@@ -2,7 +2,7 @@ import "server-only";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 
-const API_URL = process.env.API_URL ?? "http://localhost:8000";
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 /**
  * Fetch autenticado para uso em Server Components e Server Actions.
@@ -18,7 +18,7 @@ export async function apiFetch(
     redirect("/login");
   }
 
-  return fetch(`${API_URL}${path}`, {
+  return fetch(`${BASE_URL}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",

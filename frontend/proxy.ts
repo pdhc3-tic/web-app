@@ -24,7 +24,7 @@ export default auth((req: NextAuthRequest) => {
 
   // Autenticado tentando acessar rota pública → redireciona para dashboard
   if (session !== null && !hasError && isPublicPath(pathname)) {
-    return NextResponse.redirect(new URL("/dashboard", req.nextUrl));
+    return NextResponse.redirect(new URL("/core/dashboard", req.nextUrl));
   }
 
   return NextResponse.next();

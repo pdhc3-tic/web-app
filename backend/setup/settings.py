@@ -140,6 +140,8 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
         "setup.permissions.FullDjangoModelPermissions",
     ),
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.LimitOffsetPagination",
+    "PAGE_SIZE": 10,
 }
 
 SIMPLE_JWT = {
@@ -148,5 +150,5 @@ SIMPLE_JWT = {
 }
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
+    os.environ["CORS_ALLOWED_ORIGINS"],
 ]

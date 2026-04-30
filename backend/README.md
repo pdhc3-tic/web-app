@@ -48,4 +48,7 @@ python manage.py migrate
 7. Iniciar o Servidor
    python manage.py runserver
 
-   # Obs: certifique-se de que a porta iniciada é a mesma de API_URL do .env do frontend
+   # Obs: certifique-se de que a porta iniciada é a mesma de NEXT_PUBLIC_API_URL do .env do frontend
+
+8. Rota admin
+   [localhost:8000/admin](http://localhost:8080/admin/)

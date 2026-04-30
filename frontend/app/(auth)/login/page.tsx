@@ -9,7 +9,7 @@ type FormState = { error?: string } | undefined;
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
+  const callbackUrl = searchParams.get("callbackUrl") ?? "/core/dashboard";
 
   const [state, formAction, pending] = useActionState(
     async (prev: FormState, formData: FormData) => {

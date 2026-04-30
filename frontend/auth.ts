@@ -2,7 +2,7 @@ import NextAuth, { type DefaultSession } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import type { JWT } from "@auth/core/jwt";
 
-const API_URL = process.env.API_URL ?? "http://localhost:8000";
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 // Extende os tipos padrão do Auth.js para incluir os tokens do Django
 declare module "next-auth" {
@@ -43,7 +43,7 @@ type AppJWT = JWT & {
  */
 async function refreshDjangoToken(refreshToken: string): Promise<string | null> {
   try {
-    const res = await fetch(`${API_URL}/api/v1/auth/token/refresh/`, {
+    const res = await fetch(`${BASE_URL}/api/v1/auth/token/refresh/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh: refreshToken }),
@@ -81,7 +81,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       async authorize(credentials) {
         if (!credentials?.username || !credentials?.password) return null;
 
-        const res = await fetch(`${API_URL}/api/v1/auth/login/`, {
+        const res = await fetch(`${BASE_URL}/api/v1/auth/login/`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -98,7 +98,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         let email = "";
         let permissions: string[] = [];
         try {
-          const meRes = await fetch(`${API_URL}/api/v1/auth/me/`, {
+          const meRes = await fetch(`${BASE_URL}/api/v1/auth/me/`, {
             headers: { Authorization: `Bearer ${tokens.access}` },
           });
           if (meRes.ok) {
