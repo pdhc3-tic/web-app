@@ -54,6 +54,8 @@ INSTALLED_APPS = [
     "apps.sca",
 ]
 
+AUTH_USER_MODEL = "core.User"
+
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
