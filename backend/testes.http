@@ -1,0 +1,27 @@
+### Buscar todos os estados
+GET http://127.0.0.1:8080/api/v1/territorios/
+Content-Type: application/json
+
+### Autenticação
+POST http://127.0.0.1:8080/api/v1/auth/login/
+Content-Type: application/json
+
+{
+    "username": "teste1",
+    "password": "Senh@654"
+}
+
+### Buscar um estado específico
+GET http://127.0.0.1:8080/api/v1/estados
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc3MjY0Mjg5LCJpYXQiOjE3NzcyMzU0ODksImp0aSI6IjQ1M2RjNzdiODRhNDRlMzZiNTI3NWRkMTRmYWQzODBkIiwidXNlcl9pZCI6IjIifQ.IhffFcfJ6UpFo6ZVibkHT2KDYw1KoqjyoouddIznvuM
+
+### Adiciona um estado
+POST http://127.0.0.1:8080/api/v1/estados/
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc2MzAyMjAxLCJpYXQiOjE3NzYyNzM0MDEsImp0aSI6ImRlYWI5MTAyMjJhMTRmNjFiOTdkYWJjMmIzNDdkYzNlIiwidXNlcl9pZCI6IjIifQ.UzmhvSUDxRrjzC630XL7jB-g3Kr-otiyhe8-NmDLLjg
+
+{
+    "nome": "Teste",
+    "sigla": "TT"
+}
