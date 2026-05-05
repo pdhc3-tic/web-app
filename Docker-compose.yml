@@ -34,8 +34,10 @@ services:
   backend:
     build:
       context: ./backend
-    container_name: backend
-    command: python manage.py runserver 0.0.0.0:8000
+    container_name: backend.
+    command: >- # o backend deve esperar o db estar disponivel para inicializar
+      sh -c "until python -c \"import socket; socket.create_connection(('db', 5432), 2).close()\"; do sleep 1; done;
+      python manage.py runserver 0.0.0.0:8000" 
     volumes:
       - ./backend:/app
     ports:
