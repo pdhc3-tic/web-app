@@ -1,54 +1,64 @@
-1. Criar o Ambiente Virtual (venv)
+# Backend (Django) com Docker
 
-# No Windows:
+## Pré-requisitos
 
-python -m venv venv
+- Docker
+- Docker Compose
 
-# No Linux/Mac:
+## 1. Preparar ambiente
 
-python3 -m venv venv
+Na raiz do monorepo:
 
-2. Ativar o Ambiente Virtual
+```bash
+cp -n backend/.env.example backend/.env
+cp -n frontend/.env.example frontend/.env.local
+```
 
-# No Windows (Prompt de Comando):
+Preencha os obrigatórios:
 
-venv\Scripts\activate
+- `backend/.env`: `DJANGO_SECRET_KEY`
+- `frontend/.env.local`: `AUTH_SECRET`
+- mantenha `NEXT_PUBLIC_API_URL=http://backend:8000` no frontend
 
-# No Windows (PowerShell):
+## 2. Subir stack do zero
 
-.\venv\Scripts\Activate.ps1
+```bash
+docker compose -f Docker-compose.yml down -v
+docker compose -f Docker-compose.yml up --build -d
+```
 
-# No Linux/Mac:
+## 3. Migrations (recomendado)
 
-source venv/bin/activate
+O backend roda com usuário de app limitado (`app_user`, sem CREATE/DROP).  
+Por isso, rode migrations com override temporário para `postgres`:
 
-3. Instalar as Dependências
-   pip install -r requirements/base.txt
+```bash
+docker compose -f Docker-compose.yml exec \
+  -e DB_USER=postgres \
+  -e DB_PASSWORD=postgres \
+  backend python manage.py migrate
+```
 
-4. Configurar as Variáveis de Ambiente
-   4.1. Procure por um arquivo chamado .env.example.
+Se necessário:
 
-   4.2. Crie uma cópia e renomeie para .env.
+```bash
+docker compose -f Docker-compose.yml exec \
+  -e DB_USER=postgres \
+  -e DB_PASSWORD=postgres \
+  backend python manage.py makemigrations
+```
 
-   4.3. Preencha as chaves DJANGO_SECRET_KEY e AUTH_SECRET (use as chaves que geramos anteriormente).
+## 4. Validar backend
 
-5. Preparar o Banco de Dados (Migrations)
+```bash
+docker compose -f Docker-compose.yml ps
+curl -i http://localhost:8000/admin/login/
+curl -i http://localhost:8000/api/v1/
+```
 
-# Identifica mudanças nos modelos
+## 5. Logs e parada
 
-python manage.py makemigrations
-
-# Aplica as mudanças ao banco de dados
-
-python manage.py migrate
-
-6. Criar um Superusuário (Opcional)
-   python manage.py createsuperuser
-
-7. Iniciar o Servidor
-   python manage.py runserver
-
-   # Obs: certifique-se de que a porta iniciada é a mesma de NEXT_PUBLIC_API_URL do .env do frontend
-
-8. Rota admin
-   [localhost:8000/admin](http://localhost:8080/admin/)
+```bash
+docker compose -f Docker-compose.yml logs -f backend db redis
+docker compose -f Docker-compose.yml down
+```
