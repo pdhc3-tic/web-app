@@ -18,6 +18,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 from rest_framework_simplejwt import views as jwt_views
+from rest_framework_simplejwt.views import TokenBlacklistView
 
 from .views import me
 
@@ -35,4 +36,7 @@ urlpatterns = [
     ),
     path("api/v1/auth/me/", me, name="me"),
     path("api/v1/", include("apps.core.urls")),
+    path("api/v1/auth/logout/", 
+         TokenBlacklistView.as_view(), 
+         name="token_blacklist"),
 ]
