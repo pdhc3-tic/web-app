@@ -6,16 +6,15 @@ services:
     image: postgres:16
     container_name: db
     restart: always
-    environment:
-      POSTGRES_DB: app_db
-      POSTGRES_USER: app_user
-      POSTGRES_PASSWORD: app_pass
+    env_file:
+      - ./backend/.env
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./backend/db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app_user -d app_db"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -35,8 +34,10 @@ services:
   backend:
     build:
       context: ./backend
-    container_name: backend
-    command: python manage.py runserver 0.0.0.0:8000
+    container_name: backend.
+    command: >- # o backend deve esperar o db estar disponivel para inicializar
+      sh -c "until python -c \"import socket; socket.create_connection(('db', 5432), 2).close()\"; do sleep 1; done;
+      python manage.py runserver 0.0.0.0:8000" 
     volumes:
       - ./backend:/app
     ports:
@@ -48,6 +49,17 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: frontend
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./frontend/.env.local
+    depends_on:
+      - backend
 
 volumes:
   postgres_data:
