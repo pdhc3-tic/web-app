@@ -20,13 +20,13 @@ from django.urls import include, path
 from rest_framework_simplejwt import views as jwt_views
 from rest_framework_simplejwt.views import TokenBlacklistView
 
-from .views import me
+from .views import LoginView, me
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path(
         "api/v1/auth/login/",
-        jwt_views.TokenObtainPairView.as_view(),
+        LoginView.as_view(),
         name="token_obtain_pair",
     ),
     path(
