@@ -41,7 +41,7 @@ type AppJWT = JWT & {
  * Tenta renovar o access token Django usando o refresh token.
  * Retorna o novo access token ou null se o refresh expirou.
  */
-async function refreshDjangoToken(refreshToken: string): Promise<string | null> {
+async function refreshDjangoToken(refreshToken: string): Promise<{ access: string; refresh: string } | null> {
   try {
     const res = await fetch(`${BASE_URL}/api/v1/auth/token/refresh/`, {
       method: "POST",
@@ -49,8 +49,8 @@ async function refreshDjangoToken(refreshToken: string): Promise<string | null> 
       body: JSON.stringify({ refresh: refreshToken }),
     });
     if (!res.ok) return null;
-    const data: { access: string } = await res.json();
-    return data.access;
+    const data: { access: string; refresh: string } = await res.json();
+    return { access: data.access, refresh: data.refresh }
   } catch {
     return null;
   }
@@ -149,11 +149,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
 
       // Access token expirado — tenta renovar silenciosamente
-      const newAccessToken = await refreshDjangoToken(t.refreshToken);
+      const tokens = await refreshDjangoToken(t.refreshToken);
 
-      if (newAccessToken) {
-        t.accessToken = newAccessToken;
-        t.accessTokenExpiresAt = getTokenExpiry(newAccessToken);
+      if (tokens) {
+        t.accessToken = tokens.access
+        t.refreshToken = tokens.refresh
+        t.accessTokenExpiresAt = getTokenExpiry(tokens.access);
         return t;
       }
 

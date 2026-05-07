@@ -18,21 +18,25 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 from rest_framework_simplejwt import views as jwt_views
+from rest_framework_simplejwt.views import TokenBlacklistView
 
-from .views import me
+from .views import LoginView, RefreshView, LogoutView, me
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path(
         "api/v1/auth/login/",
-        jwt_views.TokenObtainPairView.as_view(),
+        LoginView.as_view(),
         name="token_obtain_pair",
     ),
     path(
         "api/v1/auth/token/refresh/",
-        jwt_views.TokenRefreshView.as_view(),
+        RefreshView.as_view(),
         name="token_refresh",
     ),
     path("api/v1/auth/me/", me, name="me"),
     path("api/v1/", include("apps.core.urls")),
+    path("api/v1/auth/logout/", 
+         LogoutView.as_view(), 
+         name="token_blacklist"),
 ]
