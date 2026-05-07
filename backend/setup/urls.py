@@ -20,7 +20,7 @@ from django.urls import include, path
 from rest_framework_simplejwt import views as jwt_views
 from rest_framework_simplejwt.views import TokenBlacklistView
 
-from .views import LoginView, me
+from .views import LoginView, RefreshView, me
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -31,7 +31,7 @@ urlpatterns = [
     ),
     path(
         "api/v1/auth/token/refresh/",
-        jwt_views.TokenRefreshView.as_view(),
+        RefreshView.as_view(),
         name="token_refresh",
     ),
     path("api/v1/auth/me/", me, name="me"),
