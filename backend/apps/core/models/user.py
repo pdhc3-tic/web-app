@@ -1,3 +1,7 @@
+from django.db import models
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from .role import Role
+
 class UserManager(BaseUserManager):
     def create_user(self, email: str, nome: str, perfil: str, password: str | None = None):
         if not email:
@@ -57,8 +61,8 @@ class User(AbstractBaseUser, PermissionsMixin):
         verbose_name = "Usuario"
         verbose_name_plural = "Users"
         ordering = ["email"]
+        indexes = [models.Index(fields=["ultimo_login"], name="idx_user_ultimo_login")]
 
-        ]
 
     @property
     def is_active(self):

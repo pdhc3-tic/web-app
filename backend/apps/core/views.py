@@ -1,29 +1,51 @@
-from rest_framework.viewsets import ModelViewSet
+from rest_framework import viewsets, filters
+from rest_framework.permissions import IsAuthenticated
+from django_filters.rest_framework import DjangoFilterBackend
+from django.contrib.auth import get_user_model
 
-from .models import Comunidade, Estado, Municipio, Territorio
+from .models import Role, State, Territory, Municipality
 from .serializers import (
-    ComunidadeSerializer,
-    EstadoSerializer,
-    MunicipioSerializer,
-    TerritorioSerializer,
+    RoleSerializer, StateSerializer, TerritorySerializer, 
+    MunicipalitySerializer, UserSerializer
 )
 
+User = get_user_model()
 
-class EstadoViewSet(ModelViewSet):
-    queryset = Estado.objects.all()
-    serializer_class = EstadoSerializer
+class RoleViewSet(viewsets.ModelViewSet):
+    queryset = Role.objects.all()
+    serializer_class = RoleSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [filters.SearchFilter, DjangoFilterBackend]
+    search_fields = ['nome', 'slug']
+    filterset_fields = ['ativo']
 
+class StateViewSet(viewsets.ModelViewSet):
+    queryset = State.objects.all()
+    serializer_class = StateSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['nome', 'sigla']
 
-class TerritorioViewSet(ModelViewSet):
-    queryset = Territorio.objects.all()
-    serializer_class = TerritorioSerializer
+class TerritoryViewSet(viewsets.ModelViewSet):
+    queryset = Territory.objects.all()
+    serializer_class = TerritorySerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [filters.SearchFilter, DjangoFilterBackend]
+    search_fields = ['nome']
+    filterset_fields = ['ativo', 'articulador']
 
+class MunicipalityViewSet(viewsets.ModelViewSet):
+    queryset = Municipality.objects.all()
+    serializer_class = MunicipalitySerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [filters.SearchFilter, DjangoFilterBackend]
+    search_fields = ['nome', 'codigo_ibge']
+    filterset_fields = ['state', 'territory']
 
-class MunicipioViewSet(ModelViewSet):
-    queryset = Municipio.objects.select_related("estado", "territorio").all()
-    serializer_class = MunicipioSerializer
-
-
-class ComunidadeViewSet(ModelViewSet):
-    queryset = Comunidade.objects.select_related("municipio", "territorio").all()
-    serializer_class = ComunidadeSerializer
+class UserViewSet(viewsets.ModelViewSet):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [filters.SearchFilter, DjangoFilterBackend]
+    search_fields = ['nome', 'email']
+    filterset_fields = ['role', 'ativo']

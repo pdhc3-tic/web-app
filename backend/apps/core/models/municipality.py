@@ -3,8 +3,8 @@ from django.db import models
 class Municipality(models.Model):
     id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=255)
-    estado_id = models.ForeignKey(State, on_delete=models.CASCADE, related_name="municipalities")
-    territorio_id = models.ForeignKey(Territorio, on_delete=models.SET_NULL, null=True, blank=True, related_name="municipalities")
+    estado_id = models.ForeignKey('core.State', on_delete=models.CASCADE, related_name="municipalities")
+    territorio_id = models.ForeignKey('core.Territory', on_delete=models.SET_NULL, null=True, blank=True, related_name="municipalities")
     codigo_ibge = models.CharField(max_length=7, unique=True)
     area_km2 = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     pop_total = models.IntegerField(null=True, blank=True)
