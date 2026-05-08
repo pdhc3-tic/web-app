@@ -62,3 +62,8 @@ curl -i http://localhost:8000/api/v1/
 docker compose -f Docker-compose.yml logs -f backend db redis
 docker compose -f Docker-compose.yml down
 ```
+## 6. Rodar testes do backend
+
+```bash
+docker exec -it backend pytest -v
+```
