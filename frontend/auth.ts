@@ -46,11 +46,11 @@ async function refreshDjangoToken(refreshToken: string): Promise<{ access: strin
     const res = await fetch(`${BASE_URL}/api/v1/auth/token/refresh/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh: refreshToken }),
+      body: JSON.stringify({ refresh_token: refreshToken }),
     });
     if (!res.ok) return null;
-    const data: { access: string; refresh: string } = await res.json();
-    return { access: data.access, refresh: data.refresh }
+    const data: { access_token: string; refresh_token: string } = await res.json();
+    return { access: data.access_token, refresh: data.refresh_token }
   } catch {
     return null;
   }
@@ -74,36 +74,33 @@ function getTokenExpiry(token: string): number {
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
     Credentials({
+      /*
+       * O login real (POST /api/v1/auth/login/) acontece no cliente (login/page.tsx),
+       * que tem acesso total ao body da resposta (401 {code, message}, 429 Retry-After).
+       * O authorize() recebe os tokens já validados e só busca os dados do usuário.
+       */
       credentials: {
-        username: { label: "Usuário", type: "text" },
-        password: { label: "Senha", type: "password" },
+        access: { label: "Access token", type: "text" },
+        refresh: { label: "Refresh token", type: "text" },
       },
       async authorize(credentials) {
-        if (!credentials?.username || !credentials?.password) return null;
+        if (!credentials?.access || !credentials?.refresh) return null;
 
-        const res = await fetch(`${BASE_URL}/api/v1/auth/login/`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username: credentials.username,
-            password: credentials.password,
-          }),
-        });
-
-        if (!res.ok) return null;
-
-        const tokens: { access: string; refresh: string } = await res.json();
+        const access = credentials.access as string;
+        const refresh = credentials.refresh as string;
 
         // Busca dados completos do usuário (email + permissões)
+        let username = "";
         let email = "";
         let permissions: string[] = [];
         try {
           const meRes = await fetch(`${BASE_URL}/api/v1/auth/me/`, {
-            headers: { Authorization: `Bearer ${tokens.access}` },
+            headers: { Authorization: `Bearer ${access}` },
           });
           if (meRes.ok) {
             const me: { id: number; username: string; email: string; permissions: string[] } =
               await meRes.json();
+            username = me.username;
             email = me.email;
             permissions = me.permissions;
           }
@@ -112,12 +109,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         }
 
         return {
-          id: credentials.username as string,
-          username: credentials.username as string,
+          id: username || "user",
+          username,
           email,
           permissions,
-          accessToken: tokens.access,
-          refreshToken: tokens.refresh,
+          accessToken: access,
+          refreshToken: refresh,
         };
       },
     }),

@@ -1,26 +1,50 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+  @theme (sem inline) faz o Tailwind v4:
+    1. criar as CSS vars em :root  → --color-primary: #1b5e3b
+    2. criar as utilidades         → bg-primary { background-color: var(--color-primary) }
+  Dark mode só precisa sobrescrever as CSS vars em :root.
+*/
+@theme {
+  --color-background: #f7f7f5;
+  --color-foreground: #3d3d3a;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f1efe8;
+  --color-primary: #1b5e3b;
+  --color-primary-hover: #2e7d52;
+  --color-border: #d3d1c7;
+  --color-text-muted: #6b6b68;
+  --color-error: #c62828;
+  --color-error-bg: #ffebee;
+  --color-success: #1b5e3b;
 }
 
+/* @theme inline apenas para a fonte, que precisa do var(--font-inter) do Next.js */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans:
+    var(--font-inter), system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
 }
 
+/* Dark mode: sobrescreve as CSS vars geradas pelo @theme acima */
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --color-background: #1a1a18;
+    --color-foreground: #e8e6e0;
+    --color-surface: #252523;
+    --color-surface-muted: #2e2e2b;
+    --color-primary: #4a9c6d;
+    --color-primary-hover: #5baf7e;
+    --color-border: #3a3a37;
+    --color-text-muted: #9e9b93;
+    --color-error: #ef5350;
+    --color-error-bg: #3b1515;
+    --color-success: #4a9c6d;
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
 }
