@@ -84,3 +84,4 @@ class ComunidadeAdmin(admin.ModelAdmin):
     list_display = ("nome", "municipio", "territorio", "zona")
     list_filter = ("zona", "territorio")
     search_fields = ("nome",)
+
