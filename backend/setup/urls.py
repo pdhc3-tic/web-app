@@ -20,7 +20,7 @@ from django.urls import include, path
 from rest_framework_simplejwt import views as jwt_views
 from rest_framework_simplejwt.views import TokenBlacklistView
 
-from .views import LoginView, RefreshView, LogoutView, me
+from .views import LoginView, RefreshView, LogoutView, logout_all, me
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -39,4 +39,5 @@ urlpatterns = [
     path("api/v1/auth/logout/", 
          LogoutView.as_view(), 
          name="token_blacklist"),
+    path("api/v1/auth/logout-all/", logout_all, name="logout_all"),
 ]
