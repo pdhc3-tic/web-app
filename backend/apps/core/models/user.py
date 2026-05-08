@@ -10,7 +10,7 @@ class UserManager(BaseUserManager):
         user = self.model(
             email=self.normalize_email(email),
             nome=nome,
-            perfil=perfil,
+            role = role, 
         )
         user.set_password(password)
         user.save(using=self._db)
@@ -29,8 +29,9 @@ class UserManager(BaseUserManager):
         user = self.create_user(
             email=email,
             nome=nome,
-            perfil=perfil,
             password=password,
+            role = role,
+
         )
         user.is_staff = True
         user.is_superuser = True
@@ -40,36 +41,23 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
-    class PerfilChoices(models.TextChoices):
-        AGRICULTOR_BENEFICIARIO = (
-            "agricultor_beneficiario",
-            "Agricultor / Beneficiário",
-        )
-        TECNICO_CAMPO_ADT_ACR = "tecnico_campo_adt_acr", "ADT / ACR — Técnico de campo"
-        ARTICULADOR_ESTADUAL = "articulador_estadual", "Articulador Estadual"
-        UGP_COORDENACAO = "ugp_coordenacao", "UGP — Coordenação territorial"
-        FGD_EQUIPE_FUNDACAO = "fgd_equipe_fundacao", "FGD — Equipe Fundação"
-        SUPER_ADMIN = "super_admin", "UFERSA / Equipe técnica (Super Admin)"
-
     email = models.EmailField(unique=True)
     nome = models.CharField(max_length=255)
     ativo = models.BooleanField(default=True)
     ultimo_login = models.DateTimeField(null=True, blank=True)
-    perfil = models.CharField(max_length=50, choices=PerfilChoices.choices)
-    is_staff = models.BooleanField(default=False)
-    date_joined = models.DateTimeField(default=timezone.now)
+
+    role = models.ForeignKey(Role, on_delete=models.PROTECT, null=True, blank=True, related_name="users")
 
     objects = UserManager()
 
     USERNAME_FIELD = "email"
-    REQUIRED_FIELDS = ["nome", "perfil"]
+    REQUIRED_FIELDS = ["nome"]
 
     class Meta:
-        ordering = ["-date_joined"]
-        verbose_name = "usuário"
-        verbose_name_plural = "usuários"
-        indexes = [
-            models.Index(fields=["ativo", "ultimo_login"], name="core_usr_ativo_login_idx"),
+        verbose_name = "Usuario"
+        verbose_name_plural = "Users"
+        ordering = ["email"]
+
         ]
 
     @property
@@ -99,6 +87,4 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self) -> str:
         return str(self.email)
-
-
 

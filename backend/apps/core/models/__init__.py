@@ -5,3 +5,5 @@ from .role import Role
 from .municipality import Municipality
 
 __all__ = ['User', 'Role', 'State', 'Territory', 'Municipality']
+
+

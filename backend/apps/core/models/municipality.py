@@ -1,3 +1,5 @@
+from django.db import models
+
 class Municipality(models.Model):
     id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=255)
@@ -15,7 +17,11 @@ class Municipality(models.Model):
         verbose_name = 'Municipality'
         verbose_name_plural = 'Municipalities'
         ordering = ['name']
+        indexes = [
+            models.Index(fields=['territorio_id']),
+            # codigo_ibge já cria um índice por ser unique
+        ]
 
     def __str__(self):
-        return self.name
+        return f"{self.nome} - {self.state.sigla}"
 

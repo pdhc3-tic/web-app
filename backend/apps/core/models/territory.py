@@ -1,3 +1,8 @@
+from django.db import models
+from django.conf import settings
+from django.contrib.postgres.fields import ArrayField
+
+
 class Territory(models.Model):
     nome = models.CharField(max_length=255)
     estados = models.ManyToManyField(Estado, related_name="territorios", blank=True)
@@ -12,5 +17,11 @@ class Territory(models.Model):
         verbose_name = 'Território'
         verbose_name_plural = 'Territórios'
         ordering = ['nome']
+        indexes = [
+            models.Index(fields=['ativos']),
+        ]
 
+
+    def __str__(self):
+        return self.nome
 
