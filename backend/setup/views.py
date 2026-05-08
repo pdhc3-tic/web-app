@@ -33,8 +33,9 @@ def me(request):
     return Response(
         {
             "id": user.id,
-            "username": user.username,
+            "nome": user.nome,
             "email": user.email,
+            "perfil": user.perfil,
             "permissions": sorted(user.get_all_permissions()),
         }
     )
