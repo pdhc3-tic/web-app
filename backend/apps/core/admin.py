@@ -85,6 +85,6 @@ class TerritoryAdmin(admin.ModelAdmin):
 # 5. ATUALIZADO: Municipio -> Municipality
 @admin.register(Municipality)
 class MunicipalityAdmin(admin.ModelAdmin):
-    list_display = ("nome", "state", "territory", "codigo_ibge")  # <-- Alterado
-    list_filter = ("state", "territory")  # <-- Alterado
+    list_display = ("nome", "state", "territory", "codigo_ibge")
+    list_filter = ("state", "territory")
     search_fields = ("nome", "codigo_ibge")
