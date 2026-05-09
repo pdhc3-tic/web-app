@@ -21,7 +21,6 @@ class Municipality(models.Model):
         ordering = ['nome']
         indexes = [
             models.Index(fields=['territory']),
-            models.Index(fields=['codigo_ibge']),
         ]
 
     def __str__(self):

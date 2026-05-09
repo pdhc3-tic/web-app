@@ -3,18 +3,16 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, Permis
 from .role import Role
 
 class UserManager(BaseUserManager):
-    def create_user(self, email: str, nome: str, perfil: str, password: str | None = None):
+    def create_user(self, email: str, nome: str, role=None, password: str | None = None):
         if not email:
             raise ValueError("O email é obrigatório.")
         if not nome:
             raise ValueError("O nome é obrigatório.")
-        if not perfil:
-            raise ValueError("O perfil é obrigatório.")
 
         user = self.model(
             email=self.normalize_email(email),
             nome=nome,
-            role = role, 
+            role=role,
         )
         user.set_password(password)
         user.save(using=self._db)
@@ -24,8 +22,8 @@ class UserManager(BaseUserManager):
         self,
         email: str,
         nome: str,
-        perfil: str = "super_admin",
         password: str | None = None,
+        role=None,
     ):
         if password is None:
             raise ValueError("Superusuário precisa de senha.")
@@ -34,10 +32,8 @@ class UserManager(BaseUserManager):
             email=email,
             nome=nome,
             password=password,
-            role = role,
-
+            role=role,
         )
-        user.is_staff = True
         user.is_superuser = True
         user.ativo = True
         user.save(using=self._db)
@@ -71,6 +67,10 @@ class User(AbstractBaseUser, PermissionsMixin):
     @is_active.setter
     def is_active(self, value):
         self.ativo = value
+
+    @property
+    def is_staff(self) -> bool:
+        return self.is_superuser
 
     @property
     def last_login(self):

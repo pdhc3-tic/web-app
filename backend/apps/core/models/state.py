@@ -6,8 +6,8 @@ class State(models.Model):
     nome = models.CharField(max_length=255, unique=True)
 
     class Meta:
-        verbose_name = 'State'
-        verbose_name_plural = 'States'
+        verbose_name = 'Estado'
+        verbose_name_plural = 'Estados'
         ordering = ['nome']
 
     def __str__(self):

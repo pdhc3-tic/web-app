@@ -17,33 +17,31 @@ class UserAdmin(DjangoUserAdmin):
     list_display = (
         "email",
         "nome",
-        "role",  # <-- Alterado
+        "role",
         "ativo",
         "is_staff",
         "is_superuser",
         "ultimo_login",
-        "date_joined",
     )
-    list_filter = ("role", "ativo", "is_staff", "is_superuser")  # <-- Alterado
-    ordering = ("-date_joined",)
+    list_filter = ("role", "ativo", "is_superuser")
+    ordering = ("-ultimo_login",)
     search_fields = ("email", "nome")
-    readonly_fields = ("ultimo_login", "date_joined")
+    readonly_fields = ("ultimo_login",)
     fieldsets = (
         (None, {"fields": ("email", "password")}),
-        ("Informações pessoais", {"fields": ("nome", "role")}),  # <-- Alterado
+        ("Informações pessoais", {"fields": ("nome", "role")}),
         (
             "Permissões",
             {
                 "fields": (
                     "ativo",
-                    "is_staff",
                     "is_superuser",
                     "groups",
                     "user_permissions",
                 )
             },
         ),
-        ("Datas importantes", {"fields": ("ultimo_login", "date_joined")}),
+        ("Datas importantes", {"fields": ("ultimo_login",)}),
     )
     add_fieldsets = (
         (
@@ -53,11 +51,10 @@ class UserAdmin(DjangoUserAdmin):
                 "fields": (
                     "email",
                     "nome",
-                    "role",  # <-- Alterado
+                    "role",
                     "password1",
                     "password2",
                     "ativo",
-                    "is_staff",
                     "is_superuser",
                 ),
             },

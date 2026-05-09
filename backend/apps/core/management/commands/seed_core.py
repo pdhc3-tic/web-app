@@ -1,8 +1,18 @@
+"""
+Seed de dados de referência do core (roles, estados, territórios, municípios).
+
+Decisão CI/testes
+-----------------
+- Este comando é executado APENAS em ambientes de desenvolvimento e staging
+  para popular o banco com dados reais de referência.
+- Em testes automatizados (CI), NÃO usar este seed. Usar factory_boy
+  (factories em apps/core/tests/factories.py) para criar fixtures isoladas
+  por teste, garantindo velocidade e independência entre casos de teste.
+"""
 from django.core.management.base import BaseCommand
 import csv
 
-from core.models import Role, State, Territory, Municipality
-from django.conf import settings
+from apps.core.models import Role, State, Territory, Municipality
 
 
 ROLES = [
@@ -16,13 +26,11 @@ ROLES = [
 
 STATES = ["PE", "PB", "AL", "RN", "MA", "BA", "MG"]
 
-# Minimal placeholder territories: one per state
 
 def ensure_roles(stdout):
     for slug, nome in ROLES:
         role, created = Role.objects.get_or_create(slug=slug, defaults={"nome": nome, "ativo": True})
         if not created:
-            # ensure name is up to date
             if role.nome != nome:
                 role.nome = nome
                 role.save()
@@ -36,7 +44,6 @@ def ensure_states(stdout):
 
 
 def ensure_territories(stdout):
-    # Create at least one territory per state
     for sigla in STATES:
         name = f"Território {sigla}"
         territory, created = Territory.objects.get_or_create(nome=name, defaults={"estados": [sigla], "ativo": True})
@@ -47,7 +54,6 @@ def ensure_territories(stdout):
 
 
 def ensure_sample_municipalities(stdout):
-    # Create a small sample of municipalities (one per state) for tests/dev
     counter = 1
     for sigla in STATES:
         state = State.objects.get(sigla=sigla)
@@ -92,7 +98,6 @@ class Command(BaseCommand):
 
         csvfile = options.get("csvfile")
         if csvfile:
-            # Import from CSV: expected columns: codigo_ibge,nome,sigla,...
             self.stdout.write(f"Importing municipalities from {csvfile}...")
             with open(csvfile, newline='', encoding='utf-8') as fh:
                 reader = csv.DictReader(fh)
