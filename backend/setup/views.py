@@ -2,7 +2,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView, TokenBlacklistView
-from .serializers import LoginSerializer, RefreshSerializer, LogoutSerializer
+from .serializers import LoginSerializer, RefreshSerializer, LogoutSerializer, UserMeSerializer
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 from rest_framework import status
 
@@ -31,16 +31,8 @@ class LogoutView(TokenBlacklistView):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def me(request):
-    user = request.user
-    return Response(
-        {
-            "id": user.id,
-            "nome": user.nome,
-            "email": user.email,
-            "perfil": user.perfil,
-            "permissions": sorted(user.get_all_permissions()),
-        }
-    )
+    serializer = UserMeSerializer(request.user)
+    return Response(serializer.data)
     
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
