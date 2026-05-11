@@ -1,27 +1,40 @@
 from rest_framework import serializers
+from django.contrib.auth import get_user_model
+from .models import Role, State, Territory, Municipality
 
-from .models import Comunidade, Estado, Municipio, Territorio
+User = get_user_model()
 
-
-class EstadoSerializer(serializers.ModelSerializer):
+class RoleSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Estado
-        fields = "__all__"
+        model = Role
+        fields = ['id', 'nome', 'slug', 'descricao', 'ativo', 'criado_em']
+        read_only_fields = ['criado_em']
 
-
-class TerritorioSerializer(serializers.ModelSerializer):
+class StateSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Territorio
-        fields = "__all__"
+        model = State
+        fields = ['id', 'sigla', 'nome']
 
-
-class MunicipioSerializer(serializers.ModelSerializer):
+class TerritorySerializer(serializers.ModelSerializer):
     class Meta:
-        model = Municipio
-        fields = "__all__"
+        model = Territory
+        fields = ['id', 'nome', 'estados', 'articulador', 'ativo']
 
-
-class ComunidadeSerializer(serializers.ModelSerializer):
+class MunicipalitySerializer(serializers.ModelSerializer):
     class Meta:
-        model = Comunidade
-        fields = "__all__"
+        model = Municipality
+        fields = [
+            'id', 'nome', 'state', 'territory', 'codigo_ibge', 
+            'area_km2', 'pop_total', 'pop_rural', 'idh', 
+            'perc_extr_pobres', 'benef_programa_agri_familiar', 
+            'estab_agri_familiar'
+        ]
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = [
+            'id', 'email', 'nome', 'role', 'ativo', 
+            'ultimo_login', 'date_joined'
+        ]
+        read_only_fields = ['ultimo_login', 'date_joined']

@@ -3,6 +3,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView, TokenBlacklistView
 from .serializers import LoginSerializer, RefreshSerializer, LogoutSerializer
+from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
+from rest_framework import status
 
 class LoginView(TokenObtainPairView):
     serializer_class = LoginSerializer
@@ -33,9 +35,17 @@ def me(request):
     return Response(
         {
             "id": user.id,
-            "username": user.username,
+            "nome": user.nome,
             "email": user.email,
+            "perfil": user.perfil,
             "permissions": sorted(user.get_all_permissions()),
         }
     )
     
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def logout_all(request):
+    tokens = OutstandingToken.objects.filter(user=request.user)
+    for token in tokens:
+        BlacklistedToken.objects.get_or_create(token=token)
+    return Response(status=status.HTTP_200_OK)
