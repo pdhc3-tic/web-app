@@ -1,41 +1,47 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
-from .models import Comunidade, Estado, Municipio, Territorio, User
+from .models import State, Territory, Municipality, User, Role
+
+# 1. NOVO: Admin para o model Role
+@admin.register(Role)
+class RoleAdmin(admin.ModelAdmin):
+    list_display = ("nome", "slug", "ativo", "criado_em")
+    search_fields = ("nome", "slug")
+    list_filter = ("ativo",)
 
 
+# 2. ATUALIZADO: UserAdmin (trocando 'perfil' por 'role')
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
     list_display = (
         "email",
         "nome",
-        "perfil",
+        "role",
         "ativo",
         "is_staff",
         "is_superuser",
         "ultimo_login",
-        "date_joined",
     )
-    list_filter = ("perfil", "ativo", "is_staff", "is_superuser")
-    ordering = ("-date_joined",)
+    list_filter = ("role", "ativo", "is_superuser")
+    ordering = ("-ultimo_login",)
     search_fields = ("email", "nome")
-    readonly_fields = ("ultimo_login", "date_joined")
+    readonly_fields = ("ultimo_login",)
     fieldsets = (
         (None, {"fields": ("email", "password")}),
-        ("Informações pessoais", {"fields": ("nome", "perfil")}),
+        ("Informações pessoais", {"fields": ("nome", "role")}),
         (
             "Permissões",
             {
                 "fields": (
                     "ativo",
-                    "is_staff",
                     "is_superuser",
                     "groups",
                     "user_permissions",
                 )
             },
         ),
-        ("Datas importantes", {"fields": ("ultimo_login", "date_joined")}),
+        ("Datas importantes", {"fields": ("ultimo_login",)}),
     )
     add_fieldsets = (
         (
@@ -45,11 +51,10 @@ class UserAdmin(DjangoUserAdmin):
                 "fields": (
                     "email",
                     "nome",
-                    "perfil",
+                    "role",
                     "password1",
                     "password2",
                     "ativo",
-                    "is_staff",
                     "is_superuser",
                 ),
             },
@@ -58,29 +63,25 @@ class UserAdmin(DjangoUserAdmin):
     filter_horizontal = ("groups", "user_permissions")
 
 
-@admin.register(Estado)
-class EstadoAdmin(admin.ModelAdmin):
+# 3. ATUALIZADO: Estado -> State
+@admin.register(State)
+class StateAdmin(admin.ModelAdmin):
     list_display = ("sigla", "nome")
     search_fields = ("sigla", "nome")
 
 
-@admin.register(Territorio)
-class TerritorioAdmin(admin.ModelAdmin):
+# 4. ATUALIZADO: Territorio -> Territory
+@admin.register(Territory)
+class TerritoryAdmin(admin.ModelAdmin):
     list_display = ("nome", "articulador", "ativo")
     list_filter = ("ativo",)
     search_fields = ("nome",)
-    filter_horizontal = ("estados",)
+    # ATENÇÃO: Removido o filter_horizontal=("estados",) pois não funciona com ArrayField
 
 
-@admin.register(Municipio)
-class MunicipioAdmin(admin.ModelAdmin):
-    list_display = ("nome", "estado", "territorio", "codigo_ibge")
-    list_filter = ("estado", "territorio")
+# 5. ATUALIZADO: Municipio -> Municipality
+@admin.register(Municipality)
+class MunicipalityAdmin(admin.ModelAdmin):
+    list_display = ("nome", "state", "territory", "codigo_ibge")
+    list_filter = ("state", "territory")
     search_fields = ("nome", "codigo_ibge")
-
-
-@admin.register(Comunidade)
-class ComunidadeAdmin(admin.ModelAdmin):
-    list_display = ("nome", "municipio", "territorio", "zona")
-    list_filter = ("zona", "territorio")
-    search_fields = ("nome",)

@@ -1,11 +1,18 @@
 from rest_framework.routers import DefaultRouter
 
-from .views import ComunidadeViewSet, EstadoViewSet, MunicipioViewSet, TerritorioViewSet
+from .views import (
+    RoleViewSet,
+    StateViewSet,
+    TerritoryViewSet,
+    MunicipalityViewSet,
+    UserViewSet,
+)
 
 router = DefaultRouter()
-router.register("estados", EstadoViewSet)
-router.register("territorios", TerritorioViewSet)
-router.register("municipios", MunicipioViewSet)
-router.register("comunidades", ComunidadeViewSet)
+router.register("roles", RoleViewSet)
+router.register("states", StateViewSet)
+router.register("territories", TerritoryViewSet)
+router.register("municipalities", MunicipalityViewSet)
+router.register("users", UserViewSet)
 
 urlpatterns = router.urls
