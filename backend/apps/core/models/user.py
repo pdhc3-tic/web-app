@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from .role import Role
+from apps.core.models.territory import Territory
 
 class UserManager(BaseUserManager):
     def create_user(self, email: str, nome: str, role=None, password: str | None = None):
@@ -44,9 +45,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(unique=True)
     nome = models.CharField(max_length=255)
     ativo = models.BooleanField(default=True)
+    telefone = models.CharField(max_length=20, blank=True, default="")
+    whatsapp = models.CharField(max_length=20, blank=True, default="")
+    foto_url = models.URLField(blank=True, default="")
     ultimo_login = models.DateTimeField(null=True, blank=True)
 
     role = models.ForeignKey(Role, on_delete=models.PROTECT, null=True, blank=True, related_name="users")
+    territorios = models.ManyToManyField(Territory, blank=True, related_name="users")
 
     objects = UserManager()
 
