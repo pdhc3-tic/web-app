@@ -2,7 +2,10 @@ import NextAuth, { type DefaultSession } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import type { JWT } from "@auth/core/jwt";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// API_INTERNAL_URL é usado server-side (ex: dentro do container Docker, http://backend:8000).
+const BASE_URL =
+  process.env.API_INTERNAL_URL ??
+  "http://backend:8000";
 
 // Extende os tipos padrão do Auth.js para incluir os tokens do Django
 declare module "next-auth" {
@@ -11,17 +14,23 @@ declare module "next-auth" {
     refreshToken: string;
     error?: "RefreshTokenExpired";
     user: {
-      username: string;
-      permissions: string[];
+      id: string;
+      nome_completo: string;
+      foto_url: string;
+      perfis: string[];
+      territorios: string[];
     } & DefaultSession["user"];
   }
 
   interface User {
     accessToken: string;
     refreshToken: string;
-    username: string;
+    id: string;
+    nome_completo: string;
     email: string;
-    permissions: string[];
+    foto_url: string;
+    perfis: string[];
+    territorios: string[];
   }
 }
 
@@ -30,9 +39,12 @@ declare module "next-auth" {
 type AppJWT = JWT & {
   accessToken: string;
   refreshToken: string;
-  username: string;
+  id: string;
+  nome_completo: string;
   email: string;
-  permissions: string[];
+  foto_url: string;
+  perfis: string[];
+  territorios: string[];
   accessTokenExpiresAt: number;
   error?: "RefreshTokenExpired";
 };
@@ -89,30 +101,44 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const access = credentials.access as string;
         const refresh = credentials.refresh as string;
 
-        // Busca dados completos do usuário (email + permissões)
-        let username = "";
+        // Busca dados completos do usuário
+        let id = "";
+        let nome_completo = "";
         let email = "";
-        let permissions: string[] = [];
+        let foto_url = "";
+        let perfis: string[] = [];
+        let territorios: string[] = [];
         try {
           const meRes = await fetch(`${BASE_URL}/api/v1/auth/me/`, {
             headers: { Authorization: `Bearer ${access}` },
           });
           if (meRes.ok) {
-            const me: { id: number; username: string; email: string; permissions: string[] } =
-              await meRes.json();
-            username = me.username;
+            const me: {
+              id: number;
+              nome_completo: string;
+              email: string;
+              foto_url: string;
+              perfis: string[];
+              territorios: string[];
+            } = await meRes.json();
+            id = me.id.toString();
+            nome_completo = me.nome_completo;
             email = me.email;
-            permissions = me.permissions;
+            foto_url = me.foto_url;
+            perfis = me.perfis;
+            territorios = me.territorios;
           }
         } catch {
           // Segue sem dados extras caso a chamada falhe
         }
 
         return {
-          id: username || "user",
-          username,
+          id,
+          nome_completo,
           email,
-          permissions,
+          foto_url,
+          perfis,
+          territorios,
           accessToken: access,
           refreshToken: refresh,
         };
@@ -133,9 +159,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (user) {
         t.accessToken = user.accessToken;
         t.refreshToken = user.refreshToken;
-        t.username = user.username;
+        t.id = user.id;
+        t.nome_completo = user.nome_completo;
         t.email = user.email;
-        t.permissions = user.permissions;
+        t.foto_url = user.foto_url;
+        t.perfis = user.perfis;
+        t.territorios = user.territorios;
         t.accessTokenExpiresAt = getTokenExpiry(user.accessToken);
         return t;
       }
@@ -159,14 +188,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return { ...t, error: "RefreshTokenExpired" as const };
     },
 
-    // Expõe accessToken e username na session do cliente
+    // Expõe accessToken e email na session do cliente
     async session({ session, token }) {
       const t = token as AppJWT;
       session.accessToken = t.accessToken;
       session.refreshToken = t.refreshToken;
-      session.user.username = t.username;
+      session.user.id = t.id;
+      session.user.nome_completo = t.nome_completo;
       session.user.email = t.email;
-      session.user.permissions = t.permissions;
+      session.user.foto_url = t.foto_url;
+      session.user.perfis = t.perfis;
+      session.user.territorios = t.territorios;
       if (t.error) {
         session.error = t.error;
       }
