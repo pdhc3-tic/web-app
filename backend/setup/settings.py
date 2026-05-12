@@ -111,6 +111,11 @@ DATABASES = {
     }
 }
 
+# Password hashing — bcrypt custo 12 (Arq. §8)
+PASSWORD_HASHERS = [
+    "setup.hashers.BCrypt12PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",  # fallback para senhas antigas
+]
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -183,4 +188,23 @@ CELERY_BEAT_SCHEDULE = {
         "task": "setup.tasks.cleanup_expired_tokens",
         "schedule": crontab(hour=2, minute=0),  # todo dia às 2h da manhã
     },
+}
+
+# E-MAIL
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+EMAIL_HOST = os.getenv("EMAIL_HOST", "")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@pdhc.ufersa.edu.br")
+
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "https://pdhc.ufersa.edu.br")
+
+# CACHES : UTIZEI O BANCO 1 DO REDIS POIS O BANCO 0 É O CELERY QUEM ESTÁ USANDO.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": f"redis://{os.getenv('REDIS_HOST', 'redis')}:{os.getenv('REDIS_PORT', '6379')}/1",
+    }
 }
