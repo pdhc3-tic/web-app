@@ -20,7 +20,7 @@ from django.urls import include, path
 from rest_framework_simplejwt import views as jwt_views
 from rest_framework_simplejwt.views import TokenBlacklistView
 
-from .views import LoginView, RefreshView, LogoutView, logout_all, me
+from .views import LoginView, RefreshView, LogoutView, logout_all, me, password_reset_request, password_reset_confirm
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -40,4 +40,6 @@ urlpatterns = [
          LogoutView.as_view(), 
          name="token_blacklist"),
     path("api/v1/auth/logout-all/", logout_all, name="logout_all"),
+    path("api/v1/auth/password-reset/request/", password_reset_request, name="password_reset_request"),
+    path("api/v1/auth/password-reset/confirm/", password_reset_confirm, name="password_reset_confirm"),
 ]
