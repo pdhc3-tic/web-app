@@ -1,7 +1,6 @@
 version: "3.9"
 
 services:
-
   db:
     image: postgres:16
     container_name: db
@@ -37,7 +36,7 @@ services:
     container_name: backend.
     command: >- # o backend deve esperar o db estar disponivel para inicializar
       sh -c "until python -c \"import socket; socket.create_connection(('db', 5432), 2).close()\"; do sleep 1; done;
-      python manage.py runserver 0.0.0.0:8000" 
+      python manage.py runserver 0.0.0.0:8000"
     volumes:
       - ./backend:/app
     ports:
@@ -78,6 +77,12 @@ services:
     container_name: frontend
     ports:
       - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=500
     env_file:
       - ./frontend/.env.local
     depends_on:
