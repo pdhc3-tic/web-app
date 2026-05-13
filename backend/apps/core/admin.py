@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
 from .models import State, Territory, Municipality, User, Role
+from apps.core.models.audit_log import AuditLog
 
 # 1. NOVO: Admin para o model Role
 @admin.register(Role)
@@ -85,3 +86,9 @@ class MunicipalityAdmin(admin.ModelAdmin):
     list_display = ("nome", "state", "territory", "codigo_ibge")
     list_filter = ("state", "territory")
     search_fields = ("nome", "codigo_ibge")
+
+# 6. Audit Logs
+@admin.register(AuditLog)
+class AuditLogAdmin(admin.ModelAdmin):
+    list_display = ["evento", "usuario", "ip", "criado_em"]
+    readonly_fields = ["evento", "usuario", "detalhes", "ip", "criado_em"]
