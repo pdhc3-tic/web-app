@@ -3,8 +3,6 @@ Classes de permissão RBAC — composable via & / | (DRF 3.9+).
 Negações registradas com logger.warning para auditoria.
 """
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 
