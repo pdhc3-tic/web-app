@@ -40,6 +40,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") ?? "/dashboard";
+  const resetSuccess = searchParams.get("reset") === "ok";
 
   const [pending, startTransition] = useTransition();
   const [globalError, setGlobalError] = useState<string | null>(null);
@@ -141,17 +142,23 @@ function LoginForm() {
   const inputErrorCls = "border-error focus:ring-error/20 focus:border-error";
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <div className="w-full max-w-sm bg-surface rounded-lg border border-border shadow-sm p-8">
+    <>
+      <h1 className="text-2xl font-semibold text-foreground mb-1">Entrar</h1>
+      <p className="text-sm text-text-muted mb-6">
+        Acesse seu painel do PDHC iii.
+      </p>
 
-        {/* TODO: substituir pelo componente <Logo /> quando o arquivo da marca estiver disponível */}
-        <div className="flex justify-center mb-7">
-          <div className="w-32 h-12 bg-surface-muted rounded flex items-center justify-center">
-            <span className="text-xs text-text-muted select-none">Logo PDHC</span>
+        {resetSuccess && !globalError && retryAfter === 0 && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mb-5 rounded-md border border-success bg-surface-muted px-3 py-2.5"
+          >
+            <p className="text-sm text-foreground">
+              Senha redefinida com sucesso. Faça login com a nova senha.
+            </p>
           </div>
-        </div>
-
-        <h1 className="text-xl font-semibold text-primary mb-6">Entrar</h1>
+        )}
 
         {/* Erro geral — aria-live para leitores de tela (PDHC seção 9.5) */}
         {(globalError || retryAfter > 0) && (
@@ -235,8 +242,7 @@ function LoginForm() {
             </Link>
           </div>
         </form>
-      </div>
-    </div>
+    </>
   );
 }
 
