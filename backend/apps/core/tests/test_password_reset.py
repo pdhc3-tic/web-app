@@ -86,7 +86,7 @@ def test_confirm_retorna_200_token_valido(client, usuario):
     assert response.data["message"] == "Senha redefinida com sucesso."
 
 @pytest.mark.django_db
-def test_confirm_token_invalido(client):
+def test_confirm_token_invalido(client, limpa_cache):
     response = client.post("/api/v1/auth/password-reset/confirm/", {
         "token": "token-inexistente",
         "nova_senha": "NovaSenha123",
@@ -95,7 +95,7 @@ def test_confirm_token_invalido(client):
     assert response.data["code"] == ["INVALID_TOKEN"]
 
 @pytest.mark.django_db
-def test_confirm_token_ja_usado(client, usuario):
+def test_confirm_token_ja_usado(client, usuario, limpa_cache):
     token_raw = "token-ja-usado-123"
     token_hash = hashlib.sha256(token_raw.encode()).hexdigest()
     PasswordResetToken.objects.create(
@@ -112,7 +112,7 @@ def test_confirm_token_ja_usado(client, usuario):
     assert response.data["code"] == ["INVALID_TOKEN"]
 
 @pytest.mark.django_db
-def test_confirm_token_expirado(client, usuario):
+def test_confirm_token_expirado(client, usuario, limpa_cache):
     token_raw = "token-expirado-123"
     token_hash = hashlib.sha256(token_raw.encode()).hexdigest()
     PasswordResetToken.objects.create(
@@ -128,7 +128,7 @@ def test_confirm_token_expirado(client, usuario):
     assert response.data["code"] == ["EXPIRED_TOKEN"]
 
 @pytest.mark.django_db
-def test_confirm_senha_fraca_curta(client, usuario):
+def test_confirm_senha_fraca_curta(client, usuario, limpa_cache):
     token_raw = "token-senha-fraca-123"
     token_hash = hashlib.sha256(token_raw.encode()).hexdigest()
     PasswordResetToken.objects.create(
@@ -143,7 +143,7 @@ def test_confirm_senha_fraca_curta(client, usuario):
     assert response.status_code == 400
 
 @pytest.mark.django_db
-def test_confirm_senha_sem_maiuscula(client, usuario):
+def test_confirm_senha_sem_maiuscula(client, usuario, limpa_cache):
     token_raw = "token-sem-maiuscula-123"
     token_hash = hashlib.sha256(token_raw.encode()).hexdigest()
     PasswordResetToken.objects.create(
@@ -158,7 +158,7 @@ def test_confirm_senha_sem_maiuscula(client, usuario):
     assert response.status_code == 400
 
 @pytest.mark.django_db
-def test_confirm_senha_sem_numero(client, usuario):
+def test_confirm_senha_sem_numero(client, usuario, limpa_cache):
     token_raw = "token-sem-numero-123"
     token_hash = hashlib.sha256(token_raw.encode()).hexdigest()
     PasswordResetToken.objects.create(
@@ -173,7 +173,7 @@ def test_confirm_senha_sem_numero(client, usuario):
     assert response.status_code == 400
 
 @pytest.mark.django_db
-def test_confirm_revoga_refresh_tokens(client, usuario):
+def test_confirm_revoga_refresh_tokens(client, usuario, limpa_cache):
     refresh1 = RefreshToken.for_user(usuario)
     refresh2 = RefreshToken.for_user(usuario)
     token_raw = "token-revoga-refresh-123"
@@ -193,7 +193,7 @@ def test_confirm_revoga_refresh_tokens(client, usuario):
     assert response2.status_code == 401
 
 @pytest.mark.django_db
-def test_confirm_registra_audit_log(client, usuario):
+def test_confirm_registra_audit_log(client, usuario, limpa_cache):
     token_raw = "token-audit-log-123"
     token_hash = hashlib.sha256(token_raw.encode()).hexdigest()
     PasswordResetToken.objects.create(
