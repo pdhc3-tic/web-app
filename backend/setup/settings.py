@@ -163,6 +163,17 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.LimitOffsetPagination",
     "PAGE_SIZE": 10,
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/min',
+        'user': '1000/min',
+        'auth_login': '5/min',
+        'auth_password_reset_email': '3/hour',
+        'auth_password_reset_ip': '5/hour',
+    },
+    "EXCEPTION_HANDLER": "setup.exceptions.custom_exception_handler",
+    "NUM_PROXIES": 1,  # Railway usa 1 load balancer na frente
+    # Isso faz o SimpleRateThrottle usar X-Forwarded-For
+    # corretamente sem confiar em IPs intermediários injetáveis
 }
 
 SIMPLE_JWT = {
