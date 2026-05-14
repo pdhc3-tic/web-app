@@ -5,11 +5,17 @@ from .role import Role
 from .municipality import Municipality
 from .password_reset_token import PasswordResetToken
 from .audit_log import AuditLog
+from .login_attempt import LoginAttempt
 from .user_profile import UserProfile
 
-__all__ = [
-    'User', 'Role', 'State', 'Territory', 'Municipality',
-    'PasswordResetToken', 'AuditLog', 'UserProfile',
-]
+__all__ = ['User', 
+           'Role', 
+           'State', 
+           'Territory', 
+           'Municipality', 
+           'PasswordResetToken', 
+           'AuditLog',
+           'UserProfile',
+           'LoginAttempt']
 
 
