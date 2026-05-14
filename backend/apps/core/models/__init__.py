@@ -13,7 +13,8 @@ __all__ = ['User',
            'Territory', 
            'Municipality', 
            'PasswordResetToken', 
-           'AuditLog', 
+           'AuditLog',
+           'UserProfile',
            'LoginAttempt']
 
 
