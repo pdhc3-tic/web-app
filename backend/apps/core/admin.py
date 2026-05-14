@@ -1,10 +1,18 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
-from .models import State, Territory, Municipality, User, Role
+from .models import State, Territory, Municipality, User, Role, UserProfile
 from apps.core.models.audit_log import AuditLog
 
-# 1. NOVO: Admin para o model Role
+
+class UserProfileInline(admin.StackedInline):
+    model = UserProfile
+    can_delete = False
+    verbose_name = "Perfil do Usuário"
+    verbose_name_plural = "Perfil do Usuário"
+    extra = 0
+
+
 @admin.register(Role)
 class RoleAdmin(admin.ModelAdmin):
     list_display = ("nome", "slug", "ativo", "criado_em")
@@ -12,9 +20,9 @@ class RoleAdmin(admin.ModelAdmin):
     list_filter = ("ativo",)
 
 
-# 2. ATUALIZADO: UserAdmin (trocando 'perfil' por 'role')
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
+    inlines = [UserProfileInline]
     list_display = (
         "email",
         "nome",
@@ -64,31 +72,35 @@ class UserAdmin(DjangoUserAdmin):
     filter_horizontal = ("groups", "user_permissions")
 
 
-# 3. ATUALIZADO: Estado -> State
 @admin.register(State)
 class StateAdmin(admin.ModelAdmin):
     list_display = ("sigla", "nome")
     search_fields = ("sigla", "nome")
 
 
-# 4. ATUALIZADO: Territorio -> Territory
 @admin.register(Territory)
 class TerritoryAdmin(admin.ModelAdmin):
     list_display = ("nome", "articulador", "ativo")
     list_filter = ("ativo",)
     search_fields = ("nome",)
-    # ATENÇÃO: Removido o filter_horizontal=("estados",) pois não funciona com ArrayField
 
 
-# 5. ATUALIZADO: Municipio -> Municipality
 @admin.register(Municipality)
 class MunicipalityAdmin(admin.ModelAdmin):
     list_display = ("nome", "state", "territory", "codigo_ibge")
     list_filter = ("state", "territory")
     search_fields = ("nome", "codigo_ibge")
 
-# 6. Audit Logs
+
 @admin.register(AuditLog)
 class AuditLogAdmin(admin.ModelAdmin):
     list_display = ["evento", "usuario", "ip", "criado_em"]
     readonly_fields = ["evento", "usuario", "detalhes", "ip", "criado_em"]
+
+
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display = ("user", "perfil", "territorio", "criado_em")
+    list_filter = ("perfil", "territorio")
+    search_fields = ("user__email", "user__nome")
+    raw_id_fields = ("user",)
