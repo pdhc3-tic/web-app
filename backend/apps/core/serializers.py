@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import Role, State, Territory, Municipality
+from .models.notifications import Notification
 
 User = get_user_model()
 
@@ -38,3 +39,22 @@ class UserSerializer(serializers.ModelSerializer):
             'ultimo_login', 'date_joined'
         ]
         read_only_fields = ['ultimo_login', 'date_joined']
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = [
+            "id",
+            "tipo",
+            "titulo",
+            "mensagem",
+            "link",
+            "modulo_origem",
+            "evento",
+            "enviado_em",
+            "lido_em",
+            "status",
+            "tentativas",
+        ]
+        read_only_fields = fields

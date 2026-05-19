@@ -1,4 +1,4 @@
-from rest_framework.throttling import SimpleRateThrottle
+from rest_framework.throttling import SimpleRateThrottle, UserRateThrottle
 
 
 class LoginRateThrottle(SimpleRateThrottle):
@@ -7,3 +7,7 @@ class LoginRateThrottle(SimpleRateThrottle):
 
     def get_cache_key(self, request, view):
         return f"throttle_login_{self.get_ident(request)}"
+
+
+class NotificationUnreadCountThrottle(UserRateThrottle):
+    scope = "notification_unread_count"

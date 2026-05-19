@@ -169,6 +169,7 @@ REST_FRAMEWORK = {
         'auth_login': '5/min',
         'auth_password_reset_email': '3/hour',
         'auth_password_reset_ip': '5/hour',
+        'notification_unread_count': '60/min',
     },
     "EXCEPTION_HANDLER": "setup.exceptions.custom_exception_handler",
     "NUM_PROXIES": 1,  # Railway usa 1 load balancer na frente
