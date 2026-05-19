@@ -1,6 +1,7 @@
 import NextAuth, { type DefaultSession } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import type { JWT } from "@auth/core/jwt";
+import type { Perfil, Territorio } from "@/app/lib/auth/types";
 
 // API_INTERNAL_URL é usado server-side (ex: dentro do container Docker, http://backend:8000).
 const BASE_URL =
@@ -17,8 +18,8 @@ declare module "next-auth" {
       id: string;
       nome_completo: string;
       foto_url: string;
-      perfis: string[];
-      territorios: string[];
+      perfis: Perfil[];
+      territorios: Territorio[];
     } & DefaultSession["user"];
   }
 
@@ -29,8 +30,8 @@ declare module "next-auth" {
     nome_completo: string;
     email: string;
     foto_url: string;
-    perfis: string[];
-    territorios: string[];
+    perfis: Perfil[];
+    territorios: Territorio[];
   }
 }
 
@@ -43,8 +44,8 @@ type AppJWT = JWT & {
   nome_completo: string;
   email: string;
   foto_url: string;
-  perfis: string[];
-  territorios: string[];
+  perfis: Perfil[];
+  territorios: Territorio[];
   accessTokenExpiresAt: number;
   error?: "RefreshTokenExpired";
 };
@@ -106,8 +107,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         let nome_completo = "";
         let email = "";
         let foto_url = "";
-        let perfis: string[] = [];
-        let territorios: string[] = [];
+        let perfis: Perfil[] = [];
+        let territorios: Territorio[] = [];
         try {
           const meRes = await fetch(`${BASE_URL}/api/v1/auth/me/`, {
             headers: { Authorization: `Bearer ${access}` },
@@ -118,8 +119,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               nome_completo: string;
               email: string;
               foto_url: string;
-              perfis: string[];
-              territorios: string[];
+              perfis: Perfil[];
+              territorios: Territorio[];
             } = await meRes.json();
             id = me.id.toString();
             nome_completo = me.nome_completo;

@@ -1,5 +1,6 @@
-import { auth } from "@/auth";
-import { redirect } from "next/navigation";
+"use client";
+
+import { useSession } from "next-auth/react";
 import { LogoutButton } from "./logout-button";
 
 type CardIcon = "users" | "calendar" | "megaphone" | "clipboard";
@@ -108,11 +109,18 @@ function BrandMark() {
   );
 }
 
-export default async function DashboardPage() {
-  const session = await auth();
-  if (!session) redirect("/login");
+export default function DashboardPage() {
+  const { data: session, status } = useSession();
 
-  const { nome_completo, foto_url, perfis } = session.user;
+  if (status === "loading") {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="h-8 w-8 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+      </div>
+    );
+  }
+
+  const { nome_completo, foto_url, perfis } = session!.user;
   const nome = nome_completo || "Usuário";
   const primeiroNome = getPrimeiroNome(nome) || "por aqui";
   const iniciais = getIniciais(nome);
@@ -148,10 +156,10 @@ export default async function DashboardPage() {
                   <ul className="mt-1 flex flex-wrap gap-1">
                     {perfis.map((perfil) => (
                       <li
-                        key={perfil}
+                        key={perfil.slug}
                         className="px-1.5 py-0.5 rounded-full bg-surface-muted text-[10px] font-medium uppercase tracking-wide text-text-muted border border-border"
                       >
-                        {perfil}
+                        {perfil.nome}
                       </li>
                     ))}
                   </ul>
