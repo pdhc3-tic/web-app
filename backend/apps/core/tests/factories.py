@@ -3,6 +3,7 @@ from apps.core.models import User
 from apps.core.models.role import Role
 from apps.core.models.territory import Territory
 from apps.core.models.user_profile import UserProfile
+from apps.core.models.audit_log import AuditLog
 
 
 class RoleFactory(factory.django.DjangoModelFactory):
@@ -40,3 +41,17 @@ class UserProfileFactory(factory.django.DjangoModelFactory):
     user = factory.SubFactory(UserFactory)
     perfil = factory.SubFactory(RoleFactory)
     territorio = None
+
+class AuditLogFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = AuditLog
+
+    usuario = factory.SubFactory(UserFactory)
+    acao = "CREATE"
+    modulo = "core"
+    entidade = "User"
+    entidade_id = factory.Sequence(lambda n: str(n))
+    valores_anteriores = {}
+    valores_novos = {"nome": "Teste"}
+    ip = "127.0.0.1"
+    user_agent = "Mozilla/5.0"
