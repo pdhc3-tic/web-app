@@ -7,6 +7,7 @@ from .password_reset_token import PasswordResetToken
 from .audit_log import AuditLog
 from .login_attempt import LoginAttempt
 from .user_profile import UserProfile
+from .notifications import Notification, NotificationPreference
 
 __all__ = ['User', 
            'Role', 
@@ -16,6 +17,8 @@ __all__ = ['User',
            'PasswordResetToken', 
            'AuditLog',
            'UserProfile',
-           'LoginAttempt']
+           'LoginAttempt',
+           'Notification',
+           'NotificationPreference']
 
 
