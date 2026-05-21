@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Role, State, Territory, Municipality
+from .models import Role, State, Territory, Municipality, Organization
 from .models.notifications import Notification
 
 User = get_user_model()
@@ -58,3 +58,36 @@ class NotificationSerializer(serializers.ModelSerializer):
             "tentativas",
         ]
         read_only_fields = fields
+
+
+class OrganizationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Organization
+        fields = [
+            "id", "nome", "cnpj", "tipo", "municipio", "territorios",
+            "contato", "email", "telefone", "ativa", "criado_em",
+        ]
+        read_only_fields = ["criado_em"]
+
+    def validate_cnpj(self, value):
+        from validate_docbr import CNPJ
+
+        cnpj_validator = CNPJ()
+        # Strip formatting for validation
+        digits = "".join(c for c in value if c.isdigit())
+        if not cnpj_validator.validate(digits):
+            raise serializers.ValidationError("CNPJ inválido")
+        return digits
+
+    def validate(self, attrs):
+        cnpj = attrs.get("cnpj")
+        if cnpj:
+            qs = Organization.objects.filter(cnpj=cnpj)
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError(
+                    {"cnpj": "Já existe uma organização cadastrada com este CNPJ"}
+                )
+        return attrs
+

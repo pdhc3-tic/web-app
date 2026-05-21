@@ -7,6 +7,7 @@ from .views import (
     TerritoryViewSet,
     MunicipalityViewSet,
     UserViewSet,
+    OrganizationViewSet,
     NotificationListView,
     NotificationMarkReadView,
     mark_all_read,
@@ -19,6 +20,7 @@ router.register("states", StateViewSet)
 router.register("territories", TerritoryViewSet)
 router.register("municipalities", MunicipalityViewSet)
 router.register("users", UserViewSet)
+router.register("organizations", OrganizationViewSet, basename="organization")
 
 urlpatterns = router.urls + [
     path("notifications/me/", NotificationListView.as_view(), name="notification-list"),
