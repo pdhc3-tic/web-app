@@ -1,69 +1,69 @@
-# Backend (Django) com Docker
+# Backend — Django REST Framework
 
-## Pré-requisitos
+API REST do PDHC construída com Django 6, Django REST Framework e Celery.
 
-- Docker
-- Docker Compose
+## Banco de Dados
 
-## 1. Preparar ambiente
+O PostgreSQL é inicializado com dois usuários:
 
-Na raiz do monorepo:
+| Usuário | Privilégios | Uso |
+|---------|------------|-----|
+| `postgres` | Superusuário | Migrations (`makemigrations`, `migrate`) |
+| `app_user` | SELECT, INSERT, UPDATE, DELETE | Runtime da aplicação |
 
-```bash
-cp -n backend/.env.example backend/.env
-cp -n frontend/.env.example frontend/.env.local
-```
+> O script `db/init/01_app_user.sql` cria o `app_user` automaticamente na primeira inicialização.
 
-Preencha os obrigatórios:
-
-- `backend/.env`: `DJANGO_SECRET_KEY`
-- `frontend/.env.local`: `AUTH_SECRET`
-- mantenha `NEXT_PUBLIC_API_URL=http://backend:8000` no frontend
-
-## 2. Subir stack do zero
+### Criar migrations
 
 ```bash
-docker compose -f Docker-compose.yml down -v
-docker compose -f Docker-compose.yml up --build -d
-```
-
-## 3. Migrations (recomendado)
-
-O backend roda com usuário de app limitado (`app_user`, sem CREATE/DROP).  
-Por isso, rode migrations com override temporário para `postgres`:
-
-```bash
-docker compose -f Docker-compose.yml exec \
-  -e DB_USER=postgres \
-  -e DB_PASSWORD=postgres \
-  backend python manage.py migrate
-```
-
-Se necessário:
-
-```bash
-docker compose -f Docker-compose.yml exec \
+sudo docker compose exec \
   -e DB_USER=postgres \
   -e DB_PASSWORD=postgres \
   backend python manage.py makemigrations
 ```
 
-## 4. Validar backend
+### Executar migrations
 
 ```bash
-docker compose -f Docker-compose.yml ps
-curl -i http://localhost:8000/admin/login/
-curl -i http://localhost:8000/api/v1/
+sudo docker compose exec \
+  -e DB_USER=postgres -e DB_PASSWORD=postgres \
+  backend python manage.py migrate
 ```
 
-## 5. Logs e parada
-
-```bash
-docker compose -f Docker-compose.yml logs -f backend db redis
-docker compose -f Docker-compose.yml down
-```
-## 6. Rodar testes do backend
+## Testes
 
 ```bash
-docker exec -it backend pytest -v
+# Todos os testes
+sudo docker compose exec backend pytest -v
+
+# Módulo específico
+sudo docker compose exec backend pytest apps/core/tests/test_organizations.py -v
+
+# Com cobertura (se instalado)
+sudo docker compose exec backend pytest --cov=apps -v
 ```
+
+## Seed de Dados
+
+Popula estados, territórios, municípios e perfis base:
+
+```bash
+sudo docker compose exec \
+  -e DB_USER=postgres -e DB_PASSWORD=postgres \
+  backend python manage.py seed_core
+```
+
+## Variáveis de Ambiente
+
+Referência completa em [`.env.example`](.env.example):
+
+| Variável | Obrigatória | Descrição |
+|----------|-------------|-----------|
+| `DJANGO_SECRET_KEY` | ✅ | Chave secreta do Django |
+| `DEBUG` | — | `True` para desenvolvimento |
+| `DB_NAME` | — | Nome do banco (padrão: `app_db`) |
+| `DB_USER` | — | Usuário do banco (padrão: `app_user`) |
+| `DB_PASSWORD` | — | Senha do banco |
+| `DB_HOST` | — | Host do banco (padrão: `db`) |
+| `REDIS_HOST` | — | Host do Redis (padrão: `redis`) |
+| `CORS_ALLOWED_ORIGINS` | — | Origins permitidos (padrão: `http://localhost:3000`) |
