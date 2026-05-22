@@ -112,14 +112,14 @@ function LoginForm() {
   const isBlocked = pending || retryAfter > 0;
 
   const inputBase =
-    "h-10 w-full rounded-md border px-3 text-sm text-foreground bg-surface outline-none transition" +
+    "h-10 w-full rounded-md border px-3 text-sm text-text bg-surface outline-none transition" +
     " focus:ring-2 focus:ring-primary/15 focus:border-primary" +
     " border-border placeholder:text-text-muted";
   const inputErrorCls = "border-error focus:ring-error/20 focus:border-error";
 
   return (
     <>
-      <h1 className="text-2xl font-semibold text-foreground mb-1">Entrar</h1>
+      <h1 className="text-2xl font-semibold text-text mb-1">Entrar</h1>
       <p className="text-sm text-text-muted mb-6">
         Acesse seu painel do PDHC iii.
       </p>
@@ -130,7 +130,7 @@ function LoginForm() {
             aria-live="polite"
             className="mb-5 rounded-md border border-success bg-surface-muted px-3 py-2.5"
           >
-            <p className="text-sm text-foreground">
+            <p className="text-sm text-text">
               Senha redefinida com sucesso. Faça login com a nova senha.
             </p>
           </div>
@@ -156,7 +156,7 @@ function LoginForm() {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="email" className="text-sm font-medium text-foreground">
+            <label htmlFor="email" className="text-sm font-medium text-text">
               E-mail
             </label>
             <input
@@ -175,7 +175,7 @@ function LoginForm() {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="password" className="text-sm font-medium text-foreground">
+            <label htmlFor="password" className="text-sm font-medium text-text">
               Senha
             </label>
             <input
@@ -197,7 +197,7 @@ function LoginForm() {
           <button
             type="submit"
             disabled={isBlocked}
-            className="mt-1 h-10 rounded-md bg-primary text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed"
+            className="mt-1 h-10 rounded-md bg-primary text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors hover:bg-secondary disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {pending ? (
               <>

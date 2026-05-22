@@ -9,7 +9,7 @@ const PILARES = [
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] bg-background">
+    <div className="min-h-screen grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] bg-bg">
       <aside className="hidden lg:flex flex-col justify-between bg-primary text-white px-12 py-10 relative overflow-hidden">
         <div
           aria-hidden="true"
