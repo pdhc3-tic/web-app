@@ -1,7 +1,7 @@
 from rest_framework import viewsets, filters, generics, status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.pagination import LimitOffsetPagination
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, SAFE_METHODS
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import get_user_model
@@ -10,11 +10,15 @@ from django.utils import timezone
 
 from .models import Role, State, Territory, Municipality
 from .models.notifications import Notification, _invalidate_unread_cache
+from .models.system_config import SystemConfig
 from .serializers import (
     RoleSerializer, StateSerializer, TerritorySerializer, 
-    MunicipalitySerializer, UserSerializer, NotificationSerializer
+    MunicipalitySerializer, UserSerializer, NotificationSerializer,
+    SystemConfigSerializer,
 )
 from .throttling import NotificationUnreadCountThrottle
+from .permissions import IsSuperAdmin
+from .services.permissions import user_has_role
 
 User = get_user_model()
 
@@ -132,3 +136,36 @@ def unread_count(request):
         cache.set(cache_key, count, timeout=30)
 
     return Response({"count": count}, status=status.HTTP_200_OK)
+
+
+# ──────────────────────────────────────────────────────────────
+# System Config
+# ──────────────────────────────────────────────────────────────
+
+
+class IsSuperAdminOrUGPReadOnly(IsSuperAdmin):
+    def has_permission(self, request, view):
+        if request.method in SAFE_METHODS:
+            return user_has_role(request.user, "super-admin") or user_has_role(request.user, "ugp")
+        return super().has_permission(request, view)
+
+
+class SystemConfigListView(generics.ListAPIView):
+    """GET /api/v1/system-config/ — lista configurações do sistema."""
+
+    queryset = SystemConfig.objects.all()
+    serializer_class = SystemConfigSerializer
+    permission_classes = [IsAuthenticated, IsSuperAdminOrUGPReadOnly]
+
+
+class SystemConfigDetailView(generics.RetrieveUpdateAPIView):
+    """GET|PATCH /api/v1/system-config/{chave}/ — detalhe ou atualização."""
+
+    queryset = SystemConfig.objects.all()
+    serializer_class = SystemConfigSerializer
+    lookup_field = "chave"
+    http_method_names = ["get", "patch"]
+    permission_classes = [IsAuthenticated, IsSuperAdminOrUGPReadOnly]
+
+    def perform_update(self, serializer):
+        serializer.save(atualizado_por=self.request.user)

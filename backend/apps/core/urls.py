@@ -11,6 +11,8 @@ from .views import (
     NotificationMarkReadView,
     mark_all_read,
     unread_count,
+    SystemConfigListView,
+    SystemConfigDetailView,
 )
 
 router = DefaultRouter()
@@ -25,4 +27,6 @@ urlpatterns = router.urls + [
     path("notifications/<int:pk>/read/", NotificationMarkReadView.as_view(), name="notification-read"),
     path("notifications/mark-all-read/", mark_all_read, name="notification-mark-all-read"),
     path("notifications/me/unread-count/", unread_count, name="notification-unread-count"),
+    path("system-config/", SystemConfigListView.as_view(), name="system-config-list"),
+    path("system-config/<str:chave>/", SystemConfigDetailView.as_view(), name="system-config-detail"),
 ]
