@@ -3,6 +3,7 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
 from .models import State, Territory, Municipality, User, Role, UserProfile
 from .models.notifications import Notification, NotificationPreference
+from .models.system_config import SystemConfig
 from apps.core.models.audit_log import AuditLog
 
 
@@ -122,3 +123,11 @@ class NotificationPreferenceAdmin(admin.ModelAdmin):
     list_filter = ("canal", "ativo")
     search_fields = ("user__email", "tipo_evento")
     raw_id_fields = ("user",)
+
+
+@admin.register(SystemConfig)
+class SystemConfigAdmin(admin.ModelAdmin):
+    list_display = ("chave", "tipo", "descricao", "atualizado_por", "atualizado_em")
+    list_filter = ("tipo",)
+    search_fields = ("chave", "descricao")
+    readonly_fields = ("chave", "tipo", "atualizado_em")
