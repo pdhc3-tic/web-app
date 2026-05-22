@@ -8,6 +8,7 @@ from .audit_log import AuditLog
 from .login_attempt import LoginAttempt
 from .user_profile import UserProfile
 from .notifications import Notification, NotificationPreference
+from .organization import Organization
 
 __all__ = ['User', 
            'Role', 
@@ -19,6 +20,8 @@ __all__ = ['User',
            'UserProfile',
            'LoginAttempt',
            'Notification',
-           'NotificationPreference']
+           'NotificationPreference',
+           'Organization']
+
 
 

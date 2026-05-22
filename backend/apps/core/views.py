@@ -1,19 +1,23 @@
 from rest_framework import viewsets, filters, generics, status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.pagination import LimitOffsetPagination
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, SAFE_METHODS
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.utils import timezone
 
-from .models import Role, State, Territory, Municipality
+from .models import Role, State, Territory, Municipality, Organization
+from .models.audit_log import AuditLog
 from .models.notifications import Notification, _invalidate_unread_cache
+from .permissions import IsSuperAdmin, IsUGP, IsArticuladorEstadual
 from .serializers import (
-    RoleSerializer, StateSerializer, TerritorySerializer, 
-    MunicipalitySerializer, UserSerializer, NotificationSerializer
+    RoleSerializer, StateSerializer, TerritorySerializer,
+    MunicipalitySerializer, UserSerializer, NotificationSerializer,
+    OrganizationSerializer,
 )
+from .services.permissions import user_has_role, user_territories
 from .throttling import NotificationUnreadCountThrottle
 
 User = get_user_model()
@@ -56,6 +60,87 @@ class UserViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, DjangoFilterBackend]
     search_fields = ['nome', 'email']
     filterset_fields = ['role', 'ativo']
+
+
+# ──────────────────────────────────────────────────────────────
+# Organizações (OSC)
+# ──────────────────────────────────────────────────────────────
+
+class OrganizationViewSet(viewsets.ModelViewSet):
+    """CRUD de Organizações (OSC) com RBAC e soft-delete."""
+
+    serializer_class = OrganizationSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["nome", "cnpj"]
+    filterset_fields = ["municipio__state", "territorios", "ativa", "tipo"]
+    ordering_fields = ["nome", "criado_em"]
+    ordering = ["nome"]
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return [(IsSuperAdmin | IsUGP | IsArticuladorEstadual)()]
+        # create, partial_update, destroy → apenas SuperAdmin ou UGP
+        return [(IsSuperAdmin | IsUGP)()]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = Organization.objects.select_related("municipio", "municipio__state").prefetch_related("territorios")
+
+        if user_has_role(user, "articulador-estadual"):
+            territories = user_territories(user)
+            qs = qs.filter(territorios__in=territories, ativa=True).distinct()
+        elif self.action == "list":
+            qs = qs.filter(ativa=True)
+
+        return qs
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        territory_ids = list(instance.territorios.values_list("pk", flat=True))
+        AuditLog.objects.create(
+            usuario=self.request.user,
+            evento="organization.create",
+            detalhes={
+                "organization_id": instance.pk,
+                "nome": instance.nome,
+                "cnpj": instance.cnpj,
+                "territorios": territory_ids,
+            },
+            ip=self.request.META.get("REMOTE_ADDR"),
+        )
+
+    def perform_update(self, serializer):
+        old_territories = set(
+            self.get_object().territorios.values_list("pk", flat=True)
+        )
+        instance = serializer.save()
+        new_territories = set(
+            instance.territorios.values_list("pk", flat=True)
+        )
+        if old_territories != new_territories:
+            AuditLog.objects.create(
+                usuario=self.request.user,
+                evento="organization.territory_change",
+                detalhes={
+                    "organization_id": instance.pk,
+                    "old_territories": sorted(old_territories),
+                    "new_territories": sorted(new_territories),
+                },
+                ip=self.request.META.get("REMOTE_ADDR"),
+            )
+
+    def perform_destroy(self, instance):
+        instance.ativa = False
+        instance.save(update_fields=["ativa"])
+        AuditLog.objects.create(
+            usuario=self.request.user,
+            evento="organization.soft_delete",
+            detalhes={
+                "organization_id": instance.pk,
+                "nome": instance.nome,
+            },
+            ip=self.request.META.get("REMOTE_ADDR"),
+        )
 
 
 # ──────────────────────────────────────────────────────────────

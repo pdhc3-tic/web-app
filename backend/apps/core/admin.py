@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
-from .models import State, Territory, Municipality, User, Role, UserProfile
+from .models import State, Territory, Municipality, User, Role, UserProfile, Organization
 from .models.notifications import Notification, NotificationPreference
 from apps.core.models.audit_log import AuditLog
 
@@ -122,3 +122,12 @@ class NotificationPreferenceAdmin(admin.ModelAdmin):
     list_filter = ("canal", "ativo")
     search_fields = ("user__email", "tipo_evento")
     raw_id_fields = ("user",)
+
+
+@admin.register(Organization)
+class OrganizationAdmin(admin.ModelAdmin):
+    list_display = ("nome", "cnpj", "tipo", "municipio", "ativa")
+    list_filter = ("municipio__state", "tipo", "ativa")
+    search_fields = ("nome", "cnpj")
+    filter_horizontal = ("territorios",)
+    raw_id_fields = ("municipio",)

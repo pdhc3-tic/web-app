@@ -16,3 +16,4 @@ redis==7.4.0
 celery==5.6.3
 django-celery-beat==2.9.0
 bcrypt==5.0.0
+validate-docbr>=1.10
