@@ -1,4 +1,4 @@
-# PDHC — Plataforma Digital de Habilitação Comunitária
+# PDHC — Plataforma Dom Helder Câmara III
 
 Plataforma web para o projeto Dom Helder Camâra III(PDHC), conectando territórios, organizações da sociedade civil (OSCs) e beneficiários.
 
