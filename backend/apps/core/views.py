@@ -11,11 +11,12 @@ from django.utils import timezone
 from .models import Role, State, Territory, Municipality, Organization
 from .models.audit_log import AuditLog
 from .models.notifications import Notification, _invalidate_unread_cache
+from .models.system_config import SystemConfig
 from .permissions import IsSuperAdmin, IsUGP, IsArticuladorEstadual
 from .serializers import (
     RoleSerializer, StateSerializer, TerritorySerializer,
     MunicipalitySerializer, UserSerializer, NotificationSerializer,
-    OrganizationSerializer,
+    OrganizationSerializer, SystemConfigSerializer,
 )
 from .services.permissions import user_has_role, user_territories
 from .throttling import NotificationUnreadCountThrottle
@@ -228,3 +229,36 @@ def unread_count(request):
         cache.set(cache_key, count, timeout=30)
 
     return Response({"count": count}, status=status.HTTP_200_OK)
+
+
+# ──────────────────────────────────────────────────────────────
+# System Config
+# ──────────────────────────────────────────────────────────────
+
+
+class IsSuperAdminOrUGPReadOnly(IsSuperAdmin):
+    def has_permission(self, request, view):
+        if request.method in SAFE_METHODS:
+            return user_has_role(request.user, "super-admin") or user_has_role(request.user, "ugp")
+        return super().has_permission(request, view)
+
+
+class SystemConfigListView(generics.ListAPIView):
+    """GET /api/v1/system-config/ — lista configurações do sistema."""
+
+    queryset = SystemConfig.objects.all()
+    serializer_class = SystemConfigSerializer
+    permission_classes = [IsAuthenticated, IsSuperAdminOrUGPReadOnly]
+
+
+class SystemConfigDetailView(generics.RetrieveUpdateAPIView):
+    """GET|PATCH /api/v1/system-config/{chave}/ — detalhe ou atualização."""
+
+    queryset = SystemConfig.objects.all()
+    serializer_class = SystemConfigSerializer
+    lookup_field = "chave"
+    http_method_names = ["get", "patch"]
+    permission_classes = [IsAuthenticated, IsSuperAdminOrUGPReadOnly]
+
+    def perform_update(self, serializer):
+        serializer.save(atualizado_por=self.request.user)
