@@ -67,7 +67,7 @@ class Migration(migrations.Migration):
                 ('ip', models.GenericIPAddressField(blank=True, null=True, verbose_name='Endereço IP')),
                 ('user_agent', models.TextField(blank=True, default='', verbose_name='User-Agent')),
                 ('timestamp', models.DateTimeField(auto_now_add=True, verbose_name='Timestamp')),
-                ('usuario', models.ForeignKey(
+                ('user', models.ForeignKey(
                     blank=True,
                     null=True,
                     on_delete=django.db.models.deletion.SET_NULL,
@@ -88,7 +88,7 @@ class Migration(migrations.Migration):
         migrations.AddIndex(
             model_name='auditlog',
             index=models.Index(
-                fields=['usuario', '-timestamp'],
+                fields=['user', '-timestamp'],
                 name='idx_auditlog_user_timestamp',
             ),
         ),

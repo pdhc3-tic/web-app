@@ -174,7 +174,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
         # Registra o evento no AuditLog
         AuditLog.objects.create(
-            usuario=user,
+            user=user,
             acao="password_reset",
             modulo="core",
             entidade="User",

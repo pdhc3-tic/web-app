@@ -46,7 +46,7 @@ class AuditLogFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = AuditLog
 
-    usuario = factory.SubFactory(UserFactory)
+    user = factory.SubFactory(UserFactory)
     acao = "CREATE"
     modulo = "core"
     entidade = "User"

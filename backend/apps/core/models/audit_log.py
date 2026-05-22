@@ -26,7 +26,7 @@ class AuditLog(models.Model):
     - user_agent:         identificação do navegador/cliente HTTP
     - timestamp:          momento exato do evento (gerado automaticamente)
     """
-    usuario = models.ForeignKey(
+    user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
@@ -102,7 +102,7 @@ class AuditLog(models.Model):
         ordering = ["-timestamp"]
         indexes = [
             models.Index(
-                fields=["usuario", "-timestamp"],
+                fields=["user", "-timestamp"],
                 name="idx_auditlog_user_timestamp",
             ),
             models.Index(
@@ -126,4 +126,4 @@ class AuditLog(models.Model):
         )
 
     def __str__(self) -> str:
-        return f"[{self.acao}] {self.entidade}#{self.entidade_id} — {self.usuario} — {self.timestamp}"
+        return f"[{self.acao}] {self.entidade}#{self.entidade_id} — {self.user} — {self.timestamp}"

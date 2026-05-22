@@ -30,7 +30,7 @@ class TestAuditLogModel:
         valores_novos = {"nome": "João Silva", "endereco": {"cidade": "Natal", "uf": "RN"}}
 
         log = AuditLog(
-            usuario=usuario,
+            user=usuario,
             acao="UPDATE",
             modulo="core",
             entidade="User",
@@ -43,7 +43,7 @@ class TestAuditLogModel:
         log.save()
 
         salvo = AuditLog.objects.get(pk=log.pk)
-        assert salvo.usuario == usuario
+        assert salvo.user == usuario
         assert salvo.acao == "UPDATE"
         assert salvo.modulo == "core"
         assert salvo.entidade == "User"

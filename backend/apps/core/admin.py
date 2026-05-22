@@ -102,14 +102,14 @@ class AuditLogAdmin(admin.ModelAdmin):
     aqui quanto pelo trigger PostgreSQL na camada de banco de dados.
     """
 
-    list_display = ("timestamp", "usuario", "acao", "modulo", "entidade", "entidade_id", "ip")
+    list_display = ("timestamp", "user", "acao", "modulo", "entidade", "entidade_id", "ip")
     list_filter = ("acao", "modulo", "entidade")
     search_fields = ("user__email", "user__nome", "entidade", "entidade_id", "ip")
     ordering = ("-timestamp",)
     date_hierarchy = "timestamp"
 
     readonly_fields = (
-        "usuario",
+        "user",
         "acao",
         "modulo",
         "entidade",
