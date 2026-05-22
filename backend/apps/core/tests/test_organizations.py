@@ -164,6 +164,7 @@ class TestCreateOrganizationDuplicateCnpjReturns400:
         assert "Já existe uma organização cadastrada com este CNPJ" in str(response2.data)
 
 
+
 class TestOrganizationMultiTerritoryAssignment:
     """POST com territorios=[a, b, c] cria os três vínculos M2M."""
 
