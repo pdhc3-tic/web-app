@@ -95,8 +95,41 @@ class MunicipalityAdmin(admin.ModelAdmin):
 
 @admin.register(AuditLog)
 class AuditLogAdmin(admin.ModelAdmin):
-    list_display = ["evento", "usuario", "ip", "criado_em"]
-    readonly_fields = ["evento", "usuario", "detalhes", "ip", "criado_em"]
+    """
+    Admin de AuditLog em modo estritamente read-only.
+
+    Nenhuma ação de criação, edição ou remoção está disponível,
+    inclusive para superusuários. A imutabilidade é reforçada tanto
+    aqui quanto pelo trigger PostgreSQL na camada de banco de dados.
+    """
+
+    list_display = ("timestamp", "user", "acao", "modulo", "entidade", "entidade_id", "ip")
+    list_filter = ("acao", "modulo", "entidade")
+    search_fields = ("user__email", "user__nome", "entidade", "entidade_id", "ip")
+    ordering = ("-timestamp",)
+    date_hierarchy = "timestamp"
+
+    readonly_fields = (
+        "user",
+        "acao",
+        "modulo",
+        "entidade",
+        "entidade_id",
+        "valores_anteriores",
+        "valores_novos",
+        "ip",
+        "user_agent",
+        "timestamp",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(UserProfile)
