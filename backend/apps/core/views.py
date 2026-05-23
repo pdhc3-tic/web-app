@@ -98,48 +98,64 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         instance = serializer.save()
         territory_ids = list(instance.territorios.values_list("pk", flat=True))
         AuditLog.objects.create(
-            usuario=self.request.user,
-            evento="organization.create",
-            detalhes={
-                "organization_id": instance.pk,
+            user=self.request.user,
+            acao="CREATE",
+            modulo="core",
+            entidade="Organization",
+            entidade_id=str(instance.pk),
+            valores_anteriores={},
+            valores_novos={
                 "nome": instance.nome,
                 "cnpj": instance.cnpj,
-                "territorios": territory_ids,
+                "tipo": instance.tipo,
+                "ativa": instance.ativa,
             },
             ip=self.request.META.get("REMOTE_ADDR"),
+            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )
 
     def perform_update(self, serializer):
-        old_territories = set(
-            self.get_object().territorios.values_list("pk", flat=True)
-        )
+        old = self.get_object()
+        valores_anteriores = {
+            "nome": old.nome,
+            "cnpj": old.cnpj,
+            "tipo": old.tipo,
+            "ativa": old.ativa,
+        }
+
         instance = serializer.save()
-        new_territories = set(
-            instance.territorios.values_list("pk", flat=True)
+        
+        AuditLog.objects.create(
+            user=self.request.user,
+            acao="UPDATE",
+            modulo="core",
+            entidade="Organization",
+            entidade_id=str(instance.pk),
+            valores_anteriores=valores_anteriores,
+            valores_novos={
+                "nome": instance.nome,
+                "cnpj": instance.cnpj,
+                "tipo": instance.tipo,
+                "ativa": instance.ativa,
+            },
+            ip=self.request.META.get("REMOTE_ADDR"),
+            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )
-        if old_territories != new_territories:
-            AuditLog.objects.create(
-                usuario=self.request.user,
-                evento="organization.territory_change",
-                detalhes={
-                    "organization_id": instance.pk,
-                    "old_territories": sorted(old_territories),
-                    "new_territories": sorted(new_territories),
-                },
-                ip=self.request.META.get("REMOTE_ADDR"),
-            )
 
     def perform_destroy(self, instance):
+        valores_anteriores = {"nome": instance.nome, "ativa": instance.ativa}
         instance.ativa = False
         instance.save(update_fields=["ativa"])
         AuditLog.objects.create(
-            usuario=self.request.user,
-            evento="organization.soft_delete",
-            detalhes={
-                "organization_id": instance.pk,
-                "nome": instance.nome,
-            },
+            user=self.request.user,
+            acao="DESTROY",
+            modulo="core",
+            entidade="Organization",
+            entidade_id=str(instance.pk),
+            valores_anteriores=valores_anteriores,
+            valores_novos={"ativa": False},
             ip=self.request.META.get("REMOTE_ADDR"),
+            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )
 
 
