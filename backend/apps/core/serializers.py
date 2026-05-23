@@ -3,6 +3,7 @@ from rest_framework.validators import UniqueValidator
 from django.contrib.auth import get_user_model
 from .models import Role, State, Territory, Municipality, Organization
 from .models.notifications import Notification
+from apps.core.models.audit_log import AuditLog
 
 User = get_user_model()
 
@@ -88,3 +89,20 @@ class OrganizationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("CNPJ inválido")
         return digits
 
+class AuditLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AuditLog
+        fields = [
+            "id",
+            "user",
+            "acao",
+            "modulo",
+            "entidade",
+            "entidade_id",
+            "valores_anteriores",
+            "valores_novos",
+            "ip",
+            "user_agent",
+            "timestamp",
+        ]
+        read_only_fields = fields
