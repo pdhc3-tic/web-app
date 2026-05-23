@@ -1,6 +1,6 @@
 import threading
 from django.forms.models import model_to_dict
-from django.db.models.signals import post_save, post_delete
+from django.db.models.signals import post_save, post_delete, pre_save
 from django.dispatch import receiver
 
 from apps.core.models.audit_log import AuditLog
@@ -91,6 +91,28 @@ def _get_model_name(instance):
 def _get_modulo(instance):
     return AUDITED_MODELS.get(instance.__class__, "core")
 
+
+@receiver(pre_save)
+def handle_pre_save(sender, instance, **kwargs):
+    """
+    Captura o estado anterior do registro antes de salvar.
+    Armazena em _audit_valores_anteriores na própria instância
+    para que o post_save possa acessar.
+    """
+    if sender not in AUDITED_MODELS:
+        return
+
+    if sender is AuditLog:
+        return
+
+    if instance.pk:
+        try:
+            anterior = sender.objects.get(pk=instance.pk)
+            instance._audit_valores_anteriores = _serialize(anterior)
+        except sender.DoesNotExist:
+            instance._audit_valores_anteriores = {}
+    else:
+        instance._audit_valores_anteriores = {}
 
 @receiver(post_save)
 def handle_post_save(sender, instance, created, **kwargs):
