@@ -2,6 +2,7 @@ from django.db import connection, transaction
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.authentication import JWTStatelessUserAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from apps.core.signals.audit import set_audit_context, clear_audit_context
 
 
 class SessionContextMiddleware:
@@ -48,3 +49,33 @@ class SessionContextMiddleware:
         if isinstance(raw_territorios, (list, tuple, set)):
             return ",".join(str(territorio_id) for territorio_id in raw_territorios)
         return str(raw_territorios)
+    
+class AuditContextMiddleware:
+    """
+    Injeta user, ip e user_agent num threading.local() para que os
+    signals de auditoria possam acessar o contexto do request.
+    Ações via shell/management command que não passam por aqui
+    geram log com user=None e ip=null sem causar crash.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        user = getattr(request, "user", None)
+        if user and not user.is_authenticated:
+            user = None
+
+        ip = (
+            request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip()
+            or request.META.get("REMOTE_ADDR")
+        )
+        user_agent = request.META.get("HTTP_USER_AGENT", "")
+
+        set_audit_context(user=user, ip=ip, user_agent=user_agent)
+        try:
+            response = self.get_response(request)
+        finally:
+            clear_audit_context()
+
+        return response
