@@ -38,9 +38,9 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'email', 'nome', 'role', 'ativo', 
-            'ultimo_login', 'date_joined'
+            'ultimo_login',
         ]
-        read_only_fields = ['ultimo_login', 'date_joined']
+        read_only_fields = ['ultimo_login']
 
 
 class NotificationSerializer(serializers.ModelSerializer):

@@ -53,19 +53,26 @@ AUDIT_EXCLUDED_FIELDS = {
 def _serialize(instance):
     """
     Serializa o model para dict excluindo campos não-auditáveis.
-    ManyToMany são ignorados para evitar queries extras.
+    Ignora campos que causam erro na serialização.
     """
-    try:
-        data = model_to_dict(instance, fields=[
-            f.name for f in instance._meta.fields
-            if f.name not in AUDIT_EXCLUDED_FIELDS
-        ])
-    except Exception:
-        data = {}
+    fields = [
+        f.name for f in instance._meta.fields
+        if f.name not in AUDIT_EXCLUDED_FIELDS
+    ]
 
-    # Garante que todos os valores são serializáveis como JSON
-    return {k: str(v) if not isinstance(v, (str, int, float, bool, type(None), dict, list)) else v
-            for k, v in data.items()}
+    data = {}
+    for field_name in fields:
+        try:
+            value = getattr(instance, field_name)
+            # Garante que o valor é serializável como JSON
+            if isinstance(value, (str, int, float, bool, type(None), dict, list)):
+                data[field_name] = value
+            else:
+                data[field_name] = str(value)
+        except Exception:
+            pass
+
+    return data
 
 
 # ---------------------------------------------------------------------------
