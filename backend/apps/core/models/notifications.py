@@ -17,6 +17,7 @@ class StatusNotificacao(models.TextChoices):
     ENVIADO = "enviado", "Enviado"
     ENTREGUE = "entregue", "Entregue"
     FALHOU = "falhou", "Falhou"
+    CANCELADO = "cancelado", "Cancelado"
 
 
 class Notification(models.Model):
@@ -31,7 +32,7 @@ class Notification(models.Model):
     link = models.URLField(blank=True, default="")
     modulo_origem = models.CharField(max_length=100, blank=True, default="")
     evento = models.CharField(max_length=100, blank=True, default="")
-    enviado_em = models.DateTimeField(auto_now_add=True)
+    enviado_em = models.DateTimeField(null=True, blank=True)
     lido_em = models.DateTimeField(null=True, blank=True)
     status = models.CharField(
         max_length=20,
