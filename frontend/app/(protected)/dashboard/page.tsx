@@ -114,7 +114,7 @@ export default function DashboardPage() {
 
   if (status === "loading") {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-bg flex items-center justify-center">
         <div className="h-8 w-8 rounded-full border-4 border-primary border-t-transparent animate-spin" />
       </div>
     );
@@ -127,7 +127,7 @@ export default function DashboardPage() {
   const saudacao = getSaudacao();
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-bg">
       <header className="border-b border-border bg-surface">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
           <BrandMark />
@@ -149,7 +149,7 @@ export default function DashboardPage() {
                 </div>
               )}
               <div className="min-w-0 hidden sm:block">
-                <p className="text-sm font-medium text-foreground truncate leading-tight">
+                <p className="text-sm font-medium text-text truncate leading-tight">
                   {nome}
                 </p>
                 {perfis && perfis.length > 0 ? (
@@ -208,7 +208,7 @@ export default function DashboardPage() {
                   <CardIconSvg name={card.icon} />
                 </span>
               </div>
-              <p className="mt-3 text-3xl font-semibold text-foreground tabular-nums">
+              <p className="mt-3 text-3xl font-semibold text-text tabular-nums">
                 —
               </p>
             </div>

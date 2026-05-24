@@ -10,7 +10,7 @@ const MENSAGEM_GENERICA =
   "Se o e-mail estiver cadastrado, enviamos um link de redefinição.";
 
 const inputBase =
-  "h-10 w-full rounded-md border px-3 text-sm text-foreground bg-surface outline-none transition" +
+  "h-10 w-full rounded-md border px-3 text-sm text-text bg-surface outline-none transition" +
   " focus:ring-2 focus:ring-primary/15 focus:border-primary" +
   " border-border placeholder:text-text-muted";
 const inputErrorCls = "border-error focus:ring-error/20 focus:border-error";
@@ -75,7 +75,7 @@ export default function EsqueciMinhaSenhaPage() {
 
   return (
     <>
-      <h1 className="text-2xl font-semibold text-foreground mb-1">
+      <h1 className="text-2xl font-semibold text-text mb-1">
         Recuperar senha
       </h1>
       <p className="text-sm text-text-muted mb-6">
@@ -88,7 +88,7 @@ export default function EsqueciMinhaSenhaPage() {
             aria-live="polite"
             className="rounded-md border border-border bg-surface-muted px-3 py-3"
           >
-            <p className="text-sm text-foreground">{MENSAGEM_GENERICA}</p>
+            <p className="text-sm text-text">{MENSAGEM_GENERICA}</p>
             <div className="mt-4">
               <Link
                 href="/login"
@@ -119,7 +119,7 @@ export default function EsqueciMinhaSenhaPage() {
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
               <div className="flex flex-col gap-1.5">
-                <label htmlFor="email" className="text-sm font-medium text-foreground">
+                <label htmlFor="email" className="text-sm font-medium text-text">
                   E-mail
                 </label>
                 <input
