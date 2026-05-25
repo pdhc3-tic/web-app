@@ -77,6 +77,10 @@
   --space-6: 24px;
   --space-7: 28px;
   --space-8: 32px;
+
+  /* ── Layout ──────────────────────────────────────── */
+  /* Largura da Sidebar (alternada entre 240px expandida e 64px recolhida em runtime) */
+  --sidebar-width: 15rem;
 }
 
 /* @theme inline: fontes (precisam dos vars do Next.js) */
