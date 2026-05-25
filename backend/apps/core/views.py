@@ -352,7 +352,7 @@ class AuditLogListView(generics.ListAPIView):
     serializer_class = AuditLogSerializer
     permission_classes = [IsSuperAdmin]
     pagination_class = AuditLogPagination
-    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filter_backends = [django_filters.DjangoFilterBackend, filters.OrderingFilter]
     filterset_class = AuditLogFilter
     ordering_fields = ["timestamp"]
     ordering = ["-timestamp"]

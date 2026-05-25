@@ -47,21 +47,5 @@ class Migration(migrations.Migration):
             name='valores_novos',
             field=models.JSONField(blank=True, default=dict, help_text='Snapshot do estado após a alteração. Vazio em DELETE.', verbose_name='Valores Novos'),
         ),
-        migrations.CreateModel(
-            name='SystemConfig',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('chave', models.CharField(max_length=255, unique=True)),
-                ('valor', models.TextField()),
-                ('tipo', models.CharField(choices=[('string', 'String'), ('integer', 'Integer'), ('boolean', 'Boolean'), ('json', 'JSON')], max_length=20)),
-                ('descricao', models.TextField(blank=True, default='')),
-                ('atualizado_em', models.DateTimeField(auto_now=True)),
-                ('atualizado_por', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='system_configs', to=settings.AUTH_USER_MODEL)),
-            ],
-            options={
-                'verbose_name': 'Configuração do Sistema',
-                'verbose_name_plural': 'Configurações do Sistema',
-                'ordering': ['chave'],
-            },
-        ),
+
     ]
