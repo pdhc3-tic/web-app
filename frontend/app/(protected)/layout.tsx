@@ -1,5 +1,7 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
+import { AppShell } from "@/app/components/layout/AppShell";
+import { Sidebar } from "@/app/components/layout/Sidebar";
 
 export default async function ProtectedLayout({
   children,
@@ -8,5 +10,5 @@ export default async function ProtectedLayout({
 }) {
   const session = await auth();
   if (!session) redirect("/login");
-  return <>{children}</>;
+  return <AppShell sidebar={<Sidebar />}>{children}</AppShell>;
 }
