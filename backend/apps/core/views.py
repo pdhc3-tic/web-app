@@ -98,9 +98,12 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         instance = serializer.save()
         territory_ids = list(instance.territorios.values_list("pk", flat=True))
         AuditLog.objects.create(
-            usuario=self.request.user,
-            evento="organization.create",
-            detalhes={
+            user=self.request.user,
+            acao="organization.create",
+            modulo="core",
+            entidade="Organization",
+            entidade_id=str(instance.pk),
+            valores_novos={
                 "organization_id": instance.pk,
                 "nome": instance.nome,
                 "cnpj": instance.cnpj,
@@ -119,12 +122,16 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         )
         if old_territories != new_territories:
             AuditLog.objects.create(
-                usuario=self.request.user,
-                evento="organization.territory_change",
-                detalhes={
-                    "organization_id": instance.pk,
-                    "old_territories": sorted(old_territories),
-                    "new_territories": sorted(new_territories),
+                user=self.request.user,
+                acao="organization.territory_change",
+                modulo="core",
+                entidade="Organization",
+                entidade_id=str(instance.pk),
+                valores_anteriores={
+                    "territorios": sorted(old_territories),
+                },
+                valores_novos={
+                    "territorios": sorted(new_territories),
                 },
                 ip=self.request.META.get("REMOTE_ADDR"),
             )
@@ -133,11 +140,15 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         instance.ativa = False
         instance.save(update_fields=["ativa"])
         AuditLog.objects.create(
-            usuario=self.request.user,
-            evento="organization.soft_delete",
-            detalhes={
+            user=self.request.user,
+            acao="organization.soft_delete",
+            modulo="core",
+            entidade="Organization",
+            entidade_id=str(instance.pk),
+            valores_novos={
                 "organization_id": instance.pk,
                 "nome": instance.nome,
+                "ativa": False,
             },
             ip=self.request.META.get("REMOTE_ADDR"),
         )

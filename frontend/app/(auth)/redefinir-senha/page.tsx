@@ -15,7 +15,7 @@ function validatePassword(senha: string): string | null {
 }
 
 const inputBase =
-  "h-10 w-full rounded-md border px-3 text-sm text-foreground bg-surface outline-none transition" +
+  "h-10 w-full rounded-md border px-3 text-sm text-text bg-surface outline-none transition" +
   " focus:ring-2 focus:ring-primary/15 focus:border-primary" +
   " border-border placeholder:text-text-muted";
 const inputErrorCls = "border-error focus:ring-error/20 focus:border-error";
@@ -99,7 +99,7 @@ function RedefinirSenhaForm() {
 
   return (
     <>
-      <h1 className="text-2xl font-semibold text-foreground mb-1">
+      <h1 className="text-2xl font-semibold text-text mb-1">
         Redefinir senha
       </h1>
       <p className="text-sm text-text-muted mb-6">
@@ -133,7 +133,7 @@ function RedefinirSenhaForm() {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="senha" className="text-sm font-medium text-foreground">
+            <label htmlFor="senha" className="text-sm font-medium text-text">
               Nova senha
             </label>
             <input
@@ -152,7 +152,7 @@ function RedefinirSenhaForm() {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="confirm" className="text-sm font-medium text-foreground">
+            <label htmlFor="confirm" className="text-sm font-medium text-text">
               Confirmar nova senha
             </label>
             <input
@@ -173,7 +173,7 @@ function RedefinirSenhaForm() {
           <button
             type="submit"
             disabled={pending}
-            className="mt-1 h-10 rounded-md bg-primary text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed"
+            className="mt-1 h-10 rounded-md bg-primary text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors hover:bg-secondary disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {pending ? (
               <>
