@@ -2,6 +2,7 @@ import pytest
 from django.core.cache import cache
 from rest_framework import status
 
+from apps.core.models.audit_log import AuditLog
 from apps.core.models.system_config import SystemConfig, TipoConfiguracao
 from apps.core.utils import get_config
 
@@ -156,3 +157,22 @@ class TestAPI:
         assert isinstance(results["test_integer_param"]["valor"], int)
         assert results["test_bool_param"]["valor"] is True
         assert isinstance(results["test_bool_param"]["valor"], bool)
+
+    def test_patch_creates_audit_log_with_old_and_new_values(
+        self, api_client, config_int, super_admin_user
+    ):
+        api_client.force_authenticate(user=super_admin_user)
+        response = api_client.patch(
+            f"/api/v1/system-config/{config_int.chave}/", {"valor": "99"}
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        log = AuditLog.objects.filter(
+            usuario=super_admin_user,
+            evento="system_config_update",
+        ).last()
+        assert log is not None
+        assert log.detalhes["chave"] == "test_integer_param"
+        assert log.detalhes["valor_anterior"] == "42"
+        assert log.detalhes["valor_novo"] == "99"
+        assert log.detalhes["tipo"] == "integer"

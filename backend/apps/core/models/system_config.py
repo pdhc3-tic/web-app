@@ -41,6 +41,40 @@ def _invalidate_system_config_cache(chave):
     cache.delete(f"system_config:{chave}")
 
 
+@receiver(signals.pre_save, sender=SystemConfig)
+def stash_system_config_old_value(sender, instance, **kwargs):
+    if instance.pk:
+        try:
+            instance._old_valor = sender.objects.get(pk=instance.pk).valor
+        except sender.DoesNotExist:
+            instance._old_valor = None
+    else:
+        instance._old_valor = None
+
+
 @receiver(signals.post_save, sender=SystemConfig)
 def invalidate_system_config_cache_on_save(sender, instance, **kwargs):
     _invalidate_system_config_cache(instance.chave)
+
+
+@receiver(signals.post_save, sender=SystemConfig)
+def audit_system_config_update(sender, instance, created, **kwargs):
+    if created:
+        return
+
+    old_valor = getattr(instance, "_old_valor", None)
+    if old_valor == instance.valor:
+        return
+
+    from .audit_log import AuditLog
+
+    AuditLog.objects.create(
+        usuario=instance.atualizado_por,
+        evento="system_config_update",
+        detalhes={
+            "chave": instance.chave,
+            "tipo": instance.tipo,
+            "valor_anterior": old_valor,
+            "valor_novo": instance.valor,
+        },
+    )
