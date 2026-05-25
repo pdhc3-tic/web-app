@@ -7,44 +7,125 @@
   Dark mode só precisa sobrescrever as CSS vars em :root.
 */
 @theme {
-  --color-background: #f7f7f5;
-  --color-foreground: #3d3d3a;
+  /* ── Paleta principal ─────────────────────────────── */
+  --color-primary: #1b5e3b;
+  --color-secondary: #2e7d52;
+  --color-accent-sage: #4a7c59;
+  --color-accent-terracota: #b05a2f;
+  --color-accent-ocre: #c9973a;
+
+  /* ── Superfícies e neutros ───────────────────────── */
+  --color-bg: #f7f7f5;
   --color-surface: #ffffff;
   --color-surface-muted: #f1efe8;
-  --color-primary: #1b5e3b;
-  --color-primary-hover: #2e7d52;
+  --color-surface-warm: #f5efe0;
   --color-border: #d3d1c7;
+  --color-text: #3d3d3a;
   --color-text-muted: #6b6b68;
-  --color-error: #c62828;
+
+  /* ── Semânticas (pares bg / text) ────────────────── */
+  --color-success-bg: #e8f5e9;
+  --color-success-text: #1b5e3b;
+  --color-warning-bg: #fff8e1;
+  --color-warning-text: #7a5000;
   --color-error-bg: #ffebee;
+  --color-error-text: #c62828;
+  --color-info-bg: #e3f2fd;
+  --color-info-text: #0d47a1;
+  --color-neutral-bg: #f1efe8;
+  --color-neutral-text: #6b6b68;
+
+  /* ── Aliases (mantidos para classes Tailwind existentes) ── */
+  --color-error: #c62828;
   --color-success: #1b5e3b;
+
+  /* ── Border-radius ───────────────────────────────── */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-full: 9999px;
+
+  /* ── Sombras ─────────────────────────────────────── */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+
+  /* ── Font-sizes ──────────────────────────────────── */
+  /* Escala base (mesmos valores do Tailwind v4, declarados explicitamente) */
+  --text-xs: 0.75rem;       /* 12px */
+  --text-sm: 0.875rem;      /* 14px */
+  --text-base: 1rem;        /* 16px */
+  --text-lg: 1.125rem;      /* 18px */
+  --text-xl: 1.25rem;       /* 20px */
+  --text-2xl: 1.5rem;       /* 24px */
+  --text-3xl: 1.875rem;     /* 30px */
+  --text-4xl: 2.25rem;      /* 36px */
+  --text-5xl: 3rem;         /* 48px */
+
+  /* Extras do design system */
+  --text-micro: 0.625rem;   /* 10px, hints e captions discretas */
+  --text-2xs: 0.6875rem;    /* 11px, Badge e Label uppercase */
+  --text-label: 0.8125rem;  /* 13px, Label default */
+
+  /* ── Espaçamento ─────────────────────────────────── */
+  /* Base unit do Tailwind v4: classes p-N, gap-N, m-N derivam de N * --spacing */
+  --spacing: 4px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
 }
 
-/* @theme inline apenas para a fonte, que precisa do var(--font-inter) do Next.js */
+/* @theme inline: fontes (precisam dos vars do Next.js) */
 @theme inline {
   --font-sans:
     var(--font-inter), system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  --font-mono:
+    var(--font-jetbrains-mono), ui-monospace, "Cascadia Code", monospace;
 }
 
 /* Dark mode: sobrescreve as CSS vars geradas pelo @theme acima */
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-background: #1a1a18;
-    --color-foreground: #e8e6e0;
+    /* Paleta principal */
+    --color-primary: #4a9c6d;
+    --color-secondary: #5baf7e;
+    --color-accent-sage: #6a9e79;
+    --color-accent-terracota: #d4805a;
+    --color-accent-ocre: #e0b356;
+
+    /* Superfícies e neutros */
+    --color-bg: #1a1a18;
     --color-surface: #252523;
     --color-surface-muted: #2e2e2b;
-    --color-primary: #4a9c6d;
-    --color-primary-hover: #5baf7e;
+    --color-surface-warm: #2a2520;
     --color-border: #3a3a37;
+    --color-text: #e8e6e0;
     --color-text-muted: #9e9b93;
-    --color-error: #ef5350;
+
+    /* Semânticas */
+    --color-success-bg: #1a3325;
+    --color-success-text: #4a9c6d;
+    --color-warning-bg: #2e2200;
+    --color-warning-text: #d4a044;
     --color-error-bg: #3b1515;
+    --color-error-text: #ef5350;
+    --color-info-bg: #0d2a4d;
+    --color-info-text: #64b5f6;
+    --color-neutral-bg: #2a2a27;
+    --color-neutral-text: #9e9b93;
+
+    /* Aliases */
+    --color-error: #ef5350;
     --color-success: #4a9c6d;
   }
 }
 
 body {
-  background-color: var(--color-background);
-  color: var(--color-foreground);
+  background-color: var(--color-bg);
+  color: var(--color-text);
   font-family: var(--font-sans);
 }
