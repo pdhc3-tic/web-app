@@ -4,6 +4,7 @@ import {
   ReactNode,
   forwardRef,
 } from "react";
+import Spinner from "@/app/components/ui/Spinner";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger" | "icon-label";
 type Size = "sm" | "md" | "lg";
@@ -55,32 +56,6 @@ const sizeClass: Record<Size, string> = {
 
 const loadingExtra = "cursor-progress pointer-events-none";
 
-function Spinner() {
-  return (
-    <svg
-      className="w-3.5 h-3.5 shrink-0 animate-[spin_700ms_linear_infinite]"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
-      <circle
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeOpacity="0.25"
-        strokeWidth="4"
-      />
-      <path
-        d="M4 12a8 8 0 018-8"
-        stroke="currentColor"
-        strokeWidth="4"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
 function isAnchor(props: ButtonProps): props is ButtonAsAnchor {
   return props.as === "a";
 }
@@ -111,7 +86,7 @@ function renderContent(
   return (
     <>
       {loading ? (
-        <Spinner />
+        <Spinner className="animate-[spin_700ms_linear_infinite] h-3.5 w-3.5 shrink-0" />
       ) : leftIcon ? (
         <span className="inline-flex items-center justify-center shrink-0">
           {leftIcon}

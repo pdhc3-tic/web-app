@@ -9,6 +9,11 @@ import {
   useState,
 } from "react";
 import { Label } from "../Label/Label";
+import {
+  ChevronDownIcon,
+  CheckIcon,
+  ErrorIcon,
+} from "@/app/components/icons";
 
 export type SelectOption = {
   value: string;
@@ -65,58 +70,6 @@ function buildTriggerClass(
     if (open) parts.push(triggerSuccessOpenOverride);
   }
   return parts.join(" ");
-}
-
-function ChevronIcon({ open }: { open: boolean }) {
-  return (
-    <svg
-      className={`w-3.5 h-3.5 shrink-0 text-text-muted transition-transform duration-150 ${open ? "rotate-180" : ""}`}
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.75}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M4 6l4 4 4-4" />
-    </svg>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg
-      className="w-3.5 h-3.5 ml-auto shrink-0"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.75}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M3.5 8l3 3 6-6" />
-    </svg>
-  );
-}
-
-function ErrorIcon() {
-  return (
-    <svg
-      className="w-3 h-3 shrink-0"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.75}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="8" cy="8" r="6.5" />
-      <path d="M8 5v3.5M8 11v.5" />
-    </svg>
-  );
 }
 
 export function Select({
@@ -279,7 +232,9 @@ export function Select({
         <span className={selected ? "" : "text-text-muted"}>
           {selected?.label ?? placeholder}
         </span>
-        <ChevronIcon open={open} />
+        <ChevronDownIcon
+          className={`w-3.5 h-3.5 shrink-0 text-text-muted transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+        />
       </button>
 
       {name && <input type="hidden" name={name} value={value ?? ""} />}
@@ -336,7 +291,9 @@ export function Select({
                     }}
                   >
                     <span>{opt.label}</span>
-                    {isSelected && <CheckIcon />}
+                    {isSelected && (
+                      <CheckIcon className="w-3.5 h-3.5 ml-auto shrink-0" />
+                    )}
                   </li>
                 );
               })
