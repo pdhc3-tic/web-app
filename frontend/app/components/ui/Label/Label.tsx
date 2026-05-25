@@ -1,5 +1,4 @@
 import { LabelHTMLAttributes, ReactNode } from "react";
-import styles from "./Label.module.css";
 
 export type LabelProps = Omit<
   LabelHTMLAttributes<HTMLLabelElement>,
@@ -20,16 +19,16 @@ export function Label({
   return (
     <label
       htmlFor={htmlFor}
-      className={`${styles.label} ${className ?? ""}`}
+      className={`inline-flex items-baseline gap-1 text-label font-medium text-text leading-[1.2] ${className ?? ""}`}
       {...rest}
     >
       {children}
       {required && (
         <>
-          <span className={styles.required} aria-hidden="true">
+          <span className="ml-0.5 font-semibold text-error-text" aria-hidden="true">
             *
           </span>
-          <span className={styles.requiredHint}>(obrigatório)</span>
+          <span className="ml-0.5 text-2xs text-text-muted">(obrigatório)</span>
         </>
       )}
     </label>
