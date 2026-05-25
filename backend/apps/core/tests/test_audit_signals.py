@@ -34,9 +34,9 @@ def test_audit_logged_on_user_create(superadmin_client):
     role = RoleFactory()
     response = superadmin_client.post("/api/v1/users/", {
         "email": "novo@example.com",
-        "nome": "Novo Usuario",
+        "nome_completo": "Novo Usuario",
         "password": "senha123",
-        "role": role.pk,
+        "perfil_id": role.pk,
         "ativo": True,
     })
 
@@ -59,7 +59,7 @@ def test_audit_logged_on_user_update(superadmin_client):
     usuario = UserFactory(nome="Nome Antigo")
 
     response = superadmin_client.patch(f"/api/v1/users/{usuario.pk}/", {
-        "nome": "Nome Novo",
+        "nome_completo": "Nome Novo",
     })
 
     assert response.status_code == 200
