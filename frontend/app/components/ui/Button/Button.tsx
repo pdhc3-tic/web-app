@@ -4,7 +4,6 @@ import {
   ReactNode,
   forwardRef,
 } from "react";
-import styles from "./Button.module.css";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger" | "icon-label";
 type Size = "sm" | "md" | "lg";
@@ -32,24 +31,34 @@ type ButtonAsAnchor = CommonProps &
 
 export type ButtonProps = ButtonAsButton | ButtonAsAnchor;
 
+const baseClass =
+  "inline-flex items-center justify-center gap-2 border border-transparent rounded-md font-medium leading-none cursor-pointer no-underline whitespace-nowrap transition duration-[120ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-40 disabled:cursor-not-allowed";
+
 const variantClass: Record<Variant, string> = {
-  primary: styles.primary,
-  secondary: styles.secondary,
-  ghost: styles.ghost,
-  danger: styles.danger,
-  "icon-label": styles.iconLabel,
+  primary:
+    "bg-primary text-surface border-primary enabled:hover:bg-secondary enabled:hover:border-secondary",
+  secondary:
+    "bg-surface text-primary border-primary enabled:hover:bg-surface-muted",
+  ghost:
+    "bg-transparent text-text border-transparent enabled:hover:bg-surface-muted",
+  danger:
+    "bg-error-text text-surface border-error-text enabled:hover:brightness-[0.92]",
+  "icon-label":
+    "bg-transparent text-text border-border enabled:hover:bg-surface-muted enabled:hover:border-primary enabled:hover:text-primary",
 };
 
 const sizeClass: Record<Size, string> = {
-  sm: styles.sizeSm,
-  md: styles.sizeMd,
-  lg: styles.sizeLg,
+  sm: "h-7 px-3 text-xs",
+  md: "h-9 px-4 text-sm",
+  lg: "h-11 px-5 text-base",
 };
+
+const loadingExtra = "cursor-progress pointer-events-none";
 
 function Spinner() {
   return (
     <svg
-      className={styles.spinner}
+      className="w-3.5 h-3.5 shrink-0 animate-[spin_700ms_linear_infinite]"
       viewBox="0 0 24 24"
       fill="none"
       aria-hidden="true"
@@ -83,10 +92,10 @@ function buildClasses(
   extra: string | undefined,
 ) {
   return [
-    styles.button,
+    baseClass,
     variantClass[variant],
     sizeClass[size],
-    loading ? styles.loading : "",
+    loading ? loadingExtra : "",
     extra ?? "",
   ]
     .filter(Boolean)
@@ -104,11 +113,15 @@ function renderContent(
       {loading ? (
         <Spinner />
       ) : leftIcon ? (
-        <span className={styles.icon}>{leftIcon}</span>
+        <span className="inline-flex items-center justify-center shrink-0">
+          {leftIcon}
+        </span>
       ) : null}
       <span>{loading ? "Salvando..." : children}</span>
       {!loading && rightIcon ? (
-        <span className={styles.icon}>{rightIcon}</span>
+        <span className="inline-flex items-center justify-center shrink-0">
+          {rightIcon}
+        </span>
       ) : null}
     </>
   );
