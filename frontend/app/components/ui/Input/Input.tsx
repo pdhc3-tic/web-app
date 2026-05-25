@@ -1,6 +1,5 @@
 import { InputHTMLAttributes, forwardRef, useId } from "react";
 import { Label } from "../Label/Label";
-import styles from "./Input.module.css";
 
 export type InputProps = Omit<
   InputHTMLAttributes<HTMLInputElement>,
@@ -12,10 +11,23 @@ export type InputProps = Omit<
   success?: boolean;
 };
 
+const inputBase =
+  "w-full h-9 px-3 text-sm text-text bg-surface border border-border rounded-md outline-none placeholder:text-text-muted transition duration-[120ms] enabled:hover:border-text-muted focus:border-2 focus:border-primary focus:px-[calc(0.75rem-1px)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-primary)_15%,transparent)] disabled:bg-surface-muted disabled:text-text-muted disabled:cursor-not-allowed disabled:opacity-70";
+
+const inputError =
+  "border-error-text focus:border-error-text focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-error-text)_15%,transparent)]";
+
+const inputSuccess = "border-success-text focus:border-success-text";
+
+const inputWithEndIcon = "pr-7 focus:pr-[calc(1.75rem-1px)]";
+
+const endIconBase =
+  "absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-4 h-4 pointer-events-none";
+
 function ErrorIcon() {
   return (
     <svg
-      className={styles.errorIcon}
+      className="w-3 h-3 shrink-0"
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"
@@ -32,7 +44,7 @@ function ErrorIcon() {
 
 function EndIconError() {
   return (
-    <span className={`${styles.endIcon} ${styles.endIconError}`}>
+    <span className={`${endIconBase} text-error-text`}>
       <ErrorIcon />
     </span>
   );
@@ -40,7 +52,7 @@ function EndIconError() {
 
 function EndIconSuccess() {
   return (
-    <span className={`${styles.endIcon} ${styles.endIconSuccess}`}>
+    <span className={`${endIconBase} text-success-text`}>
       <svg
         viewBox="0 0 16 16"
         fill="none"
@@ -78,22 +90,20 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   const helperId = helperText ? `${id}-helper` : undefined;
   const errorId = error ? `${id}-error` : undefined;
 
-  const stateClass = error ? styles.error : success ? styles.success : "";
+  const stateClass = error ? inputError : success ? inputSuccess : "";
   const hasEndIcon = !!error || success;
 
   return (
-    <div className={`${styles.field} ${className ?? ""}`}>
+    <div className={`flex flex-col gap-1 ${className ?? ""}`}>
       <Label htmlFor={id} required={required}>
         {label}
       </Label>
 
-      <div className={styles.inputWrap}>
+      <div className="relative flex items-center">
         <input
           ref={ref}
           id={id}
-          className={`${styles.input} ${stateClass} ${
-            hasEndIcon ? styles.inputWithEndIcon : ""
-          }`}
+          className={`${inputBase} ${stateClass} ${hasEndIcon ? inputWithEndIcon : ""}`}
           required={required}
           disabled={disabled}
           aria-invalid={!!error || undefined}
@@ -109,13 +119,17 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       </div>
 
       {helperText && !error && (
-        <span id={helperId} className={styles.helper}>
+        <span id={helperId} className="text-xs text-text-muted leading-[1.4]">
           {helperText}
         </span>
       )}
 
       {error && (
-        <span id={errorId} className={styles.errorMessage} role="alert">
+        <span
+          id={errorId}
+          className="inline-flex items-center gap-1 text-xs text-error-text leading-[1.4]"
+          role="alert"
+        >
           <ErrorIcon />
           {error}
         </span>
