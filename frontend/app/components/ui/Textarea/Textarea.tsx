@@ -1,6 +1,5 @@
 import { TextareaHTMLAttributes, forwardRef, useId } from "react";
 import { Label } from "../Label/Label";
-import styles from "./Textarea.module.css";
 
 export type TextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement> & {
   label: string;
@@ -9,10 +8,18 @@ export type TextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement> & {
   success?: boolean;
 };
 
+const textareaBase =
+  "w-full min-h-[88px] py-2 px-3 text-sm leading-normal text-text bg-surface border border-border rounded-md outline-none resize-y placeholder:text-text-muted transition duration-[120ms] enabled:hover:border-text-muted focus:border-2 focus:border-primary focus:py-[calc(0.5rem-1px)] focus:px-[calc(0.75rem-1px)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-primary)_15%,transparent)] disabled:bg-surface-muted disabled:text-text-muted disabled:cursor-not-allowed disabled:opacity-70";
+
+const textareaError =
+  "border-error-text focus:border-error-text focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-error-text)_15%,transparent)]";
+
+const textareaSuccess = "border-success-text focus:border-success-text";
+
 function ErrorIcon() {
   return (
     <svg
-      className={styles.errorIcon}
+      className="w-3 h-3 shrink-0"
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"
@@ -47,19 +54,23 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
     const helperId = helperText ? `${id}-helper` : undefined;
     const errorId = error ? `${id}-error` : undefined;
 
-    const stateClass = error ? styles.error : success ? styles.success : "";
+    const stateClass = error
+      ? textareaError
+      : success
+        ? textareaSuccess
+        : "";
 
     return (
-      <div className={`${styles.field} ${className ?? ""}`}>
+      <div className={`flex flex-col gap-1 ${className ?? ""}`}>
         <Label htmlFor={id} required={required}>
           {label}
         </Label>
 
-        <div className={styles.textareaWrap}>
+        <div className="relative flex">
           <textarea
             ref={ref}
             id={id}
-            className={`${styles.textarea} ${stateClass}`}
+            className={`${textareaBase} ${stateClass}`}
             required={required}
             disabled={disabled}
             aria-invalid={!!error || undefined}
@@ -70,13 +81,17 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         </div>
 
         {helperText && !error && (
-          <span id={helperId} className={styles.helper}>
+          <span id={helperId} className="text-xs text-text-muted leading-[1.4]">
             {helperText}
           </span>
         )}
 
         {error && (
-          <span id={errorId} className={styles.errorMessage} role="alert">
+          <span
+            id={errorId}
+            className="inline-flex items-center gap-1 text-xs text-error-text leading-[1.4]"
+            role="alert"
+          >
             <ErrorIcon />
             {error}
           </span>
