@@ -145,7 +145,7 @@ class OrganizationViewSet(viewsets.ModelViewSet):
     """CRUD de Organizações (OSC) com RBAC e soft-delete."""
 
     serializer_class = OrganizationSerializer
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [django_filters.DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["nome", "cnpj"]
     filterset_fields = ["municipio__state", "territorios", "ativa", "tipo"]
     ordering_fields = ["nome", "criado_em"]
