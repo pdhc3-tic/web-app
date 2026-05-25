@@ -17,6 +17,7 @@ from .models.system_config import SystemConfig
 from .permissions import IsSuperAdmin, IsUGP, IsArticuladorEstadual
 
 from .serializers import (
+    AuditLogSerializer,
     RoleSerializer,
     StateSerializer,
     TerritorySerializer,
@@ -31,6 +32,7 @@ from .serializers import (
 
 from .services.permissions import user_has_role, user_territories
 from .throttling import NotificationUnreadCountThrottle
+from django_filters import rest_framework as django_filters
 
 logger = logging.getLogger("apps.core.views")
 
@@ -184,18 +186,40 @@ class OrganizationViewSet(viewsets.ModelViewSet):
                 "organization_id": instance.pk,
                 "nome": instance.nome,
                 "cnpj": instance.cnpj,
+                "tipo": instance.tipo,
+                "ativa": instance.ativa,
                 "territorios": territory_ids,
             },
             ip=self.request.META.get("REMOTE_ADDR"),
+            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )
 
     def perform_update(self, serializer):
-        old_territories = set(
-            self.get_object().territorios.values_list("pk", flat=True)
-        )
+        old = self.get_object()
+        valores_anteriores = {
+            "nome": old.nome,
+            "cnpj": old.cnpj,
+            "tipo": old.tipo,
+            "ativa": old.ativa,
+        }
+
         instance = serializer.save()
-        new_territories = set(
-            instance.territorios.values_list("pk", flat=True)
+        
+        AuditLog.objects.create(
+            user=self.request.user,
+            acao="UPDATE",
+            modulo="core",
+            entidade="Organization",
+            entidade_id=str(instance.pk),
+            valores_anteriores=valores_anteriores,
+            valores_novos={
+                "nome": instance.nome,
+                "cnpj": instance.cnpj,
+                "tipo": instance.tipo,
+                "ativa": instance.ativa,
+            },
+            ip=self.request.META.get("REMOTE_ADDR"),
+            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )
         if old_territories != new_territories:
             AuditLog.objects.create(
@@ -214,6 +238,7 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             )
 
     def perform_destroy(self, instance):
+        valores_anteriores = {"nome": instance.nome, "ativa": instance.ativa}
         instance.ativa = False
         instance.save(update_fields=["ativa"])
         AuditLog.objects.create(
@@ -228,6 +253,7 @@ class OrganizationViewSet(viewsets.ModelViewSet):
                 "ativa": False,
             },
             ip=self.request.META.get("REMOTE_ADDR"),
+            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )
 
 
@@ -306,6 +332,33 @@ def unread_count(request):
 
     return Response({"count": count}, status=status.HTTP_200_OK)
 
+class AuditLogFilter(django_filters.FilterSet):
+    timestamp_gte = django_filters.IsoDateTimeFilter(field_name="timestamp", lookup_expr="gte")
+    timestamp_lte = django_filters.IsoDateTimeFilter(field_name="timestamp", lookup_expr="lte")
+
+    class Meta:
+        model = AuditLog
+        fields = ["user", "entidade"]
+
+
+class AuditLogPagination(LimitOffsetPagination):
+    default_limit = 20
+    max_limit = 100
+
+
+class AuditLogListView(generics.ListAPIView):
+    """GET /api/v1/audit-logs/ — listagem paginada, apenas Super Admin."""
+
+    serializer_class = AuditLogSerializer
+    permission_classes = [IsSuperAdmin]
+    pagination_class = AuditLogPagination
+    filter_backends = [django_filters.DjangoFilterBackend, filters.OrderingFilter]
+    filterset_class = AuditLogFilter
+    ordering_fields = ["timestamp"]
+    ordering = ["-timestamp"]
+
+    def get_queryset(self):
+        return AuditLog.objects.select_related("user").all()
 
 # ──────────────────────────────────────────────────────────────
 # System Config
