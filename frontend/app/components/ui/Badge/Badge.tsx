@@ -1,5 +1,4 @@
 import { ReactNode } from "react";
-import styles from "./Badge.module.css";
 
 export type BadgeStatus =
   | "planejado"
@@ -18,15 +17,15 @@ export type BadgeProps = {
 };
 
 const statusClass: Record<BadgeStatus, string> = {
-  planejado: styles.planejado,
-  agendado: styles.agendado,
-  "em-andamento": styles.emAndamento,
-  concluido: styles.concluido,
-  "sem-evidencia": styles.semEvidencia,
-  adiada: styles.adiada,
-  "nao-realizada": styles.naoRealizada,
-  cancelada: styles.cancelada,
-  atrasada: styles.atrasada,
+  planejado: "bg-info-bg text-info-text border-info-text",
+  agendado: "bg-info-bg text-info-text border-info-text",
+  "em-andamento": "bg-warning-bg text-warning-text border-warning-text",
+  concluido: "bg-success-bg text-success-text border-success-text",
+  "sem-evidencia": "bg-neutral-bg text-neutral-text border-border border-dashed",
+  adiada: "bg-warning-bg text-warning-text border-warning-text border-dashed",
+  "nao-realizada": "bg-error-bg text-error-text border-error-text",
+  cancelada: "bg-neutral-bg text-neutral-text border-neutral-text line-through decoration-1",
+  atrasada: "bg-error-bg text-error-text border-error-text border-dashed",
 };
 
 const defaultLabel: Record<BadgeStatus, string> = {
@@ -43,7 +42,7 @@ const defaultLabel: Record<BadgeStatus, string> = {
 
 function Icon({ status }: { status: BadgeStatus }): ReactNode {
   const common = {
-    className: styles.icon,
+    className: "w-3 h-3 shrink-0",
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
@@ -123,7 +122,9 @@ function Icon({ status }: { status: BadgeStatus }): ReactNode {
 export function Badge({ status, label }: BadgeProps) {
   const text = label ?? defaultLabel[status];
   return (
-    <span className={`${styles.badge} ${statusClass[status]}`}>
+    <span
+      className={`inline-flex items-center gap-1 py-0.5 px-2 rounded-full border text-2xs font-medium leading-[1.4] whitespace-nowrap ${statusClass[status]}`}
+    >
       <Icon status={status} />
       {text}
     </span>
