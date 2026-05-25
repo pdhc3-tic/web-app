@@ -48,6 +48,23 @@
   /* ── Sombras ─────────────────────────────────────── */
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+
+  /* ── Font-sizes ──────────────────────────────────── */
+  /* Escala base (mesmos valores do Tailwind v4, declarados explicitamente) */
+  --text-xs: 0.75rem;       /* 12px */
+  --text-sm: 0.875rem;      /* 14px */
+  --text-base: 1rem;        /* 16px */
+  --text-lg: 1.125rem;      /* 18px */
+  --text-xl: 1.25rem;       /* 20px */
+  --text-2xl: 1.5rem;       /* 24px */
+  --text-3xl: 1.875rem;     /* 30px */
+  --text-4xl: 2.25rem;      /* 36px */
+  --text-5xl: 3rem;         /* 48px */
+
+  /* Extras do design system */
+  --text-micro: 0.625rem;   /* 10px, hints e captions discretas */
+  --text-2xs: 0.6875rem;    /* 11px, Badge e Label uppercase */
+  --text-label: 0.8125rem;  /* 13px, Label default */
 }
 
 /* @theme inline: fontes (precisam dos vars do Next.js) */
