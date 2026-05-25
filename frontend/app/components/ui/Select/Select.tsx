@@ -34,10 +34,10 @@ export type SelectProps = {
 const SEARCH_THRESHOLD = 10;
 
 const triggerBase =
-  "w-full h-9 px-3 flex items-center justify-between gap-2 text-sm text-text bg-surface border border-border rounded-md outline-none cursor-pointer text-left transition duration-[120ms] enabled:hover:border-text-muted focus-visible:border-2 focus-visible:border-primary focus-visible:px-[calc(0.75rem-1px)] focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-primary)_15%,transparent)] disabled:bg-surface-muted disabled:text-text-muted disabled:cursor-not-allowed disabled:opacity-70";
+  "w-full h-9 px-3 flex items-center justify-between gap-2 text-sm text-text bg-surface border border-border rounded-md outline-none cursor-pointer text-left transition duration-[120ms] enabled:hover:border-text-muted focus-visible:border-2 focus-visible:border-primary focus-visible:px-[calc(var(--space-3)-1px)] focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-primary)_15%,transparent)] disabled:bg-surface-muted disabled:text-text-muted disabled:cursor-not-allowed disabled:opacity-70";
 
 const triggerOpenClass =
-  "border-2 border-primary px-[calc(0.75rem-1px)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-primary)_15%,transparent)]";
+  "border-2 border-primary px-[calc(var(--space-3)-1px)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-primary)_15%,transparent)]";
 
 const triggerError =
   "border-error-text focus-visible:border-error-text focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-error-text)_15%,transparent)]";
@@ -285,7 +285,7 @@ export function Select({
       {name && <input type="hidden" name={name} value={value ?? ""} />}
 
       {open && (
-        <div className="absolute top-[calc(100%+0.25rem)] left-0 right-0 z-30 flex flex-col max-h-[280px] bg-surface border border-border rounded-md shadow-md overflow-hidden">
+        <div className="absolute top-[calc(100%+var(--space-1))] left-0 right-0 z-30 flex flex-col max-h-[280px] bg-surface border border-border rounded-md shadow-md overflow-hidden">
           {showSearch && (
             <div className="p-2 border-b border-border bg-surface">
               <input

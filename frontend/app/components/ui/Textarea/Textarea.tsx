@@ -9,7 +9,7 @@ export type TextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement> & {
 };
 
 const textareaBase =
-  "w-full min-h-[88px] py-2 px-3 text-sm leading-normal text-text bg-surface border border-border rounded-md outline-none resize-y placeholder:text-text-muted transition duration-[120ms] enabled:hover:border-text-muted focus:border-2 focus:border-primary focus:py-[calc(0.5rem-1px)] focus:px-[calc(0.75rem-1px)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-primary)_15%,transparent)] disabled:bg-surface-muted disabled:text-text-muted disabled:cursor-not-allowed disabled:opacity-70";
+  "w-full min-h-[88px] py-2 px-3 text-sm leading-normal text-text bg-surface border border-border rounded-md outline-none resize-y placeholder:text-text-muted transition duration-[120ms] enabled:hover:border-text-muted focus:border-2 focus:border-primary focus:py-[calc(var(--space-2)-1px)] focus:px-[calc(var(--space-3)-1px)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-primary)_15%,transparent)] disabled:bg-surface-muted disabled:text-text-muted disabled:cursor-not-allowed disabled:opacity-70";
 
 const textareaError =
   "border-error-text focus:border-error-text focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-error-text)_15%,transparent)]";
