@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { ComponentsShowcase } from "./ComponentsShowcase";
 
 if (process.env.NODE_ENV === "production") {
   notFound();
@@ -288,6 +289,8 @@ export default function StyleguidePage() {
             ))}
           </div>
         </section>
+
+        <ComponentsShowcase />
 
         <footer className="border-t border-border pt-6">
           <p className="text-xs font-mono text-text-muted">
