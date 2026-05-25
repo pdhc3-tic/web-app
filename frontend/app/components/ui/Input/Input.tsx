@@ -1,5 +1,6 @@
 import { InputHTMLAttributes, forwardRef, useId } from "react";
 import { Label } from "../Label/Label";
+import { ErrorIcon, CheckIcon } from "@/app/components/icons";
 
 export type InputProps = Omit<
   InputHTMLAttributes<HTMLInputElement>,
@@ -24,28 +25,10 @@ const inputWithEndIcon = "pr-7 focus:pr-[calc(var(--space-7)-1px)]";
 const endIconBase =
   "absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-4 h-4 pointer-events-none";
 
-function ErrorIcon() {
-  return (
-    <svg
-      className="w-3 h-3 shrink-0"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.75}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="8" cy="8" r="6.5" />
-      <path d="M8 5v3.5M8 11v.5" />
-    </svg>
-  );
-}
-
 function EndIconError() {
   return (
     <span className={`${endIconBase} text-error-text`}>
-      <ErrorIcon />
+      <ErrorIcon className="w-3.5 h-3.5 shrink-0" />
     </span>
   );
 }
@@ -53,20 +36,7 @@ function EndIconError() {
 function EndIconSuccess() {
   return (
     <span className={`${endIconBase} text-success-text`}>
-      <svg
-        viewBox="0 0 16 16"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.75}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-        width="14"
-        height="14"
-      >
-        <circle cx="8" cy="8" r="6.5" />
-        <path d="M5 8l2 2 4-4" />
-      </svg>
+      <CheckIcon className="w-3.5 h-3.5 shrink-0" />
     </span>
   );
 }

@@ -1,5 +1,6 @@
 import { TextareaHTMLAttributes, forwardRef, useId } from "react";
 import { Label } from "../Label/Label";
+import { ErrorIcon } from "@/app/components/icons";
 
 export type TextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement> & {
   label: string;
@@ -15,24 +16,6 @@ const textareaError =
   "border-error-text focus:border-error-text focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-error-text)_15%,transparent)]";
 
 const textareaSuccess = "border-success-text focus:border-success-text";
-
-function ErrorIcon() {
-  return (
-    <svg
-      className="w-3 h-3 shrink-0"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.75}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="8" cy="8" r="6.5" />
-      <path d="M8 5v3.5M8 11v.5" />
-    </svg>
-  );
-}
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
   function Textarea(
