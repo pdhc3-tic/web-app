@@ -3,7 +3,8 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
 from .models import State, Territory, Municipality, User, Role, UserProfile, Organization
 from .models.notifications import Notification, NotificationPreference
-from apps.core.models.audit_log import AuditLog
+from .models.system_config import SystemConfig
+from .models import AuditLog
 
 
 class UserProfileInline(admin.StackedInline):
@@ -157,6 +158,14 @@ class NotificationPreferenceAdmin(admin.ModelAdmin):
     raw_id_fields = ("user",)
 
 
+@admin.register(SystemConfig)
+class SystemConfigAdmin(admin.ModelAdmin):
+    list_display = ("chave", "tipo", "descricao", "atualizado_por", "atualizado_em")
+    list_filter = ("tipo",)
+    search_fields = ("chave", "descricao")
+    readonly_fields = ("chave", "tipo", "atualizado_em")
+
+
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
     list_display = ("nome", "cnpj", "tipo", "municipio", "ativa")
@@ -164,3 +173,7 @@ class OrganizationAdmin(admin.ModelAdmin):
     search_fields = ("nome", "cnpj")
     filter_horizontal = ("territorios",)
     raw_id_fields = ("municipio",)
+    def save_model(self, request, obj, form, change):
+        if change:
+            obj.atualizado_por = request.user
+        super().save_model(request, obj, form, change)
