@@ -27,6 +27,11 @@ export function AppShell({ sidebar, children }: AppShellProps) {
         <main id="main-content" className="flex-1 p-6 pb-20 md:pb-6">
           {children}
         </main>
+        <footer className="border-t border-border bg-surface px-6 py-3">
+          <p className="text-micro font-mono text-text-muted text-center">
+            Ecossistema PDHC III · Sprint 1
+          </p>
+        </footer>
       </div>
 
       <nav
