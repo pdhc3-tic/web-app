@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { LogoutButton } from "./logout-button";
+import { PageHeader } from "@/app/components/layout/PageHeader";
 
 type CardIcon = "users" | "calendar" | "megaphone" | "clipboard";
 
@@ -11,15 +11,6 @@ const PLACEHOLDER_CARDS: { label: string; icon: CardIcon }[] = [
   { label: "Eventos", icon: "megaphone" },
   { label: "Demandas", icon: "clipboard" },
 ];
-
-function getIniciais(nome: string): string {
-  const partes = nome.split(" ").filter(Boolean);
-  if (partes.length === 0) return "?";
-  if (partes.length === 1) return partes[0][0]?.toUpperCase() ?? "?";
-  return (
-    (partes[0][0] ?? "") + (partes[partes.length - 1][0] ?? "")
-  ).toUpperCase();
-}
 
 function getPrimeiroNome(nome: string): string {
   return nome.split(" ").filter(Boolean)[0] ?? "";
@@ -85,94 +76,30 @@ function CardIconSvg({ name }: { name: CardIcon }) {
   }
 }
 
-function BrandMark() {
-  return (
-    <div className="flex items-center gap-2 text-primary">
-      <svg
-        viewBox="0 0 24 24"
-        className="h-6 w-6"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.75}
-        aria-hidden="true"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M12 3 L20 19 L4 19 Z"
-        />
-      </svg>
-      <span className="text-base font-semibold tracking-tight">
-        PDHC <span className="font-light italic lowercase opacity-80">iii</span>
-      </span>
-    </div>
-  );
-}
-
 export default function DashboardPage() {
   const { data: session, status } = useSession();
 
   if (status === "loading") {
     return (
-      <div className="min-h-screen bg-bg flex items-center justify-center">
+      <div className="flex items-center justify-center min-h-[400px]">
         <div className="h-8 w-8 rounded-full border-4 border-primary border-t-transparent animate-spin" />
       </div>
     );
   }
 
-  const { nome_completo, foto_url, perfis } = session!.user;
+  const { nome_completo } = session!.user;
   const nome = nome_completo || "Usuário";
   const primeiroNome = getPrimeiroNome(nome) || "por aqui";
-  const iniciais = getIniciais(nome);
   const saudacao = getSaudacao();
 
   return (
-    <div className="min-h-screen bg-bg">
-      <header className="border-b border-border bg-surface">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-          <BrandMark />
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="flex items-center gap-3 min-w-0">
-              {foto_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={foto_url}
-                  alt=""
-                  className="h-9 w-9 rounded-full object-cover border border-border shrink-0"
-                />
-              ) : (
-                <div
-                  aria-hidden="true"
-                  className="h-9 w-9 rounded-full bg-primary text-white text-xs font-medium flex items-center justify-center shrink-0"
-                >
-                  {iniciais}
-                </div>
-              )}
-              <div className="min-w-0 hidden sm:block">
-                <p className="text-sm font-medium text-text truncate leading-tight">
-                  {nome}
-                </p>
-                {perfis && perfis.length > 0 ? (
-                  <ul className="mt-1 flex flex-wrap gap-1">
-                    {perfis.map((perfil) => (
-                      <li
-                        key={perfil.slug}
-                        className="px-1.5 py-0.5 rounded-full bg-surface-muted text-[10px] font-medium uppercase tracking-wide text-text-muted border border-border"
-                      >
-                        {perfil.nome}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </div>
-            </div>
-            <LogoutButton />
-          </div>
-        </div>
-      </header>
+    <>
+      <PageHeader>
+        <h1 className="text-base font-semibold text-text truncate">Dashboard</h1>
+      </PageHeader>
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        <section className="relative overflow-hidden rounded-lg border border-border bg-primary text-white p-6 sm:p-8">
+      <div className="max-w-6xl mx-auto space-y-6">
+        <section className="relative overflow-hidden rounded-lg border border-border bg-primary text-surface p-6 sm:p-8">
           <div
             aria-hidden="true"
             className="absolute -top-20 -right-20 h-64 w-64 rounded-full bg-white/10 blur-3xl"
@@ -181,9 +108,9 @@ export default function DashboardPage() {
             <p className="text-sm text-white/80 uppercase tracking-wider font-medium">
               Painel · Sprint 1
             </p>
-            <h1 className="mt-2 text-2xl sm:text-3xl font-semibold leading-tight">
+            <h2 className="mt-2 text-2xl sm:text-3xl font-semibold leading-tight">
               {saudacao}, {primeiroNome}.
-            </h1>
+            </h2>
             <p className="mt-2 text-sm text-white/80 max-w-md">
               Seu painel está em construção. As métricas dos módulos aparecerão aqui
               conforme forem entregues.
@@ -214,7 +141,7 @@ export default function DashboardPage() {
             </div>
           ))}
         </section>
-      </main>
-    </div>
+      </div>
+    </>
   );
 }
