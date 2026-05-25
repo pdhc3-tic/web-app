@@ -168,11 +168,10 @@ class TestAPI:
         assert response.status_code == status.HTTP_200_OK
 
         log = AuditLog.objects.filter(
-            usuario=super_admin_user,
-            evento="system_config_update",
+            user=super_admin_user,
+            acao="system_config_update",
         ).last()
         assert log is not None
-        assert log.detalhes["chave"] == "test_integer_param"
-        assert log.detalhes["valor_anterior"] == "42"
-        assert log.detalhes["valor_novo"] == "99"
-        assert log.detalhes["tipo"] == "integer"
+        assert log.entidade_id == str(config_int.pk)
+        assert log.valores_anteriores == {"valor": "42"}
+        assert log.valores_novos == {"valor": "99"}

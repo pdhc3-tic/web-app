@@ -69,12 +69,11 @@ def audit_system_config_update(sender, instance, created, **kwargs):
     from .audit_log import AuditLog
 
     AuditLog.objects.create(
-        usuario=instance.atualizado_por,
-        evento="system_config_update",
-        detalhes={
-            "chave": instance.chave,
-            "tipo": instance.tipo,
-            "valor_anterior": old_valor,
-            "valor_novo": instance.valor,
-        },
+        user=instance.atualizado_por,
+        acao="system_config_update",
+        modulo="core",
+        entidade="SystemConfig",
+        entidade_id=str(instance.pk),
+        valores_anteriores={"valor": old_valor},
+        valores_novos={"valor": instance.valor},
     )
