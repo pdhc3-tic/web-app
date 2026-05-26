@@ -91,17 +91,22 @@
     var(--font-jetbrains-mono), ui-monospace, "Cascadia Code", monospace;
 }
 
-/* Dark mode: sobrescreve as CSS vars geradas pelo @theme acima */
+/*
+  Dark mode: sobrescreve as CSS vars geradas pelo @theme acima.
+  Aplicado em dois cenarios:
+  1. SO em dark mode E usuario nao forcou "light" via data-theme
+  2. Usuario forcou "dark" via data-theme
+  Mantemos as duas regras separadas (mesmo conteudo) para que o
+  override manual sempre vença o sistema operacional.
+*/
 @media (prefers-color-scheme: dark) {
-  :root {
-    /* Paleta principal */
+  :root:not([data-theme="light"]) {
     --color-primary: #4a9c6d;
     --color-secondary: #5baf7e;
     --color-accent-sage: #6a9e79;
     --color-accent-terracota: #d4805a;
     --color-accent-ocre: #e0b356;
 
-    /* Superfícies e neutros */
     --color-bg: #1a1a18;
     --color-surface: #252523;
     --color-surface-muted: #2e2e2b;
@@ -110,7 +115,6 @@
     --color-text: #e8e6e0;
     --color-text-muted: #9e9b93;
 
-    /* Semânticas */
     --color-success-bg: #1a3325;
     --color-success-text: #4a9c6d;
     --color-warning-bg: #2e2200;
@@ -122,14 +126,65 @@
     --color-neutral-bg: #2a2a27;
     --color-neutral-text: #9e9b93;
 
-    /* Aliases */
     --color-error: #ef5350;
     --color-success: #4a9c6d;
   }
 }
 
+:root[data-theme="dark"] {
+  --color-primary: #4a9c6d;
+  --color-secondary: #5baf7e;
+  --color-accent-sage: #6a9e79;
+  --color-accent-terracota: #d4805a;
+  --color-accent-ocre: #e0b356;
+
+  --color-bg: #1a1a18;
+  --color-surface: #252523;
+  --color-surface-muted: #2e2e2b;
+  --color-surface-warm: #2a2520;
+  --color-border: #3a3a37;
+  --color-text: #e8e6e0;
+  --color-text-muted: #9e9b93;
+
+  --color-success-bg: #1a3325;
+  --color-success-text: #4a9c6d;
+  --color-warning-bg: #2e2200;
+  --color-warning-text: #d4a044;
+  --color-error-bg: #3b1515;
+  --color-error-text: #ef5350;
+  --color-info-bg: #0d2a4d;
+  --color-info-text: #64b5f6;
+  --color-neutral-bg: #2a2a27;
+  --color-neutral-text: #9e9b93;
+
+  --color-error: #ef5350;
+  --color-success: #4a9c6d;
+}
+
 body {
   background-color: var(--color-bg);
+  background-image:
+    radial-gradient(
+      ellipse 90% 70% at 100% 0%,
+      color-mix(in srgb, var(--color-primary) 18%, transparent),
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse 80% 60% at 0% 100%,
+      color-mix(in srgb, var(--color-accent-ocre) 14%, transparent),
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse 60% 50% at 50% 100%,
+      color-mix(in srgb, var(--color-accent-sage) 10%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse 50% 40% at 0% 0%,
+      color-mix(in srgb, var(--color-secondary) 8%, transparent),
+      transparent 60%
+    );
+  background-attachment: fixed;
   color: var(--color-text);
   font-family: var(--font-sans);
 }

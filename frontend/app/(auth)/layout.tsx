@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] bg-bg">
+    <div className="min-h-screen grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <aside className="hidden lg:flex flex-col justify-between relative overflow-hidden px-14 py-12 text-white bg-[#0d2e1d]">
         <div
           aria-hidden="true"

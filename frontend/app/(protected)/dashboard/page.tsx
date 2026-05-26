@@ -54,15 +54,14 @@ export default function DashboardPage() {
             className="absolute -top-20 -right-20 h-64 w-64 rounded-full bg-white/10 blur-3xl"
           />
           <div className="relative">
-            <p className="text-sm text-white/80 uppercase tracking-wider font-medium">
-              Painel · Sprint 1
+            <p className="text-xs uppercase tracking-[0.2em] text-white/70 font-medium">
+              Painel inicial
             </p>
-            <h2 className="mt-2 text-2xl sm:text-3xl font-semibold leading-tight">
+            <h2 className="mt-3 text-2xl sm:text-3xl font-semibold leading-tight">
               {saudacao}, {primeiroNome}.
             </h2>
-            <p className="mt-2 text-sm text-white/80 max-w-md">
-              Seu painel está em construção. As métricas dos módulos aparecerão aqui
-              conforme forem entregues.
+            <p className="mt-3 text-sm text-white/80 max-w-md leading-relaxed">
+              Os indicadores dos módulos vão aparecer aqui conforme as funcionalidades forem liberadas.
             </p>
           </div>
         </section>

@@ -22,6 +22,7 @@ import type { LucideIcon } from "lucide-react";
 import { BrandMark } from "@/app/components/icons";
 import Spinner from "@/app/components/ui/Spinner";
 import { logout } from "@/app/lib/api";
+import { ThemeToggle } from "./ThemeToggle";
 
 type ModuleItem = {
   href: string;
@@ -143,7 +144,7 @@ function UserMenu({ collapsed }: UserMenuProps) {
         <Link
           href="/preferencias"
           title="Preferências"
-          className="p-2 rounded-lg text-text-muted hover:bg-surface-muted/60 hover:text-text transition-colors"
+          className="p-2 rounded-lg text-text-muted hover:bg-surface-muted hover:text-text transition-colors"
         >
           <SlidersHorizontal className="h-4 w-4" />
         </Link>
@@ -152,7 +153,7 @@ function UserMenu({ collapsed }: UserMenuProps) {
           onClick={handleLogout}
           disabled={leaving}
           title="Sair"
-          className="p-2 rounded-lg text-text-muted hover:bg-error-bg/60 hover:text-error-text transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="p-2 rounded-lg text-text-muted hover:bg-error-bg hover:text-error-text transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {leaving ? (
             <Spinner className="h-4 w-4 animate-spin" />
@@ -177,10 +178,10 @@ function UserMenu({ collapsed }: UserMenuProps) {
           </p>
         </div>
       </div>
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1">
         <Link
           href="/preferencias"
-          className="flex-1 inline-flex items-center justify-center gap-1.5 h-8 px-2 rounded-lg text-xs text-text-muted hover:bg-surface-muted/60 hover:text-text transition-colors"
+          className="flex-1 inline-flex items-center justify-center gap-1.5 h-8 px-2 rounded-lg text-xs text-text-muted hover:bg-surface-muted hover:text-text transition-colors"
         >
           <SlidersHorizontal className="h-3.5 w-3.5" />
           <span>Preferências</span>
@@ -189,7 +190,7 @@ function UserMenu({ collapsed }: UserMenuProps) {
           type="button"
           onClick={handleLogout}
           disabled={leaving}
-          className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-lg text-xs text-text-muted hover:bg-error-bg/60 hover:text-error-text transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-lg text-xs text-text-muted hover:bg-error-bg hover:text-error-text transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {leaving ? (
             <Spinner className="h-3.5 w-3.5 animate-spin" />
@@ -303,6 +304,16 @@ export function Sidebar() {
           </li>
         ))}
       </ul>
+
+      <div
+        className={`shrink-0 ${
+          collapsed
+            ? "px-2 py-2 flex justify-center"
+            : "px-3 py-2 flex justify-end"
+        }`}
+      >
+        <ThemeToggle collapsed={collapsed} />
+      </div>
 
       <UserMenu collapsed={collapsed} />
     </div>

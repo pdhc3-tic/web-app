@@ -9,7 +9,7 @@ type AppShellProps = {
 
 export function AppShell({ sidebar, children }: AppShellProps) {
   return (
-    <div className="min-h-screen bg-bg">
+    <div className="min-h-screen">
       <SkipLinks />
 
       <aside className="hidden md:flex fixed top-0 left-0 h-screen w-[var(--sidebar-width)] flex-col z-10 transition-[width] duration-200 shadow-[1px_0_0_0_color-mix(in_srgb,var(--color-border)_50%,transparent)]">
@@ -29,7 +29,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
         </main>
         <footer className="px-6 py-4">
           <p className="text-micro font-mono text-text-muted/60 text-center">
-            Ecossistema PDHC III · Sprint 1
+            Ecossistema PDHC III
           </p>
         </footer>
       </div>
