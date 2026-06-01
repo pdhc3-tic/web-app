@@ -16,7 +16,7 @@ from apps.core.services.permissions import (
     user_territories,
 )
 
-logger = logging.getLogger("apps.core.permissions")
+logger = logging.getLogger(__name__)
 
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 
@@ -67,6 +67,13 @@ class IsUGP(BasePermission):
 
     def has_object_permission(self, request: Request, view: APIView, obj: Any) -> bool:
         return self.has_permission(request, view)
+
+
+class IsSuperAdminOrUGPReadOnly(IsSuperAdmin):
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        if request.method in SAFE_METHODS:
+            return user_has_role(request.user, "super-admin") or user_has_role(request.user, "ugp")
+        return super().has_permission(request, view)
 
 
 class IsArticuladorEstadual(BasePermission):

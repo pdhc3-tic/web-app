@@ -4,6 +4,7 @@ from django.db.models.signals import post_save, post_delete, pre_save
 from django.dispatch import receiver
 
 from apps.core.models.audit_log import AuditLog
+from apps.core.services.audit import log_audit
 
 # ---------------------------------------------------------------------------
 # Contexto de thread — preenchido pelo AuditContextMiddleware
@@ -135,7 +136,7 @@ def handle_post_save(sender, instance, created, **kwargs):
     valores_anteriores = getattr(instance, "_audit_valores_anteriores", {})
     valores_novos = _serialize(instance)
 
-    AuditLog.objects.create(
+    log_audit(
         user=ctx["user"],
         acao="CREATE" if created else "UPDATE",
         modulo=_get_modulo(instance),
@@ -158,7 +159,7 @@ def handle_post_delete(sender, instance, **kwargs):
 
     ctx = get_audit_context()
 
-    AuditLog.objects.create(
+    log_audit(
         user=ctx["user"],
         acao="DELETE",
         modulo=_get_modulo(instance),

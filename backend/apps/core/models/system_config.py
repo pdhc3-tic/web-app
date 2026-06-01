@@ -66,9 +66,9 @@ def audit_system_config_update(sender, instance, created, **kwargs):
     if old_valor == instance.valor:
         return
 
-    from .audit_log import AuditLog
+    from apps.core.services.audit import log_audit
 
-    AuditLog.objects.create(
+    log_audit(
         user=instance.atualizado_por,
         acao="system_config_update",
         modulo="core",
