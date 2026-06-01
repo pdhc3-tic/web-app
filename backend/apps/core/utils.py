@@ -29,3 +29,10 @@ def get_config(chave, default=None):
 
     cache.set(cache_key, result, timeout=300)
     return result
+
+
+def get_client_ip(request) -> str:
+    ip = request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", ""))
+    if ip and "," in ip:
+        ip = ip.split(",")[0].strip()
+    return ip

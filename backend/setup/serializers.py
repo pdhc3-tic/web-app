@@ -2,8 +2,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, Toke
 
 from rest_framework import serializers
 from apps.core.models.user import User
-from apps.core.models.role import Role
-from apps.core.models.territory import Territory
+from apps.core.serializers import RoleSummarySerializer, TerritorySummarySerializer
 
 import hashlib
 import secrets
@@ -12,9 +11,9 @@ from datetime import timedelta
 from django.utils import timezone
 from apps.core.models.password_reset_token import PasswordResetToken
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
-from apps.core.models.audit_log import AuditLog
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from apps.core.services.audit import log_audit
 
 
 class LoginSerializer(TokenObtainPairSerializer):
@@ -50,16 +49,8 @@ class LogoutSerializer(TokenBlacklistSerializer):
         attrs["refresh"] = attrs.pop("refresh_token")
         return super().validate(attrs)
     
-class RoleSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Role
-        fields = ["id", "slug", "nome"]
-
-
-class TerritorySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Territory
-        fields = ["id", "nome", "estados"]
+RoleSerializer = RoleSummarySerializer
+TerritorySerializer = TerritorySummarySerializer
 
 
 class UserMeSerializer(serializers.ModelSerializer):
@@ -173,7 +164,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         ip = self.context.get("ip") or None  
 
         # Registra o evento no AuditLog
-        AuditLog.objects.create(
+        log_audit(
             user=user,
             acao="password_reset",
             modulo="core",

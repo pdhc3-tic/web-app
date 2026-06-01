@@ -7,6 +7,7 @@ from .models import Role, State, Territory, Municipality, Organization
 from .models.notifications import Notification
 from apps.core.models.audit_log import AuditLog
 from .models.system_config import SystemConfig, TipoConfiguracao
+from .services.users import create_user, update_user
 
 User = get_user_model()
 
@@ -97,6 +98,12 @@ class RoleSerializer(serializers.ModelSerializer):
         fields = ['id', 'nome', 'slug', 'descricao', 'ativo', 'criado_em']
         read_only_fields = ['criado_em']
 
+
+class RoleSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Role
+        fields = ["id", "slug", "nome"]
+
 class StateSerializer(serializers.ModelSerializer):
     class Meta:
         model = State
@@ -106,6 +113,12 @@ class TerritorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Territory
         fields = ['id', 'nome', 'estados', 'articulador', 'ativo']
+
+
+class TerritorySummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Territory
+        fields = ["id", "nome", "estados"]
 
 class MunicipalitySerializer(serializers.ModelSerializer):
     class Meta:
@@ -199,38 +212,10 @@ class UserDetailSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
-        territorios = validated_data.pop("territorios", [])
-        password = validated_data.pop("password", None)
-        role = validated_data.pop("role", None)
-        user = User(**validated_data)
-        if password:
-            user.set_password(password)
-        if role is not None:
-            user.role = role
-        user.save()
-        if territorios:
-            user.territorios.set(territorios)
-        return user
+        return create_user(user_model=User, validated_data=validated_data)
 
     def update(self, instance, validated_data):
-        territorios = validated_data.pop("territorios", None)
-        password = validated_data.pop("password", None)
-        role = validated_data.pop("role", None)
-
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-
-        if password:
-            instance.set_password(password)
-        if role is not None:
-            instance.role = role
-
-        instance.save()
-
-        if territorios is not None:
-            instance.territorios.set(territorios)
-
-        return instance
+        return update_user(user=instance, validated_data=validated_data)
 
 
 class NotificationSerializer(serializers.ModelSerializer):
