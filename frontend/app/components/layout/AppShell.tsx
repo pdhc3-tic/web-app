@@ -9,10 +9,10 @@ type AppShellProps = {
 
 export function AppShell({ sidebar, children }: AppShellProps) {
   return (
-    <div className="min-h-screen bg-bg">
+    <div className="min-h-screen">
       <SkipLinks />
 
-      <aside className="hidden md:flex fixed top-0 left-0 h-screen w-60 bg-surface border-r border-border flex-col z-10">
+      <aside className="hidden md:flex fixed top-0 left-0 h-screen w-[var(--sidebar-width)] flex-col z-10 transition-[width] duration-200 shadow-[1px_0_0_0_color-mix(in_srgb,var(--color-border)_50%,transparent)]">
         <nav
           id="main-nav"
           aria-label="Navegação principal"
@@ -22,21 +22,21 @@ export function AppShell({ sidebar, children }: AppShellProps) {
         </nav>
       </aside>
 
-      <div className="md:ml-60 flex flex-col min-h-screen">
+      <div className="md:ml-[var(--sidebar-width)] flex flex-col min-h-screen transition-[margin-left] duration-200">
         <Header />
         <main id="main-content" className="flex-1 p-6 pb-20 md:pb-6">
           {children}
         </main>
-        <footer className="border-t border-border bg-surface px-6 py-3">
-          <p className="text-micro font-mono text-text-muted text-center">
-            Ecossistema PDHC III · Sprint 1
+        <footer className="px-6 py-4">
+          <p className="text-micro font-mono text-text-muted/60 text-center">
+            Ecossistema PDHC III
           </p>
         </footer>
       </div>
 
       <nav
         aria-label="Navegação principal (móvel)"
-        className="md:hidden fixed bottom-0 left-0 right-0 h-14 bg-surface border-t border-border flex items-center justify-center z-10"
+        className="md:hidden fixed bottom-0 left-0 right-0 h-14 bg-surface/80 backdrop-blur-md flex items-center justify-center z-10 shadow-[0_-1px_0_0_color-mix(in_srgb,var(--color-border)_60%,transparent)]"
       >
         <p className="text-micro font-mono text-text-muted">
           Bottom nav placeholder · sprint do SCA

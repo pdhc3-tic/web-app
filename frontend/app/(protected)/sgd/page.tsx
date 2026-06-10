@@ -1,11 +1,19 @@
-"use client";
+import { FileText } from "lucide-react";
+import { ModulePlaceholder } from "@/app/components/layout/ModulePlaceholder";
 
 export default function SGDPage() {
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900 flex items-center justify-center">
-      <h1 className="text-4xl font-bold text-emerald-700 dark:text-emerald-400">
-        SGD — Sistema de Gestão de Demandas
-      </h1>
-    </div>
+    <ModulePlaceholder
+      shortName="SGD"
+      fullName="Sistema de Gestão de Demandas"
+      Icon={FileText}
+      description="Acompanhamento de pedidos, ordens e demandas geradas pelas equipes em campo e pelas instâncias gestoras do PDHC III."
+      features={[
+        "Cadastro e rastreamento de demandas por território",
+        "Workflow de aprovação por instância",
+        "Notificações de prazo e status",
+        "Integração com o SGE para conversão em atividades",
+      ]}
+    />
   );
 }
