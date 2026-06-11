@@ -4,6 +4,7 @@ from unittest.mock import patch
 from django.core.cache import cache
 from apps.core.tests.factories import UserFactory
 from apps.core.models.login_attempt import LoginAttempt
+from apps.core.throttling import (PasswordResetByEmailThrottle, LoginRateThrottle )
 from rest_framework_simplejwt.tokens import RefreshToken
 
 
@@ -24,9 +25,25 @@ def usuario():
     return UserFactory()
 
 
-#########################################################
-## LoginRateThrottle — limite de 5/min por IP no login ##
-#########################################################
+def test_custom_window_rate_throttle_parseia_janela_de_5_minutos():
+    throttle = PasswordResetByEmailThrottle()
+
+    assert throttle.parse_rate("5/5min") == (5, 300)
+    assert throttle.parse_rate("10/5min") == (10, 300)
+    assert throttle.parse_rate("3/5min") == (3, 300)
+
+
+def test_password_reset_email_throttle_normaliza_email():
+    request = type("Request", (), {"data": {"email": " Usuario@Example.COM "}})()
+
+    cache_key = PasswordResetByEmailThrottle().get_cache_key(request, None)
+
+    assert cache_key == "throttle_auth_password_reset_email_usuario@example.com"
+
+
+##########################################################
+## LoginRateThrottle — limite de 5/5min por IP no login ##
+##########################################################
 
 @pytest.mark.django_db
 def test_login_throttle_bloqueia_apos_limite(client, usuario):
@@ -64,13 +81,89 @@ def test_login_throttle_resposta_padronizada(client, usuario):
 def test_refresh_throttle_bloqueia_apos_limite(client, usuario):    
     refresh = RefreshToken.for_user(usuario)
 
-    for _ in range(5):
+    for _ in range(10):
         client.post("/api/v1/auth/token/refresh/", {
             "refresh_token": "token-invalido",
         })
 
     response = client.post("/api/v1/auth/token/refresh/", {
         "refresh_token": str(refresh),
+    })
+    assert response.status_code == 429
+
+
+@pytest.mark.django_db
+def test_refresh_throttle_nao_bloqueia_login(client, usuario):
+    for _ in range(10):
+        client.post("/api/v1/auth/token/refresh/", {
+            "refresh_token": "token-invalido",
+        })
+
+    response = client.post("/api/v1/auth/login/", {
+        "email": usuario.email,
+        "senha": "senha123",
+    })
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_login_throttle_nao_bloqueia_refresh(client, usuario):
+    refresh = RefreshToken.for_user(usuario)
+
+    for _ in range(5):
+        client.post("/api/v1/auth/login/", {
+            "email": usuario.email,
+            "senha": "senha-errada",
+        })
+
+    response = client.post("/api/v1/auth/token/refresh/", {
+        "refresh_token": str(refresh),
+    })
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_login_throttle_nao_bloqueia_password_reset_request(client, usuario):
+    for _ in range(5):
+        client.post("/api/v1/auth/login/", {
+            "email": usuario.email,
+            "senha": "senha-errada",
+        })
+
+    with patch("setup.views.send_email_notification.delay"):
+        response = client.post("/api/v1/auth/password-reset/request/", {
+            "email": usuario.email,
+        })
+    assert response.status_code == 202
+
+
+@pytest.mark.django_db
+def test_login_throttle_nao_bloqueia_password_reset_confirm(client, usuario):
+    for _ in range(5):
+        client.post("/api/v1/auth/login/", {
+            "email": usuario.email,
+            "senha": "senha-errada",
+        })
+
+    response = client.post("/api/v1/auth/password-reset/confirm/", {
+        "token": "token-inexistente",
+        "nova_senha": "NovaSenha123",
+    })
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_password_reset_confirm_throttle_bloqueia_apos_limite(client):
+    for _ in range(3):
+        response = client.post("/api/v1/auth/password-reset/confirm/", {
+            "token": "token-inexistente",
+            "nova_senha": "NovaSenha123",
+        })
+        assert response.status_code == 400
+
+    response = client.post("/api/v1/auth/password-reset/confirm/", {
+        "token": "token-inexistente",
+        "nova_senha": "NovaSenha123",
     })
     assert response.status_code == 429
 
@@ -162,3 +255,9 @@ def test_login_attempt_ip_via_forwarded_for(client, usuario):
     )
     tentativa = LoginAttempt.objects.get(email=usuario.email)
     assert tentativa.ip == "203.0.113.5"
+
+def test_custom_window_rate_throttle_gera_cache_key_por_ip():
+    request = type("request", (), {"META": {"REMOTE_ADDR": "127.0.0.1"}})()
+    cache_key = LoginRateThrottle().get_cache_key(request, None)
+
+    assert cache_key == "throttle_auth_login_127.0.0.1" 
