@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { BrandMark } from "@/app/components/icons";
-import Spinner from "@/app/components/ui/Spinner";
+import Spinner from "@/app/components/icons/Spinner";
 import { logout } from "@/app/lib/api";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -91,7 +91,7 @@ function SidebarItem({ item, active, collapsed }: SidebarItemProps) {
       className={`${base} ${layout} ${state}`}
     >
       <Icon
-        className="h-[18px] w-[18px] shrink-0 transition-transform group-hover:scale-105"
+        className="h-4.5 w-4.5 shrink-0 transition-transform group-hover:scale-105"
         strokeWidth={active ? 2 : 1.75}
       />
       {!collapsed && <span className="flex-1 truncate">{label}</span>}
@@ -131,7 +131,7 @@ function UserMenu({ collapsed }: UserMenuProps) {
   ) : (
     <div
       aria-hidden="true"
-      className="h-9 w-9 rounded-full bg-gradient-to-br from-primary to-secondary text-surface text-xs font-medium flex items-center justify-center shadow-md shadow-primary/20 shrink-0"
+      className="h-9 w-9 rounded-full bg-linear-to-br from-primary to-secondary text-surface text-xs font-medium flex items-center justify-center shadow-md shadow-primary/20 shrink-0"
     >
       {iniciais}
     </div>
@@ -289,7 +289,7 @@ export function Sidebar() {
         ) : (
           <li
             aria-hidden="true"
-            className="px-3 pt-5 pb-1.5 text-[10px] font-medium uppercase tracking-[0.18em] text-text-muted/70"
+            className="px-3 pt-5 pb-1.5 text-micro font-medium uppercase tracking-[0.18em] text-text-muted/70"
           >
             Módulos
           </li>

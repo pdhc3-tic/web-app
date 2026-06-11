@@ -240,13 +240,13 @@ export function Select({
       {name && <input type="hidden" name={name} value={value ?? ""} />}
 
       {open && (
-        <div className="absolute top-[calc(100%+var(--space-1))] left-0 right-0 z-30 flex flex-col max-h-[280px] bg-surface border border-border rounded-md shadow-md overflow-hidden">
+        <div className="absolute top-[calc(100%+var(--space-1))] left-0 right-0 z-30 flex flex-col max-h-70 bg-surface border border-border rounded-md shadow-md overflow-hidden">
           {showSearch && (
             <div className="p-2 border-b border-border bg-surface">
               <input
                 ref={searchRef}
                 type="text"
-                className="w-full h-[30px] px-2 text-label text-text bg-surface-muted border border-border rounded-sm outline-none focus:border-primary focus:bg-surface"
+                className="w-full h-7.5 px-2 text-label text-text bg-surface-muted border border-border rounded-sm outline-none focus:border-primary focus:bg-surface"
                 placeholder="Buscar..."
                 value={query}
                 onChange={(e) => {

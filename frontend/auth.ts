@@ -1,6 +1,7 @@
 import NextAuth, { type DefaultSession } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import type { JWT } from "@auth/core/jwt";
+import { CredentialsSignin } from "@auth/core/errors";
 import type { Perfil, Territorio } from "@/app/lib/auth/types";
 
 // API_INTERNAL_URL é usado server-side (ex: dentro do container Docker, http://backend:8000).
@@ -88,30 +89,63 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
     Credentials({
       /*
-       * O login real (POST /api/v1/auth/login/) acontece no cliente (login/page.tsx),
-       * que tem acesso total ao body da resposta (401 {code, message}, 429 Retry-After).
-       * O authorize() recebe os tokens já validados e só busca os dados do usuário.
+       * O authorize() chama POST /api/v1/auth/login/ diretamente, server-side,
+       * usando a URL interna (API_INTERNAL_URL). Os tokens JWT nunca chegam ao
+       * browser. Erros são comunicados ao cliente via CredentialsSignin.code.
        */
       credentials: {
-        access: { label: "Access token", type: "text" },
-        refresh: { label: "Refresh token", type: "text" },
+        email: { label: "E-mail", type: "email" },
+        password: { label: "Senha", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.access || !credentials?.refresh) return null;
+        const email = (credentials?.email as string) ?? "";
+        const password = (credentials?.password as string) ?? "";
+        if (!email || !password) return null;
 
-        const access = credentials.access as string;
-        const refresh = credentials.refresh as string;
+        // 1. Autentica no Django
+        let loginRes: Response;
+        try {
+          loginRes = await fetch(`${BASE_URL}/api/v1/auth/login/`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, senha: password }),
+          });
+        } catch {
+          const err = new CredentialsSignin();
+          err.code = "network_error";
+          throw err;
+        }
 
-        // Busca dados completos do usuário
+        if (loginRes.status === 429) {
+          let retryAfter = 60;
+          try {
+            const body: { retry_after?: number } = await loginRes.json();
+            retryAfter = body.retry_after ?? 60;
+          } catch { /* usa o padrão */ }
+          const err = new CredentialsSignin();
+          err.code = `rate_limited:${retryAfter}`;
+          throw err;
+        }
+
+        if (!loginRes.ok) {
+          const err = new CredentialsSignin();
+          err.code = "invalid_credentials";
+          throw err;
+        }
+
+        const tokens: { access_token: string; refresh_token: string } =
+          await loginRes.json();
+
+        // 2. Busca dados completos do usuário
         let id = "";
         let nome_completo = "";
-        let email = "";
+        let userEmail = "";
         let foto_url = "";
         let perfis: Perfil[] = [];
         let territorios: Territorio[] = [];
         try {
           const meRes = await fetch(`${BASE_URL}/api/v1/auth/me/`, {
-            headers: { Authorization: `Bearer ${access}` },
+            headers: { Authorization: `Bearer ${tokens.access_token}` },
           });
           if (meRes.ok) {
             const me: {
@@ -124,7 +158,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             } = await meRes.json();
             id = me.id.toString();
             nome_completo = me.nome_completo;
-            email = me.email;
+            userEmail = me.email;
             foto_url = me.foto_url;
             perfis = me.perfis;
             territorios = me.territorios;
@@ -136,12 +170,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         return {
           id,
           nome_completo,
-          email,
+          email: userEmail,
           foto_url,
           perfis,
           territorios,
-          accessToken: access,
-          refreshToken: refresh,
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
         };
       },
     }),

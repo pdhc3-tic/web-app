@@ -9,3 +9,7 @@ export {
   DashboardCardIcon,
   type DashboardCardIconName,
 } from "./DashboardCardIcon";
+export { XIcon } from "./XIcon";
+export { AlertCircleIcon } from "./AlertCircleIcon";
+export { ChevronLeftIcon } from "./ChevronLeftIcon";
+export { DocumentIcon } from "./DocumentIcon";
