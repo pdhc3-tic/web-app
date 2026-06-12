@@ -2,6 +2,8 @@ import factory
 from apps.core.models import User
 from apps.core.models.role import Role
 from apps.core.models.territory import Territory
+from apps.core.models.state import State
+from apps.core.models.municipality import Municipality
 from apps.core.models.user_profile import UserProfile
 from apps.core.models.audit_log import AuditLog
 from apps.core.models.notifications import Notification, NotificationPreference, TipoNotificacao, StatusNotificacao
@@ -87,11 +89,29 @@ class NotificationPreferenceFactory(factory.django.DjangoModelFactory):
     canal = TipoNotificacao.EMAIL
     ativo = True
 
+class StateFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = State
+        django_get_or_create = ("sigla",)
+
+    sigla = factory.Sequence(lambda n: f"{chr(65 + (n // 26) % 26)}{chr(65 + n % 26)}")
+    nome = factory.Sequence(lambda n: f"Estado {n}")
+
+
+class MunicipalityFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Municipality
+
+    nome = factory.Sequence(lambda n: f"Município {n}")
+    state = factory.SubFactory(StateFactory)
+
+
 class OrganizationFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = "core.Organization"
 
     nome = factory.Sequence(lambda n: f"Organização {n}")
     cnpj = factory.Sequence(lambda n: f"{n:014d}")
-    tipo = "associacao"
+    tipo = "ASSOCIACAO"
+    municipio = factory.SubFactory(MunicipalityFactory)
     ativa = True

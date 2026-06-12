@@ -1,0 +1,125 @@
+db  | The files belonging to this database system will be owned by user "postgres".
+db  | This user must also own the server process.
+db  | 
+db  | The database cluster will be initialized with locale "en_US.utf8".
+db  | The default database encoding has accordingly been set to "UTF8".
+db  | The default text search configuration will be set to "english".
+db  | 
+db  | Data page checksums are disabled.
+db  | 
+db  | fixing permissions on existing directory /var/lib/postgresql/data ... ok
+db  | creating subdirectories ... ok
+db  | selecting dynamic shared memory implementation ... posix
+db  | selecting default max_connections ... 100
+db  | selecting default shared_buffers ... 128MB
+db  | selecting default time zone ... Etc/UTC
+db  | creating configuration files ... ok
+db  | running bootstrap script ... ok
+db  | performing post-bootstrap initialization ... ok
+redis  | 1:C 12 Jun 2026 17:29:45.008 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+redis  | 1:C 12 Jun 2026 17:29:45.008 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+redis  | 1:C 12 Jun 2026 17:29:45.008 * Redis version=7.4.8, bits=64, commit=00000000, modified=0, pid=1, just started
+redis  | 1:C 12 Jun 2026 17:29:45.008 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+redis  | 1:M 12 Jun 2026 17:29:45.008 * Increased maximum number of open files to 10032 (it was originally set to 1024).
+redis  | 1:M 12 Jun 2026 17:29:45.008 * monotonic clock: POSIX clock_gettime
+redis  | 1:M 12 Jun 2026 17:29:45.009 * Running mode=standalone, port=6379.
+redis  | 1:M 12 Jun 2026 17:29:45.009 * Server initialized
+redis  | 1:M 12 Jun 2026 17:29:45.009 * Ready to accept connections tcp
+db     | initdb: warning: enabling "trust" authentication for local connections
+db     | initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+db     | syncing data to disk ... ok
+db     | 
+db     | 
+db     | Success. You can now start the database server using:
+db     | 
+db     |     pg_ctl -D /var/lib/postgresql/data -l logfile start
+db     | 
+db     | waiting for server to start....2026-06-12 17:29:46.038 UTC [48] LOG:  starting PostgreSQL 16.13 (Debian 16.13-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+db     | 2026-06-12 17:29:46.048 UTC [48] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+db     | 2026-06-12 17:29:46.071 UTC [51] LOG:  database system was shut down at 2026-06-12 17:29:45 UTC
+db     | 2026-06-12 17:29:46.079 UTC [48] LOG:  database system is ready to accept connections
+db     |  done
+db     | server started
+db     | CREATE DATABASE
+db     | 
+db     | 
+db     | /usr/local/bin/docker-entrypoint.sh: running /docker-entrypoint-initdb.d/01_app_user.sql
+db     | CREATE ROLE
+db     | GRANT
+db     | REVOKE
+db     | REVOKE
+db     | GRANT
+db     | GRANT
+db     | GRANT
+db     | ALTER DEFAULT PRIVILEGES
+db     | ALTER DEFAULT PRIVILEGES
+db     | 
+db     | 
+db     | waiting for server to shut down...2026-06-12 17:29:46.297 UTC [48] LOG:  received fast shutdown request
+db     | .2026-06-12 17:29:46.302 UTC [48] LOG:  aborting any active transactions
+db     | 2026-06-12 17:29:46.304 UTC [48] LOG:  background worker "logical replication launcher" (PID 54) exited with exit code 1
+db     | 2026-06-12 17:29:46.307 UTC [49] LOG:  shutting down
+db     | 2026-06-12 17:29:46.316 UTC [49] LOG:  checkpoint starting: shutdown immediate
+db     | 2026-06-12 17:29:46.514 UTC [49] LOG:  checkpoint complete: wrote 938 buffers (5.7%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.062 s, sync=0.110 s, total=0.208 s; sync files=308, longest=0.016 s, average=0.001 s; distance=4280 kB, estimate=4280 kB; lsn=0/1920AC8, redo lsn=0/1920AC8
+db     | 2026-06-12 17:29:46.519 UTC [48] LOG:  database system is shut down
+db     |  done
+db     | server stopped
+db     | 
+db     | PostgreSQL init process complete; ready for start up.
+db     | 
+db     | 2026-06-12 17:29:46.623 UTC [1] LOG:  starting PostgreSQL 16.13 (Debian 16.13-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+db     | 2026-06-12 17:29:46.624 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+db     | 2026-06-12 17:29:46.624 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+db     | 2026-06-12 17:29:46.637 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+db     | 2026-06-12 17:29:46.654 UTC [66] LOG:  database system was shut down at 2026-06-12 17:29:46 UTC
+db     | 2026-06-12 17:29:46.668 UTC [1] LOG:  database system is ready to accept connections
+backend.  | Watching for file changes with StatReloader
+backend.  | Performing system checks...
+backend.  | 
+backend.  | System check identified no issues (0 silenced).
+backend.  | 
+backend.  | You have 38 unapplied migration(s). Your project may not work properly until you apply the migrations for app(s): core, django_celery_beat, sessions, token_blacklist.
+backend.  | Run 'python manage.py migrate' to apply them.
+backend.  | June 12, 2026 - 14:29:56
+backend.  | Django version 6.0.4, using settings 'setup.settings'
+backend.  | Starting development server at http://0.0.0.0:8000/
+db        | 2026-06-12 17:29:54.172 UTC [79] ERROR:  relation "django_celery_beat_crontabschedule" does not exist at character 335
+db        | 2026-06-12 17:29:54.172 UTC [79] STATEMENT:  SELECT DISTINCT "django_celery_beat_crontabschedule"."timezone" AS "timezone", "django_celery_beat_crontabschedule"."month_of_year", "django_celery_beat_crontabschedule"."day_of_month", "django_celery_beat_crontabschedule"."day_of_week", "django_celery_beat_crontabschedule"."hour", "django_celery_beat_crontabschedule"."minute" FROM "django_celery_beat_crontabschedule" ORDER BY "django_celery_beat_crontabschedule"."month_of_year" ASC, "django_celery_beat_crontabschedule"."day_of_month" ASC, "django_celery_beat_crontabschedule"."day_of_week" ASC, "django_celery_beat_crontabschedule"."hour" ASC, "django_celery_beat_crontabschedule"."minute" ASC, 1 ASC
+db        | 2026-06-12 17:29:57.364 UTC [90] ERROR:  relation "django_celery_beat_clockedschedule" does not exist at character 1128
+db        | 2026-06-12 17:29:57.364 UTC [90] STATEMENT:  SELECT "django_celery_beat_periodictask"."id", "django_celery_beat_periodictask"."name", "django_celery_beat_periodictask"."task", "django_celery_beat_periodictask"."interval_id", "django_celery_beat_periodictask"."crontab_id", "django_celery_beat_periodictask"."solar_id", "django_celery_beat_periodictask"."clocked_id", "django_celery_beat_periodictask"."args", "django_celery_beat_periodictask"."kwargs", "django_celery_beat_periodictask"."queue", "django_celery_beat_periodictask"."exchange", "django_celery_beat_periodictask"."routing_key", "django_celery_beat_periodictask"."headers", "django_celery_beat_periodictask"."priority", "django_celery_beat_periodictask"."expires", "django_celery_beat_periodictask"."expire_seconds", "django_celery_beat_periodictask"."one_off", "django_celery_beat_periodictask"."start_time", "django_celery_beat_periodictask"."enabled", "django_celery_beat_periodictask"."last_run_at", "django_celery_beat_periodictask"."total_run_count", "django_celery_beat_periodictask"."date_changed", "django_celery_beat_periodictask"."description" FROM "django_celery_beat_periodictask" LEFT OUTER JOIN "django_celery_beat_clockedschedule" ON ("django_celery_beat_periodictask"."clocked_id" = "django_celery_beat_clockedschedule"."id") WHERE ("django_celery_beat_periodictask"."enabled" AND NOT ((("django_celery_beat_clockedschedule"."clocked_time" > '2026-06-12T14:34:57.351914-03:00'::timestamptz AND "django_celery_beat_clockedschedule"."clocked_time" IS NOT NULL AND "django_celery_beat_periodictask"."clocked_id" IS NOT NULL) OR ("django_celery_beat_periodictask"."crontab_id" IS NOT NULL AND "django_celery_beat_periodictask"."crontab_id" IN (SELECT U0."id" AS "id" FROM "django_celery_beat_crontabschedule" U0 WHERE (U0."hour" IN ('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '00', '01', '02', '03', '04', '05', '06', '07', '08', '09') AND NOT ((U0."hour")::integer IN (15, 16, 17, 18, 19, 4)))) AND "django_celery_beat_periodictask"."crontab_id" IS NOT NULL))))
+db        | 2026-06-12 17:30:16.664 UTC [108] ERROR:  null value in column "user_agent" of relation "core_auditlog" violates not-null constraint
+db        | 2026-06-12 17:30:16.664 UTC [108] DETAIL:  Failing row contains (1, password_reset_completed, core, User, 99, {}, {}, null, null, 2026-06-12 17:30:16.663973+00, null).
+db        | 2026-06-12 17:30:16.664 UTC [108] STATEMENT:  INSERT INTO "core_auditlog" ("user_id", "acao", "modulo", "entidade", "entidade_id", "valores_anteriores", "valores_novos", "user_agent", "ip", "timestamp") VALUES (NULL, 'password_reset_completed', 'core', 'User', '99', '{}'::jsonb, '{}'::jsonb, NULL, NULL, '2026-06-12T17:30:16.663973+00:00'::timestamptz) RETURNING "core_auditlog"."id"
+db        | 2026-06-12 17:30:18.308 UTC [108] ERROR:  null value in column "user_agent" of relation "core_auditlog" violates not-null constraint
+backend.  | Quit the server with CONTROL-C.
+db        | 2026-06-12 17:30:18.308 UTC [108] DETAIL:  Failing row contains (2, system_config_updated, core, SystemConfig, 12, {"valor": "5"}, {"valor": "10"}, null, null, 2026-06-12 17:30:18.307755+00, null).
+backend.  | 
+db        | 2026-06-12 17:30:18.308 UTC [108] STATEMENT:  INSERT INTO "core_auditlog" ("user_id", "acao", "modulo", "entidade", "entidade_id", "valores_anteriores", "valores_novos", "user_agent", "ip", "timestamp") VALUES (NULL, 'system_config_updated', 'core', 'SystemConfig', '12', '{"valor": "5"}'::jsonb, '{"valor": "10"}'::jsonb, NULL, NULL, '2026-06-12T17:30:18.307755+00:00'::timestamptz) RETURNING "core_auditlog"."id"
+db        | 2026-06-12 17:30:22.609 UTC [64] LOG:  checkpoint starting: immediate force wait
+backend.  | WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+backend.  | For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+backend.  | /app/apps/core/signals/audit.py changed, reloading.
+db        | 2026-06-12 17:30:22.846 UTC [64] LOG:  checkpoint complete: wrote 276 buffers (1.7%); 1 WAL file(s) added, 0 removed, 0 recycled; write=0.026 s, sync=0.085 s, total=0.238 s; sync files=288, longest=0.009 s, average=0.001 s; distance=6826 kB, estimate=6826 kB; lsn=0/1FCB568, redo lsn=0/1FCB530
+backend.  | Watching for file changes with StatReloader
+backend.  | Performing system checks...
+backend.  | 
+backend.  | System check identified no issues (0 silenced).
+backend.  | June 12, 2026 - 14:33:04
+backend.  | Django version 6.0.4, using settings 'setup.settings'
+backend.  | Starting development server at http://0.0.0.0:8000/
+backend.  | Quit the server with CONTROL-C.
+backend.  | 
+backend.  | WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+backend.  | For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
+backend.  | /app/apps/core/services/audit.py changed, reloading.
+backend.  | Watching for file changes with StatReloader
+backend.  | Performing system checks...
+backend.  | 
+backend.  | System check identified no issues (0 silenced).
+backend.  | June 12, 2026 - 14:33:12
+backend.  | Django version 6.0.4, using settings 'setup.settings'
+backend.  | Starting development server at http://0.0.0.0:8000/
+backend.  | Quit the server with CONTROL-C.
+backend.  | 
+backend.  | WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+backend.  | For more information on production servers see: https://docs.djangoproject.com/en/6.0/howto/deployment/
