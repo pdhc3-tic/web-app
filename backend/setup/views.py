@@ -124,7 +124,7 @@ def password_reset_request(request):
     # SÓ ENVIA E-MAIL SE ENCONTROU O USUÁRIO
     if result is not None:
         token_raw, user = result
-        link = f"{settings.FRONTEND_BASE_URL}/redefinir-senha?token={token_raw}"
+        link = f"{settings.FRONTEND_BASE_URL}/redefinir-senha#token={token_raw}"
         send_email_notification.delay(
             subject="Redefinição de senha — PDHC",
             message=f"Clique no link para redefinir sua senha:\n\n{link}\n\nO link expira em 24 horas.",

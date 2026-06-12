@@ -64,6 +64,9 @@ def test_request_envia_email_usuario_ativo(client, usuario):
             "email": usuario.email,
         })
     mock_send.assert_called_once()
+    message = mock_send.call_args.kwargs["message"]
+    assert "/redefinir-senha#token=" in message
+    assert "/redefinir-senha?token=" not in message
 
 ################################################
 ##  testes endpoint /password-reset/confirm/  ##
