@@ -2,8 +2,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, Toke
 
 from rest_framework import serializers
 from apps.core.models.user import User
-from apps.core.models.role import Role
-from apps.core.models.territory import Territory
+from apps.core.serializers import RoleSummarySerializer, TerritorySummarySerializer
 
 import hashlib
 import secrets
@@ -12,7 +11,6 @@ from datetime import timedelta
 from django.utils import timezone
 from apps.core.models.password_reset_token import PasswordResetToken
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
-from apps.core.models.audit_log import AuditLog
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 
@@ -50,22 +48,10 @@ class LogoutSerializer(TokenBlacklistSerializer):
         attrs["refresh"] = attrs.pop("refresh_token")
         return super().validate(attrs)
     
-class RoleSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Role
-        fields = ["id", "slug", "nome"]
-
-
-class TerritorySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Territory
-        fields = ["id", "nome", "estados"]
-
-
 class UserMeSerializer(serializers.ModelSerializer):
     nome_completo = serializers.CharField(source="nome")
-    perfis = serializers.SerializerMethodField()#RoleSerializer(source="role", many=False)
-    territorios = TerritorySerializer(many=True)
+    perfis = serializers.SerializerMethodField()
+    territorios = TerritorySummarySerializer(many=True)
     permissoes_resumo = serializers.SerializerMethodField()
     ultimo_login = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%SZ")
 
@@ -87,7 +73,7 @@ class UserMeSerializer(serializers.ModelSerializer):
     def get_perfis(self, obj):
         if obj.role is None:
             return []
-        return [RoleSerializer(obj.role).data]
+        return [RoleSummarySerializer(obj.role).data]
 
     def get_permissoes_resumo(self, obj):
         return sorted(obj.get_all_permissions())
@@ -170,18 +156,19 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
             BlacklistedToken.objects.get_or_create(token=token)
 
         # string vazia vira None (campo aceita null)
-        ip = self.context.get("ip") or None  
+        request = self.context.get("request") or None
 
         # Registra o evento no AuditLog
-        AuditLog.objects.create(
+        from apps.core.services.audit import log_audit
+        log_audit(
             user=user,
-            acao="password_reset",
+            acao="password_reset_completed",
             modulo="core",
             entidade="User",
-            entidade_id=str(user.pk),
+            entidade_id=user.pk,
             valores_anteriores={},
             valores_novos={"email": user.email},
-            ip=ip,
+            request=request,
         )
 
         return user
