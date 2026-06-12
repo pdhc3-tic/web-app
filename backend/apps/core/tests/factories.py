@@ -101,9 +101,11 @@ class StateFactory(factory.django.DjangoModelFactory):
 class MunicipalityFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = Municipality
+        django_get_or_create = ("codigo_ibge",)
 
     nome = factory.Sequence(lambda n: f"Município {n}")
     state = factory.SubFactory(StateFactory)
+    codigo_ibge = factory.Sequence(lambda n: f"{2400000 + n:07d}")
 
 
 class OrganizationFactory(factory.django.DjangoModelFactory):
