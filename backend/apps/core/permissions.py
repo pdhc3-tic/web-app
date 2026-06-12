@@ -175,3 +175,13 @@ class IsOwnerOrReadOnly(BasePermission):
 
         _log_denial(request.user, view, obj, reason="usuario nao e o criador do objeto")
         return False
+
+
+class IsSuperAdminOrUGPReadOnly(IsSuperAdmin):
+    """Super-admin tem acesso total; UGP tem acesso apenas a métodos seguros (GET, HEAD, OPTIONS)."""
+
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        if request.method in SAFE_METHODS:
+            return user_has_role(request.user, "super-admin") or user_has_role(request.user, "ugp")
+        return super().has_permission(request, view)
+
