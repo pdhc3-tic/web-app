@@ -86,3 +86,12 @@ class NotificationPreferenceFactory(factory.django.DjangoModelFactory):
     tipo_evento = "nova_visita"
     canal = TipoNotificacao.EMAIL
     ativo = True
+
+class OrganizationFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = "core.Organization"
+
+    nome = factory.Sequence(lambda n: f"Organização {n}")
+    cnpj = factory.Sequence(lambda n: f"{n:014d}")
+    tipo = "associacao"
+    ativa = True

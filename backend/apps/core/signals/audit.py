@@ -3,7 +3,7 @@ from django.forms.models import model_to_dict
 from django.db.models.signals import post_save, post_delete, pre_save
 from django.dispatch import receiver
 
-from apps.core.models.audit_log import AuditLog
+from apps.core.services.audit import log_audit
 
 # ---------------------------------------------------------------------------
 # Contexto de thread — preenchido pelo AuditContextMiddleware
@@ -127,6 +127,7 @@ def handle_post_save(sender, instance, created, **kwargs):
         return
 
     # Evita loop infinito — AuditLog não audita a si mesmo
+    from apps.core.models.audit_log import AuditLog
     if sender is AuditLog:
         return
 
@@ -135,16 +136,16 @@ def handle_post_save(sender, instance, created, **kwargs):
     valores_anteriores = getattr(instance, "_audit_valores_anteriores", {})
     valores_novos = _serialize(instance)
 
-    AuditLog.objects.create(
+    log_audit(
         user=ctx["user"],
         acao="CREATE" if created else "UPDATE",
         modulo=_get_modulo(instance),
         entidade=_get_model_name(instance),
-        entidade_id=str(instance.pk),
+        entidade_id=instance.pk,
         valores_anteriores={} if created else valores_anteriores,
         valores_novos=valores_novos,
-        ip=ctx["ip"],
-        user_agent=ctx["user_agent"],
+        _ip=ctx["ip"],
+        _user_agent=ctx["user_agent"],
     )
 
 
@@ -153,19 +154,20 @@ def handle_post_delete(sender, instance, **kwargs):
     if sender not in AUDITED_MODELS:
         return
 
+    from apps.core.models.audit_log import AuditLog
     if sender is AuditLog:
         return
 
     ctx = get_audit_context()
 
-    AuditLog.objects.create(
+    log_audit(
         user=ctx["user"],
         acao="DELETE",
         modulo=_get_modulo(instance),
         entidade=_get_model_name(instance),
-        entidade_id=str(instance.pk),
+        entidade_id=instance.pk,
         valores_anteriores=_serialize(instance),
         valores_novos={},
-        ip=ctx["ip"],
-        user_agent=ctx["user_agent"],
+        _ip=ctx["ip"],
+        _user_agent=ctx["user_agent"],
     )
