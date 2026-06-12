@@ -43,13 +43,13 @@ def log_audit(
     from apps.core.models.audit_log import AuditLog
 
     ip = None
-    user_agent = None
+    user_agent = ""
     if request is not None:
         ip = get_client_ip(request)
-        user_agent = request.META.get("HTTP_USER_AGENT", "") or None
+        user_agent = request.META.get("HTTP_USER_AGENT", "") or ""
     else:
         ip = _ip or None
-        user_agent = _user_agent or None
+        user_agent = _user_agent or ""
 
     authenticated_user = user if (user is not None and getattr(user, "is_authenticated", False)) else None
 

@@ -109,9 +109,6 @@ def handle_pre_save(sender, instance, **kwargs):
     if sender not in AUDITED_MODELS:
         return
 
-    if sender is AuditLog:
-        return
-
     if instance.pk:
         try:
             anterior = sender.objects.get(pk=instance.pk)

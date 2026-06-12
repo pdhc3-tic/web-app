@@ -47,7 +47,7 @@ class TestLogAudit:
         )
 
         assert log.ip is None
-        assert log.user_agent is None
+        assert log.user_agent == ""
 
     def test_unauthenticated_user_is_stored_as_none(self):
         """Usuário anônimo (is_authenticated=False) é gravado como NULL."""
