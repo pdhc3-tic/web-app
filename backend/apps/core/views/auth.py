@@ -1,13 +1,14 @@
-from rest_framework.decorators import api_view, permission_classes, throttle_classes
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.response import Response
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView, TokenBlacklistView
-from .serializers import LoginSerializer, RefreshSerializer, LogoutSerializer, UserMeSerializer, PasswordResetRequestSerializer, PasswordResetConfirmSerializer
-from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
-from rest_framework import status
-from django.conf import settings
-from setup.tasks import send_email_notification
 import logging
+
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+from rest_framework_simplejwt.views import TokenBlacklistView, TokenObtainPairView, TokenRefreshView
+
 from apps.core.models.login_attempt import LoginAttempt
 from apps.core.throttling import (
     LoginRateThrottle,
@@ -16,26 +17,26 @@ from apps.core.throttling import (
     PasswordResetConfirmThrottle,
     RefreshRateThrottle,
 )
-from django.contrib.auth import get_user_model
+from apps.core.utils import get_client_ip
+from setup.serializers import (
+    LoginSerializer,
+    LogoutSerializer,
+    PasswordResetConfirmSerializer,
+    PasswordResetRequestSerializer,
+    RefreshSerializer,
+    UserMeSerializer,
+)
+from setup.tasks import send_email_notification
+
 
 logger = logging.getLogger(__name__)
 
-def get_client_ip(request):
-    ip = request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", ""))
-    if ip and "," in ip:
-        ip = ip.split(",")[0].strip()
-    return ip
 
 class LoginView(TokenObtainPairView):
     serializer_class = LoginSerializer
     throttle_classes = [LoginRateThrottle]
 
     def throttled(self, request, wait):
-        """
-        Sobrescreve o hook do DRF chamado antes de levantar Throttled.
-        Grava o LoginAttempt com RATE_LIMITED de forma não-bloqueante —
-        falha aqui nunca impede o 429 de ser retornado ao cliente.
-        """
         ip = get_client_ip(request)
         email = request.data.get("email", "")
         try:
@@ -45,8 +46,8 @@ class LoginView(TokenObtainPairView):
                 sucesso=False,
                 motivo_falha=LoginAttempt.MotivFalha.RATE_LIMITED,
             )
-        except Exception as e:
-            logger.error(f"Erro ao gravar LoginAttempt (RATE_LIMITED): {e}")
+        except Exception as exc:
+            logger.error("Erro ao gravar LoginAttempt (RATE_LIMITED): %s", exc)
         super().throttled(request, wait)
 
     def post(self, request, *args, **kwargs):
@@ -58,15 +59,13 @@ class LoginView(TokenObtainPairView):
             response.data["access_token"] = response.data.pop("access")
             response.data["refresh_token"] = response.data.pop("refresh")
 
-            # Grava tentativa bem sucedida
             try:
                 LoginAttempt.objects.create(email=email, ip=ip, sucesso=True)
-            except Exception as e:
-                logger.error(f"Erro ao gravar LoginAttempt: {e}")
+            except Exception as exc:
+                logger.error("Erro ao gravar LoginAttempt: %s", exc)
 
             return response
         except Exception as exc:
-            # Identifica o motivo da falha            
             User = get_user_model()
 
             if not email or "@" not in email:
@@ -78,15 +77,15 @@ class LoginView(TokenObtainPairView):
                     if not user.ativo:
                         motivo = LoginAttempt.MotivFalha.INACTIVE_USER
                 except User.DoesNotExist:
-                    motivo = LoginAttempt.MotivFalha.INVALID_CREDENTIALS            
+                    motivo = LoginAttempt.MotivFalha.INVALID_CREDENTIALS
 
-            # Grava tentativa com falha
             try:
                 LoginAttempt.objects.create(email=email, ip=ip, sucesso=False, motivo_falha=motivo)
-            except Exception as e:
-                logger.error(f"Erro ao gravar LoginAttempt: {e}")
+            except Exception as log_exc:
+                logger.error("Erro ao gravar LoginAttempt: %s", log_exc)
 
-            raise exc        
+            raise exc
+
 
 class RefreshView(TokenRefreshView):
     serializer_class = RefreshSerializer
@@ -97,7 +96,8 @@ class RefreshView(TokenRefreshView):
         response.data["access_token"] = response.data.pop("access")
         response.data["refresh_token"] = response.data.pop("refresh")
         return response
-    
+
+
 class LogoutView(TokenBlacklistView):
     serializer_class = LogoutSerializer
 
@@ -107,7 +107,8 @@ class LogoutView(TokenBlacklistView):
 def me(request):
     serializer = UserMeSerializer(request.user)
     return Response(serializer.data)
-    
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def logout_all(request):
@@ -115,6 +116,7 @@ def logout_all(request):
     for token in tokens:
         BlacklistedToken.objects.get_or_create(token=token)
     return Response(status=status.HTTP_200_OK)
+
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -124,7 +126,6 @@ def password_reset_request(request):
     serializer.is_valid(raise_exception=True)
     result = serializer.save()
 
-    # SÓ ENVIA E-MAIL SE ENCONTROU O USUÁRIO
     if result is not None:
         token_raw, user = result
         link = f"{settings.FRONTEND_BASE_URL}/redefinir-senha?token={token_raw}"
@@ -139,12 +140,12 @@ def password_reset_request(request):
         status=status.HTTP_202_ACCEPTED,
     )
 
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
 @throttle_classes([PasswordResetConfirmThrottle])
 def password_reset_confirm(request):
-    ip = get_client_ip(request)
-    serializer = PasswordResetConfirmSerializer(data=request.data, context={"ip": ip})
+    serializer = PasswordResetConfirmSerializer(data=request.data, context={"request": request})
     serializer.is_valid(raise_exception=True)
     serializer.save()
     return Response(

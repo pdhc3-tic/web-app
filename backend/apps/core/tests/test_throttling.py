@@ -12,7 +12,7 @@ from apps.core.throttling import (
     RefreshRateThrottle,
 )
 from rest_framework_simplejwt.tokens import RefreshToken
-from setup.views import LoginView, RefreshView, password_reset_confirm, password_reset_request
+from apps.core.views.auth import LoginView, RefreshView, password_reset_confirm, password_reset_request
 
 
 @pytest.fixture(autouse=True)
@@ -155,7 +155,7 @@ def test_login_throttle_nao_bloqueia_password_reset_request(client, usuario):
             "senha": "senha-errada",
         })
 
-    with patch("setup.views.send_email_notification.delay"):
+    with patch("apps.core.views.auth.send_email_notification.delay"):
         response = client.post("/api/v1/auth/password-reset/request/", {
             "email": usuario.email,
         })
@@ -181,7 +181,7 @@ def test_login_throttle_nao_bloqueia_password_reset_confirm(client, usuario):
 def test_password_reset_request_throttle_por_email_nao_bloqueia_login_e_refresh(client, usuario):
     refresh = RefreshToken.for_user(usuario)
 
-    with patch("setup.views.send_email_notification.delay"):
+    with patch("apps.core.views.auth.send_email_notification.delay"):
         for _ in range(3):
             response = client.post("/api/v1/auth/password-reset/request/", {
                 "email": usuario.email,
@@ -205,7 +205,7 @@ def test_password_reset_request_throttle_por_ip_nao_bloqueia_login_e_refresh(cli
     refresh = RefreshToken.for_user(usuario)
     client.defaults["REMOTE_ADDR"] = "10.0.0.1"
 
-    with patch("setup.views.send_email_notification.delay"):
+    with patch("apps.core.views.auth.send_email_notification.delay"):
         for i in range(5):
             response = client.post("/api/v1/auth/password-reset/request/", {
                 "email": f"diferente{i}@example.com",
@@ -254,7 +254,7 @@ def test_refresh_throttle_nao_bloqueia_password_reset_request_e_confirm(client, 
             "refresh_token": "token-invalido",
         })
 
-    with patch("setup.views.send_email_notification.delay"):
+    with patch("apps.core.views.auth.send_email_notification.delay"):
         response = client.post("/api/v1/auth/password-reset/request/", {
             "email": usuario.email,
         })

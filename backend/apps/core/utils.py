@@ -1,5 +1,13 @@
 import json
 
+
+def get_client_ip(request) -> str | None:
+    """Retorna o IP real do cliente, respeitando proxies reversos."""
+    ip = request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", ""))
+    if ip and "," in ip:
+        ip = ip.split(",")[0].strip()
+    return ip or None
+
 from django.core.cache import cache
 
 from apps.core.models.system_config import SystemConfig, TipoConfiguracao
