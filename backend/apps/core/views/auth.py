@@ -10,7 +10,13 @@ from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, Ou
 from rest_framework_simplejwt.views import TokenBlacklistView, TokenObtainPairView, TokenRefreshView
 
 from apps.core.models.login_attempt import LoginAttempt
-from apps.core.throttling import LoginRateThrottle
+from apps.core.throttling import (
+    LoginRateThrottle,
+    PasswordResetByEmailThrottle,
+    PasswordResetByIPThrottle,
+    PasswordResetConfirmThrottle,
+    RefreshRateThrottle,
+)
 from apps.core.utils import get_client_ip
 from setup.serializers import (
     LoginSerializer,
@@ -21,7 +27,6 @@ from setup.serializers import (
     UserMeSerializer,
 )
 from setup.tasks import send_email_notification
-from setup.throttles import PasswordResetByEmailThrottle, PasswordResetByIPThrottle
 
 
 logger = logging.getLogger(__name__)
@@ -84,7 +89,7 @@ class LoginView(TokenObtainPairView):
 
 class RefreshView(TokenRefreshView):
     serializer_class = RefreshSerializer
-    throttle_classes = [LoginRateThrottle]
+    throttle_classes = [RefreshRateThrottle]
 
     def post(self, request, *args, **kwargs):
         response = super().post(request, *args, **kwargs)
@@ -115,7 +120,7 @@ def logout_all(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
-@throttle_classes([LoginRateThrottle, PasswordResetByIPThrottle, PasswordResetByEmailThrottle])
+@throttle_classes([PasswordResetByIPThrottle, PasswordResetByEmailThrottle])
 def password_reset_request(request):
     serializer = PasswordResetRequestSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
@@ -138,7 +143,7 @@ def password_reset_request(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
-@throttle_classes([LoginRateThrottle])
+@throttle_classes([PasswordResetConfirmThrottle])
 def password_reset_confirm(request):
     serializer = PasswordResetConfirmSerializer(data=request.data, context={"request": request})
     serializer.is_valid(raise_exception=True)
