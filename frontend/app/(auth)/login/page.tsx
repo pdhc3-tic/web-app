@@ -4,9 +4,8 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import Link from "next/link";
-import Spinner from "@/app/components/ui/Spinner";
-
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import Spinner from "@/app/components/icons/Spinner";
+import { AlertCircleIcon } from "@/app/components/icons";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -65,51 +64,33 @@ function LoginForm() {
     setGlobalError(null);
 
     startTransition(async () => {
-      let res: Response;
-      try {
-        res = await fetch(`${BASE_URL}/api/v1/auth/login/`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, senha: password }),
-        });
-      } catch {
-        setGlobalError(
-          "Não foi possível conectar ao servidor. Tente novamente.",
-        );
-        return;
-      }
-
-      if (res.status === 429) {
-        const retryHeader = res.headers.get("Retry-After");
-        const seconds = retryHeader ? parseInt(retryHeader, 10) : 60;
-        setRetryAfter(isNaN(seconds) ? 60 : seconds);
-        return;
-      }
-
-      if (!res.ok) {
-        try {
-          const body: { code?: string; message?: string; detail?: string } =
-            await res.json();
-          setGlobalError(
-            body.message ?? body.detail ?? "Usuário ou senha inválidos.",
-          );
-        } catch {
-          setGlobalError("Usuário ou senha inválidos.");
-        }
-        return;
-      }
-
-      const tokens: { access_token: string; refresh_token: string } =
-        await res.json();
-
       const result = await signIn("credentials", {
-        access: tokens.access_token,
-        refresh: tokens.refresh_token,
+        email,
+        password,
         redirect: false,
       });
 
       if (result?.error) {
-        setGlobalError("Erro ao iniciar sessão. Tente novamente.");
+        let code = "";
+        try {
+          if (result.url) {
+            code =
+              new URL(result.url, window.location.origin).searchParams.get(
+                "code",
+              ) ?? "";
+          }
+        } catch { /* ignora URL inválida */ }
+
+        if (code.startsWith("rate_limited:")) {
+          const seconds = parseInt(code.split(":")[1], 10);
+          setRetryAfter(isNaN(seconds) ? 60 : seconds);
+        } else if (code === "network_error") {
+          setGlobalError(
+            "Não foi possível conectar ao servidor. Tente novamente.",
+          );
+        } else {
+          setGlobalError("Usuário ou senha inválidos.");
+        }
         return;
       }
 
@@ -154,18 +135,7 @@ function LoginForm() {
           aria-live="polite"
           className="mb-6 flex items-start gap-2 rounded-lg bg-error-bg/60 px-3.5 py-2.5"
         >
-          <svg
-            className="mt-0.5 h-4 w-4 shrink-0 text-error-text"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path
-              fillRule="evenodd"
-              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-              clipRule="evenodd"
-            />
-          </svg>
+          <AlertCircleIcon className="mt-0.5 h-4 w-4 shrink-0 text-error-text" />
           <p className="text-sm text-error-text">
             {retryAfter > 0
               ? `Muitas tentativas. Tente novamente em ${retryAfter} segundo${retryAfter !== 1 ? "s" : ""}.`
@@ -238,7 +208,7 @@ function LoginForm() {
         <button
           type="submit"
           disabled={isBlocked}
-          className="mt-3 h-12 rounded-lg bg-gradient-to-br from-primary to-secondary text-white text-sm font-medium tracking-wide flex items-center justify-center gap-2 transition-all hover:shadow-lg hover:shadow-primary/25 active:shadow-md disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-none"
+          className="mt-3 h-12 rounded-lg bg-linear-to-br from-primary to-secondary text-white text-sm font-medium tracking-wide flex items-center justify-center gap-2 transition-all hover:shadow-lg hover:shadow-primary/25 active:shadow-md disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-none"
         >
           {pending ? (
             <>

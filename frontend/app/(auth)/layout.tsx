@@ -55,13 +55,13 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
           </p>
         </div>
 
-        <p className="relative text-[11px] tracking-[0.2em] uppercase text-white/35 font-medium">
+        <p className="relative text-2xs tracking-[0.2em] uppercase text-white/35 font-medium">
           Ecossistema PDHC III
         </p>
       </aside>
 
       <main className="flex items-center justify-center px-6 py-12 lg:px-16">
-        <div className="w-full max-w-[420px]">
+        <div className="w-full max-w-105">
           <div className="lg:hidden flex items-center justify-center gap-2 mb-10 text-primary">
             <svg
               viewBox="0 0 24 24"

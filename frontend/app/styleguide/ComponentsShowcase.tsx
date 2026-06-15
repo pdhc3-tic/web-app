@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Badge, BadgeStatus } from "../components/ui/Badge/Badge";
 import { Button } from "../components/ui/Button/Button";
 import { Input } from "../components/ui/Input/Input";
 import { Select } from "../components/ui/Select/Select";
 import { Textarea } from "../components/ui/Textarea/Textarea";
-import { ArrowRightIcon, PlusIcon } from "../components/icons";
+import { ArrowRightIcon, DocumentIcon, PlusIcon } from "../components/icons";
+import { SlideOver } from "../components/ui/SlideOver/SlideOver";
 
 const BADGE_STATUSES: BadgeStatus[] = [
   "planejado",
@@ -61,6 +62,14 @@ export function ComponentsShowcase() {
   const [formObs, setFormObs] = useState("");
   const [formTerritorio, setFormTerritorio] = useState("");
   const [formSubmitted, setFormSubmitted] = useState(false);
+
+  // ── Estados para demos do SlideOver ────────────────────────────────────────
+  const [openView, setOpenView] = useState(false);
+  const [openEdit, setOpenEdit] = useState(false);
+  const [openTabs, setOpenTabs] = useState(false);
+  const [activeTab, setActiveTab] = useState(0);
+  const [editDesc, setEditDesc] = useState("Mobilização comunitária no semiárido");
+  const [editTerr, setEditTerr] = useState("bahia");
 
   return (
     <>
@@ -281,6 +290,185 @@ export function ComponentsShowcase() {
             </p>
           )}
         </form>
+      </section>
+
+      {/* ── 14 · SlideOver ── */}
+      <section>
+        <SectionTitle>14 · SlideOver — Painel de Detalhe</SectionTitle>
+        <p className="text-sm text-text-muted mb-5">
+          Componente base reutilizável para todos os módulos. Anima da direita (250 ms
+          ease-out). Esc fecha e devolve foco à origem.{" "}
+          <code className="font-mono text-xs bg-surface-muted px-1 py-0.5 rounded">aria-modal=&quot;false&quot;</code>
+          {" "}— não bloqueia foco (padrão inline).
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <Button variant="secondary" onClick={() => setOpenView(true)}>
+            Visualização (leitura)
+          </Button>
+          <Button variant="secondary" onClick={() => setOpenEdit(true)}>
+            Edição (formulário + rodapé)
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => { setActiveTab(0); setOpenTabs(true); }}
+          >
+            Com abas internas
+          </Button>
+        </div>
+
+        {/* Demo 1: Modo visualização */}
+        <SlideOver
+          open={openView}
+          onClose={() => setOpenView(false)}
+          title="Família Pereira — UPF #042"
+          badge={<Badge status="em-andamento" />}
+          breadcrumb="SGP / Unidades Produtivas / #042"
+          actions={
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => { setOpenView(false); setOpenEdit(true); }}
+            >
+              Editar
+            </Button>
+          }
+        >
+          <div className="p-5 space-y-5">
+            <dl className="grid grid-cols-[auto_1fr] items-baseline gap-x-6 gap-y-3 text-sm">
+              {([
+                ["Responsável", "João Pereira"],
+                ["Município", "Petrolina – PE"],
+                ["Território", "Vale do São Francisco"],
+                ["Área total", "3,2 ha"],
+                ["Atividade principal", "Apicultura"],
+                ["Data de cadastro", "12 mar 2026"],
+                ["Status", "Em acompanhamento ativo"],
+              ] as [string, string][]).map(([label, value]) => (
+                <Fragment key={label}>
+                  <dt className="text-text-muted whitespace-nowrap">{label}</dt>
+                  <dd className="text-text font-medium">{value}</dd>
+                </Fragment>
+              ))}
+            </dl>
+            <div className="rounded-md bg-surface-muted border border-border p-4 text-sm text-text-muted leading-relaxed">
+              <p className="font-medium text-text mb-1">Observações</p>
+              Família cadastrada no PRONAF. Prioridade alta para visita técnica no
+              próximo ciclo. Última visita realizada em fevereiro de 2026.
+            </div>
+          </div>
+        </SlideOver>
+
+        {/* Demo 2: Modo edição (formulário + rodapé) */}
+        <SlideOver
+          open={openEdit}
+          onClose={() => setOpenEdit(false)}
+          title="Editar Atividade — #015"
+          badge={<Badge status="agendado" />}
+          breadcrumb="SGE / Atividades / #015"
+          width="wide"
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setOpenEdit(false)}>Cancelar</Button>
+              <Button variant="primary" onClick={() => setOpenEdit(false)}>Salvar alterações</Button>
+            </div>
+          }
+        >
+          <div className="p-5 space-y-4">
+            <Input
+              label="Descrição"
+              value={editDesc}
+              onChange={(e) => setEditDesc(e.target.value)}
+              required
+            />
+            <Select
+              label="Território"
+              options={TERRITORIOS}
+              value={editTerr}
+              onChange={setEditTerr}
+              required
+              placeholder="Selecione"
+            />
+            <div className="grid grid-cols-2 gap-4">
+              <Input label="Data de início" type="date" defaultValue="2026-06-10" />
+              <Input label="Data de término" type="date" defaultValue="2026-06-12" />
+            </div>
+            <Textarea
+              label="Observações"
+              placeholder="Informações complementares..."
+              helperText="Opcional."
+            />
+          </div>
+        </SlideOver>
+
+        {/* Demo 3: Com abas internas */}
+        <SlideOver
+          open={openTabs}
+          onClose={() => setOpenTabs(false)}
+          title="Demanda #128 — Regularização fundiária"
+          badge={<Badge status="em-andamento" />}
+          breadcrumb="SGD / Demandas / #128"
+          actions={<Button variant="secondary" size="sm">Editar</Button>}
+          tabs={
+            <div className="flex px-2">
+              {(["Detalhes", "Histórico", "Documentos"] as const).map((tab, i) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveTab(i)}
+                  className={[
+                    "px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors duration-120",
+                    activeTab === i
+                      ? "border-primary text-primary"
+                      : "border-transparent text-text-muted hover:text-text hover:border-border",
+                  ].join(" ")}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+          }
+        >
+          {activeTab === 0 && (
+            <div className="p-5">
+              <dl className="grid grid-cols-[auto_1fr] items-baseline gap-x-6 gap-y-3 text-sm">
+                {([
+                  ["Beneficiário", "Maria da Conceição Silva"],
+                  ["Tipo", "Regularização fundiária"],
+                  ["Território", "Sertão do São Francisco"],
+                  ["Prioridade", "Alta"],
+                  ["Abertura", "02 mai 2026"],
+                  ["Responsável técnico", "Ana Paula Ramos"],
+                ] as [string, string][]).map(([label, value]) => (
+                  <Fragment key={label}>
+                    <dt className="text-text-muted whitespace-nowrap">{label}</dt>
+                    <dd className="text-text font-medium">{value}</dd>
+                  </Fragment>
+                ))}
+              </dl>
+            </div>
+          )}
+          {activeTab === 1 && (
+            <ul className="divide-y divide-border">
+              {[
+                { data: "20 mai 2026", texto: "Demanda encaminhada para análise jurídica." },
+                { data: "15 mai 2026", texto: "Documentação complementar recebida pela equipe." },
+                { data: "07 mai 2026", texto: "Vistoria de campo realizada sem pendências." },
+                { data: "02 mai 2026", texto: "Demanda registrada no sistema pelo técnico responsável." },
+              ].map((item) => (
+                <li key={item.data} className="flex gap-4 px-5 py-3 text-sm">
+                  <span className="text-text-muted whitespace-nowrap tabular-nums">{item.data}</span>
+                  <span className="text-text">{item.texto}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {activeTab === 2 && (
+            <div className="flex flex-col items-center justify-center gap-3 py-16 text-text-muted">
+              <DocumentIcon className="h-10 w-10 opacity-40" />
+              <p className="text-sm">Nenhum documento anexado.</p>
+            </div>
+          )}
+        </SlideOver>
       </section>
     </>
   );

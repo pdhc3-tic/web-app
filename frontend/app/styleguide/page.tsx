@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ComponentsShowcase } from "./ComponentsShowcase";
+import { ChevronLeftIcon } from "../components/icons";
 
 if (process.env.NODE_ENV === "production") {
   notFound();
@@ -89,7 +90,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 function TokenLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-[10px] font-mono text-text-muted leading-tight">{children}</p>
+    <p className="text-micro font-mono text-text-muted leading-tight">{children}</p>
   );
 }
 
@@ -103,16 +104,14 @@ export default function StyleguidePage() {
         {/* header */}
         <header>
           <div className="flex items-center justify-between mb-3">
-            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-warning-bg text-warning-text text-[10px] font-medium uppercase tracking-wide border border-border">
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-warning-bg text-warning-text text-micro font-medium uppercase tracking-wide border border-border">
               Dev only · NODE_ENV = {process.env.NODE_ENV}
             </span>
             <Link
               href="/dashboard"
               className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-border bg-surface text-sm font-medium text-text hover:bg-surface-muted transition-colors"
             >
-              <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.75} aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10 12L6 8l4-4" />
-              </svg>
+              <ChevronLeftIcon className="h-3.5 w-3.5" />
               Dashboard
             </Link>
           </div>
@@ -167,7 +166,7 @@ export default function StyleguidePage() {
                   {s.label}
                 </p>
                 <p className={`text-sm ${s.text}`}>{s.sample}</p>
-                <p className="text-[10px] font-mono text-text-muted mt-2 opacity-70">{s.vars}</p>
+                <p className="text-micro font-mono text-text-muted mt-2 opacity-70">{s.vars}</p>
               </div>
             ))}
           </div>
@@ -228,7 +227,7 @@ export default function StyleguidePage() {
                 {["Super Admin", "Gestor Territorial", "Técnico", "Visualizador"].map((role) => (
                   <span
                     key={role}
-                    className="px-2 py-0.5 rounded-full bg-surface-muted border border-border text-[10px] font-medium uppercase tracking-wide text-text-muted"
+                    className="px-2 py-0.5 rounded-full bg-surface-muted border border-border text-micro font-medium uppercase tracking-wide text-text-muted"
                   >
                     {role}
                   </span>
@@ -284,7 +283,7 @@ export default function StyleguidePage() {
                   style={{ width: `var(${s.cssVar})`, height: `var(${s.cssVar})` }}
                 />
                 <TokenLabel>{s.label}</TokenLabel>
-                <p className="text-[10px] text-text-muted">{s.value}</p>
+                <p className="text-micro text-text-muted">{s.value}</p>
               </div>
             ))}
           </div>
