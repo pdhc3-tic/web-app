@@ -5,6 +5,8 @@ from rest_framework.test import APIClient
 
 from apps.core.tests.factories import UserFactory
 from apps.core.models.notifications import Notification, NotificationPreference
+from django.utils import timezone
+from datetime import timedelta
 
 
 @pytest.fixture
@@ -30,7 +32,7 @@ def _auth(client, user):
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.access_token}")
 
 
-def _create_notification(user, **kwargs):
+def _create_notification(user, enviado_em=None, **kwargs):
     """Helper para criar notificação."""
     defaults = {
         "user": user,
@@ -38,6 +40,7 @@ def _create_notification(user, **kwargs):
         "titulo": "Teste",
         "mensagem": "Mensagem de teste",
         "status": "pendente",
+        "enviado_em": enviado_em,
     }
     defaults.update(kwargs)
     return Notification.objects.create(**defaults)
@@ -167,9 +170,10 @@ def test_pagination_default_page_size_20(client, usuario):
 # ──────────────────────────────────────────────────────────────
 @pytest.mark.django_db
 def test_ordering_default_recent_first(client, usuario):
-    n1 = _create_notification(usuario, titulo="Primeira")
-    n2 = _create_notification(usuario, titulo="Segunda")
-    n3 = _create_notification(usuario, titulo="Terceira")
+    now = timezone.now()
+    n1 = _create_notification(usuario, titulo="Primeira", enviado_em=now)
+    n2 = _create_notification(usuario, titulo="Segunda", enviado_em=now + timedelta(seconds=1))
+    n3 = _create_notification(usuario, titulo="Terceira", enviado_em=now + timedelta(seconds=2))
 
     _auth(client, usuario)
     response = client.get("/api/v1/notifications/me/")

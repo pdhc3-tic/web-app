@@ -7,12 +7,15 @@ from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, Bl
 from rest_framework import status
 from django.conf import settings
 from setup.tasks import send_email_notification
-from setup.throttles import PasswordResetByIPThrottle, PasswordResetByEmailThrottle
-from rest_framework.throttling import AnonRateThrottle
 import logging
 from apps.core.models.login_attempt import LoginAttempt
-from apps.core.throttling import LoginRateThrottle
-from rest_framework.exceptions import AuthenticationFailed
+from apps.core.throttling import (
+    LoginRateThrottle,
+    PasswordResetByEmailThrottle,
+    PasswordResetByIPThrottle,
+    PasswordResetConfirmThrottle,
+    RefreshRateThrottle,
+)
 from django.contrib.auth import get_user_model
 
 logger = logging.getLogger(__name__)
@@ -87,7 +90,7 @@ class LoginView(TokenObtainPairView):
 
 class RefreshView(TokenRefreshView):
     serializer_class = RefreshSerializer
-    throttle_classes = [LoginRateThrottle]
+    throttle_classes = [RefreshRateThrottle]
 
     def post(self, request, *args, **kwargs):
         response = super().post(request, *args, **kwargs)
@@ -115,7 +118,7 @@ def logout_all(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
-@throttle_classes([LoginRateThrottle,PasswordResetByIPThrottle, PasswordResetByEmailThrottle])
+@throttle_classes([PasswordResetByIPThrottle, PasswordResetByEmailThrottle])
 def password_reset_request(request):
     serializer = PasswordResetRequestSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
@@ -138,7 +141,7 @@ def password_reset_request(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
-@throttle_classes([LoginRateThrottle])
+@throttle_classes([PasswordResetConfirmThrottle])
 def password_reset_confirm(request):
     ip = get_client_ip(request)
     serializer = PasswordResetConfirmSerializer(data=request.data, context={"ip": ip})
