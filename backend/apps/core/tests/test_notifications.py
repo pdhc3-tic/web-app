@@ -1,18 +1,10 @@
 import pytest
-from django.core.cache import cache
 from django.db import IntegrityError
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.core.tests.factories import UserFactory
 from apps.core.models.notifications import Notification, NotificationPreference
-
-
-@pytest.fixture(autouse=True)
-def limpa_cache():
-    cache.clear()
-    yield
-    cache.clear()
 
 
 @pytest.fixture

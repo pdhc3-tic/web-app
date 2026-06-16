@@ -1,38 +1,45 @@
 import pytest
 from rest_framework.test import APIClient
 
-from apps.core.models import Organization, Municipality, State, Territory, Role, User
+from apps.core.models import Organization
 from apps.core.models.user_profile import UserProfile
-from apps.core.tests.factories import RoleFactory, TerritoryFactory, UserFactory
+from apps.core.tests.factories import (
+    RoleFactory,
+    TerritoryFactory,
+    UserFactory,
+    StateFactory,
+    MunicipalityFactory,
+    OrganizationFactory,
+)
 
 pytestmark = pytest.mark.django_db
+
+
+# ──────────────────────────────────────────────────────────────
+# Constantes
+# ──────────────────────────────────────────────────────────────
+
+VALID_CNPJ = "11222333000181"   # CNPJ válido (verificável via algoritmo)
+VALID_CNPJ_2 = "11444777000161"  # Segundo CNPJ válido
 
 
 # ──────────────────────────────────────────────────────────────
 # Fixtures
 # ──────────────────────────────────────────────────────────────
 
-VALID_CNPJ = "11222333000181"  # CNPJ válido (verificável via algoritmo)
-VALID_CNPJ_2 = "11444777000161"  # Segundo CNPJ válido
-
-
 @pytest.fixture
 def state_rn():
-    return State.objects.get_or_create(sigla="RN", defaults={"nome": "Rio Grande do Norte"})[0]
+    return StateFactory(sigla="RN", nome="Rio Grande do Norte")
 
 
 @pytest.fixture
 def state_pb():
-    return State.objects.get_or_create(sigla="PB", defaults={"nome": "Paraíba"})[0]
+    return StateFactory(sigla="PB", nome="Paraíba")
 
 
 @pytest.fixture
 def municipality(state_rn):
-    return Municipality.objects.create(
-        nome="Mossoró",
-        state=state_rn,
-        codigo_ibge="2408003",
-    )
+    return MunicipalityFactory(nome="Mossoró", state=state_rn, codigo_ibge="2408003")
 
 
 @pytest.fixture
@@ -52,22 +59,22 @@ def territory_c():
 
 @pytest.fixture
 def role_super_admin():
-    return Role.objects.get_or_create(slug="super-admin", defaults={"nome": "Super Admin"})[0]
+    return RoleFactory(slug="super-admin", nome="Super Admin")
 
 
 @pytest.fixture
 def role_ugp():
-    return Role.objects.get_or_create(slug="ugp", defaults={"nome": "UGP"})[0]
+    return RoleFactory(slug="ugp", nome="UGP")
 
 
 @pytest.fixture
 def role_articulador():
-    return Role.objects.get_or_create(slug="articulador-estadual", defaults={"nome": "Articulador Estadual"})[0]
+    return RoleFactory(slug="articulador-estadual", nome="Articulador Estadual")
 
 
 @pytest.fixture
 def role_adt():
-    return Role.objects.get_or_create(slug="adt-acr", defaults={"nome": "ADT / ACR"})[0]
+    return RoleFactory(slug="adt-acr", nome="ADT / ACR")
 
 
 @pytest.fixture
@@ -164,7 +171,6 @@ class TestCreateOrganizationDuplicateCnpjReturns400:
         assert "Já existe uma organização cadastrada com este CNPJ" in str(response2.data)
 
 
-
 class TestOrganizationMultiTerritoryAssignment:
     """POST com territorios=[a, b, c] cria os três vínculos M2M."""
 
@@ -188,13 +194,9 @@ class TestSuperAdminSeesAllOrganizations:
     def test_super_admin_sees_all_organizations(
         self, super_admin_client, municipality, territory_a, territory_b
     ):
-        org1 = Organization.objects.create(
-            nome="OSC Alpha", cnpj=VALID_CNPJ, tipo="ASSOCIACAO", municipio=municipality
-        )
+        org1 = OrganizationFactory(nome="OSC Alpha", cnpj=VALID_CNPJ, tipo="ASSOCIACAO", municipio=municipality)
         org1.territorios.add(territory_a)
-        org2 = Organization.objects.create(
-            nome="OSC Beta", cnpj=VALID_CNPJ_2, tipo="COOPERATIVA", municipio=municipality
-        )
+        org2 = OrganizationFactory(nome="OSC Beta", cnpj=VALID_CNPJ_2, tipo="COOPERATIVA", municipio=municipality)
         org2.territorios.add(territory_b)
 
         response = super_admin_client.get(URL)
@@ -211,13 +213,13 @@ class TestArticuladorSeesOnlyOwnTerritoryOrganizations:
         self, articulador_client, municipality, territory_a, territory_b
     ):
         # OSC no território A (visível)
-        org_visible = Organization.objects.create(
+        org_visible = OrganizationFactory(
             nome="OSC Visível", cnpj=VALID_CNPJ, tipo="ASSOCIACAO", municipio=municipality
         )
         org_visible.territorios.add(territory_a)
 
         # OSC no território B (invisível para o articulador)
-        org_hidden = Organization.objects.create(
+        org_hidden = OrganizationFactory(
             nome="OSC Oculta", cnpj=VALID_CNPJ_2, tipo="FUNDACAO", municipio=municipality
         )
         org_hidden.territorios.add(territory_b)
@@ -234,9 +236,7 @@ class TestAdtCannotAccessOrganizations:
 
     def test_adt_cannot_access_organizations(self, adt_client, municipality, org_payload):
         # Cria OSC para testar PATCH e DELETE
-        org = Organization.objects.create(
-            nome="OSC ADT Test", cnpj=VALID_CNPJ, tipo="OUTRO", municipio=municipality
-        )
+        org = OrganizationFactory(nome="OSC ADT Test", cnpj=VALID_CNPJ, tipo="OUTRO", municipio=municipality)
 
         assert adt_client.get(URL).status_code == 403
         assert adt_client.post(URL, org_payload, format="json").status_code == 403
@@ -248,9 +248,7 @@ class TestSoftDeleteKeepsRecord:
     """DELETE marca ativa=False; OSC desaparece da listagem mas continua no banco."""
 
     def test_soft_delete_keeps_record(self, super_admin_client, municipality):
-        org = Organization.objects.create(
-            nome="OSC Soft Delete", cnpj=VALID_CNPJ, tipo="ASSOCIACAO", municipio=municipality
-        )
+        org = OrganizationFactory(nome="OSC Soft Delete", cnpj=VALID_CNPJ, tipo="ASSOCIACAO", municipio=municipality)
 
         # DELETE — soft delete
         response = super_admin_client.delete(f"{URL}{org.pk}/")
