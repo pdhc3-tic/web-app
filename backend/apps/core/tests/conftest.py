@@ -1,6 +1,18 @@
 import pytest
+from django.core.cache import cache
 from rest_framework.test import APIClient
 from apps.core.tests.factories import UserFactory, RoleFactory, TerritoryFactory
+
+
+# ──────────────────────────────────────────────────────────────
+# Cache — limpa antes e depois de cada teste para evitar
+# contaminação entre testes (LocMemCache persiste no processo).
+# ──────────────────────────────────────────────────────────────
+@pytest.fixture(autouse=True)
+def limpa_cache():
+    cache.clear()
+    yield
+    cache.clear()
 
 
 @pytest.fixture
@@ -33,6 +45,7 @@ def super_admin_user(db):
 def ugp_user(db):
     role = RoleFactory(slug="ugp", nome="UGP")
     return UserFactory(email="ugp@test.com", nome="UGP User", role=role)
+
 
 @pytest.fixture
 def adt_user(db):
