@@ -45,8 +45,8 @@ class LoginView(TokenObtainPairView):
                 sucesso=False,
                 motivo_falha=LoginAttempt.MotivFalha.RATE_LIMITED,
             )
-        except Exception as e:
-            logger.error(f"Erro ao gravar LoginAttempt (RATE_LIMITED): {e}")
+        except Exception as exc:
+            logger.error("Erro ao gravar LoginAttempt (RATE_LIMITED): %s", exc)
         super().throttled(request, wait)
 
     def post(self, request, *args, **kwargs):
@@ -61,8 +61,8 @@ class LoginView(TokenObtainPairView):
             # Grava tentativa bem sucedida
             try:
                 LoginAttempt.objects.create(email=email, ip=ip, sucesso=True)
-            except Exception as e:
-                logger.error(f"Erro ao gravar LoginAttempt: {e}")
+            except Exception as exc:
+                logger.error("Erro ao gravar LoginAttempt: %s", exc)
 
             return response
         except Exception as exc:
@@ -83,8 +83,8 @@ class LoginView(TokenObtainPairView):
             # Grava tentativa com falha
             try:
                 LoginAttempt.objects.create(email=email, ip=ip, sucesso=False, motivo_falha=motivo)
-            except Exception as e:
-                logger.error(f"Erro ao gravar LoginAttempt: {e}")
+            except Exception as exc:
+                logger.error("Erro ao gravar LoginAttempt: %s", exc)
 
             raise exc        
 

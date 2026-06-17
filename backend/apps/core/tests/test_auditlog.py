@@ -121,5 +121,4 @@ class TestAuditLogModel:
                 ORDER BY timestamp DESC
             """)
             explain = "\n".join(row[0] for row in cursor.fetchall())
-        print(f"INDICE = {explain}")
         assert "idx_auditlog_entidade_ts" in explain

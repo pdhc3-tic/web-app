@@ -1,13 +1,13 @@
 import logging
 
+from django.core.cache import cache
+from django.utils import timezone
 from django_filters import rest_framework as django_filters
 from rest_framework import filters, generics, status, viewsets
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.permissions import IsAuthenticated, SAFE_METHODS
 from rest_framework.response import Response
-from django.core.cache import cache
-from django.utils import timezone
 
 from .models import Role, State, Territory, Municipality, User, Organization
 from .models.audit_log import AuditLog
@@ -32,9 +32,8 @@ from .serializers import (
 
 from .services.permissions import user_has_role, user_territories
 from .throttling import NotificationUnreadCountThrottle
-from django_filters import rest_framework as django_filters
 
-logger = logging.getLogger("apps.core.views")
+logger = logging.getLogger(__name__)
 
 class RoleViewSet(viewsets.ModelViewSet):
     queryset = Role.objects.all()
