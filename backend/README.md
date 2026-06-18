@@ -2,6 +2,10 @@
 
 API REST do PDHC construída com Django 6, Django REST Framework e Celery.
 
+## Documentação
+
+- [Throttling da API](docs/throttling.md)
+
 ## Banco de Dados
 
 O PostgreSQL é inicializado com dois usuários:
