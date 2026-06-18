@@ -3,10 +3,10 @@ from django.conf import settings
 
 
 class UserProfile(models.Model):
-    user = models.OneToOneField(
+    user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="profile",
+        related_name="profiles",
     )
     perfil = models.ForeignKey(
         "core.Role",
