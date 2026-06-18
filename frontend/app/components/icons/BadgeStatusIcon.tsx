@@ -9,7 +9,9 @@ export type BadgeStatus =
   | "adiada"
   | "nao-realizada"
   | "cancelada"
-  | "atrasada";
+  | "atrasada"
+  | "ativo"
+  | "inativo";
 
 type BadgeStatusIconProps = {
   status: BadgeStatus;
@@ -93,6 +95,18 @@ export function BadgeStatusIcon({
         <svg {...common}>
           <circle cx="8" cy="8" r="6" />
           <path d="M8 5v3.5M8 11.25v.25" />
+        </svg>
+      );
+    case "ativo":
+      return (
+        <svg {...common}>
+          <circle cx="8" cy="8" r="3.25" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case "inativo":
+      return (
+        <svg {...common}>
+          <circle cx="8" cy="8" r="3.25" />
         </svg>
       );
   }
