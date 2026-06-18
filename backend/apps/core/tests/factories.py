@@ -33,6 +33,14 @@ class UserFactory(factory.django.DjangoModelFactory):
     senha = factory.PostGenerationMethodCall("set_password", "senha123")
     ativo = True
 
+    @factory.post_generation
+    def profiles(self, create, extracted, **kwargs):
+        if not create:
+            return
+        if extracted:
+            for perfil, territorio in extracted:
+                UserProfileFactory(user=self, perfil=perfil, territorio=territorio)
+
 
 class UserProfileFactory(factory.django.DjangoModelFactory):
     class Meta:
