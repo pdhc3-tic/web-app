@@ -19,6 +19,7 @@ from apps.core.throttling import (
 from django.contrib.auth import get_user_model
 
 logger = logging.getLogger(__name__)
+security_logger = logging.getLogger("security")
 
 def get_client_ip(request):
     ip = request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", ""))
@@ -38,6 +39,11 @@ class LoginView(TokenObtainPairView):
         """
         ip = get_client_ip(request)
         email = request.data.get("email", "")
+        security_logger.warning(
+            "auth.login_rate_limited ip=%s path=%s",
+            ip,
+            request.path,
+        )
         try:
             LoginAttempt.objects.create(
                 email=email,
@@ -64,6 +70,12 @@ class LoginView(TokenObtainPairView):
             except Exception as exc:
                 logger.error("Erro ao gravar LoginAttempt: %s", exc)
 
+            security_logger.info(
+                "auth.login_success ip=%s path=%s",
+                ip,
+                request.path,
+            )
+
             return response
         except Exception as exc:
             # Identifica o motivo da falha            
@@ -86,6 +98,13 @@ class LoginView(TokenObtainPairView):
             except Exception as exc:
                 logger.error("Erro ao gravar LoginAttempt: %s", exc)
 
+            security_logger.warning(
+                "auth.login_failed ip=%s path=%s reason=%s",
+                ip,
+                request.path,
+                motivo,
+            )
+
             raise exc        
 
 class RefreshView(TokenRefreshView):
@@ -93,13 +112,48 @@ class RefreshView(TokenRefreshView):
     throttle_classes = [RefreshRateThrottle]
 
     def post(self, request, *args, **kwargs):
-        response = super().post(request, *args, **kwargs)
+        try:
+            response = super().post(request, *args, **kwargs)
+        except Exception as exc:
+            security_logger.warning(
+                "auth.refresh_failed ip=%s path=%s error=%s",
+                get_client_ip(request),
+                request.path,
+                exc.__class__.__name__,
+            )
+            raise
         response.data["access_token"] = response.data.pop("access")
         response.data["refresh_token"] = response.data.pop("refresh")
+        security_logger.info(
+            "auth.refresh_success ip=%s path=%s",
+            get_client_ip(request),
+            request.path,
+        )
         return response
     
 class LogoutView(TokenBlacklistView):
     serializer_class = LogoutSerializer
+
+    def post(self, request, *args, **kwargs):
+        try:
+            response = super().post(request, *args, **kwargs)
+        except Exception as exc:
+            security_logger.warning(
+                "auth.logout_failed user_id=%s ip=%s path=%s error=%s",
+                getattr(request.user, "pk", None),
+                get_client_ip(request),
+                request.path,
+                exc.__class__.__name__,
+            )
+            raise
+
+        security_logger.info(
+            "auth.logout_success user_id=%s ip=%s path=%s",
+            getattr(request.user, "pk", None),
+            get_client_ip(request),
+            request.path,
+        )
+        return response
 
 
 @api_view(["GET"])
@@ -112,8 +166,16 @@ def me(request):
 @permission_classes([IsAuthenticated])
 def logout_all(request):
     tokens = OutstandingToken.objects.filter(user=request.user)
+    token_count = tokens.count()
     for token in tokens:
         BlacklistedToken.objects.get_or_create(token=token)
+    security_logger.info(
+        "auth.logout_all_success user_id=%s ip=%s path=%s token_count=%s",
+        request.user.pk,
+        get_client_ip(request),
+        request.path,
+        token_count,
+    )
     return Response(status=status.HTTP_200_OK)
 
 @api_view(["POST"])
@@ -123,6 +185,11 @@ def password_reset_request(request):
     serializer = PasswordResetRequestSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     result = serializer.save()
+    security_logger.info(
+        "auth.password_reset_requested ip=%s path=%s",
+        get_client_ip(request),
+        request.path,
+    )
 
     # SÓ ENVIA E-MAIL SE ENCONTROU O USUÁRIO
     if result is not None:
@@ -132,6 +199,12 @@ def password_reset_request(request):
             subject="Redefinição de senha — PDHC",
             message=f"Clique no link para redefinir sua senha:\n\n{link}\n\nO link expira em 24 horas.",
             recipient_list=[user.email],
+        )
+        security_logger.info(
+            "auth.password_reset_email_enqueued user_id=%s ip=%s path=%s",
+            user.pk,
+            get_client_ip(request),
+            request.path,
         )
 
     return Response(
@@ -145,8 +218,23 @@ def password_reset_request(request):
 def password_reset_confirm(request):
     ip = get_client_ip(request)
     serializer = PasswordResetConfirmSerializer(data=request.data, context={"ip": ip})
-    serializer.is_valid(raise_exception=True)
-    serializer.save()
+    try:
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+    except Exception as exc:
+        security_logger.warning(
+            "auth.password_reset_confirm_failed ip=%s path=%s error=%s",
+            ip,
+            request.path,
+            exc.__class__.__name__,
+        )
+        raise
+    security_logger.info(
+        "auth.password_reset_completed user_id=%s ip=%s path=%s",
+        user.pk,
+        ip,
+        request.path,
+    )
     return Response(
         {"message": "Senha redefinida com sucesso."},
         status=status.HTTP_200_OK,

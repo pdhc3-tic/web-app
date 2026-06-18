@@ -83,8 +83,8 @@ def send_email_notification(self, notification_id: int) -> None:
         notification.save(update_fields=["status", "enviado_em"])
 
         logger.info(
-            "send_email_notification: e-mail enviado com sucesso para %s (notification_id=%s).",
-            notification.user.email,
+            "send_email_notification: e-mail enviado com sucesso user_id=%s notification_id=%s.",
+            notification.user_id,
             notification_id,
         )
 

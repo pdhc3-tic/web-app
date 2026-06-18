@@ -1,8 +1,13 @@
+import logging
+
 from django.db import connection, transaction
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.authentication import JWTStatelessUserAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from apps.core.signals.audit import set_audit_context, clear_audit_context
+
+
+logger = logging.getLogger(__name__)
 
 
 class SessionContextMiddleware:
@@ -22,16 +27,21 @@ class SessionContextMiddleware:
         role = str(token.get("role") or token.get("perfil") or "")
 
         with transaction.atomic():
-            with connection.cursor() as cursor:
-                cursor.execute("SET LOCAL app.current_user_id = %s;", [str(user_id)])
-                cursor.execute("SET LOCAL app.user_territorios = %s;", [territorios])
-                cursor.execute("SET LOCAL app.user_role = %s;", [role])
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute("SET LOCAL app.current_user_id = %s;", [str(user_id)])
+                    cursor.execute("SET LOCAL app.user_territorios = %s;", [territorios])
+                    cursor.execute("SET LOCAL app.user_role = %s;", [role])
+            except Exception:
+                logger.exception("session_context.set_local_failed user_id=%s", user_id)
+                raise
             return self.get_response(request)
 
     def _authenticate_request(self, request):
         try:
             auth_result = self.jwt_authentication.authenticate(request)
-        except (AuthenticationFailed, InvalidToken, TokenError):
+        except (AuthenticationFailed, InvalidToken, TokenError) as exc:
+            logger.debug("session_context.jwt_authentication_failed error=%s", exc.__class__.__name__)
             return None
 
         if auth_result is None:

@@ -34,6 +34,7 @@ from .services.permissions import user_has_role, user_territories
 from .throttling import NotificationUnreadCountThrottle
 
 logger = logging.getLogger(__name__)
+audit_event_logger = logging.getLogger("audit_events")
 
 class RoleViewSet(viewsets.ModelViewSet):
     queryset = Role.objects.all()
@@ -122,17 +123,29 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = serializer.save()
-        logger.info(
-            "Mock: welcome email would be sent to %s (user_id=%s)",
-            user.email, user.pk,
+        logger.info("Mock: welcome email would be sent user_id=%s", user.pk)
+        audit_event_logger.info(
+            "user.created actor_user_id=%s target_user_id=%s",
+            getattr(self.request.user, "pk", None),
+            user.pk,
         )
 
     def perform_update(self, serializer):
-        serializer.save()
+        user = serializer.save()
+        audit_event_logger.info(
+            "user.updated actor_user_id=%s target_user_id=%s",
+            getattr(self.request.user, "pk", None),
+            user.pk,
+        )
 
     def perform_destroy(self, instance):
         instance.ativo = False
         instance.save(update_fields=["ativo"])
+        audit_event_logger.info(
+            "user.deactivated actor_user_id=%s target_user_id=%s",
+            getattr(self.request.user, "pk", None),
+            instance.pk,
+        )
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -192,6 +205,11 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             ip=self.request.META.get("REMOTE_ADDR"),
             user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )
+        audit_event_logger.info(
+            "organization.created actor_user_id=%s organization_id=%s",
+            getattr(self.request.user, "pk", None),
+            instance.pk,
+        )
 
     def perform_update(self, serializer):
         old = self.get_object()
@@ -235,6 +253,11 @@ class OrganizationViewSet(viewsets.ModelViewSet):
                 },
                 ip=self.request.META.get("REMOTE_ADDR"),
             )
+        audit_event_logger.info(
+            "organization.updated actor_user_id=%s organization_id=%s",
+            getattr(self.request.user, "pk", None),
+            instance.pk,
+        )
 
     def perform_destroy(self, instance):
         valores_anteriores = {"nome": instance.nome, "ativa": instance.ativa}
@@ -253,6 +276,11 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             },
             ip=self.request.META.get("REMOTE_ADDR"),
             user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
+        )
+        audit_event_logger.info(
+            "organization.soft_deleted actor_user_id=%s organization_id=%s",
+            getattr(self.request.user, "pk", None),
+            instance.pk,
         )
 
 
@@ -310,6 +338,11 @@ def mark_all_read(request):
 
     if updated_count > 0:
         _invalidate_unread_cache(request.user.pk)
+        logger.info(
+            "notifications.mark_all_read user_id=%s updated_count=%s",
+            request.user.pk,
+            updated_count,
+        )
 
     return Response({"updated_count": updated_count}, status=status.HTTP_200_OK)
 
@@ -357,6 +390,11 @@ class AuditLogListView(generics.ListAPIView):
     ordering = ["-timestamp"]
 
     def get_queryset(self):
+        audit_event_logger.info(
+            "audit_log.accessed actor_user_id=%s path=%s",
+            getattr(self.request.user, "pk", None),
+            self.request.path,
+        )
         return AuditLog.objects.select_related("user").all()
 
 # ──────────────────────────────────────────────────────────────
@@ -389,4 +427,9 @@ class SystemConfigDetailView(generics.RetrieveUpdateAPIView):
     permission_classes = [IsAuthenticated, IsSuperAdminOrUGPReadOnly]
 
     def perform_update(self, serializer):
-        serializer.save(atualizado_por=self.request.user)
+        instance = serializer.save(atualizado_por=self.request.user)
+        audit_event_logger.info(
+            "system_config.updated actor_user_id=%s chave=%s",
+            getattr(self.request.user, "pk", None),
+            instance.chave,
+        )
