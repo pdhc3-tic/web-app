@@ -7,6 +7,7 @@ import { Input } from "../components/ui/Input/Input";
 import { Select } from "../components/ui/Select/Select";
 import { Textarea } from "../components/ui/Textarea/Textarea";
 import { ArrowRightIcon, DocumentIcon, PlusIcon } from "../components/icons";
+import { Search, Mail } from "lucide-react";
 import { SlideOver } from "../components/ui/SlideOver/SlideOver";
 
 const BADGE_STATUSES: BadgeStatus[] = [
@@ -161,6 +162,18 @@ export function ComponentsShowcase() {
             label="Disabled"
             defaultValue="Não editável"
             disabled
+          />
+          <Input
+            label="Com ícone à esquerda"
+            placeholder="Buscar por nome ou e-mail..."
+            startIcon={<Search className="h-4 w-4" />}
+          />
+          <Input
+            label="Com ícone à esquerda"
+            type="email"
+            placeholder="seu.email@dominio.com"
+            startIcon={<Mail className="h-4 w-4" />}
+            helperText="Ícone combina com o tipo do campo."
           />
         </div>
       </section>
