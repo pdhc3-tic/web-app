@@ -31,6 +31,7 @@ from .serializers import (
 )
 
 from .services.permissions import user_has_role, user_territories
+from .models.user_profile import UserProfile
 from .throttling import NotificationUnreadCountThrottle
 from django_filters import rest_framework as django_filters
 
@@ -72,8 +73,8 @@ class MunicipalityViewSet(viewsets.ModelViewSet):
 # ──────────────────────────────────────────────────────────────
 
 class UserFilter(django_filters.FilterSet):
-    perfil = django_filters.NumberFilter(field_name="role_id")
-    territorio = django_filters.NumberFilter(field_name="territorios__id")
+    perfil = django_filters.NumberFilter(field_name="profiles__perfil_id")
+    territorio = django_filters.NumberFilter(field_name="profiles__territorio_id")
     ativo = django_filters.BooleanFilter()
     ultimo_login_gte = django_filters.DateTimeFilter(
         field_name="ultimo_login", lookup_expr="gte"
@@ -119,7 +120,7 @@ class UserViewSet(viewsets.ModelViewSet):
         qs = User.objects.all()
         if "ativo" not in self.request.query_params:
             qs = qs.filter(ativo=True)
-        return qs.select_related("role").prefetch_related("territorios")
+        return qs.prefetch_related("profiles__perfil", "profiles__territorio")
 
     def perform_create(self, serializer):
         user = serializer.save()
@@ -221,21 +222,7 @@ class OrganizationViewSet(viewsets.ModelViewSet):
             ip=self.request.META.get("REMOTE_ADDR"),
             user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )
-        if old_territories != new_territories:
-            AuditLog.objects.create(
-                user=self.request.user,
-                acao="organization.territory_change",
-                modulo="core",
-                entidade="Organization",
-                entidade_id=str(instance.pk),
-                valores_anteriores={
-                    "territorios": sorted(old_territories),
-                },
-                valores_novos={
-                    "territorios": sorted(new_territories),
-                },
-                ip=self.request.META.get("REMOTE_ADDR"),
-            )
+
 
     def perform_destroy(self, instance):
         valores_anteriores = {"nome": instance.nome, "ativa": instance.ativa}
