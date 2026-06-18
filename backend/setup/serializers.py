@@ -4,6 +4,7 @@ from rest_framework import serializers
 from apps.core.models.user import User
 from apps.core.models.role import Role
 from apps.core.models.territory import Territory
+from apps.core.models.user_profile import UserProfile
 
 import hashlib
 import secrets
@@ -64,8 +65,8 @@ class TerritorySerializer(serializers.ModelSerializer):
 
 class UserMeSerializer(serializers.ModelSerializer):
     nome_completo = serializers.CharField(source="nome")
-    perfis = serializers.SerializerMethodField()#RoleSerializer(source="role", many=False)
-    territorios = TerritorySerializer(many=True)
+    perfis = serializers.SerializerMethodField()
+    territorios = serializers.SerializerMethodField()
     permissoes_resumo = serializers.SerializerMethodField()
     ultimo_login = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%SZ")
 
@@ -85,9 +86,24 @@ class UserMeSerializer(serializers.ModelSerializer):
         ]
 
     def get_perfis(self, obj):
-        if obj.role is None:
-            return []
-        return [RoleSerializer(obj.role).data]
+        profiles = obj.profiles.select_related("perfil").all()
+        return [RoleSerializer(p.perfil).data for p in profiles]
+
+    def get_territorios(self, obj):
+        profile_territory_ids = list(
+            obj.profiles.filter(territorio__isnull=False)
+            .values_list("territorio_id", flat=True)
+        )
+        if profile_territory_ids:
+            from apps.core.models.territory import Territory
+            return TerritorySerializer(
+                Territory.objects.filter(pk__in=profile_territory_ids), many=True
+            ).data
+        has_global = obj.profiles.filter(territorio__isnull=True).exists()
+        if has_global:
+            from apps.core.models.territory import Territory
+            return TerritorySerializer(Territory.objects.all(), many=True).data
+        return []
 
     def get_permissoes_resumo(self, obj):
         return sorted(obj.get_all_permissions())

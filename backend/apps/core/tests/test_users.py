@@ -2,6 +2,8 @@ import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
 from apps.core.tests.factories import UserFactory, RoleFactory, TerritoryFactory
+from apps.core.models.role import Role
+from apps.core.models.user_profile import UserProfile
 
 
 @pytest.fixture
@@ -27,13 +29,17 @@ def territory_factory():
 @pytest.fixture
 def super_admin_user(db):
     role = RoleFactory(slug="super-admin", nome="Super Admin")
-    return UserFactory(email="super@admin.com", nome="Super Admin", role=role, is_superuser=True)
+    user = UserFactory(email="super@admin.com", nome="Super Admin", is_superuser=True)
+    UserProfile.objects.create(user=user, perfil=role)
+    return user
 
 
 @pytest.fixture
 def adt_user(db):
     role = RoleFactory(slug="adt-acr", nome="ADT / ACR")
-    return UserFactory(email="adt@test.com", nome="ADT User", role=role)
+    user = UserFactory(email="adt@test.com", nome="ADT User")
+    UserProfile.objects.create(user=user, perfil=role)
+    return user
 
 
 # ──────────────────────────────────────────────────────────────
@@ -97,15 +103,16 @@ def test_list_users_filter_by_active_false_shows_deactivated(
 
 @pytest.mark.django_db
 def test_list_users_filter_by_territorio(
-    api_client, super_admin_user, user_factory, territory_factory
+    api_client, super_admin_user, user_factory, territory_factory, role_factory
 ):
     api_client.force_authenticate(user=super_admin_user)
+    role = role_factory(slug="adt-acr")
     t1 = territory_factory()
     t2 = territory_factory()
     u1 = user_factory()
-    u1.territorios.add(t1)
+    UserProfile.objects.create(user=u1, perfil=role, territorio=t1)
     u2 = user_factory()
-    u2.territorios.add(t2)
+    UserProfile.objects.create(user=u2, perfil=role, territorio=t2)
 
     response = api_client.get(f"/api/v1/users/?territorio={t1.pk}")
 
@@ -153,7 +160,8 @@ def test_list_users_ordering_default_ultimo_login(
     from datetime import timedelta
     now = timezone.now()
     role = role_factory(slug="super-admin", nome="Super Admin")
-    user = user_factory(role=role, ultimo_login=now - timedelta(hours=2))
+    user = user_factory(ultimo_login=now - timedelta(hours=2))
+    UserProfile.objects.create(user=user, perfil=role)
     api_client.force_authenticate(user=user)
     u1 = user_factory(ultimo_login=now)
     u2 = user_factory(ultimo_login=now - timedelta(hours=1))
@@ -179,8 +187,8 @@ def test_retrieve_user_returns_detail_with_nested(
     api_client.force_authenticate(user=super_admin_user)
     role = role_factory(slug="adt-acr", nome="ADT / ACR")
     territory = territory_factory(nome="Sertão do Apodi", estados=["RN"])
-    user = user_factory(role=role)
-    user.territorios.add(territory)
+    user = user_factory()
+    UserProfile.objects.create(user=user, perfil=role, territorio=territory)
 
     response = api_client.get(f"/api/v1/users/{user.pk}/")
 
@@ -208,8 +216,9 @@ def test_create_user_with_profile_and_territory(
         "email": "novo@test.com",
         "nome_completo": "Novo Usuário",
         "password": "SenhaForte1",
-        "perfil_id": role.pk,
-        "territorio_ids": [territory.pk],
+        "perfis_input": [
+            {"perfil_id": role.pk, "territorio_id": territory.pk},
+        ],
     }
 
     response = api_client.post("/api/v1/users/", data, format="json")
@@ -265,12 +274,13 @@ def test_update_user_changes_profile_preserves_history(
     api_client.force_authenticate(user=super_admin_user)
     old_role = role_factory(slug="adt-acr", nome="ADT / ACR")
     new_role = role_factory(slug="ugp", nome="UGP")
-    user = user_factory(role=old_role, nome="Usuário Teste")
+    user = user_factory(nome="Usuário Teste")
+    UserProfile.objects.create(user=user, perfil=old_role)
 
     # PATCH — troca o perfil
     response = api_client.patch(
         f"/api/v1/users/{user.pk}/",
-        {"perfil_id": new_role.pk},
+        {"perfis_input": [{"perfil_id": new_role.pk, "territorio_id": None}]},
         format="json",
     )
 
@@ -402,17 +412,26 @@ def test_permissions_matrix(
 
     territory = territory_factory()
 
+    # Cria todos os roles e o role do target antecipadamente para evitar
+    # duplicatas (factory.Iterator não garante unicidade entre chamadas).
+    roles = {}
     for slug in slugs:
-        role = role_factory(slug=slug, nome=slug.replace("-", " ").title())
-        is_super = slug == "super-admin"
-        user = user_factory(
-            role=role,
-            is_superuser=is_super,
+        roles[slug], _ = Role.objects.get_or_create(
+            slug=slug, defaults={"nome": slug.replace("-", " ").title()}
         )
+    target_role, _ = Role.objects.get_or_create(
+        slug="adt-acr-target", defaults={"nome": "ADT / ACR Target"}
+    )
+
+    for slug in slugs:
+        role = roles[slug]
+        is_super = slug == "super-admin"
+        user = user_factory(is_superuser=is_super)
+        UserProfile.objects.create(user=user, perfil=role)
         api_client.force_authenticate(user=user)
 
         target = user_factory()
-        target.territorios.add(territory)
+        UserProfile.objects.create(user=target, perfil=target_role, territorio=territory)
 
         # list
         resp = api_client.get("/api/v1/users/")

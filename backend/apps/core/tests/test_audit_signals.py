@@ -17,7 +17,10 @@ def superadmin():
         slug="super-admin",
         defaults={"nome": "Super Admin", "ativo": True}
     )
-    return UserFactory(is_superuser=True, role=role)
+    user = UserFactory(is_superuser=True)
+    from apps.core.models.user_profile import UserProfile
+    UserProfile.objects.create(user=user, perfil=role)
+    return user
 
 @pytest.fixture
 def superadmin_client(superadmin):
@@ -36,7 +39,7 @@ def test_audit_logged_on_user_create(superadmin_client):
         "email": "novo@example.com",
         "nome_completo": "Novo Usuario",
         "password": "senha123",
-        "perfil_id": role.pk,
+        "perfis_input": [{"perfil_id": role.pk, "territorio_id": None}],
         "ativo": True,
     })
 

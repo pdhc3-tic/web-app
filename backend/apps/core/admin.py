@@ -1,5 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
+from django.utils.html import format_html_join
+from django.urls import reverse
 
 from .models import State, Territory, Municipality, User, Role, UserProfile, Organization
 from .models.notifications import Notification, NotificationPreference
@@ -7,12 +9,12 @@ from .models.system_config import SystemConfig
 from .models import AuditLog
 
 
-class UserProfileInline(admin.StackedInline):
+class UserProfileInline(admin.TabularInline):
     model = UserProfile
-    can_delete = False
-    verbose_name = "Perfil do Usuário"
-    verbose_name_plural = "Perfil do Usuário"
-    extra = 0
+    verbose_name = "Perfil"
+    verbose_name_plural = "Perfis"
+    extra = 1
+    fields = ("perfil", "territorio")
 
 
 @admin.register(Role)
@@ -28,19 +30,19 @@ class UserAdmin(DjangoUserAdmin):
     list_display = (
         "email",
         "nome",
-        "role",
+        "perfis_resumo",
         "ativo",
         "is_staff",
         "is_superuser",
         "ultimo_login",
     )
-    list_filter = ("role", "ativo", "is_superuser")
+    list_filter = ("ativo", "is_superuser", "profiles__perfil")
     ordering = ("-ultimo_login",)
     search_fields = ("email", "nome")
     readonly_fields = ("ultimo_login",)
     fieldsets = (
         (None, {"fields": ("email", "password")}),
-        ("Informações pessoais", {"fields": ("nome", "role")}),
+        ("Informações pessoais", {"fields": ("nome",)}),
         (
             "Permissões",
             {
@@ -62,7 +64,6 @@ class UserAdmin(DjangoUserAdmin):
                 "fields": (
                     "email",
                     "nome",
-                    "role",
                     "password1",
                     "password2",
                     "ativo",
@@ -72,6 +73,17 @@ class UserAdmin(DjangoUserAdmin):
         ),
     )
     filter_horizontal = ("groups", "user_permissions")
+
+    def perfis_resumo(self, obj):
+        profiles = obj.profiles.select_related("perfil", "territorio").all()
+        items = []
+        for p in profiles:
+            label = p.perfil.nome
+            if p.territorio:
+                label += f" ({p.territorio.nome})"
+            items.append(label)
+        return ", ".join(items) if items else "—"
+    perfis_resumo.short_description = "Perfis"
 
 
 @admin.register(State)

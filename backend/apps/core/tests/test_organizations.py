@@ -3,7 +3,7 @@ from rest_framework.test import APIClient
 
 from apps.core.models import Organization, Municipality, State, Territory, Role, User
 from apps.core.models.user_profile import UserProfile
-from apps.core.tests.factories import RoleFactory, TerritoryFactory, UserFactory
+from apps.core.tests.factories import RoleFactory, TerritoryFactory, UserFactory, UserProfileFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -72,7 +72,8 @@ def role_adt():
 
 @pytest.fixture
 def super_admin_client(role_super_admin):
-    user = UserFactory(role=role_super_admin)
+    user = UserFactory()
+    UserProfile.objects.create(user=user, perfil=role_super_admin)
     client = APIClient()
     client.force_authenticate(user=user)
     return client
@@ -80,7 +81,8 @@ def super_admin_client(role_super_admin):
 
 @pytest.fixture
 def ugp_client(role_ugp):
-    user = UserFactory(role=role_ugp)
+    user = UserFactory()
+    UserProfile.objects.create(user=user, perfil=role_ugp)
     client = APIClient()
     client.force_authenticate(user=user)
     return client
@@ -88,8 +90,7 @@ def ugp_client(role_ugp):
 
 @pytest.fixture
 def articulador_client(role_articulador, territory_a):
-    user = UserFactory(role=role_articulador)
-    user.territorios.add(territory_a)
+    user = UserFactory()
     UserProfile.objects.create(user=user, perfil=role_articulador, territorio=territory_a)
     client = APIClient()
     client.force_authenticate(user=user)
@@ -98,7 +99,8 @@ def articulador_client(role_articulador, territory_a):
 
 @pytest.fixture
 def adt_client(role_adt):
-    user = UserFactory(role=role_adt)
+    user = UserFactory()
+    UserProfile.objects.create(user=user, perfil=role_adt)
     client = APIClient()
     client.force_authenticate(user=user)
     return client
