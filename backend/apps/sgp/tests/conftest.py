@@ -7,7 +7,7 @@ from apps.core.tests.factories import (
     TerritoryFactory,
     UserFactory,
 )
-from apps.sgp.tests.factories import ProjetoFactory
+from apps.sgp.tests.factories import MembroFactory, ProjetoFactory, UPFFactory
 
 
 @pytest.fixture
@@ -62,6 +62,36 @@ def projeto(db):
 @pytest.fixture
 def outro_projeto(db):
     return ProjetoFactory(nome="Outro Projeto")
+
+
+@pytest.fixture
+def upf(db, municipio, projeto):
+    return UPFFactory(
+        nome_titular="UPF Teste",
+        municipio=municipio,
+        projeto=projeto,
+        ativa=True,
+    )
+
+
+@pytest.fixture
+def upf_inativa(db, municipio, projeto):
+    return UPFFactory(
+        nome_titular="UPF Inativa",
+        municipio=municipio,
+        projeto=projeto,
+        ativa=False,
+    )
+
+
+@pytest.fixture
+def outra_upf(db, municipio, projeto):
+    return UPFFactory(
+        nome_titular="Outra UPF",
+        municipio=municipio,
+        projeto=projeto,
+        ativa=True,
+    )
 
 
 @pytest.fixture
@@ -121,3 +151,38 @@ def upf_payload_completo(projeto, municipio):
         "nis": "12345678901",
         "foto_url": "https://example.com/foto.jpg",
     }
+
+
+@pytest.fixture
+def membro_payload_minimo(upf):
+    return {
+        "nome_completo": "João Filho",
+        "parentesco": "filho",
+    }
+
+
+@pytest.fixture
+def titular_payload(upf):
+    return {
+        "nome_completo": "Maria Titular",
+        "parentesco": "titular",
+        "data_nasc": "1980-05-10",
+    }
+
+
+@pytest.fixture
+def membro(upf):
+    return MembroFactory(
+        upf=upf,
+        nome_completo="Membro Existente",
+        parentesco="filho",
+    )
+
+
+@pytest.fixture
+def membro_outra_upf(outra_upf):
+    return MembroFactory(
+        upf=outra_upf,
+        nome_completo="Membro de Outra UPF",
+        parentesco="filho",
+    )

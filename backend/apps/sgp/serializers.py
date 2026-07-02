@@ -1,7 +1,10 @@
+from datetime import date
+
 from rest_framework import serializers
 
 from apps.core.models import Municipality
-from apps.sgp.models import Projeto, UPF
+from apps.sgp.constants import SAUDE_CHOICES
+from apps.sgp.models import MembroFamilia, Projeto, UPF
 from apps.sgp.validators import validate_cpf
 
 
@@ -59,52 +62,25 @@ class UPFDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = UPF
         fields = [
-            "id",
-            "projeto",
-            "nome_titular",
-            "cpf",
-            "rg",
-            "data_nascimento",
-            "genero",
-            "estado_civil",
-            "nacionalidade",
-            "naturalidade",
-            "nome_mae",
-            "nome_pai",
-            "telefone",
-            "celular",
-            "email",
-            "cep",
-            "logradouro",
-            "numero",
-            "complemento",
-            "bairro",
-            "municipio",
-            "territorio",
-            "latitude",
-            "longitude",
-            "situacao_moradia",
-            "tipo_moradia",
-            "numero_dap",
-            "nis",
-            "foto_url",
-            "criado_por",
-            "ativa",
-            "criado_em",
-            "atualizado_em",
+            "id", "projeto", "nome_titular", "cpf", "rg",
+            "data_nascimento", "genero", "estado_civil",
+            "nacionalidade", "naturalidade", "nome_mae", "nome_pai",
+            "telefone", "celular", "email", "cep", "logradouro",
+            "numero", "complemento", "bairro", "municipio",
+            "territorio", "latitude", "longitude", "situacao_moradia",
+            "tipo_moradia", "numero_dap", "nis", "foto_url",
+            "criado_por", "ativa", "criado_em", "atualizado_em",
             "membros",
         ]
         validators = []
         read_only_fields = [
-            "criado_em",
-            "atualizado_em",
-            "criado_por",
-            "territorio",
-            "membros",
+            "criado_em", "atualizado_em", "criado_por",
+            "territorio", "membros",
         ]
 
     def get_membros(self, obj):
-        return []
+        membros = obj.membros.all()
+        return MembroListSerializer(membros, many=True).data
 
     def validate_cpf(self, value):
         return validate_cpf(value)
@@ -136,3 +112,85 @@ class UPFDetailSerializer(serializers.ModelSerializer):
         )
         data["projeto"] = NestedSerializer(instance.projeto).data
         return data
+
+
+class MembroListSerializer(serializers.ModelSerializer):
+    idade = serializers.SerializerMethodField()
+    parentesco_display = serializers.CharField(
+        source="get_parentesco_display", read_only=True
+    )
+
+    class Meta:
+        model = MembroFamilia
+        fields = [
+            "id", "nome_completo", "data_nasc", "idade",
+            "parentesco", "parentesco_display", "cpf",
+            "criado_em",
+        ]
+
+    def get_idade(self, obj):
+        if obj.data_nasc:
+            today = date.today()
+            return (
+                today.year
+                - obj.data_nasc.year
+                - (
+                    (today.month, today.day)
+                    < (obj.data_nasc.month, obj.data_nasc.day)
+                )
+            )
+        return None
+
+
+class MembroDetailSerializer(serializers.ModelSerializer):
+    idade = serializers.SerializerMethodField()
+    parentesco_display = serializers.CharField(
+        source="get_parentesco_display", read_only=True
+    )
+    cpf = serializers.CharField(
+        max_length=14, required=False, allow_blank=True
+    )
+
+    class Meta:
+        model = MembroFamilia
+        fields = [
+            "id", "upf", "nome_completo", "data_nasc", "idade",
+            "cpf", "rg", "nis", "caf", "parentesco",
+            "parentesco_display", "saude", "telefone", "email",
+            "escolaridade", "profissao", "renda", "observacao",
+            "criado_por", "criado_em", "atualizado_em",
+        ]
+        read_only_fields = [
+            "criado_em", "atualizado_em", "criado_por", "upf",
+        ]
+
+    def get_idade(self, obj):
+        if obj.data_nasc:
+            today = date.today()
+            return (
+                today.year
+                - obj.data_nasc.year
+                - (
+                    (today.month, today.day)
+                    < (obj.data_nasc.month, obj.data_nasc.day)
+                )
+            )
+        return None
+
+    def validate_cpf(self, value):
+        if not value:
+            return ""
+        return validate_cpf(value)
+
+    def validate_saude(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError(
+                "Saúde deve ser uma lista de strings"
+            )
+        for item in value:
+            if item not in SAUDE_CHOICES:
+                raise serializers.ValidationError(
+                    f"'{item}' não é um valor válido para saúde. "
+                    f"Valores permitidos: {', '.join(SAUDE_CHOICES)}"
+                )
+        return value
