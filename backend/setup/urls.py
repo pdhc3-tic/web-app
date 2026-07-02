@@ -34,6 +34,7 @@ urlpatterns = [
     path("api/v1/auth/token/refresh/", RefreshView.as_view(), name="token_refresh"),
     path("api/v1/auth/me/", me, name="me"),
     path("api/v1/", include("apps.core.urls")),
+    path("api/v1/", include("apps.sgp.urls")),
     path("api/v1/auth/logout/", LogoutView.as_view(), name="token_blacklist"),
     path("api/v1/auth/logout-all/", logout_all, name="logout_all"),
     path("api/v1/auth/password-reset/request/", password_reset_request, name="password_reset_request"),
