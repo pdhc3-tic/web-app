@@ -1,5 +1,7 @@
 import factory
 from apps.core.models import User
+from apps.core.models.state import State
+from apps.core.models.municipality import Municipality
 from apps.core.models.role import Role
 from apps.core.models.territory import Territory
 from apps.core.models.user_profile import UserProfile
@@ -7,13 +9,14 @@ from apps.core.models.audit_log import AuditLog
 from apps.core.models.notifications import Notification, NotificationPreference, TipoNotificacao, StatusNotificacao
 
 
-class RoleFactory(factory.django.DjangoModelFactory):
+class StateFactory(factory.django.DjangoModelFactory):
     class Meta:
-        model = Role
+        model = State
 
-    nome = factory.Sequence(lambda n: f"Role {n}")
-    slug = factory.Iterator(['agricultor', 'adt-acr', 'articulador-estadual', 'ugp', 'fgd', 'super-admin'])
-    ativo = True
+    sigla = factory.Iterator(["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO",
+                              "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI",
+                              "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"])
+    nome = factory.Sequence(lambda n: f"Estado {n}")
 
 
 class TerritoryFactory(factory.django.DjangoModelFactory):
@@ -22,6 +25,25 @@ class TerritoryFactory(factory.django.DjangoModelFactory):
 
     nome = factory.Sequence(lambda n: f"Território {n}")
     estados = ["RN"]
+    ativo = True
+
+
+class MunicipalityFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Municipality
+
+    nome = factory.Sequence(lambda n: f"Município {n}")
+    state = factory.SubFactory(StateFactory)
+    territory = factory.SubFactory(TerritoryFactory)
+    codigo_ibge = factory.Sequence(lambda n: f"{n:07d}")
+
+
+class RoleFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Role
+
+    nome = factory.Sequence(lambda n: f"Role {n}")
+    slug = factory.Iterator(['agricultor', 'adt-acr', 'articulador-estadual', 'ugp', 'fgd', 'super-admin'])
     ativo = True
 
 
@@ -51,6 +73,7 @@ class UserProfileFactory(factory.django.DjangoModelFactory):
     perfil = factory.SubFactory(RoleFactory)
     territorio = None
 
+
 class AuditLogFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = AuditLog
@@ -64,6 +87,7 @@ class AuditLogFactory(factory.django.DjangoModelFactory):
     valores_novos = {"nome": "Teste"}
     ip = "127.0.0.1"
     user_agent = "Mozilla/5.0"
+
 
 class NotificationFactory(factory.django.DjangoModelFactory):
     class Meta:

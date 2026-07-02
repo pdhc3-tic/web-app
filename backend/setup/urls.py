@@ -36,6 +36,7 @@ urlpatterns = [
     ),
     path("api/v1/auth/me/", me, name="me"),
     path("api/v1/", include("apps.core.urls")),
+    path("api/v1/", include("apps.sgp.urls")),
     path("api/v1/auth/logout/", 
          LogoutView.as_view(), 
          name="token_blacklist"),
