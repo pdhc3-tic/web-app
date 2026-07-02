@@ -160,9 +160,29 @@ class MembroDetailSerializer(serializers.ModelSerializer):
             "escolaridade", "profissao", "renda", "observacao",
             "criado_por", "criado_em", "atualizado_em",
         ]
+        validators = []
         read_only_fields = [
             "criado_em", "atualizado_em", "criado_por", "upf",
         ]
+
+    def validate_parentesco(self, value):
+        if value == "titular":
+            upf_id = self.instance.upf_id if self.instance else None
+            if not upf_id:
+                view_upf_id = self.context.get("view").kwargs.get("upf_pk") if self.context.get("view") else None
+                if view_upf_id:
+                    upf_id = view_upf_id
+            if upf_id:
+                qs = MembroFamilia.objects.filter(
+                    upf_id=upf_id, parentesco="titular"
+                )
+                if self.instance:
+                    qs = qs.exclude(pk=self.instance.pk)
+                if qs.exists():
+                    raise serializers.ValidationError(
+                        "Já existe um titular cadastrado para esta UPF"
+                    )
+        return value
 
     def get_idade(self, obj):
         if obj.data_nasc:

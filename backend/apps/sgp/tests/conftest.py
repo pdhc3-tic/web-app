@@ -90,6 +90,7 @@ def outra_upf(db, municipio, projeto):
         nome_titular="Outra UPF",
         municipio=municipio,
         projeto=projeto,
+        cpf="52998224725",
         ativa=True,
     )
 
