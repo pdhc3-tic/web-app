@@ -80,9 +80,10 @@ class TestHistoricoAtualizacoes:
         for entry in response.data["results"]:
             if entry["campo"] is not None:
                 assert not any(kw in entry["campo"].lower() for kw in SENSITIVE_KEYWORDS)
-            for d in (entry.get("valor_novo") or {}, entry.get("valor_anterior") or {}):
-                for key in d:
-                    assert not any(kw in key.lower() for kw in SENSITIVE_KEYWORDS)
+            for val in (entry.get("valor_novo"), entry.get("valor_anterior")):
+                if isinstance(val, dict):
+                    for key in val:
+                        assert not any(kw in key.lower() for kw in SENSITIVE_KEYWORDS)
 
 
 class TestHistoricoFiltros:
