@@ -21,8 +21,23 @@ def state_rn(db):
 
 
 @pytest.fixture
+def state_ce(db):
+    return StateFactory(sigla="CE", nome="Ceará")
+
+
+@pytest.fixture
 def territory(db):
     return TerritoryFactory(nome="Território Teste", estados=["RN"])
+
+
+@pytest.fixture
+def territory_rn(db):
+    return TerritoryFactory(nome="Território RN", estados=["RN"])
+
+
+@pytest.fixture
+def territory_ce(db):
+    return TerritoryFactory(nome="Território CE", estados=["CE"])
 
 
 @pytest.fixture
@@ -33,6 +48,28 @@ def municipio(db, state_rn, territory):
         state=state_rn,
         territory=territory,
         codigo_ibge="2408003",
+    )
+
+
+@pytest.fixture
+def municipio_rn(db, state_rn, territory_rn):
+    from apps.core.tests.factories import MunicipalityFactory
+    return MunicipalityFactory(
+        nome="Mossoró",
+        state=state_rn,
+        territory=territory_rn,
+        codigo_ibge="2408003",
+    )
+
+
+@pytest.fixture
+def municipio_ce(db, state_ce, territory_ce):
+    from apps.core.tests.factories import MunicipalityFactory
+    return MunicipalityFactory(
+        nome="Fortaleza",
+        state=state_ce,
+        territory=territory_ce,
+        codigo_ibge="2304400",
     )
 
 
@@ -106,8 +143,76 @@ def usuario(db):
 
 
 @pytest.fixture
+def usuario_super_admin(db):
+    role = RoleFactory(slug="super-admin", nome="Super Admin")
+    return UserFactory(
+        email="super@test.com",
+        nome="Super Admin",
+        role=role,
+    )
+
+
+@pytest.fixture
+def usuario_articulador_rn(db, territory_rn):
+    role = RoleFactory(slug="articulador-estadual", nome="Articulador Estadual")
+    user = UserFactory(
+        email="articulador@test.com",
+        nome="Articulador RN",
+        role=role,
+    )
+    user.territorios.add(territory_rn)
+    return user
+
+
+@pytest.fixture
+def usuario_adt_rn(db, territory_rn):
+    role = RoleFactory(slug="adt-acr", nome="ADT")
+    user = UserFactory(
+        email="adt@test.com",
+        nome="ADT RN",
+        role=role,
+    )
+    user.territorios.add(territory_rn)
+    return user
+
+
+@pytest.fixture
+def usuario_sem_acesso(db):
+    role = RoleFactory(slug="agricultor", nome="Agricultor")
+    return UserFactory(
+        email="agricultor@test.com",
+        nome="Agricultor",
+        role=role,
+    )
+
+
+@pytest.fixture
 def auth_client(api_client, usuario):
     api_client.force_authenticate(user=usuario)
+    return api_client
+
+
+@pytest.fixture
+def auth_client_super_admin(api_client, usuario_super_admin):
+    api_client.force_authenticate(user=usuario_super_admin)
+    return api_client
+
+
+@pytest.fixture
+def auth_client_articulador_rn(api_client, usuario_articulador_rn):
+    api_client.force_authenticate(user=usuario_articulador_rn)
+    return api_client
+
+
+@pytest.fixture
+def auth_client_adt_rn(api_client, usuario_adt_rn):
+    api_client.force_authenticate(user=usuario_adt_rn)
+    return api_client
+
+
+@pytest.fixture
+def auth_client_sem_acesso(api_client, usuario_sem_acesso):
+    api_client.force_authenticate(user=usuario_sem_acesso)
     return api_client
 
 

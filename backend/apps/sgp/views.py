@@ -1,12 +1,16 @@
 import logging
 
 from django.shortcuts import get_object_or_404
-from rest_framework import serializers, status, viewsets
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import filters, serializers, status, viewsets
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.core.models.audit_log import AuditLog
+from apps.sgp.filters import UPFFilter
 from apps.sgp.models import MembroFamilia, UPF
+from apps.sgp.pagination import UPFPagination
 from apps.sgp.serializers import (
     MembroDetailSerializer,
     MembroListSerializer,
@@ -19,20 +23,55 @@ logger = logging.getLogger("apps.sgp.views")
 
 class UPFViewSet(viewsets.ModelViewSet):
     queryset = UPF.objects.select_related(
-        "municipio", "territorio", "projeto", "criado_por"
+        "municipio", "municipio__state", "territorio", "projeto", "criado_por"
     ).all()
     permission_classes = [IsAuthenticated]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    pagination_class = UPFPagination
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_class = UPFFilter
+    ordering_fields = ["criado_em", "nome_titular", "data_nasc"]
+    ordering = ["-criado_em"]
 
     def get_serializer_class(self):
         if self.action == "list":
             return UPFListSerializer
         return UPFDetailSerializer
 
+    def filter_queryset(self, queryset):
+        if "ativa" not in self.request.query_params:
+            queryset = queryset.filter(ativa=True)
+        return super().filter_queryset(queryset)
+
     def get_queryset(self):
-        return UPF.objects.select_related(
-            "municipio", "territorio", "projeto", "criado_por"
+        qs = UPF.objects.select_related(
+            "municipio", "municipio__state", "territorio", "projeto", "criado_por"
         ).all()
+
+        role_slug = getattr(getattr(self.request.user, "role", None), "slug", None)
+
+        if role_slug in ("super-admin", "ugp"):
+            return qs
+
+        if role_slug == "articulador-estadual":
+            territories = self.request.user.territorios.all()
+            if not territories.exists():
+                return qs.none()
+            states = set()
+            for t in territories:
+                states.update(t.estados)
+            if not states:
+                return qs.none()
+            return qs.filter(municipio__state__sigla__in=states)
+
+        if role_slug == "adt-acr":
+            territories = self.request.user.territorios.all()
+            if not territories.exists():
+                return qs.none()
+            return qs.filter(territorio__in=territories)
+
+        raise PermissionDenied("Você não tem acesso ao módulo SGP.")
 
     def _log_audit(self, acao, instance, valores_anteriores=None):
         AuditLog.objects.create(
