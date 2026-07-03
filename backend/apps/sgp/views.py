@@ -1,8 +1,12 @@
 import logging
 
+from django.apps import apps
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from django.utils.dateparse import parse_datetime
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, serializers, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -10,7 +14,7 @@ from rest_framework.response import Response
 from apps.core.models.audit_log import AuditLog
 from apps.sgp.filters import UPFFilter
 from apps.sgp.models import MembroFamilia, UPF
-from apps.sgp.pagination import UPFPagination
+from apps.sgp.pagination import HistoricoPagination, UPFPagination
 from apps.sgp.serializers import (
     MembroDetailSerializer,
     MembroListSerializer,
@@ -37,6 +41,8 @@ class UPFViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == "list":
             return UPFListSerializer
+        if self.action == "historico":
+            return HistoricoEntrySerializer
         return UPFDetailSerializer
 
     def filter_queryset(self, queryset):
@@ -72,6 +78,98 @@ class UPFViewSet(viewsets.ModelViewSet):
             return qs.filter(territorio__in=territories)
 
         raise PermissionDenied("Você não tem acesso ao módulo SGP.")
+
+    @action(detail=True, methods=["get"], url_path="historico")
+    def historico(self, request, pk=None):
+        upf = self.get_object()
+        q = Q(entidade="UPF", entidade_id=str(upf.pk))
+
+        incluir_membros = request.query_params.get("incluir_membros") == "true"
+        if incluir_membros:
+            MembroFamilia = apps.get_model("sgp", "MembroFamilia")
+            if MembroFamilia is not None:
+                member_ids = list(
+                    MembroFamilia.objects.filter(upf_id=upf.pk).values_list(
+                        "pk", flat=True
+                    )
+                )
+                if member_ids:
+                    q |= Q(
+                        entidade="MembroFamilia",
+                        entidade_id__in=[str(m) for m in member_ids],
+                    )
+
+        logs = (
+            AuditLog.objects.filter(q)
+            .select_related("user")
+            .order_by("-timestamp")
+        )
+
+        entries = []
+        for log in logs:
+            if log.acao.lower().endswith(".create"):
+                entries.append(
+                    self._build_entry(log, campo=None, valor_anterior=None, valor_novo=log.valores_novos)
+                )
+            elif log.acao.lower().endswith(".update"):
+                old = log.valores_anteriores or {}
+                new = log.valores_novos or {}
+                all_keys = set(old.keys()) | set(new.keys())
+                for key in sorted(all_keys):
+                    old_val = old.get(key)
+                    new_val = new.get(key)
+                    if old_val != new_val:
+                        entries.append(
+                            self._build_entry(log, campo=key, valor_anterior=old_val, valor_novo=new_val, suffix=key)
+                        )
+            else:
+                entries.append(
+                    self._build_entry(log, campo=None, valor_anterior=log.valores_anteriores, valor_novo=log.valores_novos)
+                )
+
+        campo_filter = request.query_params.get("campo")
+        if campo_filter:
+            entries = [e for e in entries if e["campo"] == campo_filter]
+
+        usuario_filter = request.query_params.get("usuario")
+        if usuario_filter:
+            entries = [
+                e
+                for e in entries
+                if e.get("usuario_id") is not None
+                and str(e["usuario_id"]) == usuario_filter
+            ]
+
+        desde = request.query_params.get("desde")
+        if desde:
+            dt = parse_datetime(desde)
+            if dt:
+                entries = [e for e in entries if e["timestamp"] >= dt]
+
+        ate = request.query_params.get("ate")
+        if ate:
+            dt = parse_datetime(ate)
+            if dt:
+                entries = [e for e in entries if e["timestamp"] <= dt]
+
+        entries.sort(key=lambda e: e["timestamp"], reverse=True)
+
+        paginator = HistoricoPagination()
+        page = paginator.paginate_queryset(entries, request)
+        serializer = HistoricoEntrySerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
+    def _build_entry(self, log, campo, valor_anterior, valor_novo, suffix=None):
+        eid = str(log.pk) if suffix is None else f"{log.pk}_{suffix}"
+        return {
+            "id": eid,
+            "campo": campo,
+            "valor_anterior": valor_anterior,
+            "valor_novo": valor_novo,
+            "usuario_id": log.user.pk if log.user else None,
+            "usuario_nome": log.user.nome if log.user else None,
+            "timestamp": log.timestamp,
+        }
 
     def _log_audit(self, acao, instance, valores_anteriores=None):
         AuditLog.objects.create(

@@ -214,3 +214,18 @@ class MembroDetailSerializer(serializers.ModelSerializer):
                     f"Valores permitidos: {', '.join(SAUDE_CHOICES)}"
                 )
         return value
+
+
+class HistoricoEntrySerializer(serializers.Serializer):
+    id = serializers.CharField(read_only=True)
+    campo = serializers.CharField(allow_null=True, read_only=True)
+    valor_anterior = serializers.JSONField(allow_null=True, read_only=True)
+    valor_novo = serializers.JSONField(allow_null=True, read_only=True)
+    usuario = serializers.SerializerMethodField()
+    timestamp = serializers.DateTimeField(read_only=True)
+
+    def get_usuario(self, obj):
+        uid = obj.get("usuario_id")
+        if uid is not None:
+            return {"id": uid, "nome": obj.get("usuario_nome")}
+        return None
