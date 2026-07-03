@@ -1,7 +1,10 @@
+import factory
 import pytest
 
 from apps.core.models.audit_log import AuditLog
 from apps.sgp.models import UPF
+from apps.sgp.tests.factories import UPFFactory
+from apps.core.tests.factories import MunicipalityFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -239,3 +242,256 @@ class TestAuditLog:
             entidade_id=str(upf_id),
             acao="UPF.update",
         ).exists()
+
+
+class TestFiltrosEBusca:
+    def test_list_filter_by_municipio_returns_correct_subset(
+        self, auth_client, projeto, municipio_rn, municipio_ce
+    ):
+        upf_rn = UPFFactory(
+            projeto=projeto, municipio=municipio_rn, cpf="86288366757"
+        )
+        UPFFactory(
+            projeto=projeto, municipio=municipio_ce, cpf="52998224725"
+        )
+        response = auth_client.get(
+            f"/api/v1/upfs/?municipio={municipio_rn.pk}"
+        )
+        assert response.status_code == 200
+        ids = [u["id"] for u in response.data["results"]]
+        assert upf_rn.pk in ids
+        assert len(ids) == 1
+
+    def test_list_filter_by_multiple_params(
+        self, auth_client, projeto, municipio_rn
+    ):
+        UPFFactory(
+            projeto=projeto, municipio=municipio_rn, cpf="86288366757", ativa=True
+        )
+        UPFFactory(
+            projeto=projeto, municipio=municipio_rn, cpf="52998224725", ativa=False
+        )
+        response = auth_client.get(
+            f"/api/v1/upfs/?municipio={municipio_rn.pk}&ativa=true"
+        )
+        assert response.status_code == 200
+        assert len(response.data["results"]) == 1
+
+    def test_list_search_by_nome_titular(
+        self, auth_client, projeto, municipio_rn
+    ):
+        UPFFactory(
+            projeto=projeto, municipio=municipio_rn,
+            nome_titular="João Silva", cpf="86288366757",
+        )
+        UPFFactory(
+            projeto=projeto, municipio=municipio_rn,
+            nome_titular="Maria Souza", cpf="52998224725",
+        )
+        response = auth_client.get("/api/v1/upfs/?q=joão")
+        assert response.status_code == 200
+        nomes = [u["nome_titular"] for u in response.data["results"]]
+        assert "João Silva" in nomes
+        assert "Maria Souza" not in nomes
+
+    def test_list_search_by_cpf_ignores_mask(
+        self, auth_client, projeto, municipio_rn
+    ):
+        UPFFactory(
+            projeto=projeto, municipio=municipio_rn,
+            cpf="86288366757",
+        )
+        response_unmasked = auth_client.get("/api/v1/upfs/?q=86288366757")
+        response_masked = auth_client.get("/api/v1/upfs/?q=862.883.667-57")
+        assert response_unmasked.status_code == 200
+        assert response_masked.status_code == 200
+        assert (
+            len(response_unmasked.data["results"])
+            == len(response_masked.data["results"])
+            == 1
+        )
+
+    def test_list_ordering_default_recent_first(
+        self, auth_client, projeto, municipio_rn
+    ):
+        UPFFactory(
+            projeto=projeto, municipio=municipio_rn,
+            cpf="86288366757",
+        )
+        UPFFactory(
+            projeto=projeto, municipio=municipio_rn,
+            cpf="52998224725",
+        )
+        oldest = UPF.objects.order_by("criado_em").first()
+        response = auth_client.get("/api/v1/upfs/")
+        assert response.status_code == 200
+        assert response.data["results"][0]["id"] != oldest.pk
+
+    def test_list_ordering_by_nome_titular_asc_and_desc(
+        self, auth_client, projeto, municipio_rn
+    ):
+        UPFFactory(
+            projeto=projeto, municipio=municipio_rn,
+            nome_titular="Ana", cpf="86288366757",
+        )
+        UPFFactory(
+            projeto=projeto, municipio=municipio_rn,
+            nome_titular="Zeca", cpf="52998224725",
+        )
+        response_asc = auth_client.get("/api/v1/upfs/?ordering=nome_titular")
+        names_asc = [u["nome_titular"] for u in response_asc.data["results"]]
+        assert names_asc == sorted(names_asc)
+
+        response_desc = auth_client.get("/api/v1/upfs/?ordering=-nome_titular")
+        names_desc = [u["nome_titular"] for u in response_desc.data["results"]]
+        assert names_desc == sorted(names_desc, reverse=True)
+
+
+class TestPaginacao:
+    def test_list_pagination_default_50(
+        self, auth_client, projeto, municipio_rn
+    ):
+        UPFFactory.create_batch(
+            55,
+            projeto=projeto,
+            municipio=municipio_rn,
+            cpf=factory.Sequence(lambda n: f"{n + 10000000000:011d}"),
+        )
+        response = auth_client.get("/api/v1/upfs/")
+        assert response.status_code == 200
+        assert len(response.data["results"]) == 50
+        assert response.data["next"] is not None
+        assert response.data["previous"] is None
+
+        page2 = auth_client.get(response.data["next"])
+        assert len(page2.data["results"]) == 5
+
+    def test_list_pagination_max_200_capped(
+        self, auth_client, projeto, municipio_rn
+    ):
+        UPFFactory.create_batch(
+            210,
+            projeto=projeto,
+            municipio=municipio_rn,
+            cpf=factory.Sequence(lambda n: f"{n + 20000000000:011d}"),
+        )
+        response = auth_client.get("/api/v1/upfs/?page_size=500")
+        assert response.status_code == 200
+        assert len(response.data["results"]) == 200
+
+
+class TestAtivaPadrao:
+    def test_list_returns_only_active_by_default(
+        self, auth_client, projeto, municipio_rn
+    ):
+        ativa = UPFFactory(
+            projeto=projeto, municipio=municipio_rn,
+            nome_titular="Ativa", cpf="86288366757", ativa=True,
+        )
+        UPFFactory(
+            projeto=projeto, municipio=municipio_rn,
+            nome_titular="Inativa", cpf="52998224725", ativa=False,
+        )
+        response = auth_client.get("/api/v1/upfs/")
+        assert response.status_code == 200
+        nomes = [u["nome_titular"] for u in response.data["results"]]
+        assert "Ativa" in nomes
+        assert "Inativa" not in nomes
+
+        response_inativas = auth_client.get("/api/v1/upfs/?ativa=false")
+        assert response_inativas.status_code == 200
+        nomes_inativas = [
+            u["nome_titular"] for u in response_inativas.data["results"]
+        ]
+        assert "Inativa" in nomes_inativas
+        assert "Ativa" not in nomes_inativas
+
+
+class TestIsolamentoTerritorial:
+    def test_adt_sees_only_own_territory(
+        self, auth_client_adt_rn, projeto, municipio_rn, municipio_ce,
+        territory_rn, territory_ce,
+    ):
+        upf_rn = UPFFactory(
+            projeto=projeto, municipio=municipio_rn,
+            territorio=territory_rn, cpf="86288366757",
+        )
+        UPFFactory(
+            projeto=projeto, municipio=municipio_ce,
+            territorio=territory_ce, cpf="52998224725",
+        )
+        response = auth_client_adt_rn.get("/api/v1/upfs/")
+        assert response.status_code == 200
+        ids = [u["id"] for u in response.data["results"]]
+        assert upf_rn.pk in ids
+        assert len(ids) == 1
+
+    def test_articulador_sees_only_own_state(
+        self, auth_client_articulador_rn, projeto,
+        municipio_rn, municipio_ce, territory_rn, territory_ce,
+    ):
+        upf_rn = UPFFactory(
+            projeto=projeto, municipio=municipio_rn,
+            territorio=territory_rn, cpf="86288366757",
+        )
+        UPFFactory(
+            projeto=projeto, municipio=municipio_ce,
+            territorio=territory_ce, cpf="52998224725",
+        )
+        response = auth_client_articulador_rn.get("/api/v1/upfs/")
+        assert response.status_code == 200
+        ids = [u["id"] for u in response.data["results"]]
+        assert upf_rn.pk in ids
+        assert len(ids) == 1
+
+    def test_super_admin_sees_all_upfs(
+        self, auth_client_super_admin, projeto,
+        municipio_rn, municipio_ce, territory_rn, territory_ce,
+    ):
+        UPFFactory(
+            projeto=projeto, municipio=municipio_rn,
+            territorio=territory_rn, cpf="86288366757",
+        )
+        UPFFactory(
+            projeto=projeto, municipio=municipio_ce,
+            territorio=territory_ce, cpf="52998224725",
+        )
+        response = auth_client_super_admin.get("/api/v1/upfs/")
+        assert response.status_code == 200
+        assert len(response.data["results"]) == 2
+
+    def test_ugp_sees_all_upfs(
+        self, auth_client, projeto,
+        municipio_rn, municipio_ce, territory_rn, territory_ce,
+    ):
+        UPFFactory(
+            projeto=projeto, municipio=municipio_rn,
+            territorio=territory_rn, cpf="86288366757",
+        )
+        UPFFactory(
+            projeto=projeto, municipio=municipio_ce,
+            territorio=territory_ce, cpf="52998224725",
+        )
+        response = auth_client.get("/api/v1/upfs/")
+        assert response.status_code == 200
+        assert len(response.data["results"]) == 2
+
+    def test_adt_accessing_upf_outside_territory_returns_404(
+        self, auth_client_adt_rn, projeto,
+        municipio_ce, territory_ce,
+    ):
+        upf_ce = UPFFactory(
+            projeto=projeto, municipio=municipio_ce,
+            territorio=territory_ce, cpf="52998224725",
+        )
+        response = auth_client_adt_rn.get(f"/api/v1/upfs/{upf_ce.pk}/")
+        assert response.status_code == 404
+
+    def test_perfil_without_sgp_access_returns_403(
+        self, auth_client_sem_acesso, projeto, municipio_rn
+    ):
+        UPFFactory(
+            projeto=projeto, municipio=municipio_rn, cpf="86288366757"
+        )
+        response = auth_client_sem_acesso.get("/api/v1/upfs/")
+        assert response.status_code == 403
