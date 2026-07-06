@@ -2,6 +2,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from apps.core.models import Organization, Municipality, State, Territory, Role, User
+from apps.core.models.audit_log import AuditLog
 from apps.core.models.user_profile import UserProfile
 from apps.core.tests.factories import RoleFactory, TerritoryFactory, UserFactory
 
@@ -135,6 +136,11 @@ class TestCreateOrganizationValidCnpj:
         assert Organization.objects.filter(cnpj=VALID_CNPJ).exists()
         assert response.data["nome"] == "OSC Teste"
         assert response.data["cnpj"] == VALID_CNPJ
+        assert AuditLog.objects.filter(
+            entidade="Organization",
+            entidade_id=str(response.data["id"]),
+            acao="organization.create",
+        ).count() == 1
 
 
 class TestCreateOrganizationInvalidCnpjReturns400:

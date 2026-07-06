@@ -31,10 +31,18 @@ from .serializers import (
 )
 
 from .services.permissions import user_has_role, user_territories
+from .services.audit import create_audit_log
 from .throttling import NotificationUnreadCountThrottle
 
 logger = logging.getLogger(__name__)
 audit_event_logger = logging.getLogger("audit_events")
+
+
+def _user_access_snapshot(user):
+    return {
+        "role_id": user.role_id,
+        "territorios": sorted(user.territorios.values_list("pk", flat=True)),
+    }
 
 class RoleViewSet(viewsets.ModelViewSet):
     queryset = Role.objects.all()
@@ -124,6 +132,17 @@ class UserViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         user = serializer.save()
         logger.info("Mock: welcome email would be sent user_id=%s", user.pk)
+        access_snapshot = _user_access_snapshot(user)
+        if access_snapshot["role_id"] is not None or access_snapshot["territorios"]:
+            create_audit_log(
+                user=self.request.user,
+                acao="user.access_changed",
+                entidade="User",
+                entidade_id=user.pk,
+                valores_anteriores={},
+                valores_novos=access_snapshot,
+                request=self.request,
+            )
         audit_event_logger.info(
             "user.created actor_user_id=%s target_user_id=%s",
             getattr(self.request.user, "pk", None),
@@ -131,7 +150,19 @@ class UserViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
+        old_access = _user_access_snapshot(serializer.instance)
         user = serializer.save()
+        new_access = _user_access_snapshot(user)
+        if old_access != new_access:
+            create_audit_log(
+                user=self.request.user,
+                acao="user.access_changed",
+                entidade="User",
+                entidade_id=user.pk,
+                valores_anteriores=old_access,
+                valores_novos=new_access,
+                request=self.request,
+            )
         audit_event_logger.info(
             "user.updated actor_user_id=%s target_user_id=%s",
             getattr(self.request.user, "pk", None),
@@ -188,12 +219,11 @@ class OrganizationViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         instance = serializer.save()
         territory_ids = list(instance.territorios.values_list("pk", flat=True))
-        AuditLog.objects.create(
+        create_audit_log(
             user=self.request.user,
             acao="organization.create",
-            modulo="core",
             entidade="Organization",
-            entidade_id=str(instance.pk),
+            entidade_id=instance.pk,
             valores_novos={
                 "organization_id": instance.pk,
                 "nome": instance.nome,
@@ -202,8 +232,7 @@ class OrganizationViewSet(viewsets.ModelViewSet):
                 "ativa": instance.ativa,
                 "territorios": territory_ids,
             },
-            ip=self.request.META.get("REMOTE_ADDR"),
-            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
+            request=self.request,
         )
         audit_event_logger.info(
             "organization.created actor_user_id=%s organization_id=%s",
@@ -213,6 +242,7 @@ class OrganizationViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         old = self.get_object()
+        old_territories = set(old.territorios.values_list("pk", flat=True))
         valores_anteriores = {
             "nome": old.nome,
             "cnpj": old.cnpj,
@@ -221,13 +251,13 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         }
 
         instance = serializer.save()
+        new_territories = set(instance.territorios.values_list("pk", flat=True))
         
-        AuditLog.objects.create(
+        create_audit_log(
             user=self.request.user,
             acao="UPDATE",
-            modulo="core",
             entidade="Organization",
-            entidade_id=str(instance.pk),
+            entidade_id=instance.pk,
             valores_anteriores=valores_anteriores,
             valores_novos={
                 "nome": instance.nome,
@@ -235,23 +265,21 @@ class OrganizationViewSet(viewsets.ModelViewSet):
                 "tipo": instance.tipo,
                 "ativa": instance.ativa,
             },
-            ip=self.request.META.get("REMOTE_ADDR"),
-            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
+            request=self.request,
         )
         if old_territories != new_territories:
-            AuditLog.objects.create(
+            create_audit_log(
                 user=self.request.user,
                 acao="organization.territory_change",
-                modulo="core",
                 entidade="Organization",
-                entidade_id=str(instance.pk),
+                entidade_id=instance.pk,
                 valores_anteriores={
                     "territorios": sorted(old_territories),
                 },
                 valores_novos={
                     "territorios": sorted(new_territories),
                 },
-                ip=self.request.META.get("REMOTE_ADDR"),
+                request=self.request,
             )
         audit_event_logger.info(
             "organization.updated actor_user_id=%s organization_id=%s",
@@ -263,19 +291,18 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         valores_anteriores = {"nome": instance.nome, "ativa": instance.ativa}
         instance.ativa = False
         instance.save(update_fields=["ativa"])
-        AuditLog.objects.create(
+        create_audit_log(
             user=self.request.user,
             acao="organization.soft_delete",
-            modulo="core",
             entidade="Organization",
-            entidade_id=str(instance.pk),
+            entidade_id=instance.pk,
+            valores_anteriores=valores_anteriores,
             valores_novos={
                 "organization_id": instance.pk,
                 "nome": instance.nome,
                 "ativa": False,
             },
-            ip=self.request.META.get("REMOTE_ADDR"),
-            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
+            request=self.request,
         )
         audit_event_logger.info(
             "organization.soft_deleted actor_user_id=%s organization_id=%s",

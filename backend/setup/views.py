@@ -2,6 +2,8 @@ from rest_framework.decorators import api_view, permission_classes, throttle_cla
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView, TokenBlacklistView
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.tokens import RefreshToken
 from .serializers import LoginSerializer, RefreshSerializer, LogoutSerializer, UserMeSerializer, PasswordResetRequestSerializer, PasswordResetConfirmSerializer
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 from rest_framework import status
@@ -9,6 +11,7 @@ from django.conf import settings
 from setup.tasks import send_email_notification
 import logging
 from apps.core.models.login_attempt import LoginAttempt
+from apps.core.services.audit import create_audit_log, get_client_ip as get_audit_client_ip
 from apps.core.throttling import (
     LoginRateThrottle,
     PasswordResetByEmailThrottle,
@@ -22,10 +25,38 @@ logger = logging.getLogger(__name__)
 security_logger = logging.getLogger("security")
 
 def get_client_ip(request):
-    ip = request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", ""))
-    if ip and "," in ip:
-        ip = ip.split(",")[0].strip()
-    return ip
+    return get_audit_client_ip(request) or ""
+
+
+def _get_user_by_email(email):
+    if not email or "@" not in email:
+        return None
+    User = get_user_model()
+    try:
+        return User.objects.get(email__iexact=email.strip())
+    except User.DoesNotExist:
+        return None
+
+
+def _get_user_from_refresh_token(raw_token):
+    if not raw_token:
+        return None
+    try:
+        token = RefreshToken(raw_token)
+    except TokenError:
+        return None
+
+    outstanding_token = OutstandingToken.objects.select_related("user").filter(
+        jti=token.get("jti"),
+    ).first()
+    if outstanding_token is not None:
+        return outstanding_token.user
+
+    user_id = token.get("user_id")
+    if user_id is None:
+        return None
+    User = get_user_model()
+    return User.objects.filter(pk=user_id).first()
 
 class LoginView(TokenObtainPairView):
     serializer_class = LoginSerializer
@@ -53,6 +84,18 @@ class LoginView(TokenObtainPairView):
             )
         except Exception as exc:
             logger.error("Erro ao gravar LoginAttempt (RATE_LIMITED): %s", exc)
+        audit_user = _get_user_by_email(email)
+        create_audit_log(
+            user=audit_user,
+            acao="auth.login_rate_limited",
+            entidade="User" if audit_user else "LoginAttempt",
+            entidade_id=getattr(audit_user, "pk", ""),
+            valores_novos={
+                "reason": LoginAttempt.MotivFalha.RATE_LIMITED,
+                "wait_seconds": int(wait or 0),
+            },
+            request=request,
+        )
         super().throttled(request, wait)
 
     def post(self, request, *args, **kwargs):
@@ -75,19 +118,29 @@ class LoginView(TokenObtainPairView):
                 ip,
                 request.path,
             )
+            audit_user = _get_user_by_email(email)
+            create_audit_log(
+                user=audit_user,
+                acao="auth.login_success",
+                entidade="User",
+                entidade_id=getattr(audit_user, "pk", ""),
+                valores_novos={"status": "success"},
+                request=request,
+            )
 
             return response
         except Exception as exc:
             # Identifica o motivo da falha            
             User = get_user_model()
 
+            audit_user = None
             if not email or "@" not in email:
                 motivo = LoginAttempt.MotivFalha.INVALID_FORMAT
             else:
                 motivo = LoginAttempt.MotivFalha.INVALID_CREDENTIALS
                 try:
-                    user = User.objects.get(email=email)
-                    if not user.ativo:
+                    audit_user = User.objects.get(email__iexact=email.strip())
+                    if not audit_user.ativo:
                         motivo = LoginAttempt.MotivFalha.INACTIVE_USER
                 except User.DoesNotExist:
                     motivo = LoginAttempt.MotivFalha.INVALID_CREDENTIALS            
@@ -103,6 +156,14 @@ class LoginView(TokenObtainPairView):
                 ip,
                 request.path,
                 motivo,
+            )
+            create_audit_log(
+                user=audit_user,
+                acao="auth.login_failed",
+                entidade="User" if audit_user else "LoginAttempt",
+                entidade_id=getattr(audit_user, "pk", ""),
+                valores_novos={"reason": motivo},
+                request=request,
             )
 
             raise exc        
@@ -135,6 +196,9 @@ class LogoutView(TokenBlacklistView):
     serializer_class = LogoutSerializer
 
     def post(self, request, *args, **kwargs):
+        audit_user = _get_user_from_refresh_token(request.data.get("refresh_token"))
+        if audit_user is None and getattr(request.user, "is_authenticated", False):
+            audit_user = request.user
         try:
             response = super().post(request, *args, **kwargs)
         except Exception as exc:
@@ -153,6 +217,14 @@ class LogoutView(TokenBlacklistView):
             get_client_ip(request),
             request.path,
         )
+        create_audit_log(
+            user=audit_user,
+            acao="auth.logout_success",
+            entidade="User",
+            entidade_id=getattr(audit_user, "pk", ""),
+            valores_novos={"status": "success"},
+            request=request,
+        )
         return response
 
 
@@ -166,7 +238,7 @@ def me(request):
 @permission_classes([IsAuthenticated])
 def logout_all(request):
     tokens = OutstandingToken.objects.filter(user=request.user)
-    token_count = tokens.count()
+    revoked_count = tokens.count()
     for token in tokens:
         BlacklistedToken.objects.get_or_create(token=token)
     security_logger.info(
@@ -174,7 +246,15 @@ def logout_all(request):
         request.user.pk,
         get_client_ip(request),
         request.path,
-        token_count,
+        revoked_count,
+    )
+    create_audit_log(
+        user=request.user,
+        acao="auth.logout_all_success",
+        entidade="User",
+        entidade_id=request.user.pk,
+        valores_novos={"revoked_count": revoked_count},
+        request=request,
     )
     return Response(status=status.HTTP_200_OK)
 
@@ -194,6 +274,14 @@ def password_reset_request(request):
     # SÓ ENVIA E-MAIL SE ENCONTROU O USUÁRIO
     if result is not None:
         token_raw, user = result
+        create_audit_log(
+            user=user,
+            acao="auth.password_reset_requested",
+            entidade="User",
+            entidade_id=user.pk,
+            valores_novos={"delivery": "email"},
+            request=request,
+        )
         link = f"{settings.FRONTEND_BASE_URL}/redefinir-senha?token={token_raw}"
         send_email_notification.delay(
             subject="Redefinição de senha — PDHC",
@@ -234,6 +322,15 @@ def password_reset_confirm(request):
         user.pk,
         ip,
         request.path,
+    )
+    create_audit_log(
+        user=user,
+        acao="auth.password_reset_completed",
+        entidade="User",
+        entidade_id=user.pk,
+        valores_novos={"status": "completed"},
+        request=request,
+        ip=ip,
     )
     return Response(
         {"message": "Senha redefinida com sucesso."},

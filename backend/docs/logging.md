@@ -207,13 +207,23 @@ Use `AuditLog` para:
 - `notifications.mark_all_read`
 - `session_context.set_local_failed`
 
-## Eventos Que Devem Ir Para AuditLog Em PR Futuro
+## Eventos Formalizados No AuditLog
 
-- Login bem-sucedido.
-- Logout.
-- Logout global.
-- Reset de senha concluido.
-- Criacao/edicao/desativacao de usuario.
-- Alteracao de perfil e territorio.
-- Alteracao de configuracao global.
+- `auth.login_success`
+- `auth.login_failed`
+- `auth.login_rate_limited`
+- `auth.logout_success`
+- `auth.logout_all_success`
+- `auth.password_reset_requested`
+- `auth.password_reset_completed`
+- `user.access_changed`
+- `organization.create`
+- `organization.territory_change`
+- `organization.soft_delete`
+- `system_config_update`
+- `CREATE`, `UPDATE` e `DELETE` automaticos para models auditados.
+
+## Pendencias De AuditLog Em PR Futuro
+
+- Exportacao CSV do log de auditoria para conformidade e LGPD.
 - Consulta IA futura com prompt, resposta, tokens e custo.
