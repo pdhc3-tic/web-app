@@ -10,7 +10,6 @@ from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, Ou
 from rest_framework_simplejwt.views import TokenBlacklistView, TokenObtainPairView, TokenRefreshView
 
 from apps.core.models.login_attempt import LoginAttempt
-from apps.core.services.audit import create_audit_log, get_client_ip as get_audit_client_ip
 from apps.core.throttling import (
     LoginRateThrottle,
     PasswordResetByEmailThrottle,
@@ -27,6 +26,8 @@ from setup.serializers import (
     RefreshSerializer,
     UserMeSerializer,
 )
+
+from apps.core.views.audit import log_audit
 from setup.tasks import send_email_notification
 
 
@@ -145,11 +146,13 @@ class LogoutView(TokenBlacklistView):
             get_client_ip(request),
             request.path,
         )
-        create_audit_log(
+        log_audit(
             user=audit_user,
             acao="auth.logout_success",
+            modulo="core",
             entidade="User",
             entidade_id=getattr(audit_user, "pk", ""),
+            valores_anteriores={},
             valores_novos={"status": "success"},
             request=request,
         )
@@ -177,13 +180,16 @@ def logout_all(request):
         request.path,
         revoked_count,
     )
-    create_audit_log(
+    log_audit(
         user=request.user,
         acao="auth.logout_all_success",
+        modulo="core",
         entidade="User",
         entidade_id=request.user.pk,
+        valores_anteriores={},
         valores_novos={"revoked_count": revoked_count},
-        request=request,
+        _ip=get_client_ip(request),
+        _user_agent=request.META.get("HTTP_USER_AGENT"),
     )
     return Response(status=status.HTTP_200_OK)
 
@@ -203,11 +209,13 @@ def password_reset_request(request):
 
     if result is not None:
         token_raw, user = result
-        create_audit_log(
+        log_audit(
             user=user,
             acao="auth.password_reset_requested",
+            modulo="core",
             entidade="User",
             entidade_id=user.pk,
+            valores_anteriores={},
             valores_novos={"delivery": "email"},
             request=request,
         )
