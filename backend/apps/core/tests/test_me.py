@@ -1,6 +1,7 @@
 import pytest
 from rest_framework.test import APIClient
 from apps.core.tests.factories import UserFactory, RoleFactory, TerritoryFactory
+from apps.core.models.user_profile import UserProfile
 
 
 @pytest.fixture
@@ -35,7 +36,8 @@ def test_me_perfis_vazio_sem_role(client, usuario):
 @pytest.mark.django_db
 def test_me_perfis_com_role(client):
     role = RoleFactory(slug="adt-acr", nome="ADT/ACR")
-    usuario = UserFactory(role=role)
+    usuario = UserFactory()
+    UserProfile.objects.create(user=usuario, perfil=role)
     client.force_authenticate(user=usuario)
     response = client.get("/api/v1/auth/me/")
     assert len(response.data["perfis"]) == 1
@@ -50,9 +52,10 @@ def test_me_territorios_vazio_sem_vinculo(client, usuario):
 
 @pytest.mark.django_db
 def test_me_territorios_com_vinculo(client):
+    role = RoleFactory(slug="adt-acr", nome="ADT/ACR")
     territorio = TerritoryFactory(nome="Sertão do Apodi", estados=["RN"])
     usuario = UserFactory()
-    usuario.territorios.add(territorio)
+    UserProfile.objects.create(user=usuario, perfil=role, territorio=territorio)
     client.force_authenticate(user=usuario)
     response = client.get("/api/v1/auth/me/")
     assert len(response.data["territorios"]) == 1

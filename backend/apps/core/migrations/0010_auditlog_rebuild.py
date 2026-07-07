@@ -42,7 +42,7 @@ DROP FUNCTION IF EXISTS core_auditlog_block_mutation();
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0009_merge_0008_loginattempt_0008_userprofile'),
+        ('core', '0009_userprofile'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

@@ -23,8 +23,17 @@ class SessionContextMiddleware:
 
         _, token = auth_result
         user_id = token["user_id"]
-        territorios = self._format_territorios(token.get("territorios", []))
-        role = str(token.get("role") or token.get("perfil") or "")
+        user = request.user
+
+        territorios = self._format_territorios(
+            token.get("territorios") or self._user_territories_from_db(user)
+        )
+        role = str(
+            token.get("role")
+            or token.get("perfil")
+            or self._user_role_from_db(user)
+            or ""
+        )
 
         with transaction.atomic():
             try:
@@ -36,6 +45,31 @@ class SessionContextMiddleware:
                 logger.exception("session_context.set_local_failed user_id=%s", user_id)
                 raise
             return self.get_response(request)
+
+    @staticmethod
+    def _user_role_from_db(user):
+        try:
+            from apps.core.models.user_profile import UserProfile
+            profile = UserProfile.objects.filter(user=user).select_related("perfil").first()
+            if profile:
+                return profile.perfil.slug
+        except Exception:
+            pass
+        return ""
+
+    @staticmethod
+    def _user_territories_from_db(user):
+        try:
+            from apps.core.models.user_profile import UserProfile
+            ids = list(
+                UserProfile.objects.filter(
+                    user=user, territorio__isnull=False
+                ).values_list("territorio_id", flat=True)
+            )
+            return ",".join(str(i) for i in ids) if ids else ""
+        except Exception:
+            pass
+        return ""
 
     def _authenticate_request(self, request):
         try:

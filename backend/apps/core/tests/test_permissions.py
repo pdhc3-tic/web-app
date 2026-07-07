@@ -40,38 +40,46 @@ def territory_ce():
 
 
 class TestUserHasRole:
-    def test_matching(self, role_super):
-        assert user_has_role(UserFactory(role=role_super), "super-admin") is True
+    def test_matching(self, role_super, role_ugp):
+        user = UserFactory()
+        UserProfileFactory(user=user, perfil=role_super)
+        assert user_has_role(user, "super-admin") is True
 
     def test_mismatch(self, role_ugp):
-        assert user_has_role(UserFactory(role=role_ugp), "super-admin") is False
+        user = UserFactory()
+        UserProfileFactory(user=user, perfil=role_ugp)
+        assert user_has_role(user, "super-admin") is False
 
     def test_no_role(self):
-        assert user_has_role(UserFactory(role=None), "super-admin") is False
+        assert user_has_role(UserFactory(), "super-admin") is False
 
 
 class TestUserTerritories:
-    def test_with_territories(self, territory_rn, territory_pb):
+    def test_with_territories(self, territory_rn, territory_pb, role_adt):
         user = UserFactory()
-        user.territorios.add(territory_rn, territory_pb)
+        UserProfileFactory(user=user, perfil=role_adt, territorio=territory_rn)
+        UserProfileFactory(user=user, perfil=role_adt, territorio=territory_pb)
         assert set(user_territories(user).values_list("pk", flat=True)) == {
             territory_rn.pk,
             territory_pb.pk,
         }
 
-    def test_global_without_territories(self, territory_rn):
+    def test_global_without_territories(self, territory_rn, role_ugp):
         user = UserFactory()
+        UserProfileFactory(user=user, perfil=role_ugp, territorio=None)
         assert user_territories(user).count() == Territory.objects.count()
 
 
 class TestUserStates:
-    def test_with_territories(self, territory_rn, territory_pb):
+    def test_with_territories(self, territory_rn, territory_pb, role_adt):
         user = UserFactory()
-        user.territorios.add(territory_rn, territory_pb)
+        UserProfileFactory(user=user, perfil=role_adt, territorio=territory_rn)
+        UserProfileFactory(user=user, perfil=role_adt, territorio=territory_pb)
         assert user_states(user) == {"RN", "PB"}
 
-    def test_global_without_territories(self, territory_rn, territory_ce):
+    def test_global_without_territories(self, territory_rn, territory_ce, role_ugp):
         user = UserFactory()
+        UserProfileFactory(user=user, perfil=role_ugp, territorio=None)
         states = user_states(user)
         assert "RN" in states and "CE" in states
 
