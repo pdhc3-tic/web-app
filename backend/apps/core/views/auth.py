@@ -69,7 +69,7 @@ class LoginView(TokenObtainPairView):
                 motivo_falha=LoginAttempt.MotivFalha.RATE_LIMITED,
             )
         except Exception as exc:
-            logger.error("Erro ao gravar LoginAttempt (RATE_LIMITED): %s", exc)
+            logger.error("auth.login_attempt_save_failed reason=rate_limited error=%s", exc)
         super().throttled(request, wait)
 
     def post(self, request, *args, **kwargs):
@@ -84,7 +84,7 @@ class LoginView(TokenObtainPairView):
             try:
                 LoginAttempt.objects.create(email=email, ip=ip, sucesso=True)
             except Exception as exc:
-                logger.error("Erro ao gravar LoginAttempt: %s", exc)
+                logger.error("auth.login_attempt_save_failed reason=success_login error=%s", exc)
 
             return response
         except Exception as exc:
@@ -105,7 +105,7 @@ class LoginView(TokenObtainPairView):
             try:
                 LoginAttempt.objects.create(email=email, ip=ip, sucesso=False, motivo_falha=motivo)
             except Exception as log_exc:
-                logger.error("Erro ao gravar LoginAttempt: %s", log_exc)
+                logger.error("auth.login_attempt_save_failed reason=failed_login error=%s", log_exc)
 
             raise exc
 
@@ -257,7 +257,17 @@ def password_reset_request(request):
 def password_reset_confirm(request):
     serializer = PasswordResetConfirmSerializer(data=request.data, context={"request": request})
     serializer.is_valid(raise_exception=True)
-    serializer.save()
+    user = serializer.save()
+    log_audit(
+        user=user,
+        acao="auth.password_reset_completed",
+        modulo="core",
+        entidade="User",
+        entidade_id=user.pk,
+        valores_anteriores={},
+        valores_novos={"email": user.email},
+        request=request,
+    )
     return Response(
         {"message": "Senha redefinida com sucesso."},
         status=status.HTTP_200_OK,

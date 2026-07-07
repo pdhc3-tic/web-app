@@ -169,7 +169,7 @@ class TestAPI:
 
         log = AuditLog.objects.filter(
             user=super_admin_user,
-            acao="system_config_updated",
+            acao="system_config.updated",
         ).last()
         assert log is not None
         assert log.entidade_id == str(config_int.pk)

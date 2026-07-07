@@ -35,7 +35,7 @@ def _log_denial(user: Any, view: APIView, obj: Any | None = None, *, reason: str
     obj_id = getattr(obj, "pk", None) if obj else None
     view_name = view.__class__.__name__ if view else "UnknownView"
     logger.warning(
-        "Permissão negada: user_id=%s view=%s object_id=%s reason=%s",
+        "permission.denied user_id=%s view=%s object_id=%s reason=%s",
         getattr(user, "pk", None),
         view_name,
         obj_id,

@@ -92,7 +92,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 request=self.request,
             )
         audit_event_logger.info(
-            "user.created actor_user_id=%s target_user_id=%s",
+            "user.created user_id=%s target_user_id=%s",
             getattr(self.request.user, "pk", None),
             user.pk,
         )
@@ -113,7 +113,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 request=self.request,
             )
         audit_event_logger.info(
-            "user.updated actor_user_id=%s target_user_id=%s",
+            "user.updated user_id=%s target_user_id=%s",
             getattr(self.request.user, "pk", None),
             user.pk,
         )

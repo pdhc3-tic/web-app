@@ -171,20 +171,4 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         for token in tokens:
             BlacklistedToken.objects.get_or_create(token=token)
 
-        # string vazia vira None (campo aceita null)
-        request = self.context.get("request") or None
-
-        # Registra o evento no AuditLog
-        from apps.core.services.audit import log_audit
-        log_audit(
-            user=user,
-            acao="auth.password_reset_completed",
-            modulo="core",
-            entidade="User",
-            entidade_id=user.pk,
-            valores_anteriores={},
-            valores_novos={"email": user.email},
-            request=request,
-        )
-
         return user

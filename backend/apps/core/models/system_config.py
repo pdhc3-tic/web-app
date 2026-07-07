@@ -70,7 +70,7 @@ def audit_system_config_update(sender, instance, created, **kwargs):
 
     log_audit(
         user=instance.atualizado_por,
-        acao="system_config_updated",
+        acao="system_config.updated",
         modulo="core",
         entidade="SystemConfig",
         entidade_id=instance.pk,
