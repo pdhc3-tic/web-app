@@ -282,7 +282,7 @@ def password_reset_request(request):
             valores_novos={"delivery": "email"},
             request=request,
         )
-        link = f"{settings.FRONTEND_BASE_URL}/redefinir-senha?token={token_raw}"
+        link = f"{settings.FRONTEND_BASE_URL}/redefinir-senha#token={token_raw}"
         send_email_notification.delay(
             subject="Redefinição de senha — PDHC",
             message=f"Clique no link para redefinir sua senha:\n\n{link}\n\nO link expira em 24 horas.",
