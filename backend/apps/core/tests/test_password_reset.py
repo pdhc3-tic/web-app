@@ -8,16 +8,6 @@ from apps.core.tests.factories import UserFactory
 from apps.core.models.password_reset_token import PasswordResetToken
 from apps.core.models.audit_log import AuditLog
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.core.cache import cache
-
-# O LocMemCache persiste entre testes no mesmo processo.
-# Sem limpeza, um teste "contamina" o outro. 
-# Por isso foi criado essa fixture para limpar o cache.
-@pytest.fixture(autouse=False)
-def limpa_cache():
-    cache.clear()
-    yield
-    cache.clear()
 
 @pytest.fixture
 def client():
@@ -89,7 +79,7 @@ def test_confirm_retorna_200_token_valido(client, usuario):
     assert response.data["message"] == "Senha redefinida com sucesso."
 
 @pytest.mark.django_db
-def test_confirm_token_invalido(client, limpa_cache):
+def test_confirm_token_invalido(client):
     response = client.post("/api/v1/auth/password-reset/confirm/", {
         "token": "token-inexistente",
         "nova_senha": "NovaSenha123",
@@ -98,7 +88,7 @@ def test_confirm_token_invalido(client, limpa_cache):
     assert response.data["code"] == ["INVALID_TOKEN"]
 
 @pytest.mark.django_db
-def test_confirm_token_ja_usado(client, usuario, limpa_cache):
+def test_confirm_token_ja_usado(client, usuario):
     token_raw = "token-ja-usado-123"
     token_hash = hashlib.sha256(token_raw.encode()).hexdigest()
     PasswordResetToken.objects.create(
@@ -115,7 +105,7 @@ def test_confirm_token_ja_usado(client, usuario, limpa_cache):
     assert response.data["code"] == ["INVALID_TOKEN"]
 
 @pytest.mark.django_db
-def test_confirm_token_expirado(client, usuario, limpa_cache):
+def test_confirm_token_expirado(client, usuario):
     token_raw = "token-expirado-123"
     token_hash = hashlib.sha256(token_raw.encode()).hexdigest()
     PasswordResetToken.objects.create(
@@ -131,7 +121,7 @@ def test_confirm_token_expirado(client, usuario, limpa_cache):
     assert response.data["code"] == ["EXPIRED_TOKEN"]
 
 @pytest.mark.django_db
-def test_confirm_senha_fraca_curta(client, usuario, limpa_cache):
+def test_confirm_senha_fraca_curta(client, usuario):
     token_raw = "token-senha-fraca-123"
     token_hash = hashlib.sha256(token_raw.encode()).hexdigest()
     PasswordResetToken.objects.create(
@@ -146,7 +136,7 @@ def test_confirm_senha_fraca_curta(client, usuario, limpa_cache):
     assert response.status_code == 400
 
 @pytest.mark.django_db
-def test_confirm_senha_sem_maiuscula(client, usuario, limpa_cache):
+def test_confirm_senha_sem_maiuscula(client, usuario):
     token_raw = "token-sem-maiuscula-123"
     token_hash = hashlib.sha256(token_raw.encode()).hexdigest()
     PasswordResetToken.objects.create(
@@ -161,7 +151,7 @@ def test_confirm_senha_sem_maiuscula(client, usuario, limpa_cache):
     assert response.status_code == 400
 
 @pytest.mark.django_db
-def test_confirm_senha_sem_numero(client, usuario, limpa_cache):
+def test_confirm_senha_sem_numero(client, usuario):
     token_raw = "token-sem-numero-123"
     token_hash = hashlib.sha256(token_raw.encode()).hexdigest()
     PasswordResetToken.objects.create(
@@ -176,7 +166,7 @@ def test_confirm_senha_sem_numero(client, usuario, limpa_cache):
     assert response.status_code == 400
 
 @pytest.mark.django_db
-def test_confirm_revoga_refresh_tokens(client, usuario, limpa_cache):
+def test_confirm_revoga_refresh_tokens(client, usuario):
     refresh1 = RefreshToken.for_user(usuario)
     refresh2 = RefreshToken.for_user(usuario)
     token_raw = "token-revoga-refresh-123"
@@ -196,7 +186,7 @@ def test_confirm_revoga_refresh_tokens(client, usuario, limpa_cache):
     assert response2.status_code == 401
 
 @pytest.mark.django_db
-def test_confirm_registra_audit_log(client, usuario, limpa_cache):
+def test_confirm_registra_audit_log(client, usuario):
     token_raw = "token-audit-log-123"
     token_hash = hashlib.sha256(token_raw.encode()).hexdigest()
     PasswordResetToken.objects.create(
@@ -214,7 +204,7 @@ def test_confirm_registra_audit_log(client, usuario, limpa_cache):
 ##  testes throttles                          ##
 ################################################
 @pytest.mark.django_db
-def test_throttle_por_email(client, usuario, limpa_cache):
+def test_throttle_por_email(client, usuario):
     with patch("setup.views.send_email_notification.delay"):
         for _ in range(3):
             response = client.post("/api/v1/auth/password-reset/request/", {
@@ -228,7 +218,7 @@ def test_throttle_por_email(client, usuario, limpa_cache):
     assert response.status_code == 429
 
 @pytest.mark.django_db
-def test_throttle_por_ip(client, limpa_cache):
+def test_throttle_por_ip(client):
     # client.defaults["REMOTE_ADDR"] = "10.0.0.1" PARA FIXAR O IP, SEM ISSO
     # O APIClient usa IPs diferentes a cada request em aguns ambientes. 
     # Emails diferentes em cada iteração garantem que o throttle de email

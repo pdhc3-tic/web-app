@@ -1,7 +1,6 @@
 import pytest
 from rest_framework.test import APIClient
 from unittest.mock import patch
-from django.core.cache import cache
 from apps.core.tests.factories import UserFactory
 from apps.core.models.login_attempt import LoginAttempt
 from apps.core.throttling import (
@@ -13,13 +12,6 @@ from apps.core.throttling import (
 )
 from rest_framework_simplejwt.tokens import RefreshToken
 from setup.views import LoginView, RefreshView, password_reset_confirm, password_reset_request
-
-
-@pytest.fixture(autouse=True)
-def limpa_cache():
-    cache.clear()
-    yield
-    cache.clear()
 
 
 @pytest.fixture
