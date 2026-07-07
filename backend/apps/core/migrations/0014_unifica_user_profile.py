@@ -34,7 +34,8 @@ def forwards_copy_user_role_to_profile(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("core", "0015_alter_notification_enviado_em_and_more"),
+        ("core", "0013_seed_system_config"),
+        ("core", "0010_auditlog_rebuild"),
     ]
 
     operations = [
