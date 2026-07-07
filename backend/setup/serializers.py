@@ -12,7 +12,6 @@ from datetime import timedelta
 from django.utils import timezone
 from apps.core.models.password_reset_token import PasswordResetToken
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
-from apps.core.models.audit_log import AuditLog
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 
@@ -168,20 +167,5 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         tokens = OutstandingToken.objects.filter(user=user)
         for token in tokens:
             BlacklistedToken.objects.get_or_create(token=token)
-
-        # string vazia vira None (campo aceita null)
-        ip = self.context.get("ip") or None  
-
-        # Registra o evento no AuditLog
-        AuditLog.objects.create(
-            user=user,
-            acao="password_reset",
-            modulo="core",
-            entidade="User",
-            entidade_id=str(user.pk),
-            valores_anteriores={},
-            valores_novos={"email": user.email},
-            ip=ip,
-        )
 
         return user
