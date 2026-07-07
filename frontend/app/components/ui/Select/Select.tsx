@@ -229,7 +229,7 @@ export function Select({
         onClick={() => (open ? closeDropdown() : openDropdown())}
         className={buildTriggerClass(open, !!error, !!success)}
       >
-        <span className={selected ? "" : "text-text-muted"}>
+        <span className={`truncate ${selected ? "" : "text-text-muted"}`}>
           {selected?.label ?? placeholder}
         </span>
         <ChevronDownIcon

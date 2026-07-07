@@ -15,6 +15,7 @@ import {
   LogOut,
   SlidersHorizontal,
   Smartphone,
+  UserCog,
   Users,
   Wallet,
 } from "lucide-react";
@@ -22,6 +23,8 @@ import type { LucideIcon } from "lucide-react";
 import { BrandMark } from "@/app/components/icons";
 import Spinner from "@/app/components/icons/Spinner";
 import { logout } from "@/app/lib/api";
+import { isSuperAdmin } from "@/app/lib/auth/roles";
+import { Avatar } from "@/app/components/ui/Avatar/Avatar";
 import { ThemeToggle } from "./ThemeToggle";
 
 type ModuleItem = {
@@ -39,6 +42,13 @@ const DASHBOARD: ModuleItem = {
   Icon: LayoutDashboard,
 };
 
+// Itens visíveis apenas para Super Admin (gerenciamento do sistema).
+const ADMIN_ITEM: ModuleItem = {
+  href: "/admin/usuarios",
+  label: "Usuários",
+  Icon: UserCog,
+};
+
 // Badges mock: substituir por /api/v1/notifications/me/unread-count/ em sprint futura
 const MODULES: ModuleItem[] = [
   { href: "/core", label: "Core", Icon: Database },
@@ -49,15 +59,6 @@ const MODULES: ModuleItem[] = [
   { href: "/sge", label: "SGE", Icon: Calendar, badge: 2 },
   { href: "/sca", label: "SCA", Icon: Smartphone },
 ];
-
-function getIniciais(nome: string): string {
-  const partes = nome.split(" ").filter(Boolean);
-  if (partes.length === 0) return "?";
-  if (partes.length === 1) return partes[0][0]?.toUpperCase() ?? "?";
-  return (
-    (partes[0][0] ?? "") + (partes[partes.length - 1][0] ?? "")
-  ).toUpperCase();
-}
 
 function isActive(pathname: string | null, href: string): boolean {
   if (!pathname) return false;
@@ -117,24 +118,16 @@ function UserMenu({ collapsed }: UserMenuProps) {
 
   const { nome_completo, foto_url, perfis } = session.user;
   const nome = nome_completo || "Usuário";
-  const iniciais = getIniciais(nome);
   const perfilPrincipal =
     perfis && perfis.length > 0 ? perfis[0].nome : "Sem perfil";
 
-  const avatar = foto_url ? (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
+  const avatar = (
+    <Avatar
+      name={nome}
       src={foto_url}
-      alt=""
-      className="h-9 w-9 rounded-full object-cover ring-2 ring-surface shadow-md shrink-0"
+      size="md"
+      className="shadow-md shadow-primary/20"
     />
-  ) : (
-    <div
-      aria-hidden="true"
-      className="h-9 w-9 rounded-full bg-linear-to-br from-primary to-secondary text-surface text-xs font-medium flex items-center justify-center shadow-md shadow-primary/20 shrink-0"
-    >
-      {iniciais}
-    </div>
   );
 
   if (collapsed) {
@@ -197,7 +190,10 @@ function UserMenu({ collapsed }: UserMenuProps) {
           ) : (
             <LogOut className="h-3.5 w-3.5" />
           )}
-          <span>{leaving ? "Saindo" : "Sair"}</span>
+          <span className="relative inline-flex">
+            <span aria-hidden="true" className="invisible">Saindo</span>
+            <span className="absolute">{leaving ? "Saindo" : "Sair"}</span>
+          </span>
         </button>
       </div>
     </div>
@@ -206,6 +202,8 @@ function UserMenu({ collapsed }: UserMenuProps) {
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { data: session } = useSession();
+  const superAdmin = isSuperAdmin(session?.user);
   const [collapsed, setCollapsed] = useState(false);
   const listRef = useRef<HTMLUListElement | null>(null);
 
@@ -284,6 +282,15 @@ export function Sidebar() {
             collapsed={collapsed}
           />
         </li>
+        {superAdmin && (
+          <li>
+            <SidebarItem
+              item={ADMIN_ITEM}
+              active={isActive(pathname, ADMIN_ITEM.href)}
+              collapsed={collapsed}
+            />
+          </li>
+        )}
         {collapsed ? (
           <li aria-hidden="true" className="mx-3 my-3 h-px bg-border/40" />
         ) : (

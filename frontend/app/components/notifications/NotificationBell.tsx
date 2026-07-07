@@ -19,6 +19,7 @@ import {
   Users,
 } from "lucide-react";
 import { apiClient } from "@/app/lib/api";
+import { relativeTime } from "@/app/lib/datetime";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -69,22 +70,6 @@ function ModuleOriginIcon({ modulo }: { modulo: string }) {
     default:
       return <Bell {...props} />;
   }
-}
-
-// ─── Tempo relativo (pt-BR) ─────────────────────────────────────────────────
-
-const rtf = new Intl.RelativeTimeFormat("pt-BR", { numeric: "auto" });
-
-function relativeTime(iso: string | null): string {
-  if (!iso) return "";
-  const diffSec = Math.round((new Date(iso).getTime() - Date.now()) / 1000);
-  const abs = Math.abs(diffSec);
-  if (abs < 60) return "agora";
-  const min = Math.round(diffSec / 60);
-  if (Math.abs(min) < 60) return rtf.format(min, "minute");
-  const hour = Math.round(diffSec / 3600);
-  if (Math.abs(hour) < 24) return rtf.format(hour, "hour");
-  return rtf.format(Math.round(diffSec / 86_400), "day");
 }
 
 function isUnread(n: Notification): boolean {
@@ -470,3 +455,4 @@ export function NotificationBell() {
     </div>
   );
 }
+

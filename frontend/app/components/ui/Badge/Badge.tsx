@@ -17,6 +17,8 @@ const statusClass: Record<BadgeStatus, string> = {
   "nao-realizada": "bg-error-bg text-error-text border-error-text",
   cancelada: "bg-neutral-bg text-neutral-text border-neutral-text line-through decoration-1",
   atrasada: "bg-error-bg text-error-text border-error-text border-dashed",
+  ativo: "bg-success-bg text-success-text border-success-text",
+  inativo: "bg-neutral-bg text-neutral-text border-neutral-text",
 };
 
 const defaultLabel: Record<BadgeStatus, string> = {
@@ -29,6 +31,8 @@ const defaultLabel: Record<BadgeStatus, string> = {
   "nao-realizada": "Não realizada",
   cancelada: "Cancelada",
   atrasada: "Atrasada",
+  ativo: "Ativo",
+  inativo: "Inativo",
 };
 
 export function Badge({ status, label }: BadgeProps) {
