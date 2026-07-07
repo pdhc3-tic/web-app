@@ -98,15 +98,33 @@ class RoleSerializer(serializers.ModelSerializer):
         fields = ['id', 'nome', 'slug', 'descricao', 'ativo', 'criado_em']
         read_only_fields = ['criado_em']
 
+
+class RoleSummarySerializer(serializers.ModelSerializer):
+    """Versão resumida de Role para uso em endpoints de auth (me, etc.)."""
+
+    class Meta:
+        model = Role
+        fields = ['id', 'slug', 'nome']
+
+
 class StateSerializer(serializers.ModelSerializer):
     class Meta:
         model = State
         fields = ['id', 'sigla', 'nome']
 
+
 class TerritorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Territory
         fields = ['id', 'nome', 'estados', 'articulador', 'ativo']
+
+
+class TerritorySummarySerializer(serializers.ModelSerializer):
+    """Versão resumida de Territory para uso em endpoints de auth (me, etc.)."""
+
+    class Meta:
+        model = Territory
+        fields = ['id', 'nome', 'estados']
 
 class MunicipalitySerializer(serializers.ModelSerializer):
     class Meta:

@@ -2,9 +2,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, Toke
 
 from rest_framework import serializers
 from apps.core.models.user import User
-from apps.core.models.role import Role
-from apps.core.models.territory import Territory
-from apps.core.models.user_profile import UserProfile
+from apps.core.serializers import RoleSummarySerializer, TerritorySummarySerializer
 
 import hashlib
 import secrets
@@ -50,18 +48,6 @@ class LogoutSerializer(TokenBlacklistSerializer):
         attrs["refresh"] = attrs.pop("refresh_token")
         return super().validate(attrs)
     
-class RoleSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Role
-        fields = ["id", "slug", "nome"]
-
-
-class TerritorySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Territory
-        fields = ["id", "nome", "estados"]
-
-
 class UserMeSerializer(serializers.ModelSerializer):
     nome_completo = serializers.CharField(source="nome")
     perfis = serializers.SerializerMethodField()
@@ -85,22 +71,23 @@ class UserMeSerializer(serializers.ModelSerializer):
         ]
 
     def get_perfis(self, obj):
+        from apps.core.serializers import RoleSerializer
         profiles = obj.profiles.select_related("perfil").all()
         return [RoleSerializer(p.perfil).data for p in profiles]
 
     def get_territorios(self, obj):
+        from apps.core.serializers import TerritorySerializer
+        from apps.core.models.territory import Territory
         profile_territory_ids = list(
             obj.profiles.filter(territorio__isnull=False)
             .values_list("territorio_id", flat=True)
         )
         if profile_territory_ids:
-            from apps.core.models.territory import Territory
             return TerritorySerializer(
                 Territory.objects.filter(pk__in=profile_territory_ids), many=True
             ).data
         has_global = obj.profiles.filter(territorio__isnull=True).exists()
         if has_global:
-            from apps.core.models.territory import Territory
             return TerritorySerializer(Territory.objects.all(), many=True).data
         return []
 
@@ -183,5 +170,21 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         tokens = OutstandingToken.objects.filter(user=user)
         for token in tokens:
             BlacklistedToken.objects.get_or_create(token=token)
+
+        # string vazia vira None (campo aceita null)
+        request = self.context.get("request") or None
+
+        # Registra o evento no AuditLog
+        from apps.core.services.audit import log_audit
+        log_audit(
+            user=user,
+            acao="password_reset_completed",
+            modulo="core",
+            entidade="User",
+            entidade_id=user.pk,
+            valores_anteriores={},
+            valores_novos={"email": user.email},
+            request=request,
+        )
 
         return user

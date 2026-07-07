@@ -23,7 +23,7 @@ def usuario():
 ###############################################
 @pytest.mark.django_db
 def test_request_retorna_202_email_valido(client, usuario):
-    with patch("setup.views.send_email_notification.delay"):
+    with patch("apps.core.views.auth.send_email_notification.delay"):
         response = client.post("/api/v1/auth/password-reset/request/", {
             "email": usuario.email,
         })
@@ -41,7 +41,7 @@ def test_request_retorna_202_email_inexistente(client):
 @pytest.mark.django_db
 def test_request_nao_envia_email_usuario_inativo(client):
     usuario = UserFactory(ativo=False)
-    with patch("setup.views.send_email_notification.delay") as mock_send:
+    with patch("apps.core.views.auth.send_email_notification.delay") as mock_send:
         client.post("/api/v1/auth/password-reset/request/", {
             "email": usuario.email,
         })
@@ -49,7 +49,7 @@ def test_request_nao_envia_email_usuario_inativo(client):
 
 @pytest.mark.django_db
 def test_request_envia_email_usuario_ativo(client, usuario):
-    with patch("setup.views.send_email_notification.delay") as mock_send:
+    with patch("apps.core.views.auth.send_email_notification.delay") as mock_send:
         client.post("/api/v1/auth/password-reset/request/", {
             "email": usuario.email,
         })
@@ -204,8 +204,8 @@ def test_confirm_registra_audit_log(client, usuario):
 ##  testes throttles                          ##
 ################################################
 @pytest.mark.django_db
-def test_throttle_por_email(client, usuario):
-    with patch("setup.views.send_email_notification.delay"):
+def test_throttle_por_email(client, usuario, limpa_cache):
+    with patch("apps.core.views.auth.send_email_notification.delay"):
         for _ in range(3):
             response = client.post("/api/v1/auth/password-reset/request/", {
                 "email": usuario.email,
@@ -224,7 +224,7 @@ def test_throttle_por_ip(client):
     # Emails diferentes em cada iteração garantem que o throttle de email
     # não seja acionado antes do IP.
     client.defaults["REMOTE_ADDR"] = "10.0.0.1"
-    with patch("setup.views.send_email_notification.delay"):
+    with patch("apps.core.views.auth.send_email_notification.delay"):
         for i in range(5):
             response = client.post("/api/v1/auth/password-reset/request/", {
                 "email": f"diferente{i}@example.com",
