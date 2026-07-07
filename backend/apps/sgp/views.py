@@ -1,9 +1,9 @@
 import logging
+from datetime import datetime
 
 from django.apps import apps
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
-from django.utils.dateparse import parse_datetime
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, serializers, status, viewsets
 from rest_framework.decorators import action
@@ -16,6 +16,7 @@ from apps.sgp.filters import UPFFilter
 from apps.sgp.models import MembroFamilia, UPF
 from apps.sgp.pagination import HistoricoPagination, UPFPagination
 from apps.sgp.serializers import (
+    HistoricoEntrySerializer,
     MembroDetailSerializer,
     MembroListSerializer,
     UPFDetailSerializer,
@@ -142,13 +143,19 @@ class UPFViewSet(viewsets.ModelViewSet):
 
         desde = request.query_params.get("desde")
         if desde:
-            dt = parse_datetime(desde)
+            try:
+                dt = datetime.fromisoformat(desde)
+            except (ValueError, TypeError):
+                dt = None
             if dt:
                 entries = [e for e in entries if e["timestamp"] >= dt]
 
         ate = request.query_params.get("ate")
         if ate:
-            dt = parse_datetime(ate)
+            try:
+                dt = datetime.fromisoformat(ate)
+            except (ValueError, TypeError):
+                dt = None
             if dt:
                 entries = [e for e in entries if e["timestamp"] <= dt]
 
@@ -199,6 +206,7 @@ class UPFViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         old = self.get_object()
         valores_anteriores = {
+            "upf_id": old.pk,
             "nome_titular": old.nome_titular,
             "cpf": old.cpf,
             "projeto_id": old.projeto_id,
@@ -211,6 +219,7 @@ class UPFViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, instance):
         valores_anteriores = {
+            "upf_id": instance.pk,
             "nome_titular": instance.nome_titular,
             "cpf": instance.cpf,
             "projeto_id": instance.projeto_id,
@@ -269,6 +278,8 @@ class MembroViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         old = self.get_object()
         valores_anteriores = {
+            "membro_id": old.pk,
+            "upf_id": old.upf_id,
             "nome_completo": old.nome_completo,
             "parentesco": old.parentesco,
             "cpf": old.cpf,
@@ -300,9 +311,9 @@ class MembroViewSet(viewsets.ModelViewSet):
             entidade_id=str(instance.pk),
             valores_anteriores={
                 "membro_id": instance.pk,
+                "upf_id": instance.upf_id,
                 "nome_completo": instance.nome_completo,
                 "parentesco": instance.parentesco,
-                "upf_id": instance.upf_id,
             },
             valores_novos={},
             ip=self.request.META.get("REMOTE_ADDR"),

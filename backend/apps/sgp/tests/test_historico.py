@@ -1,11 +1,11 @@
-from datetime import timedelta
-
 import pytest
-from django.utils import timezone
 
 from apps.core.models.audit_log import AuditLog
 from apps.sgp.models import UPF
 from apps.sgp.tests.factories import UPFFactory
+
+FUTURE = "2099-01-01T00:00:00Z"
+PAST = "2020-01-01T00:00:00Z"
 
 pytestmark = pytest.mark.django_db
 
@@ -128,21 +128,23 @@ class TestHistoricoFiltros:
         res = auth_client.post("/api/v1/upfs/", upf_payload_minimo, format="json")
         upf_id = res.data["id"]
 
-        now = timezone.now()
-        desde = (now - timedelta(hours=1)).isoformat()
-        ate = (now + timedelta(hours=1)).isoformat()
-
         response = auth_client.get(
-            f"/api/v1/upfs/{upf_id}/historico/?desde={desde}&ate={ate}"
+            f"/api/v1/upfs/{upf_id}/historico/?desde={PAST}"
         )
         assert response.status_code == 200
         assert response.data["count"] == 1
 
         response_futuro = auth_client.get(
-            f"/api/v1/upfs/{upf_id}/historico/?desde={(now + timedelta(hours=2)).isoformat()}"
+            f"/api/v1/upfs/{upf_id}/historico/?desde={FUTURE}"
         )
         assert response_futuro.status_code == 200
         assert response_futuro.data["count"] == 0
+
+        response_past_ate = auth_client.get(
+            f"/api/v1/upfs/{upf_id}/historico/?ate={PAST}"
+        )
+        assert response_past_ate.status_code == 200
+        assert response_past_ate.data["count"] == 0
 
 
 class TestHistoricoPaginacao:
