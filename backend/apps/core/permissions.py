@@ -16,7 +16,7 @@ from apps.core.services.permissions import (
     user_territories,
 )
 
-logger = logging.getLogger("apps.core.permissions")
+logger = logging.getLogger(__name__)
 
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 

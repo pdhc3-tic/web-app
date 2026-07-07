@@ -21,12 +21,19 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / ".env")
 
+LOG_DIR = Path(os.getenv("LOG_DIR", "logs"))
+if not LOG_DIR.is_absolute():
+    LOG_DIR = BASE_DIR / LOG_DIR
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "14"))
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "fallback-secret")
+SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "False") == "True"
@@ -160,7 +167,6 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
-        "setup.permissions.FullDjangoModelPermissions",
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.LimitOffsetPagination",
     "PAGE_SIZE": 10,
@@ -191,7 +197,11 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
-CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
 
 # CONFIGURAÇÕES DO CELERY
 CELERY_BROKER_URL = f"redis://{os.getenv('REDIS_HOST', 'redis')}:{os.getenv('REDIS_PORT', '6379')}/0"
@@ -222,4 +232,97 @@ CACHES = {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
         "LOCATION": f"redis://{os.getenv('REDIS_HOST', 'redis')}:{os.getenv('REDIS_PORT', '6379')}/1",
     }
+}
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "standard": {
+            "format": "%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "standard",
+        },
+        "app_file": {
+            "class": "logging.handlers.TimedRotatingFileHandler",
+            "filename": str(LOG_DIR / "app.log"),
+            "when": "midnight",
+            "backupCount": LOG_BACKUP_COUNT,
+            "encoding": "utf-8",
+            "formatter": "standard",
+        },
+        "security_file": {
+            "class": "logging.handlers.TimedRotatingFileHandler",
+            "filename": str(LOG_DIR / "security.log"),
+            "when": "midnight",
+            "backupCount": int(os.getenv("SECURITY_LOG_BACKUP_COUNT", "90")),
+            "encoding": "utf-8",
+            "formatter": "standard",
+        },
+        "audit_events_file": {
+            "class": "logging.handlers.TimedRotatingFileHandler",
+            "filename": str(LOG_DIR / "audit-events.log"),
+            "when": "midnight",
+            "backupCount": int(os.getenv("AUDIT_LOG_BACKUP_COUNT", "90")),
+            "encoding": "utf-8",
+            "formatter": "standard",
+        },
+        "celery_file": {
+            "class": "logging.handlers.TimedRotatingFileHandler",
+            "filename": str(LOG_DIR / "celery.log"),
+            "when": "midnight",
+            "backupCount": LOG_BACKUP_COUNT,
+            "encoding": "utf-8",
+            "formatter": "standard",
+        },
+        "errors_file": {
+            "class": "logging.handlers.TimedRotatingFileHandler",
+            "filename": str(LOG_DIR / "errors.log"),
+            "when": "midnight",
+            "backupCount": int(os.getenv("ERROR_LOG_BACKUP_COUNT", "30")),
+            "encoding": "utf-8",
+            "formatter": "standard",
+            "level": "ERROR",
+        },
+    },
+    "loggers": {
+        "apps": {
+            "handlers": ["console", "app_file", "errors_file"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
+        "setup": {
+            "handlers": ["console", "app_file", "errors_file"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
+        "security": {
+            "handlers": ["console", "security_file", "errors_file"],
+            "level": os.getenv("SECURITY_LOG_LEVEL", "INFO"),
+            "propagate": False,
+        },
+        "audit_events": {
+            "handlers": ["console", "audit_events_file", "errors_file"],
+            "level": os.getenv("AUDIT_EVENT_LOG_LEVEL", "INFO"),
+            "propagate": False,
+        },
+        "apps.core.tasks": {
+            "handlers": ["console", "celery_file", "errors_file"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
+        "django.request": {
+            "handlers": ["console", "errors_file"],
+            "level": "ERROR",
+            "propagate": False,
+        },
+    },
+    "root": {
+        "handlers": ["console", "errors_file"],
+        "level": "WARNING",
+    },
 }

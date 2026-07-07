@@ -41,10 +41,15 @@ def clear_audit_context():
 
 AUDIT_EXCLUDED_FIELDS = {
     "password",
+    "senha",
     "senha_hash",
     "token",
+    "access_token",
+    "access",
     "refresh_token",
+    "refresh",
     "token_hash",
+    "reset_token",
     "last_login",
     "ultimo_login",
 }

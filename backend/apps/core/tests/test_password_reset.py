@@ -64,6 +64,9 @@ def test_request_envia_email_usuario_ativo(client, usuario):
             "email": usuario.email,
         })
     mock_send.assert_called_once()
+    message = mock_send.call_args.kwargs["message"]
+    assert "/redefinir-senha#token=" in message
+    assert "/redefinir-senha?token=" not in message
 
 ################################################
 ##  testes endpoint /password-reset/confirm/  ##
@@ -205,7 +208,7 @@ def test_confirm_registra_audit_log(client, usuario, limpa_cache):
         "token": token_raw,
         "nova_senha": "NovaSenha123",
     })
-    assert AuditLog.objects.filter(user=usuario, acao="password_reset_completed").exists()
+    assert AuditLog.objects.filter(user=usuario, acao="auth.password_reset_completed").exists()
 
 ################################################
 ##  testes throttles                          ##

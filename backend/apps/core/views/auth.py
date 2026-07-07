@@ -10,6 +10,7 @@ from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, Ou
 from rest_framework_simplejwt.views import TokenBlacklistView, TokenObtainPairView, TokenRefreshView
 
 from apps.core.models.login_attempt import LoginAttempt
+from apps.core.services.audit import create_audit_log, get_client_ip as get_audit_client_ip
 from apps.core.throttling import (
     LoginRateThrottle,
     PasswordResetByEmailThrottle,
@@ -30,6 +31,7 @@ from setup.tasks import send_email_notification
 
 
 logger = logging.getLogger(__name__)
+security_logger = logging.getLogger("security")
 
 
 class LoginView(TokenObtainPairView):
@@ -39,6 +41,11 @@ class LoginView(TokenObtainPairView):
     def throttled(self, request, wait):
         ip = get_client_ip(request)
         email = request.data.get("email", "")
+        security_logger.warning(
+            "auth.login_rate_limited ip=%s path=%s",
+            ip,
+            request.path,
+        )
         try:
             LoginAttempt.objects.create(
                 email=email,
@@ -68,13 +75,14 @@ class LoginView(TokenObtainPairView):
         except Exception as exc:
             User = get_user_model()
 
+            audit_user = None
             if not email or "@" not in email:
                 motivo = LoginAttempt.MotivFalha.INVALID_FORMAT
             else:
                 motivo = LoginAttempt.MotivFalha.INVALID_CREDENTIALS
                 try:
-                    user = User.objects.get(email=email)
-                    if not user.ativo:
+                    audit_user = User.objects.get(email__iexact=email.strip())
+                    if not audit_user.ativo:
                         motivo = LoginAttempt.MotivFalha.INACTIVE_USER
                 except User.DoesNotExist:
                     motivo = LoginAttempt.MotivFalha.INVALID_CREDENTIALS
@@ -92,14 +100,60 @@ class RefreshView(TokenRefreshView):
     throttle_classes = [RefreshRateThrottle]
 
     def post(self, request, *args, **kwargs):
-        response = super().post(request, *args, **kwargs)
+        try:
+            response = super().post(request, *args, **kwargs)
+        except Exception as exc:
+            security_logger.warning(
+                "auth.refresh_failed ip=%s path=%s error=%s",
+                get_client_ip(request),
+                request.path,
+                exc.__class__.__name__,
+            )
+            raise
         response.data["access_token"] = response.data.pop("access")
         response.data["refresh_token"] = response.data.pop("refresh")
+        security_logger.info(
+            "auth.refresh_success ip=%s path=%s",
+            get_client_ip(request),
+            request.path,
+        )
         return response
 
 
 class LogoutView(TokenBlacklistView):
     serializer_class = LogoutSerializer
+
+    def post(self, request, *args, **kwargs):
+        audit_user = _get_user_from_refresh_token(request.data.get("refresh_token"))
+        if audit_user is None and getattr(request.user, "is_authenticated", False):
+            audit_user = request.user
+        try:
+            response = super().post(request, *args, **kwargs)
+        except Exception as exc:
+            security_logger.warning(
+                "auth.logout_failed user_id=%s ip=%s path=%s error=%s",
+                getattr(request.user, "pk", None),
+                get_client_ip(request),
+                request.path,
+                exc.__class__.__name__,
+            )
+            raise
+
+        security_logger.info(
+            "auth.logout_success user_id=%s ip=%s path=%s",
+            getattr(request.user, "pk", None),
+            get_client_ip(request),
+            request.path,
+        )
+        create_audit_log(
+            user=audit_user,
+            acao="auth.logout_success",
+            entidade="User",
+            entidade_id=getattr(audit_user, "pk", ""),
+            valores_novos={"status": "success"},
+            request=request,
+        )
+        return response
 
 
 @api_view(["GET"])
@@ -113,8 +167,24 @@ def me(request):
 @permission_classes([IsAuthenticated])
 def logout_all(request):
     tokens = OutstandingToken.objects.filter(user=request.user)
+    revoked_count = tokens.count()
     for token in tokens:
         BlacklistedToken.objects.get_or_create(token=token)
+    security_logger.info(
+        "auth.logout_all_success user_id=%s ip=%s path=%s token_count=%s",
+        request.user.pk,
+        get_client_ip(request),
+        request.path,
+        revoked_count,
+    )
+    create_audit_log(
+        user=request.user,
+        acao="auth.logout_all_success",
+        entidade="User",
+        entidade_id=request.user.pk,
+        valores_novos={"revoked_count": revoked_count},
+        request=request,
+    )
     return Response(status=status.HTTP_200_OK)
 
 
@@ -125,14 +195,33 @@ def password_reset_request(request):
     serializer = PasswordResetRequestSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     result = serializer.save()
+    security_logger.info(
+        "auth.password_reset_requested ip=%s path=%s",
+        get_client_ip(request),
+        request.path,
+    )
 
     if result is not None:
         token_raw, user = result
-        link = f"{settings.FRONTEND_BASE_URL}/redefinir-senha?token={token_raw}"
+        create_audit_log(
+            user=user,
+            acao="auth.password_reset_requested",
+            entidade="User",
+            entidade_id=user.pk,
+            valores_novos={"delivery": "email"},
+            request=request,
+        )
+        link = f"{settings.FRONTEND_BASE_URL}/redefinir-senha#token={token_raw}"
         send_email_notification.delay(
             subject="Redefinição de senha — PDHC",
             message=f"Clique no link para redefinir sua senha:\n\n{link}\n\nO link expira em 24 horas.",
             recipient_list=[user.email],
+        )
+        security_logger.info(
+            "auth.password_reset_email_enqueued user_id=%s ip=%s path=%s",
+            user.pk,
+            get_client_ip(request),
+            request.path,
         )
 
     return Response(
