@@ -1,17 +1,25 @@
-"""
-Testes unitários para apps/core/selectors.py
-"""
 import pytest
 from apps.core.selectors import organization_list
 from apps.core.tests.factories import RoleFactory, UserFactory, TerritoryFactory, OrganizationFactory
+from apps.core.models.user_profile import UserProfile
 
 
 @pytest.mark.django_db
 class TestOrganizationList:
-    def test_admin_sees_all_active(self):
-        """Super-admin vê todas as organizações ativas."""
+    def _make_admin_user(self):
         role = RoleFactory(slug="super-admin", nome="Super Admin")
-        user = UserFactory(role=role)
+        user = UserFactory()
+        UserProfile.objects.create(user=user, perfil=role)
+        return user
+
+    def _make_articulador_user(self, territory):
+        role = RoleFactory(slug="articulador-estadual", nome="Articulador Estadual")
+        user = UserFactory()
+        UserProfile.objects.create(user=user, perfil=role, territorio=territory)
+        return user
+
+    def test_admin_sees_all_active(self):
+        user = self._make_admin_user()
         t = TerritoryFactory()
         o1 = OrganizationFactory(ativa=True)
         o2 = OrganizationFactory(ativa=True)
@@ -22,9 +30,7 @@ class TestOrganizationList:
         assert qs.count() == 2
 
     def test_list_excludes_inactive(self):
-        """Na ação list, organizações inativas ficam fora."""
-        role = RoleFactory(slug="super-admin", nome="Super Admin")
-        user = UserFactory(role=role)
+        user = self._make_admin_user()
         t = TerritoryFactory()
         o1 = OrganizationFactory(ativa=True)
         o2 = OrganizationFactory(ativa=False)
@@ -36,9 +42,7 @@ class TestOrganizationList:
         assert qs.first().ativa is True
 
     def test_retrieve_includes_inactive_for_admin(self):
-        """Na ação retrieve, admin vê também inativas."""
-        role = RoleFactory(slug="super-admin", nome="Super Admin")
-        user = UserFactory(role=role)
+        user = self._make_admin_user()
         t = TerritoryFactory()
         o1 = OrganizationFactory(ativa=True)
         o2 = OrganizationFactory(ativa=False)
@@ -49,12 +53,9 @@ class TestOrganizationList:
         assert qs.count() == 2
 
     def test_articulador_sees_only_own_territory(self):
-        """Articulador vê apenas organizações dos seus territórios, sempre ativas."""
-        role = RoleFactory(slug="articulador-estadual", nome="Articulador Estadual")
         t1 = TerritoryFactory()
         t2 = TerritoryFactory()
-        user = UserFactory(role=role)
-        user.territorios.set([t1])
+        user = self._make_articulador_user(t1)
 
         o_visible = OrganizationFactory(ativa=True)
         o_other = OrganizationFactory(ativa=True)

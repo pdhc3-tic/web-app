@@ -15,39 +15,42 @@ if TYPE_CHECKING:
 
 def create_user(
     *,
-    territorios=None,
     password: str | None = None,
-    role=None,
+    perfis_input: list[dict] | None = None,
     **fields,
 ) -> "User":
     """
-    Cria e salva um novo User, configurando senha e territórios.
+    Cria e salva um novo User, configurando senha e perfis (UserProfile).
 
     Args:
-        territorios: lista/queryset de Territory para vincular via M2M.
         password: senha em texto plano (será hasheada via set_password).
-        role: instância de Role (opcional).
+        perfis_input: lista de dicts com perfil_id e (opcional) territorio_id.
         **fields: demais campos escalares do modelo User.
     """
     from apps.core.models import User as UserModel
+    from apps.core.models.user_profile import UserProfile
 
     user = UserModel(**fields)
     if password:
         user.set_password(password)
-    if role is not None:
-        user.role = role
     user.save()
-    if territorios:
-        user.territorios.set(territorios)
+
+    if perfis_input:
+        for item in perfis_input:
+            UserProfile.objects.create(
+                user=user,
+                perfil_id=item["perfil_id"],
+                territorio_id=item.get("territorio_id"),
+            )
+
     return user
 
 
 def update_user(
     instance: "User",
     *,
-    territorios=None,
     password: str | None = None,
-    role=None,
+    perfis_input: list[dict] | None = None,
     **fields,
 ) -> "User":
     """
@@ -55,22 +58,27 @@ def update_user(
 
     Args:
         instance: instância User a ser atualizada.
-        territorios: nova lista de Territory (None = não altera; [] = limpa).
         password: nova senha em texto plano (None = não altera).
-        role: novo Role (None = não altera).
+        perfis_input: nova lista de perfis (None = não altera).
         **fields: demais campos escalares a sobrescrever.
     """
+    from apps.core.models.user_profile import UserProfile
+
     for attr, value in fields.items():
         setattr(instance, attr, value)
 
     if password:
         instance.set_password(password)
-    if role is not None:
-        instance.role = role
 
     instance.save()
 
-    if territorios is not None:
-        instance.territorios.set(territorios)
+    if perfis_input is not None:
+        instance.profiles.all().delete()
+        for item in perfis_input:
+            UserProfile.objects.create(
+                user=instance,
+                perfil_id=item["perfil_id"],
+                territorio_id=item.get("territorio_id"),
+            )
 
     return instance
