@@ -208,7 +208,7 @@ def test_confirm_registra_audit_log(client, usuario, limpa_cache):
         "token": token_raw,
         "nova_senha": "NovaSenha123",
     })
-    assert AuditLog.objects.filter(user=usuario, acao="password_reset").exists()
+    assert AuditLog.objects.filter(user=usuario, acao="auth.password_reset_completed").exists()
 
 ################################################
 ##  testes throttles                          ##

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <title>{% block titulo %}Notificação{% endblock %}</title>
+  <style>
+    /* Reset básico para clientes de e-mail */
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
+    body { margin: 0; padding: 0; background-color: #f4f4f4; }
+
+    /* Wrapper */
+    .email-wrapper {
+      width: 100%;
+      background-color: #f4f4f4;
+      padding: 32px 0;
+    }
+
+    /* Container principal */
+    .email-container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    /* Header */
+    .email-header {
+      background-color: #1a5276;
+      padding: 24px 32px;
+      text-align: center;
+    }
+    .email-header h1 {
+      margin: 0;
+      color: #ffffff;
+      font-size: 22px;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+    }
+    .email-header p {
+      margin: 4px 0 0;
+      color: #aed6f1;
+      font-size: 13px;
+    }
+
+    /* Conteúdo */
+    .email-body {
+      padding: 32px;
+      color: #333333;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+    .email-body h2 {
+      margin-top: 0;
+      color: #1a5276;
+      font-size: 18px;
+    }
+    .email-body p {
+      margin: 0 0 16px;
+    }
+
+    /* Botão de ação */
+    .btn-wrapper {
+      text-align: center;
+      margin: 24px 0;
+    }
+    .btn-acao {
+      display: inline-block;
+      background-color: #1a5276;
+      color: #ffffff !important;
+      text-decoration: none;
+      padding: 12px 28px;
+      border-radius: 4px;
+      font-size: 15px;
+      font-weight: bold;
+    }
+
+    /* Informações adicionais */
+    .email-meta {
+      background-color: #f8f9fa;
+      border-top: 1px solid #e9ecef;
+      padding: 16px 32px;
+      font-size: 13px;
+      color: #666666;
+    }
+
+    /* Footer */
+    .email-footer {
+      background-color: #1a5276;
+      padding: 20px 32px;
+      text-align: center;
+    }
+    .email-footer p {
+      margin: 0;
+      color: #aed6f1;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .email-footer a {
+      color: #aed6f1;
+      text-decoration: underline;
+    }
+
+    /* Responsivo */
+    @media only screen and (max-width: 620px) {
+      .email-container { width: 100% !important; border-radius: 0; }
+      .email-body { padding: 24px 16px; }
+      .email-header { padding: 20px 16px; }
+      .email-footer { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="email-wrapper">
+    <table class="email-container" cellpadding="0" cellspacing="0" role="presentation">
+
+      <!-- HEADER -->
+      <tr>
+        <td class="email-header">
+          <h1>PDHC — UFERSA</h1>
+          <p>Sistema de Gestão</p>
+        </td>
+      </tr>
+
+      <!-- BODY -->
+      <tr>
+        <td class="email-body">
+          {% block corpo %}
+          <h2>Olá, {{ nome_usuario|default:"" }}</h2>
+          <p>{{ mensagem|default:"" }}</p>
+
+          {% if link_acao %}
+          <div class="btn-wrapper">
+            <a href="{{ link_acao }}" class="btn-acao">Acessar</a>
+          </div>
+          {% endif %}
+          {% endblock %}
+        </td>
+      </tr>
+
+      <!-- META -->
+      {% block meta %}
+      {% if nome_demanda or data_prazo %}
+      <tr>
+        <td class="email-meta">
+          {% if nome_demanda %}
+          <p><strong>Demanda:</strong> {{ nome_demanda|default:"" }}</p>
+          {% endif %}
+          {% if data_prazo %}
+          <p><strong>Prazo:</strong> {{ data_prazo|default:"" }}</p>
+          {% endif %}
+        </td>
+      </tr>
+      {% endif %}
+      {% endblock %}
+
+      <!-- FOOTER -->
+      <tr>
+        <td class="email-footer">
+          <p>
+            Este é um e-mail automático. Por favor, não responda.<br />
+            UFERSA — Universidade Federal Rural do Semi-Árido<br />
+            <a href="https://ufersa.edu.br">ufersa.edu.br</a>
+          </p>
+        </td>
+      </tr>
+
+    </table>
+  </div>
+</body>
+</html>

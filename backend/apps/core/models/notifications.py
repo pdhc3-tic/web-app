@@ -17,6 +17,7 @@ class StatusNotificacao(models.TextChoices):
     ENVIADO = "enviado", "Enviado"
     ENTREGUE = "entregue", "Entregue"
     FALHOU = "falhou", "Falhou"
+    CANCELADO = "cancelado", "Cancelado"
 
 
 class Notification(models.Model):
@@ -31,7 +32,7 @@ class Notification(models.Model):
     link = models.URLField(blank=True, default="")
     modulo_origem = models.CharField(max_length=100, blank=True, default="")
     evento = models.CharField(max_length=100, blank=True, default="")
-    enviado_em = models.DateTimeField(auto_now_add=True)
+    enviado_em = models.DateTimeField(null=True, blank=True)
     lido_em = models.DateTimeField(null=True, blank=True)
     status = models.CharField(
         max_length=20,
@@ -93,3 +94,13 @@ def _invalidate_unread_cache(user_id):
 def invalidate_unread_count_on_save(sender, instance, **kwargs):
     """Invalida o cache sempre que uma notificação é criada ou atualizada."""
     _invalidate_unread_cache(instance.user_id)
+
+@receiver(signals.post_save, sender=Notification)
+def enqueue_email_notification(sender, instance, created, **kwargs):
+    """
+    Enfileira a task de envio de e-mail sempre que uma Notification
+    do tipo 'email' é criada com status 'pendente'.
+    """
+    if created and instance.tipo == TipoNotificacao.EMAIL and instance.status == StatusNotificacao.PENDENTE:
+        from apps.core.tasks.notifications import send_email_notification
+        send_email_notification.delay(instance.pk)
