@@ -16,7 +16,8 @@ audit_event_logger = logging.getLogger("audit_events")
 
 
 def _user_access_snapshot(user):
-    profiles = user.profiles.all().values("perfil_id", "territorio_id")
+    from apps.core.models.user_profile import UserProfile
+    profiles = UserProfile.objects.filter(user=user).values("perfil_id", "territorio_id")
     return {
         "perfis": [
             {"perfil_id": p["perfil_id"], "territorio_id": p["territorio_id"]}

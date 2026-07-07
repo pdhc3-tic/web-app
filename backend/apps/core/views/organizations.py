@@ -40,7 +40,7 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         territory_ids = list(instance.territorios.values_list("pk", flat=True))
         log_audit(
             user=self.request.user,
-            acao="organization_created",
+            acao="organization.create",
             modulo="core",
             entidade="Organization",
             entidade_id=instance.pk,
@@ -71,7 +71,7 @@ class OrganizationViewSet(viewsets.ModelViewSet):
 
         log_audit(
             user=self.request.user,
-            acao="organization_updated",
+            acao="organization.update",
             modulo="core",
             entidade="Organization",
             entidade_id=instance.pk,
@@ -92,7 +92,7 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         instance.save(update_fields=["ativa"])
         log_audit(
             user=self.request.user,
-            acao="organization_deleted",
+            acao="organization.delete",
             modulo="core",
             entidade="Organization",
             entidade_id=instance.pk,

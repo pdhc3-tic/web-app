@@ -87,7 +87,7 @@ def test_audit_logged_on_user_access_change(superadmin_client):
         "perfis_input": [
             {"perfil_id": role.pk, "territorio_id": territorio.pk},
         ],
-    })
+    }, format="json")
 
     assert response.status_code == 200
     log = AuditLog.objects.filter(

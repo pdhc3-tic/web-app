@@ -178,7 +178,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         from apps.core.services.audit import log_audit
         log_audit(
             user=user,
-            acao="password_reset_completed",
+            acao="auth.password_reset_completed",
             modulo="core",
             entidade="User",
             entidade_id=user.pk,

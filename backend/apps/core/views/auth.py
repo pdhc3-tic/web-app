@@ -7,6 +7,7 @@ from rest_framework.decorators import api_view, permission_classes, throttle_cla
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenBlacklistView, TokenObtainPairView, TokenRefreshView
 
 from apps.core.models.login_attempt import LoginAttempt
@@ -29,6 +30,19 @@ from setup.serializers import (
 
 from apps.core.services.audit import log_audit
 from setup.tasks import send_email_notification
+
+
+def _get_user_from_refresh_token(token_str):
+    if not token_str:
+        return None
+    try:
+        token = RefreshToken(token_str)
+        user_id = token.payload.get("user_id")
+        if user_id:
+            return get_user_model().objects.get(pk=user_id)
+    except Exception:
+        return None
+    return None
 
 
 logger = logging.getLogger(__name__)

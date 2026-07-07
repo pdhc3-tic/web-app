@@ -57,7 +57,7 @@ class StateFactory(factory.django.DjangoModelFactory):
         model = State
         django_get_or_create = ("sigla",)
 
-    sigla = factory.Sequence(lambda n: f"S{n:1d}")
+    sigla = factory.Sequence(lambda n: chr(65 + (n // 26) % 26) + chr(65 + n % 26))
     nome = factory.Sequence(lambda n: f"Estado {n}")
 
 

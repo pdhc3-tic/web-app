@@ -2,6 +2,9 @@ import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from apps.core.models.role import Role
+from apps.core.models.user_profile import UserProfile
+
 
 # ──────────────────────────────────────────────────────────────
 # GET /api/v1/users/  (list)
