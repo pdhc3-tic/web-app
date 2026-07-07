@@ -36,6 +36,12 @@ class UserFactory(factory.django.DjangoModelFactory):
     ativo = True
 
     @factory.post_generation
+    def profiles(self, create, extracted, **kwargs):
+        if not create:
+            return
+        if extracted:
+            for perfil, territorio in extracted:
+                UserProfileFactory(user=self, perfil=perfil, territorio=territorio)
     def senha(obj, create, extracted, **kwargs):
         password = extracted or "senha123"
         obj.set_password(password)

@@ -32,6 +32,7 @@ from .serializers import (
 
 from .services.permissions import user_has_role, user_territories
 from .services.audit import create_audit_log
+from .models.user_profile import UserProfile
 from .throttling import NotificationUnreadCountThrottle
 
 logger = logging.getLogger(__name__)
@@ -80,8 +81,8 @@ class MunicipalityViewSet(viewsets.ModelViewSet):
 # ──────────────────────────────────────────────────────────────
 
 class UserFilter(django_filters.FilterSet):
-    perfil = django_filters.NumberFilter(field_name="role_id")
-    territorio = django_filters.NumberFilter(field_name="territorios__id")
+    perfil = django_filters.NumberFilter(field_name="profiles__perfil_id")
+    territorio = django_filters.NumberFilter(field_name="profiles__territorio_id")
     ativo = django_filters.BooleanFilter()
     ultimo_login_gte = django_filters.DateTimeFilter(
         field_name="ultimo_login", lookup_expr="gte"
@@ -127,7 +128,7 @@ class UserViewSet(viewsets.ModelViewSet):
         qs = User.objects.all()
         if "ativo" not in self.request.query_params:
             qs = qs.filter(ativo=True)
-        return qs.select_related("role").prefetch_related("territorios")
+        return qs.prefetch_related("profiles__perfil", "profiles__territorio")
 
     def perform_create(self, serializer):
         user = serializer.save()

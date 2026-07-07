@@ -5,6 +5,7 @@ from rest_framework.validators import UniqueValidator
 from django.contrib.auth import get_user_model
 from .models import Role, State, Territory, Municipality, Organization
 from .models.notifications import Notification
+from .models.user_profile import UserProfile
 from apps.core.models.audit_log import AuditLog
 from .models.system_config import SystemConfig, TipoConfiguracao
 
@@ -121,7 +122,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'id', 'email', 'nome', 'role', 'ativo', 
+            'id', 'email', 'nome', 'ativo', 
             'ultimo_login',
         ]
         read_only_fields = ['ultimo_login']
@@ -130,7 +131,7 @@ class UserSerializer(serializers.ModelSerializer):
 class UserListSerializer(serializers.ModelSerializer):
     nome_completo = serializers.CharField(source="nome")
     perfis = serializers.SerializerMethodField()
-    territorios = TerritorySerializer(many=True)
+    territorios = serializers.SerializerMethodField()
     ultimo_login = serializers.DateTimeField(
         format="%Y-%m-%dT%H:%M:%SZ", allow_null=True, default=None
     )
@@ -143,30 +144,38 @@ class UserListSerializer(serializers.ModelSerializer):
         ]
 
     def get_perfis(self, obj):
-        if obj.role is None:
-            return []
-        return [RoleSerializer(obj.role).data]
+        profiles = obj.profiles.select_related("perfil").all()
+        return [RoleSerializer(p.perfil).data for p in profiles]
+
+    def get_territorios(self, obj):
+        profile_territory_ids = list(
+            obj.profiles.filter(territorio__isnull=False)
+            .values_list("territorio_id", flat=True)
+        )
+        if profile_territory_ids:
+            return TerritorySerializer(
+                Territory.objects.filter(pk__in=profile_territory_ids), many=True
+            ).data
+        has_global = obj.profiles.filter(territorio__isnull=True).exists()
+        if has_global:
+            return TerritorySerializer(Territory.objects.all(), many=True).data
+        return []
+
+
+class PerfilInputSerializer(serializers.Serializer):
+    perfil_id = serializers.IntegerField()
+    territorio_id = serializers.IntegerField(allow_null=True, required=False, default=None)
 
 
 class UserDetailSerializer(serializers.ModelSerializer):
     email = serializers.EmailField()
     nome_completo = serializers.CharField(source="nome")
     perfis = serializers.SerializerMethodField()
-    territorios = TerritorySerializer(many=True, read_only=True)
-    perfil_id = serializers.PrimaryKeyRelatedField(
-        source="role",
-        queryset=Role.objects.all(),
-        required=False,
-        allow_null=True,
-        write_only=True,
-    )
-    territorio_ids = serializers.PrimaryKeyRelatedField(
-        source="territorios",
-        queryset=Territory.objects.all(),
+    territorios = serializers.SerializerMethodField()
+    perfis_input = PerfilInputSerializer(
         many=True,
-        required=False,
-        allow_empty=True,
         write_only=True,
+        required=False,
     )
     password = serializers.CharField(write_only=True, required=False, allow_null=True)
     ultimo_login = serializers.DateTimeField(
@@ -177,16 +186,37 @@ class UserDetailSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             "id", "nome_completo", "email", "perfis",
-            "perfil_id", "territorios", "territorio_ids",
+            "perfis_input", "territorios",
             "ativo", "ultimo_login", "telefone",
             "whatsapp", "foto_url", "password",
         ]
         read_only_fields = ["ultimo_login"]
 
     def get_perfis(self, obj):
-        if obj.role is None:
-            return []
-        return [RoleSerializer(obj.role).data]
+        profiles = obj.profiles.select_related("perfil", "territorio").all()
+        return [
+            {
+                "id": p.perfil_id,
+                "slug": p.perfil.slug,
+                "nome": p.perfil.nome,
+                "territorio_id": p.territorio_id,
+            }
+            for p in profiles
+        ]
+
+    def get_territorios(self, obj):
+        profile_territory_ids = list(
+            obj.profiles.filter(territorio__isnull=False)
+            .values_list("territorio_id", flat=True)
+        )
+        if profile_territory_ids:
+            return TerritorySerializer(
+                Territory.objects.filter(pk__in=profile_territory_ids), many=True
+            ).data
+        has_global = obj.profiles.filter(territorio__isnull=True).exists()
+        if has_global:
+            return TerritorySerializer(Territory.objects.all(), many=True).data
+        return []
 
     def validate_email(self, value):
         value = value.lower().strip()
@@ -198,37 +228,40 @@ class UserDetailSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Já existe um usuário com este e-mail.")
         return value
 
+    def _sync_profiles(self, user, perfis_data):
+        user.profiles.all().delete()
+        for item in perfis_data:
+            UserProfile.objects.create(
+                user=user,
+                perfil_id=item["perfil_id"],
+                territorio_id=item.get("territorio_id"),
+            )
+
     def create(self, validated_data):
-        territorios = validated_data.pop("territorios", [])
+        perfis_data = validated_data.pop("perfis_input", None)
         password = validated_data.pop("password", None)
-        role = validated_data.pop("role", None)
         user = User(**validated_data)
         if password:
             user.set_password(password)
-        if role is not None:
-            user.role = role
         user.save()
-        if territorios:
-            user.territorios.set(territorios)
+        if perfis_data:
+            self._sync_profiles(user, perfis_data)
         return user
 
     def update(self, instance, validated_data):
-        territorios = validated_data.pop("territorios", None)
+        perfis_data = validated_data.pop("perfis_input", None)
         password = validated_data.pop("password", None)
-        role = validated_data.pop("role", None)
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
 
         if password:
             instance.set_password(password)
-        if role is not None:
-            instance.role = role
 
         instance.save()
 
-        if territorios is not None:
-            instance.territorios.set(territorios)
+        if perfis_data is not None:
+            self._sync_profiles(instance, perfis_data)
 
         return instance
 
