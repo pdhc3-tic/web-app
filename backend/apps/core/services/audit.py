@@ -29,7 +29,10 @@ def log_audit(
 
     Args:
         user: instância do usuário responsável pela ação (pode ser None/anônimo).
-        acao: string snake_case descrevendo a ação (ex: ``organization_created``).
+        acao: string descrevendo a ação. Convenções:
+          - Signals automáticos: ``CREATE``, ``UPDATE``, ``DELETE`` (maiúsculas).
+          - Views/Manuais: snake_case com prefixo de contexto
+            (ex: ``organization_created``, ``auth.logout_success``).
         modulo: app/módulo de origem (ex: ``core``).
         entidade: nome da classe do modelo afetado (ex: ``Organization``).
         entidade_id: pk da instância afetada (convertido para str automaticamente).

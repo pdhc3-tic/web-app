@@ -93,7 +93,6 @@ class UserFactory(factory.django.DjangoModelFactory):
 
     email = factory.Sequence(lambda n: f"user_{n}@example.com")
     nome = factory.Sequence(lambda n: f"User {n}")
-    senha = factory.PostGenerationMethodCall("set_password", "senha123")
     ativo = True
 
     @factory.post_generation
@@ -103,6 +102,8 @@ class UserFactory(factory.django.DjangoModelFactory):
         if extracted:
             for perfil, territorio in extracted:
                 UserProfileFactory(user=self, perfil=perfil, territorio=territorio)
+
+    @factory.post_generation
     def senha(obj, create, extracted, **kwargs):
         password = extracted or "senha123"
         obj.set_password(password)

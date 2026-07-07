@@ -16,7 +16,7 @@ def client():
 def superadmin():
     return UserFactory(is_superuser=True)
 
-#pytestmark = pytest.mark.django_db
+pytestmark = pytest.mark.django_db
 
 class TestAuditLogModel:
     @pytest.mark.django_db

@@ -27,7 +27,7 @@ from setup.serializers import (
     UserMeSerializer,
 )
 
-from apps.core.views.audit import log_audit
+from apps.core.services.audit import log_audit
 from setup.tasks import send_email_notification
 
 
@@ -188,8 +188,7 @@ def logout_all(request):
         entidade_id=request.user.pk,
         valores_anteriores={},
         valores_novos={"revoked_count": revoked_count},
-        _ip=get_client_ip(request),
-        _user_agent=request.META.get("HTTP_USER_AGENT"),
+        request=request,
     )
     return Response(status=status.HTTP_200_OK)
 

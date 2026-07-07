@@ -84,8 +84,9 @@ def test_audit_logged_on_user_access_change(superadmin_client):
     territorio = TerritoryFactory()
 
     response = superadmin_client.patch(f"/api/v1/users/{usuario.pk}/", {
-        "perfil_id": role.pk,
-        "territorio_ids": [territorio.pk],
+        "perfis_input": [
+            {"perfil_id": role.pk, "territorio_id": territorio.pk},
+        ],
     })
 
     assert response.status_code == 200
@@ -95,10 +96,12 @@ def test_audit_logged_on_user_access_change(superadmin_client):
         entidade_id=str(usuario.pk),
     ).last()
     assert log is not None
-    assert log.valores_anteriores["role_id"] is None
-    assert log.valores_anteriores["territorios"] == []
-    assert log.valores_novos["role_id"] == role.pk
-    assert log.valores_novos["territorios"] == [territorio.pk]
+    assert log.valores_anteriores == {"perfis": []}
+    assert log.valores_novos == {
+        "perfis": [
+            {"perfil_id": role.pk, "territorio_id": territorio.pk},
+        ],
+    }
 
 @pytest.mark.django_db
 def test_audit_logged_on_user_delete(superadmin_client):
