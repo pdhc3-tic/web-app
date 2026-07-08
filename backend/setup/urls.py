@@ -17,6 +17,7 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import include, path
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 
 from apps.core.views import (
     LoginView,
@@ -30,6 +31,9 @@ from apps.core.views import (
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("api/docs/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path("api/docs/swagger/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
+    path("api/docs/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
     path("api/v1/auth/login/", LoginView.as_view(), name="token_obtain_pair"),
     path("api/v1/auth/token/refresh/", RefreshView.as_view(), name="token_refresh"),
     path("api/v1/auth/me/", me, name="me"),
