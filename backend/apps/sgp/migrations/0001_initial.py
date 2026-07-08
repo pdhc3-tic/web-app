@@ -10,7 +10,7 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('core', '0015_alter_notification_enviado_em_and_more'),
+        ('core', '0015_alter_auditlog_and_notification'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
