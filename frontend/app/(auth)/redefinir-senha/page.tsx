@@ -3,7 +3,8 @@
 import { Suspense, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import Spinner from "@/app/components/ui/Spinner";
+import Spinner from "@/app/components/icons/Spinner";
+import { AlertCircleIcon } from "@/app/components/icons";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -113,9 +114,7 @@ function RedefinirSenhaForm() {
             className="mb-5 rounded-md border border-error bg-error-bg px-3 py-2.5"
           >
             <div className="flex items-start gap-2">
-              <svg className="mt-0.5 h-4 w-4 shrink-0 text-error" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-              </svg>
+              <AlertCircleIcon className="mt-0.5 h-4 w-4 shrink-0 text-error" />
               <p className="text-sm text-error">{globalError}</p>
             </div>
             {tokenInvalido && (

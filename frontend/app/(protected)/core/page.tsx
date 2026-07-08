@@ -1,11 +1,19 @@
-"use client";
+import { Database } from "lucide-react";
+import { ModulePlaceholder } from "@/app/components/layout/ModulePlaceholder";
 
 export default function CorePage() {
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900 flex items-center justify-center">
-      <h1 className="text-4xl font-bold text-zinc-700 dark:text-zinc-300">
-        Core — Módulo Central
-      </h1>
-    </div>
+    <ModulePlaceholder
+      shortName="Core"
+      fullName="Módulo Central"
+      Icon={Database}
+      description="Concentra dados base, usuários, perfis, territórios e configurações compartilhadas por todos os módulos do ecossistema PDHC III."
+      features={[
+        "Cadastro e gestão de usuários e perfis de acesso",
+        "Territórios e municípios atendidos pelo programa",
+        "Configurações gerais e parâmetros do sistema",
+        "Auditoria centralizada das ações dos usuários",
+      ]}
+    />
   );
 }

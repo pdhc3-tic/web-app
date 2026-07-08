@@ -1,8 +1,13 @@
+import logging
+
 from django.db import connection, transaction
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.authentication import JWTStatelessUserAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from apps.core.signals.audit import set_audit_context, clear_audit_context
+
+
+logger = logging.getLogger(__name__)
 
 
 class SessionContextMiddleware:
@@ -18,20 +23,59 @@ class SessionContextMiddleware:
 
         _, token = auth_result
         user_id = token["user_id"]
-        territorios = self._format_territorios(token.get("territorios", []))
-        role = str(token.get("role") or token.get("perfil") or "")
+        user = request.user
+
+        territorios = self._format_territorios(
+            token.get("territorios") or self._user_territories_from_db(user)
+        )
+        role = str(
+            token.get("role")
+            or token.get("perfil")
+            or self._user_role_from_db(user)
+            or ""
+        )
 
         with transaction.atomic():
-            with connection.cursor() as cursor:
-                cursor.execute("SET LOCAL app.current_user_id = %s;", [str(user_id)])
-                cursor.execute("SET LOCAL app.user_territorios = %s;", [territorios])
-                cursor.execute("SET LOCAL app.user_role = %s;", [role])
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute("SET LOCAL app.current_user_id = %s;", [str(user_id)])
+                    cursor.execute("SET LOCAL app.user_territorios = %s;", [territorios])
+                    cursor.execute("SET LOCAL app.user_role = %s;", [role])
+            except Exception:
+                logger.exception("session_context.set_local_failed user_id=%s", user_id)
+                raise
             return self.get_response(request)
+
+    @staticmethod
+    def _user_role_from_db(user):
+        try:
+            from apps.core.models.user_profile import UserProfile
+            profile = UserProfile.objects.filter(user=user).select_related("perfil").first()
+            if profile:
+                return profile.perfil.slug
+        except Exception:
+            pass
+        return ""
+
+    @staticmethod
+    def _user_territories_from_db(user):
+        try:
+            from apps.core.models.user_profile import UserProfile
+            ids = list(
+                UserProfile.objects.filter(
+                    user=user, territorio__isnull=False
+                ).values_list("territorio_id", flat=True)
+            )
+            return ",".join(str(i) for i in ids) if ids else ""
+        except Exception:
+            pass
+        return ""
 
     def _authenticate_request(self, request):
         try:
             auth_result = self.jwt_authentication.authenticate(request)
-        except (AuthenticationFailed, InvalidToken, TokenError):
+        except (AuthenticationFailed, InvalidToken, TokenError) as exc:
+            logger.debug("session_context.jwt_authentication_failed error=%s", exc.__class__.__name__)
             return None
 
         if auth_result is None:

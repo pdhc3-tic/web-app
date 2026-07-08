@@ -31,9 +31,7 @@ def reverse_seed(apps, schema_editor):
 
 class Migration(migrations.Migration):
 
-    dependencies = [
-        ("core", "0013_alter_auditlog_acao_alter_auditlog_entidade_and_more"),
-    ]
+    dependencies = [('core', '0012_organization')]
 
     operations = [
         migrations.CreateModel(

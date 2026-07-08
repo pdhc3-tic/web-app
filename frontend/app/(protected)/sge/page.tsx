@@ -1,11 +1,19 @@
-"use client";
+import { Calendar } from "lucide-react";
+import { ModulePlaceholder } from "@/app/components/layout/ModulePlaceholder";
 
 export default function SGEPage() {
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900 flex items-center justify-center">
-      <h1 className="text-4xl font-bold text-purple-700 dark:text-purple-400">
-        SGE — Sistema de Gestão de Eventos
-      </h1>
-    </div>
+    <ModulePlaceholder
+      shortName="SGE"
+      fullName="Sistema de Gestão de Eventos"
+      Icon={Calendar}
+      description="Calendário, planejamento e registro de eventos, oficinas e atividades realizadas nos territórios."
+      features={[
+        "Agenda integrada com módulos SGP e SGD",
+        "Inscrições e listas de presença por evento",
+        "Registro fotográfico e materiais entregues",
+        "Relatório de execução com indicadores de alcance",
+      ]}
+    />
   );
 }

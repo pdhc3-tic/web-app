@@ -4,7 +4,7 @@ import {
   ReactNode,
   forwardRef,
 } from "react";
-import Spinner from "@/app/components/ui/Spinner";
+import Spinner from "@/app/components/icons/Spinner";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger" | "icon-label";
 type Size = "sm" | "md" | "lg";

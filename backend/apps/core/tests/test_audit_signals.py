@@ -3,7 +3,7 @@ from django.test import Client as DjangoClient
 from rest_framework.test import APIClient
 
 from apps.core.models.audit_log import AuditLog
-from apps.core.tests.factories import UserFactory, RoleFactory
+from apps.core.tests.factories import UserFactory, RoleFactory, TerritoryFactory
 from apps.core.models.role import Role
 
 
@@ -17,7 +17,10 @@ def superadmin():
         slug="super-admin",
         defaults={"nome": "Super Admin", "ativo": True}
     )
-    return UserFactory(is_superuser=True, role=role)
+    user = UserFactory(is_superuser=True)
+    from apps.core.models.user_profile import UserProfile
+    UserProfile.objects.create(user=user, perfil=role)
+    return user
 
 @pytest.fixture
 def superadmin_client(superadmin):
@@ -36,7 +39,7 @@ def test_audit_logged_on_user_create(superadmin_client):
         "email": "novo@example.com",
         "nome_completo": "Novo Usuario",
         "password": "senha123",
-        "perfil_id": role.pk,
+        "perfis_input": [{"perfil_id": role.pk, "territorio_id": None}],
         "ativo": True,
     })
 
@@ -73,6 +76,32 @@ def test_audit_logged_on_user_update(superadmin_client):
     assert log is not None
     assert log.valores_anteriores.get("nome") == "Nome Antigo"
     assert log.valores_novos.get("nome") == "Nome Novo"
+
+@pytest.mark.django_db
+def test_audit_logged_on_user_access_change(superadmin_client):
+    usuario = UserFactory()
+    role = RoleFactory()
+    territorio = TerritoryFactory()
+
+    response = superadmin_client.patch(f"/api/v1/users/{usuario.pk}/", {
+        "perfis_input": [
+            {"perfil_id": role.pk, "territorio_id": territorio.pk},
+        ],
+    }, format="json")
+
+    assert response.status_code == 200
+    log = AuditLog.objects.filter(
+        entidade="User",
+        acao="user.access_changed",
+        entidade_id=str(usuario.pk),
+    ).last()
+    assert log is not None
+    assert log.valores_anteriores == {"perfis": []}
+    assert log.valores_novos == {
+        "perfis": [
+            {"perfil_id": role.pk, "territorio_id": territorio.pk},
+        ],
+    }
 
 @pytest.mark.django_db
 def test_audit_logged_on_user_delete(superadmin_client):

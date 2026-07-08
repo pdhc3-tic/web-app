@@ -16,7 +16,7 @@ def client():
 def superadmin():
     return UserFactory(is_superuser=True)
 
-#pytestmark = pytest.mark.django_db
+pytestmark = pytest.mark.django_db
 
 class TestAuditLogModel:
     @pytest.mark.django_db
@@ -121,5 +121,4 @@ class TestAuditLogModel:
                 ORDER BY timestamp DESC
             """)
             explain = "\n".join(row[0] for row in cursor.fetchall())
-        print(f"INDICE = {explain}")
         assert "idx_auditlog_entidade_ts" in explain

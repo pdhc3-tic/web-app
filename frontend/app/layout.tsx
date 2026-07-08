@@ -27,10 +27,21 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
+      <head>
+        <script
+          // Aplica a preferência de tema salva ANTES do paint, evitando flash
+          // entre claro/escuro durante a hidratação. Quando não houver
+          // preferência, o navegador segue prefers-color-scheme do sistema.
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark'){document.documentElement.setAttribute('data-theme',t);}}catch(_){}`,
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col">
-          <SessionProvider>{children}</SessionProvider>
-        </body>
+        <SessionProvider>{children}</SessionProvider>
+      </body>
     </html>
   );
 }

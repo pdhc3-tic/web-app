@@ -16,7 +16,7 @@ from apps.core.services.permissions import (
     user_territories,
 )
 
-logger = logging.getLogger("apps.core.permissions")
+logger = logging.getLogger(__name__)
 
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 
@@ -35,7 +35,7 @@ def _log_denial(user: Any, view: APIView, obj: Any | None = None, *, reason: str
     obj_id = getattr(obj, "pk", None) if obj else None
     view_name = view.__class__.__name__ if view else "UnknownView"
     logger.warning(
-        "Permissão negada: user_id=%s view=%s object_id=%s reason=%s",
+        "permission.denied user_id=%s view=%s object_id=%s reason=%s",
         getattr(user, "pk", None),
         view_name,
         obj_id,
@@ -175,3 +175,13 @@ class IsOwnerOrReadOnly(BasePermission):
 
         _log_denial(request.user, view, obj, reason="usuario nao e o criador do objeto")
         return False
+
+
+class IsSuperAdminOrUGPReadOnly(IsSuperAdmin):
+    """Super-admin tem acesso total; UGP tem acesso apenas a métodos seguros (GET, HEAD, OPTIONS)."""
+
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        if request.method in SAFE_METHODS:
+            return user_has_role(request.user, "super-admin") or user_has_role(request.user, "ugp")
+        return super().has_permission(request, view)
+
