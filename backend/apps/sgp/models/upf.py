@@ -25,7 +25,7 @@ class UPF(models.Model):
         max_length=100, blank=True, default="", verbose_name="Apelido"
     )
     cpf = models.CharField(
-        max_length=11, verbose_name="CPF", db_index=True
+        max_length=11, verbose_name="CPF"
     )
     rg = models.CharField(
         max_length=20, blank=True, default="", verbose_name="RG"

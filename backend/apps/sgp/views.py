@@ -110,6 +110,26 @@ class UPFViewSet(viewsets.ModelViewSet):
                         entidade_id__in=[str(m) for m in member_ids],
                     )
 
+        usuario_filter = request.query_params.get("usuario")
+        if usuario_filter:
+            q &= Q(user_id=usuario_filter)
+
+        desde = request.query_params.get("desde")
+        if desde:
+            try:
+                dt = datetime.fromisoformat(desde)
+                q &= Q(timestamp__gte=dt)
+            except (ValueError, TypeError):
+                pass
+
+        ate = request.query_params.get("ate")
+        if ate:
+            try:
+                dt = datetime.fromisoformat(ate)
+                q &= Q(timestamp__lte=dt)
+            except (ValueError, TypeError):
+                pass
+
         logs = (
             AuditLog.objects.filter(q)
             .select_related("user")
@@ -141,35 +161,6 @@ class UPFViewSet(viewsets.ModelViewSet):
         campo_filter = request.query_params.get("campo")
         if campo_filter:
             entries = [e for e in entries if e["campo"] == campo_filter]
-
-        usuario_filter = request.query_params.get("usuario")
-        if usuario_filter:
-            entries = [
-                e
-                for e in entries
-                if e.get("usuario_id") is not None
-                and str(e["usuario_id"]) == usuario_filter
-            ]
-
-        desde = request.query_params.get("desde")
-        if desde:
-            try:
-                dt = datetime.fromisoformat(desde)
-            except (ValueError, TypeError):
-                dt = None
-            if dt:
-                entries = [e for e in entries if e["timestamp"] >= dt]
-
-        ate = request.query_params.get("ate")
-        if ate:
-            try:
-                dt = datetime.fromisoformat(ate)
-            except (ValueError, TypeError):
-                dt = None
-            if dt:
-                entries = [e for e in entries if e["timestamp"] <= dt]
-
-        entries.sort(key=lambda e: e["timestamp"], reverse=True)
 
         paginator = HistoricoPagination()
         page = paginator.paginate_queryset(entries, request)
@@ -279,7 +270,7 @@ class ComunidadeViewSet(viewsets.ModelViewSet):
                 user.is_authenticated
                 and (user_has_role(user, "super-admin") or user_has_role(user, "ugp"))
             ):
-                return qs
+                return qs.filter(ativa=False)
         return qs.filter(ativa=True)
 
     def list(self, request, *args, **kwargs):
