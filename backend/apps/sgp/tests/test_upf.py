@@ -526,3 +526,28 @@ class TestPerformanceIndexes:
         with CaptureQueriesContext(connection) as ctx:
             auth_client.get(f"/api/v1/upfs/?municipio={municipio_rn.pk}")
         assert len(ctx.captured_queries) <= 8
+
+    def test_list_performance_5000_upfs(
+        self, auth_client, projeto, municipio_rn, territory_rn
+    ):
+        import time
+        from apps.sgp.models import UPF
+        upfs = [
+            UPF(
+                projeto=projeto,
+                municipio=municipio_rn,
+                territorio=territory_rn,
+                nome_titular=f"Titular {i}",
+                cpf=f"{i + 10000000000:011d}",
+                ativa=True,
+            )
+            for i in range(5000)
+        ]
+        UPF.objects.bulk_create(upfs, batch_size=500)
+
+        start = time.time()
+        response = auth_client.get(f"/api/v1/upfs/?municipio={municipio_rn.pk}")
+        elapsed = time.time() - start
+
+        assert response.status_code == 200
+        assert elapsed < 0.5
