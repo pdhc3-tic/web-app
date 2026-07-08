@@ -56,6 +56,11 @@ class UPFDetailSerializer(serializers.ModelSerializer):
         queryset=Municipality.objects.all()
     )
     territorio = serializers.PrimaryKeyRelatedField(read_only=True)
+    comunidade = serializers.PrimaryKeyRelatedField(
+        queryset=Comunidade.objects.all(),
+        required=False,
+        allow_null=True,
+    )
     criado_por = serializers.StringRelatedField(read_only=True)
     membros = serializers.SerializerMethodField()
 
@@ -67,10 +72,10 @@ class UPFDetailSerializer(serializers.ModelSerializer):
             "nacionalidade", "naturalidade", "nome_mae", "nome_pai",
             "telefone", "celular", "email", "cep", "logradouro",
             "numero", "complemento", "bairro", "municipio",
-            "territorio", "latitude", "longitude", "situacao_moradia",
-            "tipo_moradia", "numero_dap", "nis", "foto_url",
-            "criado_por", "ativa", "criado_em", "atualizado_em",
-            "membros",
+            "territorio", "comunidade", "latitude", "longitude",
+            "situacao_moradia", "tipo_moradia", "numero_dap", "nis",
+            "foto_url", "criado_por", "ativa", "criado_em",
+            "atualizado_em", "membros",
         ]
         validators = []
         read_only_fields = [
@@ -111,6 +116,11 @@ class UPFDetailSerializer(serializers.ModelSerializer):
             else None
         )
         data["projeto"] = NestedSerializer(instance.projeto).data
+        data["comunidade"] = (
+            NestedSerializer(instance.comunidade).data
+            if instance.comunidade_id
+            else None
+        )
         return data
 
 

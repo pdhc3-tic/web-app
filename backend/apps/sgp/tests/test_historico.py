@@ -197,3 +197,54 @@ class TestHistoricoPermissao:
             f"/api/v1/upfs/{upf_ce.pk}/historico/"
         )
         assert response.status_code == 404
+
+
+class TestHistoricoIncluirMembros:
+    def test_historico_with_incluir_membros_returns_member_events(
+        self, auth_client, upf_payload_minimo
+    ):
+        res = auth_client.post(
+            "/api/v1/upfs/", upf_payload_minimo, format="json"
+        )
+        upf_id = res.data["id"]
+
+        payload_membro = {"nome_completo": "Filho Teste", "parentesco": "filho"}
+        auth_client.post(
+            f"/api/v1/upfs/{upf_id}/membros/",
+            payload_membro,
+            format="json",
+        )
+
+        response_sem = auth_client.get(
+            f"/api/v1/upfs/{upf_id}/historico/"
+        )
+        assert response_sem.data["count"] == 1
+
+        response_com = auth_client.get(
+            f"/api/v1/upfs/{upf_id}/historico/?incluir_membros=true"
+        )
+        assert response_com.data["count"] == 2
+
+
+class TestPerformanceIndexes:
+    def test_query_uses_audit_log_index(
+        self, auth_client, upf_payload_minimo
+    ):
+        res = auth_client.post(
+            "/api/v1/upfs/", upf_payload_minimo, format="json"
+        )
+        upf_id = res.data["id"]
+
+        for i in range(5):
+            auth_client.patch(
+                f"/api/v1/upfs/{upf_id}/",
+                {"nome_titular": f"Update {i}"},
+                format="json",
+            )
+
+        from django.db import connection
+        qs = AuditLog.objects.filter(
+            entidade="UPF", entidade_id=str(upf_id)
+        )
+        explain = qs.explain(analyze=True)
+        assert "Index Scan" in explain or "Index Only Scan" in explain or "Bitmap Heap Scan" in explain

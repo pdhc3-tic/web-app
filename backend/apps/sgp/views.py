@@ -203,6 +203,7 @@ class UPFViewSet(viewsets.ModelViewSet):
                 "projeto_id": instance.projeto_id,
                 "municipio_id": instance.municipio_id,
                 "territorio_id": instance.territorio_id,
+                "comunidade_id": instance.comunidade_id,
                 "ativa": instance.ativa,
             },
             ip=self.request.META.get("REMOTE_ADDR"),
@@ -222,6 +223,7 @@ class UPFViewSet(viewsets.ModelViewSet):
             "projeto_id": old.projeto_id,
             "municipio_id": old.municipio_id,
             "territorio_id": old.territorio_id,
+            "comunidade_id": old.comunidade_id,
             "ativa": old.ativa,
         }
         instance = serializer.save()
@@ -235,6 +237,7 @@ class UPFViewSet(viewsets.ModelViewSet):
             "projeto_id": instance.projeto_id,
             "municipio_id": instance.municipio_id,
             "territorio_id": instance.territorio_id,
+            "comunidade_id": instance.comunidade_id,
             "ativa": instance.ativa,
         }
         instance.ativa = False

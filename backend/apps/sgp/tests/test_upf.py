@@ -495,3 +495,34 @@ class TestIsolamentoTerritorial:
         )
         response = auth_client_sem_acesso.get("/api/v1/upfs/")
         assert response.status_code == 403
+
+
+class TestPerformanceIndexes:
+    def test_query_uses_index_on_municipio_and_territorio(
+        self, auth_client, projeto, municipio_rn, territory_rn
+    ):
+        UPFFactory.create_batch(
+            10, projeto=projeto, municipio=municipio_rn,
+            territorio=territory_rn,
+            cpf=factory.Sequence(lambda n: f"{n + 10000000000:011d}"),
+        )
+        from django.db import connection
+        qs = UPF.objects.filter(
+            municipio=municipio_rn, territorio=territory_rn
+        )
+        explain = qs.explain(analyze=True)
+        assert "Index Scan" in explain or "Bitmap Heap Scan" in explain or "Index Only Scan" in explain
+
+    def test_list_filter_by_municipio_is_efficient(
+        self, auth_client, projeto, municipio_rn, territory_rn
+    ):
+        UPFFactory.create_batch(
+            10, projeto=projeto, municipio=municipio_rn,
+            territorio=territory_rn,
+            cpf=factory.Sequence(lambda n: f"{n + 10000000000:011d}"),
+        )
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        with CaptureQueriesContext(connection) as ctx:
+            auth_client.get(f"/api/v1/upfs/?municipio={municipio_rn.pk}")
+        assert len(ctx.captured_queries) <= 8

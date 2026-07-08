@@ -9,6 +9,14 @@ class UPF(models.Model):
         related_name="upfs",
         verbose_name="Projeto",
     )
+    comunidade = models.ForeignKey(
+        "sgp.Comunidade",
+        on_delete=models.PROTECT,
+        related_name="upfs",
+        null=True,
+        blank=True,
+        verbose_name="Comunidade",
+    )
 
     nome_titular = models.CharField(
         max_length=255, verbose_name="Nome do Titular"
@@ -192,6 +200,9 @@ class UPF(models.Model):
             ),
             models.Index(fields=["projeto"], name="idx_upf_projeto"),
             models.Index(fields=["cpf"], name="idx_upf_cpf"),
+            models.Index(
+                fields=["comunidade"], name="idx_upf_comunidade"
+            ),
         ]
 
     def __str__(self):
