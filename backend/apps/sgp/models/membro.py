@@ -18,6 +18,18 @@ class MembroFamilia(models.Model):
     data_nasc = models.DateField(
         null=True, blank=True, verbose_name="Data de Nascimento"
     )
+    genero = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="Gênero",
+    )
+    cor_raca = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="Cor/Raça",
+    )
 
     cpf = models.CharField(
         max_length=11,
@@ -45,6 +57,18 @@ class MembroFamilia(models.Model):
         max_length=20,
         choices=PARENTESCO_CHOICES,
         verbose_name="Parentesco",
+    )
+
+    escola = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Escola",
+    )
+    seguridade_social = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Seguridade Social",
     )
 
     saude = models.JSONField(

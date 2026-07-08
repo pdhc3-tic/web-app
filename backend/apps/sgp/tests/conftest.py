@@ -229,7 +229,7 @@ def upf_payload_completo(projeto, municipio):
         "nome_titular": "João Oliveira",
         "cpf": "529.982.247-25",
         "rg": "1234567",
-        "data_nascimento": "1985-03-15",
+        "data_nasc": "1985-03-15",
         "genero": "masculino",
         "estado_civil": "casado",
         "nacionalidade": "brasileira",
@@ -249,7 +249,7 @@ def upf_payload_completo(projeto, municipio):
         "longitude": "-37.123456",
         "situacao_moradia": "propria",
         "tipo_moradia": "casa",
-        "numero_dap": "DAP123456",
+        "daf_caf": "DAP123456",
         "nis": "12345678901",
         "foto_url": "https://example.com/foto.jpg",
     }
@@ -258,7 +258,7 @@ def upf_payload_completo(projeto, municipio):
 @pytest.fixture
 def membro_payload_minimo(upf):
     return {
-        "nome_completo": "João Filho",
+        "nome": "João Filho",
         "parentesco": "filho",
     }
 
@@ -266,7 +266,7 @@ def membro_payload_minimo(upf):
 @pytest.fixture
 def titular_payload(upf):
     return {
-        "nome_completo": "Maria Titular",
+        "nome": "Maria Titular",
         "parentesco": "titular",
         "data_nasc": "1980-05-10",
     }

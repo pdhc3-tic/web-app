@@ -21,6 +21,9 @@ class UPF(models.Model):
     nome_titular = models.CharField(
         max_length=255, verbose_name="Nome do Titular"
     )
+    apelido = models.CharField(
+        max_length=100, blank=True, default="", verbose_name="Apelido"
+    )
     cpf = models.CharField(
         max_length=11, verbose_name="CPF", db_index=True
     )
@@ -36,11 +39,23 @@ class UPF(models.Model):
         default="",
         verbose_name="Gênero",
     )
+    cor_raca = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="Cor/Raça",
+    )
     estado_civil = models.CharField(
         max_length=20,
         blank=True,
         default="",
         verbose_name="Estado Civil",
+    )
+    escolaridade = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Escolaridade",
     )
     nacionalidade = models.CharField(
         max_length=100,
@@ -70,11 +85,20 @@ class UPF(models.Model):
     telefone = models.CharField(
         max_length=20, blank=True, default="", verbose_name="Telefone"
     )
-    celular = models.CharField(
-        max_length=20, blank=True, default="", verbose_name="Celular"
+    whatsapp = models.CharField(
+        max_length=20, blank=True, default="", verbose_name="WhatsApp"
     )
     email = models.EmailField(
         blank=True, default="", verbose_name="E-mail"
+    )
+    internet = models.BooleanField(
+        default=False, verbose_name="Acesso à Internet"
+    )
+    dispositivo = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Dispositivo",
     )
 
     cep = models.CharField(
@@ -136,6 +160,25 @@ class UPF(models.Model):
         verbose_name="Longitude",
     )
 
+    pct = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="PCT",
+    )
+    posse_terra = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="Posse da Terra",
+    )
+    area_terra_ha = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Área da Terra (ha)",
+    )
     situacao_moradia = models.CharField(
         max_length=50,
         blank=True,
@@ -147,6 +190,18 @@ class UPF(models.Model):
         blank=True,
         default="",
         verbose_name="Tipo de Moradia",
+    )
+    energia = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Energia",
+    )
+    agua = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Água",
     )
 
     numero_dap = models.CharField(
@@ -160,6 +215,12 @@ class UPF(models.Model):
         blank=True,
         default="",
         verbose_name="NIS",
+    )
+
+    seguridade_social = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Seguridade Social",
     )
 
     foto_url = models.URLField(

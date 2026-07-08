@@ -18,7 +18,7 @@ class TestCriacaoMembro:
             format="json",
         )
         assert response.status_code == 201
-        assert response.data["nome_completo"] == "João Filho"
+        assert response.data["nome"] == "João Filho"
         assert response.data["parentesco"] == "filho"
 
     def test_create_membro_titular(
@@ -86,7 +86,7 @@ class TestIdade:
         self, auth_client, upf
     ):
         payload = {
-            "nome_completo": "Criança",
+            "nome": "Criança",
             "parentesco": "filho",
             "data_nasc": "2010-06-15",
         }
@@ -185,7 +185,7 @@ class TestAuditLog:
 
         auth_client.patch(
             f"/api/v1/upfs/{upf.pk}/membros/{membro_id}/",
-            {"nome_completo": "Nome Atualizado"},
+            {"nome": "Nome Atualizado"},
             format="json",
         )
         assert AuditLog.objects.filter(

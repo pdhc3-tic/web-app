@@ -49,6 +49,12 @@ class NestedSerializer(serializers.Serializer):
 
 class UPFDetailSerializer(serializers.ModelSerializer):
     cpf = serializers.CharField(max_length=14)
+    data_nasc = serializers.DateField(
+        source="data_nascimento", required=False, allow_null=True
+    )
+    daf_caf = serializers.CharField(
+        source="numero_dap", required=False, allow_blank=True
+    )
     projeto = serializers.PrimaryKeyRelatedField(
         queryset=Projeto.objects.all()
     )
@@ -67,13 +73,17 @@ class UPFDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = UPF
         fields = [
-            "id", "projeto", "nome_titular", "cpf", "rg",
-            "data_nascimento", "genero", "estado_civil",
+            "id", "projeto", "nome_titular", "apelido", "cpf", "rg",
+            "data_nasc", "genero", "cor_raca", "estado_civil",
+            "escolaridade",
             "nacionalidade", "naturalidade", "nome_mae", "nome_pai",
-            "telefone", "celular", "email", "cep", "logradouro",
+            "telefone", "whatsapp", "email", "internet", "dispositivo",
+            "cep", "logradouro",
             "numero", "complemento", "bairro", "municipio",
             "territorio", "comunidade", "latitude", "longitude",
-            "situacao_moradia", "tipo_moradia", "numero_dap", "nis",
+            "pct", "posse_terra", "area_terra_ha",
+            "situacao_moradia", "tipo_moradia", "energia", "agua",
+            "daf_caf", "nis", "seguridade_social",
             "foto_url", "criado_por", "ativa", "criado_em",
             "atualizado_em", "membros",
         ]
@@ -125,6 +135,7 @@ class UPFDetailSerializer(serializers.ModelSerializer):
 
 
 class MembroListSerializer(serializers.ModelSerializer):
+    nome = serializers.CharField(source="nome_completo", read_only=True)
     idade = serializers.SerializerMethodField()
     parentesco_display = serializers.CharField(
         source="get_parentesco_display", read_only=True
@@ -133,8 +144,9 @@ class MembroListSerializer(serializers.ModelSerializer):
     class Meta:
         model = MembroFamilia
         fields = [
-            "id", "nome_completo", "data_nasc", "idade",
+            "id", "nome", "data_nasc", "idade",
             "parentesco", "parentesco_display", "cpf",
+            "genero", "cor_raca",
             "criado_em",
         ]
 
@@ -153,6 +165,7 @@ class MembroListSerializer(serializers.ModelSerializer):
 
 
 class MembroDetailSerializer(serializers.ModelSerializer):
+    nome = serializers.CharField(source="nome_completo")
     idade = serializers.SerializerMethodField()
     parentesco_display = serializers.CharField(
         source="get_parentesco_display", read_only=True
@@ -164,9 +177,11 @@ class MembroDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = MembroFamilia
         fields = [
-            "id", "upf", "nome_completo", "data_nasc", "idade",
+            "id", "upf", "nome", "data_nasc", "idade",
             "cpf", "rg", "nis", "caf", "parentesco",
-            "parentesco_display", "saude", "telefone", "email",
+            "parentesco_display", "genero", "cor_raca",
+            "escola", "seguridade_social", "saude",
+            "telefone", "email",
             "escolaridade", "profissao", "renda", "observacao",
             "criado_por", "criado_em", "atualizado_em",
         ]
