@@ -4,8 +4,65 @@ API REST do PDHC construída com Django 6, Django REST Framework e Celery.
 
 ## Documentação
 
+- [Swagger / OpenAPI](#swagger--openapi)
 - [Throttling da API](docs/throttling.md)
 - [Política de Logging](docs/logging.md)
+
+## Swagger / OpenAPI
+
+A documentação da API é gerada automaticamente com [drf-spectacular](https://drf-spectacular.readthedocs.io/).
+
+### Acesso
+
+Com o backend rodando em `localhost:8000`:
+
+| URL | Descrição |
+|-----|-----------|
+| `http://localhost:8000/api/docs/swagger/` | Swagger UI (interativo) |
+| `http://localhost:8000/api/docs/redoc/`   | Redoc (visualização estática) |
+| `http://localhost:8000/api/docs/schema/`  | Schema OpenAPI cru (YAML) |
+
+```bash
+curl -s http://localhost:8000/api/docs/schema/ | head -30
+```
+
+### Como manter
+
+Views que usam **ViewSet** com `serializer_class` e `queryset` são documentadas automaticamente — nenhuma ação necessária.
+
+Views que **não** seguem esse padrão precisam de `@extend_schema`:
+
+```python
+from drf_spectacular.utils import extend_schema
+
+@extend_schema(
+    summary="Listar notificações do usuário",
+    responses=NotificationSerializer(many=True),
+)
+class NotificationListView(ListAPIView):
+    ...
+```
+
+Para views baseadas em função (`@api_view`):
+
+```python
+@extend_schema(
+    request=LoginSerializer,
+    responses={200: TokenResponseSerializer},
+)
+@api_view(["POST"])
+def login_view(request):
+    ...
+```
+
+Se um campo precisa de descrição extra no schema:
+
+```python
+class MeuSerializer(serializers.Serializer):
+    campo = serializers.CharField(help_text="Descrição que aparece no Swagger")
+```
+
+> Comece adicionando `@extend_schema` nas function-based views de `apps/core/views.py` (login, logout, me, password-reset).
 
 ## Banco de Dados
 

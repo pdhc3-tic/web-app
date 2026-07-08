@@ -1,0 +1,32 @@
+SAUDE_CHOICES = [
+    "diabetes",
+    "hipertensao",
+    "deficiencia_visual",
+    "deficiencia_auditiva",
+    "deficiencia_fisica",
+    "deficiencia_intelectual",
+    "deficiencia_multipla",
+    "doenca_cardiaca",
+    "doenca_respiratoria",
+    "doenca_renal",
+    "saude_mental",
+    "gestante",
+    "lactante",
+    "desnutricao",
+    "alergia_alimentar",
+    "doenca_cronica",
+    "outros",
+]
+
+PARENTESCO_CHOICES = [
+    ("titular", "Titular"),
+    ("conjuge", "Cônjuge"),
+    ("filho", "Filho(a)"),
+    ("enteado", "Enteado(a)"),
+    ("pai", "Pai"),
+    ("mae", "Mãe"),
+    ("irmao", "Irmão(ã)"),
+    ("avo", "Avô(ó)"),
+    ("neto", "Neto(a)"),
+    ("outro", "Outro"),
+]

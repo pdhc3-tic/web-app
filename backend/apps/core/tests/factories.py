@@ -2,8 +2,6 @@ import factory
 from apps.core.models import User, Organization, Municipality, State
 from apps.core.models.role import Role
 from apps.core.models.territory import Territory
-from apps.core.models.state import State
-from apps.core.models.municipality import Municipality
 from apps.core.models.user_profile import UserProfile
 from apps.core.models.audit_log import AuditLog
 from apps.core.models.notifications import Notification, NotificationPreference, TipoNotificacao, StatusNotificacao
@@ -85,7 +83,6 @@ class OrganizationFactory(factory.django.DjangoModelFactory):
 # ---------------------------------------------------------------------------
 # User factories
 # ---------------------------------------------------------------------------
-
 class UserFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = User
@@ -134,6 +131,7 @@ class AuditLogFactory(factory.django.DjangoModelFactory):
     ip = "127.0.0.1"
     user_agent = "Mozilla/5.0"
 
+
 class NotificationFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = Notification
@@ -155,4 +153,3 @@ class NotificationPreferenceFactory(factory.django.DjangoModelFactory):
     tipo_evento = "nova_visita"
     canal = TipoNotificacao.EMAIL
     ativo = True
-
