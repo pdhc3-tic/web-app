@@ -16,6 +16,7 @@ from rest_framework.response import Response
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsSuperAdmin, IsUGP
+from apps.core.services.permissions import user_has_role, user_states, user_territories
 from apps.sgp.filters import UPFFilter
 from apps.sgp.models import Comunidade, MembroFamilia, UPF
 from apps.sgp.pagination import HistoricoPagination, UPFPagination
@@ -70,24 +71,19 @@ class UPFViewSet(viewsets.ModelViewSet):
             "municipio", "municipio__state", "territorio", "projeto", "criado_por"
         ).all()
 
-        role_slug = getattr(getattr(self.request.user, "role", None), "slug", None)
+        user = self.request.user
 
-        if role_slug in ("super-admin", "ugp"):
+        if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
             return qs
 
-        if role_slug == "articulador-estadual":
-            territories = self.request.user.territorios.all()
-            if not territories.exists():
-                return qs.none()
-            states = set()
-            for t in territories:
-                states.update(t.estados)
+        if user_has_role(user, "articulador-estadual"):
+            states = user_states(user)
             if not states:
                 return qs.none()
             return qs.filter(municipio__state__sigla__in=states)
 
-        if role_slug == "adt-acr":
-            territories = self.request.user.territorios.all()
+        if user_has_role(user, "adt-acr"):
+            territories = user_territories(user)
             if not territories.exists():
                 return qs.none()
             return qs.filter(territorio__in=territories)
@@ -278,8 +274,7 @@ class ComunidadeViewSet(viewsets.ModelViewSet):
             user = self.request.user
             if (
                 user.is_authenticated
-                and getattr(user, 'role', None)
-                and user.role.slug in ('super-admin', 'ugp')
+                and (user_has_role(user, "super-admin") or user_has_role(user, "ugp"))
             ):
                 return qs
         return qs.filter(ativa=True)

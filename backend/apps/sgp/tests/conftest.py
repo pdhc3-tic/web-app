@@ -138,7 +138,7 @@ def usuario(db):
     return UserFactory(
         email="user@test.com",
         nome="Usuário Teste",
-        role=role,
+        profiles=[(role, None)],
     )
 
 
@@ -148,32 +148,28 @@ def usuario_super_admin(db):
     return UserFactory(
         email="super@test.com",
         nome="Super Admin",
-        role=role,
+        profiles=[(role, None)],
     )
 
 
 @pytest.fixture
 def usuario_articulador_rn(db, territory_rn):
     role = RoleFactory(slug="articulador-estadual", nome="Articulador Estadual")
-    user = UserFactory(
+    return UserFactory(
         email="articulador@test.com",
         nome="Articulador RN",
-        role=role,
+        profiles=[(role, territory_rn)],
     )
-    user.territorios.add(territory_rn)
-    return user
 
 
 @pytest.fixture
 def usuario_adt_rn(db, territory_rn):
     role = RoleFactory(slug="adt-acr", nome="ADT")
-    user = UserFactory(
+    return UserFactory(
         email="adt@test.com",
         nome="ADT RN",
-        role=role,
+        profiles=[(role, territory_rn)],
     )
-    user.territorios.add(territory_rn)
-    return user
 
 
 @pytest.fixture
@@ -182,7 +178,7 @@ def usuario_sem_acesso(db):
     return UserFactory(
         email="agricultor@test.com",
         nome="Agricultor",
-        role=role,
+        profiles=[(role, None)],
     )
 
 
@@ -301,7 +297,7 @@ def membro_outra_upf(outra_upf):
 @pytest.fixture
 def super_admin_client(api_client):
     role = RoleFactory(slug='super-admin', nome='Super Admin')
-    user = UserFactory(role=role)
+    user = UserFactory(profiles=[(role, None)])
     api_client.force_authenticate(user=user)
     return api_client
 
@@ -309,7 +305,7 @@ def super_admin_client(api_client):
 @pytest.fixture
 def ugp_client(api_client):
     role = RoleFactory(slug='ugp', nome='UGP')
-    user = UserFactory(role=role)
+    user = UserFactory(profiles=[(role, None)])
     api_client.force_authenticate(user=user)
     return api_client
 
@@ -317,6 +313,6 @@ def ugp_client(api_client):
 @pytest.fixture
 def adt_client(api_client):
     role = RoleFactory(slug='adt-acr', nome='ADT / ACR')
-    user = UserFactory(role=role)
+    user = UserFactory(profiles=[(role, None)])
     api_client.force_authenticate(user=user)
     return api_client
