@@ -77,7 +77,7 @@ class UPFDetailSerializer(serializers.ModelSerializer):
             "data_nasc", "genero", "cor_raca", "estado_civil",
             "escolaridade",
             "nacionalidade", "naturalidade", "nome_mae", "nome_pai",
-            "telefone", "whatsapp", "email", "internet", "dispositivo",
+            "telefone", "celular", "whatsapp", "email", "internet", "dispositivo",
             "cep", "logradouro",
             "numero", "complemento", "bairro", "municipio",
             "territorio", "comunidade", "latitude", "longitude",

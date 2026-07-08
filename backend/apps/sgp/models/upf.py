@@ -88,6 +88,9 @@ class UPF(models.Model):
     whatsapp = models.CharField(
         max_length=20, blank=True, default="", verbose_name="WhatsApp"
     )
+    celular = models.CharField(
+        max_length=20, blank=True, default="", verbose_name="Celular"
+    )
     email = models.EmailField(
         blank=True, default="", verbose_name="E-mail"
     )

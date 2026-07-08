@@ -85,6 +85,17 @@ def municipio_sem_territorio(db, state_rn):
 
 
 @pytest.fixture
+def outro_municipio(db, state_rn, outro_territorio):
+    from apps.core.tests.factories import MunicipalityFactory
+    return MunicipalityFactory(
+        nome="Apodi",
+        state=state_rn,
+        territory=outro_territorio,
+        codigo_ibge="2401104",
+    )
+
+
+@pytest.fixture
 def outro_territorio(db):
     return TerritoryFactory(
         nome="Outro Território", estados=["RN"]
