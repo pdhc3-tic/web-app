@@ -1,5 +1,6 @@
+from .comunidade import Comunidade
+from .membro import MembroFamilia
 from .projeto import Projeto
 from .upf import UPF
-from .membro import MembroFamilia
 
-__all__ = ["Projeto", "UPF", "MembroFamilia"]
+__all__ = ["Comunidade", "MembroFamilia", "Projeto", "UPF"]

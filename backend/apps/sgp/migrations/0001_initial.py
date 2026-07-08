@@ -32,6 +32,26 @@ class Migration(migrations.Migration):
             },
         ),
         migrations.CreateModel(
+            name='Comunidade',
+            fields=[
+                ('id', models.AutoField(primary_key=True, serialize=False)),
+                ('nome', models.CharField(max_length=120)),
+                ('lat', models.DecimalField(blank=True, decimal_places=6, max_digits=9, null=True)),
+                ('lng', models.DecimalField(blank=True, decimal_places=6, max_digits=9, null=True)),
+                ('ativa', models.BooleanField(default=True)),
+                ('criada_em', models.DateTimeField(auto_now_add=True)),
+                ('criada_por', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='comunidades_criadas', to=settings.AUTH_USER_MODEL)),
+                ('municipio', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='comunidades', to='core.municipality')),
+            ],
+            options={
+                'verbose_name': 'Comunidade',
+                'verbose_name_plural': 'Comunidades',
+                'ordering': ['nome'],
+                'indexes': [models.Index(fields=['municipio'], name='sgp_comunid_municip_65f115_idx')],
+                'constraints': [models.UniqueConstraint(condition=models.Q(('ativa', True)), fields=('nome', 'municipio'), name='unique_comunidade_ativa_por_municipio')],
+            },
+        ),
+        migrations.CreateModel(
             name='UPF',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),

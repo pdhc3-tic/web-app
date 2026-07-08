@@ -4,7 +4,7 @@ from rest_framework import serializers
 
 from apps.core.models import Municipality
 from apps.sgp.constants import SAUDE_CHOICES
-from apps.sgp.models import MembroFamilia, Projeto, UPF
+from apps.sgp.models import Comunidade, MembroFamilia, Projeto, UPF
 from apps.sgp.validators import validate_cpf
 
 
@@ -229,3 +229,30 @@ class HistoricoEntrySerializer(serializers.Serializer):
         if uid is not None:
             return {"id": uid, "nome": obj.get("usuario_nome")}
         return None
+
+
+class ComunidadeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Comunidade
+        fields = [
+            'id', 'nome', 'municipio', 'lat', 'lng',
+            'ativa', 'criada_em', 'criada_por',
+        ]
+        read_only_fields = ['id', 'criada_em', 'criada_por']
+        validators = []
+
+    def validate(self, attrs):
+        nome = attrs.get('nome')
+        municipio = attrs.get('municipio')
+        if nome and municipio:
+            municipio_pk = municipio.pk if hasattr(municipio, 'pk') else municipio
+            qs = Comunidade.objects.filter(
+                nome=nome, municipio_id=municipio_pk, ativa=True
+            )
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError({
+                    'nome': 'Já existe uma comunidade ativa com este nome neste município.',
+                })
+        return attrs

@@ -1,7 +1,7 @@
 import factory
-from apps.core.tests.factories import MunicipalityFactory
 
-from apps.sgp.models import MembroFamilia, Projeto, UPF
+from apps.core.tests.factories import MunicipalityFactory, UserFactory
+from apps.sgp.models import Comunidade, MembroFamilia, Projeto, UPF
 
 
 class ProjetoFactory(factory.django.DjangoModelFactory):
@@ -36,3 +36,13 @@ class MembroFactory(factory.django.DjangoModelFactory):
         lambda: __import__("datetime").date.today().replace(year=2000)
     )
     cpf = ""
+
+
+class ComunidadeFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Comunidade
+
+    nome = factory.Sequence(lambda n: f"Comunidade {n}")
+    municipio = factory.SubFactory(MunicipalityFactory)
+    ativa = True
+    criada_por = factory.SubFactory(UserFactory)

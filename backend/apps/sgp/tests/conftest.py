@@ -292,3 +292,31 @@ def membro_outra_upf(outra_upf):
         nome_completo="Membro de Outra UPF",
         parentesco="filho",
     )
+
+
+# ---------------------------------------------------------------------------
+# Comunidade fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def super_admin_client(api_client):
+    role = RoleFactory(slug='super-admin', nome='Super Admin')
+    user = UserFactory(role=role)
+    api_client.force_authenticate(user=user)
+    return api_client
+
+
+@pytest.fixture
+def ugp_client(api_client):
+    role = RoleFactory(slug='ugp', nome='UGP')
+    user = UserFactory(role=role)
+    api_client.force_authenticate(user=user)
+    return api_client
+
+
+@pytest.fixture
+def adt_client(api_client):
+    role = RoleFactory(slug='adt-acr', nome='ADT / ACR')
+    user = UserFactory(role=role)
+    api_client.force_authenticate(user=user)
+    return api_client
