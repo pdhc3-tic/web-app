@@ -243,8 +243,10 @@ class TestPerformanceIndexes:
             )
 
         from django.db import connection
-        qs = AuditLog.objects.filter(
-            entidade="UPF", entidade_id=str(upf_id)
-        )
-        explain = qs.explain(analyze=True)
+        with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL enable_seqscan = OFF")
+            qs = AuditLog.objects.filter(
+                entidade="UPF", entidade_id=str(upf_id)
+            )
+            explain = qs.explain(analyze=True)
         assert "Index Scan" in explain or "Index Only Scan" in explain or "Bitmap Heap Scan" in explain
