@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     "django_filters",
     "django_celery_beat",
     "corsheaders",
+    "drf_spectacular",
     "apps.core",
     "apps.sgp",
     "apps.sgf",
@@ -180,6 +181,7 @@ REST_FRAMEWORK = {
         "auth_password_reset_ip": "5/hour",
         "notification_unread_count": "60/min",
     },
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "EXCEPTION_HANDLER": "setup.exceptions.custom_exception_handler",
     "NUM_PROXIES": 1,  # Railway usa 1 load balancer na frente
     # Isso faz o SimpleRateThrottle usar X-Forwarded-For
@@ -195,6 +197,17 @@ SIMPLE_JWT = {
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
     "AUTH_HEADER_TYPES": ("Bearer",),
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "PDHC API",
+    "DESCRIPTION": "API do Programa de Desenvolvimento Humano de Crianças e Adolescentes (PDHC)",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "SWAGGER_UI_SETTINGS": {
+        "deepLinking": True,
+        "persistAuthorization": True,
+    },
 }
 
 CORS_ALLOWED_ORIGINS = [
