@@ -19,6 +19,7 @@ import Spinner from "@/app/components/icons/Spinner";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { Pagination } from "@/app/components/ui/Pagination/Pagination";
+import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
 import { ApiError } from "@/app/lib/api";
 import {
   listUpfs,
@@ -255,6 +256,14 @@ function UpfsView() {
       </PageHeader>
 
       <div className="flex flex-col gap-4">
+        <Breadcrumb
+          items={[
+            { label: "Início", href: "/dashboard" },
+            { label: "SGP", href: "/sgp" },
+            { label: "UPFs" },
+          ]}
+        />
+
         <UpfsFilters
           value={filters}
           onChange={handleFilterChange}

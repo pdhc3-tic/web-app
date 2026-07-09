@@ -134,7 +134,6 @@ export function UpfsFilters({
             value=""
             disabled
             placeholder="Em breve"
-            helperText="Filtro disponível em breve."
           />
         </div>
       </div>

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import {
   BarChart3,
   Calendar,
@@ -12,6 +11,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
+import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
 import { fetchUpfCount } from "@/app/lib/upfs";
 import { SubmoduleCard } from "./_components/SubmoduleCard";
 
@@ -89,24 +89,9 @@ export default function SGPPage() {
 
       <div className="mx-auto max-w-6xl space-y-6">
         <div>
-          <nav aria-label="Breadcrumb">
-            <ol className="flex items-center gap-1.5 text-sm text-text-muted">
-              <li>
-                <Link
-                  href="/dashboard"
-                  className="rounded transition-colors hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                >
-                  Início
-                </Link>
-              </li>
-              <li aria-hidden="true" className="text-text-muted/60">
-                ›
-              </li>
-              <li aria-current="page" className="font-medium text-text">
-                SGP
-              </li>
-            </ol>
-          </nav>
+          <Breadcrumb
+            items={[{ label: "Início", href: "/dashboard" }, { label: "SGP" }]}
+          />
 
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-text">
             SGP — Sistema de Gestão de Projetos

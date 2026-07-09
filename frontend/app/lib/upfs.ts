@@ -116,3 +116,102 @@ export async function fetchTerritoryOptions(
     label: t.nome,
   }));
 }
+
+// ─── Detalhe da UPF ───────────────────────────────────────────────────────────
+
+/** Objeto aninhado {id, nome} usado no detalhe (município, território, etc.). */
+export type NestedRef = { id: number; nome: string };
+
+/**
+ * Espelha apps/sgp/serializers.py::UPFDetailSerializer.
+ * Atenção: o CPF vem CRU (sem máscara) no detalhe — mascarar na exibição.
+ * Campos "enum" (genero, cor_raca, etc.) são strings livres, sem label do backend.
+ */
+export type UpfDetail = {
+  id: number;
+  projeto: NestedRef;
+  nome_titular: string;
+  apelido: string;
+  cpf: string;
+  rg: string;
+  data_nasc: string | null;
+  genero: string;
+  cor_raca: string;
+  estado_civil: string;
+  escolaridade: string;
+  nacionalidade: string;
+  naturalidade: string;
+  nome_mae: string;
+  nome_pai: string;
+  telefone: string;
+  celular: string;
+  whatsapp: string;
+  email: string;
+  internet: boolean;
+  dispositivo: string;
+  cep: string;
+  logradouro: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
+  municipio: NestedRef;
+  territorio: NestedRef | null;
+  comunidade: NestedRef | null;
+  latitude: string | null;
+  longitude: string | null;
+  pct: string;
+  posse_terra: string;
+  area_terra_ha: string | null;
+  situacao_moradia: string;
+  tipo_moradia: string;
+  energia: string;
+  agua: string;
+  daf_caf: string;
+  nis: string;
+  seguridade_social: string[];
+  foto_url: string;
+  criado_por: string | null;
+  ativa: boolean;
+  criado_em: string;
+  atualizado_em: string;
+};
+
+/** GET /api/v1/upfs/{id}/ — detalhe completo da UPF. Lança ApiError (404/403). */
+export async function getUpfDetail(
+  id: string | number,
+  signal?: AbortSignal,
+): Promise<UpfDetail> {
+  const res = await apiClient(`/api/v1/upfs/${id}/`, { signal });
+  return res.json();
+}
+
+// ─── Histórico da UPF ─────────────────────────────────────────────────────────
+
+/** Espelha apps/sgp/serializers.py::HistoricoEntrySerializer. */
+export type HistoricoEntry = {
+  id: string;
+  campo: string | null;
+  valor_anterior: unknown;
+  valor_novo: unknown;
+  usuario: { id: number; nome: string } | null;
+  timestamp: string;
+};
+
+export type HistoricoParams = {
+  page: number;
+  pageSize: number;
+};
+
+/** GET /api/v1/upfs/{id}/historico/ — alterações em ordem cronológica decrescente. */
+export async function fetchUpfHistorico(
+  id: string | number,
+  { page, pageSize }: HistoricoParams,
+  signal?: AbortSignal,
+): Promise<Paginated<HistoricoEntry>> {
+  const qs = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  });
+  const res = await apiClient(`/api/v1/upfs/${id}/historico/?${qs}`, { signal });
+  return res.json();
+}

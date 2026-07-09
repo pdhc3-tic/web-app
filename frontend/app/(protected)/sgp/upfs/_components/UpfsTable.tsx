@@ -34,7 +34,7 @@ function SkeletonRows() {
         <tr key={i} className="border-t border-border">
           {Array.from({ length: 6 }).map((__, j) => (
             <td key={j} className="px-4 py-3">
-              <div className="h-4 w-full max-w-[140px] animate-pulse rounded bg-surface-muted" />
+              <div className="h-4 w-full max-w-35 animate-pulse rounded bg-surface-muted" />
             </td>
           ))}
         </tr>
@@ -83,19 +83,19 @@ export function UpfsTable({ upfs, loading }: UpfsTableProps) {
               <th scope="col" className={TH_BASE}>
                 Titular
               </th>
-              <th scope="col" className={`${TH_BASE} w-[180px]`}>
+              <th scope="col" className={`${TH_BASE} w-45`}>
                 Município
               </th>
-              <th scope="col" className={`${TH_BASE} w-[160px]`}>
+              <th scope="col" className={`${TH_BASE} w-40`}>
                 Território
               </th>
-              <th scope="col" className={`${TH_BASE} w-[160px]`}>
+              <th scope="col" className={`${TH_BASE} w-40`}>
                 Cadastrado em
               </th>
-              <th scope="col" className={`${TH_BASE} w-[100px]`}>
+              <th scope="col" className={`${TH_BASE} w-25`}>
                 Status
               </th>
-              <th scope="col" className={`${TH_BASE} w-[80px]`}>
+              <th scope="col" className={`${TH_BASE} w-20`}>
                 <span className="sr-only">Ações</span>
               </th>
             </tr>

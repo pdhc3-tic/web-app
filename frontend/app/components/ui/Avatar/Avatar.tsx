@@ -1,8 +1,9 @@
-type AvatarSize = "sm" | "md";
+type AvatarSize = "sm" | "md" | "lg";
 
 const sizeClass: Record<AvatarSize, string> = {
   sm: "h-8 w-8 text-2xs",
   md: "h-9 w-9 text-xs",
+  lg: "h-16 w-16 text-lg",
 };
 
 function getIniciais(nome: string): string {
