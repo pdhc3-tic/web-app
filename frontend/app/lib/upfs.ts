@@ -215,3 +215,172 @@ export async function fetchUpfHistorico(
   const res = await apiClient(`/api/v1/upfs/${id}/historico/?${qs}`, { signal });
   return res.json();
 }
+
+// ─── Escrita (cadastro / edição) ──────────────────────────────────────────────
+
+/**
+ * Campos graváveis de UPF (POST/PATCH). `territorio` é derivado no backend e não
+ * é enviado. Campos opcionais podem ser omitidos.
+ */
+export type UpfWritePayload = {
+  projeto: number | null;
+  municipio: number | null;
+  comunidade: number | null;
+  nome_titular: string;
+  cpf: string;
+  apelido?: string;
+  rg?: string;
+  data_nasc?: string | null;
+  genero?: string;
+  cor_raca?: string;
+  estado_civil?: string;
+  escolaridade?: string;
+  pct?: string;
+  nis?: string;
+  daf_caf?: string;
+  posse_terra?: string;
+  area_terra_ha?: string | null;
+  seguridade_social?: string[];
+  telefone?: string;
+  whatsapp?: string;
+  email?: string;
+  internet?: boolean;
+  dispositivo?: string;
+  cep?: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  latitude?: string | null;
+  longitude?: string | null;
+  tipo_moradia?: string;
+  situacao_moradia?: string;
+  energia?: string;
+  agua?: string;
+};
+
+/** POST /api/v1/upfs/ — cria uma UPF; retorna o detalhe com id. */
+export async function createUpf(payload: UpfWritePayload): Promise<UpfDetail> {
+  const res = await apiClient("/api/v1/upfs/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+/** PATCH /api/v1/upfs/{id}/ — atualiza uma UPF; retorna o detalhe. */
+export async function updateUpf(
+  id: string | number,
+  payload: UpfWritePayload,
+): Promise<UpfDetail> {
+  const res = await apiClient(`/api/v1/upfs/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+// ─── Cascata (Estado → Município → Comunidade) e Projeto ──────────────────────
+
+type StateItem = { id: number; sigla: string; nome: string };
+
+/** GET /api/v1/states/ — UFs para o primeiro nível da cascata. */
+export async function fetchStateOptions(
+  signal?: AbortSignal,
+): Promise<SelectOption[]> {
+  const res = await apiClient("/api/v1/states/?limit=1000", { signal });
+  const data: Paginated<StateItem> = await res.json();
+  return data.results.map((s) => ({
+    value: String(s.id),
+    label: `${s.nome} (${s.sigla})`,
+  }));
+}
+
+/** Município para o select da cascata, carregando também seu território. */
+export type MunicipalityOpt = SelectOption & { territoryId: number | null };
+
+type MunicipalityItem = {
+  id: number;
+  nome: string;
+  state: number;
+  territory: number | null;
+};
+
+/** GET /api/v1/municipalities/?state={id} — municípios do estado, com território. */
+export async function fetchMunicipalitiesByState(
+  stateId: string | number,
+  signal?: AbortSignal,
+): Promise<MunicipalityOpt[]> {
+  const res = await apiClient(
+    `/api/v1/municipalities/?state=${stateId}&limit=1000`,
+    { signal },
+  );
+  const data: Paginated<MunicipalityItem> = await res.json();
+  return data.results.map((m) => ({
+    value: String(m.id),
+    label: m.nome,
+    territoryId: m.territory,
+  }));
+}
+
+/** GET /api/v1/municipalities/{id}/ — usado no prefill de edição (descobre o estado). */
+export async function fetchMunicipality(
+  id: string | number,
+  signal?: AbortSignal,
+): Promise<MunicipalityItem> {
+  const res = await apiClient(`/api/v1/municipalities/${id}/`, { signal });
+  return res.json();
+}
+
+/** GET /api/v1/territories/ — mapa id→nome para exibir o território derivado. */
+export async function fetchTerritoryMap(
+  signal?: AbortSignal,
+): Promise<Map<number, string>> {
+  const res = await apiClient("/api/v1/territories/?limit=500", { signal });
+  const data: Paginated<Territorio> = await res.json();
+  return new Map(data.results.map((t) => [t.id, t.nome]));
+}
+
+/** GET /api/v1/municipios/{id}/comunidades/ — comunidades ativas do município. */
+export async function fetchComunidadeOptions(
+  municipioId: string | number,
+  signal?: AbortSignal,
+): Promise<SelectOption[]> {
+  const res = await apiClient(
+    `/api/v1/municipios/${municipioId}/comunidades/?limit=100`,
+    { signal },
+  );
+  const data: Paginated<{ id: number; nome: string }> = await res.json();
+  return data.results.map((c) => ({ value: String(c.id), label: c.nome }));
+}
+
+/** POST /api/v1/municipios/{id}/comunidades/ — cria comunidade (nome + lat/lng opcionais). */
+export async function createComunidade(
+  municipioId: string | number,
+  payload: { nome: string; lat?: string | null; lng?: string | null },
+): Promise<{ id: number; nome: string }> {
+  const res = await apiClient(
+    `/api/v1/municipios/${municipioId}/comunidades/`,
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+  return res.json();
+}
+
+/**
+ * GET /api/v1/projetos/ — opções de projeto. O endpoint ainda não existe no
+ * backend; em erro/404 retorna [] (forward-compatible), mantendo o wizard pronto
+ * para quando a rota for criada.
+ */
+export async function fetchProjetoOptions(
+  signal?: AbortSignal,
+): Promise<SelectOption[]> {
+  try {
+    const res = await apiClient("/api/v1/projetos/?ativo=true&limit=1000", {
+      signal,
+    });
+    const data: Paginated<{ id: number; nome: string }> = await res.json();
+    return data.results.map((p) => ({ value: String(p.id), label: p.nome }));
+  } catch {
+    return [];
+  }
+}
