@@ -2,13 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { notFound, useParams } from "next/navigation";
-import { AlertTriangle, Users } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
 import { Button } from "@/app/components/ui/Button/Button";
 import { Chip } from "@/app/components/ui/Chip/Chip";
 import { DefinitionList } from "@/app/components/ui/DefinitionList/DefinitionList";
-import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { RestrictedAccess } from "@/app/components/ui/RestrictedAccess/RestrictedAccess";
 import { Tabs, type TabItem } from "@/app/components/ui/Tabs/Tabs";
 import { ApiError } from "@/app/lib/api";
@@ -24,6 +23,7 @@ import {
 import { UpfHeader } from "./_components/UpfHeader";
 import { UpfDetailSkeleton } from "./_components/UpfDetailSkeleton";
 import { HistoricoTab } from "./_components/HistoricoTab";
+import { MembrosTab } from "./_components/MembrosTab";
 
 const TAB_IDS = [
   "localizacao",
@@ -165,13 +165,7 @@ function buildTabs(upf: UpfDetail): TabItem[] {
     {
       id: "membros",
       label: "Membros",
-      content: (
-        <EmptyState
-          icon={<Users className="h-7 w-7" />}
-          title="Gerenciamento de membros em breve"
-          description="A composição familiar da UPF será liberada em uma próxima entrega."
-        />
-      ),
+      content: <MembrosTab upfId={String(upf.id)} />,
     },
     {
       id: "historico",
