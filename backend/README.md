@@ -7,6 +7,7 @@ API REST do PDHC construída com Django 6, Django REST Framework e Celery.
 - [Swagger / OpenAPI](#swagger--openapi)
 - [Throttling da API](docs/throttling.md)
 - [Política de Logging](docs/logging.md)
+- [Storage Cloudflare R2](docs/storage-setup.md)
 
 ## Swagger / OpenAPI
 
@@ -129,3 +130,15 @@ Referência completa em [`.env.example`](.env.example):
 | `DB_HOST` | — | Host do banco (padrão: `db`) |
 | `REDIS_HOST` | — | Host do Redis (padrão: `redis`) |
 | `CORS_ALLOWED_ORIGINS` | — | Origins permitidos (padrão: `http://localhost:3000`) |
+| `STORAGE_BACKEND` | — | `local` em desenvolvimento ou `r2` em produção |
+| `MEDIA_URL` | — | Prefixo público do storage local |
+| `MEDIA_ROOT` | — | Diretório usado pelo storage local |
+| `R2_ACCESS_KEY_ID` | Quando `r2` | Access Key ID do Cloudflare R2 |
+| `R2_SECRET_ACCESS_KEY` | Quando `r2` | Secret Access Key do Cloudflare R2 |
+| `R2_BUCKET_NAME` | Quando `r2` | Nome do bucket R2 |
+| `R2_ENDPOINT_URL` | Quando `r2` | Endpoint S3-compatible da conta R2 |
+| `R2_PUBLIC_URL` | Quando `r2` | Domínio público/CNAME do bucket |
+
+## Storage De Arquivos
+
+O upload de foto da UPF usa URL presignada para evitar que o backend receba o arquivo como proxy. Consulte [docs/storage-setup.md](docs/storage-setup.md) para criação do bucket, credenciais R2 e CORS.
