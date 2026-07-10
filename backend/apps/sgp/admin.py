@@ -1,12 +1,33 @@
 from django.contrib import admin
 
-from apps.sgp.models import Comunidade, MembroFamilia, Projeto, UPF
+from apps.sgp.models import (
+    Comunidade,
+    Cultura,
+    EspecieAnimal,
+    MembroFamilia,
+    Projeto,
+    UPF,
+)
 
 
 @admin.register(Projeto)
 class ProjetoAdmin(admin.ModelAdmin):
     list_display = ["nome", "ativo", "criado_em"]
     list_filter = ["ativo"]
+    search_fields = ["nome"]
+
+
+@admin.register(Cultura)
+class CulturaAdmin(admin.ModelAdmin):
+    list_display = ["nome", "nome_cientifico", "categoria", "ciclo", "ativa"]
+    list_filter = ["ativa", "categoria", "ciclo"]
+    search_fields = ["nome", "nome_cientifico"]
+
+
+@admin.register(EspecieAnimal)
+class EspecieAnimalAdmin(admin.ModelAdmin):
+    list_display = ["nome", "categoria", "ativa"]
+    list_filter = ["ativa", "categoria"]
     search_fields = ["nome"]
 
 

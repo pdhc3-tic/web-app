@@ -1,7 +1,13 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
-from .views import ComunidadeViewSet, MembroViewSet, UPFViewSet
+from .views import (
+    ComunidadeViewSet,
+    CulturaListView,
+    EspecieAnimalListView,
+    MembroViewSet,
+    UPFViewSet,
+)
 
 router = DefaultRouter()
 router.register("upfs", UPFViewSet)
@@ -13,6 +19,16 @@ comunidade_list = ComunidadeViewSet.as_view({
 })
 
 urlpatterns = router.urls + [
+    path(
+        "catalogos/culturas/",
+        CulturaListView.as_view(),
+        name="catalogo-culturas-list",
+    ),
+    path(
+        "catalogos/especies-animais/",
+        EspecieAnimalListView.as_view(),
+        name="catalogo-especies-animais-list",
+    ),
     path(
         "upfs/<int:upf_pk>/membros/",
         MembroViewSet.as_view(

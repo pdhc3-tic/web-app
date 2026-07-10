@@ -4,7 +4,14 @@ from rest_framework import serializers
 
 from apps.core.models import Municipality
 from apps.sgp.constants import SAUDE_CHOICES
-from apps.sgp.models import Comunidade, MembroFamilia, Projeto, UPF
+from apps.sgp.models import (
+    Comunidade,
+    Cultura,
+    EspecieAnimal,
+    MembroFamilia,
+    Projeto,
+    UPF,
+)
 from apps.sgp.validators import validate_cpf
 
 
@@ -13,6 +20,25 @@ class ProjetoSerializer(serializers.ModelSerializer):
         model = Projeto
         fields = ["id", "nome", "descricao", "ativo", "criado_em"]
         read_only_fields = ["criado_em"]
+
+
+class CulturaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Cultura
+        fields = [
+            "id",
+            "nome",
+            "nome_cientifico",
+            "categoria",
+            "ciclo",
+            "ativa",
+        ]
+
+
+class EspecieAnimalSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EspecieAnimal
+        fields = ["id", "nome", "categoria", "ativa"]
 
 
 class UPFListSerializer(serializers.ModelSerializer):
