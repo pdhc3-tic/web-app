@@ -10,6 +10,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
+
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -18,13 +19,14 @@ from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsSuperAdmin, IsUGP
 from apps.core.services.permissions import user_has_role, user_states, user_territories
 from apps.sgp.filters import UPFFilter
-from apps.sgp.models import Comunidade, MembroFamilia, UPF
+from apps.sgp.models import Comunidade, MembroFamilia, Projeto, UPF
 from apps.sgp.pagination import HistoricoPagination, UPFPagination
 from apps.sgp.serializers import (
     ComunidadeSerializer,
     HistoricoEntrySerializer,
     MembroDetailSerializer,
     MembroListSerializer,
+    ProjetoSerializer,
     UPFDetailSerializer,
     UPFListSerializer,
 )
@@ -460,3 +462,17 @@ class MembroViewSet(viewsets.ModelViewSet):
             user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )
         instance.delete()
+
+
+class ProjetoViewSet(viewsets.ModelViewSet):
+    queryset = Projeto.objects.all()
+    serializer_class = ProjetoSerializer
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_permissions(self):
+        if self.action in ("update", "partial_update", "destroy"):
+            return [(IsSuperAdmin | IsUGP)()]
+        return [IsAuthenticated()]
+
+
+

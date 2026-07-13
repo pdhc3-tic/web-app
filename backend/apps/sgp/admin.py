@@ -1,6 +1,11 @@
 from django.contrib import admin
 
-from apps.sgp.models import Comunidade, MembroFamilia, Projeto, UPF
+from apps.sgp.models import (
+    Comunidade,
+    MembroFamilia,
+    Projeto,
+    UPF,
+)
 
 
 @admin.register(Projeto)

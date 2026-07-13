@@ -1,6 +1,21 @@
 from django.conf import settings
 from django.db import models
 
+from apps.sgp.constants import (
+    AGUA_CHOICES,
+    COR_RACA_CHOICES,
+    DISPOSITIVO_CHOICES,
+    ENERGIA_CHOICES,
+    ESCOLARIDADE_CHOICES,
+    ESTADO_CIVIL_CHOICES,
+    GENERO_CHOICES,
+    MATERIAL_CONSTRUCAO_CHOICES,
+    PCT_CHOICES,
+    POSSE_TERRA_CHOICES,
+    SITUACAO_MORADIA_CHOICES,
+    TIPO_MORADIA_CHOICES,
+)
+
 
 class UPF(models.Model):
     projeto = models.ForeignKey(
@@ -33,28 +48,28 @@ class UPF(models.Model):
     data_nascimento = models.DateField(
         null=True, blank=True, verbose_name="Data de Nascimento"
     )
-    genero = models.CharField(
-        max_length=20,
+    genero = models.PositiveSmallIntegerField(
+        choices=GENERO_CHOICES,
+        null=True,
         blank=True,
-        default="",
         verbose_name="Gênero",
     )
-    cor_raca = models.CharField(
-        max_length=50,
+    cor_raca = models.PositiveSmallIntegerField(
+        choices=COR_RACA_CHOICES,
+        null=True,
         blank=True,
-        default="",
         verbose_name="Cor/Raça",
     )
-    estado_civil = models.CharField(
-        max_length=20,
+    estado_civil = models.PositiveSmallIntegerField(
+        choices=ESTADO_CIVIL_CHOICES,
+        null=True,
         blank=True,
-        default="",
         verbose_name="Estado Civil",
     )
-    escolaridade = models.CharField(
-        max_length=100,
+    escolaridade = models.PositiveSmallIntegerField(
+        choices=ESCOLARIDADE_CHOICES,
+        null=True,
         blank=True,
-        default="",
         verbose_name="Escolaridade",
     )
     nacionalidade = models.CharField(
@@ -97,10 +112,10 @@ class UPF(models.Model):
     internet = models.BooleanField(
         default=False, verbose_name="Acesso à Internet"
     )
-    dispositivo = models.CharField(
-        max_length=100,
+    dispositivo = models.PositiveSmallIntegerField(
+        choices=DISPOSITIVO_CHOICES,
+        null=True,
         blank=True,
-        default="",
         verbose_name="Dispositivo",
     )
 
@@ -163,16 +178,16 @@ class UPF(models.Model):
         verbose_name="Longitude",
     )
 
-    pct = models.CharField(
-        max_length=50,
+    pct = models.PositiveSmallIntegerField(
+        choices=PCT_CHOICES,
+        null=True,
         blank=True,
-        default="",
         verbose_name="PCT",
     )
-    posse_terra = models.CharField(
-        max_length=50,
+    posse_terra = models.PositiveSmallIntegerField(
+        choices=POSSE_TERRA_CHOICES,
+        null=True,
         blank=True,
-        default="",
         verbose_name="Posse da Terra",
     )
     area_terra_ha = models.DecimalField(
@@ -182,28 +197,39 @@ class UPF(models.Model):
         blank=True,
         verbose_name="Área da Terra (ha)",
     )
-    situacao_moradia = models.CharField(
-        max_length=50,
+    situacao_moradia = models.PositiveSmallIntegerField(
+        choices=SITUACAO_MORADIA_CHOICES,
+        null=True,
         blank=True,
-        default="",
         verbose_name="Situação da Moradia",
     )
-    tipo_moradia = models.CharField(
-        max_length=50,
+    tipo_moradia = models.PositiveSmallIntegerField(
+        choices=TIPO_MORADIA_CHOICES,
+        null=True,
         blank=True,
-        default="",
         verbose_name="Tipo de Moradia",
     )
-    energia = models.CharField(
-        max_length=100,
+    material_construcao = models.PositiveSmallIntegerField(
+        choices=MATERIAL_CONSTRUCAO_CHOICES,
+        null=True,
         blank=True,
-        default="",
+        verbose_name="Material de Construção",
+    )
+    num_comodos = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Número de Cômodos",
+    )
+    energia = models.PositiveSmallIntegerField(
+        choices=ENERGIA_CHOICES,
+        null=True,
+        blank=True,
         verbose_name="Energia",
     )
-    agua = models.CharField(
-        max_length=100,
+    agua = models.PositiveSmallIntegerField(
+        choices=AGUA_CHOICES,
+        null=True,
         blank=True,
-        default="",
         verbose_name="Água",
     )
 
