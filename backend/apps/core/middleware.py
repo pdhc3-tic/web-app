@@ -1,6 +1,7 @@
 import logging
 
 from django.db import connection, transaction
+from django.conf import settings
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.authentication import JWTStatelessUserAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
@@ -8,6 +9,18 @@ from apps.core.signals.audit import set_audit_context, clear_audit_context
 
 
 logger = logging.getLogger(__name__)
+
+
+class ContentSecurityPolicyMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if "Content-Security-Policy" not in response:
+            connect_src = " ".join(settings.CSP_CONNECT_SRC)
+            response["Content-Security-Policy"] = f"connect-src {connect_src};"
+        return response
 
 
 class SessionContextMiddleware:

@@ -13,6 +13,7 @@ from .views import (
     mark_all_read,
     unread_count,
     AuditLogListView,
+    LocalStorageUploadView,
     SystemConfigListView,
     SystemConfigDetailView,
 )
@@ -31,6 +32,7 @@ urlpatterns = router.urls + [
     path("notifications/mark-all-read/", mark_all_read, name="notification-mark-all-read"),
     path("notifications/me/unread-count/", unread_count, name="notification-unread-count"),
     path("audit-logs/", AuditLogListView.as_view(), name="audit-log-list"),
+    path("storage/local-upload/", LocalStorageUploadView.as_view(), name="local-storage-upload"),
     path("system-config/", SystemConfigListView.as_view(), name="system-config-list"),
     path("system-config/<str:chave>/", SystemConfigDetailView.as_view(), name="system-config-detail"),
 ]

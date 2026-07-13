@@ -15,6 +15,7 @@ from .notifications import (
     unread_count,
 )
 from .organizations import OrganizationViewSet
+from .storage import LocalStorageUploadView
 from .system_config import SystemConfigDetailView, SystemConfigListView
 from .territorial import MunicipalityViewSet, RoleViewSet, StateViewSet, TerritoryViewSet
 from .users import UserViewSet
@@ -34,6 +35,7 @@ __all__ = [
     "mark_all_read",
     "unread_count",
     "OrganizationViewSet",
+    "LocalStorageUploadView",
     "SystemConfigDetailView",
     "SystemConfigListView",
     "MunicipalityViewSet",

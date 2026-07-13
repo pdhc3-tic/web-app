@@ -28,6 +28,7 @@ from apps.sgp.serializers import (
     UPFDetailSerializer,
     UPFListSerializer,
 )
+from .upf_foto import UPFPhotoMixin
 
 logger = logging.getLogger("apps.sgp.views")
 
@@ -41,7 +42,7 @@ class ComunidadePagination(LimitOffsetPagination):
     max_limit = 100
 
 
-class UPFViewSet(viewsets.ModelViewSet):
+class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
     queryset = UPF.objects.select_related(
         "municipio", "municipio__state", "territorio", "projeto", "criado_por"
     ).all()
