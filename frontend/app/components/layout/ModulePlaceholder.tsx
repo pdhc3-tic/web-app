@@ -34,15 +34,15 @@ export function ModulePlaceholder({
         <div className="relative">
           <div
             aria-hidden="true"
-            className="absolute -top-12 -left-12 h-64 w-64 rounded-full bg-gradient-to-br from-primary/10 to-transparent blur-2xl"
+            className="absolute -top-12 -left-12 h-64 w-64 rounded-full bg-linear-to-br from-primary/10 to-transparent blur-2xl"
           />
           <div
             aria-hidden="true"
-            className="absolute -top-8 right-0 h-48 w-48 rounded-full bg-gradient-to-tl from-accent-ocre/10 to-transparent blur-2xl"
+            className="absolute -top-8 right-0 h-48 w-48 rounded-full bg-linear-to-tl from-accent-ocre/10 to-transparent blur-2xl"
           />
 
           <div className="relative">
-            <div className="flex items-center justify-center h-16 w-16 rounded-2xl bg-gradient-to-br from-primary to-secondary text-surface shadow-lg shadow-primary/20">
+            <div className="flex items-center justify-center h-16 w-16 rounded-2xl bg-linear-to-br from-primary to-secondary text-surface shadow-lg shadow-primary/20">
               <Icon className="h-7 w-7" aria-hidden="true" strokeWidth={1.75} />
             </div>
 
@@ -52,7 +52,7 @@ export function ModulePlaceholder({
                   className="h-3 w-3 text-warning-text"
                   aria-hidden="true"
                 />
-                <span className="text-[10px] font-medium uppercase tracking-wider text-warning-text">
+                <span className="text-micro font-medium uppercase tracking-wider text-warning-text">
                   Em desenvolvimento
                 </span>
               </span>
@@ -70,7 +70,7 @@ export function ModulePlaceholder({
 
         {features && features.length > 0 && (
           <div className="mt-12 pt-8 border-t border-border">
-            <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-text-muted mb-4">
+            <p className="text-micro font-medium uppercase tracking-[0.2em] text-text-muted mb-4">
               O que vem por aí
             </p>
             <ul className="grid sm:grid-cols-2 gap-x-6 gap-y-3">
