@@ -1,3 +1,31 @@
+GENERO_CHOICES = [
+    (1, "Masculino"),
+    (2, "Feminino"),
+    (3, "Outro"),
+    (4, "Não Informado"),
+]
+
+COR_RACA_CHOICES = [
+    (1, "Branca"),
+    (2, "Preta"),
+    (3, "Parda"),
+    (4, "Amarela"),
+    (5, "Indígena"),
+    (6, "Não Informado"),
+]
+
+ESCOLARIDADE_CHOICES = [
+    (1, "Sem instrução"),
+    (2, "Fundamental incompleto"),
+    (3, "Fundamental completo"),
+    (4, "Médio incompleto"),
+    (5, "Médio completo"),
+    (6, "Superior incompleto"),
+    (7, "Superior completo"),
+    (8, "Pós-graduação"),
+    (9, "Não Informado"),
+]
+
 DISPOSITIVO_CHOICES = [
     (1, "Computador"),
     (2, "Notebook"),

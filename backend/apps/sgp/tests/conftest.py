@@ -7,7 +7,7 @@ from apps.core.tests.factories import (
     TerritoryFactory,
     UserFactory,
 )
-from apps.sgp.tests.factories import MembroFactory, ProjetoFactory, TitularFactory, UPFFactory
+from apps.sgp.tests.factories import MembroFactory, ProjetoFactory, UPFFactory
 
 
 @pytest.fixture
@@ -238,8 +238,8 @@ def upf_payload_completo(projeto, municipio):
         "cpf": "52998224725",
         "rg": "1234567",
         "data_nasc": "1985-03-15",
-        "genero": "Masculino",
-        "escolaridade": "Superior completo",
+        "genero": 1,
+        "escolaridade": 7,
         "nacionalidade": "brasileira",
         "naturalidade": "Mossoró",
         "nome_mae": "Mãe do João",

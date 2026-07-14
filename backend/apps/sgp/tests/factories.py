@@ -16,7 +16,6 @@ class ProjetoFactory(factory.django.DjangoModelFactory):
 class UPFFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = UPF
-        exclude = ["_titular_nome"]
 
     _titular_nome = factory.Sequence(lambda n: f"Titular {n}")
     projeto = factory.SubFactory(ProjetoFactory)

@@ -1,7 +1,12 @@
 from django.conf import settings
 from django.db import models
 
-from apps.sgp.constants import PARENTESCO_CHOICES
+from apps.sgp.constants import (
+    COR_RACA_CHOICES,
+    ESCOLARIDADE_CHOICES,
+    GENERO_CHOICES,
+    PARENTESCO_CHOICES,
+)
 
 
 class MembroFamilia(models.Model):
@@ -9,6 +14,8 @@ class MembroFamilia(models.Model):
         "sgp.UPF",
         on_delete=models.CASCADE,
         related_name="membros",
+        null=True,
+        blank=True,
         verbose_name="UPF",
     )
 
@@ -18,16 +25,16 @@ class MembroFamilia(models.Model):
     data_nasc = models.DateField(
         null=True, blank=True, verbose_name="Data de Nascimento"
     )
-    genero = models.CharField(
-        max_length=20,
+    genero = models.PositiveSmallIntegerField(
+        choices=GENERO_CHOICES,
+        null=True,
         blank=True,
-        default="",
         verbose_name="Gênero",
     )
-    cor_raca = models.CharField(
-        max_length=50,
+    cor_raca = models.PositiveSmallIntegerField(
+        choices=COR_RACA_CHOICES,
+        null=True,
         blank=True,
-        default="",
         verbose_name="Cor/Raça",
     )
 
@@ -84,10 +91,23 @@ class MembroFamilia(models.Model):
         blank=True, default="", verbose_name="E-mail"
     )
 
-    escolaridade = models.CharField(
-        max_length=100,
+    nome_mae = models.CharField(
+        max_length=255, blank=True, default="", verbose_name="Nome da Mãe"
+    )
+    nome_pai = models.CharField(
+        max_length=255, blank=True, default="", verbose_name="Nome do Pai"
+    )
+    nacionalidade = models.CharField(
+        max_length=100, blank=True, default="", verbose_name="Nacionalidade"
+    )
+    naturalidade = models.CharField(
+        max_length=255, blank=True, default="", verbose_name="Naturalidade"
+    )
+
+    escolaridade = models.PositiveSmallIntegerField(
+        choices=ESCOLARIDADE_CHOICES,
+        null=True,
         blank=True,
-        default="",
         verbose_name="Escolaridade",
     )
     profissao = models.CharField(

@@ -18,12 +18,23 @@ class ProjetoSerializer(serializers.ModelSerializer):
 
 class TitularNestedSerializer(serializers.ModelSerializer):
     idade = serializers.SerializerMethodField()
+    genero_display = serializers.CharField(
+        source="get_genero_display", read_only=True
+    )
+    cor_raca_display = serializers.CharField(
+        source="get_cor_raca_display", read_only=True
+    )
+    escolaridade_display = serializers.CharField(
+        source="get_escolaridade_display", read_only=True
+    )
 
     class Meta:
         model = MembroFamilia
         fields = [
             "id", "nome_completo", "cpf", "rg", "data_nasc",
-            "genero", "cor_raca", "escolaridade",
+            "genero", "genero_display",
+            "cor_raca", "cor_raca_display",
+            "escolaridade", "escolaridade_display",
             "telefone", "email", "nis",
             "nome_mae", "nome_pai", "nacionalidade", "naturalidade",
             "idade",
@@ -118,16 +129,16 @@ class UPFDetailSerializer(serializers.ModelSerializer):
         write_only=True, required=False, allow_null=True, default=None,
         source="_titular_data_nasc",
     )
-    genero = serializers.CharField(
-        write_only=True, required=False, allow_blank=True, default="",
+    genero = serializers.IntegerField(
+        write_only=True, required=False, allow_null=True, default=None,
         source="_titular_genero",
     )
-    cor_raca = serializers.CharField(
-        write_only=True, required=False, allow_blank=True, default="",
+    cor_raca = serializers.IntegerField(
+        write_only=True, required=False, allow_null=True, default=None,
         source="_titular_cor_raca",
     )
-    escolaridade = serializers.CharField(
-        write_only=True, required=False, allow_blank=True, default="",
+    escolaridade = serializers.IntegerField(
+        write_only=True, required=False, allow_null=True, default=None,
         source="_titular_escolaridade",
     )
     telefone = serializers.CharField(
@@ -320,13 +331,20 @@ class MembroListSerializer(serializers.ModelSerializer):
     parentesco_display = serializers.CharField(
         source="get_parentesco_display", read_only=True
     )
+    genero_display = serializers.CharField(
+        source="get_genero_display", read_only=True
+    )
+    cor_raca_display = serializers.CharField(
+        source="get_cor_raca_display", read_only=True
+    )
 
     class Meta:
         model = MembroFamilia
         fields = [
             "id", "nome", "data_nasc", "idade",
             "parentesco", "parentesco_display", "cpf",
-            "genero", "cor_raca",
+            "genero", "genero_display",
+            "cor_raca", "cor_raca_display",
             "criado_em",
         ]
 
@@ -346,6 +364,15 @@ class MembroDetailSerializer(serializers.ModelSerializer):
     parentesco_display = serializers.CharField(
         source="get_parentesco_display", read_only=True
     )
+    genero_display = serializers.CharField(
+        source="get_genero_display", read_only=True
+    )
+    cor_raca_display = serializers.CharField(
+        source="get_cor_raca_display", read_only=True
+    )
+    escolaridade_display = serializers.CharField(
+        source="get_escolaridade_display", read_only=True
+    )
     cpf = serializers.CharField(
         max_length=14, required=False, allow_blank=True
     )
@@ -355,10 +382,14 @@ class MembroDetailSerializer(serializers.ModelSerializer):
         fields = [
             "id", "upf", "nome", "data_nasc", "idade",
             "cpf", "rg", "nis", "caf", "parentesco",
-            "parentesco_display", "genero", "cor_raca",
+            "parentesco_display",
+            "genero", "genero_display",
+            "cor_raca", "cor_raca_display",
             "escola", "seguridade_social", "saude",
             "telefone", "email",
-            "escolaridade", "profissao", "renda", "observacao",
+            "nome_mae", "nome_pai", "nacionalidade", "naturalidade",
+            "escolaridade", "escolaridade_display",
+            "profissao", "renda", "observacao",
             "criado_por", "criado_em", "atualizado_em",
         ]
         validators = []
