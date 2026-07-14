@@ -28,17 +28,65 @@ export class ApiError extends Error {
   }
 }
 
-async function parseApiError(res: Response): Promise<never> {
-  try {
-    const body: ApiErrorBody = await res.json();
-    throw new ApiError(res.status, body);
-  } catch (e) {
-    if (e instanceof ApiError) throw e;
-    throw new ApiError(res.status, {
-      code: "unknown_error",
-      message: `Erro inesperado (${res.status})`,
-    });
+/**
+ * Normaliza o corpo de erro em ApiErrorBody. Aceita três formatos:
+ * 1. Envelope da API `{ code, message, field_errors? }` (usado como está);
+ * 2. `{ detail: "..." }` do DRF → vira `message`;
+ * 3. Erros de validação DRF `{ campo: ["msg"] | "msg", ... }` → `field_errors`
+ *    (a chave `non_field_errors` é tratada como erro global, sem `field`).
+ */
+function normalizeErrorBody(status: number, raw: unknown): ApiErrorBody {
+  if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+
+    if (typeof obj.message === "string") {
+      return raw as ApiErrorBody;
+    }
+    if (typeof obj.detail === "string") {
+      return {
+        code: typeof obj.code === "string" ? obj.code : "error",
+        message: obj.detail,
+      };
+    }
+
+    const fieldErrors: ApiFieldError[] = [];
+    let firstMessage: string | undefined;
+    let globalMessage: string | undefined;
+
+    for (const [field, value] of Object.entries(obj)) {
+      const message = Array.isArray(value)
+        ? String(value[0])
+        : typeof value === "string"
+          ? value
+          : JSON.stringify(value);
+      firstMessage ??= message;
+      if (field === "non_field_errors" || field === "detail") {
+        globalMessage ??= message;
+      } else {
+        fieldErrors.push({ field, message });
+      }
+    }
+
+    if (fieldErrors.length > 0 || globalMessage) {
+      return {
+        code: "validation_error",
+        message: globalMessage ?? firstMessage ?? "Dados inválidos.",
+        field_errors: fieldErrors.length > 0 ? fieldErrors : undefined,
+      };
+    }
   }
+
+  return { code: "unknown_error", message: `Erro inesperado (${status})` };
+}
+
+async function parseApiError(res: Response): Promise<never> {
+  let raw: unknown = null;
+  try {
+    raw = await res.json();
+  } catch {
+    /* corpo vazio ou não-JSON */
+  }
+  throw new ApiError(res.status, normalizeErrorBody(res.status, raw));
 }
 
 // --- Utilitários internos ---

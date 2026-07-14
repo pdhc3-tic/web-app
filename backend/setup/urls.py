@@ -18,6 +18,8 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
+from django.conf import settings
+from django.conf.urls.static import static
 
 from apps.core.views import (
     LoginView,
@@ -44,3 +46,8 @@ urlpatterns = [
     path("api/v1/auth/password-reset/request/", password_reset_request, name="password_reset_request"),
     path("api/v1/auth/password-reset/confirm/", password_reset_confirm, name="password_reset_confirm"),
 ]
+
+# Abrir documento local com a URL gerado para download
+# upf_document_download -> GET DOWNLOAD
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

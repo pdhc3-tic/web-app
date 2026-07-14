@@ -52,7 +52,7 @@ const ADMIN_ITEM: ModuleItem = {
 // Badges mock: substituir por /api/v1/notifications/me/unread-count/ em sprint futura
 const MODULES: ModuleItem[] = [
   { href: "/core", label: "Core", Icon: Database },
-  { href: "/sgp", label: "SGP", Icon: Users, badge: 3 },
+  { href: "/sgp", label: "SGP", Icon: Users },
   { href: "/sgf", label: "SGF", Icon: Wallet },
   { href: "/sgd", label: "SGD", Icon: FileText, badge: 1 },
   { href: "/sgs", label: "SGS", Icon: Heart },

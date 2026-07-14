@@ -12,7 +12,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
     <div className="min-h-screen">
       <SkipLinks />
 
-      <aside className="hidden md:flex fixed top-0 left-0 h-screen w-[var(--sidebar-width)] flex-col z-10 transition-[width] duration-200 shadow-[1px_0_0_0_color-mix(in_srgb,var(--color-border)_50%,transparent)]">
+      <aside className="hidden md:flex fixed top-0 left-0 h-screen w-(--sidebar-width) flex-col z-10 transition-[width] duration-200 shadow-[1px_0_0_0_color-mix(in_srgb,var(--color-border)_50%,transparent)]">
         <nav
           id="main-nav"
           aria-label="Navegação principal"
@@ -22,7 +22,7 @@ export function AppShell({ sidebar, children }: AppShellProps) {
         </nav>
       </aside>
 
-      <div className="md:ml-[var(--sidebar-width)] flex flex-col min-h-screen transition-[margin-left] duration-200">
+      <div className="md:ml-(--sidebar-width) flex flex-col min-h-screen transition-[margin-left] duration-200">
         <Header />
         <main id="main-content" className="flex-1 p-6 pb-20 md:pb-6">
           {children}

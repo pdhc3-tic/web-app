@@ -7,6 +7,7 @@ from .views import (
     EspecieAnimalListView,
     MembroViewSet,
     UPFViewSet,
+    UPFDocumentViewSet,
 )
 
 router = DefaultRouter()
@@ -16,6 +17,19 @@ router.register('comunidades', ComunidadeViewSet, basename='comunidade')
 comunidade_list = ComunidadeViewSet.as_view({
     'get': 'list',
     'post': 'create',
+})
+upf_document_list = UPFDocumentViewSet.as_view({
+    "get": "list",
+    "post": "create",
+})
+upf_document_upload_url = UPFDocumentViewSet.as_view({
+    "post": "upload_url",
+})
+upf_document_detail = UPFDocumentViewSet.as_view({
+    "delete": "destroy",
+})
+upf_document_download = UPFDocumentViewSet.as_view({
+    "get": "download",
 })
 
 urlpatterns = router.urls + [
@@ -28,6 +42,26 @@ urlpatterns = router.urls + [
         "catalogos/especies-animais/",
         EspecieAnimalListView.as_view(),
         name="catalogo-especies-animais-list",
+    ),
+    path(
+        "upfs/<int:upf_pk>/documentos/",
+        upf_document_list,
+        name="upf-documentos-list",
+    ),
+    path(
+        "upfs/<int:upf_pk>/documentos/upload-url/",
+        upf_document_upload_url,
+        name="upf-documentos-upload-url",
+    ),
+    path(
+        "upfs/<int:upf_pk>/documentos/<int:pk>/download/",
+        upf_document_download,
+        name="upf-documentos-download",
+    ),
+    path(
+        "upfs/<int:upf_pk>/documentos/<int:pk>/",
+        upf_document_detail,
+        name="upf-documentos-detail",
     ),
     path(
         "upfs/<int:upf_pk>/membros/",

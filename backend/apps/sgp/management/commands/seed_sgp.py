@@ -1,15 +1,26 @@
 """
-Seed de dados de referência do SGP.
+Seed de dados de referência do SGP (Projetos, Culturas e Espécie Animais).
 
-Este comando popula os catálogos usados pelo módulo Produção. Assim como o
-seed_core, deve ser executado explicitamente em desenvolvimento/staging após as
-migrations, sem depender de data migrations.
+Decisão CI/testes
+-----------------
+- Este comando é executado APENAS em ambientes de desenvolvimento e staging
+  para popular o banco com dados reais de referência.
+- Em testes automatizados (CI), NÃO usar este seed. Usar factory_boy
+  (factories em apps/core/tests/factories.py) para criar fixtures isoladas
+  por teste, garantindo velocidade e independência entre casos de teste.
 """
 
 from django.core.management.base import BaseCommand
 
-from apps.sgp.models import Cultura, EspecieAnimal
+from apps.sgp.models import Cultura, EspecieAnimal, Projeto
 
+PROJETOS = [
+    {
+        "nome": "Projeto Dom Hélder Câmara III",
+        "descricao": "Projeto PDHC III",
+        "ativo": True,
+    },
+]
 
 CULTURAS = [
     ("Milho", "Zea mays", "graos", "anual"),
@@ -139,11 +150,26 @@ def ensure_especies_animais(stdout):
 
 
 class Command(BaseCommand):
-    help = "Seed SGP data (catálogos de culturas e espécies animais)."
+    help = "Seed SGP data (Projetos, catálogos de culturas e espécies animais)."
 
     def handle(self, *args, **options):
-        stdout = self.stdout
-        stdout.write("Seeding SGP data...")
-        ensure_culturas(stdout)
-        ensure_especies_animais(stdout)
-        stdout.write(self.style.SUCCESS("Seeding complete."))
+        self.stdout.write("Seeding SGP data...")
+
+        # 1. Popula Projetos
+        for item in PROJETOS:
+            projeto, created = Projeto.objects.update_or_create(
+                nome=item["nome"],
+                defaults={
+                    "descricao": item["descricao"],
+                    "ativo": item["ativo"],
+                },
+            )
+            self.stdout.write(
+                f"Projeto: {projeto.nome} -> {'created' if created else 'updated'}"
+            )
+
+        # 2. Popula Culturas e Animais
+        ensure_culturas(self.stdout)
+        ensure_especies_animais(self.stdout)
+
+        self.stdout.write(self.style.SUCCESS("Seeding SGP complete."))
