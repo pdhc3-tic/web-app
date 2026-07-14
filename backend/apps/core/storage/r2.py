@@ -46,6 +46,17 @@ class R2Storage:
             HttpMethod="PUT",
         )
 
+    def generate_presigned_get(self, key, expires_in=300):
+        return self.client.generate_presigned_url(
+            ClientMethod="get_object",
+            Params={
+                "Bucket": self.bucket_name,
+                "Key": key,
+            },
+            ExpiresIn=expires_in,
+            HttpMethod="GET",
+        )
+
     def head_object(self, key):
         try:
             return self.client.head_object(Bucket=self.bucket_name, Key=key)
@@ -93,6 +104,9 @@ class LocalStorage:
             }
         )
         return f"{settings.LOCAL_STORAGE_UPLOAD_URL}?{query}"
+
+    def generate_presigned_get(self, key, expires_in=300):
+        return self.get_public_url(key)
 
     def head_object(self, key):
         path = self._path_for_key(key)
