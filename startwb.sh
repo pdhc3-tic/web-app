@@ -61,7 +61,7 @@ echo -e "\n---"
 read -p "Deseja executar os testes com Pytest agora? (s/N): " confirm
 if [[ "$confirm" =~ ^[sS]$ ]]; then
     echo -e "${YELLOW}Executando testes...${NC}"
-    sudo docker exec -it backend. pytest -v
+    sudo docker compose -f docker-compose.yml exec backend pytest -v
 else
     echo -e "${GREEN}Setup finalizado sem testes.${NC}"
 fi
