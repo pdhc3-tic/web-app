@@ -72,8 +72,9 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = UPF.objects.select_related(
-            "municipio", "municipio__state", "territorio", "projeto", "criado_por"
-        ).all()
+            "municipio", "municipio__state", "territorio", "projeto",
+            "criado_por", "titular",
+        ).prefetch_related("membros").all()
 
         user = self.request.user
 
