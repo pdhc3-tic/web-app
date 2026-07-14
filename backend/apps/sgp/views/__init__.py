@@ -55,7 +55,7 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
     pagination_class = UPFPagination
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_class = UPFFilter
-    ordering_fields = ["criado_em", "nome_titular", "data_nasc"]
+    ordering_fields = ["criado_em", "titular__nome_completo"]
     ordering = ["-criado_em"]
 
     def get_serializer_class(self):
@@ -193,8 +193,8 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
             valores_anteriores=valores_anteriores or {},
             valores_novos={
                 "upf_id": instance.pk,
-                "nome_titular": instance.nome_titular,
-                "cpf": instance.cpf,
+                "nome_titular": instance.titular.nome_completo,
+                "cpf": instance.titular.cpf,
                 "projeto_id": instance.projeto_id,
                 "municipio_id": instance.municipio_id,
                 "territorio_id": instance.territorio_id,
@@ -213,8 +213,8 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
         old = self.get_object()
         valores_anteriores = {
             "upf_id": old.pk,
-            "nome_titular": old.nome_titular,
-            "cpf": old.cpf,
+            "nome_titular": old.titular.nome_completo,
+            "cpf": old.titular.cpf,
             "projeto_id": old.projeto_id,
             "municipio_id": old.municipio_id,
             "territorio_id": old.territorio_id,
@@ -227,8 +227,8 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         valores_anteriores = {
             "upf_id": instance.pk,
-            "nome_titular": instance.nome_titular,
-            "cpf": instance.cpf,
+            "nome_titular": instance.titular.nome_completo,
+            "cpf": instance.titular.cpf,
             "projeto_id": instance.projeto_id,
             "municipio_id": instance.municipio_id,
             "territorio_id": instance.territorio_id,

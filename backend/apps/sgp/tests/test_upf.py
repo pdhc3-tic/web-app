@@ -17,7 +17,7 @@ class TestUPFCriacao:
             "/api/v1/upfs/", upf_payload_minimo, format="json"
         )
         assert response.status_code == 201
-        assert response.data["nome_titular"] == "Maria da Silva"
+        assert response.data["titular"]["nome_completo"] == "Maria da Silva"
         assert response.data["ativa"] is True
 
     def test_create_upf_with_all_fields(
@@ -27,10 +27,10 @@ class TestUPFCriacao:
             "/api/v1/upfs/", upf_payload_completo, format="json"
         )
         assert response.status_code == 201
-        assert response.data["rg"] == "1234567"
-        assert response.data["email"] == "joao@example.com"
+        assert response.data["titular"]["rg"] == "1234567"
+        assert response.data["titular"]["email"] == "joao@example.com"
         assert response.data["latitude"] == "-5.123456"
-        assert response.data["nome_mae"] == "Mãe do João"
+        assert response.data["titular"]["nome_mae"] == "Mãe do João"
 
     def test_cep_optional(self, auth_client, upf_payload_minimo):
         response = auth_client.post(
@@ -193,8 +193,8 @@ class TestSerializers:
         assert response.status_code == 200
 
         assert "membros" in response.data
-        assert response.data["membros"] == []
-        assert "cpf" in response.data
+        assert len(response.data["membros"]) == 1
+        assert "titular" in response.data
         assert "municipio" in response.data
         assert isinstance(response.data["municipio"], dict)
         assert "territorio" in response.data
@@ -233,7 +233,7 @@ class TestAuditLog:
 
         auth_client.patch(
             f"/api/v1/upfs/{upf_id}/",
-            {"nome_titular": "Nome Atualizado"},
+            {"nome": "Nome Atualizado"},
             format="json",
         )
 
@@ -249,10 +249,10 @@ class TestFiltrosEBusca:
         self, auth_client, projeto, municipio_rn, municipio_ce
     ):
         upf_rn = UPFFactory(
-            projeto=projeto, municipio=municipio_rn, cpf="86288366757"
+            projeto=projeto, municipio=municipio_rn, titular_cpf="86288366757"
         )
         UPFFactory(
-            projeto=projeto, municipio=municipio_ce, cpf="52998224725"
+            projeto=projeto, municipio=municipio_ce, titular_cpf="52998224725"
         )
         response = auth_client.get(
             f"/api/v1/upfs/?municipio={municipio_rn.pk}"
@@ -266,10 +266,10 @@ class TestFiltrosEBusca:
         self, auth_client, projeto, municipio_rn
     ):
         UPFFactory(
-            projeto=projeto, municipio=municipio_rn, cpf="86288366757", ativa=True
+            projeto=projeto, municipio=municipio_rn, titular_cpf="86288366757", ativa=True
         )
         UPFFactory(
-            projeto=projeto, municipio=municipio_rn, cpf="52998224725", ativa=False
+            projeto=projeto, municipio=municipio_rn, titular_cpf="52998224725", ativa=False
         )
         response = auth_client.get(
             f"/api/v1/upfs/?municipio={municipio_rn.pk}&ativa=true"
@@ -282,11 +282,11 @@ class TestFiltrosEBusca:
     ):
         UPFFactory(
             projeto=projeto, municipio=municipio_rn,
-            nome_titular="João Silva", cpf="86288366757",
+            _titular_nome="João Silva", titular_cpf="86288366757",
         )
         UPFFactory(
             projeto=projeto, municipio=municipio_rn,
-            nome_titular="Maria Souza", cpf="52998224725",
+            _titular_nome="Maria Souza", titular_cpf="52998224725",
         )
         response = auth_client.get("/api/v1/upfs/?q=joão")
         assert response.status_code == 200
@@ -299,7 +299,7 @@ class TestFiltrosEBusca:
     ):
         UPFFactory(
             projeto=projeto, municipio=municipio_rn,
-            cpf="86288366757",
+            titular_cpf="86288366757",
         )
         response_unmasked = auth_client.get("/api/v1/upfs/?q=86288366757")
         response_masked = auth_client.get("/api/v1/upfs/?q=862.883.667-57")
@@ -316,11 +316,11 @@ class TestFiltrosEBusca:
     ):
         UPFFactory(
             projeto=projeto, municipio=municipio_rn,
-            cpf="86288366757",
+            titular_cpf="86288366757",
         )
         UPFFactory(
             projeto=projeto, municipio=municipio_rn,
-            cpf="52998224725",
+            titular_cpf="52998224725",
         )
         oldest = UPF.objects.order_by("criado_em").first()
         response = auth_client.get("/api/v1/upfs/")
@@ -332,17 +332,17 @@ class TestFiltrosEBusca:
     ):
         UPFFactory(
             projeto=projeto, municipio=municipio_rn,
-            nome_titular="Ana", cpf="86288366757",
+            _titular_nome="Ana", titular_cpf="86288366757",
         )
         UPFFactory(
             projeto=projeto, municipio=municipio_rn,
-            nome_titular="Zeca", cpf="52998224725",
+            _titular_nome="Zeca", titular_cpf="52998224725",
         )
-        response_asc = auth_client.get("/api/v1/upfs/?ordering=nome_titular")
+        response_asc = auth_client.get("/api/v1/upfs/?ordering=titular__nome_completo")
         names_asc = [u["nome_titular"] for u in response_asc.data["results"]]
         assert names_asc == sorted(names_asc)
 
-        response_desc = auth_client.get("/api/v1/upfs/?ordering=-nome_titular")
+        response_desc = auth_client.get("/api/v1/upfs/?ordering=-titular__nome_completo")
         names_desc = [u["nome_titular"] for u in response_desc.data["results"]]
         assert names_desc == sorted(names_desc, reverse=True)
 
@@ -355,7 +355,7 @@ class TestPaginacao:
             55,
             projeto=projeto,
             municipio=municipio_rn,
-            cpf=factory.Sequence(lambda n: f"{n + 10000000000:011d}"),
+            titular_cpf=factory.Sequence(lambda n: f"{n + 10000000000:011d}"),
         )
         response = auth_client.get("/api/v1/upfs/")
         assert response.status_code == 200
@@ -373,7 +373,7 @@ class TestPaginacao:
             210,
             projeto=projeto,
             municipio=municipio_rn,
-            cpf=factory.Sequence(lambda n: f"{n + 20000000000:011d}"),
+            titular_cpf=factory.Sequence(lambda n: f"{n + 20000000000:011d}"),
         )
         response = auth_client.get("/api/v1/upfs/?page_size=500")
         assert response.status_code == 200
@@ -386,11 +386,11 @@ class TestAtivaPadrao:
     ):
         ativa = UPFFactory(
             projeto=projeto, municipio=municipio_rn,
-            nome_titular="Ativa", cpf="86288366757", ativa=True,
+            _titular_nome="Ativa", titular_cpf="86288366757", ativa=True,
         )
         UPFFactory(
             projeto=projeto, municipio=municipio_rn,
-            nome_titular="Inativa", cpf="52998224725", ativa=False,
+            _titular_nome="Inativa", titular_cpf="52998224725", ativa=False,
         )
         response = auth_client.get("/api/v1/upfs/")
         assert response.status_code == 200
@@ -414,11 +414,11 @@ class TestIsolamentoTerritorial:
     ):
         upf_rn = UPFFactory(
             projeto=projeto, municipio=municipio_rn,
-            territorio=territory_rn, cpf="86288366757",
+            territorio=territory_rn, titular_cpf="86288366757",
         )
         UPFFactory(
             projeto=projeto, municipio=municipio_ce,
-            territorio=territory_ce, cpf="52998224725",
+            territorio=territory_ce, titular_cpf="52998224725",
         )
         response = auth_client_adt_rn.get("/api/v1/upfs/")
         assert response.status_code == 200
@@ -432,11 +432,11 @@ class TestIsolamentoTerritorial:
     ):
         upf_rn = UPFFactory(
             projeto=projeto, municipio=municipio_rn,
-            territorio=territory_rn, cpf="86288366757",
+            territorio=territory_rn, titular_cpf="86288366757",
         )
         UPFFactory(
             projeto=projeto, municipio=municipio_ce,
-            territorio=territory_ce, cpf="52998224725",
+            territorio=territory_ce, titular_cpf="52998224725",
         )
         response = auth_client_articulador_rn.get("/api/v1/upfs/")
         assert response.status_code == 200
@@ -450,11 +450,11 @@ class TestIsolamentoTerritorial:
     ):
         UPFFactory(
             projeto=projeto, municipio=municipio_rn,
-            territorio=territory_rn, cpf="86288366757",
+            territorio=territory_rn, titular_cpf="86288366757",
         )
         UPFFactory(
             projeto=projeto, municipio=municipio_ce,
-            territorio=territory_ce, cpf="52998224725",
+            territorio=territory_ce, titular_cpf="52998224725",
         )
         response = auth_client_super_admin.get("/api/v1/upfs/")
         assert response.status_code == 200
@@ -466,11 +466,11 @@ class TestIsolamentoTerritorial:
     ):
         UPFFactory(
             projeto=projeto, municipio=municipio_rn,
-            territorio=territory_rn, cpf="86288366757",
+            territorio=territory_rn, titular_cpf="86288366757",
         )
         UPFFactory(
             projeto=projeto, municipio=municipio_ce,
-            territorio=territory_ce, cpf="52998224725",
+            territorio=territory_ce, titular_cpf="52998224725",
         )
         response = auth_client.get("/api/v1/upfs/")
         assert response.status_code == 200
@@ -482,7 +482,7 @@ class TestIsolamentoTerritorial:
     ):
         upf_ce = UPFFactory(
             projeto=projeto, municipio=municipio_ce,
-            territorio=territory_ce, cpf="52998224725",
+            territorio=territory_ce, titular_cpf="52998224725",
         )
         response = auth_client_adt_rn.get(f"/api/v1/upfs/{upf_ce.pk}/")
         assert response.status_code == 404
@@ -491,7 +491,7 @@ class TestIsolamentoTerritorial:
         self, auth_client_sem_acesso, projeto, municipio_rn
     ):
         UPFFactory(
-            projeto=projeto, municipio=municipio_rn, cpf="86288366757"
+            projeto=projeto, municipio=municipio_rn, titular_cpf="86288366757"
         )
         response = auth_client_sem_acesso.get("/api/v1/upfs/")
         assert response.status_code == 403
@@ -504,7 +504,7 @@ class TestPerformanceIndexes:
         UPFFactory.create_batch(
             10, projeto=projeto, municipio=municipio_rn,
             territorio=territory_rn,
-            cpf=factory.Sequence(lambda n: f"{n + 10000000000:011d}"),
+            titular_cpf=factory.Sequence(lambda n: f"{n + 10000000000:011d}"),
         )
         from django.db import connection
         qs = UPF.objects.filter(
@@ -519,7 +519,7 @@ class TestPerformanceIndexes:
         UPFFactory.create_batch(
             10, projeto=projeto, municipio=municipio_rn,
             territorio=territory_rn,
-            cpf=factory.Sequence(lambda n: f"{n + 10000000000:011d}"),
+            titular_cpf=factory.Sequence(lambda n: f"{n + 10000000000:011d}"),
         )
         from django.db import connection
         from django.test.utils import CaptureQueriesContext
@@ -531,19 +531,35 @@ class TestPerformanceIndexes:
         self, auth_client, projeto, municipio_rn, territory_rn
     ):
         import time
-        from apps.sgp.models import UPF
+        from apps.sgp.models import UPF, MembroFamilia
+
+        titulars = [
+            MembroFamilia(
+                upf=None,
+                parentesco="titular",
+                nome_completo=f"Titular {i}",
+                cpf=f"{i + 10000000000:011d}",
+                data_nasc="1990-01-01",
+            )
+            for i in range(5000)
+        ]
+        titulars = MembroFamilia.objects.bulk_create(titulars, batch_size=500)
+
         upfs = [
             UPF(
                 projeto=projeto,
                 municipio=municipio_rn,
                 territorio=territory_rn,
-                nome_titular=f"Titular {i}",
-                cpf=f"{i + 10000000000:011d}",
+                titular=t,
                 ativa=True,
             )
-            for i in range(5000)
+            for t in titulars
         ]
-        UPF.objects.bulk_create(upfs, batch_size=500)
+        upfs = UPF.objects.bulk_create(upfs, batch_size=500)
+
+        for titular, upf in zip(titulars, upfs):
+            titular.upf_id = upf.pk
+        MembroFamilia.objects.bulk_update(titulars, ["upf"], batch_size=500)
 
         start = time.time()
         response = auth_client.get(f"/api/v1/upfs/?municipio={municipio_rn.pk}")

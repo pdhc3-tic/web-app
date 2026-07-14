@@ -7,7 +7,7 @@ from apps.core.tests.factories import (
     TerritoryFactory,
     UserFactory,
 )
-from apps.sgp.tests.factories import MembroFactory, ProjetoFactory, UPFFactory
+from apps.sgp.tests.factories import MembroFactory, ProjetoFactory, TitularFactory, UPFFactory
 
 
 @pytest.fixture
@@ -115,7 +115,6 @@ def outro_projeto(db):
 @pytest.fixture
 def upf(db, municipio, projeto):
     return UPFFactory(
-        nome_titular="UPF Teste",
         municipio=municipio,
         projeto=projeto,
         ativa=True,
@@ -125,7 +124,6 @@ def upf(db, municipio, projeto):
 @pytest.fixture
 def upf_inativa(db, municipio, projeto):
     return UPFFactory(
-        nome_titular="UPF Inativa",
         municipio=municipio,
         projeto=projeto,
         ativa=False,
@@ -135,10 +133,9 @@ def upf_inativa(db, municipio, projeto):
 @pytest.fixture
 def outra_upf(db, municipio, projeto):
     return UPFFactory(
-        nome_titular="Outra UPF",
         municipio=municipio,
         projeto=projeto,
-        cpf="52998224725",
+        titular_cpf="52998224725",
         ativa=True,
     )
 
@@ -227,8 +224,8 @@ def auth_client_sem_acesso(api_client, usuario_sem_acesso):
 def upf_payload_minimo(projeto, municipio):
     return {
         "projeto": projeto.pk,
-        "nome_titular": "Maria da Silva",
-        "cpf": "862.883.667-57",
+        "nome": "Maria da Silva",
+        "cpf": "86288366757",
         "municipio": municipio.pk,
     }
 
@@ -237,19 +234,20 @@ def upf_payload_minimo(projeto, municipio):
 def upf_payload_completo(projeto, municipio):
     return {
         "projeto": projeto.pk,
-        "nome_titular": "João Oliveira",
-        "cpf": "529.982.247-25",
+        "nome": "João Oliveira",
+        "cpf": "52998224725",
         "rg": "1234567",
         "data_nasc": "1985-03-15",
-        "genero": 1,
-        "estado_civil": 2,
+        "genero": "Masculino",
+        "escolaridade": "Superior completo",
         "nacionalidade": "brasileira",
         "naturalidade": "Mossoró",
         "nome_mae": "Mãe do João",
         "nome_pai": "Pai do João",
         "telefone": "84999990001",
-        "celular": "84999990002",
         "email": "joao@example.com",
+        "nis": "12345678901",
+        "celular": "84999990002",
         "cep": "59600000",
         "logradouro": "Rua Principal",
         "numero": "100",
@@ -261,7 +259,6 @@ def upf_payload_completo(projeto, municipio):
         "situacao_moradia": 1,
         "tipo_moradia": 1,
         "daf_caf": "DAP123456",
-        "nis": "12345678901",
         "foto_url": "https://example.com/foto.jpg",
     }
 
