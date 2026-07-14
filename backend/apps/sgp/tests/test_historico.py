@@ -191,7 +191,7 @@ class TestHistoricoPermissao:
             projeto=projeto,
             municipio=municipio_ce,
             territorio=territory_ce,
-            cpf="52998224725",
+            titular_cpf="52998224725",
         )
         response = auth_client_adt_rn.get(
             f"/api/v1/upfs/{upf_ce.pk}/historico/"
