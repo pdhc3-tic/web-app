@@ -35,8 +35,7 @@ class TitularNestedSerializer(serializers.ModelSerializer):
             "genero", "genero_display",
             "cor_raca", "cor_raca_display",
             "escolaridade", "escolaridade_display",
-            "telefone", "email", "nis",
-            "nome_mae", "nome_pai", "nacionalidade", "naturalidade",
+            "nis",
             "idade",
         ]
         read_only_fields = ["id"]
@@ -141,33 +140,9 @@ class UPFDetailSerializer(serializers.ModelSerializer):
         write_only=True, required=False, allow_null=True, default=None,
         source="_titular_escolaridade",
     )
-    telefone = serializers.CharField(
-        write_only=True, required=False, allow_blank=True, default="",
-        source="_titular_telefone",
-    )
-    email = serializers.EmailField(
-        write_only=True, required=False, allow_blank=True, default="",
-        source="_titular_email",
-    )
     nis = serializers.CharField(
         write_only=True, required=False, allow_blank=True, default="",
         source="_titular_nis",
-    )
-    nome_mae = serializers.CharField(
-        write_only=True, required=False, allow_blank=True, default="",
-        source="_titular_nome_mae",
-    )
-    nome_pai = serializers.CharField(
-        write_only=True, required=False, allow_blank=True, default="",
-        source="_titular_nome_pai",
-    )
-    nacionalidade = serializers.CharField(
-        write_only=True, required=False, allow_blank=True, default="",
-        source="_titular_nacionalidade",
-    )
-    naturalidade = serializers.CharField(
-        write_only=True, required=False, allow_blank=True, default="",
-        source="_titular_naturalidade",
     )
 
     # ── Leitura (read_only) ──
@@ -192,8 +167,7 @@ class UPFDetailSerializer(serializers.ModelSerializer):
             "id", "projeto",
             "nome", "cpf", "rg", "data_nasc",
             "genero", "cor_raca", "escolaridade",
-            "nacionalidade", "naturalidade", "nome_mae", "nome_pai",
-            "telefone", "email", "nis",
+            "nis",
             "titular",
             "apelido", "celular", "whatsapp", "internet", "dispositivo",
             "cep", "logradouro", "numero", "complemento", "bairro",
@@ -249,13 +223,7 @@ class UPFDetailSerializer(serializers.ModelSerializer):
             "_titular_genero": "genero",
             "_titular_cor_raca": "cor_raca",
             "_titular_escolaridade": "escolaridade",
-            "_titular_telefone": "telefone",
-            "_titular_email": "email",
             "_titular_nis": "nis",
-            "_titular_nome_mae": "nome_mae",
-            "_titular_nome_pai": "nome_pai",
-            "_titular_nacionalidade": "nacionalidade",
-            "_titular_naturalidade": "naturalidade",
         }
         data = {}
         for source_key, model_field in field_map.items():
@@ -386,10 +354,7 @@ class MembroDetailSerializer(serializers.ModelSerializer):
             "genero", "genero_display",
             "cor_raca", "cor_raca_display",
             "escola", "seguridade_social", "saude",
-            "telefone", "email",
-            "nome_mae", "nome_pai", "nacionalidade", "naturalidade",
             "escolaridade", "escolaridade_display",
-            "profissao", "renda", "observacao",
             "criado_por", "criado_em", "atualizado_em",
         ]
         validators = []

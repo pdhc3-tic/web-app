@@ -84,47 +84,11 @@ class MembroFamilia(models.Model):
         verbose_name="Condições de Saúde",
     )
 
-    telefone = models.CharField(
-        max_length=20, blank=True, default="", verbose_name="Telefone"
-    )
-    email = models.EmailField(
-        blank=True, default="", verbose_name="E-mail"
-    )
-
-    nome_mae = models.CharField(
-        max_length=255, blank=True, default="", verbose_name="Nome da Mãe"
-    )
-    nome_pai = models.CharField(
-        max_length=255, blank=True, default="", verbose_name="Nome do Pai"
-    )
-    nacionalidade = models.CharField(
-        max_length=100, blank=True, default="", verbose_name="Nacionalidade"
-    )
-    naturalidade = models.CharField(
-        max_length=255, blank=True, default="", verbose_name="Naturalidade"
-    )
-
     escolaridade = models.PositiveSmallIntegerField(
         choices=ESCOLARIDADE_CHOICES,
         null=True,
         blank=True,
         verbose_name="Escolaridade",
-    )
-    profissao = models.CharField(
-        max_length=100,
-        blank=True,
-        default="",
-        verbose_name="Profissão",
-    )
-    renda = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        null=True,
-        blank=True,
-        verbose_name="Renda Mensal",
-    )
-    observacao = models.TextField(
-        blank=True, default="", verbose_name="Observação"
     )
 
     criado_por = models.ForeignKey(

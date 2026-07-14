@@ -28,9 +28,8 @@ class TestUPFCriacao:
         )
         assert response.status_code == 201
         assert response.data["titular"]["rg"] == "1234567"
-        assert response.data["titular"]["email"] == "joao@example.com"
         assert response.data["latitude"] == "-5.123456"
-        assert response.data["titular"]["nome_mae"] == "Mãe do João"
+        assert response.data["nis"] == "12345678901"
 
     def test_cep_optional(self, auth_client, upf_payload_minimo):
         response = auth_client.post(
