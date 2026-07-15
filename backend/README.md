@@ -116,13 +116,16 @@ sudo docker compose exec \
   backend python manage.py seed_core
 ```
 
-Popula os catálogos do SGP usados pelo módulo Produção:
+Popula projetos base do SGP:
 
 ```bash
 sudo docker compose exec \
   -e DB_USER=postgres -e DB_PASSWORD=postgres \
   backend python manage.py seed_sgp
 ```
+
+Os catálogos de culturas e espécies animais do SGP são populados automaticamente
+por data migration ao executar `python manage.py migrate`.
 
 ## Variáveis de Ambiente
 

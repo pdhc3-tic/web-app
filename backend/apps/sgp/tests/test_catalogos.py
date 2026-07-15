@@ -1,5 +1,4 @@
 import pytest
-from django.core.management import call_command
 from rest_framework.test import APIClient
 
 from apps.sgp.models import Cultura, EspecieAnimal
@@ -10,24 +9,15 @@ CULTURAS_URL = "/api/v1/catalogos/culturas/"
 ESPECIES_URL = "/api/v1/catalogos/especies-animais/"
 
 
-@pytest.fixture
-def catalogos_seed(db):
-    call_command("seed_sgp", verbosity=0)
-
-
 def test_seeds_insert_minimum_culturas():
-    call_command("seed_sgp", verbosity=0)
-
     assert Cultura.objects.count() >= 50
 
 
 def test_seeds_insert_minimum_especies():
-    call_command("seed_sgp", verbosity=0)
-
     assert EspecieAnimal.objects.count() >= 20
 
 
-def test_list_culturas_paginated(auth_client, catalogos_seed):
+def test_list_culturas_paginated(auth_client):
     response = auth_client.get(CULTURAS_URL)
 
     assert response.status_code == 200
@@ -35,7 +25,7 @@ def test_list_culturas_paginated(auth_client, catalogos_seed):
     assert len(response.data["results"]) == 50
 
 
-def test_list_culturas_search_by_nome(auth_client, catalogos_seed):
+def test_list_culturas_search_by_nome(auth_client):
     response = auth_client.get(f"{CULTURAS_URL}?q=feijão")
 
     assert response.status_code == 200
@@ -44,7 +34,7 @@ def test_list_culturas_search_by_nome(auth_client, catalogos_seed):
     assert all("feijão" in nome for nome in nomes)
 
 
-def test_list_culturas_filter_by_categoria(auth_client, catalogos_seed):
+def test_list_culturas_filter_by_categoria(auth_client):
     response = auth_client.get(f"{CULTURAS_URL}?categoria=graos")
 
     assert response.status_code == 200
@@ -52,7 +42,7 @@ def test_list_culturas_filter_by_categoria(auth_client, catalogos_seed):
     assert all(item["categoria"] == "graos" for item in response.data["results"])
 
 
-def test_list_especies_animais_filter_by_categoria(auth_client, catalogos_seed):
+def test_list_especies_animais_filter_by_categoria(auth_client):
     response = auth_client.get(f"{ESPECIES_URL}?categoria=caprino")
 
     assert response.status_code == 200
@@ -60,7 +50,7 @@ def test_list_especies_animais_filter_by_categoria(auth_client, catalogos_seed):
     assert all(item["categoria"] == "caprino" for item in response.data["results"])
 
 
-def test_list_default_only_active(auth_client, catalogos_seed):
+def test_list_default_only_active(auth_client):
     Cultura.objects.create(
         nome="Cultura Inativa Teste",
         categoria="graos",
@@ -76,7 +66,7 @@ def test_list_default_only_active(auth_client, catalogos_seed):
 
 
 def test_list_ativa_false_shows_all_only_for_admin(
-    usuario_sem_acesso, usuario_super_admin, catalogos_seed
+    usuario_sem_acesso, usuario_super_admin
 ):
     Cultura.objects.create(
         nome="Cultura Ativa Teste",

@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("sgp", "0003_add_campos_documentacao"),
+        ("sgp", "0005_seed_catalogos"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
@@ -93,7 +93,10 @@ class Migration(migrations.Migration):
                 "verbose_name_plural": "Documentos da UPF",
                 "ordering": ["-criado_em"],
                 "indexes": [
-                    models.Index(fields=["upf", "-criado_em"], name="idx_upfdoc_upf_criado"),
+                    models.Index(
+                        fields=["upf", "-criado_em"],
+                        name="idx_upfdoc_upf_criado",
+                    ),
                     models.Index(fields=["arquivo_key"], name="idx_upfdoc_arquivo_key"),
                 ],
             },

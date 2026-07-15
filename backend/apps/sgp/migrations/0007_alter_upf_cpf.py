@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('sgp', '0004_catalogos'),
+        ("sgp", "0006_upfdocument"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='upf',
-            name='cpf',
-            field=models.CharField(max_length=11, verbose_name='CPF'),
+            model_name="upf",
+            name="cpf",
+            field=models.CharField(max_length=11, verbose_name="CPF"),
         ),
     ]
