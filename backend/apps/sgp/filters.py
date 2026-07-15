@@ -34,8 +34,8 @@ class UPFFilter(django_filters.FilterSet):
         ]
 
     def filter_q(self, queryset, name, value):
-        q = Q(nome_titular__icontains=value)
+        q = Q(titular__nome_completo__icontains=value)
         digits_only = re.sub(r"\D", "", value)
         if digits_only:
-            q |= Q(cpf__startswith=digits_only)
+            q |= Q(titular__cpf__startswith=digits_only)
         return queryset.filter(q)

@@ -29,17 +29,12 @@ class TestCriacaoMembro:
             titular_payload,
             format="json",
         )
-        assert response.status_code == 201
-        assert response.data["parentesco"] == "titular"
+        assert response.status_code == 400
 
     def test_create_second_titular_returns_400(
         self, auth_client, upf, titular_payload
     ):
-        auth_client.post(
-            f"/api/v1/upfs/{upf.pk}/membros/",
-            titular_payload,
-            format="json",
-        )
+        # UPF already has a titular from the factory; adding another must fail
         response = auth_client.post(
             f"/api/v1/upfs/{upf.pk}/membros/",
             titular_payload,

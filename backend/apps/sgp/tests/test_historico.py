@@ -37,7 +37,7 @@ class TestHistoricoAtualizacoes:
 
         auth_client.patch(
             f"/api/v1/upfs/{upf_id}/",
-            {"nome_titular": "Maria Updated"},
+            {"nome": "Maria Updated"},
             format="json",
         )
 
@@ -53,7 +53,7 @@ class TestHistoricoAtualizacoes:
 
         auth_client.patch(
             f"/api/v1/upfs/{upf_id}/",
-            {"nome_titular": "Maria Updated"},
+            {"nome": "Maria Updated"},
             format="json",
         )
 
@@ -72,7 +72,7 @@ class TestHistoricoAtualizacoes:
 
         auth_client.patch(
             f"/api/v1/upfs/{upf_id}/",
-            {"nome_titular": "Updated", "email": "novo@email.com"},
+            {"nome": "Updated", "email": "novo@email.com"},
             format="json",
         )
 
@@ -95,7 +95,7 @@ class TestHistoricoFiltros:
 
         auth_client.patch(
             f"/api/v1/upfs/{upf_id}/",
-            {"nome_titular": "Updated", "email": "novo@email.com"},
+            {"nome": "Updated", "email": "novo@email.com"},
             format="json",
         )
 
@@ -157,7 +157,7 @@ class TestHistoricoPaginacao:
         for i in range(26):
             auth_client.patch(
                 f"/api/v1/upfs/{upf_id}/",
-                {"nome_titular": f"Maria Updated {i}"},
+                {"nome": f"Maria Updated {i}"},
                 format="json",
             )
 
@@ -174,7 +174,7 @@ class TestHistoricoPaginacao:
 
         auth_client.patch(
             f"/api/v1/upfs/{upf_id}/",
-            {"nome_titular": "Update 1"},
+            {"nome": "Update 1"},
             format="json",
         )
 
@@ -191,7 +191,7 @@ class TestHistoricoPermissao:
             projeto=projeto,
             municipio=municipio_ce,
             territorio=territory_ce,
-            cpf="52998224725",
+            titular_cpf="52998224725",
         )
         response = auth_client_adt_rn.get(
             f"/api/v1/upfs/{upf_ce.pk}/historico/"
@@ -238,7 +238,7 @@ class TestPerformanceIndexes:
         for i in range(5):
             auth_client.patch(
                 f"/api/v1/upfs/{upf_id}/",
-                {"nome_titular": f"Update {i}"},
+                {"nome": f"Update {i}"},
                 format="json",
             )
 

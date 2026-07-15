@@ -168,7 +168,7 @@ def test_request_upload_url_requires_permission(
         projeto=projeto,
         municipio=municipio_ce,
         territorio=territory_ce,
-        cpf="52998224725",
+        titular_cpf="52998224725",
     )
 
     response = auth_client_adt_rn.post(

@@ -1,10 +1,11 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
-from .views import ComunidadeViewSet, MembroViewSet, UPFDocumentViewSet, UPFViewSet
+from .views import ComunidadeViewSet, MembroViewSet, ProjetoViewSet, UPFDocumentViewSet, UPFViewSet
 
 router = DefaultRouter()
 router.register("upfs", UPFViewSet)
+router.register("projetos", ProjetoViewSet, basename="projeto")
 router.register('comunidades', ComunidadeViewSet, basename='comunidade')
 
 comunidade_list = ComunidadeViewSet.as_view({
