@@ -7,7 +7,7 @@ from django.db import IntegrityError
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters, serializers, status, viewsets
+from rest_framework import filters, generics, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 
@@ -19,10 +19,12 @@ from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsSuperAdmin, IsUGP
 from apps.core.services.permissions import user_has_role, user_states, user_territories
 from apps.sgp.filters import UPFFilter
-from apps.sgp.models import Comunidade, MembroFamilia, Projeto, UPF
-from apps.sgp.pagination import HistoricoPagination, UPFPagination
+from apps.sgp.models import Comunidade, Cultura, EspecieAnimal, MembroFamilia, UPF, Projeto
+from apps.sgp.pagination import CatalogoPagination, HistoricoPagination, UPFPagination
 from apps.sgp.serializers import (
     ComunidadeSerializer,
+    CulturaSerializer,
+    EspecieAnimalSerializer,
     HistoricoEntrySerializer,
     MembroDetailSerializer,
     MembroListSerializer,
@@ -38,6 +40,43 @@ logger = logging.getLogger("apps.sgp.views")
 
 class QSearchFilter(filters.SearchFilter):
     search_param = 'q'
+
+
+class CatalogoListView(generics.ListAPIView):
+    permission_classes = [IsAuthenticated]
+    pagination_class = CatalogoPagination
+    http_method_names = ["get", "head", "options"]
+    model = None
+
+    def get_queryset(self):
+        qs = self.model.objects.all()
+
+        ativa_param = self.request.query_params.get("ativa", "").lower()
+        is_admin = user_has_role(self.request.user, "super-admin") or user_has_role(
+            self.request.user, "ugp"
+        )
+        if ativa_param != "false" or not is_admin:
+            qs = qs.filter(ativa=True)
+
+        q = self.request.query_params.get("q", "").strip()
+        if q:
+            qs = qs.filter(nome__icontains=q)
+
+        categoria = self.request.query_params.get("categoria", "").strip()
+        if categoria:
+            qs = qs.filter(categoria=categoria)
+
+        return qs
+
+
+class CulturaListView(CatalogoListView):
+    serializer_class = CulturaSerializer
+    model = Cultura
+
+
+class EspecieAnimalListView(CatalogoListView):
+    serializer_class = EspecieAnimalSerializer
+    model = EspecieAnimal
 
 
 class ComunidadePagination(LimitOffsetPagination):

@@ -1,11 +1,21 @@
 from datetime import date
 
 from django.db import transaction
+from django.db.models import Q
 from rest_framework import serializers
 
 from apps.core.models import Municipality
 from apps.sgp.constants import SAUDE_CHOICES
-from apps.sgp.models import Comunidade, MembroFamilia, Projeto, UPF, UPFDocument
+from apps.sgp.models import (
+    Comunidade,
+    Cultura,
+    EspecieAnimal,
+    MembroFamilia,
+    Projeto,
+    UPF,
+    UPFDocument,
+)
+
 from apps.sgp.validators import validate_cpf
 
 
@@ -14,6 +24,25 @@ class ProjetoSerializer(serializers.ModelSerializer):
         model = Projeto
         fields = ["id", "nome", "descricao", "ativo", "criado_em"]
         read_only_fields = ["criado_em"]
+
+
+class CulturaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Cultura
+        fields = [
+            "id",
+            "nome",
+            "nome_cientifico",
+            "categoria",
+            "ciclo",
+            "ativa",
+        ]
+
+
+class EspecieAnimalSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EspecieAnimal
+        fields = ["id", "nome", "categoria", "ativa"]
 
 
 class TitularNestedSerializer(serializers.ModelSerializer):
@@ -201,7 +230,6 @@ class UPFDetailSerializer(serializers.ModelSerializer):
 
         if cpf and projeto:
             projeto_pk = projeto.pk if hasattr(projeto, "pk") else projeto
-            from django.db.models import Q
             titular_ids = MembroFamilia.objects.filter(
                 cpf=cpf, upf__projeto_id=projeto_pk, upf__ativa=True,
             ).exclude(
@@ -370,7 +398,6 @@ class MembroDetailSerializer(serializers.ModelSerializer):
                 if view_upf_id:
                     upf_id = view_upf_id
             if upf_id:
-                from apps.sgp.models import UPF
                 upf = UPF.objects.filter(pk=upf_id).first()
                 if upf and upf.titular_id:
                     if not self.instance or upf.titular_id != self.instance.pk:

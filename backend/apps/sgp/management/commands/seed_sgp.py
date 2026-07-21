@@ -6,11 +6,14 @@ Decisão CI/testes
 - Este comando é executado APENAS em ambientes de desenvolvimento e staging
   para popular o banco com dados reais de referência.
 - Em testes automatizados (CI), NÃO usar este seed. Usar factory_boy
-  (factories em apps/core/tests/factories.py) para criar fixtures isoladas
-  por teste, garantindo velocidade e independência entre casos de teste.
+  para criar fixtures isoladas por teste, garantindo velocidade e
+  independência entre casos de teste.
 """
+
 from django.core.management.base import BaseCommand
+
 from apps.sgp.models import Projeto
+
 
 PROJETOS = [
     {
@@ -35,8 +38,7 @@ class Command(BaseCommand):
                     "ativo": item["ativo"],
                 },
             )
-            self.stdout.write(
-                f"Projeto: {projeto.nome} -> {'created' if created else 'updated'}"
-            )
+            status = "created" if created else "updated"
+            self.stdout.write(f"Projeto: {projeto.nome} -> {status}")
 
         self.stdout.write(self.style.SUCCESS("Seeding SGP complete."))
