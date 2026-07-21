@@ -10,6 +10,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, generics, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
+
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -18,7 +19,7 @@ from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsSuperAdmin, IsUGP
 from apps.core.services.permissions import user_has_role, user_states, user_territories
 from apps.sgp.filters import UPFFilter
-from apps.sgp.models import Comunidade, Cultura, EspecieAnimal, MembroFamilia, UPF
+from apps.sgp.models import Comunidade, Cultura, EspecieAnimal, MembroFamilia, UPF, Projeto
 from apps.sgp.pagination import CatalogoPagination, HistoricoPagination, UPFPagination
 from apps.sgp.serializers import (
     ComunidadeSerializer,
@@ -27,6 +28,7 @@ from apps.sgp.serializers import (
     HistoricoEntrySerializer,
     MembroDetailSerializer,
     MembroListSerializer,
+    ProjetoSerializer,
     UPFDetailSerializer,
     UPFListSerializer,
 )
@@ -92,7 +94,7 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
     pagination_class = UPFPagination
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_class = UPFFilter
-    ordering_fields = ["criado_em", "nome_titular", "data_nasc"]
+    ordering_fields = ["criado_em", "titular__nome_completo"]
     ordering = ["-criado_em"]
 
     def get_serializer_class(self):
@@ -109,8 +111,9 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = UPF.objects.select_related(
-            "municipio", "municipio__state", "territorio", "projeto", "criado_por"
-        ).all()
+            "municipio", "municipio__state", "territorio", "projeto",
+            "criado_por", "titular",
+        ).prefetch_related("membros").all()
 
         user = self.request.user
 
@@ -230,8 +233,8 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
             valores_anteriores=valores_anteriores or {},
             valores_novos={
                 "upf_id": instance.pk,
-                "nome_titular": instance.nome_titular,
-                "cpf": instance.cpf,
+                "nome_titular": instance.titular.nome_completo,
+                "cpf": instance.titular.cpf,
                 "projeto_id": instance.projeto_id,
                 "municipio_id": instance.municipio_id,
                 "territorio_id": instance.territorio_id,
@@ -250,8 +253,8 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
         old = self.get_object()
         valores_anteriores = {
             "upf_id": old.pk,
-            "nome_titular": old.nome_titular,
-            "cpf": old.cpf,
+            "nome_titular": old.titular.nome_completo,
+            "cpf": old.titular.cpf,
             "projeto_id": old.projeto_id,
             "municipio_id": old.municipio_id,
             "territorio_id": old.territorio_id,
@@ -264,8 +267,8 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         valores_anteriores = {
             "upf_id": instance.pk,
-            "nome_titular": instance.nome_titular,
-            "cpf": instance.cpf,
+            "nome_titular": instance.titular.nome_completo,
+            "cpf": instance.titular.cpf,
             "projeto_id": instance.projeto_id,
             "municipio_id": instance.municipio_id,
             "territorio_id": instance.territorio_id,
@@ -499,3 +502,17 @@ class MembroViewSet(viewsets.ModelViewSet):
             user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )
         instance.delete()
+
+
+class ProjetoViewSet(viewsets.ModelViewSet):
+    queryset = Projeto.objects.all()
+    serializer_class = ProjetoSerializer
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_permissions(self):
+        if self.action in ("update", "partial_update", "destroy"):
+            return [(IsSuperAdmin | IsUGP)()]
+        return [IsAuthenticated()]
+
+
+

@@ -34,14 +34,22 @@ class EspecieAnimalAdmin(admin.ModelAdmin):
 @admin.register(UPF)
 class UPFAdmin(admin.ModelAdmin):
     list_display = [
-        "nome_titular", "cpf", "projeto",
+        "get_nome_titular", "get_cpf", "projeto",
         "municipio", "territorio", "ativa", "criado_em",
     ]
     list_filter = ["ativa", "projeto", "territorio"]
-    search_fields = ["nome_titular", "cpf"]
+    search_fields = ["titular__nome_completo", "titular__cpf"]
     readonly_fields = [
         "territorio", "criado_em", "atualizado_em", "criado_por",
     ]
+
+    def get_nome_titular(self, obj):
+        return obj.titular.nome_completo
+    get_nome_titular.short_description = "Titular"
+
+    def get_cpf(self, obj):
+        return obj.titular.cpf
+    get_cpf.short_description = "CPF"
 
 
 @admin.register(MembroFamilia)

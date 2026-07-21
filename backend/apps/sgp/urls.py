@@ -8,10 +8,12 @@ from .views import (
     MembroViewSet,
     UPFViewSet,
     UPFDocumentViewSet,
+    ProjetoViewSet,
 )
 
 router = DefaultRouter()
 router.register("upfs", UPFViewSet)
+router.register("projetos", ProjetoViewSet, basename="projeto")
 router.register('comunidades', ComunidadeViewSet, basename='comunidade')
 
 comunidade_list = ComunidadeViewSet.as_view({
