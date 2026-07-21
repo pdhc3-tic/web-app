@@ -1,6 +1,7 @@
 from datetime import date
 
 from django.db import transaction
+from django.db.models import Q
 from rest_framework import serializers
 
 from apps.core.models import Municipality
@@ -44,9 +45,6 @@ class EspecieAnimalSerializer(serializers.ModelSerializer):
         fields = ["id", "nome", "categoria", "ativa"]
 
 
-class UPFListSerializer(serializers.ModelSerializer):
-    municipio = serializers.CharField(
-        source="municipio.nome", read_only=True
 class TitularNestedSerializer(serializers.ModelSerializer):
     idade = serializers.SerializerMethodField()
     genero_display = serializers.CharField(
@@ -232,7 +230,6 @@ class UPFDetailSerializer(serializers.ModelSerializer):
 
         if cpf and projeto:
             projeto_pk = projeto.pk if hasattr(projeto, "pk") else projeto
-            from django.db.models import Q
             titular_ids = MembroFamilia.objects.filter(
                 cpf=cpf, upf__projeto_id=projeto_pk, upf__ativa=True,
             ).exclude(
@@ -401,7 +398,6 @@ class MembroDetailSerializer(serializers.ModelSerializer):
                 if view_upf_id:
                     upf_id = view_upf_id
             if upf_id:
-                from apps.sgp.models import UPF
                 upf = UPF.objects.filter(pk=upf_id).first()
                 if upf and upf.titular_id:
                     if not self.instance or upf.titular_id != self.instance.pk:
