@@ -50,6 +50,9 @@ class WorkPlanMetaViewSet(viewsets.ModelViewSet):
         ).all()
 
         user = self.request.user
+        if not user.is_authenticated:
+            return qs.none()
+
         if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
             return qs
 
@@ -173,6 +176,9 @@ class WorkPlanAcaoViewSet(viewsets.ModelViewSet):
         qs = WorkPlanAcao.objects.select_related("meta").all()
 
         user = self.request.user
+        if not user.is_authenticated:
+            return qs.none()
+
         if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
             return qs
 
