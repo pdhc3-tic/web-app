@@ -1,13 +1,22 @@
 import logging
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 
 from django.apps import apps
+from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
+
 from rest_framework import filters, generics, serializers, status, viewsets
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiTypes,
+    extend_schema,
+    inline_serializer,
+)
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 
@@ -18,6 +27,7 @@ from rest_framework.response import Response
 from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsSuperAdmin, IsUGP
 from apps.core.services.permissions import user_has_role, user_states, user_territories
+from apps.sgp.cache import UPF_MAP_CACHE_TIMEOUT, build_upf_map_cache_key
 from apps.sgp.filters import UPFFilter
 from apps.sgp.models import Comunidade, Cultura, EspecieAnimal, MembroFamilia, UPF, Projeto
 from apps.sgp.pagination import CatalogoPagination, HistoricoPagination, UPFPagination
@@ -85,6 +95,7 @@ class ComunidadePagination(LimitOffsetPagination):
 
 
 class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
+    MAPA_FEATURE_LIMIT = 10000
     queryset = UPF.objects.select_related(
         "municipio", "municipio__state", "territorio", "projeto", "criado_por"
     ).all()
@@ -133,6 +144,144 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
             return qs.filter(territorio__in=territories)
 
         raise PermissionDenied("Você não tem acesso ao módulo SGP.")
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="bbox",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Bounding box no formato lng_sw,lat_sw,lng_ne,lat_ne.",
+            ),
+            OpenApiParameter("municipio", OpenApiTypes.INT, OpenApiParameter.QUERY),
+            OpenApiParameter("territorio", OpenApiTypes.INT, OpenApiParameter.QUERY),
+            OpenApiParameter("projeto", OpenApiTypes.INT, OpenApiParameter.QUERY),
+            OpenApiParameter("ativa", OpenApiTypes.BOOL, OpenApiParameter.QUERY),
+        ],
+        responses={
+            200: inline_serializer(
+                name="UPFMapFeatureCollection",
+                fields={
+                    "type": serializers.CharField(default="FeatureCollection"),
+                    "features": serializers.ListField(
+                        child=serializers.DictField(),
+                    ),
+                    "truncated": serializers.BooleanField(),
+                    "message": serializers.CharField(required=False),
+                },
+            )
+        },
+        description=(
+            "Retorna UPFs georreferenciadas em GeoJSON FeatureCollection. "
+            "Cada feature possui geometry.coordinates na ordem [lng, lat] "
+            "e properties mínimo: id, nome_titular, municipio, territorio e ativa."
+        ),
+    )
+    @action(detail=False, methods=["get"], url_path="mapa")
+    def mapa(self, request):
+        bbox = self._parse_bbox(request.query_params.get("bbox"))
+        cache_key = build_upf_map_cache_key(
+            request.user.pk,
+            request.query_params,
+        )
+        cached_response = cache.get(cache_key)
+        if cached_response is not None:
+            return Response(cached_response)
+
+        queryset = self.filter_queryset(self.get_queryset())
+        queryset = queryset.filter(
+            latitude__isnull=False,
+            longitude__isnull=False,
+        )
+        if bbox is not None:
+            lng_sw, lat_sw, lng_ne, lat_ne = bbox
+            queryset = queryset.filter(
+                longitude__gte=lng_sw,
+                longitude__lte=lng_ne,
+                latitude__gte=lat_sw,
+                latitude__lte=lat_ne,
+            )
+
+        queryset = (
+            queryset.select_related(None)
+            .prefetch_related(None)
+            .select_related("titular", "municipio", "territorio")
+            .only(
+                "id",
+                "titular",
+                "titular__nome_completo",
+                "latitude",
+                "longitude",
+                "municipio",
+                "municipio__nome",
+                "territorio",
+                "territorio__nome",
+                "ativa",
+            )
+            .order_by("id")
+        )
+
+        upfs = list(queryset[: self.MAPA_FEATURE_LIMIT + 1])
+        truncated = len(upfs) > self.MAPA_FEATURE_LIMIT
+        upfs = upfs[: self.MAPA_FEATURE_LIMIT]
+
+        response_data = {
+            "type": "FeatureCollection",
+            "features": [self._build_mapa_feature(upf) for upf in upfs],
+            "truncated": truncated,
+        }
+        if truncated:
+            response_data["message"] = (
+                "Resultado limitado a 10000 UPFs. Use o filtro bbox para reduzir a área."
+            )
+
+        cache.set(cache_key, response_data, UPF_MAP_CACHE_TIMEOUT)
+        return Response(response_data)
+
+    def _parse_bbox(self, value):
+        if not value:
+            return None
+
+        parts = value.split(",")
+        if len(parts) != 4:
+            raise serializers.ValidationError(
+                {"bbox": "Use o formato lng_sw,lat_sw,lng_ne,lat_ne."}
+            )
+
+        try:
+            lng_sw, lat_sw, lng_ne, lat_ne = [Decimal(part.strip()) for part in parts]
+        except (InvalidOperation, ValueError):
+            raise serializers.ValidationError(
+                {
+                    "bbox": (
+                        "Use valores numéricos no formato "
+                        "lng_sw,lat_sw,lng_ne,lat_ne."
+                    )
+                }
+            )
+
+        if lng_sw > lng_ne or lat_sw > lat_ne:
+            raise serializers.ValidationError(
+                {"bbox": "O sudoeste do bbox deve vir antes do nordeste."}
+            )
+
+        return lng_sw, lat_sw, lng_ne, lat_ne
+
+    def _build_mapa_feature(self, upf):
+        return {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [float(upf.longitude), float(upf.latitude)],
+            },
+            "properties": {
+                "id": upf.pk,
+                "nome_titular": upf.titular.nome_completo,
+                "municipio": upf.municipio.nome,
+                "territorio": upf.territorio.nome,
+                "ativa": upf.ativa,
+            },
+        }
 
     @action(detail=True, methods=["get"], url_path="historico")
     def historico(self, request, pk=None):
@@ -513,6 +662,4 @@ class ProjetoViewSet(viewsets.ModelViewSet):
         if self.action in ("update", "partial_update", "destroy"):
             return [(IsSuperAdmin | IsUGP)()]
         return [IsAuthenticated()]
-
-
 
