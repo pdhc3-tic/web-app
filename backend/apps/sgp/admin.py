@@ -5,6 +5,7 @@ from apps.sgp.models import (
     Cultura,
     EspecieAnimal,
     MembroFamilia,
+    Production,
     Projeto,
     UPF,
 )
@@ -50,6 +51,19 @@ class UPFAdmin(admin.ModelAdmin):
     def get_cpf(self, obj):
         return obj.titular.cpf
     get_cpf.short_description = "CPF"
+
+
+@admin.register(Production)
+class ProductionAdmin(admin.ModelAdmin):
+    list_display = ["upf", "tipo", "cultura", "especie", "tipo_outra", "criado_em"]
+    list_filter = ["tipo", "sistema_criacao", "tipo_outra"]
+    search_fields = [
+        "upf__titular__nome_completo",
+        "cultura__nome",
+        "especie__nome",
+        "descricao_outra",
+    ]
+    readonly_fields = ["criado_em", "atualizado_em"]
 
 
 @admin.register(MembroFamilia)
