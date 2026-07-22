@@ -4,7 +4,7 @@ import pytest
 from decimal import Decimal
 
 from apps.sgp.models import WorkPlanMeta, WorkPlanAcao
-from apps.sgp.tests.factories_workplan import WorkPlanAcaoFactory, WorkPlanMetaFactory
+from apps.sgp.tests.factories import ActivityFactory, WorkPlanAcaoFactory, WorkPlanMetaFactory
 
 pytestmark = pytest.mark.django_db
 

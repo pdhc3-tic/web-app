@@ -28,10 +28,16 @@ from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsSuperAdmin, IsUGP
 from apps.core.services.permissions import user_has_role, user_states, user_territories
 from apps.sgp.cache import UPF_MAP_CACHE_TIMEOUT, build_upf_map_cache_key
-from apps.sgp.filters import UPFFilter
-from apps.sgp.models import Comunidade, Cultura, EspecieAnimal, MembroFamilia, UPF, Projeto
-from apps.sgp.pagination import CatalogoPagination, HistoricoPagination, UPFPagination
+from apps.sgp.filters import ActivityFilter, UPFFilter
+from apps.sgp.models import (
+    Activity, Comunidade, Cultura, EspecieAnimal, MembroFamilia, UPF, Projeto
+)
+from apps.sgp.pagination import (
+    ActivityPagination, CatalogoPagination, HistoricoPagination, UPFPagination
+)
 from apps.sgp.serializers import (
+    ActivityDetailSerializer,
+    ActivityListSerializer,
     ComunidadeSerializer,
     CulturaSerializer,
     EspecieAnimalSerializer,
@@ -664,3 +670,118 @@ class ProjetoViewSet(viewsets.ModelViewSet):
             return [(IsSuperAdmin | IsUGP)()]
         return [IsAuthenticated()]
 
+
+class ActivityViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet de Atividades do SGP.
+
+    GET/POST    /api/v1/sgp/atividades/
+    GET/PATCH/PUT/DELETE /api/v1/sgp/atividades/{id}/
+
+    Isolamento territorial (RLS):
+        - super-admin / ugp: visualizam tudo
+        - articulador-estadual: atividades nos estados do seu escopo
+        - adt-acr: atividades nos territórios vinculados
+    """
+    http_method_names = ["get", "post", "put", "patch", "delete", "head", "options"]
+    permission_classes = [IsAuthenticated]
+    pagination_class = ActivityPagination
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_class = ActivityFilter
+    ordering_fields = ["data_inicio", "data_fim", "criado_em", "titulo"]
+    ordering = ["-data_inicio"]
+
+    # Caminho do atributo territorio para _resolve_territorio_id das permissions
+    _territorio_attr_path = "territorio_id"
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return ActivityListSerializer
+        return ActivityDetailSerializer
+
+    def get_queryset(self):
+        qs = Activity.objects.select_related(
+            "acao", "acao__meta",
+            "municipio", "municipio__territory",
+            "comunidade",
+            "tecnico_responsavel",
+            "criado_por",
+        ).prefetch_related(
+            "equipe_adicional",
+            "upfs_participantes",
+            "membros_participantes",
+        ).filter(ativo=True)
+
+        user = self.request.user
+
+        # RLS — acesso global (sem filtro territorial)
+        if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
+            return qs
+
+        # RLS — articulador estadual: filtra por estados do usuário
+        if user_has_role(user, "articulador-estadual"):
+            states = user_states(user)
+            if not states:
+                return qs.none()
+            return qs.filter(municipio__state__sigla__in=states)
+
+        # RLS — ADT/ACR: filtra por territórios vinculados
+        if user_has_role(user, "adt-acr"):
+            territories = user_territories(user)
+            if not territories.exists():
+                return qs.none()
+            return qs.filter(municipio__territory__in=territories)
+
+        raise PermissionDenied("Você não tem acesso ao módulo de Atividades do SGP.")
+
+    def perform_create(self, serializer):
+        instance = serializer.save(criado_por=self.request.user)
+        self._log_audit("activity.create", instance)
+
+    def perform_update(self, serializer):
+        old = self.get_object()
+        valores_anteriores = self._snapshot(old)
+        instance = serializer.save()
+        self._log_audit("activity.update", instance, valores_anteriores)
+
+    def perform_destroy(self, instance):
+        """Soft-delete via ativo=False."""
+        valores_anteriores = self._snapshot(instance)
+        instance.ativo = False
+        instance.save(update_fields=["ativo"])
+        self._log_audit("activity.soft_delete", instance, valores_anteriores)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    # ── Helpers ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _snapshot(instance) -> dict:
+        return {
+            "id": instance.pk,
+            "titulo": instance.titulo,
+            "status": instance.status,
+            "tipo_atividade": instance.tipo_atividade,
+            "municipio_id": instance.municipio_id,
+            "acao_id": instance.acao_id,
+            "tecnico_responsavel_id": instance.tecnico_responsavel_id,
+            "data_inicio": str(instance.data_inicio),
+            "data_fim": str(instance.data_fim),
+            "ativo": instance.ativo,
+        }
+
+    def _log_audit(self, acao: str, instance, valores_anteriores: dict | None = None):
+        AuditLog.objects.create(
+            user=self.request.user,
+            acao=acao,
+            modulo="sgp",
+            entidade="Activity",
+            entidade_id=str(instance.pk),
+            valores_anteriores=valores_anteriores or {},
+            valores_novos=self._snapshot(instance),
+            ip=self.request.META.get("REMOTE_ADDR"),
+            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
+        )

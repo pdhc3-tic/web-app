@@ -1,6 +1,7 @@
 from django.contrib import admin
 
 from apps.sgp.models import (
+    Activity,
     Comunidade,
     Cultura,
     EspecieAnimal,
@@ -120,3 +121,46 @@ class WorkPlanAcaoAdmin(admin.ModelAdmin):
     list_filter = ["meta"]
     search_fields = ["descricao"]
     readonly_fields = ["valor_total", "status_execucao"]
+
+
+@admin.register(Activity)
+class ActivityAdmin(admin.ModelAdmin):
+    list_display = [
+        "titulo", "tipo_atividade", "status", "forma_atuacao",
+        "municipio", "tecnico_responsavel", "data_inicio", "data_fim",
+        "ativo", "criado_em",
+    ]
+    list_filter = ["status", "tipo_atividade", "forma_atuacao", "ambito", "ativo"]
+    search_fields = ["titulo", "descricao_narrativa", "tecnico_responsavel__nome"]
+    readonly_fields = [
+        "criado_por", "criado_em", "atualizado_em",
+    ]
+    filter_horizontal = [
+        "equipe_adicional", "upfs_participantes", "membros_participantes",
+    ]
+    fieldsets = [
+        ("Identificação", {
+            "fields": ["titulo", "tipo_atividade", "forma_atuacao", "ambito", "acao"],
+        }),
+        ("Equipe", {
+            "fields": ["tecnico_responsavel", "equipe_adicional"],
+        }),
+        ("Localização", {
+            "fields": ["municipio", "comunidade", "latitude", "longitude"],
+        }),
+        ("Datas", {
+            "fields": ["data_inicio", "data_fim"],
+        }),
+        ("Participantes", {
+            "fields": ["upfs_participantes", "membros_participantes", "parceiros"],
+        }),
+        ("Narrativa", {
+            "fields": ["descricao_narrativa", "resultados_alcancados"],
+        }),
+        ("Status", {
+            "fields": ["status", "justificativa"],
+        }),
+        ("Controle", {
+            "fields": ["ativo", "criado_por", "criado_em", "atualizado_em", "device_id", "uuid_local"],
+        }),
+    ]

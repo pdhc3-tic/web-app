@@ -6,8 +6,10 @@ from .projeto import Projeto
 from .upf import UPF
 from .upf_document import UPFDocument
 from .workplan import WorkPlanAcao, WorkPlanMeta
+from .activity import Activity
 
 __all__ = [
+    "Activity",
     "Comunidade",
     "Cultura",
     "EspecieAnimal",

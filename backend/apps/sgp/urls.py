@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    ActivityViewSet,
     ComunidadeViewSet,
     CulturaListView,
     EspecieAnimalListView,
@@ -17,6 +18,7 @@ router = DefaultRouter()
 router.register("upfs", UPFViewSet)
 router.register("projetos", ProjetoViewSet, basename="projeto")
 router.register('comunidades', ComunidadeViewSet, basename='comunidade')
+router.register('atividades', ActivityViewSet, basename='atividade')
 router.register("metas", WorkPlanMetaViewSet, basename="workplanmeta")
 router.register("acoes", WorkPlanAcaoViewSet, basename="workplanacao")
 
