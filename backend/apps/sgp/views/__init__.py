@@ -36,6 +36,7 @@ from apps.sgp.pagination import (
     ActivityPagination, CatalogoPagination, HistoricoPagination, UPFPagination
 )
 from apps.sgp.serializers import (
+    ActivityCalendarioSerializer,
     ActivityDetailSerializer,
     ActivityListSerializer,
     ComunidadeSerializer,
@@ -786,4 +787,124 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
             valores_novos=self._snapshot(instance),
             ip=self.request.META.get("REMOTE_ADDR"),
             user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
+        )
+
+    # ── Endpoint de Calendário ────────────────────────────────────────────
+
+    @action(detail=False, methods=["get"], url_path="calendario")
+    def calendario(self, request):
+        """
+        GET /api/v1/sgp/atividades/calendario/?inicio=YYYY-MM-DD&fim=YYYY-MM-DD
+
+        Retorna payload reduzido de todas as atividades cujo intervalo
+        (data_inicio, data_fim) intersecciona com o período solicitado.
+        Máximo de 90 dias entre inicio e fim (retorna 400 se excedido).
+
+        Filtros opcionais via querystring:
+            tecnico_id, projeto, acao, tipo_atividade, status
+        """
+        from datetime import date
+        from rest_framework.fields import DateField as DRFDateField
+
+        # ── Validação dos parâmetros de intervalo ───────────────────────────────
+        errors = {}
+
+        inicio_raw = request.query_params.get("inicio")
+        fim_raw = request.query_params.get("fim")
+
+        if not inicio_raw:
+            errors["inicio"] = "Parâmetro obrigatório."
+        if not fim_raw:
+            errors["fim"] = "Parâmetro obrigatório."
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        date_field = DRFDateField()
+        try:
+            inicio: date = date_field.to_internal_value(inicio_raw)
+        except Exception:
+            return Response(
+                {"inicio": "Data inválida. Use o formato YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            fim: date = date_field.to_internal_value(fim_raw)
+        except Exception:
+            return Response(
+                {"fim": "Data inválida. Use o formato YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if fim < inicio:
+            return Response(
+                {"fim": "'fim' deve ser maior ou igual a 'inicio'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        delta = (fim - inicio).days
+        if delta > 90:
+            return Response(
+                {
+                    "detail": (
+                        f"Intervalo de {delta} dias excede o máximo permitido de 90 dias. "
+                        f"Reduza o período e faça múltiplas requisições se necessário."
+                    ),
+                    "code": "CALENDAR_INTERVAL_TOO_LARGE",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ── Queryset base (RLS já aplicado por get_queryset) ──────────────────────
+        # Para o calendário não precisamos dos M2M pesados — override do QS
+        qs = Activity.objects.select_related(
+            "municipio",
+            "comunidade",
+            "tecnico_responsavel",
+        ).filter(ativo=True)
+
+        # RLS inline (mesma lógica de get_queryset, sem os prefetch_related desnecessarios)
+        user = request.user
+        if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
+            pass  # sem filtro territorial
+        elif user_has_role(user, "articulador-estadual"):
+            states = user_states(user)
+            qs = qs.filter(municipio__state__sigla__in=states) if states else qs.none()
+        elif user_has_role(user, "adt-acr"):
+            territories = user_territories(user)
+            qs = qs.filter(municipio__territory__in=territories) if territories.exists() else qs.none()
+        else:
+            raise PermissionDenied("Você não tem acesso ao módulo de Atividades do SGP.")
+
+        # Interseccão de intervalo: atividade toca o período se
+        #   data_inicio <= fim  AND  data_fim >= inicio
+        qs = qs.filter(data_inicio__lte=fim, data_fim__gte=inicio)
+
+        # ── Filtros opcionais ──────────────────────────────────────────────────
+        qp = request.query_params
+
+        if tecnico_id := qp.get("tecnico_id"):
+            qs = qs.filter(tecnico_responsavel_id=tecnico_id)
+
+        if projeto := qp.get("projeto"):
+            qs = qs.filter(acao__meta__projeto_id=projeto)
+
+        if acao_id := qp.get("acao"):
+            qs = qs.filter(acao_id=acao_id)
+
+        if tipo_atividade := qp.get("tipo_atividade"):
+            qs = qs.filter(tipo_atividade=tipo_atividade)
+
+        if status_filter := qp.get("status"):
+            qs = qs.filter(status=status_filter)
+
+        # ── Serialização sem paginação ───────────────────────────────────────────
+        qs = qs.order_by("data_inicio", "data_fim")
+        serializer = ActivityCalendarioSerializer(qs, many=True)
+        return Response(
+            {
+                "count": qs.count(),
+                "inicio": str(inicio),
+                "fim": str(fim),
+                "results": serializer.data,
+            }
         )
