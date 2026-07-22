@@ -230,12 +230,13 @@ class Activity(models.Model):
     # ── Lógica de evidências (BE-2 stub) ──────────────────────────────────────
     def has_evidencias(self) -> bool:
         """
-        Retorna True se a atividade possui ao menos 1 foto ou documento vinculado.
-        Stub enquanto BE-2 (ActivityDocument/ActivityPhoto) não estiver implementado.
-        Quando BE-2 for mergeado, substituir por:
-            return self.documentos.exists() or self.fotos.exists()
+        Retorna True se a atividade possui ao menos 1 foto ativa
+        ou 1 documento ativo vinculado.
         """
-        return False
+        return (
+            self.fotos.filter(ativa=True).exists()
+            or self.documentos.filter(ativo=True).exists()
+        )
 
     # ── Utilitário de status ───────────────────────────────────────────────────
     def get_transicoes_permitidas(self) -> set[str]:

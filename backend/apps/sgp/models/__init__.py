@@ -7,9 +7,13 @@ from .upf import UPF
 from .upf_document import UPFDocument
 from .workplan import WorkPlanAcao, WorkPlanMeta
 from .activity import Activity
+from .activity_photo import ActivityPhoto
+from .activity_document import ActivityDocument
 
 __all__ = [
     "Activity",
+    "ActivityDocument",
+    "ActivityPhoto",
     "Comunidade",
     "Cultura",
     "EspecieAnimal",

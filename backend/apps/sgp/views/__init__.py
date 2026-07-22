@@ -50,6 +50,8 @@ from apps.sgp.serializers import (
 )
 from .upf_foto import UPFPhotoMixin
 from .upf_documentos import UPFDocumentViewSet
+from .activity_foto import ActivityPhotoMixin
+from .activity_documentos import ActivityDocumentMixin
 from .production import ProductionViewSet
 
 logger = logging.getLogger("apps.sgp.views")
@@ -671,7 +673,7 @@ class ProjetoViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated()]
 
 
-class ActivityViewSet(viewsets.ModelViewSet):
+class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelViewSet):
     """
     ViewSet de Atividades do SGP.
 
