@@ -5,6 +5,7 @@ from .production import Production
 from .projeto import Projeto
 from .upf import UPF
 from .upf_document import UPFDocument
+from .workplan import WorkPlanAcao, WorkPlanMeta
 
 __all__ = [
     "Comunidade",
@@ -15,4 +16,6 @@ __all__ = [
     "Projeto",
     "UPF",
     "UPFDocument",
+    "WorkPlanAcao",
+    "WorkPlanMeta",
 ]

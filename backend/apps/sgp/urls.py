@@ -11,11 +11,14 @@ from .views import (
     UPFDocumentViewSet,
     ProjetoViewSet,
 )
+from .views.workplan import WorkPlanAcaoViewSet, WorkPlanMetaViewSet
 
 router = DefaultRouter()
 router.register("upfs", UPFViewSet)
 router.register("projetos", ProjetoViewSet, basename="projeto")
 router.register('comunidades', ComunidadeViewSet, basename='comunidade')
+router.register("metas", WorkPlanMetaViewSet, basename="workplanmeta")
+router.register("acoes", WorkPlanAcaoViewSet, basename="workplanacao")
 
 comunidade_list = ComunidadeViewSet.as_view({
     'get': 'list',
