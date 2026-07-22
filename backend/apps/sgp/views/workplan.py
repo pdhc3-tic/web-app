@@ -1,6 +1,7 @@
 import logging
 
 from django.db.models import F, Sum
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -27,7 +28,7 @@ logger = logging.getLogger("apps.sgp.views.workplan")
 
 class WorkPlanMetaViewSet(viewsets.ModelViewSet):
     pagination_class = UPFPagination
-    filter_backends = [WorkPlanMetaFilter]
+    filter_backends = [DjangoFilterBackend]
     filterset_class = WorkPlanMetaFilter
     ordering_fields = ["numero", "criado_em"]
     ordering = ["numero"]
@@ -152,7 +153,7 @@ class WorkPlanMetaViewSet(viewsets.ModelViewSet):
 
 class WorkPlanAcaoViewSet(viewsets.ModelViewSet):
     pagination_class = UPFPagination
-    filter_backends = [WorkPlanAcaoFilter]
+    filter_backends = [DjangoFilterBackend]
     filterset_class = WorkPlanAcaoFilter
     ordering_fields = ["numero", "criado_em"]
     ordering = ["numero"]
