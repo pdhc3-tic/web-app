@@ -42,8 +42,11 @@ services:
       - DEBUG=False
     env_file:
       - ./backend/.env
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
+    volumes:
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
     depends_on:
       db:
         condition: service_healthy
@@ -89,13 +92,31 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     container_name: frontend
     restart: always
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     env_file:
       - ./frontend/.env.local
     depends_on:
       - backend
     logging: *default-logging
 
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile.prod
+    container_name: nginx
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - static_volume:/app/staticfiles:ro
+      - media_volume:/app/media:ro
+    depends_on:
+      - backend
+      - frontend
+    logging: *default-logging
+
 volumes:
   postgres_data:
+  static_volume:
+  media_volume:

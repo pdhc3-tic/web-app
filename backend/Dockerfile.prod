@@ -14,7 +14,10 @@ RUN pip install --no-cache-dir -r /app/requirements/prod.txt
 
 COPY . /app
 
+RUN chmod +x /app/entrypoint.prod.sh
+
 # Expor porta
 EXPOSE 8000
 
+ENTRYPOINT ["/app/entrypoint.prod.sh"]
 CMD ["gunicorn", "setup.wsgi:application", "--bind", "0.0.0.0:8000"]
