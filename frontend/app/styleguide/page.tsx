@@ -3,10 +3,6 @@ import Link from "next/link";
 import { ComponentsShowcase } from "./ComponentsShowcase";
 import { ChevronLeftIcon } from "../components/icons";
 
-if (process.env.NODE_ENV === "production") {
-  notFound();
-}
-
 // ─── dados dos tokens ────────────────────────────────────────────────────────
 
 const PALETTE_MAIN = [
@@ -97,6 +93,10 @@ function TokenLabel({ children }: { children: React.ReactNode }) {
 // ─── page ────────────────────────────────────────────────────────────────────
 
 export default function StyleguidePage() {
+  if (process.env.NODE_ENV === "production") {
+    notFound();
+  }
+
   return (
     <div className="min-h-screen bg-bg">
       <div className="max-w-5xl mx-auto px-6 py-10 space-y-14">
