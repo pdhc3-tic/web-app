@@ -15,6 +15,11 @@ export type UpfListItem = {
   territorio: string | null;
   criado_em: string;
   ativa: boolean;
+  /**
+   * Opcional: UPFListSerializer ainda não expõe este campo (pendente no
+   * backend). Quando ausente, o avatar da listagem cai para as iniciais.
+   */
+  foto_url?: string | null;
 };
 
 /** Filtro de status mapeado para o parâmetro `ativa` do backend. */

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Eye, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { Avatar } from "@/app/components/ui/Avatar/Avatar";
 import { Badge } from "@/app/components/ui/Badge/Badge";
 import { Chip } from "@/app/components/ui/Chip/Chip";
 import { relativeTime, absoluteDateTime } from "@/app/lib/datetime";
@@ -118,13 +119,16 @@ export function UpfsTable({ upfs, loading }: UpfsTableProps) {
                   className="cursor-pointer border-t border-border transition-colors hover:bg-surface-warm focus:bg-surface-warm focus:outline-none"
                 >
                   <td className="px-4 py-3">
-                    <div className="flex flex-col leading-tight">
-                      <span className="font-medium text-text">
-                        {u.nome_titular}
-                      </span>
-                      <span className="text-xs text-text-muted">
-                        {u.cpf || "—"}
-                      </span>
+                    <div className="flex items-center gap-2.5">
+                      <Avatar name={u.nome_titular} src={u.foto_url ?? null} size="sm" />
+                      <div className="flex min-w-0 flex-col leading-tight">
+                        <span className="truncate font-medium text-text">
+                          {u.nome_titular}
+                        </span>
+                        <span className="text-xs text-text-muted">
+                          {u.cpf || "—"}
+                        </span>
+                      </div>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-text-muted">
@@ -196,13 +200,16 @@ export function UpfsTable({ upfs, loading }: UpfsTableProps) {
                   className="flex w-full flex-col gap-2 rounded-lg border border-border bg-surface p-4 text-left transition-colors hover:bg-surface-warm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 flex-col leading-tight">
-                      <span className="truncate font-medium text-text">
-                        {u.nome_titular}
-                      </span>
-                      <span className="text-xs text-text-muted">
-                        {u.cpf || "—"}
-                      </span>
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <Avatar name={u.nome_titular} src={u.foto_url ?? null} size="sm" />
+                      <div className="flex min-w-0 flex-col leading-tight">
+                        <span className="truncate font-medium text-text">
+                          {u.nome_titular}
+                        </span>
+                        <span className="text-xs text-text-muted">
+                          {u.cpf || "—"}
+                        </span>
+                      </div>
                     </div>
                     <Badge status={u.ativa ? "ativo" : "inativo"} />
                   </div>

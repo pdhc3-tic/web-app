@@ -213,6 +213,10 @@ export default function UpfDetailPage() {
 
   const tabs = useMemo(() => (upf ? buildTabs(upf) : []), [upf]);
 
+  function handlePhotoChange(url: string | null) {
+    setUpf((prev) => (prev ? { ...prev, foto_url: url ?? "" } : prev));
+  }
+
   if (status === "notfound") {
     notFound();
   }
@@ -285,7 +289,7 @@ export default function UpfDetailPage() {
           ]}
         />
 
-        <UpfHeader upf={upf} />
+        <UpfHeader upf={upf} onPhotoChange={handlePhotoChange} />
 
         <Tabs
           items={tabs}

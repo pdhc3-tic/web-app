@@ -95,6 +95,9 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
   const [form, setForm] = useState<UpfFormData>(() =>
     initialData ? detailToForm(initialData) : EMPTY_FORM,
   );
+  const [fotoUrl, setFotoUrl] = useState<string | null>(
+    initialData?.foto_url || null,
+  );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [currentStep, setCurrentStep] = useState(0);
   const [furthest, setFurthest] = useState(mode === "edit" ? 3 : 0);
@@ -426,7 +429,14 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
           />
         )}
         {currentStep === 1 && (
-          <DadosBasicosStep form={form} errors={errors} onChange={patchForm} />
+          <DadosBasicosStep
+            form={form}
+            errors={errors}
+            onChange={patchForm}
+            upfId={mode === "edit" ? upfId : undefined}
+            fotoUrl={fotoUrl}
+            onPhotoChange={setFotoUrl}
+          />
         )}
         {currentStep === 2 && (
           <ComunicacaoStep form={form} errors={errors} onChange={patchForm} />
