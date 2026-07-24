@@ -7,7 +7,6 @@ import { formatCpfInput } from "@/app/lib/format";
 import {
   COR_RACA_OPTIONS,
   ESCOLARIDADE_OPTIONS,
-  ESTADO_CIVIL_OPTIONS,
   GENERO_OPTIONS,
   PCT_OPTIONS,
   POSSE_TERRA_OPTIONS,
@@ -115,12 +114,6 @@ export function DadosBasicosStep({
         onChange={(v) => onChange({ cor_raca: v })}
       />
 
-      <Select
-        label="Estado civil"
-        options={withCurrentValue(ESTADO_CIVIL_OPTIONS, form.estado_civil)}
-        value={form.estado_civil}
-        onChange={(v) => onChange({ estado_civil: v })}
-      />
       <Select
         label="Escolaridade"
         options={withCurrentValue(ESCOLARIDADE_OPTIONS, form.escolaridade)}

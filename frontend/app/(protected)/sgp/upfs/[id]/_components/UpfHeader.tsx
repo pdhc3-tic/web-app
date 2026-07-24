@@ -18,7 +18,7 @@ type UpfHeaderProps = {
 
 /** Cabeçalho da UPF: foto + nome + CPF mascarado + chips de local/status + Editar. */
 export function UpfHeader({ upf, onPhotoChange }: UpfHeaderProps) {
-  const cpf = maskCpf(upf.cpf);
+  const cpf = maskCpf(upf.titular.cpf);
   const [photoOpen, setPhotoOpen] = useState(false);
 
   return (
@@ -32,7 +32,7 @@ export function UpfHeader({ upf, onPhotoChange }: UpfHeaderProps) {
           className="group relative shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         >
           <Avatar
-            name={upf.nome_titular}
+            name={upf.titular.nome_completo}
             src={upf.foto_url || null}
             size="lg"
             className="shadow-sm"
@@ -45,7 +45,7 @@ export function UpfHeader({ upf, onPhotoChange }: UpfHeaderProps) {
 
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-2xl font-semibold tracking-tight text-text">
-            {upf.nome_titular}
+            {upf.titular.nome_completo}
           </h1>
           <p className="mt-0.5 text-sm text-text-muted tabular-nums">
             {cpf || "CPF não informado"}

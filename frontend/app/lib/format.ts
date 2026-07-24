@@ -116,3 +116,10 @@ export function formatCep(value: string | null | undefined): string {
   if (digits.length !== 8) return value?.trim() ?? "";
   return `${digits.slice(0, 5)}-${digits.slice(5)}`;
 }
+
+/** Máscara progressiva de CEP para input controlado: "12345678" → "12345-678". */
+export function formatCepInput(value: string | null | undefined): string {
+  const d = onlyDigits(value).slice(0, 8);
+  if (d.length <= 5) return d;
+  return `${d.slice(0, 5)}-${d.slice(5)}`;
+}

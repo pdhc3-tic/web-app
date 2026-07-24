@@ -128,32 +128,43 @@ export async function fetchTerritoryOptions(
 export type NestedRef = { id: number; nome: string };
 
 /**
- * Espelha apps/sgp/serializers.py::UPFDetailSerializer.
- * Atenção: o CPF vem CRU (sem máscara) no detalhe — mascarar na exibição.
- * Campos "enum" (genero, cor_raca, etc.) são strings livres, sem label do backend.
+ * Titular aninhado no detalhe da UPF. Espelha
+ * apps/sgp/serializers.py::TitularNestedSerializer. O titular é um MembroFamilia
+ * (parentesco="titular"). CPF vem CRU (sem máscara) — mascarar na exibição.
+ * Campos de choice (genero, cor_raca, escolaridade) são inteiros + `*_display`.
+ */
+export type TitularNested = {
+  id: number;
+  nome_completo: string;
+  cpf: string;
+  rg: string;
+  data_nasc: string | null;
+  genero: number | null;
+  genero_display: string;
+  cor_raca: number | null;
+  cor_raca_display: string;
+  escolaridade: number | null;
+  escolaridade_display: string;
+  nis: string;
+  idade: number | null;
+};
+
+/**
+ * Espelha apps/sgp/serializers.py::UPFDetailSerializer (leitura).
+ * Os campos de choice da UPF (pct, posse_terra, dispositivo, tipo_moradia,
+ * situacao_moradia, material_construcao, energia, agua) vêm como id inteiro cru,
+ * sem `*_display` — usar labelForValue() na exibição. Os dados do titular ficam
+ * no objeto aninhado `titular`.
  */
 export type UpfDetail = {
   id: number;
   projeto: NestedRef;
-  nome_titular: string;
+  titular: TitularNested;
   apelido: string;
-  cpf: string;
-  rg: string;
-  data_nasc: string | null;
-  genero: string;
-  cor_raca: string;
-  estado_civil: string;
-  escolaridade: string;
-  nacionalidade: string;
-  naturalidade: string;
-  nome_mae: string;
-  nome_pai: string;
-  telefone: string;
   celular: string;
   whatsapp: string;
-  email: string;
   internet: boolean;
-  dispositivo: string;
+  dispositivo: number | null;
   cep: string;
   logradouro: string;
   numero: string;
@@ -164,15 +175,16 @@ export type UpfDetail = {
   comunidade: NestedRef | null;
   latitude: string | null;
   longitude: string | null;
-  pct: string;
-  posse_terra: string;
+  pct: number | null;
+  posse_terra: number | null;
   area_terra_ha: string | null;
-  situacao_moradia: string;
-  tipo_moradia: string;
-  energia: string;
-  agua: string;
+  situacao_moradia: number | null;
+  tipo_moradia: number | null;
+  material_construcao: number | null;
+  num_comodos: number | null;
+  energia: number | null;
+  agua: number | null;
   daf_caf: string;
-  nis: string;
   seguridade_social: string[];
   foto_url: string;
   criado_por: string | null;
@@ -225,32 +237,29 @@ export async function fetchUpfHistorico(
 
 /**
  * Campos graváveis de UPF (POST/PATCH). `territorio` é derivado no backend e não
- * é enviado. Campos opcionais podem ser omitidos.
+ * é enviado. Os dados do titular são enviados achatados (nome, cpf, rg, ...),
+ * conforme os campos write_only do UPFDetailSerializer que alimentam o
+ * MembroFamilia titular. Campos de choice vão como id inteiro.
  */
 export type UpfWritePayload = {
   projeto: number | null;
   municipio: number | null;
   comunidade: number | null;
-  nome_titular: string;
+  // Titular (write_only → _titular_* no backend)
+  nome: string;
   cpf: string;
-  apelido?: string;
   rg?: string;
   data_nasc?: string | null;
-  genero?: string;
-  cor_raca?: string;
-  estado_civil?: string;
-  escolaridade?: string;
-  pct?: string;
+  genero?: number | null;
+  cor_raca?: number | null;
+  escolaridade?: number | null;
   nis?: string;
-  daf_caf?: string;
-  posse_terra?: string;
-  area_terra_ha?: string | null;
-  seguridade_social?: string[];
-  telefone?: string;
+  // UPF
+  apelido?: string;
+  celular?: string;
   whatsapp?: string;
-  email?: string;
   internet?: boolean;
-  dispositivo?: string;
+  dispositivo?: number | null;
   cep?: string;
   logradouro?: string;
   numero?: string;
@@ -258,10 +267,17 @@ export type UpfWritePayload = {
   bairro?: string;
   latitude?: string | null;
   longitude?: string | null;
-  tipo_moradia?: string;
-  situacao_moradia?: string;
-  energia?: string;
-  agua?: string;
+  pct?: number | null;
+  posse_terra?: number | null;
+  area_terra_ha?: string | null;
+  situacao_moradia?: number | null;
+  tipo_moradia?: number | null;
+  material_construcao?: number | null;
+  num_comodos?: number | null;
+  energia?: number | null;
+  agua?: number | null;
+  daf_caf?: string;
+  seguridade_social?: string[];
 };
 
 /** POST /api/v1/upfs/ — cria uma UPF; retorna o detalhe com id. */

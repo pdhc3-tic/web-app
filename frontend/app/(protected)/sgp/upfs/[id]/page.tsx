@@ -20,6 +20,17 @@ import {
   formatPhone,
   maskCpf,
 } from "@/app/lib/format";
+import {
+  AGUA_OPTIONS,
+  DISPOSITIVO_OPTIONS,
+  ENERGIA_OPTIONS,
+  MATERIAL_CONSTRUCAO_OPTIONS,
+  PCT_OPTIONS,
+  POSSE_TERRA_OPTIONS,
+  SITUACAO_MORADIA_OPTIONS,
+  TIPO_MORADIA_OPTIONS,
+  labelForValue,
+} from "../_components/upfFormOptions";
 import { UpfHeader } from "./_components/UpfHeader";
 import { UpfDetailSkeleton } from "./_components/UpfDetailSkeleton";
 import { HistoricoTab } from "./_components/HistoricoTab";
@@ -109,20 +120,22 @@ function buildTabs(upf: UpfDetail): TabItem[] {
       content: (
         <DefinitionList
           items={[
-            { label: "Titular", value: upf.nome_titular },
-            { label: "CPF", value: maskCpf(upf.cpf) },
+            { label: "Titular", value: upf.titular.nome_completo },
+            { label: "CPF", value: maskCpf(upf.titular.cpf) },
             { label: "Apelido", value: upf.apelido },
-            { label: "RG", value: upf.rg },
-            { label: "Nascimento", value: formatDate(upf.data_nasc) },
-            { label: "Gênero", value: upf.genero },
-            { label: "Cor/Raça", value: upf.cor_raca },
-            { label: "PCT", value: upf.pct },
-            { label: "NIS", value: upf.nis },
+            { label: "RG", value: upf.titular.rg },
+            { label: "Nascimento", value: formatDate(upf.titular.data_nasc) },
+            { label: "Gênero", value: upf.titular.genero_display },
+            { label: "Cor/Raça", value: upf.titular.cor_raca_display },
+            { label: "PCT", value: labelForValue(PCT_OPTIONS, upf.pct) },
+            { label: "NIS", value: upf.titular.nis },
             { label: "DAP/CAF", value: upf.daf_caf },
-            { label: "Estado civil", value: upf.estado_civil },
-            { label: "Escolaridade", value: upf.escolaridade },
+            { label: "Escolaridade", value: upf.titular.escolaridade_display },
             { label: "Seguridade", value: seguridade },
-            { label: "Posse da terra", value: upf.posse_terra },
+            {
+              label: "Posse da terra",
+              value: labelForValue(POSSE_TERRA_OPTIONS, upf.posse_terra),
+            },
             { label: "Área", value: formatArea(upf.area_terra_ha) },
           ]}
         />
@@ -134,14 +147,13 @@ function buildTabs(upf: UpfDetail): TabItem[] {
       content: (
         <DefinitionList
           items={[
-            {
-              label: "Telefone",
-              value: formatPhone(upf.telefone || upf.celular),
-            },
+            { label: "Telefone", value: formatPhone(upf.celular) },
             { label: "WhatsApp", value: formatPhone(upf.whatsapp) },
-            { label: "E-mail", value: upf.email },
             { label: "Internet", value: formatBool(upf.internet) },
-            { label: "Dispositivo", value: upf.dispositivo },
+            {
+              label: "Dispositivo",
+              value: labelForValue(DISPOSITIVO_OPTIONS, upf.dispositivo),
+            },
           ]}
         />
       ),
@@ -152,12 +164,33 @@ function buildTabs(upf: UpfDetail): TabItem[] {
       content: (
         <DefinitionList
           items={[
-            { label: "Tipo", value: upf.tipo_moradia },
-            { label: "Material", value: undefined },
-            { label: "Cômodos", value: undefined },
-            { label: "Energia", value: upf.energia },
-            { label: "Água", value: upf.agua },
-            { label: "Situação", value: upf.situacao_moradia },
+            {
+              label: "Tipo",
+              value: labelForValue(TIPO_MORADIA_OPTIONS, upf.tipo_moradia),
+            },
+            {
+              label: "Material",
+              value: labelForValue(
+                MATERIAL_CONSTRUCAO_OPTIONS,
+                upf.material_construcao,
+              ),
+            },
+            {
+              label: "Cômodos",
+              value:
+                upf.num_comodos !== null && upf.num_comodos !== undefined
+                  ? String(upf.num_comodos)
+                  : undefined,
+            },
+            {
+              label: "Energia",
+              value: labelForValue(ENERGIA_OPTIONS, upf.energia),
+            },
+            { label: "Água", value: labelForValue(AGUA_OPTIONS, upf.agua) },
+            {
+              label: "Situação",
+              value: labelForValue(SITUACAO_MORADIA_OPTIONS, upf.situacao_moradia),
+            },
           ]}
         />
       ),
@@ -285,7 +318,7 @@ export default function UpfDetailPage() {
             { label: "Início", href: "/dashboard" },
             { label: "SGP", href: "/sgp" },
             { label: "UPFs", href: "/sgp/upfs" },
-            { label: upf.nome_titular },
+            { label: upf.titular.nome_completo },
           ]}
         />
 

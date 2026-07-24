@@ -44,7 +44,10 @@ export function saudeLabel(value: string): string {
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
-/** Espelha apps/sgp/serializers.py::MembroListSerializer. */
+/**
+ * Espelha apps/sgp/serializers.py::MembroListSerializer.
+ * genero/cor_raca são choices inteiros; use os `*_display` para exibição.
+ */
 export type MembroListItem = {
   id: number;
   nome: string;
@@ -53,8 +56,10 @@ export type MembroListItem = {
   parentesco: string;
   parentesco_display: string;
   cpf: string;
-  genero: string;
-  cor_raca: string;
+  genero: number | null;
+  genero_display: string;
+  cor_raca: number | null;
+  cor_raca_display: string;
   criado_em: string;
 };
 
@@ -71,17 +76,15 @@ export type MembroDetail = {
   caf: string;
   parentesco: string;
   parentesco_display: string;
-  genero: string;
-  cor_raca: string;
+  genero: number | null;
+  genero_display: string;
+  cor_raca: number | null;
+  cor_raca_display: string;
   escola: string;
   seguridade_social: string[];
   saude: string[];
-  telefone: string;
-  email: string;
-  escolaridade: string;
-  profissao: string;
-  renda: string | null;
-  observacao: string;
+  escolaridade: number | null;
+  escolaridade_display: string;
   criado_por: number | null;
   criado_em: string;
   atualizado_em: string;
@@ -96,16 +99,12 @@ export type MembroWritePayload = {
   rg?: string;
   nis?: string;
   caf?: string;
-  genero?: string;
-  cor_raca?: string;
+  genero?: number | null;
+  cor_raca?: number | null;
   escola?: string;
-  escolaridade?: string;
+  escolaridade?: number | null;
   saude?: string[];
   seguridade_social?: string[];
-  telefone?: string;
-  email?: string;
-  profissao?: string;
-  observacao?: string;
 };
 
 // ─── API ─────────────────────────────────────────────────────────────────────
