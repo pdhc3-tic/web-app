@@ -33,6 +33,7 @@ import {
 } from "../_components/upfFormOptions";
 import { UpfHeader } from "./_components/UpfHeader";
 import { UpfDetailSkeleton } from "./_components/UpfDetailSkeleton";
+import { DocumentosTab } from "./_components/DocumentosTab";
 import { HistoricoTab } from "./_components/HistoricoTab";
 import { MembrosTab } from "./_components/MembrosTab";
 import { ProducaoTab } from "./_components/ProducaoTab";
@@ -44,6 +45,7 @@ const TAB_IDS = [
   "moradia",
   "membros",
   "producao",
+  "documentos",
   "historico",
 ] as const;
 type TabId = (typeof TAB_IDS)[number];
@@ -206,6 +208,11 @@ function buildTabs(upf: UpfDetail): TabItem[] {
       id: "producao",
       label: "Produção",
       content: <ProducaoTab upfId={String(upf.id)} />,
+    },
+    {
+      id: "documentos",
+      label: "Documentos",
+      content: <DocumentosTab upfId={String(upf.id)} />,
     },
     {
       id: "historico",
