@@ -291,6 +291,26 @@ export default function StyleguidePage() {
 
         <ComponentsShowcase />
 
+        {/* ── 15 · Mapas ── */}
+        <section>
+          <SectionTitle>15 · Mapas</SectionTitle>
+          <p className="text-sm text-text leading-relaxed max-w-2xl">
+            Componente <span className="font-mono text-text-muted">MapView</span>{" "}
+            (Leaflet + OpenStreetMap): markers por status, clustering automático
+            acima de 200 pontos e popups no design system.
+          </p>
+          <p className="mt-1 text-sm text-text-muted max-w-2xl">
+            O mapa carrega o Leaflet sob demanda, então fica numa página à parte
+            para não pesar o guia.
+          </p>
+          <Link
+            href="/styleguide/maps"
+            className="mt-4 inline-flex items-center gap-1.5 h-9 px-4 rounded-md bg-primary text-sm font-medium text-surface hover:bg-secondary transition-colors"
+          >
+            Ver mapas (5 · 50 · 500 markers)
+          </Link>
+        </section>
+
         <footer className="border-t border-border pt-6">
           <p className="text-xs font-mono text-text-muted">
             /styleguide · visível apenas quando NODE_ENV ≠ production · sem dados reais
