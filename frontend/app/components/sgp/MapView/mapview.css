@@ -13,6 +13,10 @@
   overflow: hidden;
   border: 1px solid var(--color-border);
   background: var(--color-surface-muted);
+  /* Contém o z-index interno do Leaflet (panes/controles vão de 400 a 1000) num
+     stacking context próprio, para não sobrepor overlays da app (ex.: SlideOver). */
+  position: relative;
+  isolation: isolate;
 }
 
 @media (max-width: 640px) {
