@@ -158,22 +158,22 @@ class TestMetaStatusCalculado:
         assert meta.status_calculado == "no_prazo"
 
     def test_concluida_when_all_acoes_concluidas(self, meta):
-        WorkPlanAcaoFactory(meta=meta, numero="1.1", quantidade_realizada=Decimal("100"))
-        WorkPlanAcaoFactory(meta=meta, numero="1.2", quantidade_realizada=Decimal("100"))
+        WorkPlanAcaoFactory(meta=meta, numero="1.1", quantidade_planejada=Decimal("0"))
+        WorkPlanAcaoFactory(meta=meta, numero="1.2", quantidade_planejada=Decimal("0"))
         assert meta.status_calculado == "concluida"
 
     def test_em_atraso_when_past_and_pending(self, meta):
         meta.data_fim = date.today() - timedelta(days=1)
         meta.save(update_fields=["data_fim"])
-        WorkPlanAcaoFactory(meta=meta, numero="1.1", quantidade_realizada=Decimal("100"))
-        WorkPlanAcaoFactory(meta=meta, numero="1.2", quantidade_realizada=Decimal("0"))
+        WorkPlanAcaoFactory(meta=meta, numero="1.1", quantidade_planejada=Decimal("0"))
+        WorkPlanAcaoFactory(meta=meta, numero="1.2", quantidade_planejada=Decimal("100"))
         assert meta.status_calculado == "em_atraso"
 
     def test_no_prazo_when_future_and_pending(self, meta):
         meta.data_fim = date.today() + timedelta(days=365)
         meta.save(update_fields=["data_fim"])
-        WorkPlanAcaoFactory(meta=meta, numero="1.1", quantidade_realizada=Decimal("100"))
-        WorkPlanAcaoFactory(meta=meta, numero="1.2", quantidade_realizada=Decimal("0"))
+        WorkPlanAcaoFactory(meta=meta, numero="1.1", quantidade_planejada=Decimal("0"))
+        WorkPlanAcaoFactory(meta=meta, numero="1.2", quantidade_planejada=Decimal("100"))
         assert meta.status_calculado == "no_prazo"
 
 
@@ -308,42 +308,30 @@ class TestAcaoValorTotalCalculado:
 
 
 class TestAcaoQuantidadeRealizada:
-    def test_quantidade_realizada_updates_on_activity_change(self, auth_client, acao):
-        acao.quantidade_realizada = Decimal("50.00")
-        acao.save(update_fields=["quantidade_realizada"])
-        acao.refresh_from_db()
-        assert acao.quantidade_realizada == Decimal("50.00")
+    def test_property_returns_zero_placeholder(self, acao):
+        assert acao.quantidade_realizada == 0
 
-    def test_quantidade_realizada_decrements(self, auth_client, acao):
-        acao.quantidade_realizada = Decimal("50.00")
-        acao.save(update_fields=["quantidade_realizada"])
-        acao.quantidade_realizada = Decimal("30.00")
-        acao.save(update_fields=["quantidade_realizada"])
-        acao.refresh_from_db()
-        assert acao.quantidade_realizada == Decimal("30.00")
+    def test_property_is_read_only_in_serializer(self, auth_client, acao_payload):
+        response = auth_client.post(
+            "/api/v1/acoes/", {**acao_payload, "quantidade_realizada": "999"}, format="json"
+        )
+        assert response.status_code == 201
+        assert response.data["quantidade_realizada"] == "0.00"
 
 
 class TestAcaoStatusExecucao:
-    def test_concluida_when_quantidade_atingida(self, acao):
-        acao.quantidade_realizada = Decimal("100.00")
-        acao.quantidade_planejada = Decimal("100.00")
-        assert acao.status_execucao == "concluida"
-
-    def test_concluida_when_exceeds(self, acao):
-        acao.quantidade_realizada = Decimal("150.00")
-        acao.quantidade_planejada = Decimal("100.00")
+    def test_concluida_when_quantidade_planejada_atingida(self, acao):
+        acao.quantidade_planejada = Decimal("0")
         assert acao.status_execucao == "concluida"
 
     def test_em_atraso_when_past_and_not_atingida(self, acao):
         acao.data_fim = date.today() - timedelta(days=1)
-        acao.quantidade_realizada = Decimal("50.00")
-        acao.quantidade_planejada = Decimal("100.00")
+        acao.quantidade_planejada = Decimal("100")
         assert acao.status_execucao == "em_atraso"
 
     def test_no_prazo_when_future_and_not_atingida(self, acao):
         acao.data_fim = date.today() + timedelta(days=365)
-        acao.quantidade_realizada = Decimal("50.00")
-        acao.quantidade_planejada = Decimal("100.00")
+        acao.quantidade_planejada = Decimal("100")
         assert acao.status_execucao == "no_prazo"
 
 

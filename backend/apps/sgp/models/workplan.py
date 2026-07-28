@@ -111,12 +111,6 @@ class WorkPlanAcao(models.Model):
         default=0,
         verbose_name="Valor Unitário (R$)",
     )
-    quantidade_realizada = models.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        default=0,
-        verbose_name="Quantidade Realizada",
-    )
     data_inicio = models.DateField(
         null=True, blank=True, verbose_name="Data de Início"
     )
@@ -151,6 +145,10 @@ class WorkPlanAcao(models.Model):
     @property
     def valor_total(self):
         return self.quantidade_planejada * self.valor_unitario
+
+    @property
+    def quantidade_realizada(self):
+        return 0
 
     @property
     def status_execucao(self):

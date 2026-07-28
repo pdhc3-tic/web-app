@@ -13,6 +13,9 @@ class WorkPlanAcaoSerializer(serializers.ModelSerializer):
     valor_total = serializers.DecimalField(
         max_digits=14, decimal_places=2, read_only=True
     )
+    quantidade_realizada = serializers.DecimalField(
+        max_digits=12, decimal_places=2, read_only=True
+    )
     status_execucao = serializers.CharField(read_only=True)
 
     class Meta:
@@ -36,6 +39,9 @@ class WorkPlanAcaoSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id",
+            "valor_total",
+            "quantidade_realizada",
+            "status_execucao",
             "criado_em",
             "atualizado_em",
         ]
@@ -64,6 +70,9 @@ class WorkPlanAcaoListSerializer(serializers.ModelSerializer):
     valor_total = serializers.DecimalField(
         max_digits=14, decimal_places=2, read_only=True
     )
+    quantidade_realizada = serializers.DecimalField(
+        max_digits=12, decimal_places=2, read_only=True
+    )
     status_execucao = serializers.CharField(read_only=True)
 
     class Meta:
@@ -81,6 +90,13 @@ class WorkPlanAcaoListSerializer(serializers.ModelSerializer):
             "quantidade_realizada",
             "data_inicio",
             "data_fim",
+            "status_execucao",
+            "criado_em",
+        ]
+        read_only_fields = [
+            "id",
+            "valor_total",
+            "quantidade_realizada",
             "status_execucao",
             "criado_em",
         ]
