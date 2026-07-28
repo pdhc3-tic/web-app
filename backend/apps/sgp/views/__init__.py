@@ -34,6 +34,7 @@ from apps.sgp.serializers import (
 )
 from .upf_foto import UPFPhotoMixin
 from .upf_documentos import UPFDocumentViewSet
+from .production import ProductionViewSet
 
 logger = logging.getLogger("apps.sgp.views")
 

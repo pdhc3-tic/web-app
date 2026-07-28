@@ -6,6 +6,7 @@ from .views import (
     CulturaListView,
     EspecieAnimalListView,
     MembroViewSet,
+    ProductionViewSet,
     UPFViewSet,
     UPFDocumentViewSet,
     ProjetoViewSet,
@@ -32,6 +33,15 @@ upf_document_detail = UPFDocumentViewSet.as_view({
 })
 upf_document_download = UPFDocumentViewSet.as_view({
     "get": "download",
+})
+production_list = ProductionViewSet.as_view({
+    "get": "list",
+    "post": "create",
+})
+production_detail = ProductionViewSet.as_view({
+    "get": "retrieve",
+    "patch": "partial_update",
+    "delete": "destroy",
 })
 
 urlpatterns = router.urls + [
@@ -64,6 +74,16 @@ urlpatterns = router.urls + [
         "upfs/<int:upf_pk>/documentos/<int:pk>/",
         upf_document_detail,
         name="upf-documentos-detail",
+    ),
+    path(
+        "upfs/<int:upf_pk>/producao/",
+        production_list,
+        name="upf-producao-list",
+    ),
+    path(
+        "upfs/<int:upf_pk>/producao/<int:pk>/",
+        production_detail,
+        name="upf-producao-detail",
     ),
     path(
         "upfs/<int:upf_pk>/membros/",

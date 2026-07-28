@@ -1,7 +1,16 @@
 import factory
 
 from apps.core.tests.factories import MunicipalityFactory, UserFactory
-from apps.sgp.models import Comunidade, MembroFamilia, Projeto, UPF, UPFDocument
+from apps.sgp.models import (
+    Comunidade,
+    Cultura,
+    EspecieAnimal,
+    MembroFamilia,
+    Production,
+    Projeto,
+    UPF,
+    UPFDocument,
+)
 
 
 class ProjetoFactory(factory.django.DjangoModelFactory):
@@ -85,3 +94,35 @@ class UPFDocumentFactory(factory.django.DjangoModelFactory):
         lambda: __import__("datetime").date(2026, 1, 15)
     )
     criado_por = factory.SubFactory(UserFactory)
+
+
+class CulturaFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Cultura
+
+    nome = factory.Sequence(lambda n: f"Cultura Produção {n}")
+    categoria = Cultura.CATEGORIA_GRAOS
+    ciclo = Cultura.CICLO_ANUAL
+    ativa = True
+
+
+class EspecieAnimalFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = EspecieAnimal
+
+    nome = factory.Sequence(lambda n: f"Espécie Produção {n}")
+    categoria = EspecieAnimal.CATEGORIA_CAPRINO
+    ativa = True
+
+
+class ProductionFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Production
+
+    upf = factory.SubFactory(UPFFactory)
+    tipo = Production.TIPO_AGRICOLA
+    cultura = factory.SubFactory(CulturaFactory)
+    area_ha = "1.50"
+    producao_estimada = "30.00"
+    unidade_producao = "saca"
+    sementes_crioulas = False
