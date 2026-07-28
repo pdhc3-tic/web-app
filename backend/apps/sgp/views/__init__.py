@@ -28,6 +28,21 @@ from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsSuperAdmin, IsUGP
 from apps.core.services.permissions import user_has_role, user_states, user_territories
 from apps.sgp.cache import UPF_MAP_CACHE_TIMEOUT, build_upf_map_cache_key
+from apps.sgp.constants import (
+    AGUA_CHOICES,
+    COR_RACA_CHOICES,
+    DISPOSITIVO_CHOICES,
+    ENERGIA_CHOICES,
+    ESCOLARIDADE_CHOICES,
+    GENERO_CHOICES,
+    MATERIAL_CONSTRUCAO_CHOICES,
+    PARENTESCO_CHOICES,
+    PCT_CHOICES,
+    POSSE_TERRA_CHOICES,
+    SAUDE_CHOICES,
+    SITUACAO_MORADIA_CHOICES,
+    TIPO_MORADIA_CHOICES,
+)
 from apps.sgp.filters import UPFFilter
 from apps.sgp.models import Comunidade, Cultura, EspecieAnimal, MembroFamilia, UPF, Projeto
 from apps.sgp.pagination import CatalogoPagination, HistoricoPagination, UPFPagination
@@ -663,4 +678,27 @@ class ProjetoViewSet(viewsets.ModelViewSet):
         if self.action in ("update", "partial_update", "destroy"):
             return [(IsSuperAdmin | IsUGP)()]
         return [IsAuthenticated()]
+
+
+class SGPChoicesView(APIView):
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "head", "options"]
+
+    def get(self, request):
+        choices = {
+            "genero": [{"value": v, "label": l} for v, l in GENERO_CHOICES],
+            "cor_raca": [{"value": v, "label": l} for v, l in COR_RACA_CHOICES],
+            "escolaridade": [{"value": v, "label": l} for v, l in ESCOLARIDADE_CHOICES],
+            "dispositivo": [{"value": v, "label": l} for v, l in DISPOSITIVO_CHOICES],
+            "pct": [{"value": v, "label": l} for v, l in PCT_CHOICES],
+            "posse_terra": [{"value": v, "label": l} for v, l in POSSE_TERRA_CHOICES],
+            "situacao_moradia": [{"value": v, "label": l} for v, l in SITUACAO_MORADIA_CHOICES],
+            "tipo_moradia": [{"value": v, "label": l} for v, l in TIPO_MORADIA_CHOICES],
+            "material_construcao": [{"value": v, "label": l} for v, l in MATERIAL_CONSTRUCAO_CHOICES],
+            "energia": [{"value": v, "label": l} for v, l in ENERGIA_CHOICES],
+            "agua": [{"value": v, "label": l} for v, l in AGUA_CHOICES],
+            "parentesco": [{"value": v, "label": l} for v, l in PARENTESCO_CHOICES],
+            "saude": [{"value": v, "label": v} for v in SAUDE_CHOICES],
+        }
+        return Response(choices)
 

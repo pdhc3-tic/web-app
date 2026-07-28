@@ -182,6 +182,7 @@ class UPFListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "nome_titular", "cpf",
             "municipio", "territorio", "criado_em", "ativa",
+            "foto_url",
         ]
 
     def get_cpf(self, obj):
