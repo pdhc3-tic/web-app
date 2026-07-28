@@ -258,7 +258,7 @@ class TestAcaoCriacao:
             "/api/v1/acoes/", {**acao_payload, "quantidade_realizada": "999"}, format="json"
         )
         assert response.status_code == 201
-        assert response.data["quantidade_realizada"] == "0"
+        assert response.data["quantidade_realizada"] == "0.00"
 
 
 class TestAcaoNumeroFormato:
