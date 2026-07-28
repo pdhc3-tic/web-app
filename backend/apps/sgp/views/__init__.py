@@ -11,6 +11,7 @@ from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 
 from rest_framework import filters, generics, serializers, status, viewsets
+from rest_framework.views import APIView
 from drf_spectacular.utils import (
     OpenApiParameter,
     OpenApiTypes,
