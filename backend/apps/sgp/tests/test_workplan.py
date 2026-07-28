@@ -158,22 +158,27 @@ class TestMetaStatusCalculado:
         assert meta.status_calculado == "no_prazo"
 
     def test_concluida_when_all_acoes_concluidas(self, meta):
-        WorkPlanAcaoFactory(meta=meta, numero="1.1", quantidade_planejada=Decimal("0"))
-        WorkPlanAcaoFactory(meta=meta, numero="1.2", quantidade_planejada=Decimal("0"))
+        acao1 = WorkPlanAcaoFactory(meta=meta, numero="1.1", quantidade_planejada=Decimal("2"))
+        ActivityFactory(acao=acao1, status="concluido")
+        ActivityFactory(acao=acao1, status="concluido")
+        acao2 = WorkPlanAcaoFactory(meta=meta, numero="1.2", quantidade_planejada=Decimal("1"))
+        ActivityFactory(acao=acao2, status="concluido")
         assert meta.status_calculado == "concluida"
 
     def test_em_atraso_when_past_and_pending(self, meta):
         meta.data_fim = date.today() - timedelta(days=1)
         meta.save(update_fields=["data_fim"])
-        WorkPlanAcaoFactory(meta=meta, numero="1.1", quantidade_planejada=Decimal("0"))
-        WorkPlanAcaoFactory(meta=meta, numero="1.2", quantidade_planejada=Decimal("100"))
+        acao1 = WorkPlanAcaoFactory(meta=meta, numero="1.1", quantidade_planejada=Decimal("1"))
+        ActivityFactory(acao=acao1, status="concluido")
+        acao2 = WorkPlanAcaoFactory(meta=meta, numero="1.2", quantidade_planejada=Decimal("1"))
         assert meta.status_calculado == "em_atraso"
 
     def test_no_prazo_when_future_and_pending(self, meta):
         meta.data_fim = date.today() + timedelta(days=365)
         meta.save(update_fields=["data_fim"])
-        WorkPlanAcaoFactory(meta=meta, numero="1.1", quantidade_planejada=Decimal("0"))
-        WorkPlanAcaoFactory(meta=meta, numero="1.2", quantidade_planejada=Decimal("100"))
+        acao1 = WorkPlanAcaoFactory(meta=meta, numero="1.1", quantidade_planejada=Decimal("1"))
+        ActivityFactory(acao=acao1, status="concluido")
+        acao2 = WorkPlanAcaoFactory(meta=meta, numero="1.2", quantidade_planejada=Decimal("1"))
         assert meta.status_calculado == "no_prazo"
 
 
@@ -248,6 +253,13 @@ class TestAcaoCriacao:
         assert response.status_code == 201
         assert response.data["status_execucao"] == "no_prazo"
 
+    def test_quantidade_realizada_read_only(self, auth_client, acao_payload):
+        response = auth_client.post(
+            "/api/v1/acoes/", {**acao_payload, "quantidade_realizada": "999"}, format="json"
+        )
+        assert response.status_code == 201
+        assert response.data["quantidade_realizada"] == "0"
+
 
 class TestAcaoNumeroFormato:
     def test_invalid_format_returns_400(self, auth_client, acao_payload):
@@ -308,30 +320,39 @@ class TestAcaoValorTotalCalculado:
 
 
 class TestAcaoQuantidadeRealizada:
-    def test_property_returns_zero_placeholder(self, acao):
-        assert acao.quantidade_realizada == 0
+    def test_counts_concluido_activities(self, acao):
+        ActivityFactory(acao=acao, status="concluido")
+        ActivityFactory(acao=acao, status="concluido")
+        ActivityFactory(acao=acao, status="concluido")
+        assert acao.quantidade_realizada == 3
 
-    def test_property_is_read_only_in_serializer(self, auth_client, acao_payload):
-        response = auth_client.post(
-            "/api/v1/acoes/", {**acao_payload, "quantidade_realizada": "999"}, format="json"
-        )
-        assert response.status_code == 201
-        assert response.data["quantidade_realizada"] == "0.00"
+    def test_ignores_non_concluido_activities(self, acao):
+        ActivityFactory(acao=acao, status="planejado")
+        ActivityFactory(acao=acao, status="agendado")
+        ActivityFactory(acao=acao, status="concluido")
+        assert acao.quantidade_realizada == 1
+
+    def test_zero_when_no_activities(self, acao):
+        assert acao.quantidade_realizada == 0
 
 
 class TestAcaoStatusExecucao:
-    def test_concluida_when_quantidade_planejada_atingida(self, acao):
-        acao.quantidade_planejada = Decimal("0")
+    def test_concluida_when_quantidade_atingida(self, acao):
+        acao.quantidade_planejada = Decimal("2")
+        ActivityFactory(acao=acao, status="concluido")
+        ActivityFactory(acao=acao, status="concluido")
         assert acao.status_execucao == "concluida"
 
     def test_em_atraso_when_past_and_not_atingida(self, acao):
         acao.data_fim = date.today() - timedelta(days=1)
-        acao.quantidade_planejada = Decimal("100")
+        acao.quantidade_planejada = Decimal("2")
+        ActivityFactory(acao=acao, status="concluido")
         assert acao.status_execucao == "em_atraso"
 
     def test_no_prazo_when_future_and_not_atingida(self, acao):
         acao.data_fim = date.today() + timedelta(days=365)
-        acao.quantidade_planejada = Decimal("100")
+        acao.quantidade_planejada = Decimal("2")
+        ActivityFactory(acao=acao, status="concluido")
         assert acao.status_execucao == "no_prazo"
 
 

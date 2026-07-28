@@ -148,7 +148,7 @@ class WorkPlanAcao(models.Model):
 
     @property
     def quantidade_realizada(self):
-        return 0
+        return self.atividades.filter(status='concluido').count()
 
     @property
     def status_execucao(self):
