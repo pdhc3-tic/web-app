@@ -84,6 +84,24 @@ const numOrNull = (v: string) => {
   return v.trim() && Number.isFinite(n) ? n : null;
 };
 
+const formatMoneyInput = (v: string) => {
+  const digits = v.replace(/\D/g, "");
+  if (!digits) return "";
+
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(Number(digits) / 100);
+};
+
+const moneyOrNull = (v: string) => {
+  const digits = v.replace(/\D/g, "");
+  if (!digits) return null;
+
+  const normalized = digits.padStart(3, "0");
+  return `${normalized.slice(0, -2)}.${normalized.slice(-2)}`;
+};
+
 const decOrNull = (v: string) => {
   const s = v.trim().replace(",", ".");
   const n = Number(s);
@@ -107,8 +125,8 @@ function producaoToForm(p: Producao): FormState {
     tipo_outra: p.tipo_outra ?? "",
     descricao_outra: p.descricao_outra ?? "",
     quantidade_produzida: p.quantidade_produzida ?? "",
-    renda_estimada_mensal: p.renda_estimada_mensal ?? "",
-    custo_anual: p.custo_anual ?? "",
+    renda_estimada_mensal: formatMoneyInput(p.renda_estimada_mensal ?? ""),
+    custo_anual: formatMoneyInput(p.custo_anual ?? ""),
     observacoes: p.observacoes ?? "",
   };
 }
@@ -117,7 +135,7 @@ function formToPayload(f: FormState): ProducaoWritePayload {
   const tipo = f.tipo as TipoProducao;
   const base: ProducaoWritePayload = {
     tipo,
-    custo_anual: decOrNull(f.custo_anual),
+    custo_anual: moneyOrNull(f.custo_anual),
     observacoes: f.observacoes.trim() || null,
   };
   if (tipo === "agricola") {
@@ -146,7 +164,7 @@ function formToPayload(f: FormState): ProducaoWritePayload {
     tipo_outra: f.tipo_outra || null,
     descricao_outra: f.descricao_outra.trim() || null,
     quantidade_produzida: f.quantidade_produzida.trim() || null,
-    renda_estimada_mensal: decOrNull(f.renda_estimada_mensal),
+    renda_estimada_mensal: moneyOrNull(f.renda_estimada_mensal),
   };
 }
 
@@ -308,14 +326,14 @@ export function ProducaoSlideOver({ open, onClose, mode, upfId, producao, onSave
             <Textarea label="Descrição" rows={3} value={form.descricao_outra} onChange={(e) => update("descricao_outra", e.target.value)} placeholder="Descreva a atividade..." />
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Input label="Quantidade produzida" value={form.quantidade_produzida} onChange={(e) => update("quantidade_produzida", e.target.value)} placeholder="Ex.: 60 unid/mês" />
-              <Input label="Renda estimada mensal (R$)" value={form.renda_estimada_mensal} onChange={(e) => update("renda_estimada_mensal", e.target.value)} inputMode="decimal" placeholder="0,00" />
+              <Input label="Renda estimada mensal (R$)" value={form.renda_estimada_mensal} onChange={(e) => update("renda_estimada_mensal", formatMoneyInput(e.target.value))} inputMode="numeric" placeholder="R$ 0,00" />
             </div>
           </div>
         )}
 
         {form.tipo && (
           <div className="flex flex-col gap-4 border-t border-border pt-4">
-            <Input label="Custo anual (R$)" value={form.custo_anual} onChange={(e) => update("custo_anual", e.target.value)} inputMode="decimal" placeholder="0,00" />
+            <Input label="Custo anual (R$)" value={form.custo_anual} onChange={(e) => update("custo_anual", formatMoneyInput(e.target.value))} inputMode="numeric" placeholder="R$ 0,00" />
             <Textarea label="Observações" rows={3} value={form.observacoes} onChange={(e) => update("observacoes", e.target.value)} />
           </div>
         )}
