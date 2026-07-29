@@ -3,7 +3,7 @@ import re
 import django_filters
 from django.db.models import Q
 
-from apps.sgp.models import UPF
+from apps.sgp.models import Activity, UPF
 
 
 class UPFFilter(django_filters.FilterSet):
@@ -39,3 +39,59 @@ class UPFFilter(django_filters.FilterSet):
         if digits_only:
             q |= Q(titular__cpf__startswith=digits_only)
         return queryset.filter(q)
+
+
+class ActivityFilter(django_filters.FilterSet):
+    projeto = django_filters.NumberFilter(field_name="acao__meta__projeto_id", label="Projeto")
+    acao = django_filters.NumberFilter(field_name="acao_id", label="Ação")
+    territorio_id = django_filters.NumberFilter(
+        field_name="municipio__territory_id", label="Território"
+    )
+    tecnico_id = django_filters.NumberFilter(
+        field_name="tecnico_responsavel_id", label="Técnico Responsável"
+    )
+    tipo_atividade = django_filters.ChoiceFilter(
+        choices=[
+            ("visita_tecnica", "Visita técnica"),
+            ("reuniao_comunitaria", "Reunião comunitária"),
+            ("oficina", "Oficina"),
+            ("intercambio", "Intercâmbio"),
+            ("curso_capacitacao", "Curso/Capacitação"),
+            ("dia_de_campo", "Dia de campo"),
+            ("seminario", "Seminário"),
+            ("encontro", "Encontro"),
+            ("dia_de_partilha", "Dia de partilha"),
+            ("atividade_interna", "Atividade interna"),
+            ("pesquisa_de_campo", "Pesquisa de campo"),
+            ("ater", "Assistência técnica/ATER"),
+            ("outro", "Outro"),
+        ],
+        label="Tipo de Atividade",
+    )
+    status = django_filters.ChoiceFilter(
+        choices=[
+            ("planejado", "Planejado"),
+            ("agendado", "Agendado"),
+            ("em_andamento", "Em andamento"),
+            ("concluido", "Concluído"),
+            ("concluido_sem_evidencia", "Concluído sem evidência"),
+            ("adiada", "Adiada"),
+            ("nao_realizada", "Não realizada"),
+            ("cancelada", "Cancelada"),
+        ],
+        label="Status",
+    )
+    data_inicio_after = django_filters.DateFilter(
+        field_name="data_inicio", lookup_expr="gte", label="Data Início (após)"
+    )
+    data_inicio_before = django_filters.DateFilter(
+        field_name="data_inicio", lookup_expr="lte", label="Data Início (antes)"
+    )
+
+    class Meta:
+        model = Activity
+        fields = [
+            "projeto", "acao", "territorio_id", "tecnico_id",
+            "tipo_atividade", "status",
+            "data_inicio_after", "data_inicio_before",
+        ]

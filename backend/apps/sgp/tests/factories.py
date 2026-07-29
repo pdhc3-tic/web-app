@@ -2,6 +2,7 @@ import factory
 
 from apps.core.tests.factories import MunicipalityFactory, UserFactory
 from apps.sgp.models import (
+    Activity,
     Comunidade,
     Cultura,
     EspecieAnimal,
@@ -11,6 +12,7 @@ from apps.sgp.models import (
     UPF,
     UPFDocument,
 )
+from apps.sgp.models.workplan import WorkPlanAcao, WorkPlanMeta
 
 
 class ProjetoFactory(factory.django.DjangoModelFactory):
@@ -126,3 +128,62 @@ class ProductionFactory(factory.django.DjangoModelFactory):
     producao_estimada = "30.00"
     unidade_producao = "saca"
     sementes_crioulas = False
+
+
+# ---------------------------------------------------------------------------
+# WorkPlan factories
+# ---------------------------------------------------------------------------
+
+class WorkPlanMetaFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = WorkPlanMeta
+        django_get_or_create = ("numero",)
+
+    numero = factory.Sequence(lambda n: (n % 7) + 1)
+    titulo = factory.Sequence(lambda n: f"Meta {n}")
+    descricao = factory.Sequence(lambda n: f"Descrição da meta {n}")
+    data_inicio = factory.LazyFunction(
+        lambda: __import__("datetime").date(2026, 1, 1)
+    )
+    data_fim = factory.LazyFunction(
+        lambda: __import__("datetime").date(2026, 12, 31)
+    )
+    criado_por = factory.SubFactory(UserFactory)
+
+
+class WorkPlanAcaoFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = WorkPlanAcao
+
+    meta = factory.SubFactory(WorkPlanMetaFactory)
+    numero = factory.Sequence(lambda n: f"{(n % 7) + 1}.{(n % 5) + 1}")
+    descricao = factory.Sequence(lambda n: f"Ação {n}")
+    tipo_unidade = 1
+    quantidade_planejada = 10
+    valor_unitario = 100
+
+
+# ---------------------------------------------------------------------------
+# Activity factory
+# ---------------------------------------------------------------------------
+
+class ActivityFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Activity
+
+    titulo = factory.Sequence(lambda n: f"Atividade {n}")
+    tipo_atividade = "visita_tecnica"
+    acao = factory.SubFactory(WorkPlanAcaoFactory)
+    forma_atuacao = "realizacao"
+    tecnico_responsavel = factory.SubFactory(UserFactory)
+    municipio = factory.SubFactory(MunicipalityFactory)
+    ambito = "municipal"
+    data_inicio = factory.LazyFunction(
+        lambda: __import__("datetime").date(2026, 6, 1)
+    )
+    data_fim = factory.LazyFunction(
+        lambda: __import__("datetime").date(2026, 6, 30)
+    )
+    descricao_narrativa = factory.Sequence(lambda n: f"Narrativa da atividade {n}")
+    status = "planejado"
+    ativo = True

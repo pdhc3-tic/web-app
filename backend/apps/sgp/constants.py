@@ -127,3 +127,48 @@ PARENTESCO_CHOICES = [
     ("neto", "Neto(a)"),
     ("outro", "Outro"),
 ]
+
+# ---------------------------------------------------------------------------
+# Plano de Trabalho — Metas & Ações
+# ---------------------------------------------------------------------------
+
+STATUS_WORKPLAN = [
+    ("no_prazo", "No Prazo"),
+    ("em_atraso", "Em Atraso"),
+    ("concluida", "Concluída"),
+]
+
+TIPO_UNIDADE_MEDIDA = [
+    (1, "Seminário"),
+    (2, "Oficina"),
+    (3, "Curso / Capacitação"),
+    (4, "Plano"),
+    (5, "Relatório de pesquisas"),
+    (6, "Intercâmbio"),
+    (7, "Conteúdo audiovisual"),
+    (8, "Visita técnica"),
+    (9, "Encontro / Reunião"),
+    (10, "Unidade implementada"),
+    (11, "Família atendida"),
+    (12, "Outro"),
+]
+
+ODS_CHOICES = [
+    (1, "ODS 1 – Erradicação da Pobreza"),
+    (2, "ODS 2 – Fome Zero e Agricultura Sustentável"),
+    (3, "ODS 3 – Saúde e Bem-Estar"),
+    (4, "ODS 4 – Educação de Qualidade"),
+    (5, "ODS 5 – Igualdade de Gênero"),
+    (6, "ODS 6 – Água Potável e Saneamento"),
+    (7, "ODS 7 – Energia Acessível e Limpa"),
+    (8, "ODS 8 – Trabalho Decente e Crescimento Econômico"),
+    (9, "ODS 9 – Indústria, Inovação e Infraestrutura"),
+    (10, "ODS 10 – Redução das Desigualdades"),
+    (11, "ODS 11 – Cidades e Comunidades Sustentáveis"),
+    (12, "ODS 12 – Consumo e Produção Responsáveis"),
+    (13, "ODS 13 – Ação contra a Mudança Global do Clima"),
+    (14, "ODS 14 – Vida na Água"),
+    (15, "ODS 15 – Vida Terrestre"),
+    (16, "ODS 16 – Paz, Justiça e Instituições Eficazes"),
+    (17, "ODS 17 – Parcerias e Meios de Implementação"),
+]
