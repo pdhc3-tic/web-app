@@ -605,7 +605,7 @@ class ActivityListSerializer(serializers.ModelSerializer):
             "data_inicio", "data_fim",
             "status", "status_display",
             "tecnico_responsavel", "tecnico_nome",
-            "total_participantes", "atrasada",
+            "total_participantes", "atrasada", "google_calendar_sync_status",
             "ativo", "criado_em",
         ]
         read_only_fields = fields
@@ -616,7 +616,7 @@ class ActivityListSerializer(serializers.ModelSerializer):
     def get_atrasada(self, obj):
         if obj.status in STATUS_TERMINAIS:
             return False
-        return obj.data_fim < timezone.localdate()
+        return obj.data_fim < timezone.now()
 
 
 class ActivityDetailSerializer(serializers.ModelSerializer):
@@ -701,13 +701,16 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             "criado_por", "criado_em", "atualizado_em",
             # Sync SCA
             "device_id", "uuid_local",
+            # Google Calendar
+            "google_calendar_event_id", "google_calendar_sync_status",
         ]
         read_only_fields = [
             "id", "criado_por", "criado_em", "atualizado_em",
             "tipo_atividade_display", "forma_atuacao_display",
             "ambito_display", "status_display",
             "atrasada", "total_participantes", "transicoes_permitidas",
-            "territorio_id",
+            "territorio_id", "google_calendar_event_id",
+            "google_calendar_sync_status",
         ]
 
     # ── SerializerMethodFields ───────────────────────────────────────────────
@@ -715,7 +718,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
     def get_atrasada(self, obj):
         if obj.status in STATUS_TERMINAIS:
             return False
-        return obj.data_fim < timezone.localdate()
+        return obj.data_fim < timezone.now()
 
     def get_total_participantes(self, obj):
         return obj.membros_participantes.count()
@@ -763,10 +766,9 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
     def validate_data_fim(self, value):
         data_inicio = self.initial_data.get("data_inicio")
         if data_inicio and value:
-            from datetime import date as date_type
-            from rest_framework.fields import DateField as DRFDateField
+            from rest_framework.fields import DateTimeField as DRFDateTimeField
             try:
-                di = DRFDateField().to_internal_value(data_inicio)
+                di = DRFDateTimeField().to_internal_value(data_inicio)
                 if value < di:
                     raise serializers.ValidationError(
                         "data_fim não pode ser anterior a data_inicio."
@@ -925,6 +927,7 @@ class ActivityCalendarioSerializer(serializers.ModelSerializer):
             "tipo_atividade_display",
             "status",
             "status_display",
+            "google_calendar_sync_status",
             "atrasada",
             "cor",
             "data_inicio",
@@ -939,7 +942,7 @@ class ActivityCalendarioSerializer(serializers.ModelSerializer):
         if obj.status in STATUS_TERMINAIS:
             return False
         from django.utils import timezone
-        return obj.data_fim < timezone.localdate()
+        return obj.data_fim < timezone.now()
 
     def get_cor(self, obj) -> str:
         return STATUS_COR_MAP.get(obj.status, "#6B7280")

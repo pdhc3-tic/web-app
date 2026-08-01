@@ -283,6 +283,25 @@ DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@pdhc.ufersa.edu.br
 
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "https://pdhc.ufersa.edu.br")
 
+# GOOGLE CALENDAR
+GOOGLE_CALENDAR_SERVICE_ACCOUNT_INFO = os.getenv("GOOGLE_CALENDAR_SERVICE_ACCOUNT_INFO", "")
+GOOGLE_CALENDAR_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_CALENDAR_SERVICE_ACCOUNT_FILE", "")
+GOOGLE_CALENDAR_DELEGATED_USER = os.getenv("GOOGLE_CALENDAR_DELEGATED_USER", "")
+
+# SENTRY
+SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+if SENTRY_DSN:
+    try:
+        import sentry_sdk
+
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            send_default_pii=False,
+            traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0")),
+        )
+    except ImportError:
+        pass
+
 # CACHES : UTIZEI O BANCO 1 DO REDIS POIS O BANCO 0 É O CELERY QUEM ESTÁ USANDO.
 CACHES = {
     "default": {

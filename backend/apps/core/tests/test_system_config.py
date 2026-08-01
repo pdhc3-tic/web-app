@@ -144,22 +144,25 @@ class TestAPI:
         assert response.data["valor"] == 42
         assert isinstance(response.data["valor"], int)
 
-    def test_get_list_returns_typed_value(
-        self, api_client, config_int, super_admin_user
-    ):
+    def test_get_list_returns_typed_value(self, api_client, super_admin_user):
         SystemConfig.objects.create(
-            chave="test_bool_param",
+            chave="aaa_test_integer_param",
+            valor="42",
+            tipo=TipoConfiguracao.INTEGER,
+        )
+        SystemConfig.objects.create(
+            chave="aaa_test_bool_param",
             valor="True",
             tipo=TipoConfiguracao.BOOLEAN,
         )
         api_client.force_authenticate(user=super_admin_user)
-        response = api_client.get("/api/v1/system-config/?limit=100")
+        response = api_client.get("/api/v1/system-config/")
         assert response.status_code == status.HTTP_200_OK
         results = {r["chave"]: r for r in response.data["results"]}
-        assert results["test_integer_param"]["valor"] == 42
-        assert isinstance(results["test_integer_param"]["valor"], int)
-        assert results["test_bool_param"]["valor"] is True
-        assert isinstance(results["test_bool_param"]["valor"], bool)
+        assert results["aaa_test_integer_param"]["valor"] == 42
+        assert isinstance(results["aaa_test_integer_param"]["valor"], int)
+        assert results["aaa_test_bool_param"]["valor"] is True
+        assert isinstance(results["aaa_test_bool_param"]["valor"], bool)
 
     def test_patch_creates_audit_log_with_old_and_new_values(
         self, api_client, config_int, super_admin_user
