@@ -46,6 +46,24 @@ class User(AbstractBaseUser, PermissionsMixin):
     foto_url = models.URLField(blank=True, default="")
     ultimo_login = models.DateTimeField(null=True, blank=True)
 
+    # Acesso do SCA — flag consumida pelo endpoint de status
+    acesso_revogado = models.BooleanField(
+        default=False,
+        verbose_name="Acesso revogado",
+        help_text="Se True, o app SCA apaga os dados locais e exige novo login (wipe remoto).",
+    )
+    acesso_revogado_em = models.DateTimeField(
+        null=True, blank=True, verbose_name="Revogado em"
+    )
+    acesso_revogado_por = models.ForeignKey(
+        "core.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="revogacoes_realizadas",
+        verbose_name="Revogado por",
+    )
+
     objects = UserManager()
 
     USERNAME_FIELD = "email"

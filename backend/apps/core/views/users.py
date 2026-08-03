@@ -1,9 +1,12 @@
 import logging
 
+from django.utils import timezone
 from django_filters import rest_framework as django_filters
 from rest_framework import filters, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
 from apps.core.models import User
 from apps.core.permissions import IsSuperAdmin
@@ -131,3 +134,89 @@ class UserViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         self.perform_destroy(instance)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    # ------------------------------------------------------------------
+    # Acesso do SCA — revogar / reativar
+    # ------------------------------------------------------------------
+    def _invalidate_all_sessions(self, user):
+        """Blacklista todos os refresh tokens ativos do usuário (todos os dispositivos)."""
+        tokens = OutstandingToken.objects.filter(user=user)
+        revoked = 0
+        for token in tokens:
+            _, created = BlacklistedToken.objects.get_or_create(token=token)
+            revoked += int(created)
+        return revoked
+
+    @action(detail=True, methods=["patch"], url_path="revogar-acesso")
+    def revogar_acesso(self, request, pk=None):
+        instance = self.get_object()
+        instance.acesso_revogado = True
+        instance.acesso_revogado_em = timezone.now()
+        instance.acesso_revogado_por = request.user
+        instance.save(update_fields=[
+            "acesso_revogado",
+            "acesso_revogado_em",
+            "acesso_revogado_por",
+        ])
+        revoked = self._invalidate_all_sessions(instance)
+        log_audit(
+            user=request.user,
+            acao="user.access_revoked",
+            modulo="core",
+            entidade="User",
+            entidade_id=instance.pk,
+            valores_anteriores={"acesso_revogado": False},
+            valores_novos={
+                "acesso_revogado": True,
+                "sessoes_invalidadas": revoked,
+            },
+            request=request,
+        )
+        audit_event_logger.info(
+            "user.access_revoked actor_user_id=%s target_user_id=%s sessions=%s",
+            getattr(request.user, "pk", None),
+            instance.pk,
+            revoked,
+        )
+        return Response(
+            {
+                "message": "Acesso revogado. O app SCA fará o wipe remoto no próximo sync.",
+                "acesso_revogado": True,
+                "sessoes_invalidadas": revoked,
+            }
+        )
+
+    @action(detail=True, methods=["patch"], url_path="reativar-acesso")
+    def reativar_acesso(self, request, pk=None):
+        instance = self.get_object()
+        instance.acesso_revogado = False
+        instance.acesso_revogado_em = None
+        instance.acesso_revogado_por = None
+        instance.save(update_fields=[
+            "acesso_revogado",
+            "acesso_revogado_em",
+            "acesso_revogado_por",
+        ])
+        revoked = self._invalidate_all_sessions(instance)
+        log_audit(
+            user=request.user,
+            acao="user.access_reactivated",
+            modulo="core",
+            entidade="User",
+            entidade_id=instance.pk,
+            valores_anteriores={"acesso_revogado": True},
+            valores_novos={"acesso_revogado": False},
+            request=request,
+        )
+        audit_event_logger.info(
+            "user.access_reactivated actor_user_id=%s target_user_id=%s",
+            getattr(request.user, "pk", None),
+            instance.pk,
+        )
+        return Response(
+            {
+                "message": "Acesso reativado. O técnico precisa fazer um novo login (sessões antigas invalidadas).",
+                "acesso_revogado": False,
+                "sessoes_invalidadas": revoked,
+            }
+        )
