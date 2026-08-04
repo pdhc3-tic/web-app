@@ -534,6 +534,11 @@ class TestPerformanceIndexes:
         qs = UPF.objects.filter(
             municipio=municipio_rn, territorio=territory_rn
         )
+        # Com poucas linhas o planner pode preferir seq scan dependendo das
+        # estatísticas locais do banco; desabilita seq scan para verificar de
+        # forma determinística que existe índice capaz de atender a consulta.
+        with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL enable_seqscan = off")
         explain = qs.explain(analyze=True)
         assert "Index Scan" in explain or "Bitmap Heap Scan" in explain or "Index Only Scan" in explain
 
