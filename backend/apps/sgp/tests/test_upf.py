@@ -177,8 +177,33 @@ class TestSerializers:
             "territorio",
             "criado_em",
             "ativa",
+            "foto_url",
         }
         assert set(result.keys()) == expected_keys
+
+    def test_list_serializer_includes_foto_url(
+        self, auth_client, upf_payload_minimo
+    ):
+        auth_client.post(
+            "/api/v1/upfs/", {**upf_payload_minimo, "foto_url": "https://example.com/foto.jpg"}, format="json"
+        )
+        response = auth_client.get("/api/v1/upfs/")
+        assert response.status_code == 200
+
+        result = response.data["results"][0]
+        assert result["foto_url"] == "https://example.com/foto.jpg"
+
+    def test_list_serializer_foto_url_empty_when_not_set(
+        self, auth_client, upf_payload_minimo
+    ):
+        auth_client.post(
+            "/api/v1/upfs/", upf_payload_minimo, format="json"
+        )
+        response = auth_client.get("/api/v1/upfs/")
+        assert response.status_code == 200
+
+        result = response.data["results"][0]
+        assert result["foto_url"] == ""
 
     def test_detail_serializer_returns_full_payload_with_membros_array(
         self, auth_client, upf_payload_completo
