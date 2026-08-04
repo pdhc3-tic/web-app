@@ -2,16 +2,17 @@ import { apiClient } from "@/app/lib/api";
 import type { Paginated } from "@/app/lib/users";
 import type { NestedRef } from "@/app/lib/upfs";
 import type { BadgeStatus } from "@/app/components/ui/Badge/Badge";
-import type { SelectOption } from "@/app/components/ui/Select/Select";
 
 // ─── Constantes espelhadas do backend ────────────────────────────────────────
 // Fonte: apps/sgp/models/activity.py.
 //
-// Servem de FALLBACK para fetchAtividadeChoices(): o SGPChoicesView
+// Servem de FALLBACK em @/app/lib/choices.ts: o SGPChoicesView
 // (GET /api/v1/choices/) ainda não expõe os choices de atividade, então
 // enquanto isso a UI usa estas listas. Assim que o backend incluir as chaves
 // `tipo_atividade`, `forma_atuacao`, `ambito` e `status`, elas passam a valer
 // automaticamente e estas constantes viram só rede de segurança.
+//
+// Em componente, use `useSgpChoices()` em vez destas constantes.
 
 /** Espelha TIPO_ATIVIDADE_CHOICES. */
 export const TIPO_ATIVIDADE_OPTIONS = [
@@ -219,89 +220,6 @@ export type AtividadeWritePayload = {
   status: string;
   justificativa: string;
 };
-
-// ─── API — Choices ───────────────────────────────────────────────────────────
-
-/** Os quatro selects de choice do módulo de atividades. */
-export type AtividadeChoices = {
-  tipo_atividade: SelectOption[];
-  forma_atuacao: SelectOption[];
-  ambito: SelectOption[];
-  status: SelectOption[];
-};
-
-/** Fallback usado enquanto o backend não expõe os choices de atividade. */
-export const FALLBACK_CHOICES: AtividadeChoices = {
-  tipo_atividade: TIPO_ATIVIDADE_OPTIONS,
-  forma_atuacao: FORMA_ATUACAO_OPTIONS,
-  ambito: AMBITO_OPTIONS,
-  status: STATUS_OPTIONS,
-};
-
-/** Formato de cada item no SGPChoicesView. `value` pode vir int ou string. */
-type RawChoice = { value: string | number; label: string };
-
-/**
- * Aceita a lista do backend só quando ela é um array não-vazio de itens bem
- * formados. Lista ausente, vazia ou malformada cai no fallback — melhor uma
- * lista defasada do que um select vazio que trava o formulário.
- */
-function normalizeChoiceList(
-  raw: unknown,
-  fallback: SelectOption[],
-): SelectOption[] {
-  if (!Array.isArray(raw) || raw.length === 0) return fallback;
-
-  const options: SelectOption[] = [];
-  for (const item of raw as RawChoice[]) {
-    if (!item || typeof item !== "object") return fallback;
-    if (item.value === undefined || item.value === null) return fallback;
-    if (typeof item.label !== "string") return fallback;
-    // O <Select> opera com string; choices de atividade são CharField no
-    // backend, mas coagimos por segurança caso venham como int.
-    options.push({ value: String(item.value), label: item.label });
-  }
-  return options;
-}
-
-/**
- * GET /api/v1/choices/ — choices do SGP servidos pelo backend.
- *
- * Hoje o SGPChoicesView só devolve os choices de UPF e membro; as chaves de
- * atividade ainda não existem. Esta função já consome o endpoint e usa o que
- * encontrar, caindo nas constantes locais para cada chave ausente — então no
- * dia em que o backend incluir `tipo_atividade`, `forma_atuacao`, `ambito` e
- * `status`, a UI passa a refletir o backend sem nenhuma alteração no front.
- *
- * Erro de rede ou 403 também caem no fallback: os choices são estáveis o
- * bastante para não valer a pena bloquear o formulário por causa deles.
- */
-export async function fetchAtividadeChoices(
-  signal?: AbortSignal,
-): Promise<AtividadeChoices> {
-  let data: Record<string, unknown>;
-  try {
-    const res = await apiClient("/api/v1/choices/", { signal });
-    data = (await res.json()) as Record<string, unknown>;
-  } catch {
-    return FALLBACK_CHOICES;
-  }
-
-  if (!data || typeof data !== "object") return FALLBACK_CHOICES;
-
-  return {
-    tipo_atividade: normalizeChoiceList(
-      data.tipo_atividade,
-      FALLBACK_CHOICES.tipo_atividade,
-    ),
-    forma_atuacao: normalizeChoiceList(
-      data.forma_atuacao,
-      FALLBACK_CHOICES.forma_atuacao,
-    ),
-    ambito: normalizeChoiceList(data.ambito, FALLBACK_CHOICES.ambito),
-    status: normalizeChoiceList(data.status, FALLBACK_CHOICES.status),
-  };
-}
 
 // ─── API — Listagem ──────────────────────────────────────────────────────────
 

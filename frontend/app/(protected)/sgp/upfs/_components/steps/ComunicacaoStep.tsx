@@ -3,7 +3,8 @@
 import { Input } from "@/app/components/ui/Input/Input";
 import { Select } from "@/app/components/ui/Select/Select";
 import { formatPhoneInput } from "@/app/lib/format";
-import { DISPOSITIVO_OPTIONS, withCurrentValue } from "../upfFormOptions";
+import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
+import { withCurrentValue } from "../upfFormOptions";
 import type { UpfFormData } from "../upfForm";
 
 type StepProps = {
@@ -18,6 +19,7 @@ const INTERNET_OPTIONS = [
 ];
 
 export function ComunicacaoStep({ form, errors, onChange }: StepProps) {
+  const choices = useSgpChoices();
   return (
     <div className="grid gap-5 sm:grid-cols-2">
       <Input
@@ -48,7 +50,7 @@ export function ComunicacaoStep({ form, errors, onChange }: StepProps) {
 
       <Select
         label="Dispositivo"
-        options={withCurrentValue(DISPOSITIVO_OPTIONS, form.dispositivo)}
+        options={withCurrentValue(choices.dispositivo, form.dispositivo)}
         value={form.dispositivo}
         onChange={(v) => onChange({ dispositivo: v })}
       />

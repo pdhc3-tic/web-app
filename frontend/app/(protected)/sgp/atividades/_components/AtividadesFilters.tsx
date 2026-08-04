@@ -2,7 +2,8 @@
 
 import { X } from "lucide-react";
 import { Select, type SelectOption } from "@/app/components/ui/Select/Select";
-import type { AcaoPT, AtividadeChoices } from "@/app/lib/atividades";
+import type { AcaoPT } from "@/app/lib/atividades";
+import type { SgpChoices } from "@/app/lib/choices";
 import { AcaoCombobox } from "./AcaoCombobox";
 
 const fieldLabelClass = "text-label font-medium text-text leading-[1.2]";
@@ -39,7 +40,7 @@ type Props = {
   /** Ação correspondente a `value.acao`, resolvida pela página. */
   acaoSelecionada: AcaoPT | null;
   /** Choices vindos de /api/v1/choices/ (com fallback local). */
-  choices: AtividadeChoices;
+  choices: SgpChoices;
   projetoOptions: SelectOption[];
   territorioOptions: SelectOption[];
   tecnicoOptions: SelectOption[];

@@ -13,20 +13,18 @@ import { SlideOver } from "@/app/components/ui/SlideOver/SlideOver";
 import { useToast } from "@/app/components/ui/Toast/Toast";
 import { ApiError } from "@/app/lib/api";
 import {
-  FALLBACK_CHOICES,
   STATUS_INICIAIS,
   createAtividade,
-  fetchAtividadeChoices,
   getAtividade,
   listAcoes,
   listTecnicos,
   statusLabel,
   updateAtividade,
   type AcaoPT,
-  type AtividadeChoices,
   type AtividadeDetail,
   type TecnicoOption,
 } from "@/app/lib/atividades";
+import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
 import {
   fetchComunidadeOptions,
   fetchMunicipalitiesByState,
@@ -63,6 +61,7 @@ export function AtividadeForm({ mode, atividadeId, initialData }: Props) {
   const router = useRouter();
   const { showToast } = useToast();
   const { data: session } = useSession();
+  const choices = useSgpChoices();
 
   const [form, setForm] = useState<AtividadeFormData>(() =>
     initialData ? detailToForm(initialData) : EMPTY_FORM,
@@ -79,24 +78,21 @@ export function AtividadeForm({ mode, atividadeId, initialData }: Props) {
   const [estadoOptions, setEstadoOptions] = useState<SelectOption[]>([]);
   const [municipioOptions, setMunicipioOptions] = useState<MunicipalityOpt[]>([]);
   const [comunidadeOptions, setComunidadeOptions] = useState<SelectOption[]>([]);
-  const [choices, setChoices] = useState<AtividadeChoices>(FALLBACK_CHOICES);
   const [relacionadosLoading, setRelacionadosLoading] = useState(true);
 
-  // ── Carga dos dados relacionados (choices, ações, técnicos, estados) ──────
+  // ── Carga dos dados relacionados (ações, técnicos, estados) ───────────────
   useEffect(() => {
     const controller = new AbortController();
     Promise.all([
       listAcoes(controller.signal).catch(() => [] as AcaoPT[]),
       listTecnicos(controller.signal),
       fetchStateOptions(controller.signal).catch(() => [] as SelectOption[]),
-      fetchAtividadeChoices(controller.signal),
     ])
-      .then(([acoesData, tecnicosData, estadosData, choicesData]) => {
+      .then(([acoesData, tecnicosData, estadosData]) => {
         if (controller.signal.aborted) return;
         setAcoes(acoesData);
         setTecnicos(tecnicosData);
         setEstadoOptions(estadosData);
-        setChoices(choicesData);
       })
       .finally(() => {
         if (!controller.signal.aborted) setRelacionadosLoading(false);

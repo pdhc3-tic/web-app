@@ -17,17 +17,14 @@ import {
   getMembro,
   calcIdade,
   saudeLabel,
-  PARENTESCO_OPTIONS,
   SAUDE_OPTIONS,
   type MembroDetail,
   type MembroListItem,
   type MembroWritePayload,
 } from "@/app/lib/membros";
 import { formatCpfInput, isValidCpf, maskCpf } from "@/app/lib/format";
+import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
 import {
-  COR_RACA_OPTIONS,
-  ESCOLARIDADE_OPTIONS,
-  GENERO_OPTIONS,
   SEGURIDADE_OPTIONS,
   withCurrentValue,
 } from "@/app/(protected)/sgp/upfs/_components/upfFormOptions";
@@ -140,6 +137,7 @@ export function MembroSlideOver({
   onSaved,
   onEditFromView,
 }: Props) {
+  const choices = useSgpChoices();
   const [membro, setMembro] = useState<MembroDetail | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
@@ -191,12 +189,12 @@ export function MembroSlideOver({
   // Titular só é desabilitado se já existe titular E este membro não é ele.
   const parentescoOptions = useMemo(() => {
     const isCurrentTitular = membro?.parentesco === "titular";
-    return PARENTESCO_OPTIONS.map((p) => ({
+    return choices.parentesco.map((p) => ({
       value: p.value,
       label: p.label,
       disabled: p.value === "titular" && titularExists && !isCurrentTitular,
     }));
-  }, [titularExists, membro]);
+  }, [choices.parentesco, titularExists, membro]);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -399,6 +397,7 @@ function FormBody({
   update,
   toggleMulti,
 }: FormBodyProps) {
+  const choices = useSgpChoices();
   return (
     <div className="flex flex-col gap-4 px-4 py-4">
       {globalError && (
@@ -449,7 +448,7 @@ function FormBody({
           label="Gênero"
           value={form.genero}
           onChange={(v) => update("genero", v)}
-          options={withCurrentValue(GENERO_OPTIONS, form.genero)}
+          options={withCurrentValue(choices.genero, form.genero)}
           error={fieldErrors.genero}
           placeholder="Selecione..."
         />
@@ -457,7 +456,7 @@ function FormBody({
           label="Cor/Raça"
           value={form.cor_raca}
           onChange={(v) => update("cor_raca", v)}
-          options={withCurrentValue(COR_RACA_OPTIONS, form.cor_raca)}
+          options={withCurrentValue(choices.cor_raca, form.cor_raca)}
           error={fieldErrors.cor_raca}
           placeholder="Selecione..."
         />
@@ -494,7 +493,7 @@ function FormBody({
           label="Escolaridade"
           value={form.escolaridade}
           onChange={(v) => update("escolaridade", v)}
-          options={withCurrentValue(ESCOLARIDADE_OPTIONS, form.escolaridade)}
+          options={withCurrentValue(choices.escolaridade, form.escolaridade)}
           error={fieldErrors.escolaridade}
           placeholder="Selecione..."
         />

@@ -12,15 +12,13 @@ import Spinner from "@/app/components/icons/Spinner";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 import { ApiError } from "@/app/lib/api";
 import {
-  FALLBACK_CHOICES,
-  fetchAtividadeChoices,
   listAcoes,
   listAtividades,
   listTecnicos,
   type AcaoPT,
-  type AtividadeChoices,
   type AtividadeListItem,
 } from "@/app/lib/atividades";
+import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
 import { fetchProjetoOptions, fetchTerritoryOptions } from "@/app/lib/upfs";
 import {
   AtividadesFilters,
@@ -44,6 +42,7 @@ function AtividadesView() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
+  const choices = useSgpChoices();
 
   const [filters, setFilters] = useState<AtividadesFiltersValue>(() => ({
     acao: searchParams.get("acao") ?? "",
@@ -74,7 +73,6 @@ function AtividadesView() {
   const [projetoOptions, setProjetoOptions] = useState<SelectOption[]>([]);
   const [territorioOptions, setTerritorioOptions] = useState<SelectOption[]>([]);
   const [tecnicoOptions, setTecnicoOptions] = useState<SelectOption[]>([]);
-  const [choices, setChoices] = useState<AtividadeChoices>(FALLBACK_CHOICES);
   const [optionsLoading, setOptionsLoading] = useState(true);
 
   const hasActiveFilters = useMemo(
@@ -109,9 +107,8 @@ function AtividadesView() {
       fetchProjetoOptions(controller.signal),
       fetchTerritoryOptions(controller.signal).catch(() => [] as SelectOption[]),
       listTecnicos(controller.signal),
-      fetchAtividadeChoices(controller.signal),
     ])
-      .then(([acoesData, projetos, territorios, tecnicos, choicesData]) => {
+      .then(([acoesData, projetos, territorios, tecnicos]) => {
         if (controller.signal.aborted) return;
         setAcoes(acoesData);
         setProjetoOptions(projetos);
@@ -119,7 +116,6 @@ function AtividadesView() {
         setTecnicoOptions(
           tecnicos.map((t) => ({ value: String(t.id), label: t.nome })),
         );
-        setChoices(choicesData);
       })
       .finally(() => {
         if (!controller.signal.aborted) setOptionsLoading(false);
