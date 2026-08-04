@@ -39,13 +39,6 @@ export function ComunicacaoStep({ form, errors, onChange }: StepProps) {
         error={errors.whatsapp}
       />
 
-      <Input
-        label="E-mail"
-        type="email"
-        value={form.email}
-        onChange={(e) => onChange({ email: e.target.value })}
-        error={errors.email}
-      />
       <Select
         label="Acesso à internet"
         options={INTERNET_OPTIONS}

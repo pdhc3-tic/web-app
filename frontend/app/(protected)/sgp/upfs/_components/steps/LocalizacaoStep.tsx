@@ -3,7 +3,7 @@
 import { Select, type SelectOption } from "@/app/components/ui/Select/Select";
 import { Input } from "@/app/components/ui/Input/Input";
 import { Label } from "@/app/components/ui/Label/Label";
-import { formatCep } from "@/app/lib/format";
+import { formatCepInput } from "@/app/lib/format";
 import { GpsCapture } from "../GpsCapture";
 import type { UpfFormData } from "../upfForm";
 
@@ -102,13 +102,12 @@ export function LocalizacaoStep({
 
       <Select
         label="Projeto"
+        required
         options={projetoOptions}
         value={form.projeto}
         onChange={(v) => onChange({ projeto: v })}
-        disabled
         placeholder="Selecione o projeto"
         error={errors.projeto}
-        helperText="Indisponível (pendência de backend)."
       />
 
       <div className="sm:col-span-2">
@@ -142,9 +141,10 @@ export function LocalizacaoStep({
       <Input
         label="CEP"
         inputMode="numeric"
+        maxLength={9}
+        placeholder="00000-000"
         value={form.cep}
-        onChange={(e) => onChange({ cep: e.target.value })}
-        onBlur={(e) => onChange({ cep: formatCep(e.target.value) })}
+        onChange={(e) => onChange({ cep: formatCepInput(e.target.value) })}
       />
     </div>
   );

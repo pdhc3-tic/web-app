@@ -33,6 +33,7 @@ import {
   type UpfsFiltersValue,
 } from "./_components/UpfsFilters";
 import { UpfsTable } from "./_components/UpfsTable";
+import { ViewToggle } from "./_components/ViewToggle";
 
 const SEARCH_DEBOUNCE_MS = 300;
 const DEFAULT_LIMIT = 50;
@@ -245,13 +246,16 @@ function UpfsView() {
       <PageHeader>
         <div className="flex w-full items-center justify-between gap-3">
           <h1 className="truncate text-base font-semibold text-text">UPFs</h1>
-          <Button
-            size="sm"
-            onClick={handleNewUpf}
-            leftIcon={<Plus className="h-4 w-4" />}
-          >
-            Nova UPF
-          </Button>
+          <div className="flex items-center gap-2">
+            <ViewToggle active="lista" />
+            <Button
+              size="sm"
+              onClick={handleNewUpf}
+              leftIcon={<Plus className="h-4 w-4" />}
+            >
+              Nova UPF
+            </Button>
+          </div>
         </div>
       </PageHeader>
 

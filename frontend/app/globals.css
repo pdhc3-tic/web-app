@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Estilos base do Leaflet (mapa reusável — ver components/sgp/MapView).
+   Precisam vir no topo: CSS exige @import antes de outras regras. */
+@import "leaflet/dist/leaflet.css";
+@import "leaflet.markercluster/dist/MarkerCluster.css";
+
 /*
   @theme (sem inline) faz o Tailwind v4:
     1. criar as CSS vars em :root  → --color-primary: #1b5e3b
