@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from datetime import timedelta
 from pathlib import Path
 import os
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 from celery.schedules import crontab
 
@@ -61,6 +62,7 @@ INSTALLED_APPS = [
     "django_filters",
     "django_celery_beat",
     "corsheaders",
+    "drf_spectacular",
     "apps.core",
     "apps.sgp",
     "apps.sgf",
@@ -75,6 +77,7 @@ AUTH_USER_MODEL = "core.User"
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "apps.core.middleware.ContentSecurityPolicyMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -161,6 +164,48 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 
+MEDIA_URL = os.getenv("MEDIA_URL", "/media/")
+MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", BASE_DIR / "media"))
+if not MEDIA_ROOT.is_absolute():
+    MEDIA_ROOT = BASE_DIR / MEDIA_ROOT
+
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(
+    os.getenv("DATA_UPLOAD_MAX_MEMORY_SIZE", "10485760")
+)
+FILE_UPLOAD_MAX_MEMORY_SIZE = int(
+    os.getenv("FILE_UPLOAD_MAX_MEMORY_SIZE", "10485760")
+)
+
+STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "local")
+R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID", "")
+R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY", "")
+R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "pdhc-iii")
+R2_ENDPOINT_URL = os.getenv("R2_ENDPOINT_URL", "")
+R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "")
+LOCAL_STORAGE_UPLOAD_URL = os.getenv(
+    "LOCAL_STORAGE_UPLOAD_URL",
+    "/api/v1/storage/local-upload/",
+)
+
+
+def _origin_from_url(value):
+    parsed = urlparse(value or "")
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+CSP_CONNECT_SRC = [
+    source
+    for source in [
+        "'self'",
+        "https://*.r2.cloudflarestorage.com",
+        _origin_from_url(R2_ENDPOINT_URL),
+        _origin_from_url(R2_PUBLIC_URL),
+    ]
+    if source
+]
+
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
@@ -180,6 +225,7 @@ REST_FRAMEWORK = {
         "auth_password_reset_ip": "5/hour",
         "notification_unread_count": "60/min",
     },
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "EXCEPTION_HANDLER": "setup.exceptions.custom_exception_handler",
     "NUM_PROXIES": 1,  # Railway usa 1 load balancer na frente
     # Isso faz o SimpleRateThrottle usar X-Forwarded-For
@@ -195,6 +241,17 @@ SIMPLE_JWT = {
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
     "AUTH_HEADER_TYPES": ("Bearer",),
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "PDHC API",
+    "DESCRIPTION": "API do Programa de Desenvolvimento Humano de Crianças e Adolescentes (PDHC)",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "SWAGGER_UI_SETTINGS": {
+        "deepLinking": True,
+        "persistAuthorization": True,
+    },
 }
 
 CORS_ALLOWED_ORIGINS = [

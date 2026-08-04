@@ -10,11 +10,15 @@ class CoreConfig(AppConfig):
         from apps.core.models.user_profile import UserProfile
         from apps.core.models.role import Role
         from apps.core.models.territory import Territory
+        from apps.core.models.state import State
+        from apps.core.models.municipality import Municipality
         from apps.core.signals.audit import _register_audited_model
         _register_audited_model(User, modulo="core")
         _register_audited_model(UserProfile, modulo="core")
         _register_audited_model(Role, modulo="core")
         _register_audited_model(Territory, modulo="core")
+        _register_audited_model(State, modulo="core")
+        _register_audited_model(Municipality, modulo="core")
         # Organization é auditada manualmente na view para incluir territórios M2M.
         # SystemConfig será adicionado aqui quando vier do main
         #_register_audited_model(SystemConfig, modulo="core")

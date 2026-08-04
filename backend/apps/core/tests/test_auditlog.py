@@ -16,7 +16,7 @@ def client():
 def superadmin():
     return UserFactory(is_superuser=True)
 
-#pytestmark = pytest.mark.django_db
+pytestmark = pytest.mark.django_db
 
 class TestAuditLogModel:
     @pytest.mark.django_db
@@ -112,10 +112,11 @@ class TestAuditLogModel:
         existe no banco.
         """
         with connection.cursor() as cursor:
-            constraints = connection.introspection.get_constraints(cursor, AuditLog._meta.db_table)
-        
-        index = constraints.get("idx_auditlog_entidade_ts")
-
-        assert index is not None
-        assert index["index"] is True
-        assert index["columns"] == ["entidade", "entidade_id", "timestamp"]
+            cursor.execute("""SET LOCAL enable_seqscan = off""")
+            cursor.execute("""
+                EXPLAIN SELECT * FROM core_auditlog
+                WHERE entidade = 'Projeto' AND entidade_id = '1'
+                ORDER BY timestamp DESC
+            """)
+            explain = "\n".join(row[0] for row in cursor.fetchall())
+        assert "idx_auditlog_entidade_ts" in explain

@@ -10,16 +10,6 @@ from unittest.mock import patch
 from setup.tasks import cleanup_expired_tokens
 
 from apps.core.tests.factories import UserFactory
-from django.core.cache import cache
-
-# O LocMemCache persiste entre testes no mesmo processo.
-# Sem limpeza, um teste "contamina" o outro. 
-# Por isso foi criado essa fixture para limpar o cache.
-@pytest.fixture(autouse=True)
-def limpa_cache():
-    cache.clear()
-    yield
-    cache.clear()
 
 @pytest.fixture
 def client():

@@ -1,10 +1,9 @@
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
-from .role import Role
-from apps.core.models.territory import Territory
+
 
 class UserManager(BaseUserManager):
-    def create_user(self, email: str, nome: str, role=None, password: str | None = None):
+    def create_user(self, email: str, nome: str, password: str | None = None):
         if not email:
             raise ValueError("O email é obrigatório.")
         if not nome:
@@ -13,7 +12,6 @@ class UserManager(BaseUserManager):
         user = self.model(
             email=self.normalize_email(email),
             nome=nome,
-            role=role,
         )
         user.set_password(password)
         user.save(using=self._db)
@@ -24,7 +22,6 @@ class UserManager(BaseUserManager):
         email: str,
         nome: str,
         password: str | None = None,
-        role=None,
     ):
         if password is None:
             raise ValueError("Superusuário precisa de senha.")
@@ -33,7 +30,6 @@ class UserManager(BaseUserManager):
             email=email,
             nome=nome,
             password=password,
-            role=role,
         )
         user.is_superuser = True
         user.ativo = True
@@ -49,9 +45,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     whatsapp = models.CharField(max_length=20, blank=True, default="")
     foto_url = models.URLField(blank=True, default="")
     ultimo_login = models.DateTimeField(null=True, blank=True)
-
-    role = models.ForeignKey(Role, on_delete=models.PROTECT, null=True, blank=True, related_name="users")
-    territorios = models.ManyToManyField(Territory, blank=True, related_name="users")
 
     objects = UserManager()
 

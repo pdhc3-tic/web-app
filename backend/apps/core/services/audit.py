@@ -1,70 +1,69 @@
-SENSITIVE_AUDIT_KEYS = {
-    "password",
-    "senha",
-    "senha_hash",
-    "nova_senha",
-    "access",
-    "access_token",
-    "refresh",
-    "refresh_token",
-    "authorization",
-    "cookie",
-    "cookies",
-    "token",
-    "token_hash",
-    "reset_token",
-    "payload",
-}
+"""
+Service de auditoria centralizado.
+
+Regra de uso:
+  - Views com request → log_audit(..., request=request)  → popula ip + user_agent
+  - Signals sem request → log_audit(..., request=None)   → ip=None, user_agent=None
+
+Nunca chamar AuditLog.objects.create() fora deste módulo.
+"""
+
+from apps.core.utils import get_client_ip
 
 
-def get_client_ip(request):
-    if request is None:
-        return None
-    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip() or None
-    return request.META.get("REMOTE_ADDR") or None
-
-
-def sanitize_audit_values(values):
-    if not values:
-        return {}
-    sanitized = {}
-    for key, value in values.items():
-        if key.lower() in SENSITIVE_AUDIT_KEYS:
-            continue
-        sanitized[key] = value
-    return sanitized
-
-
-def create_audit_log(
+def log_audit(
     *,
     user,
-    acao,
-    modulo="core",
-    entidade="",
-    entidade_id="",
+    acao: str,
+    modulo: str,
+    entidade: str,
+    entidade_id,
     valores_anteriores=None,
     valores_novos=None,
     request=None,
-    ip=None,
-    user_agent=None,
+    _ip=None,
+    _user_agent=None,
 ):
+    """
+    Cria um registro de AuditLog de forma padronizada.
+
+    Args:
+        user: instância do usuário responsável pela ação (pode ser None/anônimo).
+        acao: string descrevendo a ação. Convenções:
+          - Signals automáticos: ``CREATE``, ``UPDATE``, ``DELETE`` (maiúsculas).
+          - Views/Manuais: dot-notation com prefixo de contexto
+            (ex: ``user.access_changed``, ``organization.create``, ``auth.logout_success``).
+        modulo: app/módulo de origem (ex: ``core``).
+        entidade: nome da classe do modelo afetado (ex: ``Organization``).
+        entidade_id: pk da instância afetada (convertido para str automaticamente).
+        valores_anteriores: dict com estado anterior do objeto (opcional).
+        valores_novos: dict com estado posterior do objeto (opcional).
+        request: objeto HttpRequest; quando fornecido, extrai IP e User-Agent.
+        _ip: IP de override para contextos sem request (ex.: signals com thread-local).
+        _user_agent: User-Agent de override para contextos sem request.
+    """
+    # Import lazy para evitar import circular (models → services → models)
     from apps.core.models.audit_log import AuditLog
 
-    if ip is None:
+    ip = None
+    user_agent = ""
+    if request is not None:
         ip = get_client_ip(request)
-    if user_agent is None:
-        user_agent = request.META.get("HTTP_USER_AGENT", "") if request is not None else ""
+        user_agent = request.META.get("HTTP_USER_AGENT", "") or ""
+    else:
+        ip = _ip or None
+        user_agent = _user_agent or ""
+
+    authenticated_user = user if (user is not None and getattr(user, "is_authenticated", False)) else None
 
     return AuditLog.objects.create(
-        user=user,
+        user=authenticated_user,
         acao=acao,
         modulo=modulo,
         entidade=entidade,
-        entidade_id=str(entidade_id or ""),
-        valores_anteriores=sanitize_audit_values(valores_anteriores),
-        valores_novos=sanitize_audit_values(valores_novos),
-        ip=ip or None,
-        user_agent=user_agent or "",
+        entidade_id=str(entidade_id),
+        valores_anteriores=valores_anteriores or {},
+        valores_novos=valores_novos or {},
+        ip=ip,
+        user_agent=user_agent,
     )
