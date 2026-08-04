@@ -5,6 +5,8 @@ from apps.core.models.user_profile import UserProfile
 
 
 def user_has_role(user, slug: str) -> bool:
+    if not user.is_authenticated:
+        return False
     return UserProfile.objects.filter(user=user, perfil__slug=slug).exists()
 
 

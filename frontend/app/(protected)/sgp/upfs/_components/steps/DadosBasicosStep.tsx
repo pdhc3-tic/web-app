@@ -2,11 +2,11 @@
 
 import { Input } from "@/app/components/ui/Input/Input";
 import { Select } from "@/app/components/ui/Select/Select";
+import { PhotoUploader } from "@/app/components/sgp/PhotoUploader/PhotoUploader";
 import { formatCpfInput } from "@/app/lib/format";
 import {
   COR_RACA_OPTIONS,
   ESCOLARIDADE_OPTIONS,
-  ESTADO_CIVIL_OPTIONS,
   GENERO_OPTIONS,
   PCT_OPTIONS,
   POSSE_TERRA_OPTIONS,
@@ -19,9 +19,20 @@ type StepProps = {
   form: UpfFormData;
   errors: Record<string, string>;
   onChange: (patch: Partial<UpfFormData>) => void;
+  /** Presentes apenas em modo edição — a foto depende do id da UPF já existir. */
+  upfId?: string;
+  fotoUrl?: string | null;
+  onPhotoChange?: (url: string | null) => void;
 };
 
-export function DadosBasicosStep({ form, errors, onChange }: StepProps) {
+export function DadosBasicosStep({
+  form,
+  errors,
+  onChange,
+  upfId,
+  fotoUrl,
+  onPhotoChange,
+}: StepProps) {
   function toggleSeguridade(value: string) {
     const set = new Set(form.seguridade_social);
     if (set.has(value)) set.delete(value);
@@ -31,6 +42,27 @@ export function DadosBasicosStep({ form, errors, onChange }: StepProps) {
 
   return (
     <div className="grid gap-5 sm:grid-cols-2">
+      <div className="sm:col-span-2">
+        <span className="text-label font-medium text-text leading-[1.2]">
+          Foto do titular
+        </span>
+        <div className="mt-2">
+          {upfId ? (
+            <PhotoUploader
+              currentUrl={fotoUrl ?? null}
+              onChange={onPhotoChange ?? (() => {})}
+              uploadUrlEndpoint={`/api/v1/upfs/${upfId}/foto/upload-url/`}
+              confirmEndpoint={`/api/v1/upfs/${upfId}/foto/confirm/`}
+              deleteEndpoint={`/api/v1/upfs/${upfId}/foto/`}
+            />
+          ) : (
+            <p className="text-sm text-text-muted">
+              Foto pode ser adicionada após o cadastro inicial.
+            </p>
+          )}
+        </div>
+      </div>
+
       <Input
         label="Nome do titular"
         required
@@ -82,12 +114,6 @@ export function DadosBasicosStep({ form, errors, onChange }: StepProps) {
         onChange={(v) => onChange({ cor_raca: v })}
       />
 
-      <Select
-        label="Estado civil"
-        options={withCurrentValue(ESTADO_CIVIL_OPTIONS, form.estado_civil)}
-        value={form.estado_civil}
-        onChange={(v) => onChange({ estado_civil: v })}
-      />
       <Select
         label="Escolaridade"
         options={withCurrentValue(ESCOLARIDADE_OPTIONS, form.escolaridade)}

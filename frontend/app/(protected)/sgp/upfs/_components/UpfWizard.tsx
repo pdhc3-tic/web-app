@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircleIcon } from "@/app/components/icons";
 import { Button } from "@/app/components/ui/Button/Button";
+import { SlideOver } from "@/app/components/ui/SlideOver/SlideOver";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 import { ApiError } from "@/app/lib/api";
 import {
@@ -39,7 +40,6 @@ import { DadosBasicosStep } from "./steps/DadosBasicosStep";
 import { ComunicacaoStep } from "./steps/ComunicacaoStep";
 import { MoradiaStep } from "./steps/MoradiaStep";
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const FOCUS_SELECTOR =
   'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), [role="combobox"]:not([disabled])';
 
@@ -64,8 +64,7 @@ function validateStep(step: number, form: UpfFormData): Record<string, string> {
   if (step === 0) {
     if (!form.estado) errs.estado = "Selecione o estado.";
     if (!form.municipio) errs.municipio = "Selecione o município.";
-    // Projeto é opcional por ora (não há endpoint de cadastro de projetos);
-    // voltará a ser obrigatório quando o backend expuser a listagem.
+    if (!form.projeto) errs.projeto = "Selecione o projeto.";
   }
   if (step === 1) {
     if (!form.nome_titular.trim())
@@ -74,9 +73,6 @@ function validateStep(step: number, form: UpfFormData): Record<string, string> {
     else if (!isValidCpf(form.cpf)) errs.cpf = "CPF inválido.";
   }
   if (step === 2) {
-    if (form.email.trim() && !EMAIL_RE.test(form.email.trim())) {
-      errs.email = "Informe um e-mail válido.";
-    }
     if (form.telefone.trim() && !isValidPhone(form.telefone)) {
       errs.telefone = "Telefone incompleto. Use DDD + número.";
     }
@@ -94,6 +90,9 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
 
   const [form, setForm] = useState<UpfFormData>(() =>
     initialData ? detailToForm(initialData) : EMPTY_FORM,
+  );
+  const [fotoUrl, setFotoUrl] = useState<string | null>(
+    initialData?.foto_url || null,
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [currentStep, setCurrentStep] = useState(0);
@@ -119,6 +118,7 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
   );
 
   const [comunidadeModalOpen, setComunidadeModalOpen] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [draftDismissed, setDraftDismissed] = useState(false);
@@ -366,6 +366,22 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
     setDraftDismissed(true);
   }
 
+  // Descarta o rascunho (localStorage) e volta para a listagem.
+  function performCancel() {
+    clear();
+    router.push("/sgp/upfs/");
+  }
+
+  // Só confirma se há mudanças não salvas; caso contrário sai direto.
+  function handleCancel() {
+    if (submitting) return;
+    if (dirty.current) {
+      setCancelConfirmOpen(true);
+    } else {
+      performCancel();
+    }
+  }
+
   const showDraftPrompt = existing && !draftDismissed;
 
   return (
@@ -426,7 +442,14 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
           />
         )}
         {currentStep === 1 && (
-          <DadosBasicosStep form={form} errors={errors} onChange={patchForm} />
+          <DadosBasicosStep
+            form={form}
+            errors={errors}
+            onChange={patchForm}
+            upfId={mode === "edit" ? upfId : undefined}
+            fotoUrl={fotoUrl}
+            onPhotoChange={setFotoUrl}
+          />
         )}
         {currentStep === 2 && (
           <ComunicacaoStep form={form} errors={errors} onChange={patchForm} />
@@ -437,14 +460,15 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
       </div>
 
       <div className="flex items-center justify-between gap-3">
-        <div>
+        <Button variant="icon-label" onClick={handleCancel} disabled={submitting}>
+          Cancelar
+        </Button>
+        <div className="flex items-center gap-2">
           {currentStep > 0 && (
             <Button variant="secondary" onClick={handleBack} disabled={submitting}>
               Voltar
             </Button>
           )}
-        </div>
-        <div className="flex items-center gap-2">
           {currentStep < STEP_LABELS.length - 1 ? (
             <Button onClick={handleNext}>Avançar</Button>
           ) : (
@@ -463,6 +487,36 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
           onCreated={handleComunidadeCreated}
         />
       )}
+
+      <SlideOver
+        open={cancelConfirmOpen}
+        onClose={() => setCancelConfirmOpen(false)}
+        title={mode === "edit" ? "Descartar alterações?" : "Descartar cadastro?"}
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => setCancelConfirmOpen(false)}
+            >
+              Continuar editando
+            </Button>
+            <Button variant="danger" onClick={performCancel}>
+              Descartar
+            </Button>
+          </div>
+        }
+      >
+        <div className="flex items-start gap-3 px-4 py-6">
+          <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-error-bg text-error-text">
+            <AlertCircleIcon className="h-5 w-5" />
+          </span>
+          <p className="text-sm leading-relaxed text-text">
+            {mode === "edit"
+              ? "As alterações não salvas serão descartadas e você voltará para a listagem de UPFs."
+              : "As informações preenchidas serão descartadas e você voltará para a listagem de UPFs."}
+          </p>
+        </div>
+      </SlideOver>
     </div>
   );
 }

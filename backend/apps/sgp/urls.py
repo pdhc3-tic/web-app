@@ -1,7 +1,8 @@
-from django.urls import path
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    ActivityViewSet,
     ComunidadeViewSet,
     CulturaListView,
     EspecieAnimalListView,
@@ -12,11 +13,17 @@ from .views import (
     UPFDocumentViewSet,
     ProjetoViewSet,
 )
+from .views.workplan import WorkPlanAcaoViewSet, WorkPlanMetaViewSet
 
 router = DefaultRouter()
 router.register("upfs", UPFViewSet)
 router.register("projetos", ProjetoViewSet, basename="projeto")
 router.register('comunidades', ComunidadeViewSet, basename='comunidade')
+router.register("metas", WorkPlanMetaViewSet, basename="workplanmeta")
+router.register("acoes", WorkPlanAcaoViewSet, basename="workplanacao")
+
+sgp_router = DefaultRouter()
+sgp_router.register("atividades", ActivityViewSet, basename="atividade")
 
 comunidade_list = ComunidadeViewSet.as_view({
     'get': 'list',
@@ -46,6 +53,7 @@ production_detail = ProductionViewSet.as_view({
 })
 
 urlpatterns = router.urls + [
+    path("sgp/", include(sgp_router.urls)),
     path(
         "choices/",
         SGPChoicesView.as_view(),
