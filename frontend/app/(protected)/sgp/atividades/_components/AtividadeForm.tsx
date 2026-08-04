@@ -13,18 +13,17 @@ import { SlideOver } from "@/app/components/ui/SlideOver/SlideOver";
 import { useToast } from "@/app/components/ui/Toast/Toast";
 import { ApiError } from "@/app/lib/api";
 import {
-  AMBITO_OPTIONS,
-  FORMA_ATUACAO_OPTIONS,
+  FALLBACK_CHOICES,
   STATUS_INICIAIS,
-  STATUS_OPTIONS,
-  TIPO_ATIVIDADE_OPTIONS,
   createAtividade,
+  fetchAtividadeChoices,
   getAtividade,
   listAcoes,
   listTecnicos,
   statusLabel,
   updateAtividade,
   type AcaoPT,
+  type AtividadeChoices,
   type AtividadeDetail,
   type TecnicoOption,
 } from "@/app/lib/atividades";
@@ -80,21 +79,24 @@ export function AtividadeForm({ mode, atividadeId, initialData }: Props) {
   const [estadoOptions, setEstadoOptions] = useState<SelectOption[]>([]);
   const [municipioOptions, setMunicipioOptions] = useState<MunicipalityOpt[]>([]);
   const [comunidadeOptions, setComunidadeOptions] = useState<SelectOption[]>([]);
+  const [choices, setChoices] = useState<AtividadeChoices>(FALLBACK_CHOICES);
   const [relacionadosLoading, setRelacionadosLoading] = useState(true);
 
-  // ── Carga dos dados relacionados (ações, técnicos, estados) ───────────────
+  // ── Carga dos dados relacionados (choices, ações, técnicos, estados) ──────
   useEffect(() => {
     const controller = new AbortController();
     Promise.all([
       listAcoes(controller.signal).catch(() => [] as AcaoPT[]),
       listTecnicos(controller.signal),
       fetchStateOptions(controller.signal).catch(() => [] as SelectOption[]),
+      fetchAtividadeChoices(controller.signal),
     ])
-      .then(([acoesData, tecnicosData, estadosData]) => {
+      .then(([acoesData, tecnicosData, estadosData, choicesData]) => {
         if (controller.signal.aborted) return;
         setAcoes(acoesData);
         setTecnicos(tecnicosData);
         setEstadoOptions(estadosData);
+        setChoices(choicesData);
       })
       .finally(() => {
         if (!controller.signal.aborted) setRelacionadosLoading(false);
@@ -221,14 +223,14 @@ export function AtividadeForm({ mode, atividadeId, initialData }: Props) {
   // Edição: o status atual + as transições que o backend declara permitidas.
   const statusOptions = useMemo<SelectOption[]>(() => {
     if (mode === "create") {
-      return STATUS_OPTIONS.filter((s) => STATUS_INICIAIS.includes(s.value));
+      return choices.status.filter((s) => STATUS_INICIAIS.includes(s.value));
     }
     const permitidos = new Set([
       form.status,
       ...(initialData?.transicoes_permitidas ?? []),
     ]);
-    return STATUS_OPTIONS.filter((s) => permitidos.has(s.value));
-  }, [mode, form.status, initialData?.transicoes_permitidas]);
+    return choices.status.filter((s) => permitidos.has(s.value));
+  }, [mode, choices.status, form.status, initialData?.transicoes_permitidas]);
 
   const tecnicoOptions = useMemo<SelectOption[]>(() => {
     const base = tecnicos.map((t) => ({
@@ -363,7 +365,7 @@ export function AtividadeForm({ mode, atividadeId, initialData }: Props) {
           id={fieldId("tipo_atividade")}
           label="Tipo de atividade"
           required
-          options={TIPO_ATIVIDADE_OPTIONS}
+          options={choices.tipo_atividade}
           value={form.tipo_atividade}
           onChange={(v) => patchForm({ tipo_atividade: v })}
           error={errors.tipo_atividade}
@@ -372,7 +374,7 @@ export function AtividadeForm({ mode, atividadeId, initialData }: Props) {
           id={fieldId("forma_atuacao")}
           label="Forma de atuação"
           required
-          options={FORMA_ATUACAO_OPTIONS}
+          options={choices.forma_atuacao}
           value={form.forma_atuacao}
           onChange={(v) => patchForm({ forma_atuacao: v })}
           error={errors.forma_atuacao}
@@ -447,7 +449,7 @@ export function AtividadeForm({ mode, atividadeId, initialData }: Props) {
           id={fieldId("ambito")}
           label="Âmbito"
           required
-          options={AMBITO_OPTIONS}
+          options={choices.ambito}
           value={form.ambito}
           onChange={(v) => patchForm({ ambito: v })}
           error={errors.ambito}

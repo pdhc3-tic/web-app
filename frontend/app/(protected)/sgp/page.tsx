@@ -38,6 +38,7 @@ const SUBMODULES: Submodule[] = [
     title: "Atividades de Campo",
     description: "Registro e acompanhamento das atividades em campo.",
     Icon: ClipboardList,
+    href: "/sgp/atividades/",
   },
   {
     key: "calendario",

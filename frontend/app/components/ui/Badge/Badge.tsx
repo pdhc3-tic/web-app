@@ -12,7 +12,10 @@ const statusClass: Record<BadgeStatus, string> = {
   agendado: "bg-info-bg text-info-text border-info-text",
   "em-andamento": "bg-warning-bg text-warning-text border-warning-text",
   concluido: "bg-success-bg text-success-text border-success-text",
-  "sem-evidencia": "bg-neutral-bg text-neutral-text border-border border-dashed",
+  // Atenção (não neutro): concluída sem evidência é uma pendência, não um
+  // estado inerte. A borda tracejada mantém a distinção de "concluido" cheio.
+  "sem-evidencia":
+    "bg-warning-bg text-warning-text border-warning-text border-dashed",
   adiada: "bg-warning-bg text-warning-text border-warning-text border-dashed",
   "nao-realizada": "bg-error-bg text-error-text border-error-text",
   cancelada: "bg-neutral-bg text-neutral-text border-neutral-text line-through decoration-1",

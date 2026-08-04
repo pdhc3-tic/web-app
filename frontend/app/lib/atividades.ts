@@ -1,10 +1,17 @@
 import { apiClient } from "@/app/lib/api";
 import type { Paginated } from "@/app/lib/users";
 import type { NestedRef } from "@/app/lib/upfs";
+import type { BadgeStatus } from "@/app/components/ui/Badge/Badge";
+import type { SelectOption } from "@/app/components/ui/Select/Select";
 
 // ─── Constantes espelhadas do backend ────────────────────────────────────────
-// Fonte: apps/sgp/models/activity.py. Mantidas em sincronia manualmente — se o
-// backend alterar os choices, este arquivo precisa acompanhar.
+// Fonte: apps/sgp/models/activity.py.
+//
+// Servem de FALLBACK para fetchAtividadeChoices(): o SGPChoicesView
+// (GET /api/v1/choices/) ainda não expõe os choices de atividade, então
+// enquanto isso a UI usa estas listas. Assim que o backend incluir as chaves
+// `tipo_atividade`, `forma_atuacao`, `ambito` e `status`, elas passam a valer
+// automaticamente e estas constantes viram só rede de segurança.
 
 /** Espelha TIPO_ATIVIDADE_CHOICES. */
 export const TIPO_ATIVIDADE_OPTIONS = [
@@ -67,6 +74,28 @@ export function statusLabel(value: string): string {
   return STATUS_OPTIONS.find((s) => s.value === value)?.label ?? value;
 }
 
+/**
+ * Status da API (snake_case) → variante do <Badge> (kebab-case).
+ *
+ * Mapa explícito de propósito: `concluido_sem_evidencia` vira `sem-evidencia`,
+ * então trocar `_` por `-` não resolveria. Status desconhecido cai em
+ * `planejado` para a listagem não quebrar se o backend criar um estado novo.
+ */
+const BADGE_STATUS: Record<string, BadgeStatus> = {
+  planejado: "planejado",
+  agendado: "agendado",
+  em_andamento: "em-andamento",
+  concluido: "concluido",
+  concluido_sem_evidencia: "sem-evidencia",
+  adiada: "adiada",
+  nao_realizada: "nao-realizada",
+  cancelada: "cancelada",
+};
+
+export function badgeStatusFor(status: string): BadgeStatus {
+  return BADGE_STATUS[status] ?? "planejado";
+}
+
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
 /** Ação do Plano de Trabalho (WorkPlanAcaoListSerializer, subset usado aqui). */
@@ -95,6 +124,33 @@ export type TecnicoNested = {
   id: number;
   nome: string;
   email: string;
+};
+
+/**
+ * Espelha apps/sgp/serializers.py::ActivityListSerializer.
+ * `municipio` vem como PK e `municipio_nome` como texto; idem para o técnico.
+ * `atrasada` já é calculado no backend (false para status terminais).
+ */
+export type AtividadeListItem = {
+  id: number;
+  titulo: string;
+  tipo_atividade: string;
+  tipo_atividade_display: string;
+  forma_atuacao: string;
+  ambito: string;
+  ambito_display: string;
+  municipio: number;
+  municipio_nome: string;
+  data_inicio: string;
+  data_fim: string;
+  status: string;
+  status_display: string;
+  tecnico_responsavel: number;
+  tecnico_nome: string;
+  total_participantes: number;
+  atrasada: boolean;
+  ativo: boolean;
+  criado_em: string;
 };
 
 /**
@@ -163,6 +219,153 @@ export type AtividadeWritePayload = {
   status: string;
   justificativa: string;
 };
+
+// ─── API — Choices ───────────────────────────────────────────────────────────
+
+/** Os quatro selects de choice do módulo de atividades. */
+export type AtividadeChoices = {
+  tipo_atividade: SelectOption[];
+  forma_atuacao: SelectOption[];
+  ambito: SelectOption[];
+  status: SelectOption[];
+};
+
+/** Fallback usado enquanto o backend não expõe os choices de atividade. */
+export const FALLBACK_CHOICES: AtividadeChoices = {
+  tipo_atividade: TIPO_ATIVIDADE_OPTIONS,
+  forma_atuacao: FORMA_ATUACAO_OPTIONS,
+  ambito: AMBITO_OPTIONS,
+  status: STATUS_OPTIONS,
+};
+
+/** Formato de cada item no SGPChoicesView. `value` pode vir int ou string. */
+type RawChoice = { value: string | number; label: string };
+
+/**
+ * Aceita a lista do backend só quando ela é um array não-vazio de itens bem
+ * formados. Lista ausente, vazia ou malformada cai no fallback — melhor uma
+ * lista defasada do que um select vazio que trava o formulário.
+ */
+function normalizeChoiceList(
+  raw: unknown,
+  fallback: SelectOption[],
+): SelectOption[] {
+  if (!Array.isArray(raw) || raw.length === 0) return fallback;
+
+  const options: SelectOption[] = [];
+  for (const item of raw as RawChoice[]) {
+    if (!item || typeof item !== "object") return fallback;
+    if (item.value === undefined || item.value === null) return fallback;
+    if (typeof item.label !== "string") return fallback;
+    // O <Select> opera com string; choices de atividade são CharField no
+    // backend, mas coagimos por segurança caso venham como int.
+    options.push({ value: String(item.value), label: item.label });
+  }
+  return options;
+}
+
+/**
+ * GET /api/v1/choices/ — choices do SGP servidos pelo backend.
+ *
+ * Hoje o SGPChoicesView só devolve os choices de UPF e membro; as chaves de
+ * atividade ainda não existem. Esta função já consome o endpoint e usa o que
+ * encontrar, caindo nas constantes locais para cada chave ausente — então no
+ * dia em que o backend incluir `tipo_atividade`, `forma_atuacao`, `ambito` e
+ * `status`, a UI passa a refletir o backend sem nenhuma alteração no front.
+ *
+ * Erro de rede ou 403 também caem no fallback: os choices são estáveis o
+ * bastante para não valer a pena bloquear o formulário por causa deles.
+ */
+export async function fetchAtividadeChoices(
+  signal?: AbortSignal,
+): Promise<AtividadeChoices> {
+  let data: Record<string, unknown>;
+  try {
+    const res = await apiClient("/api/v1/choices/", { signal });
+    data = (await res.json()) as Record<string, unknown>;
+  } catch {
+    return FALLBACK_CHOICES;
+  }
+
+  if (!data || typeof data !== "object") return FALLBACK_CHOICES;
+
+  return {
+    tipo_atividade: normalizeChoiceList(
+      data.tipo_atividade,
+      FALLBACK_CHOICES.tipo_atividade,
+    ),
+    forma_atuacao: normalizeChoiceList(
+      data.forma_atuacao,
+      FALLBACK_CHOICES.forma_atuacao,
+    ),
+    ambito: normalizeChoiceList(data.ambito, FALLBACK_CHOICES.ambito),
+    status: normalizeChoiceList(data.status, FALLBACK_CHOICES.status),
+  };
+}
+
+// ─── API — Listagem ──────────────────────────────────────────────────────────
+
+/**
+ * Filtros da listagem. Os nomes aqui são os da UI; a tradução para os
+ * parâmetros do ActivityFilter acontece em buildAtividadesQuery().
+ */
+export type ListAtividadesParams = {
+  /** Contrato offset/limit do componente Pagination — convertido para page/page_size. */
+  limit: number;
+  offset: number;
+  acao?: string;
+  projeto?: string;
+  territorio?: string;
+  tecnico?: string;
+  tipo?: string;
+  status?: string;
+  /** Datas no formato YYYY-MM-DD (input nativo), aplicadas sobre data_inicio. */
+  inicioDe?: string;
+  inicioAte?: string;
+  ordering?: string;
+};
+
+/**
+ * Monta a query string da listagem.
+ *
+ * Dois cuidados que não dão erro visível quando esquecidos:
+ * 1. O ActivityViewSet usa ActivityPagination (PageNumberPagination), que lê
+ *    `page`/`page_size` — mandar limit/offset seria silenciosamente ignorado e
+ *    devolveria sempre a primeira página.
+ * 2. O ActivityFilter chama os filtros de `territorio_id` e `tecnico_id`, e não
+ *    `territorio`/`tecnico` como o UPFFilter. Nome errado é ignorado pelo
+ *    django-filter, que então devolve a lista inteira sem filtrar.
+ */
+function buildAtividadesQuery(params: ListAtividadesParams): string {
+  const qs = new URLSearchParams();
+
+  qs.set("page", String(Math.floor(params.offset / params.limit) + 1));
+  qs.set("page_size", String(params.limit));
+
+  if (params.acao) qs.set("acao", params.acao);
+  if (params.projeto) qs.set("projeto", params.projeto);
+  if (params.territorio) qs.set("territorio_id", params.territorio);
+  if (params.tecnico) qs.set("tecnico_id", params.tecnico);
+  if (params.tipo) qs.set("tipo_atividade", params.tipo);
+  if (params.status) qs.set("status", params.status);
+  if (params.inicioDe) qs.set("data_inicio_after", params.inicioDe);
+  if (params.inicioAte) qs.set("data_inicio_before", params.inicioAte);
+  qs.set("ordering", params.ordering ?? "-data_inicio");
+
+  return qs.toString();
+}
+
+/** GET /api/v1/sgp/atividades/ — listagem paginada com filtros. */
+export async function listAtividades(
+  params: ListAtividadesParams,
+  signal?: AbortSignal,
+): Promise<Paginated<AtividadeListItem>> {
+  const res = await apiClient(
+    `/api/v1/sgp/atividades/?${buildAtividadesQuery(params)}`,
+    { signal },
+  );
+  return res.json();
+}
 
 // ─── API — Atividade ─────────────────────────────────────────────────────────
 
