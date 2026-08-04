@@ -35,6 +35,7 @@ class SessionContextMiddleware:
             return self.get_response(request)
 
         _, token = auth_result
+        context = self._build_session_context(token)
         user_id = token["user_id"]
         user = request.user
 
@@ -56,6 +57,14 @@ class SessionContextMiddleware:
                 logger.exception("session_context.set_local_failed user_id=%s", context["user_id"])
                 raise
             return self.get_response(request)
+
+    @staticmethod
+    def _build_session_context(token):
+        return {
+            "user_id": token.get("user_id"),
+            "territorios": token.get("territorios"),
+            "role": token.get("role") or token.get("perfil"),
+        }
 
     @staticmethod
     def _user_role_from_db(user):
