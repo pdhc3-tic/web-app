@@ -3,7 +3,7 @@ import logging
 from django.db import connection, transaction
 from django.conf import settings
 from rest_framework.exceptions import AuthenticationFailed
-from rest_framework_simplejwt.authentication import JWTStatelessUserAuthentication
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from apps.core.signals.audit import set_audit_context, clear_audit_context
 
@@ -26,7 +26,7 @@ class ContentSecurityPolicyMiddleware:
 class SessionContextMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
-        self.jwt_authentication = JWTStatelessUserAuthentication()
+        self.jwt_authentication = JWTAuthentication()
 
     def __call__(self, request):
         auth_result = self._authenticate_request(request)
@@ -35,6 +35,7 @@ class SessionContextMiddleware:
             return self.get_response(request)
 
         _, token = auth_result
+        context = self._build_session_context(token)
         user_id = token["user_id"]
         user = request.user
 
@@ -48,16 +49,22 @@ class SessionContextMiddleware:
             or ""
         )
 
+        # SET LOCAL only survives inside the current database transaction.
         with transaction.atomic():
             try:
-                with connection.cursor() as cursor:
-                    cursor.execute("SET LOCAL app.current_user_id = %s;", [str(user_id)])
-                    cursor.execute("SET LOCAL app.user_territorios = %s;", [territorios])
-                    cursor.execute("SET LOCAL app.user_role = %s;", [role])
+                self._set_database_session_context(context)
             except Exception:
-                logger.exception("session_context.set_local_failed user_id=%s", user_id)
+                logger.exception("session_context.set_local_failed user_id=%s", context["user_id"])
                 raise
             return self.get_response(request)
+
+    @staticmethod
+    def _build_session_context(token):
+        return {
+            "user_id": token.get("user_id"),
+            "territorios": token.get("territorios"),
+            "role": token.get("role") or token.get("perfil"),
+        }
 
     @staticmethod
     def _user_role_from_db(user):
@@ -96,6 +103,20 @@ class SessionContextMiddleware:
 
         request.user, request.auth = auth_result
         return auth_result
+
+    def _build_session_context(self, token):
+        return {
+            "user_id": str(token["user_id"]),
+            "territorios": self._format_territorios(token.get("territorios", [])),
+            "role": str(token.get("role") or token.get("perfil") or ""),
+        }
+
+    @staticmethod
+    def _set_database_session_context(context):
+        with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL app.current_user_id = %s;", [context["user_id"]])
+            cursor.execute("SET LOCAL app.user_territorios = %s;", [context["territorios"]])
+            cursor.execute("SET LOCAL app.user_role = %s;", [context["role"]])
 
     @staticmethod
     def _format_territorios(raw_territorios):

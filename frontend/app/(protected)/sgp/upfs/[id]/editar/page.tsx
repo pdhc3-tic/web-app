@@ -106,7 +106,7 @@ export default function EditarUpfPage() {
             { label: "Início", href: "/dashboard" },
             { label: "SGP", href: "/sgp" },
             { label: "UPFs", href: "/sgp/upfs" },
-            { label: upf.nome_titular, href: `/sgp/upfs/${id}` },
+            { label: upf.titular.nome_completo, href: `/sgp/upfs/${id}` },
             { label: "Editar" },
           ]}
         />
@@ -115,7 +115,7 @@ export default function EditarUpfPage() {
           <h1 className="text-2xl font-semibold tracking-tight text-text">
             Editar UPF
           </h1>
-          <p className="mt-1 text-sm text-text-muted">{upf.nome_titular}</p>
+          <p className="mt-1 text-sm text-text-muted">{upf.titular.nome_completo}</p>
         </div>
 
         <UpfWizard mode="edit" upfId={id} initialData={upf} />

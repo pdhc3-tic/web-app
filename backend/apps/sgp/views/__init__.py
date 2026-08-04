@@ -11,6 +11,7 @@ from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 
 from rest_framework import filters, generics, serializers, status, viewsets
+from rest_framework.views import APIView
 from drf_spectacular.utils import (
     OpenApiParameter,
     OpenApiTypes,
@@ -27,7 +28,23 @@ from rest_framework.response import Response
 from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsSuperAdmin, IsUGP
 from apps.core.services.permissions import user_has_role, user_states, user_territories
+from apps.core.utils import get_config
 from apps.sgp.cache import UPF_MAP_CACHE_TIMEOUT, build_upf_map_cache_key
+from apps.sgp.constants import (
+    AGUA_CHOICES,
+    COR_RACA_CHOICES,
+    DISPOSITIVO_CHOICES,
+    ENERGIA_CHOICES,
+    ESCOLARIDADE_CHOICES,
+    GENERO_CHOICES,
+    MATERIAL_CONSTRUCAO_CHOICES,
+    PARENTESCO_CHOICES,
+    PCT_CHOICES,
+    POSSE_TERRA_CHOICES,
+    SAUDE_CHOICES,
+    SITUACAO_MORADIA_CHOICES,
+    TIPO_MORADIA_CHOICES,
+)
 from apps.sgp.filters import ActivityFilter, UPFFilter
 from apps.sgp.models import (
     Activity, Comunidade, Cultura, EspecieAnimal, MembroFamilia, UPF, Projeto
@@ -54,6 +71,7 @@ from .upf_documentos import UPFDocumentViewSet
 from .activity_foto import ActivityPhotoMixin
 from .activity_documentos import ActivityDocumentMixin
 from .production import ProductionViewSet
+from apps.sgp.tasks import sync_activity_to_google_calendar
 
 logger = logging.getLogger("apps.sgp.views")
 
@@ -674,6 +692,28 @@ class ProjetoViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated()]
 
 
+class SGPChoicesView(APIView):
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "head", "options"]
+
+    def get(self, request):
+        choices = {
+            "genero": [{"value": v, "label": l} for v, l in GENERO_CHOICES],
+            "cor_raca": [{"value": v, "label": l} for v, l in COR_RACA_CHOICES],
+            "escolaridade": [{"value": v, "label": l} for v, l in ESCOLARIDADE_CHOICES],
+            "dispositivo": [{"value": v, "label": l} for v, l in DISPOSITIVO_CHOICES],
+            "pct": [{"value": v, "label": l} for v, l in PCT_CHOICES],
+            "posse_terra": [{"value": v, "label": l} for v, l in POSSE_TERRA_CHOICES],
+            "situacao_moradia": [{"value": v, "label": l} for v, l in SITUACAO_MORADIA_CHOICES],
+            "tipo_moradia": [{"value": v, "label": l} for v, l in TIPO_MORADIA_CHOICES],
+            "material_construcao": [{"value": v, "label": l} for v, l in MATERIAL_CONSTRUCAO_CHOICES],
+            "energia": [{"value": v, "label": l} for v, l in ENERGIA_CHOICES],
+            "agua": [{"value": v, "label": l} for v, l in AGUA_CHOICES],
+            "parentesco": [{"value": v, "label": l} for v, l in PARENTESCO_CHOICES],
+            "saude": [{"value": v, "label": v} for v in SAUDE_CHOICES],
+        }
+        return Response(choices)
+
 class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelViewSet):
     """
     ViewSet de Atividades do SGP.
@@ -740,12 +780,19 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
     def perform_create(self, serializer):
         instance = serializer.save(criado_por=self.request.user)
         self._log_audit("activity.create", instance)
+        self._enqueue_google_calendar_sync_if_needed(instance, created=True)
 
     def perform_update(self, serializer):
         old = self.get_object()
         valores_anteriores = self._snapshot(old)
+        google_calendar_anteriores = self._google_calendar_sync_snapshot(old)
         instance = serializer.save()
         self._log_audit("activity.update", instance, valores_anteriores)
+        self._enqueue_google_calendar_sync_if_needed(
+            instance,
+            created=False,
+            valores_anteriores=google_calendar_anteriores,
+        )
 
     def perform_destroy(self, instance):
         """Soft-delete via ativo=False."""
@@ -771,8 +818,8 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
             "municipio_id": instance.municipio_id,
             "acao_id": instance.acao_id,
             "tecnico_responsavel_id": instance.tecnico_responsavel_id,
-            "data_inicio": str(instance.data_inicio),
-            "data_fim": str(instance.data_fim),
+            "data_inicio": instance.data_inicio.isoformat(),
+            "data_fim": instance.data_fim.isoformat(),
             "ativo": instance.ativo,
         }
 
@@ -789,6 +836,83 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
             user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )
 
+    @staticmethod
+    def _google_calendar_sync_snapshot(instance) -> dict:
+        return {
+            "status": instance.status,
+            "data_inicio": instance.data_inicio.isoformat(),
+            "data_fim": instance.data_fim.isoformat(),
+            "municipio_id": instance.municipio_id,
+            "comunidade_id": instance.comunidade_id,
+            "equipe_adicional_ids": sorted(
+                instance.equipe_adicional.values_list("pk", flat=True)
+            ),
+        }
+
+    def _enqueue_google_calendar_sync_if_needed(
+        self,
+        instance,
+        *,
+        created: bool,
+        valores_anteriores: dict | None = None,
+    ):
+        if not get_config("google_calendar_integracao_ativa", False):
+            return
+
+        valores_novos = self._google_calendar_sync_snapshot(instance)
+        if not self._should_sync_google_calendar(
+            created,
+            valores_anteriores,
+            valores_novos,
+        ):
+            return
+
+        Activity.objects.filter(pk=instance.pk).update(
+            google_calendar_sync_status="pendente",
+        )
+        instance.google_calendar_sync_status = "pendente"
+        try:
+            sync_activity_to_google_calendar.delay(instance.pk)
+        except Exception:
+            logger.exception(
+                "Falha ao enfileirar sync Google Calendar activity_id=%s.",
+                instance.pk,
+            )
+
+    @staticmethod
+    def _should_sync_google_calendar(
+        created: bool,
+        valores_anteriores: dict | None,
+        valores_novos: dict,
+    ) -> bool:
+        status_atual = valores_novos["status"]
+        if status_atual in {"cancelada", "nao_realizada"}:
+            return bool(
+                valores_anteriores
+                and valores_anteriores["status"] != status_atual
+            )
+
+        if status_atual != "agendado":
+            return False
+
+        if created or not valores_anteriores:
+            return True
+
+        if valores_anteriores["status"] != "agendado":
+            return True
+
+        campos_monitorados = [
+            "data_inicio",
+            "data_fim",
+            "municipio_id",
+            "comunidade_id",
+            "equipe_adicional_ids",
+        ]
+        return any(
+            valores_anteriores[campo] != valores_novos[campo]
+            for campo in campos_monitorados
+        )
+
     # ── Endpoint de Calendário ────────────────────────────────────────────
 
     @action(detail=False, methods=["get"], url_path="calendario")
@@ -803,7 +927,8 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
         Filtros opcionais via querystring:
             tecnico_id, projeto, acao, tipo_atividade, status
         """
-        from datetime import date
+        from datetime import date, datetime, time
+        from django.utils import timezone
         from rest_framework.fields import DateField as DRFDateField
 
         # ── Validação dos parâmetros de intervalo ───────────────────────────────
@@ -875,9 +1000,12 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
         else:
             raise PermissionDenied("Você não tem acesso ao módulo de Atividades do SGP.")
 
+        inicio_dt = timezone.make_aware(datetime.combine(inicio, time.min))
+        fim_dt = timezone.make_aware(datetime.combine(fim, time.max))
+
         # Interseccão de intervalo: atividade toca o período se
         #   data_inicio <= fim  AND  data_fim >= inicio
-        qs = qs.filter(data_inicio__lte=fim, data_fim__gte=inicio)
+        qs = qs.filter(data_inicio__lte=fim_dt, data_fim__gte=inicio_dt)
 
         # ── Filtros opcionais ──────────────────────────────────────────────────
         qp = request.query_params

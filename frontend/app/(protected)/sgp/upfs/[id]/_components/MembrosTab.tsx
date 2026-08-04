@@ -115,7 +115,9 @@ export function MembrosTab({ upfId }: Props) {
       parentesco_display: saved.parentesco_display,
       cpf: saved.cpf,
       genero: saved.genero,
+      genero_display: saved.genero_display,
       cor_raca: saved.cor_raca,
+      cor_raca_display: saved.cor_raca_display,
       criado_em: saved.criado_em,
     };
 
@@ -243,7 +245,7 @@ function Tabela({ membros, onView, onEdit, onRemove }: TabelaProps) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] border-collapse text-sm">
+        <table className="w-full min-w-180 border-collapse text-sm">
           <thead className="bg-surface-muted text-left text-2xs font-semibold uppercase tracking-wide text-text-muted">
             <tr>
               <th className="px-4 py-2.5">Nome</th>
@@ -304,7 +306,7 @@ function LinhaMembro({
           ? `${membro.idade} anos`
           : "—"}
       </td>
-      <td className="px-4 py-3 text-text-muted">{membro.genero || "—"}</td>
+      <td className="px-4 py-3 text-text-muted">{membro.genero_display || "—"}</td>
       <td className="px-4 py-3 font-mono text-2xs text-text-muted tabular-nums">
         {membro.cpf ? maskCpf(membro.cpf) || membro.cpf : "—"}
       </td>

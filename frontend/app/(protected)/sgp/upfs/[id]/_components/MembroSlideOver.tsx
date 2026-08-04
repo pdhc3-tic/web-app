@@ -84,18 +84,27 @@ const EMPTY_FORM: FormState = {
   seguridade_social: [],
 };
 
+/** "" ↔ null para choices inteiros (o form guarda string; a API espera número). */
+function intToStr(value: number | null | undefined): string {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function strToInt(value: string): number | null {
+  return value ? Number(value) : null;
+}
+
 function detailToForm(m: MembroDetail): FormState {
   return {
     nome: m.nome ?? "",
     parentesco: m.parentesco ?? "",
     data_nasc: m.data_nasc ?? "",
-    genero: m.genero ?? "",
+    genero: intToStr(m.genero),
     cpf: m.cpf ? formatCpfInput(m.cpf) : "",
     nis: m.nis ?? "",
     caf: m.caf ?? "",
-    escolaridade: m.escolaridade ?? "",
+    escolaridade: intToStr(m.escolaridade),
     escola: m.escola ?? "",
-    cor_raca: m.cor_raca ?? "",
+    cor_raca: intToStr(m.cor_raca),
     saude: m.saude ?? [],
     seguridade_social: m.seguridade_social ?? [],
   };
@@ -107,13 +116,13 @@ function formToPayload(f: FormState): MembroWritePayload {
     nome: f.nome.trim(),
     parentesco: f.parentesco,
     data_nasc: f.data_nasc || null,
-    genero: f.genero,
+    genero: strToInt(f.genero),
     cpf: cpfDigits,
     nis: f.nis.trim(),
     caf: f.caf.trim(),
-    escolaridade: f.escolaridade,
+    escolaridade: strToInt(f.escolaridade),
     escola: f.escola.trim(),
-    cor_raca: f.cor_raca,
+    cor_raca: strToInt(f.cor_raca),
     saude: f.saude,
     seguridade_social: f.seguridade_social,
   };
@@ -354,12 +363,12 @@ function ViewBody({ membro }: { membro: MembroDetail }) {
                 ? `${membro.idade} anos`
                 : undefined,
           },
-          { label: "Gênero", value: membro.genero },
-          { label: "Cor/Raça", value: membro.cor_raca },
+          { label: "Gênero", value: membro.genero_display },
+          { label: "Cor/Raça", value: membro.cor_raca_display },
           { label: "CPF", value: maskCpf(membro.cpf) },
           { label: "NIS", value: membro.nis },
           { label: "CAF", value: membro.caf },
-          { label: "Escolaridade", value: membro.escolaridade },
+          { label: "Escolaridade", value: membro.escolaridade_display },
           { label: "Escola", value: membro.escola },
           { label: "Saúde", value: saudeChips },
           { label: "Seguridade", value: seguridadeChips },
@@ -549,7 +558,7 @@ function SelectField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-invalid={!!error || undefined}
-        className={`h-9 w-full rounded-md border bg-surface px-3 text-sm text-text outline-none transition duration-[120ms] hover:border-text-muted focus:border-2 focus:border-primary focus:px-[calc(var(--space-3)-1px)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-primary)_15%,transparent)] ${
+        className={`h-9 w-full rounded-md border bg-surface px-3 text-sm text-text outline-none transition duration-120 hover:border-text-muted focus:border-2 focus:border-primary focus:px-[calc(var(--space-3)-1px)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-primary)_15%,transparent)] ${
           error
             ? "border-error-text focus:border-error-text focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-error-text)_15%,transparent)]"
             : "border-border"

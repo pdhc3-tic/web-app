@@ -1,106 +1,117 @@
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 
-// Listas curadas no frontend. O backend armazena strings livres (sem choices),
-// então value === label. Convenções usuais (IBGE etc.).
+// Opções espelham apps/sgp/constants.py — o backend armazena estes campos como
+// PositiveSmallIntegerField(choices=...). O `value` é o id inteiro (como string,
+// pois o <Select> opera com string); o label é o rótulo do backend.
 
-function opts(...labels: string[]): SelectOption[] {
-  return labels.map((l) => ({ value: l, label: l }));
+function opt(id: number, label: string): SelectOption {
+  return { value: String(id), label };
 }
 
-export const GENERO_OPTIONS = opts(
-  "Masculino",
-  "Feminino",
-  "Outro",
-  "Prefere não informar",
-);
+// ── MembroFamilia (titular e demais membros) ──────────────────────────────────
 
-export const COR_RACA_OPTIONS = opts(
-  "Branca",
-  "Preta",
-  "Parda",
-  "Amarela",
-  "Indígena",
-);
+export const GENERO_OPTIONS: SelectOption[] = [
+  opt(1, "Masculino"),
+  opt(2, "Feminino"),
+  opt(3, "Outro"),
+  opt(4, "Não Informado"),
+];
 
-export const ESTADO_CIVIL_OPTIONS = opts(
-  "Solteiro(a)",
-  "Casado(a)",
-  "União estável",
-  "Divorciado(a)",
-  "Separado(a)",
-  "Viúvo(a)",
-);
+export const COR_RACA_OPTIONS: SelectOption[] = [
+  opt(1, "Branca"),
+  opt(2, "Preta"),
+  opt(3, "Parda"),
+  opt(4, "Amarela"),
+  opt(5, "Indígena"),
+  opt(6, "Não Informado"),
+];
 
-export const ESCOLARIDADE_OPTIONS = opts(
-  "Sem escolaridade",
-  "Fundamental incompleto",
-  "Fundamental completo",
-  "Médio incompleto",
-  "Médio completo",
-  "Superior incompleto",
-  "Superior completo",
-  "Pós-graduação",
-);
+export const ESCOLARIDADE_OPTIONS: SelectOption[] = [
+  opt(1, "Sem instrução"),
+  opt(2, "Fundamental incompleto"),
+  opt(3, "Fundamental completo"),
+  opt(4, "Médio incompleto"),
+  opt(5, "Médio completo"),
+  opt(6, "Superior incompleto"),
+  opt(7, "Superior completo"),
+  opt(8, "Pós-graduação"),
+  opt(9, "Não Informado"),
+];
 
-export const PCT_OPTIONS = opts(
-  "Não se aplica",
-  "Quilombola",
-  "Indígena",
-  "Ribeirinho",
-  "Extrativista",
-  "Pescador artesanal",
-  "Assentado",
-  "Outro",
-);
+// ── UPF ───────────────────────────────────────────────────────────────────────
 
-export const POSSE_TERRA_OPTIONS = opts(
-  "Proprietário",
-  "Posseiro",
-  "Arrendatário",
-  "Parceiro",
-  "Comodatário",
-  "Assentado",
-  "Sem terra",
-);
+export const DISPOSITIVO_OPTIONS: SelectOption[] = [
+  opt(1, "Computador"),
+  opt(2, "Notebook"),
+  opt(3, "Tablet"),
+  opt(4, "Smartphone"),
+  opt(5, "Não possui"),
+  opt(6, "Outro"),
+];
 
-export const TIPO_MORADIA_OPTIONS = opts(
-  "Própria",
-  "Alugada",
-  "Cedida",
-  "Financiada",
-  "Ocupação",
-);
+export const PCT_OPTIONS: SelectOption[] = [
+  opt(1, "Sim"),
+  opt(2, "Não"),
+  opt(3, "Não Informado"),
+];
 
-export const SITUACAO_MORADIA_OPTIONS = opts(
-  "Regular",
-  "Irregular",
-  "Em regularização",
-);
+export const POSSE_TERRA_OPTIONS: SelectOption[] = [
+  opt(1, "Própria"),
+  opt(2, "Alugada"),
+  opt(3, "Cedida"),
+  opt(4, "Ocupação"),
+  opt(5, "Posse tradicional"),
+  opt(6, "Não Informado"),
+];
 
-export const ENERGIA_OPTIONS = opts(
-  "Rede pública",
-  "Solar",
-  "Gerador",
-  "Não possui",
-);
+export const SITUACAO_MORADIA_OPTIONS: SelectOption[] = [
+  opt(1, "Própria"),
+  opt(2, "Alugada"),
+  opt(3, "Cedida"),
+  opt(4, "Ocupação"),
+  opt(5, "Financiada"),
+  opt(6, "Não Informado"),
+];
 
-export const AGUA_OPTIONS = opts(
-  "Rede pública",
-  "Poço",
-  "Nascente",
-  "Cisterna",
-  "Caminhão-pipa",
-  "Rio/açude",
-);
+export const TIPO_MORADIA_OPTIONS: SelectOption[] = [
+  opt(1, "Casa"),
+  opt(2, "Apartamento"),
+  opt(3, "Cômodo"),
+  opt(4, "Barraca"),
+  opt(5, "Outro"),
+  opt(6, "Não Informado"),
+];
 
-export const DISPOSITIVO_OPTIONS = opts(
-  "Smartphone",
-  "Tablet",
-  "Computador",
-  "Nenhum",
-);
+export const MATERIAL_CONSTRUCAO_OPTIONS: SelectOption[] = [
+  opt(1, "Alvenaria"),
+  opt(2, "Madeira"),
+  opt(3, "Taipa"),
+  opt(4, "Pedra"),
+  opt(5, "Misto"),
+  opt(6, "Outro"),
+  opt(7, "Não Informado"),
+];
 
-export const SEGURIDADE_OPTIONS = opts(
+export const ENERGIA_OPTIONS: SelectOption[] = [
+  opt(1, "Sim"),
+  opt(2, "Não"),
+  opt(3, "Não Informado"),
+];
+
+export const AGUA_OPTIONS: SelectOption[] = [
+  opt(1, "Rede pública"),
+  opt(2, "Poço artesiano"),
+  opt(3, "Poço raso"),
+  opt(4, "Nascente"),
+  opt(5, "Carro-pipa"),
+  opt(6, "Chuva"),
+  opt(7, "Outro"),
+  opt(8, "Não Informado"),
+];
+
+// `seguridade_social` continua como JSONField de strings livres no backend
+// (UPF e MembroFamilia) — não foi refatorado para choices. Mantém value === label.
+export const SEGURIDADE_OPTIONS: SelectOption[] = [
   "Aposentadoria",
   "BPC/LOAS",
   "Bolsa Família",
@@ -109,11 +120,11 @@ export const SEGURIDADE_OPTIONS = opts(
   "Seguro-defeso",
   "Nenhum",
   "Outros",
-);
+].map((l) => ({ value: l, label: l }));
 
 /**
  * Garante que o valor atual apareça no select mesmo que não esteja na lista
- * curada (ex.: dado legado de texto livre gravado antes desta tela).
+ * (ex.: dado legado gravado antes desta tela).
  */
 export function withCurrentValue(
   options: SelectOption[],
@@ -122,4 +133,17 @@ export function withCurrentValue(
   if (!value) return options;
   if (options.some((o) => o.value === value)) return options;
   return [{ value, label: value }, ...options];
+}
+
+/**
+ * Rótulo humano de um valor de choice inteiro, para exibição na ficha (o detalhe
+ * da UPF retorna o id cru desses campos, sem `*_display`). Retorna "" quando nulo.
+ */
+export function labelForValue(
+  options: SelectOption[],
+  value: number | string | null | undefined,
+): string {
+  if (value === null || value === undefined || value === "") return "";
+  const v = String(value);
+  return options.find((o) => o.value === v)?.label ?? v;
 }

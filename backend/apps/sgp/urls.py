@@ -8,6 +8,7 @@ from .views import (
     EspecieAnimalListView,
     MembroViewSet,
     ProductionViewSet,
+    SGPChoicesView,
     UPFViewSet,
     UPFDocumentViewSet,
     ProjetoViewSet,
@@ -53,6 +54,11 @@ production_detail = ProductionViewSet.as_view({
 
 urlpatterns = router.urls + [
     path("sgp/", include(sgp_router.urls)),
+    path(
+        "choices/",
+        SGPChoicesView.as_view(),
+        name="sgp-choices",
+    ),
     path(
         "catalogos/culturas/",
         CulturaListView.as_view(),
