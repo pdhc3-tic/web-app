@@ -28,6 +28,8 @@ from apps.core.tests.factories import (
 )
 from apps.sgp.models import Activity
 from apps.sgp.tests.factories import ActivityFactory, WorkPlanAcaoFactory
+from django.utils import timezone
+import datetime
 
 
 # ---------------------------------------------------------------------------
@@ -148,8 +150,8 @@ def payload_minimo(acao, tecnico, municipio_rn):
         "tecnico_responsavel": tecnico.pk,
         "municipio": municipio_rn.pk,
         "ambito": "municipal",
-        "data_inicio": "2026-08-01",
-        "data_fim": "2026-08-01",
+        "data_inicio": "2026-08-01T08:00:00-03:00",
+        "data_fim": "2026-08-01T12:00:00-03:00",
         "descricao_narrativa": "Narrativa completa da visita técnica.",
     }
 
@@ -160,6 +162,8 @@ LIST_URL = "/api/v1/sgp/atividades/"
 def detail_url(pk):
     return f"/api/v1/sgp/atividades/{pk}/"
 
+def aware_dt(year, month, day, hour=0, minute=0):
+    return timezone.make_aware(datetime.datetime(year, month, day, hour, minute))
 
 # ===========================================================================
 # Teste 1 — Criação com campos obrigatórios → 201
@@ -340,8 +344,8 @@ def test_campo_atrasada_true_quando_data_fim_passada(auth_ugp, municipio_rn):
     atividade = ActivityFactory(
         municipio=municipio_rn,
         status="agendado",
-        data_inicio=datetime.date(2025, 1, 1),
-        data_fim=datetime.date(2025, 1, 31),  # passado
+        data_inicio=aware_dt(2025, 1, 1),
+        data_fim=aware_dt(2025, 1, 31),  # passado
     )
 
     response = auth_ugp.get(detail_url(atividade.pk))
@@ -355,8 +359,8 @@ def test_campo_atrasada_false_quando_status_terminal(auth_ugp, municipio_rn):
     atividade = ActivityFactory(
         municipio=municipio_rn,
         status="concluido",
-        data_inicio=datetime.date(2025, 1, 1),
-        data_fim=datetime.date(2025, 1, 31),
+        data_inicio=aware_dt(2025, 1, 1),
+        data_fim=aware_dt(2025, 1, 31),
     )
 
     response = auth_ugp.get(detail_url(atividade.pk))

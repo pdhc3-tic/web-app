@@ -92,6 +92,18 @@ class SystemConfigSerializer(serializers.ModelSerializer):
         return data
 
 
+class GoogleCalendarConfigSerializer(serializers.Serializer):
+    calendario_destino_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+    )
+    lembretes = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        required=False,
+    )
+    integracao_ativa = serializers.BooleanField(required=False)
+
+
 class RoleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Role

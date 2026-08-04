@@ -28,6 +28,8 @@ from apps.core.tests.factories import (
     MunicipalityFactory,
 )
 from apps.sgp.tests.factories import ActivityFactory
+from django.utils import timezone
+import datetime
 
 
 CALENDARIO_URL = "/api/v1/sgp/atividades/calendario/"
@@ -113,6 +115,8 @@ def auth_adt_rn(api_client, usuario_adt_rn):
     api_client.force_authenticate(user=usuario_adt_rn)
     return api_client
 
+def aware_dt(year, month, day, hour=0, minute=0):
+    return timezone.make_aware(datetime.datetime(year, month, day, hour, minute))
 
 # ===========================================================================
 # Teste 1 — Filtro por intervalo de 1 semana
@@ -127,29 +131,29 @@ def test_calendario_retorna_apenas_atividades_dentro_do_intervalo(auth_ugp, muni
     # Dentro: inicia dentro da semana
     dentro = ActivityFactory(
         municipio=municipio_rn,
-        data_inicio=datetime.date(2026, 8, 3),
-        data_fim=datetime.date(2026, 8, 5),
+        data_inicio=aware_dt(2026, 8, 3),
+        data_fim=aware_dt(2026, 8, 5),
         status="planejado",
     )
     # Dentro: abrange toda a semana (multi-dia)
     abrange = ActivityFactory(
         municipio=municipio_rn,
-        data_inicio=datetime.date(2026, 7, 28),
-        data_fim=datetime.date(2026, 8, 10),
+        data_inicio=aware_dt(2026, 7, 28),
+        data_fim=aware_dt(2026, 8, 10),
         status="em_andamento",
     )
     # Fora: terminou antes da semana
     antes = ActivityFactory(
         municipio=municipio_rn,
-        data_inicio=datetime.date(2026, 7, 20),
-        data_fim=datetime.date(2026, 7, 31),
+        data_inicio=aware_dt(2026, 7, 20),
+        data_fim=aware_dt(2026, 7, 31),
         status="concluido",
     )
     # Fora: começa depois da semana
     depois = ActivityFactory(
         municipio=municipio_rn,
-        data_inicio=datetime.date(2026, 8, 15),
-        data_fim=datetime.date(2026, 8, 20),
+        data_inicio=aware_dt(2026, 8, 15),
+        data_fim=aware_dt(2026, 8, 20),
         status="planejado",
     )
 
@@ -187,24 +191,24 @@ def test_calendario_filtro_combinado_tecnico_e_status(
         municipio=municipio_rn,
         tecnico_responsavel=tecnico_a,
         status="agendado",
-        data_inicio=datetime.date(2026, 8, 1),
-        data_fim=datetime.date(2026, 8, 3),
+        data_inicio=aware_dt(2026, 8, 1),
+        data_fim=aware_dt(2026, 8, 3),
     )
     # Mesmo técnico, status diferente
     mesmo_tec_outro_status = ActivityFactory(
         municipio=municipio_rn,
         tecnico_responsavel=tecnico_a,
         status="planejado",
-        data_inicio=datetime.date(2026, 8, 1),
-        data_fim=datetime.date(2026, 8, 3),
+        data_inicio=aware_dt(2026, 8, 1),
+        data_fim=aware_dt(2026, 8, 3),
     )
     # Status correto, técnico diferente
     outro_tec_mesmo_status = ActivityFactory(
         municipio=municipio_rn,
         tecnico_responsavel=tecnico_b,
         status="agendado",
-        data_inicio=datetime.date(2026, 8, 1),
-        data_fim=datetime.date(2026, 8, 3),
+        data_inicio=aware_dt(2026, 8, 1),
+        data_fim=aware_dt(2026, 8, 3),
     )
 
     resp = auth_ugp.get(
@@ -289,8 +293,8 @@ def test_calendario_sem_n_mais_1_queries(auth_ugp, municipio_rn, tecnico_a, tecn
             municipio=municipio_rn,
             tecnico_responsavel=tec,
             status="planejado",
-            data_inicio=datetime.date(2026, 8, 1) + datetime.timedelta(days=i),
-            data_fim=datetime.date(2026, 8, 1) + datetime.timedelta(days=i),
+            data_inicio=aware_dt(2026, 8, 1) + datetime.timedelta(days=i),
+            data_fim=aware_dt(2026, 8, 1) + datetime.timedelta(days=i),
         )
 
     with CaptureQueriesContext(connection) as ctx:
@@ -322,8 +326,8 @@ def test_calendario_payload_campos_corretos(auth_ugp, municipio_rn, tecnico_a):
         municipio=municipio_rn,
         tecnico_responsavel=tecnico_a,
         status="agendado",
-        data_inicio=datetime.date(2026, 8, 5),
-        data_fim=datetime.date(2026, 8, 5),
+        data_inicio=aware_dt(2026, 8, 5),
+        data_fim=aware_dt(2026, 8, 5),
     )
 
     resp = auth_ugp.get(
@@ -384,8 +388,8 @@ def test_calendario_cor_semantica_por_status(auth_ugp, municipio_rn):
         ActivityFactory(
             municipio=municipio_rn,
             status=st,
-            data_inicio=datetime.date(2026, 8, 1),
-            data_fim=datetime.date(2026, 8, 1),
+            data_inicio=aware_dt(2026, 8, 1),
+            data_fim=aware_dt(2026, 8, 1),
         )
 
     resp = auth_ugp.get(
@@ -413,14 +417,14 @@ def test_calendario_rls_adt_nao_ve_outro_territorio(
     a_rn = ActivityFactory(
         municipio=municipio_rn,
         status="planejado",
-        data_inicio=datetime.date(2026, 8, 1),
-        data_fim=datetime.date(2026, 8, 5),
+        data_inicio=aware_dt(2026, 8, 1),
+        data_fim=aware_dt(2026, 8, 5),
     )
     a_ce = ActivityFactory(
         municipio=municipio_ce,
         status="planejado",
-        data_inicio=datetime.date(2026, 8, 1),
-        data_fim=datetime.date(2026, 8, 5),
+        data_inicio=aware_dt(2026, 8, 1),
+        data_fim=aware_dt(2026, 8, 5),
     )
 
     resp = auth_adt_rn.get(

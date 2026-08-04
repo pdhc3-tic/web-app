@@ -1,4 +1,5 @@
 import factory
+from django.utils import timezone
 
 from apps.core.tests.factories import MunicipalityFactory, UserFactory
 from apps.sgp.models import (
@@ -179,10 +180,10 @@ class ActivityFactory(factory.django.DjangoModelFactory):
     municipio = factory.SubFactory(MunicipalityFactory)
     ambito = "municipal"
     data_inicio = factory.LazyFunction(
-        lambda: __import__("datetime").date(2026, 6, 1)
+        lambda: timezone.make_aware(__import__("datetime").datetime(2026, 6, 1, 8, 0))
     )
     data_fim = factory.LazyFunction(
-        lambda: __import__("datetime").date(2026, 6, 30)
+        lambda: timezone.make_aware(__import__("datetime").datetime(2026, 6, 1, 12, 0))
     )
     descricao_narrativa = factory.Sequence(lambda n: f"Narrativa da atividade {n}")
     status = "planejado"
