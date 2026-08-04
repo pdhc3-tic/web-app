@@ -115,6 +115,7 @@ class TestAuditLogModel:
         AuditLogFactory(entidade="Projeto", entidade_id="1")
         
         with connection.cursor() as cursor:
+            cursor.execute("""SET LOCAL enable_seqscan = off""")
             cursor.execute("""
                 EXPLAIN SELECT * FROM core_auditlog
                 WHERE entidade = 'Projeto' AND entidade_id = '1'

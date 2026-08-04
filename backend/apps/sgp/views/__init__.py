@@ -1,13 +1,22 @@
 import logging
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 
 from django.apps import apps
+from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
+
 from rest_framework import filters, generics, serializers, status, viewsets
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiTypes,
+    extend_schema,
+    inline_serializer,
+)
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 
@@ -18,10 +27,18 @@ from rest_framework.response import Response
 from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsSuperAdmin, IsUGP
 from apps.core.services.permissions import user_has_role, user_states, user_territories
-from apps.sgp.filters import UPFFilter
-from apps.sgp.models import Comunidade, Cultura, EspecieAnimal, MembroFamilia, UPF, Projeto
-from apps.sgp.pagination import CatalogoPagination, HistoricoPagination, UPFPagination
+from apps.sgp.cache import UPF_MAP_CACHE_TIMEOUT, build_upf_map_cache_key
+from apps.sgp.filters import ActivityFilter, UPFFilter
+from apps.sgp.models import (
+    Activity, Comunidade, Cultura, EspecieAnimal, MembroFamilia, UPF, Projeto
+)
+from apps.sgp.pagination import (
+    ActivityPagination, CatalogoPagination, HistoricoPagination, UPFPagination
+)
 from apps.sgp.serializers import (
+    ActivityCalendarioSerializer,
+    ActivityDetailSerializer,
+    ActivityListSerializer,
     ComunidadeSerializer,
     CulturaSerializer,
     EspecieAnimalSerializer,
@@ -34,6 +51,9 @@ from apps.sgp.serializers import (
 )
 from .upf_foto import UPFPhotoMixin
 from .upf_documentos import UPFDocumentViewSet
+from .activity_foto import ActivityPhotoMixin
+from .activity_documentos import ActivityDocumentMixin
+from .production import ProductionViewSet
 
 logger = logging.getLogger("apps.sgp.views")
 
@@ -85,6 +105,7 @@ class ComunidadePagination(LimitOffsetPagination):
 
 
 class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
+    MAPA_FEATURE_LIMIT = 10000
     queryset = UPF.objects.select_related(
         "municipio", "municipio__state", "territorio", "projeto", "criado_por"
     ).all()
@@ -133,6 +154,144 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
             return qs.filter(territorio__in=territories)
 
         raise PermissionDenied("Você não tem acesso ao módulo SGP.")
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="bbox",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description="Bounding box no formato lng_sw,lat_sw,lng_ne,lat_ne.",
+            ),
+            OpenApiParameter("municipio", OpenApiTypes.INT, OpenApiParameter.QUERY),
+            OpenApiParameter("territorio", OpenApiTypes.INT, OpenApiParameter.QUERY),
+            OpenApiParameter("projeto", OpenApiTypes.INT, OpenApiParameter.QUERY),
+            OpenApiParameter("ativa", OpenApiTypes.BOOL, OpenApiParameter.QUERY),
+        ],
+        responses={
+            200: inline_serializer(
+                name="UPFMapFeatureCollection",
+                fields={
+                    "type": serializers.CharField(default="FeatureCollection"),
+                    "features": serializers.ListField(
+                        child=serializers.DictField(),
+                    ),
+                    "truncated": serializers.BooleanField(),
+                    "message": serializers.CharField(required=False),
+                },
+            )
+        },
+        description=(
+            "Retorna UPFs georreferenciadas em GeoJSON FeatureCollection. "
+            "Cada feature possui geometry.coordinates na ordem [lng, lat] "
+            "e properties mínimo: id, nome_titular, municipio, territorio e ativa."
+        ),
+    )
+    @action(detail=False, methods=["get"], url_path="mapa")
+    def mapa(self, request):
+        bbox = self._parse_bbox(request.query_params.get("bbox"))
+        cache_key = build_upf_map_cache_key(
+            request.user.pk,
+            request.query_params,
+        )
+        cached_response = cache.get(cache_key)
+        if cached_response is not None:
+            return Response(cached_response)
+
+        queryset = self.filter_queryset(self.get_queryset())
+        queryset = queryset.filter(
+            latitude__isnull=False,
+            longitude__isnull=False,
+        )
+        if bbox is not None:
+            lng_sw, lat_sw, lng_ne, lat_ne = bbox
+            queryset = queryset.filter(
+                longitude__gte=lng_sw,
+                longitude__lte=lng_ne,
+                latitude__gte=lat_sw,
+                latitude__lte=lat_ne,
+            )
+
+        queryset = (
+            queryset.select_related(None)
+            .prefetch_related(None)
+            .select_related("titular", "municipio", "territorio")
+            .only(
+                "id",
+                "titular",
+                "titular__nome_completo",
+                "latitude",
+                "longitude",
+                "municipio",
+                "municipio__nome",
+                "territorio",
+                "territorio__nome",
+                "ativa",
+            )
+            .order_by("id")
+        )
+
+        upfs = list(queryset[: self.MAPA_FEATURE_LIMIT + 1])
+        truncated = len(upfs) > self.MAPA_FEATURE_LIMIT
+        upfs = upfs[: self.MAPA_FEATURE_LIMIT]
+
+        response_data = {
+            "type": "FeatureCollection",
+            "features": [self._build_mapa_feature(upf) for upf in upfs],
+            "truncated": truncated,
+        }
+        if truncated:
+            response_data["message"] = (
+                "Resultado limitado a 10000 UPFs. Use o filtro bbox para reduzir a área."
+            )
+
+        cache.set(cache_key, response_data, UPF_MAP_CACHE_TIMEOUT)
+        return Response(response_data)
+
+    def _parse_bbox(self, value):
+        if not value:
+            return None
+
+        parts = value.split(",")
+        if len(parts) != 4:
+            raise serializers.ValidationError(
+                {"bbox": "Use o formato lng_sw,lat_sw,lng_ne,lat_ne."}
+            )
+
+        try:
+            lng_sw, lat_sw, lng_ne, lat_ne = [Decimal(part.strip()) for part in parts]
+        except (InvalidOperation, ValueError):
+            raise serializers.ValidationError(
+                {
+                    "bbox": (
+                        "Use valores numéricos no formato "
+                        "lng_sw,lat_sw,lng_ne,lat_ne."
+                    )
+                }
+            )
+
+        if lng_sw > lng_ne or lat_sw > lat_ne:
+            raise serializers.ValidationError(
+                {"bbox": "O sudoeste do bbox deve vir antes do nordeste."}
+            )
+
+        return lng_sw, lat_sw, lng_ne, lat_ne
+
+    def _build_mapa_feature(self, upf):
+        return {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [float(upf.longitude), float(upf.latitude)],
+            },
+            "properties": {
+                "id": upf.pk,
+                "nome_titular": upf.titular.nome_completo,
+                "municipio": upf.municipio.nome,
+                "territorio": upf.territorio.nome,
+                "ativa": upf.ativa,
+            },
+        }
 
     @action(detail=True, methods=["get"], url_path="historico")
     def historico(self, request, pk=None):
@@ -515,4 +674,237 @@ class ProjetoViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated()]
 
 
+class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelViewSet):
+    """
+    ViewSet de Atividades do SGP.
 
+    GET/POST    /api/v1/sgp/atividades/
+    GET/PATCH/PUT/DELETE /api/v1/sgp/atividades/{id}/
+
+    Isolamento territorial (RLS):
+        - super-admin / ugp: visualizam tudo
+        - articulador-estadual: atividades nos estados do seu escopo
+        - adt-acr: atividades nos territórios vinculados
+    """
+    http_method_names = ["get", "post", "put", "patch", "delete", "head", "options"]
+    permission_classes = [IsAuthenticated]
+    pagination_class = ActivityPagination
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_class = ActivityFilter
+    ordering_fields = ["data_inicio", "data_fim", "criado_em", "titulo"]
+    ordering = ["-data_inicio"]
+
+    # Caminho do atributo territorio para _resolve_territorio_id das permissions
+    _territorio_attr_path = "territorio_id"
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return ActivityListSerializer
+        return ActivityDetailSerializer
+
+    def get_queryset(self):
+        qs = Activity.objects.select_related(
+            "acao", "acao__meta",
+            "municipio", "municipio__territory",
+            "comunidade",
+            "tecnico_responsavel",
+            "criado_por",
+        ).prefetch_related(
+            "equipe_adicional",
+            "upfs_participantes",
+            "membros_participantes",
+        ).filter(ativo=True)
+
+        user = self.request.user
+
+        # RLS — acesso global (sem filtro territorial)
+        if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
+            return qs
+
+        # RLS — articulador estadual: filtra por estados do usuário
+        if user_has_role(user, "articulador-estadual"):
+            states = user_states(user)
+            if not states:
+                return qs.none()
+            return qs.filter(municipio__state__sigla__in=states)
+
+        # RLS — ADT/ACR: filtra por territórios vinculados
+        if user_has_role(user, "adt-acr"):
+            territories = user_territories(user)
+            if not territories.exists():
+                return qs.none()
+            return qs.filter(municipio__territory__in=territories)
+
+        raise PermissionDenied("Você não tem acesso ao módulo de Atividades do SGP.")
+
+    def perform_create(self, serializer):
+        instance = serializer.save(criado_por=self.request.user)
+        self._log_audit("activity.create", instance)
+
+    def perform_update(self, serializer):
+        old = self.get_object()
+        valores_anteriores = self._snapshot(old)
+        instance = serializer.save()
+        self._log_audit("activity.update", instance, valores_anteriores)
+
+    def perform_destroy(self, instance):
+        """Soft-delete via ativo=False."""
+        valores_anteriores = self._snapshot(instance)
+        instance.ativo = False
+        instance.save(update_fields=["ativo"])
+        self._log_audit("activity.soft_delete", instance, valores_anteriores)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    # ── Helpers ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _snapshot(instance) -> dict:
+        return {
+            "id": instance.pk,
+            "titulo": instance.titulo,
+            "status": instance.status,
+            "tipo_atividade": instance.tipo_atividade,
+            "municipio_id": instance.municipio_id,
+            "acao_id": instance.acao_id,
+            "tecnico_responsavel_id": instance.tecnico_responsavel_id,
+            "data_inicio": str(instance.data_inicio),
+            "data_fim": str(instance.data_fim),
+            "ativo": instance.ativo,
+        }
+
+    def _log_audit(self, acao: str, instance, valores_anteriores: dict | None = None):
+        AuditLog.objects.create(
+            user=self.request.user,
+            acao=acao,
+            modulo="sgp",
+            entidade="Activity",
+            entidade_id=str(instance.pk),
+            valores_anteriores=valores_anteriores or {},
+            valores_novos=self._snapshot(instance),
+            ip=self.request.META.get("REMOTE_ADDR"),
+            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
+        )
+
+    # ── Endpoint de Calendário ────────────────────────────────────────────
+
+    @action(detail=False, methods=["get"], url_path="calendario")
+    def calendario(self, request):
+        """
+        GET /api/v1/sgp/atividades/calendario/?inicio=YYYY-MM-DD&fim=YYYY-MM-DD
+
+        Retorna payload reduzido de todas as atividades cujo intervalo
+        (data_inicio, data_fim) intersecciona com o período solicitado.
+        Máximo de 90 dias entre inicio e fim (retorna 400 se excedido).
+
+        Filtros opcionais via querystring:
+            tecnico_id, projeto, acao, tipo_atividade, status
+        """
+        from datetime import date
+        from rest_framework.fields import DateField as DRFDateField
+
+        # ── Validação dos parâmetros de intervalo ───────────────────────────────
+        errors = {}
+
+        inicio_raw = request.query_params.get("inicio")
+        fim_raw = request.query_params.get("fim")
+
+        if not inicio_raw:
+            errors["inicio"] = "Parâmetro obrigatório."
+        if not fim_raw:
+            errors["fim"] = "Parâmetro obrigatório."
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        date_field = DRFDateField()
+        try:
+            inicio: date = date_field.to_internal_value(inicio_raw)
+        except Exception:
+            return Response(
+                {"inicio": "Data inválida. Use o formato YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            fim: date = date_field.to_internal_value(fim_raw)
+        except Exception:
+            return Response(
+                {"fim": "Data inválida. Use o formato YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if fim < inicio:
+            return Response(
+                {"fim": "'fim' deve ser maior ou igual a 'inicio'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        delta = (fim - inicio).days
+        if delta > 90:
+            return Response(
+                {
+                    "detail": (
+                        f"Intervalo de {delta} dias excede o máximo permitido de 90 dias. "
+                        f"Reduza o período e faça múltiplas requisições se necessário."
+                    ),
+                    "code": "CALENDAR_INTERVAL_TOO_LARGE",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ── Queryset base (RLS já aplicado por get_queryset) ──────────────────────
+        # Para o calendário não precisamos dos M2M pesados — override do QS
+        qs = Activity.objects.select_related(
+            "municipio",
+            "comunidade",
+            "tecnico_responsavel",
+        ).filter(ativo=True)
+
+        # RLS inline (mesma lógica de get_queryset, sem os prefetch_related desnecessarios)
+        user = request.user
+        if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
+            pass  # sem filtro territorial
+        elif user_has_role(user, "articulador-estadual"):
+            states = user_states(user)
+            qs = qs.filter(municipio__state__sigla__in=states) if states else qs.none()
+        elif user_has_role(user, "adt-acr"):
+            territories = user_territories(user)
+            qs = qs.filter(municipio__territory__in=territories) if territories.exists() else qs.none()
+        else:
+            raise PermissionDenied("Você não tem acesso ao módulo de Atividades do SGP.")
+
+        # Interseccão de intervalo: atividade toca o período se
+        #   data_inicio <= fim  AND  data_fim >= inicio
+        qs = qs.filter(data_inicio__lte=fim, data_fim__gte=inicio)
+
+        # ── Filtros opcionais ──────────────────────────────────────────────────
+        qp = request.query_params
+
+        if tecnico_id := qp.get("tecnico_id"):
+            qs = qs.filter(tecnico_responsavel_id=tecnico_id)
+
+        if projeto := qp.get("projeto"):
+            qs = qs.filter(acao__meta__projeto_id=projeto)
+
+        if acao_id := qp.get("acao"):
+            qs = qs.filter(acao_id=acao_id)
+
+        if tipo_atividade := qp.get("tipo_atividade"):
+            qs = qs.filter(tipo_atividade=tipo_atividade)
+
+        if status_filter := qp.get("status"):
+            qs = qs.filter(status=status_filter)
+
+        # ── Serialização sem paginação ───────────────────────────────────────────
+        qs = qs.order_by("data_inicio", "data_fim")
+        serializer = ActivityCalendarioSerializer(qs, many=True)
+        return Response(
+            {
+                "count": qs.count(),
+                "inicio": str(inicio),
+                "fim": str(fim),
+                "results": serializer.data,
+            }
+        )

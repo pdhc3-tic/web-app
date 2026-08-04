@@ -1,20 +1,28 @@
-from django.urls import path
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    ActivityViewSet,
     ComunidadeViewSet,
     CulturaListView,
     EspecieAnimalListView,
     MembroViewSet,
+    ProductionViewSet,
     UPFViewSet,
     UPFDocumentViewSet,
     ProjetoViewSet,
 )
+from .views.workplan import WorkPlanAcaoViewSet, WorkPlanMetaViewSet
 
 router = DefaultRouter()
 router.register("upfs", UPFViewSet)
 router.register("projetos", ProjetoViewSet, basename="projeto")
 router.register('comunidades', ComunidadeViewSet, basename='comunidade')
+router.register("metas", WorkPlanMetaViewSet, basename="workplanmeta")
+router.register("acoes", WorkPlanAcaoViewSet, basename="workplanacao")
+
+sgp_router = DefaultRouter()
+sgp_router.register("atividades", ActivityViewSet, basename="atividade")
 
 comunidade_list = ComunidadeViewSet.as_view({
     'get': 'list',
@@ -33,8 +41,18 @@ upf_document_detail = UPFDocumentViewSet.as_view({
 upf_document_download = UPFDocumentViewSet.as_view({
     "get": "download",
 })
+production_list = ProductionViewSet.as_view({
+    "get": "list",
+    "post": "create",
+})
+production_detail = ProductionViewSet.as_view({
+    "get": "retrieve",
+    "patch": "partial_update",
+    "delete": "destroy",
+})
 
 urlpatterns = router.urls + [
+    path("sgp/", include(sgp_router.urls)),
     path(
         "catalogos/culturas/",
         CulturaListView.as_view(),
@@ -64,6 +82,16 @@ urlpatterns = router.urls + [
         "upfs/<int:upf_pk>/documentos/<int:pk>/",
         upf_document_detail,
         name="upf-documentos-detail",
+    ),
+    path(
+        "upfs/<int:upf_pk>/producao/",
+        production_list,
+        name="upf-producao-list",
+    ),
+    path(
+        "upfs/<int:upf_pk>/producao/<int:pk>/",
+        production_detail,
+        name="upf-producao-detail",
     ),
     path(
         "upfs/<int:upf_pk>/membros/",
