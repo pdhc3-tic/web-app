@@ -45,6 +45,7 @@ const SUBMODULES: Submodule[] = [
     title: "Calendário",
     description: "Agenda de visitas, eventos e prazos do território.",
     Icon: Calendar,
+    href: "/sgp/atividades/calendario/",
   },
   {
     key: "plano",

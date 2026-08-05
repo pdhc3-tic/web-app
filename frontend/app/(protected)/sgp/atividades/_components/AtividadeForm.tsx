@@ -54,19 +54,31 @@ type Props = {
   mode: "create" | "edit";
   atividadeId?: string;
   initialData?: AtividadeDetail;
+  /**
+   * Pré-preenchimento parcial para o modo "create" (ex.: data vinda do
+   * calendário). Ignorado em "edit" — o detalhe já traz tudo.
+   */
+  initialFormPatch?: Partial<AtividadeFormData>;
 };
 
 const LOADING_LABEL = "Carregando atividades…";
 
-export function AtividadeForm({ mode, atividadeId, initialData }: Props) {
+export function AtividadeForm({
+  mode,
+  atividadeId,
+  initialData,
+  initialFormPatch,
+}: Props) {
   const router = useRouter();
   const { showToast } = useToast();
   const { data: session } = useSession();
   const choices = useSgpChoices();
 
-  const [form, setForm] = useState<AtividadeFormData>(() =>
-    initialData ? detailToForm(initialData) : EMPTY_FORM,
-  );
+  const [form, setForm] = useState<AtividadeFormData>(() => {
+    if (initialData) return detailToForm(initialData);
+    if (initialFormPatch) return { ...EMPTY_FORM, ...initialFormPatch };
+    return EMPTY_FORM;
+  });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
