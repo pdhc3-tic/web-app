@@ -35,6 +35,7 @@ import {
 } from "@/app/lib/upfs";
 // Reaproveitado do wizard de UPF — mesmo comportamento de captura de GPS.
 import { GpsCapture } from "../../upfs/_components/GpsCapture";
+import { EvidenceGallery } from "@/app/components/sgp/EvidenceGallery/EvidenceGallery";
 import { AcaoCombobox } from "./AcaoCombobox";
 import { EquipeAdicionalPicker } from "./EquipeAdicionalPicker";
 import { ParticipantesSection } from "./ParticipantesSection";
@@ -538,6 +539,13 @@ export function AtividadeForm({ mode, atividadeId, initialData }: Props) {
           error={errors.resultados_alcancados}
         />
       </Section>
+
+      {/* ── Evidências (só faz sentido após a atividade existir) ───────────── */}
+      {mode === "edit" && atividadeId && (
+        <Section title="Evidências" columns={1}>
+          <EvidenceGallery atividadeId={atividadeId} />
+        </Section>
+      )}
 
       {/* ── Status ───────────────────────────────────────────────────────── */}
       <Section title="Status">
