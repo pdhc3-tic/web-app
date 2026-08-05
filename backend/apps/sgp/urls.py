@@ -13,7 +13,11 @@ from .views import (
     UPFDocumentViewSet,
     ProjetoViewSet,
 )
-from .views.workplan import WorkPlanAcaoViewSet, WorkPlanMetaViewSet
+from .views.workplan import (
+    WorkPlanAcaoViewSet,
+    WorkPlanDashboardView,
+    WorkPlanMetaViewSet,
+)
 
 router = DefaultRouter()
 router.register("upfs", UPFViewSet)
@@ -53,6 +57,12 @@ production_detail = ProductionViewSet.as_view({
 })
 
 urlpatterns = router.urls + [
+    # Painel consolidado do Plano de Trabalho (Issue #136).
+    path(
+        "sgp/plano-trabalho/painel/",
+        WorkPlanDashboardView.as_view(),
+        name="workplan-dashboard",
+    ),
     path("sgp/", include(sgp_router.urls)),
     path(
         "choices/",

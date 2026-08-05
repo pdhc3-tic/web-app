@@ -16,6 +16,8 @@ import os
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 from celery.schedules import crontab
+import sentry_sdk
+from sentry_sdk.integrations.django import DjangoIntegration
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -270,6 +272,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "setup.tasks.cleanup_expired_tokens",
         "schedule": crontab(hour=2, minute=0),  # todo dia às 2h da manhã
     },
+    "check_acao_progress_alert": {
+        "task": "sgp.tasks.check_acao_progress_alert",
+        "schedule": crontab(hour=12, minute=0),  # diariamente ao meio-dia
+    },
 }
 
 # E-MAIL
@@ -297,6 +303,7 @@ if SENTRY_DSN:
         sentry_sdk.init(
             dsn=SENTRY_DSN,
             send_default_pii=False,
+            integrations=[DjangoIntegration()],
             traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0")),
         )
     except ImportError:

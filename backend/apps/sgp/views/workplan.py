@@ -3,8 +3,11 @@ import logging
 from django.db.models import F, Sum
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status, viewsets
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+import sentry_sdk
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsSuperAdmin, IsUGP
@@ -17,9 +20,60 @@ from apps.sgp.serializers_workplan import (
     WorkPlanAcaoSerializer,
     WorkPlanMetaDetailSerializer,
     WorkPlanMetaListSerializer,
+    WorkPlanDashboardAcaoSerializer,
+    WorkPlanDashboardQuerySerializer,
+)
+from apps.sgp.services.workplan_dashboard import (
+    apply_dashboard_filters,
+    dashboard_actions_for_user,
+    enrich_dashboard_action,
 )
 
 logger = logging.getLogger("apps.sgp.views.workplan")
+
+
+class WorkPlanDashboardView(APIView):
+    """GET /api/v1/sgp/plano-trabalho/painel/ com indicadores e semáforo das Ações."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        query_serializer = WorkPlanDashboardQuerySerializer(data=request.query_params)
+        query_serializer.is_valid(raise_exception=True)
+
+        try:
+            actions = dashboard_actions_for_user(request.user)
+            actions = apply_dashboard_filters(actions, **{
+                key: value
+                for key, value in query_serializer.validated_data.items()
+                if key in {"meta_id", "territorio_id"}
+            })
+            actions = [enrich_dashboard_action(action) for action in actions]
+
+            status_execucao = query_serializer.validated_data.get("status_execucao")
+            if status_execucao:
+                actions = [
+                    action for action in actions
+                    if action.dashboard_status_execucao == status_execucao
+                ]
+
+            resumo = {"total_acoes": len(actions), "verde": 0, "amarelo": 0, "vermelho": 0}
+            for action in actions:
+                resumo[action.dashboard_semaforo] += 1
+
+            return Response({
+                "resumo": resumo,
+                "acoes": WorkPlanDashboardAcaoSerializer(actions, many=True).data,
+            })
+        except PermissionDenied:
+            raise
+        except Exception as exc:
+            sentry_sdk.capture_exception(exc)
+            logger.exception("Falha ao gerar painel do Plano de Trabalho.")
+            return Response(
+                {"detail": "Não foi possível gerar o painel do Plano de Trabalho."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 # ---------------------------------------------------------------------------
