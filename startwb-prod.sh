@@ -11,7 +11,7 @@ echo -e "${YELLOW}Iniciando configuração do ambiente...${NC}\n"
 # --- Passo 1: Copiar arquivos .env ---
 echo -e "Passo 1: Copiando arquivos de ambiente..."
 cp -n backend/.env.example backend/.env 2>/dev/null
-cp -n frontend/.env.example frontend/.env.local 2>/dev/null
+cp -n frontend/.env.production.example frontend/.env.local 2>/dev/null
 
 # --- Passo 2: Gerar Secrets ---
 echo -e "Passo 2: Gerando chaves secretas..."
