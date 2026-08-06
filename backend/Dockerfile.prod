@@ -1,0 +1,23 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Evita gerar .pyc e melhora logs
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Copia apenas dependências primeiro (melhora cache)
+COPY requirements/base.txt /app/requirements/base.txt
+COPY requirements/prod.txt /app/requirements/prod.txt
+
+RUN pip install --no-cache-dir -r /app/requirements/prod.txt
+
+COPY . /app
+
+RUN chmod +x /app/entrypoint.prod.sh
+
+# Expor porta
+EXPOSE 8000
+
+ENTRYPOINT ["/app/entrypoint.prod.sh"]
+CMD ["gunicorn", "setup.wsgi:application", "--bind", "0.0.0.0:8000"]
