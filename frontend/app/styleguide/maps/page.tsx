@@ -3,11 +3,11 @@ import Link from "next/link";
 import { ChevronLeftIcon } from "../../components/icons";
 import { MapsShowcase } from "./MapsShowcase";
 
-if (process.env.NODE_ENV === "production") {
-  notFound();
-}
-
 export default function StyleguideMapsPage() {
+  if (process.env.NODE_ENV === "production") {
+    notFound();
+  }
+
   return (
     <div className="min-h-screen bg-bg">
       <div className="max-w-5xl mx-auto px-6 py-10 space-y-10">
