@@ -1,42 +1,24 @@
-import { apiClient } from "@/app/lib/api";
+import { ApiError, apiClient } from "@/app/lib/api";
 
 /**
  * Configurações não sensíveis da integração com o Google Calendar.
  *
- * Persistidas como chaves do SystemConfig (apps/core/models/system_config.py),
- * onde `valor` é sempre TextField — a conversão de/para os tipos da UI acontece
- * aqui. Credenciais OAuth2 NÃO passam por este módulo: ficam em variável de
- * ambiente no backend e nunca são expostas pela API.
+ * Espelha o endpoint singleton `GoogleCalendarConfigView`
+ * (apps/core/views/system_config.py). Por baixo os valores vivem em chaves do
+ * SystemConfig, mas isso é detalhe do backend: aqui só existe o payload plano
+ * `{ calendario_destino_id, lembretes, integracao_ativa }`.
  *
- * Estado atual: as chaves ainda não foram semeadas no banco e o endpoint de
- * status não existe (BE-4 pendente). Tudo aqui degrada para defaults em vez de
- * lançar, e passa a funcionar sozinho quando o backend entregar sua parte.
+ * Credenciais OAuth2 NÃO passam por este módulo — ficam em variável de ambiente
+ * (`GOOGLE_CALENDAR_SERVICE_ACCOUNT_INFO` / `_FILE`) e nunca são expostas pela
+ * API. Ver backend/docs/google-calendar.md.
  */
 
-// ─── Chaves ──────────────────────────────────────────────────────────────────
-
-export const GCAL_CALENDAR_ID = "gcal_calendar_id";
-export const GCAL_REMINDERS = "gcal_reminders";
-export const GCAL_ENABLED = "gcal_enabled";
-
-/** As únicas chaves que esta tela lê ou escreve. */
-export const GCAL_KEYS = [
-  GCAL_CALENDAR_ID,
-  GCAL_REMINDERS,
-  GCAL_ENABLED,
-] as const;
-
-export type GcalKey = (typeof GCAL_KEYS)[number];
-
-/** Rótulo humano de cada chave, usado nas mensagens de erro de salvamento. */
-export const GCAL_KEY_LABEL: Record<GcalKey, string> = {
-  [GCAL_CALENDAR_ID]: "Calendário destino",
-  [GCAL_REMINDERS]: "Lembretes",
-  [GCAL_ENABLED]: "Integração ativa",
-};
+const CONFIG_URL = "/api/v1/core/config/google-calendar/";
 
 // ─── Limites do Google Calendar ──────────────────────────────────────────────
-// Replicados aqui para o erro aparecer na edição, e não só na sincronização.
+// O backend valida apenas `min_value=1` por lembrete — sem teto e sem limite de
+// quantidade. Replicamos os limites reais do Google aqui para o erro aparecer na
+// edição, e não silenciosamente na sincronização assíncrona.
 
 /** 4 semanas em minutos — teto de antecedência aceito pelo Google Calendar. */
 export const REMINDER_MAX_MINUTES = 40320;
@@ -45,186 +27,103 @@ export const REMINDER_MAX_COUNT = 5;
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
+/** Espelha GoogleCalendarConfigSerializer (apps/core/serializers.py). */
 export type GoogleCalendarConfig = {
-  calendarId: string;
+  calendario_destino_id: string;
   /** Minutos de antecedência de cada lembrete. */
-  reminders: number[];
-  enabled: boolean;
+  lembretes: number[];
+  integracao_ativa: boolean;
 };
 
-export type GoogleCalendarConfigResult = {
-  config: GoogleCalendarConfig;
-  /**
-   * false quando alguma das três chaves não existe no backend — a integração
-   * ainda não foi provisionada e salvar vai falhar com 404.
-   */
-  configurado: boolean;
-  /** Chaves ausentes, para a UI dizer exatamente o que falta. */
-  chavesAusentes: GcalKey[];
+/** Usado como estado inicial enquanto a requisição não volta. */
+export const EMPTY_CONFIG: GoogleCalendarConfig = {
+  calendario_destino_id: "",
+  lembretes: [],
+  integracao_ativa: false,
 };
 
-export const DEFAULT_CONFIG: GoogleCalendarConfig = {
-  calendarId: "",
-  reminders: [],
-  enabled: false,
+/** Rótulo humano de cada campo, para mensagens de erro do backend. */
+export const CONFIG_FIELD_LABEL: Record<keyof GoogleCalendarConfig, string> = {
+  calendario_destino_id: "Calendário destino",
+  lembretes: "Lembretes",
+  integracao_ativa: "Integração ativa",
 };
 
-/** Espelha SystemConfigSerializer. */
-type SystemConfigItem = {
-  chave: string;
-  valor: string;
-  tipo: string;
-  descricao: string;
-  atualizado_por: string | null;
-  atualizado_em: string;
-};
+// ─── Leitura e escrita ───────────────────────────────────────────────────────
 
-type Envelope<T> = { count?: number; results?: T[] };
-
-// ─── Leitura ─────────────────────────────────────────────────────────────────
-
-function parseReminders(raw: string): number[] {
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((v) => Number(v))
-      .filter((n) => Number.isInteger(n) && n > 0);
-  } catch {
-    return [];
-  }
-}
-
-/** O backend serializa boolean como "True"/"False" (str(bool) do Python). */
-function parseBoolean(raw: string): boolean {
-  return ["true", "1"].includes(raw.trim().toLowerCase());
-}
-
-/**
- * GET /api/v1/system-config/ — lê apenas as três chaves do Google Calendar.
- *
- * Filtrar aqui é deliberado: a listagem devolve TODAS as configurações do
- * sistema, e nada além destas três deve chegar à tela.
- */
-export async function fetchGoogleCalendarConfig(
-  signal?: AbortSignal,
-): Promise<GoogleCalendarConfigResult> {
-  const res = await apiClient("/api/v1/system-config/?limit=200", { signal });
-  const data = (await res.json()) as
-    | SystemConfigItem[]
-    | Envelope<SystemConfigItem>;
-  const items = Array.isArray(data) ? data : (data.results ?? []);
-
-  const porChave = new Map<string, SystemConfigItem>();
-  for (const item of items) {
-    if ((GCAL_KEYS as readonly string[]).includes(item.chave)) {
-      porChave.set(item.chave, item);
-    }
-  }
-
-  const chavesAusentes = GCAL_KEYS.filter((k) => !porChave.has(k));
-
+function normalizeConfig(raw: Partial<GoogleCalendarConfig>): GoogleCalendarConfig {
   return {
-    config: {
-      calendarId: porChave.get(GCAL_CALENDAR_ID)?.valor ?? DEFAULT_CONFIG.calendarId,
-      reminders: porChave.has(GCAL_REMINDERS)
-        ? parseReminders(porChave.get(GCAL_REMINDERS)!.valor)
-        : DEFAULT_CONFIG.reminders,
-      enabled: porChave.has(GCAL_ENABLED)
-        ? parseBoolean(porChave.get(GCAL_ENABLED)!.valor)
-        : DEFAULT_CONFIG.enabled,
-    },
-    configurado: chavesAusentes.length === 0,
-    chavesAusentes: [...chavesAusentes],
+    calendario_destino_id:
+      typeof raw?.calendario_destino_id === "string"
+        ? raw.calendario_destino_id
+        : "",
+    lembretes: Array.isArray(raw?.lembretes)
+      ? raw.lembretes
+          .map((v) => Number(v))
+          .filter((n) => Number.isInteger(n) && n > 0)
+          // O backend semeia [1440, 60]; ordenar deixa a leitura da lista
+          // previsível, do lembrete mais próximo ao mais distante.
+          .sort((a, b) => a - b)
+      : [],
+    integracao_ativa: raw?.integracao_ativa === true,
   };
 }
 
-// ─── Escrita ─────────────────────────────────────────────────────────────────
-
-/** Serializa cada campo para o formato que o SystemConfigSerializer aceita. */
-function serializeValor(key: GcalKey, config: GoogleCalendarConfig): string {
-  switch (key) {
-    case GCAL_CALENDAR_ID:
-      return config.calendarId.trim();
-    case GCAL_REMINDERS:
-      return JSON.stringify(config.reminders);
-    case GCAL_ENABLED:
-      return String(config.enabled);
-  }
+/** GET — configuração atual. Lança ApiError (403 para não Super Admin). */
+export async function fetchGoogleCalendarConfig(
+  signal?: AbortSignal,
+): Promise<GoogleCalendarConfig> {
+  const res = await apiClient(CONFIG_URL, { signal });
+  return normalizeConfig(await res.json());
 }
-
-/** Quais chaves mudaram entre dois estados — evita PATCH desnecessário. */
-export function diffConfig(
-  original: GoogleCalendarConfig,
-  atual: GoogleCalendarConfig,
-): GcalKey[] {
-  const mudou: GcalKey[] = [];
-  if (original.calendarId.trim() !== atual.calendarId.trim()) {
-    mudou.push(GCAL_CALENDAR_ID);
-  }
-  if (
-    original.reminders.length !== atual.reminders.length ||
-    original.reminders.some((v, i) => v !== atual.reminders[i])
-  ) {
-    mudou.push(GCAL_REMINDERS);
-  }
-  if (original.enabled !== atual.enabled) mudou.push(GCAL_ENABLED);
-  return mudou;
-}
-
-export type SaveResult = {
-  salvas: GcalKey[];
-  falhas: { key: GcalKey; message: string }[];
-};
 
 /**
- * Salva a configuração com um PATCH por chave alterada.
+ * PATCH — grava a configuração e devolve o estado persistido.
  *
- * O SystemConfig não tem escrita em lote, então não há atomicidade: as três
- * chaves podem falhar independentemente. Duas decisões por causa disso —
- * só enviamos o que mudou (reduz a chance de estado parcial), e usamos
- * allSettled para que uma falha não descarte os sucessos. Quem chama precisa
- * informar ao usuário exatamente o que não salvou.
+ * A view é `@transaction.atomic`: ou os três campos gravam, ou nenhum. Não há
+ * estado parcial a tratar, então o erro pode subir para quem chama.
  */
 export async function saveGoogleCalendarConfig(
-  original: GoogleCalendarConfig,
-  atual: GoogleCalendarConfig,
-): Promise<SaveResult> {
-  const alteradas = diffConfig(original, atual);
-  if (alteradas.length === 0) return { salvas: [], falhas: [] };
-
-  const resultados = await Promise.allSettled(
-    alteradas.map((key) =>
-      apiClient(`/api/v1/system-config/${key}/`, {
-        method: "PATCH",
-        body: JSON.stringify({ valor: serializeValor(key, atual) }),
-      }),
-    ),
-  );
-
-  const salvas: GcalKey[] = [];
-  const falhas: SaveResult["falhas"] = [];
-
-  resultados.forEach((r, i) => {
-    const key = alteradas[i];
-    if (r.status === "fulfilled") {
-      salvas.push(key);
-    } else {
-      const reason = r.reason as unknown;
-      falhas.push({
-        key,
-        message:
-          reason instanceof Error ? reason.message : "Falha ao salvar.",
-      });
-    }
+  config: GoogleCalendarConfig,
+): Promise<GoogleCalendarConfig> {
+  const res = await apiClient(CONFIG_URL, {
+    method: "PATCH",
+    body: JSON.stringify({
+      calendario_destino_id: config.calendario_destino_id.trim(),
+      lembretes: config.lembretes,
+      integracao_ativa: config.integracao_ativa,
+    }),
   });
+  return normalizeConfig(await res.json());
+}
 
-  return { salvas, falhas };
+/** Compara dois estados para habilitar o botão Salvar. */
+export function configEquals(
+  a: GoogleCalendarConfig,
+  b: GoogleCalendarConfig,
+): boolean {
+  return (
+    a.calendario_destino_id.trim() === b.calendario_destino_id.trim() &&
+    a.integracao_ativa === b.integracao_ativa &&
+    a.lembretes.length === b.lembretes.length &&
+    a.lembretes.every((v, i) => v === b.lembretes[i])
+  );
 }
 
 // ─── Status de sincronização ─────────────────────────────────────────────────
 
-export type SyncEstado = "ok" | "erro" | "nunca_executada" | "indisponivel";
+/**
+ * `pendente` está na lista porque é o vocabulário que o backend já usa em
+ * `Activity.google_calendar_sync_status` (ok/pendente/erro) — é provável que o
+ * endpoint agregado espelhe esses mesmos valores. `indisponivel` é local: marca
+ * "não consegui falar com o endpoint", nunca vem do servidor.
+ */
+export type SyncEstado =
+  | "ok"
+  | "pendente"
+  | "erro"
+  | "nunca_executada"
+  | "indisponivel";
 
 export type GoogleCalendarStatus = {
   estado: SyncEstado;
@@ -247,39 +146,95 @@ type RawStatus = {
   falhas_recentes?: number;
 };
 
-const ESTADOS_VALIDOS: SyncEstado[] = ["ok", "erro", "nunca_executada"];
+/** Estados que podem vir do servidor. `indisponivel` é sempre local. */
+const ESTADOS_DO_SERVIDOR: SyncEstado[] = [
+  "ok",
+  "pendente",
+  "erro",
+  "nunca_executada",
+];
+
+const STATUS_URL = `${CONFIG_URL}status/`;
 
 /**
- * GET /api/v1/integrations/google-calendar/status/
+ * Avisa no console quando o endpoint responde mas fora do contrato.
  *
- * O endpoint ainda não existe (BE-4 pendente): 404, erro de rede ou payload
- * inesperado devolvem `indisponivel`, que a tela trata como estado normal e não
- * como falha. Nunca lança.
+ * Sem isto a divergência é invisível: o fallback devolve `indisponivel` e a tela
+ * fica idêntica à de quando o endpoint ainda não existia — dando a impressão de
+ * que o backend não entregou, quando na verdade entregou diferente.
+ */
+function avisarContratoDivergente(motivo: string, recebido: unknown): void {
+  console.warn(
+    `[google-calendar] ${STATUS_URL} respondeu fora do contrato: ${motivo}. ` +
+      "Esperado { estado: 'ok'|'pendente'|'erro'|'nunca_executada', " +
+      "ultima_sincronizacao, ultimo_erro, falhas_recentes }. Recebido:",
+    recebido,
+  );
+}
+
+/**
+ * GET /api/v1/core/config/google-calendar/status/
+ *
+ * **Este endpoint ainda não existe.** O backend rastreia a sincronização por
+ * atividade (`Activity.google_calendar_sync_status`), sem visão agregada da
+ * integração — não há "última sincronização" nem contagem de falhas em lugar
+ * nenhum, e o campo por atividade nem é filtrável no ActivityFilter.
+ *
+ * A função já consome o contrato pedido ao time do backend. Nunca lança:
+ * 404 é o estado esperado hoje e passa calado; qualquer outra divergência
+ * avisa no console para não passar despercebida.
  */
 export async function fetchGoogleCalendarStatus(
   signal?: AbortSignal,
 ): Promise<GoogleCalendarStatus> {
+  let raw: RawStatus;
+
   try {
-    const res = await apiClient(
-      "/api/v1/integrations/google-calendar/status/",
-      { signal },
+    const res = await apiClient(STATUS_URL, { signal });
+    raw = (await res.json()) as RawStatus;
+  } catch (e) {
+    // 404 = endpoint ainda não implementado. É o estado normal hoje, sem ruído.
+    if (e instanceof ApiError && e.status === 404) return STATUS_INDISPONIVEL;
+    // Abort não é erro: a tela foi desmontada no meio da requisição.
+    if (signal?.aborted) return STATUS_INDISPONIVEL;
+    avisarContratoDivergente(
+      e instanceof ApiError ? `HTTP ${e.status}` : "falha de rede",
+      e,
     );
-    const raw = (await res.json()) as RawStatus;
-
-    const estado = ESTADOS_VALIDOS.includes(raw?.estado as SyncEstado)
-      ? (raw.estado as SyncEstado)
-      : "indisponivel";
-
-    return {
-      estado,
-      ultimaSincronizacao: raw?.ultima_sincronizacao ?? null,
-      ultimoErro: raw?.ultimo_erro ?? null,
-      falhasRecentes:
-        typeof raw?.falhas_recentes === "number" ? raw.falhas_recentes : 0,
-    };
-  } catch {
     return STATUS_INDISPONIVEL;
   }
+
+  if (!raw || typeof raw !== "object") {
+    avisarContratoDivergente("corpo não é um objeto", raw);
+    return STATUS_INDISPONIVEL;
+  }
+
+  if (!ESTADOS_DO_SERVIDOR.includes(raw.estado as SyncEstado)) {
+    avisarContratoDivergente(`estado desconhecido '${raw.estado}'`, raw);
+    return STATUS_INDISPONIVEL;
+  }
+
+  // O estado é válido, mas um campo pode ter vindo com outro nome — o caso mais
+  // traiçoeiro, porque a tela exibiria "nunca executada" com confiança.
+  // Só vale para 'ok' e 'erro': em 'pendente' (primeira sincronização em curso)
+  // e 'nunca_executada' a ausência da data é legítima.
+  if (
+    (raw.estado === "ok" || raw.estado === "erro") &&
+    !raw.ultima_sincronizacao
+  ) {
+    avisarContratoDivergente(
+      `estado '${raw.estado}' sem 'ultima_sincronizacao'`,
+      raw,
+    );
+  }
+
+  return {
+    estado: raw.estado as SyncEstado,
+    ultimaSincronizacao: raw.ultima_sincronizacao ?? null,
+    ultimoErro: raw.ultimo_erro ?? null,
+    falhasRecentes:
+      typeof raw.falhas_recentes === "number" ? raw.falhas_recentes : 0,
+  };
 }
 
 // ─── Validação dos lembretes ─────────────────────────────────────────────────
@@ -304,7 +259,7 @@ export function validateReminder(
   return null;
 }
 
-/** "1440" → "1 dia antes". Usado ao lado de cada chip de lembrete. */
+/** 1440 → "1 dia antes". Usado ao lado de cada chip de lembrete. */
 export function formatReminder(minutos: number): string {
   if (minutos < 60) {
     return `${minutos} min antes`;

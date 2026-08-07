@@ -15,6 +15,8 @@ type Props = {
   id: string;
   value: number[];
   onChange: (reminders: number[]) => void;
+  /** Erro vindo da validação do backend, exibido junto dos erros locais. */
+  error?: string;
   disabled?: boolean;
 };
 
@@ -25,33 +27,42 @@ type Props = {
  * 40320 minutos) para o erro aparecer aqui, e não silenciosamente na
  * sincronização. Os lembretes ficam ordenados do mais próximo ao mais distante.
  */
-export function RemindersEditor({ id, value, onChange, disabled }: Props) {
+export function RemindersEditor({
+  id,
+  value,
+  onChange,
+  error,
+  disabled,
+}: Props) {
   const [rascunho, setRascunho] = useState("");
-  const [erro, setErro] = useState<string | null>(null);
+  const [erroLocal, setErroLocal] = useState<string | null>(null);
 
+  // O erro local (digitação) tem prioridade sobre o do backend: é o mais
+  // recente e o mais acionável para quem está editando agora.
+  const erro = erroLocal ?? error ?? null;
   const cheio = value.length >= REMINDER_MAX_COUNT;
 
   function adicionar() {
     const minutos = Number(rascunho.trim());
     if (rascunho.trim() === "") {
-      setErro("Informe os minutos de antecedência.");
+      setErroLocal("Informe os minutos de antecedência.");
       return;
     }
 
     const problema = validateReminder(minutos, value);
     if (problema) {
-      setErro(problema);
+      setErroLocal(problema);
       return;
     }
 
     onChange([...value, minutos].sort((a, b) => a - b));
     setRascunho("");
-    setErro(null);
+    setErroLocal(null);
   }
 
   function remover(minutos: number) {
     onChange(value.filter((m) => m !== minutos));
-    setErro(null);
+    setErroLocal(null);
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
@@ -83,7 +94,7 @@ export function RemindersEditor({ id, value, onChange, disabled }: Props) {
           aria-describedby={`${id}-help`}
           onChange={(e) => {
             setRascunho(e.target.value);
-            setErro(null);
+            setErroLocal(null);
           }}
           onKeyDown={onKeyDown}
           className="h-9 w-40 rounded-md border border-border bg-surface px-3 text-sm text-text outline-none transition duration-120 enabled:hover:border-text-muted focus:border-2 focus:border-primary disabled:cursor-not-allowed disabled:bg-surface-muted disabled:opacity-70"

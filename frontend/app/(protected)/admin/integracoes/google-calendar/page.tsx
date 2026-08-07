@@ -10,25 +10,25 @@ import { Input } from "@/app/components/ui/Input/Input";
 import { RestrictedAccess } from "@/app/components/ui/RestrictedAccess/RestrictedAccess";
 import Spinner from "@/app/components/icons/Spinner";
 import { useToast } from "@/app/components/ui/Toast/Toast";
+import { ApiError } from "@/app/lib/api";
 import { useIsSuperAdmin } from "@/app/lib/auth/roles";
 import { absoluteDateTime, relativeTime } from "@/app/lib/datetime";
 import {
-  DEFAULT_CONFIG,
-  GCAL_KEY_LABEL,
-  diffConfig,
+  CONFIG_FIELD_LABEL,
+  EMPTY_CONFIG,
+  configEquals,
   fetchGoogleCalendarConfig,
   fetchGoogleCalendarStatus,
   saveGoogleCalendarConfig,
-  type GcalKey,
   type GoogleCalendarConfig,
   type GoogleCalendarStatus,
 } from "@/app/lib/integracoes";
 import { RemindersEditor } from "./_components/RemindersEditor";
 import { Toggle } from "./_components/Toggle";
 
-const CALENDAR_ID_FIELD = "gcal-calendar-id";
-const REMINDERS_FIELD = "gcal-reminders";
-const ENABLED_FIELD = "gcal-enabled";
+const CALENDAR_ID_FIELD = "gcal-calendario-destino-id";
+const REMINDERS_FIELD = "gcal-lembretes";
+const ENABLED_FIELD = "gcal-integracao-ativa";
 
 function HeaderSlot() {
   return (
@@ -52,10 +52,10 @@ export default function GoogleCalendarConfigPage() {
   const { loading: authLoading, isSuperAdmin } = useIsSuperAdmin();
   const { showToast } = useToast();
 
-  const [original, setOriginal] = useState<GoogleCalendarConfig>(DEFAULT_CONFIG);
-  const [form, setForm] = useState<GoogleCalendarConfig>(DEFAULT_CONFIG);
-  const [chavesAusentes, setChavesAusentes] = useState<GcalKey[]>([]);
+  const [original, setOriginal] = useState<GoogleCalendarConfig>(EMPTY_CONFIG);
+  const [form, setForm] = useState<GoogleCalendarConfig>(EMPTY_CONFIG);
   const [status, setStatus] = useState<GoogleCalendarStatus | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -72,20 +72,21 @@ export default function GoogleCalendarConfigPage() {
 
     Promise.all([
       fetchGoogleCalendarConfig(controller.signal),
-      // Nunca rejeita: sem a BE-4 devolve `indisponivel`.
+      // Nunca rejeita: sem o endpoint agregado devolve `indisponivel`.
       fetchGoogleCalendarStatus(controller.signal),
     ])
-      .then(([configResult, statusResult]) => {
+      .then(([config, statusResult]) => {
         if (controller.signal.aborted) return;
-        setOriginal(configResult.config);
-        setForm(configResult.config);
-        setChavesAusentes(configResult.chavesAusentes);
+        setOriginal(config);
+        setForm(config);
         setStatus(statusResult);
       })
-      .catch(() => {
+      .catch((e: unknown) => {
         if (controller.signal.aborted) return;
         setLoadError(
-          "Não foi possível carregar as configurações da integração.",
+          e instanceof ApiError
+            ? e.message
+            : "Não foi possível carregar as configurações da integração.",
         );
       })
       .finally(() => {
@@ -97,45 +98,48 @@ export default function GoogleCalendarConfigPage() {
 
   const patch = useCallback((p: Partial<GoogleCalendarConfig>) => {
     setForm((prev) => ({ ...prev, ...p }));
+    setFieldErrors((prev) => {
+      if (Object.keys(p).every((k) => !(k in prev))) return prev;
+      const next = { ...prev };
+      for (const k of Object.keys(p)) delete next[k];
+      return next;
+    });
   }, []);
 
-  const naoProvisionada = chavesAusentes.length > 0;
-  const alteradas = diffConfig(original, form);
-  const dirty = alteradas.length > 0;
+  const dirty = !configEquals(original, form);
 
   async function handleSave() {
     if (saving || !dirty) return;
     setSaving(true);
+    setFieldErrors({});
 
     try {
-      const { salvas, falhas } = await saveGoogleCalendarConfig(original, form);
-
-      if (falhas.length === 0) {
-        setOriginal(form);
-        showToast("Configurações salvas.", "success");
+      // A view é @transaction.atomic — ou grava tudo, ou nada. Não há estado
+      // parcial a reconciliar; adotamos o payload devolvido como novo original.
+      const persistido = await saveGoogleCalendarConfig(form);
+      setOriginal(persistido);
+      setForm(persistido);
+      showToast("Configurações salvas.", "success");
+    } catch (e: unknown) {
+      if (e instanceof ApiError && e.fieldErrors?.length) {
+        const mapped: Record<string, string> = {};
+        for (const fe of e.fieldErrors) mapped[fe.field] = fe.message;
+        setFieldErrors(mapped);
+        const nomes = e.fieldErrors
+          .map(
+            (fe) =>
+              CONFIG_FIELD_LABEL[
+                fe.field as keyof GoogleCalendarConfig
+              ] ?? fe.field,
+          )
+          .join(", ");
+        showToast(`Corrija os campos destacados: ${nomes}.`, "error");
         return;
       }
-
-      // Salvamento parcial: o SystemConfig não tem escrita em lote, então parte
-      // pode ter persistido. Fixamos o que salvou como novo original e dizemos
-      // exatamente o que ficou de fora — sem isso o usuário acha que salvou tudo.
-      if (salvas.length > 0) {
-        setOriginal((prev) => {
-          const next = { ...prev };
-          for (const key of salvas) {
-            if (key === "gcal_calendar_id") next.calendarId = form.calendarId;
-            if (key === "gcal_reminders") next.reminders = form.reminders;
-            if (key === "gcal_enabled") next.enabled = form.enabled;
-          }
-          return next;
-        });
-      }
-
-      const nomes = falhas.map((f) => GCAL_KEY_LABEL[f.key]).join(", ");
       showToast(
-        salvas.length > 0
-          ? `Salvo parcialmente. Não foi possível salvar: ${nomes}.`
-          : `Não foi possível salvar: ${nomes}.`,
+        e instanceof ApiError
+          ? e.message
+          : "Não foi possível salvar as configurações. Tente novamente.",
         "error",
       );
     } finally {
@@ -203,8 +207,6 @@ export default function GoogleCalendarConfigPage() {
           </div>
         ) : (
           <>
-            {naoProvisionada && <NaoProvisionadaAviso />}
-
             <StatusSection status={status} />
 
             <CredenciaisSection />
@@ -215,27 +217,31 @@ export default function GoogleCalendarConfigPage() {
               <Input
                 id={CALENDAR_ID_FIELD}
                 label="Calendário destino (ID)"
-                value={form.calendarId}
-                onChange={(e) => patch({ calendarId: e.target.value })}
-                placeholder="equipe@organizacao.org.br"
+                value={form.calendario_destino_id}
+                onChange={(e) =>
+                  patch({ calendario_destino_id: e.target.value })
+                }
+                placeholder="agenda@organizacao.org.br"
                 helperText="ID do calendário no Google, geralmente um e-mail ou terminado em @group.calendar.google.com."
+                error={fieldErrors.calendario_destino_id}
                 disabled={saving}
               />
 
               <RemindersEditor
                 id={REMINDERS_FIELD}
-                value={form.reminders}
-                onChange={(reminders) => patch({ reminders })}
+                value={form.lembretes}
+                onChange={(lembretes) => patch({ lembretes })}
+                error={fieldErrors.lembretes}
                 disabled={saving}
               />
 
               <div className="border-t border-border pt-5">
                 <Toggle
                   id={ENABLED_FIELD}
-                  checked={form.enabled}
-                  onChange={(enabled) => patch({ enabled })}
+                  checked={form.integracao_ativa}
+                  onChange={(integracao_ativa) => patch({ integracao_ativa })}
                   label="Integração ativa"
-                  description="Quando desativada, nenhuma atividade é enviada ao Google Calendar."
+                  description="Quando desativada, novas sincronizações não são enfileiradas."
                   disabled={saving}
                 />
               </div>
@@ -244,14 +250,10 @@ export default function GoogleCalendarConfigPage() {
             <div className="flex items-center justify-end gap-3">
               {dirty && (
                 <span className="text-xs text-text-muted">
-                  {alteradas.length} alteração(ões) não salva(s)
+                  Alterações não salvas
                 </span>
               )}
-              <Button
-                onClick={handleSave}
-                loading={saving}
-                disabled={!dirty || naoProvisionada}
-              >
+              <Button onClick={handleSave} loading={saving} disabled={!dirty}>
                 Salvar alterações
               </Button>
             </div>
@@ -259,30 +261,6 @@ export default function GoogleCalendarConfigPage() {
         )}
       </div>
     </>
-  );
-}
-
-/**
- * As chaves de configuração não existem no banco. Salvar retornaria 404, então
- * o botão fica desabilitado e explicamos o motivo em vez de deixar o usuário
- * tentar e falhar.
- */
-function NaoProvisionadaAviso() {
-  return (
-    <div
-      role="status"
-      className="flex items-start gap-2 rounded-lg border border-warning-text/30 bg-warning-bg px-4 py-3"
-    >
-      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-text" />
-      <div className="text-sm text-warning-text">
-        <p className="font-medium">Integração ainda não provisionada.</p>
-        <p className="mt-0.5">
-          As chaves de configuração do Google Calendar não existem no servidor.
-          Os valores abaixo são apenas os padrões e não podem ser salvos até que
-          o backend provisione a integração.
-        </p>
-      </div>
-    </div>
   );
 }
 
@@ -296,8 +274,9 @@ function CredenciaisSection() {
       <div>
         <h3 className="text-sm font-medium text-text">Credenciais OAuth2</h3>
         <p className="mt-1 text-sm leading-relaxed text-text-muted">
-          Client ID e Client Secret são configurados por variável de ambiente no
-          servidor. Por segurança, não são exibidos nem editáveis por esta tela.
+          As credenciais da conta de serviço são configuradas por variável de
+          ambiente no servidor. Por segurança, não são exibidas nem editáveis
+          por esta tela.
         </p>
       </div>
     </section>
@@ -306,9 +285,13 @@ function CredenciaisSection() {
 
 const ESTADO_BADGE: Record<
   GoogleCalendarStatus["estado"],
-  { status: "concluido" | "nao-realizada" | "inativo"; label: string }
+  {
+    status: "concluido" | "em-andamento" | "nao-realizada" | "inativo";
+    label: string;
+  }
 > = {
   ok: { status: "concluido", label: "Sincronizado" },
+  pendente: { status: "em-andamento", label: "Sincronização em andamento" },
   erro: { status: "nao-realizada", label: "Falha na sincronização" },
   nunca_executada: { status: "inativo", label: "Nunca sincronizado" },
   indisponivel: { status: "inativo", label: "Indisponível" },
@@ -330,7 +313,10 @@ function StatusSection({ status }: { status: GoogleCalendarStatus | null }) {
 
       {estado === "indisponivel" ? (
         <p className="text-sm text-text-muted">
-          A sincronização ainda não está disponível neste ambiente.
+          O backend ainda não expõe o status agregado da integração. A
+          sincronização é registrada por atividade, no campo{" "}
+          <span className="font-medium text-text">Status de sincronização</span>{" "}
+          de cada uma.
         </p>
       ) : (
         <>
