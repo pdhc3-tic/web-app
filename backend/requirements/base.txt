@@ -19,3 +19,6 @@ bcrypt==5.0.0
 validate-docbr>=1.10
 drf-spectacular==0.28.0
 boto3==1.40.0
+google-api-python-client==2.179.0
+google-auth==2.40.3
+sentry-sdk==2.34.1

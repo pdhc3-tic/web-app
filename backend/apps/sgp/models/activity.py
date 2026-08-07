@@ -70,6 +70,12 @@ STATUS_TRANSITIONS: dict[str, set[str]] = {
     "cancelada": set(),
 }
 
+GOOGLE_CALENDAR_SYNC_STATUS_CHOICES = [
+    ("pendente", "Pendente"),
+    ("ok", "OK"),
+    ("erro", "Erro"),
+]
+
 
 # ---------------------------------------------------------------------------
 # Model
@@ -144,8 +150,8 @@ class Activity(models.Model):
     )
 
     # ── Datas ────────────────────────────────────────────────────────────────
-    data_inicio = models.DateField(verbose_name="Data de Início")
-    data_fim = models.DateField(verbose_name="Data de Fim")
+    data_inicio = models.DateTimeField(verbose_name="Data de Início")
+    data_fim = models.DateTimeField(verbose_name="Data de Fim")
 
     # ── Participantes ────────────────────────────────────────────────────────
     upfs_participantes = models.ManyToManyField(
@@ -216,6 +222,20 @@ class Activity(models.Model):
         unique=True,
         verbose_name="UUID Local",
         help_text="UUID gerado pelo dispositivo para idempotência no sync SCA.",
+    )
+
+    # ── Integração Google Calendar ────────────────────────────────────────────
+    google_calendar_event_id = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="ID do Evento Google Calendar",
+    )
+    google_calendar_sync_status = models.CharField(
+        max_length=20,
+        choices=GOOGLE_CALENDAR_SYNC_STATUS_CHOICES,
+        default="ok",
+        verbose_name="Status de Sync Google Calendar",
     )
 
     # ── Campo calculado território (derivado do município) ────────────────────

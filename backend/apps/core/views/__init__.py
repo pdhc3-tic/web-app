@@ -16,7 +16,11 @@ from .notifications import (
 )
 from .organizations import OrganizationViewSet
 from .storage import LocalStorageUploadView
-from .system_config import SystemConfigDetailView, SystemConfigListView
+from .system_config import (
+    GoogleCalendarConfigView,
+    SystemConfigDetailView,
+    SystemConfigListView,
+)
 from .territorial import MunicipalityViewSet, RoleViewSet, StateViewSet, TerritoryViewSet
 from .users import UserViewSet
 
@@ -36,6 +40,7 @@ __all__ = [
     "unread_count",
     "OrganizationViewSet",
     "LocalStorageUploadView",
+    "GoogleCalendarConfigView",
     "SystemConfigDetailView",
     "SystemConfigListView",
     "MunicipalityViewSet",
