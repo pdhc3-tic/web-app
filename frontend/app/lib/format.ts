@@ -104,6 +104,25 @@ export function formatArea(value: number | string | null | undefined): string {
   })} ha`;
 }
 
+/**
+ * Valor monetário em reais: 1234.5 → "R$ 1.234,50".
+ *
+ * Aceita string porque o DRF serializa DecimalField como string
+ * (ex.: valor_total_planejado das Metas). Nulo/NaN vira "R$ 0,00" — a soma de
+ * uma Meta sem Ações é zero, não "desconhecido".
+ */
+export function formatCurrencyBRL(
+  value: number | string | null | undefined,
+): string {
+  const n = value === null || value === undefined || value === ""
+    ? 0
+    : Number(value);
+  return (Number.isNaN(n) ? 0 : n).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+}
+
 /** Boolean → "Sim"/"Não". Retorna "" para nulo/indefinido. */
 export function formatBool(value: boolean | null | undefined): string {
   if (value === null || value === undefined) return "";

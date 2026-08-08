@@ -50,8 +50,9 @@ const SUBMODULES: Submodule[] = [
   {
     key: "plano",
     title: "Plano de Trabalho",
-    description: "Planejamento das ações por período e responsável.",
+    description: "Metas do PDHC III, com período, ODS e valor planejado.",
     Icon: ClipboardCheck,
+    href: "/sgp/metas/",
   },
   {
     key: "producao",

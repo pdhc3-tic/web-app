@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useTransition } from "react";
+import { Suspense, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Spinner from "@/app/components/icons/Spinner";
@@ -32,6 +32,14 @@ function RedefinirSenhaForm() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [tokenInvalido, setTokenInvalido] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+
+  // Ver login/page.tsx: sem isso um clique pré-hidratação faz o submit nativo
+  // do <form> e joga a nova senha na query string da própria URL.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHydrated(true);
+  }, []);
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -130,7 +138,7 @@ function RedefinirSenhaForm() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
+        <form onSubmit={handleSubmit} method="post" className="flex flex-col gap-5" noValidate>
           <div className="flex flex-col gap-1.5">
             <label htmlFor="senha" className="text-sm font-medium text-text">
               Nova senha
@@ -171,7 +179,7 @@ function RedefinirSenhaForm() {
 
           <button
             type="submit"
-            disabled={pending}
+            disabled={pending || !hydrated}
             className="mt-1 h-10 rounded-md bg-primary text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors hover:bg-secondary disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {pending ? (
