@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
+import { ApiError } from "@/app/lib/api";
 import { SlideOver } from "@/app/components/ui/SlideOver/SlideOver";
 import { Button } from "@/app/components/ui/Button/Button";
 import { Input } from "@/app/components/ui/Input/Input";
@@ -9,12 +10,10 @@ import { Select } from "@/app/components/ui/Select/Select";
 import { Textarea } from "@/app/components/ui/Textarea/Textarea";
 import { CatalogoCombobox } from "./CatalogoCombobox";
 import {
-  createProducaoMock,
-  searchCulturasMock,
-  searchEspeciesMock,
-  updateProducaoMock,
-} from "./producaoMock";
-import {
+  createProducao,
+  searchCulturas,
+  searchEspecies,
+  updateProducao,
   SISTEMA_CRIACAO_OPTIONS,
   TIPO_OPTIONS,
   TIPO_OUTRA_OPTIONS,
@@ -24,7 +23,7 @@ import {
   type SistemaCriacao,
   type TipoOutra,
   type TipoProducao,
-} from "./producaoTypes";
+} from "@/app/lib/producao";
 
 export type SlideOverMode = "create" | "edit";
 
@@ -168,6 +167,33 @@ function formToPayload(f: FormState): ProducaoWritePayload {
   };
 }
 
+/** Campos do ProductionSerializer que a UI nomeia de outro jeito. */
+const CAMPO_API_PARA_FORM: Record<string, string> = {
+  cultura_id: "cultura",
+  especie_id: "especie",
+};
+
+/**
+ * Distribui os erros de validação da API nos campos do formulário e devolve a
+ * mensagem global. Sem `field_errors` (ou fora de um ApiError), cai na mensagem
+ * genérica.
+ */
+function aplicarErrosDeCampo(
+  e: unknown,
+  setErrors: (errs: Record<string, string>) => void,
+): string {
+  if (e instanceof ApiError && e.fieldErrors?.length) {
+    const mapeados: Record<string, string> = {};
+    for (const fe of e.fieldErrors) {
+      mapeados[CAMPO_API_PARA_FORM[fe.field] ?? fe.field] = fe.message;
+    }
+    setErrors(mapeados);
+    return "Corrija os campos destacados.";
+  }
+  if (e instanceof ApiError) return e.message;
+  return "Não foi possível salvar. Tente novamente.";
+}
+
 function hasTipoValues(f: FormState): boolean {
   if (f.tipo === "agricola") {
     return !!(f.cultura || f.area_ha || f.producao_estimada || f.unidade_producao || f.sementes_crioulas);
@@ -231,11 +257,11 @@ export function ProducaoSlideOver({ open, onClose, mode, upfId, producao, onSave
       const payload = formToPayload(form);
       const saved =
         mode === "edit" && producao
-          ? await updateProducaoMock(upfId, producao.id, payload)
-          : await createProducaoMock(upfId, payload);
+          ? await updateProducao(upfId, producao.id, payload)
+          : await createProducao(upfId, payload);
       onSaved(saved);
-    } catch {
-      setGlobalError("Não foi possível salvar. Tente novamente.");
+    } catch (e) {
+      setGlobalError(aplicarErrosDeCampo(e, setErrors));
     } finally {
       setSaving(false);
     }
@@ -270,7 +296,7 @@ export function ProducaoSlideOver({ open, onClose, mode, upfId, producao, onSave
               required
               value={form.cultura}
               onChange={(v) => update("cultura", v)}
-              search={searchCulturasMock}
+              search={searchCulturas}
               placeholder="Buscar cultura..."
               error={errors.cultura}
             />
@@ -290,7 +316,7 @@ export function ProducaoSlideOver({ open, onClose, mode, upfId, producao, onSave
               required
               value={form.especie}
               onChange={(v) => update("especie", v)}
-              search={searchEspeciesMock}
+              search={searchEspecies}
               placeholder="Buscar espécie..."
               error={errors.especie}
             />

@@ -4,10 +4,15 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Pencil, Plus, Sprout, Trash2 } from "lucide-react";
 import { Button } from "@/app/components/ui/Button/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
-import { listProducoesMock } from "./producaoMock";
+import {
+  listProducoes,
+  SISTEMA_CRIACAO_OPTIONS,
+  TIPO_OUTRA_OPTIONS,
+  type Producao,
+  type TipoProducao,
+} from "@/app/lib/producao";
 import { ProducaoSlideOver, type SlideOverMode } from "./ProducaoSlideOver";
 import { RemoverProducaoDialog } from "./RemoverProducaoDialog";
-import { SISTEMA_CRIACAO_OPTIONS, TIPO_OUTRA_OPTIONS, type Producao, type TipoProducao } from "./producaoTypes";
 
 type Props = { upfId: string };
 type SlideOverState = { open: false } | { open: true; mode: SlideOverMode; producao?: Producao };
@@ -28,7 +33,7 @@ export function ProducaoTab({ upfId }: Props) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError(null);
-    listProducoesMock(upfId, controller.signal)
+    listProducoes(upfId, controller.signal)
       .then((data) => setProducoes(data))
       .catch((e: unknown) => {
         if (controller.signal.aborted) return;

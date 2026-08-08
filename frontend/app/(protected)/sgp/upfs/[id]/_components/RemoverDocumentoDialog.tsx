@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { SlideOver } from "@/app/components/ui/SlideOver/SlideOver";
 import { Button } from "@/app/components/ui/Button/Button";
-import { deleteDocumentoMock } from "./documentoMock";
+import { deleteDocumento } from "@/app/lib/upfDocumentos";
 
 type Props = {
   open: boolean;
@@ -24,7 +24,7 @@ export function RemoverDocumentoDialog({ open, onClose, upfId, documentoId, nome
     setError(null);
     setDeleting(true);
     try {
-      await deleteDocumentoMock(upfId, documentoId);
+      await deleteDocumento(upfId, documentoId);
       onDeleted(documentoId);
     } catch {
       setError("Não foi possível remover. Tente novamente.");

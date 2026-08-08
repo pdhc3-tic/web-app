@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { SlideOver } from "@/app/components/ui/SlideOver/SlideOver";
 import { Button } from "@/app/components/ui/Button/Button";
-import { deleteProducaoMock } from "./producaoMock";
+import { deleteProducao } from "@/app/lib/producao";
 
 type Props = {
   open: boolean;
@@ -24,7 +24,7 @@ export function RemoverProducaoDialog({ open, onClose, upfId, producaoId, descri
     setError(null);
     setDeleting(true);
     try {
-      await deleteProducaoMock(upfId, producaoId);
+      await deleteProducao(upfId, producaoId);
       onDeleted(producaoId);
     } catch {
       setError("Não foi possível remover. Tente novamente.");
