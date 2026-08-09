@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import { ApiError } from "@/app/lib/api";
+import { decOrNull, formatMoneyInput, moneyOrNull } from "@/app/lib/format";
 import { SlideOver } from "@/app/components/ui/SlideOver/SlideOver";
 import { Button } from "@/app/components/ui/Button/Button";
 import { Input } from "@/app/components/ui/Input/Input";
@@ -81,30 +82,6 @@ const EMPTY: FormState = {
 const numOrNull = (v: string) => {
   const n = Number(v.trim());
   return v.trim() && Number.isFinite(n) ? n : null;
-};
-
-const formatMoneyInput = (v: string) => {
-  const digits = v.replace(/\D/g, "");
-  if (!digits) return "";
-
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }).format(Number(digits) / 100);
-};
-
-const moneyOrNull = (v: string) => {
-  const digits = v.replace(/\D/g, "");
-  if (!digits) return null;
-
-  const normalized = digits.padStart(3, "0");
-  return `${normalized.slice(0, -2)}.${normalized.slice(-2)}`;
-};
-
-const decOrNull = (v: string) => {
-  const s = v.trim().replace(",", ".");
-  const n = Number(s);
-  return s && Number.isFinite(n) ? String(n) : null;
 };
 
 function producaoToForm(p: Producao): FormState {

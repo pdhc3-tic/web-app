@@ -1,4 +1,5 @@
 import { apiClient } from "@/app/lib/api";
+import type { Acao } from "@/app/lib/acoes";
 import type { Paginated } from "@/app/lib/users";
 import type { BadgeStatus } from "@/app/components/ui/Badge/Badge";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
@@ -97,33 +98,18 @@ export type MetaListItem = {
 /**
  * Ação do Plano de Trabalho aninhada no detalhe da Meta.
  *
- * TODO(issue-acoes): o WorkPlanMetaDetailSerializer já devolve este array
- * completo, mas esta issue cobre apenas as Metas. A issue de Ações consome
- * daqui para montar a tela de detalhe da Meta — por isso o campo já vem
- * tipado (subset dos campos do WorkPlanAcaoSerializer).
+ * O WorkPlanMetaDetailSerializer devolve o array completo com os mesmos campos
+ * do WorkPlanAcaoSerializer, então o tipo é o mesmo de acoes.ts — manter duas
+ * definições só criaria oportunidade de divergirem.
  */
-export type MetaAcao = {
-  id: number;
-  meta: number;
-  numero: string;
-  descricao: string;
-  tipo_unidade: number;
-  tipo_unidade_display: string;
-  quantidade_planejada: string;
-  valor_unitario: string;
-  valor_total: string;
-  quantidade_realizada: string;
-  data_inicio: string | null;
-  data_fim: string | null;
-  status_execucao: string;
-};
+export type MetaAcao = Acao;
 
 /** Espelha WorkPlanMetaDetailSerializer. */
 export type MetaDetail = MetaListItem & {
   descricao: string;
   ods_ids: number[];
   atualizado_em: string;
-  acoes: MetaAcao[];
+  acoes: Acao[];
 };
 
 /** Campos graváveis (os demais são read_only no serializer). */

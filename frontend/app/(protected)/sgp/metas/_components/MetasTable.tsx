@@ -1,6 +1,7 @@
 "use client";
 
-import { Pencil, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Eye, Pencil, Trash2 } from "lucide-react";
 import { Badge } from "@/app/components/ui/Badge/Badge";
 import { formatDate } from "@/app/lib/datetime";
 import { formatCurrencyBRL } from "@/app/lib/format";
@@ -76,29 +77,47 @@ function SkeletonCards() {
 
 function RowActions({
   meta,
+  canManage,
   onEdit,
   onDelete,
-}: Pick<Props, "onEdit" | "onDelete"> & { meta: MetaListItem }) {
+}: Pick<Props, "onEdit" | "onDelete" | "canManage"> & {
+  meta: MetaListItem;
+}) {
   return (
     <div className="flex items-center gap-1">
-      <button
-        type="button"
-        aria-label={`Editar Meta ${meta.numero}`}
-        onClick={() => onEdit(meta)}
+      {/* Visualizar fica fora do gate de escrita: quem só lê também precisa
+          chegar às Ações da Meta. */}
+      <Link
+        href={`/sgp/metas/${meta.id}`}
+        aria-label={`Visualizar Meta ${meta.numero}`}
         className={actionBtn}
-        data-testid={`meta-editar-btn-${meta.id}`}
+        data-testid={`meta-visualizar-btn-${meta.id}`}
       >
-        <Pencil className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
-        aria-label={`Excluir Meta ${meta.numero}`}
-        onClick={() => onDelete(meta)}
-        className={dangerBtn}
-        data-testid={`meta-excluir-btn-${meta.id}`}
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
+        <Eye className="h-4 w-4" />
+      </Link>
+
+      {canManage && (
+        <>
+          <button
+            type="button"
+            aria-label={`Editar Meta ${meta.numero}`}
+            onClick={() => onEdit(meta)}
+            className={actionBtn}
+            data-testid={`meta-editar-btn-${meta.id}`}
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            aria-label={`Excluir Meta ${meta.numero}`}
+            onClick={() => onDelete(meta)}
+            className={dangerBtn}
+            data-testid={`meta-excluir-btn-${meta.id}`}
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -106,10 +125,9 @@ function RowActions({
 /**
  * Listagem das Metas do Plano de Trabalho.
  *
- * TODO(issue-acoes): quando a tela de detalhe da Meta existir, o título vira um
- * link para `/sgp/metas/{id}` (onde as Ações são listadas) e a linha ganha
- * navegação por clique/Enter, como em AtividadesTable. Hoje a linha não é
- * clicável porque não há para onde ir.
+ * A coluna de ações existe para todos os perfis: ela carrega o "visualizar",
+ * que leva à ficha da Meta e às suas Ações. Editar e excluir é que dependem de
+ * `canManage`.
  */
 export function MetasTable({
   metas,
@@ -118,7 +136,7 @@ export function MetasTable({
   onEdit,
   onDelete,
 }: Props) {
-  const columns = canManage ? 6 : 5;
+  const columns = 6;
 
   return (
     <div data-testid="metas-table">
@@ -145,11 +163,9 @@ export function MetasTable({
               <th scope="col" className={`${TH_BASE} w-40`}>
                 Status
               </th>
-              {canManage && (
-                <th scope="col" className={`${TH_BASE} w-24`}>
-                  <span className="sr-only">Ações</span>
-                </th>
-              )}
+              <th scope="col" className={`${TH_BASE} w-28`}>
+                <span className="sr-only">Ações</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -177,15 +193,14 @@ export function MetasTable({
                   <td className="px-4 py-3">
                     <StatusCell meta={meta} />
                   </td>
-                  {canManage && (
-                    <td className="px-4 py-3">
-                      <RowActions
-                        meta={meta}
-                        onEdit={onEdit}
-                        onDelete={onDelete}
-                      />
-                    </td>
-                  )}
+                  <td className="px-4 py-3">
+                    <RowActions
+                      meta={meta}
+                      canManage={canManage}
+                      onEdit={onEdit}
+                      onDelete={onDelete}
+                    />
+                  </td>
                 </tr>
               ))
             )}
@@ -212,13 +227,12 @@ export function MetasTable({
                     </span>
                     <span className="font-medium text-text">{meta.titulo}</span>
                   </div>
-                  {canManage && (
-                    <RowActions
-                      meta={meta}
-                      onEdit={onEdit}
-                      onDelete={onDelete}
-                    />
-                  )}
+                  <RowActions
+                    meta={meta}
+                    canManage={canManage}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                  />
                 </div>
 
                 <StatusCell meta={meta} />

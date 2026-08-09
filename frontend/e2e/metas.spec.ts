@@ -145,7 +145,10 @@ test.describe("Metas — usuário sem permissão", () => {
     await expect(
       page.getByRole("button", { name: /^Excluir Meta \d+$/ }),
     ).toHaveCount(0);
-    // Sem a coluna de ações a tabela fica com 5 colunas.
-    await expect(tabela(page).locator("thead th")).toHaveCount(5);
+    // "Visualizar" continua disponível: sem ele o perfil de leitura não teria
+    // como chegar às Ações da Meta.
+    await expect(
+      tabela(page).getByRole("link", { name: "Visualizar Meta 1" }),
+    ).toBeVisible();
   });
 });
