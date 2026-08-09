@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { notFound, useParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { notFound, useParams, useSearchParams } from "next/navigation";
 import { AlertTriangle, ListChecks, Plus } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { AlertCircleIcon } from "@/app/components/icons";
@@ -110,9 +110,14 @@ function MetaResumo({ meta }: { meta: MetaDetail }) {
   );
 }
 
-export default function MetaDetalhePage() {
+function MetaDetalheConteudo() {
   const params = useParams<{ id: string }>();
   const metaId = Number(params.id);
+
+  // Deep-link do Painel de Acompanhamento (FE-9): /sgp/metas/{id}?acao={id}
+  // abre a Ação já no formulário de edição.
+  const acaoParam = useSearchParams().get("acao");
+  const [deepLinkAplicado, setDeepLinkAplicado] = useState(false);
 
   const { loading: authLoading, canManage } = useCanManageWorkPlan();
   const { showToast } = useToast();
@@ -167,6 +172,18 @@ export default function MetaDetalhePage() {
 
     return () => controller.abort();
   }, [metaId, idInvalido, reloadKey]);
+
+  // Aplica o deep-link uma única vez: depois disso o SlideOver é do usuário, e
+  // reabri-lo a cada render impediria que ele fosse fechado.
+  useEffect(() => {
+    if (deepLinkAplicado || !acaoParam || !meta) return;
+    const alvo = meta.acoes.find((a) => String(a.id) === acaoParam);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDeepLinkAplicado(true);
+    if (alvo && canManage) {
+      setSlideOver({ open: true, mode: "edit", acao: alvo });
+    }
+  }, [acaoParam, meta, canManage, deepLinkAplicado]);
 
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 
@@ -385,5 +402,17 @@ export default function MetaDetalhePage() {
         </div>
       </SlideOver>
     </div>
+  );
+}
+
+/**
+ * `useSearchParams` exige um limite de Suspense acima dele — mesmo padrão já
+ * usado nas telas de login e redefinição de senha.
+ */
+export default function MetaDetalhePage() {
+  return (
+    <Suspense fallback={<CenteredSpinner />}>
+      <MetaDetalheConteudo />
+    </Suspense>
   );
 }

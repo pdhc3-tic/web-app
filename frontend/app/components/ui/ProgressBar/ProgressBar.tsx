@@ -1,4 +1,4 @@
-export type ProgressBarTone = "primary" | "warning" | "success";
+export type ProgressBarTone = "primary" | "warning" | "success" | "error";
 
 export type ProgressBarProps = {
   /** 0–100. `null` desenha o trilho vazio (sem denominador para comparar). */
@@ -21,6 +21,7 @@ const fillClass: Record<ProgressBarTone, string> = {
   primary: "bg-primary",
   warning: "bg-warning-text",
   success: "bg-success-text",
+  error: "bg-error-text",
 };
 
 /**

@@ -6,6 +6,7 @@ import {
   Calendar,
   ClipboardCheck,
   ClipboardList,
+  Gauge,
   Sprout,
   Users,
 } from "lucide-react";
@@ -53,6 +54,14 @@ const SUBMODULES: Submodule[] = [
     description: "Metas do PDHC III, com período, ODS e valor planejado.",
     Icon: ClipboardCheck,
     href: "/sgp/metas/",
+  },
+  {
+    key: "painel",
+    title: "Painel de Acompanhamento",
+    description:
+      "Semáforo de execução das Ações e alerta das que exigem atenção.",
+    Icon: Gauge,
+    href: "/sgp/painel/",
   },
   {
     key: "producao",

@@ -9,6 +9,16 @@ import { Textarea } from "../components/ui/Textarea/Textarea";
 import { ArrowRightIcon, DocumentIcon, PlusIcon } from "../components/icons";
 import { Search, Mail } from "lucide-react";
 import { SlideOver } from "../components/ui/SlideOver/SlideOver";
+import { SemaforoBadge } from "../components/ui/SemaforoBadge/SemaforoBadge";
+import type { NivelSemaforo } from "../lib/semaforo";
+
+/** Inclui "sem-dado": é o estado neutro que a tela usa e precisa ser testado. */
+const SEMAFORO_NIVEIS: NivelSemaforo[] = [
+  "verde",
+  "amarelo",
+  "vermelho",
+  "sem-dado",
+];
 
 const BADGE_STATUSES: BadgeStatus[] = [
   "planejado",
@@ -126,6 +136,14 @@ export function ComponentsShowcase() {
         <Group title="Cada badge tem cor + ícone + label (regra de ouro: nunca só cor)">
           {BADGE_STATUSES.map((s) => (
             <Badge key={s} status={s} />
+          ))}
+        </Group>
+
+        <div className="mt-5" />
+        <SectionTitle>9.1 · Semáforo de execução (RF17)</SectionTitle>
+        <Group title="Sucesso / Atenção / Erro — mapeamento verificado pelo teste de componente">
+          {SEMAFORO_NIVEIS.map((n) => (
+            <SemaforoBadge key={n} nivel={n} />
           ))}
         </Group>
       </section>
