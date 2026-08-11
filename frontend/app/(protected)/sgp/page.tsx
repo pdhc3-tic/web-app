@@ -6,6 +6,7 @@ import {
   Calendar,
   ClipboardCheck,
   ClipboardList,
+  Gauge,
   Sprout,
   Users,
 } from "lucide-react";
@@ -38,18 +39,29 @@ const SUBMODULES: Submodule[] = [
     title: "Atividades de Campo",
     description: "Registro e acompanhamento das atividades em campo.",
     Icon: ClipboardList,
+    href: "/sgp/atividades/",
   },
   {
     key: "calendario",
     title: "Calendário",
     description: "Agenda de visitas, eventos e prazos do território.",
     Icon: Calendar,
+    href: "/sgp/atividades/calendario/",
   },
   {
     key: "plano",
     title: "Plano de Trabalho",
-    description: "Planejamento das ações por período e responsável.",
+    description: "Metas do PDHC III, com período, ODS e valor planejado.",
     Icon: ClipboardCheck,
+    href: "/sgp/metas/",
+  },
+  {
+    key: "painel",
+    title: "Painel de Acompanhamento",
+    description:
+      "Semáforo de execução das Ações e alerta das que exigem atenção.",
+    Icon: Gauge,
+    href: "/sgp/painel/",
   },
   {
     key: "producao",

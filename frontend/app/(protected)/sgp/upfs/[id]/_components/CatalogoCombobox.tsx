@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ChevronDown, Search, X } from "lucide-react";
 import { Label } from "@/app/components/ui/Label/Label";
-import type { CatalogoItem } from "./producaoTypes";
+import type { CatalogoItem } from "@/app/lib/producao";
 
 type Props = {
   label: string;

@@ -20,14 +20,16 @@ import { MapView, type MapMarker } from "@/app/components/sgp/MapView/MapView";
 import {
   fetchMunicipalityOptions,
   fetchTerritoryOptions,
+  fetchUpfsMapa,
   type StatusUpfFilter,
+  type UpfMapa,
+  type UpfMapaResponse,
 } from "@/app/lib/upfs";
 import { ViewToggle } from "../../_components/ViewToggle";
 import {
   UpfsFilters,
   type UpfsFiltersValue,
 } from "../../_components/UpfsFilters";
-import { fetchUpfsMapaMock, type UpfMapa, type UpfMapaResponse } from "../_mock/mapaMock";
 import { UpfMiniFichaSlideOver } from "./UpfMiniFichaSlideOver";
 
 const DEFAULT_FILTERS: UpfsFiltersValue = {
@@ -126,7 +128,7 @@ function UpfsMapaContent() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError(null);
-    fetchUpfsMapaMock(
+    fetchUpfsMapa(
       {
         search: filters.search || undefined,
         municipio: filters.municipio || undefined,
@@ -240,7 +242,8 @@ function UpfsMapaContent() {
             role="status"
             className="rounded-md border border-warning-text bg-warning-bg px-3 py-2 text-sm text-warning-text"
           >
-            Mostrando {data.results.length} de {data.total} UPFs — aproxime o zoom para ver mais detalhes.
+            {data.message ??
+              `Mostrando as primeiras ${data.results.length} UPFs — refine os filtros para ver o restante.`}
           </div>
         )}
 
