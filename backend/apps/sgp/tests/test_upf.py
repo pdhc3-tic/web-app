@@ -538,8 +538,12 @@ class TestPerformanceIndexes:
         # estatísticas locais do banco; desabilita seq scan para verificar de
         # forma determinística que existe índice capaz de atender a consulta.
         with connection.cursor() as cursor:
-            cursor.execute("SET LOCAL enable_seqscan = off")
-        explain = qs.explain(analyze=True)
+            cursor.execute("SET enable_seqscan = off")
+        try:
+            explain = qs.explain(analyze=True)
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute("SET enable_seqscan = on")
         assert "Index Scan" in explain or "Bitmap Heap Scan" in explain or "Index Only Scan" in explain
 
     def test_list_filter_by_municipio_is_efficient(

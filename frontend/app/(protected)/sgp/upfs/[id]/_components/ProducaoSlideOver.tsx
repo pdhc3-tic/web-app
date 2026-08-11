@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
+import { ApiError } from "@/app/lib/api";
+import { decOrNull, formatMoneyInput, moneyOrNull } from "@/app/lib/format";
 import { SlideOver } from "@/app/components/ui/SlideOver/SlideOver";
 import { Button } from "@/app/components/ui/Button/Button";
 import { Input } from "@/app/components/ui/Input/Input";
@@ -9,12 +11,10 @@ import { Select } from "@/app/components/ui/Select/Select";
 import { Textarea } from "@/app/components/ui/Textarea/Textarea";
 import { CatalogoCombobox } from "./CatalogoCombobox";
 import {
-  createProducaoMock,
-  searchCulturasMock,
-  searchEspeciesMock,
-  updateProducaoMock,
-} from "./producaoMock";
-import {
+  createProducao,
+  searchCulturas,
+  searchEspecies,
+  updateProducao,
   SISTEMA_CRIACAO_OPTIONS,
   TIPO_OPTIONS,
   TIPO_OUTRA_OPTIONS,
@@ -24,7 +24,7 @@ import {
   type SistemaCriacao,
   type TipoOutra,
   type TipoProducao,
-} from "./producaoTypes";
+} from "@/app/lib/producao";
 
 export type SlideOverMode = "create" | "edit";
 
@@ -82,30 +82,6 @@ const EMPTY: FormState = {
 const numOrNull = (v: string) => {
   const n = Number(v.trim());
   return v.trim() && Number.isFinite(n) ? n : null;
-};
-
-const formatMoneyInput = (v: string) => {
-  const digits = v.replace(/\D/g, "");
-  if (!digits) return "";
-
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }).format(Number(digits) / 100);
-};
-
-const moneyOrNull = (v: string) => {
-  const digits = v.replace(/\D/g, "");
-  if (!digits) return null;
-
-  const normalized = digits.padStart(3, "0");
-  return `${normalized.slice(0, -2)}.${normalized.slice(-2)}`;
-};
-
-const decOrNull = (v: string) => {
-  const s = v.trim().replace(",", ".");
-  const n = Number(s);
-  return s && Number.isFinite(n) ? String(n) : null;
 };
 
 function producaoToForm(p: Producao): FormState {
@@ -166,6 +142,33 @@ function formToPayload(f: FormState): ProducaoWritePayload {
     quantidade_produzida: f.quantidade_produzida.trim() || null,
     renda_estimada_mensal: moneyOrNull(f.renda_estimada_mensal),
   };
+}
+
+/** Campos do ProductionSerializer que a UI nomeia de outro jeito. */
+const CAMPO_API_PARA_FORM: Record<string, string> = {
+  cultura_id: "cultura",
+  especie_id: "especie",
+};
+
+/**
+ * Distribui os erros de validação da API nos campos do formulário e devolve a
+ * mensagem global. Sem `field_errors` (ou fora de um ApiError), cai na mensagem
+ * genérica.
+ */
+function aplicarErrosDeCampo(
+  e: unknown,
+  setErrors: (errs: Record<string, string>) => void,
+): string {
+  if (e instanceof ApiError && e.fieldErrors?.length) {
+    const mapeados: Record<string, string> = {};
+    for (const fe of e.fieldErrors) {
+      mapeados[CAMPO_API_PARA_FORM[fe.field] ?? fe.field] = fe.message;
+    }
+    setErrors(mapeados);
+    return "Corrija os campos destacados.";
+  }
+  if (e instanceof ApiError) return e.message;
+  return "Não foi possível salvar. Tente novamente.";
 }
 
 function hasTipoValues(f: FormState): boolean {
@@ -231,11 +234,11 @@ export function ProducaoSlideOver({ open, onClose, mode, upfId, producao, onSave
       const payload = formToPayload(form);
       const saved =
         mode === "edit" && producao
-          ? await updateProducaoMock(upfId, producao.id, payload)
-          : await createProducaoMock(upfId, payload);
+          ? await updateProducao(upfId, producao.id, payload)
+          : await createProducao(upfId, payload);
       onSaved(saved);
-    } catch {
-      setGlobalError("Não foi possível salvar. Tente novamente.");
+    } catch (e) {
+      setGlobalError(aplicarErrosDeCampo(e, setErrors));
     } finally {
       setSaving(false);
     }
@@ -270,7 +273,7 @@ export function ProducaoSlideOver({ open, onClose, mode, upfId, producao, onSave
               required
               value={form.cultura}
               onChange={(v) => update("cultura", v)}
-              search={searchCulturasMock}
+              search={searchCulturas}
               placeholder="Buscar cultura..."
               error={errors.cultura}
             />
@@ -290,7 +293,7 @@ export function ProducaoSlideOver({ open, onClose, mode, upfId, producao, onSave
               required
               value={form.especie}
               onChange={(v) => update("especie", v)}
-              search={searchEspeciesMock}
+              search={searchEspecies}
               placeholder="Buscar espécie..."
               error={errors.especie}
             />

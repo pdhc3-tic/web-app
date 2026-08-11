@@ -122,6 +122,98 @@ export async function fetchTerritoryOptions(
   }));
 }
 
+// ─── Mapa de UPFs ─────────────────────────────────────────────────────────────
+
+/**
+ * UPF georreferenciada, achatada a partir do GeoJSON devolvido por
+ * `GET /api/v1/upfs/mapa/` (apps/sgp/views::UPFViewSet.mapa). As properties da
+ * feature trazem apenas o mínimo para desenhar e rotular o marcador — CPF e foto
+ * não vêm aqui; a mini-ficha busca o detalhe da UPF sob demanda.
+ */
+export type UpfMapa = {
+  id: number;
+  nome_titular: string;
+  municipio: string;
+  territorio: string | null;
+  latitude: number;
+  longitude: number;
+  ativa: boolean;
+};
+
+export type UpfMapaResponse = {
+  results: UpfMapa[];
+  truncated: boolean;
+  /** Aviso do backend quando o resultado estoura o limite de features. */
+  message?: string;
+};
+
+export type UpfMapaFilters = {
+  search?: string;
+  /** Ids (não nomes) — mesmos valores dos selects de filtro. */
+  municipio?: string;
+  territorio?: string;
+  projeto?: string;
+  status?: StatusUpfFilter;
+  /** bbox no formato lng_sw,lat_sw,lng_ne,lat_ne. */
+  bbox?: string;
+};
+
+/** Feature GeoJSON como o backend a monta em `_build_mapa_feature`. */
+type UpfMapaFeature = {
+  type: "Feature";
+  geometry: { type: "Point"; coordinates: [number, number] };
+  properties: {
+    id: number;
+    nome_titular: string;
+    municipio: string;
+    territorio: string | null;
+    ativa: boolean;
+  };
+};
+
+type UpfMapaFeatureCollection = {
+  type: "FeatureCollection";
+  features: UpfMapaFeature[];
+  truncated: boolean;
+  message?: string;
+};
+
+/** GET /api/v1/upfs/mapa/ — UPFs com coordenadas, em GeoJSON. */
+export async function fetchUpfsMapa(
+  filters: UpfMapaFilters,
+  signal?: AbortSignal,
+): Promise<UpfMapaResponse> {
+  const qs = new URLSearchParams();
+  if (filters.search?.trim()) qs.set("q", filters.search.trim());
+  if (filters.municipio) qs.set("municipio", filters.municipio);
+  if (filters.territorio) qs.set("territorio", filters.territorio);
+  if (filters.projeto) qs.set("projeto", filters.projeto);
+  if (filters.bbox) qs.set("bbox", filters.bbox);
+
+  // Mesmo mapeamento status → `ativa` da listagem: o UPFViewSet.filter_queryset
+  // aplica ativa=True por padrão, e "todas" desliga esse default.
+  if (filters.status === "ativas") qs.set("ativa", "true");
+  else if (filters.status === "inativas") qs.set("ativa", "false");
+  else if (filters.status === "todas") qs.set("ativa", "");
+
+  const query = qs.toString();
+  const res = await apiClient(`/api/v1/upfs/mapa/${query ? `?${query}` : ""}`, {
+    signal,
+  });
+  const data: UpfMapaFeatureCollection = await res.json();
+
+  return {
+    results: data.features.map((f) => ({
+      ...f.properties,
+      // GeoJSON é [lng, lat]; o mapa consome [lat, lng].
+      longitude: f.geometry.coordinates[0],
+      latitude: f.geometry.coordinates[1],
+    })),
+    truncated: data.truncated,
+    message: data.message,
+  };
+}
+
 // ─── Detalhe da UPF ───────────────────────────────────────────────────────────
 
 /** Objeto aninhado {id, nome} usado no detalhe (município, território, etc.). */

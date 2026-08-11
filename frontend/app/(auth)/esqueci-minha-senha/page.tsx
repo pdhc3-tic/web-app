@@ -22,6 +22,14 @@ export default function EsqueciMinhaSenhaPage() {
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [retryAfter, setRetryAfter] = useState(0);
+  const [hydrated, setHydrated] = useState(false);
+
+  // Ver login/page.tsx: sem isso um clique pré-hidratação faz o submit nativo
+  // do <form> e joga os campos na query string da própria URL.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHydrated(true);
+  }, []);
 
   useEffect(() => {
     if (retryAfter <= 0) return;
@@ -72,7 +80,7 @@ export default function EsqueciMinhaSenhaPage() {
     });
   }
 
-  const isBlocked = pending || retryAfter > 0;
+  const isBlocked = pending || retryAfter > 0 || !hydrated;
 
   return (
     <>
@@ -116,7 +124,7 @@ export default function EsqueciMinhaSenhaPage() {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
+            <form onSubmit={handleSubmit} method="post" className="flex flex-col gap-5" noValidate>
               <div className="flex flex-col gap-1.5">
                 <label htmlFor="email" className="text-sm font-medium text-text">
                   E-mail

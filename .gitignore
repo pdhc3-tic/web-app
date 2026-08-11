@@ -14,3 +14,9 @@ Thumbs.db
 *.docx
 
 logs/
+
+# Playwright (artefatos dos E2E do frontend)
+.playwright/
+
+# Claude Code (config de maquina/sessao)
+.claude/

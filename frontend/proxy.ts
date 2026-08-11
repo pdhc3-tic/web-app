@@ -31,5 +31,12 @@ export default auth((req: NextAuthRequest) => {
 });
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|.*\\.(?:png|svg|ico|jpg)$).*)"],
+  // Exclui `_next` inteiro, e não apenas `_next/static` e `_next/image`: o
+  // websocket de HMR do dev server é `/_next/webpack-hmr` e, quando entra
+  // aqui, recebe um redirect 307 para /login em vez do handshake 101 — o que
+  // derruba o hot reload em toda a aplicação.
+  // Nenhuma rota sob `_next` precisa do guard: são internas do framework. O
+  // payload RSC das navegações client-side é buscado na própria URL da página
+  // (`/dashboard?_rsc=…`), que continua coberta pelo matcher.
+  matcher: ["/((?!api|_next|.*\\.(?:png|svg|ico|jpg)$).*)"],
 };

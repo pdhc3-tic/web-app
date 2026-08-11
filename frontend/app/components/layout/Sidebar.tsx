@@ -13,6 +13,7 @@ import {
   Heart,
   LayoutDashboard,
   LogOut,
+  Plug,
   SlidersHorizontal,
   Smartphone,
   UserCog,
@@ -43,11 +44,20 @@ const DASHBOARD: ModuleItem = {
 };
 
 // Itens visíveis apenas para Super Admin (gerenciamento do sistema).
-const ADMIN_ITEM: ModuleItem = {
-  href: "/admin/usuarios",
-  label: "Usuários",
-  Icon: UserCog,
-};
+const ADMIN_ITEMS: ModuleItem[] = [
+  {
+    href: "/admin/usuarios",
+    label: "Usuários",
+    Icon: UserCog,
+  },
+  {
+    // Aponta direto para a única integração existente — não há tela índice em
+    // /admin/integracoes. Ao surgir a segunda, criar o hub e trocar este href.
+    href: "/admin/integracoes/google-calendar",
+    label: "Integrações",
+    Icon: Plug,
+  },
+];
 
 // Badges mock: substituir por /api/v1/notifications/me/unread-count/ em sprint futura
 const MODULES: ModuleItem[] = [
@@ -282,15 +292,16 @@ export function Sidebar() {
             collapsed={collapsed}
           />
         </li>
-        {superAdmin && (
-          <li>
-            <SidebarItem
-              item={ADMIN_ITEM}
-              active={isActive(pathname, ADMIN_ITEM.href)}
-              collapsed={collapsed}
-            />
-          </li>
-        )}
+        {superAdmin &&
+          ADMIN_ITEMS.map((item) => (
+            <li key={item.href}>
+              <SidebarItem
+                item={item}
+                active={isActive(pathname, item.href)}
+                collapsed={collapsed}
+              />
+            </li>
+          ))}
         {collapsed ? (
           <li aria-hidden="true" className="mx-3 my-3 h-px bg-border/40" />
         ) : (

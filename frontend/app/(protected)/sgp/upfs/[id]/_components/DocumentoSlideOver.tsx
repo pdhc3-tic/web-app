@@ -9,16 +9,14 @@ import { Select } from "@/app/components/ui/Select/Select";
 import { Textarea } from "@/app/components/ui/Textarea/Textarea";
 import { FileTypeIcon } from "./FileTypeIcon";
 import {
-  uploadDocumentoMock,
-  type UploadHandle,
-} from "./documentoMock";
-import {
+  uploadDocumento,
   ACCEPTED_CONTENT_TYPES,
   MAX_DOC_SIZE_BYTES,
   TIPO_DOC_OPTIONS,
   type Documento,
   type TipoDocumento,
-} from "./documentoTypes";
+  type UploadHandle,
+} from "@/app/lib/upfDocumentos";
 
 type Props = {
   open: boolean;
@@ -122,7 +120,7 @@ export function DocumentoSlideOver({ open, onClose, upfId, onSaved }: Props) {
     setUploading(true);
     setProgress(0);
 
-    const handle = uploadDocumentoMock(
+    const handle = uploadDocumento(
       upfId,
       form.file!,
       {

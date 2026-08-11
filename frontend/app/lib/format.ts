@@ -104,6 +104,56 @@ export function formatArea(value: number | string | null | undefined): string {
   })} ha`;
 }
 
+/**
+ * Valor monetário em reais: 1234.5 → "R$ 1.234,50".
+ *
+ * Aceita string porque o DRF serializa DecimalField como string
+ * (ex.: valor_total_planejado das Metas). Nulo/NaN vira "R$ 0,00" — a soma de
+ * uma Meta sem Ações é zero, não "desconhecido".
+ */
+export function formatCurrencyBRL(
+  value: number | string | null | undefined,
+): string {
+  const n = value === null || value === undefined || value === ""
+    ? 0
+    : Number(value);
+  return (Number.isNaN(n) ? 0 : n).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+}
+
+/**
+ * Máscara de digitação para campos monetários: o usuário digita só dígitos e o
+ * valor cresce da direita para a esquerda ("1250" → "R$ 12,50").
+ *
+ * Par de mão dupla com moneyOrNull: esta formata para exibir, aquela converte
+ * de volta para o decimal que o DRF espera.
+ */
+export function formatMoneyInput(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(Number(digits) / 100);
+}
+
+/** "R$ 12,50" → "12.50" para o payload. Vazio vira null. */
+export function moneyOrNull(value: string): string | null {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return null;
+  const normalized = digits.padStart(3, "0");
+  return `${normalized.slice(0, -2)}.${normalized.slice(-2)}`;
+}
+
+/** Decimal digitado com vírgula ou ponto → "12.5" para o payload. */
+export function decOrNull(value: string): string | null {
+  const s = value.trim().replace(",", ".");
+  const n = Number(s);
+  return s && Number.isFinite(n) ? String(n) : null;
+}
+
 /** Boolean → "Sim"/"Não". Retorna "" para nulo/indefinido. */
 export function formatBool(value: boolean | null | undefined): string {
   if (value === null || value === undefined) return "";
