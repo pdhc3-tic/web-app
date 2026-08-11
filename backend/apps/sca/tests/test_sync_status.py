@@ -1,8 +1,9 @@
 """
 Testes do endpoint GET /api/v1/sca/sync/status/.
 
-Status do sync: último sync no servidor, registros pendentes para o device
-e flag de acesso revogado.
+Status do sync: último sync no servidor e registros pendentes para o device.
+Usuários com acesso revogado são rejeitados com 401 (a flag acesso_revogado
+nunca chega a ser exposta: a sessão é invalidada no permission layer).
 """
 
 from datetime import timedelta
@@ -50,14 +51,14 @@ def test_status_com_ultimo_sync_e_pendentes(auth_client, usuario, municipio, pro
 
 
 @pytest.mark.django_db
-def test_status_acesso_revogado(auth_client, usuario):
+def test_status_acesso_revogado_rejeitado_com_401(auth_client, usuario):
     usuario.acesso_revogado = True
     usuario.save(update_fields=["acesso_revogado"])
 
     response = get_status(auth_client)
 
-    assert response.status_code == 200
-    assert response.data["acesso_revogado"] is True
+    assert response.status_code == 401
+    assert response.data["detail"] == "Acesso revogado. Faça novo login."
 
 
 @pytest.mark.django_db

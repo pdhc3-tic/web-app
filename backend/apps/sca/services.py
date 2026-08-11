@@ -16,6 +16,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -324,28 +325,70 @@ class PushProcessor:
 
     def _notify_articulador(self, entity, item, instance, conf) -> None:
         from apps.core.models import Territory
+        from apps.core.models.user_profile import UserProfile
 
         territorio_id = entity.territorio_of(instance)
         if territorio_id is None:
+            logger.warning(
+                "sca.notify_articulador sem_territorio entity=%s uuid=%s campo=%s",
+                entity.name,
+                item["uuid_local"],
+                conf["path"],
+            )
             return
         try:
             territorio = Territory.objects.get(pk=territorio_id)
         except Territory.DoesNotExist:
+            logger.warning(
+                "sca.notify_articulador territorio_nao_encontrado territorio_id=%s entity=%s uuid=%s",
+                territorio_id,
+                entity.name,
+                item["uuid_local"],
+            )
             return
-        articulador = territorio.articulador
-        if articulador is None:
-            return
+
+        if territorio.articulador is not None:
+            destinatario_ids = [territorio.articulador_id]
+        else:
+            # Fallback: sem articulador designado no território, a coordenação
+            # (UGP) é notificada para o conflito não passar despercebido.
+            logger.warning(
+                "sca.notify_articulador sem_articulador territorio_id=%s entity=%s uuid=%s campo=%s — fallback para UGP",
+                territorio_id,
+                entity.name,
+                item["uuid_local"],
+                conf["path"],
+            )
+            destinatario_ids = list(
+                UserProfile.objects.filter(
+                    perfil__slug="ugp",
+                    user__ativo=True,
+                    user__acesso_revogado=False,
+                )
+                .values_list("user_id", flat=True)
+                .distinct()
+            )
+            if not destinatario_ids:
+                logger.error(
+                    "sca.notify_articulador sem_articulador_e_sem_ugp territorio_id=%s entity=%s uuid=%s",
+                    territorio_id,
+                    entity.name,
+                    item["uuid_local"],
+                )
+                return
+
         from apps.sca.tasks import notify_articulador_sync_conflict
 
-        notify_articulador_sync_conflict.delay(
-            articulador_id=articulador.pk,
-            entidade=entity.name,
-            uuid_local=str(item["uuid_local"]),
-            campo=conf["path"],
-            valor_local=conf["valor_local"],
-            valor_servidor=conf["valor_servidor"],
-            territorio_id=territorio_id,
-        )
+        for destinatario_id in destinatario_ids:
+            notify_articulador_sync_conflict.delay(
+                articulador_id=destinatario_id,
+                entidade=entity.name,
+                uuid_local=str(item["uuid_local"]),
+                campo=conf["path"],
+                valor_local=conf["valor_local"],
+                valor_servidor=conf["valor_servidor"],
+                territorio_id=territorio_id,
+            )
 
     def _strategy4(self, entity, item, instance) -> dict:
         """
@@ -490,9 +533,15 @@ def register_refresh(user, device) -> None:
 # Forms — fail-safe
 # ---------------------------------------------------------------------------
 
-def get_published_forms(since=None) -> list[dict]:
+def get_published_forms(since=None, user=None) -> list[dict]:
     """
     Retorna formulários SGF publicados aplicáveis ao sync.
+
+    Quando `user` é informado, o escopo é limitado aos territórios do técnico
+    (mesmo isolamento territorial do push/pull): apenas formulários vinculados
+    aos territórios do usuário (`territorio` no FormularioSGF) ou formulários
+    globais (territorio nulo). Usuários sem territórios vinculados não recebem
+    formulários.
 
     Fail-safe: se o app SGF ainda não estiver disponível (ou o modelo ainda
     não existir), retorna lista vazia sem erro, permitindo que o restante do
@@ -501,9 +550,18 @@ def get_published_forms(since=None) -> list[dict]:
     try:
         from apps.sgf.models import FormularioSGF
 
+        territory_ids = territory_ids_for(user) if user is not None else None
+
         qs = FormularioSGF.objects.filter(status="publicado")
         if since is not None:
             qs = qs.filter(atualizado_em__gt=since)
+
+        if territory_ids is not None:
+            if not territory_ids:
+                return []
+            qs = qs.filter(
+                Q(territorio_id__in=territory_ids) | Q(territorio_id__isnull=True)
+            )
 
         return [
             {

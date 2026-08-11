@@ -299,6 +299,57 @@ def test_push_conflito_campo_sensivel_notifica_articulador(auth_client, articula
     assert upf.titular.cpf == "33355588800"
 
 
+@pytest.mark.django_db
+def test_push_conflito_sem_articulador_notifica_ugp(auth_client, usuario, upf_existente, municipio, projeto):
+    from apps.core.tests.factories import RoleFactory, UserFactory
+
+    role_ugp = RoleFactory(slug="ugp", nome="UGP — Coordenação")
+    ugp = UserFactory(email="ugp@test.com", nome="UGP", profiles=[(role_ugp, None)])
+
+    item = _item_conflito_sensivel(upf_existente, projeto, municipio)
+
+    with patch("apps.sca.tasks.notify_articulador_sync_conflict.delay") as mock_notify:
+        response = post_batch(auth_client, [item])
+
+    assert response.status_code == 200
+    assert response.data["resultados"][0]["status"] == "conflito"
+    mock_notify.assert_called_once()
+    assert mock_notify.call_args.kwargs["articulador_id"] == ugp.pk
+
+
+@pytest.mark.django_db
+def test_push_conflito_sem_articulador_e_sem_ugp_nao_falha(auth_client, upf_existente, municipio, projeto):
+    item = _item_conflito_sensivel(upf_existente, projeto, municipio)
+
+    with patch("apps.sca.tasks.notify_articulador_sync_conflict.delay") as mock_notify:
+        response = post_batch(auth_client, [item])
+
+    assert response.status_code == 200
+    assert response.data["resultados"][0]["status"] == "conflito"
+    mock_notify.assert_not_called()
+
+
+def _item_conflito_sensivel(upf, projeto, municipio):
+    """Item de update que gera conflito em campo sensível (CPF do titular)."""
+    upf.uuid_local = uuid4()
+    upf.save(update_fields=["uuid_local"])
+    MembroFamilia = upf.titular.__class__
+    MembroFamilia.objects.filter(pk=upf.titular.pk).update(cpf="52998224725")  # servidor alterou o CPF
+
+    base = payload_upf(projeto, municipio)
+    base["titular"] = {"nome_completo": upf.titular.nome_completo, "cpf": "86288366757"}
+    payload = dict(base)
+    payload["titular"] = {"nome_completo": upf.titular.nome_completo, "cpf": "33355588800"}
+
+    return build_item(
+        operacao="update",
+        uuid_local=upf.uuid_local,
+        payload=payload,
+        base=base,
+        updated_at=timezone.now() + timedelta(minutes=1),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Idempotência por uuid_local
 # ---------------------------------------------------------------------------

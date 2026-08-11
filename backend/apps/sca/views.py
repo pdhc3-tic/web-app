@@ -14,13 +14,14 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework import status
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.settings import api_settings as jwt_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.core.throttling import RefreshRateThrottle
 from apps.sca import services
 from apps.sca.serializers import PushBatchSerializer, ScaRefreshSerializer
@@ -56,7 +57,7 @@ def _parse_since(value):
 # ---------------------------------------------------------------------------
 
 class SyncPushView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedActiveAccess]
 
     def post(self, request):
         serializer = PushBatchSerializer(data=request.data)
@@ -98,7 +99,7 @@ class SyncPushView(APIView):
 # ---------------------------------------------------------------------------
 
 class SyncPullView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedActiveAccess]
 
     def get(self, request):
         since = _parse_since(request.query_params.get("since"))
@@ -119,7 +120,7 @@ class SyncPullView(APIView):
 # ---------------------------------------------------------------------------
 
 class SyncFormsView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedActiveAccess]
 
     def get(self, request):
         since = _parse_since(request.query_params.get("since"))
@@ -128,7 +129,7 @@ class SyncFormsView(APIView):
                 {"code": "SINCE_INVALIDO", "message": "Parâmetro 'since' inválido."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        formularios = services.get_published_forms(since)
+        formularios = services.get_published_forms(since, user=request.user)
         return Response(
             {
                 "formularios": formularios,
@@ -142,7 +143,7 @@ class SyncFormsView(APIView):
 # ---------------------------------------------------------------------------
 
 class SyncStatusView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedActiveAccess]
 
     def get(self, request):
         device_id = _resolve_device_id(request)

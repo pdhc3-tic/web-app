@@ -1,7 +1,7 @@
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers, viewsets
 from rest_framework.exceptions import PermissionDenied
-from rest_framework.permissions import IsAuthenticated
+from apps.core.permissions import IsAuthenticatedActiveAccess
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.services.permissions import user_has_role, user_states, user_territories
@@ -11,7 +11,7 @@ from apps.sgp.serializers import ProductionSerializer
 
 class ProductionViewSet(viewsets.ModelViewSet):
     serializer_class = ProductionSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedActiveAccess]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_upf(self):

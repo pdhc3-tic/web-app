@@ -22,7 +22,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 
 from rest_framework.pagination import LimitOffsetPagination
-from rest_framework.permissions import IsAuthenticated
+from apps.core.permissions import IsAuthenticatedActiveAccess
 from rest_framework.response import Response
 
 from apps.core.models.audit_log import AuditLog
@@ -81,7 +81,7 @@ class QSearchFilter(filters.SearchFilter):
 
 
 class CatalogoListView(generics.ListAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedActiveAccess]
     pagination_class = CatalogoPagination
     http_method_names = ["get", "head", "options"]
     model = None
@@ -127,7 +127,7 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
     queryset = UPF.objects.select_related(
         "municipio", "municipio__state", "territorio", "projeto", "criado_por"
     ).all()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedActiveAccess]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     pagination_class = UPFPagination
@@ -473,7 +473,7 @@ class ComunidadeViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ('update', 'partial_update', 'destroy'):
             return [(IsSuperAdmin | IsUGP)()]
-        return [IsAuthenticated()]
+        return [IsAuthenticatedActiveAccess()]
 
     def get_queryset(self):
         qs = Comunidade.objects.select_related(
@@ -597,7 +597,7 @@ class ComunidadeViewSet(viewsets.ModelViewSet):
 
 
 class MembroViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedActiveAccess]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_upf(self):
@@ -689,11 +689,11 @@ class ProjetoViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ("update", "partial_update", "destroy"):
             return [(IsSuperAdmin | IsUGP)()]
-        return [IsAuthenticated()]
+        return [IsAuthenticatedActiveAccess()]
 
 
 class SGPChoicesView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedActiveAccess]
     http_method_names = ["get", "head", "options"]
 
     def get(self, request):
@@ -727,7 +727,7 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
         - adt-acr: atividades nos territórios vinculados
     """
     http_method_names = ["get", "post", "put", "patch", "delete", "head", "options"]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedActiveAccess]
     pagination_class = ActivityPagination
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_class = ActivityFilter
