@@ -4,15 +4,8 @@ import { Input } from "@/app/components/ui/Input/Input";
 import { Select } from "@/app/components/ui/Select/Select";
 import { PhotoUploader } from "@/app/components/sgp/PhotoUploader/PhotoUploader";
 import { formatCpfInput } from "@/app/lib/format";
-import {
-  COR_RACA_OPTIONS,
-  ESCOLARIDADE_OPTIONS,
-  GENERO_OPTIONS,
-  PCT_OPTIONS,
-  POSSE_TERRA_OPTIONS,
-  SEGURIDADE_OPTIONS,
-  withCurrentValue,
-} from "../upfFormOptions";
+import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
+import { SEGURIDADE_OPTIONS, withCurrentValue } from "../upfFormOptions";
 import type { UpfFormData } from "../upfForm";
 
 type StepProps = {
@@ -33,6 +26,8 @@ export function DadosBasicosStep({
   fotoUrl,
   onPhotoChange,
 }: StepProps) {
+  const choices = useSgpChoices();
+
   function toggleSeguridade(value: string) {
     const set = new Set(form.seguridade_social);
     if (set.has(value)) set.delete(value);
@@ -103,33 +98,33 @@ export function DadosBasicosStep({
 
       <Select
         label="Gênero"
-        options={withCurrentValue(GENERO_OPTIONS, form.genero)}
+        options={withCurrentValue(choices.genero, form.genero)}
         value={form.genero}
         onChange={(v) => onChange({ genero: v })}
       />
       <Select
         label="Cor/Raça"
-        options={withCurrentValue(COR_RACA_OPTIONS, form.cor_raca)}
+        options={withCurrentValue(choices.cor_raca, form.cor_raca)}
         value={form.cor_raca}
         onChange={(v) => onChange({ cor_raca: v })}
       />
 
       <Select
         label="Escolaridade"
-        options={withCurrentValue(ESCOLARIDADE_OPTIONS, form.escolaridade)}
+        options={withCurrentValue(choices.escolaridade, form.escolaridade)}
         value={form.escolaridade}
         onChange={(v) => onChange({ escolaridade: v })}
       />
 
       <Select
         label="PCT (povos e comunidades tradicionais)"
-        options={withCurrentValue(PCT_OPTIONS, form.pct)}
+        options={withCurrentValue(choices.pct, form.pct)}
         value={form.pct}
         onChange={(v) => onChange({ pct: v })}
       />
       <Select
         label="Posse da terra"
-        options={withCurrentValue(POSSE_TERRA_OPTIONS, form.posse_terra)}
+        options={withCurrentValue(choices.posse_terra, form.posse_terra)}
         value={form.posse_terra}
         onChange={(v) => onChange({ posse_terra: v })}
       />

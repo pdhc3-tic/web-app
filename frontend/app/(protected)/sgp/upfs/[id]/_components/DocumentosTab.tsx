@@ -16,10 +16,15 @@ import { Button } from "@/app/components/ui/Button/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { absoluteDateTime, formatDate, relativeTime } from "@/app/lib/datetime";
 import { FileTypeIcon } from "./FileTypeIcon";
-import { downloadDocumentoMock, listDocumentosMock } from "./documentoMock";
+import {
+  downloadDocumento,
+  listDocumentos,
+  tipoDocumentoLabel,
+  type Documento,
+  type TipoDocumento,
+} from "@/app/lib/upfDocumentos";
 import { DocumentoSlideOver } from "./DocumentoSlideOver";
 import { RemoverDocumentoDialog } from "./RemoverDocumentoDialog";
-import { tipoDocumentoLabel, type Documento, type TipoDocumento } from "./documentoTypes";
 
 type Props = { upfId: string };
 type Toast = { id: number; variant: "success" | "error"; message: string };
@@ -59,7 +64,7 @@ export function DocumentosTab({ upfId }: Props) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError(null);
-    listDocumentosMock(upfId, controller.signal)
+    listDocumentos(upfId, controller.signal)
       .then((data) => setDocumentos(data))
       .catch((e: unknown) => {
         if (controller.signal.aborted) return;
@@ -111,9 +116,9 @@ export function DocumentosTab({ upfId }: Props) {
     pushToast("success", "Documento removido.");
   }
 
-  function handleDownload(doc: Documento) {
+  async function handleDownload(doc: Documento) {
     try {
-      downloadDocumentoMock(doc);
+      await downloadDocumento(upfId, doc);
     } catch {
       pushToast("error", "Falha ao baixar o arquivo.");
     }

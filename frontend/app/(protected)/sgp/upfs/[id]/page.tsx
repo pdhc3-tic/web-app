@@ -20,17 +20,9 @@ import {
   formatPhone,
   maskCpf,
 } from "@/app/lib/format";
-import {
-  AGUA_OPTIONS,
-  DISPOSITIVO_OPTIONS,
-  ENERGIA_OPTIONS,
-  MATERIAL_CONSTRUCAO_OPTIONS,
-  PCT_OPTIONS,
-  POSSE_TERRA_OPTIONS,
-  SITUACAO_MORADIA_OPTIONS,
-  TIPO_MORADIA_OPTIONS,
-  labelForValue,
-} from "../_components/upfFormOptions";
+import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
+import type { SgpChoices } from "@/app/lib/choices";
+import { labelForValue } from "../_components/upfFormOptions";
 import { UpfHeader } from "./_components/UpfHeader";
 import { UpfDetailSkeleton } from "./_components/UpfDetailSkeleton";
 import { DocumentosTab } from "./_components/DocumentosTab";
@@ -89,7 +81,9 @@ function gps(upf: UpfDetail): string {
     : "";
 }
 
-function buildTabs(upf: UpfDetail): TabItem[] {
+// `choices` entra por parâmetro porque buildTabs não é componente e não pode
+// chamar useSgpChoices() — o hook fica no componente, que repassa aqui.
+function buildTabs(upf: UpfDetail, choices: SgpChoices): TabItem[] {
   const seguridade =
     upf.seguridade_social.length > 0 ? (
       <div className="flex flex-wrap gap-1.5">
@@ -131,14 +125,14 @@ function buildTabs(upf: UpfDetail): TabItem[] {
             { label: "Nascimento", value: formatDate(upf.titular.data_nasc) },
             { label: "Gênero", value: upf.titular.genero_display },
             { label: "Cor/Raça", value: upf.titular.cor_raca_display },
-            { label: "PCT", value: labelForValue(PCT_OPTIONS, upf.pct) },
+            { label: "PCT", value: labelForValue(choices.pct, upf.pct) },
             { label: "NIS", value: upf.titular.nis },
             { label: "DAP/CAF", value: upf.daf_caf },
             { label: "Escolaridade", value: upf.titular.escolaridade_display },
             { label: "Seguridade", value: seguridade },
             {
               label: "Posse da terra",
-              value: labelForValue(POSSE_TERRA_OPTIONS, upf.posse_terra),
+              value: labelForValue(choices.posse_terra, upf.posse_terra),
             },
             { label: "Área", value: formatArea(upf.area_terra_ha) },
           ]}
@@ -156,7 +150,7 @@ function buildTabs(upf: UpfDetail): TabItem[] {
             { label: "Internet", value: formatBool(upf.internet) },
             {
               label: "Dispositivo",
-              value: labelForValue(DISPOSITIVO_OPTIONS, upf.dispositivo),
+              value: labelForValue(choices.dispositivo, upf.dispositivo),
             },
           ]}
         />
@@ -170,12 +164,12 @@ function buildTabs(upf: UpfDetail): TabItem[] {
           items={[
             {
               label: "Tipo",
-              value: labelForValue(TIPO_MORADIA_OPTIONS, upf.tipo_moradia),
+              value: labelForValue(choices.tipo_moradia, upf.tipo_moradia),
             },
             {
               label: "Material",
               value: labelForValue(
-                MATERIAL_CONSTRUCAO_OPTIONS,
+                choices.material_construcao,
                 upf.material_construcao,
               ),
             },
@@ -188,12 +182,12 @@ function buildTabs(upf: UpfDetail): TabItem[] {
             },
             {
               label: "Energia",
-              value: labelForValue(ENERGIA_OPTIONS, upf.energia),
+              value: labelForValue(choices.energia, upf.energia),
             },
-            { label: "Água", value: labelForValue(AGUA_OPTIONS, upf.agua) },
+            { label: "Água", value: labelForValue(choices.agua, upf.agua) },
             {
               label: "Situação",
-              value: labelForValue(SITUACAO_MORADIA_OPTIONS, upf.situacao_moradia),
+              value: labelForValue(choices.situacao_moradia, upf.situacao_moradia),
             },
           ]}
         />
@@ -258,7 +252,11 @@ export default function UpfDetailPage() {
     return () => controller.abort();
   }, [id, reloadKey]);
 
-  const tabs = useMemo(() => (upf ? buildTabs(upf) : []), [upf]);
+  const choices = useSgpChoices();
+  const tabs = useMemo(
+    () => (upf ? buildTabs(upf, choices) : []),
+    [upf, choices],
+  );
 
   function handlePhotoChange(url: string | null) {
     setUpf((prev) => (prev ? { ...prev, foto_url: url ?? "" } : prev));

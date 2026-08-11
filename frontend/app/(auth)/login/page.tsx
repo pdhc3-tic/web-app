@@ -21,6 +21,16 @@ function LoginForm() {
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [retryAfter, setRetryAfter] = useState(0);
+  const [hydrated, setHydrated] = useState(false);
+
+  // Antes da hidratação o onSubmit não está ligado: um clique faria o submit
+  // nativo do <form>, que sem `action` vira GET na própria URL — com a senha
+  // na query string (e daí para o access log do nginx). Manter o botão
+  // desabilitado até aqui fecha essa janela.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHydrated(true);
+  }, []);
 
   useEffect(() => {
     if (retryAfter <= 0) return;
@@ -71,15 +81,10 @@ function LoginForm() {
       });
 
       if (result?.error) {
-        let code = "";
-        try {
-          if (result.url) {
-            code =
-              new URL(result.url, window.location.origin).searchParams.get(
-                "code",
-              ) ?? "";
-          }
-        } catch { /* ignora URL inválida */ }
+        // O code do CredentialsSignin (ver authorize() em auth.ts) já vem
+        // pronto no resultado. Não dá para lê-lo de result.url: o signIn
+        // devolve `url: null` sempre que há erro — justamente o caso daqui.
+        const code = result.code ?? "";
 
         if (code.startsWith("rate_limited:")) {
           const seconds = parseInt(code.split(":")[1], 10);
@@ -98,7 +103,7 @@ function LoginForm() {
     });
   }
 
-  const isBlocked = pending || retryAfter > 0;
+  const isBlocked = pending || retryAfter > 0 || !hydrated;
 
   const inputBase =
     "h-12 w-full rounded-lg border border-border bg-transparent px-4 text-sm text-text outline-none placeholder:text-text-muted/70 transition" +
@@ -144,7 +149,14 @@ function LoginForm() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
+      {/* method="post" é rede de segurança: se algum submit escapar do
+          onSubmit, o browser posta em vez de pôr os campos na URL. */}
+      <form
+        onSubmit={handleSubmit}
+        method="post"
+        className="flex flex-col gap-5"
+        noValidate
+      >
         <div className="flex flex-col gap-2">
           <label
             htmlFor="email"
