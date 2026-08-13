@@ -3,7 +3,7 @@ import logging
 from django.db.models import F, Sum
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status, viewsets
-from rest_framework.permissions import IsAuthenticated
+from apps.core.permissions import IsAuthenticatedActiveAccess
 from rest_framework.response import Response
 
 from apps.core.models.audit_log import AuditLog
@@ -42,7 +42,7 @@ class WorkPlanMetaViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ("create", "update", "partial_update", "destroy"):
             return [(IsSuperAdmin | IsUGP)()]
-        return [IsAuthenticated()]
+        return [IsAuthenticatedActiveAccess()]
 
     def get_queryset(self):
         qs = WorkPlanMeta.objects.annotate(
@@ -170,7 +170,7 @@ class WorkPlanAcaoViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ("create", "update", "partial_update", "destroy"):
             return [(IsSuperAdmin | IsUGP)()]
-        return [IsAuthenticated()]
+        return [IsAuthenticatedActiveAccess()]
 
     def get_queryset(self):
         qs = WorkPlanAcao.objects.select_related("meta").all()

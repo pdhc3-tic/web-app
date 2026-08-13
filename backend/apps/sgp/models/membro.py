@@ -106,6 +106,20 @@ class MembroFamilia(models.Model):
         auto_now=True, verbose_name="Atualizado em"
     )
 
+    # ── Sync SCA (compatibilidade com dispositivos offline) ──────────────────
+    device_id = models.CharField(
+        max_length=100,
+        blank=True, default="",
+        verbose_name="Device ID",
+        help_text="Identificador do dispositivo de origem (sync SCA).",
+    )
+    uuid_local = models.UUIDField(
+        null=True, blank=True,
+        unique=True,
+        verbose_name="UUID Local",
+        help_text="UUID gerado pelo dispositivo para idempotência no sync SCA.",
+    )
+
     class Meta:
         verbose_name = "Membro da Família"
         verbose_name_plural = "Membros da Família"

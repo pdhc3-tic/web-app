@@ -1,4 +1,5 @@
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer, TokenBlacklistSerializer
+from rest_framework_simplejwt.exceptions import InvalidToken
 
 from rest_framework import serializers
 from apps.core.models.user import User
@@ -24,7 +25,10 @@ class LoginSerializer(TokenObtainPairSerializer):
          
     def validate(self, attrs):
         attrs["password"] = attrs.pop("senha")
-        return super().validate(attrs)
+        data = super().validate(attrs)
+        if getattr(self.user, "acesso_revogado", False):
+            raise InvalidToken("Acesso revogado. Faça novo login.")
+        return data
     
 class RefreshSerializer(TokenRefreshSerializer):
     refresh_token = serializers.CharField()

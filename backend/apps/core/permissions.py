@@ -3,12 +3,13 @@ Classes de permissão RBAC — composable via & / | (DRF 3.9+).
 Negações registradas com logger.warning para auditoria.
 """
 
+from __future__ import annotations
+
 import logging
 from typing import Any
 
-from rest_framework.permissions import BasePermission
-from rest_framework.request import Request
-from rest_framework.views import APIView
+from rest_framework.exceptions import NotAuthenticated
+from rest_framework.permissions import BasePermission, IsAuthenticated
 
 from apps.core.services.permissions import (
     user_has_role,
@@ -41,6 +42,27 @@ def _log_denial(user: Any, view: APIView, obj: Any | None = None, *, reason: str
         obj_id,
         reason,
     )
+
+
+class IsAuthenticatedActiveAccess(IsAuthenticated):
+    """
+    Usuário autenticado com acesso vigente.
+
+    Idêntico ao `IsAuthenticated` (401 para anônimos), mas também rejeita com
+    401 usuários com `acesso_revogado=True` — mesmo que o access token JWT
+    ainda seja válido (stateless, ACCESS_TOKEN_LIFETIME=8h). Isso invalida a
+    sessão ativa em tempo real, independente do refresh token/blacklist.
+    """
+
+    message = "Acesso revogado. Faça novo login."
+
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        if not super().has_permission(request, view):
+            return False
+        if getattr(request.user, "acesso_revogado", False):
+            _log_denial(request.user, view, reason="acesso_revogado")
+            raise NotAuthenticated(self.message)
+        return True
 
 
 class IsSuperAdmin(BasePermission):
