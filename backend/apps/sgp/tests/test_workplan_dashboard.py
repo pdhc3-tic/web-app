@@ -33,7 +33,7 @@ def create_action_with_progress(meta, numero, municipio, completed, planned=10):
 
 
 class TestWorkPlanDashboard:
-    def test_returns_green_yellow_and_red_indicators(self, auth_client, municipio):
+    def test_returns_indicators_and_summary_per_meta(self, auth_client, municipio):
         meta = WorkPlanMetaFactory(numero=1)
         create_action_with_progress(meta, "1.1", municipio, completed=5)
         create_action_with_progress(meta, "1.2", municipio, completed=3)
@@ -42,17 +42,45 @@ class TestWorkPlanDashboard:
         response = auth_client.get(PANEL_URL)
 
         assert response.status_code == 200
-        assert response.data["resumo"] == {
+        assert response.data["metas"][0]["meta"]["id"] == meta.pk
+        assert response.data["metas"][0]["resumo"] == {
             "total_acoes": 3,
             "verde": 1,
             "amarelo": 1,
             "vermelho": 1,
         }
-        assert [action["semaforo"] for action in response.data["acoes"]] == [
+        assert [action["semaforo"] for action in response.data["metas"][0]["acoes"]] == [
             "verde", "amarelo", "vermelho"
         ]
-        assert response.data["acoes"][0]["percentual_realizado"] == "50.00"
-        assert response.data["acoes"][0]["progresso_esperado"] == "50.00"
+        assert response.data["metas"][0]["acoes"][0]["percentual_realizado"] == "50.00"
+        assert response.data["metas"][0]["acoes"][0]["progresso_esperado"] == "50.00"
+
+    def test_keeps_summary_separate_for_each_meta(self, auth_client, municipio):
+        first_meta = WorkPlanMetaFactory(numero=1)
+        second_meta = WorkPlanMetaFactory(numero=2)
+        create_action_with_progress(first_meta, "1.1", municipio, completed=5)
+        create_action_with_progress(first_meta, "1.2", municipio, completed=1)
+        create_action_with_progress(second_meta, "2.1", municipio, completed=3)
+
+        response = auth_client.get(PANEL_URL)
+
+        assert response.status_code == 200
+        assert [item["meta"] for item in response.data["metas"]] == [
+            {
+                "id": first_meta.pk,
+                "numero": first_meta.numero,
+                "titulo": first_meta.titulo,
+            },
+            {
+                "id": second_meta.pk,
+                "numero": second_meta.numero,
+                "titulo": second_meta.titulo,
+            },
+        ]
+        assert [item["resumo"] for item in response.data["metas"]] == [
+            {"total_acoes": 2, "verde": 1, "amarelo": 0, "vermelho": 1},
+            {"total_acoes": 1, "verde": 0, "amarelo": 1, "vermelho": 0},
+        ]
 
     def test_filters_by_meta_territory_and_execution_status(
         self, auth_client, municipio, municipio_ce, territory
@@ -69,7 +97,7 @@ class TestWorkPlanDashboard:
         )
 
         assert response.status_code == 200
-        assert [action["id"] for action in response.data["acoes"]] == [completed.pk]
+        assert [action["id"] for action in response.data["metas"][0]["acoes"]] == [completed.pk]
         assert visible.pk != completed.pk
 
     def test_adt_only_sees_actions_with_activities_in_own_territory(
@@ -83,7 +111,7 @@ class TestWorkPlanDashboard:
         response = auth_client_adt_rn.get(PANEL_URL)
 
         assert response.status_code == 200
-        assert [action["id"] for action in response.data["acoes"]] == [own_action.pk]
+        assert [action["id"] for action in response.data["metas"][0]["acoes"]] == [own_action.pk]
 
     def test_rejects_invalid_filter(self, auth_client):
         response = auth_client.get(f"{PANEL_URL}?meta_id=invalida")
@@ -103,7 +131,9 @@ class TestWorkPlanDashboard:
         elapsed = monotonic() - started_at
 
         assert response.status_code == 200
-        assert len(response.data["acoes"]) == 100
+        assert sum(len(meta["acoes"])
+                    for meta in response.data["metas"]
+        ) == 100
         assert elapsed < 1
 
 

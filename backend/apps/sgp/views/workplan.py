@@ -21,6 +21,7 @@ from apps.sgp.serializers_workplan import (
     WorkPlanMetaDetailSerializer,
     WorkPlanMetaListSerializer,
     WorkPlanDashboardAcaoSerializer,
+    WorkPlanDashboardMetaSerializer,
     WorkPlanDashboardQuerySerializer,
 )
 from apps.sgp.services.workplan_dashboard import (
@@ -35,7 +36,7 @@ logger = logging.getLogger("apps.sgp.views.workplan")
 class WorkPlanDashboardView(APIView):
     """GET /api/v1/sgp/plano-trabalho/painel/ com indicadores e semáforo das Ações."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedActiveAccess]
 
     def get(self, request):
         query_serializer = WorkPlanDashboardQuerySerializer(data=request.query_params)
@@ -57,13 +58,33 @@ class WorkPlanDashboardView(APIView):
                     if action.dashboard_status_execucao == status_execucao
                 ]
 
-            resumo = {"total_acoes": len(actions), "verde": 0, "amarelo": 0, "vermelho": 0}
+            metas = {}
             for action in actions:
-                resumo[action.dashboard_semaforo] += 1
+                grupo = metas.setdefault(action.meta_id, {
+                    "meta": action.meta,
+                    "resumo": {
+                        "total_acoes": 0,
+                        "verde": 0,
+                        "amarelo": 0,
+                        "vermelho": 0,
+                    },
+                    "acoes": [],
+                })
+                grupo["resumo"]["total_acoes"] += 1
+                grupo["resumo"][action.dashboard_semaforo] += 1
+                grupo["acoes"].append(action)
 
             return Response({
-                "resumo": resumo,
-                "acoes": WorkPlanDashboardAcaoSerializer(actions, many=True).data,
+                "metas": [
+                    {
+                        "meta": WorkPlanDashboardMetaSerializer(grupo["meta"]).data,
+                        "resumo": grupo["resumo"],
+                        "acoes": WorkPlanDashboardAcaoSerializer(
+                            grupo["acoes"], many=True
+                        ).data,
+                    }
+                    for grupo in metas.values()
+                ],
             })
         except PermissionDenied:
             raise
