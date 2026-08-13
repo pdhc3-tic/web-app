@@ -3,10 +3,10 @@ from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.pagination import LimitOffsetPagination
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.core.models.notifications import Notification, _invalidate_unread_cache
+from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.core.serializers import NotificationSerializer
 from apps.core.throttling import NotificationUnreadCountThrottle
 
@@ -19,7 +19,7 @@ class NotificationListView(generics.ListAPIView):
     """GET /api/v1/notifications/me/ — notificações do usuário autenticado."""
 
     serializer_class = NotificationSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedActiveAccess]
     pagination_class = NotificationPagination
     ordering = ["-enviado_em"]
 
@@ -31,7 +31,7 @@ class NotificationMarkReadView(generics.UpdateAPIView):
     """PATCH /api/v1/notifications/{id}/read/ — marca como lida."""
 
     serializer_class = NotificationSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedActiveAccess]
     http_method_names = ["patch"]
 
     def get_queryset(self):
@@ -50,7 +50,7 @@ class NotificationMarkReadView(generics.UpdateAPIView):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticatedActiveAccess])
 def mark_all_read(request):
     """POST /api/v1/notifications/mark-all-read/ — marca todas como lidas."""
     updated_count = Notification.objects.filter(
@@ -65,7 +65,7 @@ def mark_all_read(request):
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticatedActiveAccess])
 @throttle_classes([NotificationUnreadCountThrottle])
 def unread_count(request):
     """GET /api/v1/notifications/me/unread-count/ — contagem de não-lidas com cache 30s."""

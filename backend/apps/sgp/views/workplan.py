@@ -5,7 +5,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
+from apps.core.permissions import IsAuthenticatedActiveAccess
 from rest_framework.response import Response
 import sentry_sdk
 
@@ -96,7 +96,7 @@ class WorkPlanMetaViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ("create", "update", "partial_update", "destroy"):
             return [(IsSuperAdmin | IsUGP)()]
-        return [IsAuthenticated()]
+        return [IsAuthenticatedActiveAccess()]
 
     def get_queryset(self):
         qs = WorkPlanMeta.objects.annotate(
@@ -224,7 +224,7 @@ class WorkPlanAcaoViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ("create", "update", "partial_update", "destroy"):
             return [(IsSuperAdmin | IsUGP)()]
-        return [IsAuthenticated()]
+        return [IsAuthenticatedActiveAccess()]
 
     def get_queryset(self):
         qs = WorkPlanAcao.objects.select_related("meta").all()

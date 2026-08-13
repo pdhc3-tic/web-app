@@ -4,7 +4,7 @@ from uuid import uuid4
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers, status, viewsets
 from rest_framework.exceptions import PermissionDenied
-from rest_framework.permissions import IsAuthenticated
+from apps.core.permissions import IsAuthenticatedActiveAccess
 from rest_framework.response import Response
 
 from apps.core.models.audit_log import AuditLog
@@ -48,7 +48,7 @@ class UPFDocumentUploadURLSerializer(serializers.Serializer):
 
 class UPFDocumentViewSet(viewsets.GenericViewSet):
     serializer_class = UPFDocumentSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedActiveAccess]
     http_method_names = ["get", "post", "delete", "head", "options"]
 
     def get_upf(self):

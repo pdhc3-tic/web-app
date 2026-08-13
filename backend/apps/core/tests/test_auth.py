@@ -58,6 +58,17 @@ def test_login_usuario_inativo(client):
     })
     assert response.status_code == 401
 
+@pytest.mark.django_db
+def test_login_usuario_com_acesso_revogado(client, usuario):
+    usuario.acesso_revogado = True
+    usuario.save(update_fields=["acesso_revogado"])
+    response = client.post("/api/v1/auth/login/", {
+        "email": usuario.email,
+        "senha": "senha123",
+    })
+    assert response.status_code == 401
+    assert "access_token" not in response.data
+
 # Testes de Payload inválido
 @pytest.mark.django_db
 def test_login_sem_email(client):

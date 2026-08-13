@@ -4,13 +4,14 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenBlacklistView, TokenObtainPairView, TokenRefreshView
 
 from apps.core.models.login_attempt import LoginAttempt
+from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.core.throttling import (
     LoginRateThrottle,
     PasswordResetByEmailThrottle,
@@ -174,14 +175,14 @@ class LogoutView(TokenBlacklistView):
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticatedActiveAccess])
 def me(request):
     serializer = UserMeSerializer(request.user)
     return Response(serializer.data)
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticatedActiveAccess])
 def logout_all(request):
     tokens = OutstandingToken.objects.filter(user=request.user)
     revoked_count = tokens.count()

@@ -2,12 +2,15 @@ import json
 
 from django.db import transaction
 from rest_framework import generics
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.models.system_config import SystemConfig
-from apps.core.permissions import IsSuperAdmin, IsSuperAdminOrUGPReadOnly
+from apps.core.permissions import (
+    IsAuthenticatedActiveAccess,
+    IsSuperAdmin,
+    IsSuperAdminOrUGPReadOnly,
+)
 from apps.core.serializers import GoogleCalendarConfigSerializer, SystemConfigSerializer
 
 
@@ -66,7 +69,7 @@ class SystemConfigListView(generics.ListAPIView):
 
     queryset = SystemConfig.objects.all()
     serializer_class = SystemConfigSerializer
-    permission_classes = [IsAuthenticated, IsSuperAdminOrUGPReadOnly]
+    permission_classes = [IsAuthenticatedActiveAccess, IsSuperAdminOrUGPReadOnly]
 
 
 class SystemConfigDetailView(generics.RetrieveUpdateAPIView):
@@ -76,7 +79,7 @@ class SystemConfigDetailView(generics.RetrieveUpdateAPIView):
     serializer_class = SystemConfigSerializer
     lookup_field = "chave"
     http_method_names = ["get", "patch"]
-    permission_classes = [IsAuthenticated, IsSuperAdminOrUGPReadOnly]
+    permission_classes = [IsAuthenticatedActiveAccess, IsSuperAdminOrUGPReadOnly]
 
     def perform_update(self, serializer):
         serializer.save(atualizado_por=self.request.user)
@@ -85,7 +88,7 @@ class SystemConfigDetailView(generics.RetrieveUpdateAPIView):
 class GoogleCalendarConfigView(APIView):
     """GET|PATCH /api/v1/core/config/google-calendar/ — configuração singleton."""
 
-    permission_classes = [IsAuthenticated, IsSuperAdmin]
+    permission_classes = [IsAuthenticatedActiveAccess, IsSuperAdmin]
     http_method_names = ["get", "patch", "head", "options"]
 
     def get(self, request):
