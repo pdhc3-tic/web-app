@@ -2,6 +2,9 @@
 .venv/
 venv/
 
+# Variáveis de produção (raiz, usada como build-arg do frontend)
+.env
+
 # IDEs
 .idea/
 .vscode/

@@ -1,0 +1,108 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Testes (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rodar testes do backend
+        run: |
+          docker build -t pdhc-backend-test -f backend/Dockerfile backend
+          docker run --rm pdhc-backend-test pytest -v
+
+  deploy:
+    name: Deploy na VPS
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Executar deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: "30m"
+          envs: VPS_APP_DIR,POSTGRES_PASSWORD,VPS_HOST
+          script: |
+            export VPS_APP_DIR="$VPS_APP_DIR"
+            export POSTGRES_PASSWORD="$POSTGRES_PASSWORD"
+            export VPS_HOST="$VPS_HOST"
+            cd "$VPS_APP_DIR"
+            bash deploy.sh
+        env:
+          VPS_APP_DIR: ${{ secrets.VPS_APP_DIR }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+
+  notify:
+    name: Notificar Slack
+    needs: [test, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notificar sucesso
+        if: needs.deploy.result == 'success'
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": { "type": "plain_text", "text": "🚀 Deploy do PDHC concluído com sucesso" }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    { "type": "mrkdwn", "text": "*Status:*\n✅ Sucesso" },
+                    { "type": "mrkdwn", "text": "*Ambiente:*\nProdução (VPS)" },
+                    { "type": "mrkdwn", "text": "*Repositório:*\n${{ github.repository }}" },
+                    { "type": "mrkdwn", "text": "*Commit:*\n<https://github.com/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>" }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notificar falha
+        if: needs.deploy.result == 'failure' || needs.test.result == 'failure'
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": { "type": "plain_text", "text": "🚨 Deploy do PDHC falhou" }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    { "type": "mrkdwn", "text": "*Status:*\n❌ Falha" },
+                    { "type": "mrkdwn", "text": "*Ambiente:*\nProdução (VPS)" },
+                    { "type": "mrkdwn", "text": "*Repositório:*\n${{ github.repository }}" },
+                    { "type": "mrkdwn", "text": "*Commit:*\n${{ github.sha }}" }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":rotating_light: <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|Ver logs do workflow>"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
