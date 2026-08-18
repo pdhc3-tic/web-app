@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  #test:
+  # test:
   #  name: Testes (pytest)
   #  env:
   #    DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
@@ -38,25 +38,25 @@ jobs:
             --health-timeout=5s
             --health-retries=5
     
-      steps:
-        - uses: actions/checkout@v4
-    
-        - name: Rodar testes do backend
-          env:
-            DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
-          run: |
-            docker build -t pdhc-backend-test -f backend/Dockerfile backend
-    
-            docker run --rm \
-              --network host \
-              -e DJANGO_SECRET_KEY="$DJANGO_SECRET_KEY" \
-              -e DB_NAME=pdhc \
-              -e DB_USER=postgres \
-              -e DB_PASSWORD=postgres \
-              -e DB_HOST=127.0.0.1 \
-              -e DB_PORT=5432 \
-              pdhc-backend-test \
-              pytest -v
+        steps:
+          - uses: actions/checkout@v4
+      
+          - name: Rodar testes do backend
+            env:
+              DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+            run: |
+              docker build -t pdhc-backend-test -f backend/Dockerfile backend
+      
+              docker run --rm \
+                --network host \
+                -e DJANGO_SECRET_KEY="$DJANGO_SECRET_KEY" \
+                -e DB_NAME=pdhc \
+                -e DB_USER=postgres \
+                -e DB_PASSWORD=postgres \
+                -e DB_HOST=127.0.0.1 \
+                -e DB_PORT=5432 \
+                pdhc-backend-test \
+                pytest -v
 
   deploy:
     name: Deploy na VPS
