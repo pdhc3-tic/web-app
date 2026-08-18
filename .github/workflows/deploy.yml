@@ -6,19 +6,57 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
-    name: Testes (pytest)
-    env:
-      DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
-      DJANGO_SETTINGS_MODULE: setup.settings
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+  #test:
+  #  name: Testes (pytest)
+  #  env:
+  #    DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+  #    DJANGO_SETTINGS_MODULE: setup.settings
+  #  runs-on: ubuntu-latest
+    # steps:
+    #   - uses: actions/checkout@v4
 
-      - name: Rodar testes do backend
-        run: |
-          docker build -t pdhc-backend-test -f backend/Dockerfile backend
-          docker run -e DJANGO_SECRET_KEY="$DJANGO_SECRET_KEY" --rm pdhc-backend-test pytest -v
+    #   - name: Rodar testes do backend
+    #     run: |
+    #       docker build -t pdhc-backend-test -f backend/Dockerfile backend
+    #       docker run -e DJANGO_SECRET_KEY="$DJANGO_SECRET_KEY" --rm pdhc-backend-test pytest -v
+    test:
+      name: Testes (pytest)
+      runs-on: ubuntu-latest
+    
+      services:
+        postgres:
+          image: postgres:17
+          env:
+            POSTGRES_DB: pdhc
+            POSTGRES_USER: postgres
+            POSTGRES_PASSWORD: postgres
+          ports:
+            - 5432:5432
+          options: >-
+            --health-cmd="pg_isready -U postgres -d pdhc"
+            --health-interval=10s
+            --health-timeout=5s
+            --health-retries=5
+    
+      steps:
+        - uses: actions/checkout@v4
+    
+        - name: Rodar testes do backend
+          env:
+            DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+          run: |
+            docker build -t pdhc-backend-test -f backend/Dockerfile backend
+    
+            docker run --rm \
+              --network host \
+              -e DJANGO_SECRET_KEY="$DJANGO_SECRET_KEY" \
+              -e DB_NAME=pdhc \
+              -e DB_USER=postgres \
+              -e DB_PASSWORD=postgres \
+              -e DB_HOST=127.0.0.1 \
+              -e DB_PORT=5432 \
+              pdhc-backend-test \
+              pytest -v
 
   deploy:
     name: Deploy na VPS
