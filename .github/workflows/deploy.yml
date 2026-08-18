@@ -18,7 +18,7 @@ jobs:
       - name: Rodar testes do backend
         run: |
           docker build -t pdhc-backend-test -f backend/Dockerfile backend
-          docker run --rm pdhc-backend-test pytest -v
+          docker run -e DJANGO_SECRET_KEY="$DJANGO_SECRET_KEY" --rm pdhc-backend-test pytest -v
 
   deploy:
     name: Deploy na VPS
