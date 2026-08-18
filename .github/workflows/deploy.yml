@@ -8,6 +8,9 @@ on:
 jobs:
   test:
     name: Testes (pytest)
+    env:
+      DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+      DJANGO_SETTINGS_MODULE: setup.settings
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
