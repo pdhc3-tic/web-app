@@ -184,3 +184,55 @@ class WorkPlanMetaDetailSerializer(serializers.ModelSerializer):
                     f"ODS inválido: {item}. Valores permitidos: 1–17."
                 )
         return value
+
+
+class WorkPlanDashboardQuerySerializer(serializers.Serializer):
+    """Valida os filtros aceitos pelo painel do Plano de Trabalho."""
+
+    meta_id = serializers.IntegerField(min_value=1, required=False)
+    territorio_id = serializers.IntegerField(min_value=1, required=False)
+    status_execucao = serializers.ChoiceField(
+        choices=["concluida", "em_atraso", "no_prazo"], required=False
+    )
+
+
+class WorkPlanDashboardMetaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WorkPlanMeta
+        fields = ["id", "numero", "titulo"]
+
+
+class WorkPlanDashboardAcaoSerializer(serializers.Serializer):
+    """Representação de uma Ação e de seus indicadores calculados."""
+
+    id = serializers.IntegerField(read_only=True)
+    meta = WorkPlanDashboardMetaSerializer(read_only=True)
+    numero = serializers.CharField(read_only=True)
+    descricao = serializers.CharField(read_only=True)
+    quantidade_planejada = serializers.DecimalField(
+        max_digits=12, decimal_places=2, read_only=True
+    )
+    quantidade_realizada = serializers.DecimalField(
+        source="dashboard_quantidade_realizada",
+        max_digits=12,
+        decimal_places=2,
+        read_only=True,
+    )
+    percentual_realizado = serializers.DecimalField(
+        source="dashboard_percentual_realizado",
+        max_digits=7,
+        decimal_places=2,
+        read_only=True,
+    )
+    progresso_esperado = serializers.DecimalField(
+        source="dashboard_progresso_esperado",
+        max_digits=7,
+        decimal_places=2,
+        read_only=True,
+    )
+    semaforo = serializers.CharField(source="dashboard_semaforo", read_only=True)
+    status_execucao = serializers.CharField(
+        source="dashboard_status_execucao", read_only=True
+    )
+    data_inicio = serializers.DateField(read_only=True)
+    data_fim = serializers.DateField(read_only=True)

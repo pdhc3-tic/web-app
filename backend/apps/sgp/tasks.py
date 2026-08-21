@@ -1,6 +1,7 @@
 import logging
 
 from celery import shared_task
+from django.conf import settings
 
 from apps.core.utils import get_config
 from apps.sgp.services.google_calendar import (
@@ -11,6 +12,10 @@ from apps.sgp.services.google_calendar import (
     update_event,
 )
 from setup.tasks import send_email_notification
+from apps.core.models.notifications import Notification, TipoNotificacao
+from apps.core.models.user import User
+from apps.sgp.services.workplan_dashboard import dashboard_actions, enrich_dashboard_action
+
 
 try:
     import sentry_sdk
@@ -128,3 +133,50 @@ def _notify_super_admins(activity_id, exc):
         ),
         recipients,
     )
+
+@shared_task(name="sgp.tasks.check_acao_progress_alert")
+def check_acao_progress_alert() -> int:
+    """Notifica UGP e Super Admin sobre Ações em vermelho no semáforo.
+
+    A execução diária cria uma notificação por destinatário e Ação. O signal de
+    Notification enfileira o envio pelo serviço central de e-mail.
+    """
+    try:
+        recipients = User.objects.filter(
+            ativo=True,
+            profiles__perfil__slug__in=["ugp", "super-admin"],
+        ).distinct()
+        if not recipients.exists():
+            return 0
+
+        red_actions = []
+        for action in dashboard_actions():
+            action = enrich_dashboard_action(action)
+            if action.dashboard_semaforo == "vermelho":
+                red_actions.append(action)
+        notifications_sent = 0
+        panel_url = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/sgp/plano-trabalho"
+
+        for action in red_actions:
+            message = (
+                f"A Ação {action.numero} ({action.descricao}) está em vermelho: "
+                f"{action.dashboard_percentual_realizado}% realizado para "
+                f"{action.dashboard_progresso_esperado}% esperado."
+            )
+            for recipient in recipients:
+                Notification.objects.create(
+                    user=recipient,
+                    tipo=TipoNotificacao.EMAIL,
+                    titulo=f"Alerta de progresso: Ação {action.numero}",
+                    mensagem=message,
+                    link=panel_url,
+                    modulo_origem="sgp",
+                    evento="workplan_action_red",
+                )
+                notifications_sent += 1
+
+        return notifications_sent
+    except Exception as exc:
+        sentry_sdk.capture_exception(exc)
+        logger.exception("Falha ao verificar alertas do Plano de Trabalho.")
+        raise
