@@ -196,6 +196,25 @@ class WorkPlanDashboardQuerySerializer(serializers.Serializer):
     )
 
 
+class WorkPlanExportQuerySerializer(serializers.Serializer):
+    formato = serializers.ChoiceField(choices=["csv", "xlsx"])
+    meta_id = serializers.IntegerField(min_value=1, required=False)
+    territorio_id = serializers.IntegerField(min_value=1, required=False)
+    periodo_inicio = serializers.DateField(required=False)
+    periodo_fim = serializers.DateField(required=False)
+
+    def validate(self, attrs):
+        if (
+            attrs.get("periodo_inicio")
+            and attrs.get("periodo_fim")
+            and attrs["periodo_inicio"] > attrs["periodo_fim"]
+        ):
+            raise serializers.ValidationError(
+                "periodo_inicio não pode ser posterior a periodo_fim."
+            )
+        return attrs
+
+
 class WorkPlanDashboardMetaSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkPlanMeta
