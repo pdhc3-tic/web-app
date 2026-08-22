@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { storageStatePath } from "./helpers/users";
 
 /**
  * Teste de componente do SemaforoBadge, rodado sobre a página /styleguide.
@@ -71,8 +72,13 @@ async function amostrarBadges(
   }, tokens);
 }
 
-// /styleguide fica fora do grupo (protected) — não precisa de sessão.
 test.describe("SemaforoBadge — mapeamento de cores do design system", () => {
+  // /styleguide está fora do grupo (protected), mas o guard do proxy.ts cobre
+  // tudo que não seja login/recuperação de senha — sem sessão a página vira um
+  // redirect para /login e nenhum badge é renderizado. O perfil de menor
+  // privilégio basta: a página não tem nada atrás de permissão.
+  test.use({ storageState: storageStatePath("semPermissao") });
+
   for (const tema of ["light", "dark"] as const) {
     test(`cores dos badges seguem a paleta semântica (tema ${tema})`, async ({
       page,

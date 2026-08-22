@@ -4,6 +4,11 @@ import { storageStatePath } from "./helpers/users";
 /**
  * Painel de Acompanhamento (FE-9) — semáforo por Ação.
  *
+ * O semáforo é calculado pelo backend, em
+ * `GET /api/v1/sgp/plano-trabalho/painel/`; a tela apenas o apresenta. Estes
+ * testes cobrem a apresentação e os filtros, não a regra de classificação —
+ * essa tem cobertura própria em `backend/apps/sgp/tests/test_workplan_dashboard.py`.
+ *
  * ─── Por que o teste cria a Ação em vez de usar o seed ──────────────────────
  *
  * O semáforo compara o realizado com o tempo já decorrido do período, e todas
@@ -13,8 +18,9 @@ import { storageStatePath } from "./helpers/users";
  *
  * A Ação criada aqui tem período INTEIRO NO PASSADO e nenhuma Atividade
  * vinculada: 0% realizado contra 100% esperado, razão zero. Fica vermelha em
- * qualquer data em que a suíte rode. Como o número da Ação é único apenas
- * dentro da Meta, "9.9" não colide com o seed — mesma tática de acoes.spec.ts.
+ * qualquer data em que a suíte rode, e `em_atraso` pela mesma razão — prazo
+ * vencido com entrega incompleta. Como o número da Ação é único apenas dentro
+ * da Meta, "9.9" não colide com o seed — mesma tática de acoes.spec.ts.
  */
 
 const META_NUMERO = 1;
@@ -35,6 +41,12 @@ async function abrirMeta(page: Page): Promise<void> {
     .click();
   await page.waitForURL(/\/sgp\/metas\/\d+$/);
   await expect(page.getByTestId("meta-detalhe-page")).toBeVisible();
+  // `meta-detalhe-page` envolve TAMBÉM o spinner de carregamento, então esperar
+  // só por ele devolve o controle com a tabela ainda vazia — e um `count()`
+  // feito nesse instante conclui "não há resíduo" quando há. A tabela é a
+  // primeira coisa que só existe com os dados carregados. A Meta 1 sempre tem
+  // Ações no seed, então ela nunca cai no empty state.
+  await expect(page.getByTestId("acoes-table")).toBeVisible();
 }
 
 /** Linha da Ação do teste na tabela da Meta (vazia quando não existe). */
@@ -60,7 +72,21 @@ async function limparResiduo(page: Page): Promise<void> {
   const id = testid?.replace("acao-row-", "");
   if (!id) return;
 
-  await page.getByTestId(`acao-excluir-btn-${id}`).click();
+  await excluirAcao(page, id);
+}
+
+/**
+ * Exclui a Ação pelo botão da linha da tabela.
+ *
+ * O botão é buscado DENTRO da linha: a AcoesTable renderiza a mesma Ação duas
+ * vezes — na tabela (desktop) e no card (mobile) —, e as duas cópias carregam o
+ * mesmo `data-testid`. Procurar na página inteira viola o strict mode.
+ */
+async function excluirAcao(page: Page, id: string): Promise<void> {
+  await page
+    .getByTestId(`acao-row-${id}`)
+    .getByTestId(`acao-excluir-btn-${id}`)
+    .click();
   await page.getByTestId("acao-excluir-confirmar").click();
   await expect(page.getByTestId(`acao-row-${id}`)).toHaveCount(0);
 }
@@ -103,11 +129,8 @@ async function criarAcaoCritica(page: Page): Promise<string> {
 /** Remove a Ação criada. Silencioso se ela já não existir. */
 async function excluirAcaoCritica(page: Page, acaoId: string): Promise<void> {
   await abrirMeta(page);
-  const botao = page.getByTestId(`acao-excluir-btn-${acaoId}`);
-  if ((await botao.count()) === 0) return;
-  await botao.click();
-  await page.getByTestId("acao-excluir-confirmar").click();
-  await expect(page.getByTestId(`acao-row-${acaoId}`)).toHaveCount(0);
+  if ((await page.getByTestId(`acao-row-${acaoId}`).count()) === 0) return;
+  await excluirAcao(page, acaoId);
 }
 
 test.describe("Painel de Acompanhamento — UGP", () => {
@@ -186,5 +209,60 @@ test.describe("Painel de Acompanhamento — UGP", () => {
 
     await page.getByTestId("painel-limpar-filtros").click();
     await expect(page.getByTestId(`painel-acao-${acaoId}`)).toHaveCount(1);
+  });
+
+  test("filtrar por situação usa o status_execucao calculado pelo backend", async ({
+    page,
+  }) => {
+    await page.goto("/sgp/painel");
+    // A Ação é procurada dentro do alerta: reduzir o painel a uma única Meta
+    // abre o card por padrão, e aí a mesma Ação aparece no alerta E na lista.
+    // O que este teste mede é o recorte do filtro, não quantas vezes a linha é
+    // desenhada.
+    const noAlerta = page
+      .getByTestId("painel-alerta")
+      .getByTestId(`painel-acao-${acaoId}`);
+    await expect(noAlerta).toHaveCount(1);
+
+    const filtro = page.locator("#painel-filtro-situacao");
+
+    // A Ação tem prazo vencido e entrega zerada: está "Em atraso", nunca
+    // "Concluída". Filtrar pelo oposto tem de tirá-la da tela inteira.
+    await filtro.click();
+    await page
+      .locator('li[role="option"]')
+      .filter({ hasText: /^Concluída$/ })
+      .click();
+    await expect(page.getByTestId(`painel-acao-${acaoId}`)).toHaveCount(0);
+
+    await filtro.click();
+    await page
+      .locator('li[role="option"]')
+      .filter({ hasText: /^Em atraso$/ })
+      .click();
+    await expect(noAlerta).toHaveCount(1);
+  });
+
+  test("os filtros ficam na URL e sobrevivem ao recarregamento", async ({
+    page,
+  }) => {
+    await page.goto("/sgp/painel");
+    await expect(page.getByTestId(`painel-acao-${acaoId}`)).toHaveCount(1);
+
+    await page.locator("#painel-filtro-meta").click();
+    await page
+      .locator('li[role="option"]')
+      .filter({ hasText: /^Meta 2 – / })
+      .click();
+
+    await page.waitForURL(/\/sgp\/painel\?.*meta=\d+/);
+    await expect(page.getByTestId(`painel-acao-${acaoId}`)).toHaveCount(0);
+
+    // O recorte é o estado da tela: recarregar não pode devolver "todas as
+    // Metas", senão o link compartilhado não vale nada.
+    await page.reload();
+    await expect(page.getByTestId("painel-page")).toBeVisible();
+    await expect(page.getByTestId(`painel-acao-${acaoId}`)).toHaveCount(0);
+    await expect(page.getByTestId("painel-limpar-filtros")).toBeVisible();
   });
 });

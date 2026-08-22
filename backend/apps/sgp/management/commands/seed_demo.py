@@ -17,6 +17,7 @@ Uso:
 
 from __future__ import annotations
 
+import os
 import random
 import struct
 import zlib
@@ -28,7 +29,7 @@ from uuid import uuid4
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
 
 from apps.core.models import Municipality, Organization, Role, State, Territory, UserProfile
@@ -53,7 +54,9 @@ User = get_user_model()
 SEED = 20260808
 DEMO_EMAIL_DOMAIN = "demo.pdhc.local"
 DEMO_PASSWORD = "Pdhc@2026demo"
-MEDIA_BASE_URL = "http://localhost:8000/media"
+# URL que o NAVEGADOR usa para baixar as evidências. Depende da porta em que o
+# backend está publicado no host (docker-compose), por isso é configurável.
+MEDIA_BASE_URL = os.getenv("DEMO_MEDIA_BASE_URL", "http://localhost:8000/media")
 
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -369,9 +372,14 @@ class Command(BaseCommand):
             WorkPlanMeta.objects.all().delete()
             Production.objects.all().delete()
             UPFDocument.objects.all().delete()
-            # titular é OneToOne PROTECT → zerar o vínculo antes de apagar membros
-            UPF.objects.all().delete()
-            MembroFamilia.objects.all().delete()
+            # UPF.titular (OneToOne PROTECT) e MembroFamilia.upf (CASCADE) formam um
+            # ciclo que o collector do ORM não resolve: apagar a UPF exige apagar o
+            # titular e apagar o titular exige apagar a UPF. Com as constraints
+            # adiadas, as linhas saem direto e a integridade é checada no fim do bloco.
+            with connection.constraint_checks_disabled():
+                with connection.cursor() as cursor:
+                    cursor.execute(f'DELETE FROM "{UPF._meta.db_table}"')
+                    cursor.execute(f'DELETE FROM "{MembroFamilia._meta.db_table}"')
             Comunidade.objects.all().delete()
             Organization.objects.all().delete()
             UserProfile.objects.filter(

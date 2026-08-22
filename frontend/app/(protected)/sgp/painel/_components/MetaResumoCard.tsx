@@ -59,8 +59,16 @@ export function MetaResumoCard({
   const painelId = useId();
   const { meta, acoes } = item;
 
+  // A resposta do painel traz um `resumo` pronto, mas ele não conhece o nível
+  // "sem-dado": Ações sem quantidade planejada entram lá como vermelhas. Contar
+  // sobre os níveis já exibidos mantém a pastilha e a lista logo abaixo dizendo
+  // a mesma coisa — que é o ponto de um card-resumo.
   const contagens = contarNiveis(acoes.map((a) => a.avaliacao));
   const semDado = contagens["sem-dado"];
+  const periodo =
+    meta.data_inicio || meta.data_fim
+      ? `${formatDate(meta.data_inicio)} – ${formatDate(meta.data_fim)}`
+      : null;
 
   // Progresso da Meta = média simples do realizado das Ações que têm
   // denominador. Não é ponderada por valor nem por quantidade de propósito:
@@ -88,9 +96,9 @@ export function MetaResumoCard({
             <h3 className="text-sm font-semibold leading-snug text-text">
               {meta.titulo}
             </h3>
-            <span className="text-xs text-text-muted">
-              {formatDate(meta.data_inicio)} – {formatDate(meta.data_fim)}
-            </span>
+            {periodo && (
+              <span className="text-xs text-text-muted">{periodo}</span>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">

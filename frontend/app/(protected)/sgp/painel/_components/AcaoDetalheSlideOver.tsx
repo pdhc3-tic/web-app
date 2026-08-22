@@ -30,6 +30,9 @@ type Props = {
 export function AcaoDetalheSlideOver({ item, onClose, canManage }: Props) {
   const acao = item?.acao;
   const avaliacao = item?.avaliacao;
+  // Tipo de unidade e valores não vêm na resposta do painel: saem do
+  // cruzamento com /acoes/ e ficam de fora da lista quando ele falta.
+  const detalhe = item?.detalhe ?? null;
 
   const hrefEdicao =
     item?.meta && acao ? `/sgp/metas/${item.meta.id}?acao=${acao.id}` : null;
@@ -85,7 +88,11 @@ export function AcaoDetalheSlideOver({ item, onClose, canManage }: Props) {
             <ProgressBar
               value={avaliacao.realizado}
               label={`Progresso da Ação ${acao.numero}`}
-              valueText={`${progressoLabel(acao)} — ${acao.tipo_unidade_display}`}
+              valueText={
+                detalhe
+                  ? `${progressoLabel(acao)} — ${detalhe.tipo_unidade_display}`
+                  : progressoLabel(acao)
+              }
             />
             <p className="text-xs leading-relaxed text-text-muted">
               Esperado {formatPercentual(avaliacao.esperado)} pelo tempo já
@@ -97,7 +104,10 @@ export function AcaoDetalheSlideOver({ item, onClose, canManage }: Props) {
 
           <DefinitionList
             items={[
-              { label: "Tipo / unidade", value: acao.tipo_unidade_display },
+              {
+                label: "Tipo / unidade",
+                value: detalhe?.tipo_unidade_display ?? null,
+              },
               {
                 label: "Quantidade planejada",
                 value: (
@@ -116,19 +126,19 @@ export function AcaoDetalheSlideOver({ item, onClose, canManage }: Props) {
               },
               {
                 label: "Valor unitário",
-                value: (
+                value: detalhe ? (
                   <span className="tabular-nums">
-                    {formatCurrencyBRL(acao.valor_unitario)}
+                    {formatCurrencyBRL(detalhe.valor_unitario)}
                   </span>
-                ),
+                ) : null,
               },
               {
                 label: "Valor total",
-                value: (
+                value: detalhe ? (
                   <span className="tabular-nums">
-                    {formatCurrencyBRL(acao.valor_total)}
+                    {formatCurrencyBRL(detalhe.valor_total)}
                   </span>
-                ),
+                ) : null,
               },
               {
                 label: avaliacao.periodoHerdado ? "Período (da Meta)" : "Período",

@@ -22,9 +22,12 @@ type Props = {
  * e ativação por Enter/Espaço sem nenhum handler extra.
  */
 export function AcaoLinha({ item, onSelect, mostrarMeta = false }: Props) {
-  const { acao, meta, avaliacao } = item;
+  const { acao, detalhe, meta, avaliacao } = item;
   const { nivel, realizado, esperado } = avaliacao;
   const contagem = progressoLabel(acao);
+  // A unidade não vem na resposta do painel; some da linha se o cruzamento com
+  // /acoes/ não estiver disponível, em vez de deixar um "·" solto.
+  const unidade = detalhe?.tipo_unidade_display;
 
   return (
     <button
@@ -46,7 +49,8 @@ export function AcaoLinha({ item, onSelect, mostrarMeta = false }: Props) {
 
         <div className="flex items-baseline justify-between gap-2 text-xs">
           <span className="tabular-nums text-text-muted">
-            {contagem} · {acao.tipo_unidade_display}
+            {contagem}
+            {unidade ? ` · ${unidade}` : ""}
           </span>
           {/* Realizado ao lado do esperado: o semáforo é a razão entre os dois,
               e vê-los juntos é o que torna a cor auditável. */}
@@ -61,7 +65,7 @@ export function AcaoLinha({ item, onSelect, mostrarMeta = false }: Props) {
         <ProgressBar
           value={realizado}
           label={`Progresso da Ação ${acao.numero}`}
-          valueText={`${contagem} — ${formatPercentual(realizado)} realizado, ${formatPercentual(esperado)} esperado`}
+          valueText={`${contagem}${unidade ? ` ${unidade}` : ""} — ${formatPercentual(realizado)} realizado, ${formatPercentual(esperado)} esperado`}
           tone={
             nivel === "vermelho"
               ? "error"
