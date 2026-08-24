@@ -15,7 +15,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.db import transaction
-from django.db.models import F, Q, Value
+from django.db.models import Exists, F, OuterRef, Q, Value
 from django.db.models.functions import Coalesce, Greatest
 from django_filters import rest_framework as django_filters
 from rest_framework import filters, generics, status, viewsets
@@ -84,8 +84,18 @@ class SyncDeviceFilter(django_filters.FilterSet):
         fields = ["tecnico", "territorio"]
 
     def filter_territorio(self, qs, name, value):
-        return qs.filter(
-            Q(user__profiles__territorio_id=value) | Q(user__profiles__territorio__isnull=True)
+        # Semântica idêntica à de user_territories/UserListSerializer.get_territorios:
+        # "dispositivos de técnicos com acesso a T". Usuário com algum perfil de
+        # território específico acessa SÓ esses territórios (perfil global é ignorado);
+        # sem nenhum específico, perfil global dá acesso a todos.
+        from apps.core.models.user_profile import UserProfile
+
+        tem_especifico = UserProfile.objects.filter(
+            user=OuterRef("user"), territorio__isnull=False
+        )
+        return qs.annotate(tem_territorio_especifico=Exists(tem_especifico)).filter(
+            Q(tem_territorio_especifico=True, user__profiles__territorio_id=value)
+            | Q(tem_territorio_especifico=False, user__profiles__territorio__isnull=True)
         ).distinct()
 
 
@@ -128,8 +138,9 @@ class SyncDeviceListView(generics.ListAPIView):
     permission_classes = [IsAuthenticatedActiveAccess, IsSuperAdminOrUGPReadOnly]
     pagination_class = SCAPagination
     serializer_class = SyncDeviceListSerializer
-    filter_backends = [django_filters.DjangoFilterBackend, filters.OrderingFilter]
+    filter_backends = [django_filters.DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = SyncDeviceFilter
+    search_fields = ["user__nome", "user__email"]
     ordering_fields = ["ultimo_sync_servidor", "criado_em", "nome", "device_id"]
 
     def _get_limiar_alerta_dias(self) -> int:

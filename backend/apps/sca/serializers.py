@@ -199,6 +199,7 @@ class SyncEventListSerializer(serializers.ModelSerializer):
             "since",
             "iniciado_em",
             "finalizado_em",
+            "contagem",
             "contagem_enviados",
             "contagem_recebidos",
             "contagem_erros",

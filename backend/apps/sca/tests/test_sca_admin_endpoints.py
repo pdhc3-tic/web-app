@@ -153,6 +153,39 @@ class TestDevicesEndpoint:
         ids = {i["id"] for i in self._list(auth_client_super_admin, territorio=territory.id).data["results"]}
         assert ids == {dev_rn.pk, dev_global.pk}
 
+    def test_filtro_territorio_misto_especifico_e_global(
+        self, auth_client_super_admin, role_adt, territory, outro_territory
+    ):
+        # perfil específico + global: user_territories devolve SÓ o específico,
+        # então o dispositivo não pode aparecer no filtro de outro território
+        misto = UserFactory(
+            email="misto@test.com",
+            nome="Misto RN + Global",
+            profiles=[(role_adt, territory), (role_adt, None)],
+        )
+        dev_misto = _device(misto, "dev-misto")
+
+        ids_rn = {
+            i["id"]
+            for i in self._list(auth_client_super_admin, territorio=territory.id).data["results"]
+        }
+        assert dev_misto.pk in ids_rn
+
+        ids_ce = {
+            i["id"]
+            for i in self._list(auth_client_super_admin, territorio=outro_territory.id).data["results"]
+        }
+        assert dev_misto.pk not in ids_ce
+
+    def test_busca_por_nome_ou_email_do_tecnico(self, auth_client_super_admin, usuario):
+        device = _device(usuario, "dev-rn-1")
+
+        por_email = self._list(auth_client_super_admin, search="adt@test").data["results"]
+        assert [i["id"] for i in por_email] == [device.pk]
+
+        por_nome = self._list(auth_client_super_admin, search="ADT RN").data["results"]
+        assert [i["id"] for i in por_nome] == [device.pk]
+
     def test_filtro_por_tecnico(self, auth_client_super_admin, usuario, tecnico_ce):
         dev_rn = _device(usuario, "dev-rn-1")
         _device(tecnico_ce, "dev-ce-1")
