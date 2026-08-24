@@ -9,6 +9,7 @@ API REST do PDHC construída com Django 6, Django REST Framework e Celery.
 - [Política de Logging](docs/logging.md)
 - [Storage Cloudflare R2](docs/storage-setup.md)
 - [Integração Google Calendar](docs/google-calendar.md)
+- [Exportação CSV/XSLX e PowerBI](docs/export.md)
 
 ## Swagger / OpenAPI
 
