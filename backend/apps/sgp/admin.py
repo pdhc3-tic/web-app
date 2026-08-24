@@ -5,6 +5,7 @@ from apps.sgp.models import (
     Comunidade,
     Cultura,
     EspecieAnimal,
+    FormResponse,
     MembroFamilia,
     Production,
     Projeto,
@@ -12,6 +13,17 @@ from apps.sgp.models import (
     WorkPlanAcao,
     WorkPlanMeta,
 )
+
+
+@admin.register(FormResponse)
+class FormResponseAdmin(admin.ModelAdmin):
+    list_display = [
+        "formulario_nome", "formulario_versao", "upf", "respondente",
+        "status", "origem", "data_preenchimento",
+    ]
+    list_filter = ["status", "origem", "formulario_id"]
+    search_fields = ["formulario_nome", "respondente", "upf__titular__nome_completo"]
+    readonly_fields = ["criado_em"]
 
 
 @admin.register(Projeto)

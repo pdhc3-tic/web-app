@@ -13,6 +13,7 @@ from .views import (
     UPFDocumentViewSet,
     ProjetoViewSet,
 )
+from .views.form_responses import FormResponseViewSet
 from .views.workplan import (
     WorkPlanAcaoViewSet,
     WorkPlanDashboardView,
@@ -55,6 +56,8 @@ production_detail = ProductionViewSet.as_view({
     "patch": "partial_update",
     "delete": "destroy",
 })
+form_response_list = FormResponseViewSet.as_view({"get": "list"})
+form_response_detail = FormResponseViewSet.as_view({"get": "retrieve"})
 
 urlpatterns = router.urls + [
     # Painel consolidado do Plano de Trabalho (Issue #136).
@@ -64,6 +67,16 @@ urlpatterns = router.urls + [
         name="workplan-dashboard",
     ),
     path("sgp/", include(sgp_router.urls)),
+    path(
+        "sgp/upfs/<int:upf_pk>/formularios/",
+        form_response_list,
+        name="upf-formularios-list",
+    ),
+    path(
+        "sgp/upfs/<int:upf_pk>/formularios/<int:pk>/",
+        form_response_detail,
+        name="upf-formularios-detail",
+    ),
     path(
         "choices/",
         SGPChoicesView.as_view(),

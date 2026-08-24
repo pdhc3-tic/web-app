@@ -12,6 +12,7 @@ from apps.sgp.models import (
     Comunidade,
     Cultura,
     EspecieAnimal,
+    FormResponse,
     MembroFamilia,
     Production,
     Projeto,
@@ -22,6 +23,29 @@ from apps.sgp.models import (
 from apps.sgp.models.activity import STATUS_TRANSITIONS, STATUS_TERMINAIS
 
 from apps.sgp.validators import validate_cpf
+
+
+class FormResponseListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FormResponse
+        fields = [
+            "id",
+            "upf",
+            "formulario_id",
+            "formulario_nome",
+            "formulario_versao",
+            "data_preenchimento",
+            "respondente",
+            "status",
+            "origem",
+            "criado_em",
+        ]
+        read_only_fields = fields
+
+
+class FormResponseDetailSerializer(FormResponseListSerializer):
+    class Meta(FormResponseListSerializer.Meta):
+        fields = [*FormResponseListSerializer.Meta.fields, "respostas_json"]
 
 
 class ProjetoSerializer(serializers.ModelSerializer):
