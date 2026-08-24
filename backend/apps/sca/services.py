@@ -567,6 +567,41 @@ def count_pending_records(user, device) -> int:
     return total
 
 
+def bulk_count_pending_records(devices, territory_ids_by_user) -> dict[int, int]:
+    """Contagem de registros pendentes em lote para a listagem de dispositivos.
+
+    Replica o critério de count_pending_records (escopo territorial do técnico
+    + atualizações desde o último pull do dispositivo) com uma consulta por
+    entidade: os dispositivos da página entram como agregações condicionais,
+    mantendo o custo constante independentemente do tamanho da página.
+    """
+    from django.db.models import Count, Q
+
+    from apps.sca.sync_entities import ENTITY_REGISTRY
+
+    totals = {device.pk: 0 for device in devices}
+    if not devices:
+        return totals
+    for entity in ENTITY_REGISTRY.values():
+        conditional = {}
+        for device in devices:
+            condition = Q(
+                **{
+                    f"{entity.territory_lookup}__in": territory_ids_by_user.get(
+                        device.user_id
+                    )
+                    or []
+                }
+            )
+            if device.ultimo_pull_em is not None:
+                condition &= Q(atualizado_em__gt=device.ultimo_pull_em)
+            conditional[f"dev_{device.pk}"] = Count("pk", filter=condition)
+        row = entity.model.objects.aggregate(**conditional)
+        for key, value in row.items():
+            totals[int(key[4:])] += value or 0
+    return totals
+
+
 # ---------------------------------------------------------------------------
 # Refresh SCA
 # ---------------------------------------------------------------------------

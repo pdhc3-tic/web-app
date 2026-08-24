@@ -173,8 +173,13 @@ class SyncDeviceListSerializer(serializers.ModelSerializer):
 
     def get_territorios(self, obj):
         from apps.core.serializers import TerritorySerializer
-        from apps.core.services.permissions import user_territories
-        territorios = user_territories(obj.user)
+
+        mapa = self.context.get("territorios_por_usuario")
+        territorios = mapa.get(obj.user_id) if mapa is not None else None
+        if territorios is None:
+            from apps.core.services.permissions import user_territories
+
+            territorios = list(user_territories(obj.user))
         return TerritorySerializer(territorios, many=True).data
 
     def get_ultimo_sync_servidor(self, obj):
@@ -182,7 +187,11 @@ class SyncDeviceListSerializer(serializers.ModelSerializer):
         return dt.isoformat() if dt else None
 
     def get_registros_pendentes(self, obj):
+        mapa = self.context.get("registros_pendentes")
+        if mapa is not None:
+            return mapa.get(obj.pk, 0)
         from apps.sca import services
+
         return services.count_pending_records(obj.user, obj)
 
 

@@ -130,11 +130,52 @@ class ConflictLogFilter(django_filters.FilterSet):
 # Devices (#156)
 # ---------------------------------------------------------------------------
 
+def _territorio_ids_do_usuario(user) -> list[int]:
+    """Replica user_territories() usando os profiles pré-buscados (sem query).
+
+    Perfis com território específico vencem; só-perfil-global enxerga todos
+    os territórios; sem perfil territorial não enxerga nada.
+    """
+    especificos: list[int] = []
+    tem_global = False
+    for profile in user.profiles.all():
+        if profile.territorio_id:
+            especificos.append(profile.territorio_id)
+        else:
+            tem_global = True
+    if especificos or not tem_global:
+        return sorted(set(especificos))
+    return list(Territory.objects.all().values_list("pk", flat=True))
+
+
+class SyncOrderingFilter(filters.OrderingFilter):
+    """Ordenação que mantém dispositivos sem sync na frente (NULLs primeiro).
+
+    O OrderingFilter padrão do DRF reordena pelo nome do campo e perde o
+    nulls_first do annotate — aqui o campo de sync é traduzido para a
+    expressão equivalente antes de ordenar.
+    """
+
+    def filter_queryset(self, request, queryset, view):
+        ordering = self.get_ordering(request, queryset, view) or []
+        if not any(o.lstrip("-") == "ultimo_sync_servidor" for o in ordering):
+            return super().filter_queryset(request, queryset, view)
+        traduzido = []
+        for o in ordering:
+            if o == "ultimo_sync_servidor":
+                traduzido.append(F("ultimo_sync_servidor").asc(nulls_first=True))
+            elif o == "-ultimo_sync_servidor":
+                traduzido.append(F("ultimo_sync_servidor").desc(nulls_last=True))
+            else:
+                traduzido.append(o)
+        return queryset.order_by(*traduzido)
+
+
 class SyncDeviceListView(generics.ListAPIView):
     permission_classes = [IsAuthenticatedActiveAccess, IsSuperAdminOrUGPReadOnly]
     pagination_class = SCAPagination
     serializer_class = SyncDeviceListSerializer
-    filter_backends = [django_filters.DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [django_filters.DjangoFilterBackend, filters.SearchFilter, SyncOrderingFilter]
     filterset_class = SyncDeviceFilter
     search_fields = ["user__nome", "user__email"]
     ordering_fields = ["ultimo_sync_servidor", "criado_em", "nome", "device_id"]
@@ -160,12 +201,27 @@ class SyncDeviceListView(generics.ListAPIView):
         queryset = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(queryset)
         limiar = self._get_limiar_alerta_dias()
+        alvo = page if page is not None else list(queryset)
+
+        usuarios = {device.user_id: device.user for device in alvo}
+        territory_ids = {uid: _territorio_ids_do_usuario(u) for uid, u in usuarios.items()}
+
+        context = self.get_serializer_context()
+        context["registros_pendentes"] = services.bulk_count_pending_records(
+            alvo, territory_ids
+        )
+        union_ids = sorted({tid for ids in territory_ids.values() for tid in ids})
+        por_id = {t.pk: t for t in Territory.objects.filter(pk__in=union_ids)}
+        context["territorios_por_usuario"] = {
+            uid: [por_id[tid] for tid in ids if tid in por_id]
+            for uid, ids in territory_ids.items()
+        }
         if page is not None:
-            serializer = self.get_serializer(page, many=True)
+            serializer = self.get_serializer(page, many=True, context=context)
             response = self.get_paginated_response(serializer.data)
             response.data["limiar_alerta_dias"] = limiar
             return response
-        serializer = self.get_serializer(queryset, many=True)
+        serializer = self.get_serializer(queryset, many=True, context=context)
         return Response({"limiar_alerta_dias": limiar, "results": serializer.data})
 
 

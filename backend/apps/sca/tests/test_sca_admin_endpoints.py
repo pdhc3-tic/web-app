@@ -589,3 +589,146 @@ class TestUserViewSetIssue160:
         assert alvo["acesso_revogado"] is True
         assert alvo["acesso_revogado_por"]["nome"]
         assert "email" not in alvo["acesso_revogado_por"]  # no list vai só {id, nome}
+
+
+# ──────────────────────────────────────────────────────────────
+# Performance da listagem de dispositivos e técnicos (#195)
+# ──────────────────────────────────────────────────────────────
+
+def _conta_queries(cliente, url, params=None):
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    with CaptureQueriesContext(connection) as ctx:
+        cliente.get(url, data=params)
+    return len(ctx.captured_queries)
+
+
+@pytest.mark.django_db
+class TestDevicesPerformanceIssue195:
+    def _lista(self, client, **params):
+        return client.get("/api/v1/sca/devices/", data=params)
+
+    def test_sync_somente_push_ou_somente_pull_exibe_valor_nao_nulo(
+        self, auth_client_super_admin, usuario
+    ):
+        base = timezone.now()
+        SyncDeviceFactory(
+            user=usuario, device_id="dev-so-push",
+            ultimo_push_em=base - timedelta(hours=1), ultimo_pull_em=None,
+        )
+        SyncDeviceFactory(
+            user=usuario, device_id="dev-so-pull",
+            ultimo_push_em=None, ultimo_pull_em=base - timedelta(hours=2),
+        )
+
+        response = self._lista(auth_client_super_admin)
+        itens = {i["device_id"]: i for i in response.data["results"]}
+
+        assert itens["dev-so-push"]["ultimo_sync_servidor"] is not None
+        assert itens["dev-so-pull"]["ultimo_sync_servidor"] == (
+            base - timedelta(hours=2)
+        ).isoformat()
+
+    def test_ordenacao_por_ultimo_sync_servidor_coloca_nunca_sincronizado_primeiro(
+        self, auth_client_super_admin, usuario
+    ):
+        base = timezone.now()
+        SyncDeviceFactory(user=usuario, device_id="d-recente", ultimo_pull_em=base)
+        SyncDeviceFactory(
+            user=usuario, device_id="d-antigo", ultimo_push_em=base - timedelta(days=5)
+        )
+        SyncDeviceFactory(user=usuario, device_id="d-nunca")
+
+        response = self._lista(auth_client_super_admin, ordering="ultimo_sync_servidor")
+        ids = [i["device_id"] for i in response.data["results"]]
+
+        assert (
+            ids.index("d-nunca") < ids.index("d-antigo") < ids.index("d-recente")
+        )
+
+    def test_registros_pendentes_da_listagem_bate_com_calculo_original(
+        self, auth_client_super_admin, usuario, municipio, municipio_outro, projeto
+    ):
+        from apps.sca import services
+        from apps.sgp.models import UPF
+        from apps.sgp.tests.factories import UPFFactory
+
+        agora = timezone.now()
+        device_recente = SyncDeviceFactory(
+            user=usuario, device_id="dev-pull-hoje",
+            ultimo_pull_em=agora - timedelta(days=1),
+        )
+        device_antigo = SyncDeviceFactory(
+            user=usuario, device_id="dev-pull-antigo",
+            ultimo_pull_em=agora - timedelta(days=10),
+        )
+
+        upf_nova = UPFFactory(municipio=municipio, projeto=projeto)
+        UPF.objects.filter(pk=upf_nova.pk).update(atualizado_em=agora - timedelta(hours=12))
+        upf_velha = UPFFactory(municipio=municipio, projeto=projeto)
+        UPF.objects.filter(pk=upf_velha.pk).update(atualizado_em=agora - timedelta(days=30))
+        upf_fora = UPFFactory(municipio=municipio_outro, projeto=projeto)
+        UPF.objects.filter(pk=upf_fora.pk).update(atualizado_em=agora)
+
+        response = self._lista(auth_client_super_admin)
+        itens = {i["device_id"]: i for i in response.data["results"]}
+
+        esperado_recente = services.count_pending_records(usuario, device_recente)
+        esperado_antigo = services.count_pending_records(usuario, device_antigo)
+        assert esperado_recente >= 1  # upf_nova está no escopo e após o pull
+        assert itens["dev-pull-hoje"]["registros_pendentes"] == esperado_recente
+        assert itens["dev-pull-antigo"]["registros_pendentes"] == esperado_antigo
+        assert esperado_antigo >= esperado_recente
+
+    def test_queries_da_listagem_de_dispositivos_nao_crescem_com_a_pagina(
+        self, auth_client_super_admin, usuario
+    ):
+        for i in range(5):
+            SyncDeviceFactory(
+                user=usuario, device_id=f"dev-q-{i}", ultimo_pull_em=timezone.now()
+            )
+        _conta_queries(auth_client_super_admin, "/api/v1/sca/devices/")
+
+        with_contagem_pequena = _conta_queries(
+            auth_client_super_admin, "/api/v1/sca/devices/"
+        )
+
+        for i in range(20):
+            extra = UserFactory(email=f"perf{i}@test.com")
+            SyncDeviceFactory(
+                user=extra, device_id=f"dev-muito-{i}", ultimo_pull_em=timezone.now()
+            )
+
+        with_contagem_grande = _conta_queries(
+            auth_client_super_admin, "/api/v1/sca/devices/"
+        )
+
+        assert with_contagem_grande == with_contagem_pequena
+
+    def test_users_com_dispositivo_queries_constantes_e_valores_corretos(
+        self, auth_client_super_admin, usuario
+    ):
+        url = "/api/v1/users/"
+        params = {"com_dispositivo": "true"}
+
+        SyncDeviceFactory(
+            user=usuario, device_id="dev-user-0", ultimo_pull_em=timezone.now()
+        )
+        _conta_queries(auth_client_super_admin, url, params)
+        pequena = _conta_queries(auth_client_super_admin, url, params)
+
+        for i in range(1, 13):
+            extra = UserFactory(email=f"user-dev{i}@test.com")
+            SyncDeviceFactory(user=extra, device_id=f"dev-u-{i}")
+            SyncDeviceFactory(user=extra, device_id=f"dev-u-{i}-b")
+
+        grande = _conta_queries(auth_client_super_admin, url, params)
+
+        assert grande == pequena
+        resultado = auth_client_super_admin.get(url, data=params)
+        alvo = next(
+            u for u in resultado.data["results"] if u["email"] == "user-dev3@test.com"
+        )
+        assert alvo["qtd_dispositivos"] == 2
+        assert alvo["ultimo_sync_dispositivos"] is None  # nunca sincronizaram
