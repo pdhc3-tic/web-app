@@ -75,7 +75,7 @@ def test_refresh_sessao_expirada_por_inatividade_retorna_401(api_client, usuario
         contagem=0,
     )
     SyncEvent.objects.filter(pk=evento.pk).update(
-        recebido_em=timezone.now() - timedelta(days=31)
+        finalizado_em=timezone.now() - timedelta(days=31)
     )
     refresh = RefreshToken.for_user(usuario)
 
@@ -94,7 +94,7 @@ def test_refresh_apos_sync_recente_nao_experia(api_client, usuario):
         contagem=1,
     )
     SyncEvent.objects.filter(pk=evento.pk).update(
-        recebido_em=timezone.now() - timedelta(days=5)
+        finalizado_em=timezone.now() - timedelta(days=5)
     )
     refresh = RefreshToken.for_user(usuario)
 
