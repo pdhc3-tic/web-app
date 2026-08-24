@@ -1,5 +1,8 @@
 import logging
+from datetime import datetime, timezone as dt_timezone
 
+from django.db.models import Count, Max, Value
+from django.db.models.functions import Coalesce, Greatest
 from django.utils import timezone
 from django_filters import rest_framework as django_filters
 from rest_framework import filters, status, viewsets
@@ -16,6 +19,8 @@ from apps.core.services.audit import log_audit
 
 logger = logging.getLogger(__name__)
 audit_event_logger = logging.getLogger("audit_events")
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=dt_timezone.utc)
 
 
 def _user_access_snapshot(user):
@@ -39,13 +44,20 @@ class UserFilter(django_filters.FilterSet):
     ultimo_login_lte = django_filters.DateTimeFilter(
         field_name="ultimo_login", lookup_expr="lte"
     )
+    com_dispositivo = django_filters.BooleanFilter(method="filter_com_dispositivo")
 
     class Meta:
         model = User
         fields = [
             "perfil", "territorio", "ativo",
             "ultimo_login_gte", "ultimo_login_lte",
+            "com_dispositivo",
         ]
+
+    def filter_com_dispositivo(self, qs, name, value):
+        if value:
+            return qs.filter(sca_devices__isnull=False).distinct()
+        return qs
 
 
 class UserPagination(LimitOffsetPagination):
@@ -77,7 +89,20 @@ class UserViewSet(viewsets.ModelViewSet):
         qs = User.objects.all()
         if "ativo" not in self.request.query_params:
             qs = qs.filter(ativo=True)
+        if self._com_dispositivo_ativo():
+            qs = qs.annotate(
+                qtd_dispositivos=Count("sca_devices", distinct=True),
+                ultimo_sync_dispositivos=Max(
+                    Greatest(
+                        Coalesce("sca_devices__ultimo_push_em", Value(_EPOCH)),
+                        Coalesce("sca_devices__ultimo_pull_em", Value(_EPOCH)),
+                    )
+                ),
+            )
         return qs.prefetch_related("profiles__perfil", "profiles__territorio")
+
+    def _com_dispositivo_ativo(self) -> bool:
+        return self.request.query_params.get("com_dispositivo", "").lower() in ("true", "1")
 
     def perform_create(self, serializer):
         user = serializer.save()

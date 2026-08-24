@@ -9,11 +9,19 @@ Views do módulo SCA — endpoints de sync offline.
 """
 
 import logging
+from datetime import datetime, timezone as dt_timezone
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
-from rest_framework import status
+from django.db import transaction
+from django.db.models import F, Q, Value
+from django.db.models.functions import Coalesce, Greatest
+from django_filters import rest_framework as django_filters
+from rest_framework import filters, generics, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -21,13 +29,260 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.settings import api_settings as jwt_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.core.permissions import IsAuthenticatedActiveAccess
+from apps.core.models import SystemConfig, Territory
+from apps.core.permissions import (
+    IsAuthenticatedActiveAccess,
+    IsSuperAdminOrUGPReadOnly,
+)
+from apps.core.services.audit import log_audit
+from apps.core.services.permissions import user_has_role, user_states
 from apps.core.throttling import RefreshRateThrottle
 from apps.sca import services
-from apps.sca.serializers import PushBatchSerializer, ScaRefreshSerializer
+from apps.sca.models import ConflictLog, SyncDevice, SyncEvent
+from apps.sca.serializers import (
+    ConflictLogDetailSerializer,
+    ConflictLogListSerializer,
+    ConflictResolveSerializer,
+    PushBatchSerializer,
+    ScaRefreshSerializer,
+    SyncDeviceListSerializer,
+    SyncEventDetailSerializer,
+    SyncEventListSerializer,
+)
+from apps.sca.sync_entities import get_sync_entity
 
 logger = logging.getLogger(__name__)
 security_logger = logging.getLogger("security")
+
+
+class SCAPagination(LimitOffsetPagination):
+    default_limit = 20
+    max_limit = 100
+
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=dt_timezone.utc)
+
+
+def _tipo_conexao_from_request(request) -> str | None:
+    """Lê o header X-Connection-Type; valores fora das choices viram null (V1)."""
+    raw = request.headers.get("X-Connection-Type", "")
+    raw = raw.strip().lower()
+    valid = {choice for choice, _ in SyncEvent.TipoConexao.choices}
+    return raw if raw in valid else None
+
+
+# ---------------------------------------------------------------------------
+# Filtros
+# ---------------------------------------------------------------------------
+
+class SyncDeviceFilter(django_filters.FilterSet):
+    tecnico = django_filters.NumberFilter(field_name="user_id")
+    territorio = django_filters.NumberFilter(method="filter_territorio")
+
+    class Meta:
+        model = SyncDevice
+        fields = ["tecnico", "territorio"]
+
+    def filter_territorio(self, qs, name, value):
+        return qs.filter(
+            Q(user__profiles__territorio_id=value) | Q(user__profiles__territorio__isnull=True)
+        ).distinct()
+
+
+class SyncEventFilter(django_filters.FilterSet):
+    iniciado_em_gte = django_filters.DateTimeFilter(field_name="iniciado_em", lookup_expr="gte")
+    iniciado_em_lte = django_filters.DateTimeFilter(field_name="iniciado_em", lookup_expr="lte")
+    user = django_filters.NumberFilter()
+    device = django_filters.NumberFilter()
+    tipo = django_filters.ChoiceFilter(choices=SyncEvent.Tipo.choices)
+    com_erro = django_filters.BooleanFilter(method="filter_com_erro")
+
+    class Meta:
+        model = SyncEvent
+        fields = ["user", "device", "tipo", "iniciado_em_gte", "iniciado_em_lte", "com_erro"]
+
+    def filter_com_erro(self, qs, name, value):
+        if value:
+            return qs.filter(contagem_erros__gt=0)
+        return qs
+
+
+class ConflictLogFilter(django_filters.FilterSet):
+    status = django_filters.ChoiceFilter(choices=ConflictLog.Status.choices)
+    campo_sensivel = django_filters.BooleanFilter()
+    entidade = django_filters.ChoiceFilter(choices=[("upf", "UPF"), ("member", "Membro"), ("activity", "Atividade")])
+    user = django_filters.NumberFilter()
+    criado_em_gte = django_filters.DateTimeFilter(field_name="criado_em", lookup_expr="gte")
+    criado_em_lte = django_filters.DateTimeFilter(field_name="criado_em", lookup_expr="lte")
+
+    class Meta:
+        model = ConflictLog
+        fields = ["status", "campo_sensivel", "entidade", "user", "criado_em_gte", "criado_em_lte"]
+
+
+# ---------------------------------------------------------------------------
+# Devices (#156)
+# ---------------------------------------------------------------------------
+
+class SyncDeviceListView(generics.ListAPIView):
+    permission_classes = [IsAuthenticatedActiveAccess, IsSuperAdminOrUGPReadOnly]
+    pagination_class = SCAPagination
+    serializer_class = SyncDeviceListSerializer
+    filter_backends = [django_filters.DjangoFilterBackend, filters.OrderingFilter]
+    filterset_class = SyncDeviceFilter
+    ordering_fields = ["ultimo_sync_servidor", "criado_em", "nome", "device_id"]
+
+    def _get_limiar_alerta_dias(self) -> int:
+        try:
+            cfg = SystemConfig.objects.filter(chave="sca_sync_alerta_dias").first()
+            return int(cfg.valor) if cfg and cfg.valor else 7
+        except Exception:
+            return 7
+
+    def get_queryset(self):
+        # Coalesce por argumento: Greatest no Postgres devolve NULL se qualquer
+        # argumento for NULL (dispositivo que só deu pull e nunca push é caso real).
+        return (
+            SyncDevice.objects.annotate(
+                ultimo_sync_servidor=Greatest(
+                    Coalesce("ultimo_push_em", Value(_EPOCH)),
+                    Coalesce("ultimo_pull_em", Value(_EPOCH)),
+                )
+            )
+            .select_related("user")
+            .prefetch_related("user__profiles__territorio", "user__profiles__perfil")
+            .order_by(F("ultimo_sync_servidor").asc(nulls_first=True))
+        )
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        limiar = self._get_limiar_alerta_dias()
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            response = self.get_paginated_response(serializer.data)
+            response.data["limiar_alerta_dias"] = limiar
+            return response
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({"limiar_alerta_dias": limiar, "results": serializer.data})
+
+
+# ---------------------------------------------------------------------------
+# Sync Events (#157)
+# ---------------------------------------------------------------------------
+
+class SyncEventViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [IsAuthenticatedActiveAccess, IsSuperAdminOrUGPReadOnly]
+    pagination_class = SCAPagination
+    filter_backends = [django_filters.DjangoFilterBackend, filters.OrderingFilter]
+    filterset_class = SyncEventFilter
+    ordering_fields = ["iniciado_em", "finalizado_em", "contagem", "contagem_erros"]
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return SyncEventListSerializer
+        return SyncEventDetailSerializer
+
+    def get_queryset(self):
+        return (
+            SyncEvent.objects.all()
+            .select_related("user", "device")
+            .order_by(F("iniciado_em").desc(nulls_last=True), "-finalizado_em")
+        )
+
+
+# ---------------------------------------------------------------------------
+# Conflicts (#158)
+# ---------------------------------------------------------------------------
+
+class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [IsAuthenticatedActiveAccess]
+    pagination_class = SCAPagination
+    filter_backends = [django_filters.DjangoFilterBackend, filters.OrderingFilter]
+    filterset_class = ConflictLogFilter
+    ordering_fields = ["criado_em", "status", "entidade"]
+    ordering = ["-criado_em"]
+    _territorio_attr_path = "territorio_id"
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return ConflictLogListSerializer
+        return ConflictLogDetailSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = ConflictLog.objects.all().select_related("user", "device", "resolvido_por", "territorio")
+        if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
+            return qs
+        if user_has_role(user, "articulador-estadual"):
+            states = user_states(user)
+            if not states:
+                return qs.none()
+            territory_ids = [
+                t.id for t in Territory.objects.all() if set(t.estados or []) & states
+            ]
+            return qs.filter(territorio_id__in=territory_ids)
+        return qs.none()
+
+    @action(detail=True, methods=["post"], url_path="resolver")
+    def resolver(self, request, pk=None):
+        conflict = self.get_object()
+
+        if user_has_role(request.user, "articulador-estadual"):
+            from apps.core.permissions import IsArticuladorEstadual
+            perm = IsArticuladorEstadual()
+            if not perm.has_object_permission(request, self, conflict):
+                raise PermissionDenied("Você não tem permissão para resolver conflitos deste território.")
+        elif not (user_has_role(request.user, "super-admin") or user_has_role(request.user, "ugp")):
+            raise PermissionDenied("Permissão negada.")
+
+        if conflict.status != ConflictLog.Status.PENDENTE:
+            return Response(
+                {"code": "CONFLITO_JA_RESOLVIDO", "message": "Este conflito não está mais pendente de resolução."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        serializer = ConflictResolveSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        decisao = serializer.validated_data["decisao"]
+        valor_manual = serializer.validated_data.get("valor_manual")
+
+        if decisao == "local":
+            valor_final = conflict.valor_local
+        elif decisao == "servidor":
+            valor_final = conflict.valor_servidor
+        else:
+            valor_final = valor_manual
+
+        with transaction.atomic():
+            entity = get_sync_entity(conflict.entidade)
+            if entity:
+                instance = entity.get_by_uuid_local(conflict.uuid_local)
+                if instance:
+                    entity.apply_changes(instance, {conflict.campo: valor_final})
+
+            conflict.status = ConflictLog.Status.RESOLVIDO_MANUAL
+            conflict.valor_final = services._jsonable(valor_final)
+            conflict.resolvido_por = request.user
+            conflict.resolvido_em = timezone.now()
+            conflict.save()
+
+            log_audit(
+                user=request.user,
+                acao="sca.conflict_resolved",
+                modulo="sca",
+                entidade="ConflictLog",
+                entidade_id=conflict.pk,
+                valores_anteriores={"status": "pendente"},
+                valores_novos={
+                    "status": "resolvido_manual",
+                    "decisao": decisao,
+                    "valor_final": services._jsonable(valor_final),
+                },
+                request=request,
+            )
+
+        return Response(ConflictLogDetailSerializer(conflict).data, status=status.HTTP_200_OK)
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +328,8 @@ class SyncPushView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        tipo_conexao = _tipo_conexao_from_request(request)
+
         device_meta = {
             "nome": request.data.get("dispositivo_nome") or request.data.get("nome") or "",
             "modelo": request.data.get("modelo") or "",
@@ -80,7 +337,7 @@ class SyncPushView(APIView):
             "app_versao": request.data.get("app_versao") or "",
         }
         device = services.get_or_create_device(request.user, device_id, device_meta)
-        processor = services.PushProcessor(request.user, device, device_id)
+        processor = services.PushProcessor(request.user, device, device_id, tipo_conexao=tipo_conexao)
         resultados = processor.process(data["registros"])
 
         sucesso = sum(1 for r in resultados if r["status"] == "ok")
@@ -110,8 +367,9 @@ class SyncPullView(APIView):
             )
 
         device_id = _resolve_device_id(request)
+        tipo_conexao = _tipo_conexao_from_request(request)
         device = services.get_or_create_device(request.user, device_id)
-        payload = services.build_pull(request.user, device, since)
+        payload = services.build_pull(request.user, device, since, tipo_conexao=tipo_conexao)
         return Response(payload)
 
 

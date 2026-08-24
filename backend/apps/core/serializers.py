@@ -165,13 +165,31 @@ class UserListSerializer(serializers.ModelSerializer):
     ultimo_login = serializers.DateTimeField(
         format="%Y-%m-%dT%H:%M:%SZ", allow_null=True, default=None
     )
+    acesso_revogado_por = serializers.SerializerMethodField()
+    qtd_dispositivos = serializers.SerializerMethodField()
+    ultimo_sync_dispositivos = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             "id", "nome_completo", "email", "perfis",
             "territorios", "ativo", "ultimo_login",
+            "acesso_revogado", "acesso_revogado_em", "acesso_revogado_por",
+            "qtd_dispositivos", "ultimo_sync_dispositivos",
         ]
+
+    def get_acesso_revogado_por(self, obj):
+        if obj.acesso_revogado_por:
+            return {"id": obj.acesso_revogado_por_id, "nome": obj.acesso_revogado_por.nome}
+        return None
+
+    def get_qtd_dispositivos(self, obj):
+        # Preenchido apenas com ?com_dispositivo=true (evita N+1 nas demais listagens).
+        return getattr(obj, "qtd_dispositivos", None)
+
+    def get_ultimo_sync_dispositivos(self, obj):
+        value = getattr(obj, "ultimo_sync_dispositivos", None)
+        return value.isoformat() if value else None
 
     def get_perfis(self, obj):
         profiles = obj.profiles.select_related("perfil").all()
@@ -211,16 +229,37 @@ class UserDetailSerializer(serializers.ModelSerializer):
     ultimo_login = serializers.DateTimeField(
         format="%Y-%m-%dT%H:%M:%SZ", allow_null=True, default=None, read_only=True
     )
+    acesso_revogado_por = serializers.SerializerMethodField()
+    qtd_dispositivos = serializers.SerializerMethodField()
+    ultimo_sync_dispositivos = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
-            "id", "nome_completo", "email", "perfis",
+            "id", "nome_completo", "email",
             "perfis_input", "territorios",
             "ativo", "ultimo_login", "telefone",
             "whatsapp", "foto_url", "password",
+            "acesso_revogado", "acesso_revogado_em", "acesso_revogado_por",
+            "qtd_dispositivos", "ultimo_sync_dispositivos",
         ]
         read_only_fields = ["ultimo_login"]
+
+    def get_acesso_revogado_por(self, obj):
+        if obj.acesso_revogado_por:
+            return {
+                "id": obj.acesso_revogado_por_id,
+                "nome": obj.acesso_revogado_por.nome,
+                "email": obj.acesso_revogado_por.email,
+            }
+        return None
+
+    def get_qtd_dispositivos(self, obj):
+        return getattr(obj, "qtd_dispositivos", None)
+
+    def get_ultimo_sync_dispositivos(self, obj):
+        value = getattr(obj, "ultimo_sync_dispositivos", None)
+        return value.isoformat() if value else None
 
     def get_perfis(self, obj):
         profiles = obj.profiles.select_related("perfil", "territorio").all()
