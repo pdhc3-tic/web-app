@@ -4,10 +4,12 @@ from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import Count, Q, QuerySet
-from rest_framework.exceptions import PermissionDenied
 
-from apps.core.services.permissions import user_has_role, user_states, user_territories
 from apps.sgp.models import WorkPlanAcao
+from apps.sgp.services.workplan_access import (
+    activity_scope_for_user,
+    filter_workplan_actions_for_user,
+)
 
 
 ZERO = Decimal("0")
@@ -15,12 +17,17 @@ ONE_HUNDRED = Decimal("100")
 PERCENTAGE_QUANTUM = Decimal("0.01")
 
 
-def dashboard_actions() -> QuerySet[WorkPlanAcao]:
+def dashboard_actions(activity_scope: Q | None = None) -> QuerySet[WorkPlanAcao]:
     """Retorna Ações com a quantidade concluída calculada em uma única consulta."""
+    completed_activity_filter = Q(
+        atividades__status="concluido", atividades__ativo=True
+    )
+    if activity_scope is not None:
+        completed_activity_filter &= activity_scope
     return WorkPlanAcao.objects.select_related("meta").annotate(
         _quantidade_realizada=Count(
             "atividades",
-            filter=Q(atividades__status="concluido", atividades__ativo=True),
+            filter=completed_activity_filter,
             distinct=True,
         )
     )
@@ -32,30 +39,8 @@ def dashboard_actions_for_user(user) -> QuerySet[WorkPlanAcao]:
     Ações sem atividades ficam restritas a UGP e Super Admin. Alterações futuras
     nessa política devem ser feitas nesta função.
     """
-    queryset = dashboard_actions()
-
-    if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
-        return queryset
-
-    if user_has_role(user, "articulador-estadual"):
-        states = user_states(user)
-        if not states:
-            return queryset.none()
-        return queryset.filter(
-            atividades__municipio__state__sigla__in=states,
-            atividades__ativo=True,
-        ).distinct()
-
-    if user_has_role(user, "adt-acr"):
-        territories = user_territories(user)
-        if not territories.exists():
-            return queryset.none()
-        return queryset.filter(
-            atividades__municipio__territory__in=territories,
-            atividades__ativo=True,
-        ).distinct()
-
-    raise PermissionDenied("Você não tem acesso ao painel do Plano de Trabalho.")
+    scope = activity_scope_for_user(user)
+    return filter_workplan_actions_for_user(dashboard_actions(scope), user)
 
 
 def apply_dashboard_filters(

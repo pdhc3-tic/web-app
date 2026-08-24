@@ -16,7 +16,9 @@ from .views import (
 from .views.workplan import (
     WorkPlanAcaoViewSet,
     WorkPlanDashboardView,
+    WorkPlanExportView,
     WorkPlanMetaViewSet,
+    WorkPlanPowerBIView,
 )
 
 router = DefaultRouter()
@@ -62,6 +64,16 @@ urlpatterns = router.urls + [
         "sgp/plano-trabalho/painel/",
         WorkPlanDashboardView.as_view(),
         name="workplan-dashboard",
+    ),
+    path(
+        "sgp/plano-trabalho/exportar/",
+        WorkPlanExportView.as_view(),
+        name="workplan-export",
+    ),
+    path(
+        "sgp/plano-trabalho/powerbi/",
+        WorkPlanPowerBIView.as_view(),
+        name="workplan-power-bi",
     ),
     path("sgp/", include(sgp_router.urls)),
     path(

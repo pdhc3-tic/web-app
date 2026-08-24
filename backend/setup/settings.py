@@ -41,6 +41,10 @@ SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "False") == "True"
 
+# POWER BI
+POWER_BI_SERVICE_TOKEN = os.getenv("POWER_BI_SERVICE_TOKEN", "")
+POWER_BI_RATE_LIMIT = os.getenv("POWER_BI_RATE_LIMIT", "100/hour")
+
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,backend").split(",")
@@ -229,6 +233,7 @@ REST_FRAMEWORK = {
         "auth_password_reset_email": "3/hour",
         "auth_password_reset_ip": "5/hour",
         "notification_unread_count": "60/min",
+        "power_bi_service": POWER_BI_RATE_LIMIT,
     },
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "EXCEPTION_HANDLER": "setup.exceptions.custom_exception_handler",
@@ -278,6 +283,10 @@ CELERY_BEAT_SCHEDULE = {
     "check_acao_progress_alert": {
         "task": "sgp.tasks.check_acao_progress_alert",
         "schedule": crontab(hour=12, minute=0),  # diariamente ao meio-dia
+    },
+    "export_to_power_bi": {
+        "task": "sgp.tasks.export_to_power_bi",
+        "schedule": crontab(minute=0),  # a cada hora
     },
 }
 

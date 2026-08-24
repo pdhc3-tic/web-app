@@ -138,6 +138,50 @@ class TestMetaPermissoes:
     def test_any_authenticated_can_list(self, auth_client_adt_rn, meta):
         assert auth_client_adt_rn.get("/api/v1/metas/").status_code == 200
 
+    def test_adt_lists_only_metas_with_actions_in_own_territory(
+        self, auth_client_adt_rn, municipio_rn, municipio_ce
+    ):
+        visible_meta = WorkPlanMetaFactory(numero=1)
+        hidden_meta = WorkPlanMetaFactory(numero=2)
+        visible_action = WorkPlanAcaoFactory(meta=visible_meta, numero="1.1")
+        hidden_action = WorkPlanAcaoFactory(meta=hidden_meta, numero="2.1")
+        ActivityFactory(acao=visible_action, municipio=municipio_rn, status="concluido")
+        ActivityFactory(acao=hidden_action, municipio=municipio_ce, status="concluido")
+
+        response = auth_client_adt_rn.get("/api/v1/metas/")
+
+        assert response.status_code == 200
+        assert [item["id"] for item in response.data["results"]] == [visible_meta.pk]
+
+    def test_meta_detail_excludes_actions_outside_adt_territory(
+        self, auth_client_adt_rn, municipio_rn, municipio_ce
+    ):
+        meta = WorkPlanMetaFactory(numero=1)
+        visible_action = WorkPlanAcaoFactory(meta=meta, numero="1.1")
+        hidden_action = WorkPlanAcaoFactory(meta=meta, numero="1.2")
+        ActivityFactory(acao=visible_action, municipio=municipio_rn, status="concluido")
+        ActivityFactory(acao=hidden_action, municipio=municipio_ce, status="concluido")
+
+        response = auth_client_adt_rn.get(f"/api/v1/metas/{meta.pk}/")
+
+        assert response.status_code == 200
+        assert [item["id"] for item in response.data["acoes"]] == [visible_action.pk]
+
+    def test_articulador_lists_only_metas_with_actions_in_own_states(
+        self, auth_client_articulador_rn, municipio_rn, municipio_ce
+    ):
+        visible_meta = WorkPlanMetaFactory(numero=1)
+        hidden_meta = WorkPlanMetaFactory(numero=2)
+        visible_action = WorkPlanAcaoFactory(meta=visible_meta, numero="1.1")
+        hidden_action = WorkPlanAcaoFactory(meta=hidden_meta, numero="2.1")
+        ActivityFactory(acao=visible_action, municipio=municipio_rn, status="concluido")
+        ActivityFactory(acao=hidden_action, municipio=municipio_ce, status="concluido")
+
+        response = auth_client_articulador_rn.get("/api/v1/metas/")
+
+        assert response.status_code == 200
+        assert [item["id"] for item in response.data["results"]] == [visible_meta.pk]
+
     def test_ugp_can_update(self, auth_client, meta):
         response = auth_client.patch(
             f"/api/v1/metas/{meta.pk}/",
@@ -379,6 +423,42 @@ class TestAcaoPermissoes:
 
     def test_any_authenticated_can_list(self, auth_client_adt_rn, acao):
         assert auth_client_adt_rn.get("/api/v1/acoes/").status_code == 200
+
+    def test_adt_lists_only_actions_in_own_territory(
+        self, auth_client_adt_rn, meta, municipio_rn, municipio_ce
+    ):
+        visible_action = WorkPlanAcaoFactory(meta=meta, numero="1.1")
+        hidden_action = WorkPlanAcaoFactory(meta=meta, numero="1.2")
+        ActivityFactory(acao=visible_action, municipio=municipio_rn, status="concluido")
+        ActivityFactory(acao=hidden_action, municipio=municipio_ce, status="concluido")
+
+        response = auth_client_adt_rn.get("/api/v1/acoes/")
+
+        assert response.status_code == 200
+        assert [item["id"] for item in response.data["results"]] == [visible_action.pk]
+
+    def test_articulador_lists_only_actions_in_own_states(
+        self, auth_client_articulador_rn, meta, municipio_rn, municipio_ce
+    ):
+        visible_action = WorkPlanAcaoFactory(meta=meta, numero="1.1")
+        hidden_action = WorkPlanAcaoFactory(meta=meta, numero="1.2")
+        ActivityFactory(acao=visible_action, municipio=municipio_rn, status="concluido")
+        ActivityFactory(acao=hidden_action, municipio=municipio_ce, status="concluido")
+
+        response = auth_client_articulador_rn.get("/api/v1/acoes/")
+
+        assert response.status_code == 200
+        assert [item["id"] for item in response.data["results"]] == [visible_action.pk]
+
+    def test_adt_cannot_retrieve_action_from_another_territory(
+        self, auth_client_adt_rn, meta, municipio_ce
+    ):
+        hidden_action = WorkPlanAcaoFactory(meta=meta, numero="1.1")
+        ActivityFactory(acao=hidden_action, municipio=municipio_ce, status="concluido")
+
+        response = auth_client_adt_rn.get(f"/api/v1/acoes/{hidden_action.pk}/")
+
+        assert response.status_code == 404
 
     def test_filter_by_meta(self, auth_client, acao, meta):
         meta2 = WorkPlanMetaFactory(numero=3, titulo="Outra")
