@@ -188,7 +188,10 @@ class UserListSerializer(serializers.ModelSerializer):
         return getattr(obj, "qtd_dispositivos", None)
 
     def get_ultimo_sync_dispositivos(self, obj):
-        value = getattr(obj, "ultimo_sync_dispositivos", None)
+        push = getattr(obj, "ultimo_push_maximo", None)
+        pull = getattr(obj, "ultimo_pull_maximo", None)
+        candidates = [v for v in (push, pull) if v]
+        value = max(candidates) if candidates else None
         return value.isoformat() if value else None
 
     def get_perfis(self, obj):
@@ -237,6 +240,7 @@ class UserDetailSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             "id", "nome_completo", "email",
+            "perfis",
             "perfis_input", "territorios",
             "ativo", "ultimo_login", "telefone",
             "whatsapp", "foto_url", "password",
@@ -258,7 +262,10 @@ class UserDetailSerializer(serializers.ModelSerializer):
         return getattr(obj, "qtd_dispositivos", None)
 
     def get_ultimo_sync_dispositivos(self, obj):
-        value = getattr(obj, "ultimo_sync_dispositivos", None)
+        push = getattr(obj, "ultimo_push_maximo", None)
+        pull = getattr(obj, "ultimo_pull_maximo", None)
+        candidates = [v for v in (push, pull) if v]
+        value = max(candidates) if candidates else None
         return value.isoformat() if value else None
 
     def get_perfis(self, obj):

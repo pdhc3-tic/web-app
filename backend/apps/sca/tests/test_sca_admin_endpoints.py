@@ -229,7 +229,7 @@ class TestDevicesEndpoint:
 class TestSyncEventFieldsFromPush:
     def test_push_preenche_contagens_e_erros_detalhes(self, auth_client, municipio, projeto):
         valido = build_item(payload=payload_upf(projeto, municipio))
-        invalido = build_item(entidade="entidade_inexistente", payload={})
+        invalido = build_item(entidade="upf", payload={"num_comodos": "muitos"})
 
         response = auth_client.post(
             "/api/v1/sca/sync/push/",
@@ -249,7 +249,8 @@ class TestSyncEventFieldsFromPush:
         assert evento.finalizado_em is not None
         (erro,) = evento.erros_detalhes
         assert set(erro.keys()) == {"uuid_local", "entidade", "mensagem", "codigo"}
-        assert erro["entidade"] == "entidade_inexistente"
+        assert erro["entidade"] == "upf"
+        assert erro["codigo"] == "PAYLOAD_INVALIDO"
 
     def test_sem_header_tipo_conexao_fica_null(self, auth_client, municipio, projeto):
         post_batch(auth_client, [build_item(payload=payload_upf(projeto, municipio))])
@@ -540,8 +541,8 @@ class TestBadgeUltimaOrigem:
         assert response.status_code == 200
         assert response.data["ultima_origem"] == "web"
         assert response.data["ultimo_sync_em"] is None
-        assert response.data["device_id"] is None
-        assert response.data["uuid_local"]
+        assert not response.data["device_id"]
+        assert response.data["uuid_local"] == str(upf_existente.uuid_local)
 
 
 # ──────────────────────────────────────────────────────────────

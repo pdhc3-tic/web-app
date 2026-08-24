@@ -9,14 +9,13 @@ Views do módulo SCA — endpoints de sync offline.
 """
 
 import logging
-from datetime import datetime, timezone as dt_timezone
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.db import transaction
-from django.db.models import Exists, F, OuterRef, Q, Value
-from django.db.models.functions import Coalesce, Greatest
+from django.db.models import Exists, F, OuterRef, Q
+from django.db.models.functions import Greatest
 from django_filters import rest_framework as django_filters
 from rest_framework import filters, generics, status, viewsets
 from rest_framework.decorators import action
@@ -58,9 +57,6 @@ security_logger = logging.getLogger("security")
 class SCAPagination(LimitOffsetPagination):
     default_limit = 20
     max_limit = 100
-
-
-_EPOCH = datetime(1970, 1, 1, tzinfo=dt_timezone.utc)
 
 
 def _tipo_conexao_from_request(request) -> str | None:
@@ -151,14 +147,9 @@ class SyncDeviceListView(generics.ListAPIView):
             return 7
 
     def get_queryset(self):
-        # Coalesce por argumento: Greatest no Postgres devolve NULL se qualquer
-        # argumento for NULL (dispositivo que só deu pull e nunca push é caso real).
         return (
             SyncDevice.objects.annotate(
-                ultimo_sync_servidor=Greatest(
-                    Coalesce("ultimo_push_em", Value(_EPOCH)),
-                    Coalesce("ultimo_pull_em", Value(_EPOCH)),
-                )
+                ultimo_sync_servidor=Greatest("ultimo_push_em", "ultimo_pull_em"),
             )
             .select_related("user")
             .prefetch_related("user__profiles__territorio", "user__profiles__perfil")

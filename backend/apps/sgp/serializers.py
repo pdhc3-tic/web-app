@@ -377,7 +377,7 @@ class UPFDetailSerializer(serializers.ModelSerializer):
             "latitude", "longitude", "pct", "posse_terra", "area_terra_ha",
             "situacao_moradia", "tipo_moradia", "material_construcao",
             "num_comodos", "energia", "agua", "seguridade_social",
-            "foto_url", "ativa",
+            "foto_url", "ativa", "ultima_origem",
         }
         daf_caf = attrs.pop("numero_dap", None)
         if daf_caf is not None:
