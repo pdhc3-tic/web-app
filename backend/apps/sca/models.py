@@ -1,12 +1,5 @@
 """
-Models do módulo SCA — sincronização offline (delta sync).
-
-Endpoints suportados (seção 4 e 9 do SCA_Requisitos):
-- POST /api/v1/sca/sync/push
-- GET  /api/v1/sca/sync/pull
-- GET  /api/v1/sca/sync/forms
-- GET  /api/v1/sca/sync/status
-- POST /api/v1/sca/auth/refresh
+Models do módulo SCA — sincronização offline (delta sync) e gestão administrativa.
 """
 
 from django.conf import settings
@@ -61,12 +54,20 @@ class SyncDevice(models.Model):
 
 
 class SyncEvent(models.Model):
-    """Registro de cada sincronização bem-sucedida (push/pull/refresh)."""
+    """Registro de cada sincronização executada (push/pull/refresh)."""
 
     class Tipo(models.TextChoices):
         PUSH = "push", "Push"
         PULL = "pull", "Pull"
         REFRESH = "refresh", "Refresh"
+
+    class TipoConexao(models.TextChoices):
+        WIFI = "wifi", "Wi-Fi"
+        G4 = "4g", "4G"
+        G3 = "3g", "3G"
+        G2 = "2g", "2G"
+        G5 = "5g", "5G"
+        OFFLINE = "offline", "Offline"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -85,28 +86,52 @@ class SyncEvent(models.Model):
     tipo = models.CharField(max_length=10, choices=Tipo.choices, verbose_name="Tipo")
     since = models.DateTimeField(null=True, blank=True, verbose_name="Since (pull)")
     contagem = models.PositiveIntegerField(default=0, verbose_name="Registros processados")
-    recebido_em = models.DateTimeField(auto_now_add=True, verbose_name="Recebido em")
+
+    iniciado_em = models.DateTimeField(null=True, blank=True, verbose_name="Iniciado em")
+    finalizado_em = models.DateTimeField(auto_now_add=True, verbose_name="Finalizado em")
+
+    contagem_enviados = models.PositiveIntegerField(default=0, verbose_name="Contagem enviados")
+    contagem_recebidos = models.PositiveIntegerField(default=0, verbose_name="Contagem recebidos")
+    contagem_erros = models.PositiveIntegerField(default=0, verbose_name="Contagem erros")
+    erros_detalhes = models.JSONField(default=list, blank=True, verbose_name="Detalhes dos erros")
+    tipo_conexao = models.CharField(
+        max_length=20,
+        choices=TipoConexao.choices,
+        null=True,
+        blank=True,
+        verbose_name="Tipo de conexão",
+    )
 
     class Meta:
         verbose_name = "Evento de Sincronização"
         verbose_name_plural = "Eventos de Sincronização"
-        ordering = ["-recebido_em"]
+        ordering = ["-iniciado_em", "-finalizado_em"]
         indexes = [
-            models.Index(fields=["user", "-recebido_em"], name="idx_sca_event_user_rec"),
+            models.Index(fields=["user", "-finalizado_em"], name="idx_sca_event_user_rec"),
+            models.Index(fields=["device", "-iniciado_em"], name="idx_sca_event_device_ini"),
         ]
 
     def __str__(self):
-        return f"{self.tipo} {self.user_id} em {self.recebido_em:%Y-%m-%d %H:%M}"
+        return f"{self.tipo} {self.user_id} em {self.finalizado_em:%Y-%m-%d %H:%M}"
+
+    @property
+    def has_erros(self) -> bool:
+        return self.contagem_erros > 0
 
 
 class ConflictLog(models.Model):
-    """Registro de conflito de sincronização (seção 4 do SCA_Requisitos)."""
+    """Registro de conflito de sincronização com suporte a resolução manual."""
 
     class Estrategia(models.TextChoices):
         LAST_WRITE_WINS = "last_write_wins", "Last-write-wins"
         DUPLICATE_REJEITADO = "duplicate_rejeitado", "Duplicata rejeitada"
         EXCLUSAO_PREVALECE = "exclusao_prevalece", "Exclusão do servidor prevalece"
         MERGE_AUTOMATICO = "merge_automatico", "Merge automático"
+
+    class Status(models.TextChoices):
+        PENDENTE = "pendente", "Pendente"
+        RESOLVIDO_AUTO = "resolvido_auto", "Resolvido Automaticamente"
+        RESOLVIDO_MANUAL = "resolvido_manual", "Resolvido Manualmente"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -134,6 +159,30 @@ class ConflictLog(models.Model):
         verbose_name="Estratégia aplicada",
     )
     campo_sensivel = models.BooleanField(default=False, verbose_name="Campo sensível")
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.RESOLVIDO_AUTO,
+        verbose_name="Status de resolução",
+    )
+    valor_final = models.JSONField(null=True, blank=True, verbose_name="Valor final aplicado")
+    resolvido_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="sca_conflicts_resolved",
+        verbose_name="Resolvido por",
+    )
+    resolvido_em = models.DateTimeField(null=True, blank=True, verbose_name="Resolvido em")
+    territorio = models.ForeignKey(
+        "core.Territory",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="sca_conflicts",
+        verbose_name="Território",
+    )
     criado_em = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
 
     class Meta:
@@ -143,7 +192,8 @@ class ConflictLog(models.Model):
         indexes = [
             models.Index(fields=["user", "-criado_em"], name="idx_sca_conflict_user"),
             models.Index(fields=["uuid_local"], name="idx_sca_conflict_uuid"),
+            models.Index(fields=["status", "campo_sensivel"], name="idx_sca_conflict_status"),
         ]
 
     def __str__(self):
-        return f"Conflito {self.entidade}/{self.uuid_local} — {self.campo}"
+        return f"Conflito [{self.status}] {self.entidade}/{self.uuid_local} — {self.campo}"
