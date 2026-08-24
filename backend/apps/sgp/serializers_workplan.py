@@ -4,6 +4,7 @@ from rest_framework import serializers
 
 from apps.sgp.constants import ODS_CHOICES
 from apps.sgp.models import WorkPlanAcao, WorkPlanMeta
+from apps.sgp.services.workplan_access import filter_workplan_actions_for_user
 
 
 class WorkPlanAcaoSerializer(serializers.ModelSerializer):
@@ -131,7 +132,7 @@ class WorkPlanMetaDetailSerializer(serializers.ModelSerializer):
     )
     status_calculado = serializers.CharField(read_only=True)
     criado_por = serializers.StringRelatedField(read_only=True)
-    acoes = WorkPlanAcaoSerializer(many=True, read_only=True)
+    acoes = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkPlanMeta
@@ -173,6 +174,13 @@ class WorkPlanMetaDetailSerializer(serializers.ModelSerializer):
                 "Já existe uma meta com este número."
             )
         return value
+
+    def get_acoes(self, obj):
+        request = self.context.get("request")
+        queryset = obj.acoes.all()
+        if request is not None and request.user.is_authenticated:
+            queryset = filter_workplan_actions_for_user(queryset, request.user)
+        return WorkPlanAcaoSerializer(queryset, many=True, context=self.context).data
 
     def validate_ods_ids(self, value):
         if not isinstance(value, list):

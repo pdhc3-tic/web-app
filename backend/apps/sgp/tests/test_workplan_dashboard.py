@@ -113,6 +113,18 @@ class TestWorkPlanDashboard:
         assert response.status_code == 200
         assert [action["id"] for action in response.data["metas"][0]["acoes"]] == [own_action.pk]
 
+    def test_adt_progress_counts_only_activities_in_own_territory(
+        self, auth_client_adt_rn, municipio_rn, municipio_ce
+    ):
+        meta = WorkPlanMetaFactory(numero=1)
+        action = create_action_with_progress(meta, "1.1", municipio_rn, completed=1)
+        ActivityFactory(acao=action, municipio=municipio_ce, status="concluido")
+
+        response = auth_client_adt_rn.get(PANEL_URL)
+
+        assert response.status_code == 200
+        assert response.data["metas"][0]["acoes"][0]["quantidade_realizada"] == "1.00"
+
     def test_rejects_invalid_filter(self, auth_client):
         response = auth_client.get(f"{PANEL_URL}?meta_id=invalida")
 

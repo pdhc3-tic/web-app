@@ -34,6 +34,10 @@ from apps.sgp.serializers_workplan import (
 )
 from apps.sgp.cache import get_power_bi_snapshot
 from apps.sgp.services.workplan_export import EXPORT_COLUMNS, workplan_export_rows
+from apps.sgp.services.workplan_access import (
+    filter_workplan_actions_for_user,
+    filter_workplan_metas_for_user,
+)
 from apps.sgp.tasks import refresh_power_bi_snapshot
 from apps.sgp.services.workplan_dashboard import (
     apply_dashboard_filters,
@@ -207,24 +211,7 @@ class WorkPlanMetaViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return qs.none()
 
-        if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
-            return qs
-
-        if user_has_role(user, "articulador-estadual"):
-            from apps.core.services.permissions import user_states
-            states = user_states(user)
-            if not states:
-                return qs.none()
-            return qs
-
-        if user_has_role(user, "adt-acr"):
-            from apps.core.services.permissions import user_territories
-            territories = user_territories(user)
-            if not territories.exists():
-                return qs.none()
-            return qs
-
-        return qs
+        return filter_workplan_metas_for_user(qs, user)
 
     def perform_create(self, serializer):
         instance = serializer.save(criado_por=self.request.user)
@@ -333,24 +320,7 @@ class WorkPlanAcaoViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return qs.none()
 
-        if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
-            return qs
-
-        if user_has_role(user, "articulador-estadual"):
-            from apps.core.services.permissions import user_states
-            states = user_states(user)
-            if not states:
-                return qs.none()
-            return qs
-
-        if user_has_role(user, "adt-acr"):
-            from apps.core.services.permissions import user_territories
-            territories = user_territories(user)
-            if not territories.exists():
-                return qs.none()
-            return qs
-
-        return qs
+        return filter_workplan_actions_for_user(qs, user)
 
     def perform_create(self, serializer):
         instance = serializer.save()

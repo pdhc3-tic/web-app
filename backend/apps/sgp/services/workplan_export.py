@@ -6,10 +6,11 @@ from datetime import date
 from decimal import Decimal
 
 from django.db.models import Count, Exists, OuterRef, Q, QuerySet
-from rest_framework.exceptions import PermissionDenied
-
-from apps.core.services.permissions import user_has_role, user_states, user_territories
 from apps.sgp.models import Activity, WorkPlanAcao
+from apps.sgp.services.workplan_access import (
+    activity_scope_for_user,
+    is_global_workplan_user,
+)
 from apps.sgp.services.workplan_dashboard import enrich_dashboard_action
 
 
@@ -60,26 +61,11 @@ def _export_actions_for_scope(*, user, territorio_id: int | None) -> QuerySet[Wo
     visible_activities = Activity.objects.filter(acao_id=OuterRef("pk"), ativo=True)
 
     if user is not None:
-        if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
-            pass
-        elif user_has_role(user, "articulador-estadual"):
-            states = user_states(user)
-            if not states:
-                return WorkPlanAcao.objects.none()
-            activity_filter &= Q(atividades__municipio__state__sigla__in=states)
-            visible_activities = visible_activities.filter(
-                municipio__state__sigla__in=states
-            )
-        elif user_has_role(user, "adt-acr"):
-            territories = user_territories(user)
-            if not territories.exists():
-                return WorkPlanAcao.objects.none()
-            activity_filter &= Q(atividades__municipio__territory__in=territories)
-            visible_activities = visible_activities.filter(
-                municipio__territory__in=territories
-            )
-        else:
-            raise PermissionDenied("Você não tem acesso ao Plano de Trabalho.")
+        activity_scope = activity_scope_for_user(user)
+        if activity_scope is not None:
+            activity_filter &= activity_scope
+            visible_activity_scope = activity_scope_for_user(user, prefix="")
+            visible_activities = visible_activities.filter(visible_activity_scope)
 
     if territorio_id is not None:
         activity_filter &= Q(atividades__municipio__territory_id=territorio_id)
@@ -94,9 +80,7 @@ def _export_actions_for_scope(*, user, territorio_id: int | None) -> QuerySet[Wo
     )
 
     # Ações sem atividade são visíveis somente para perfis com visão global.
-    if user is not None and not (
-        user_has_role(user, "super-admin") or user_has_role(user, "ugp")
-    ):
+    if user is not None and not is_global_workplan_user(user):
         actions = actions.filter(Exists(visible_activities))
     elif territorio_id is not None:
         actions = actions.filter(Exists(visible_activities))
