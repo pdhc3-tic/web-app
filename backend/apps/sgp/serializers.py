@@ -305,11 +305,14 @@ class UPFDetailSerializer(serializers.ModelSerializer):
             "daf_caf", "seguridade_social",
             "foto_url", "criado_por", "ativa", "criado_em",
             "atualizado_em", "membros",
+            # Sync SCA
+            "device_id", "uuid_local", "ultima_origem", "ultimo_sync_em",
         ]
         validators = []
         read_only_fields = [
             "criado_em", "atualizado_em", "criado_por",
             "territorio", "membros",
+            "device_id", "uuid_local", "ultima_origem", "ultimo_sync_em",
         ]
 
     def get_membros(self, obj):
@@ -481,10 +484,13 @@ class MembroDetailSerializer(serializers.ModelSerializer):
             "escola", "seguridade_social", "saude",
             "escolaridade", "escolaridade_display",
             "criado_por", "criado_em", "atualizado_em",
+            # Sync SCA
+            "device_id", "uuid_local", "ultima_origem", "ultimo_sync_em",
         ]
         validators = []
         read_only_fields = [
             "criado_em", "atualizado_em", "criado_por", "upf",
+            "device_id", "uuid_local", "ultima_origem", "ultimo_sync_em",
         ]
 
     def validate_parentesco(self, value):
@@ -701,7 +707,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             # Auditoria
             "criado_por", "criado_em", "atualizado_em",
             # Sync SCA
-            "device_id", "uuid_local",
+            "device_id", "uuid_local", "ultima_origem", "ultimo_sync_em",
             # Google Calendar
             "google_calendar_event_id", "google_calendar_sync_status",
         ]
@@ -712,6 +718,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             "atrasada", "total_participantes", "transicoes_permitidas",
             "territorio_id", "google_calendar_event_id",
             "google_calendar_sync_status",
+            "device_id", "uuid_local", "ultima_origem", "ultimo_sync_em",
         ]
 
     # ── SerializerMethodFields ───────────────────────────────────────────────

@@ -216,13 +216,17 @@ class UPFSyncEntity(SyncEntity):
                 criado_por=user,
                 device_id=device_id,
                 uuid_local=uuid_local,
+                ultima_origem="sca",
+                ultimo_sync_em=timezone.now(),
                 **_resolve_fk_ids(UPF, data),
             )
         except Exception:
             titular.delete()
             raise
         titular.upf = upf
-        titular.save(update_fields=["upf"])
+        titular.ultima_origem = "sca"
+        titular.ultimo_sync_em = timezone.now()
+        titular.save(update_fields=["upf", "ultima_origem", "ultimo_sync_em"])
         return upf
 
     def apply_changes(self, instance, changes: dict):
@@ -236,11 +240,14 @@ class UPFSyncEntity(SyncEntity):
         upf_changes = _resolve_fk_ids(UPF, upf_changes)
         for field, value in upf_changes.items():
             setattr(instance, field, value)
-        if upf_changes:
-            instance.save()
+        instance.ultima_origem = "sca"
+        instance.ultimo_sync_em = timezone.now()
+        instance.save()
         if titular_changes:
             for field, value in titular_changes.items():
                 setattr(instance.titular, field, value)
+            instance.titular.ultima_origem = "sca"
+            instance.titular.ultimo_sync_em = timezone.now()
             instance.titular.save()
 
     def serialize(self, instance):
@@ -338,12 +345,16 @@ class MemberSyncEntity(SyncEntity):
             criado_por=user,
             device_id=device_id,
             uuid_local=uuid_local,
+            ultima_origem="sca",
+            ultimo_sync_em=timezone.now(),
             **data,
         )
 
     def apply_changes(self, instance, changes: dict):
         for field, value in changes.items():
             setattr(instance, field, value)
+        instance.ultima_origem = "sca"
+        instance.ultimo_sync_em = timezone.now()
         instance.save()
 
     def serialize(self, instance):
@@ -395,6 +406,8 @@ class ActivitySyncEntity(SyncEntity):
             criado_por=user,
             device_id=device_id,
             uuid_local=uuid_local,
+            ultima_origem="sca",
+            ultimo_sync_em=timezone.now(),
             **_resolve_fk_ids(Activity, data),
         )
         if upfs:
@@ -413,6 +426,8 @@ class ActivitySyncEntity(SyncEntity):
         changes = _resolve_fk_ids(Activity, changes)
         for field, value in changes.items():
             setattr(instance, field, value)
+        instance.ultima_origem = "sca"
+        instance.ultimo_sync_em = timezone.now()
         instance.save()
 
     def serialize(self, instance):
