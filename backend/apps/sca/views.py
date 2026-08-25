@@ -44,6 +44,7 @@ from apps.sca.serializers import (
     ConflictResolveSerializer,
     PushBatchSerializer,
     ScaRefreshSerializer,
+    SyncDeviceDetailSerializer,
     SyncDeviceListSerializer,
     SyncEventDetailSerializer,
     SyncEventListSerializer,
@@ -223,6 +224,35 @@ class SyncDeviceListView(generics.ListAPIView):
             return response
         serializer = self.get_serializer(queryset, many=True, context=context)
         return Response({"limiar_alerta_dias": limiar, "results": serializer.data})
+
+
+# ---------------------------------------------------------------------------
+# Sync Device Detail (#183 pendência)
+# ---------------------------------------------------------------------------
+
+
+class SyncDeviceDetailView(generics.RetrieveAPIView):
+    permission_classes = [IsAuthenticatedActiveAccess, IsSuperAdminOrUGPReadOnly]
+    serializer_class = SyncDeviceDetailSerializer
+    queryset = SyncDevice.objects.select_related("user").all()
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        territory_ids = _territorio_ids_do_usuario(instance.user)
+        registros_por_entidade = services.count_pending_records_by_entity(
+            instance.user, instance
+        )
+        from apps.core.serializers import TerritorySerializer
+
+        territorios = list(
+            Territory.objects.filter(pk__in=territory_ids)
+        )
+        context = {
+            "registros_por_entidade": registros_por_entidade,
+            "territorios_por_usuario": {instance.user_id: territorios},
+        }
+        serializer = self.get_serializer(instance, context=context)
+        return Response(serializer.data)
 
 
 # ---------------------------------------------------------------------------

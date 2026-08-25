@@ -732,3 +732,89 @@ class TestDevicesPerformanceIssue195:
         )
         assert alvo["qtd_dispositivos"] == 2
         assert alvo["ultimo_sync_dispositivos"] is None  # nunca sincronizaram
+
+
+# ──────────────────────────────────────────────────────────────
+# GET /api/v1/sca/devices/{id}/
+# ──────────────────────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestDeviceDetailEndpoint:
+    def _detail(self, client, pk):
+        return client.get(f"/api/v1/sca/devices/{pk}/")
+
+    def test_retorna_200_para_dispositivo_existente(
+        self, auth_client_super_admin, super_admin_user
+    ):
+        device = _device(super_admin_user, "dev-detail-1")
+        response = self._detail(auth_client_super_admin, device.pk)
+        assert response.status_code == 200
+
+    def test_retorna_404_para_dispositivo_inexistente(self, auth_client_super_admin):
+        response = self._detail(auth_client_super_admin, 999999)
+        assert response.status_code == 404
+
+    def test_campos_esperados_no_response(
+        self, auth_client_super_admin, super_admin_user
+    ):
+        device = _device(super_admin_user, "dev-detail-campos")
+        data = self._detail(auth_client_super_admin, device.pk).data
+        assert data["id"] == device.pk
+        assert data["device_id"] == "dev-detail-campos"
+        assert "tecnico" in data
+        assert "territorios" in data
+        assert "registros_pendentes" in data
+        assert "registros_por_entidade" in data
+        assert "criado_em" in data
+
+    def test_registros_por_entidade_e_dict_com_chaves_esperadas(
+        self, auth_client_super_admin, super_admin_user
+    ):
+        device = _device(super_admin_user, "dev-detail-ent")
+        data = self._detail(auth_client_super_admin, device.pk).data
+        por_entidade = data["registros_por_entidade"]
+        assert isinstance(por_entidade, dict)
+        assert set(por_entidade.keys()) == {"upf", "member", "activity"}
+
+    def test_registros_pendentes_e_soma_das_entidades(
+        self, auth_client_super_admin, super_admin_user
+    ):
+        device = _device(super_admin_user, "dev-detail-soma")
+        data = self._detail(auth_client_super_admin, device.pk).data
+        soma = sum(data["registros_por_entidade"].values())
+        assert data["registros_pendentes"] == soma
+
+    def test_dispositivo_sem_pull_mostra_valores_zero(
+        self, auth_client_super_admin, super_admin_user
+    ):
+        device = _device(super_admin_user, "dev-detail-0")
+        assert device.ultimo_pull_em is None
+        data = self._detail(auth_client_super_admin, device.pk).data
+        # Sem pull, todos pendentes do escopo territorial
+        assert data["registros_pendentes"] >= 0
+        for v in data["registros_por_entidade"].values():
+            assert v >= 0
+
+    def test_ugp_ve_seu_dispositivo(self, auth_client_ugp, ugp_user):
+        device = _device(ugp_user, "dev-ugp-own")
+        response = self._detail(auth_client_ugp, device.pk)
+        assert response.status_code == 200
+
+    def test_ugp_ve_dispositivo_de_outro(
+        self, auth_client_ugp, super_admin_user
+    ):
+        device = _device(super_admin_user, "dev-other")
+        response = self._detail(auth_client_ugp, device.pk)
+        assert response.status_code == 200
+
+    def test_anonimo_recebe_401(self, api_client):
+        response = self._detail(api_client, 1)
+        assert response.status_code == 401
+
+    def test_admin_ve_dispositivo_qualquer(
+        self, auth_client_super_admin, ugp_user
+    ):
+        device = _device(ugp_user, "dev-admin-any")
+        response = self._detail(auth_client_super_admin, device.pk)
+        assert response.status_code == 200

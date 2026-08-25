@@ -567,6 +567,24 @@ def count_pending_records(user, device) -> int:
     return total
 
 
+def count_pending_records_by_entity(user, device) -> dict[str, int]:
+    """Contagem de registros pendentes separados por entidade para o detalhe do dispositivo."""
+    from apps.sca.sync_entities import ENTITY_REGISTRY
+
+    territory_ids = territory_ids_for(user)
+    if not territory_ids:
+        return {name: 0 for name in ENTITY_REGISTRY}
+
+    since = device.ultimo_pull_em if device else None
+    result = {}
+    for name, entity in ENTITY_REGISTRY.items():
+        qs = entity.filter_by_territories(entity.model.objects.all(), territory_ids)
+        if since is not None:
+            qs = entity.filter_since(qs, since)
+        result[name] = qs.count()
+    return result
+
+
 def bulk_count_pending_records(devices, territory_ids_by_user) -> dict[int, int]:
     """Contagem de registros pendentes em lote para a listagem de dispositivos.
 
