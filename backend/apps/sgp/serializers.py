@@ -526,7 +526,19 @@ class MembroDetailSerializer(serializers.ModelSerializer):
     def validate_cpf(self, value):
         if not value:
             return ""
-        return validate_cpf(value)
+        value = validate_cpf(value)
+        if MembroFamilia.objects.filter(cpf=value).exclude(pk=self.instance.pk if self.instance else None).exists():
+            raise serializers.ValidationError(
+                "Já existe um membro cadastrado com este CPF"
+            )
+        return value
+
+    def validate_data_nasc(self, value):
+        if value and value > date.today():
+            raise serializers.ValidationError(
+                "Data de nascimento não pode ser uma data futura"
+            )
+        return value
 
     def validate_saude(self, value):
         if not isinstance(value, list):

@@ -197,3 +197,112 @@ class TestAuditLog:
             entidade_id=str(membro_id),
             acao="MEMBRO.delete",
         ).exists()
+
+
+class TestDeleteTitular:
+    def test_delete_unico_titular_retorna_400(
+        self, auth_client, upf
+    ):
+        membro = upf.titular
+        response = auth_client.delete(
+            f"/api/v1/upfs/{upf.pk}/membros/{membro.pk}/"
+        )
+        assert response.status_code == 400
+        assert "único titular" in str(response.data).lower()
+
+    def test_delete_titular_com_outros_membros_retorna_400(
+        self, auth_client, upf, membro
+    ):
+        response = auth_client.delete(
+            f"/api/v1/upfs/{upf.pk}/membros/{upf.titular.pk}/"
+        )
+        assert response.status_code == 400
+        assert "titularidade" in str(response.data).lower()
+
+
+class TestCPFUnicoGlobal:
+    def test_cpf_duplicado_entre_upfs_diferentes_retorna_400(
+        self, auth_client, upf, outra_upf, membro_payload_minimo
+    ):
+        payload = {
+            **membro_payload_minimo,
+            "cpf": "12345678909",
+        }
+        response = auth_client.post(
+            f"/api/v1/upfs/{upf.pk}/membros/",
+            payload,
+            format="json",
+        )
+        assert response.status_code == 201
+
+        payload_outra = {
+            "nome": "Membro Duplicado",
+            "parentesco": "filho",
+            "cpf": "12345678909",
+        }
+        response = auth_client.post(
+            f"/api/v1/upfs/{outra_upf.pk}/membros/",
+            payload_outra,
+            format="json",
+        )
+        assert response.status_code == 400
+        assert "já existe um membro" in str(response.data).lower()
+
+
+class TestDataNascimentoFutura:
+    def test_data_nascimento_futura_retorna_400(
+        self, auth_client, upf
+    ):
+        payload = {
+            "nome": "Membro Futuro",
+            "parentesco": "filho",
+            "data_nasc": "2030-01-01",
+        }
+        response = auth_client.post(
+            f"/api/v1/upfs/{upf.pk}/membros/",
+            payload,
+            format="json",
+        )
+        assert response.status_code == 400
+        assert "futura" in str(response.data).lower()
+
+
+class TestResumoMembros:
+    def test_resumo_retorna_totais_e_faixas_etarias(
+        self, auth_client, upf, membro
+    ):
+        response = auth_client.get(
+            f"/api/v1/upfs/{upf.pk}/membros/resumo/"
+        )
+        assert response.status_code == 200
+        assert response.data["total_membros"] >= 2
+        assert "faixa_etaria" in response.data
+        assert "genero" in response.data
+        assert response.data["tem_titular"] is True
+
+    def test_resumo_sem_titular_retorna_false(
+        self, auth_client, upf, membro
+    ):
+        upf.titular = membro
+        upf.save()
+        MembroFamilia.objects.filter(
+            upf=upf, parentesco="titular"
+        ).exclude(pk=membro.pk).update(parentesco="filho")
+
+        response = auth_client.get(
+            f"/api/v1/upfs/{upf.pk}/membros/resumo/"
+        )
+        assert response.status_code == 200
+        assert response.data["tem_titular"] is False
+
+    def test_resumo_nao_inclui_dados_individuais(
+        self, auth_client, upf, membro
+    ):
+        response = auth_client.get(
+            f"/api/v1/upfs/{upf.pk}/membros/resumo/"
+        )
+        assert response.status_code == 200
+        dados = response.data
+        assert "saude" not in dados
+        assert "cor_raca" not in dados
+        assert "cpf" not in dados

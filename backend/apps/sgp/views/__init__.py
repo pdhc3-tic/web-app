@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from django.apps import apps
@@ -662,6 +662,15 @@ class MembroViewSet(viewsets.ModelViewSet):
         )
 
     def perform_destroy(self, instance):
+        if instance.parentesco == "titular":
+            outros = MembroFamilia.objects.filter(upf=instance.upf).exclude(pk=instance.pk)
+            if not outros.exists():
+                raise serializers.ValidationError(
+                    "Não é possível excluir o único titular da UPF"
+                )
+            raise serializers.ValidationError(
+                "Transfira a titularidade para outro membro antes de excluir"
+            )
         AuditLog.objects.create(
             user=self.request.user,
             acao="MEMBRO.delete",
@@ -679,6 +688,46 @@ class MembroViewSet(viewsets.ModelViewSet):
             user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )
         instance.delete()
+
+    @action(detail=False, methods=["get"], url_path="resumo")
+    def resumo(self, request, upf_pk=None):
+        upf = self.get_upf()
+        membros = MembroFamilia.objects.filter(upf=upf)
+
+        total = membros.count()
+        tem_titular = membros.filter(parentesco="titular").exists()
+
+        faixa_etaria = {"0-11": 0, "12-17": 0, "18-59": 0, "60+": 0}
+        genero = {"masculino": 0, "feminino": 0, "nao_informado": 0}
+
+        for membro in membros:
+            if membro.data_nasc:
+                idade = (
+                    date.today().year - membro.data_nasc.year
+                    - ((date.today().month, date.today().day) < (membro.data_nasc.month, membro.data_nasc.day))
+                )
+                if idade < 12:
+                    faixa_etaria["0-11"] += 1
+                elif idade < 18:
+                    faixa_etaria["12-17"] += 1
+                elif idade < 60:
+                    faixa_etaria["18-59"] += 1
+                else:
+                    faixa_etaria["60+"] += 1
+
+            if membro.genero == 1:
+                genero["masculino"] += 1
+            elif membro.genero == 2:
+                genero["feminino"] += 1
+            else:
+                genero["nao_informado"] += 1
+
+        return Response({
+            "total_membros": total,
+            "faixa_etaria": faixa_etaria,
+            "genero": genero,
+            "tem_titular": tem_titular,
+        })
 
 
 class ProjetoViewSet(viewsets.ModelViewSet):

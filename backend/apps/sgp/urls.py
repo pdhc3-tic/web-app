@@ -118,6 +118,11 @@ urlpatterns = router.urls + [
         name="upf-membros-detail",
     ),
     path(
+        "upfs/<int:upf_pk>/membros/resumo/",
+        MembroViewSet.as_view({"get": "resumo"}),
+        name="upf-membros-resumo",
+    ),
+    path(
         'municipios/<int:municipio_id>/comunidades/',
         comunidade_list,
         name='comunidade-list-by-municipio',
