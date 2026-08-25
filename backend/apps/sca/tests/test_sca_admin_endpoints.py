@@ -177,6 +177,19 @@ class TestDevicesEndpoint:
         }
         assert dev_misto.pk not in ids_ce
 
+    def test_filtro_territorio_nao_inclui_tecnico_sem_perfis(
+        self, auth_client_super_admin, usuario, territory
+    ):
+        sem_perfil = UserFactory(email="sem.perfil@test.com", nome="Técnico Sem Perfil")
+        _device(sem_perfil, "dev-sem-perfil")
+        dev_rn = _device(usuario, "dev-rn-1")
+
+        ids = {
+            i["id"]
+            for i in self._list(auth_client_super_admin, territorio=territory.id).data["results"]
+        }
+        assert ids == {dev_rn.pk}
+
     def test_busca_por_nome_ou_email_do_tecnico(self, auth_client_super_admin, usuario):
         device = _device(usuario, "dev-rn-1")
 

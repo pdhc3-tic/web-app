@@ -83,15 +83,22 @@ class SyncDeviceFilter(django_filters.FilterSet):
         # Semântica idêntica à de user_territories/UserListSerializer.get_territorios:
         # "dispositivos de técnicos com acesso a T". Usuário com algum perfil de
         # território específico acessa SÓ esses territórios (perfil global é ignorado);
-        # sem nenhum específico, perfil global dá acesso a todos.
+        # sem nenhum específico, perfil global dá acesso a todos — e técnico sem
+        # nenhum perfil não acessa território algum.
         from apps.core.models.user_profile import UserProfile
 
         tem_especifico = UserProfile.objects.filter(
             user=OuterRef("user"), territorio__isnull=False
         )
-        return qs.annotate(tem_territorio_especifico=Exists(tem_especifico)).filter(
+        tem_global = UserProfile.objects.filter(
+            user=OuterRef("user"), territorio__isnull=True
+        )
+        return qs.annotate(
+            tem_territorio_especifico=Exists(tem_especifico),
+            tem_perfil_global=Exists(tem_global),
+        ).filter(
             Q(tem_territorio_especifico=True, user__profiles__territorio_id=value)
-            | Q(tem_territorio_especifico=False, user__profiles__territorio__isnull=True)
+            | Q(tem_territorio_especifico=False, tem_perfil_global=True)
         ).distinct()
 
 

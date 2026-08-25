@@ -363,6 +363,11 @@ class UPFDetailSerializer(serializers.ModelSerializer):
     def _update_titular(self, upf):
         titular_data = self._extract_titular_data(self.validated_data)
         titular = upf.titular
+        alterado = any(
+            getattr(titular, key) != value for key, value in titular_data.items()
+        )
+        if alterado:
+            titular.ultima_origem = "web"
         for key, value in titular_data.items():
             setattr(titular, key, value)
         titular.save()
