@@ -305,11 +305,14 @@ class UPFDetailSerializer(serializers.ModelSerializer):
             "daf_caf", "seguridade_social",
             "foto_url", "criado_por", "ativa", "criado_em",
             "atualizado_em", "membros",
+            # Sync SCA
+            "device_id", "uuid_local", "ultima_origem", "ultimo_sync_em",
         ]
         validators = []
         read_only_fields = [
             "criado_em", "atualizado_em", "criado_por",
             "territorio", "membros",
+            "device_id", "uuid_local", "ultima_origem", "ultimo_sync_em",
         ]
 
     def get_membros(self, obj):
@@ -360,6 +363,11 @@ class UPFDetailSerializer(serializers.ModelSerializer):
     def _update_titular(self, upf):
         titular_data = self._extract_titular_data(self.validated_data)
         titular = upf.titular
+        alterado = any(
+            getattr(titular, key) != value for key, value in titular_data.items()
+        )
+        if alterado:
+            titular.ultima_origem = "web"
         for key, value in titular_data.items():
             setattr(titular, key, value)
         titular.save()
@@ -374,7 +382,7 @@ class UPFDetailSerializer(serializers.ModelSerializer):
             "latitude", "longitude", "pct", "posse_terra", "area_terra_ha",
             "situacao_moradia", "tipo_moradia", "material_construcao",
             "num_comodos", "energia", "agua", "seguridade_social",
-            "foto_url", "ativa",
+            "foto_url", "ativa", "ultima_origem",
         }
         daf_caf = attrs.pop("numero_dap", None)
         if daf_caf is not None:
@@ -481,10 +489,13 @@ class MembroDetailSerializer(serializers.ModelSerializer):
             "escola", "seguridade_social", "saude",
             "escolaridade", "escolaridade_display",
             "criado_por", "criado_em", "atualizado_em",
+            # Sync SCA
+            "device_id", "uuid_local", "ultima_origem", "ultimo_sync_em",
         ]
         validators = []
         read_only_fields = [
             "criado_em", "atualizado_em", "criado_por", "upf",
+            "device_id", "uuid_local", "ultima_origem", "ultimo_sync_em",
         ]
 
     def validate_parentesco(self, value):
@@ -701,7 +712,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             # Auditoria
             "criado_por", "criado_em", "atualizado_em",
             # Sync SCA
-            "device_id", "uuid_local",
+            "device_id", "uuid_local", "ultima_origem", "ultimo_sync_em",
             # Google Calendar
             "google_calendar_event_id", "google_calendar_sync_status",
         ]
@@ -712,6 +723,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             "atrasada", "total_participantes", "transicoes_permitidas",
             "territorio_id", "google_calendar_event_id",
             "google_calendar_sync_status",
+            "device_id", "uuid_local", "ultima_origem", "ultimo_sync_em",
         ]
 
     # ── SerializerMethodFields ───────────────────────────────────────────────

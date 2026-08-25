@@ -1,8 +1,12 @@
 import factory
 import pytest
+from datetime import timedelta
+from uuid import uuid4
+
+from django.utils import timezone
 
 from apps.core.models.audit_log import AuditLog
-from apps.sgp.models import UPF
+from apps.sgp.models import MembroFamilia, UPF
 from apps.sgp.tests.factories import UPFFactory
 from apps.core.tests.factories import MunicipalityFactory
 
@@ -600,3 +604,59 @@ class TestPerformanceIndexes:
 
         assert response.status_code == 200
         assert elapsed < 1.0
+
+
+class TestOrigemTitular:
+    def _upf_rn(self, projeto, municipio_rn, territory_rn):
+        return UPFFactory(
+            projeto=projeto, municipio=municipio_rn,
+            territorio=territory_rn, titular_cpf="86288366757",
+        )
+
+    def _simular_sync_sca(self, upf):
+        sync_em = timezone.now() - timedelta(hours=1)
+        MembroFamilia.objects.filter(pk=upf.titular_id).update(
+            device_id="dev-app-001",
+            uuid_local=uuid4(),
+            ultima_origem="sca",
+            ultimo_sync_em=sync_em,
+        )
+        return sync_em
+
+    def test_edicao_web_do_titular_marca_origem_web_e_preserva_sync(
+        self, auth_client_adt_rn, projeto, municipio_rn, territory_rn,
+    ):
+        upf = self._upf_rn(projeto, municipio_rn, territory_rn)
+        sync_em = self._simular_sync_sca(upf)
+
+        response = auth_client_adt_rn.patch(
+            f"/api/v1/upfs/{upf.pk}/",
+            {"nome": "Nome Editado na Web"},
+            format="json",
+        )
+        assert response.status_code == 200
+
+        titular = UPF.objects.get(pk=upf.pk).titular
+        assert titular.nome_completo == "Nome Editado na Web"
+        assert titular.ultima_origem == "web"
+        assert titular.device_id == "dev-app-001"
+        assert titular.ultimo_sync_em == sync_em
+
+    def test_patch_sem_alterar_titular_preserva_origem_sca(
+        self, auth_client_adt_rn, projeto, municipio_rn, territory_rn,
+    ):
+        upf = self._upf_rn(projeto, municipio_rn, territory_rn)
+        nome_original = upf.titular.nome_completo
+        sync_em = self._simular_sync_sca(upf)
+
+        response = auth_client_adt_rn.patch(
+            f"/api/v1/upfs/{upf.pk}/",
+            {"apelido": "Sítio Renomeado"},
+            format="json",
+        )
+        assert response.status_code == 200
+
+        titular = UPF.objects.get(pk=upf.pk).titular
+        assert titular.nome_completo == nome_original
+        assert titular.ultima_origem == "sca"
+        assert titular.ultimo_sync_em == sync_em

@@ -183,6 +183,7 @@ def test_push_mesmo_campo_sobreposicao_lww_client_novo(auth_client, upf_existent
     assert conflito.valor_local == "9999"
     assert conflito.valor_servidor == "1111"
     assert conflito.estrategia == ConflictLog.Estrategia.LAST_WRITE_WINS
+    assert conflito.status == ConflictLog.Status.RESOLVIDO_AUTO
 
 
 @pytest.mark.django_db
@@ -294,9 +295,15 @@ def test_push_conflito_campo_sensivel_notifica_articulador(auth_client, articula
     assert conflito.campo_sensivel is True
     assert conflito.valor_servidor == "52998224725"
     assert conflito.valor_local == "33355588800"
+    assert conflito.status == ConflictLog.Status.PENDENTE
+    assert conflito.valor_final is None
+    assert conflito.resolvido_por is None
+    mock_notify.assert_called_once()
+    assert mock_notify.call_args.kwargs["conflict_id"] == conflito.pk
 
+    # campo sensível: estratégia automática NÃO é aplicada ao registro definitivo
     upf.titular.refresh_from_db()
-    assert upf.titular.cpf == "33355588800"
+    assert upf.titular.cpf == "52998224725"
 
 
 @pytest.mark.django_db

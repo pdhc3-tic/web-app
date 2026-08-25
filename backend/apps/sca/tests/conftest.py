@@ -92,9 +92,10 @@ def usuario(db, role_adt, territory):
 
 
 @pytest.fixture
-def auth_client(api_client, usuario):
-    api_client.force_authenticate(user=usuario)
-    return api_client
+def auth_client(usuario):
+    client = APIClient()
+    client.force_authenticate(user=usuario)
+    return client
 
 
 @pytest.fixture
@@ -104,9 +105,10 @@ def super_admin_user(db):
 
 
 @pytest.fixture
-def auth_client_super_admin(api_client, super_admin_user):
-    api_client.force_authenticate(user=super_admin_user)
-    return api_client
+def auth_client_super_admin(super_admin_user):
+    client = APIClient()
+    client.force_authenticate(user=super_admin_user)
+    return client
 
 
 # ──────────────────────────────────────────────────────────────

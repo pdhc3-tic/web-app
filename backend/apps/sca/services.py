@@ -134,16 +134,21 @@ def resolve_conflicts(entity, instance, payload_flat, base_flat, incoming_update
     to_apply = dict(local_changed)
     conflicts = []
     for path in overlaps:
+        is_sensitive = path in entity.sensitive_paths
         conflicts.append(
             {
                 "path": path,
                 "valor_local": _jsonable(local_changed[path]),
                 "valor_servidor": _jsonable(server_changed[path]),
-                "sensitive": path in entity.sensitive_paths,
+                "sensitive": is_sensitive,
             }
         )
-        if not client_wins:
-            del to_apply[path]
+        if is_sensitive:
+            if path in to_apply:
+                del to_apply[path]
+        elif not client_wins:
+            if path in to_apply:
+                del to_apply[path]
 
     return MergeResult(to_apply, conflicts, "conflito")
 
@@ -153,25 +158,49 @@ def resolve_conflicts(entity, instance, payload_flat, base_flat, incoming_update
 # ---------------------------------------------------------------------------
 
 class PushProcessor:
-    def __init__(self, user, device, device_id: str = ""):
+    def __init__(self, user, device, device_id: str = "", tipo_conexao: str | None = None):
         self.user = user
         self.device = device
         self.device_id = device_id or (device.device_id if device else "")
+        self.tipo_conexao = tipo_conexao
         self.territory_ids = territory_ids_for(user)
         self.uuid_map: dict[str, int] = {}
 
     # -- entrada ------------------------------------------------------------
     def process(self, items) -> list[dict]:
+        iniciado_em = timezone.now()
         results = []
         for item in items:
             results.append(self._process_item(item))
+
         if self.device:
             SyncDevice.objects.filter(pk=self.device.pk).update(ultimo_push_em=timezone.now())
+
+        erros_detalhes = []
+        for item, r in zip(items, results):
+            if r.get("status") == "erro":
+                erros_detalhes.append({
+                    "uuid_local": str(r.get("uuid_local")),
+                    "entidade": item.get("entidade", ""),
+                    "mensagem": r.get("erro", ""),
+                    "codigo": r.get("erro", "").split(":")[0] if ":" in r.get("erro", "") else "ERRO",
+                })
+
+        contagem_erros = len(erros_detalhes)
+        finalizado_em = timezone.now()
+
         SyncEvent.objects.create(
             user=self.user,
             device=self.device,
             tipo=SyncEvent.Tipo.PUSH,
             contagem=len(results),
+            contagem_enviados=len(results),
+            contagem_recebidos=0,
+            contagem_erros=contagem_erros,
+            erros_detalhes=erros_detalhes,
+            iniciado_em=iniciado_em,
+            finalizado_em=finalizado_em,
+            tipo_conexao=self.tipo_conexao,
         )
         return results
 
@@ -254,6 +283,8 @@ class PushProcessor:
                 valor_servidor={"id_servidor": duplicate.pk},
                 estrategia=ConflictLog.Estrategia.DUPLICATE_REJEITADO,
                 campo_sensivel=False,
+                status=ConflictLog.Status.RESOLVIDO_AUTO,
+                territorio_id=entity.territorio_of(duplicate),
             )
             return self._result(
                 item,
@@ -308,8 +339,15 @@ class PushProcessor:
         return self._result(item, "ok", id_servidor=instance.pk)
 
     def _record_conflicts(self, entity, item, instance, result) -> None:
+        territorio_id = entity.territorio_of(instance)
         for conf in result.conflicts:
-            ConflictLog.objects.create(
+            is_sensitive = conf["sensitive"]
+            status_conflito = (
+                ConflictLog.Status.PENDENTE
+                if is_sensitive
+                else ConflictLog.Status.RESOLVIDO_AUTO
+            )
+            conflict_log = ConflictLog.objects.create(
                 user=self.user,
                 device=self.device,
                 entidade=entity.name,
@@ -318,12 +356,14 @@ class PushProcessor:
                 valor_local=_jsonable(conf["valor_local"]),
                 valor_servidor=_jsonable(conf["valor_servidor"]),
                 estrategia=ConflictLog.Estrategia.LAST_WRITE_WINS,
-                campo_sensivel=conf["sensitive"],
+                campo_sensivel=is_sensitive,
+                status=status_conflito,
+                territorio_id=territorio_id,
             )
-            if conf["sensitive"]:
-                self._notify_articulador(entity, item, instance, conf)
+            if is_sensitive:
+                self._notify_articulador(entity, item, instance, conf, conflict_log.pk)
 
-    def _notify_articulador(self, entity, item, instance, conf) -> None:
+    def _notify_articulador(self, entity, item, instance, conf, conflict_id: int) -> None:
         from apps.core.models import Territory
         from apps.core.models.user_profile import UserProfile
 
@@ -382,6 +422,7 @@ class PushProcessor:
         for destinatario_id in destinatario_ids:
             notify_articulador_sync_conflict.delay(
                 articulador_id=destinatario_id,
+                conflict_id=conflict_id,
                 entidade=entity.name,
                 uuid_local=str(item["uuid_local"]),
                 campo=conf["path"],
@@ -405,6 +446,8 @@ class PushProcessor:
             valor_servidor={"id_servidor": instance.pk, "ativo": False},
             estrategia=ConflictLog.Estrategia.EXCLUSAO_PREVALECE,
             campo_sensivel=False,
+            status=ConflictLog.Status.RESOLVIDO_AUTO,
+            territorio_id=entity.territorio_of(instance),
         )
         _create_notification(
             self.user,
@@ -434,9 +477,10 @@ class PushProcessor:
 # Pull
 # ---------------------------------------------------------------------------
 
-def build_pull(user, device, since) -> dict:
+def build_pull(user, device, since, tipo_conexao: str | None = None) -> dict:
     from apps.sca.sync_entities import ENTITY_REGISTRY
 
+    iniciado_em = timezone.now()
     territory_ids = territory_ids_for(user)
     server_time = timezone.now()
     payload = {"upfs": [], "members": [], "activities": [], "server_time": server_time.isoformat()}
@@ -444,7 +488,20 @@ def build_pull(user, device, since) -> dict:
     if not territory_ids:
         if device:
             SyncDevice.objects.filter(pk=device.pk).update(ultimo_pull_em=server_time)
-        SyncEvent.objects.create(user=user, device=device, tipo=SyncEvent.Tipo.PULL, since=since, contagem=0)
+        SyncEvent.objects.create(
+            user=user,
+            device=device,
+            tipo=SyncEvent.Tipo.PULL,
+            since=since,
+            contagem=0,
+            contagem_enviados=0,
+            contagem_recebidos=0,
+            contagem_erros=0,
+            erros_detalhes=[],
+            iniciado_em=iniciado_em,
+            finalizado_em=server_time,
+            tipo_conexao=tipo_conexao,
+        )
         return payload
 
     group_key = {"upf": "upfs", "member": "members", "activity": "activities"}
@@ -458,7 +515,21 @@ def build_pull(user, device, since) -> dict:
     if device:
         SyncDevice.objects.filter(pk=device.pk).update(ultimo_pull_em=server_time)
     total = sum(len(v) for v in payload.values() if isinstance(v, list))
-    SyncEvent.objects.create(user=user, device=device, tipo=SyncEvent.Tipo.PULL, since=since, contagem=total)
+    finalizado_em = timezone.now()
+    SyncEvent.objects.create(
+        user=user,
+        device=device,
+        tipo=SyncEvent.Tipo.PULL,
+        since=since,
+        contagem=total,
+        contagem_enviados=0,
+        contagem_recebidos=total,
+        contagem_erros=0,
+        erros_detalhes=[],
+        iniciado_em=iniciado_em,
+        finalizado_em=finalizado_em,
+        tipo_conexao=tipo_conexao,
+    )
     return payload
 
 
@@ -508,10 +579,10 @@ def last_successful_sync(user, device) -> "object | None":
             user=user,
             tipo__in=[SyncEvent.Tipo.PUSH, SyncEvent.Tipo.PULL],
         )
-        .order_by("-recebido_em")
+        .order_by("-finalizado_em")
         .first()
     )
-    return event.recebido_em if event else None
+    return event.finalizado_em if event else None
 
 
 def is_session_expired(user, device) -> bool:
@@ -524,9 +595,21 @@ def is_session_expired(user, device) -> bool:
 
 
 def register_refresh(user, device) -> None:
+    server_time = timezone.now()
     if device:
-        SyncDevice.objects.filter(pk=device.pk).update(ultimo_refresh_em=timezone.now())
-    SyncEvent.objects.create(user=user, device=device, tipo=SyncEvent.Tipo.REFRESH, contagem=0)
+        SyncDevice.objects.filter(pk=device.pk).update(ultimo_refresh_em=server_time)
+    SyncEvent.objects.create(
+        user=user,
+        device=device,
+        tipo=SyncEvent.Tipo.REFRESH,
+        contagem=0,
+        contagem_enviados=0,
+        contagem_recebidos=0,
+        contagem_erros=0,
+        erros_detalhes=[],
+        iniciado_em=server_time,
+        finalizado_em=server_time,
+    )
 
 
 # ---------------------------------------------------------------------------

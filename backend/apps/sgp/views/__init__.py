@@ -423,7 +423,7 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
         )
 
     def perform_create(self, serializer):
-        instance = serializer.save(criado_por=self.request.user)
+        instance = serializer.save(criado_por=self.request.user, ultima_origem="web")
         self._log_audit("UPF.create", instance)
 
     def perform_update(self, serializer):
@@ -438,7 +438,7 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
             "comunidade_id": old.comunidade_id,
             "ativa": old.ativa,
         }
-        instance = serializer.save()
+        instance = serializer.save(ultima_origem="web")
         self._log_audit("UPF.update", instance, valores_anteriores)
 
     def perform_destroy(self, instance):
@@ -617,7 +617,7 @@ class MembroViewSet(viewsets.ModelViewSet):
             raise serializers.ValidationError(
                 "Não é possível adicionar membros a uma UPF inativa"
             )
-        instance = serializer.save(upf=upf, criado_por=self.request.user)
+        instance = serializer.save(upf=upf, criado_por=self.request.user, ultima_origem="web")
         AuditLog.objects.create(
             user=self.request.user,
             acao="MEMBRO.create",
@@ -643,7 +643,7 @@ class MembroViewSet(viewsets.ModelViewSet):
             "parentesco": old.parentesco,
             "cpf": old.cpf,
         }
-        instance = serializer.save()
+        instance = serializer.save(ultima_origem="web")
         AuditLog.objects.create(
             user=self.request.user,
             acao="MEMBRO.update",
@@ -778,7 +778,7 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
         raise PermissionDenied("Você não tem acesso ao módulo de Atividades do SGP.")
 
     def perform_create(self, serializer):
-        instance = serializer.save(criado_por=self.request.user)
+        instance = serializer.save(criado_por=self.request.user, ultima_origem="web")
         self._log_audit("activity.create", instance)
         self._enqueue_google_calendar_sync_if_needed(instance, created=True)
 
@@ -786,7 +786,7 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
         old = self.get_object()
         valores_anteriores = self._snapshot(old)
         google_calendar_anteriores = self._google_calendar_sync_snapshot(old)
-        instance = serializer.save()
+        instance = serializer.save(ultima_origem="web")
         self._log_audit("activity.update", instance, valores_anteriores)
         self._enqueue_google_calendar_sync_if_needed(
             instance,

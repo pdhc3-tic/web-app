@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 def notify_articulador_sync_conflict(
     articulador_id,
     *,
+    conflict_id=None,
     entidade="",
     uuid_local="",
     campo="",
@@ -33,6 +34,8 @@ def notify_articulador_sync_conflict(
         logger.warning("sca.notify_articulador user_not_found articulador_id=%s", articulador_id)
         return
 
+    link = f"/sca/conflitos/{conflict_id}" if conflict_id else "/sca/conflitos"
+
     Notification.objects.create(
         user=articulador,
         tipo=TipoNotificacao.IN_APP,
@@ -40,9 +43,9 @@ def notify_articulador_sync_conflict(
         mensagem=(
             f"Conflito detectado em '{entidade}' ({campo}). "
             f"Valor local: {valor_local} | Valor no servidor: {valor_servidor}. "
-            "Resolvido por last-write-wins."
+            "Aguardando resolução manual."
         ),
-        link="",
+        link=link,
         modulo_origem="sca",
         evento="sca.sync.conflict_sensitive",
     )
