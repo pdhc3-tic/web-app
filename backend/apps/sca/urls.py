@@ -3,6 +3,7 @@ from django.urls import path
 from apps.sca.views import (
     ConflictLogViewSet,
     ScaAuthRefreshView,
+    SyncDeviceDetailView,
     SyncDeviceListView,
     SyncEventViewSet,
     SyncFormsView,
@@ -19,6 +20,11 @@ urlpatterns = [
     path("sca/auth/refresh/", ScaAuthRefreshView.as_view(), name="sca-auth-refresh"),
     # Endpoints administrativos (#156, #157, #158)
     path("sca/devices/", SyncDeviceListView.as_view(), name="sca-devices-list"),
+    path(
+        "sca/devices/<int:pk>/",
+        SyncDeviceDetailView.as_view(),
+        name="sca-devices-detail",
+    ),
     path(
         "sca/sync-events/",
         SyncEventViewSet.as_view({"get": "list"}),

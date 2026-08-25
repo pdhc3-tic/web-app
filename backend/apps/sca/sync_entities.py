@@ -49,6 +49,7 @@ class SyncEntity:
     natural_key_paths: tuple = ()
     id_fields: frozenset = frozenset()
     soft_delete_field: str | None = None
+    territory_lookup: str = ""
 
     # ------------------------------------------------------------------
     # Helpers de valor
@@ -119,7 +120,7 @@ class SyncEntity:
         raise NotImplementedError
 
     def filter_by_territories(self, qs, territory_ids):
-        raise NotImplementedError
+        return qs.filter(**{f"{self.territory_lookup}__in": territory_ids})
 
     def filter_since(self, qs, since):
         return qs.filter(atualizado_em__gt=since)
@@ -167,6 +168,7 @@ class UPFSyncEntity(SyncEntity):
     id_fields = frozenset({"projeto", "comunidade", "municipio", "territorio"})
     sensitive_paths = ("titular.nome_completo", "titular.cpf", "latitude", "longitude")
     natural_key_paths = ("titular.cpf",)
+    territory_lookup = "territorio_id"
 
     # ------------------------------------------------------------------
     def territorio_id_from_payload(self, data, uuid_map=None):
@@ -174,9 +176,6 @@ class UPFSyncEntity(SyncEntity):
 
     def territorio_of(self, instance):
         return instance.territorio_id
-
-    def filter_by_territories(self, qs, territory_ids):
-        return qs.filter(territorio_id__in=territory_ids)
 
     def get_by_natural(self, data):
         titular = data.get("titular") or {}
@@ -307,6 +306,7 @@ class MemberSyncEntity(SyncEntity):
     id_fields = frozenset({"upf"})
     sensitive_paths = ("nome_completo", "cpf")
     natural_key_paths = ("cpf",)
+    territory_lookup = "upf__territorio_id"
 
     def territorio_id_from_payload(self, data, uuid_map=None):
         upf_id = data.get("upf")
@@ -323,9 +323,6 @@ class MemberSyncEntity(SyncEntity):
 
     def territorio_of(self, instance):
         return instance.upf.territorio_id if instance.upf_id else None
-
-    def filter_by_territories(self, qs, territory_ids):
-        return qs.filter(upf__territorio_id__in=territory_ids)
 
     def get_by_natural(self, data):
         cpf = (data.get("cpf") or "").strip()
@@ -383,6 +380,7 @@ class ActivitySyncEntity(SyncEntity):
     soft_delete_field = "ativo"
     id_fields = frozenset({"acao", "municipio", "comunidade", "tecnico_responsavel"})
     sensitive_paths = ("titulo", "latitude", "longitude")
+    territory_lookup = "municipio__territory_id"
 
     def territorio_id_from_payload(self, data, uuid_map=None):
         municipio_id = data.get("municipio")
@@ -395,9 +393,6 @@ class ActivitySyncEntity(SyncEntity):
 
     def territorio_of(self, instance):
         return instance.municipio.territory_id if instance.municipio_id else None
-
-    def filter_by_territories(self, qs, territory_ids):
-        return qs.filter(municipio__territory_id__in=territory_ids)
 
     def create(self, data, *, user, device_id, uuid_local, uuid_map):
         upfs = [self._resolve_participante(item, uuid_map, UPF) for item in data.pop("upfs_participantes", [])]

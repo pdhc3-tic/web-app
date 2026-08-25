@@ -173,8 +173,13 @@ class SyncDeviceListSerializer(serializers.ModelSerializer):
 
     def get_territorios(self, obj):
         from apps.core.serializers import TerritorySerializer
-        from apps.core.services.permissions import user_territories
-        territorios = user_territories(obj.user)
+
+        mapa = self.context.get("territorios_por_usuario")
+        territorios = mapa.get(obj.user_id) if mapa is not None else None
+        if territorios is None:
+            from apps.core.services.permissions import user_territories
+
+            territorios = list(user_territories(obj.user))
         return TerritorySerializer(territorios, many=True).data
 
     def get_ultimo_sync_servidor(self, obj):
@@ -182,8 +187,69 @@ class SyncDeviceListSerializer(serializers.ModelSerializer):
         return dt.isoformat() if dt else None
 
     def get_registros_pendentes(self, obj):
+        mapa = self.context.get("registros_pendentes")
+        if mapa is not None:
+            return mapa.get(obj.pk, 0)
+        from apps.sca import services
+
+        return services.count_pending_records(obj.user, obj)
+
+
+class SyncDeviceDetailSerializer(serializers.ModelSerializer):
+    tecnico = serializers.SerializerMethodField()
+    territorios = serializers.SerializerMethodField()
+    ultimo_sync_servidor = serializers.SerializerMethodField()
+    registros_pendentes = serializers.SerializerMethodField()
+    registros_por_entidade = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SyncDevice
+        fields = [
+            "id",
+            "device_id",
+            "nome",
+            "modelo",
+            "sistema_operacional",
+            "app_versao",
+            "tecnico",
+            "territorios",
+            "ultimo_sync_servidor",
+            "registros_pendentes",
+            "registros_por_entidade",
+            "ativo",
+            "criado_em",
+        ]
+
+    def get_tecnico(self, obj):
+        return {
+            "id": obj.user_id,
+            "nome": obj.user.nome,
+            "email": obj.user.email,
+        }
+
+    def get_territorios(self, obj):
+        from apps.core.serializers import TerritorySerializer
+        from apps.core.services.permissions import user_territories
+
+        return TerritorySerializer(list(user_territories(obj.user)), many=True).data
+
+    def get_ultimo_sync_servidor(self, obj):
+        dt = getattr(obj, "ultimo_sync_servidor", None) or obj.ultimo_sync_em
+        return dt.isoformat() if dt else None
+
+    def get_registros_pendentes(self, obj):
+        mapa = self.context.get("registros_por_entidade")
+        if mapa is not None:
+            return sum(mapa.values())
         from apps.sca import services
         return services.count_pending_records(obj.user, obj)
+
+    def get_registros_por_entidade(self, obj):
+        mapa = self.context.get("registros_por_entidade")
+        if mapa is not None:
+            return mapa
+        from apps.sca import services
+        return services.count_pending_records_by_entity(obj.user, obj)
 
 
 class SyncEventListSerializer(serializers.ModelSerializer):

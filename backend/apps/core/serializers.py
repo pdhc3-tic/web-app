@@ -195,22 +195,34 @@ class UserListSerializer(serializers.ModelSerializer):
         return value.isoformat() if value else None
 
     def get_perfis(self, obj):
-        profiles = obj.profiles.select_related("perfil").all()
+        # consome o prefetch_related("profiles__perfil") sem reconsultar
+        profiles = obj.profiles.all()
         return [RoleSerializer(p.perfil).data for p in profiles]
 
+    def _todos_territorios(self):
+        cache = getattr(self, "_territorios_todos", None)
+        if cache is None:
+            cache = self._territorios_todos = list(Territory.objects.all())
+        return cache
+
+    def _territorios_do_usuario(self, obj):
+        especificos = {}
+        tem_global = False
+        for p in obj.profiles.all():
+            if p.territorio_id:
+                especificos.setdefault(p.territorio_id, p.territorio)
+            else:
+                tem_global = True
+        if especificos:
+            territorios = list(especificos.values())
+        elif tem_global:
+            territorios = self._todos_territorios()
+        else:
+            territorios = []
+        return sorted(territorios, key=lambda t: t.nome)
+
     def get_territorios(self, obj):
-        profile_territory_ids = list(
-            obj.profiles.filter(territorio__isnull=False)
-            .values_list("territorio_id", flat=True)
-        )
-        if profile_territory_ids:
-            return TerritorySerializer(
-                Territory.objects.filter(pk__in=profile_territory_ids), many=True
-            ).data
-        has_global = obj.profiles.filter(territorio__isnull=True).exists()
-        if has_global:
-            return TerritorySerializer(Territory.objects.all(), many=True).data
-        return []
+        return TerritorySerializer(self._territorios_do_usuario(obj), many=True).data
 
 
 class PerfilInputSerializer(serializers.Serializer):
@@ -269,7 +281,8 @@ class UserDetailSerializer(serializers.ModelSerializer):
         return value.isoformat() if value else None
 
     def get_perfis(self, obj):
-        profiles = obj.profiles.select_related("perfil", "territorio").all()
+        # consome o prefetch_related("profiles__perfil") sem reconsultar
+        profiles = obj.profiles.all()
         return [
             {
                 "id": p.perfil_id,
@@ -280,19 +293,30 @@ class UserDetailSerializer(serializers.ModelSerializer):
             for p in profiles
         ]
 
+    def _todos_territorios(self):
+        cache = getattr(self, "_territorios_todos", None)
+        if cache is None:
+            cache = self._territorios_todos = list(Territory.objects.all())
+        return cache
+
+    def _territorios_do_usuario(self, obj):
+        especificos = {}
+        tem_global = False
+        for p in obj.profiles.all():
+            if p.territorio_id:
+                especificos.setdefault(p.territorio_id, p.territorio)
+            else:
+                tem_global = True
+        if especificos:
+            territorios = list(especificos.values())
+        elif tem_global:
+            territorios = self._todos_territorios()
+        else:
+            territorios = []
+        return sorted(territorios, key=lambda t: t.nome)
+
     def get_territorios(self, obj):
-        profile_territory_ids = list(
-            obj.profiles.filter(territorio__isnull=False)
-            .values_list("territorio_id", flat=True)
-        )
-        if profile_territory_ids:
-            return TerritorySerializer(
-                Territory.objects.filter(pk__in=profile_territory_ids), many=True
-            ).data
-        has_global = obj.profiles.filter(territorio__isnull=True).exists()
-        if has_global:
-            return TerritorySerializer(Territory.objects.all(), many=True).data
-        return []
+        return TerritorySerializer(self._territorios_do_usuario(obj), many=True).data
 
     def validate_email(self, value):
         value = value.lower().strip()

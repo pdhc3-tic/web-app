@@ -4,7 +4,10 @@ Seed de dados de DEMONSTRAÇÃO do SGP.
 Diferente de `seed_core` / `seed_sgp` (dados de referência reais), este comando
 popula o banco com um volume realista de dados fictícios para exercitar as telas
 do frontend: municípios, comunidades, UPFs com famílias, produções, plano de
-trabalho, atividades e evidências (fotos/documentos).
+trabalho, atividades e evidências (fotos/documentos). Inclui também o cenário
+do SCA (#193): técnicos com dispositivos nas faixas verde/laranja/vermelha,
+histórico de eventos de sincronização, conflitos (pendente sensível e resolvido)
+e registros com origem "sca" para os badges.
 
 NÃO usar em produção nem em testes automatizados (para testes, usar as factories
 em apps/sgp/tests/factories.py).
@@ -29,9 +32,11 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 
-from apps.core.models import Municipality, Organization, Role, State, Territory, UserProfile
+from apps.core.models import Municipality, Organization, Role, State, SystemConfig, Territory, UserProfile
+from apps.sca.models import ConflictLog, SyncDevice, SyncEvent
 from apps.sgp.models import (
     Activity,
     ActivityDocument,
@@ -344,6 +349,7 @@ class Command(BaseCommand):
             self._producoes(upfs)
             acoes = self._plano_trabalho(tecnicos[-2])
             self._atividades(acoes, comunidades, upfs, tecnicos, options["atividades"])
+            self._sca(tecnicos, upfs)
 
         self._resumo()
 
@@ -369,11 +375,17 @@ class Command(BaseCommand):
             WorkPlanMeta.objects.all().delete()
             Production.objects.all().delete()
             UPFDocument.objects.all().delete()
-            # titular é OneToOne PROTECT → zerar o vínculo antes de apagar membros
+            # ciclo de exclusão: UPF.titular é PROTECT e Membro.upf é CASCADE —
+            # desligar os membros das UPFs antes de apagar destrava as duas pontas
+            MembroFamilia.objects.update(upf=None)
             UPF.objects.all().delete()
             MembroFamilia.objects.all().delete()
             Comunidade.objects.all().delete()
             Organization.objects.all().delete()
+            # SCA: eventos/conflitos referenciam usuários e dispositivos (SET_NULL)
+            SyncEvent.objects.all().delete()
+            ConflictLog.objects.all().delete()
+            SyncDevice.objects.all().delete()
             UserProfile.objects.filter(
                 user__email__endswith=f"@{DEMO_EMAIL_DOMAIN}"
             ).delete()
@@ -847,6 +859,197 @@ class Command(BaseCommand):
 
     def _telefone(self) -> str:
         return f"({self.rnd.randint(81, 89)}) 9{self.rnd.randint(1000, 9999)}-{self.rnd.randint(1000, 9999)}"
+
+    # ── Bloco SCA (#193) ──────────────────────────────────────────────────────
+
+    SCA_TECNICOS = [
+        ("sca.verde", "Técnico SCA Verde"),
+        ("sca.laranja", "Técnico SCA Laranja"),
+        ("sca.vermelho", "Técnico SCA Vermelho"),
+    ]
+
+    CONEXOES_SCA = ["wifi", "4g", "3g", "2g", "5g", "offline"]
+
+    def _sca(self, tecnicos, upfs):
+        agora = timezone.now()
+        limiar = self._limiar_sync_dias()
+        territorios = list(Territory.objects.order_by("pk"))
+        role_tecnico = Role.objects.get(slug="adt-acr")
+
+        sca_tecnicos = []
+        for i, (usuario_local, nome) in enumerate(self.SCA_TECNICOS):
+            email = f"{usuario_local}@{DEMO_EMAIL_DOMAIN}"
+            user = User.objects.filter(email=email).first()
+            if not user:
+                user = User.objects.create_user(
+                    email=email, nome=nome, password=DEMO_PASSWORD,
+                )
+            UserProfile.objects.get_or_create(
+                user=user,
+                perfil=role_tecnico,
+                territorio=territorios[i % len(territorios)],
+            )
+            sca_tecnicos.append((user, territorios[i % len(territorios)]))
+
+        faixas = [
+            ("dev-seed-verde", agora - timedelta(minutes=30), [0, 1]),
+            ("dev-seed-laranja", agora - timedelta(days=3), [2, 4]),
+            ("dev-seed-vermelho", agora - timedelta(days=limiar + 2), [limiar + 2, limiar + 5]),
+        ]
+
+        conexoes = (self.CONEXOES_SCA * 3)[: len(faixas) * 3]
+        dispositivos = {}
+        eventos_criados = []
+        for idx, (device_id, ultimo_sync, dias) in enumerate(faixas):
+            tecnico, _ = sca_tecnicos[idx]
+            device = SyncDevice.objects.create(
+                user=tecnico,
+                device_id=device_id,
+                nome=device_id.replace("-", " ").title(),
+                modelo=self.rnd.choice(["Samsung Galaxy A14", "Motorola Moto E13", "Xiaomi Redmi 9"]),
+                sistema_operacional=self.rnd.choice(["Android 13", "Android 12", "Android 11"]),
+                app_versao="1.4.0",
+                ultimo_push_em=ultimo_sync,
+                ultimo_pull_em=ultimo_sync - timedelta(minutes=self.rnd.randint(1, 10)),
+            )
+            dispositivos[device_id] = device
+            plano_eventos = [
+                ("push", dias[0], {"enviados": 9}),
+                ("pull", dias[-1], {"recebidos": 38}),
+            ]
+            if device_id == "dev-seed-laranja":
+                plano_eventos.append(("push", 3, {
+                    "enviados": 6,
+                    "erros": [
+                        {"uuid_local": str(uuid4()), "entidade": "upf",
+                         "codigo": "PAYLOAD_INVALIDO",
+                         "mensagem": "CPF inválido no payload."},
+                        {"uuid_local": str(uuid4()), "entidade": "activity",
+                         "codigo": "FORA_TERRITORIO", "mensagem": ""},
+                    ],
+                }))
+            else:
+                plano_eventos.append(("pull", dias[0], {"recebidos": 17}))
+            for tipo, dias_atras, kwargs in plano_eventos:
+                evento = self._evento_sync(
+                    tecnico, device, tipo, dias_atras,
+                    conexoes.pop(0), agora=agora, **kwargs,
+                )
+                eventos_criados.append(evento.pk)
+        SyncEvent.objects.filter(pk__in=eventos_criados).update(
+            finalizado_em=F("iniciado_em") + timedelta(minutes=2),
+        )
+
+        territorio_a = sca_tecnicos[0][1]
+        territorio_b = self._territorio_de_estado_distinto(territorio_a, territorios)
+        tecnico_verde, tecnico_vermelho = sca_tecnicos[0][0], sca_tecnicos[-1][0]
+
+        ConflictLog.objects.create(
+            user=tecnico_verde,
+            device=dispositivos["dev-seed-verde"],
+            entidade="upf",
+            uuid_local=uuid4(),
+            campo="cpf",
+            valor_local="333.555.888-00",
+            valor_servidor="529.982.247-25",
+            estrategia=ConflictLog.Estrategia.LAST_WRITE_WINS,
+            campo_sensivel=True,
+            status=ConflictLog.Status.PENDENTE,
+            territorio=territorio_a,
+        )
+        ConflictLog.objects.create(
+            user=tecnico_vermelho,
+            device=dispositivos["dev-seed-vermelho"],
+            entidade="upf",
+            uuid_local=uuid4(),
+            campo="whatsapp",
+            valor_local="(84) 99999-1111",
+            valor_servidor="(84) 98888-2222",
+            valor_final="(84) 98888-2222",
+            estrategia=ConflictLog.Estrategia.LAST_WRITE_WINS,
+            campo_sensivel=False,
+            status=ConflictLog.Status.RESOLVIDO_AUTO,
+            resolvido_em=agora - timedelta(days=limiar + 1),
+            territorio=territorio_b,
+        )
+
+        if upfs:
+            UPF.objects.filter(pk=upfs[0].pk).update(
+                device_id="dev-mock-001",
+                uuid_local=uuid4(),
+                ultima_origem="sca",
+                ultimo_sync_em=agora - timedelta(hours=2),
+            )
+            MembroFamilia.objects.filter(pk=upfs[0].titular_id).update(
+                device_id="dev-mock-001",
+                uuid_local=uuid4(),
+                ultima_origem="sca",
+                ultimo_sync_em=agora - timedelta(hours=2),
+            )
+        atividade_base = Activity.objects.order_by("pk").first()
+        if atividade_base:
+            Activity.objects.filter(pk=atividade_base.pk).update(
+                device_id="dev-mock-001",
+                uuid_local=uuid4(),
+                ultima_origem="sca",
+                ultimo_sync_em=agora - timedelta(hours=2),
+            )
+
+        alvo_revogacao = next(
+            (t for t in tecnicos if t.email.endswith(f"@{DEMO_EMAIL_DOMAIN}")), None
+        )
+        if alvo_revogacao:
+            User.objects.filter(pk=alvo_revogacao.pk).update(
+                acesso_revogado=True,
+                acesso_revogado_em=agora - timedelta(days=10),
+            )
+
+        self.stdout.write(
+            "SCA: 3 técnicos com dispositivos nas faixas verde/laranja/vermelha, "
+            f"{len(eventos_criados)} eventos de sync e 2 conflitos "
+            "(1 pendente sensível, 1 resolvido automático)"
+        )
+
+    def _limiar_sync_dias(self) -> int:
+        config, _ = SystemConfig.objects.get_or_create(
+            chave="sca_sync_alerta_dias",
+            defaults={
+                "valor": "7",
+                "tipo": "integer",
+                "descricao": "Dias sem sincronização antes de alertar dispositivo SCA.",
+            },
+        )
+        try:
+            return int(config.valor)
+        except (TypeError, ValueError):
+            return 7
+
+    def _evento_sync(self, usuario, device, tipo, dias_atras, conexao, *, agora,
+                     enviados=0, recebidos=0, erros=None):
+        erros = erros or []
+        inicio = agora - timedelta(days=dias_atras, minutes=self.rnd.randint(3, 720))
+        return SyncEvent.objects.create(
+            user=usuario,
+            device=device,
+            tipo=tipo,
+            contagem=max(enviados + recebidos, 1),
+            contagem_enviados=enviados,
+            contagem_recebidos=recebidos,
+            contagem_erros=len(erros),
+            erros_detalhes=list(erros),
+            tipo_conexao=conexao,
+            iniciado_em=inicio,
+        )
+
+    @staticmethod
+    def _territorio_de_estado_distinto(referencia, territorios):
+        estados_ref = set(referencia.estados or [])
+        for territorio in territorios:
+            if territorio.pk != referencia.pk and not (
+                set(territorio.estados or []) & estados_ref
+            ):
+                return territorio
+        return territorios[-1]
 
     def _resumo(self):
         self.stdout.write("")
