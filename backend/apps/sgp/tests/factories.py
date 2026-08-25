@@ -7,6 +7,7 @@ from apps.sgp.models import (
     Comunidade,
     Cultura,
     EspecieAnimal,
+    FormResponse,
     MembroFamilia,
     Production,
     Projeto,
@@ -97,6 +98,21 @@ class UPFDocumentFactory(factory.django.DjangoModelFactory):
         lambda: __import__("datetime").date(2026, 1, 15)
     )
     criado_por = factory.SubFactory(UserFactory)
+
+
+class FormResponseFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = FormResponse
+
+    upf = factory.SubFactory(UPFFactory)
+    formulario_id = factory.Sequence(lambda n: n + 1)
+    formulario_nome = factory.Sequence(lambda n: f"Formulário {n}")
+    formulario_versao = "1.0"
+    data_preenchimento = factory.LazyFunction(timezone.now)
+    respondente = "Técnico de Campo"
+    status = FormResponse.Status.SUBMETIDO
+    respostas_json = factory.LazyFunction(lambda: {"pergunta_1": "resposta"})
+    origem = FormResponse.Origem.WEB
 
 
 class CulturaFactory(factory.django.DjangoModelFactory):
