@@ -67,6 +67,8 @@ def upfs_acessiveis_ao_usuario(user):
             return qs.none()
         return qs.filter(territorio__in=territories)
     return qs.none()
+
+
 from apps.sgp.pagination import (
     ActivityPagination, CatalogoPagination, HistoricoPagination, UPFPagination
 )
@@ -173,23 +175,16 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
         ).prefetch_related("membros").all()
 
         user = self.request.user
+        if not (
+            user_has_role(user, "super-admin")
+            or user_has_role(user, "ugp")
+            or user_has_role(user, "articulador-estadual")
+            or user_has_role(user, "adt-acr")
+        ):
+            raise PermissionDenied("Você não tem acesso ao módulo SGP.")
 
-        if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
-            return qs
-
-        if user_has_role(user, "articulador-estadual"):
-            states = user_states(user)
-            if not states:
-                return qs.none()
-            return qs.filter(municipio__state__sigla__in=states)
-
-        if user_has_role(user, "adt-acr"):
-            territories = user_territories(user)
-            if not territories.exists():
-                return qs.none()
-            return qs.filter(territorio__in=territories)
-
-        raise PermissionDenied("Você não tem acesso ao módulo SGP.")
+        pks = upfs_acessiveis_ao_usuario(user).values_list("pk", flat=True)
+        return qs.filter(pk__in=pks)
 
     @extend_schema(
         parameters=[
@@ -637,7 +632,14 @@ class MembroViewSet(viewsets.ModelViewSet):
             raise serializers.ValidationError(
                 "Não é possível adicionar membros a uma UPF inativa"
             )
-        instance = serializer.save(upf=upf, criado_por=self.request.user, ultima_origem="web")
+        try:
+            instance = serializer.save(upf=upf, criado_por=self.request.user, ultima_origem="web")
+        except IntegrityError as e:
+            if "unique_cpf_global" in str(e):
+                raise serializers.ValidationError(
+                    {"cpf": "Já existe um membro cadastrado com este CPF"}
+                )
+            raise
         AuditLog.objects.create(
             user=self.request.user,
             acao="MEMBRO.create",
@@ -656,6 +658,11 @@ class MembroViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         old = self.get_object()
+        if old.pk == old.upf.titular_id and "parentesco" in serializer.validated_data:
+            if serializer.validated_data["parentesco"] != "titular":
+                raise serializers.ValidationError(
+                    {"parentesco": "Não é possível alterar o parentesco do titular. Use o endpoint de transferência de titularidade."}
+                )
         valores_anteriores = {
             "membro_id": old.pk,
             "upf_id": old.upf_id,
@@ -663,7 +670,14 @@ class MembroViewSet(viewsets.ModelViewSet):
             "parentesco": old.parentesco,
             "cpf": old.cpf,
         }
-        instance = serializer.save(ultima_origem="web")
+        try:
+            instance = serializer.save(ultima_origem="web")
+        except IntegrityError as e:
+            if "unique_cpf_global" in str(e):
+                raise serializers.ValidationError(
+                    {"cpf": "Já existe um membro cadastrado com este CPF"}
+                )
+            raise
         AuditLog.objects.create(
             user=self.request.user,
             acao="MEMBRO.update",
@@ -723,44 +737,29 @@ class MembroViewSet(viewsets.ModelViewSet):
         total = membros.count()
         tem_titular = membros.filter(parentesco="titular").exists()
 
-        # Expressão de idade calculada no banco
-        idade_expr = (
-            hoje.year - Coalesce("data_nasc__year", Value(hoje.year))
-        )
-        idade_ajustada = Case(
-            When(
-                Q(data_nasc__month__gt=hoje.month)
-                | (Q(data_nasc__month=hoje.month) & Q(data_nasc__day__gt=hoje.day)),
-                then=idade_expr - 1,
-            ),
-            default=idade_expr,
-            output_field=IntegerField(),
-        )
+        def _data_limite(anos):
+            return date(hoje.year - anos, hoje.month, hoje.day)
 
         faixa_agg = membros.aggregate(
             faixa_0_11=Count(
                 "pk",
-                filter=Q(data_nasc__isnull=False) & Q(data_nasc__year__gte=hoje.year - 11)
-                & ~Q(
-                    Q(data_nasc__month__gt=hoje.month)
-                    | (Q(data_nasc__month=hoje.month) & Q(data_nasc__day__gt=hoje.day))
-                )
+                filter=Q(data_nasc__isnull=False) & Q(data_nasc__gte=_data_limite(11))
             ),
             faixa_12_17=Count(
                 "pk",
                 filter=Q(data_nasc__isnull=False)
-                & Q(data_nasc__year__lte=hoje.year - 12)
-                & Q(data_nasc__year__gte=hoje.year - 17)
+                & Q(data_nasc__lt=_data_limite(11))
+                & Q(data_nasc__gte=_data_limite(17))
             ),
             faixa_18_59=Count(
                 "pk",
                 filter=Q(data_nasc__isnull=False)
-                & Q(data_nasc__year__lte=hoje.year - 18)
-                & Q(data_nasc__year__gte=hoje.year - 59)
+                & Q(data_nasc__lt=_data_limite(17))
+                & Q(data_nasc__gte=_data_limite(59))
             ),
             faixa_60_mais=Count(
                 "pk",
-                filter=Q(data_nasc__isnull=False) & Q(data_nasc__year__lte=hoje.year - 60)
+                filter=Q(data_nasc__isnull=False) & Q(data_nasc__lt=_data_limite(59))
             ),
             sem_data_nasc=Count("pk", filter=Q(data_nasc__isnull=True)),
         )
@@ -770,20 +769,20 @@ class MembroViewSet(viewsets.ModelViewSet):
             "12-17": faixa_agg["faixa_12_17"],
             "18-59": faixa_agg["faixa_18_59"],
             "60+": faixa_agg["faixa_60_mais"],
+            "sem_data_nascimento": faixa_agg["sem_data_nasc"],
         }
 
-        # Gênero via SQL
         genero_agg = membros.aggregate(
             masculino=Count("pk", filter=Q(genero=1)),
             feminino=Count("pk", filter=Q(genero=2)),
-            outro=Count("pk", filter=Q(genero=3)),
+            nao_binario=Count("pk", filter=Q(genero=3)),
             nao_informado=Count("pk", filter=Q(genero=4) | Q(genero__isnull=True)),
         )
 
         genero = {
             "masculino": genero_agg["masculino"],
             "feminino": genero_agg["feminino"],
-            "outro": genero_agg["outro"],
+            "nao_binario": genero_agg["nao_binario"],
             "nao_informado": genero_agg["nao_informado"],
         }
 
@@ -796,27 +795,39 @@ class MembroViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="transferir-titularidade")
     def transferir_titularidade(self, request, upf_pk=None):
-        upf = self.get_upf()
         novo_titular_id = request.data.get("novo_titular_id")
         if not novo_titular_id:
             raise serializers.ValidationError(
                 {"novo_titular_id": "Campo obrigatório."}
             )
 
-        try:
-            novo_titular = MembroFamilia.objects.get(pk=novo_titular_id, upf=upf)
-        except MembroFamilia.DoesNotExist:
-            raise serializers.ValidationError(
-                {"novo_titular_id": "Membro não encontrado nesta UPF."}
-            )
-
-        if novo_titular.pk == upf.titular_id:
-            raise serializers.ValidationError(
-                {"novo_titular_id": "Este membro já é o titular."}
-            )
-
-        antigo_titular = upf.titular
         with transaction.atomic():
+            upf = UPF.objects.select_for_update().get(pk=self.kwargs["upf_pk"])
+            upfs_visiveis = upfs_acessiveis_ao_usuario(request.user)
+            if not upfs_visiveis.filter(pk=upf.pk).exists():
+                from django.shortcuts import get_object_or_404
+                get_object_or_404(UPF, pk=self.kwargs["upf_pk"])
+
+            try:
+                novo_titular = MembroFamilia.objects.select_for_update().get(
+                    pk=novo_titular_id, upf=upf
+                )
+            except MembroFamilia.DoesNotExist:
+                raise serializers.ValidationError(
+                    {"novo_titular_id": "Membro não encontrado nesta UPF."}
+                )
+
+            if novo_titular.pk == upf.titular_id:
+                raise serializers.ValidationError(
+                    {"novo_titular_id": "Este membro já é o titular."}
+                )
+
+            antigo_titular = upf.titular
+            if antigo_titular:
+                antigo_titular = MembroFamilia.objects.select_for_update().get(pk=antigo_titular.pk)
+
+            antigo_titular_parentesco_anterior = antigo_titular.parentesco if antigo_titular else None
+
             if antigo_titular:
                 antigo_titular.parentesco = "filho"
                 antigo_titular.save(update_fields=["parentesco"])
@@ -824,6 +835,28 @@ class MembroViewSet(viewsets.ModelViewSet):
             novo_titular.save(update_fields=["parentesco"])
             upf.titular = novo_titular
             upf.save(update_fields=["titular"])
+
+        AuditLog.objects.create(
+            user=request.user,
+            acao="MEMBRO.transferir_titularidade",
+            modulo="sgp",
+            entidade="UPF",
+            entidade_id=str(upf.pk),
+            valores_anteriores={
+                "upf_id": upf.pk,
+                "antigo_titular_id": antigo_titular.pk if antigo_titular else None,
+                "antigo_titular_nome": antigo_titular.nome_completo if antigo_titular else None,
+                "antigo_titular_parentesco": antigo_titular_parentesco_anterior,
+            },
+            valores_novos={
+                "upf_id": upf.pk,
+                "novo_titular_id": novo_titular.pk,
+                "novo_titular_nome": novo_titular.nome_completo,
+                "novo_titular_parentesco": "titular",
+            },
+            ip=request.META.get("REMOTE_ADDR"),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+        )
 
         return Response({
             "detail": "Titularidade transferida com sucesso.",
@@ -836,38 +869,6 @@ class MembroViewSet(viewsets.ModelViewSet):
                 "nome_completo": antigo_titular.nome_completo,
             } if antigo_titular else None,
         })
-
-    def perform_update(self, serializer):
-        old = self.get_object()
-        if old.pk == old.upf.titular_id and "parentesco" in serializer.validated_data:
-            if serializer.validated_data["parentesco"] != "titular":
-                raise serializers.ValidationError(
-                    {"parentesco": "Não é possível alterar o parentesco do titular. Use o endpoint de transferência de titularidade."}
-                )
-        valores_anteriores = {
-            "membro_id": old.pk,
-            "upf_id": old.upf_id,
-            "nome_completo": old.nome_completo,
-            "parentesco": old.parentesco,
-            "cpf": old.cpf,
-        }
-        instance = serializer.save(ultima_origem="web")
-        AuditLog.objects.create(
-            user=self.request.user,
-            acao="MEMBRO.update",
-            modulo="sgp",
-            entidade="MembroFamilia",
-            entidade_id=str(instance.pk),
-            valores_anteriores=valores_anteriores,
-            valores_novos={
-                "membro_id": instance.pk,
-                "nome_completo": instance.nome_completo,
-                "parentesco": instance.parentesco,
-                "upf_id": instance.upf_id,
-            },
-            ip=self.request.META.get("REMOTE_ADDR"),
-            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
-        )
 
 
 class ProjetoViewSet(viewsets.ModelViewSet):
