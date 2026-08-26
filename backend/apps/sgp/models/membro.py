@@ -143,9 +143,15 @@ class MembroFamilia(models.Model):
                 condition=models.Q(parentesco="titular"),
                 name="unique_titular_por_upf",
             ),
+            models.UniqueConstraint(
+                fields=["cpf"],
+                condition=models.Q(cpf__gt=""),
+                name="unique_cpf_global",
+            ),
         ]
         indexes = [
             models.Index(fields=["upf"], name="idx_membro_upf"),
+            models.Index(fields=["cpf"], name="idx_membro_cpf"),
         ]
 
     def __str__(self):
