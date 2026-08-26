@@ -428,7 +428,6 @@ class UPFDetailSerializer(serializers.ModelSerializer):
 
 
 class MembroListSerializer(serializers.ModelSerializer):
-    nome = serializers.CharField(source="nome_completo", read_only=True)
     idade = serializers.SerializerMethodField()
     parentesco_display = serializers.CharField(
         source="get_parentesco_display", read_only=True
@@ -443,7 +442,7 @@ class MembroListSerializer(serializers.ModelSerializer):
     class Meta:
         model = MembroFamilia
         fields = [
-            "id", "nome", "data_nasc", "idade",
+            "id", "nome_completo", "data_nasc", "idade",
             "parentesco", "parentesco_display", "cpf",
             "genero", "genero_display",
             "cor_raca", "cor_raca_display",
@@ -461,7 +460,6 @@ class MembroListSerializer(serializers.ModelSerializer):
 
 
 class MembroDetailSerializer(serializers.ModelSerializer):
-    nome = serializers.CharField(source="nome_completo")
     idade = serializers.SerializerMethodField()
     parentesco_display = serializers.CharField(
         source="get_parentesco_display", read_only=True
@@ -482,7 +480,7 @@ class MembroDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = MembroFamilia
         fields = [
-            "id", "upf", "nome", "data_nasc", "idade",
+            "id", "upf", "nome_completo", "data_nasc", "idade",
             "cpf", "rg", "nis", "caf", "parentesco",
             "parentesco_display",
             "genero", "genero_display",
@@ -490,7 +488,6 @@ class MembroDetailSerializer(serializers.ModelSerializer):
             "escola", "seguridade_social", "saude",
             "escolaridade", "escolaridade_display",
             "criado_por", "criado_em", "atualizado_em",
-            # Sync SCA
             "device_id", "uuid_local", "ultima_origem", "ultimo_sync_em",
         ]
         validators = []
@@ -533,11 +530,10 @@ class MembroDetailSerializer(serializers.ModelSerializer):
             qs = qs.exclude(pk=self.instance.pk)
         duplicado = qs.first()
         if duplicado:
-            # Verifica se o membro duplicado está no território do usuário
             user = self.context["request"].user
-            territorios_usuario = user_territories(user)
-            upfs_do_usuario = territorios_usuario.values_list("upfs__id", flat=True) if territorios_usuario.exists() else []
-            if duplicado.upf_id in upfs_do_usuario:
+            from apps.sgp.views import upfs_acessiveis_ao_usuario
+            upfs_visiveis = upfs_acessiveis_ao_usuario(user)
+            if duplicado.upf_id in upfs_visiveis.values_list("pk", flat=True):
                 raise serializers.ValidationError(
                     "Já existe um membro cadastrado com este CPF: "
                     f"{duplicado.nome_completo} (UPF {duplicado.upf_id})"
@@ -559,12 +555,36 @@ class MembroDetailSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "Saúde deve ser uma lista de strings"
             )
+        if len(value) != len(set(value)):
+            raise serializers.ValidationError("Condições de saúde não podem conter duplicidades.")
         for item in value:
             if item not in SAUDE_CHOICES:
                 raise serializers.ValidationError(
                     f"'{item}' não é um valor válido para saúde. "
                     f"Valores permitidos: {', '.join(SAUDE_CHOICES)}"
                 )
+        if "nenhuma" in value and len(value) > 1:
+            raise serializers.ValidationError(
+                "A opção 'nenhuma' é mutuamente exclusiva com outras condições."
+            )
+        return value
+
+    def validate_seguridade_social(self, value):
+        from apps.sgp.constants import SEGURIDADE_SOCIAL_CHOICES
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Seguridade social deve ser uma lista de strings.")
+        if len(value) != len(set(value)):
+            raise serializers.ValidationError("Seguridade social não pode conter duplicidades.")
+        for item in value:
+            if item not in SEGURIDADE_SOCIAL_CHOICES:
+                raise serializers.ValidationError(
+                    f"'{item}' não é um valor válido para seguridade social. "
+                    f"Valores permitidos: {', '.join(SEGURIDADE_SOCIAL_CHOICES)}"
+                )
+        if "nenhum" in value and len(value) > 1:
+            raise serializers.ValidationError(
+                "A opção 'nenhum' é mutuamente exclusiva com outros benefícios."
+            )
         return value
 
 
@@ -703,6 +723,32 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         queryset=MembroFamilia.objects.all(),
         many=True, required=False,
     )
+
+    def _get_upfs_visiveis(self):
+        user = self.context["request"].user
+        from apps.sgp.views import upfs_acessiveis_ao_usuario
+        return upfs_acessiveis_ao_usuario(user)
+
+    def validate_upfs_participantes(self, value):
+        upfs_visiveis_pks = set(self._get_upfs_visiveis().values_list("pk", flat=True))
+        invalidas = [upf.pk for upf in value if upf.pk not in upfs_visiveis_pks]
+        if invalidas:
+            raise serializers.ValidationError(
+                f"UPFs {invalidas} não são acessíveis ao seu perfil."
+            )
+        return value
+
+    def validate_membros_participantes(self, value):
+        upfs_visiveis_pks = set(self._get_upfs_visiveis().values_list("pk", flat=True))
+        invalidos = [
+            m.pk for m in value
+            if not m.upf_id or m.upf_id not in upfs_visiveis_pks
+        ]
+        if invalidos:
+            raise serializers.ValidationError(
+                f"Membros {invalidos} não pertencem a UPFs acessíveis ao seu perfil."
+            )
+        return value
 
     class Meta:
         model = Activity
@@ -855,13 +901,29 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
                     "code": "VALIDATION_ERROR",
                 })
             elif instance is None:
-                # Nova atividade já criada como 'concluido' — bloquear
                 raise serializers.ValidationError({
                     "status": (
                         "Não é possível criar uma atividade já com status 'concluido'. "
                         "Inicie como 'planejado' e avance o status progressivamente."
                     ),
                     "code": "VALIDATION_ERROR",
+                })
+
+        # Validação cruzada: membros devem pertencer às UPFs selecionadas
+        upfs_ids = set()
+        if "upfs_participantes" in attrs:
+            upfs_ids = {upf.pk for upf in attrs["upfs_participantes"]}
+        elif self.instance:
+            upfs_ids = set(self.instance.upfs_participantes.values_list("pk", flat=True))
+
+        membros = attrs.get("membros_participantes")
+        if membros is not None and upfs_ids:
+            invalidos = [m.pk for m in membros if m.upf_id not in upfs_ids]
+            if invalidos:
+                raise serializers.ValidationError({
+                    "membros_participantes": (
+                        f"Membros {invalidos} não pertencem às UPFs participantes selecionadas."
+                    ),
                 })
 
         return attrs
