@@ -21,6 +21,7 @@ from apps.sgp.models import (
 )
 from apps.sgp.models.activity import STATUS_TRANSITIONS, STATUS_TERMINAIS
 
+from apps.core.services.permissions import user_territories
 from apps.sgp.validators import validate_cpf
 
 
@@ -527,7 +528,20 @@ class MembroDetailSerializer(serializers.ModelSerializer):
         if not value:
             return ""
         value = validate_cpf(value)
-        if MembroFamilia.objects.filter(cpf=value).exclude(pk=self.instance.pk if self.instance else None).exists():
+        qs = MembroFamilia.objects.filter(cpf=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        duplicado = qs.first()
+        if duplicado:
+            # Verifica se o membro duplicado está no território do usuário
+            user = self.context["request"].user
+            territorios_usuario = user_territories(user)
+            upfs_do_usuario = territorios_usuario.values_list("upfs__id", flat=True) if territorios_usuario.exists() else []
+            if duplicado.upf_id in upfs_do_usuario:
+                raise serializers.ValidationError(
+                    "Já existe um membro cadastrado com este CPF: "
+                    f"{duplicado.nome_completo} (UPF {duplicado.upf_id})"
+                )
             raise serializers.ValidationError(
                 "Já existe um membro cadastrado com este CPF"
             )
