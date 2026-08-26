@@ -13,7 +13,11 @@ from .views import (
     UPFDocumentViewSet,
     ProjetoViewSet,
 )
-from .views.form_responses import FormResponseViewSet
+from .views.form_responses import (
+    AvailableFormListView,
+    FormResponseReceiveView,
+    FormResponseViewSet,
+)
 from .views.workplan import (
     WorkPlanAcaoViewSet,
     WorkPlanDashboardView,
@@ -79,6 +83,16 @@ urlpatterns = router.urls + [
         name="workplan-power-bi",
     ),
     path("sgp/", include(sgp_router.urls)),
+    path(
+        "sgp/formularios-disponiveis/",
+        AvailableFormListView.as_view(),
+        name="formularios-disponiveis-list",
+    ),
+    path(
+        "sgp/formularios/respostas/",
+        FormResponseReceiveView.as_view(),
+        name="formulario-resposta-receive",
+    ),
     path(
         "sgp/upfs/<int:upf_pk>/formularios/",
         form_response_list,
