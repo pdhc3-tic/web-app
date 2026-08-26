@@ -157,7 +157,7 @@ class TitularNestedSerializer(serializers.ModelSerializer):
     class Meta:
         model = MembroFamilia
         fields = [
-            "id", "nome_completo", "cpf", "rg", "data_nasc",
+            "id", "nome_completo", "cpf", "rg", "data_nascimento",
             "genero", "genero_display",
             "cor_raca", "cor_raca_display",
             "escolaridade", "escolaridade_display",
@@ -167,11 +167,11 @@ class TitularNestedSerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
 
     def get_idade(self, obj):
-        if obj.data_nasc:
+        if obj.data_nascimento:
             today = date.today()
             return (
-                today.year - obj.data_nasc.year
-                - ((today.month, today.day) < (obj.data_nasc.month, obj.data_nasc.day))
+                today.year - obj.data_nascimento.year
+                - ((today.month, today.day) < (obj.data_nascimento.month, obj.data_nascimento.day))
             )
         return None
 
@@ -251,9 +251,9 @@ class UPFDetailSerializer(serializers.ModelSerializer):
         write_only=True, required=False, allow_blank=True, default="",
         source="_titular_rg",
     )
-    data_nasc = serializers.DateField(
+    data_nascimento = serializers.DateField(
         write_only=True, required=False, allow_null=True, default=None,
-        source="_titular_data_nasc",
+        source="_titular_data_nascimento",
     )
     genero = serializers.IntegerField(
         write_only=True, required=False, allow_null=True, default=None,
@@ -292,7 +292,7 @@ class UPFDetailSerializer(serializers.ModelSerializer):
         model = UPF
         fields = [
             "id", "projeto",
-            "nome", "cpf", "rg", "data_nasc",
+            "nome", "cpf", "rg", "data_nascimento",
             "genero", "cor_raca", "escolaridade",
             "nis",
             "titular",
@@ -348,7 +348,7 @@ class UPFDetailSerializer(serializers.ModelSerializer):
             "_titular_nome": "nome_completo",
             "_titular_cpf": "cpf",
             "_titular_rg": "rg",
-            "_titular_data_nasc": "data_nasc",
+            "_titular_data_nascimento": "data_nascimento",
             "_titular_genero": "genero",
             "_titular_cor_raca": "cor_raca",
             "_titular_escolaridade": "escolaridade",
@@ -396,7 +396,7 @@ class UPFDetailSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         upf_fields = self._upf_fields(validated_data)
         titular_data = self._extract_titular_data(validated_data)
-        titular = MembroFamilia.objects.create(parentesco="titular", **titular_data)
+        titular = MembroFamilia.objects.create(grau_parentesco="titular", **titular_data)
         upf = UPF.objects.create(titular=titular, **upf_fields)
         titular.upf = upf
         titular.save(update_fields=["upf"])
@@ -429,8 +429,8 @@ class UPFDetailSerializer(serializers.ModelSerializer):
 
 class MembroListSerializer(serializers.ModelSerializer):
     idade = serializers.SerializerMethodField()
-    parentesco_display = serializers.CharField(
-        source="get_parentesco_display", read_only=True
+    grau_parentesco_display = serializers.CharField(
+        source="get_grau_parentesco_display", read_only=True
     )
     genero_display = serializers.CharField(
         source="get_genero_display", read_only=True
@@ -442,27 +442,27 @@ class MembroListSerializer(serializers.ModelSerializer):
     class Meta:
         model = MembroFamilia
         fields = [
-            "id", "nome_completo", "data_nasc", "idade",
-            "parentesco", "parentesco_display", "cpf",
+            "id", "nome_completo", "data_nascimento", "idade",
+            "grau_parentesco", "grau_parentesco_display", "cpf",
             "genero", "genero_display",
             "cor_raca", "cor_raca_display",
             "criado_em",
         ]
 
     def get_idade(self, obj):
-        if obj.data_nasc:
+        if obj.data_nascimento:
             today = date.today()
             return (
-                today.year - obj.data_nasc.year
-                - ((today.month, today.day) < (obj.data_nasc.month, obj.data_nasc.day))
+                today.year - obj.data_nascimento.year
+                - ((today.month, today.day) < (obj.data_nascimento.month, obj.data_nascimento.day))
             )
         return None
 
 
 class MembroDetailSerializer(serializers.ModelSerializer):
     idade = serializers.SerializerMethodField()
-    parentesco_display = serializers.CharField(
-        source="get_parentesco_display", read_only=True
+    grau_parentesco_display = serializers.CharField(
+        source="get_grau_parentesco_display", read_only=True
     )
     genero_display = serializers.CharField(
         source="get_genero_display", read_only=True
@@ -480,9 +480,9 @@ class MembroDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = MembroFamilia
         fields = [
-            "id", "upf", "nome_completo", "data_nasc", "idade",
-            "cpf", "rg", "nis", "caf", "parentesco",
-            "parentesco_display",
+            "id", "upf", "nome_completo", "data_nascimento", "idade",
+            "cpf", "rg", "nis", "caf", "grau_parentesco",
+            "grau_parentesco_display",
             "genero", "genero_display",
             "cor_raca", "cor_raca_display",
             "escola", "seguridade_social", "saude",
@@ -496,7 +496,7 @@ class MembroDetailSerializer(serializers.ModelSerializer):
             "device_id", "uuid_local", "ultima_origem", "ultimo_sync_em",
         ]
 
-    def validate_parentesco(self, value):
+    def validate_grau_parentesco(self, value):
         if value == "titular":
             upf_id = self.instance.upf_id if self.instance else None
             if not upf_id:
@@ -513,11 +513,11 @@ class MembroDetailSerializer(serializers.ModelSerializer):
         return value
 
     def get_idade(self, obj):
-        if obj.data_nasc:
+        if obj.data_nascimento:
             today = date.today()
             return (
-                today.year - obj.data_nasc.year
-                - ((today.month, today.day) < (obj.data_nasc.month, obj.data_nasc.day))
+                today.year - obj.data_nascimento.year
+                - ((today.month, today.day) < (obj.data_nascimento.month, obj.data_nascimento.day))
             )
         return None
 
@@ -543,7 +543,7 @@ class MembroDetailSerializer(serializers.ModelSerializer):
             )
         return value
 
-    def validate_data_nasc(self, value):
+    def validate_data_nascimento(self, value):
         if value and value > date.today():
             raise serializers.ValidationError(
                 "Data de nascimento não pode ser uma data futura"

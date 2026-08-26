@@ -246,7 +246,7 @@ def upf_payload_completo(projeto, municipio):
         "nome": "João Oliveira",
         "cpf": "52998224725",
         "rg": "1234567",
-        "data_nasc": "1985-03-15",
+        "data_nascimento": "1985-03-15",
         "genero": 1,
         "escolaridade": 7,
         "nis": "12345678901",
@@ -270,7 +270,7 @@ def upf_payload_completo(projeto, municipio):
 def membro_payload_minimo(upf):
     return {
         "nome_completo": "João Filho",
-        "parentesco": "filho",
+        "grau_parentesco": "filho",
     }
 
 
@@ -278,8 +278,8 @@ def membro_payload_minimo(upf):
 def titular_payload(upf):
     return {
         "nome_completo": "Maria Titular",
-        "parentesco": "titular",
-        "data_nasc": "1980-05-10",
+        "grau_parentesco": "titular",
+        "data_nascimento": "1980-05-10",
     }
 
 
@@ -288,7 +288,7 @@ def membro(upf):
     return MembroFactory(
         upf=upf,
         nome_completo="Membro Existente",
-        parentesco="filho",
+        grau_parentesco="filho",
     )
 
 
@@ -297,7 +297,7 @@ def membro_outra_upf(outra_upf):
     return MembroFactory(
         upf=outra_upf,
         nome_completo="Membro de Outra UPF",
-        parentesco="filho",
+        grau_parentesco="filho",
     )
 
 

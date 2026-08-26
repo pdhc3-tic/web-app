@@ -577,10 +577,10 @@ class TestPerformanceIndexes:
         titulars = [
             MembroFamilia(
                 upf=None,
-                parentesco="titular",
+                grau_parentesco="titular",
                 nome_completo=f"Titular {i}",
                 cpf=f"{i + 10000000000:011d}",
-                data_nasc="1990-01-01",
+                data_nascimento="1990-01-01",
             )
             for i in range(5000)
         ]

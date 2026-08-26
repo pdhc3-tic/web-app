@@ -649,7 +649,7 @@ class MembroViewSet(viewsets.ModelViewSet):
             valores_novos={
                 "membro_id": instance.pk,
                 "nome_completo": instance.nome_completo,
-                "parentesco": instance.parentesco,
+                "grau_parentesco": instance.grau_parentesco,
                 "upf_id": instance.upf_id,
             },
             ip=self.request.META.get("REMOTE_ADDR"),
@@ -658,16 +658,16 @@ class MembroViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         old = self.get_object()
-        if old.pk == old.upf.titular_id and "parentesco" in serializer.validated_data:
-            if serializer.validated_data["parentesco"] != "titular":
+        if old.pk == old.upf.titular_id and "grau_parentesco" in serializer.validated_data:
+            if serializer.validated_data["grau_parentesco"] != "titular":
                 raise serializers.ValidationError(
-                    {"parentesco": "Não é possível alterar o parentesco do titular. Use o endpoint de transferência de titularidade."}
+                    {"grau_parentesco": "Não é possível alterar o parentesco do titular. Use o endpoint de transferência de titularidade."}
                 )
         valores_anteriores = {
             "membro_id": old.pk,
             "upf_id": old.upf_id,
             "nome_completo": old.nome_completo,
-            "parentesco": old.parentesco,
+            "grau_parentesco": old.grau_parentesco,
             "cpf": old.cpf,
         }
         try:
@@ -688,7 +688,7 @@ class MembroViewSet(viewsets.ModelViewSet):
             valores_novos={
                 "membro_id": instance.pk,
                 "nome_completo": instance.nome_completo,
-                "parentesco": instance.parentesco,
+                "grau_parentesco": instance.grau_parentesco,
                 "upf_id": instance.upf_id,
             },
             ip=self.request.META.get("REMOTE_ADDR"),
@@ -716,7 +716,7 @@ class MembroViewSet(viewsets.ModelViewSet):
                 "membro_id": instance.pk,
                 "upf_id": instance.upf_id,
                 "nome_completo": instance.nome_completo,
-                "parentesco": instance.parentesco,
+                "grau_parentesco": instance.grau_parentesco,
             },
             valores_novos={},
             ip=self.request.META.get("REMOTE_ADDR"),
@@ -735,7 +735,7 @@ class MembroViewSet(viewsets.ModelViewSet):
         membros = MembroFamilia.objects.filter(upf=upf)
 
         total = membros.count()
-        tem_titular = membros.filter(parentesco="titular").exists()
+        tem_titular = membros.filter(grau_parentesco="titular").exists()
 
         def _data_limite(anos):
             return date(hoje.year - anos, hoje.month, hoje.day)
@@ -743,25 +743,25 @@ class MembroViewSet(viewsets.ModelViewSet):
         faixa_agg = membros.aggregate(
             faixa_0_11=Count(
                 "pk",
-                filter=Q(data_nasc__isnull=False) & Q(data_nasc__gte=_data_limite(11))
+                filter=Q(data_nascimento__isnull=False) & Q(data_nascimento__gte=_data_limite(11))
             ),
             faixa_12_17=Count(
                 "pk",
-                filter=Q(data_nasc__isnull=False)
-                & Q(data_nasc__lt=_data_limite(11))
-                & Q(data_nasc__gte=_data_limite(17))
+                filter=Q(data_nascimento__isnull=False)
+                & Q(data_nascimento__lt=_data_limite(11))
+                & Q(data_nascimento__gte=_data_limite(17))
             ),
             faixa_18_59=Count(
                 "pk",
-                filter=Q(data_nasc__isnull=False)
-                & Q(data_nasc__lt=_data_limite(17))
-                & Q(data_nasc__gte=_data_limite(59))
+                filter=Q(data_nascimento__isnull=False)
+                & Q(data_nascimento__lt=_data_limite(17))
+                & Q(data_nascimento__gte=_data_limite(59))
             ),
             faixa_60_mais=Count(
                 "pk",
-                filter=Q(data_nasc__isnull=False) & Q(data_nasc__lt=_data_limite(59))
+                filter=Q(data_nascimento__isnull=False) & Q(data_nascimento__lt=_data_limite(59))
             ),
-            sem_data_nasc=Count("pk", filter=Q(data_nasc__isnull=True)),
+            sem_data_nasc=Count("pk", filter=Q(data_nascimento__isnull=True)),
         )
 
         faixa_etaria = {
@@ -826,13 +826,13 @@ class MembroViewSet(viewsets.ModelViewSet):
             if antigo_titular:
                 antigo_titular = MembroFamilia.objects.select_for_update().get(pk=antigo_titular.pk)
 
-            antigo_titular_parentesco_anterior = antigo_titular.parentesco if antigo_titular else None
+            antigo_titular_grau_parentesco_anterior = antigo_titular.grau_parentesco if antigo_titular else None
 
             if antigo_titular:
-                antigo_titular.parentesco = "filho"
-                antigo_titular.save(update_fields=["parentesco"])
-            novo_titular.parentesco = "titular"
-            novo_titular.save(update_fields=["parentesco"])
+                antigo_titular.grau_parentesco = "filho"
+                antigo_titular.save(update_fields=["grau_parentesco"])
+            novo_titular.grau_parentesco = "titular"
+            novo_titular.save(update_fields=["grau_parentesco"])
             upf.titular = novo_titular
             upf.save(update_fields=["titular"])
 
@@ -846,13 +846,13 @@ class MembroViewSet(viewsets.ModelViewSet):
                 "upf_id": upf.pk,
                 "antigo_titular_id": antigo_titular.pk if antigo_titular else None,
                 "antigo_titular_nome": antigo_titular.nome_completo if antigo_titular else None,
-                "antigo_titular_parentesco": antigo_titular_parentesco_anterior,
+                "antigo_titular_grau_parentesco": antigo_titular_grau_parentesco_anterior,
             },
             valores_novos={
                 "upf_id": upf.pk,
                 "novo_titular_id": novo_titular.pk,
                 "novo_titular_nome": novo_titular.nome_completo,
-                "novo_titular_parentesco": "titular",
+                "novo_titular_grau_parentesco": "titular",
             },
             ip=request.META.get("REMOTE_ADDR"),
             user_agent=request.META.get("HTTP_USER_AGENT", ""),
@@ -899,7 +899,7 @@ class SGPChoicesView(APIView):
             "material_construcao": [{"value": v, "label": l} for v, l in MATERIAL_CONSTRUCAO_CHOICES],
             "energia": [{"value": v, "label": l} for v, l in ENERGIA_CHOICES],
             "agua": [{"value": v, "label": l} for v, l in AGUA_CHOICES],
-            "parentesco": [{"value": v, "label": l} for v, l in PARENTESCO_CHOICES],
+            "grau_parentesco": [{"value": v, "label": l} for v, l in PARENTESCO_CHOICES],
             "saude": [{"value": v, "label": v} for v in SAUDE_CHOICES],
         }
         return Response(choices)
