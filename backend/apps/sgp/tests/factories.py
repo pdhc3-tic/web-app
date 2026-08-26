@@ -30,6 +30,7 @@ class UPFFactory(factory.django.DjangoModelFactory):
         model = UPF
 
     _titular_nome = factory.Sequence(lambda n: f"Titular {n}")
+    _titular_cpf = factory.Sequence(lambda n: f"{n:011d}")
     projeto = factory.SubFactory(ProjetoFactory)
     municipio = factory.SubFactory(MunicipalityFactory)
     territorio = factory.SelfAttribute("municipio.territory")
@@ -38,7 +39,7 @@ class UPFFactory(factory.django.DjangoModelFactory):
     @classmethod
     def _create(cls, model_class, *args, **kwargs):
         titular_nome = kwargs.pop("_titular_nome")
-        titular_cpf = kwargs.pop("cpf", kwargs.pop("titular_cpf", "86288366757"))
+        titular_cpf = kwargs.pop("cpf", kwargs.pop("titular_cpf", kwargs.pop("_titular_cpf")))
         titular = MembroFamilia(
             upf=None,
             parentesco="titular",

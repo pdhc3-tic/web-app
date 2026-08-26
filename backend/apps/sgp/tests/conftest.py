@@ -113,18 +113,18 @@ def outro_projeto(db):
 
 
 @pytest.fixture
-def upf(db, municipio, projeto):
+def upf(db, municipio_rn, projeto):
     return UPFFactory(
-        municipio=municipio,
+        municipio=municipio_rn,
         projeto=projeto,
         ativa=True,
     )
 
 
 @pytest.fixture
-def upf_inativa(db, municipio, projeto):
+def upf_inativa(db, municipio_rn, projeto):
     return UPFFactory(
-        municipio=municipio,
+        municipio=municipio_rn,
         projeto=projeto,
         ativa=False,
     )
@@ -136,6 +136,15 @@ def outra_upf(db, municipio, projeto):
         municipio=municipio,
         projeto=projeto,
         titular_cpf="52998224725",
+        ativa=True,
+    )
+
+
+@pytest.fixture
+def upf_ce(db, municipio_ce, projeto):
+    return UPFFactory(
+        municipio=municipio_ce,
+        projeto=projeto,
         ativa=True,
     )
 
