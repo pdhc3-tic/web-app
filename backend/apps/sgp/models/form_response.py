@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q
 
 
 class FormResponse(models.Model):
@@ -19,6 +20,17 @@ class FormResponse(models.Model):
     formulario_id = models.PositiveIntegerField(verbose_name="ID do formulário")
     formulario_nome = models.CharField(max_length=255, verbose_name="Nome do formulário")
     formulario_versao = models.CharField(max_length=50, verbose_name="Versão do formulário")
+    contract_version = models.CharField(
+        max_length=20,
+        default="1.0",
+        verbose_name="Versão do contrato",
+    )
+    resposta_id_origem = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name="Chave externa da resposta",
+    )
     data_preenchimento = models.DateTimeField(verbose_name="Data de preenchimento")
     respondente = models.CharField(
         max_length=255,
@@ -49,6 +61,13 @@ class FormResponse(models.Model):
             models.Index(
                 fields=["upf", "-data_preenchimento"],
                 name="idx_form_response_upf_data",
+            ),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["origem", "resposta_id_origem"],
+                condition=Q(resposta_id_origem__isnull=False),
+                name="uniq_form_response_origem_external_id",
             ),
         ]
 
