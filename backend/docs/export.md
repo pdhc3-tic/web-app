@@ -1,5 +1,26 @@
 # Exportação do Plano de Trabalho e Integração Power BI
 
+## Exportação de Respostas de Formulários da UPF
+
+```http
+GET /api/v1/sgp/upfs/{upf_pk}/formularios/exportar/?formato={csv|pdf}
+```
+
+Requer autenticação JWT e aplica o mesmo escopo territorial e os mesmos filtros da
+listagem de formulários da UPF. Os parâmetros opcionais são `formulario_id`,
+`data_inicio`, `data_fim` e `respondente`.
+
+| Formato | Content-Type | Conteúdo |
+|---|---|---|
+| `csv` | `text/csv; charset=utf-8` | Uma linha por resposta, com ID, formulário, versão, data, respondente, status, origem e `respostas_json` serializado em JSON. |
+| `pdf` | `application/pdf` | Uma seção por resposta, com metadados e `respostas_json` indentado de forma legível. |
+
+O schema e o layout original dos formulários SGF ainda não são persistidos no SGP.
+Consequentemente, o PDF representa as respostas pelo JSON hierárquico armazenado;
+essa representação deverá ser substituída pelo renderizador do SGF quando esse
+contrato estiver disponível. `formato` ausente ou diferente de `csv` e `pdf`
+retorna `400 Bad Request`.
+
 ## 1. Resumo
 
 Foram implementadas a exportação do Plano de Trabalho em CSV/XLSX e uma API autenticada para consumo consolidado pelo Power BI. A solução aplica filtros e regras de escopo territorial na exportação, além de manter um snapshot em Redis atualizado periodicamente pelo Celery para reduzir o custo de leitura do conector BI.

@@ -60,6 +60,7 @@ production_detail = ProductionViewSet.as_view({
 })
 form_response_list = FormResponseViewSet.as_view({"get": "list"})
 form_response_detail = FormResponseViewSet.as_view({"get": "retrieve"})
+form_response_export = FormResponseViewSet.as_view({"get": "export"})
 
 urlpatterns = router.urls + [
     # Painel consolidado do Plano de Trabalho (Issue #136).
@@ -83,6 +84,11 @@ urlpatterns = router.urls + [
         "sgp/upfs/<int:upf_pk>/formularios/",
         form_response_list,
         name="upf-formularios-list",
+    ),
+    path(
+        "sgp/upfs/<int:upf_pk>/formularios/exportar/",
+        form_response_export,
+        name="upf-formularios-export",
     ),
     path(
         "sgp/upfs/<int:upf_pk>/formularios/<int:pk>/",
