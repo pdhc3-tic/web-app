@@ -269,7 +269,7 @@ def upf_payload_completo(projeto, municipio):
 @pytest.fixture
 def membro_payload_minimo(upf):
     return {
-        "nome": "João Filho",
+        "nome_completo": "João Filho",
         "parentesco": "filho",
     }
 
@@ -277,7 +277,7 @@ def membro_payload_minimo(upf):
 @pytest.fixture
 def titular_payload(upf):
     return {
-        "nome": "Maria Titular",
+        "nome_completo": "Maria Titular",
         "parentesco": "titular",
         "data_nasc": "1980-05-10",
     }

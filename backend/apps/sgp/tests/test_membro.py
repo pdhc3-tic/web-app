@@ -19,7 +19,7 @@ class TestCriacaoMembro:
             format="json",
         )
         assert response.status_code == 201
-        assert response.data["nome"] == "João Filho"
+        assert response.data["nome_completo"] == "João Filho"
         assert response.data["parentesco"] == "filho"
 
     def test_create_membro_titular(
@@ -82,7 +82,7 @@ class TestIdade:
         self, auth_client, upf
     ):
         payload = {
-            "nome": "Criança",
+            "nome_completo": "Criança",
             "parentesco": "filho",
             "data_nasc": "2010-06-15",
         }
@@ -181,7 +181,7 @@ class TestAuditLog:
 
         auth_client.patch(
             f"/api/v1/sgp/upfs/{upf.pk}/membros/{membro_id}/",
-            {"nome": "Nome Atualizado"},
+            {"nome_completo": "Nome Atualizado"},
             format="json",
         )
         assert AuditLog.objects.filter(
@@ -237,7 +237,7 @@ class TestCPFUnicoGlobal:
         assert response.status_code == 201
 
         payload_outra = {
-            "nome": "Membro Duplicado",
+            "nome_completo": "Membro Duplicado",
             "parentesco": "filho",
             "cpf": "12345678909",
         }
@@ -255,7 +255,7 @@ class TestDataNascimentoFutura:
         self, auth_client, upf
     ):
         payload = {
-            "nome": "Membro Futuro",
+            "nome_completo": "Membro Futuro",
             "parentesco": "filho",
             "data_nasc": "2030-01-01",
         }
@@ -386,7 +386,7 @@ class TestPutMethod:
     def test_put_atualiza_todos_campos(self, auth_client, upf, membro):
         url = f"/api/v1/sgp/upfs/{upf.pk}/membros/{membro.pk}/"
         payload = {
-            "nome": "Novo Nome Completo",
+            "nome_completo": "Novo Nome Completo",
             "parentesco": "filho",
             "cpf": "49193681437",
             "data_nasc": "2010-01-01",
@@ -394,7 +394,7 @@ class TestPutMethod:
         }
         response = auth_client.put(url, payload, format="json")
         assert response.status_code == 200
-        assert response.data["nome"] == "Novo Nome Completo"
+        assert response.data["nome_completo"] == "Novo Nome Completo"
         assert response.data["parentesco"] == "filho"
         assert response.data["cpf"] == "49193681437"
 
@@ -402,13 +402,13 @@ class TestPutMethod:
         """PUT deve requerer todos os campos obrigatórios."""
         url = f"/api/v1/sgp/upfs/{upf.pk}/membros/{membro.pk}/"
         payload = {
-            "nome": "Nome Alterado",
+            "nome_completo": "Nome Alterado",
             "parentesco": "conjuge",
             "cpf": "49193681437",
         }
         response = auth_client.put(url, payload, format="json")
         assert response.status_code == 200
-        assert response.data["nome"] == "Nome Alterado"
+        assert response.data["nome_completo"] == "Nome Alterado"
 
 
 # ──────────────────────────────────────────────────────────────
@@ -515,12 +515,12 @@ class TestChoicesValidos:
     def test_genero_aceita_valores_validos(self, auth_client, upf):
         """Gênero aceita 1,2,3,4."""
         for i, g in enumerate([1, 2, 3, 4]):
-            payload = {"nome": "Teste", "parentesco": "filho", "cpf": self._valid_cpf(i), "genero": g}
+            payload = {"nome_completo": "Teste", "parentesco": "filho", "cpf": self._valid_cpf(i), "genero": g}
             response = auth_client.post(f"/api/v1/sgp/upfs/{upf.pk}/membros/", payload, format="json")
             assert response.status_code == 201, f"Falhou para genero={g}: {response.data}"
 
     def test_genero_rejeita_invalido(self, auth_client, upf):
-        payload = {"nome": "Teste", "parentesco": "filho", "cpf": self._valid_cpf(0), "genero": 99}
+        payload = {"nome_completo": "Teste", "parentesco": "filho", "cpf": self._valid_cpf(0), "genero": 99}
         response = auth_client.post(f"/api/v1/sgp/upfs/{upf.pk}/membros/", payload, format="json")
         assert response.status_code == 400
 
@@ -528,7 +528,7 @@ class TestChoicesValidos:
         """Parentesco aceita todos os valores de PARENTESCO_CHOICES."""
         from apps.sgp.constants import PARENTESCO_CHOICES
         for i, (key, _) in enumerate(PARENTESCO_CHOICES):
-            payload = {"nome": f"Teste {key}", "parentesco": key, "cpf": self._valid_cpf(i)}
+            payload = {"nome_completo": f"Teste {key}", "parentesco": key, "cpf": self._valid_cpf(i)}
             response = auth_client.post(f"/api/v1/sgp/upfs/{upf.pk}/membros/", payload, format="json")
             # Pode falhar se for "titular" e já existe titular
             if key == "titular":
@@ -537,9 +537,9 @@ class TestChoicesValidos:
                 assert response.status_code == 201, f"Falhou para parentesco={key}: {response.data}"
 
     def test_escolaridade_aceita_valores(self, auth_client, upf):
-        """Escolaridade aceita valores incluindo pós-graduação."""
-        for i, e in enumerate(range(1, 10)):  # 1 a 9 conforme ESCOLARIDADE_CHOICES
-            payload = {"nome": "Teste", "parentesco": "filho", "cpf": self._valid_cpf(i), "escolaridade": e}
+        """Escolaridade aceita valores de 1 a 7 (Superior completo)."""
+        for i, e in enumerate(range(1, 8)):  # 1 a 7 conforme ESCOLARIDADE_CHOICES
+            payload = {"nome_completo": "Teste", "parentesco": "filho", "cpf": self._valid_cpf(i), "escolaridade": e}
             response = auth_client.post(f"/api/v1/sgp/upfs/{upf.pk}/membros/", payload, format="json")
             assert response.status_code == 201, f"Falhou para escolaridade={e}: {response.data}"
 
