@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 from django.apps import apps
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
@@ -49,6 +49,24 @@ from apps.sgp.filters import ActivityFilter, UPFFilter
 from apps.sgp.models import (
     Activity, Comunidade, Cultura, EspecieAnimal, MembroFamilia, UPF, Projeto
 )
+
+
+def upfs_acessiveis_ao_usuario(user):
+    """Retorna queryset de UPFs acessíveis ao usuário conforme regras territoriais."""
+    qs = UPF.objects.all()
+    if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
+        return qs
+    if user_has_role(user, "articulador-estadual"):
+        states = user_states(user)
+        if not states:
+            return qs.none()
+        return qs.filter(municipio__state__sigla__in=states)
+    if user_has_role(user, "adt-acr"):
+        territories = user_territories(user)
+        if not territories.exists():
+            return qs.none()
+        return qs.filter(territorio__in=territories)
+    return qs.none()
 from apps.sgp.pagination import (
     ActivityPagination, CatalogoPagination, HistoricoPagination, UPFPagination
 )
@@ -598,13 +616,15 @@ class ComunidadeViewSet(viewsets.ModelViewSet):
 
 class MembroViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedActiveAccess]
-    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    http_method_names = ["get", "post", "put", "patch", "delete", "head", "options"]
 
     def get_upf(self):
-        return get_object_or_404(UPF, pk=self.kwargs["upf_pk"])
+        upf_pk = self.kwargs["upf_pk"]
+        return get_object_or_404(upfs_acessiveis_ao_usuario(self.request.user), pk=upf_pk)
 
     def get_queryset(self):
-        return MembroFamilia.objects.filter(upf=self.kwargs["upf_pk"])
+        upf = self.get_upf()
+        return MembroFamilia.objects.filter(upf=upf)
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -662,8 +682,9 @@ class MembroViewSet(viewsets.ModelViewSet):
         )
 
     def perform_destroy(self, instance):
-        if instance.parentesco == "titular":
-            outros = MembroFamilia.objects.filter(upf=instance.upf).exclude(pk=instance.pk)
+        upf = instance.upf
+        if upf.titular_id == instance.pk:
+            outros = MembroFamilia.objects.filter(upf=upf).exclude(pk=instance.pk)
             if not outros.exists():
                 raise serializers.ValidationError(
                     "Não é possível excluir o único titular da UPF"
@@ -691,36 +712,80 @@ class MembroViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="resumo")
     def resumo(self, request, upf_pk=None):
+        from django.db.models import Count, Case, When, IntegerField, Value, Q
+        from django.db.models.functions import Coalesce
+
         upf = self.get_upf()
+        hoje = date.today()
+
         membros = MembroFamilia.objects.filter(upf=upf)
 
         total = membros.count()
         tem_titular = membros.filter(parentesco="titular").exists()
 
-        faixa_etaria = {"0-11": 0, "12-17": 0, "18-59": 0, "60+": 0}
-        genero = {"masculino": 0, "feminino": 0, "nao_informado": 0}
+        # Expressão de idade calculada no banco
+        idade_expr = (
+            hoje.year - Coalesce("data_nasc__year", Value(hoje.year))
+        )
+        idade_ajustada = Case(
+            When(
+                Q(data_nasc__month__gt=hoje.month)
+                | (Q(data_nasc__month=hoje.month) & Q(data_nasc__day__gt=hoje.day)),
+                then=idade_expr - 1,
+            ),
+            default=idade_expr,
+            output_field=IntegerField(),
+        )
 
-        for membro in membros:
-            if membro.data_nasc:
-                idade = (
-                    date.today().year - membro.data_nasc.year
-                    - ((date.today().month, date.today().day) < (membro.data_nasc.month, membro.data_nasc.day))
+        faixa_agg = membros.aggregate(
+            faixa_0_11=Count(
+                "pk",
+                filter=Q(data_nasc__isnull=False) & Q(data_nasc__year__gte=hoje.year - 11)
+                & ~Q(
+                    Q(data_nasc__month__gt=hoje.month)
+                    | (Q(data_nasc__month=hoje.month) & Q(data_nasc__day__gt=hoje.day))
                 )
-                if idade < 12:
-                    faixa_etaria["0-11"] += 1
-                elif idade < 18:
-                    faixa_etaria["12-17"] += 1
-                elif idade < 60:
-                    faixa_etaria["18-59"] += 1
-                else:
-                    faixa_etaria["60+"] += 1
+            ),
+            faixa_12_17=Count(
+                "pk",
+                filter=Q(data_nasc__isnull=False)
+                & Q(data_nasc__year__lte=hoje.year - 12)
+                & Q(data_nasc__year__gte=hoje.year - 17)
+            ),
+            faixa_18_59=Count(
+                "pk",
+                filter=Q(data_nasc__isnull=False)
+                & Q(data_nasc__year__lte=hoje.year - 18)
+                & Q(data_nasc__year__gte=hoje.year - 59)
+            ),
+            faixa_60_mais=Count(
+                "pk",
+                filter=Q(data_nasc__isnull=False) & Q(data_nasc__year__lte=hoje.year - 60)
+            ),
+            sem_data_nasc=Count("pk", filter=Q(data_nasc__isnull=True)),
+        )
 
-            if membro.genero == 1:
-                genero["masculino"] += 1
-            elif membro.genero == 2:
-                genero["feminino"] += 1
-            else:
-                genero["nao_informado"] += 1
+        faixa_etaria = {
+            "0-11": faixa_agg["faixa_0_11"],
+            "12-17": faixa_agg["faixa_12_17"],
+            "18-59": faixa_agg["faixa_18_59"],
+            "60+": faixa_agg["faixa_60_mais"],
+        }
+
+        # Gênero via SQL
+        genero_agg = membros.aggregate(
+            masculino=Count("pk", filter=Q(genero=1)),
+            feminino=Count("pk", filter=Q(genero=2)),
+            outro=Count("pk", filter=Q(genero=3)),
+            nao_informado=Count("pk", filter=Q(genero=4) | Q(genero__isnull=True)),
+        )
+
+        genero = {
+            "masculino": genero_agg["masculino"],
+            "feminino": genero_agg["feminino"],
+            "outro": genero_agg["outro"],
+            "nao_informado": genero_agg["nao_informado"],
+        }
 
         return Response({
             "total_membros": total,
@@ -728,6 +793,81 @@ class MembroViewSet(viewsets.ModelViewSet):
             "genero": genero,
             "tem_titular": tem_titular,
         })
+
+    @action(detail=False, methods=["post"], url_path="transferir-titularidade")
+    def transferir_titularidade(self, request, upf_pk=None):
+        upf = self.get_upf()
+        novo_titular_id = request.data.get("novo_titular_id")
+        if not novo_titular_id:
+            raise serializers.ValidationError(
+                {"novo_titular_id": "Campo obrigatório."}
+            )
+
+        try:
+            novo_titular = MembroFamilia.objects.get(pk=novo_titular_id, upf=upf)
+        except MembroFamilia.DoesNotExist:
+            raise serializers.ValidationError(
+                {"novo_titular_id": "Membro não encontrado nesta UPF."}
+            )
+
+        if novo_titular.pk == upf.titular_id:
+            raise serializers.ValidationError(
+                {"novo_titular_id": "Este membro já é o titular."}
+            )
+
+        antigo_titular = upf.titular
+        with transaction.atomic():
+            if antigo_titular:
+                antigo_titular.parentesco = "filho"
+                antigo_titular.save(update_fields=["parentesco"])
+            novo_titular.parentesco = "titular"
+            novo_titular.save(update_fields=["parentesco"])
+            upf.titular = novo_titular
+            upf.save(update_fields=["titular"])
+
+        return Response({
+            "detail": "Titularidade transferida com sucesso.",
+            "novo_titular": {
+                "id": novo_titular.pk,
+                "nome_completo": novo_titular.nome_completo,
+            },
+            "antigo_titular": {
+                "id": antigo_titular.pk,
+                "nome_completo": antigo_titular.nome_completo,
+            } if antigo_titular else None,
+        })
+
+    def perform_update(self, serializer):
+        old = self.get_object()
+        if old.pk == old.upf.titular_id and "parentesco" in serializer.validated_data:
+            if serializer.validated_data["parentesco"] != "titular":
+                raise serializers.ValidationError(
+                    {"parentesco": "Não é possível alterar o parentesco do titular. Use o endpoint de transferência de titularidade."}
+                )
+        valores_anteriores = {
+            "membro_id": old.pk,
+            "upf_id": old.upf_id,
+            "nome_completo": old.nome_completo,
+            "parentesco": old.parentesco,
+            "cpf": old.cpf,
+        }
+        instance = serializer.save(ultima_origem="web")
+        AuditLog.objects.create(
+            user=self.request.user,
+            acao="MEMBRO.update",
+            modulo="sgp",
+            entidade="MembroFamilia",
+            entidade_id=str(instance.pk),
+            valores_anteriores=valores_anteriores,
+            valores_novos={
+                "membro_id": instance.pk,
+                "nome_completo": instance.nome_completo,
+                "parentesco": instance.parentesco,
+                "upf_id": instance.upf_id,
+            },
+            ip=self.request.META.get("REMOTE_ADDR"),
+            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
+        )
 
 
 class ProjetoViewSet(viewsets.ModelViewSet):
