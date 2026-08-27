@@ -1,8 +1,8 @@
 GENERO_CHOICES = [
     (1, "Masculino"),
     (2, "Feminino"),
-    (3, "Outro"),
-    (4, "Não Informado"),
+    (3, "Não binário"),
+    (4, "Não informado"),
 ]
 
 COR_RACA_CHOICES = [
@@ -11,7 +11,6 @@ COR_RACA_CHOICES = [
     (3, "Parda"),
     (4, "Amarela"),
     (5, "Indígena"),
-    (6, "Não Informado"),
 ]
 
 ESCOLARIDADE_CHOICES = [
@@ -22,8 +21,6 @@ ESCOLARIDADE_CHOICES = [
     (5, "Médio completo"),
     (6, "Superior incompleto"),
     (7, "Superior completo"),
-    (8, "Pós-graduação"),
-    (9, "Não Informado"),
 ]
 
 DISPOSITIVO_CHOICES = [
@@ -96,11 +93,12 @@ AGUA_CHOICES = [
 ]
 
 SAUDE_CHOICES = [
+    "nenhuma",
     "diabetes",
     "hipertensao",
     "deficiencia_visual",
     "deficiencia_auditiva",
-    "deficiencia_fisica",
+    "deficiencia_motora",
     "deficiencia_intelectual",
     "deficiencia_multipla",
     "doenca_cardiaca",
@@ -113,6 +111,13 @@ SAUDE_CHOICES = [
     "alergia_alimentar",
     "doenca_cronica",
     "outros",
+]
+
+SEGURIDADE_SOCIAL_CHOICES = [
+    "bpc",
+    "bolsa_familia",
+    "aposentadoria",
+    "nenhum",
 ]
 
 PARENTESCO_CHOICES = [

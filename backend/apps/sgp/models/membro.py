@@ -22,7 +22,7 @@ class MembroFamilia(models.Model):
     nome_completo = models.CharField(
         max_length=255, verbose_name="Nome Completo"
     )
-    data_nasc = models.DateField(
+    data_nascimento = models.DateField(
         null=True, blank=True, verbose_name="Data de Nascimento"
     )
     genero = models.PositiveSmallIntegerField(
@@ -60,10 +60,10 @@ class MembroFamilia(models.Model):
         verbose_name="CAF",
     )
 
-    parentesco = models.CharField(
+    grau_parentesco = models.CharField(
         max_length=20,
         choices=PARENTESCO_CHOICES,
-        verbose_name="Parentesco",
+        verbose_name="Grau de Parentesco",
     )
 
     escola = models.CharField(
@@ -140,13 +140,19 @@ class MembroFamilia(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["upf"],
-                condition=models.Q(parentesco="titular"),
+                condition=models.Q(grau_parentesco="titular"),
                 name="unique_titular_por_upf",
+            ),
+            models.UniqueConstraint(
+                fields=["cpf"],
+                condition=models.Q(cpf__gt=""),
+                name="unique_cpf_global",
             ),
         ]
         indexes = [
             models.Index(fields=["upf"], name="idx_membro_upf"),
+            models.Index(fields=["cpf"], name="idx_membro_cpf"),
         ]
 
     def __str__(self):
-        return f"{self.nome_completo} ({self.get_parentesco_display()})"
+        return f"{self.nome_completo} ({self.get_grau_parentesco_display()})"

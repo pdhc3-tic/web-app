@@ -88,12 +88,14 @@ class TestUnicidadeCPF:
     def test_cpf_duplicate_different_projetos_allowed(
         self, auth_client, upf_payload_minimo, outro_projeto
     ):
+        # CPF must be globally unique among members
         auth_client.post(
             "/api/v1/upfs/", upf_payload_minimo, format="json"
         )
         payload2 = {
             **upf_payload_minimo,
             "projeto": outro_projeto.pk,
+            "cpf": "49193681437",  # valid CPF
         }
         response = auth_client.post(
             "/api/v1/upfs/", payload2, format="json"
@@ -109,8 +111,10 @@ class TestUnicidadeCPF:
         upf_id = res.data["id"]
         auth_client.delete(f"/api/v1/upfs/{upf_id}/")
 
+        # CPF must be globally unique, even if UPF was inactive
+        payload = {**upf_payload_minimo, "cpf": "04227503523"}  # valid CPF
         response = auth_client.post(
-            "/api/v1/upfs/", upf_payload_minimo, format="json"
+            "/api/v1/upfs/", payload, format="json"
         )
         assert response.status_code == 201
 
@@ -573,10 +577,10 @@ class TestPerformanceIndexes:
         titulars = [
             MembroFamilia(
                 upf=None,
-                parentesco="titular",
+                grau_parentesco="titular",
                 nome_completo=f"Titular {i}",
                 cpf=f"{i + 10000000000:011d}",
-                data_nasc="1990-01-01",
+                data_nascimento="1990-01-01",
             )
             for i in range(5000)
         ]

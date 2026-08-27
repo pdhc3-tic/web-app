@@ -149,22 +149,33 @@ urlpatterns = router.urls + [
         name="upf-producao-detail",
     ),
     path(
-        "upfs/<int:upf_pk>/membros/",
+        "sgp/upfs/<int:upf_pk>/membros/",
         MembroViewSet.as_view(
             {"get": "list", "post": "create"}
         ),
         name="upf-membros-list",
     ),
     path(
-        "upfs/<int:upf_pk>/membros/<int:pk>/",
+        "sgp/upfs/<int:upf_pk>/membros/<int:pk>/",
         MembroViewSet.as_view(
             {
                 "get": "retrieve",
+                "put": "update",
                 "patch": "partial_update",
                 "delete": "destroy",
             }
         ),
         name="upf-membros-detail",
+    ),
+    path(
+        "sgp/upfs/<int:upf_pk>/membros/resumo/",
+        MembroViewSet.as_view({"get": "resumo"}),
+        name="upf-membros-resumo",
+    ),
+    path(
+        "sgp/upfs/<int:upf_pk>/membros/transferir-titularidade/",
+        MembroViewSet.as_view({"post": "transferir_titularidade"}),
+        name="upf-membros-transferir-titularidade",
     ),
     path(
         'municipios/<int:municipio_id>/comunidades/',
