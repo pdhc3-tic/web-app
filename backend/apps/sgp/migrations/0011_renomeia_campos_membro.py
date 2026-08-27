@@ -8,6 +8,10 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.RemoveConstraint(
+            model_name="membrofamilia",
+            name="unique_titular_por_upf",
+        ),
         migrations.RenameField(
             model_name="membrofamilia",
             old_name="data_nasc",
@@ -36,6 +40,14 @@ class Migration(migrations.Migration):
                 ],
                 max_length=20,
                 verbose_name="Grau de Parentesco",
+            ),
+        ),
+        migrations.AddConstraint(
+            model_name="membrofamilia",
+            constraint=models.UniqueConstraint(
+                condition=models.Q(("grau_parentesco", "titular")),
+                fields=("upf",),
+                name="unique_titular_por_upf",
             ),
         ),
     ]

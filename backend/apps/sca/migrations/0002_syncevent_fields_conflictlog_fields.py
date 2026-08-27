@@ -21,6 +21,10 @@ class Migration(migrations.Migration):
 
     operations = [
         # SyncEvent updates
+        migrations.RemoveIndex(
+            model_name="syncevent",
+            name="idx_sca_event_user_rec",
+        ),
         migrations.RenameField(
             model_name="syncevent",
             old_name="recebido_em",
@@ -84,6 +88,10 @@ class Migration(migrations.Migration):
         migrations.AddIndex(
             model_name="syncevent",
             index=models.Index(fields=["device", "-iniciado_em"], name="idx_sca_event_device_ini"),
+        ),
+        migrations.AddIndex(
+            model_name="syncevent",
+            index=models.Index(fields=["user", "-finalizado_em"], name="idx_sca_event_user_rec"),
         ),
 
         # ConflictLog updates

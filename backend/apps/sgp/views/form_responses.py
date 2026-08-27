@@ -1,7 +1,14 @@
+import csv
+import json
+from io import BytesIO, StringIO
+from xml.sax.saxutils import escape
+
 from django.shortcuts import get_object_or_404
+from django.http import FileResponse, HttpResponse
+from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, OpenApiTypes, extend_schema
-from rest_framework import mixins, status, viewsets
+from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -35,6 +42,10 @@ def accessible_upf_queryset(user):
         return queryset.filter(territorio__in=territories) if territories.exists() else queryset.none()
 
     raise PermissionDenied("Você não tem acesso ao módulo SGP.")
+
+
+class FormResponseExportQuerySerializer(serializers.Serializer):
+    formato = serializers.ChoiceField(choices=["csv", "pdf"])
 
 
 class FormResponseViewSet(
@@ -84,6 +95,149 @@ class FormResponseViewSet(
     @extend_schema(responses=FormResponseDetailSerializer)
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "formato",
+                OpenApiTypes.STR,
+                OpenApiParameter.QUERY,
+                required=True,
+                enum=["csv", "pdf"],
+            ),
+            OpenApiParameter("formulario_id", OpenApiTypes.INT, OpenApiParameter.QUERY),
+            OpenApiParameter("data_inicio", OpenApiTypes.DATE, OpenApiParameter.QUERY),
+            OpenApiParameter("data_fim", OpenApiTypes.DATE, OpenApiParameter.QUERY),
+            OpenApiParameter("respondente", OpenApiTypes.STR, OpenApiParameter.QUERY),
+        ],
+        responses={200: OpenApiTypes.BINARY},
+    )
+    def export(self, request, *args, **kwargs):
+        query_serializer = FormResponseExportQuerySerializer(data=request.query_params)
+        query_serializer.is_valid(raise_exception=True)
+
+        responses = self.filter_queryset(self.get_queryset())
+        formato = query_serializer.validated_data["formato"]
+        timestamp = timezone.localtime().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"respostas_formularios_upf_{self.get_upf().pk}_{timestamp}.{formato}"
+
+        if formato == "csv":
+            return self._csv_response(responses, filename)
+        return self._pdf_response(responses, filename)
+
+    @staticmethod
+    def _csv_response(responses, filename):
+        content = StringIO()
+        writer = csv.writer(content)
+        writer.writerow(
+            [
+                "ID",
+                "Formulário",
+                "Versão",
+                "Data de preenchimento",
+                "Respondente",
+                "Status",
+                "Origem",
+                "Respostas",
+            ]
+        )
+        for response in responses:
+            writer.writerow(
+                [
+                    response.pk,
+                    response.formulario_nome,
+                    response.formulario_versao,
+                    timezone.localtime(response.data_preenchimento).isoformat(),
+                    response.respondente or "Anônimo",
+                    response.get_status_display(),
+                    response.get_origem_display(),
+                    json.dumps(response.respostas_json, ensure_ascii=False, default=str),
+                ]
+            )
+
+        return HttpResponse(
+            "\ufeff" + content.getvalue(),
+            content_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @staticmethod
+    def _pdf_response(responses, filename):
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import cm
+        from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
+
+        content = BytesIO()
+        document = SimpleDocTemplate(
+            content,
+            pagesize=A4,
+            leftMargin=2 * cm,
+            rightMargin=2 * cm,
+            topMargin=2 * cm,
+            bottomMargin=2 * cm,
+            title="Respostas de formulários da UPF",
+        )
+        styles = getSampleStyleSheet()
+        metadata_style = ParagraphStyle(
+            "FormResponseMetadata",
+            parent=styles["BodyText"],
+            leading=15,
+        )
+        json_style = ParagraphStyle(
+            "FormResponseJson",
+            parent=styles["Code"],
+            fontName="Courier",
+            fontSize=7,
+            leading=9,
+        )
+        story = [Paragraph("Respostas de formulários", styles["Title"])]
+
+        for index, response in enumerate(responses):
+            if index:
+                story.append(PageBreak())
+
+            story.extend(
+                [
+                    Paragraph(
+                        escape(f"{response.formulario_nome} (v{response.formulario_versao})"),
+                        styles["Heading1"],
+                    ),
+                    Paragraph(
+                        "<br/>".join(
+                            [
+                                f"<b>Data de preenchimento:</b> {timezone.localtime(response.data_preenchimento).strftime('%d/%m/%Y %H:%M')}",
+                                f"<b>Respondente:</b> {escape(response.respondente or 'Anônimo')}",
+                                f"<b>Status:</b> {escape(response.get_status_display())}",
+                                f"<b>Origem:</b> {escape(response.get_origem_display())}",
+                            ]
+                        ),
+                        metadata_style,
+                    ),
+                    Spacer(1, 0.4 * cm),
+                    Paragraph("Respostas", styles["Heading2"]),
+                    Paragraph(
+                        escape(
+                            json.dumps(
+                                response.respostas_json,
+                                ensure_ascii=False,
+                                indent=2,
+                                default=str,
+                            )
+                        ).replace("\n", "<br/>"),
+                        json_style,
+                    ),
+                ]
+            )
+
+        document.build(story)
+        content.seek(0)
+        return FileResponse(
+            content,
+            as_attachment=True,
+            filename=filename,
+            content_type="application/pdf",
+        )
 
 
 class AvailableFormListView(APIView):
