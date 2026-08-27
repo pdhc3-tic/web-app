@@ -738,28 +738,31 @@ class MembroViewSet(viewsets.ModelViewSet):
         tem_titular = membros.filter(grau_parentesco="titular").exists()
 
         def _data_limite(anos):
-            return date(hoje.year - anos, hoje.month, hoje.day)
+            try:
+                return date(hoje.year - anos, hoje.month, hoje.day)
+            except ValueError:
+                return date(hoje.year - anos, hoje.month, 28)
 
         faixa_agg = membros.aggregate(
             faixa_0_11=Count(
                 "pk",
-                filter=Q(data_nascimento__isnull=False) & Q(data_nascimento__gte=_data_limite(11))
+                filter=Q(data_nascimento__isnull=False) & Q(data_nascimento__gt=_data_limite(12))
             ),
             faixa_12_17=Count(
                 "pk",
                 filter=Q(data_nascimento__isnull=False)
-                & Q(data_nascimento__lt=_data_limite(11))
-                & Q(data_nascimento__gte=_data_limite(17))
+                & Q(data_nascimento__lte=_data_limite(12))
+                & Q(data_nascimento__gt=_data_limite(18))
             ),
             faixa_18_59=Count(
                 "pk",
                 filter=Q(data_nascimento__isnull=False)
-                & Q(data_nascimento__lt=_data_limite(17))
-                & Q(data_nascimento__gte=_data_limite(59))
+                & Q(data_nascimento__lte=_data_limite(18))
+                & Q(data_nascimento__gt=_data_limite(60))
             ),
             faixa_60_mais=Count(
                 "pk",
-                filter=Q(data_nascimento__isnull=False) & Q(data_nascimento__lt=_data_limite(59))
+                filter=Q(data_nascimento__isnull=False) & Q(data_nascimento__lte=_data_limite(60))
             ),
             sem_data_nasc=Count("pk", filter=Q(data_nascimento__isnull=True)),
         )
