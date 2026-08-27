@@ -128,6 +128,49 @@ sudo docker compose exec \
 Os catálogos de culturas e espécies animais do SGP são populados automaticamente
 por data migration ao executar `python manage.py migrate`.
 
+Em produção, os XLSX legados ficam em um diretório separado da aplicação na
+VPS, configurado pela variável `SEED_DATA_DIR`. O deploy não monta os XLSX no
+backend permanente. Em um container temporário, ele prepara um pacote privado
+e determinístico (JSONL + `manifest.json` + `report.json`) e depois importa
+somente esse pacote:
+
+```bash
+sudo docker compose -f docker-compose.prod.yml run --rm --no-deps \
+  -v "$SEED_DATA_DIR:/seed-data:ro" \
+  -v "$SEED_PACKAGE_DIR:/seed-package" \
+  backend python manage.py prepare_seed \
+  --source-dir /seed-data --output-dir /seed-package
+
+sudo docker compose -f docker-compose.prod.yml run --rm --no-deps \
+  -v "$SEED_PACKAGE_DIR:/seed-package:ro" \
+  backend python manage.py seed_prod --package-dir /seed-package
+```
+
+O diretório dos XLSX deve ter permissões restritas e o pacote deve ficar fora do
+checkout. O manifesto valida SHA-256 antes da importação. O comando é
+idempotente, mantém o vínculo entre ID legado e objeto atual em
+`SeedImportRecord`, e nunca apaga registros que estejam ausentes no pacote:
+essas diferenças são apenas relatadas. Planilhas sem mapeamento direto e linhas
+inválidas ficam em `report.json`.
+
+Para validar localmente sem persistir:
+
+```bash
+SEED_DATA_DIR="$(realpath ../dados_seed)"
+SEED_PACKAGE_DIR=/tmp/pdhc-seed-package
+rm -rf "$SEED_PACKAGE_DIR" && mkdir -p "$SEED_PACKAGE_DIR"
+
+docker compose run --rm --no-deps \
+  -v "$SEED_DATA_DIR:/seed-data:ro" \
+  -v "$SEED_PACKAGE_DIR:/seed-package" \
+  backend python manage.py prepare_seed \
+  --source-dir /seed-data --output-dir /seed-package
+docker compose run --rm --no-deps \
+  -v "$SEED_PACKAGE_DIR:/seed-package:ro" \
+  backend python manage.py seed_prod \
+  --package-dir /seed-package --dry-run
+```
+
 ## Variáveis de Ambiente
 
 Referência completa em [`.env.example`](.env.example):
@@ -150,6 +193,8 @@ Referência completa em [`.env.example`](.env.example):
 | `R2_BUCKET_NAME` | Quando `r2` | Nome do bucket R2 |
 | `R2_ENDPOINT_URL` | Quando `r2` | Endpoint S3-compatible da conta R2 |
 | `R2_PUBLIC_URL` | Quando `r2` | Domínio público/CNAME do bucket |
+| `SEED_DATA_DIR` | Produção | Diretório privado com os XLSX legados |
+| `SEED_PACKAGE_DIR` | — | Diretório privado do pacote normalizado |
 
 ## Storage De Arquivos
 
