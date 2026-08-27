@@ -3,6 +3,7 @@ from datetime import datetime
 import pytest
 from django.utils import timezone
 
+from apps.sgp.models import FormResponse
 from apps.sgp.tests.factories import FormResponseFactory, UPFFactory
 
 
@@ -17,12 +18,32 @@ def detail_url(upf, response):
     return f"{list_url(upf)}{response.pk}/"
 
 
+RECEIVE_URL = "/api/v1/sgp/formularios/respostas/"
+
+
 def response_results(response):
     return response.data["results"] if "results" in response.data else response.data
 
 
 def aware(year, month, day):
     return timezone.make_aware(datetime(year, month, day, 12, 0))
+
+
+def receive_payload(upf, **overrides):
+    payload = {
+        "upf_id": upf.pk,
+        "formulario_id": 21,
+        "formulario_nome": "Diagnóstico produtivo",
+        "formulario_versao": "1.0",
+        "respondente": "Técnico de Campo",
+        "status": "submetido",
+        "respostas_json": {"atividade_principal": "Agricultura"},
+        "origem": "web",
+        "contract_version": "1.0",
+        "resposta_id_origem": "web-a1b2c3",
+    }
+    payload.update(overrides)
+    return payload
 
 
 def test_list_returns_responses_in_reverse_chronological_order(auth_client, upf):
@@ -121,3 +142,50 @@ def test_adt_cannot_retrieve_response_from_another_territory(
     response = auth_client_adt_rn.get(detail_url(upf_ce, form_response))
 
     assert response.status_code == 404
+
+
+def test_receive_response_creates_and_lists_form_response(auth_client, upf):
+    response = auth_client.post(RECEIVE_URL, receive_payload(upf), format="json")
+
+    assert response.status_code == 201
+    form_response = FormResponse.objects.get(pk=response.data["id"])
+    assert form_response.upf == upf
+    assert form_response.contract_version == "1.0"
+    assert form_response.resposta_id_origem == "web-a1b2c3"
+
+    listed = auth_client.get(list_url(upf))
+    assert form_response.pk in [item["id"] for item in response_results(listed)]
+
+
+def test_receive_response_rejects_unknown_upf(auth_client, upf):
+    response = auth_client.post(
+        RECEIVE_URL,
+        receive_payload(upf, upf_id=999999),
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert response.data["upf_id"] == ["UPF não encontrada ou sem permissão de acesso."]
+
+
+def test_receive_response_is_idempotent(auth_client, upf):
+    payload = receive_payload(upf)
+
+    created = auth_client.post(RECEIVE_URL, payload, format="json")
+    retried = auth_client.post(RECEIVE_URL, payload, format="json")
+
+    assert created.status_code == 201
+    assert retried.status_code == 200
+    assert retried.data["id"] == created.data["id"]
+    assert FormResponse.objects.filter(resposta_id_origem="web-a1b2c3").count() == 1
+
+
+def test_receive_response_keeps_sca_origin(auth_client, upf):
+    response = auth_client.post(
+        RECEIVE_URL,
+        receive_payload(upf, origem="sca", resposta_id_origem="sca-a1b2c3"),
+        format="json",
+    )
+
+    assert response.status_code == 201
+    assert response.data["origem"] == FormResponse.Origem.SCA

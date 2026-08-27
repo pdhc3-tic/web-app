@@ -84,9 +84,9 @@ class ProductionAdmin(admin.ModelAdmin):
 @admin.register(MembroFamilia)
 class MembroFamiliaAdmin(admin.ModelAdmin):
     list_display = [
-        "nome_completo", "parentesco", "upf", "cpf", "criado_em",
+        "nome_completo", "grau_parentesco", "upf", "cpf", "criado_em",
     ]
-    list_filter = ["parentesco"]
+    list_filter = ["grau_parentesco"]
     search_fields = ["nome_completo", "cpf"]
 
 

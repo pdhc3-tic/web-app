@@ -34,7 +34,7 @@ class TestSGPChoicesEndpoint:
             "genero", "cor_raca", "escolaridade", "dispositivo",
             "pct", "posse_terra", "situacao_moradia", "tipo_moradia",
             "material_construcao", "energia", "agua",
-            "parentesco", "saude",
+            "grau_parentesco", "saude",
         }
         assert set(response.data.keys()) == expected_keys
 
@@ -121,7 +121,7 @@ class TestSGPChoicesEndpoint:
 
     def test_parentesco_choices_structure(self, auth_client):
         response = auth_client.get(self.CHOICES_URL)
-        choices = response.data["parentesco"]
+        choices = response.data["grau_parentesco"]
         assert len(choices) == len(PARENTESCO_CHOICES)
         for item, (value, label) in zip(choices, PARENTESCO_CHOICES):
             assert item == {"value": value, "label": label}

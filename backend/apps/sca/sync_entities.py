@@ -203,7 +203,7 @@ class UPFSyncEntity(SyncEntity):
 
         titular = MembroFamilia.objects.create(
             upf=None,
-            parentesco="titular",
+            grau_parentesco="titular",
             criado_por=user,
             device_id=device_id,
             uuid_local=None,
@@ -285,7 +285,7 @@ class UPFSyncEntity(SyncEntity):
             "titular": {
                 "nome_completo": titular.nome_completo,
                 "cpf": titular.cpf,
-                "data_nasc": titular.data_nasc.isoformat() if titular.data_nasc else None,
+                "data_nascimento": titular.data_nascimento.isoformat() if titular.data_nascimento else None,
                 "genero": titular.genero,
                 "cor_raca": titular.cor_raca,
                 "rg": titular.rg,
@@ -358,14 +358,14 @@ class MemberSyncEntity(SyncEntity):
         data = {
             "upf": instance.upf_id,
             "nome_completo": instance.nome_completo,
-            "data_nasc": instance.data_nasc.isoformat() if instance.data_nasc else None,
+            "data_nascimento": instance.data_nascimento.isoformat() if instance.data_nascimento else None,
             "genero": instance.genero,
             "cor_raca": instance.cor_raca,
             "cpf": instance.cpf,
             "rg": instance.rg,
             "nis": instance.nis,
             "caf": instance.caf,
-            "parentesco": instance.parentesco,
+            "grau_parentesco": instance.grau_parentesco,
             "escola": instance.escola,
             "seguridade_social": list(instance.seguridade_social or []),
             "saude": list(instance.saude or []),

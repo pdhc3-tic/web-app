@@ -484,7 +484,7 @@ class Command(BaseCommand):
             municipio = comunidade.municipio
             criador = self.rnd.choice(tecnicos)
 
-            titular = self._membro(parentesco="titular", criador=criador, idade=(30, 68))
+            titular = self._membro(grau_parentesco="titular", criador=criador, idade=(30, 68))
             upf = UPF.objects.create(
                 projeto=projeto,
                 comunidade=comunidade,
@@ -528,7 +528,7 @@ class Command(BaseCommand):
                 composicao.append(self.rnd.choice(["mae", "pai", "neto", "irmao"]))
             for parentesco in composicao:
                 faixa = (0, 21) if parentesco in ("filho", "neto") else (25, 82)
-                self._membro(parentesco=parentesco, criador=criador, idade=faixa, upf=upf)
+                self._membro(grau_parentesco=parentesco, criador=criador, idade=faixa, upf=upf)
 
             upfs.append(upf)
 
@@ -538,7 +538,7 @@ class Command(BaseCommand):
         self._documentos_upf(upfs)
         return upfs
 
-    def _membro(self, parentesco, criador, idade, upf=None) -> MembroFamilia:
+    def _membro(self, grau_parentesco, criador, idade, upf=None) -> MembroFamilia:
         genero = self.rnd.choice([1, 2])
         primeiro = self.rnd.choice(NOMES_M if genero == 1 else NOMES_F)
         nome = f"{primeiro} {self.rnd.choice(SOBRENOMES)} {self.rnd.choice(SOBRENOMES)}"
@@ -548,14 +548,14 @@ class Command(BaseCommand):
         return MembroFamilia.objects.create(
             upf=upf,
             nome_completo=nome,
-            data_nasc=nascimento,
+            data_nascimento=nascimento,
             genero=genero,
             cor_raca=self.rnd.choice([2, 3, 3, 3, 1, 5]),
             cpf="" if anos < 12 else gerar_cpf(self.rnd),
             rg="" if menor else str(self.rnd.randint(1000000, 9999999)),
             nis=str(self.rnd.randint(10000000000, 99999999999)),
-            caf=f"CAF{self.rnd.randint(100000, 999999)}" if parentesco == "titular" else "",
-            parentesco=parentesco,
+            caf=f"CAF{self.rnd.randint(100000, 999999)}" if grau_parentesco == "titular" else "",
+            grau_parentesco=grau_parentesco,
             escola="Escola Municipal Rural" if menor and anos >= 5 else "",
             escolaridade=self.rnd.choice([1, 2, 2, 3, 4, 5]) if not menor else self.rnd.choice([1, 2]),
             seguridade_social=self.rnd.sample(SEGURIDADE, self.rnd.randint(0, 2)),
