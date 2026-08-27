@@ -69,6 +69,19 @@ def upfs_acessiveis_ao_usuario(user):
     return qs.none()
 
 
+def data_limite_aniversario(hoje, anos):
+    """Data mínima para quem ainda não completou `anos` anos hoje.
+
+    Corresponde ao aniversário de `anos` anos atrás: quem nasceu nesta data
+    ou depois ainda não completou `anos` anos. Em anos não bissextos, um
+    aniversário que cairia em 29/fev é tratado como 28/fev.
+    """
+    try:
+        return date(hoje.year - anos, hoje.month, hoje.day)
+    except ValueError:
+        return date(hoje.year - anos, hoje.month, 28)
+
+
 from apps.sgp.pagination import (
     ActivityPagination, CatalogoPagination, HistoricoPagination, UPFPagination
 )
@@ -737,32 +750,26 @@ class MembroViewSet(viewsets.ModelViewSet):
         total = membros.count()
         tem_titular = membros.filter(grau_parentesco="titular").exists()
 
-        def _data_limite(anos):
-            try:
-                return date(hoje.year - anos, hoje.month, hoje.day)
-            except ValueError:
-                return date(hoje.year - anos, hoje.month, 28)
-
         faixa_agg = membros.aggregate(
             faixa_0_11=Count(
                 "pk",
-                filter=Q(data_nascimento__isnull=False) & Q(data_nascimento__gt=_data_limite(12))
+                filter=Q(data_nascimento__isnull=False) & Q(data_nascimento__gt=data_limite_aniversario(hoje, 12))
             ),
             faixa_12_17=Count(
                 "pk",
                 filter=Q(data_nascimento__isnull=False)
-                & Q(data_nascimento__lte=_data_limite(12))
-                & Q(data_nascimento__gt=_data_limite(18))
+                & Q(data_nascimento__lte=data_limite_aniversario(hoje, 12))
+                & Q(data_nascimento__gt=data_limite_aniversario(hoje, 18))
             ),
             faixa_18_59=Count(
                 "pk",
                 filter=Q(data_nascimento__isnull=False)
-                & Q(data_nascimento__lte=_data_limite(18))
-                & Q(data_nascimento__gt=_data_limite(60))
+                & Q(data_nascimento__lte=data_limite_aniversario(hoje, 18))
+                & Q(data_nascimento__gt=data_limite_aniversario(hoje, 60))
             ),
             faixa_60_mais=Count(
                 "pk",
-                filter=Q(data_nascimento__isnull=False) & Q(data_nascimento__lte=_data_limite(60))
+                filter=Q(data_nascimento__isnull=False) & Q(data_nascimento__lte=data_limite_aniversario(hoje, 60))
             ),
             sem_data_nasc=Count("pk", filter=Q(data_nascimento__isnull=True)),
         )

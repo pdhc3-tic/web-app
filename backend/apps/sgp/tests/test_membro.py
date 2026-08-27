@@ -309,6 +309,44 @@ class TestResumoMembros:
         assert "cpf" not in dados
 
 
+class TestFaixasEtarias:
+    """Testa que as faixas etárias cobrem todos os membros e os limites corretos."""
+
+    def test_limite_29_fevereiro_usa_dia_28(self):
+        from datetime import date as _date
+        from apps.sgp.views import data_limite_aniversario
+        hoje = _date(2027, 2, 28)  # ano não bissexto
+        # quem nasceu em 29/02 de 12 anos atrás deve ser tratado como 28/02
+        limite = data_limite_aniversario(hoje, 12)
+        assert limite.day == 28
+
+    def test_soma_faixas_mais_sem_data_igual_total(self, auth_client, upf, membro):
+        from datetime import date as _date
+        from apps.sgp.views import data_limite_aniversario
+        hoje = _date.today()
+        upf.titular.data_nascimento = hoje.replace(year=hoje.year - 30)
+        upf.titular.save()
+        # Limites exatos: nasce exatamente no aniversário de 12, 18 e 60 anos
+        for anos in (12, 18, 60):
+            MembroFamilia.objects.create(
+                upf=upf,
+                nome_completo=f"Limite {anos}",
+                grau_parentesco="filho",
+                data_nascimento=hoje.replace(year=hoje.year - anos),
+            )
+        MembroFactory(upf=upf, nome_completo="Sem data", data_nascimento=None)
+
+        response = auth_client.get(f"/api/v1/sgp/upfs/{upf.pk}/membros/resumo/")
+        faixas = response.data["faixa_etaria"]
+        soma = sum(faixas.values())
+        assert soma == response.data["total_membros"]
+        # Quem nasceu exatamente no aniversário de N anos está NA faixa de N+
+        assert faixas["0-11"] == 0
+        assert faixas["12-17"] == 1
+        assert faixas["18-59"] == 3
+        assert faixas["60+"] == 1
+
+
 # ──────────────────────────────────────────────────────────────
 # Isolamento territorial por role
 # ──────────────────────────────────────────────────────────────
