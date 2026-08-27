@@ -69,3 +69,14 @@ class PasswordResetConfirmThrottle(CustomWindowRateThrottle):
 
 class NotificationUnreadCountThrottle(UserRateThrottle):
     scope = "notification_unread_count"
+
+
+class PowerBIServiceTokenThrottle(CustomWindowRateThrottle):
+    """Limita o conector pelo principal autenticado, nunca pelo IP compartilhado."""
+
+    scope = "power_bi_service"
+
+    def get_cache_key(self, request, view):
+        if not request.auth:
+            return None
+        return f"throttle_{self.scope}_{request.auth}"

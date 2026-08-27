@@ -3,7 +3,7 @@ import re
 import django_filters
 from django.db.models import Q
 
-from apps.sgp.models import Activity, UPF
+from apps.sgp.models import Activity, FormResponse, UPF
 
 
 class UPFFilter(django_filters.FilterSet):
@@ -95,3 +95,18 @@ class ActivityFilter(django_filters.FilterSet):
             "tipo_atividade", "status",
             "data_inicio_after", "data_inicio_before",
         ]
+
+
+class FormResponseFilter(django_filters.FilterSet):
+    formulario_id = django_filters.NumberFilter()
+    data_inicio = django_filters.DateFilter(
+        field_name="data_preenchimento", lookup_expr="date__gte"
+    )
+    data_fim = django_filters.DateFilter(
+        field_name="data_preenchimento", lookup_expr="date__lte"
+    )
+    respondente = django_filters.CharFilter(lookup_expr="icontains")
+
+    class Meta:
+        model = FormResponse
+        fields = ["formulario_id", "data_inicio", "data_fim", "respondente"]

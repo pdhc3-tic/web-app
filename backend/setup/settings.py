@@ -16,6 +16,8 @@ import os
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 from celery.schedules import crontab
+import sentry_sdk
+from sentry_sdk.integrations.django import DjangoIntegration
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -38,6 +40,10 @@ SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "False") == "True"
+
+# POWER BI
+POWER_BI_SERVICE_TOKEN = os.getenv("POWER_BI_SERVICE_TOKEN", "")
+POWER_BI_RATE_LIMIT = os.getenv("POWER_BI_RATE_LIMIT", "100/hour")
 
 ALLOWED_HOSTS = [
     host.strip()
@@ -227,6 +233,7 @@ REST_FRAMEWORK = {
         "auth_password_reset_email": "3/hour",
         "auth_password_reset_ip": "5/hour",
         "notification_unread_count": "60/min",
+        "power_bi_service": POWER_BI_RATE_LIMIT,
     },
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "EXCEPTION_HANDLER": "setup.exceptions.custom_exception_handler",
@@ -273,6 +280,14 @@ CELERY_BEAT_SCHEDULE = {
         "task": "setup.tasks.cleanup_expired_tokens",
         "schedule": crontab(hour=2, minute=0),  # todo dia às 2h da manhã
     },
+    "check_acao_progress_alert": {
+        "task": "sgp.tasks.check_acao_progress_alert",
+        "schedule": crontab(hour=12, minute=0),  # diariamente ao meio-dia
+    },
+    "export_to_power_bi": {
+        "task": "sgp.tasks.export_to_power_bi",
+        "schedule": crontab(minute=0),  # a cada hora
+    },
 }
 
 # E-MAIL
@@ -300,6 +315,7 @@ if SENTRY_DSN:
         sentry_sdk.init(
             dsn=SENTRY_DSN,
             send_default_pii=False,
+            integrations=[DjangoIntegration()],
             traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0")),
         )
     except ImportError:

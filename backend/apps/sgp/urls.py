@@ -13,7 +13,18 @@ from .views import (
     UPFDocumentViewSet,
     ProjetoViewSet,
 )
-from .views.workplan import WorkPlanAcaoViewSet, WorkPlanMetaViewSet
+from .views.form_responses import (
+    AvailableFormListView,
+    FormResponseReceiveView,
+    FormResponseViewSet,
+)
+from .views.workplan import (
+    WorkPlanAcaoViewSet,
+    WorkPlanDashboardView,
+    WorkPlanExportView,
+    WorkPlanMetaViewSet,
+    WorkPlanPowerBIView,
+)
 
 router = DefaultRouter()
 router.register("upfs", UPFViewSet)
@@ -51,9 +62,47 @@ production_detail = ProductionViewSet.as_view({
     "patch": "partial_update",
     "delete": "destroy",
 })
+form_response_list = FormResponseViewSet.as_view({"get": "list"})
+form_response_detail = FormResponseViewSet.as_view({"get": "retrieve"})
 
 urlpatterns = router.urls + [
+    # Painel consolidado do Plano de Trabalho (Issue #136).
+    path(
+        "sgp/plano-trabalho/painel/",
+        WorkPlanDashboardView.as_view(),
+        name="workplan-dashboard",
+    ),
+    path(
+        "sgp/plano-trabalho/exportar/",
+        WorkPlanExportView.as_view(),
+        name="workplan-export",
+    ),
+    path(
+        "sgp/plano-trabalho/powerbi/",
+        WorkPlanPowerBIView.as_view(),
+        name="workplan-power-bi",
+    ),
     path("sgp/", include(sgp_router.urls)),
+    path(
+        "sgp/formularios-disponiveis/",
+        AvailableFormListView.as_view(),
+        name="formularios-disponiveis-list",
+    ),
+    path(
+        "sgp/formularios/respostas/",
+        FormResponseReceiveView.as_view(),
+        name="formulario-resposta-receive",
+    ),
+    path(
+        "sgp/upfs/<int:upf_pk>/formularios/",
+        form_response_list,
+        name="upf-formularios-list",
+    ),
+    path(
+        "sgp/upfs/<int:upf_pk>/formularios/<int:pk>/",
+        form_response_detail,
+        name="upf-formularios-detail",
+    ),
     path(
         "choices/",
         SGPChoicesView.as_view(),
@@ -100,22 +149,33 @@ urlpatterns = router.urls + [
         name="upf-producao-detail",
     ),
     path(
-        "upfs/<int:upf_pk>/membros/",
+        "sgp/upfs/<int:upf_pk>/membros/",
         MembroViewSet.as_view(
             {"get": "list", "post": "create"}
         ),
         name="upf-membros-list",
     ),
     path(
-        "upfs/<int:upf_pk>/membros/<int:pk>/",
+        "sgp/upfs/<int:upf_pk>/membros/<int:pk>/",
         MembroViewSet.as_view(
             {
                 "get": "retrieve",
+                "put": "update",
                 "patch": "partial_update",
                 "delete": "destroy",
             }
         ),
         name="upf-membros-detail",
+    ),
+    path(
+        "sgp/upfs/<int:upf_pk>/membros/resumo/",
+        MembroViewSet.as_view({"get": "resumo"}),
+        name="upf-membros-resumo",
+    ),
+    path(
+        "sgp/upfs/<int:upf_pk>/membros/transferir-titularidade/",
+        MembroViewSet.as_view({"post": "transferir_titularidade"}),
+        name="upf-membros-transferir-titularidade",
     ),
     path(
         'municipios/<int:municipio_id>/comunidades/',

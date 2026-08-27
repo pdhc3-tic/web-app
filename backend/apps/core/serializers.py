@@ -165,31 +165,64 @@ class UserListSerializer(serializers.ModelSerializer):
     ultimo_login = serializers.DateTimeField(
         format="%Y-%m-%dT%H:%M:%SZ", allow_null=True, default=None
     )
+    acesso_revogado_por = serializers.SerializerMethodField()
+    qtd_dispositivos = serializers.SerializerMethodField()
+    ultimo_sync_dispositivos = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             "id", "nome_completo", "email", "perfis",
             "territorios", "ativo", "ultimo_login",
+            "acesso_revogado", "acesso_revogado_em", "acesso_revogado_por",
+            "qtd_dispositivos", "ultimo_sync_dispositivos",
         ]
 
+    def get_acesso_revogado_por(self, obj):
+        if obj.acesso_revogado_por:
+            return {"id": obj.acesso_revogado_por_id, "nome": obj.acesso_revogado_por.nome}
+        return None
+
+    def get_qtd_dispositivos(self, obj):
+        # Preenchido apenas com ?com_dispositivo=true (evita N+1 nas demais listagens).
+        return getattr(obj, "qtd_dispositivos", None)
+
+    def get_ultimo_sync_dispositivos(self, obj):
+        push = getattr(obj, "ultimo_push_maximo", None)
+        pull = getattr(obj, "ultimo_pull_maximo", None)
+        candidates = [v for v in (push, pull) if v]
+        value = max(candidates) if candidates else None
+        return value.isoformat() if value else None
+
     def get_perfis(self, obj):
-        profiles = obj.profiles.select_related("perfil").all()
+        # consome o prefetch_related("profiles__perfil") sem reconsultar
+        profiles = obj.profiles.all()
         return [RoleSerializer(p.perfil).data for p in profiles]
 
+    def _todos_territorios(self):
+        cache = getattr(self, "_territorios_todos", None)
+        if cache is None:
+            cache = self._territorios_todos = list(Territory.objects.all())
+        return cache
+
+    def _territorios_do_usuario(self, obj):
+        especificos = {}
+        tem_global = False
+        for p in obj.profiles.all():
+            if p.territorio_id:
+                especificos.setdefault(p.territorio_id, p.territorio)
+            else:
+                tem_global = True
+        if especificos:
+            territorios = list(especificos.values())
+        elif tem_global:
+            territorios = self._todos_territorios()
+        else:
+            territorios = []
+        return sorted(territorios, key=lambda t: t.nome)
+
     def get_territorios(self, obj):
-        profile_territory_ids = list(
-            obj.profiles.filter(territorio__isnull=False)
-            .values_list("territorio_id", flat=True)
-        )
-        if profile_territory_ids:
-            return TerritorySerializer(
-                Territory.objects.filter(pk__in=profile_territory_ids), many=True
-            ).data
-        has_global = obj.profiles.filter(territorio__isnull=True).exists()
-        if has_global:
-            return TerritorySerializer(Territory.objects.all(), many=True).data
-        return []
+        return TerritorySerializer(self._territorios_do_usuario(obj), many=True).data
 
 
 class PerfilInputSerializer(serializers.Serializer):
@@ -211,19 +244,45 @@ class UserDetailSerializer(serializers.ModelSerializer):
     ultimo_login = serializers.DateTimeField(
         format="%Y-%m-%dT%H:%M:%SZ", allow_null=True, default=None, read_only=True
     )
+    acesso_revogado_por = serializers.SerializerMethodField()
+    qtd_dispositivos = serializers.SerializerMethodField()
+    ultimo_sync_dispositivos = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
-            "id", "nome_completo", "email", "perfis",
+            "id", "nome_completo", "email",
+            "perfis",
             "perfis_input", "territorios",
             "ativo", "ultimo_login", "telefone",
             "whatsapp", "foto_url", "password",
+            "acesso_revogado", "acesso_revogado_em", "acesso_revogado_por",
+            "qtd_dispositivos", "ultimo_sync_dispositivos",
         ]
         read_only_fields = ["ultimo_login"]
 
+    def get_acesso_revogado_por(self, obj):
+        if obj.acesso_revogado_por:
+            return {
+                "id": obj.acesso_revogado_por_id,
+                "nome": obj.acesso_revogado_por.nome,
+                "email": obj.acesso_revogado_por.email,
+            }
+        return None
+
+    def get_qtd_dispositivos(self, obj):
+        return getattr(obj, "qtd_dispositivos", None)
+
+    def get_ultimo_sync_dispositivos(self, obj):
+        push = getattr(obj, "ultimo_push_maximo", None)
+        pull = getattr(obj, "ultimo_pull_maximo", None)
+        candidates = [v for v in (push, pull) if v]
+        value = max(candidates) if candidates else None
+        return value.isoformat() if value else None
+
     def get_perfis(self, obj):
-        profiles = obj.profiles.select_related("perfil", "territorio").all()
+        # consome o prefetch_related("profiles__perfil") sem reconsultar
+        profiles = obj.profiles.all()
         return [
             {
                 "id": p.perfil_id,
@@ -234,19 +293,30 @@ class UserDetailSerializer(serializers.ModelSerializer):
             for p in profiles
         ]
 
+    def _todos_territorios(self):
+        cache = getattr(self, "_territorios_todos", None)
+        if cache is None:
+            cache = self._territorios_todos = list(Territory.objects.all())
+        return cache
+
+    def _territorios_do_usuario(self, obj):
+        especificos = {}
+        tem_global = False
+        for p in obj.profiles.all():
+            if p.territorio_id:
+                especificos.setdefault(p.territorio_id, p.territorio)
+            else:
+                tem_global = True
+        if especificos:
+            territorios = list(especificos.values())
+        elif tem_global:
+            territorios = self._todos_territorios()
+        else:
+            territorios = []
+        return sorted(territorios, key=lambda t: t.nome)
+
     def get_territorios(self, obj):
-        profile_territory_ids = list(
-            obj.profiles.filter(territorio__isnull=False)
-            .values_list("territorio_id", flat=True)
-        )
-        if profile_territory_ids:
-            return TerritorySerializer(
-                Territory.objects.filter(pk__in=profile_territory_ids), many=True
-            ).data
-        has_global = obj.profiles.filter(territorio__isnull=True).exists()
-        if has_global:
-            return TerritorySerializer(Territory.objects.all(), many=True).data
-        return []
+        return TerritorySerializer(self._territorios_do_usuario(obj), many=True).data
 
     def validate_email(self, value):
         value = value.lower().strip()

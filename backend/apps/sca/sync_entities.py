@@ -49,6 +49,7 @@ class SyncEntity:
     natural_key_paths: tuple = ()
     id_fields: frozenset = frozenset()
     soft_delete_field: str | None = None
+    territory_lookup: str = ""
 
     # ------------------------------------------------------------------
     # Helpers de valor
@@ -119,7 +120,7 @@ class SyncEntity:
         raise NotImplementedError
 
     def filter_by_territories(self, qs, territory_ids):
-        raise NotImplementedError
+        return qs.filter(**{f"{self.territory_lookup}__in": territory_ids})
 
     def filter_since(self, qs, since):
         return qs.filter(atualizado_em__gt=since)
@@ -167,6 +168,7 @@ class UPFSyncEntity(SyncEntity):
     id_fields = frozenset({"projeto", "comunidade", "municipio", "territorio"})
     sensitive_paths = ("titular.nome_completo", "titular.cpf", "latitude", "longitude")
     natural_key_paths = ("titular.cpf",)
+    territory_lookup = "territorio_id"
 
     # ------------------------------------------------------------------
     def territorio_id_from_payload(self, data, uuid_map=None):
@@ -174,9 +176,6 @@ class UPFSyncEntity(SyncEntity):
 
     def territorio_of(self, instance):
         return instance.territorio_id
-
-    def filter_by_territories(self, qs, territory_ids):
-        return qs.filter(territorio_id__in=territory_ids)
 
     def get_by_natural(self, data):
         titular = data.get("titular") or {}
@@ -204,7 +203,7 @@ class UPFSyncEntity(SyncEntity):
 
         titular = MembroFamilia.objects.create(
             upf=None,
-            parentesco="titular",
+            grau_parentesco="titular",
             criado_por=user,
             device_id=device_id,
             uuid_local=None,
@@ -216,13 +215,17 @@ class UPFSyncEntity(SyncEntity):
                 criado_por=user,
                 device_id=device_id,
                 uuid_local=uuid_local,
+                ultima_origem="sca",
+                ultimo_sync_em=timezone.now(),
                 **_resolve_fk_ids(UPF, data),
             )
         except Exception:
             titular.delete()
             raise
         titular.upf = upf
-        titular.save(update_fields=["upf"])
+        titular.ultima_origem = "sca"
+        titular.ultimo_sync_em = timezone.now()
+        titular.save(update_fields=["upf", "ultima_origem", "ultimo_sync_em"])
         return upf
 
     def apply_changes(self, instance, changes: dict):
@@ -236,11 +239,14 @@ class UPFSyncEntity(SyncEntity):
         upf_changes = _resolve_fk_ids(UPF, upf_changes)
         for field, value in upf_changes.items():
             setattr(instance, field, value)
-        if upf_changes:
-            instance.save()
+        instance.ultima_origem = "sca"
+        instance.ultimo_sync_em = timezone.now()
+        instance.save()
         if titular_changes:
             for field, value in titular_changes.items():
                 setattr(instance.titular, field, value)
+            instance.titular.ultima_origem = "sca"
+            instance.titular.ultimo_sync_em = timezone.now()
             instance.titular.save()
 
     def serialize(self, instance):
@@ -279,7 +285,7 @@ class UPFSyncEntity(SyncEntity):
             "titular": {
                 "nome_completo": titular.nome_completo,
                 "cpf": titular.cpf,
-                "data_nasc": titular.data_nasc.isoformat() if titular.data_nasc else None,
+                "data_nascimento": titular.data_nascimento.isoformat() if titular.data_nascimento else None,
                 "genero": titular.genero,
                 "cor_raca": titular.cor_raca,
                 "rg": titular.rg,
@@ -300,6 +306,7 @@ class MemberSyncEntity(SyncEntity):
     id_fields = frozenset({"upf"})
     sensitive_paths = ("nome_completo", "cpf")
     natural_key_paths = ("cpf",)
+    territory_lookup = "upf__territorio_id"
 
     def territorio_id_from_payload(self, data, uuid_map=None):
         upf_id = data.get("upf")
@@ -316,9 +323,6 @@ class MemberSyncEntity(SyncEntity):
 
     def territorio_of(self, instance):
         return instance.upf.territorio_id if instance.upf_id else None
-
-    def filter_by_territories(self, qs, territory_ids):
-        return qs.filter(upf__territorio_id__in=territory_ids)
 
     def get_by_natural(self, data):
         cpf = (data.get("cpf") or "").strip()
@@ -338,26 +342,30 @@ class MemberSyncEntity(SyncEntity):
             criado_por=user,
             device_id=device_id,
             uuid_local=uuid_local,
+            ultima_origem="sca",
+            ultimo_sync_em=timezone.now(),
             **data,
         )
 
     def apply_changes(self, instance, changes: dict):
         for field, value in changes.items():
             setattr(instance, field, value)
+        instance.ultima_origem = "sca"
+        instance.ultimo_sync_em = timezone.now()
         instance.save()
 
     def serialize(self, instance):
         data = {
             "upf": instance.upf_id,
             "nome_completo": instance.nome_completo,
-            "data_nasc": instance.data_nasc.isoformat() if instance.data_nasc else None,
+            "data_nascimento": instance.data_nascimento.isoformat() if instance.data_nascimento else None,
             "genero": instance.genero,
             "cor_raca": instance.cor_raca,
             "cpf": instance.cpf,
             "rg": instance.rg,
             "nis": instance.nis,
             "caf": instance.caf,
-            "parentesco": instance.parentesco,
+            "grau_parentesco": instance.grau_parentesco,
             "escola": instance.escola,
             "seguridade_social": list(instance.seguridade_social or []),
             "saude": list(instance.saude or []),
@@ -372,6 +380,7 @@ class ActivitySyncEntity(SyncEntity):
     soft_delete_field = "ativo"
     id_fields = frozenset({"acao", "municipio", "comunidade", "tecnico_responsavel"})
     sensitive_paths = ("titulo", "latitude", "longitude")
+    territory_lookup = "municipio__territory_id"
 
     def territorio_id_from_payload(self, data, uuid_map=None):
         municipio_id = data.get("municipio")
@@ -385,9 +394,6 @@ class ActivitySyncEntity(SyncEntity):
     def territorio_of(self, instance):
         return instance.municipio.territory_id if instance.municipio_id else None
 
-    def filter_by_territories(self, qs, territory_ids):
-        return qs.filter(municipio__territory_id__in=territory_ids)
-
     def create(self, data, *, user, device_id, uuid_local, uuid_map):
         upfs = [self._resolve_participante(item, uuid_map, UPF) for item in data.pop("upfs_participantes", [])]
         membros = [self._resolve_participante(item, uuid_map, MembroFamilia) for item in data.pop("membros_participantes", [])]
@@ -395,6 +401,8 @@ class ActivitySyncEntity(SyncEntity):
             criado_por=user,
             device_id=device_id,
             uuid_local=uuid_local,
+            ultima_origem="sca",
+            ultimo_sync_em=timezone.now(),
             **_resolve_fk_ids(Activity, data),
         )
         if upfs:
@@ -413,6 +421,8 @@ class ActivitySyncEntity(SyncEntity):
         changes = _resolve_fk_ids(Activity, changes)
         for field, value in changes.items():
             setattr(instance, field, value)
+        instance.ultima_origem = "sca"
+        instance.ultimo_sync_em = timezone.now()
         instance.save()
 
     def serialize(self, instance):
