@@ -1,7 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-cd "$APP_DIR"
+DEPLOY_PHASE="initialização"
+trap 'status=$?; if [ "$status" -ne 0 ]; then printf "DEPLOY_FAILURE phase=%s exit_code=%s\n" "$DEPLOY_PHASE" "$status"; fi' EXIT
+
+: "${VPS_APP_DIR:?VPS_APP_DIR precisa apontar para o diretório da aplicação na VPS}"
+: "${SUPERUSER_EMAIL:?SUPERUSER_EMAIL precisa ser configurado}"
+: "${SUPERUSER_NAME:?SUPERUSER_NAME precisa ser configurado}"
+: "${SUPERUSER_PASSWORD:?SUPERUSER_PASSWORD precisa ser configurado}"
+cd "$VPS_APP_DIR"
 
 set_env() {
   local file=$1 key=$2 value=$3
@@ -21,7 +28,8 @@ ensure_secret() {
   fi
 }
 
-echo "==> [1/7] Primeira configuração (.env)"
+DEPLOY_PHASE="configuração de ambiente"
+echo "==> [1/11] Primeira configuração (.env)"
 
 if [ ! -f backend/.env ]; then
   cp backend/.env.example backend/.env
@@ -43,30 +51,96 @@ if [ ! -f .env ]; then
   echo "    .env (raiz) criado com NEXT_PUBLIC_API_URL vazio (mesma origem)"
 fi
 set -a; source .env; set +a
+: "${SEED_DATA_DIR:?SEED_DATA_DIR precisa apontar para o diretório dos XLSX na VPS}"
+if [ ! -d "$SEED_DATA_DIR" ]; then
+  echo "FALHA - diretório de seed não encontrado: $SEED_DATA_DIR"
+  exit 1
+fi
+SEED_DATA_DIR="$(realpath "$SEED_DATA_DIR")"
+case "$SEED_DATA_DIR" in
+  "$VPS_APP_DIR"|"$VPS_APP_DIR"/*)
+    echo "FALHA - dados de seed precisam ficar fora do diretório da aplicação: $SEED_DATA_DIR"
+    exit 1
+    ;;
+esac
+if find "$SEED_DATA_DIR" -maxdepth 1 -perm /007 -print -quit | grep -q .; then
+  echo "FALHA - diretório ou arquivos de seed não podem ter permissões para grupo/outros."
+  exit 1
+fi
+export SEED_DATA_DIR
+SEED_PACKAGE_DIR="${SEED_PACKAGE_DIR:-$(dirname "$SEED_DATA_DIR")/pdhc-seed-package}"
+case "$SEED_PACKAGE_DIR" in
+  "$VPS_APP_DIR"|"$VPS_APP_DIR"/*)
+    echo "FALHA - pacote de seed precisa ficar fora do diretório da aplicação: $SEED_PACKAGE_DIR"
+    exit 1
+    ;;
+esac
+mkdir -p "$SEED_PACKAGE_DIR"
+chmod 700 "$SEED_PACKAGE_DIR"
+export SEED_PACKAGE_DIR
 
 PREV=$(git rev-parse HEAD)
 
-echo "==> [2/7] Atualizando código (branch main)"
+DEPLOY_PHASE="atualização do código"
+echo "==> [2/11] Atualizando código (branch main)"
 git fetch origin main
 git checkout main
 git pull --ff-only origin main
 
-echo "==> [3/7] Build das imagens"
+DEPLOY_PHASE="build das imagens"
+echo "==> [3/11] Build das imagens"
 docker compose -f docker-compose.prod.yml build
 
-echo "==> [4/7] Subindo containers"
+DEPLOY_PHASE="validação da árvore de migrations"
+echo "==> [4/11] Validando árvore de migrations"
+if ! docker compose -f docker-compose.prod.yml run --rm --no-deps \
+  --entrypoint python backend manage.py makemigrations --check --dry-run; then
+  echo "FALHA - há migrations conflitantes ou alterações de modelos sem migration versionada."
+  echo "Resolva o conflito localmente, gere uma merge migration revisada e faça o commit antes de tentar novamente."
+  exit 1
+fi
+
+DEPLOY_PHASE="subida dos containers"
+echo "==> [5/11] Subindo containers"
 docker compose -f docker-compose.prod.yml up -d
 
-echo "==> [5/7] Aguardando banco de dados ficar pronto"
+DEPLOY_PHASE="aguardo do banco de dados"
+echo "==> [6/11] Aguardando banco de dados ficar pronto"
 docker compose -f docker-compose.prod.yml exec -T backend \
   sh -c 'until python -c "import socket; socket.create_connection((\"db\", 5432), 2).close()"; do sleep 2; done'
 
-echo "==> [6/7] Aplicando migrations (usuário postgres)"
+DEPLOY_PHASE="preparação do pacote de seed"
+echo "==> [7/11] Preparando pacote normalizado de seed"
+docker compose -f docker-compose.prod.yml run --rm --no-deps \
+  -v "$SEED_DATA_DIR:/seed-data:ro" \
+  -v "$SEED_PACKAGE_DIR:/seed-package" \
+  backend python manage.py prepare_seed \
+  --source-dir /seed-data \
+  --output-dir /seed-package
+
+DEPLOY_PHASE="aplicação das migrations"
+echo "==> [8/11] Aplicando migrations (usuário postgres)"
 docker compose -f docker-compose.prod.yml exec -T \
   -e DB_USER=postgres -e DB_PASSWORD="$POSTGRES_PASSWORD" \
   backend python manage.py migrate
 
-echo "==> [7/7] Health check"
+DEPLOY_PHASE="provisionamento do superusuário"
+echo "==> [9/11] Garantindo superusuário de produção"
+docker compose -f docker-compose.prod.yml exec -T \
+  -e SUPERUSER_EMAIL="$SUPERUSER_EMAIL" \
+  -e SUPERUSER_NAME="$SUPERUSER_NAME" \
+  -e SUPERUSER_PASSWORD="$SUPERUSER_PASSWORD" \
+  backend python manage.py ensure_superuser
+
+DEPLOY_PHASE="importação dos dados legados"
+echo "==> [10/11] Importando dados legados"
+docker compose -f docker-compose.prod.yml run --rm --no-deps \
+  -v "$SEED_PACKAGE_DIR:/seed-package:ro" \
+  backend python manage.py seed_prod \
+  --package-dir /seed-package
+
+DEPLOY_PHASE="health check"
+echo "==> [11/11] Health check"
 if curl -fsS http://localhost/ >/dev/null; then
   echo "OK - aplicação respondeu"
 else

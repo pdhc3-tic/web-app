@@ -5,13 +5,80 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
 jobs:
-  deploy:
-    name: Deploy na VPS
+  test:
+    name: Testes do backend
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: app_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d app_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
+      - name: Construir imagem de testes
+        run: docker build -t pdhc-backend-test -f backend/Dockerfile.prod backend
+
+      - name: Verificar migrations
+        run: >-
+          docker run --rm --network host
+          -e DJANGO_SECRET_KEY=ci-only-secret
+          -e DEBUG=False
+          -e ALLOWED_HOSTS=localhost,127.0.0.1,backend
+          -e DB_NAME=app_db
+          -e DB_USER=postgres
+          -e DB_PASSWORD=postgres
+          -e DB_HOST=127.0.0.1
+          -e DB_PORT=5432
+          pdhc-backend-test
+          python manage.py makemigrations --check --dry-run
+
+      - name: Executar pytest
+        run: >-
+          docker run --rm --network host
+          -e DJANGO_SECRET_KEY=ci-only-secret
+          -e DEBUG=False
+          -e ALLOWED_HOSTS=localhost,127.0.0.1,backend
+          -e DB_NAME=app_db
+          -e DB_USER=postgres
+          -e DB_PASSWORD=postgres
+          -e DB_HOST=127.0.0.1
+          -e DB_PORT=5432
+          -e POSTGRES_USER=postgres
+          -e POSTGRES_PASSWORD=postgres
+          -e REDIS_HOST=127.0.0.1
+          -e REDIS_PORT=6379
+          pdhc-backend-test
+          pytest -v
+
+  deploy:
+    name: Deploy na VPS
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
       - name: Executar deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -20,26 +87,34 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           command_timeout: "30m"
-          envs: VPS_APP_DIR,POSTGRES_PASSWORD,VPS_HOST
+          envs: VPS_APP_DIR,POSTGRES_PASSWORD,VPS_HOST,SEED_DATA_DIR,SUPERUSER_EMAIL,SUPERUSER_NAME,SUPERUSER_PASSWORD
           script: |
             export VPS_APP_DIR="$VPS_APP_DIR"
             export POSTGRES_PASSWORD="$POSTGRES_PASSWORD"
             export VPS_HOST="$VPS_HOST"
+            export SEED_DATA_DIR="$SEED_DATA_DIR"
+            export SUPERUSER_EMAIL="$SUPERUSER_EMAIL"
+            export SUPERUSER_NAME="$SUPERUSER_NAME"
+            export SUPERUSER_PASSWORD="$SUPERUSER_PASSWORD"
             cd "$VPS_APP_DIR"
             bash deploy.sh
         env:
           VPS_APP_DIR: ${{ secrets.VPS_APP_DIR }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
+          SEED_DATA_DIR: ${{ secrets.SEED_DATA_DIR }}
+          SUPERUSER_EMAIL: ${{ secrets.SUPERUSER_EMAIL }}
+          SUPERUSER_NAME: ${{ secrets.SUPERUSER_NAME }}
+          SUPERUSER_PASSWORD: ${{ secrets.SUPERUSER_PASSWORD }}
 
   notify:
     name: Notificar Slack
-    needs: deploy
+    needs: [test, deploy]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Notificar sucesso
-        if: needs.deploy.result == 'success'
+        if: needs.test.result == 'success' && needs.deploy.result == 'success'
         uses: slackapi/slack-github-action@v1.26.0
         with:
           payload: |
@@ -64,35 +139,67 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
-      - name: Notificar falha
-        if: needs.deploy.result == 'failure'
-        uses: slackapi/slack-github-action@v1.26.0
-        with:
-          payload: |
-            {
-              "text": "Deploy do PDHC falhou",
-              "blocks": [
+      - name: Coletar motivo da falha
+        if: needs.test.result != 'success' || needs.deploy.result != 'success'
+        id: failure_details
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            failed_stage="testes"
+          else
+            failed_stage="deploy remoto"
+          fi
+
+          logs=$(gh run view "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --log-failed 2>&1 || true)
+          reason=$(printf '%s\n' "$logs" | tail -40 | cut -c1-2500)
+          if [ -z "$reason" ]; then
+            reason="Não foi possível obter as últimas linhas do log; consulte o workflow."
+          fi
+          delimiter="PAYLOAD_$(date +%s%N)"
+          payload=$(jq -n \
+            --arg stage "$failed_stage" \
+            --arg reason "$reason" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg commit "$GITHUB_SHA" \
+            --arg run_url "https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{
+              text: ("Deploy do PDHC falhou na etapa de " + $stage),
+              blocks: [
                 {
-                  "type": "header",
-                  "text": { "type": "plain_text", "text": "🚨 Deploy do PDHC falhou" }
+                  type: "header",
+                  text: { type: "plain_text", text: "🚨 Deploy do PDHC falhou" }
                 },
                 {
-                  "type": "section",
-                  "fields": [
-                    { "type": "mrkdwn", "text": "*Status:*\n❌ Falha" },
-                    { "type": "mrkdwn", "text": "*Ambiente:*\nProdução (VPS)" },
-                    { "type": "mrkdwn", "text": "*Repositório:*\n${{ github.repository }}" },
-                    { "type": "mrkdwn", "text": "*Commit:*\n${{ github.sha }}" }
+                  type: "section",
+                  fields: [
+                    { type: "mrkdwn", text: ("*Etapa:*\n" + $stage) },
+                    { type: "mrkdwn", text: "*Status:*\n❌ Falha" },
+                    { type: "mrkdwn", text: ("*Repositório:*\n" + $repository) },
+                    { type: "mrkdwn", text: ("*Commit:*\n" + $commit) }
                   ]
                 },
                 {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": ":rotating_light: <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|Ver logs do workflow>"
-                  }
+                  type: "section",
+                  text: { type: "mrkdwn", text: ("*Últimas linhas do log:*\n```" + $reason + "```") }
+                },
+                {
+                  type: "section",
+                  text: { type: "mrkdwn", text: (":rotating_light: <" + $run_url + "|Ver logs completos do workflow>") }
                 }
               ]
-            }
+            }')
+
+          {
+            echo "payload<<$delimiter"
+            echo "$payload"
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Notificar falha
+        if: needs.test.result != 'success' || needs.deploy.result != 'success'
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: ${{ steps.failure_details.outputs.payload }}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
