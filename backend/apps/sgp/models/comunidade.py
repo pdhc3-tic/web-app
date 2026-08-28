@@ -5,7 +5,7 @@ from django.db.models import Q
 
 class Comunidade(models.Model):
     id = models.AutoField(primary_key=True)
-    nome = models.CharField(max_length=120)
+    nome = models.CharField(max_length=255)
     municipio = models.ForeignKey(
         'core.Municipality',
         on_delete=models.PROTECT,

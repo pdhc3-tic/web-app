@@ -102,6 +102,103 @@ sudo docker compose exec \
 
 ---
 
+## Deploy em produção
+
+O deploy é executado pelo GitHub Actions na branch `main`. O workflow roda os
+testes e a verificação de migrations em um ambiente CI e, somente se passarem,
+conecta na VPS por SSH e executa `deploy.sh`. Na VPS, o script faz `git pull`,
+build das imagens, valida novamente as migrations, prepara o pacote de seed,
+aplica as migrations, importa os dados e executa o health check.
+
+### Secrets do GitHub Actions
+
+Configure em **Settings → Secrets and variables → Actions → Repository secrets**:
+
+| Secret | Uso |
+|--------|-----|
+| `VPS_HOST` | Host ou IP da VPS; também entra em `ALLOWED_HOSTS` |
+| `VPS_USER` | Usuário SSH usado pelo deploy |
+| `VPS_PORT` | Porta SSH |
+| `SSH_PRIVATE_KEY` | Chave privada correspondente à chave autorizada na VPS |
+| `VPS_APP_DIR` | Caminho absoluto do checkout na VPS |
+| `POSTGRES_PASSWORD` | Senha administrativa do PostgreSQL |
+| `SEED_DATA_DIR` | Caminho absoluto dos XLSX privados na VPS |
+| `SUPERUSER_EMAIL` | E-mail do administrador inicial |
+| `SUPERUSER_NAME` | Nome do administrador inicial |
+| `SUPERUSER_PASSWORD` | Senha do administrador inicial |
+| `SLACK_WEBHOOK_URL` | Webhook usado nas notificações de sucesso e falha |
+
+O workflow não versiona nem transporta os XLSX. O `SEED_DATA_DIR` é apenas
+enviado ao script remoto. Não coloque valores de secrets em arquivos do
+repositório ou nos logs.
+
+### Preparação da VPS
+
+O usuário SSH precisa ter Docker, o plugin Docker Compose, Git, `curl`,
+`openssl`, `realpath` e `find`, além de permissão para executar Docker
+(normalmente, estar no grupo `docker`). O repositório deve estar clonado em
+`VPS_APP_DIR`, na branch `main`, e `deploy.sh` deve ser executável:
+
+```bash
+chmod +x deploy.sh
+git checkout main
+```
+
+Mantenha os dados legados fora do checkout, por exemplo:
+
+```text
+/srv/pdhc/dados_seed/
+├── Comunidades (1).xlsx
+├── Culturas e Animais.xlsx
+├── Municípios (1).xlsx
+└── SGP.xlsx
+```
+
+O diretório e os arquivos devem ser acessíveis somente pelo usuário do deploy
+(sem permissões para grupo ou outros). O pacote normalizado será criado
+automaticamente em `../pdhc-seed-package`, também fora da aplicação, com
+permissões restritas. Veja o formato e o relatório em
+[`backend/README.md`](backend/README.md#seed-de-dados).
+
+Na primeira execução, o script cria `backend/.env` e `frontend/.env.local` a
+partir dos exemplos e gera `DJANGO_SECRET_KEY` e `AUTH_SECRET` se estiverem
+vazios. Revise os demais valores de produção, especialmente `ALLOWED_HOSTS`,
+`CORS_ALLOWED_ORIGINS`, storage R2 e `NEXT_PUBLIC_API_URL` no `.env` da raiz.
+O `DB_PASSWORD` de `backend/.env` precisa corresponder à senha do usuário
+`app_user` criado no PostgreSQL; a instalação inicial usa `app_pass` conforme
+`backend/db/init/01_app_user.sql`. O `POSTGRES_PASSWORD` deve permanecer
+compatível com a senha administrativa já existente no volume do banco.
+As credenciais `SUPERUSER_*` são usadas somente na primeira criação; se o
+superusuário já existir, o deploy preserva a senha atual.
+
+### Política de migrations e seed
+
+Conflitos de migrations devem ser resolvidos localmente, com uma merge
+migration revisada e versionada. A VPS **não** executa
+`makemigrations --merge`; o deploy aborta se
+`makemigrations --check --dry-run` detectar divergências.
+
+O seed segue o fluxo:
+
+```text
+XLSX privado → prepare_seed → pacote JSONL + manifest/report → seed_prod → PostgreSQL
+```
+
+O pacote é validado por SHA-256 antes da importação. A importação é idempotente,
+preserva a identidade legada em `SeedImportRecord` e apenas relata registros
+existentes no banco que não estão nas planilhas; não remove nem inativa esses
+registros automaticamente.
+
+### Falhas e notificações
+
+Deploys são serializados para impedir duas atualizações simultâneas. Em caso de
+falha nos testes ou no deploy remoto, o Slack recebe a etapa, o commit, as
+últimas linhas do log e um link para o workflow. Falhas de migration ou seed
+interrompem o deploy; falhas no health check acionam o rollback do código
+anterior.
+
+---
+
 ## Comandos Úteis
 
 ### Logs

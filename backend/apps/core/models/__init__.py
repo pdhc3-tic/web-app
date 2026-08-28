@@ -10,6 +10,7 @@ from .user_profile import UserProfile
 from .notifications import Notification, NotificationPreference
 from .system_config import SystemConfig, TipoConfiguracao
 from .organization import Organization
+from .seed_import import SeedImportRecord
 
 __all__ = ['User', 
            'Role', 
@@ -24,7 +25,7 @@ __all__ = ['User',
            'NotificationPreference',
            'SystemConfig',
            'TipoConfiguracao',
-           'Organization']
-
+           'Organization',
+           'SeedImportRecord']
 
 
