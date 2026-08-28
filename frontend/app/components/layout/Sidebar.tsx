@@ -14,6 +14,7 @@ import {
   LayoutDashboard,
   LogOut,
   Plug,
+  GitCompareArrows,
   SlidersHorizontal,
   Smartphone,
   UserCog,
@@ -24,7 +25,7 @@ import type { LucideIcon } from "lucide-react";
 import { BrandMark } from "@/app/components/icons";
 import Spinner from "@/app/components/icons/Spinner";
 import { logout } from "@/app/lib/api";
-import { isSuperAdmin } from "@/app/lib/auth/roles";
+import { canReviewSyncConflicts, isSuperAdmin } from "@/app/lib/auth/roles";
 import { Avatar } from "@/app/components/ui/Avatar/Avatar";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -58,6 +59,16 @@ const ADMIN_ITEMS: ModuleItem[] = [
     Icon: Plug,
   },
 ];
+
+// Revisão de conflitos de sincronização: Super Admin, UGP e Articulador Estadual.
+// Fica fora de ADMIN_ITEMS porque o público é outro — e fora do módulo SCA
+// porque /sca descreve o aplicativo de campo, não a área administrativa.
+const CONFLITOS_ITEM: ModuleItem = {
+  href: "/sca/conflitos",
+  // Rótulo curto: o menu trunca em ~20 caracteres quando expandido.
+  label: "Conflitos SCA",
+  Icon: GitCompareArrows,
+};
 
 // Badges mock: substituir por /api/v1/notifications/me/unread-count/ em sprint futura
 const MODULES: ModuleItem[] = [
@@ -214,6 +225,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const superAdmin = isSuperAdmin(session?.user);
+  const revisaConflitos = canReviewSyncConflicts(session?.user);
   const [collapsed, setCollapsed] = useState(false);
   const listRef = useRef<HTMLUListElement | null>(null);
 
@@ -302,6 +314,15 @@ export function Sidebar() {
               />
             </li>
           ))}
+        {revisaConflitos && (
+          <li>
+            <SidebarItem
+              item={CONFLITOS_ITEM}
+              active={isActive(pathname, CONFLITOS_ITEM.href)}
+              collapsed={collapsed}
+            />
+          </li>
+        )}
         {collapsed ? (
           <li aria-hidden="true" className="mx-3 my-3 h-px bg-border/40" />
         ) : (

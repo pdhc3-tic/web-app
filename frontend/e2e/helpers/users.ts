@@ -7,8 +7,12 @@ import path from "node:path";
  *                    (espelha o `IsSuperAdmin | IsUGP` do backend).
  * - `semPermissao` → perfil "adt-acr": lê as Metas, mas não pode criar,
  *                    editar nem excluir.
+ * - `articuladorPE` / `articuladorPB` → perfil "articulador-estadual", cada um
+ *                    vinculado a um conjunto DISJUNTO de territórios (PE/AL/MA e
+ *                    PB/RN/BA/MG). O par existe para provar o recorte por estado:
+ *                    um não pode enxergar os conflitos do outro.
  */
-export type UserKey = "ugp" | "semPermissao";
+export type UserKey = "ugp" | "semPermissao" | "articuladorPE" | "articuladorPB";
 
 export const USERS: Record<UserKey, { email: string; password: string }> = {
   ugp: {
@@ -17,6 +21,14 @@ export const USERS: Record<UserKey, { email: string; password: string }> = {
   },
   semPermissao: {
     email: process.env.E2E_LEITOR_EMAIL ?? "marina.albuquerque@demo.pdhc.local",
+    password: process.env.E2E_PASSWORD ?? "Pdhc@2026demo",
+  },
+  articuladorPE: {
+    email: process.env.E2E_ARTICULADOR_PE_EMAIL ?? "sandra.queiroz@demo.pdhc.local",
+    password: process.env.E2E_PASSWORD ?? "Pdhc@2026demo",
+  },
+  articuladorPB: {
+    email: process.env.E2E_ARTICULADOR_PB_EMAIL ?? "helio.fontenele@demo.pdhc.local",
     password: process.env.E2E_PASSWORD ?? "Pdhc@2026demo",
   },
 };
