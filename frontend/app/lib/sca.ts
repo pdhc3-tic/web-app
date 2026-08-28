@@ -175,6 +175,120 @@ export async function getDevice(
   return res.json();
 }
 
+// ─── Sync Events (Log de Sincronização — #157) ──────────────────────────────
+
+/** Espelha SyncEvent.Tipo do backend. */
+export type TipoEvento = "push" | "pull" | "refresh";
+
+/**
+ * Espelha SyncEvent.TipoConexao. `null` acontece na V1 quando o app não envia
+ * o header `X-Connection-Type` (backend/apps/sca/README.md, decisão V1 #2).
+ */
+export type TipoConexao = "wifi" | "4g" | "3g" | "2g" | "5g" | "offline" | null;
+
+export type SyncEventTecnico = {
+  id: number;
+  nome: string;
+  email: string;
+};
+
+/** Dispositivo aninhado no evento — pode ser `null` quando removido. */
+export type SyncEventDispositivo = {
+  id: number;
+  device_id: string;
+  nome: string;
+};
+
+/** Erro por item retornado no push. Formato definido em sca/README.md. */
+export type SyncErroDetalhe = {
+  uuid_local: string;
+  entidade: string;
+  codigo: string;
+  mensagem: string;
+};
+
+/**
+ * Espelha apps/sca/serializers.py::SyncEventListSerializer. `iniciado_em`
+ * pode ser `null` para eventos legados sem timestamp de início. `since` só
+ * vem preenchido em pulls (marca o cursor pedido pelo cliente).
+ */
+export type SyncEventListItem = {
+  id: number;
+  tipo: TipoEvento;
+  since: string | null;
+  iniciado_em: string | null;
+  finalizado_em: string;
+  contagem: number;
+  contagem_enviados: number;
+  contagem_recebidos: number;
+  contagem_erros: number;
+  has_erros: boolean;
+  tipo_conexao: TipoConexao;
+  tecnico: SyncEventTecnico;
+  dispositivo: SyncEventDispositivo | null;
+};
+
+/**
+ * Espelha SyncEventDetailSerializer — mesmo do list + `erros_detalhes`
+ * (lista de objetos por item rejeitado no push).
+ */
+export type SyncEventDetail = SyncEventListItem & {
+  erros_detalhes: SyncErroDetalhe[];
+};
+
+export type ListSyncEventsParams = {
+  limit: number;
+  offset: number;
+  /** ISO datetime (backend `iniciado_em_gte`). */
+  iniciadoDe?: string;
+  /** ISO datetime (backend `iniciado_em_lte`). */
+  iniciadoAte?: string;
+  /** User id do técnico. */
+  user?: number;
+  /** Id do dispositivo (SyncDevice.pk, não device_id). */
+  device?: number;
+  tipo?: TipoEvento;
+  /** Só eventos com erros (backend `com_erro` filter). */
+  comErro?: boolean;
+  ordering?: string;
+};
+
+function buildSyncEventsQuery(params: ListSyncEventsParams): string {
+  const qs = new URLSearchParams();
+  qs.set("limit", String(params.limit));
+  qs.set("offset", String(params.offset));
+  if (params.iniciadoDe) qs.set("iniciado_em_gte", params.iniciadoDe);
+  if (params.iniciadoAte) qs.set("iniciado_em_lte", params.iniciadoAte);
+  if (params.user !== undefined) qs.set("user", String(params.user));
+  if (params.device !== undefined) qs.set("device", String(params.device));
+  if (params.tipo) qs.set("tipo", params.tipo);
+  if (params.comErro !== undefined)
+    qs.set("com_erro", params.comErro ? "true" : "false");
+  if (params.ordering) qs.set("ordering", params.ordering);
+  return qs.toString();
+}
+
+/** GET /api/v1/sca/sync-events/ — histórico paginado (#157). Super Admin/UGP. */
+export async function listSyncEvents(
+  params: ListSyncEventsParams,
+  signal?: AbortSignal,
+): Promise<Paginated<SyncEventListItem>> {
+  const res = await apiClient(
+    `/api/v1/sca/sync-events/?${buildSyncEventsQuery(params)}`,
+    { signal },
+  );
+  return res.json();
+}
+
+/** GET /api/v1/sca/sync-events/{id}/ — detalhe com `erros_detalhes`. */
+export async function getSyncEvent(
+  id: number | string,
+  signal?: AbortSignal,
+): Promise<SyncEventDetail> {
+  const res = await apiClient(`/api/v1/sca/sync-events/${id}/`, { signal });
+  return res.json();
+}
+
 // ─── Filtros (opções para os selects) ────────────────────────────────────────
 
 /**
@@ -188,4 +302,21 @@ export async function fetchScaTerritoryOptions(
   const res = await apiClient("/api/v1/territories/?limit=500", { signal });
   const data: Paginated<SyncDeviceTerritorio> = await res.json();
   return data.results.map((t) => ({ value: String(t.id), label: t.nome }));
+}
+
+/**
+ * Opções de dispositivo para o filtro do log (#157). Não há um endpoint
+ * dedicado a "listar todos os dispositivos como options"; reaproveita o
+ * próprio `/api/v1/sca/devices/` com limit alto — a mesma listagem que o
+ * painel #156 já consome, então cache de HTTP costuma bater.
+ */
+export async function fetchDispositivoOptions(
+  signal?: AbortSignal,
+): Promise<SelectOption[]> {
+  const res = await apiClient("/api/v1/sca/devices/?limit=500", { signal });
+  const data = (await res.json()) as SyncDevicesPaginated;
+  return data.results.map((d) => ({
+    value: String(d.id),
+    label: `${d.nome || d.device_id} · ${d.tecnico.nome}`,
+  }));
 }

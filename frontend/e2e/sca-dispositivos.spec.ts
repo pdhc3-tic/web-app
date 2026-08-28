@@ -13,13 +13,6 @@ import { storageStatePath } from "./helpers/users";
  *
  * Cada dispositivo vai para um técnico distinto (round-robin sobre territórios
  * ativos), então filtrar por um território devolve exatamente um dispositivo.
- *
- * ─── Requisitos derivados que este arquivo NÃO cobre ────────────────────────
- *
- * - Clique navega para o log completo do dispositivo: depende da tela FE-12
- *   (#157) existir. Enquanto a rota /sca/sync-events for 404, o teste apenas
- *   confirmaria isso mesmo. Marcado como `test.fixme` — reabrir quando #157
- *   aterrissar.
  */
 const PAGE_URL = "/sca/dispositivos";
 
@@ -99,18 +92,27 @@ test.describe("SCA — Painel de Dispositivos", () => {
     }
   });
 
-  test.fixme(
-    "clique em um dispositivo navega para o log de sincronização correspondente",
-    async ({ page }) => {
-      // Aguardando #157 (FE-12) implementar /sca/sync-events. O botão "Ver log
-      // completo" do SlideOver já aponta para /sca/sync-events?device={id}; sem
-      // a tela destino, o teste só validaria uma 404.
-      await abrirPainel(page);
-      await tabela(page).first().click();
-      await page.getByTestId("dispositivo-ver-log").click();
-      await expect(page).toHaveURL(/\/sca\/sync-events\?device=\d+$/);
-    },
-  );
+  test("clique em um dispositivo navega para o log de sincronização correspondente", async ({
+    page,
+  }) => {
+    await abrirPainel(page);
+
+    // A ordem default do painel joga o dev-seed-vermelho no topo (nulls_first
+    // + sync mais antigo). Pegamos o id direto do data-testid pra montar a URL
+    // esperada — resiste a mudanças no seed.
+    const primeiraLinha = tabela(page).first();
+    const idAttr = await primeiraLinha.getAttribute("data-testid");
+    const deviceId = idAttr?.replace("dispositivo-row-", "");
+    expect(deviceId).toBeTruthy();
+
+    await primeiraLinha.click();
+    await page.getByTestId("dispositivo-ver-log").click();
+    await expect(page).toHaveURL(
+      new RegExp(`/sca/sync-events\\?device=${deviceId}$`),
+    );
+    // A página do log carrega — a query string sobreviveu.
+    await expect(page.getByTestId("sca-sync-events-page")).toBeVisible();
+  });
 });
 
 /** Escapa metacaracteres de regex para poder usar strings do seed em regex. */
