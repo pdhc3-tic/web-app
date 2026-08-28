@@ -1,5 +1,6 @@
 import logging
 
+from django.db.models import Count, Max
 from django.utils import timezone
 from django_filters import rest_framework as django_filters
 from rest_framework import filters, status, viewsets
@@ -39,13 +40,20 @@ class UserFilter(django_filters.FilterSet):
     ultimo_login_lte = django_filters.DateTimeFilter(
         field_name="ultimo_login", lookup_expr="lte"
     )
+    com_dispositivo = django_filters.BooleanFilter(method="filter_com_dispositivo")
 
     class Meta:
         model = User
         fields = [
             "perfil", "territorio", "ativo",
             "ultimo_login_gte", "ultimo_login_lte",
+            "com_dispositivo",
         ]
+
+    def filter_com_dispositivo(self, qs, name, value):
+        if value:
+            return qs.filter(sca_devices__isnull=False).distinct()
+        return qs
 
 
 class UserPagination(LimitOffsetPagination):
@@ -77,7 +85,16 @@ class UserViewSet(viewsets.ModelViewSet):
         qs = User.objects.all()
         if "ativo" not in self.request.query_params:
             qs = qs.filter(ativo=True)
+        if self._com_dispositivo_ativo():
+            qs = qs.annotate(
+                qtd_dispositivos=Count("sca_devices", distinct=True),
+                ultimo_push_maximo=Max("sca_devices__ultimo_push_em"),
+                ultimo_pull_maximo=Max("sca_devices__ultimo_pull_em"),
+            )
         return qs.prefetch_related("profiles__perfil", "profiles__territorio")
+
+    def _com_dispositivo_ativo(self) -> bool:
+        return self.request.query_params.get("com_dispositivo", "").lower() in ("true", "1")
 
     def perform_create(self, serializer):
         user = serializer.save()

@@ -2,6 +2,7 @@ import logging
 
 from celery import shared_task
 from django.conf import settings
+from django.utils import timezone
 
 from apps.core.utils import get_config
 from apps.sgp.services.google_calendar import (
@@ -15,6 +16,8 @@ from setup.tasks import send_email_notification
 from apps.core.models.notifications import Notification, TipoNotificacao
 from apps.core.models.user import User
 from apps.sgp.services.workplan_dashboard import dashboard_actions, enrich_dashboard_action
+from apps.sgp.cache import set_power_bi_snapshot
+from apps.sgp.services.workplan_export import workplan_export_rows
 
 
 try:
@@ -28,6 +31,27 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
+
+
+def refresh_power_bi_snapshot():
+    """Materializa o dataset de BI no Redis para manter a leitura da API barata."""
+    snapshot = {
+        "atualizado_em": timezone.now().isoformat(),
+        "resultados": workplan_export_rows(),
+    }
+    set_power_bi_snapshot(snapshot)
+    return snapshot
+
+
+@shared_task(name="sgp.tasks.export_to_power_bi")
+def export_to_power_bi() -> dict:
+    snapshot = refresh_power_bi_snapshot()
+    logger.info(
+        "Snapshot Power BI atualizado: linhas=%s atualizado_em=%s.",
+        len(snapshot["resultados"]),
+        snapshot["atualizado_em"],
+    )
+    return snapshot
 
 
 @shared_task(name="sgp.tasks.sync_activity_to_google_calendar")

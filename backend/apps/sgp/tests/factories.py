@@ -7,6 +7,7 @@ from apps.sgp.models import (
     Comunidade,
     Cultura,
     EspecieAnimal,
+    FormResponse,
     MembroFamilia,
     Production,
     Projeto,
@@ -30,6 +31,7 @@ class UPFFactory(factory.django.DjangoModelFactory):
         model = UPF
 
     _titular_nome = factory.Sequence(lambda n: f"Titular {n}")
+    _titular_cpf = factory.Sequence(lambda n: f"{n:011d}")
     projeto = factory.SubFactory(ProjetoFactory)
     municipio = factory.SubFactory(MunicipalityFactory)
     territorio = factory.SelfAttribute("municipio.territory")
@@ -38,13 +40,13 @@ class UPFFactory(factory.django.DjangoModelFactory):
     @classmethod
     def _create(cls, model_class, *args, **kwargs):
         titular_nome = kwargs.pop("_titular_nome")
-        titular_cpf = kwargs.pop("cpf", kwargs.pop("titular_cpf", "86288366757"))
+        titular_cpf = kwargs.pop("cpf", kwargs.pop("titular_cpf", kwargs.pop("_titular_cpf")))
         titular = MembroFamilia(
             upf=None,
-            parentesco="titular",
+            grau_parentesco="titular",
             nome_completo=titular_nome,
             cpf=titular_cpf,
-            data_nasc="1990-01-01",
+            data_nascimento="1990-01-01",
         )
         titular.save()
         kwargs["titular"] = titular
@@ -60,8 +62,8 @@ class MembroFactory(factory.django.DjangoModelFactory):
 
     upf = factory.SubFactory("apps.sgp.tests.factories.UPFFactory")
     nome_completo = factory.Sequence(lambda n: f"Membro {n}")
-    parentesco = "filho"
-    data_nasc = factory.LazyFunction(
+    grau_parentesco = "filho"
+    data_nascimento = factory.LazyFunction(
         lambda: __import__("datetime").date.today().replace(year=2000)
     )
     cpf = ""
@@ -97,6 +99,21 @@ class UPFDocumentFactory(factory.django.DjangoModelFactory):
         lambda: __import__("datetime").date(2026, 1, 15)
     )
     criado_por = factory.SubFactory(UserFactory)
+
+
+class FormResponseFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = FormResponse
+
+    upf = factory.SubFactory(UPFFactory)
+    formulario_id = factory.Sequence(lambda n: n + 1)
+    formulario_nome = factory.Sequence(lambda n: f"Formulário {n}")
+    formulario_versao = "1.0"
+    data_preenchimento = factory.LazyFunction(timezone.now)
+    respondente = "Técnico de Campo"
+    status = FormResponse.Status.SUBMETIDO
+    respostas_json = factory.LazyFunction(lambda: {"pergunta_1": "resposta"})
+    origem = FormResponse.Origem.WEB
 
 
 class CulturaFactory(factory.django.DjangoModelFactory):

@@ -1,16 +1,23 @@
 import logging
+import csv
+from io import BytesIO, StringIO
 
 from django.db.models import F, Sum
+from django.http import HttpResponse
+from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.views import APIView
 from apps.core.permissions import IsAuthenticatedActiveAccess
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 import sentry_sdk
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsSuperAdmin, IsUGP
+from apps.core.authentication import PowerBIServiceTokenAuthentication
+from apps.core.throttling import PowerBIServiceTokenThrottle
 from apps.core.services.permissions import user_has_role
 from apps.sgp.filters_workplan import WorkPlanAcaoFilter, WorkPlanMetaFilter
 from apps.sgp.models import WorkPlanAcao, WorkPlanMeta
@@ -23,7 +30,15 @@ from apps.sgp.serializers_workplan import (
     WorkPlanDashboardAcaoSerializer,
     WorkPlanDashboardMetaSerializer,
     WorkPlanDashboardQuerySerializer,
+    WorkPlanExportQuerySerializer,
 )
+from apps.sgp.cache import get_power_bi_snapshot
+from apps.sgp.services.workplan_export import EXPORT_COLUMNS, workplan_export_rows
+from apps.sgp.services.workplan_access import (
+    filter_workplan_actions_for_user,
+    filter_workplan_metas_for_user,
+)
+from apps.sgp.tasks import refresh_power_bi_snapshot
 from apps.sgp.services.workplan_dashboard import (
     apply_dashboard_filters,
     dashboard_actions_for_user,
@@ -31,6 +46,74 @@ from apps.sgp.services.workplan_dashboard import (
 )
 
 logger = logging.getLogger("apps.sgp.views.workplan")
+
+
+class WorkPlanExportView(APIView):
+    """Exporta o Plano de Trabalho no escopo territorial do usuário autenticado."""
+
+    permission_classes = [IsAuthenticatedActiveAccess]
+
+    def get(self, request):
+        query_serializer = WorkPlanExportQuerySerializer(data=request.query_params)
+        query_serializer.is_valid(raise_exception=True)
+        options = query_serializer.validated_data
+        formato = options.pop("formato")
+        rows = workplan_export_rows(user=request.user, **options)
+        timestamp = timezone.localtime().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"plano_trabalho_{timestamp}.{formato}"
+
+        if formato == "csv":
+            return self._csv_response(rows, filename)
+        return self._xlsx_response(rows, filename)
+
+    @staticmethod
+    def _csv_response(rows, filename):
+        content = StringIO()
+        writer = csv.writer(content)
+        writer.writerow([label for _, label in EXPORT_COLUMNS])
+        for row in rows:
+            writer.writerow([row[key] for key, _ in EXPORT_COLUMNS])
+        response = HttpResponse(
+            "\ufeff" + content.getvalue(),
+            content_type="text/csv; charset=utf-8",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+    @staticmethod
+    def _xlsx_response(rows, filename):
+        from openpyxl import Workbook
+
+        workbook = Workbook(write_only=True)
+        worksheet = workbook.create_sheet("Plano de Trabalho")
+        worksheet.append([label for _, label in EXPORT_COLUMNS])
+        for row in rows:
+            worksheet.append([row[key] for key, _ in EXPORT_COLUMNS])
+        content = BytesIO()
+        workbook.save(content)
+        response = HttpResponse(
+            content.getvalue(),
+            content_type=(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+class WorkPlanPowerBIView(APIView):
+    """Fornece o último snapshot consolidado ao conector Power BI."""
+
+    authentication_classes = [PowerBIServiceTokenAuthentication]
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [PowerBIServiceTokenThrottle]
+
+    def get(self, request):
+        snapshot = get_power_bi_snapshot()
+        if snapshot is None:
+            # Após um flush do Redis, a primeira chamada recompõe o snapshot.
+            snapshot = refresh_power_bi_snapshot()
+        return Response(snapshot)
 
 
 class WorkPlanDashboardView(APIView):
@@ -128,24 +211,7 @@ class WorkPlanMetaViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return qs.none()
 
-        if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
-            return qs
-
-        if user_has_role(user, "articulador-estadual"):
-            from apps.core.services.permissions import user_states
-            states = user_states(user)
-            if not states:
-                return qs.none()
-            return qs
-
-        if user_has_role(user, "adt-acr"):
-            from apps.core.services.permissions import user_territories
-            territories = user_territories(user)
-            if not territories.exists():
-                return qs.none()
-            return qs
-
-        return qs
+        return filter_workplan_metas_for_user(qs, user)
 
     def perform_create(self, serializer):
         instance = serializer.save(criado_por=self.request.user)
@@ -254,24 +320,7 @@ class WorkPlanAcaoViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return qs.none()
 
-        if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
-            return qs
-
-        if user_has_role(user, "articulador-estadual"):
-            from apps.core.services.permissions import user_states
-            states = user_states(user)
-            if not states:
-                return qs.none()
-            return qs
-
-        if user_has_role(user, "adt-acr"):
-            from apps.core.services.permissions import user_territories
-            territories = user_territories(user)
-            if not territories.exists():
-                return qs.none()
-            return qs
-
-        return qs
+        return filter_workplan_actions_for_user(qs, user)
 
     def perform_create(self, serializer):
         instance = serializer.save()

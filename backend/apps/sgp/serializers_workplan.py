@@ -4,6 +4,7 @@ from rest_framework import serializers
 
 from apps.sgp.constants import ODS_CHOICES
 from apps.sgp.models import WorkPlanAcao, WorkPlanMeta
+from apps.sgp.services.workplan_access import filter_workplan_actions_for_user
 
 
 class WorkPlanAcaoSerializer(serializers.ModelSerializer):
@@ -131,7 +132,7 @@ class WorkPlanMetaDetailSerializer(serializers.ModelSerializer):
     )
     status_calculado = serializers.CharField(read_only=True)
     criado_por = serializers.StringRelatedField(read_only=True)
-    acoes = WorkPlanAcaoSerializer(many=True, read_only=True)
+    acoes = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkPlanMeta
@@ -174,6 +175,13 @@ class WorkPlanMetaDetailSerializer(serializers.ModelSerializer):
             )
         return value
 
+    def get_acoes(self, obj):
+        request = self.context.get("request")
+        queryset = obj.acoes.all()
+        if request is not None and request.user.is_authenticated:
+            queryset = filter_workplan_actions_for_user(queryset, request.user)
+        return WorkPlanAcaoSerializer(queryset, many=True, context=self.context).data
+
     def validate_ods_ids(self, value):
         if not isinstance(value, list):
             raise serializers.ValidationError("ods_ids deve ser uma lista.")
@@ -194,6 +202,25 @@ class WorkPlanDashboardQuerySerializer(serializers.Serializer):
     status_execucao = serializers.ChoiceField(
         choices=["concluida", "em_atraso", "no_prazo"], required=False
     )
+
+
+class WorkPlanExportQuerySerializer(serializers.Serializer):
+    formato = serializers.ChoiceField(choices=["csv", "xlsx"])
+    meta_id = serializers.IntegerField(min_value=1, required=False)
+    territorio_id = serializers.IntegerField(min_value=1, required=False)
+    periodo_inicio = serializers.DateField(required=False)
+    periodo_fim = serializers.DateField(required=False)
+
+    def validate(self, attrs):
+        if (
+            attrs.get("periodo_inicio")
+            and attrs.get("periodo_fim")
+            and attrs["periodo_inicio"] > attrs["periodo_fim"]
+        ):
+            raise serializers.ValidationError(
+                "periodo_inicio não pode ser posterior a periodo_fim."
+            )
+        return attrs
 
 
 class WorkPlanDashboardMetaSerializer(serializers.ModelSerializer):

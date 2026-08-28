@@ -44,6 +44,7 @@ jobs:
         with:
           payload: |
             {
+              "text": "Deploy do PDHC concluído com sucesso",
               "blocks": [
                 {
                   "type": "header",
@@ -64,11 +65,12 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
       - name: Notificar falha
-        if: needs.deploy.result == 'failure' || needs.test.result == 'failure'
+        if: needs.deploy.result == 'failure'
         uses: slackapi/slack-github-action@v1.26.0
         with:
           payload: |
             {
+              "text": "Deploy do PDHC falhou",
               "blocks": [
                 {
                   "type": "header",

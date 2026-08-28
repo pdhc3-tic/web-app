@@ -1,5 +1,6 @@
 from .comunidade import Comunidade
 from .catalogos import Cultura, EspecieAnimal
+from .form_response import FormResponse
 from .membro import MembroFamilia
 from .production import Production
 from .projeto import Projeto
@@ -17,6 +18,7 @@ __all__ = [
     "Comunidade",
     "Cultura",
     "EspecieAnimal",
+    "FormResponse",
     "MembroFamilia",
     "Production",
     "Projeto",

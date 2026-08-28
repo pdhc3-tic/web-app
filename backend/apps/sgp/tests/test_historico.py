@@ -208,9 +208,9 @@ class TestHistoricoIncluirMembros:
         )
         upf_id = res.data["id"]
 
-        payload_membro = {"nome": "Filho Teste", "parentesco": "filho"}
+        payload_membro = {"nome_completo": "Filho Teste", "grau_parentesco": "filho"}
         auth_client.post(
-            f"/api/v1/upfs/{upf_id}/membros/",
+            f"/api/v1/sgp/upfs/{upf_id}/membros/",
             payload_membro,
             format="json",
         )

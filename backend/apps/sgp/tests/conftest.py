@@ -113,18 +113,18 @@ def outro_projeto(db):
 
 
 @pytest.fixture
-def upf(db, municipio, projeto):
+def upf(db, municipio_rn, projeto):
     return UPFFactory(
-        municipio=municipio,
+        municipio=municipio_rn,
         projeto=projeto,
         ativa=True,
     )
 
 
 @pytest.fixture
-def upf_inativa(db, municipio, projeto):
+def upf_inativa(db, municipio_rn, projeto):
     return UPFFactory(
-        municipio=municipio,
+        municipio=municipio_rn,
         projeto=projeto,
         ativa=False,
     )
@@ -136,6 +136,15 @@ def outra_upf(db, municipio, projeto):
         municipio=municipio,
         projeto=projeto,
         titular_cpf="52998224725",
+        ativa=True,
+    )
+
+
+@pytest.fixture
+def upf_ce(db, municipio_ce, projeto):
+    return UPFFactory(
+        municipio=municipio_ce,
+        projeto=projeto,
         ativa=True,
     )
 
@@ -237,7 +246,7 @@ def upf_payload_completo(projeto, municipio):
         "nome": "João Oliveira",
         "cpf": "52998224725",
         "rg": "1234567",
-        "data_nasc": "1985-03-15",
+        "data_nascimento": "1985-03-15",
         "genero": 1,
         "escolaridade": 7,
         "nis": "12345678901",
@@ -260,17 +269,17 @@ def upf_payload_completo(projeto, municipio):
 @pytest.fixture
 def membro_payload_minimo(upf):
     return {
-        "nome": "João Filho",
-        "parentesco": "filho",
+        "nome_completo": "João Filho",
+        "grau_parentesco": "filho",
     }
 
 
 @pytest.fixture
 def titular_payload(upf):
     return {
-        "nome": "Maria Titular",
-        "parentesco": "titular",
-        "data_nasc": "1980-05-10",
+        "nome_completo": "Maria Titular",
+        "grau_parentesco": "titular",
+        "data_nascimento": "1980-05-10",
     }
 
 
@@ -279,7 +288,7 @@ def membro(upf):
     return MembroFactory(
         upf=upf,
         nome_completo="Membro Existente",
-        parentesco="filho",
+        grau_parentesco="filho",
     )
 
 
@@ -288,7 +297,7 @@ def membro_outra_upf(outra_upf):
     return MembroFactory(
         upf=outra_upf,
         nome_completo="Membro de Outra UPF",
-        parentesco="filho",
+        grau_parentesco="filho",
     )
 
 
