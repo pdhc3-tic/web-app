@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, Gauge, SearchX } from "lucide-react";
+import { AlertTriangle, Download, Gauge, SearchX } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import Spinner from "@/app/components/icons/Spinner";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
@@ -22,6 +22,7 @@ import {
 import { avaliacaoDaApi } from "@/app/lib/semaforo";
 import { fetchTerritoryMap } from "@/app/lib/upfs";
 import { AcaoDetalheSlideOver } from "./_components/AcaoDetalheSlideOver";
+import { ExportarModal } from "./_components/ExportarModal";
 import { AlertaAcoesCriticas } from "./_components/AlertaAcoesCriticas";
 import { MetaResumoCard } from "./_components/MetaResumoCard";
 import {
@@ -67,6 +68,7 @@ function PainelAcompanhamentoConteudo() {
   const [reloadKey, setReloadKey] = useState(0);
 
   const [selecionada, setSelecionada] = useState<AcaoAvaliada | null>(null);
+  const [exportarAberto, setExportarAberto] = useState(false);
 
   // ── Filtros: a URL é o estado ─────────────────────────────────────────────
   // Compartilhar o recorte por link e sobreviver a refresh/voltar sai de graça
@@ -245,9 +247,24 @@ function PainelAcompanhamentoConteudo() {
 
   const header = (
     <PageHeader>
-      <h1 className="truncate text-base font-semibold text-text">
-        Painel de Acompanhamento
-      </h1>
+      <div className="flex w-full items-center justify-between gap-3">
+        <h1 className="truncate text-base font-semibold text-text">
+          Painel de Acompanhamento
+        </h1>
+        {/* Exportar é leitura: quem enxerga o painel pode baixar o mesmo
+            recorte — o endpoint aplica o escopo territorial do usuário. */}
+        {!forbidden && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setExportarAberto(true)}
+            leftIcon={<Download className="h-4 w-4" />}
+            data-testid="painel-exportar-btn"
+          >
+            Exportar
+          </Button>
+        )}
+      </div>
     </PageHeader>
   );
 
@@ -372,6 +389,15 @@ function PainelAcompanhamentoConteudo() {
         item={selecionada}
         onClose={() => setSelecionada(null)}
         canManage={canManage}
+      />
+
+      <ExportarModal
+        open={exportarAberto}
+        onClose={() => setExportarAberto(false)}
+        metaOptions={metaOptions}
+        metaIdInicial={filtros.meta}
+        territorioId={filtros.territorio}
+        situacaoAtiva={filtros.situacao !== ""}
       />
     </div>
   );
