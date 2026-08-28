@@ -222,7 +222,7 @@ export type NestedRef = { id: number; nome: string };
 /**
  * Titular aninhado no detalhe da UPF. Espelha
  * apps/sgp/serializers.py::TitularNestedSerializer. O titular é um MembroFamilia
- * (parentesco="titular"). CPF vem CRU (sem máscara) — mascarar na exibição.
+ * (grau_parentesco="titular"). CPF vem CRU (sem máscara) — mascarar na exibição.
  * Campos de choice (genero, cor_raca, escolaridade) são inteiros + `*_display`.
  */
 export type TitularNested = {
@@ -230,7 +230,7 @@ export type TitularNested = {
   nome_completo: string;
   cpf: string;
   rg: string;
-  data_nasc: string | null;
+  data_nascimento: string | null;
   genero: number | null;
   genero_display: string;
   cor_raca: number | null;
@@ -341,7 +341,7 @@ export type UpfWritePayload = {
   nome: string;
   cpf: string;
   rg?: string;
-  data_nasc?: string | null;
+  data_nascimento?: string | null;
   genero?: number | null;
   cor_raca?: number | null;
   escolaridade?: number | null;

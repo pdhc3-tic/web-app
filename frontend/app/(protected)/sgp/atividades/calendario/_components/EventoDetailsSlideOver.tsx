@@ -12,7 +12,7 @@ import {
   statusLabel,
   type AtividadeDetail,
 } from "@/app/lib/atividades";
-import { formatDate } from "@/app/lib/datetime";
+import { formatDate, formatTime, formatTimeRange } from "@/app/lib/datetime";
 import type { CalendarActivityEvent } from "@/app/lib/atividadesCalendario";
 import { statusHexColor } from "./statusColor";
 
@@ -108,12 +108,7 @@ export function EventoDetailsSlideOver({ event, open, onClose }: Props) {
             <h3 className="mt-2 text-lg font-semibold leading-snug text-text">
               {event.titulo}
             </h3>
-            <p className="mt-1 text-sm text-text-muted">
-              {formatDate(event.data_inicio)}
-              {event.data_inicio !== event.data_fim && (
-                <> — {formatDate(event.data_fim)}</>
-              )}
-            </p>
+            <p className="mt-1 text-sm text-text-muted">{periodoLabel(event)}</p>
           </div>
 
           {/* Contexto do evento */}
@@ -204,6 +199,28 @@ export function EventoDetailsSlideOver({ event, open, onClose }: Props) {
       ) : null}
     </SlideOver>
   );
+}
+
+/**
+ * Período legível do evento. `data_inicio`/`data_fim` são datetimes, então
+ * comparar as strings cruas marcaria como "multi-dia" qualquer evento que
+ * apenas começa e termina em horas diferentes — a comparação é por DIA:
+ *
+ *   mesmo dia  → "02/08/2026 · 13:00 – 16:00"
+ *   vários dias → "02/08/2026 13:00 — 05/08/2026 15:00"
+ */
+function periodoLabel(event: CalendarActivityEvent): string {
+  const diaInicio = formatDate(event.data_inicio);
+  const diaFim = formatDate(event.data_fim);
+
+  if (diaInicio === diaFim) {
+    const faixa = formatTimeRange(event.data_inicio, event.data_fim);
+    return faixa ? `${diaInicio} · ${faixa}` : diaInicio;
+  }
+
+  const hi = formatTime(event.data_inicio);
+  const hf = formatTime(event.data_fim);
+  return `${diaInicio}${hi ? ` ${hi}` : ""} — ${diaFim}${hf ? ` ${hf}` : ""}`;
 }
 
 function InfoItem({

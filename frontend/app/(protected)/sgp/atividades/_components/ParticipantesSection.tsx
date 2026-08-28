@@ -135,7 +135,7 @@ export function ParticipantesSection({
 
         const porId = new Map<number, { nome: string; upfId: number }>();
         for (const [upfId, lista] of pares) {
-          for (const m of lista) porId.set(m.id, { nome: m.nome, upfId });
+          for (const m of lista) porId.set(m.id, { nome: m.nome_completo, upfId });
         }
         onChangeRef.current({
           membros_participantes: membrosRef.current.map((m) => {
@@ -185,7 +185,7 @@ export function ParticipantesSection({
         membros_participantes: marcado
           ? [
               ...membros,
-              { id: membro.id, nome: membro.nome, upfId },
+              { id: membro.id, nome: membro.nome_completo, upfId },
             ]
           : membros.filter((m) => m.id !== membro.id),
       });
@@ -200,7 +200,7 @@ export function ParticipantesSection({
         const jaSelecionados = new Set(membros.map((m) => m.id));
         const novos = lista
           .filter((m) => !jaSelecionados.has(m.id))
-          .map((m) => ({ id: m.id, nome: m.nome, upfId }));
+          .map((m) => ({ id: m.id, nome: m.nome_completo, upfId }));
         onChange({ membros_participantes: [...membros, ...novos] });
       } else {
         onChange({
@@ -358,9 +358,9 @@ export function ParticipantesSection({
                               }
                               className="h-4 w-4 shrink-0 accent-(--color-primary)"
                             />
-                            <span className="truncate">{m.nome}</span>
+                            <span className="truncate">{m.nome_completo}</span>
                             <span className="ml-auto shrink-0 text-xs text-text-muted">
-                              {m.parentesco_display}
+                              {m.grau_parentesco_display}
                             </span>
                           </label>
                         </li>

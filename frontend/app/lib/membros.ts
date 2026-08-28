@@ -16,13 +16,17 @@ export const PARENTESCO_OPTIONS: { value: string; label: string }[] = [
   { value: "outro", label: "Outro" },
 ];
 
-/** Espelha apps/sgp/constants.py::SAUDE_CHOICES. Valor cru + rótulo humano. */
+/**
+ * Espelha apps/sgp/constants.py::SAUDE_CHOICES. Valor cru + rótulo humano.
+ * `nenhuma` é mutuamente exclusiva com as demais (validate_saude no backend).
+ */
 export const SAUDE_OPTIONS: { value: string; label: string }[] = [
+  { value: "nenhuma", label: "Nenhuma" },
   { value: "diabetes", label: "Diabetes" },
   { value: "hipertensao", label: "Hipertensão" },
   { value: "deficiencia_visual", label: "Deficiência visual" },
   { value: "deficiencia_auditiva", label: "Deficiência auditiva" },
-  { value: "deficiencia_fisica", label: "Deficiência física" },
+  { value: "deficiencia_motora", label: "Deficiência motora" },
   { value: "deficiencia_intelectual", label: "Deficiência intelectual" },
   { value: "deficiencia_multipla", label: "Deficiência múltipla" },
   { value: "doenca_cardiaca", label: "Doença cardíaca" },
@@ -50,11 +54,11 @@ export function saudeLabel(value: string): string {
  */
 export type MembroListItem = {
   id: number;
-  nome: string;
-  data_nasc: string | null;
+  nome_completo: string;
+  data_nascimento: string | null;
   idade: number | null;
-  parentesco: string;
-  parentesco_display: string;
+  grau_parentesco: string;
+  grau_parentesco_display: string;
   cpf: string;
   genero: number | null;
   genero_display: string;
@@ -67,15 +71,15 @@ export type MembroListItem = {
 export type MembroDetail = {
   id: number;
   upf: number;
-  nome: string;
-  data_nasc: string | null;
+  nome_completo: string;
+  data_nascimento: string | null;
   idade: number | null;
   cpf: string;
   rg: string;
   nis: string;
   caf: string;
-  parentesco: string;
-  parentesco_display: string;
+  grau_parentesco: string;
+  grau_parentesco_display: string;
   genero: number | null;
   genero_display: string;
   cor_raca: number | null;
@@ -92,9 +96,9 @@ export type MembroDetail = {
 
 /** Campos graváveis (POST/PATCH). Campos opcionais podem ser omitidos. */
 export type MembroWritePayload = {
-  nome: string;
-  parentesco: string;
-  data_nasc?: string | null;
+  nome_completo: string;
+  grau_parentesco: string;
+  data_nascimento?: string | null;
   cpf?: string;
   rg?: string;
   nis?: string;
@@ -112,63 +116,63 @@ export type MembroWritePayload = {
 type Envelope<T> = { count?: number; results?: T[] };
 
 /**
- * GET /api/v1/upfs/{upfId}/membros/ — lista todos os membros da UPF.
+ * GET /api/v1/sgp/upfs/{upfId}/membros/ — lista todos os membros da UPF.
  * Aceita resposta paginada (envelope) ou array cru — retorna sempre um array.
  */
 export async function listMembros(
   upfId: string | number,
   signal?: AbortSignal,
 ): Promise<MembroListItem[]> {
-  const res = await apiClient(`/api/v1/upfs/${upfId}/membros/?limit=1000`, {
+  const res = await apiClient(`/api/v1/sgp/upfs/${upfId}/membros/?limit=1000`, {
     signal,
   });
   const data = (await res.json()) as MembroListItem[] | Envelope<MembroListItem>;
   return Array.isArray(data) ? data : (data.results ?? []);
 }
 
-/** GET /api/v1/upfs/{upfId}/membros/{id}/ — detalhe completo do membro. */
+/** GET /api/v1/sgp/upfs/{upfId}/membros/{id}/ — detalhe completo do membro. */
 export async function getMembro(
   upfId: string | number,
   id: string | number,
   signal?: AbortSignal,
 ): Promise<MembroDetail> {
-  const res = await apiClient(`/api/v1/upfs/${upfId}/membros/${id}/`, {
+  const res = await apiClient(`/api/v1/sgp/upfs/${upfId}/membros/${id}/`, {
     signal,
   });
   return res.json();
 }
 
-/** POST /api/v1/upfs/{upfId}/membros/ — cria um membro. */
+/** POST /api/v1/sgp/upfs/{upfId}/membros/ — cria um membro. */
 export async function createMembro(
   upfId: string | number,
   payload: MembroWritePayload,
 ): Promise<MembroDetail> {
-  const res = await apiClient(`/api/v1/upfs/${upfId}/membros/`, {
+  const res = await apiClient(`/api/v1/sgp/upfs/${upfId}/membros/`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
   return res.json();
 }
 
-/** PATCH /api/v1/upfs/{upfId}/membros/{id}/ — atualiza um membro. */
+/** PATCH /api/v1/sgp/upfs/{upfId}/membros/{id}/ — atualiza um membro. */
 export async function updateMembro(
   upfId: string | number,
   id: string | number,
   payload: MembroWritePayload,
 ): Promise<MembroDetail> {
-  const res = await apiClient(`/api/v1/upfs/${upfId}/membros/${id}/`, {
+  const res = await apiClient(`/api/v1/sgp/upfs/${upfId}/membros/${id}/`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
   return res.json();
 }
 
-/** DELETE /api/v1/upfs/{upfId}/membros/{id}/ — remove um membro. */
+/** DELETE /api/v1/sgp/upfs/{upfId}/membros/{id}/ — remove um membro. */
 export async function deleteMembro(
   upfId: string | number,
   id: string | number,
 ): Promise<void> {
-  await apiClient(`/api/v1/upfs/${upfId}/membros/${id}/`, {
+  await apiClient(`/api/v1/sgp/upfs/${upfId}/membros/${id}/`, {
     method: "DELETE",
   });
 }

@@ -389,10 +389,14 @@ class Command(BaseCommand):
             SyncEvent.objects.all().delete()
             ConflictLog.objects.all().delete()
             SyncDevice.objects.all().delete()
+            # Os perfis saem (o seed reatribui papel/território do zero), mas os
+            # usuários de demo FICAM: AuditLog.user é SET_NULL e o trigger
+            # core_auditlog_immutable barra tanto UPDATE quanto DELETE na tabela,
+            # então apagar um usuário que já registrou auditoria é impossível.
+            # _tecnicos() reaproveita quem já existe, então recriar não é preciso.
             UserProfile.objects.filter(
                 user__email__endswith=f"@{DEMO_EMAIL_DOMAIN}"
             ).delete()
-            User.objects.filter(email__endswith=f"@{DEMO_EMAIL_DOMAIN}").delete()
 
     # ── Blocos de seed ─────────────────────────────────────────────────────────
 
@@ -416,6 +420,19 @@ class Command(BaseCommand):
                     nome=f"{primeiro} {ultimo}",
                     password=DEMO_PASSWORD,
                 )
+            else:
+                # Usuário sobrevivente de um --reset: repõe nome e senha para que
+                # as credenciais de demo valham sempre o que o resumo anuncia.
+                user.nome = f"{primeiro} {ultimo}"
+                user.set_password(DEMO_PASSWORD)
+                user.ativo = True
+                user.acesso_revogado = False
+                user.acesso_revogado_em = None
+                user.acesso_revogado_por = None
+                user.save(update_fields=[
+                    "nome", "password", "ativo",
+                    "acesso_revogado", "acesso_revogado_em", "acesso_revogado_por",
+                ])
             role = Role.objects.get(slug=slug)
             territorio = None
             if slug == "adt-acr":

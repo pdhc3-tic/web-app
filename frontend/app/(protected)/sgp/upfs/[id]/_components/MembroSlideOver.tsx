@@ -26,6 +26,7 @@ import { formatCpfInput, isValidCpf, maskCpf } from "@/app/lib/format";
 import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
 import {
   SEGURIDADE_OPTIONS,
+  labelForValue,
   withCurrentValue,
 } from "@/app/(protected)/sgp/upfs/_components/upfFormOptions";
 
@@ -52,9 +53,9 @@ type Props = {
 };
 
 type FormState = {
-  nome: string;
-  parentesco: string;
-  data_nasc: string;
+  nome_completo: string;
+  grau_parentesco: string;
+  data_nascimento: string;
   genero: string;
   cpf: string;
   nis: string;
@@ -67,9 +68,9 @@ type FormState = {
 };
 
 const EMPTY_FORM: FormState = {
-  nome: "",
-  parentesco: "",
-  data_nasc: "",
+  nome_completo: "",
+  grau_parentesco: "",
+  data_nascimento: "",
   genero: "",
   cpf: "",
   nis: "",
@@ -79,6 +80,15 @@ const EMPTY_FORM: FormState = {
   cor_raca: "",
   saude: [],
   seguridade_social: [],
+};
+
+/**
+ * Opção que zera as demais em cada multiselect. Espelha validate_saude e
+ * validate_seguridade_social em apps/sgp/serializers.py.
+ */
+const VALOR_EXCLUSIVO: Record<"saude" | "seguridade_social", string> = {
+  saude: "nenhuma",
+  seguridade_social: "nenhum",
 };
 
 /** "" ↔ null para choices inteiros (o form guarda string; a API espera número). */
@@ -92,9 +102,9 @@ function strToInt(value: string): number | null {
 
 function detailToForm(m: MembroDetail): FormState {
   return {
-    nome: m.nome ?? "",
-    parentesco: m.parentesco ?? "",
-    data_nasc: m.data_nasc ?? "",
+    nome_completo: m.nome_completo ?? "",
+    grau_parentesco: m.grau_parentesco ?? "",
+    data_nascimento: m.data_nascimento ?? "",
     genero: intToStr(m.genero),
     cpf: m.cpf ? formatCpfInput(m.cpf) : "",
     nis: m.nis ?? "",
@@ -110,9 +120,9 @@ function detailToForm(m: MembroDetail): FormState {
 function formToPayload(f: FormState): MembroWritePayload {
   const cpfDigits = f.cpf.replace(/\D/g, "");
   return {
-    nome: f.nome.trim(),
-    parentesco: f.parentesco,
-    data_nasc: f.data_nasc || null,
+    nome_completo: f.nome_completo.trim(),
+    grau_parentesco: f.grau_parentesco,
+    data_nascimento: f.data_nascimento || null,
     genero: strToInt(f.genero),
     cpf: cpfDigits,
     nis: f.nis.trim(),
@@ -183,18 +193,21 @@ export function MembroSlideOver({
     return () => controller.abort();
   }, [open, mode, upfId, membroId]);
 
-  // Idade calculada em tempo real ao lado do campo data_nasc.
-  const idade = useMemo(() => calcIdade(form.data_nasc), [form.data_nasc]);
+  // Idade calculada em tempo real ao lado do campo data_nascimento.
+  const idade = useMemo(
+    () => calcIdade(form.data_nascimento),
+    [form.data_nascimento],
+  );
 
   // Titular só é desabilitado se já existe titular E este membro não é ele.
   const parentescoOptions = useMemo(() => {
-    const isCurrentTitular = membro?.parentesco === "titular";
-    return choices.parentesco.map((p) => ({
+    const isCurrentTitular = membro?.grau_parentesco === "titular";
+    return choices.grau_parentesco.map((p) => ({
       value: p.value,
       label: p.label,
       disabled: p.value === "titular" && titularExists && !isCurrentTitular,
     }));
-  }, [choices.parentesco, titularExists, membro]);
+  }, [choices.grau_parentesco, titularExists, membro]);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -206,20 +219,32 @@ export function MembroSlideOver({
     });
   }
 
+  /**
+   * Alterna um item dos multiselects respeitando a exclusividade validada no
+   * backend: marcar "nenhuma"/"nenhum" limpa o resto, e marcar qualquer outra
+   * opção descarta a exclusiva. Sem isso o submit voltaria 400.
+   */
   function toggleMulti(key: "saude" | "seguridade_social", value: string) {
     setForm((f) => {
       const list = f[key];
-      const next = list.includes(value)
-        ? list.filter((v) => v !== value)
-        : [...list, value];
+      if (list.includes(value)) {
+        return { ...f, [key]: list.filter((v) => v !== value) };
+      }
+      const exclusivo = VALOR_EXCLUSIVO[key];
+      const next =
+        value === exclusivo
+          ? [value]
+          : [...list.filter((v) => v !== exclusivo), value];
       return { ...f, [key]: next };
     });
   }
 
   function validateClient(): boolean {
     const errs: Record<string, string> = {};
-    if (!form.nome.trim()) errs.nome = "Informe o nome.";
-    if (!form.parentesco) errs.parentesco = "Selecione o parentesco.";
+    if (!form.nome_completo.trim())
+      errs.nome_completo = "Informe o nome.";
+    if (!form.grau_parentesco)
+      errs.grau_parentesco = "Selecione o parentesco.";
     if (form.cpf.trim() && !isValidCpf(form.cpf)) {
       errs.cpf = "CPF inválido.";
     }
@@ -243,10 +268,9 @@ export function MembroSlideOver({
     } catch (e: unknown) {
       if (e instanceof ApiError) {
         const errs: Record<string, string> = {};
+        // FormState usa os mesmos nomes da API — o erro cai direto no campo.
         e.fieldErrors?.forEach((fe) => {
-          // Backend usa "nome_completo" internamente; a API espera "nome".
-          const key = fe.field === "nome_completo" ? "nome" : fe.field;
-          errs[key] = fe.message;
+          errs[fe.field] = fe.message;
         });
         setFieldErrors(errs);
         if (!e.fieldErrors || e.fieldErrors.length === 0) {
@@ -266,7 +290,7 @@ export function MembroSlideOver({
       ? "Adicionar membro"
       : mode === "edit"
         ? "Editar membro"
-        : membro?.nome || membroListItem?.nome || "Membro";
+        : membro?.nome_completo || membroListItem?.nome_completo || "Membro";
 
   const actions = isView && onEditFromView ? (
     <Button
@@ -342,7 +366,7 @@ function ViewBody({ membro }: { membro: MembroDetail }) {
     membro.seguridade_social.length > 0 ? (
       <div className="flex flex-wrap gap-1.5">
         {membro.seguridade_social.map((s) => (
-          <Chip key={s}>{s}</Chip>
+          <Chip key={s}>{labelForValue(SEGURIDADE_OPTIONS, s)}</Chip>
         ))}
       </div>
     ) : undefined;
@@ -351,9 +375,9 @@ function ViewBody({ membro }: { membro: MembroDetail }) {
     <div className="px-4 py-4">
       <DefinitionList
         items={[
-          { label: "Nome", value: membro.nome },
-          { label: "Parentesco", value: membro.parentesco_display },
-          { label: "Nascimento", value: membro.data_nasc ?? undefined },
+          { label: "Nome", value: membro.nome_completo },
+          { label: "Parentesco", value: membro.grau_parentesco_display },
+          { label: "Nascimento", value: membro.data_nascimento ?? undefined },
           {
             label: "Idade",
             value:
@@ -412,9 +436,9 @@ function FormBody({
       <Input
         label="Nome completo"
         required
-        value={form.nome}
-        onChange={(e) => update("nome", e.target.value)}
-        error={fieldErrors.nome}
+        value={form.nome_completo}
+        onChange={(e) => update("nome_completo", e.target.value)}
+        error={fieldErrors.nome_completo}
         autoComplete="off"
       />
 
@@ -422,10 +446,10 @@ function FormBody({
         <SelectField
           label="Parentesco"
           required
-          value={form.parentesco}
-          onChange={(v) => update("parentesco", v)}
+          value={form.grau_parentesco}
+          onChange={(v) => update("grau_parentesco", v)}
           options={parentescoOptions}
-          error={fieldErrors.parentesco}
+          error={fieldErrors.grau_parentesco}
           placeholder="Selecione..."
         />
 
@@ -433,9 +457,9 @@ function FormBody({
           <Input
             label="Data de nascimento"
             type="date"
-            value={form.data_nasc}
-            onChange={(e) => update("data_nasc", e.target.value)}
-            error={fieldErrors.data_nasc}
+            value={form.data_nascimento}
+            onChange={(e) => update("data_nascimento", e.target.value)}
+            error={fieldErrors.data_nascimento}
           />
           {idade !== null && (
             <span className="text-xs text-text-muted">{idade} anos</span>

@@ -75,7 +75,7 @@ export function MembrosTab({ upfId }: Props) {
   }, [upfId, reloadKey]);
 
   const titularExists = useMemo(
-    () => membros.some((m) => m.parentesco === "titular"),
+    () => membros.some((m) => m.grau_parentesco === "titular"),
     [membros],
   );
 
@@ -108,11 +108,11 @@ export function MembrosTab({ upfId }: Props) {
   function handleSaved(saved: MembroDetail) {
     const listItem: MembroListItem = {
       id: saved.id,
-      nome: saved.nome,
-      data_nasc: saved.data_nasc,
+      nome_completo: saved.nome_completo,
+      data_nascimento: saved.data_nascimento,
       idade: saved.idade,
-      parentesco: saved.parentesco,
-      parentesco_display: saved.parentesco_display,
+      grau_parentesco: saved.grau_parentesco,
+      grau_parentesco_display: saved.grau_parentesco_display,
       cpf: saved.cpf,
       genero: saved.genero,
       genero_display: saved.genero_display,
@@ -216,7 +216,7 @@ export function MembrosTab({ upfId }: Props) {
         onClose={() => setRemover(null)}
         upfId={upfId}
         membroId={remover?.id ?? null}
-        membroNome={remover?.nome ?? ""}
+        membroNome={remover?.nome_completo ?? ""}
         onDeleted={handleDeleteConfirmed}
       />
 
@@ -237,8 +237,8 @@ type TabelaProps = {
 function Tabela({ membros, onView, onEdit, onRemove }: TabelaProps) {
   // Titular sempre no topo; demais na ordem em que já vieram do backend.
   const ordenados = useMemo(() => {
-    const titular = membros.filter((m) => m.parentesco === "titular");
-    const outros = membros.filter((m) => m.parentesco !== "titular");
+    const titular = membros.filter((m) => m.grau_parentesco === "titular");
+    const outros = membros.filter((m) => m.grau_parentesco !== "titular");
     return [...titular, ...outros];
   }, [membros]);
 
@@ -285,20 +285,20 @@ function LinhaMembro({
   onEdit: (m: MembroListItem) => void;
   onRemove: (m: MembroListItem) => void;
 }) {
-  const isTitular = membro.parentesco === "titular";
+  const isTitular = membro.grau_parentesco === "titular";
   // Placeholder de "saúde" enquanto a lista virá via detail — a listagem hoje
   // não traz o array de saúde; representamos como "—" e ao abrir a linha via
   // "Ver" o SlideOver mostra o conjunto real.
   return (
     <tr className="border-t border-border align-middle transition hover:bg-surface-muted/40">
-      <td className="px-4 py-3 font-medium text-text">{membro.nome}</td>
+      <td className="px-4 py-3 font-medium text-text">{membro.nome_completo}</td>
       <td className="px-4 py-3">
         {isTitular ? (
           <span className="inline-flex items-center rounded-full border border-primary bg-primary/10 px-2 py-0.5 text-2xs font-semibold text-primary">
-            {membro.parentesco_display}
+            {membro.grau_parentesco_display}
           </span>
         ) : (
-          <Chip>{membro.parentesco_display}</Chip>
+          <Chip>{membro.grau_parentesco_display}</Chip>
         )}
       </td>
       <td className="px-4 py-3 text-text-muted">

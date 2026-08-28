@@ -27,7 +27,12 @@ export type CalendarActivityEvent = {
   atrasada: boolean;
   /** Cor HEX da paleta semântica do design system, derivada do status. */
   cor: string;
-  /** YYYY-MM-DD (sem horário — os models são DateField). */
+  /**
+   * ISO 8601 com horário e fuso ("2026-08-02T13:00:00-03:00") — `data_inicio`
+   * e `data_fim` são DateTimeField em apps/sgp/models/activity.py. Use
+   * parseDayStart() de lib/datetime para agrupar por dia e formatTime() para
+   * exibir a hora; split("-") NÃO funciona por causa do fuso.
+   */
   data_inicio: string;
   data_fim: string;
   tecnico_responsavel: CalendarNestedRef;

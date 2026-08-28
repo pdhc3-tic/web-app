@@ -305,6 +305,18 @@ export function AtividadeForm({
 
       showToast("Atividade salva.", "success");
       setDirty(false);
+
+      if (mode === "edit") {
+        // Em edição já estamos na URL de destino: o push seria no-op, e como o
+        // reset de `submitting` dependia da navegação o botão ficava preso em
+        // "Salvando". Libera o botão e só reidrata os dados desta página.
+        setSubmitting(false);
+        router.refresh();
+        return;
+      }
+
+      // Criação: segue para a tela de edição da atividade recém-criada. O
+      // `submitting` continua true de propósito até a navegação desmontar o form.
       router.push(`/sgp/atividades/${salva.id}/editar/`);
       router.refresh();
     } catch (err) {

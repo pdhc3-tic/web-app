@@ -122,7 +122,7 @@ function buildTabs(upf: UpfDetail, choices: SgpChoices): TabItem[] {
             { label: "CPF", value: maskCpf(upf.titular.cpf) },
             { label: "Apelido", value: upf.apelido },
             { label: "RG", value: upf.titular.rg },
-            { label: "Nascimento", value: formatDate(upf.titular.data_nasc) },
+            { label: "Nascimento", value: formatDate(upf.titular.data_nascimento) },
             { label: "Gênero", value: upf.titular.genero_display },
             { label: "Cor/Raça", value: upf.titular.cor_raca_display },
             { label: "PCT", value: labelForValue(choices.pct, upf.pct) },
