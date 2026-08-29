@@ -58,7 +58,7 @@ export function EventoDetailsSlideOver({ event, open, onClose }: Props) {
   }, [open, event]);
 
   const cor = event ? event.cor : statusHexColor("planejado");
-  const linkFicha = event ? `/sgp/atividades/${event.id}/editar/` : "#";
+  const linkFicha = event ? `/sgp/atividades/${event.id}/` : "#";
 
   return (
     <SlideOver

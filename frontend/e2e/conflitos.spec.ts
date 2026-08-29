@@ -53,6 +53,9 @@ function linhaDoCampo(page: Page, campo: string) {
 test.describe("Conflitos de sincronização — Articulador de PE", () => {
   test.use({ storageState: storageStatePath("articuladorPE") });
 
+  // Por teste, e não por bloco: a resolução consome o conflito pendente, e o
+  // teste do sino abre ESSE conflito esperando encontrá-lo em aberto. Semear
+  // uma vez só por bloco deixa a ordem de declaração decidir o resultado.
   test.beforeEach(() => {
     recriarFixturesSca();
   });
@@ -164,7 +167,8 @@ test.describe("Conflitos de sincronização — Articulador de PE", () => {
 test.describe("Conflitos de sincronização — Articulador de PB", () => {
   test.use({ storageState: storageStatePath("articuladorPB") });
 
-  test.beforeEach(() => {
+  // Aqui basta uma vez: os dois testes deste bloco são de leitura.
+  test.beforeAll(() => {
     recriarFixturesSca();
   });
 

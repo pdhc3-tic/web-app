@@ -22,6 +22,7 @@ const statusClass: Record<BadgeStatus, string> = {
   atrasada: "bg-error-bg text-error-text border-error-text border-dashed",
   ativo: "bg-success-bg text-success-text border-success-text",
   inativo: "bg-neutral-bg text-neutral-text border-neutral-text",
+  info: "bg-info-bg text-info-text border-info-text",
 };
 
 const defaultLabel: Record<BadgeStatus, string> = {
@@ -36,6 +37,7 @@ const defaultLabel: Record<BadgeStatus, string> = {
   atrasada: "Atrasada",
   ativo: "Ativo",
   inativo: "Inativo",
+  info: "Informação",
 };
 
 export function Badge({ status, label }: BadgeProps) {
