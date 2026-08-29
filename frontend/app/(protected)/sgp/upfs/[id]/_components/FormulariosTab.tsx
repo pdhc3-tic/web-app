@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AlertTriangle, ClipboardList, Plus } from "lucide-react";
 import { Button } from "@/app/components/ui/Button/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { Pagination } from "@/app/components/ui/Pagination/Pagination";
+import type { SelectOption } from "@/app/components/ui/Select/Select";
 import Spinner from "@/app/components/icons/Spinner";
 import { ApiError } from "@/app/lib/api";
 import { absoluteDateTime, formatDate } from "@/app/lib/datetime";
@@ -13,15 +15,93 @@ import {
   type FormResponseListItem,
 } from "@/app/lib/formularios";
 import {
+  FormulariosFiltros,
+  type FormulariosFiltrosValue,
+} from "./FormulariosFiltros";
+import {
   RespostaFormularioSlideOver,
   StatusChip,
 } from "./RespostaFormularioSlideOver";
 
 const PAGE_SIZE = 25;
 
+const DEFAULT_FILTERS: FormulariosFiltrosValue = {
+  formulario_id: "",
+  data_inicio: "",
+  data_fim: "",
+  respondente: "",
+};
+
+/**
+ * Chaves de query string que a aba possui na URL. Preservamos qualquer outro
+ * parâmetro alheio à aba ao reescrever (ex.: `?tab=` ou `?utm_source=`).
+ */
+const FILTER_QS_KEYS = [
+  "formulario_id",
+  "data_inicio",
+  "data_fim",
+  "respondente",
+] as const;
+
 type Props = { upfId: string };
 
+/**
+ * Wrapper com Suspense: `useSearchParams` do Next 16 suspende, e este
+ * componente é montado dentro do detalhe da UPF (page.tsx), que não fornece
+ * o boundary. Sem isto, o build falha com "useSearchParams should be wrapped
+ * in a suspense boundary".
+ */
 export function FormulariosTab({ upfId }: Props) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[30vh] items-center justify-center">
+          <Spinner className="h-6 w-6 animate-spin text-text-muted" />
+        </div>
+      }
+    >
+      <FormulariosTabView upfId={upfId} />
+    </Suspense>
+  );
+}
+
+function readFiltersFromSearchParams(
+  params: URLSearchParams,
+): FormulariosFiltrosValue {
+  return {
+    formulario_id: params.get("formulario_id") ?? "",
+    data_inicio: params.get("data_inicio") ?? "",
+    data_fim: params.get("data_fim") ?? "",
+    respondente: params.get("respondente") ?? "",
+  };
+}
+
+/**
+ * Reflete os filtros na URL preservando o hash da aba (#formularios) e demais
+ * query params que não fazem parte deste conjunto. Usa `replaceState` para não
+ * poluir o histórico do browser em cada tecla digitada.
+ */
+function syncFiltersToUrl(filters: FormulariosFiltrosValue) {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  for (const key of FILTER_QS_KEYS) {
+    const value = filters[key];
+    if (value) url.searchParams.set(key, value);
+    else url.searchParams.delete(key);
+  }
+  window.history.replaceState(
+    null,
+    "",
+    `${url.pathname}${url.search}${url.hash}`,
+  );
+}
+
+function FormulariosTabView({ upfId }: Props) {
+  const searchParams = useSearchParams();
+  const [filters, setFilters] = useState<FormulariosFiltrosValue>(() =>
+    readFiltersFromSearchParams(new URLSearchParams(searchParams.toString())),
+  );
+
   const [page, setPage] = useState(1);
   const [respostas, setRespostas] = useState<FormResponseListItem[]>([]);
   const [count, setCount] = useState(0);
@@ -32,6 +112,41 @@ export function FormulariosTab({ upfId }: Props) {
     null,
   );
 
+  /**
+   * Opções do select de formulário: mantido acumulativo com os formulários
+   * vistos em qualquer página até agora. Como o BE-16 não expõe um endpoint
+   * de "formulários distintos por UPF", derivamos das respostas carregadas
+   * — em UPFs típicas isso cobre 100% dos formulários; em cenários com
+   * muitas páginas, o usuário paga a expansão à medida que navega.
+   */
+  const [formularioOptions, setFormularioOptions] = useState<
+    Map<string, string>
+  >(() => new Map());
+
+  const hasActiveFilters = useMemo(
+    () =>
+      filters.formulario_id !== "" ||
+      filters.data_inicio !== "" ||
+      filters.data_fim !== "" ||
+      filters.respondente !== "",
+    [filters],
+  );
+
+  // Zera a página quando qualquer filtro muda (evita "página 5 de 1 resultado").
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPage(1);
+  }, [
+    filters.formulario_id,
+    filters.data_inicio,
+    filters.data_fim,
+    filters.respondente,
+  ]);
+
+  useEffect(() => {
+    syncFiltersToUrl(filters);
+  }, [filters]);
+
   useEffect(() => {
     const controller = new AbortController();
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -40,12 +155,28 @@ export function FormulariosTab({ upfId }: Props) {
 
     listFormResponses(
       upfId,
-      { page, page_size: PAGE_SIZE },
+      {
+        page,
+        page_size: PAGE_SIZE,
+        formulario_id: filters.formulario_id
+          ? Number(filters.formulario_id)
+          : undefined,
+        data_inicio: filters.data_inicio || undefined,
+        data_fim: filters.data_fim || undefined,
+        respondente: filters.respondente.trim() || undefined,
+      },
       controller.signal,
     )
       .then((data) => {
         setRespostas(data.results);
         setCount(data.count);
+        setFormularioOptions((prev) => {
+          const next = new Map(prev);
+          for (const r of data.results) {
+            next.set(String(r.formulario_id), r.formulario_nome);
+          }
+          return next;
+        });
       })
       .catch((e: unknown) => {
         if (controller.signal.aborted) return;
@@ -60,46 +191,88 @@ export function FormulariosTab({ upfId }: Props) {
       });
 
     return () => controller.abort();
-  }, [upfId, page, reloadKey]);
+  }, [upfId, page, filters, reloadKey]);
 
-  if (loading) {
+  const formularioSelectOptions = useMemo<SelectOption[]>(
+    () =>
+      Array.from(formularioOptions.entries())
+        .map(([value, label]) => ({ value, label }))
+        .sort((a, b) => a.label.localeCompare(b.label, "pt-BR")),
+    [formularioOptions],
+  );
+
+  const limparFiltros = useCallback(() => {
+    setFilters(DEFAULT_FILTERS);
+  }, []);
+
+  const filtros = (
+    <FormulariosFiltros
+      value={filters}
+      onChange={setFilters}
+      formularioOptions={formularioSelectOptions}
+      disabled={loading && respostas.length === 0 && !hasActiveFilters}
+    />
+  );
+
+  if (loading && respostas.length === 0) {
     return (
-      <div className="flex min-h-[30vh] items-center justify-center">
-        <Spinner className="h-6 w-6 animate-spin text-text-muted" />
+      <div className="space-y-4" data-testid="formularios-tab">
+        {filtros}
+        <div className="flex min-h-[30vh] items-center justify-center">
+          <Spinner className="h-6 w-6 animate-spin text-text-muted" />
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center gap-4 rounded-lg border border-border bg-surface px-6 py-16 text-center">
-        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-error-bg text-error-text">
-          <AlertTriangle className="h-6 w-6" />
-        </span>
-        <p className="max-w-sm text-sm text-text-muted">{error}</p>
-        <Button variant="secondary" onClick={() => setReloadKey((k) => k + 1)}>
-          Tentar novamente
-        </Button>
+      <div className="space-y-4" data-testid="formularios-tab">
+        {filtros}
+        <div className="flex flex-col items-center gap-4 rounded-lg border border-border bg-surface px-6 py-16 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-error-bg text-error-text">
+            <AlertTriangle className="h-6 w-6" />
+          </span>
+          <p className="max-w-sm text-sm text-text-muted">{error}</p>
+          <Button variant="secondary" onClick={() => setReloadKey((k) => k + 1)}>
+            Tentar novamente
+          </Button>
+        </div>
       </div>
     );
   }
 
   if (respostas.length === 0) {
     return (
-      <>
+      <div className="space-y-4" data-testid="formularios-tab">
+        {filtros}
         <EmptyState
           icon={<ClipboardList className="h-7 w-7" />}
-          title="Nenhuma resposta registrada"
-          description="Os formulários preenchidos para esta UPF aparecerão aqui."
+          title={
+            hasActiveFilters
+              ? "Nenhuma resposta com esses filtros"
+              : "Nenhuma resposta registrada"
+          }
+          description={
+            hasActiveFilters
+              ? "Ajuste os filtros ou tente uma busca diferente."
+              : "Os formulários preenchidos para esta UPF aparecerão aqui."
+          }
           action={
-            <Button
-              leftIcon={<Plus className="h-4 w-4" />}
-              // #181 vai wire este onClick para o seletor de formulários disponíveis.
-              onClick={() => {}}
-              data-testid="formularios-preencher-novo"
-            >
-              Preencher novo formulário
-            </Button>
+            hasActiveFilters ? (
+              <Button variant="secondary" onClick={limparFiltros}>
+                Limpar filtros
+              </Button>
+            ) : (
+              <Button
+                leftIcon={<Plus className="h-4 w-4" />}
+                // #181 vai wire este onClick para o seletor de formulários disponíveis.
+                onClick={() => {}}
+                data-testid="formularios-preencher-novo"
+              >
+                Preencher novo formulário
+              </Button>
+            )
           }
         />
         <RespostaFormularioSlideOver
@@ -108,12 +281,14 @@ export function FormulariosTab({ upfId }: Props) {
           upfId={upfId}
           resposta={selecionada}
         />
-      </>
+      </div>
     );
   }
 
   return (
     <div className="space-y-4" data-testid="formularios-tab">
+      {filtros}
+
       <Tabela
         respostas={respostas}
         onSelect={(r) => setSelecionada(r)}
