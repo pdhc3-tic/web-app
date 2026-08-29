@@ -26,6 +26,7 @@ import { labelForValue } from "../_components/upfFormOptions";
 import { UpfHeader } from "./_components/UpfHeader";
 import { UpfDetailSkeleton } from "./_components/UpfDetailSkeleton";
 import { DocumentosTab } from "./_components/DocumentosTab";
+import { FormulariosTab } from "./_components/FormulariosTab";
 import { HistoricoTab } from "./_components/HistoricoTab";
 import { MembrosTab } from "./_components/MembrosTab";
 import { ProducaoTab } from "./_components/ProducaoTab";
@@ -38,6 +39,7 @@ const TAB_IDS = [
   "membros",
   "producao",
   "documentos",
+  "formularios",
   "historico",
 ] as const;
 type TabId = (typeof TAB_IDS)[number];
@@ -207,6 +209,11 @@ function buildTabs(upf: UpfDetail, choices: SgpChoices): TabItem[] {
       id: "documentos",
       label: "Documentos",
       content: <DocumentosTab upfId={String(upf.id)} />,
+    },
+    {
+      id: "formularios",
+      label: "Formulários",
+      content: <FormulariosTab upfId={String(upf.id)} />,
     },
     {
       id: "historico",
