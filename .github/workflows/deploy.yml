@@ -115,8 +115,10 @@ jobs:
     steps:
       - name: Notificar sucesso
         if: needs.test.result == 'success' && needs.deploy.result == 'success'
-        uses: slackapi/slack-github-action@v1.26.0
+        uses: slackapi/slack-github-action@v4.0.0
         with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
           payload: |
             {
               "text": "Deploy do PDHC concluído com sucesso",
@@ -136,8 +138,6 @@ jobs:
                 }
               ]
             }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
       - name: Coletar motivo da falha
         if: needs.test.result != 'success' || needs.deploy.result != 'success'
@@ -198,8 +198,8 @@ jobs:
 
       - name: Notificar falha
         if: needs.test.result != 'success' || needs.deploy.result != 'success'
-        uses: slackapi/slack-github-action@v1.26.0
+        uses: slackapi/slack-github-action@v4.0.0
         with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
           payload: ${{ steps.failure_details.outputs.payload }}
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
