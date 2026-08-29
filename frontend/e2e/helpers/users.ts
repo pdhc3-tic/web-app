@@ -11,8 +11,18 @@ import path from "node:path";
  *                    vinculado a um conjunto DISJUNTO de territórios (PE/AL/MA e
  *                    PB/RN/BA/MG). O par existe para provar o recorte por estado:
  *                    um não pode enxergar os conflitos do outro.
+ * - `superAdmin`   → perfil "super-admin" com território nulo (acesso global).
+ *                    É o único que entra nas telas de /admin. Atenção: tanto o
+ *                    `IsSuperAdmin` do backend quanto o `isSuperAdmin()` do
+ *                    front checam o PERFIL de slug "super-admin" — a flag
+ *                    `is_superuser` de um `createsuperuser` não serve.
  */
-export type UserKey = "ugp" | "semPermissao" | "articuladorPE" | "articuladorPB";
+export type UserKey =
+  | "ugp"
+  | "semPermissao"
+  | "articuladorPE"
+  | "articuladorPB"
+  | "superAdmin";
 
 export const USERS: Record<UserKey, { email: string; password: string }> = {
   ugp: {
@@ -29,6 +39,10 @@ export const USERS: Record<UserKey, { email: string; password: string }> = {
   },
   articuladorPB: {
     email: process.env.E2E_ARTICULADOR_PB_EMAIL ?? "helio.fontenele@demo.pdhc.local",
+    password: process.env.E2E_PASSWORD ?? "Pdhc@2026demo",
+  },
+  superAdmin: {
+    email: process.env.E2E_SUPER_ADMIN_EMAIL ?? "vera.lucena@demo.pdhc.local",
     password: process.env.E2E_PASSWORD ?? "Pdhc@2026demo",
   },
 };

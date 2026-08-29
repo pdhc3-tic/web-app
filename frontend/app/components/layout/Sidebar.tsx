@@ -15,6 +15,7 @@ import {
   LogOut,
   Plug,
   GitCompareArrows,
+  ShieldOff,
   SlidersHorizontal,
   Smartphone,
   UserCog,
@@ -50,6 +51,13 @@ const ADMIN_ITEMS: ModuleItem[] = [
     href: "/admin/usuarios",
     label: "Usuários",
     Icon: UserCog,
+  },
+  {
+    // Fica em /admin, e não em /sca, pelo mesmo motivo de CONFLITOS_ITEM abaixo:
+    // /sca descreve o aplicativo de campo, esta é uma tela de administração.
+    href: "/admin/acessos-sca",
+    label: "Acessos SCA",
+    Icon: ShieldOff,
   },
   {
     // Aponta direto para a única integração existente — não há tela índice em

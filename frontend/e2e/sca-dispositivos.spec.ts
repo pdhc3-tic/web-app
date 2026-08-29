@@ -13,6 +13,11 @@ import { storageStatePath } from "./helpers/users";
  *
  * Cada dispositivo vai para um técnico distinto (round-robin sobre territórios
  * ativos), então filtrar por um território devolve exatamente um dispositivo.
+ *
+ * Há ainda um quarto, `dev-seed-revogado` (issue de Revogação de Acesso): sync
+ * há 12 dias, portanto TAMBÉM vermelho e mais antigo que o dev-seed-vermelho —
+ * é ele que ocupa o topo da ordenação default. Os testes abaixo não dependem de
+ * qual dispositivo é o primeiro, só do id que a própria linha expõe.
  */
 const PAGE_URL = "/sca/dispositivos";
 
@@ -36,8 +41,9 @@ test.describe("SCA — Painel de Dispositivos", () => {
   }) => {
     await abrirPainel(page);
 
-    // dev-seed-vermelho vem do seed com `ultimo_push_em = agora - (limiar+2 dias)`
-    // e é o único cuja última sync ultrapassa o limiar. O rótulo do badge é
+    // dev-seed-vermelho vem do seed com `ultimo_push_em = agora - (limiar+2 dias)`.
+    // O filtro por nome isola a linha dele — o dev-seed-revogado também estoura
+    // o limiar, então "o único vermelho" deixou de valer. O rótulo do badge é
     // "Sem sync" (statusLabel("vermelho") — lib/sca.ts).
     const linhaVermelha = tabela(page).filter({
       hasText: /Dev Seed Vermelho/i,
@@ -82,14 +88,26 @@ test.describe("SCA — Painel de Dispositivos", () => {
     // Depois do filtro, TODAS as linhas visíveis pertencem ao território
     // escolhido — a asserção mais forte que "só 1 dispositivo" (que quebraria
     // se o seed adicionar dispositivos no mesmo território depois).
+    //
+    // Precisa ser retentante: `linhaVerde` está visível ANTES e DEPOIS do
+    // filtro, então não serve de barreira, e um `count()` solto lê o DOM
+    // pré-refetch. O toPass() só encerra quando toda linha presente é do
+    // território alvo.
     await expect(linhaVerde).toBeVisible();
-    const totalDepois = await tabela(page).count();
-    expect(totalDepois).toBeLessThan(totalAntes);
+    await expect(async () => {
+      const linhas = tabela(page);
+      const n = await linhas.count();
+      expect(n).toBeGreaterThan(0);
+      for (let i = 0; i < n; i++) {
+        const territorio = (
+          await linhas.nth(i).locator("td").nth(2).innerText()
+        ).trim();
+        expect(territorio).toContain(territorioAlvo);
+      }
+    }).toPass();
 
-    for (let i = 0; i < totalDepois; i++) {
-      const linha = tabela(page).nth(i);
-      await expect(linha.locator("td").nth(2)).toContainText(territorioAlvo);
-    }
+    // Com a listagem já estabilizada, o filtro de fato restringiu o conjunto.
+    expect(await tabela(page).count()).toBeLessThan(totalAntes);
   });
 
   test("clique em um dispositivo navega para o log de sincronização correspondente", async ({
@@ -97,9 +115,10 @@ test.describe("SCA — Painel de Dispositivos", () => {
   }) => {
     await abrirPainel(page);
 
-    // A ordem default do painel joga o dev-seed-vermelho no topo (nulls_first
-    // + sync mais antigo). Pegamos o id direto do data-testid pra montar a URL
-    // esperada — resiste a mudanças no seed.
+    // A ordem default do painel é `ultimo_sync_servidor` asc com nulls_first,
+    // então o topo é sempre o dispositivo com sync mais antigo — hoje o
+    // dev-seed-revogado. Pegamos o id direto do data-testid pra montar a URL
+    // esperada, sem depender de QUAL dispositivo ficou em primeiro.
     const primeiraLinha = tabela(page).first();
     const idAttr = await primeiraLinha.getAttribute("data-testid");
     const deviceId = idAttr?.replace("dispositivo-row-", "");
