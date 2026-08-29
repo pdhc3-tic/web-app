@@ -107,3 +107,27 @@ export async function getFormResponse(
   );
   return res.json();
 }
+
+// ─── BE-18: formulários publicados que a UPF pode responder ─────────────────
+
+/** Espelha apps/sgp/serializers.py::AvailableFormSerializer. */
+export type AvailableForm = {
+  id: number;
+  nome: string;
+  versao: string;
+  descricao: string | null;
+  atualizado_em: string;
+};
+
+/**
+ * GET /api/v1/sgp/formularios-disponiveis/ — formulários "publicado" com
+ * escopo `upf` e território do usuário (ou globais). Não paginado.
+ */
+export async function listAvailableForms(
+  signal?: AbortSignal,
+): Promise<AvailableForm[]> {
+  const res = await apiClient(`/api/v1/sgp/formularios-disponiveis/`, {
+    signal,
+  });
+  return res.json();
+}
