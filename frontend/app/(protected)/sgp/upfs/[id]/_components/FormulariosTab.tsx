@@ -18,6 +18,7 @@ import {
   FormulariosFiltros,
   type FormulariosFiltrosValue,
 } from "./FormulariosFiltros";
+import { PreencherFormularioSlideOver } from "./PreencherFormularioSlideOver";
 import {
   RespostaFormularioSlideOver,
   StatusChip,
@@ -111,6 +112,7 @@ function FormulariosTabView({ upfId }: Props) {
   const [selecionada, setSelecionada] = useState<FormResponseListItem | null>(
     null,
   );
+  const [preencherOpen, setPreencherOpen] = useState(false);
 
   /**
    * Opções do select de formulário: mantido acumulativo com os formulários
@@ -266,8 +268,7 @@ function FormulariosTabView({ upfId }: Props) {
             ) : (
               <Button
                 leftIcon={<Plus className="h-4 w-4" />}
-                // #181 vai wire este onClick para o seletor de formulários disponíveis.
-                onClick={() => {}}
+                onClick={() => setPreencherOpen(true)}
                 data-testid="formularios-preencher-novo"
               >
                 Preencher novo formulário
@@ -281,6 +282,11 @@ function FormulariosTabView({ upfId }: Props) {
           upfId={upfId}
           resposta={selecionada}
         />
+        <PreencherFormularioSlideOver
+          open={preencherOpen}
+          onClose={() => setPreencherOpen(false)}
+          upfId={upfId}
+        />
       </div>
     );
   }
@@ -288,6 +294,20 @@ function FormulariosTabView({ upfId }: Props) {
   return (
     <div className="space-y-4" data-testid="formularios-tab">
       {filtros}
+
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-text-muted">
+          {count} {count === 1 ? "resposta registrada" : "respostas registradas"}
+        </p>
+        <Button
+          size="sm"
+          leftIcon={<Plus className="h-4 w-4" />}
+          onClick={() => setPreencherOpen(true)}
+          data-testid="formularios-preencher-novo"
+        >
+          Preencher novo formulário
+        </Button>
+      </div>
 
       <Tabela
         respostas={respostas}
@@ -309,6 +329,12 @@ function FormulariosTabView({ upfId }: Props) {
         onClose={() => setSelecionada(null)}
         upfId={upfId}
         resposta={selecionada}
+      />
+
+      <PreencherFormularioSlideOver
+        open={preencherOpen}
+        onClose={() => setPreencherOpen(false)}
+        upfId={upfId}
       />
     </div>
   );

@@ -60,6 +60,50 @@ test.describe("SGP — Aba Formulários na UPF", () => {
     await expect(page.getByTestId("formularios-filtros")).toBeVisible();
   });
 
+  test("clique no CTA \"Preencher novo formulário\" abre o seletor de formulários", async ({
+    page,
+  }) => {
+    // Verifica só a abertura do SlideOver — não depende de seed de
+    // FormularioSGF, o SlideOver mostra empty state se não houver forms.
+    const upfId = primeiroUpfId();
+    await page.goto(`/sgp/upfs/${upfId}#formularios`);
+
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await page.getByTestId("formularios-preencher-novo").click();
+
+    await expect(
+      page.getByTestId("preencher-formulario-slideover"),
+    ).toBeVisible();
+  });
+
+  test.fixme(
+    "escolher formulário no seletor navega para o placeholder do motor SGF",
+    async ({ page }) => {
+      // Depende de FormularioSGF publicado no seed — ainda não coberto.
+      const upfId = primeiroUpfId();
+      await page.goto(`/sgp/upfs/${upfId}#formularios`);
+      await page.getByTestId("formularios-preencher-novo").click();
+
+      const seletor = page.getByTestId("preencher-formulario-slideover");
+      const primeiraOpcao = seletor
+        .locator('[data-testid^="formulario-disponivel-"]')
+        .first();
+      await expect(primeiraOpcao).toBeVisible();
+
+      const testId = await primeiraOpcao.getAttribute("data-testid");
+      const formularioId = testId?.replace("formulario-disponivel-", "");
+      expect(formularioId).toBeTruthy();
+
+      await primeiraOpcao.click();
+      await expect(page).toHaveURL(
+        new RegExp(`/sgf/formularios/${formularioId}/preencher\\?upf=${upfId}$`),
+      );
+      await expect(
+        page.getByTestId("preencher-formulario-placeholder"),
+      ).toBeVisible();
+    },
+  );
+
   test.fixme(
     "tabela ordena por data decrescente e clicar em linha abre o modal de detalhe",
     async ({ page }) => {
