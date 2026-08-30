@@ -1,6 +1,6 @@
-import { execFileSync } from "node:child_process";
 import { expect, test } from "@playwright/test";
 import { storageStatePath } from "./helpers/users";
+import { primeiroUpfId } from "./helpers/upf";
 
 /**
  * Aba "Formulários" na ficha da UPF (#178) — testa integração da tabela +
@@ -10,27 +10,6 @@ import { storageStatePath } from "./helpers/users";
  * O seed_demo (#193) hoje NÃO cria FormResponse — portanto todo cenário
  * "com respostas" fica marcado como `.fixme` até um seed cobrir a demo.
  */
-
-function primeiroUpfId(): number {
-  const linha = execFileSync(
-    "docker",
-    [
-      "exec",
-      "db",
-      "psql",
-      "-U",
-      "postgres",
-      "-d",
-      "app_db",
-      "-tAc",
-      "select id from sgp_upf order by id limit 1;",
-    ],
-    { encoding: "utf8", timeout: 30_000 },
-  ).trim();
-  const id = Number(linha);
-  expect(id, "seed não criou nenhuma UPF").toBeGreaterThan(0);
-  return id;
-}
 
 test.describe("SGP — Aba Formulários na UPF", () => {
   test.use({ storageState: storageStatePath("ugp") });

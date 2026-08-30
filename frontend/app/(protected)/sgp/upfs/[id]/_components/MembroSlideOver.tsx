@@ -46,6 +46,11 @@ type Props = {
    * "Titular" no select — a menos que este próprio membro já seja o titular.
    */
   titularExists: boolean;
+  /**
+   * Parentesco já preenchido ao abrir em modo `create`. A aba usa isso para o
+   * primeiro membro da UPF, que precisa ser o Titular.
+   */
+  parentescoPadrao?: string;
   /** Chamado após salvar (create ou edit). Recebe o membro persistido. */
   onSaved: (membro: MembroDetail) => void;
   /** Chamado quando o usuário clica em "Editar" no modo view. */
@@ -144,6 +149,7 @@ export function MembroSlideOver({
   upfId,
   membroListItem,
   titularExists,
+  parentescoPadrao,
   onSaved,
   onEditFromView,
 }: Props) {
@@ -166,7 +172,7 @@ export function MembroSlideOver({
 
     if (mode === "create") {
       setMembro(null);
-      setForm(EMPTY_FORM);
+      setForm({ ...EMPTY_FORM, grau_parentesco: parentescoPadrao ?? "" });
       return;
     }
     if (!membroId) return;
@@ -191,7 +197,7 @@ export function MembroSlideOver({
       });
 
     return () => controller.abort();
-  }, [open, mode, upfId, membroId]);
+  }, [open, mode, upfId, membroId, parentescoPadrao]);
 
   // Idade calculada em tempo real ao lado do campo data_nascimento.
   const idade = useMemo(
@@ -329,23 +335,25 @@ export function MembroSlideOver({
       footer={footer}
       width="wide"
     >
-      {loading ? (
-        <div className="flex min-h-[40vh] items-center justify-center">
-          <Spinner className="h-6 w-6 animate-spin text-text-muted" />
-        </div>
-      ) : isView && membro ? (
-        <ViewBody membro={membro} />
-      ) : (
-        <FormBody
-          form={form}
-          fieldErrors={fieldErrors}
-          globalError={globalError}
-          idade={idade}
-          parentescoOptions={parentescoOptions}
-          update={update}
-          toggleMulti={toggleMulti}
-        />
-      )}
+      <div data-testid="membro-slideover" data-mode={mode}>
+        {loading ? (
+          <div className="flex min-h-[40vh] items-center justify-center">
+            <Spinner className="h-6 w-6 animate-spin text-text-muted" />
+          </div>
+        ) : isView && membro ? (
+          <ViewBody membro={membro} />
+        ) : (
+          <FormBody
+            form={form}
+            fieldErrors={fieldErrors}
+            globalError={globalError}
+            idade={idade}
+            parentescoOptions={parentescoOptions}
+            update={update}
+            toggleMulti={toggleMulti}
+          />
+        )}
+      </div>
     </SlideOver>
   );
 }

@@ -16,6 +16,7 @@ import { Chip } from "@/app/components/ui/Chip/Chip";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { ApiError } from "@/app/lib/api";
 import {
+  calcIdade,
   listMembros,
   type MembroDetail,
   type MembroListItem,
@@ -37,6 +38,17 @@ type Toast = {
   variant: "success" | "error";
   message: string;
 };
+
+/**
+ * Idade em anos completos. Prefere o valor que o backend já calcula
+ * (MembroListSerializer.get_idade) e recai no cálculo local quando a lista vem
+ * sem ele — as duas pontas usam a mesma regra.
+ */
+function idadeLabel(membro: MembroListItem): string {
+  const anos = membro.idade ?? calcIdade(membro.data_nascimento);
+  if (anos === null || anos === undefined) return "—";
+  return anos === 1 ? "1 ano" : `${anos} anos`;
+}
 
 // ─── Componente principal ────────────────────────────────────────────────────
 
@@ -149,7 +161,7 @@ export function MembrosTab({ upfId }: Props) {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="membros-tab">
       {/* Cabeçalho da aba com contagem + botão de adicionar */}
       {(!loading && !error && membros.length > 0) && (
         <div className="flex items-center justify-between gap-3">
@@ -163,7 +175,7 @@ export function MembrosTab({ upfId }: Props) {
         </div>
       )}
 
-      {loading && <TabelaSkeleton />}
+      {loading && <CarregandoSection />}
 
       {!loading && error && (
         <ErroSection message={error} onRetry={() => setReloadKey((k) => k + 1)} />
@@ -172,10 +184,14 @@ export function MembrosTab({ upfId }: Props) {
       {!loading && !error && membros.length === 0 && (
         <EmptyState
           icon={<Users className="h-7 w-7" />}
-          title="Nenhum membro cadastrado ainda"
-          description="Adicione o titular e os demais integrantes da família."
+          title="Nenhum membro cadastrado ainda."
+          description="O primeiro membro cadastrado deve ser o Titular da UPF."
           action={
-            <Button leftIcon={<UserPlus className="h-4 w-4" />} onClick={openCreate}>
+            <Button
+              leftIcon={<UserPlus className="h-4 w-4" />}
+              onClick={openCreate}
+              data-testid="membros-adicionar-primeiro"
+            >
               Adicionar primeiro membro
             </Button>
           }
@@ -198,6 +214,9 @@ export function MembrosTab({ upfId }: Props) {
         upfId={upfId}
         membroListItem={slideOver.open ? slideOver.membro : undefined}
         titularExists={titularExists}
+        // Sem titular na UPF, o próximo cadastro é obrigatoriamente ele — o
+        // formulário já abre com o parentesco preenchido.
+        parentescoPadrao={titularExists ? undefined : "titular"}
         onSaved={handleSaved}
         onEditFromView={
           slideOver.open && slideOver.mode === "view" && slideOver.membro
@@ -245,7 +264,7 @@ function Tabela({ membros, onView, onEdit, onRemove }: TabelaProps) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-180 border-collapse text-sm">
+        <table className="w-full min-w-160 border-collapse text-sm">
           <thead className="bg-surface-muted text-left text-2xs font-semibold uppercase tracking-wide text-text-muted">
             <tr>
               <th className="px-4 py-2.5">Nome</th>
@@ -253,7 +272,6 @@ function Tabela({ membros, onView, onEdit, onRemove }: TabelaProps) {
               <th className="px-4 py-2.5">Idade</th>
               <th className="px-4 py-2.5">Gênero</th>
               <th className="px-4 py-2.5">CPF</th>
-              <th className="px-4 py-2.5">Saúde</th>
               <th className="px-4 py-2.5 text-right">Ações</th>
             </tr>
           </thead>
@@ -274,6 +292,10 @@ function Tabela({ membros, onView, onEdit, onRemove }: TabelaProps) {
   );
 }
 
+/**
+ * Saúde e Cor/Raça ficam de fora da listagem resumida de propósito: são campos
+ * sensíveis e só aparecem no detalhe/formulário, sujeitos à regra de FE-25.
+ */
 function LinhaMembro({
   membro,
   onView,
@@ -286,32 +308,30 @@ function LinhaMembro({
   onRemove: (m: MembroListItem) => void;
 }) {
   const isTitular = membro.grau_parentesco === "titular";
-  // Placeholder de "saúde" enquanto a lista virá via detail — a listagem hoje
-  // não traz o array de saúde; representamos como "—" e ao abrir a linha via
-  // "Ver" o SlideOver mostra o conjunto real.
+
   return (
-    <tr className="border-t border-border align-middle transition hover:bg-surface-muted/40">
+    <tr
+      data-testid={`membro-row-${membro.id}`}
+      className="cursor-pointer border-t border-border align-middle transition hover:bg-surface-muted/40"
+      onClick={() => onView(membro)}
+    >
       <td className="px-4 py-3 font-medium text-text">{membro.nome_completo}</td>
       <td className="px-4 py-3">
         {isTitular ? (
-          <span className="inline-flex items-center rounded-full border border-primary bg-primary/10 px-2 py-0.5 text-2xs font-semibold text-primary">
+          <span
+            data-testid="membro-badge-titular"
+            className="inline-flex items-center rounded-full border border-primary bg-primary/10 px-2 py-0.5 text-2xs font-semibold text-primary"
+          >
             {membro.grau_parentesco_display}
           </span>
         ) : (
           <Chip>{membro.grau_parentesco_display}</Chip>
         )}
       </td>
-      <td className="px-4 py-3 text-text-muted">
-        {membro.idade !== null && membro.idade !== undefined
-          ? `${membro.idade} anos`
-          : "—"}
-      </td>
+      <td className="px-4 py-3 text-text-muted">{idadeLabel(membro)}</td>
       <td className="px-4 py-3 text-text-muted">{membro.genero_display || "—"}</td>
       <td className="px-4 py-3 font-mono text-2xs text-text-muted tabular-nums">
         {membro.cpf ? maskCpf(membro.cpf) || membro.cpf : "—"}
-      </td>
-      <td className="px-4 py-3">
-        <SaudePreview />
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center justify-end gap-1">
@@ -337,13 +357,6 @@ function LinhaMembro({
   );
 }
 
-// Placeholder discreto — a listagem paginada não carrega o campo `saude`.
-// Ficou como "—" na tabela e o SlideOver mostra o conjunto completo.
-// Mantido como componente separado para eventual evolução futura (ex.: prefetch).
-function SaudePreview() {
-  return <span className="text-text-muted">—</span>;
-}
-
 function AcaoIcone({
   title,
   onClick,
@@ -360,7 +373,12 @@ function AcaoIcone({
       type="button"
       title={title}
       aria-label={title}
-      onClick={onClick}
+      // A linha inteira abre o detalhe; sem parar a propagação, "Editar" e
+      // "Remover" disparariam também o onClick do <tr>.
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
       className={`inline-flex h-8 w-8 items-center justify-center rounded-md text-text-muted transition hover:bg-surface-muted ${
         danger ? "hover:text-error-text" : "hover:text-text"
       }`}
@@ -370,7 +388,18 @@ function AcaoIcone({
   );
 }
 
-// ─── Skeleton ────────────────────────────────────────────────────────────────
+// ─── Carregamento ────────────────────────────────────────────────────────────
+
+function CarregandoSection() {
+  return (
+    <div className="space-y-2" data-testid="membros-loading">
+      <p className="text-sm text-text-muted" role="status" aria-live="polite">
+        Carregando membros…
+      </p>
+      <TabelaSkeleton />
+    </div>
+  );
+}
 
 function TabelaSkeleton() {
   return (
