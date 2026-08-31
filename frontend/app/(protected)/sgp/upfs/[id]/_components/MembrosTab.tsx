@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  Download,
   Eye,
   Pencil,
   Plus,
@@ -15,9 +16,13 @@ import { Button } from "@/app/components/ui/Button/Button";
 import { Chip } from "@/app/components/ui/Chip/Chip";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { useToast } from "@/app/components/ui/Toast/Toast";
+import Spinner from "@/app/components/icons/Spinner";
 import { ApiError } from "@/app/lib/api";
 import {
   calcIdade,
+  exportarMembrosCsv,
+  ExportMembrosPendenteError,
+  ExportMembrosTimeoutError,
   getResumoMembros,
   listMembros,
   type MembroDetail,
@@ -66,7 +71,35 @@ export function MembrosTab({ upfId }: Props) {
 
   const [slideOver, setSlideOver] = useState<SlideOverState>({ open: false });
   const [remover, setRemover] = useState<MembroListItem | null>(null);
+  const [exporting, setExporting] = useState(false);
   const { showToast } = useToast();
+
+  /**
+   * Baixa o CSV de membros (#191). Enquanto BE-24 não existir, o endpoint
+   * responde 404 → `ExportMembrosPendenteError`, e o toast diz "aguardando
+   * backend" em vez do genérico "não foi possível gerar". Quando BE-24
+   * subir, esta função funciona sem mais mudança.
+   */
+  async function handleExport() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const nome = await exportarMembrosCsv(upfId);
+      showToast(`Download iniciado: ${nome}`);
+    } catch (e) {
+      const mensagem =
+        e instanceof ExportMembrosPendenteError
+          ? e.message
+          : e instanceof ExportMembrosTimeoutError
+            ? "A geração do arquivo excedeu o tempo limite. Tente novamente."
+            : e instanceof ApiError
+              ? e.message
+              : "Não foi possível gerar o arquivo. Tente novamente.";
+      showToast(mensagem, "error");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   // ── Carrega a lista ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -214,7 +247,23 @@ export function MembrosTab({ upfId }: Props) {
             semTitular={semTitular}
             onRetry={() => setResumoKey((k) => k + 1)}
           />
-          <div className="flex items-center justify-end">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              leftIcon={
+                exporting ? (
+                  <Spinner className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )
+              }
+              disabled={exporting}
+              onClick={handleExport}
+              data-testid="membros-exportar-csv"
+            >
+              {exporting ? "Exportando…" : "Exportar CSV"}
+            </Button>
             <Button
               size="sm"
               leftIcon={<Plus className="h-4 w-4" />}

@@ -1,4 +1,4 @@
-import { apiClient } from "@/app/lib/api";
+import { ApiError, apiClient } from "@/app/lib/api";
 
 // ─── Constantes espelhadas do backend ────────────────────────────────────────
 
@@ -253,6 +253,107 @@ export async function getResumoMembros(
     signal,
   });
   return res.json();
+}
+
+// ─── BE-24: exportação de membros (CSV) — #191 ──────────────────────────────
+
+/** Estouro de tempo de espera do lado do cliente. Mesmo racional do BE-9/BE-20. */
+export const EXPORT_MEMBROS_TIMEOUT_MS = 60_000;
+
+export class ExportMembrosTimeoutError extends Error {
+  constructor() {
+    super("A geração do arquivo excedeu o tempo limite.");
+    this.name = "ExportMembrosTimeoutError";
+  }
+}
+
+/**
+ * Erro específico para "endpoint ainda não implementado no backend".
+ * Enquanto BE-24 não sai, o servidor responde 404 no path. O componente
+ * usa este erro para mostrar uma mensagem clara de pendência ao usuário
+ * (em vez de "não foi possível gerar o arquivo").
+ */
+export class ExportMembrosPendenteError extends Error {
+  constructor() {
+    super("A exportação ainda não está disponível — aguardando implementação no backend (BE-24).");
+    this.name = "ExportMembrosPendenteError";
+  }
+}
+
+function nomeDoContentDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(header);
+  if (!match) return null;
+  const bruto = match[1].trim();
+  try {
+    return decodeURIComponent(bruto);
+  } catch {
+    return bruto;
+  }
+}
+
+function nomeDerivadoLocalmente(upfId: string | number): string {
+  const agora = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp = [
+    agora.getFullYear(),
+    pad(agora.getMonth() + 1),
+    pad(agora.getDate()),
+    pad(agora.getHours()),
+    pad(agora.getMinutes()),
+    pad(agora.getSeconds()),
+  ].join("-");
+  return `membros_upf_${upfId}_${stamp}.csv`;
+}
+
+function dispararDownload(blob: Blob, nome: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nome;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/**
+ * GET /api/v1/sgp/upfs/{upfId}/membros/exportar/
+ *
+ * Baixa CSV de todos os membros da UPF. Colunas retornadas respeitam a
+ * matriz de permissão de BE-25 (#187) — Saúde/Cor-Raça só saem para perfis
+ * autorizados. O frontend não decide colunas: entrega o que o backend
+ * retornar (critério explícito da #191).
+ *
+ * Enquanto o endpoint não existir (404), lança `ExportMembrosPendenteError`
+ * — pequeno mimo para diferenciar "backend não tem" de "backend deu erro".
+ * Quando o BE-24 sair, funciona automaticamente sem mudança de código.
+ */
+export async function exportarMembrosCsv(
+  upfId: string | number,
+): Promise<string> {
+  let res: Response;
+  try {
+    res = await apiClient(
+      `/api/v1/sgp/upfs/${upfId}/membros/exportar/`,
+      { signal: AbortSignal.timeout(EXPORT_MEMBROS_TIMEOUT_MS) },
+    );
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "TimeoutError") {
+      throw new ExportMembrosTimeoutError();
+    }
+    if (e instanceof ApiError && e.status === 404) {
+      throw new ExportMembrosPendenteError();
+    }
+    throw e;
+  }
+
+  const nome =
+    nomeDoContentDisposition(res.headers.get("Content-Disposition")) ??
+    nomeDerivadoLocalmente(upfId);
+
+  dispararDownload(await res.blob(), nome);
+  return nome;
 }
 
 // ─── Helpers de UI ───────────────────────────────────────────────────────────
