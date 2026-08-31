@@ -220,8 +220,14 @@ function FormulariosTabView({ upfId }: Props) {
     return (
       <div className="space-y-4" data-testid="formularios-tab">
         {filtros}
-        <div className="flex min-h-[30vh] items-center justify-center">
-          <Spinner className="h-6 w-6 animate-spin text-text-muted" />
+        <div
+          className="flex min-h-[30vh] flex-col items-center justify-center gap-3 text-text-muted"
+          role="status"
+          aria-live="polite"
+          data-testid="formularios-tab-loading"
+        >
+          <Spinner className="h-6 w-6 animate-spin" />
+          <p className="text-sm">Carregando formulários…</p>
         </div>
       </div>
     );
