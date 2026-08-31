@@ -63,6 +63,11 @@ export type ListFormResponsesParams = {
   data_fim?: string;
   /** Busca `icontains` no campo respondente (backend). */
   respondente?: string;
+  /**
+   * Restringe às respostas anônimas (respondente NULL no BE). Mutuamente
+   * exclusivo com `respondente` — o container zera a busca quando este liga.
+   */
+  apenas_anonimas?: boolean;
 };
 
 // ─── API ────────────────────────────────────────────────────────────────────
@@ -76,7 +81,11 @@ function buildQuery(params: ListFormResponsesParams): string {
     qs.set("formulario_id", String(params.formulario_id));
   if (params.data_inicio) qs.set("data_inicio", params.data_inicio);
   if (params.data_fim) qs.set("data_fim", params.data_fim);
-  if (params.respondente) qs.set("respondente", params.respondente);
+  if (params.apenas_anonimas) {
+    qs.set("respondente_isnull", "true");
+  } else if (params.respondente) {
+    qs.set("respondente", params.respondente);
+  }
   return qs.toString();
 }
 

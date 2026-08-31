@@ -31,17 +31,20 @@ const DEFAULT_FILTERS: FormulariosFiltrosValue = {
   data_inicio: "",
   data_fim: "",
   respondente: "",
+  apenas_anonimas: false,
 };
 
 /**
  * Chaves de query string que a aba possui na URL. Preservamos qualquer outro
  * parâmetro alheio à aba ao reescrever (ex.: `?tab=` ou `?utm_source=`).
+ * `apenas_anonimas` é serializado como "1"/"" (booleano) — ver serialize/read.
  */
 const FILTER_QS_KEYS = [
   "formulario_id",
   "data_inicio",
   "data_fim",
   "respondente",
+  "apenas_anonimas",
 ] as const;
 
 type Props = { upfId: string };
@@ -69,11 +72,14 @@ export function FormulariosTab({ upfId }: Props) {
 function readFiltersFromSearchParams(
   params: URLSearchParams,
 ): FormulariosFiltrosValue {
+  const anonimas = params.get("apenas_anonimas") === "1";
   return {
     formulario_id: params.get("formulario_id") ?? "",
     data_inicio: params.get("data_inicio") ?? "",
     data_fim: params.get("data_fim") ?? "",
-    respondente: params.get("respondente") ?? "",
+    // Mesma regra do checkbox: ligar "anônimas" zera a busca textual.
+    respondente: anonimas ? "" : (params.get("respondente") ?? ""),
+    apenas_anonimas: anonimas,
   };
 }
 
@@ -86,7 +92,9 @@ function syncFiltersToUrl(filters: FormulariosFiltrosValue) {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
   for (const key of FILTER_QS_KEYS) {
-    const value = filters[key];
+    const raw = filters[key];
+    // Booleano vira "1" (só quando true); strings vão como estão.
+    const value = typeof raw === "boolean" ? (raw ? "1" : "") : raw;
     if (value) url.searchParams.set(key, value);
     else url.searchParams.delete(key);
   }
@@ -130,7 +138,8 @@ function FormulariosTabView({ upfId }: Props) {
       filters.formulario_id !== "" ||
       filters.data_inicio !== "" ||
       filters.data_fim !== "" ||
-      filters.respondente !== "",
+      filters.respondente !== "" ||
+      filters.apenas_anonimas,
     [filters],
   );
 
@@ -143,6 +152,7 @@ function FormulariosTabView({ upfId }: Props) {
     filters.data_inicio,
     filters.data_fim,
     filters.respondente,
+    filters.apenas_anonimas,
   ]);
 
   useEffect(() => {
@@ -165,7 +175,10 @@ function FormulariosTabView({ upfId }: Props) {
           : undefined,
         data_inicio: filters.data_inicio || undefined,
         data_fim: filters.data_fim || undefined,
-        respondente: filters.respondente.trim() || undefined,
+        respondente: filters.apenas_anonimas
+          ? undefined
+          : filters.respondente.trim() || undefined,
+        apenas_anonimas: filters.apenas_anonimas || undefined,
       },
       controller.signal,
     )
