@@ -686,6 +686,18 @@ class MembroDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSe
         return value
 
 
+class MembroExportQuerySerializer(serializers.Serializer):
+    """Filtros aceitos por `GET /api/v1/sgp/membros/exportar/` (Issue #186)."""
+
+    territorio_id = serializers.IntegerField(required=False, min_value=1)
+    municipio = serializers.IntegerField(
+        required=False, min_value=1, source="municipio_id"
+    )
+    projeto = serializers.IntegerField(
+        required=False, min_value=1, source="projeto_id"
+    )
+
+
 class HistoricoEntrySerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
     campo = serializers.CharField(allow_null=True, read_only=True)

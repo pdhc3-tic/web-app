@@ -1,13 +1,17 @@
+import csv
 import logging
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+from io import StringIO
 
 from django.apps import apps
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Q
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 
 from rest_framework import filters, generics, serializers, status, viewsets
@@ -48,6 +52,12 @@ from apps.sgp.constants import (
 from apps.sgp.filters import ActivityFilter, UPFFilter
 from apps.sgp.models import (
     Activity, Comunidade, Cultura, EspecieAnimal, MembroFamilia, UPF, Projeto
+)
+from apps.sgp.services.membro_export import (
+    MEMBROS_EXPORT_UPF_LIMIT,
+    ExportLimitExceeded,
+    membro_export_rows_for_scope,
+    membro_export_rows_for_upf,
 )
 
 
@@ -94,6 +104,7 @@ from apps.sgp.serializers import (
     EspecieAnimalSerializer,
     HistoricoEntrySerializer,
     MembroDetailSerializer,
+    MembroExportQuerySerializer,
     MembroListSerializer,
     ProjetoSerializer,
     UPFDetailSerializer,
@@ -622,6 +633,21 @@ class ComunidadeViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+def _membros_csv_response(columns, rows, filename):
+    """CSV UTF-8 com BOM, no mesmo formato de `WorkPlanExportView` (docs/export.md)."""
+    content = StringIO()
+    writer = csv.writer(content)
+    writer.writerow([label for _, label in columns])
+    for row in rows:
+        writer.writerow([row.get(key, "") for key, _ in columns])
+    response = HttpResponse(
+        "\ufeff" + content.getvalue(),
+        content_type="text/csv; charset=utf-8",
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
 def _sensitive_field_markers(instance):
     """
     Indicadores de presença/alteração de campos sensíveis (saúde, cor/raça)
@@ -761,6 +787,15 @@ class MembroViewSet(viewsets.ModelViewSet):
             user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )
         instance.delete()
+
+    @action(detail=False, methods=["get"], url_path="exportar")
+    def exportar(self, request, upf_pk=None):
+        """Exporta em CSV os membros de uma UPF específica (Issue #186)."""
+        upf = self.get_upf()
+        columns, rows = membro_export_rows_for_upf(upf, user=request.user)
+        timestamp = timezone.localtime().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"membros_upf_{upf.pk}_{timestamp}.csv"
+        return _membros_csv_response(columns, rows, filename)
 
     @action(detail=False, methods=["get"], url_path="resumo")
     def resumo(self, request, upf_pk=None):
@@ -904,6 +939,51 @@ class MembroViewSet(viewsets.ModelViewSet):
                 "nome_completo": antigo_titular.nome_completo,
             } if antigo_titular else None,
         })
+
+
+class MembroExportView(APIView):
+    """
+    Exporta em CSV os membros de múltiplas UPFs dentro do escopo territorial
+    do usuário — relatório demográfico agregado (Issue #186).
+    """
+
+    permission_classes = [IsAuthenticatedActiveAccess]
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("territorio_id", OpenApiTypes.INT, OpenApiParameter.QUERY),
+            OpenApiParameter("municipio", OpenApiTypes.INT, OpenApiParameter.QUERY),
+            OpenApiParameter("projeto", OpenApiTypes.INT, OpenApiParameter.QUERY),
+        ],
+        description=(
+            "Exportação territorial agregada de membros, restrita às UPFs "
+            "acessíveis ao usuário autenticado. Limitada a "
+            f"{MEMBROS_EXPORT_UPF_LIMIT} UPFs por exportação — acima disso, "
+            "restrinja por territorio_id, municipio ou projeto."
+        ),
+    )
+    def get(self, request):
+        query_serializer = MembroExportQuerySerializer(data=request.query_params)
+        query_serializer.is_valid(raise_exception=True)
+        filtros = query_serializer.validated_data
+
+        try:
+            columns, rows = membro_export_rows_for_scope(user=request.user, **filtros)
+        except ExportLimitExceeded as exc:
+            return Response(
+                {
+                    "detail": (
+                        f"A exportação abrange {exc.upf_count} UPFs, acima do limite "
+                        f"de {exc.limit}. Restrinja por territorio_id, município ou "
+                        "projeto."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        timestamp = timezone.localtime().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"membros_{timestamp}.csv"
+        return _membros_csv_response(columns, rows, filename)
 
 
 class ProjetoViewSet(viewsets.ModelViewSet):

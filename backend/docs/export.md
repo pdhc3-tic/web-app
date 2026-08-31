@@ -21,6 +21,45 @@ essa representação deverá ser substituída pelo renderizador do SGF quando es
 contrato estiver disponível. `formato` ausente ou diferente de `csv` e `pdf`
 retorna `400 Bad Request`.
 
+## Exportação de Membros (Issue #186)
+
+```http
+GET /api/v1/sgp/upfs/{upf_pk}/membros/exportar/
+GET /api/v1/sgp/membros/exportar/?territorio_id=&municipio=&projeto=
+```
+
+Requer autenticação JWT. A primeira rota exporta os membros de uma única UPF,
+respeitando o mesmo escopo territorial de acesso à UPF (`upfs_acessiveis_ao_usuario`).
+A segunda exporta membros de múltiplas UPFs dentro do escopo territorial do
+usuário — um relatório demográfico agregado —, com os filtros opcionais
+`territorio_id`, `municipio` e `projeto` (IDs inteiros).
+
+Resposta: CSV UTF-8 com BOM (`text/csv; charset=utf-8`), uma linha por membro,
+com `Content-Disposition: attachment`. Colunas: ID, UPF, nome completo,
+parentesco, data de nascimento, idade, gênero, CPF, município, território e
+projeto.
+
+**Campos sensíveis.** As colunas `Cor/Raça` e `Condições de saúde` só aparecem
+no CSV se o perfil do usuário autenticado tiver permissão de leitura sobre
+esses campos (mesma matriz da Issue #187, `apps.core.sensitive_fields`).
+Perfis sem permissão recebem o CSV **sem essas colunas** — nunca com valores
+vazios ou mascarados, para não sugerir a um perfil sem permissão que o dado
+existe.
+
+**Limite da exportação agregada.** Restrita a
+`apps.sgp.services.membro_export.MEMBROS_EXPORT_UPF_LIMIT` (500) UPFs por
+exportação. Acima disso, a API responde `400 Bad Request` pedindo para
+restringir por `territorio_id`, `municipio` ou `projeto`, em vez de truncar o
+resultado silenciosamente — um relatório demográfico incompleto sem aviso
+seria pior do que um erro explícito.
+
+| Cenário | Status |
+| :--- | :--- |
+| JWT ausente ou inválido | `401 Unauthorized` |
+| UPF fora do escopo do usuário (rota por UPF) | `404 Not Found` |
+| `territorio_id`/`municipio`/`projeto` inválidos | `400 Bad Request` |
+| Escopo territorial acima do limite de UPFs (rota agregada) | `400 Bad Request` |
+
 ## 1. Resumo
 
 Foram implementadas a exportação do Plano de Trabalho em CSV/XLSX e uma API autenticada para consumo consolidado pelo Power BI. A solução aplica filtros e regras de escopo territorial na exportação, além de manter um snapshot em Redis atualizado periodicamente pelo Celery para reduzir o custo de leitura do conector BI.
