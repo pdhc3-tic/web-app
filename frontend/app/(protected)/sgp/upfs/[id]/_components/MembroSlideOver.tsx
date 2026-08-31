@@ -17,12 +17,14 @@ import {
   getMembro,
   calcIdade,
   saudeLabel,
+  temVinculoEscolar,
   SAUDE_OPTIONS,
   type MembroDetail,
   type MembroListItem,
   type MembroWritePayload,
 } from "@/app/lib/membros";
 import { formatCpfInput, isValidCpf, maskCpf } from "@/app/lib/format";
+import { formatDate } from "@/app/lib/datetime";
 import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
 import {
   SEGURIDADE_OPTIONS,
@@ -385,7 +387,7 @@ function ViewBody({ membro }: { membro: MembroDetail }) {
         items={[
           { label: "Nome", value: membro.nome_completo },
           { label: "Parentesco", value: membro.grau_parentesco_display },
-          { label: "Nascimento", value: membro.data_nascimento ?? undefined },
+          { label: "Nascimento", value: formatDate(membro.data_nascimento) },
           {
             label: "Idade",
             value:
@@ -430,6 +432,9 @@ function FormBody({
   toggleMulti,
 }: FormBodyProps) {
   const choices = useSgpChoices();
+  // "Escola" só aparece quando a escolaridade indica matrícula ativa.
+  const mostraEscola = temVinculoEscolar(strToInt(form.escolaridade));
+
   return (
     <div className="flex flex-col gap-4 px-4 py-4">
       {globalError && (
@@ -524,17 +529,24 @@ function FormBody({
         <Select
           label="Escolaridade"
           value={form.escolaridade}
-          onChange={(v) => update("escolaridade", v)}
+          onChange={(v) => {
+            update("escolaridade", v);
+            // Ao sair do conjunto com vínculo escolar o campo some da tela;
+            // limpar evita que a escola antiga seja salva sem ninguém ver.
+            if (!temVinculoEscolar(strToInt(v))) update("escola", "");
+          }}
           options={withCurrentValue(choices.escolaridade, form.escolaridade)}
           error={fieldErrors.escolaridade}
           placeholder="Selecione..."
         />
-        <Input
-          label="Escola"
-          value={form.escola}
-          onChange={(e) => update("escola", e.target.value)}
-          error={fieldErrors.escola}
-        />
+        {mostraEscola && (
+          <Input
+            label="Escola"
+            value={form.escola}
+            onChange={(e) => update("escola", e.target.value)}
+            error={fieldErrors.escola}
+          />
+        )}
       </div>
 
       <MultiSelect

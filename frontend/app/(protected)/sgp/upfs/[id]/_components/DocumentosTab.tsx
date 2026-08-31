@@ -1,12 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  CheckCircle2,
   Download,
   FileText,
   Plus,
@@ -14,6 +13,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/app/components/ui/Button/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
+import { useToast } from "@/app/components/ui/Toast/Toast";
 import { absoluteDateTime, formatDate, relativeTime } from "@/app/lib/datetime";
 import { FileTypeIcon } from "./FileTypeIcon";
 import {
@@ -27,7 +27,6 @@ import { DocumentoSlideOver } from "./DocumentoSlideOver";
 import { RemoverDocumentoDialog } from "./RemoverDocumentoDialog";
 
 type Props = { upfId: string };
-type Toast = { id: number; variant: "success" | "error"; message: string };
 type SortKey = "tipo" | "descricao" | "data_documento" | "tamanho_bytes" | "criado_em" | "criado_por";
 type SortDir = "asc" | "desc";
 
@@ -55,7 +54,7 @@ export function DocumentosTab({ upfId }: Props) {
 
   const [slideOverOpen, setSlideOverOpen] = useState(false);
   const [remover, setRemover] = useState<Documento | null>(null);
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const { showToast } = useToast();
   const [sortKey, setSortKey] = useState<SortKey>("criado_em");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -75,12 +74,6 @@ export function DocumentosTab({ upfId }: Props) {
       });
     return () => controller.abort();
   }, [upfId, reloadKey]);
-
-  const pushToast = useCallback((variant: Toast["variant"], message: string) => {
-    const id = Date.now() + Math.random();
-    setToasts((prev) => [...prev, { id, variant, message }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
-  }, []);
 
   const ordenados = useMemo(() => {
     const arr = [...documentos];
@@ -106,21 +99,21 @@ export function DocumentosTab({ upfId }: Props) {
 
   function handleSaved(saved: Documento) {
     setDocumentos((prev) => [saved, ...prev]);
-    pushToast("success", "Documento adicionado.");
+    showToast("Documento adicionado.");
     setSlideOverOpen(false);
   }
 
   function handleDeleted(id: number) {
     setDocumentos((prev) => prev.filter((d) => d.id !== id));
     setRemover(null);
-    pushToast("success", "Documento removido.");
+    showToast("Documento removido.");
   }
 
   async function handleDownload(doc: Documento) {
     try {
       await downloadDocumento(upfId, doc);
     } catch {
-      pushToast("error", "Falha ao baixar o arquivo.");
+      showToast("Falha ao baixar o arquivo.", "error");
     }
   }
 
@@ -181,8 +174,6 @@ export function DocumentosTab({ upfId }: Props) {
         nome={remover?.nome_original ?? ""}
         onDeleted={handleDeleted}
       />
-
-      <ToastStack toasts={toasts} />
     </div>
   );
 }
@@ -365,23 +356,3 @@ function ErroSection({ message, onRetry }: { message: string; onRetry: () => voi
   );
 }
 
-function ToastStack({ toasts }: { toasts: Toast[] }) {
-  if (toasts.length === 0) return null;
-  return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex flex-col gap-2" role="status" aria-live="polite">
-      {toasts.map((t) => (
-        <div
-          key={t.id}
-          className={`pointer-events-auto flex items-center gap-2 rounded-md border px-3 py-2 text-sm shadow-md ${
-            t.variant === "success"
-              ? "border-success-text bg-success-bg text-success-text"
-              : "border-error-text bg-error-bg text-error-text"
-          }`}
-        >
-          {t.variant === "success" ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-          <span>{t.message}</span>
-        </div>
-      ))}
-    </div>
-  );
-}

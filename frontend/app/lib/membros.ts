@@ -46,6 +46,22 @@ export function saudeLabel(value: string): string {
   return SAUDE_OPTIONS.find((s) => s.value === value)?.label ?? value;
 }
 
+/**
+ * Escolaridades que indicam vínculo escolar ativo, sobre
+ * apps/sgp/constants.py::ESCOLARIDADE_CHOICES: 2 (Fundamental incompleto),
+ * 3 (Fundamental completo) e 4 (Médio incompleto). Fora desse conjunto a
+ * pessoa não está matriculada, e perguntar a escola só gera ruído.
+ */
+export const ESCOLARIDADE_COM_VINCULO_ESCOLAR: number[] = [2, 3, 4];
+
+/** A escolaridade informada indica matrícula ativa? */
+export function temVinculoEscolar(
+  escolaridade: number | null | undefined,
+): boolean {
+  if (escolaridade === null || escolaridade === undefined) return false;
+  return ESCOLARIDADE_COM_VINCULO_ESCOLAR.includes(escolaridade);
+}
+
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
 /**

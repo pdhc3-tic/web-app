@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
-  CheckCircle2,
   Eye,
   Pencil,
   Plus,
@@ -14,6 +13,7 @@ import {
 import { Button } from "@/app/components/ui/Button/Button";
 import { Chip } from "@/app/components/ui/Chip/Chip";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
+import { useToast } from "@/app/components/ui/Toast/Toast";
 import { ApiError } from "@/app/lib/api";
 import {
   calcIdade,
@@ -32,12 +32,6 @@ type Props = {
 type SlideOverState =
   | { open: false }
   | { open: true; mode: SlideOverMode; membro?: MembroListItem };
-
-type Toast = {
-  id: number;
-  variant: "success" | "error";
-  message: string;
-};
 
 /**
  * Idade em anos completos. Prefere o valor que o backend já calcula
@@ -60,7 +54,7 @@ export function MembrosTab({ upfId }: Props) {
 
   const [slideOver, setSlideOver] = useState<SlideOverState>({ open: false });
   const [remover, setRemover] = useState<MembroListItem | null>(null);
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const { showToast } = useToast();
 
   // ── Carrega a lista ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -90,15 +84,6 @@ export function MembrosTab({ upfId }: Props) {
     () => membros.some((m) => m.grau_parentesco === "titular"),
     [membros],
   );
-
-  // ── Toasts ─────────────────────────────────────────────────────────────────
-  const pushToast = useCallback((variant: Toast["variant"], message: string) => {
-    const id = Date.now() + Math.random();
-    setToasts((prev) => [...prev, { id, variant, message }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
-  }, []);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   function openCreate() {
@@ -141,8 +126,7 @@ export function MembrosTab({ upfId }: Props) {
       return next;
     });
 
-    pushToast(
-      "success",
+    showToast(
       slideOver.open && slideOver.mode === "edit"
         ? "Membro atualizado."
         : "Membro adicionado.",
@@ -155,7 +139,7 @@ export function MembrosTab({ upfId }: Props) {
   function handleDeleteConfirmed(id: number) {
     setMembros((prev) => prev.filter((m) => m.id !== id));
     setRemover(null);
-    pushToast("success", "Membro removido.");
+    showToast("Membro removido.");
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -238,8 +222,6 @@ export function MembrosTab({ upfId }: Props) {
         membroNome={remover?.nome_completo ?? ""}
         onDeleted={handleDeleteConfirmed}
       />
-
-      <ToastStack toasts={toasts} />
     </div>
   );
 }
@@ -439,37 +421,6 @@ function ErroSection({
       <Button variant="secondary" onClick={onRetry}>
         Tentar novamente
       </Button>
-    </div>
-  );
-}
-
-// ─── Toasts ──────────────────────────────────────────────────────────────────
-
-function ToastStack({ toasts }: { toasts: Toast[] }) {
-  if (toasts.length === 0) return null;
-  return (
-    <div
-      className="pointer-events-none fixed bottom-4 right-4 z-50 flex flex-col gap-2"
-      role="status"
-      aria-live="polite"
-    >
-      {toasts.map((t) => (
-        <div
-          key={t.id}
-          className={`pointer-events-auto flex items-center gap-2 rounded-md border px-3 py-2 text-sm shadow-md ${
-            t.variant === "success"
-              ? "border-success-text bg-success-bg text-success-text"
-              : "border-error-text bg-error-bg text-error-text"
-          }`}
-        >
-          {t.variant === "success" ? (
-            <CheckCircle2 className="h-4 w-4" />
-          ) : (
-            <AlertTriangle className="h-4 w-4" />
-          )}
-          <span>{t.message}</span>
-        </div>
-      ))}
     </div>
   );
 }
