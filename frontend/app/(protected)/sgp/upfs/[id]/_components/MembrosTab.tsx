@@ -6,6 +6,7 @@ import {
   Eye,
   Pencil,
   Plus,
+  Star,
   Trash2,
   UserPlus,
   Users,
@@ -17,11 +18,14 @@ import { useToast } from "@/app/components/ui/Toast/Toast";
 import { ApiError } from "@/app/lib/api";
 import {
   calcIdade,
+  getResumoMembros,
   listMembros,
   type MembroDetail,
   type MembroListItem,
+  type ResumoMembros,
 } from "@/app/lib/membros";
 import { maskCpf } from "@/app/lib/format";
+import { ComposicaoResumoCard } from "./ComposicaoResumoCard";
 import { MembroSlideOver, type SlideOverMode } from "./MembroSlideOver";
 import { RemoverMembroDialog } from "./RemoverMembroDialog";
 
@@ -52,6 +56,10 @@ export function MembrosTab({ upfId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
+  const [resumo, setResumo] = useState<ResumoMembros | null>(null);
+  const [resumoLoading, setResumoLoading] = useState(true);
+  const [resumoKey, setResumoKey] = useState(0);
+
   const [slideOver, setSlideOver] = useState<SlideOverState>({ open: false });
   const [remover, setRemover] = useState<MembroListItem | null>(null);
   const { showToast } = useToast();
@@ -80,10 +88,34 @@ export function MembrosTab({ upfId }: Props) {
     return () => controller.abort();
   }, [upfId, reloadKey]);
 
+  // ── Carrega o resumo agregado (BE-23) ──────────────────────────────────────
+  // Chave própria: a listagem é atualizada de forma otimista após salvar ou
+  // remover, mas os agregados só o backend sabe recalcular.
+  useEffect(() => {
+    const controller = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setResumoLoading(true);
+
+    getResumoMembros(upfId, controller.signal)
+      .then((data) => setResumo(data))
+      .catch(() => {
+        if (!controller.signal.aborted) setResumo(null);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setResumoLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [upfId, resumoKey]);
+
   const titularExists = useMemo(
     () => membros.some((m) => m.grau_parentesco === "titular"),
     [membros],
   );
+
+  // O resumo é a fonte da verdade sobre o Titular; a listagem só cobre o caso
+  // em que a chamada do resumo falhou, para o alerta não sumir junto com ela.
+  const semTitular = resumo ? !resumo.tem_titular : !titularExists;
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   function openCreate() {
@@ -126,6 +158,7 @@ export function MembrosTab({ upfId }: Props) {
       return next;
     });
 
+    setResumoKey((k) => k + 1);
     showToast(
       slideOver.open && slideOver.mode === "edit"
         ? "Membro atualizado."
@@ -138,6 +171,7 @@ export function MembrosTab({ upfId }: Props) {
   // Basta remover a linha da lista, fechar o diálogo e disparar o toast.
   function handleDeleteConfirmed(id: number) {
     setMembros((prev) => prev.filter((m) => m.id !== id));
+    setResumoKey((k) => k + 1);
     setRemover(null);
     showToast("Membro removido.");
   }
@@ -146,23 +180,38 @@ export function MembrosTab({ upfId }: Props) {
 
   return (
     <div className="space-y-4" data-testid="membros-tab">
-      {/* Cabeçalho da aba com contagem + botão de adicionar */}
-      {(!loading && !error && membros.length > 0) && (
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm text-text-muted">
-            {membros.length}{" "}
-            {membros.length === 1 ? "membro cadastrado" : "membros cadastrados"}
-          </p>
-          <Button size="sm" leftIcon={<Plus className="h-4 w-4" />} onClick={openCreate}>
-            Adicionar membro
-          </Button>
-        </div>
+      {/* Card-resumo + botão de adicionar. Com a UPF vazia nada disso aparece:
+          o EmptyState já diz o total (nenhum) e pede o Titular. */}
+      {!loading && !error && membros.length > 0 && (
+        <>
+          <ComposicaoResumoCard
+            resumo={resumo}
+            loading={resumoLoading}
+            semTitular={semTitular}
+            onRetry={() => setResumoKey((k) => k + 1)}
+          />
+          <div className="flex items-center justify-end">
+            <Button
+              size="sm"
+              leftIcon={<Plus className="h-4 w-4" />}
+              onClick={openCreate}
+            >
+              Adicionar membro
+            </Button>
+          </div>
+        </>
       )}
 
       {loading && <CarregandoSection />}
 
       {!loading && error && (
-        <ErroSection message={error} onRetry={() => setReloadKey((k) => k + 1)} />
+        <ErroSection
+          message={error}
+          onRetry={() => {
+            setReloadKey((k) => k + 1);
+            setResumoKey((k) => k + 1);
+          }}
+        />
       )}
 
       {!loading && !error && membros.length === 0 && (
@@ -302,8 +351,9 @@ function LinhaMembro({
         {isTitular ? (
           <span
             data-testid="membro-badge-titular"
-            className="inline-flex items-center rounded-full border border-primary bg-primary/10 px-2 py-0.5 text-2xs font-semibold text-primary"
+            className="inline-flex items-center gap-1 rounded-full border border-primary bg-primary/10 px-2 py-0.5 text-2xs font-semibold text-primary"
           >
+            <Star className="h-3 w-3 fill-current" aria-hidden />
             {membro.grau_parentesco_display}
           </span>
         ) : (

@@ -12,6 +12,10 @@ import { primeiroUpfId } from "./helpers/upf";
  * é FK obrigatória para um `MembroFamilia` e esse membro aparece na própria
  * listagem — por isso o empty state é exercitado interceptando o GET da lista.
  *
+ * O card-resumo da composição familiar (FE-23) sai do endpoint `membros/resumo/`
+ * (BE-23). Os cenários de composição conhecida e de UPF sem Titular fixam esse
+ * endpoint junto com a listagem — o segundo, de novo, não existe no seed.
+ *
  * A asserção do badge do Titular mora aqui, e não num teste de componente,
  * porque o projeto ainda não tem runner de componente (mesma pendência da
  * issue 133). Ao montar o runner, ela pode migrar para `MembrosTab.test.tsx`.
@@ -19,6 +23,9 @@ import { primeiroUpfId } from "./helpers/upf";
 
 /** Regex do GET da listagem — não pega o detalhe (`/membros/{id}/`). */
 const LISTA_MEMBROS = /\/api\/v1\/sgp\/upfs\/\d+\/membros\/(\?|$)/;
+
+/** Regex do GET do resumo agregado da composição familiar (BE-23). */
+const RESUMO_MEMBROS = /\/api\/v1\/sgp\/upfs\/\d+\/membros\/resumo\/$/;
 
 /**
  * Prefixo dos membros criados pelos testes. O `limparMembrosDeTeste` apaga por
@@ -135,6 +142,60 @@ function limparMembrosDeTeste(): void {
   );
 }
 
+/**
+ * Membro no formato de `MembroListSerializer` — só os campos que a listagem
+ * lê precisam ser reais.
+ */
+function membroFake(
+  id: number,
+  nome: string,
+  parentesco: string,
+  parentescoDisplay: string,
+): Record<string, unknown> {
+  return {
+    id,
+    nome_completo: nome,
+    data_nascimento: null,
+    idade: null,
+    grau_parentesco: parentesco,
+    grau_parentesco_display: parentescoDisplay,
+    cpf: "",
+    genero: null,
+    genero_display: "",
+    cor_raca: null,
+    cor_raca_display: "",
+    criado_em: "2026-01-01T00:00:00Z",
+  };
+}
+
+/**
+ * Fixa listagem e resumo de uma UPF. O resumo tem endpoint próprio (BE-23),
+ * então os dois precisam ser interceptados juntos — senão o card mostraria os
+ * agregados reais do seed sobre uma listagem falsa.
+ */
+async function stubComposicao(
+  page: Page,
+  membros: Record<string, unknown>[],
+  resumo: Record<string, unknown>,
+): Promise<void> {
+  await page.route(RESUMO_MEMBROS, async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(resumo),
+    });
+  });
+  await page.route(LISTA_MEMBROS, async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(membros),
+    });
+  });
+}
+
 test.describe("SGP — Aba Membros na UPF", () => {
   test.use({ storageState: storageStatePath("ugp") });
 
@@ -158,6 +219,15 @@ test.describe("SGP — Aba Membros na UPF", () => {
     const badges = page.getByTestId("membro-badge-titular");
     await expect(badges).toHaveCount(1);
     await expect(linhas.first().getByTestId("membro-badge-titular")).toBeVisible();
+
+    // O card-resumo fala do mesmo conjunto que a tabela mostra: a listagem vem
+    // sem paginação (limit=1000), então o total do backend bate com as linhas.
+    await expect(page.getByTestId("membros-resumo")).toBeVisible();
+    await expect(page.getByTestId("membros-resumo-total")).toHaveText(
+      String(await linhas.count()),
+    );
+    // Toda UPF do seed tem Titular — nada de alerta de Atenção aqui.
+    await expect(page.getByTestId("membros-sem-titular-alerta")).toHaveCount(0);
 
     // Campos sensíveis não podem aparecer na listagem resumida (regra FE-25).
     await expect(page.getByRole("columnheader", { name: "Saúde" })).toHaveCount(0);
@@ -204,6 +274,101 @@ test.describe("SGP — Aba Membros na UPF", () => {
     await expect(painel).toBeVisible();
     await expect(painel).toHaveAttribute("data-mode", "create");
     await expect(painel.getByLabel("Parentesco")).toHaveValue("titular");
+  });
+
+  test("card-resumo exibe os totais de uma composição familiar conhecida", async ({
+    page,
+  }) => {
+    const upfId = primeiroUpfId();
+
+    await stubComposicao(
+      page,
+      [
+        membroFake(9001, `${PREFIXO_TESTE} Titular`, "titular", "Titular"),
+        membroFake(9002, `${PREFIXO_TESTE} Cônjuge`, "conjuge", "Cônjuge"),
+        membroFake(9003, `${PREFIXO_TESTE} Filha`, "filho", "Filho(a)"),
+        membroFake(9004, `${PREFIXO_TESTE} Filho`, "filho", "Filho(a)"),
+        membroFake(9005, `${PREFIXO_TESTE} Avó`, "avo", "Avô(ó)"),
+        membroFake(9006, `${PREFIXO_TESTE} Neto`, "neto", "Neto(a)"),
+      ],
+      {
+        total_membros: 6,
+        faixa_etaria: {
+          "0-11": 2,
+          "12-17": 1,
+          "18-59": 2,
+          "60+": 1,
+          sem_data_nascimento: 0,
+        },
+        genero: { masculino: 3, feminino: 3, nao_binario: 0, nao_informado: 0 },
+        tem_titular: true,
+      },
+    );
+
+    await abrirAbaMembros(page, upfId);
+
+    const card = page.getByTestId("membros-resumo");
+    await expect(card).toBeVisible();
+    await expect(card.getByTestId("membros-resumo-total")).toHaveText("6");
+
+    // Uma pastilha por faixa, inclusive as zeradas — a soma fecha com o total.
+    await expect(card.getByTestId("membros-resumo-faixa-0-11")).toContainText(
+      "2",
+    );
+    await expect(card.getByTestId("membros-resumo-faixa-12-17")).toContainText(
+      "1",
+    );
+    await expect(card.getByTestId("membros-resumo-faixa-18-59")).toContainText(
+      "2",
+    );
+    await expect(card.getByTestId("membros-resumo-faixa-60+")).toContainText(
+      "1",
+    );
+    await expect(
+      card.getByTestId("membros-resumo-faixa-sem_data_nascimento"),
+    ).toContainText("0");
+    await expect(card.getByText("60 anos ou mais")).toBeVisible();
+
+    await expect(page.getByTestId("membros-sem-titular-alerta")).toHaveCount(0);
+  });
+
+  test("UPF sem Titular exibe o alerta de Atenção no card-resumo", async ({
+    page,
+  }) => {
+    const upfId = primeiroUpfId();
+
+    // Cenário que o seed não produz: `UPF.titular` é FK obrigatória, então
+    // nenhuma UPF real fica sem Titular. Listagem e resumo vão fixados juntos.
+    await stubComposicao(
+      page,
+      [
+        membroFake(9101, `${PREFIXO_TESTE} Sem titular`, "filho", "Filho(a)"),
+        membroFake(9102, `${PREFIXO_TESTE} Irmã`, "irmao", "Irmão(ã)"),
+      ],
+      {
+        total_membros: 2,
+        faixa_etaria: {
+          "0-11": 0,
+          "12-17": 1,
+          "18-59": 1,
+          "60+": 0,
+          sem_data_nascimento: 0,
+        },
+        genero: { masculino: 1, feminino: 1, nao_binario: 0, nao_informado: 0 },
+        tem_titular: false,
+      },
+    );
+
+    await abrirAbaMembros(page, upfId);
+
+    const alerta = page.getByTestId("membros-sem-titular-alerta");
+    await expect(alerta).toBeVisible();
+    await expect(alerta).toContainText("Esta UPF não tem Titular.");
+    // Paleta "Atenção" do design system (--color-warning-bg).
+    await expect(alerta).toHaveCSS("background-color", "rgb(255, 248, 225)");
+
+    // E nenhuma linha da tabela pode ostentar o badge do Titular.
+    await expect(page.getByTestId("membro-badge-titular")).toHaveCount(0);
   });
 });
 

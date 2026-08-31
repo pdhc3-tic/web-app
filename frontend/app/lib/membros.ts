@@ -127,6 +127,43 @@ export type MembroWritePayload = {
   seguridade_social?: string[];
 };
 
+/**
+ * Espelha a resposta de GET /api/v1/sgp/upfs/{upfId}/membros/resumo/ (BE-23).
+ * As chaves de `faixa_etaria` são as do backend — use `FAIXAS_ETARIAS` para
+ * exibi-las na ordem e com os rótulos certos.
+ */
+export type ResumoMembros = {
+  total_membros: number;
+  faixa_etaria: Record<FaixaEtariaKey, number>;
+  genero: {
+    masculino: number;
+    feminino: number;
+    nao_binario: number;
+    nao_informado: number;
+  };
+  tem_titular: boolean;
+};
+
+export type FaixaEtariaKey =
+  | "0-11"
+  | "12-17"
+  | "18-59"
+  | "60+"
+  | "sem_data_nascimento";
+
+/**
+ * Ordem e rótulos das faixas etárias do card-resumo. A última não é uma faixa
+ * de idade: o backend joga ali quem está sem `data_nascimento`, e a soma das
+ * cinco fecha com `total_membros`.
+ */
+export const FAIXAS_ETARIAS: { key: FaixaEtariaKey; label: string }[] = [
+  { key: "0-11", label: "0 a 11 anos" },
+  { key: "12-17", label: "12 a 17 anos" },
+  { key: "18-59", label: "18 a 59 anos" },
+  { key: "60+", label: "60 anos ou mais" },
+  { key: "sem_data_nascimento", label: "Sem data de nascimento" },
+];
+
 // ─── API ─────────────────────────────────────────────────────────────────────
 
 type Envelope<T> = { count?: number; results?: T[] };
@@ -191,6 +228,21 @@ export async function deleteMembro(
   await apiClient(`/api/v1/sgp/upfs/${upfId}/membros/${id}/`, {
     method: "DELETE",
   });
+}
+
+/**
+ * GET /api/v1/sgp/upfs/{upfId}/membros/resumo/ — indicadores agregados da
+ * composição familiar (BE-23). É a fonte de `tem_titular` na aba: a listagem
+ * local pode estar desatualizada, o resumo vem direto do banco.
+ */
+export async function getResumoMembros(
+  upfId: string | number,
+  signal?: AbortSignal,
+): Promise<ResumoMembros> {
+  const res = await apiClient(`/api/v1/sgp/upfs/${upfId}/membros/resumo/`, {
+    signal,
+  });
+  return res.json();
 }
 
 // ─── Helpers de UI ───────────────────────────────────────────────────────────
