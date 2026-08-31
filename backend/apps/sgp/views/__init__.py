@@ -622,6 +622,18 @@ class ComunidadeViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+def _sensitive_field_markers(instance):
+    """
+    Indicadores de presença/alteração de campos sensíveis (saúde, cor/raça)
+    para uso em AuditLog — NUNCA inclui o valor em si (evitaria reabrir, por
+    um canal lateral, o vazamento que a criptografia de repouso fecha).
+    """
+    return {
+        "saude_definido": bool(instance.saude),
+        "cor_raca_definido": instance.cor_raca is not None,
+    }
+
+
 class MembroViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedActiveAccess]
     http_method_names = ["get", "post", "put", "patch", "delete", "head", "options"]
@@ -664,6 +676,7 @@ class MembroViewSet(viewsets.ModelViewSet):
                 "nome_completo": instance.nome_completo,
                 "grau_parentesco": instance.grau_parentesco,
                 "upf_id": instance.upf_id,
+                **_sensitive_field_markers(instance),
             },
             ip=self.request.META.get("REMOTE_ADDR"),
             user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
@@ -683,6 +696,7 @@ class MembroViewSet(viewsets.ModelViewSet):
             "grau_parentesco": old.grau_parentesco,
             "cpf": old.cpf,
         }
+        old_saude, old_cor_raca = old.saude, old.cor_raca
         try:
             instance = serializer.save(ultima_origem="web")
         except IntegrityError as e:
@@ -691,6 +705,14 @@ class MembroViewSet(viewsets.ModelViewSet):
                     {"cpf": "Já existe um membro cadastrado com este CPF"}
                 )
             raise
+
+        # Campos sensíveis (saúde, cor/raça): o AuditLog registra *que* houve
+        # alteração, usuário e timestamp — nunca o valor em si (Issue #187).
+        saude_alterado = "saude" in serializer.validated_data and old_saude != instance.saude
+        cor_raca_alterado = (
+            "cor_raca" in serializer.validated_data and old_cor_raca != instance.cor_raca
+        )
+
         AuditLog.objects.create(
             user=self.request.user,
             acao="MEMBRO.update",
@@ -703,6 +725,8 @@ class MembroViewSet(viewsets.ModelViewSet):
                 "nome_completo": instance.nome_completo,
                 "grau_parentesco": instance.grau_parentesco,
                 "upf_id": instance.upf_id,
+                "saude_alterado": saude_alterado,
+                "cor_raca_alterado": cor_raca_alterado,
             },
             ip=self.request.META.get("REMOTE_ADDR"),
             user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
@@ -730,6 +754,7 @@ class MembroViewSet(viewsets.ModelViewSet):
                 "upf_id": instance.upf_id,
                 "nome_completo": instance.nome_completo,
                 "grau_parentesco": instance.grau_parentesco,
+                **_sensitive_field_markers(instance),
             },
             valores_novos={},
             ip=self.request.META.get("REMOTE_ADDR"),

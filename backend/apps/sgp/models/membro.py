@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.db import models
 
+from apps.core.fields import EncryptedIntChoiceField, EncryptedJSONField
 from apps.sgp.constants import (
     COR_RACA_CHOICES,
     ESCOLARIDADE_CHOICES,
@@ -31,11 +32,13 @@ class MembroFamilia(models.Model):
         blank=True,
         verbose_name="Gênero",
     )
-    cor_raca = models.PositiveSmallIntegerField(
+    cor_raca = EncryptedIntChoiceField(
         choices=COR_RACA_CHOICES,
         null=True,
         blank=True,
         verbose_name="Cor/Raça",
+        help_text="Armazenado criptografado em repouso (AES-256-GCM). Leitura "
+        "restrita por perfil — ver apps.core.sensitive_fields.",
     )
 
     cpf = models.CharField(
@@ -78,10 +81,12 @@ class MembroFamilia(models.Model):
         verbose_name="Seguridade Social",
     )
 
-    saude = models.JSONField(
+    saude = EncryptedJSONField(
         default=list,
         blank=True,
         verbose_name="Condições de Saúde",
+        help_text="Armazenado criptografado em repouso (AES-256-GCM). Leitura "
+        "restrita por perfil — ver apps.core.sensitive_fields.",
     )
 
     escolaridade = models.PositiveSmallIntegerField(
