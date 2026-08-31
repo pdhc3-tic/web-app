@@ -1,4 +1,5 @@
 import { apiClient } from "@/app/lib/api";
+import { localDayEndISO, localDayStartISO } from "@/app/lib/datetime";
 import type { Perfil, Territorio } from "@/app/lib/auth/types";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 
@@ -86,13 +87,13 @@ function buildUsersQuery(params: ListUsersParams): string {
   else if (params.status === "inativos") qs.set("ativo", "false");
   else if (params.status === "todos") qs.set("ativo", "");
 
-  // Range de último acesso (datas → datetime ISO em UTC).
-  if (params.ultimoAcessoDe) {
-    qs.set("ultimo_login_gte", `${params.ultimoAcessoDe}T00:00:00Z`);
-  }
-  if (params.ultimoAcessoAte) {
-    qs.set("ultimo_login_lte", `${params.ultimoAcessoAte}T23:59:59Z`);
-  }
+  // Range de último acesso: input local → ISO em UTC preservando o fuso do
+  // navegador. Concatenar `T…Z` puro deslocaria a janela em horas — ver
+  // localDayStartISO/localDayEndISO em lib/datetime.
+  const loginDe = localDayStartISO(params.ultimoAcessoDe);
+  const loginAte = localDayEndISO(params.ultimoAcessoAte);
+  if (loginDe) qs.set("ultimo_login_gte", loginDe);
+  if (loginAte) qs.set("ultimo_login_lte", loginAte);
 
   return qs.toString();
 }

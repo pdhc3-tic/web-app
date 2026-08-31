@@ -12,6 +12,7 @@ import { Pagination } from "@/app/components/ui/Pagination/Pagination";
 import { RestrictedAccess } from "@/app/components/ui/RestrictedAccess/RestrictedAccess";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 import { ApiError } from "@/app/lib/api";
+import { localDayEndISO, localDayStartISO } from "@/app/lib/datetime";
 import {
   fetchDispositivoOptions,
   listSyncEvents,
@@ -108,9 +109,10 @@ function SyncEventsView() {
       {
         limit,
         offset,
-        // Datas locais viram range em UTC — mesmo pattern usado em users.ts.
-        iniciadoDe: filters.de ? `${filters.de}T00:00:00Z` : undefined,
-        iniciadoAte: filters.ate ? `${filters.ate}T23:59:59Z` : undefined,
+        // Datas do input <type=date> são LOCAIS; convertidas para ISO em UTC
+        // preservando o fuso do navegador. Ver localDayStartISO/localDayEndISO.
+        iniciadoDe: localDayStartISO(filters.de),
+        iniciadoAte: localDayEndISO(filters.ate),
         device: filters.device ? Number(filters.device) : undefined,
         comErro: filters.comErro ? true : undefined,
       },

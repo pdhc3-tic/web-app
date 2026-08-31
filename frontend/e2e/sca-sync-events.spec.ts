@@ -14,10 +14,30 @@ import { storageStatePath } from "./helpers/users";
  * A mensagem legível do primeiro é a âncora do teste de destaque/expansão.
  */
 const PAGE_URL = "/sca/sync-events";
+const SYNC_EVENTS_API = "/api/v1/sca/sync-events";
 const MENSAGEM_ERRO_SEED = "CPF inválido no payload.";
 
 function linhasVisiveis(page: Page): Locator {
   return page.locator('tr[data-testid^="sync-event-row-"]');
+}
+
+/**
+ * Aguarda uma resposta GET da listagem que satisfaça `predicate` sobre a
+ * querystring. Chame ANTES da ação que dispara o refetch (Promise já pendurada
+ * para não perder responses rápidos). Assim o teste não corre atrás da UI —
+ * espera pelo tráfego HTTP correspondente ao novo filtro.
+ */
+function esperarRefetch(
+  page: Page,
+  predicate: (params: URLSearchParams) => boolean,
+): Promise<unknown> {
+  return page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    if (!url.pathname.includes(SYNC_EVENTS_API)) return false;
+    if (response.request().method() !== "GET") return false;
+    if (response.status() !== 200) return false;
+    return predicate(url.searchParams);
+  });
 }
 
 async function abrirLog(page: Page): Promise<void> {
@@ -41,11 +61,18 @@ test.describe("SCA — Log de Sincronização", () => {
       .first();
 
     // Filtro auxiliar quando o registro específico não fica na primeira
-    // página; se cair no fallback, restringimos por dispositivo pra reduzir.
+    // página; se cair no fallback, restringimos por "com erro" pra reduzir.
     if ((await linhaComErro.count()) === 0) {
+      // Pendura o listener ANTES do click — evita a race em que o refetch
+      // é rápido demais e o test.expect passa lendo a lista antiga.
+      const refetch = esperarRefetch(
+        page,
+        (params) => params.get("com_erro") === "true",
+      );
       await page
         .getByRole("checkbox", { name: /Apenas eventos com erros/i })
         .check();
+      await refetch;
       await expect(linhasVisiveis(page).first()).toBeVisible();
     }
 
@@ -93,10 +120,21 @@ test.describe("SCA — Log de Sincronização", () => {
     // Aplica "de = ate = dia do evento mais recente" → o range só cobre esse
     // dia específico. Como o seed cria eventos em faixas de "N dias atrás"
     // diferentes, a filtragem por 1 dia reduz o total.
+    //
+    // Pendura o listener ANTES dos fills — precisa esperar o request com
+    // AMBOS os filtros aplicados (o fill de "De" sozinho já dispararia um
+    // request intermediário, sem `iniciado_em_lte`).
+    const refetch = esperarRefetch(
+      page,
+      (params) =>
+        params.has("iniciado_em_gte") && params.has("iniciado_em_lte"),
+    );
     await page.getByLabel("De", { exact: true }).fill(isoDia);
     await page.getByLabel("Até", { exact: true }).fill(isoDia);
+    await refetch;
 
-    // Espera o refetch — o skeleton overlay some quando a lista atualiza.
+    // Sanidade visual — depois do refetch, alguma linha do novo conjunto
+    // já está pintada (o `data-testid=sync-event-row-*` só vira com dados).
     await expect(linhasVisiveis(page).first()).toBeVisible();
 
     const totalDepois = await linhasVisiveis(page).count();

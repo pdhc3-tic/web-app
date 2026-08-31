@@ -1,4 +1,5 @@
 import { apiClient } from "@/app/lib/api";
+import { localDayEndISO, localDayStartISO } from "@/app/lib/datetime";
 import type { Paginated } from "@/app/lib/users";
 import type { Territorio } from "@/app/lib/auth/types";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
@@ -65,13 +66,13 @@ function buildUpfsQuery(params: ListUpfsParams): string {
   else if (params.status === "inativas") qs.set("ativa", "false");
   else if (params.status === "todas") qs.set("ativa", "");
 
-  // Range de "cadastrado em" (datas → datetime ISO em UTC).
-  if (params.cadastradoDe) {
-    qs.set("criado_em__gte", `${params.cadastradoDe}T00:00:00Z`);
-  }
-  if (params.cadastradoAte) {
-    qs.set("criado_em__lte", `${params.cadastradoAte}T23:59:59Z`);
-  }
+  // Range de "cadastrado em": input local → ISO em UTC preservando o fuso do
+  // navegador. Concatenar `T…Z` puro deslocaria a janela em horas — ver
+  // localDayStartISO/localDayEndISO em lib/datetime.
+  const criadoDe = localDayStartISO(params.cadastradoDe);
+  const criadoAte = localDayEndISO(params.cadastradoAte);
+  if (criadoDe) qs.set("criado_em__gte", criadoDe);
+  if (criadoAte) qs.set("criado_em__lte", criadoAte);
 
   return qs.toString();
 }

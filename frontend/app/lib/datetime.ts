@@ -84,3 +84,42 @@ export function formatTimeRange(
   if (!hi) return "";
   return hf && hf !== hi ? `${hi} – ${hf}` : hi;
 }
+
+/**
+ * Início do dia LOCAL como ISO em UTC, para filtros de range no backend.
+ *
+ * Entrada: "YYYY-MM-DD" do `<input type="date">` (sempre local). Saída: ISO
+ * UTC que representa 00:00 do fuso do navegador. Concatenar `T00:00:00Z`
+ * cru interpretaria a data como UTC e deslocaria a janela em horas (o dia
+ * "28/08" no BR começa às 03:00Z, não 00:00Z), escondendo eventos das
+ * primeiras horas locais e incluindo eventos do dia anterior.
+ *
+ * Devolve `undefined` para entrada vazia/inválida.
+ */
+export function localDayStartISO(ymd: string | null | undefined): string | undefined {
+  const parsed = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd ?? "");
+  if (!parsed) return undefined;
+  const date = new Date(
+    Number(parsed[1]),
+    Number(parsed[2]) - 1,
+    Number(parsed[3]),
+    0, 0, 0, 0,
+  );
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
+/**
+ * Fim do dia LOCAL (23:59:59.999) como ISO em UTC. Complemento de
+ * `localDayStartISO` — ver docstring dele para o motivo.
+ */
+export function localDayEndISO(ymd: string | null | undefined): string | undefined {
+  const parsed = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd ?? "");
+  if (!parsed) return undefined;
+  const date = new Date(
+    Number(parsed[1]),
+    Number(parsed[2]) - 1,
+    Number(parsed[3]),
+    23, 59, 59, 999,
+  );
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
