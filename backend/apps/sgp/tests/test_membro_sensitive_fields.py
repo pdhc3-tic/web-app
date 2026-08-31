@@ -197,6 +197,131 @@ class TestMatrizPermissaoCamposSensiveis:
 
 
 # ---------------------------------------------------------------------------
+# Bloqueio de escrita de campos sensíveis por quem não tem permissão de leitura
+#
+# Correção de auditoria: a omissão na LEITURA já existia, mas um payload
+# manual de criação/edição com saude/cor_raca era apenas ignorado em
+# silêncio (a chave some de `self.fields` para quem não tem permissão, então
+# o DRF não via o valor — sem erro nenhum). Hoje nenhum dos 6 perfis do RBAC
+# tem acesso a UPF sem também ter acesso aos campos sensíveis (fgd/agricultor
+# não acessam UPF nenhuma — ver `upfs_acessiveis_ao_usuario`), então o
+# cenário não é reproduzível via HTTP; a cobertura é no nível do serializer,
+# mesmo padrão já usado acima para a omissão de leitura.
+# ---------------------------------------------------------------------------
+
+class TestBloqueioDeEscritaCamposSensiveis:
+    class _FakeRequest:
+        def __init__(self, user):
+            self.user = user
+
+    def _usuario_sem_permissao(self):
+        from apps.core.tests.factories import RoleFactory, UserFactory
+
+        role = RoleFactory(slug="agricultor", nome="Agricultor")
+        return UserFactory(profiles=[(role, None)])
+
+    def _usuario_autorizado(self):
+        from apps.core.tests.factories import RoleFactory, UserFactory
+
+        role = RoleFactory(slug="adt-acr", nome="ADT")
+        return UserFactory(profiles=[(role, None)])
+
+    def test_criacao_com_cor_raca_por_usuario_sem_permissao_e_rejeitada(self):
+        from apps.sgp.serializers import MembroDetailSerializer
+
+        payload = {"nome_completo": "Novo Membro", "grau_parentesco": "filho", "cor_raca": 2}
+        serializer = MembroDetailSerializer(
+            data=payload,
+            context={"request": self._FakeRequest(self._usuario_sem_permissao())},
+        )
+
+        assert not serializer.is_valid()
+        assert "cor_raca" in serializer.errors
+
+    def test_criacao_com_saude_por_usuario_sem_permissao_e_rejeitada(self):
+        from apps.sgp.serializers import MembroDetailSerializer
+
+        payload = {
+            "nome_completo": "Novo Membro",
+            "grau_parentesco": "filho",
+            "saude": ["diabetes"],
+        }
+        serializer = MembroDetailSerializer(
+            data=payload,
+            context={"request": self._FakeRequest(self._usuario_sem_permissao())},
+        )
+
+        assert not serializer.is_valid()
+        assert "saude" in serializer.errors
+
+    def test_edicao_com_saude_por_usuario_sem_permissao_e_rejeitada(self, upf):
+        from apps.sgp.serializers import MembroDetailSerializer
+
+        membro = MembroFactory(upf=upf, grau_parentesco="filho", saude=[])
+        serializer = MembroDetailSerializer(
+            membro,
+            data={"saude": ["hipertensao"]},
+            partial=True,
+            context={"request": self._FakeRequest(self._usuario_sem_permissao())},
+        )
+
+        assert not serializer.is_valid()
+        assert "saude" in serializer.errors
+        membro.refresh_from_db()
+        assert membro.saude == []
+
+    def test_erro_nao_expoe_o_valor_enviado_nem_descarta_em_silencio(self):
+        """A rejeição é explícita (400 nos testes de view; aqui, erro de
+        validação do serializer) — nunca um `is_valid()` silenciosamente
+        `True` que descartaria o valor sem avisar quem fez a requisição."""
+        from apps.sgp.serializers import MembroDetailSerializer
+
+        payload = {
+            "nome_completo": "Novo Membro",
+            "grau_parentesco": "filho",
+            "cor_raca": 5,
+        }
+        serializer = MembroDetailSerializer(
+            data=payload,
+            context={"request": self._FakeRequest(self._usuario_sem_permissao())},
+        )
+
+        assert not serializer.is_valid()
+        assert "5" not in str(serializer.errors)
+
+    def test_payload_sem_campos_sensiveis_nao_e_afetado(self):
+        """Perfil sem permissão continua criando/editando membros normalmente
+        — o bloqueio é só sobre saude/cor_raca."""
+        from apps.sgp.serializers import MembroDetailSerializer
+
+        payload = {"nome_completo": "Novo Membro", "grau_parentesco": "filho"}
+        serializer = MembroDetailSerializer(
+            data=payload,
+            context={"request": self._FakeRequest(self._usuario_sem_permissao())},
+        )
+
+        assert serializer.is_valid(), serializer.errors
+
+    def test_usuario_autorizado_nao_e_afetado_pelo_bloqueio(self):
+        """Regressão: perfil com permissão de leitura (adt-acr) continua
+        escrevendo saude/cor_raca normalmente."""
+        from apps.sgp.serializers import MembroDetailSerializer
+
+        payload = {
+            "nome_completo": "Novo Membro",
+            "grau_parentesco": "filho",
+            "cor_raca": 2,
+            "saude": ["diabetes"],
+        }
+        serializer = MembroDetailSerializer(
+            data=payload,
+            context={"request": self._FakeRequest(self._usuario_autorizado())},
+        )
+
+        assert serializer.is_valid(), serializer.errors
+
+
+# ---------------------------------------------------------------------------
 # AuditLog — sem vazar o valor
 # ---------------------------------------------------------------------------
 
