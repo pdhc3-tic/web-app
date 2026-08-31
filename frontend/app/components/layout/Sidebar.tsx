@@ -60,9 +60,8 @@ const ADMIN_ITEMS: ModuleItem[] = [
     Icon: ShieldOff,
   },
   {
-    // Aponta direto para a única integração existente — não há tela índice em
-    // /admin/integracoes. Ao surgir a segunda, criar o hub e trocar este href.
-    href: "/admin/integracoes/google-calendar",
+    // Hub de integrações — Google Calendar + Power BI (issue 143).
+    href: "/admin/integracoes",
     label: "Integrações",
     Icon: Plug,
   },
