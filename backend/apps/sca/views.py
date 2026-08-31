@@ -19,7 +19,6 @@ from django.db.models.functions import Greatest
 from django_filters import rest_framework as django_filters
 from rest_framework import filters, generics, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -30,7 +29,9 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.core.models import SystemConfig, Territory
 from apps.core.permissions import (
+    IsArticuladorEstadual,
     IsAuthenticatedActiveAccess,
+    IsSuperAdmin,
     IsSuperAdminOrUGPReadOnly,
 )
 from apps.core.services.audit import log_audit
@@ -291,7 +292,12 @@ class SyncEventViewSet(viewsets.ReadOnlyModelViewSet):
 # ---------------------------------------------------------------------------
 
 class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
-    permission_classes = [IsAuthenticatedActiveAccess]
+    # Somente Articulador Estadual (do próprio estado) e Super Admin (acesso
+    # global) — UGP foi removida (correção de auditoria dos critérios de
+    # aceitação: UGP não deve listar, detalhar nem resolver conflitos).
+    # A regra fica centralizada nestas duas permission classes, reutilizadas
+    # entre listagem, detalhe e a action `resolver` — evita divergência.
+    permission_classes = [IsAuthenticatedActiveAccess, IsSuperAdmin | IsArticuladorEstadual]
     pagination_class = SCAPagination
     filter_backends = [django_filters.DjangoFilterBackend, filters.OrderingFilter]
     filterset_class = ConflictLogFilter
@@ -305,9 +311,19 @@ class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
         return ConflictLogDetailSerializer
 
     def get_queryset(self):
-        user = self.request.user
         qs = ConflictLog.objects.all().select_related("user", "device", "resolvido_por", "territorio")
-        if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
+
+        if self.action != "list":
+            # Detalhe e resolução: o queryset NÃO filtra por estado — quem
+            # barra um Articulador Estadual de outro estado é
+            # `IsArticuladorEstadual.has_object_permission` (chamado por
+            # `get_object()`), retornando 403. Filtrar aqui faria o objeto
+            # sumir do queryset e a resposta virar 404, escondendo o motivo
+            # real da negação (antipadrão que a auditoria pediu para evitar).
+            return qs
+
+        user = self.request.user
+        if user_has_role(user, "super-admin"):
             return qs
         if user_has_role(user, "articulador-estadual"):
             states = user_states(user)
@@ -321,15 +337,11 @@ class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="resolver")
     def resolver(self, request, pk=None):
+        # `get_object()` já aplica `check_object_permissions` (via
+        # `IsArticuladorEstadual.has_object_permission`), retornando 403 para
+        # perfil sem autorização ou de outro estado — nenhuma checagem manual
+        # duplicada aqui.
         conflict = self.get_object()
-
-        if user_has_role(request.user, "articulador-estadual"):
-            from apps.core.permissions import IsArticuladorEstadual
-            perm = IsArticuladorEstadual()
-            if not perm.has_object_permission(request, self, conflict):
-                raise PermissionDenied("Você não tem permissão para resolver conflitos deste território.")
-        elif not (user_has_role(request.user, "super-admin") or user_has_role(request.user, "ugp")):
-            raise PermissionDenied("Permissão negada.")
 
         if conflict.status != ConflictLog.Status.PENDENTE:
             return Response(
