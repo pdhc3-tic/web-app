@@ -17,6 +17,7 @@ cp -n frontend/.env.example frontend/.env.local 2>/dev/null
 echo -e "Passo 2: Gerando chaves secretas..."
 # Gerar chaves
 BACKEND_KEY=$(openssl rand -hex 32)
+FIELD_ENCRYPTION_KEY=$(openssl rand -base64 32)
 FRONTEND_KEY=$(openssl rand -hex 32)
 
 # Atualizar ou adicionar as chaves nos arquivos
@@ -25,6 +26,18 @@ if grep -q "DJANGO_SECRET_KEY" backend/.env; then
     sed -i "s/^DJANGO_SECRET_KEY=.*/DJANGO_SECRET_KEY=$BACKEND_KEY/" backend/.env
 else
     echo "DJANGO_SECRET_KEY=$BACKEND_KEY" >> backend/.env
+fi
+
+# FIELD_ENCRYPTION_KEY: criptografa em repouso os campos sensíveis de
+# MembroFamilia (saude, cor_raca). Só gera/grava se ainda não existir um
+# valor preenchido — sobrescrever uma chave já em uso torna os dados já
+# gravados indecifráveis (perda de dado, não apenas de acesso).
+if grep -q "^FIELD_ENCRYPTION_KEY=.\+" backend/.env; then
+    echo -e "${GREEN}FIELD_ENCRYPTION_KEY já configurada — mantendo.${NC}"
+elif grep -q "^FIELD_ENCRYPTION_KEY=" backend/.env; then
+    sed -i "s|^FIELD_ENCRYPTION_KEY=.*|FIELD_ENCRYPTION_KEY=$FIELD_ENCRYPTION_KEY|" backend/.env
+else
+    echo "FIELD_ENCRYPTION_KEY=$FIELD_ENCRYPTION_KEY" >> backend/.env
 fi
 
 if grep -q "AUTH_SECRET" frontend/.env.local; then
