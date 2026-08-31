@@ -2,16 +2,20 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, ClipboardList, Plus } from "lucide-react";
+import { AlertTriangle, ClipboardList, Download, Plus } from "lucide-react";
 import { Button } from "@/app/components/ui/Button/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { Pagination } from "@/app/components/ui/Pagination/Pagination";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
+import { useToast } from "@/app/components/ui/Toast/Toast";
 import Spinner from "@/app/components/icons/Spinner";
 import { ApiError } from "@/app/lib/api";
 import { absoluteDateTime, formatDate } from "@/app/lib/datetime";
 import {
+  exportarRespostasFormularios,
+  ExportRespostasTimeoutError,
   listFormResponses,
+  type FormatoExportRespostas,
   type FormResponseListItem,
 } from "@/app/lib/formularios";
 import {
@@ -123,6 +127,16 @@ function FormulariosTabView({ upfId }: Props) {
   const [preencherOpen, setPreencherOpen] = useState(false);
 
   /**
+   * Formato em curso de exportação (#182). Guarda o formato específico
+   * (não só `boolean`) para o spinner aparecer apenas no botão apertado,
+   * sem bloquear os dois ao mesmo tempo.
+   */
+  const [exporting, setExporting] = useState<FormatoExportRespostas | null>(
+    null,
+  );
+  const { showToast } = useToast();
+
+  /**
    * Opções do select de formulário: mantido acumulativo com os formulários
    * vistos em qualquer página até agora. Como o BE-16 não expõe um endpoint
    * de "formulários distintos por UPF", derivamos das respostas carregadas
@@ -220,6 +234,53 @@ function FormulariosTabView({ upfId }: Props) {
     setFilters(DEFAULT_FILTERS);
   }, []);
 
+  /**
+   * Baixa o arquivo aplicando os filtros ATIVOS (a mesma query da listagem —
+   * BE-16 e BE-20 compartilham `FormResponseFilter`). O `exportar-` prefixo
+   * de `data-testid` casa com o padrão dos E2E de exportação já no repo.
+   */
+  const handleExport = useCallback(
+    async (formato: FormatoExportRespostas) => {
+      if (exporting) return;
+      setExporting(formato);
+      try {
+        const nome = await exportarRespostasFormularios(upfId, {
+          formato,
+          formulario_id: filters.formulario_id
+            ? Number(filters.formulario_id)
+            : undefined,
+          data_inicio: filters.data_inicio || undefined,
+          data_fim: filters.data_fim || undefined,
+          respondente: filters.apenas_anonimas
+            ? undefined
+            : filters.respondente.trim() || undefined,
+          apenas_anonimas: filters.apenas_anonimas || undefined,
+        });
+        showToast(`Download iniciado: ${nome}`);
+      } catch (e) {
+        const mensagem =
+          e instanceof ExportRespostasTimeoutError
+            ? "A geração do arquivo excedeu o tempo limite. Tente novamente com filtros mais restritivos."
+            : e instanceof ApiError
+              ? e.message
+              : "Não foi possível gerar o arquivo. Tente novamente.";
+        showToast(mensagem, "error");
+      } finally {
+        setExporting(null);
+      }
+    },
+    [
+      exporting,
+      upfId,
+      filters.formulario_id,
+      filters.data_inicio,
+      filters.data_fim,
+      filters.respondente,
+      filters.apenas_anonimas,
+      showToast,
+    ],
+  );
+
   const filtros = (
     <FormulariosFiltros
       value={filters}
@@ -314,18 +375,32 @@ function FormulariosTabView({ upfId }: Props) {
     <div className="space-y-4" data-testid="formularios-tab">
       {filtros}
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-text-muted">
           {count} {count === 1 ? "resposta registrada" : "respostas registradas"}
         </p>
-        <Button
-          size="sm"
-          leftIcon={<Plus className="h-4 w-4" />}
-          onClick={() => setPreencherOpen(true)}
-          data-testid="formularios-preencher-novo"
-        >
-          Preencher novo formulário
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ExportButton
+            formato="csv"
+            exporting={exporting}
+            disabled={count === 0}
+            onExport={handleExport}
+          />
+          <ExportButton
+            formato="pdf"
+            exporting={exporting}
+            disabled={count === 0}
+            onExport={handleExport}
+          />
+          <Button
+            size="sm"
+            leftIcon={<Plus className="h-4 w-4" />}
+            onClick={() => setPreencherOpen(true)}
+            data-testid="formularios-preencher-novo"
+          >
+            Preencher novo formulário
+          </Button>
+        </div>
       </div>
 
       <Tabela
@@ -356,6 +431,45 @@ function FormulariosTabView({ upfId }: Props) {
         upfId={upfId}
       />
     </div>
+  );
+}
+
+/**
+ * Botão de exportação da aba (#182). Encapsula o loading próprio do formato,
+ * sem bloquear o outro botão. `disabled` externo (ex.: `count === 0`) tem
+ * precedência sobre o loading — o exporting só desabilita o próprio botão.
+ */
+function ExportButton({
+  formato,
+  exporting,
+  disabled,
+  onExport,
+}: {
+  formato: FormatoExportRespostas;
+  exporting: FormatoExportRespostas | null;
+  disabled?: boolean;
+  onExport: (formato: FormatoExportRespostas) => void;
+}) {
+  const isBusy = exporting === formato;
+  const outroEmCurso = exporting !== null && !isBusy;
+  const label = formato === "csv" ? "CSV" : "PDF";
+  return (
+    <Button
+      size="sm"
+      variant="secondary"
+      leftIcon={
+        isBusy ? (
+          <Spinner className="h-4 w-4 animate-spin" />
+        ) : (
+          <Download className="h-4 w-4" />
+        )
+      }
+      disabled={disabled || isBusy || outroEmCurso}
+      onClick={() => onExport(formato)}
+      data-testid={`formularios-exportar-${formato}`}
+    >
+      {isBusy ? "Exportando…" : `Exportar ${label}`}
+    </Button>
   );
 }
 

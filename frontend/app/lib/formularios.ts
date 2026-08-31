@@ -117,6 +117,118 @@ export async function getFormResponse(
   return res.json();
 }
 
+// ─── BE-20: exportação de respostas (CSV/PDF) ───────────────────────────────
+
+export type FormatoExportRespostas = "csv" | "pdf";
+
+/**
+ * Teto de espera do lado do cliente. Mesmo racional do BE-9 (plano de trabalho):
+ * a view é síncrona, e um pendurado sem timeout deixa o botão girando pra
+ * sempre. 60s = mesmo `proxy_read_timeout` do nginx.
+ */
+export const EXPORT_RESPOSTAS_TIMEOUT_MS = 60_000;
+
+export class ExportRespostasTimeoutError extends Error {
+  constructor() {
+    super("A geração do arquivo excedeu o tempo limite.");
+    this.name = "ExportRespostasTimeoutError";
+  }
+}
+
+/**
+ * Lê o nome do arquivo do `Content-Disposition`. Em dev o header pode não
+ * chegar (CORS_EXPOSE_HEADERS não configurado no Django); em prod vem OK.
+ */
+function nomeDoContentDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(header);
+  if (!match) return null;
+  const bruto = match[1].trim();
+  try {
+    return decodeURIComponent(bruto);
+  } catch {
+    return bruto;
+  }
+}
+
+/** Fallback quando o header não veio ou é ilegível. */
+function nomeDerivadoLocalmente(
+  upfId: string | number,
+  formato: FormatoExportRespostas,
+): string {
+  const agora = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp = [
+    agora.getFullYear(),
+    pad(agora.getMonth() + 1),
+    pad(agora.getDate()),
+    pad(agora.getHours()),
+    pad(agora.getMinutes()),
+    pad(agora.getSeconds()),
+  ].join("-");
+  return `respostas_formularios_upf_${upfId}_${stamp}.${formato}`;
+}
+
+function dispararDownload(blob: Blob, nome: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nome;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/**
+ * GET /api/v1/sgp/upfs/{upfId}/formularios/exportar/?formato=csv|pdf&<filtros>
+ *
+ * Envia os mesmos filtros da listagem (BE-16 e BE-20 compartilham o
+ * `FormResponseFilter`). Não paginado — o arquivo cobre TODAS as respostas
+ * que passam pelo filtro, coerente com o critério da issue.
+ *
+ * Retorna o nome do arquivo entregue (útil para o toast).
+ */
+export async function exportarRespostasFormularios(
+  upfId: string | number,
+  filtros: Omit<ListFormResponsesParams, "page" | "page_size"> & {
+    formato: FormatoExportRespostas;
+  },
+): Promise<string> {
+  const { formato, ...resto } = filtros;
+  const qs = new URLSearchParams({ formato });
+  if (resto.formulario_id !== undefined) {
+    qs.set("formulario_id", String(resto.formulario_id));
+  }
+  if (resto.data_inicio) qs.set("data_inicio", resto.data_inicio);
+  if (resto.data_fim) qs.set("data_fim", resto.data_fim);
+  if (resto.apenas_anonimas) {
+    qs.set("respondente_isnull", "true");
+  } else if (resto.respondente) {
+    qs.set("respondente", resto.respondente);
+  }
+
+  let res: Response;
+  try {
+    res = await apiClient(
+      `/api/v1/sgp/upfs/${upfId}/formularios/exportar/?${qs.toString()}`,
+      { signal: AbortSignal.timeout(EXPORT_RESPOSTAS_TIMEOUT_MS) },
+    );
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "TimeoutError") {
+      throw new ExportRespostasTimeoutError();
+    }
+    throw e;
+  }
+
+  const nome =
+    nomeDoContentDisposition(res.headers.get("Content-Disposition")) ??
+    nomeDerivadoLocalmente(upfId, formato);
+
+  dispararDownload(await res.blob(), nome);
+  return nome;
+}
+
 // ─── BE-18: formulários publicados que a UPF pode responder ─────────────────
 
 /** Espelha apps/sgp/serializers.py::AvailableFormSerializer. */
