@@ -225,6 +225,10 @@ export type NestedRef = { id: number; nome: string };
  * apps/sgp/serializers.py::TitularNestedSerializer. O titular é um MembroFamilia
  * (grau_parentesco="titular"). CPF vem CRU (sem máscara) — mascarar na exibição.
  * Campos de choice (genero, cor_raca, escolaridade) são inteiros + `*_display`.
+ *
+ * `cor_raca`/`cor_raca_display` são omitidos pelo backend (BE-25/#187) quando o
+ * perfil do usuário não tem permissão de leitura — a ausência da chave é o
+ * sinal usado pelo frontend para não renderizar o campo (#192).
  */
 export type TitularNested = {
   id: number;
@@ -234,8 +238,8 @@ export type TitularNested = {
   data_nascimento: string | null;
   genero: number | null;
   genero_display: string;
-  cor_raca: number | null;
-  cor_raca_display: string;
+  cor_raca?: number | null;
+  cor_raca_display?: string;
   escolaridade: number | null;
   escolaridade_display: string;
   nis: string;

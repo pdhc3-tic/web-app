@@ -126,7 +126,11 @@ function buildTabs(upf: UpfDetail, choices: SgpChoices): TabItem[] {
             { label: "RG", value: upf.titular.rg },
             { label: "Nascimento", value: formatDate(upf.titular.data_nascimento) },
             { label: "Gênero", value: upf.titular.genero_display },
-            { label: "Cor/Raça", value: upf.titular.cor_raca_display },
+            // Cor/Raça é sensível (#192): quando o backend omite a chave por
+            // falta de permissão, a linha não entra na lista — nada de "—".
+            ...("cor_raca_display" in upf.titular
+              ? [{ label: "Cor/Raça", value: upf.titular.cor_raca_display }]
+              : []),
             { label: "PCT", value: labelForValue(choices.pct, upf.pct) },
             { label: "NIS", value: upf.titular.nis },
             { label: "DAP/CAF", value: upf.daf_caf },

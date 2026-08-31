@@ -67,6 +67,10 @@ export function temVinculoEscolar(
 /**
  * Espelha apps/sgp/serializers.py::MembroListSerializer.
  * genero/cor_raca são choices inteiros; use os `*_display` para exibição.
+ *
+ * `cor_raca`/`cor_raca_display` são omitidos pelo backend (BE-25/#187) quando o
+ * perfil do usuário não tem permissão de leitura — a ausência da chave é o
+ * sinal usado pelo frontend para não renderizar o campo (#192).
  */
 export type MembroListItem = {
   id: number;
@@ -78,12 +82,18 @@ export type MembroListItem = {
   cpf: string;
   genero: number | null;
   genero_display: string;
-  cor_raca: number | null;
-  cor_raca_display: string;
+  cor_raca?: number | null;
+  cor_raca_display?: string;
   criado_em: string;
 };
 
-/** Espelha apps/sgp/serializers.py::MembroDetailSerializer. */
+/**
+ * Espelha apps/sgp/serializers.py::MembroDetailSerializer.
+ *
+ * `cor_raca`/`cor_raca_display` e `saude` são omitidos pelo backend (BE-25/#187)
+ * quando o perfil do usuário não tem permissão de leitura — a ausência da chave
+ * é o sinal usado pelo frontend para não renderizar o campo (#192).
+ */
 export type MembroDetail = {
   id: number;
   upf: number;
@@ -98,11 +108,11 @@ export type MembroDetail = {
   grau_parentesco_display: string;
   genero: number | null;
   genero_display: string;
-  cor_raca: number | null;
-  cor_raca_display: string;
+  cor_raca?: number | null;
+  cor_raca_display?: string;
   escola: string;
   seguridade_social: string[];
-  saude: string[];
+  saude?: string[];
   escolaridade: number | null;
   escolaridade_display: string;
   criado_por: number | null;

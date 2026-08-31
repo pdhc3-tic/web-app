@@ -26,7 +26,11 @@ import {
 } from "@/app/lib/membros";
 import { maskCpf } from "@/app/lib/format";
 import { ComposicaoResumoCard } from "./ComposicaoResumoCard";
-import { MembroSlideOver, type SlideOverMode } from "./MembroSlideOver";
+import {
+  MembroSlideOver,
+  type SensitivePermissions,
+  type SlideOverMode,
+} from "./MembroSlideOver";
 import { RemoverMembroDialog } from "./RemoverMembroDialog";
 
 type Props = {
@@ -117,6 +121,21 @@ export function MembrosTab({ upfId }: Props) {
   // em que a chamada do resumo falhou, para o alerta não sumir junto com ela.
   const semTitular = resumo ? !resumo.tem_titular : !titularExists;
 
+  /**
+   * Permissão do usuário para os campos sensíveis (#192/BE-25) — usada para o
+   * modo `create` do SlideOver (view/edit derivam do próprio detalhe carregado).
+   * Como a listagem só expõe `cor_raca`, usamos a presença dessa chave como
+   * sinal compartilhado — a matriz de permissão de BE-25 (#187) trata Saúde e
+   * Cor/Raça como o mesmo grupo. Se BE-25 introduzir permissões independentes,
+   * este bloco precisa passar a checar Saúde por outra via.
+   * Lista vazia: default otimista (mostra) — o backend rejeita no save.
+   */
+  const sensitivePermissions = useMemo<SensitivePermissions>(() => {
+    if (membros.length === 0) return { corRaca: true, saude: true };
+    const hasCorRaca = "cor_raca_display" in membros[0];
+    return { corRaca: hasCorRaca, saude: hasCorRaca };
+  }, [membros]);
+
   // ── Handlers ───────────────────────────────────────────────────────────────
   function openCreate() {
     setSlideOver({ open: true, mode: "create" });
@@ -135,6 +154,9 @@ export function MembrosTab({ upfId }: Props) {
   // Como a chamada de API que produz `saved` já foi bem-sucedida no filho,
   // aqui é seguro apenas commitar o novo estado + toast + fechar.
   function handleSaved(saved: MembroDetail) {
+    // Preserva a "ausência" do backend: se `cor_raca_display` não veio na
+    // resposta (sem permissão), o listItem também não deve ter — a listagem
+    // segue coerente com o sinal usado em #192.
     const listItem: MembroListItem = {
       id: saved.id,
       nome_completo: saved.nome_completo,
@@ -145,9 +167,11 @@ export function MembrosTab({ upfId }: Props) {
       cpf: saved.cpf,
       genero: saved.genero,
       genero_display: saved.genero_display,
-      cor_raca: saved.cor_raca,
-      cor_raca_display: saved.cor_raca_display,
       criado_em: saved.criado_em,
+      ...("cor_raca" in saved ? { cor_raca: saved.cor_raca } : {}),
+      ...("cor_raca_display" in saved
+        ? { cor_raca_display: saved.cor_raca_display }
+        : {}),
     };
 
     setMembros((prev) => {
@@ -250,6 +274,7 @@ export function MembrosTab({ upfId }: Props) {
         // Sem titular na UPF, o próximo cadastro é obrigatoriamente ele — o
         // formulário já abre com o parentesco preenchido.
         parentescoPadrao={titularExists ? undefined : "titular"}
+        sensitivePermissions={sensitivePermissions}
         onSaved={handleSaved}
         onEditFromView={
           slideOver.open && slideOver.mode === "view" && slideOver.membro
