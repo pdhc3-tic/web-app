@@ -37,6 +37,7 @@ from django.db.models import F
 from django.utils import timezone
 
 from apps.core.models import Municipality, Organization, Role, State, SystemConfig, Territory, UserProfile
+from apps.core.models.notifications import Notification
 from apps.sca.models import ConflictLog, SyncDevice, SyncEvent
 from apps.sgp.models import (
     Activity,
@@ -203,6 +204,41 @@ TECNICOS = [
     ("Adriano", "Peixoto", "fgd"),
 ]
 
+# Estados de cada Articulador Estadual.
+#
+# O vínculo é o que dá recorte ao perfil: `UserProfile.territorio` nulo é lido
+# como ACESSO GLOBAL pelo core (ver o help_text do campo), então um articulador
+# sem território enxerga os dados de todos os estados. Os dois conjuntos são
+# disjuntos e cobrem os sete territórios — nenhum fica sem articulador, o que
+# manteria a notificação de conflito sensível caindo no fallback para a UGP.
+ARTICULADOR_TERRITORIOS = {
+    ("Sandra", "Queiroz"): ["PE", "AL", "MA"],
+    ("Hélio", "Fontenele"): ["PB", "RN", "BA", "MG"],
+}
+
+# Técnico que aparece com acesso revogado na demonstração.
+#
+# Escolhido por e-mail, e não como "o primeiro da lista": os E2E autenticam com
+# marina (adt-acr), beatriz (ugp) e os dois articuladores, e revogar qualquer um
+# deles derruba a suíte inteira já no setup de login.
+LOCAL_ACESSO_REVOGADO = "rodrigo.tavares"
+
+# Super Admin da demonstração.
+#
+# Fica FORA de TECNICOS de propósito. A lista é consumida como dado posicional
+# (`tecnicos[-2]` define o dono do Plano de Trabalho) e como universo do
+# `self.rnd.choice`/`rnd.sample` que sorteia responsáveis de UPFs e atividades:
+# acrescentar um nono elemento desloca a sequência inteira do random semeado e
+# muda dados que as specs E2E já assumem. Um Super Admin também não é técnico
+# de campo — o bloco próprio é o lugar correto.
+SUPER_ADMIN = ("Vera", "Lucena")
+
+
+def email_de_demo(primeiro: str, ultimo: str) -> str:
+    """E-mail de demonstração a partir do nome, sem acentos."""
+    email = f"{primeiro}.{ultimo}@{DEMO_EMAIL_DOMAIN}".lower()
+    return email.replace("á", "a").replace("é", "e").replace("í", "i")
+
 
 # ───────────────────────────────────────────────────────────────────────────────
 # Geradores de documento (CPF/CNPJ com dígitos verificadores válidos)
@@ -327,11 +363,22 @@ class Command(BaseCommand):
             "--atividades", type=int, default=45,
             help="Quantidade de atividades (padrão: 45).",
         )
+        parser.add_argument(
+            "--sca-only", action="store_true",
+            help=(
+                "Recria apenas as fixtures do SCA (dispositivos, eventos de sync "
+                "e conflitos), preservando o restante do banco de demonstração."
+            ),
+        )
 
     def handle(self, *args, **options):
         self.rnd = random.Random(SEED)
         self.gerar_arquivos = not options["no_files"]
         self.media_root = Path(settings.MEDIA_ROOT)
+
+        if options["sca_only"]:
+            self._sca_only()
+            return
 
         if options["reset"]:
             self._reset()
@@ -345,6 +392,7 @@ class Command(BaseCommand):
         with transaction.atomic():
             projeto = self._projeto()
             tecnicos = self._tecnicos()
+            self._super_admin()
             municipios = self._municipios()
             self._organizacoes(municipios)
             comunidades = self._comunidades(municipios, tecnicos[0])
@@ -357,6 +405,46 @@ class Command(BaseCommand):
         self._resumo()
 
     # ── Reset ──────────────────────────────────────────────────────────────────
+
+    def _sca_only(self):
+        """Reconstrói só as fixtures do SCA, sem tocar no resto da demonstração.
+
+        Existe para os E2E de conflitos: resolver um conflito é irreversível pela
+        API, então cada execução da suíte consome os pendentes e precisa de novos.
+        Refazer o seed inteiro para isso custaria as 40 UPFs e as atividades.
+        """
+        upfs = list(UPF.objects.order_by("pk")[:2])
+        if not upfs:
+            self.stdout.write(self.style.WARNING(
+                "Não há UPFs no banco — rode o seed completo antes de --sca-only."
+            ))
+            return
+
+        tecnicos = list(User.objects.filter(email__endswith=f"@{DEMO_EMAIL_DOMAIN}"))
+
+        with transaction.atomic():
+            self._vincular_articuladores()
+            # Só o técnico designado fica revogado. A versão anterior deste seed
+            # revogava "o primeiro da lista" — a Marina, que os E2E usam para
+            # logar —, e o registro sobrevive ao --reset: sem limpar aqui, o
+            # setup de autenticação continua falhando por dado herdado.
+            User.objects.filter(
+                email__endswith=f"@{DEMO_EMAIL_DOMAIN}", acesso_revogado=True
+            ).exclude(
+                email=f"{LOCAL_ACESSO_REVOGADO}@{DEMO_EMAIL_DOMAIN}"
+            ).update(
+                acesso_revogado=False, acesso_revogado_em=None,
+                acesso_revogado_por=None,
+            )
+            SyncEvent.objects.all().delete()
+            ConflictLog.objects.all().delete()
+            SyncDevice.objects.all().delete()
+            # Sem isto, cada execução deixaria notificações apontando para
+            # conflitos que não existem mais.
+            Notification.objects.filter(
+                evento="sca.sync.conflict_sensitive"
+            ).delete()
+            self._sca(tecnicos, upfs)
 
     def _reset(self):
         self.stdout.write("Removendo dados de demonstração anteriores...")
@@ -389,6 +477,9 @@ class Command(BaseCommand):
             SyncEvent.objects.all().delete()
             ConflictLog.objects.all().delete()
             SyncDevice.objects.all().delete()
+            Notification.objects.filter(
+                evento="sca.sync.conflict_sensitive"
+            ).delete()
             # Os perfis saem (o seed reatribui papel/território do zero), mas os
             # usuários de demo FICAM: AuditLog.user é SET_NULL e o trigger
             # core_auditlog_immutable barra tanto UPDATE quanto DELETE na tabela,
@@ -411,8 +502,7 @@ class Command(BaseCommand):
     def _tecnicos(self) -> list:
         usuarios = []
         for primeiro, ultimo, slug in TECNICOS:
-            email = f"{primeiro}.{ultimo}@{DEMO_EMAIL_DOMAIN}".lower()
-            email = email.replace("á", "a").replace("é", "e").replace("í", "i")
+            email = email_de_demo(primeiro, ultimo)
             user = User.objects.filter(email=email).first()
             if not user:
                 user = User.objects.create_user(
@@ -434,15 +524,84 @@ class Command(BaseCommand):
                     "acesso_revogado", "acesso_revogado_em", "acesso_revogado_por",
                 ])
             role = Role.objects.get(slug=slug)
-            territorio = None
-            if slug == "adt-acr":
-                territorio = self.rnd.choice(list(Territory.objects.all()))
-            UserProfile.objects.get_or_create(
-                user=user, perfil=role, territorio=territorio,
-            )
+            # Os articuladores recebem território em _vincular_articuladores():
+            # são vários por pessoa, e o --sca-only também precisa do vínculo.
+            if slug != "articulador-estadual":
+                territorio = None
+                if slug == "adt-acr":
+                    territorio = self.rnd.choice(list(Territory.objects.all()))
+                UserProfile.objects.get_or_create(
+                    user=user, perfil=role, territorio=territorio,
+                )
             usuarios.append(user)
+
+        self._vincular_articuladores()
         self.stdout.write(f"Técnicos: {len(usuarios)} usuários (senha: {DEMO_PASSWORD})")
         return usuarios
+
+    def _vincular_articuladores(self) -> None:
+        """Dá estados ao Articulador Estadual e o designa nos territórios.
+
+        Sem isso os dois ficariam com `UserProfile.territorio` nulo, que o core
+        lê como ACESSO GLOBAL — o recorte por estado deixaria de existir. E sem
+        `Territory.articulador` a notificação de conflito sensível cai no
+        fallback para a UGP e o articulador nunca é avisado.
+        """
+        role = Role.objects.get(slug="articulador-estadual")
+        for (primeiro, ultimo), siglas in ARTICULADOR_TERRITORIOS.items():
+            user = User.objects.filter(email=email_de_demo(primeiro, ultimo)).first()
+            if user is None:
+                continue
+            for sigla in siglas:
+                territorio = Territory.objects.filter(estados__contains=[sigla]).first()
+                if territorio is None:
+                    continue
+                UserProfile.objects.get_or_create(
+                    user=user, perfil=role, territorio=territorio,
+                )
+                Territory.objects.filter(pk=territorio.pk).update(articulador=user)
+
+    def _super_admin(self):
+        """Cria o Super Admin da demonstração.
+
+        `IsSuperAdmin` e o `isSuperAdmin()` do front checam o PERFIL de slug
+        `super-admin` — nenhum dos dois olha a flag `is_superuser`, então um
+        `createsuperuser`/`ensure_superuser` não dá acesso às telas restritas
+        (Usuários, Integrações, Acessos SCA). Sem este bloco não há como
+        autenticar nos E2E dessas telas.
+
+        `territorio=None` é lido pelo core como ACESSO GLOBAL, que é o recorte
+        correto para o perfil de bypass total.
+
+        Roda a cada seed completo, e não só na criação do usuário, porque o
+        `--reset` apaga os `UserProfile` da demonstração mas preserva os
+        usuários (AuditLog/trigger de imutabilidade impedem removê-los).
+        """
+        primeiro, ultimo = SUPER_ADMIN
+        email = email_de_demo(primeiro, ultimo)
+        user = User.objects.filter(email=email).first()
+        if not user:
+            user = User.objects.create_user(
+                email=email,
+                nome=f"{primeiro} {ultimo}",
+                password=DEMO_PASSWORD,
+            )
+        # Um Super Admin revogado não passaria nem pelo login — e o registro
+        # sobrevive ao --reset, então vale garantir o estado a cada execução.
+        if user.acesso_revogado or not user.ativo:
+            User.objects.filter(pk=user.pk).update(
+                ativo=True,
+                acesso_revogado=False,
+                acesso_revogado_em=None,
+                acesso_revogado_por=None,
+            )
+        UserProfile.objects.get_or_create(
+            user=user,
+            perfil=Role.objects.get(slug="super-admin"),
+            territorio=None,
+        )
+        self.stdout.write(f"Super Admin: {email} (senha: {DEMO_PASSWORD})")
+        return user
 
     def _municipios(self) -> list:
         criados = []
@@ -960,22 +1119,76 @@ class Command(BaseCommand):
             finalizado_em=F("iniciado_em") + timedelta(minutes=2),
         )
 
+        self._dispositivo_do_revogado(agora)
+
         territorio_a = sca_tecnicos[0][1]
         territorio_b = self._territorio_de_estado_distinto(territorio_a, territorios)
         tecnico_verde, tecnico_vermelho = sca_tecnicos[0][0], sca_tecnicos[-1][0]
 
-        ConflictLog.objects.create(
+        # Os conflitos sensíveis apontam para UPFs REAIS: sem um `uuid_local`
+        # que exista, a resolução manual não encontra o registro e não aplica o
+        # valor escolhido — a tela pareceria funcionar sem alterar nada.
+        upf_a = upfs[0] if upfs else None
+        upf_b = upfs[1] if len(upfs) > 1 else None
+        uuid_a, uuid_b = uuid4(), uuid4()
+
+        if upf_a:
+            UPF.objects.filter(pk=upf_a.pk).update(
+                device_id="dev-mock-001",
+                uuid_local=uuid_a,
+                ultima_origem="sca",
+                ultimo_sync_em=agora - timedelta(hours=2),
+            )
+            MembroFamilia.objects.filter(pk=upf_a.titular_id).update(
+                device_id="dev-mock-001",
+                uuid_local=uuid4(),
+                ultima_origem="sca",
+                ultimo_sync_em=agora - timedelta(hours=2),
+            )
+        if upf_b:
+            UPF.objects.filter(pk=upf_b.pk).update(uuid_local=uuid_b)
+
+        cpf_servidor = "529.982.247-25"
+        nome_servidor = "Maria das Graças Silva"
+        if upf_a:
+            cpf_servidor = MembroFamilia.objects.filter(
+                pk=upf_a.titular_id
+            ).values_list("cpf", flat=True).first() or cpf_servidor
+        if upf_b:
+            nome_servidor = MembroFamilia.objects.filter(
+                pk=upf_b.titular_id
+            ).values_list("nome_completo", flat=True).first() or nome_servidor
+
+        # `titular.cpf` e `titular.nome_completo` são os caminhos que o motor de
+        # sincronização produz (UPFSyncEntity.sensitive_paths). "cpf" sozinho não
+        # existe na UPF — mora no titular — e não seria aplicável na resolução.
+        conflito_a = ConflictLog.objects.create(
             user=tecnico_verde,
             device=dispositivos["dev-seed-verde"],
             entidade="upf",
-            uuid_local=uuid4(),
-            campo="cpf",
+            uuid_local=uuid_a,
+            campo="titular.cpf",
             valor_local="333.555.888-00",
-            valor_servidor="529.982.247-25",
+            valor_servidor=cpf_servidor,
             estrategia=ConflictLog.Estrategia.LAST_WRITE_WINS,
             campo_sensivel=True,
             status=ConflictLog.Status.PENDENTE,
             territorio=territorio_a,
+        )
+        # Segundo pendente sensível, em OUTRO estado: é o par que torna o recorte
+        # por território verificável dos dois lados.
+        conflito_b = ConflictLog.objects.create(
+            user=tecnico_vermelho,
+            device=dispositivos["dev-seed-vermelho"],
+            entidade="upf",
+            uuid_local=uuid_b,
+            campo="titular.nome_completo",
+            valor_local="Maria da Conceição Silva",
+            valor_servidor=nome_servidor,
+            estrategia=ConflictLog.Estrategia.LAST_WRITE_WINS,
+            campo_sensivel=True,
+            status=ConflictLog.Status.PENDENTE,
+            territorio=territorio_b,
         )
         ConflictLog.objects.create(
             user=tecnico_vermelho,
@@ -993,19 +1206,26 @@ class Command(BaseCommand):
             territorio=territorio_b,
         )
 
-        if upfs:
-            UPF.objects.filter(pk=upfs[0].pk).update(
-                device_id="dev-mock-001",
-                uuid_local=uuid4(),
-                ultima_origem="sca",
-                ultimo_sync_em=agora - timedelta(hours=2),
+        # A notificação sai do MESMO código de produção — a task chamada de forma
+        # síncrona —, para o sino da demonstração trazer o texto e o link reais,
+        # inclusive o /sca/conflitos/{id} que a tela consome.
+        from apps.sca.tasks import notify_articulador_sync_conflict
+
+        for conflito in (conflito_a, conflito_b):
+            articulador_id = getattr(conflito.territorio, "articulador_id", None)
+            if not articulador_id:
+                continue
+            notify_articulador_sync_conflict(
+                articulador_id=articulador_id,
+                conflict_id=conflito.pk,
+                entidade=conflito.entidade,
+                uuid_local=str(conflito.uuid_local),
+                campo=conflito.campo,
+                valor_local=conflito.valor_local,
+                valor_servidor=conflito.valor_servidor,
+                territorio_id=conflito.territorio_id,
             )
-            MembroFamilia.objects.filter(pk=upfs[0].titular_id).update(
-                device_id="dev-mock-001",
-                uuid_local=uuid4(),
-                ultima_origem="sca",
-                ultimo_sync_em=agora - timedelta(hours=2),
-            )
+
         atividade_base = Activity.objects.order_by("pk").first()
         if atividade_base:
             Activity.objects.filter(pk=atividade_base.pk).update(
@@ -1016,7 +1236,11 @@ class Command(BaseCommand):
             )
 
         alvo_revogacao = next(
-            (t for t in tecnicos if t.email.endswith(f"@{DEMO_EMAIL_DOMAIN}")), None
+            (
+                t for t in tecnicos
+                if t.email == f"{LOCAL_ACESSO_REVOGADO}@{DEMO_EMAIL_DOMAIN}"
+            ),
+            None,
         )
         if alvo_revogacao:
             User.objects.filter(pk=alvo_revogacao.pk).update(
@@ -1026,8 +1250,39 @@ class Command(BaseCommand):
 
         self.stdout.write(
             "SCA: 3 técnicos com dispositivos nas faixas verde/laranja/vermelha, "
-            f"{len(eventos_criados)} eventos de sync e 2 conflitos "
-            "(1 pendente sensível, 1 resolvido automático)"
+            f"{len(eventos_criados)} eventos de sync e 3 conflitos "
+            "(2 pendentes sensíveis em estados distintos, 1 resolvido automático)"
+        )
+
+    def _dispositivo_do_revogado(self, agora):
+        """Dá um dispositivo ao técnico que já vem com acesso revogado.
+
+        A tela de Acessos SCA lista `/api/v1/users/?com_dispositivo=true`, cujo
+        filtro é `sca_devices__isnull=False`. Sem um SyncDevice, o técnico
+        revogado do seed não aparece lá e a demonstração nasce sem nenhuma linha
+        no estado "Revogado" — nem afordância de "Reativar acesso" para exercer.
+
+        `modelo` e `sistema_operacional` são fixos, e não `self.rnd.choice` como
+        no laço das faixas, para não deslocar a sequência do random semeado: os
+        conflitos criados logo abaixo dependem dela.
+        """
+        user = User.objects.filter(
+            email=f"{LOCAL_ACESSO_REVOGADO}@{DEMO_EMAIL_DOMAIN}"
+        ).first()
+        if user is None:
+            return None
+        # Sync antigo de propósito: o acesso foi revogado há 10 dias, então o
+        # aparelho não deveria ter sincronizado depois disso.
+        ultimo_sync = agora - timedelta(days=12)
+        return SyncDevice.objects.create(
+            user=user,
+            device_id="dev-seed-revogado",
+            nome="Dev Seed Revogado",
+            modelo="Samsung Galaxy A14",
+            sistema_operacional="Android 13",
+            app_versao="1.4.0",
+            ultimo_push_em=ultimo_sync,
+            ultimo_pull_em=ultimo_sync - timedelta(minutes=4),
         )
 
     def _limiar_sync_dias(self) -> int:
