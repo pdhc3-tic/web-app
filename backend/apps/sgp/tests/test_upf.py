@@ -1,6 +1,6 @@
 import factory
 import pytest
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from django.utils import timezone
@@ -308,6 +308,41 @@ class TestFiltrosEBusca:
         )
         assert response.status_code == 200
         assert len(response.data["results"]) == 1
+
+    def test_list_filter_by_cadastrado_de_ate_usa_dia_do_servidor(
+        self, auth_client, projeto, municipio_rn
+    ):
+        """`cadastrado_de/ate` filtram pelo dia LOCAL (TIME_ZONE do servidor),
+        não por uma janela UTC fixa — ver DIVIDA_TECNICA_FILTROS_DATA_UTC.md."""
+
+        def aware(year, month, day, hour, minute):
+            return timezone.make_aware(datetime(year, month, day, hour, minute))
+
+        # 28/08 21:04 no fuso do servidor ainda é dia 28 local.
+        dentro = UPFFactory(
+            projeto=projeto, municipio=municipio_rn, titular_cpf="86288366757"
+        )
+        UPF.objects.filter(pk=dentro.pk).update(criado_em=aware(2026, 8, 28, 21, 4))
+        # 27/08 22:00 no fuso do servidor é dia 27 local: não deve entrar no filtro "28".
+        dia_anterior = UPFFactory(
+            projeto=projeto, municipio=municipio_rn, titular_cpf="52998224725"
+        )
+        UPF.objects.filter(pk=dia_anterior.pk).update(criado_em=aware(2026, 8, 27, 22, 0))
+        dia_seguinte = UPFFactory(
+            projeto=projeto, municipio=municipio_rn, titular_cpf="11144477735"
+        )
+        UPF.objects.filter(pk=dia_seguinte.pk).update(criado_em=aware(2026, 8, 29, 5, 0))
+
+        response = auth_client.get(
+            "/api/v1/upfs/",
+            {"cadastrado_de": "2026-08-28", "cadastrado_ate": "2026-08-28"},
+        )
+
+        assert response.status_code == 200
+        ids = {u["id"] for u in response.data["results"]}
+        assert dentro.pk in ids
+        assert dia_anterior.pk not in ids
+        assert dia_seguinte.pk not in ids
 
     def test_list_search_by_nome_titular(
         self, auth_client, projeto, municipio_rn

@@ -87,6 +87,39 @@ def test_list_users_filter_by_territorio(
 
 
 @pytest.mark.django_db
+def test_list_users_filter_by_ultimo_acesso_usa_dia_do_servidor(
+    api_client, super_admin_user, user_factory
+):
+    """`ultimo_acesso_de/ate` filtram pelo dia LOCAL (TIME_ZONE do servidor),
+    não por uma janela UTC fixa — ver DIVIDA_TECNICA_FILTROS_DATA_UTC.md."""
+    from datetime import datetime
+
+    from django.utils import timezone
+
+    api_client.force_authenticate(user=super_admin_user)
+
+    def aware(year, month, day, hour, minute):
+        return timezone.make_aware(datetime(year, month, day, hour, minute))
+
+    # 28/08 21:04 no fuso do servidor ainda é dia 28 local.
+    dentro = user_factory(ultimo_login=aware(2026, 8, 28, 21, 4))
+    # 27/08 22:00 no fuso do servidor é dia 27 local: não deve entrar no filtro "28".
+    dia_anterior = user_factory(ultimo_login=aware(2026, 8, 27, 22, 0))
+    dia_seguinte = user_factory(ultimo_login=aware(2026, 8, 29, 5, 0))
+
+    response = api_client.get(
+        "/api/v1/users/",
+        {"ultimo_acesso_de": "2026-08-28", "ultimo_acesso_ate": "2026-08-28"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    result_ids = {u["id"] for u in response.data["results"]}
+    assert dentro.pk in result_ids
+    assert dia_anterior.pk not in result_ids
+    assert dia_seguinte.pk not in result_ids
+
+
+@pytest.mark.django_db
 def test_list_users_search_by_nome(
     api_client, super_admin_user, user_factory
 ):
