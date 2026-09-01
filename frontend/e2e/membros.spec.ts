@@ -538,3 +538,102 @@ test.describe("SGP — Formulário de membro", () => {
     await expect(chipSelecionado(painel, "Nenhuma")).toHaveCount(0);
   });
 });
+
+/**
+ * Ordem entre a listagem e o resumo (#190, item 5 do review).
+ *
+ * As duas requisições são paralelas, e o resumo (BE-23) é a fonte da verdade
+ * sobre o Titular. Enquanto ele não responde, o alerta não pode ser afirmado a
+ * partir da listagem — o que faria o aviso piscar e, se as fontes divergissem,
+ * aparecer e sumir na transição.
+ *
+ * O atraso é aplicado no route handler, não com `waitForTimeout` no teste: a
+ * asserção acontece com a resposta comprovadamente ainda em voo.
+ */
+test.describe("SGP — Card de composição espera o resumo", () => {
+  test.use({ storageState: storageStatePath("ugp") });
+
+  const ATRASO_MS = 2500;
+
+  function resumoFake(temTitular: boolean) {
+    return {
+      total_membros: 2,
+      faixa_etaria: {
+        "0-11": 0,
+        "12-17": 1,
+        "18-59": 1,
+        "60+": 0,
+        sem_data_nascimento: 0,
+      },
+      genero: { masculino: 1, feminino: 1, nao_binario: 0, nao_informado: 0 },
+      tem_titular: temTitular,
+    };
+  }
+
+  /** Listagem imediata (sem Titular) + resumo atrasado com `temTitular`. */
+  async function stubResumoAtrasado(
+    page: Page,
+    temTitular: boolean,
+  ): Promise<void> {
+    await page.route(LISTA_MEMBROS, async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          membroFake(9201, `${PREFIXO_TESTE} Filha`, "filho", "Filho(a)"),
+          membroFake(9202, `${PREFIXO_TESTE} Irmã`, "irmao", "Irmão(ã)"),
+        ]),
+      });
+    });
+
+    await page.route(RESUMO_MEMBROS, async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await new Promise((r) => setTimeout(r, ATRASO_MS));
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(resumoFake(temTitular)),
+      });
+    });
+  }
+
+  test("o alerta não aparece enquanto o resumo está em voo, e surge quando tem_titular=false", async ({
+    page,
+  }) => {
+    const upfId = primeiroUpfId();
+    // A listagem não tem Titular: fosse ela a fonte, o alerta apareceria já.
+    await stubResumoAtrasado(page, false);
+
+    await abrirAbaMembros(page, upfId);
+
+    // Com a listagem já pintada e o resumo ainda pendente, o alerta tem de
+    // estar ausente — é a asserção que o item 5 pede.
+    await expect(page.getByTestId("membro-badge-titular")).toHaveCount(0);
+    await expect(page.getByTestId("membros-sem-titular-alerta")).toHaveCount(0);
+
+    // E só depois da resposta ele entra.
+    await expect(page.getByTestId("membros-sem-titular-alerta")).toBeVisible({
+      timeout: ATRASO_MS * 3,
+    });
+    await expect(page.getByTestId("membros-resumo-total")).toHaveText("2");
+  });
+
+  test("com tem_titular=true o alerta nunca aparece, nem antes nem depois", async ({
+    page,
+  }) => {
+    const upfId = primeiroUpfId();
+    // Mesma listagem sem Titular; o resumo diz que existe. Vence o resumo.
+    await stubResumoAtrasado(page, true);
+
+    await abrirAbaMembros(page, upfId);
+
+    await expect(page.getByTestId("membros-sem-titular-alerta")).toHaveCount(0);
+
+    // Espera o resumo chegar (o total só aparece com ele) e reconfere.
+    await expect(page.getByTestId("membros-resumo-total")).toHaveText("2", {
+      timeout: ATRASO_MS * 3,
+    });
+    await expect(page.getByTestId("membros-sem-titular-alerta")).toHaveCount(0);
+  });
+});

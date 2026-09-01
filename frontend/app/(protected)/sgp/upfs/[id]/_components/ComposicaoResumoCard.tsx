@@ -13,11 +13,15 @@ type Props = {
   resumo: ResumoMembros | null;
   loading: boolean;
   /**
-   * UPF sem Titular. Vem do pai porque, quando o resumo não carrega, ele ainda
-   * consegue derivar o sinal da listagem — o alerta é a parte que não pode
-   * sumir por causa de uma request que falhou.
+   * UPF sem Titular. `null` enquanto o resumo não respondeu — nesse estado o
+   * alerta não é renderizado, para não afirmar nada antes de a consulta
+   * concluir.
+   *
+   * Vem do pai porque, quando o resumo falha, ele ainda consegue derivar o
+   * sinal da listagem — o alerta é a parte que não pode sumir por causa de uma
+   * request que deu errado.
    */
-  semTitular: boolean;
+  semTitular: boolean | null;
   onRetry: () => void;
 };
 
@@ -89,7 +93,9 @@ export function ComposicaoResumoCard({
         </ul>
       )}
 
-      {semTitular && <AlertaSemTitular />}
+      {/* `=== true` e não truthy: `null` é "ainda não sei", e nesse estado o
+          alerta fica fora da tela em vez de ser afirmado por antecipação. */}
+      {semTitular === true && <AlertaSemTitular />}
     </section>
   );
 }

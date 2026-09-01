@@ -67,6 +67,8 @@ export function MembrosTab({ upfId }: Props) {
 
   const [resumo, setResumo] = useState<ResumoMembros | null>(null);
   const [resumoLoading, setResumoLoading] = useState(true);
+  /** Distingue "resumo ainda em voo" de "resumo falhou" — ver `semTitular`. */
+  const [resumoErro, setResumoErro] = useState(false);
   const [resumoKey, setResumoKey] = useState(0);
 
   const [slideOver, setSlideOver] = useState<SlideOverState>({ open: false });
@@ -133,10 +135,15 @@ export function MembrosTab({ upfId }: Props) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setResumoLoading(true);
 
+    setResumoErro(false);
+
     getResumoMembros(upfId, controller.signal)
       .then((data) => setResumo(data))
       .catch(() => {
-        if (!controller.signal.aborted) setResumo(null);
+        if (controller.signal.aborted) return;
+        // Só aqui o fallback da listagem passa a valer para o alerta.
+        setResumo(null);
+        setResumoErro(true);
       })
       .finally(() => {
         if (!controller.signal.aborted) setResumoLoading(false);
@@ -150,9 +157,21 @@ export function MembrosTab({ upfId }: Props) {
     [membros],
   );
 
-  // O resumo é a fonte da verdade sobre o Titular; a listagem só cobre o caso
-  // em que a chamada do resumo falhou, para o alerta não sumir junto com ela.
-  const semTitular = resumo ? !resumo.tem_titular : !titularExists;
+  /**
+   * Há Titular na UPF? `null` enquanto o resumo não respondeu — o alerta não
+   * pode aparecer antes disso.
+   *
+   * O resumo (BE-23) é a fonte da verdade: ele conta no banco, sem depender da
+   * página carregada. A listagem só entra como fallback depois de uma falha
+   * efetiva da chamada, para o alerta não sumir junto com ela. Derivar da
+   * listagem enquanto o resumo está em voo fazia o alerta piscar e, se as duas
+   * fontes divergissem, aparecer e sumir na transição.
+   */
+  const semTitular: boolean | null = resumo
+    ? !resumo.tem_titular
+    : resumoErro
+      ? !titularExists
+      : null;
 
   /**
    * Permissão do usuário para os campos sensíveis (#192/BE-25) — usada para o
