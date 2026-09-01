@@ -48,6 +48,7 @@ from apps.sca.serializers import (
     SyncDeviceListSerializer,
     SyncEventDetailSerializer,
     SyncEventListSerializer,
+    TecnicoOptionSerializer,
 )
 from apps.sca.sync_entities import get_sync_entity
 
@@ -177,6 +178,42 @@ class SyncOrderingFilter(filters.OrderingFilter):
             else:
                 traduzido.append(o)
         return queryset.order_by(*traduzido)
+
+
+class TecnicoListView(generics.ListAPIView):
+    """GET /api/v1/sca/tecnicos/ — fonte completa (não paginada) de técnicos
+    com dispositivo ou evento de sincronização, para o filtro por técnico de
+    `/sca/sync-events/` (#157).
+
+    Não reaproveita `UserViewSet?com_dispositivo=true`: aquele é paginado,
+    cobre só SyncDevice (não SyncEvent — o mesmo buraco que esta issue
+    corrige), exclui usuários inativos por padrão e usa uma permissão mais
+    restrita (IsSuperAdmin puro, sem UGP).
+
+    Mesma restrição territorial de BE-14/FE-12: `IsSuperAdminOrUGPReadOnly`
+    já é de escopo global nas duas telas irmãs (`SyncDeviceListView`,
+    `SyncEventViewSet`) — não há recorte adicional a aplicar aqui.
+    """
+
+    permission_classes = [IsAuthenticatedActiveAccess, IsSuperAdminOrUGPReadOnly]
+    serializer_class = TecnicoOptionSerializer
+    pagination_class = None
+
+    def get_queryset(self):
+        User = get_user_model()
+        # Exists (não join) evita duplicar a linha do usuário quando ele tem
+        # mais de um dispositivo/evento.
+        tem_dispositivo = Exists(SyncDevice.objects.filter(user_id=OuterRef("pk")))
+        tem_evento = Exists(SyncEvent.objects.filter(user_id=OuterRef("pk")))
+        return (
+            User.objects.annotate(
+                _tem_dispositivo=tem_dispositivo,
+                _tem_evento=tem_evento,
+            )
+            .filter(Q(_tem_dispositivo=True) | Q(_tem_evento=True))
+            .order_by("nome", "pk")
+            .values("id", "nome", "email")
+        )
 
 
 class SyncDeviceListView(generics.ListAPIView):
