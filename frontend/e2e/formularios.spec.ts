@@ -112,8 +112,14 @@ test.describe("SGP — Aba Formulários na UPF", () => {
       ),
     ).toBeVisible();
 
-    // Caminho de volta para a aba continua disponível.
-    await page.getByRole("button", { name: "Cancelar" }).click();
+    // Caminho de volta para a aba continua disponível. Busca por atributo, e
+    // não por role: o backdrop que envolve o painel é `aria-hidden`, então o
+    // rodapé com o "Cancelar" some das buscas na árvore de acessibilidade
+    // (mesmo contorno usado em membros.spec.ts).
+    await page
+      .locator('[role="dialog"]')
+      .locator("button", { hasText: "Cancelar" })
+      .click();
     await expect(painel).toHaveCount(0);
   });
 
@@ -247,4 +253,119 @@ test.describe("SGP — Aba Formulários na UPF", () => {
       );
     },
   );
+});
+
+/**
+ * Opções do filtro por formulário (#180, item 4 do review).
+ *
+ * O `seed_demo` não cria nenhuma `FormResponse`, então a única forma de
+ * exercitar "formulário cuja resposta está fora da primeira página" é fixar as
+ * respostas do backend. As duas páginas abaixo colocam o formulário alvo só na
+ * segunda — que é exatamente o caso que a derivação por página perdia.
+ *
+ * `/formularios/opcoes/` é fixado em 404 de propósito: isto cobre o fallback
+ * paginado, o caminho usado enquanto a #214 não é implantada. Quando ela
+ * subir, o select passa a vir do metadado não paginado e este teste segue
+ * válido como regressão do fallback.
+ */
+test.describe("SGP — Opções do filtro de formulário", () => {
+  test.use({ storageState: storageStatePath("ugp") });
+
+  const PAGINA_1 = "Caderno de Visita";
+  const PAGINA_2 = "Diagnóstico Produtivo";
+  const ID_PAGINA_2 = 77;
+
+  function resposta(id: number, formularioId: number, nome: string) {
+    return {
+      id,
+      upf: 1,
+      formulario_id: formularioId,
+      formulario_nome: nome,
+      formulario_versao: "1.0",
+      contract_version: "1.0",
+      resposta_id_origem: `orig-${id}`,
+      data_preenchimento: "2026-08-20T10:00:00-03:00",
+      respondente: "Técnico de campo",
+      status: "submetido",
+      origem: "web",
+      criado_em: "2026-08-20T10:00:00-03:00",
+    };
+  }
+
+  async function stubRespostasEmDuasPaginas(page: import("@playwright/test").Page) {
+    await page.route(/\/formularios\/opcoes\/$/, (route) =>
+      route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "not_found", message: "Não encontrado." }),
+      }),
+    );
+
+    await page.route(/\/api\/v1\/sgp\/upfs\/\d+\/formularios\/(\?|$)/, async (route) => {
+      const params = new URL(route.request().url()).searchParams;
+      const page1 = (params.get("page") ?? "1") === "1";
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          count: 2,
+          // `next` não-nulo é o que obriga a varredura a buscar a página 2.
+          next: page1 ? "http://x/?page=2" : null,
+          previous: null,
+          results: page1
+            ? [resposta(1, 55, PAGINA_1)]
+            : [resposta(2, ID_PAGINA_2, PAGINA_2)],
+        }),
+      });
+    });
+  }
+
+  test("formulário cuja resposta está fora da 1ª página aparece ao abrir a aba", async ({
+    page,
+  }) => {
+    const upfId = primeiroUpfId();
+    await stubRespostasEmDuasPaginas(page);
+
+    await page.goto(`/sgp/upfs/${upfId}#formularios`);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+
+    // Sem clicar em nada nem paginar: a opção distante já está no select.
+    await page.getByLabel("Formulário", { exact: true }).click();
+    await expect(
+      page.getByRole("option", { name: PAGINA_2, exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("option", { name: PAGINA_1, exact: true }),
+    ).toBeVisible();
+  });
+
+  test("a seleção do formulário distante sobrevive ao reload e à reabertura da aba", async ({
+    page,
+  }) => {
+    const upfId = primeiroUpfId();
+    await stubRespostasEmDuasPaginas(page);
+
+    await page.goto(`/sgp/upfs/${upfId}#formularios`);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+
+    await page.getByLabel("Formulário", { exact: true }).click();
+    await page.getByRole("option", { name: PAGINA_2, exact: true }).click();
+
+    // Vai para a URL...
+    await expect(page).toHaveURL(new RegExp(`formulario_id=${ID_PAGINA_2}`));
+
+    // ...sobrevive ao reload...
+    await page.reload();
+    await expect(page.getByLabel("Formulário", { exact: true })).toContainText(
+      PAGINA_2,
+    );
+    await expect(page).toHaveURL(new RegExp(`formulario_id=${ID_PAGINA_2}`));
+
+    // ...e à saída e volta da aba.
+    await page.getByRole("tab", { name: "Membros" }).click();
+    await page.getByRole("tab", { name: "Formulários" }).click();
+    await expect(page.getByLabel("Formulário", { exact: true })).toContainText(
+      PAGINA_2,
+    );
+  });
 });
