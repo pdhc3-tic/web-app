@@ -147,17 +147,24 @@ FormResponse no seed_demo" e as suítes de #192 nem existem.
 
 ---
 
-## 6. Bug UTC — resolvido, sem ação no backend
+## 6. Bug UTC — resolvido nas duas pontas
 
-Reportado como o "bug UTC" na sessão de auditoria. Frontend fixado no
-commit `cceb2b2` (issue 157) — helpers `localDayStartISO` /
-`localDayEndISO` em `frontend/app/lib/datetime.ts` substituindo a
-concatenação `T00:00:00Z` em `sync-events`, `users` e `upfs`. Backend
-não precisou mexer — recebia UTC correto, o problema era o frontend
-enviar UTC deslocado.
+O frontend foi corrigido no commit `cceb2b2` (issue 157), trocando a
+concatenação `T00:00:00Z` pelos helpers `localDayStartISO` / `localDayEndISO`.
 
-Registrado aqui para memória: se aparecer padrão semelhante em nova
-tela, usar os helpers em vez de recriar a concatenação.
+Depois disso a **PR #212 (mergeada em 01/09/2026)** atacou a mesma classe de bug
+pelo lado do backend: os filtros de data passaram a receber o `YYYY-MM-DD` cru e
+a recortar o dia no `TIME_ZONE` do servidor, com renomeação dos parâmetros.
+
+O frontend foi adaptado junto: `data_inicio`/`data_fim` no log de sincronização,
+`ultimo_acesso_de`/`ultimo_acesso_ate` em usuários e
+`cadastrado_de`/`cadastrado_ate` em UPFs, sem mais conversão para ISO em UTC
+nesses três pontos. Os helpers continuam existindo para outros usos.
+
+Fica o registro do risco, caso apareça mudança parecida: o django-filter
+descarta parâmetro desconhecido **em silêncio**, sem 400. Uma renomeação de
+parâmetro que entre sem o frontend correspondente não gera erro na tela — o
+filtro simplesmente deixa de filtrar, e a lista completa passa por resultado.
 
 ---
 
@@ -185,48 +192,46 @@ vazio dos demais perfis).
 
 ---
 
-## 8. Fonte de técnicos para o filtro do log de sincronização — melhoria de #157
+## 8. Fonte de técnicos para o filtro do log de sincronização — atendida pela PR #217
 
-*Estado atual:* o filtro `user` já é aceito pelo `SyncEventFilter`
-(`backend/apps/sca/views.py:109`) — isso funciona. Falta uma fonte para
-**popular o select**.
+*Estado atual:* endpoint proposto em `backend/fonte-tecnicos` (PR #217, aberta),
+ainda **não mergeado**: `GET /api/v1/sca/tecnicos/`, não paginado, com
+`IsSuperAdminOrUGPReadOnly` e cobrindo quem tem dispositivo **ou** evento.
 
-O frontend agora tem filtro por técnico independente do de dispositivo, e monta
-as opções deduplicando `tecnico` de `/api/v1/sca/devices/?limit=500`. Funciona
-e não precisa de nada novo, com uma lacuna conhecida: **técnico cujo dispositivo
-foi apagado não aparece no select**, embora seus eventos sigam no histórico.
+É exatamente o contrato que faltava. O frontend já consome esse endereço e cai
+num fallback enquanto ele responde 404: percorre **todas** as páginas de
+`/sca/devices/` seguindo `next`, em vez de supor que uma resposta é a lista
+completa — o `?limit=500` anterior era silenciosamente reduzido a 100 pelo
+`SCAPagination.max_limit`, então nem a listagem de dispositivos vinha inteira.
 
-`/api/v1/users/` não serve como alternativa: é `IsSuperAdmin`
-(`apps/core/views/users.py:66`), enquanto o log é Super Admin **ou** UGP — usá-lo
-deixaria o select vazio justamente para a UGP.
+O fallback continua sem o técnico que não tem dispositivo; só o endpoint resolve
+esse caso. Assim que a #217 entrar na main, o caminho dedicado passa a valer
+sozinho, sem mais mudança de frontend.
 
-**Pedido (não urgente):** uma fonte não paginada e autorizada com os técnicos no
-escopo do usuário — endpoint dedicado, ou um metadado no envelope da listagem
-de sync-events com os pares `{id, nome}` presentes no histórico.
+**Ação:** mergear a #217.
 
 ---
 
-## 9. Formulários distintos por UPF — melhoria de #180
+## 9. Formulários distintos por UPF — atendida pela PR #214
 
-*Estado atual:* NÃO EXISTE. Não confundir com a BE-18
-(`/api/v1/sgp/formularios-disponiveis/`), que lista formulários publicados para
-**novo** preenchimento — um formulário despublicado sai de lá e continua no
-histórico da família.
+*Estado atual:* endpoint proposto em `backend/filtros-formularios` (PR #214,
+aberta), ainda **não mergeado**:
+`GET /api/v1/sgp/upfs/{upf_pk}/formularios/opcoes/`, não paginado, devolvendo
+`{formulario_id, formulario_nome, formulario_versao}` distintos da UPF.
 
-O select "Formulário" da aba Formulários precisa dos formulários que já têm ao
-menos uma resposta naquela UPF. Antes as opções eram acumuladas página a página
-(um formulário que só aparecia na página 3 não estava no select ao abrir a aba);
-agora o frontend faz uma varredura própria da listagem sem filtro com
-`page_size=200` (`HistoricoPagination.max_page_size`) e deduplica por
-`formulario_id`.
+Não confundir com a BE-18 (`/api/v1/sgp/formularios-disponiveis/`), que lista o
+que está publicado para **novo** preenchimento — um formulário despublicado sai
+de lá e continua no histórico da família.
 
-Lacuna conhecida: UPF com mais de 200 respostas pode deixar de fora um
-formulário que só apareça depois desse corte.
+O frontend já consome o endereço novo e cai num fallback enquanto ele responde
+404: percorre **todas** as páginas da listagem de respostas, seguindo `next`, e
+deduplica por `formulario_id`. A varredura anterior mandava um `page_size=200` e
+tratava a primeira resposta como completa — o que deixava de fora formulário
+cuja primeira resposta ficasse além do corte.
 
-**Pedido:** endpoint dedicado, ou um metadado não paginado no envelope da BE-16
-com os pares `{formulario_id, formulario_nome}` existentes naquela UPF. Assim
-que existir, o helper `listFormulariosRespondidos`
-(`frontend/app/lib/formularios.ts`) passa a chamá-lo e a varredura sai.
+A mesma PR traz o `respondente_isnull` do item 1 deste documento.
+
+**Ação:** mergear a #214 — ela fecha os itens 1 e 9 de uma vez.
 
 ---
 
@@ -234,15 +239,18 @@ que existir, o helper `listFormulariosRespondidos`
 
 | # | Item | Bloqueia |
 |---|---|---|
-| 1 | `respondente_isnull` no `FormResponseFilter`                                | critério "Apenas anônimas" (#180) |
-| 2 | BE-25 (#187) — omitir `saude`/`cor_raca` por perfil                          | critério de exibição condicional (#192) + coluna condicional do export de membros (#191) |
-| 3 | Endpoint admin de token Power BI (`GET` + `POST /regenerar`)                 | tela inteira (#143) |
-| 4 | Endpoint `GET /api/v1/sgp/upfs/{upf_pk}/membros/exportar/`                   | tela inteira (#191) |
+| 1 | `respondente_isnull` — **pronto na PR #214**, falta mergear                   | critério "Apenas anônimas" (#180) |
+| 2 | BE-25 (#187) — **pronto na PR #213**, falta mergear                            | exibição condicional (#192) + coluna condicional do export (#191) |
+| 3 | Admin de token Power BI — **pronto na PR #215**, falta mergear                 | tela inteira (#143) |
+| 4 | `GET .../membros/exportar/` — **pronto na PR #213**, falta mergear             | tela inteira (#191) |
 | 5 | Seed com `FormResponse` + `MembroFamilia` com campos sensíveis               | destrave dos E2E de #178/#179/#180/#181/#192 |
-| 7 | Tirar `ugp` do `ConflictLogViewSet` (queryset + action `resolver`)           | recorte real de acesso aos conflitos (#158) — hoje só o menu esconde |
-| 8 | Fonte não paginada de técnicos no escopo do usuário                          | (melhoria) técnico sem dispositivo no select do log (#157) |
-| 9 | Formulários distintos por UPF (endpoint ou metadado na BE-16)                | (melhoria) UPF com +200 respostas no select da aba Formulários (#180) |
+| 7 | `ugp` fora do `ConflictLogViewSet` — **pronto na PR #213**, falta mergear      | recorte real de acesso aos conflitos (#158) |
+| 8 | `GET /api/v1/sca/tecnicos/` — **pronto na PR #217**, falta mergear            | técnico sem dispositivo no select do log (#157) |
+| 9 | `GET .../formularios/opcoes/` — **pronto na PR #214**, falta mergear           | opções completas do select da aba Formulários (#180) |
 
-Os itens 7, 8 e 9 vieram do review de PR de 01/09/2026. O 7 é o único que
-bloqueia um critério de aceite; 8 e 9 são lacunas conhecidas de soluções que já
-estão funcionando no frontend.
+Situação em 01/09/2026: só o item 6 (bug UTC, PR #212) chegou à `main`. Todos
+os demais têm PR aberta — #213 cobre os itens 2, 4 e 7; #214 cobre 1 e 9; #215
+cobre o 3; #217 cobre o 8. Nenhuma está mergeada, e o frontend segue com o
+comportamento provisório documentado em cada seção até que entrem.
+
+O item 5 (seed) é o único sem PR correspondente.
