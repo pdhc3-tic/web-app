@@ -8,7 +8,7 @@ Testes dos endpoints administrativos SCA (#194):
 - Filtro e anotação do UserViewSet (#160)
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -319,6 +319,30 @@ class TestSyncEventsEndpoint:
         )
         assert response.status_code == 200
         assert [e["id"] for e in response.data["results"]] == [com_erro.pk]
+
+    def test_filtra_por_data_inicio_fim_usa_dia_do_servidor(self, auth_client_super_admin, usuario):
+        """`data_inicio/data_fim` filtram pelo dia LOCAL (TIME_ZONE do servidor),
+        não por uma janela UTC fixa — ver DIVIDA_TECNICA_FILTROS_DATA_UTC.md."""
+
+        def aware(year, month, day, hour, minute):
+            return timezone.make_aware(datetime(year, month, day, hour, minute))
+
+        # 28/08 21:04 no fuso do servidor ainda é dia 28 local.
+        dentro = SyncEventFactory(user=usuario, iniciado_em=aware(2026, 8, 28, 21, 4))
+        # 27/08 22:00 no fuso do servidor é dia 27 local: não deve entrar no filtro "28".
+        dia_anterior = SyncEventFactory(user=usuario, iniciado_em=aware(2026, 8, 27, 22, 0))
+        dia_seguinte = SyncEventFactory(user=usuario, iniciado_em=aware(2026, 8, 29, 5, 0))
+
+        response = auth_client_super_admin.get(
+            "/api/v1/sca/sync-events/",
+            data={"data_inicio": "2026-08-28", "data_fim": "2026-08-28"},
+        )
+
+        assert response.status_code == 200
+        result_ids = {e["id"] for e in response.data["results"]}
+        assert dentro.pk in result_ids
+        assert dia_anterior.pk not in result_ids
+        assert dia_seguinte.pk not in result_ids
 
     def test_listagem_oculta_erros_detalhes_detalhe_exibe(self, auth_client_super_admin, usuario):
         evento = SyncEventFactory(

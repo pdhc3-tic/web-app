@@ -104,8 +104,8 @@ class SyncDeviceFilter(django_filters.FilterSet):
 
 
 class SyncEventFilter(django_filters.FilterSet):
-    iniciado_em_gte = django_filters.DateTimeFilter(field_name="iniciado_em", lookup_expr="gte")
-    iniciado_em_lte = django_filters.DateTimeFilter(field_name="iniciado_em", lookup_expr="lte")
+    data_inicio = django_filters.DateFilter(field_name="iniciado_em", lookup_expr="date__gte")
+    data_fim = django_filters.DateFilter(field_name="iniciado_em", lookup_expr="date__lte")
     user = django_filters.NumberFilter()
     device = django_filters.NumberFilter()
     tipo = django_filters.ChoiceFilter(choices=SyncEvent.Tipo.choices)
@@ -113,7 +113,7 @@ class SyncEventFilter(django_filters.FilterSet):
 
     class Meta:
         model = SyncEvent
-        fields = ["user", "device", "tipo", "iniciado_em_gte", "iniciado_em_lte", "com_erro"]
+        fields = ["user", "device", "tipo", "data_inicio", "data_fim", "com_erro"]
 
     def filter_com_erro(self, qs, name, value):
         if value:
