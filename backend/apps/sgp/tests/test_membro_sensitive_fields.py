@@ -341,8 +341,7 @@ class TestAuditLogCamposSensiveis:
         log = AuditLog.objects.filter(acao="MEMBRO.create", entidade="MembroFamilia").latest(
             "timestamp"
         )
-        assert log.valores_novos["saude_definido"] is True
-        assert log.valores_novos["cor_raca_definido"] is True
+        assert set(log.valores_novos["campos_alterados"]) == {"saude", "cor_raca"}
         assert "diabetes" not in str(log.valores_novos)
         assert "cor_raca" not in log.valores_novos
         assert "saude" not in log.valores_novos
@@ -365,8 +364,7 @@ class TestAuditLogCamposSensiveis:
 
         assert log.user_id == usuario_adt_rn.pk
         assert log.timestamp is not None
-        assert log.valores_novos["saude_alterado"] is True
-        assert log.valores_novos["cor_raca_alterado"] is False
+        assert log.valores_novos["campos_alterados"] == ["saude"]
         assert "hipertensao" not in str(log.valores_novos)
         assert "gestante" not in str(log.valores_novos)
         assert "hipertensao" not in str(log.valores_anteriores)
@@ -386,8 +384,7 @@ class TestAuditLogCamposSensiveis:
         log = AuditLog.objects.filter(
             acao="MEMBRO.update", entidade="MembroFamilia", entidade_id=str(membro.pk)
         ).latest("timestamp")
-        assert log.valores_novos["saude_alterado"] is False
-        assert log.valores_novos["cor_raca_alterado"] is False
+        assert log.valores_novos["campos_alterados"] == []
 
     def test_exclusao_de_membro_registra_presenca_sem_expor_valor(
         self, auth_client_adt_rn, upf
@@ -405,6 +402,95 @@ class TestAuditLogCamposSensiveis:
         log = AuditLog.objects.filter(
             acao="MEMBRO.delete", entidade="MembroFamilia", entidade_id=str(membro.pk)
         ).latest("timestamp")
-        assert log.valores_anteriores["saude_definido"] is True
-        assert log.valores_anteriores["cor_raca_definido"] is True
+        assert set(log.valores_novos["campos_alterados"]) == {"saude", "cor_raca"}
+        assert "doenca_renal" not in str(log.valores_novos)
         assert "doenca_renal" not in str(log.valores_anteriores)
+
+
+# ---------------------------------------------------------------------------
+# UPFDetailSerializer — cor_raca do titular escrita pela API de UPF
+# ---------------------------------------------------------------------------
+
+class TestUPFEscritaEAuditoriaDaCorRacaDoTitular:
+    def test_cor_raca_do_titular_por_usuario_sem_permissao_e_rejeitada(self):
+        from apps.core.tests.factories import RoleFactory, UserFactory
+        from apps.sgp.serializers import UPFDetailSerializer
+
+        role = RoleFactory(slug="agricultor", nome="Agricultor")
+        user = UserFactory(profiles=[(role, None)])
+
+        class _FakeRequest:
+            def __init__(self, user):
+                self.user = user
+
+        payload = {
+            "projeto": 1, "nome": "Novo Titular", "cpf": "86288366757",
+            "municipio": 1, "cor_raca": 2,
+        }
+        serializer = UPFDetailSerializer(data=payload, context={"request": _FakeRequest(user)})
+
+        assert not serializer.is_valid()
+        assert "cor_raca" in serializer.errors
+
+    def test_criacao_de_upf_audita_cor_raca_do_titular_como_membrofamilia(
+        self, auth_client_adt_rn, projeto, municipio_rn
+    ):
+        payload = {
+            "projeto": projeto.pk,
+            "nome": "Titular Auditado",
+            "cpf": "86288366757",
+            "municipio": municipio_rn.pk,
+            "cor_raca": 3,
+        }
+        response = auth_client_adt_rn.post("/api/v1/upfs/", payload, format="json")
+        assert response.status_code == 201, response.data
+
+        titular_id = response.data["titular"]["id"]
+        log = AuditLog.objects.filter(
+            acao="MEMBRO.create", entidade="MembroFamilia", entidade_id=str(titular_id)
+        ).latest("timestamp")
+        assert log.valores_novos["campos_alterados"] == ["cor_raca"]
+        assert "cor_raca" not in log.valores_novos
+        assert log.valores_novos["origem"] == "web"
+
+    def test_edicao_de_upf_altera_cor_raca_do_titular_e_audita_sem_valor(
+        self, auth_client_adt_rn, upf
+    ):
+        titular_id = upf.titular_id
+        response = auth_client_adt_rn.patch(
+            f"/api/v1/upfs/{upf.pk}/", {"cor_raca": 4}, format="json"
+        )
+        assert response.status_code == 200
+
+        upf.titular.refresh_from_db()
+        assert upf.titular.cor_raca == 4
+
+        log = AuditLog.objects.filter(
+            acao="MEMBRO.update", entidade="MembroFamilia", entidade_id=str(titular_id)
+        ).latest("timestamp")
+        assert log.valores_novos["campos_alterados"] == ["cor_raca"]
+        assert "cor_raca" not in log.valores_novos
+
+
+# ---------------------------------------------------------------------------
+# saude na listagem — antes só cor_raca respeitava a matriz (Issue #187/#192)
+# ---------------------------------------------------------------------------
+
+class TestSaudeNaListagemDeMembros:
+    def test_perfil_autorizado_recebe_saude_na_listagem(self, auth_client_adt_rn, upf):
+        MembroFactory(upf=upf, grau_parentesco="filho", saude=["asma"])
+        response = auth_client_adt_rn.get(f"/api/v1/sgp/upfs/{upf.pk}/membros/")
+        assert response.status_code == 200
+        item = next(m for m in response.data["results"] if m["grau_parentesco"] == "filho")
+        assert item["saude"] == ["asma"]
+
+    def test_campo_saude_omitido_da_listagem_e_omitido_nunca_null(self, upf):
+        from apps.sgp.serializers import MembroListSerializer
+
+        membro = MembroFactory(upf=upf, grau_parentesco="filho", saude=["asma"])
+
+        class _AnonRequest:
+            user = None
+
+        serializer = MembroListSerializer(membro, context={"request": _AnonRequest()})
+        assert "saude" not in serializer.data

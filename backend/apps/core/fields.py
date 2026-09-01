@@ -42,7 +42,12 @@ class EncryptedFieldMixin:
 
     def from_db_value(self, value, expression, connection):
         if value in (None, ""):
-            return self.empty_value
+            # Campo nulável: None é o valor correto, não `self.empty_value`
+            # (reservado a campo NOT NULL sem valor persistido ainda).
+            if self.null:
+                return None
+            empty = self.empty_value
+            return empty() if callable(empty) else empty
         return self.plaintext_to_value(decrypt_to_text(value))
 
     def value_to_plaintext(self, value) -> str:

@@ -328,7 +328,9 @@ class UPFDocumentCreateSerializer(serializers.Serializer):
     data_documento = serializers.DateField()
 
 
-class UPFDetailSerializer(serializers.ModelSerializer):
+class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSerializer):
+    sensitive_fields = {"cor_raca": ("cor_raca",)}
+
     # ── Titular (escrita) — nomes originais do formulário ──
     nome = serializers.CharField(
         write_only=True, required=True, source="_titular_nome",
@@ -529,6 +531,7 @@ class MembroListSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeri
     )
 
     sensitive_fields = {
+        "saude": ("saude",),
         "cor_raca": ("cor_raca", "cor_raca_display"),
     }
 
@@ -538,7 +541,7 @@ class MembroListSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeri
             "id", "nome_completo", "data_nascimento", "idade",
             "grau_parentesco", "grau_parentesco_display", "cpf",
             "genero", "genero_display",
-            "cor_raca", "cor_raca_display",
+            "cor_raca", "cor_raca_display", "saude",
             "criado_em",
         ]
 

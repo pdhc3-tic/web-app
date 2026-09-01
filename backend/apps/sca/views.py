@@ -35,6 +35,7 @@ from apps.core.permissions import (
     IsSuperAdminOrUGPReadOnly,
 )
 from apps.core.services.audit import log_audit
+from apps.core.services.membro_audit import log_membro_change, sensitive_fields_changed
 from apps.core.services.permissions import user_has_role, user_states
 from apps.core.throttling import RefreshRateThrottle
 from apps.sca import services
@@ -363,9 +364,18 @@ class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
 
         with transaction.atomic():
             entity = get_sync_entity(conflict.entidade)
+            membro = None
+            anteriores_sensiveis = None
             if entity:
                 instance = entity.get_by_uuid_local(conflict.uuid_local)
                 if instance:
+                    membro = (
+                        instance if entity.name == "member"
+                        else instance.titular if entity.name == "upf"
+                        else None
+                    )
+                    if membro is not None:
+                        anteriores_sensiveis = {"saude": membro.saude, "cor_raca": membro.cor_raca}
                     entity.apply_changes(instance, {conflict.campo: valor_final})
 
             conflict.status = ConflictLog.Status.RESOLVIDO_MANUAL
@@ -374,6 +384,14 @@ class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
             conflict.resolvido_em = timezone.now()
             conflict.save()
 
+            # Campo sensível: nunca grava o valor final no AuditLog, só o
+            # nome do campo.
+            valores_novos_log = {"status": "resolvido_manual", "decisao": decisao}
+            if conflict.campo_sensivel:
+                valores_novos_log["campo"] = conflict.campo
+            else:
+                valores_novos_log["valor_final"] = services._jsonable(valor_final)
+
             log_audit(
                 user=request.user,
                 acao="sca.conflict_resolved",
@@ -381,13 +399,21 @@ class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
                 entidade="ConflictLog",
                 entidade_id=conflict.pk,
                 valores_anteriores={"status": "pendente"},
-                valores_novos={
-                    "status": "resolvido_manual",
-                    "decisao": decisao,
-                    "valor_final": services._jsonable(valor_final),
-                },
+                valores_novos=valores_novos_log,
                 request=request,
             )
+
+            if membro is not None:
+                novos_sensiveis = {"saude": membro.saude, "cor_raca": membro.cor_raca}
+                log_membro_change(
+                    user=request.user,
+                    acao="MEMBRO.update",
+                    membro=membro,
+                    origem="sca_conflict_resolution",
+                    campos_alterados=sensitive_fields_changed(anteriores_sensiveis, novos_sensiveis),
+                    request=request,
+                    extra_novos={"conflict_id": conflict.pk, "campo_resolvido": conflict.campo},
+                )
 
         return Response(ConflictLogDetailSerializer(conflict).data, status=status.HTTP_200_OK)
 

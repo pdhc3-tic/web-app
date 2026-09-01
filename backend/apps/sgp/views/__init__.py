@@ -31,6 +31,7 @@ from rest_framework.response import Response
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsSuperAdmin, IsUGP
+from apps.core.services.membro_audit import log_membro_change, sensitive_fields_changed
 from apps.core.services.permissions import user_has_role, user_states, user_territories
 from apps.core.utils import get_config
 from apps.sgp.cache import UPF_MAP_CACHE_TIMEOUT, build_upf_map_cache_key
@@ -462,6 +463,17 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         instance = serializer.save(criado_por=self.request.user, ultima_origem="web")
         self._log_audit("UPF.create", instance)
+        log_membro_change(
+            user=self.request.user,
+            acao="MEMBRO.create",
+            membro=instance.titular,
+            origem="web",
+            campos_alterados=sensitive_fields_changed(
+                None, {"cor_raca": instance.titular.cor_raca}
+            ),
+            request=self.request,
+            extra_novos={"via": "upf.titular"},
+        )
 
     def perform_update(self, serializer):
         old = self.get_object()
@@ -475,8 +487,20 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
             "comunidade_id": old.comunidade_id,
             "ativa": old.ativa,
         }
+        anteriores_sensiveis = {"cor_raca": old.titular.cor_raca}
         instance = serializer.save(ultima_origem="web")
         self._log_audit("UPF.update", instance, valores_anteriores)
+        log_membro_change(
+            user=self.request.user,
+            acao="MEMBRO.update",
+            membro=instance.titular,
+            origem="web",
+            campos_alterados=sensitive_fields_changed(
+                anteriores_sensiveis, {"cor_raca": instance.titular.cor_raca}
+            ),
+            request=self.request,
+            extra_novos={"via": "upf.titular"},
+        )
 
     def perform_destroy(self, instance):
         valores_anteriores = {
@@ -648,18 +672,6 @@ def _membros_csv_response(columns, rows, filename):
     return response
 
 
-def _sensitive_field_markers(instance):
-    """
-    Indicadores de presença/alteração de campos sensíveis (saúde, cor/raça)
-    para uso em AuditLog — NUNCA inclui o valor em si (evitaria reabrir, por
-    um canal lateral, o vazamento que a criptografia de repouso fecha).
-    """
-    return {
-        "saude_definido": bool(instance.saude),
-        "cor_raca_definido": instance.cor_raca is not None,
-    }
-
-
 class MembroViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedActiveAccess]
     http_method_names = ["get", "post", "put", "patch", "delete", "head", "options"]
@@ -691,21 +703,15 @@ class MembroViewSet(viewsets.ModelViewSet):
                     {"cpf": "Já existe um membro cadastrado com este CPF"}
                 )
             raise
-        AuditLog.objects.create(
+        log_membro_change(
             user=self.request.user,
             acao="MEMBRO.create",
-            modulo="sgp",
-            entidade="MembroFamilia",
-            entidade_id=str(instance.pk),
-            valores_novos={
-                "membro_id": instance.pk,
-                "nome_completo": instance.nome_completo,
-                "grau_parentesco": instance.grau_parentesco,
-                "upf_id": instance.upf_id,
-                **_sensitive_field_markers(instance),
-            },
-            ip=self.request.META.get("REMOTE_ADDR"),
-            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
+            membro=instance,
+            origem="web",
+            campos_alterados=sensitive_fields_changed(
+                None, {"saude": instance.saude, "cor_raca": instance.cor_raca}
+            ),
+            request=self.request,
         )
 
     def perform_update(self, serializer):
@@ -722,7 +728,7 @@ class MembroViewSet(viewsets.ModelViewSet):
             "grau_parentesco": old.grau_parentesco,
             "cpf": old.cpf,
         }
-        old_saude, old_cor_raca = old.saude, old.cor_raca
+        anteriores_sensiveis = {"saude": old.saude, "cor_raca": old.cor_raca}
         try:
             instance = serializer.save(ultima_origem="web")
         except IntegrityError as e:
@@ -732,30 +738,17 @@ class MembroViewSet(viewsets.ModelViewSet):
                 )
             raise
 
-        # Campos sensíveis (saúde, cor/raça): o AuditLog registra *que* houve
-        # alteração, usuário e timestamp — nunca o valor em si (Issue #187).
-        saude_alterado = "saude" in serializer.validated_data and old_saude != instance.saude
-        cor_raca_alterado = (
-            "cor_raca" in serializer.validated_data and old_cor_raca != instance.cor_raca
-        )
-
-        AuditLog.objects.create(
+        # Nunca grava o valor de saúde/cor-raça, só o nome de quem mudou.
+        log_membro_change(
             user=self.request.user,
             acao="MEMBRO.update",
-            modulo="sgp",
-            entidade="MembroFamilia",
-            entidade_id=str(instance.pk),
+            membro=instance,
+            origem="web",
+            campos_alterados=sensitive_fields_changed(
+                anteriores_sensiveis, {"saude": instance.saude, "cor_raca": instance.cor_raca}
+            ),
+            request=self.request,
             valores_anteriores=valores_anteriores,
-            valores_novos={
-                "membro_id": instance.pk,
-                "nome_completo": instance.nome_completo,
-                "grau_parentesco": instance.grau_parentesco,
-                "upf_id": instance.upf_id,
-                "saude_alterado": saude_alterado,
-                "cor_raca_alterado": cor_raca_alterado,
-            },
-            ip=self.request.META.get("REMOTE_ADDR"),
-            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )
 
     def perform_destroy(self, instance):
@@ -769,22 +762,21 @@ class MembroViewSet(viewsets.ModelViewSet):
             raise serializers.ValidationError(
                 "Transfira a titularidade para outro membro antes de excluir"
             )
-        AuditLog.objects.create(
+        log_membro_change(
             user=self.request.user,
             acao="MEMBRO.delete",
-            modulo="sgp",
-            entidade="MembroFamilia",
-            entidade_id=str(instance.pk),
+            membro=instance,
+            origem="web",
+            campos_alterados=sensitive_fields_changed(
+                None, {"saude": instance.saude, "cor_raca": instance.cor_raca}
+            ),
+            request=self.request,
             valores_anteriores={
                 "membro_id": instance.pk,
                 "upf_id": instance.upf_id,
                 "nome_completo": instance.nome_completo,
                 "grau_parentesco": instance.grau_parentesco,
-                **_sensitive_field_markers(instance),
             },
-            valores_novos={},
-            ip=self.request.META.get("REMOTE_ADDR"),
-            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )
         instance.delete()
 
