@@ -13,8 +13,8 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
+import { SubmoduleCard } from "@/app/components/ui/SubmoduleCard/SubmoduleCard";
 import { fetchUpfCount } from "@/app/lib/upfs";
-import { SubmoduleCard } from "./_components/SubmoduleCard";
 
 type Submodule = {
   key: string;
