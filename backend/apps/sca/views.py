@@ -19,7 +19,6 @@ from django.db.models.functions import Greatest
 from django_filters import rest_framework as django_filters
 from rest_framework import filters, generics, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -30,10 +29,13 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.core.models import SystemConfig, Territory
 from apps.core.permissions import (
+    IsArticuladorEstadual,
     IsAuthenticatedActiveAccess,
+    IsSuperAdmin,
     IsSuperAdminOrUGPReadOnly,
 )
 from apps.core.services.audit import log_audit
+from apps.core.services.membro_audit import log_membro_change, sensitive_fields_changed
 from apps.core.services.permissions import user_has_role, user_states
 from apps.core.throttling import RefreshRateThrottle
 from apps.sca import services
@@ -291,7 +293,12 @@ class SyncEventViewSet(viewsets.ReadOnlyModelViewSet):
 # ---------------------------------------------------------------------------
 
 class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
-    permission_classes = [IsAuthenticatedActiveAccess]
+    # Somente Articulador Estadual (do próprio estado) e Super Admin (acesso
+    # global) — UGP foi removida (correção de auditoria dos critérios de
+    # aceitação: UGP não deve listar, detalhar nem resolver conflitos).
+    # A regra fica centralizada nestas duas permission classes, reutilizadas
+    # entre listagem, detalhe e a action `resolver` — evita divergência.
+    permission_classes = [IsAuthenticatedActiveAccess, IsSuperAdmin | IsArticuladorEstadual]
     pagination_class = SCAPagination
     filter_backends = [django_filters.DjangoFilterBackend, filters.OrderingFilter]
     filterset_class = ConflictLogFilter
@@ -305,9 +312,19 @@ class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
         return ConflictLogDetailSerializer
 
     def get_queryset(self):
-        user = self.request.user
         qs = ConflictLog.objects.all().select_related("user", "device", "resolvido_por", "territorio")
-        if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
+
+        if self.action != "list":
+            # Detalhe e resolução: o queryset NÃO filtra por estado — quem
+            # barra um Articulador Estadual de outro estado é
+            # `IsArticuladorEstadual.has_object_permission` (chamado por
+            # `get_object()`), retornando 403. Filtrar aqui faria o objeto
+            # sumir do queryset e a resposta virar 404, escondendo o motivo
+            # real da negação (antipadrão que a auditoria pediu para evitar).
+            return qs
+
+        user = self.request.user
+        if user_has_role(user, "super-admin"):
             return qs
         if user_has_role(user, "articulador-estadual"):
             states = user_states(user)
@@ -321,15 +338,11 @@ class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="resolver")
     def resolver(self, request, pk=None):
+        # `get_object()` já aplica `check_object_permissions` (via
+        # `IsArticuladorEstadual.has_object_permission`), retornando 403 para
+        # perfil sem autorização ou de outro estado — nenhuma checagem manual
+        # duplicada aqui.
         conflict = self.get_object()
-
-        if user_has_role(request.user, "articulador-estadual"):
-            from apps.core.permissions import IsArticuladorEstadual
-            perm = IsArticuladorEstadual()
-            if not perm.has_object_permission(request, self, conflict):
-                raise PermissionDenied("Você não tem permissão para resolver conflitos deste território.")
-        elif not (user_has_role(request.user, "super-admin") or user_has_role(request.user, "ugp")):
-            raise PermissionDenied("Permissão negada.")
 
         if conflict.status != ConflictLog.Status.PENDENTE:
             return Response(
@@ -351,9 +364,18 @@ class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
 
         with transaction.atomic():
             entity = get_sync_entity(conflict.entidade)
+            membro = None
+            anteriores_sensiveis = None
             if entity:
                 instance = entity.get_by_uuid_local(conflict.uuid_local)
                 if instance:
+                    membro = (
+                        instance if entity.name == "member"
+                        else instance.titular if entity.name == "upf"
+                        else None
+                    )
+                    if membro is not None:
+                        anteriores_sensiveis = {"saude": membro.saude, "cor_raca": membro.cor_raca}
                     entity.apply_changes(instance, {conflict.campo: valor_final})
 
             conflict.status = ConflictLog.Status.RESOLVIDO_MANUAL
@@ -362,6 +384,14 @@ class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
             conflict.resolvido_em = timezone.now()
             conflict.save()
 
+            # Campo sensível: nunca grava o valor final no AuditLog, só o
+            # nome do campo.
+            valores_novos_log = {"status": "resolvido_manual", "decisao": decisao}
+            if conflict.campo_sensivel:
+                valores_novos_log["campo"] = conflict.campo
+            else:
+                valores_novos_log["valor_final"] = services._jsonable(valor_final)
+
             log_audit(
                 user=request.user,
                 acao="sca.conflict_resolved",
@@ -369,13 +399,21 @@ class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
                 entidade="ConflictLog",
                 entidade_id=conflict.pk,
                 valores_anteriores={"status": "pendente"},
-                valores_novos={
-                    "status": "resolvido_manual",
-                    "decisao": decisao,
-                    "valor_final": services._jsonable(valor_final),
-                },
+                valores_novos=valores_novos_log,
                 request=request,
             )
+
+            if membro is not None:
+                novos_sensiveis = {"saude": membro.saude, "cor_raca": membro.cor_raca}
+                log_membro_change(
+                    user=request.user,
+                    acao="MEMBRO.update",
+                    membro=membro,
+                    origem="sca_conflict_resolution",
+                    campos_alterados=sensitive_fields_changed(anteriores_sensiveis, novos_sensiveis),
+                    request=request,
+                    extra_novos={"conflict_id": conflict.pk, "campo_resolvido": conflict.campo},
+                )
 
         return Response(ConflictLogDetailSerializer(conflict).data, status=status.HTTP_200_OK)
 

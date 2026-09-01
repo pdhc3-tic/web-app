@@ -6,6 +6,7 @@ from .views import (
     ComunidadeViewSet,
     CulturaListView,
     EspecieAnimalListView,
+    MembroExportView,
     MembroViewSet,
     ProductionViewSet,
     SGPChoicesView,
@@ -182,6 +183,16 @@ urlpatterns = router.urls + [
         "sgp/upfs/<int:upf_pk>/membros/transferir-titularidade/",
         MembroViewSet.as_view({"post": "transferir_titularidade"}),
         name="upf-membros-transferir-titularidade",
+    ),
+    path(
+        "sgp/upfs/<int:upf_pk>/membros/exportar/",
+        MembroViewSet.as_view({"get": "exportar"}),
+        name="upf-membros-exportar",
+    ),
+    path(
+        "sgp/membros/exportar/",
+        MembroExportView.as_view(),
+        name="membros-exportar",
     ),
     path(
         'municipios/<int:municipio_id>/comunidades/',

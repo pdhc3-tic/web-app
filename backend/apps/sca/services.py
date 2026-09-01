@@ -21,6 +21,8 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from apps.core.models.notifications import Notification, TipoNotificacao
+from apps.core.sensitive_fields import sensitive_fields_visible_to
+from apps.core.services.membro_audit import log_membro_change, sensitive_fields_changed
 from apps.core.services.permissions import user_territories
 from apps.sca.models import ConflictLog, SyncDevice, SyncEvent
 from apps.sca.serializers import ENTITY_SERIALIZERS
@@ -165,6 +167,7 @@ class PushProcessor:
         self.tipo_conexao = tipo_conexao
         self.territory_ids = territory_ids_for(user)
         self.uuid_map: dict[str, int] = {}
+        self.visible_sensitive_fields = sensitive_fields_visible_to(user)
 
     # -- entrada ------------------------------------------------------------
     def process(self, items) -> list[dict]:
@@ -233,9 +236,23 @@ class PushProcessor:
         except KeyError as exc:
             raise SyncEntityError(f"PAYLOAD_INVALIDO: sem serializer para '{entity.name}'.") from exc
 
+        self._reject_unauthorized_sensitive_write(entity, data)
+
         if item["operacao"] == "create":
             return self._handle_create(entity, item, data)
         return self._handle_update(entity, item, data)
+
+    def _reject_unauthorized_sensitive_write(self, entity, data) -> None:
+        negados = [
+            path
+            for path, sensitive_field in entity.restricted_paths_written(data).items()
+            if sensitive_field not in self.visible_sensitive_fields
+        ]
+        if negados:
+            raise SyncEntityError(
+                "CAMPO_SENSIVEL_NAO_AUTORIZADO: seu perfil não tem permissão "
+                f"para gravar os campos: {', '.join(sorted(negados))}."
+            )
 
     # -- helpers ------------------------------------------------------------
     def _result(self, item, status: str, id_servidor=None, erro=None) -> dict:
@@ -300,10 +317,33 @@ class PushProcessor:
             uuid_map=self.uuid_map,
         )
         self.uuid_map[str(uuid_local)] = instance.pk
+        self._audit_membro_change(entity, item, "MEMBRO.create", instance, anteriores_sensiveis=None)
         return self._result(item, "ok", id_servidor=instance.pk)
 
     def _norm_payload(self, entity, data) -> dict:
         return {path: str(value) for path, value in entity.flatten(data).items()}
+
+    # -- auditoria de membro (MembroFamilia via 'member' ou titular via 'upf') --
+    def _membro_for_entity(self, entity, instance):
+        if entity.name == "member":
+            return instance
+        if entity.name == "upf":
+            return instance.titular
+        return None
+
+    def _audit_membro_change(self, entity, item, acao, instance, anteriores_sensiveis) -> None:
+        membro = self._membro_for_entity(entity, instance)
+        if membro is None:
+            return
+        novos_sensiveis = {"saude": membro.saude, "cor_raca": membro.cor_raca}
+        log_membro_change(
+            user=self.user,
+            acao=acao,
+            membro=membro,
+            origem="sca",
+            campos_alterados=sensitive_fields_changed(anteriores_sensiveis, novos_sensiveis),
+            extra_novos={"device_id": self.device_id, "uuid_local": str(item["uuid_local"])},
+        )
 
     # -- update -------------------------------------------------------------
     def _handle_update(self, entity, item, data, existing=None) -> dict:
@@ -330,7 +370,14 @@ class PushProcessor:
         )
 
         if result.changes_to_apply:
+            membro_antes = self._membro_for_entity(entity, instance)
+            anteriores_sensiveis = (
+                {"saude": membro_antes.saude, "cor_raca": membro_antes.cor_raca}
+                if membro_antes is not None
+                else None
+            )
             entity.apply_changes(instance, result.changes_to_apply)
+            self._audit_membro_change(entity, item, "MEMBRO.update", instance, anteriores_sensiveis)
 
         self._record_conflicts(entity, item, instance, result)
 
@@ -504,13 +551,18 @@ def build_pull(user, device, since, tipo_conexao: str | None = None) -> dict:
         )
         return payload
 
+    visible_sensitive_fields = sensitive_fields_visible_to(user)
+
     group_key = {"upf": "upfs", "member": "members", "activity": "activities"}
     for entity in ENTITY_REGISTRY.values():
         qs = entity.filter_by_territories(entity.model.objects.all(), territory_ids)
         if since is not None:
             qs = entity.filter_since(qs, since)
         qs = qs.select_related(*_pull_select_related(entity)).prefetch_related(*_pull_prefetch(entity)).order_by("atualizado_em")
-        payload[group_key[entity.name]] = [entity.serialize(obj) for obj in qs]
+        payload[group_key[entity.name]] = [
+            entity.redact_restricted(entity.serialize(obj), visible_sensitive_fields)
+            for obj in qs
+        ]
 
     if device:
         SyncDevice.objects.filter(pk=device.pk).update(ultimo_pull_em=server_time)
