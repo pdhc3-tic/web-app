@@ -12,7 +12,6 @@ import { Pagination } from "@/app/components/ui/Pagination/Pagination";
 import { RestrictedAccess } from "@/app/components/ui/RestrictedAccess/RestrictedAccess";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 import { ApiError } from "@/app/lib/api";
-import { localDayEndISO, localDayStartISO } from "@/app/lib/datetime";
 import {
   fetchSyncEventsFiltroOptions,
   listSyncEvents,
@@ -162,10 +161,11 @@ function SyncEventsView() {
       {
         limit,
         offset,
-        // Datas do input <type=date> são LOCAIS; convertidas para ISO em UTC
-        // preservando o fuso do navegador. Ver localDayStartISO/localDayEndISO.
-        iniciadoDe: localDayStartISO(filters.de),
-        iniciadoAte: localDayEndISO(filters.ate),
+        // O "YYYY-MM-DD" do input vai cru: desde a #212 quem recorta o dia é o
+        // backend, no TIME_ZONE do servidor. Converter para ISO em UTC aqui
+        // voltaria a deslocar a janela em 3h.
+        iniciadoDe: filters.de || undefined,
+        iniciadoAte: filters.ate || undefined,
         user: filters.tecnico ? Number(filters.tecnico) : undefined,
         device: filters.device ? Number(filters.device) : undefined,
         comErro: filters.comErro ? true : undefined,

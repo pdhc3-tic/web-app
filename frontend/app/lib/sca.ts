@@ -1,4 +1,4 @@
-import { apiClient } from "@/app/lib/api";
+import { ApiError, apiClient } from "@/app/lib/api";
 import type { Paginated } from "@/app/lib/users";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 
@@ -239,9 +239,15 @@ export type SyncEventDetail = SyncEventListItem & {
 export type ListSyncEventsParams = {
   limit: number;
   offset: number;
-  /** ISO datetime (backend `iniciado_em_gte`). */
+  /**
+   * Dia local "YYYY-MM-DD", cru (backend `data_inicio`).
+   *
+   * Desde a #212 o backend recebe o dia e faz o recorte no TIME_ZONE do
+   * servidor — não se converte mais para instante ISO em UTC aqui, que era o
+   * que deslocava a janela em 3h.
+   */
   iniciadoDe?: string;
-  /** ISO datetime (backend `iniciado_em_lte`). */
+  /** Dia local "YYYY-MM-DD", cru (backend `data_fim`). */
   iniciadoAte?: string;
   /** User id do técnico. */
   user?: number;
@@ -257,8 +263,8 @@ function buildSyncEventsQuery(params: ListSyncEventsParams): string {
   const qs = new URLSearchParams();
   qs.set("limit", String(params.limit));
   qs.set("offset", String(params.offset));
-  if (params.iniciadoDe) qs.set("iniciado_em_gte", params.iniciadoDe);
-  if (params.iniciadoAte) qs.set("iniciado_em_lte", params.iniciadoAte);
+  if (params.iniciadoDe) qs.set("data_inicio", params.iniciadoDe);
+  if (params.iniciadoAte) qs.set("data_fim", params.iniciadoAte);
   if (params.user !== undefined) qs.set("user", String(params.user));
   if (params.device !== undefined) qs.set("device", String(params.device));
   if (params.tipo) qs.set("tipo", params.tipo);
@@ -322,41 +328,116 @@ export type SyncEventsFiltroOptions = {
 };
 
 /**
+ * Teto real de `SCAPagination` (`max_limit = 100`). Pedir mais que isso é
+ * silenciosamente reduzido pelo DRF — era o furo do `?limit=500` anterior, que
+ * dava a impressão de trazer tudo numa resposta só.
+ */
+const SCA_PAGE_LIMIT = 100;
+
+/** Trava de segurança: nenhuma listagem do SCA justifica mais que isto. */
+const MAX_PAGINAS = 100;
+
+/** Rótulo estável do técnico — nunca vazio, para o select não ficar mudo. */
+function rotuloTecnico(t: SyncDeviceTecnico): string {
+  return t.nome?.trim() || t.email || `Técnico ${t.id}`;
+}
+
+function ordenarPorRotulo(opcoes: SelectOption[]): SelectOption[] {
+  return [...opcoes].sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+}
+
+/**
+ * Percorre TODAS as páginas de `/sca/devices/`, seguindo `next` até o fim.
+ *
+ * Uma resposta não é a lista completa: o `limit` pedido é limitado a 100 pelo
+ * `SCAPagination`, então qualquer instalação com mais dispositivos que isso
+ * teria a listagem truncada sem aviso.
+ */
+async function fetchTodosDispositivos(
+  signal?: AbortSignal,
+): Promise<SyncDeviceListItem[]> {
+  const todos: SyncDeviceListItem[] = [];
+  let offset = 0;
+
+  for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
+    const res = await apiClient(
+      `/api/v1/sca/devices/?limit=${SCA_PAGE_LIMIT}&offset=${offset}`,
+      { signal },
+    );
+    const data = (await res.json()) as SyncDevicesPaginated;
+    todos.push(...data.results);
+
+    // `next` nulo encerra; results vazio protege contra resposta degenerada
+    // que manteria o laço girando no mesmo offset.
+    if (!data.next || data.results.length === 0) break;
+    offset += data.results.length;
+  }
+
+  return todos;
+}
+
+/**
+ * Fonte dedicada de técnicos (`GET /api/v1/sca/tecnicos/`), não paginada e com
+ * a mesma permissão das telas irmãs. Cobre também quem tem evento no histórico
+ * mas já não tem dispositivo.
+ *
+ * Devolve `null` — em vez de propagar o erro — quando o endpoint ainda não
+ * existe no backend implantado, para o chamador cair no fallback.
+ */
+async function fetchTecnicosDedicado(
+  signal?: AbortSignal,
+): Promise<SelectOption[] | null> {
+  try {
+    const res = await apiClient("/api/v1/sca/tecnicos/", { signal });
+    const data = (await res.json()) as SyncDeviceTecnico[];
+    return ordenarPorRotulo(
+      data.map((t) => ({ value: String(t.id), label: rotuloTecnico(t) })),
+    );
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
+/**
  * Opções de dispositivo e de técnico para os filtros do log (#157).
  *
- * Não há endpoint dedicado a "listar options"; reaproveita
- * `/api/v1/sca/devices/?limit=500` — a listagem inteira numa chamada, não a
- * página corrente, e a mesma que o painel #156 consome (o cache de HTTP
- * costuma bater). Os técnicos saem daí deduplicados por `tecnico.id`.
+ * Técnicos vêm de `/api/v1/sca/tecnicos/`, a fonte completa e autorizada: não é
+ * paginada e inclui quem só aparece no histórico de eventos, sem dispositivo
+ * vinculado. Enquanto esse endpoint não estiver implantado, a função cai num
+ * fallback que percorre **todas** as páginas de `/sca/devices/` e deduplica por
+ * `tecnico.id` — o que ainda deixa de fora o técnico sem dispositivo, mas nunca
+ * trata uma única resposta como lista completa.
  *
- * Por que não `/api/v1/users/`: aquele endpoint é `IsSuperAdmin`, enquanto
- * esta tela é Super Admin **ou** UGP — usá-lo deixaria o select vazio para a
- * UGP, que hoje enxerga o log. Limite conhecido desta fonte: um técnico cujo
- * dispositivo foi apagado não aparece, embora seus eventos continuem no
- * histórico. Uma fonte completa e autorizada é pedido de backend (ver
- * docs/pendencias-backend-sprint-8.md).
+ * Por que não `/api/v1/users/`: aquele endpoint é `IsSuperAdmin`, enquanto esta
+ * tela é Super Admin **ou** UGP — usá-lo deixaria o select vazio para a UGP.
  */
 export async function fetchSyncEventsFiltroOptions(
   signal?: AbortSignal,
 ): Promise<SyncEventsFiltroOptions> {
-  const res = await apiClient("/api/v1/sca/devices/?limit=500", { signal });
-  const data = (await res.json()) as SyncDevicesPaginated;
+  const [tecnicosDedicados, todosDispositivos] = await Promise.all([
+    fetchTecnicosDedicado(signal),
+    fetchTodosDispositivos(signal),
+  ]);
 
-  const dispositivos = data.results.map((d) => ({
+  const dispositivos = todosDispositivos.map((d) => ({
     value: String(d.id),
-    label: `${d.nome || d.device_id} · ${d.tecnico.nome}`,
+    label: `${d.nome || d.device_id} · ${rotuloTecnico(d.tecnico)}`,
   }));
 
+  if (tecnicosDedicados) {
+    return { dispositivos, tecnicos: tecnicosDedicados };
+  }
+
   const porTecnico = new Map<number, string>();
-  for (const d of data.results) {
+  for (const d of todosDispositivos) {
     if (!porTecnico.has(d.tecnico.id)) {
-      porTecnico.set(d.tecnico.id, d.tecnico.nome || d.tecnico.email);
+      porTecnico.set(d.tecnico.id, rotuloTecnico(d.tecnico));
     }
   }
-  const tecnicos = Array.from(porTecnico, ([id, nome]) => ({
-    value: String(id),
-    label: nome,
-  })).sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  const tecnicos = ordenarPorRotulo(
+    Array.from(porTecnico, ([id, label]) => ({ value: String(id), label })),
+  );
 
   return { dispositivos, tecnicos };
 }

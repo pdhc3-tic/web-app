@@ -1,5 +1,4 @@
 import { apiClient } from "@/app/lib/api";
-import { localDayEndISO, localDayStartISO } from "@/app/lib/datetime";
 import type { Paginated } from "@/app/lib/users";
 import type { Territorio } from "@/app/lib/auth/types";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
@@ -66,13 +65,11 @@ function buildUpfsQuery(params: ListUpfsParams): string {
   else if (params.status === "inativas") qs.set("ativa", "false");
   else if (params.status === "todas") qs.set("ativa", "");
 
-  // Range de "cadastrado em": input local → ISO em UTC preservando o fuso do
-  // navegador. Concatenar `T…Z` puro deslocaria a janela em horas — ver
-  // localDayStartISO/localDayEndISO em lib/datetime.
-  const criadoDe = localDayStartISO(params.cadastradoDe);
-  const criadoAte = localDayEndISO(params.cadastradoAte);
-  if (criadoDe) qs.set("criado_em__gte", criadoDe);
-  if (criadoAte) qs.set("criado_em__lte", criadoAte);
+  // Range de "cadastrado em": o "YYYY-MM-DD" do input vai cru. Desde a #212 o
+  // backend recorta o dia no TIME_ZONE do servidor — converter para ISO em UTC
+  // aqui era justamente o que deslocava a janela em horas.
+  if (params.cadastradoDe) qs.set("cadastrado_de", params.cadastradoDe);
+  if (params.cadastradoAte) qs.set("cadastrado_ate", params.cadastradoAte);
 
   return qs.toString();
 }

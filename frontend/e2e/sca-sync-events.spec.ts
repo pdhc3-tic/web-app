@@ -28,6 +28,17 @@ function linhasVisiveis(page: Page): Locator {
 }
 
 /**
+ * Linhas marcadas com erro. `data-has-erros` está no próprio <tr>, e
+ * `filter({ has })` do Playwright casa apenas DESCENDENTES — por isso o
+ * seletor combina as duas condições no mesmo elemento.
+ */
+function linhasComErro(page: Page): Locator {
+  return page.locator(
+    'tr[data-testid^="sync-event-row-"][data-has-erros="true"]',
+  );
+}
+
+/**
  * Aguarda uma resposta GET da listagem que satisfaça `predicate` sobre a
  * querystring. Chame ANTES da ação que dispara o refetch (Promise já pendurada
  * para não perder responses rápidos). Assim o teste não corre atrás da UI —
@@ -61,10 +72,10 @@ test.describe("SCA — Log de Sincronização", () => {
     await abrirLog(page);
 
     // Marca as linhas com erro no HTML (data-has-erros) — mais estável do que
-    // depender só de classe visual.
-    const linhaComErro = linhasVisiveis(page)
-      .filter({ has: page.locator('[data-has-erros="true"]') })
-      .first();
+    // depender só de classe visual. O atributo fica no PRÓPRIO <tr>, então o
+    // seletor precisa ser de atributo: `filter({ has })` casa descendentes e
+    // nunca encontraria a linha.
+    const linhaComErro = linhasComErro(page).first();
 
     // Filtro auxiliar quando o registro específico não fica na primeira
     // página; se cair no fallback, restringimos por "com erro" pra reduzir.
@@ -82,9 +93,7 @@ test.describe("SCA — Log de Sincronização", () => {
       await expect(linhasVisiveis(page).first()).toBeVisible();
     }
 
-    const linha = linhasVisiveis(page)
-      .filter({ has: page.locator('[data-has-erros="true"]') })
-      .first();
+    const linha = linhasComErro(page).first();
 
     await expect(linha).toBeVisible();
     await expect(linha).toHaveAttribute("data-has-erros", "true");
@@ -129,11 +138,15 @@ test.describe("SCA — Log de Sincronização", () => {
     //
     // Pendura o listener ANTES dos fills — precisa esperar o request com
     // AMBOS os filtros aplicados (o fill de "De" sozinho já dispararia um
-    // request intermediário, sem `iniciado_em_lte`).
+    // request intermediário, sem `data_fim`).
+    //
+    // Nomes de parâmetro conforme a #212: o backend recebe o dia cru e recorta
+    // no fuso do servidor, e o valor enviado é o mesmo "YYYY-MM-DD" do input.
     const refetch = esperarRefetch(
       page,
       (params) =>
-        params.has("iniciado_em_gte") && params.has("iniciado_em_lte"),
+        params.get("data_inicio") === isoDia &&
+        params.get("data_fim") === isoDia,
     );
     await page.getByLabel("De", { exact: true }).fill(isoDia);
     await page.getByLabel("Até", { exact: true }).fill(isoDia);
@@ -245,7 +258,7 @@ test.describe("SCA — Log de Sincronização", () => {
     );
   });
 
-  test("técnico combina com período e dispositivo na mesma query", async ({
+  test("técnico, dispositivo e período viajam juntos na mesma requisição", async ({
     page,
   }) => {
     await abrirLog(page);
@@ -261,21 +274,115 @@ test.describe("SCA — Log de Sincronização", () => {
     await page.getByRole("option", { name: nomeTecnico, exact: true }).click();
     await refetchTecnico;
 
-    // Período por cima do técnico: a query precisa levar os dois, não trocar
-    // um pelo outro.
+    // Dispositivo por cima do técnico.
+    await page.getByLabel("Dispositivo", { exact: true }).click();
+    const refetchDevice = esperarRefetch(
+      page,
+      (p) => p.has("user") && p.has("device"),
+    );
+    await page.getByRole("option").nth(1).click();
+    await refetchDevice;
+
+    // E o período por cima dos dois: um filtro não pode substituir o outro.
     const hoje = new Date().toISOString().slice(0, 10);
     const refetchCombinado = esperarRefetch(
       page,
       (p) =>
-        p.has("user") && p.has("iniciado_em_gte") && p.has("iniciado_em_lte"),
+        p.has("user") &&
+        p.has("device") &&
+        p.get("data_inicio") === "2020-01-01" &&
+        p.get("data_fim") === hoje,
     );
     await page.getByLabel("De", { exact: true }).fill("2020-01-01");
     await page.getByLabel("Até", { exact: true }).fill(hoje);
-    await refetchCombinado;
+    const resposta = await refetchCombinado;
 
-    // E a URL reflete o conjunto inteiro, não só o último filtro mexido.
+    // Os quatro parâmetros na MESMA query, conferidos na própria URL da
+    // requisição — não em requisições diferentes que passaram perto.
+    const enviados = new URL(resposta.url()).searchParams;
+    expect(enviados.get("user")).toMatch(/^\d+$/);
+    expect(enviados.get("device")).toMatch(/^\d+$/);
+    expect(enviados.get("data_inicio")).toBe("2020-01-01");
+    expect(enviados.get("data_fim")).toBe(hoje);
+
+    // E a URL da página reflete o conjunto inteiro, não só o último mexido.
     await expect(page).toHaveURL(/[?&]tecnico=\d+/);
+    await expect(page).toHaveURL(/[?&]device=\d+/);
     await expect(page).toHaveURL(/[?&]de=2020-01-01/);
     await expect(page).toHaveURL(new RegExp(`[?&]ate=${hoje}`));
+  });
+
+  /**
+   * Cenário controlado do técnico fora da primeira página de dispositivos.
+   *
+   * O seed tem 3 dispositivos, então a paginação real nunca é exercitada aqui —
+   * as respostas de `/sca/devices/` são fixadas em duas páginas, com o técnico
+   * alvo aparecendo só na segunda. Sem percorrer as páginas, ele não estaria no
+   * select e não haveria como filtrar por ele.
+   *
+   * `/sca/tecnicos/` é fixado em 404 de propósito: este teste cobre justamente
+   * o fallback paginado, que é o caminho usado enquanto a #217 não é implantada.
+   */
+  test("técnico que só aparece na 2ª página de dispositivos entra no select", async ({
+    page,
+  }) => {
+    const TECNICO_DISTANTE = "Zulmira Paginada";
+
+    await page.route(/\/api\/v1\/sca\/tecnicos\/$/, (route) =>
+      route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "not_found", message: "Não encontrado." }),
+      }),
+    );
+
+    const device = (id: number, nome: string, tecnico: string) => ({
+      id,
+      device_id: `dev-${id}`,
+      nome,
+      modelo: "Modelo X",
+      sistema_operacional: "Android 14",
+      app_versao: "1.0.0",
+      tecnico: { id: 900 + id, nome: tecnico, email: `t${id}@demo.local` },
+      territorios: [],
+      ultimo_sync_servidor: null,
+      registros_pendentes: 0,
+      ativo: true,
+    });
+
+    await page.route(/\/api\/v1\/sca\/devices\/\?/, async (route) => {
+      const offset = Number(
+        new URL(route.request().url()).searchParams.get("offset") ?? "0",
+      );
+      const primeira = offset === 0;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          count: 2,
+          // `next` não-nulo na primeira página é o que obriga a varredura.
+          next: primeira ? "http://x/api/v1/sca/devices/?offset=1" : null,
+          previous: null,
+          limiar_alerta_dias: 7,
+          results: primeira
+            ? [device(1, "Tablet A", "Aurora Primeira")]
+            : [device(2, "Tablet B", TECNICO_DISTANTE)],
+        }),
+      });
+    });
+
+    await abrirLog(page);
+
+    await page.getByLabel("Técnico", { exact: true }).click();
+    await expect(
+      page.getByRole("option", { name: TECNICO_DISTANTE, exact: true }),
+    ).toBeVisible();
+
+    // E é selecionável: vira `user` na requisição, como qualquer outro.
+    const refetch = esperarRefetch(page, (p) => p.get("user") === "902");
+    await page
+      .getByRole("option", { name: TECNICO_DISTANTE, exact: true })
+      .click();
+    await refetch;
   });
 });
