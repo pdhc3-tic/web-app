@@ -305,18 +305,58 @@ export async function fetchScaTerritoryOptions(
 }
 
 /**
- * Opções de dispositivo para o filtro do log (#157). Não há um endpoint
- * dedicado a "listar todos os dispositivos como options"; reaproveita o
- * próprio `/api/v1/sca/devices/` com limit alto — a mesma listagem que o
- * painel #156 já consome, então cache de HTTP costuma bater.
+ * Total de dispositivos registrados — número do card da tela-índice do SCA.
+ * `page_size=1` porque só interessa o `count` do envelope, mesmo padrão do
+ * `fetchUpfCount` do SGP.
  */
-export async function fetchDispositivoOptions(
+export async function fetchDeviceCount(signal?: AbortSignal): Promise<number> {
+  const res = await apiClient("/api/v1/sca/devices/?limit=1", { signal });
+  const data = (await res.json()) as SyncDevicesPaginated;
+  return data.count;
+}
+
+/** Opções dos dois selects do log de sincronização, de uma requisição só. */
+export type SyncEventsFiltroOptions = {
+  dispositivos: SelectOption[];
+  tecnicos: SelectOption[];
+};
+
+/**
+ * Opções de dispositivo e de técnico para os filtros do log (#157).
+ *
+ * Não há endpoint dedicado a "listar options"; reaproveita
+ * `/api/v1/sca/devices/?limit=500` — a listagem inteira numa chamada, não a
+ * página corrente, e a mesma que o painel #156 consome (o cache de HTTP
+ * costuma bater). Os técnicos saem daí deduplicados por `tecnico.id`.
+ *
+ * Por que não `/api/v1/users/`: aquele endpoint é `IsSuperAdmin`, enquanto
+ * esta tela é Super Admin **ou** UGP — usá-lo deixaria o select vazio para a
+ * UGP, que hoje enxerga o log. Limite conhecido desta fonte: um técnico cujo
+ * dispositivo foi apagado não aparece, embora seus eventos continuem no
+ * histórico. Uma fonte completa e autorizada é pedido de backend (ver
+ * docs/pendencias-backend-sprint-8.md).
+ */
+export async function fetchSyncEventsFiltroOptions(
   signal?: AbortSignal,
-): Promise<SelectOption[]> {
+): Promise<SyncEventsFiltroOptions> {
   const res = await apiClient("/api/v1/sca/devices/?limit=500", { signal });
   const data = (await res.json()) as SyncDevicesPaginated;
-  return data.results.map((d) => ({
+
+  const dispositivos = data.results.map((d) => ({
     value: String(d.id),
     label: `${d.nome || d.device_id} · ${d.tecnico.nome}`,
   }));
+
+  const porTecnico = new Map<number, string>();
+  for (const d of data.results) {
+    if (!porTecnico.has(d.tecnico.id)) {
+      porTecnico.set(d.tecnico.id, d.tecnico.nome || d.tecnico.email);
+    }
+  }
+  const tecnicos = Array.from(porTecnico, ([id, nome]) => ({
+    value: String(id),
+    label: nome,
+  })).sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+
+  return { dispositivos, tecnicos };
 }

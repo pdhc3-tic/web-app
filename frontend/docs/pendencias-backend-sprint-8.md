@@ -1,7 +1,9 @@
 # Pendências de backend — sprint 8 (pós-audit)
 
 *Compilado após o merge dos commits da sprint-8 em `frontend/sprint-8`
-(commits `cceb2b2` até `36599a5`, em 31/08/2026).*
+(commits `cceb2b2` até `36599a5`, em 31/08/2026). Revisado em 01/09/2026 com
+os itens levantados no review de PR do responsável pelo projeto — os três
+novos são os de número 7, 8 e 9.*
 
 Nenhum item aqui é destrave imediato do frontend — o frontend já foi
 entregue consumindo os endpoints/campos que existem hoje. Cada item
@@ -159,6 +161,75 @@ tela, usar os helpers em vez de recriar a concatenação.
 
 ---
 
+## 7. UGP ainda lê e resolve conflitos de sincronização — bloqueia o aceite de #158
+
+*Estado atual:* `ConflictLogViewSet.get_queryset` (`backend/apps/sca/views.py:308`)
+devolve o queryset **inteiro** para o perfil `ugp`, e a action `resolver`
+(`:331`) também o autoriza.
+
+O aceite limita a revisão de conflitos a Articulador Estadual e Super Admin. O
+frontend já foi ajustado: `canReviewSyncConflicts` não inclui mais a UGP, o
+item de menu some e as rotas `/sca/conflitos` e `/sca/conflitos/{id}` caem no
+403 da tela. Isso é **afordância, não recorte** — um usuário UGP com o token na
+mão continua lendo e resolvendo conflitos direto na API.
+
+**Fix sugerido** — em `get_queryset`, tirar `ugp` do ramo que retorna tudo, e em
+`resolver` trocar o `elif not (super-admin or ugp)` por só `super-admin`.
+Cuidado: a UGP continua com acesso legítimo ao restante do SCA
+(`SyncDeviceListView` e `SyncEventViewSet` usam `IsSuperAdminOrUGPReadOnly`) —
+o recorte é só nos conflitos.
+
+**Teste sugerido:** `GET /api/v1/sca/conflicts/` autenticado como `ugp` deve
+responder 403 (ou lista vazia, se preferirem manter o padrão de queryset
+vazio dos demais perfis).
+
+---
+
+## 8. Fonte de técnicos para o filtro do log de sincronização — melhoria de #157
+
+*Estado atual:* o filtro `user` já é aceito pelo `SyncEventFilter`
+(`backend/apps/sca/views.py:109`) — isso funciona. Falta uma fonte para
+**popular o select**.
+
+O frontend agora tem filtro por técnico independente do de dispositivo, e monta
+as opções deduplicando `tecnico` de `/api/v1/sca/devices/?limit=500`. Funciona
+e não precisa de nada novo, com uma lacuna conhecida: **técnico cujo dispositivo
+foi apagado não aparece no select**, embora seus eventos sigam no histórico.
+
+`/api/v1/users/` não serve como alternativa: é `IsSuperAdmin`
+(`apps/core/views/users.py:66`), enquanto o log é Super Admin **ou** UGP — usá-lo
+deixaria o select vazio justamente para a UGP.
+
+**Pedido (não urgente):** uma fonte não paginada e autorizada com os técnicos no
+escopo do usuário — endpoint dedicado, ou um metadado no envelope da listagem
+de sync-events com os pares `{id, nome}` presentes no histórico.
+
+---
+
+## 9. Formulários distintos por UPF — melhoria de #180
+
+*Estado atual:* NÃO EXISTE. Não confundir com a BE-18
+(`/api/v1/sgp/formularios-disponiveis/`), que lista formulários publicados para
+**novo** preenchimento — um formulário despublicado sai de lá e continua no
+histórico da família.
+
+O select "Formulário" da aba Formulários precisa dos formulários que já têm ao
+menos uma resposta naquela UPF. Antes as opções eram acumuladas página a página
+(um formulário que só aparecia na página 3 não estava no select ao abrir a aba);
+agora o frontend faz uma varredura própria da listagem sem filtro com
+`page_size=200` (`HistoricoPagination.max_page_size`) e deduplica por
+`formulario_id`.
+
+Lacuna conhecida: UPF com mais de 200 respostas pode deixar de fora um
+formulário que só apareça depois desse corte.
+
+**Pedido:** endpoint dedicado, ou um metadado não paginado no envelope da BE-16
+com os pares `{formulario_id, formulario_nome}` existentes naquela UPF. Assim
+que existir, o helper `listFormulariosRespondidos`
+(`frontend/app/lib/formularios.ts`) passa a chamá-lo e a varredura sai.
+
+---
+
 ## Resumo — o que fica pendente no backend para o sprint 8
 
 | # | Item | Bloqueia |
@@ -168,3 +239,10 @@ tela, usar os helpers em vez de recriar a concatenação.
 | 3 | Endpoint admin de token Power BI (`GET` + `POST /regenerar`)                 | tela inteira (#143) |
 | 4 | Endpoint `GET /api/v1/sgp/upfs/{upf_pk}/membros/exportar/`                   | tela inteira (#191) |
 | 5 | Seed com `FormResponse` + `MembroFamilia` com campos sensíveis               | destrave dos E2E de #178/#179/#180/#181/#192 |
+| 7 | Tirar `ugp` do `ConflictLogViewSet` (queryset + action `resolver`)           | recorte real de acesso aos conflitos (#158) — hoje só o menu esconde |
+| 8 | Fonte não paginada de técnicos no escopo do usuário                          | (melhoria) técnico sem dispositivo no select do log (#157) |
+| 9 | Formulários distintos por UPF (endpoint ou metadado na BE-16)                | (melhoria) UPF com +200 respostas no select da aba Formulários (#180) |
+
+Os itens 7, 8 e 9 vieram do review de PR de 01/09/2026. O 7 é o único que
+bloqueia um critério de aceite; 8 e 9 são lacunas conhecidas de soluções que já
+estão funcionando no frontend.

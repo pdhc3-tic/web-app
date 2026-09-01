@@ -112,10 +112,12 @@ export function PreencherFormularioSlideOver({
             </Button>
           </div>
         ) : forms.length === 0 ? (
+          // Texto exato do aceite. Sem descrição complementar: a orientação de
+          // publicar um formulário no SGF é para quem administra o catálogo,
+          // não para quem abriu o seletor a partir da ficha da família.
           <EmptyState
             icon={<ClipboardList className="h-7 w-7" />}
-            title="Nenhum formulário disponível"
-            description="Publique ao menos um formulário com escopo UPF no SGF para que ele apareça aqui."
+            title="Nenhum formulário disponível para vincular a famílias no momento."
           />
         ) : (
           <ul className="flex flex-col gap-2">

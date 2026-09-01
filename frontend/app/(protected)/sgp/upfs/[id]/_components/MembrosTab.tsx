@@ -237,42 +237,50 @@ export function MembrosTab({ upfId }: Props) {
 
   return (
     <div className="space-y-4" data-testid="membros-tab">
-      {/* Card-resumo + botão de adicionar. Com a UPF vazia nada disso aparece:
-          o EmptyState já diz o total (nenhum) e pede o Titular. */}
+      {/* Card-resumo — aparece também com a UPF vazia. Total zero e faixas
+          zeradas são informação, e é justamente aí que o alerta de "sem
+          Titular" mais importa; escondê-lo junto com a lista tirava da tela o
+          único aviso de que a UPF está irregular. O alerta não pisca à espera
+          do resumo: sem membros `semTitular` já é true pelo fallback da
+          listagem, então ele entra junto com o card e não muda depois. */}
+      {!loading && !error && (
+        <ComposicaoResumoCard
+          resumo={resumo}
+          loading={resumoLoading}
+          semTitular={semTitular}
+          onRetry={() => setResumoKey((k) => k + 1)}
+        />
+      )}
+
+      {/* A barra de ações continua atrelada à lista: exportar CSV de uma UPF
+          sem membros não tem o que gerar, e o CTA de cadastro com zero membros
+          é o do EmptyState logo abaixo ("Adicionar primeiro membro"). */}
       {!loading && !error && membros.length > 0 && (
-        <>
-          <ComposicaoResumoCard
-            resumo={resumo}
-            loading={resumoLoading}
-            semTitular={semTitular}
-            onRetry={() => setResumoKey((k) => k + 1)}
-          />
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              leftIcon={
-                exporting ? (
-                  <Spinner className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Download className="h-4 w-4" />
-                )
-              }
-              disabled={exporting}
-              onClick={handleExport}
-              data-testid="membros-exportar-csv"
-            >
-              {exporting ? "Exportando…" : "Exportar CSV"}
-            </Button>
-            <Button
-              size="sm"
-              leftIcon={<Plus className="h-4 w-4" />}
-              onClick={openCreate}
-            >
-              Adicionar membro
-            </Button>
-          </div>
-        </>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            leftIcon={
+              exporting ? (
+                <Spinner className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )
+            }
+            disabled={exporting}
+            onClick={handleExport}
+            data-testid="membros-exportar-csv"
+          >
+            {exporting ? "Exportando…" : "Exportar CSV"}
+          </Button>
+          <Button
+            size="sm"
+            leftIcon={<Plus className="h-4 w-4" />}
+            onClick={openCreate}
+          >
+            Adicionar membro
+          </Button>
+        </div>
       )}
 
       {loading && <CarregandoSection />}

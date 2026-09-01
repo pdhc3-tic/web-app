@@ -7,6 +7,8 @@ export type SyncEventsFiltrosValue = {
   /** YYYY-MM-DD (input nativo). */
   de: string;
   ate: string;
+  /** Id do técnico (User.id) como string; "" = todos. */
+  tecnico: string;
   /** Id do dispositivo como string; "" = todos. */
   device: string;
   /** Só eventos com erros. */
@@ -17,25 +19,28 @@ type Props = {
   value: SyncEventsFiltrosValue;
   onChange: (next: SyncEventsFiltrosValue) => void;
   dispositivoOptions: SelectOption[];
+  tecnicoOptions: SelectOption[];
   disabled?: boolean;
 };
 
 /**
- * Filtros do log de sincronização (#157). "Técnico/dispositivo" do critério
- * é atendido pelo select de dispositivo — cada dispositivo já pertence a um
- * técnico único no seed (round-robin), então filtrar por dispositivo é o
- * caminho natural. Uma pesquisa por técnico independente exigiria um endpoint
- * dedicado a listar técnicos (não existe hoje).
+ * Filtros do log de sincronização (#157).
+ *
+ * Técnico e dispositivo são independentes e combináveis: filtrar por
+ * dispositivo não cobre o técnico que trocou de aparelho, e o backend aceita
+ * `user` e `device` na mesma query (SyncEventFilter). As opções de técnico vêm
+ * de `fetchSyncEventsFiltroOptions` — ver lá a nota sobre a fonte.
  */
 export function SyncEventsFiltros({
   value,
   onChange,
   dispositivoOptions,
+  tecnicoOptions,
   disabled,
 }: Props) {
   return (
     <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_minmax(0,2fr)]">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_minmax(0,2fr)_minmax(0,2fr)]">
         <Input
           label="De"
           type="date"
@@ -50,6 +55,13 @@ export function SyncEventsFiltros({
           value={value.ate}
           onChange={(e) => onChange({ ...value, ate: e.target.value })}
           min={value.de || undefined}
+          disabled={disabled}
+        />
+        <Select
+          label="Técnico"
+          value={value.tecnico}
+          onChange={(v) => onChange({ ...value, tecnico: v })}
+          options={[{ value: "", label: "Todos" }, ...tecnicoOptions]}
           disabled={disabled}
         />
         <Select

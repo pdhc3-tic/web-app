@@ -44,20 +44,32 @@ export function canManageWorkPlan(
 /**
  * Revisão dos conflitos de sincronização do SCA.
  *
- * Espelha `ConflictLogViewSet.get_queryset`: Super Admin e UGP enxergam tudo, o
- * Articulador Estadual enxerga os territórios dos seus estados, e os demais
- * perfis recebem lista vazia. A issue cita apenas Articulador e Super Admin,
- * mas esconder a tela da UGP não a impediria de ler os mesmos dados pela API —
- * se o acesso tiver de ser menor, o limite nasce no backend.
+ * O aceite libera apenas Articulador Estadual e Super Admin — a UGP fica de
+ * fora, e é isso que esta regra reflete (menu e gate das telas).
+ *
+ * ATENÇÃO: isto é afordância, não segurança. `ConflictLogViewSet.get_queryset`
+ * (backend/apps/sca/views.py) ainda devolve o queryset inteiro para o perfil
+ * `ugp`, e a action `resolver` também o autoriza — quem tiver o token continua
+ * lendo e resolvendo conflitos pela API. O recorte real depende da correção
+ * correspondente no backend (ver docs/pendencias-backend-sprint-8.md).
  */
 export function canReviewSyncConflicts(
   user: Pick<NonNullable<User>, "perfis"> | null | undefined,
 ): boolean {
-  return (
-    isSuperAdmin(user) ||
-    hasRole(user, UGP_SLUG) ||
-    hasRole(user, ARTICULADOR_ESTADUAL_SLUG)
-  );
+  return isSuperAdmin(user) || hasRole(user, ARTICULADOR_ESTADUAL_SLUG);
+}
+
+/**
+ * Painel de dispositivos e log de sincronização do SCA.
+ *
+ * Espelha `IsSuperAdminOrUGPReadOnly`, aplicado por `SyncDeviceListView` e
+ * `SyncEventViewSet` (backend/apps/sca/views.py). Serve para esconder os cards
+ * e afordâncias de quem receberia 403 — o limite real é o do backend.
+ */
+export function canViewScaAdmin(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return isSuperAdmin(user) || hasRole(user, UGP_SLUG);
 }
 
 export type SuperAdminState = {

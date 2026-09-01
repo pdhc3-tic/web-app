@@ -22,11 +22,16 @@ import { ConfirmarRegeneracaoDialog } from "./_components/ConfirmarRegeneracaoDi
 import { NovoTokenDialog } from "./_components/NovoTokenDialog";
 
 /**
- * Limite considerado "atrasado" para o snapshot do Power BI (#143 AC-2).
- * O critério da issue diz "intervalo esperado de 1h"; damos folga de 15 min
- * para acomodar variação do worker Celery.
+ * Limite considerado "atrasado" para o snapshot do Power BI (#143 AC-2):
+ * exatamente o "intervalo esperado de 1h" do critério, sem folga própria.
+ *
+ * Este cálculo local é fallback. Quando o backend expuser `status_snapshot`
+ * junto da config, o status do servidor passa a ser a fonte de verdade e este
+ * limiar só cobre a resposta que ainda não trouxer o campo — os endpoints
+ * administrativos da #143 não existem hoje (ver
+ * docs/pendencias-backend-sprint-8.md), então a tela segue em estado pendente.
  */
-const SNAPSHOT_ATRASO_MS = 75 * 60 * 1000;
+const SNAPSHOT_ATRASO_MS = 60 * 60 * 1000;
 
 function HeaderSlot() {
   return (

@@ -14,7 +14,7 @@ import type { SelectOption } from "@/app/components/ui/Select/Select";
 import { ApiError } from "@/app/lib/api";
 import { localDayEndISO, localDayStartISO } from "@/app/lib/datetime";
 import {
-  fetchDispositivoOptions,
+  fetchSyncEventsFiltroOptions,
   listSyncEvents,
   type SyncEventListItem,
 } from "@/app/lib/sca";
@@ -30,16 +30,56 @@ const PAGE_SIZES = [25, 50, 100];
 const DEFAULT_FILTERS: SyncEventsFiltrosValue = {
   de: "",
   ate: "",
+  tecnico: "",
   device: "",
   comErro: false,
 };
+
+/** Chaves espelhadas na querystring, na ordem em que aparecem na tela. */
+const FILTER_QS_KEYS = ["de", "ate", "tecnico", "device"] as const;
+
+function readFiltersFromSearchParams(
+  params: URLSearchParams,
+): SyncEventsFiltrosValue {
+  return {
+    de: params.get("de") ?? "",
+    ate: params.get("ate") ?? "",
+    tecnico: params.get("tecnico") ?? "",
+    device: params.get("device") ?? "",
+    comErro: params.get("com_erro") === "1",
+  };
+}
+
+/**
+ * Reflete os filtros na URL, preservando query params alheios a este conjunto.
+ * `replaceState` em vez de push: filtrar não é navegação, e cada tecla numa
+ * data viraria uma entrada no histórico do browser. Mesmo padrão do
+ * FormulariosTab da ficha da UPF.
+ */
+function syncFiltersToUrl(filters: SyncEventsFiltrosValue) {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  for (const key of FILTER_QS_KEYS) {
+    const value = filters[key];
+    if (value) url.searchParams.set(key, value);
+    else url.searchParams.delete(key);
+  }
+  if (filters.comErro) url.searchParams.set("com_erro", "1");
+  else url.searchParams.delete("com_erro");
+  window.history.replaceState(
+    null,
+    "",
+    `${url.pathname}${url.search}${url.hash}`,
+  );
+}
 
 /**
  * Tela do Log de Sincronização SCA (#157). Consome
  * `GET /api/v1/sca/sync-events/` — Super Admin/UGP no backend.
  *
- * Aceita `?device={id}` na URL para pré-filtrar por dispositivo — é o link
- * emitido pelo painel #156 ao clicar num dispositivo específico.
+ * Todos os filtros vivem na querystring (`?de=&ate=&tecnico=&device=&com_erro=`)
+ * — sobrevivem ao reload e podem ser compartilhados por link. `?device={id}`
+ * continua sendo o deep-link emitido pelo painel #156.
  */
 export default function SyncEventsPage() {
   return (
@@ -58,15 +98,13 @@ function CenteredSpinner() {
 }
 
 function SyncEventsView() {
-  // O deep-link do #156 chega em `?device=` — inicializa o filtro a partir
-  // dele. Como a inicialização é feita na primeira renderização (useState
-  // lazy), mudanças posteriores na URL não sobrescrevem o filtro escolhido
-  // pelo usuário — é intencional; querystring é só o ponto de entrada.
+  // A querystring é lida uma vez, na primeira renderização (useState lazy): a
+  // partir daí quem manda é o estado, e é ele que reescreve a URL. Ler a cada
+  // render criaria um laço com o replaceState logo abaixo.
   const searchParams = useSearchParams();
-  const [filters, setFilters] = useState<SyncEventsFiltrosValue>(() => ({
-    ...DEFAULT_FILTERS,
-    device: searchParams.get("device") ?? "",
-  }));
+  const [filters, setFilters] = useState<SyncEventsFiltrosValue>(() =>
+    readFiltersFromSearchParams(new URLSearchParams(searchParams.toString())),
+  );
 
   const [limit, setLimit] = useState(DEFAULT_LIMIT);
   const [offset, setOffset] = useState(0);
@@ -82,19 +120,34 @@ function SyncEventsView() {
   const [dispositivoOptions, setDispositivoOptions] = useState<SelectOption[]>(
     [],
   );
+  const [tecnicoOptions, setTecnicoOptions] = useState<SelectOption[]>([]);
 
-  // Zera offset quando filtros mudam.
+  // Zera offset quando filtros mudam — inclusive o técnico, senão trocar o
+  // filtro na página 3 pediria um offset que o novo recorte não tem.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setOffset(0);
-  }, [filters.de, filters.ate, filters.device, filters.comErro]);
+  }, [
+    filters.de,
+    filters.ate,
+    filters.tecnico,
+    filters.device,
+    filters.comErro,
+  ]);
 
-  // Options do select de dispositivo — falha silenciosa (o 403 principal
-  // vem do endpoint de eventos e cuida da tela de bloqueio).
+  useEffect(() => {
+    syncFiltersToUrl(filters);
+  }, [filters]);
+
+  // Options dos selects — uma requisição só para os dois. Falha silenciosa (o
+  // 403 principal vem do endpoint de eventos e cuida da tela de bloqueio).
   useEffect(() => {
     const controller = new AbortController();
-    fetchDispositivoOptions(controller.signal)
-      .then(setDispositivoOptions)
+    fetchSyncEventsFiltroOptions(controller.signal)
+      .then(({ dispositivos, tecnicos }) => {
+        setDispositivoOptions(dispositivos);
+        setTecnicoOptions(tecnicos);
+      })
       .catch(() => {});
     return () => controller.abort();
   }, []);
@@ -113,6 +166,7 @@ function SyncEventsView() {
         // preservando o fuso do navegador. Ver localDayStartISO/localDayEndISO.
         iniciadoDe: localDayStartISO(filters.de),
         iniciadoAte: localDayEndISO(filters.ate),
+        user: filters.tecnico ? Number(filters.tecnico) : undefined,
         device: filters.device ? Number(filters.device) : undefined,
         comErro: filters.comErro ? true : undefined,
       },
@@ -145,6 +199,7 @@ function SyncEventsView() {
     () =>
       filters.de !== "" ||
       filters.ate !== "" ||
+      filters.tecnico !== "" ||
       filters.device !== "" ||
       filters.comErro,
     [filters],
@@ -191,6 +246,7 @@ function SyncEventsView() {
           value={filters}
           onChange={setFilters}
           dispositivoOptions={dispositivoOptions}
+          tecnicoOptions={tecnicoOptions}
           disabled={isFirstLoad}
         />
 
@@ -220,7 +276,7 @@ function SyncEventsView() {
               }
               description={
                 hasActiveFilters
-                  ? "Ajuste o período ou o dispositivo e tente novamente."
+                  ? "Ajuste o período, o técnico ou o dispositivo e tente novamente."
                   : "Quando um dispositivo SCA fizer o primeiro push ou pull, o evento aparecerá aqui."
               }
               action={

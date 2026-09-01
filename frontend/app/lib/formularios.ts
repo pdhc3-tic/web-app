@@ -104,6 +104,55 @@ export async function listFormResponses(
   return res.json();
 }
 
+/**
+ * Teto de uma varredura: `HistoricoPagination.max_page_size` no backend
+ * (apps/sgp/pagination.py). Pedir mais que isso é silenciosamente reduzido.
+ */
+const OPCOES_PAGE_SIZE = 200;
+
+/** Par `{formulario_id, formulario_nome}` para o select da aba Formulários. */
+export type FormularioRespondidoOption = {
+  formulario_id: number;
+  formulario_nome: string;
+};
+
+/**
+ * Formulários com ao menos uma resposta nesta UPF, para popular o filtro.
+ *
+ * Não existe endpoint de "formulários distintos por UPF" (a BE-18 lista os
+ * disponíveis para *novo* preenchimento, que é outra coisa: um formulário
+ * despublicado sai de lá e continua no histórico). Enquanto ele não vem,
+ * varremos a listagem **sem filtro**, no maior page_size que o backend aceita,
+ * e deduplicamos por `formulario_id` — uma requisição, independente da página
+ * que a tabela estiver exibindo.
+ *
+ * Limite conhecido: UPF com mais de 200 respostas pode deixar de fora um
+ * formulário que só apareça depois desse corte. Na prática nenhuma chega
+ * perto; a solução definitiva é o endpoint pedido em
+ * docs/pendencias-backend-sprint-8.md.
+ */
+export async function listFormulariosRespondidos(
+  upfId: string | number,
+  signal?: AbortSignal,
+): Promise<FormularioRespondidoOption[]> {
+  const data = await listFormResponses(
+    upfId,
+    { page: 1, page_size: OPCOES_PAGE_SIZE },
+    signal,
+  );
+
+  const porId = new Map<number, string>();
+  for (const r of data.results) {
+    if (!porId.has(r.formulario_id)) porId.set(r.formulario_id, r.formulario_nome);
+  }
+  return Array.from(porId, ([formulario_id, formulario_nome]) => ({
+    formulario_id,
+    formulario_nome,
+  })).sort((a, b) =>
+    a.formulario_nome.localeCompare(b.formulario_nome, "pt-BR"),
+  );
+}
+
 /** GET /api/v1/sgp/upfs/{upfId}/formularios/{id}/ — resposta + respostas_json. */
 export async function getFormResponse(
   upfId: string | number,

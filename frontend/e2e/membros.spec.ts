@@ -244,22 +244,48 @@ test.describe("SGP — Aba Membros na UPF", () => {
     );
   });
 
-  test("UPF sem membros exibe o estado vazio com CTA para cadastrar o Titular", async ({
+  test("UPF sem membros exibe o card-resumo zerado, o alerta e o CTA para cadastrar o Titular", async ({
     page,
   }) => {
     const upfId = primeiroUpfId();
 
-    await page.route(LISTA_MEMBROS, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: "[]",
-      });
+    // Listagem e resumo fixados juntos: com zero membros o card precisa
+    // aparecer assim mesmo — total 0, faixas zeradas e o alerta de Atenção.
+    await stubComposicao(page, [], {
+      total_membros: 0,
+      faixa_etaria: {
+        "0-11": 0,
+        "12-17": 0,
+        "18-59": 0,
+        "60+": 0,
+        sem_data_nascimento: 0,
+      },
+      genero: { masculino: 0, feminino: 0, nao_binario: 0, nao_informado: 0 },
+      tem_titular: false,
     });
 
     await abrirAbaMembros(page, upfId);
 
+    // O card não some junto com a lista.
+    const card = page.getByTestId("membros-resumo");
+    await expect(card).toBeVisible();
+    await expect(card.getByTestId("membros-resumo-total")).toHaveText("0");
+    for (const faixa of ["0-11", "12-17", "18-59", "60+"]) {
+      await expect(card.getByTestId(`membros-resumo-faixa-${faixa}`)).toContainText(
+        "0",
+      );
+    }
+
+    const alerta = page.getByTestId("membros-sem-titular-alerta");
+    await expect(alerta).toBeVisible();
+    await expect(alerta).toContainText("Esta UPF não tem Titular.");
+    // Paleta "Atenção" do design system (--color-warning-bg).
+    await expect(alerta).toHaveCSS("background-color", "rgb(255, 248, 225)");
+
+    // Exportar CSV continua atrelado à lista — sem membros não há o que gerar.
+    await expect(page.getByTestId("membros-exportar-csv")).toHaveCount(0);
+
+    // O estado vazio e o CTA ficam logo abaixo do card.
     await expect(
       page.getByText("Nenhum membro cadastrado ainda.", { exact: true }),
     ).toBeVisible();

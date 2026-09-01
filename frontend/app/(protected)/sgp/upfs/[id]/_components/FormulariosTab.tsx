@@ -15,6 +15,7 @@ import {
   exportarRespostasFormularios,
   ExportRespostasTimeoutError,
   listFormResponses,
+  listFormulariosRespondidos,
   type FormatoExportRespostas,
   type FormResponseListItem,
 } from "@/app/lib/formularios";
@@ -137,11 +138,12 @@ function FormulariosTabView({ upfId }: Props) {
   const { showToast } = useToast();
 
   /**
-   * Opções do select de formulário: mantido acumulativo com os formulários
-   * vistos em qualquer página até agora. Como o BE-16 não expõe um endpoint
-   * de "formulários distintos por UPF", derivamos das respostas carregadas
-   * — em UPFs típicas isso cobre 100% dos formulários; em cenários com
-   * muitas páginas, o usuário paga a expansão à medida que navega.
+   * Opções do select de formulário. Carregadas de uma varredura própria da
+   * listagem sem filtro (`listFormulariosRespondidos`), não das respostas da
+   * página visível: um formulário cujas respostas só aparecem na página 3
+   * precisa estar no select assim que a aba abre, senão não há como filtrar
+   * por ele. Ver a nota do helper sobre o teto de 200 e o endpoint pedido ao
+   * backend.
    */
   const [formularioOptions, setFormularioOptions] = useState<
     Map<string, string>
@@ -199,13 +201,6 @@ function FormulariosTabView({ upfId }: Props) {
       .then((data) => {
         setRespostas(data.results);
         setCount(data.count);
-        setFormularioOptions((prev) => {
-          const next = new Map(prev);
-          for (const r of data.results) {
-            next.set(String(r.formulario_id), r.formulario_nome);
-          }
-          return next;
-        });
       })
       .catch((e: unknown) => {
         if (controller.signal.aborted) return;
@@ -221,6 +216,28 @@ function FormulariosTabView({ upfId }: Props) {
 
     return () => controller.abort();
   }, [upfId, page, filters, reloadKey]);
+
+  /**
+   * Opções do select — chave própria, independente de página e de filtro: o
+   * conjunto de formulários respondidos pela UPF não muda ao paginar, e recarregá-lo
+   * a cada troca de filtro esvaziaria o próprio select que acabou de filtrar.
+   * Falha silenciosa: o erro que importa é o da listagem, já tratado acima.
+   */
+  useEffect(() => {
+    const controller = new AbortController();
+
+    listFormulariosRespondidos(upfId, controller.signal)
+      .then((opcoes) => {
+        setFormularioOptions(
+          new Map(
+            opcoes.map((o) => [String(o.formulario_id), o.formulario_nome]),
+          ),
+        );
+      })
+      .catch(() => {});
+
+    return () => controller.abort();
+  }, [upfId, reloadKey]);
 
   const formularioSelectOptions = useMemo<SelectOption[]>(
     () =>
@@ -330,10 +347,13 @@ function FormulariosTabView({ upfId }: Props) {
         {filtros}
         <EmptyState
           icon={<ClipboardList className="h-7 w-7" />}
+          // Sem filtros o texto é o do aceite, palavra por palavra. Com filtro
+          // ativo o estado é outro — dizer "nunca respondeu" numa busca vazia
+          // mentiria sobre o histórico da família.
           title={
             hasActiveFilters
               ? "Nenhuma resposta com esses filtros"
-              : "Nenhuma resposta registrada"
+              : "Nenhum formulário respondido para esta família ainda."
           }
           description={
             hasActiveFilters

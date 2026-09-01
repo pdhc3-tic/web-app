@@ -28,6 +28,14 @@ test.describe("SGP — Aba Formulários na UPF", () => {
     const abaFormularios = page.getByRole("tab", { name: "Formulários" });
     await expect(abaFormularios).toBeVisible();
 
+    // Texto do aceite, palavra por palavra — sem filtro ativo o estado vazio
+    // fala da família, não da busca.
+    await expect(
+      page.getByText("Nenhum formulário respondido para esta família ainda.", {
+        exact: true,
+      }),
+    ).toBeVisible();
+
     // #formularios já ativa a aba via useHashTab — o CTA do empty state deve
     // aparecer sem clique adicional.
     const cta = page.getByTestId("formularios-preencher-novo");
@@ -37,6 +45,25 @@ test.describe("SGP — Aba Formulários na UPF", () => {
     // Os filtros (#180) precisam estar renderizados mesmo em empty state,
     // pra permitir busca antes que haja resultado.
     await expect(page.getByTestId("formularios-filtros")).toBeVisible();
+  });
+
+  test("com filtro ativo o estado vazio fala da busca, não do histórico da família", async ({
+    page,
+  }) => {
+    const upfId = primeiroUpfId();
+    // Filtro que não casa com nada: o texto do aceite não pode aparecer aqui,
+    // senão sugere que a família nunca respondeu formulário algum.
+    await page.goto(`/sgp/upfs/${upfId}?respondente=zzz-inexistente#formularios`);
+
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(
+      page.getByText("Nenhuma resposta com esses filtros", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Nenhum formulário respondido para esta família ainda.", {
+        exact: true,
+      }),
+    ).toHaveCount(0);
   });
 
   test("clique no CTA \"Preencher novo formulário\" abre o seletor de formulários", async ({
@@ -53,6 +80,41 @@ test.describe("SGP — Aba Formulários na UPF", () => {
     await expect(
       page.getByTestId("preencher-formulario-slideover"),
     ).toBeVisible();
+  });
+
+  test("seletor sem formulários publicados mostra o texto exato do aceite", async ({
+    page,
+  }) => {
+    const upfId = primeiroUpfId();
+
+    // O seed pode ou não ter formulário publicado; o estado vazio é do
+    // catálogo (BE-18), então fixamos a resposta para exercitá-lo sempre.
+    await page.route(/\/api\/v1\/sgp\/formularios-disponiveis\/$/, (route) =>
+      route.request().method() === "GET"
+        ? route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: "[]",
+          })
+        : route.fallback(),
+    );
+
+    await page.goto(`/sgp/upfs/${upfId}#formularios`);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await page.getByTestId("formularios-preencher-novo").click();
+
+    const painel = page.getByTestId("preencher-formulario-slideover");
+    await expect(painel).toBeVisible();
+    await expect(
+      painel.getByText(
+        "Nenhum formulário disponível para vincular a famílias no momento.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+
+    // Caminho de volta para a aba continua disponível.
+    await page.getByRole("button", { name: "Cancelar" }).click();
+    await expect(painel).toHaveCount(0);
   });
 
   test.fixme(

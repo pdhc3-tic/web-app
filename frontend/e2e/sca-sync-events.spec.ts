@@ -1,4 +1,10 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type Locator,
+  type Page,
+  type Response,
+} from "@playwright/test";
 import { storageStatePath } from "./helpers/users";
 
 /**
@@ -30,7 +36,7 @@ function linhasVisiveis(page: Page): Locator {
 function esperarRefetch(
   page: Page,
   predicate: (params: URLSearchParams) => boolean,
-): Promise<unknown> {
+): Promise<Response> {
   return page.waitForResponse((response) => {
     const url = new URL(response.url());
     if (!url.pathname.includes(SYNC_EVENTS_API)) return false;
@@ -101,15 +107,15 @@ test.describe("SCA — Log de Sincronização", () => {
     await abrirLog(page);
 
     // O topo da tabela é o evento mais recente (ordenação default do backend
-    // é -iniciado_em). Usamos a data absoluta desse evento (title do <span>
-    // com tempo relativo) como âncora — assim o teste independe de "hoje".
+    // é -iniciado_em). Usamos a data absoluta desse evento como âncora — assim
+    // o teste independe de "hoje".
     const primeiraLinha = linhasVisiveis(page).first();
-    const inicioColuna = primeiraLinha.locator("td").nth(1).locator("span");
-    const titulo = (await inicioColuna.getAttribute("title")) ?? "";
+    const texto = await primeiraLinha
+      .getByTestId("sync-event-inicio")
+      .innerText();
     // formato "dd/MM/yyyy HH:mm" (absoluteDateTime, pt-BR)
-    const match = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(titulo);
-    expect(match, `data absoluta não encontrada em title="${titulo}"`).not
-      .toBeNull();
+    const match = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(texto.trim());
+    expect(match, `data absoluta não encontrada em "${texto}"`).not.toBeNull();
     const dia = match![1];
     const mes = match![2];
     const ano = match![3];
@@ -141,15 +147,135 @@ test.describe("SCA — Log de Sincronização", () => {
     expect(totalDepois).toBeLessThanOrEqual(totalAntes);
     expect(totalDepois).toBeGreaterThan(0);
 
-    // Todos os eventos remanescentes devem ter a mesma data no title.
+    // Todos os eventos remanescentes devem exibir a mesma data no início.
     for (let i = 0; i < totalDepois; i++) {
-      const linha = linhasVisiveis(page).nth(i);
-      const t = await linha
-        .locator("td")
-        .nth(1)
-        .locator("span")
-        .getAttribute("title");
-      expect(t ?? "").toContain(`${dia}/${mes}/${ano}`);
+      const t = await linhasVisiveis(page)
+        .nth(i)
+        .getByTestId("sync-event-inicio")
+        .innerText();
+      expect(t).toContain(`${dia}/${mes}/${ano}`);
     }
+  });
+
+  test("colunas Início e Fim mostram data e hora, com travessão em evento sem término", async ({
+    page,
+  }) => {
+    await abrirLog(page);
+
+    // Cabeçalhos na ordem esperada — "Fim" entre "Início" e "Duração".
+    const cabecalhos = page.locator("thead th");
+    await expect(cabecalhos.nth(1)).toHaveText("Início");
+    await expect(cabecalhos.nth(2)).toHaveText("Fim");
+    await expect(cabecalhos.nth(3)).toHaveText("Duração");
+
+    const ABSOLUTA = /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/;
+
+    const total = await linhasVisiveis(page).count();
+    expect(total).toBeGreaterThan(0);
+
+    for (let i = 0; i < total; i++) {
+      const linha = linhasVisiveis(page).nth(i);
+
+      // Início sempre com data e hora — não só o tempo relativo.
+      const inicio = (
+        await linha.getByTestId("sync-event-inicio").innerText()
+      ).trim();
+      expect(inicio, `linha ${i}: início "${inicio}"`).toMatch(ABSOLUTA);
+
+      // Fim: ou data válida, ou o travessão do evento ainda em andamento —
+      // nunca "Invalid Date" / "NaN".
+      const fim = (await linha.getByTestId("sync-event-fim").innerText()).trim();
+      expect(fim, `linha ${i}: fim "${fim}"`).toMatch(
+        new RegExp(`(${ABSOLUTA.source})|^—$`),
+      );
+    }
+  });
+
+  test("filtro por técnico vai para a URL, sobrevive ao reload e envia user=<id>", async ({
+    page,
+  }) => {
+    await abrirLog(page);
+
+    // Âncora: o técnico do primeiro evento listado. Escolher pela tabela (e
+    // não pela primeira opção do select) garante que o recorte tem pelo menos
+    // um resultado — não existe "técnico com dispositivo mas sem evento" aqui.
+    const nomeTecnico = (
+      await linhasVisiveis(page)
+        .first()
+        .getByTestId("sync-event-tecnico")
+        .locator("span")
+        .first()
+        .innerText()
+    ).trim();
+    expect(nomeTecnico.length).toBeGreaterThan(0);
+
+    const select = page.getByLabel("Técnico", { exact: true });
+    await expect(select).toBeVisible();
+    await select.click();
+
+    // Listener pendurado ANTES do clique: a request precisa carregar `user`.
+    const refetch = esperarRefetch(page, (params) => params.has("user"));
+    await page.getByRole("option", { name: nomeTecnico, exact: true }).click();
+    const resposta = await refetch;
+    await expect(linhasVisiveis(page).first()).toBeVisible();
+
+    // O id enviado à API é o mesmo que foi para a querystring da página.
+    const userEnviado = new URL(resposta.url()).searchParams.get("user");
+    expect(userEnviado).toMatch(/^\d+$/);
+    await expect(page).toHaveURL(new RegExp(`[?&]tecnico=${userEnviado}(&|$)`));
+
+    // Todos os eventos listados são do técnico escolhido.
+    const total = await linhasVisiveis(page).count();
+    expect(total).toBeGreaterThan(0);
+    for (let i = 0; i < total; i++) {
+      await expect(
+        linhasVisiveis(page).nth(i).getByTestId("sync-event-tecnico"),
+      ).toContainText(nomeTecnico);
+    }
+
+    // Sobrevive ao reload: o filtro volta da URL, não do estado em memória.
+    const aposReload = esperarRefetch(
+      page,
+      (params) => params.get("user") === userEnviado,
+    );
+    await page.reload();
+    await aposReload;
+    await expect(page.getByLabel("Técnico", { exact: true })).toContainText(
+      nomeTecnico,
+    );
+  });
+
+  test("técnico combina com período e dispositivo na mesma query", async ({
+    page,
+  }) => {
+    await abrirLog(page);
+
+    const primeira = linhasVisiveis(page).first();
+    const nomeTecnico = (
+      await primeira.getByTestId("sync-event-tecnico").locator("span").first()
+        .innerText()
+    ).trim();
+
+    await page.getByLabel("Técnico", { exact: true }).click();
+    const refetchTecnico = esperarRefetch(page, (p) => p.has("user"));
+    await page.getByRole("option", { name: nomeTecnico, exact: true }).click();
+    await refetchTecnico;
+
+    // Período por cima do técnico: a query precisa levar os dois, não trocar
+    // um pelo outro.
+    const hoje = new Date().toISOString().slice(0, 10);
+    const refetchCombinado = esperarRefetch(
+      page,
+      (p) =>
+        p.has("user") && p.has("iniciado_em_gte") && p.has("iniciado_em_lte"),
+    );
+    await page.getByLabel("De", { exact: true }).fill("2020-01-01");
+    await page.getByLabel("Até", { exact: true }).fill(hoje);
+    await refetchCombinado;
+
+    // E a URL reflete o conjunto inteiro, não só o último filtro mexido.
+    await expect(page).toHaveURL(/[?&]tecnico=\d+/);
+    await expect(page).toHaveURL(/[?&]de=2020-01-01/);
+    await expect(page).toHaveURL(new RegExp(`[?&]ate=${hoje}`));
   });
 });
