@@ -83,6 +83,80 @@ def test_list_filters_by_completion_period(auth_client, upf):
     assert after.pk not in ids
 
 
+def test_list_filters_by_respondente_isnull_true(auth_client, upf):
+    anonima = FormResponseFactory(upf=upf, respondente=None)
+    FormResponseFactory(upf=upf, respondente="Maria Silva")
+
+    response = auth_client.get(list_url(upf), {"respondente_isnull": "true"})
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response_results(response)] == [anonima.pk]
+
+
+def test_list_filters_by_respondente_isnull_false(auth_client, upf):
+    identificada = FormResponseFactory(upf=upf, respondente="Maria Silva")
+    FormResponseFactory(upf=upf, respondente=None)
+
+    response = auth_client.get(list_url(upf), {"respondente_isnull": "false"})
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response_results(response)] == [identificada.pk]
+
+
+def test_respondente_isnull_combines_with_formulario_and_period(auth_client, upf):
+    esperada = FormResponseFactory(
+        upf=upf,
+        formulario_id=30,
+        respondente=None,
+        data_preenchimento=aware(2026, 2, 15),
+    )
+    FormResponseFactory(
+        upf=upf, formulario_id=30, respondente="Maria Silva",
+        data_preenchimento=aware(2026, 2, 15),
+    )
+    FormResponseFactory(
+        upf=upf, formulario_id=31, respondente=None,
+        data_preenchimento=aware(2026, 2, 15),
+    )
+    FormResponseFactory(
+        upf=upf, formulario_id=30, respondente=None,
+        data_preenchimento=aware(2026, 5, 1),
+    )
+
+    response = auth_client.get(
+        list_url(upf),
+        {
+            "formulario_id": 30,
+            "respondente_isnull": "true",
+            "data_inicio": "2026-02-01",
+            "data_fim": "2026-02-28",
+        },
+    )
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response_results(response)] == [esperada.pk]
+
+
+def test_respondente_isnull_combines_with_respondente_text_search(auth_client, upf):
+    esperada = FormResponseFactory(upf=upf, respondente="Maria Silva Souza")
+    FormResponseFactory(upf=upf, respondente="Maria Aparecida")
+    FormResponseFactory(upf=upf, respondente=None)
+
+    response = auth_client.get(
+        list_url(upf),
+        {"respondente": "silva", "respondente_isnull": "false"},
+    )
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response_results(response)] == [esperada.pk]
+
+
+def test_list_rejects_non_boolean_respondente_isnull(auth_client, upf):
+    response = auth_client.get(list_url(upf), {"respondente_isnull": "talvez"})
+
+    assert response.status_code == 400
+
+
 def test_list_preserves_null_respondent(auth_client, upf):
     form_response = FormResponseFactory(upf=upf, respondente=None)
 

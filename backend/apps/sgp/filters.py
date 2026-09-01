@@ -106,7 +106,20 @@ class FormResponseFilter(django_filters.FilterSet):
         field_name="data_preenchimento", lookup_expr="date__lte"
     )
     respondente = django_filters.CharFilter(lookup_expr="icontains")
+    # `true` retorna somente respostas anônimas (respondente IS NULL); `false`
+    # inverte a condição. Valor não booleano é rejeitado com 400 pelo
+    # DjangoFilterBackend (raise_exception=True por padrão).
+    respondente_isnull = django_filters.BooleanFilter(
+        field_name="respondente",
+        lookup_expr="isnull",
+    )
 
     class Meta:
         model = FormResponse
-        fields = ["formulario_id", "data_inicio", "data_fim", "respondente"]
+        fields = [
+            "formulario_id",
+            "data_inicio",
+            "data_fim",
+            "respondente",
+            "respondente_isnull",
+        ]
