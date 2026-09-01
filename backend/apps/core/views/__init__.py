@@ -18,6 +18,7 @@ from .organizations import OrganizationViewSet
 from .storage import LocalStorageUploadView
 from .system_config import (
     GoogleCalendarConfigView,
+    GoogleCalendarStatusView,
     SystemConfigDetailView,
     SystemConfigListView,
 )
@@ -41,6 +42,7 @@ __all__ = [
     "OrganizationViewSet",
     "LocalStorageUploadView",
     "GoogleCalendarConfigView",
+    "GoogleCalendarStatusView",
     "SystemConfigDetailView",
     "SystemConfigListView",
     "MunicipalityViewSet",

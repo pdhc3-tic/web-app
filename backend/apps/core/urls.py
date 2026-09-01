@@ -15,6 +15,7 @@ from .views import (
     AuditLogListView,
     LocalStorageUploadView,
     GoogleCalendarConfigView,
+    GoogleCalendarStatusView,
     SystemConfigListView,
     SystemConfigDetailView,
 )
@@ -38,6 +39,11 @@ urlpatterns = router.urls + [
         "core/config/google-calendar/",
         GoogleCalendarConfigView.as_view(),
         name="google-calendar-config",
+    ),
+    path(
+        "core/config/google-calendar/status/",
+        GoogleCalendarStatusView.as_view(),
+        name="google-calendar-status",
     ),
     path("system-config/", SystemConfigListView.as_view(), name="system-config-list"),
     path("system-config/<str:chave>/", SystemConfigDetailView.as_view(), name="system-config-detail"),
