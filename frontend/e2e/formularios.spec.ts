@@ -339,6 +339,117 @@ test.describe("SGP — Opções do filtro de formulário", () => {
     ).toBeVisible();
   });
 
+  /**
+   * Tamanho de página da tabela — `PAGE_SIZE` em `FormulariosTab.tsx`. O stub
+   * das duas páginas acima devolve `count: 2`, abaixo disso: a tabela nunca
+   * mostra uma segunda página e "sobreviver à paginação" ficava sem prova.
+   * Aqui a listagem filtrada devolve mais que uma página de verdade.
+   */
+  const PAGE_SIZE = 25;
+  const TOTAL_FILTRADO = 30;
+
+  /**
+   * Como `stubRespostasEmDuasPaginas`, mas a listagem *filtrada* por
+   * `formulario_id` devolve `TOTAL_FILTRADO` respostas — duas páginas na
+   * tabela. As duas rotas convivem porque o que as separa é a presença do
+   * filtro: a varredura do select nunca manda `formulario_id`.
+   */
+  async function stubComPaginacaoNaTabela(page: import("@playwright/test").Page) {
+    await page.route(/\/formularios\/opcoes\/$/, (route) =>
+      route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "not_found", message: "Não encontrado." }),
+      }),
+    );
+
+    await page.route(/\/api\/v1\/sgp\/upfs\/\d+\/formularios\/(\?|$)/, async (route) => {
+      const params = new URL(route.request().url()).searchParams;
+      const pagina = Number(params.get("page") ?? "1");
+
+      if (params.get("formulario_id") === String(ID_PAGINA_2)) {
+        const nesta = pagina === 1 ? PAGE_SIZE : TOTAL_FILTRADO - PAGE_SIZE;
+        const primeiro = 1000 + (pagina - 1) * PAGE_SIZE;
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            count: TOTAL_FILTRADO,
+            next: pagina === 1 ? "http://x/?page=2" : null,
+            previous: pagina === 1 ? null : "http://x/?page=1",
+            results: Array.from({ length: nesta }, (_, i) =>
+              resposta(primeiro + i, ID_PAGINA_2, PAGINA_2),
+            ),
+          }),
+        });
+      }
+
+      // Sem filtro: as mesmas duas páginas que a varredura do select percorre,
+      // com o formulário alvo só na segunda.
+      const page1 = pagina === 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          count: 2,
+          next: page1 ? "http://x/?page=2" : null,
+          previous: null,
+          results: page1
+            ? [resposta(1, 55, PAGINA_1)]
+            : [resposta(2, ID_PAGINA_2, PAGINA_2)],
+        }),
+      });
+    });
+  }
+
+  test("a seleção do formulário sobrevive à troca de página da tabela", async ({
+    page,
+  }) => {
+    const upfId = primeiroUpfId();
+    await stubComPaginacaoNaTabela(page);
+
+    await page.goto(`/sgp/upfs/${upfId}#formularios`);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+
+    await page.getByLabel("Formulário", { exact: true }).click();
+    await page.getByRole("option", { name: PAGINA_2, exact: true }).click();
+
+    // Primeira página do resultado filtrado: a tabela enche e sobra gente.
+    const linhas = page.getByTestId(/^formulario-row-/);
+    await expect(linhas).toHaveCount(PAGE_SIZE);
+
+    // A requisição da página 2 tem de levar o filtro junto — se a troca de
+    // página o descartasse, voltariam as respostas de todos os formulários.
+    const requisicaoPagina2 = page.waitForRequest((r) => {
+      const u = new URL(r.url());
+      return (
+        u.pathname.endsWith(`/upfs/${upfId}/formularios/`) &&
+        u.searchParams.get("page") === "2" &&
+        u.searchParams.get("page_size") === String(PAGE_SIZE)
+      );
+    });
+    await page.getByRole("button", { name: "Próxima página" }).click();
+    const enviado = new URL((await requisicaoPagina2).url()).searchParams;
+    expect(enviado.get("formulario_id")).toBe(String(ID_PAGINA_2));
+
+    // Chegou na página 2 e a seleção continua na tela e na URL.
+    await expect(linhas).toHaveCount(TOTAL_FILTRADO - PAGE_SIZE);
+    await expect(page.getByLabel("Formulário", { exact: true })).toContainText(
+      PAGINA_2,
+    );
+    await expect(page).toHaveURL(new RegExp(`formulario_id=${ID_PAGINA_2}`));
+
+    // E a opção segue no select depois de paginar: as opções não podem encolher
+    // para o que a página corrente devolveu — foi justamente esse o bug.
+    await page.getByLabel("Formulário", { exact: true }).click();
+    await expect(
+      page.getByRole("option", { name: PAGINA_2, exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("option", { name: PAGINA_1, exact: true }),
+    ).toBeVisible();
+  });
+
   test("a seleção do formulário distante sobrevive ao reload e à reabertura da aba", async ({
     page,
   }) => {
