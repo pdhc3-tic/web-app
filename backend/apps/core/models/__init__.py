@@ -11,8 +11,9 @@ from .notifications import Notification, NotificationPreference
 from .system_config import SystemConfig, TipoConfiguracao
 from .organization import Organization
 from .seed_import import SeedImportRecord
+from .power_bi_token import PowerBIToken
 
-__all__ = ['User', 
+__all__ = ['User',
            'Role', 
            'State', 
            'Territory', 
@@ -26,6 +27,7 @@ __all__ = ['User',
            'SystemConfig',
            'TipoConfiguracao',
            'Organization',
-           'SeedImportRecord']
+           'SeedImportRecord',
+           'PowerBIToken']
 
 

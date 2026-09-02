@@ -17,6 +17,8 @@ from .views import (
     GoogleCalendarConfigView,
     SystemConfigListView,
     SystemConfigDetailView,
+    PowerBITokenView,
+    PowerBITokenRegenerateView,
 )
 
 router = DefaultRouter()
@@ -41,4 +43,10 @@ urlpatterns = router.urls + [
     ),
     path("system-config/", SystemConfigListView.as_view(), name="system-config-list"),
     path("system-config/<str:chave>/", SystemConfigDetailView.as_view(), name="system-config-detail"),
+    path("admin/power-bi-token/", PowerBITokenView.as_view(), name="power-bi-token"),
+    path(
+        "admin/power-bi-token/regenerar/",
+        PowerBITokenRegenerateView.as_view(),
+        name="power-bi-token-regenerate",
+    ),
 ]
