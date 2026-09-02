@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Gauge, SearchX } from "lucide-react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { AlertTriangle, Download, Gauge, SearchX } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import Spinner from "@/app/components/icons/Spinner";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
@@ -13,15 +14,21 @@ import { ApiError } from "@/app/lib/api";
 import { useCanManageWorkPlan } from "@/app/lib/auth/roles";
 import type { Acao } from "@/app/lib/acoes";
 import { listMetas, type MetaListItem } from "@/app/lib/metas";
-import { acoesNoTerritorio, listTodasAcoes } from "@/app/lib/painel";
-import { avaliarAcao } from "@/app/lib/semaforo";
+import {
+  fetchPainel,
+  listTodasAcoes,
+  type PainelMetaGrupoApi,
+} from "@/app/lib/painel";
+import { avaliacaoDaApi } from "@/app/lib/semaforo";
 import { fetchTerritoryMap } from "@/app/lib/upfs";
 import { AcaoDetalheSlideOver } from "./_components/AcaoDetalheSlideOver";
+import { ExportarModal } from "./_components/ExportarModal";
 import { AlertaAcoesCriticas } from "./_components/AlertaAcoesCriticas";
 import { MetaResumoCard } from "./_components/MetaResumoCard";
 import {
   FILTROS_VAZIOS,
   PainelFilters,
+  SITUACOES_VALIDAS,
   type PainelFiltersValue,
 } from "./_components/PainelFilters";
 import type { AcaoAvaliada, MetaComAcoes } from "./_components/tipos";
@@ -34,32 +41,87 @@ function CenteredSpinner() {
   );
 }
 
-export default function PainelAcompanhamentoPage() {
-  const { loading: authLoading, canManage } = useCanManageWorkPlan();
+/** Ordena "1.10" depois de "1.9" — comparação numérica, não lexicográfica. */
+function compararNumeroAcao(a: string, b: string): number {
+  const [aMeta, aAcao] = a.split(".").map(Number);
+  const [bMeta, bAcao] = b.split(".").map(Number);
+  return (aMeta - bMeta) || (aAcao - bAcao);
+}
 
+function PainelAcompanhamentoConteudo() {
+  const { loading: authLoading, canManage } = useCanManageWorkPlan();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // Dados de apoio, carregados uma única vez.
   const [metas, setMetas] = useState<MetaListItem[]>([]);
-  const [acoes, setAcoes] = useState<Acao[]>([]);
+  const [detalhes, setDetalhes] = useState<Map<number, Acao>>(new Map());
   const [territorios, setTerritorios] = useState<SelectOption[]>([]);
-  const [dataLoading, setDataLoading] = useState(true);
+  const [apoioCarregado, setApoioCarregado] = useState(false);
+
+  // Resultado do painel, refeito a cada mudança de filtro.
+  const [grupos, setGrupos] = useState<PainelMetaGrupoApi[] | null>(null);
+  const [painelLoading, setPainelLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
-  const [filtros, setFiltros] = useState<PainelFiltersValue>(FILTROS_VAZIOS);
   const [selecionada, setSelecionada] = useState<AcaoAvaliada | null>(null);
+  const [exportarAberto, setExportarAberto] = useState(false);
 
-  /** Ids permitidos pelo filtro de território; `null` = filtro inativo. */
-  const [idsNoTerritorio, setIdsNoTerritorio] = useState<Set<number> | null>(
-    null,
+  // ── Filtros: a URL é o estado ─────────────────────────────────────────────
+  // Compartilhar o recorte por link e sobreviver a refresh/voltar sai de graça
+  // quando não há cópia local para sincronizar.
+  //
+  // Os valores são saneados na leitura: a URL é digitável, e o backend responde
+  // 400 a um id não numérico. Ignorar o que não pode ser um filtro degrada para
+  // "sem filtro" em vez de trocar o painel por uma tela de erro.
+  const filtros: PainelFiltersValue = useMemo(() => {
+    const id = (chave: string) => {
+      const bruto = searchParams.get(chave) ?? "";
+      return /^\d+$/.test(bruto) ? bruto : "";
+    };
+    const situacao = searchParams.get("situacao") ?? "";
+    return {
+      meta: id("meta"),
+      territorio: id("territorio"),
+      situacao: SITUACOES_VALIDAS.includes(situacao) ? situacao : "",
+    };
+  }, [searchParams]);
+
+  const escreverFiltros = useCallback(
+    (proximos: PainelFiltersValue) => {
+      const qs = new URLSearchParams();
+      for (const [chave, valor] of Object.entries(proximos)) {
+        if (valor) qs.set(chave, valor);
+      }
+      const query = qs.toString();
+      // `replace` e não `push`: mexer num Select não é navegação, e empilhar
+      // uma entrada por tecla obrigaria o usuário a voltar N vezes.
+      router.replace(query ? `${pathname}?${query}` : pathname, {
+        scroll: false,
+      });
+    },
+    [router, pathname],
   );
-  const [territorioLoading, setTerritorioLoading] = useState(false);
 
-  // ── Carga do Plano de Trabalho ────────────────────────────────────────────
+  const patchFiltros = useCallback(
+    (patch: Partial<PainelFiltersValue>) =>
+      escreverFiltros({ ...filtros, ...patch }),
+    [escreverFiltros, filtros],
+  );
+
+  const limparFiltros = useCallback(
+    () => escreverFiltros(FILTROS_VAZIOS),
+    [escreverFiltros],
+  );
+
+  // ── Dados de apoio (uma vez) ──────────────────────────────────────────────
+  // Metas dão o período dos cards e as opções do filtro; a listagem de Ações dá
+  // os campos descritivos que a resposta do painel não carrega.
   useEffect(() => {
     const controller = new AbortController();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDataLoading(true);
-    setError(null);
 
     Promise.all([
       listMetas(controller.signal),
@@ -67,22 +129,14 @@ export default function PainelAcompanhamentoPage() {
     ])
       .then(([m, a]) => {
         setMetas(m);
-        setAcoes(a);
+        setDetalhes(new Map(a.map((acao) => [acao.id, acao])));
       })
-      .catch((e: unknown) => {
-        if (controller.signal.aborted) return;
-        if (e instanceof ApiError && e.status === 403) {
-          setForbidden(true);
-          return;
-        }
-        setError(
-          e instanceof ApiError
-            ? e.message
-            : "Não foi possível carregar o painel. Tente novamente.",
-        );
+      .catch(() => {
+        // Silencioso: sem o apoio a tela perde rótulos, não o semáforo. O erro
+        // que importa é o do painel, tratado no efeito abaixo.
       })
       .finally(() => {
-        if (!controller.signal.aborted) setDataLoading(false);
+        if (!controller.signal.aborted) setApoioCarregado(true);
       });
 
     return () => controller.abort();
@@ -107,69 +161,76 @@ export default function PainelAcompanhamentoPage() {
     return () => controller.abort();
   }, []);
 
-  // ── Avaliação do semáforo ─────────────────────────────────────────────────
-  const avaliadas: AcaoAvaliada[] = useMemo(() => {
-    const porId = new Map(metas.map((m) => [m.id, m]));
-    // Uma única referência de "agora" para todas as Ações: instantes diferentes
-    // dentro do mesmo render dariam esperados incoerentes entre linhas.
-    const hoje = new Date();
-    return acoes.map((acao) => {
-      const meta = porId.get(acao.meta) ?? null;
-      return { acao, meta, avaliacao: avaliarAcao(acao, meta, hoje) };
-    });
-  }, [acoes, metas]);
-
-  // ── Filtro de território (derivado das Atividades — ver lib/painel.ts) ─────
+  // ── Painel (refeito a cada filtro) ────────────────────────────────────────
   useEffect(() => {
-    if (filtros.territorio === "" || acoes.length === 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setIdsNoTerritorio(null);
-      return;
-    }
-
     const controller = new AbortController();
-    setTerritorioLoading(true);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPainelLoading(true);
+    setError(null);
 
-    acoesNoTerritorio(acoes, filtros.territorio, controller.signal)
-      .then((ids) => {
-        if (!controller.signal.aborted) setIdsNoTerritorio(ids);
-      })
-      .catch(() => {
-        // Sem o cruzamento não dá para afirmar o recorte; melhor não filtrar do
-        // que exibir uma lista silenciosamente incompleta.
-        if (!controller.signal.aborted) setIdsNoTerritorio(null);
+    fetchPainel(
+      {
+        meta_id: filtros.meta,
+        territorio_id: filtros.territorio,
+        status_execucao: filtros.situacao,
+      },
+      controller.signal,
+    )
+      .then((res) => setGrupos(res.metas))
+      .catch((e: unknown) => {
+        if (controller.signal.aborted) return;
+        if (e instanceof ApiError && e.status === 403) {
+          setForbidden(true);
+          return;
+        }
+        setError(
+          e instanceof ApiError
+            ? e.message
+            : "Não foi possível carregar o painel. Tente novamente.",
+        );
       })
       .finally(() => {
-        if (!controller.signal.aborted) setTerritorioLoading(false);
+        if (!controller.signal.aborted) setPainelLoading(false);
       });
 
     return () => controller.abort();
-  }, [filtros.territorio, acoes]);
+  }, [filtros.meta, filtros.territorio, filtros.situacao, reloadKey]);
 
-  // ── Aplicação dos filtros ─────────────────────────────────────────────────
-  const filtradas = useMemo(() => {
-    return avaliadas.filter((item) => {
-      if (filtros.meta !== "" && String(item.acao.meta) !== filtros.meta) {
-        return false;
-      }
-      if (idsNoTerritorio && !idsNoTerritorio.has(item.acao.id)) return false;
-      return true;
+  // ── Montagem da tela ──────────────────────────────────────────────────────
+  // O agrupamento por Meta já vem pronto do backend; aqui só se acrescenta o
+  // que ele não devolve: datas da Meta e campos descritivos da Ação.
+  const porMeta: MetaComAcoes[] = useMemo(() => {
+    if (!grupos) return [];
+    const metaPorId = new Map(metas.map((m) => [m.id, m]));
+
+    return grupos.map((grupo) => {
+      const completa = metaPorId.get(grupo.meta.id);
+      const meta = {
+        ...grupo.meta,
+        data_inicio: completa?.data_inicio ?? null,
+        data_fim: completa?.data_fim ?? null,
+      };
+
+      const acoes = [...grupo.acoes]
+        .sort((a, b) => compararNumeroAcao(a.numero, b.numero))
+        .map((acao) => ({
+          acao,
+          detalhe: detalhes.get(acao.id) ?? null,
+          meta,
+          avaliacao: avaliacaoDaApi(acao, meta),
+        }));
+
+      return { meta, acoes };
     });
-  }, [avaliadas, filtros.meta, idsNoTerritorio]);
+  }, [grupos, metas, detalhes]);
 
   const criticas = useMemo(
-    () => filtradas.filter((i) => i.avaliacao.nivel === "vermelho"),
-    [filtradas],
+    () =>
+      porMeta.flatMap((g) =>
+        g.acoes.filter((i) => i.avaliacao.nivel === "vermelho"),
+      ),
+    [porMeta],
   );
-
-  const porMeta: MetaComAcoes[] = useMemo(() => {
-    return metas
-      .map((meta) => ({
-        meta,
-        acoes: filtradas.filter((i) => i.acao.meta === meta.id),
-      }))
-      .filter((g) => g.acoes.length > 0);
-  }, [metas, filtradas]);
 
   const metaOptions: SelectOption[] = useMemo(
     () =>
@@ -182,21 +243,28 @@ export default function PainelAcompanhamentoPage() {
 
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 
-  const patchFiltros = useCallback(
-    (patch: Partial<PainelFiltersValue>) =>
-      setFiltros((prev) => ({ ...prev, ...patch })),
-    [],
-  );
-
-  const limparFiltros = useCallback(() => setFiltros(FILTROS_VAZIOS), []);
-
   if (authLoading) return <CenteredSpinner />;
 
   const header = (
     <PageHeader>
-      <h1 className="truncate text-base font-semibold text-text">
-        Painel de Acompanhamento
-      </h1>
+      <div className="flex w-full items-center justify-between gap-3">
+        <h1 className="truncate text-base font-semibold text-text">
+          Painel de Acompanhamento
+        </h1>
+        {/* Exportar é leitura: quem enxerga o painel pode baixar o mesmo
+            recorte — o endpoint aplica o escopo territorial do usuário. */}
+        {!forbidden && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setExportarAberto(true)}
+            leftIcon={<Download className="h-4 w-4" />}
+            data-testid="painel-exportar-btn"
+          >
+            Exportar
+          </Button>
+        )}
+      </div>
     </PageHeader>
   );
 
@@ -209,10 +277,13 @@ export default function PainelAcompanhamentoPage() {
     );
   }
 
-  const temFiltro = filtros.meta !== "" || filtros.territorio !== "";
-  const baseVazia = !dataLoading && !error && acoes.length === 0;
-  const filtroSemResultado =
-    !dataLoading && !error && acoes.length > 0 && filtradas.length === 0;
+  const temFiltro =
+    filtros.meta !== "" || filtros.territorio !== "" || filtros.situacao !== "";
+  // Só a primeira carga troca a tela por um spinner. Depois disso o resultado
+  // anterior fica visível e esmaecido: piscar a página inteira a cada mexida
+  // num Select custa mais orientação do que entrega.
+  const primeiraCarga = painelLoading && (grupos === null || !apoioCarregado);
+  const semResultado = !painelLoading && !error && porMeta.length === 0;
 
   return (
     <div data-testid="painel-page">
@@ -228,9 +299,9 @@ export default function PainelAcompanhamentoPage() {
         />
 
         <p className="max-w-prose text-sm text-text-muted">
-          Semáforo por Ação do Plano de Trabalho. O esperado é a fração do
-          período já decorrida; o realizado conta as Atividades de Campo
-          concluídas vinculadas a cada Ação.
+          Semáforo por Ação do Plano de Trabalho, calculado pelo sistema. O
+          esperado é a fração do período já decorrida; o realizado conta as
+          Atividades de Campo concluídas vinculadas a cada Ação.
         </p>
 
         <PainelFilters
@@ -240,7 +311,6 @@ export default function PainelAcompanhamentoPage() {
           metaOptions={metaOptions}
           territorioOptions={territorios}
           optionsLoading={territorios.length === 0}
-          territorioLoading={territorioLoading}
         />
 
         {error ? (
@@ -253,9 +323,9 @@ export default function PainelAcompanhamentoPage() {
               Tentar novamente
             </Button>
           </div>
-        ) : dataLoading ? (
+        ) : primeiraCarga ? (
           <CenteredSpinner />
-        ) : baseVazia ? (
+        ) : semResultado && !temFiltro ? (
           <div className="rounded-lg border border-border bg-surface">
             <EmptyState
               icon={<Gauge className="h-7 w-7" />}
@@ -274,23 +344,26 @@ export default function PainelAcompanhamentoPage() {
               }
             />
           </div>
-        ) : filtroSemResultado ? (
+        ) : semResultado ? (
           <div className="rounded-lg border border-border bg-surface">
             <EmptyState
               icon={<SearchX className="h-7 w-7" />}
               title="Nenhuma Ação corresponde aos filtros"
-              description="Ajuste a Meta ou o território para ver as Ações do Plano de Trabalho."
+              description="Ajuste a Meta, o território ou a situação para ver as Ações do Plano de Trabalho."
               action={
-                temFiltro ? (
-                  <Button variant="secondary" onClick={limparFiltros}>
-                    Limpar filtros
-                  </Button>
-                ) : undefined
+                <Button variant="secondary" onClick={limparFiltros}>
+                  Limpar filtros
+                </Button>
               }
             />
           </div>
         ) : (
-          <>
+          <div
+            aria-busy={painelLoading}
+            className={`flex flex-col gap-4 transition-opacity ${
+              painelLoading ? "opacity-60" : ""
+            }`}
+          >
             <AlertaAcoesCriticas acoes={criticas} onSelect={setSelecionada} />
 
             <div className="flex flex-col gap-3">
@@ -308,7 +381,7 @@ export default function PainelAcompanhamentoPage() {
                 />
               ))}
             </div>
-          </>
+          </div>
         )}
       </div>
 
@@ -317,6 +390,27 @@ export default function PainelAcompanhamentoPage() {
         onClose={() => setSelecionada(null)}
         canManage={canManage}
       />
+
+      <ExportarModal
+        open={exportarAberto}
+        onClose={() => setExportarAberto(false)}
+        metaOptions={metaOptions}
+        metaIdInicial={filtros.meta}
+        territorioId={filtros.territorio}
+        situacaoAtiva={filtros.situacao !== ""}
+      />
     </div>
+  );
+}
+
+/**
+ * `useSearchParams` exige um limite de Suspense acima dele — mesmo padrão já
+ * usado no detalhe da Meta e nas telas de login.
+ */
+export default function PainelAcompanhamentoPage() {
+  return (
+    <Suspense fallback={<CenteredSpinner />}>
+      <PainelAcompanhamentoConteudo />
+    </Suspense>
   );
 }

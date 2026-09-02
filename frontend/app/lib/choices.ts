@@ -28,8 +28,8 @@ function opt(id: number, label: string): SelectOption {
 export const GENERO_OPTIONS: SelectOption[] = [
   opt(1, "Masculino"),
   opt(2, "Feminino"),
-  opt(3, "Outro"),
-  opt(4, "Não Informado"),
+  opt(3, "Não binário"),
+  opt(4, "Não informado"),
 ];
 
 export const COR_RACA_OPTIONS: SelectOption[] = [
@@ -38,7 +38,6 @@ export const COR_RACA_OPTIONS: SelectOption[] = [
   opt(3, "Parda"),
   opt(4, "Amarela"),
   opt(5, "Indígena"),
-  opt(6, "Não Informado"),
 ];
 
 export const ESCOLARIDADE_OPTIONS: SelectOption[] = [
@@ -49,8 +48,6 @@ export const ESCOLARIDADE_OPTIONS: SelectOption[] = [
   opt(5, "Médio completo"),
   opt(6, "Superior incompleto"),
   opt(7, "Superior completo"),
-  opt(8, "Pós-graduação"),
-  opt(9, "Não Informado"),
 ];
 
 // ── UPF ──────────────────────────────────────────────────────────────────────
@@ -125,20 +122,19 @@ export const AGUA_OPTIONS: SelectOption[] = [
 ];
 
 /**
- * `seguridade_social` é JSONField de strings livres no backend (UPF e
- * MembroFamilia) — não existe SEGURIDADE_CHOICES em constants.py, então não há
- * o que buscar no endpoint. Lista definida pelo frontend; value === label.
+ * Espelha apps/sgp/constants.py::SEGURIDADE_SOCIAL_CHOICES.
+ *
+ * O SGPChoicesView não publica esta chave, então a lista fica aqui — mas ela
+ * deixou de ser texto livre: MembroDetailSerializer.validate_seguridade_social
+ * rejeita valor fora desta lista, e `nenhum` é mutuamente exclusivo com os
+ * demais. Enviar o rótulo ("Bolsa Família") em vez da chave agora dá 400.
  */
 export const SEGURIDADE_OPTIONS: SelectOption[] = [
-  "Aposentadoria",
-  "BPC/LOAS",
-  "Bolsa Família",
-  "Auxílio Brasil",
-  "Pensão",
-  "Seguro-defeso",
-  "Nenhum",
-  "Outros",
-].map((l) => ({ value: l, label: l }));
+  { value: "bpc", label: "BPC/LOAS" },
+  { value: "bolsa_familia", label: "Bolsa Família" },
+  { value: "aposentadoria", label: "Aposentadoria" },
+  { value: "nenhum", label: "Nenhum" },
+];
 
 // ── Bundle ───────────────────────────────────────────────────────────────────
 
@@ -156,7 +152,7 @@ export type SgpChoices = {
   material_construcao: SelectOption[];
   energia: SelectOption[];
   agua: SelectOption[];
-  parentesco: SelectOption[];
+  grau_parentesco: SelectOption[];
   // Atividade (value string) — ainda ausentes no SGPChoicesView
   tipo_atividade: SelectOption[];
   forma_atuacao: SelectOption[];
@@ -176,7 +172,7 @@ export const FALLBACK_CHOICES: SgpChoices = {
   material_construcao: MATERIAL_CONSTRUCAO_OPTIONS,
   energia: ENERGIA_OPTIONS,
   agua: AGUA_OPTIONS,
-  parentesco: PARENTESCO_OPTIONS,
+  grau_parentesco: PARENTESCO_OPTIONS,
   tipo_atividade: TIPO_ATIVIDADE_OPTIONS,
   forma_atuacao: FORMA_ATUACAO_OPTIONS,
   ambito: AMBITO_OPTIONS,
@@ -239,8 +235,9 @@ export async function fetchSgpChoices(
 /**
  * Listas que NÃO vêm do endpoint, e por quê:
  *
- * - `seguridade_social` — não existe SEGURIDADE_CHOICES no backend; o campo é
- *   JSONField de strings livres. Use SEGURIDADE_OPTIONS acima.
+ * - `seguridade_social` — SEGURIDADE_SOCIAL_CHOICES existe em constants.py e é
+ *   validado no serializer, mas o SGPChoicesView não expõe a chave. Use
+ *   SEGURIDADE_OPTIONS acima.
  * - `saude` — o SGPChoicesView emite `{"value": v, "label": v}` porque
  *   SAUDE_CHOICES é lista plana de strings, sem rótulo humano. Consumir o
  *   endpoint faria a tela exibir "deficiencia_visual" em vez de "Deficiência

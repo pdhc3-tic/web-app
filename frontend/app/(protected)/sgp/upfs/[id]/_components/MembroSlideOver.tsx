@@ -17,6 +17,7 @@ import {
   getMembro,
   calcIdade,
   saudeLabel,
+  temVinculoEscolar,
   SAUDE_OPTIONS,
   type MembroDetail,
   type MembroListItem,
@@ -26,6 +27,7 @@ import { formatCpfInput, isValidCpf, maskCpf } from "@/app/lib/format";
 import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
 import {
   SEGURIDADE_OPTIONS,
+  labelForValue,
   withCurrentValue,
 } from "@/app/(protected)/sgp/upfs/_components/upfFormOptions";
 
@@ -45,16 +47,50 @@ type Props = {
    * "Titular" no select — a menos que este próprio membro já seja o titular.
    */
   titularExists: boolean;
+  /**
+   * Parentesco já preenchido ao abrir em modo `create`. A aba usa isso para o
+   * primeiro membro da UPF, que precisa ser o Titular.
+   */
+  parentescoPadrao?: string;
+  /**
+   * Permissão do usuário para ler/escrever os campos sensíveis (#192/BE-25).
+   * Usado no modo `create` (ainda não há detalhe carregado). Em view/edit a
+   * decisão vem da presença das chaves no `MembroDetail` retornado pelo
+   * backend, e sobrescreve este valor.
+   */
+  sensitivePermissions?: SensitivePermissions;
   /** Chamado após salvar (create ou edit). Recebe o membro persistido. */
   onSaved: (membro: MembroDetail) => void;
   /** Chamado quando o usuário clica em "Editar" no modo view. */
   onEditFromView?: () => void;
 };
 
+/**
+ * Autorização para renderizar/enviar os campos sensíveis (Saúde e Cor/Raça).
+ * `true` = o campo pode aparecer e ir no payload; `false` = oculto e omitido.
+ */
+export type SensitivePermissions = {
+  corRaca: boolean;
+  saude: boolean;
+};
+
+const ALLOW_ALL: SensitivePermissions = { corRaca: true, saude: true };
+
+/**
+ * Deriva permissões a partir da presença das chaves na resposta do backend:
+ * ausência = sem permissão (#192, critério "ausência ≠ valor vazio").
+ */
+function permsFromDetail(m: MembroDetail): SensitivePermissions {
+  return {
+    corRaca: "cor_raca_display" in m,
+    saude: "saude" in m,
+  };
+}
+
 type FormState = {
-  nome: string;
-  parentesco: string;
-  data_nasc: string;
+  nome_completo: string;
+  grau_parentesco: string;
+  data_nascimento: string;
   genero: string;
   cpf: string;
   nis: string;
@@ -67,9 +103,9 @@ type FormState = {
 };
 
 const EMPTY_FORM: FormState = {
-  nome: "",
-  parentesco: "",
-  data_nasc: "",
+  nome_completo: "",
+  grau_parentesco: "",
+  data_nascimento: "",
   genero: "",
   cpf: "",
   nis: "",
@@ -79,6 +115,15 @@ const EMPTY_FORM: FormState = {
   cor_raca: "",
   saude: [],
   seguridade_social: [],
+};
+
+/**
+ * Opção que zera as demais em cada multiselect. Espelha validate_saude e
+ * validate_seguridade_social em apps/sgp/serializers.py.
+ */
+const VALOR_EXCLUSIVO: Record<"saude" | "seguridade_social", string> = {
+  saude: "nenhuma",
+  seguridade_social: "nenhum",
 };
 
 /** "" ↔ null para choices inteiros (o form guarda string; a API espera número). */
@@ -92,37 +137,48 @@ function strToInt(value: string): number | null {
 
 function detailToForm(m: MembroDetail): FormState {
   return {
-    nome: m.nome ?? "",
-    parentesco: m.parentesco ?? "",
-    data_nasc: m.data_nasc ?? "",
+    nome_completo: m.nome_completo ?? "",
+    grau_parentesco: m.grau_parentesco ?? "",
+    data_nascimento: m.data_nascimento ?? "",
     genero: intToStr(m.genero),
     cpf: m.cpf ? formatCpfInput(m.cpf) : "",
     nis: m.nis ?? "",
     caf: m.caf ?? "",
     escolaridade: intToStr(m.escolaridade),
     escola: m.escola ?? "",
+    // Sensíveis: quando o backend omite a chave (sem permissão), o form
+    // guarda vazio — o campo não é renderizado nem será enviado no PATCH.
     cor_raca: intToStr(m.cor_raca),
     saude: m.saude ?? [],
     seguridade_social: m.seguridade_social ?? [],
   };
 }
 
-function formToPayload(f: FormState): MembroWritePayload {
+/**
+ * Monta o payload de POST/PATCH omitindo os campos sensíveis quando o usuário
+ * não tem permissão (#192) — evita que um edit sobrescreva silenciosamente
+ * valores que o usuário nem consegue ler.
+ */
+function formToPayload(
+  f: FormState,
+  perms: SensitivePermissions,
+): MembroWritePayload {
   const cpfDigits = f.cpf.replace(/\D/g, "");
-  return {
-    nome: f.nome.trim(),
-    parentesco: f.parentesco,
-    data_nasc: f.data_nasc || null,
+  const payload: MembroWritePayload = {
+    nome_completo: f.nome_completo.trim(),
+    grau_parentesco: f.grau_parentesco,
+    data_nascimento: f.data_nascimento || null,
     genero: strToInt(f.genero),
     cpf: cpfDigits,
     nis: f.nis.trim(),
     caf: f.caf.trim(),
     escolaridade: strToInt(f.escolaridade),
     escola: f.escola.trim(),
-    cor_raca: strToInt(f.cor_raca),
-    saude: f.saude,
     seguridade_social: f.seguridade_social,
   };
+  if (perms.corRaca) payload.cor_raca = strToInt(f.cor_raca);
+  if (perms.saude) payload.saude = f.saude;
+  return payload;
 }
 
 // ─── Componente principal ────────────────────────────────────────────────────
@@ -134,6 +190,8 @@ export function MembroSlideOver({
   upfId,
   membroListItem,
   titularExists,
+  parentescoPadrao,
+  sensitivePermissions,
   onSaved,
   onEditFromView,
 }: Props) {
@@ -156,7 +214,7 @@ export function MembroSlideOver({
 
     if (mode === "create") {
       setMembro(null);
-      setForm(EMPTY_FORM);
+      setForm({ ...EMPTY_FORM, grau_parentesco: parentescoPadrao ?? "" });
       return;
     }
     if (!membroId) return;
@@ -181,20 +239,34 @@ export function MembroSlideOver({
       });
 
     return () => controller.abort();
-  }, [open, mode, upfId, membroId]);
+  }, [open, mode, upfId, membroId, parentescoPadrao]);
 
-  // Idade calculada em tempo real ao lado do campo data_nasc.
-  const idade = useMemo(() => calcIdade(form.data_nasc), [form.data_nasc]);
+  // Idade calculada em tempo real ao lado do campo data_nascimento.
+  const idade = useMemo(
+    () => calcIdade(form.data_nascimento),
+    [form.data_nascimento],
+  );
+
+  /**
+   * Permissões efetivas:
+   *   - view/edit: presença das chaves no detalhe carregado é a fonte da verdade.
+   *   - create: usa a prop do pai (derivada da listagem). Default otimista =
+   *     "mostra tudo" e deixa o backend rejeitar — cobre o caso de lista vazia.
+   */
+  const perms: SensitivePermissions = useMemo(
+    () => (membro ? permsFromDetail(membro) : (sensitivePermissions ?? ALLOW_ALL)),
+    [membro, sensitivePermissions],
+  );
 
   // Titular só é desabilitado se já existe titular E este membro não é ele.
   const parentescoOptions = useMemo(() => {
-    const isCurrentTitular = membro?.parentesco === "titular";
-    return choices.parentesco.map((p) => ({
+    const isCurrentTitular = membro?.grau_parentesco === "titular";
+    return choices.grau_parentesco.map((p) => ({
       value: p.value,
       label: p.label,
       disabled: p.value === "titular" && titularExists && !isCurrentTitular,
     }));
-  }, [choices.parentesco, titularExists, membro]);
+  }, [choices.grau_parentesco, titularExists, membro]);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -206,20 +278,32 @@ export function MembroSlideOver({
     });
   }
 
+  /**
+   * Alterna um item dos multiselects respeitando a exclusividade validada no
+   * backend: marcar "nenhuma"/"nenhum" limpa o resto, e marcar qualquer outra
+   * opção descarta a exclusiva. Sem isso o submit voltaria 400.
+   */
   function toggleMulti(key: "saude" | "seguridade_social", value: string) {
     setForm((f) => {
       const list = f[key];
-      const next = list.includes(value)
-        ? list.filter((v) => v !== value)
-        : [...list, value];
+      if (list.includes(value)) {
+        return { ...f, [key]: list.filter((v) => v !== value) };
+      }
+      const exclusivo = VALOR_EXCLUSIVO[key];
+      const next =
+        value === exclusivo
+          ? [value]
+          : [...list.filter((v) => v !== exclusivo), value];
       return { ...f, [key]: next };
     });
   }
 
   function validateClient(): boolean {
     const errs: Record<string, string> = {};
-    if (!form.nome.trim()) errs.nome = "Informe o nome.";
-    if (!form.parentesco) errs.parentesco = "Selecione o parentesco.";
+    if (!form.nome_completo.trim())
+      errs.nome_completo = "Informe o nome.";
+    if (!form.grau_parentesco)
+      errs.grau_parentesco = "Selecione o parentesco.";
     if (form.cpf.trim() && !isValidCpf(form.cpf)) {
       errs.cpf = "CPF inválido.";
     }
@@ -234,7 +318,7 @@ export function MembroSlideOver({
 
     setSaving(true);
     try {
-      const payload = formToPayload(form);
+      const payload = formToPayload(form, perms);
       const saved =
         mode === "edit" && membro
           ? await updateMembro(upfId, membro.id, payload)
@@ -243,10 +327,9 @@ export function MembroSlideOver({
     } catch (e: unknown) {
       if (e instanceof ApiError) {
         const errs: Record<string, string> = {};
+        // FormState usa os mesmos nomes da API — o erro cai direto no campo.
         e.fieldErrors?.forEach((fe) => {
-          // Backend usa "nome_completo" internamente; a API espera "nome".
-          const key = fe.field === "nome_completo" ? "nome" : fe.field;
-          errs[key] = fe.message;
+          errs[fe.field] = fe.message;
         });
         setFieldErrors(errs);
         if (!e.fieldErrors || e.fieldErrors.length === 0) {
@@ -266,7 +349,7 @@ export function MembroSlideOver({
       ? "Adicionar membro"
       : mode === "edit"
         ? "Editar membro"
-        : membro?.nome || membroListItem?.nome || "Membro";
+        : membro?.nome_completo || membroListItem?.nome_completo || "Membro";
 
   const actions = isView && onEditFromView ? (
     <Button
@@ -305,23 +388,26 @@ export function MembroSlideOver({
       footer={footer}
       width="wide"
     >
-      {loading ? (
-        <div className="flex min-h-[40vh] items-center justify-center">
-          <Spinner className="h-6 w-6 animate-spin text-text-muted" />
-        </div>
-      ) : isView && membro ? (
-        <ViewBody membro={membro} />
-      ) : (
-        <FormBody
-          form={form}
-          fieldErrors={fieldErrors}
-          globalError={globalError}
-          idade={idade}
-          parentescoOptions={parentescoOptions}
-          update={update}
-          toggleMulti={toggleMulti}
-        />
-      )}
+      <div data-testid="membro-slideover" data-mode={mode}>
+        {loading ? (
+          <div className="flex min-h-[40vh] items-center justify-center">
+            <Spinner className="h-6 w-6 animate-spin text-text-muted" />
+          </div>
+        ) : isView && membro ? (
+          <ViewBody membro={membro} />
+        ) : (
+          <FormBody
+            form={form}
+            fieldErrors={fieldErrors}
+            globalError={globalError}
+            idade={idade}
+            parentescoOptions={parentescoOptions}
+            perms={perms}
+            update={update}
+            toggleMulti={toggleMulti}
+          />
+        )}
+      </div>
     </SlideOver>
   );
 }
@@ -329,8 +415,10 @@ export function MembroSlideOver({
 // ─── Corpo em modo view ──────────────────────────────────────────────────────
 
 function ViewBody({ membro }: { membro: MembroDetail }) {
+  const perms = permsFromDetail(membro);
+
   const saudeChips =
-    membro.saude.length > 0 ? (
+    perms.saude && membro.saude && membro.saude.length > 0 ? (
       <div className="flex flex-wrap gap-1.5">
         {membro.saude.map((s) => (
           <Chip key={s}>{saudeLabel(s)}</Chip>
@@ -342,36 +430,44 @@ function ViewBody({ membro }: { membro: MembroDetail }) {
     membro.seguridade_social.length > 0 ? (
       <div className="flex flex-wrap gap-1.5">
         {membro.seguridade_social.map((s) => (
-          <Chip key={s}>{s}</Chip>
+          <Chip key={s}>{labelForValue(SEGURIDADE_OPTIONS, s)}</Chip>
         ))}
       </div>
     ) : undefined;
 
+  // Linhas construídas em ordem; as sensíveis são omitidas por completo quando
+  // o backend não retorna a chave (#192) — sem placeholder "—", sem indicação.
+  const items: { label: string; value: React.ReactNode }[] = [
+    { label: "Nome", value: membro.nome_completo },
+    { label: "Parentesco", value: membro.grau_parentesco_display },
+    { label: "Nascimento", value: membro.data_nascimento ?? undefined },
+    {
+      label: "Idade",
+      value:
+        membro.idade !== null && membro.idade !== undefined
+          ? `${membro.idade} anos`
+          : undefined,
+    },
+    { label: "Gênero", value: membro.genero_display },
+  ];
+  if (perms.corRaca) {
+    items.push({ label: "Cor/Raça", value: membro.cor_raca_display });
+  }
+  items.push(
+    { label: "CPF", value: maskCpf(membro.cpf) },
+    { label: "NIS", value: membro.nis },
+    { label: "CAF", value: membro.caf },
+    { label: "Escolaridade", value: membro.escolaridade_display },
+    { label: "Escola", value: membro.escola },
+  );
+  if (perms.saude) {
+    items.push({ label: "Saúde", value: saudeChips });
+  }
+  items.push({ label: "Seguridade", value: seguridadeChips });
+
   return (
     <div className="px-4 py-4">
-      <DefinitionList
-        items={[
-          { label: "Nome", value: membro.nome },
-          { label: "Parentesco", value: membro.parentesco_display },
-          { label: "Nascimento", value: membro.data_nasc ?? undefined },
-          {
-            label: "Idade",
-            value:
-              membro.idade !== null && membro.idade !== undefined
-                ? `${membro.idade} anos`
-                : undefined,
-          },
-          { label: "Gênero", value: membro.genero_display },
-          { label: "Cor/Raça", value: membro.cor_raca_display },
-          { label: "CPF", value: maskCpf(membro.cpf) },
-          { label: "NIS", value: membro.nis },
-          { label: "CAF", value: membro.caf },
-          { label: "Escolaridade", value: membro.escolaridade_display },
-          { label: "Escola", value: membro.escola },
-          { label: "Saúde", value: saudeChips },
-          { label: "Seguridade", value: seguridadeChips },
-        ]}
-      />
+      <DefinitionList items={items} />
     </div>
   );
 }
@@ -384,6 +480,7 @@ type FormBodyProps = {
   globalError: string | null;
   idade: number | null;
   parentescoOptions: { value: string; label: string; disabled?: boolean }[];
+  perms: SensitivePermissions;
   update: <K extends keyof FormState>(key: K, value: FormState[K]) => void;
   toggleMulti: (key: "saude" | "seguridade_social", value: string) => void;
 };
@@ -394,10 +491,14 @@ function FormBody({
   globalError,
   idade,
   parentescoOptions,
+  perms,
   update,
   toggleMulti,
 }: FormBodyProps) {
   const choices = useSgpChoices();
+  // "Escola" só aparece quando a escolaridade indica matrícula ativa.
+  const mostraEscola = temVinculoEscolar(strToInt(form.escolaridade));
+
   return (
     <div className="flex flex-col gap-4 px-4 py-4">
       {globalError && (
@@ -412,9 +513,9 @@ function FormBody({
       <Input
         label="Nome completo"
         required
-        value={form.nome}
-        onChange={(e) => update("nome", e.target.value)}
-        error={fieldErrors.nome}
+        value={form.nome_completo}
+        onChange={(e) => update("nome_completo", e.target.value)}
+        error={fieldErrors.nome_completo}
         autoComplete="off"
       />
 
@@ -422,10 +523,10 @@ function FormBody({
         <SelectField
           label="Parentesco"
           required
-          value={form.parentesco}
-          onChange={(v) => update("parentesco", v)}
+          value={form.grau_parentesco}
+          onChange={(v) => update("grau_parentesco", v)}
           options={parentescoOptions}
-          error={fieldErrors.parentesco}
+          error={fieldErrors.grau_parentesco}
           placeholder="Selecione..."
         />
 
@@ -433,9 +534,9 @@ function FormBody({
           <Input
             label="Data de nascimento"
             type="date"
-            value={form.data_nasc}
-            onChange={(e) => update("data_nasc", e.target.value)}
-            error={fieldErrors.data_nasc}
+            value={form.data_nascimento}
+            onChange={(e) => update("data_nascimento", e.target.value)}
+            error={fieldErrors.data_nascimento}
           />
           {idade !== null && (
             <span className="text-xs text-text-muted">{idade} anos</span>
@@ -443,7 +544,19 @@ function FormBody({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {/*
+        Gênero fica em par com Cor/Raça no grid; quando Cor/Raça é oculto por
+        falta de permissão (#192), Gênero passa a ocupar a linha inteira para
+        que não sobre uma coluna vazia — evita a "indicação visual" proibida
+        pelo critério.
+      */}
+      <div
+        className={
+          perms.corRaca
+            ? "grid grid-cols-1 gap-4 sm:grid-cols-2"
+            : "grid grid-cols-1 gap-4"
+        }
+      >
         <Select
           label="Gênero"
           value={form.genero}
@@ -452,14 +565,16 @@ function FormBody({
           error={fieldErrors.genero}
           placeholder="Selecione..."
         />
-        <Select
-          label="Cor/Raça"
-          value={form.cor_raca}
-          onChange={(v) => update("cor_raca", v)}
-          options={withCurrentValue(choices.cor_raca, form.cor_raca)}
-          error={fieldErrors.cor_raca}
-          placeholder="Selecione..."
-        />
+        {perms.corRaca && (
+          <Select
+            label="Cor/Raça"
+            value={form.cor_raca}
+            onChange={(v) => update("cor_raca", v)}
+            options={withCurrentValue(choices.cor_raca, form.cor_raca)}
+            error={fieldErrors.cor_raca}
+            placeholder="Selecione..."
+          />
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -492,26 +607,35 @@ function FormBody({
         <Select
           label="Escolaridade"
           value={form.escolaridade}
-          onChange={(v) => update("escolaridade", v)}
+          onChange={(v) => {
+            update("escolaridade", v);
+            // Ao sair do conjunto com vínculo escolar o campo some da tela;
+            // limpar evita que a escola antiga seja salva sem ninguém ver.
+            if (!temVinculoEscolar(strToInt(v))) update("escola", "");
+          }}
           options={withCurrentValue(choices.escolaridade, form.escolaridade)}
           error={fieldErrors.escolaridade}
           placeholder="Selecione..."
         />
-        <Input
-          label="Escola"
-          value={form.escola}
-          onChange={(e) => update("escola", e.target.value)}
-          error={fieldErrors.escola}
-        />
+        {mostraEscola && (
+          <Input
+            label="Escola"
+            value={form.escola}
+            onChange={(e) => update("escola", e.target.value)}
+            error={fieldErrors.escola}
+          />
+        )}
       </div>
 
-      <MultiSelect
-        label="Saúde"
-        selected={form.saude}
-        options={SAUDE_OPTIONS}
-        onToggle={(v) => toggleMulti("saude", v)}
-        error={fieldErrors.saude}
-      />
+      {perms.saude && (
+        <MultiSelect
+          label="Saúde"
+          selected={form.saude}
+          options={SAUDE_OPTIONS}
+          onToggle={(v) => toggleMulti("saude", v)}
+          error={fieldErrors.saude}
+        />
+      )}
 
       <MultiSelect
         label="Seguridade social"

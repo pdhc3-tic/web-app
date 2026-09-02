@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Pencil, Plus, Sprout, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertTriangle, Pencil, Plus, Sprout, Trash2 } from "lucide-react";
 import { Button } from "@/app/components/ui/Button/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
+import { useToast } from "@/app/components/ui/Toast/Toast";
 import {
   listProducoes,
   SISTEMA_CRIACAO_OPTIONS,
@@ -16,7 +17,6 @@ import { RemoverProducaoDialog } from "./RemoverProducaoDialog";
 
 type Props = { upfId: string };
 type SlideOverState = { open: false } | { open: true; mode: SlideOverMode; producao?: Producao };
-type Toast = { id: number; variant: "success" | "error"; message: string };
 
 export function ProducaoTab({ upfId }: Props) {
   const [producoes, setProducoes] = useState<Producao[]>([]);
@@ -26,7 +26,7 @@ export function ProducaoTab({ upfId }: Props) {
 
   const [slideOver, setSlideOver] = useState<SlideOverState>({ open: false });
   const [remover, setRemover] = useState<Producao | null>(null);
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const { showToast } = useToast();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -45,12 +45,6 @@ export function ProducaoTab({ upfId }: Props) {
     return () => controller.abort();
   }, [upfId, reloadKey]);
 
-  const pushToast = useCallback((variant: Toast["variant"], message: string) => {
-    const id = Date.now() + Math.random();
-    setToasts((prev) => [...prev, { id, variant, message }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
-  }, []);
-
   function handleSaved(saved: Producao) {
     setProducoes((prev) => {
       const idx = prev.findIndex((p) => p.id === saved.id);
@@ -59,14 +53,14 @@ export function ProducaoTab({ upfId }: Props) {
       next[idx] = saved;
       return next;
     });
-    pushToast("success", slideOver.open && slideOver.mode === "edit" ? "Atividade atualizada." : "Atividade adicionada.");
+    showToast(slideOver.open && slideOver.mode === "edit" ? "Atividade atualizada." : "Atividade adicionada.");
     setSlideOver({ open: false });
   }
 
   function handleDeleted(id: number) {
     setProducoes((prev) => prev.filter((p) => p.id !== id));
     setRemover(null);
-    pushToast("success", "Atividade removida.");
+    showToast("Atividade removida.");
   }
 
   return (
@@ -133,7 +127,6 @@ export function ProducaoTab({ upfId }: Props) {
         onDeleted={handleDeleted}
       />
 
-      <ToastStack toasts={toasts} />
     </div>
   );
 }
@@ -311,23 +304,3 @@ function ErroSection({ message, onRetry }: { message: string; onRetry: () => voi
   );
 }
 
-function ToastStack({ toasts }: { toasts: Toast[] }) {
-  if (toasts.length === 0) return null;
-  return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex flex-col gap-2" role="status" aria-live="polite">
-      {toasts.map((t) => (
-        <div
-          key={t.id}
-          className={`pointer-events-auto flex items-center gap-2 rounded-md border px-3 py-2 text-sm shadow-md ${
-            t.variant === "success"
-              ? "border-success-text bg-success-bg text-success-text"
-              : "border-error-text bg-error-bg text-error-text"
-          }`}
-        >
-          {t.variant === "success" ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-          <span>{t.message}</span>
-        </div>
-      ))}
-    </div>
-  );
-}

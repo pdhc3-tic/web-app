@@ -92,8 +92,8 @@ export function DadosBasicosStep({
       <Input
         label="Data de nascimento"
         type="date"
-        value={form.data_nasc}
-        onChange={(e) => onChange({ data_nasc: e.target.value })}
+        value={form.data_nascimento}
+        onChange={(e) => onChange({ data_nascimento: e.target.value })}
       />
 
       <Select

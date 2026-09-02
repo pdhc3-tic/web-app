@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Camera, Pencil, X } from "lucide-react";
 import { Avatar } from "@/app/components/ui/Avatar/Avatar";
+import { OrigemScaBadge } from "@/app/components/sgp/OrigemScaBadge";
 import { Badge } from "@/app/components/ui/Badge/Badge";
 import { Chip } from "@/app/components/ui/Chip/Chip";
 import { Button } from "@/app/components/ui/Button/Button";
@@ -55,6 +56,7 @@ export function UpfHeader({ upf, onPhotoChange }: UpfHeaderProps) {
             <Chip>{upf.municipio.nome}</Chip>
             {upf.territorio && <Chip>{upf.territorio.nome}</Chip>}
             <Badge status={upf.ativa ? "ativo" : "inativo"} />
+            <OrigemScaBadge registro={upf} />
           </div>
         </div>
 

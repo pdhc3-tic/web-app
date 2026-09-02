@@ -195,6 +195,15 @@ export type AtividadeDetail = {
   criado_por: number | null;
   criado_em: string;
   atualizado_em: string;
+  // ── Procedência SCA ────────────────────────────────────────────────────────
+  // Espelham os campos de sync do backend. `ultima_origem` é o que vale para a
+  // badge: `device_id` fica preenchido para sempre depois do primeiro sync,
+  // inclusive quando a última edição veio da web.
+  device_id: string;
+  uuid_local: string | null;
+  ultima_origem: "sca" | "web";
+  ultimo_sync_em: string | null;
+
 };
 
 /** Campos graváveis (POST/PATCH). FKs e M2M vão como PK. */

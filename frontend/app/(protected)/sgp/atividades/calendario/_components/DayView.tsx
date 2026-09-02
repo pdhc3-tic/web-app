@@ -3,11 +3,11 @@
 import { useMemo } from "react";
 import { differenceInCalendarDays, format, isToday } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { CalendarPlus, MapPin, User } from "lucide-react";
+import { CalendarPlus, Clock, MapPin, User } from "lucide-react";
 import { Button } from "@/app/components/ui/Button/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import type { CalendarActivityEvent } from "@/app/lib/atividadesCalendario";
-import { parseDateOnly } from "./MonthView";
+import { formatTimeRange, parseDayStart } from "@/app/lib/datetime";
 
 type Props = {
   anchor: Date;
@@ -25,8 +25,9 @@ export function DayView({ anchor, events, onSelectEvent, onCreateAt }: Props) {
     const target = new Date(y, m, d);
     return events
       .filter((ev) => {
-        const inicio = parseDateOnly(ev.data_inicio);
-        const fim = parseDateOnly(ev.data_fim);
+        const inicio = parseDayStart(ev.data_inicio);
+        const fim = parseDayStart(ev.data_fim);
+        if (!inicio || !fim) return false;
         return target >= inicio && target <= fim;
       })
       .sort((a, b) => a.data_inicio.localeCompare(b.data_inicio));
@@ -106,11 +107,13 @@ function DayCard({
   anchor: Date;
   onClick: () => void;
 }) {
-  const inicio = parseDateOnly(event.data_inicio);
-  const fim = parseDateOnly(event.data_fim);
-  const totalDias = differenceInCalendarDays(fim, inicio) + 1;
-  const diaAtual = differenceInCalendarDays(anchor, inicio) + 1;
+  const inicio = parseDayStart(event.data_inicio);
+  const fim = parseDayStart(event.data_fim);
+  const totalDias =
+    inicio && fim ? differenceInCalendarDays(fim, inicio) + 1 : 1;
+  const diaAtual = inicio ? differenceInCalendarDays(anchor, inicio) + 1 : 1;
   const multiplo = totalDias > 1;
+  const horario = formatTimeRange(event.data_inicio, event.data_fim);
 
   return (
     <button
@@ -130,6 +133,12 @@ function DayCard({
           <span className="text-2xs uppercase tracking-wide text-text-muted">
             {event.tipo_atividade_display}
           </span>
+          {horario && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-surface-muted px-2 py-0.5 text-2xs font-medium tabular-nums text-text">
+              <Clock className="h-3 w-3" aria-hidden="true" />
+              {horario}
+            </span>
+          )}
           {event.atrasada && (
             <span className="rounded-full bg-error-bg px-2 py-0.5 text-2xs font-semibold text-error-text">
               Atrasada

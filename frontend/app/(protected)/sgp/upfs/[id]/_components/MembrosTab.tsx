@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
-  CheckCircle2,
+  Download,
   Eye,
   Pencil,
   Plus,
+  Star,
   Trash2,
   UserPlus,
   Users,
@@ -14,14 +15,27 @@ import {
 import { Button } from "@/app/components/ui/Button/Button";
 import { Chip } from "@/app/components/ui/Chip/Chip";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
+import { useToast } from "@/app/components/ui/Toast/Toast";
+import Spinner from "@/app/components/icons/Spinner";
 import { ApiError } from "@/app/lib/api";
 import {
+  calcIdade,
+  exportarMembrosCsv,
+  ExportMembrosPendenteError,
+  ExportMembrosTimeoutError,
+  getResumoMembros,
   listMembros,
   type MembroDetail,
   type MembroListItem,
+  type ResumoMembros,
 } from "@/app/lib/membros";
 import { maskCpf } from "@/app/lib/format";
-import { MembroSlideOver, type SlideOverMode } from "./MembroSlideOver";
+import { ComposicaoResumoCard } from "./ComposicaoResumoCard";
+import {
+  MembroSlideOver,
+  type SensitivePermissions,
+  type SlideOverMode,
+} from "./MembroSlideOver";
 import { RemoverMembroDialog } from "./RemoverMembroDialog";
 
 type Props = {
@@ -32,11 +46,16 @@ type SlideOverState =
   | { open: false }
   | { open: true; mode: SlideOverMode; membro?: MembroListItem };
 
-type Toast = {
-  id: number;
-  variant: "success" | "error";
-  message: string;
-};
+/**
+ * Idade em anos completos. Prefere o valor que o backend já calcula
+ * (MembroListSerializer.get_idade) e recai no cálculo local quando a lista vem
+ * sem ele — as duas pontas usam a mesma regra.
+ */
+function idadeLabel(membro: MembroListItem): string {
+  const anos = membro.idade ?? calcIdade(membro.data_nascimento);
+  if (anos === null || anos === undefined) return "—";
+  return anos === 1 ? "1 ano" : `${anos} anos`;
+}
 
 // ─── Componente principal ────────────────────────────────────────────────────
 
@@ -46,9 +65,43 @@ export function MembrosTab({ upfId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
+  const [resumo, setResumo] = useState<ResumoMembros | null>(null);
+  const [resumoLoading, setResumoLoading] = useState(true);
+  /** Distingue "resumo ainda em voo" de "resumo falhou" — ver `semTitular`. */
+  const [resumoErro, setResumoErro] = useState(false);
+  const [resumoKey, setResumoKey] = useState(0);
+
   const [slideOver, setSlideOver] = useState<SlideOverState>({ open: false });
   const [remover, setRemover] = useState<MembroListItem | null>(null);
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [exporting, setExporting] = useState(false);
+  const { showToast } = useToast();
+
+  /**
+   * Baixa o CSV de membros (#191). Enquanto BE-24 não existir, o endpoint
+   * responde 404 → `ExportMembrosPendenteError`, e o toast diz "aguardando
+   * backend" em vez do genérico "não foi possível gerar". Quando BE-24
+   * subir, esta função funciona sem mais mudança.
+   */
+  async function handleExport() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const nome = await exportarMembrosCsv(upfId);
+      showToast(`Download iniciado: ${nome}`);
+    } catch (e) {
+      const mensagem =
+        e instanceof ExportMembrosPendenteError
+          ? e.message
+          : e instanceof ExportMembrosTimeoutError
+            ? "A geração do arquivo excedeu o tempo limite. Tente novamente."
+            : e instanceof ApiError
+              ? e.message
+              : "Não foi possível gerar o arquivo. Tente novamente.";
+      showToast(mensagem, "error");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   // ── Carrega a lista ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -74,19 +127,76 @@ export function MembrosTab({ upfId }: Props) {
     return () => controller.abort();
   }, [upfId, reloadKey]);
 
+  // ── Carrega o resumo agregado (BE-23) ──────────────────────────────────────
+  // Chave própria: a listagem é atualizada de forma otimista após salvar ou
+  // remover, mas os agregados só o backend sabe recalcular.
+  useEffect(() => {
+    const controller = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setResumoLoading(true);
+
+    setResumoErro(false);
+
+    getResumoMembros(upfId, controller.signal)
+      .then((data) => setResumo(data))
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        // Só aqui o fallback da listagem passa a valer para o alerta.
+        setResumo(null);
+        setResumoErro(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setResumoLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [upfId, resumoKey]);
+
   const titularExists = useMemo(
-    () => membros.some((m) => m.parentesco === "titular"),
+    () => membros.some((m) => m.grau_parentesco === "titular"),
     [membros],
   );
 
-  // ── Toasts ─────────────────────────────────────────────────────────────────
-  const pushToast = useCallback((variant: Toast["variant"], message: string) => {
-    const id = Date.now() + Math.random();
-    setToasts((prev) => [...prev, { id, variant, message }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
-  }, []);
+  /**
+   * Há Titular na UPF? `null` enquanto o resumo não respondeu — o alerta não
+   * pode aparecer antes disso.
+   *
+   * `resumoLoading` vem primeiro na cadeia, e não só a ausência de `resumo`:
+   * na revalidação disparada por salvar/remover, o resumo anterior continua em
+   * memória (de propósito — os números não devem sumir da tela a cada
+   * gravação), mas ele descreve o estado *antes* da alteração. Afirmar o
+   * alerta a partir dele é afirmar por antecipação do mesmo jeito que derivá-lo
+   * da listagem era: quem acabou de promover alguém a Titular veria o aviso
+   * insistir até a resposta chegar. Enquanto a consulta está em voo — primeira
+   * ou não — o valor é "ainda não sei".
+   *
+   * Fora do carregamento, o resumo (BE-23) é a fonte da verdade: ele conta no
+   * banco, sem depender da página carregada. A listagem só entra como fallback
+   * depois de uma falha efetiva da chamada, para o alerta não sumir junto com
+   * ela.
+   */
+  const semTitular: boolean | null = resumoLoading
+    ? null
+    : resumo
+      ? !resumo.tem_titular
+      : resumoErro
+        ? !titularExists
+        : null;
+
+  /**
+   * Permissão do usuário para os campos sensíveis (#192/BE-25) — usada para o
+   * modo `create` do SlideOver (view/edit derivam do próprio detalhe carregado).
+   * Como a listagem só expõe `cor_raca`, usamos a presença dessa chave como
+   * sinal compartilhado — a matriz de permissão de BE-25 (#187) trata Saúde e
+   * Cor/Raça como o mesmo grupo. Se BE-25 introduzir permissões independentes,
+   * este bloco precisa passar a checar Saúde por outra via.
+   * Lista vazia: default otimista (mostra) — o backend rejeita no save.
+   */
+  const sensitivePermissions = useMemo<SensitivePermissions>(() => {
+    if (membros.length === 0) return { corRaca: true, saude: true };
+    const hasCorRaca = "cor_raca_display" in membros[0];
+    return { corRaca: hasCorRaca, saude: hasCorRaca };
+  }, [membros]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   function openCreate() {
@@ -106,19 +216,24 @@ export function MembrosTab({ upfId }: Props) {
   // Como a chamada de API que produz `saved` já foi bem-sucedida no filho,
   // aqui é seguro apenas commitar o novo estado + toast + fechar.
   function handleSaved(saved: MembroDetail) {
+    // Preserva a "ausência" do backend: se `cor_raca_display` não veio na
+    // resposta (sem permissão), o listItem também não deve ter — a listagem
+    // segue coerente com o sinal usado em #192.
     const listItem: MembroListItem = {
       id: saved.id,
-      nome: saved.nome,
-      data_nasc: saved.data_nasc,
+      nome_completo: saved.nome_completo,
+      data_nascimento: saved.data_nascimento,
       idade: saved.idade,
-      parentesco: saved.parentesco,
-      parentesco_display: saved.parentesco_display,
+      grau_parentesco: saved.grau_parentesco,
+      grau_parentesco_display: saved.grau_parentesco_display,
       cpf: saved.cpf,
       genero: saved.genero,
       genero_display: saved.genero_display,
-      cor_raca: saved.cor_raca,
-      cor_raca_display: saved.cor_raca_display,
       criado_em: saved.criado_em,
+      ...("cor_raca" in saved ? { cor_raca: saved.cor_raca } : {}),
+      ...("cor_raca_display" in saved
+        ? { cor_raca_display: saved.cor_raca_display }
+        : {}),
     };
 
     setMembros((prev) => {
@@ -129,8 +244,8 @@ export function MembrosTab({ upfId }: Props) {
       return next;
     });
 
-    pushToast(
-      "success",
+    setResumoKey((k) => k + 1);
+    showToast(
       slideOver.open && slideOver.mode === "edit"
         ? "Membro atualizado."
         : "Membro adicionado.",
@@ -142,40 +257,83 @@ export function MembrosTab({ upfId }: Props) {
   // Basta remover a linha da lista, fechar o diálogo e disparar o toast.
   function handleDeleteConfirmed(id: number) {
     setMembros((prev) => prev.filter((m) => m.id !== id));
+    setResumoKey((k) => k + 1);
     setRemover(null);
-    pushToast("success", "Membro removido.");
+    showToast("Membro removido.");
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-4">
-      {/* Cabeçalho da aba com contagem + botão de adicionar */}
-      {(!loading && !error && membros.length > 0) && (
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm text-text-muted">
-            {membros.length}{" "}
-            {membros.length === 1 ? "membro cadastrado" : "membros cadastrados"}
-          </p>
-          <Button size="sm" leftIcon={<Plus className="h-4 w-4" />} onClick={openCreate}>
+    <div className="space-y-4" data-testid="membros-tab">
+      {/* Card-resumo — aparece também com a UPF vazia. Total zero e faixas
+          zeradas são informação, e é justamente aí que o alerta de "sem
+          Titular" mais importa; escondê-lo junto com a lista tirava da tela o
+          único aviso de que a UPF está irregular. O alerta em si só entra
+          depois que o resumo responde — ver `semTitular`. */}
+      {!loading && !error && (
+        <ComposicaoResumoCard
+          resumo={resumo}
+          loading={resumoLoading}
+          semTitular={semTitular}
+          onRetry={() => setResumoKey((k) => k + 1)}
+        />
+      )}
+
+      {/* A barra de ações continua atrelada à lista: exportar CSV de uma UPF
+          sem membros não tem o que gerar, e o CTA de cadastro com zero membros
+          é o do EmptyState logo abaixo ("Adicionar primeiro membro"). */}
+      {!loading && !error && membros.length > 0 && (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            leftIcon={
+              exporting ? (
+                <Spinner className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )
+            }
+            disabled={exporting}
+            onClick={handleExport}
+            data-testid="membros-exportar-csv"
+          >
+            {exporting ? "Exportando…" : "Exportar CSV"}
+          </Button>
+          <Button
+            size="sm"
+            leftIcon={<Plus className="h-4 w-4" />}
+            onClick={openCreate}
+          >
             Adicionar membro
           </Button>
         </div>
       )}
 
-      {loading && <TabelaSkeleton />}
+      {loading && <CarregandoSection />}
 
       {!loading && error && (
-        <ErroSection message={error} onRetry={() => setReloadKey((k) => k + 1)} />
+        <ErroSection
+          message={error}
+          onRetry={() => {
+            setReloadKey((k) => k + 1);
+            setResumoKey((k) => k + 1);
+          }}
+        />
       )}
 
       {!loading && !error && membros.length === 0 && (
         <EmptyState
           icon={<Users className="h-7 w-7" />}
-          title="Nenhum membro cadastrado ainda"
-          description="Adicione o titular e os demais integrantes da família."
+          title="Nenhum membro cadastrado ainda."
+          description="O primeiro membro cadastrado deve ser o Titular da UPF."
           action={
-            <Button leftIcon={<UserPlus className="h-4 w-4" />} onClick={openCreate}>
+            <Button
+              leftIcon={<UserPlus className="h-4 w-4" />}
+              onClick={openCreate}
+              data-testid="membros-adicionar-primeiro"
+            >
               Adicionar primeiro membro
             </Button>
           }
@@ -198,6 +356,10 @@ export function MembrosTab({ upfId }: Props) {
         upfId={upfId}
         membroListItem={slideOver.open ? slideOver.membro : undefined}
         titularExists={titularExists}
+        // Sem titular na UPF, o próximo cadastro é obrigatoriamente ele — o
+        // formulário já abre com o parentesco preenchido.
+        parentescoPadrao={titularExists ? undefined : "titular"}
+        sensitivePermissions={sensitivePermissions}
         onSaved={handleSaved}
         onEditFromView={
           slideOver.open && slideOver.mode === "view" && slideOver.membro
@@ -216,11 +378,9 @@ export function MembrosTab({ upfId }: Props) {
         onClose={() => setRemover(null)}
         upfId={upfId}
         membroId={remover?.id ?? null}
-        membroNome={remover?.nome ?? ""}
+        membroNome={remover?.nome_completo ?? ""}
         onDeleted={handleDeleteConfirmed}
       />
-
-      <ToastStack toasts={toasts} />
     </div>
   );
 }
@@ -237,15 +397,15 @@ type TabelaProps = {
 function Tabela({ membros, onView, onEdit, onRemove }: TabelaProps) {
   // Titular sempre no topo; demais na ordem em que já vieram do backend.
   const ordenados = useMemo(() => {
-    const titular = membros.filter((m) => m.parentesco === "titular");
-    const outros = membros.filter((m) => m.parentesco !== "titular");
+    const titular = membros.filter((m) => m.grau_parentesco === "titular");
+    const outros = membros.filter((m) => m.grau_parentesco !== "titular");
     return [...titular, ...outros];
   }, [membros]);
 
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-180 border-collapse text-sm">
+        <table className="w-full min-w-160 border-collapse text-sm">
           <thead className="bg-surface-muted text-left text-2xs font-semibold uppercase tracking-wide text-text-muted">
             <tr>
               <th className="px-4 py-2.5">Nome</th>
@@ -253,7 +413,6 @@ function Tabela({ membros, onView, onEdit, onRemove }: TabelaProps) {
               <th className="px-4 py-2.5">Idade</th>
               <th className="px-4 py-2.5">Gênero</th>
               <th className="px-4 py-2.5">CPF</th>
-              <th className="px-4 py-2.5">Saúde</th>
               <th className="px-4 py-2.5 text-right">Ações</th>
             </tr>
           </thead>
@@ -274,6 +433,10 @@ function Tabela({ membros, onView, onEdit, onRemove }: TabelaProps) {
   );
 }
 
+/**
+ * Saúde e Cor/Raça ficam de fora da listagem resumida de propósito: são campos
+ * sensíveis e só aparecem no detalhe/formulário, sujeitos à regra de FE-25.
+ */
 function LinhaMembro({
   membro,
   onView,
@@ -285,33 +448,32 @@ function LinhaMembro({
   onEdit: (m: MembroListItem) => void;
   onRemove: (m: MembroListItem) => void;
 }) {
-  const isTitular = membro.parentesco === "titular";
-  // Placeholder de "saúde" enquanto a lista virá via detail — a listagem hoje
-  // não traz o array de saúde; representamos como "—" e ao abrir a linha via
-  // "Ver" o SlideOver mostra o conjunto real.
+  const isTitular = membro.grau_parentesco === "titular";
+
   return (
-    <tr className="border-t border-border align-middle transition hover:bg-surface-muted/40">
-      <td className="px-4 py-3 font-medium text-text">{membro.nome}</td>
+    <tr
+      data-testid={`membro-row-${membro.id}`}
+      className="cursor-pointer border-t border-border align-middle transition hover:bg-surface-muted/40"
+      onClick={() => onView(membro)}
+    >
+      <td className="px-4 py-3 font-medium text-text">{membro.nome_completo}</td>
       <td className="px-4 py-3">
         {isTitular ? (
-          <span className="inline-flex items-center rounded-full border border-primary bg-primary/10 px-2 py-0.5 text-2xs font-semibold text-primary">
-            {membro.parentesco_display}
+          <span
+            data-testid="membro-badge-titular"
+            className="inline-flex items-center gap-1 rounded-full border border-primary bg-primary/10 px-2 py-0.5 text-2xs font-semibold text-primary"
+          >
+            <Star className="h-3 w-3 fill-current" aria-hidden />
+            {membro.grau_parentesco_display}
           </span>
         ) : (
-          <Chip>{membro.parentesco_display}</Chip>
+          <Chip>{membro.grau_parentesco_display}</Chip>
         )}
       </td>
-      <td className="px-4 py-3 text-text-muted">
-        {membro.idade !== null && membro.idade !== undefined
-          ? `${membro.idade} anos`
-          : "—"}
-      </td>
+      <td className="px-4 py-3 text-text-muted">{idadeLabel(membro)}</td>
       <td className="px-4 py-3 text-text-muted">{membro.genero_display || "—"}</td>
       <td className="px-4 py-3 font-mono text-2xs text-text-muted tabular-nums">
         {membro.cpf ? maskCpf(membro.cpf) || membro.cpf : "—"}
-      </td>
-      <td className="px-4 py-3">
-        <SaudePreview />
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center justify-end gap-1">
@@ -337,13 +499,6 @@ function LinhaMembro({
   );
 }
 
-// Placeholder discreto — a listagem paginada não carrega o campo `saude`.
-// Ficou como "—" na tabela e o SlideOver mostra o conjunto completo.
-// Mantido como componente separado para eventual evolução futura (ex.: prefetch).
-function SaudePreview() {
-  return <span className="text-text-muted">—</span>;
-}
-
 function AcaoIcone({
   title,
   onClick,
@@ -360,7 +515,12 @@ function AcaoIcone({
       type="button"
       title={title}
       aria-label={title}
-      onClick={onClick}
+      // A linha inteira abre o detalhe; sem parar a propagação, "Editar" e
+      // "Remover" disparariam também o onClick do <tr>.
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
       className={`inline-flex h-8 w-8 items-center justify-center rounded-md text-text-muted transition hover:bg-surface-muted ${
         danger ? "hover:text-error-text" : "hover:text-text"
       }`}
@@ -370,7 +530,18 @@ function AcaoIcone({
   );
 }
 
-// ─── Skeleton ────────────────────────────────────────────────────────────────
+// ─── Carregamento ────────────────────────────────────────────────────────────
+
+function CarregandoSection() {
+  return (
+    <div className="space-y-2" data-testid="membros-loading">
+      <p className="text-sm text-text-muted" role="status" aria-live="polite">
+        Carregando membros…
+      </p>
+      <TabelaSkeleton />
+    </div>
+  );
+}
 
 function TabelaSkeleton() {
   return (
@@ -410,37 +581,6 @@ function ErroSection({
       <Button variant="secondary" onClick={onRetry}>
         Tentar novamente
       </Button>
-    </div>
-  );
-}
-
-// ─── Toasts ──────────────────────────────────────────────────────────────────
-
-function ToastStack({ toasts }: { toasts: Toast[] }) {
-  if (toasts.length === 0) return null;
-  return (
-    <div
-      className="pointer-events-none fixed bottom-4 right-4 z-50 flex flex-col gap-2"
-      role="status"
-      aria-live="polite"
-    >
-      {toasts.map((t) => (
-        <div
-          key={t.id}
-          className={`pointer-events-auto flex items-center gap-2 rounded-md border px-3 py-2 text-sm shadow-md ${
-            t.variant === "success"
-              ? "border-success-text bg-success-bg text-success-text"
-              : "border-error-text bg-error-bg text-error-text"
-          }`}
-        >
-          {t.variant === "success" ? (
-            <CheckCircle2 className="h-4 w-4" />
-          ) : (
-            <AlertTriangle className="h-4 w-4" />
-          )}
-          <span>{t.message}</span>
-        </div>
-      ))}
     </div>
   );
 }

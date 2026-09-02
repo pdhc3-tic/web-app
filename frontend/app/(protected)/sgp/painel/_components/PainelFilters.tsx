@@ -1,18 +1,37 @@
 "use client";
 
 import { X } from "lucide-react";
-import Spinner from "@/app/components/icons/Spinner";
 import { Select } from "@/app/components/ui/Select/Select";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
+import { acaoStatusLabel } from "@/app/lib/acoes";
 
 export type PainelFiltersValue = {
   /** Id da Meta, como string (valor do <Select>). "" = todas. */
   meta: string;
   /** Id do território. "" = todos. */
   territorio: string;
+  /** status_execucao da Ação. "" = todas as situações. */
+  situacao: string;
 };
 
-export const FILTROS_VAZIOS: PainelFiltersValue = { meta: "", territorio: "" };
+export const FILTROS_VAZIOS: PainelFiltersValue = {
+  meta: "",
+  territorio: "",
+  situacao: "",
+};
+
+/**
+ * Os três valores que o backend aceita em `status_execucao`
+ * (WorkPlanDashboardQuerySerializer). Exportados porque a página também os usa
+ * para sanear o que vem da URL.
+ */
+export const SITUACOES_VALIDAS = ["no_prazo", "em_atraso", "concluida"];
+
+/** Rótulos vêm de `acaoStatusLabel` para não abrir um segundo mapa. */
+const SITUACAO_OPTIONS: SelectOption[] = SITUACOES_VALIDAS.map((value) => ({
+  value,
+  label: acaoStatusLabel(value),
+}));
 
 type Props = {
   value: PainelFiltersValue;
@@ -21,8 +40,6 @@ type Props = {
   metaOptions: SelectOption[];
   territorioOptions: SelectOption[];
   optionsLoading: boolean;
-  /** true enquanto o cruzamento Ação × território está sendo resolvido. */
-  territorioLoading: boolean;
 };
 
 export function PainelFilters({
@@ -32,9 +49,9 @@ export function PainelFilters({
   metaOptions,
   territorioOptions,
   optionsLoading,
-  territorioLoading,
 }: Props) {
-  const temFiltro = value.meta !== "" || value.territorio !== "";
+  const temFiltro =
+    value.meta !== "" || value.territorio !== "" || value.situacao !== "";
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4">
@@ -65,6 +82,20 @@ export function PainelFilters({
           />
         </div>
 
+        <div className="min-w-40 flex-1">
+          <Select
+            id="painel-filtro-situacao"
+            label="Situação"
+            options={[
+              { value: "", label: "Todas as situações" },
+              ...SITUACAO_OPTIONS,
+            ]}
+            value={value.situacao}
+            onChange={(v) => onChange({ situacao: v })}
+            placeholder="Todas as situações"
+          />
+        </div>
+
         {temFiltro && (
           <button
             type="button"
@@ -83,18 +114,12 @@ export function PainelFilters({
           seria a errada. */}
       {value.territorio !== "" && (
         <p
-          className="flex items-center gap-2 text-xs leading-relaxed text-text-muted"
+          className="text-xs leading-relaxed text-text-muted"
           data-testid="painel-aviso-territorio"
-          aria-live="polite"
         >
-          {territorioLoading && (
-            <Spinner className="h-3.5 w-3.5 shrink-0 animate-spin" />
-          )}
-          <span>
-            {territorioLoading
-              ? "Cruzando Ações com as Atividades de Campo do território…"
-              : "Exibindo apenas Ações com Atividades de Campo neste território. O semáforo continua medindo a execução total da Ação — não há planejamento por território."}
-          </span>
+          Exibindo apenas Ações com Atividades de Campo neste território. O
+          semáforo continua medindo a execução total da Ação — não há
+          planejamento por território.
         </p>
       )}
     </div>

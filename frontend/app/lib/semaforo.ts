@@ -1,21 +1,25 @@
-import { progressoAcao, type Acao } from "@/app/lib/acoes";
-import { parseDateOnly } from "@/app/lib/datetime";
+import type { PainelAcaoApi } from "@/app/lib/painel";
 
 /**
  * Semáforo de execução das Ações do Plano de Trabalho (RF17).
  *
+ * ─── Quem classifica ────────────────────────────────────────────────────────
+ *
+ * O BACKEND. A regra vive em `apps/sgp/services/workplan_dashboard.py`:
+ * verde quando o realizado alcança o esperado, amarelo a partir de metade do
+ * esperado, vermelho abaixo disso. Este módulo só rotula, agrega e formata o
+ * que vem de lá. Classificar de novo aqui criaria uma segunda verdade, e o
+ * alerta diário por e-mail (apps/sgp/tasks.py) usa a do backend.
+ *
  * ─── De onde sai o "esperado" ───────────────────────────────────────────────
  *
- * O backend NÃO tem curva de execução planejada: WorkPlanAcao guarda apenas
- * `quantidade_planejada`, deriva `quantidade_realizada` (contagem de Atividades
- * concluídas) e um `status_execucao` binário por data de fim. Não existe campo
- * dizendo quanto já deveria ter sido entregue nesta altura do projeto.
- *
- * O esperado aqui é, então, o TEMPO DECORRIDO do período da Ação: metade do
- * prazo passou → espera-se metade da entrega. É uma reta, e execução real não é
- * uniforme (obras concentram entrega no fim, capacitações no começo). É a única
- * leitura possível com os dados existentes, e por isso a tela nomeia o critério
- * em vez de exibir um número mágico.
+ * Não há curva de execução planejada no domínio: WorkPlanAcao guarda apenas
+ * `quantidade_planejada` e deriva `quantidade_realizada`. O esperado é, então,
+ * o TEMPO DECORRIDO do período da Ação — metade do prazo passou, espera-se
+ * metade da entrega. É uma reta, e execução real não é uniforme (obras
+ * concentram entrega no fim, capacitações no começo). É a única leitura
+ * possível com os dados existentes, e por isso a tela nomeia o critério em vez
+ * de exibir um número mágico.
  *
  * Vale lembrar o viés que vem de baixo, já documentado em acoes.ts: o realizado
  * é CONTAGEM de Atividades concluídas, não soma de unidades entregues. Para
@@ -23,16 +27,16 @@ import { parseDateOnly } from "@/app/lib/datetime";
  * vermelho — o problema é do dado de origem, não da regra daqui.
  */
 
-// ─── Níveis e limiares ──────────────────────────────────────────────────────
+// ─── Níveis ─────────────────────────────────────────────────────────────────
 
+/** Os três do backend, mais o `sem-dado` que a UI acrescenta (ver nivelDaApi). */
 export type NivelSemaforo = "verde" | "amarelo" | "vermelho" | "sem-dado";
 
-/** A partir desta razão realizado/esperado a Ação está verde. */
-export const LIMIAR_VERDE = 0.9;
-
 /**
- * Abaixo desta razão a Ação está vermelha e entra no alerta.
- * 0,5 é o critério da issue: "progresso abaixo de 50% do esperado".
+ * Razão realizado/esperado abaixo da qual a Ação está vermelha e entra no
+ * alerta. 0,5 é o critério da issue — "progresso abaixo de 50% do esperado" — e
+ * o mesmo multiplicador de `_semaphore` no backend. Aqui serve só para escrever
+ * o número no texto do alerta, não para classificar.
  */
 export const LIMIAR_VERMELHO = 0.5;
 
@@ -50,7 +54,7 @@ export function nivelLabel(nivel: NivelSemaforo): string {
   return NIVEL_LABEL[nivel];
 }
 
-// ─── Avaliação ──────────────────────────────────────────────────────────────
+// ─── Tradução da resposta do painel ─────────────────────────────────────────
 
 /** Período de referência; a Meta serve de fallback para Ações sem datas. */
 export type Periodo = {
@@ -64,105 +68,61 @@ export type AvaliacaoSemaforo = {
   realizado: number | null;
   /** 0–100. `null` quando não há período conhecido. */
   esperado: number | null;
-  /** realizado ÷ esperado. `null` quando algum dos dois falta. */
-  razao: number | null;
   /** Datas efetivamente usadas — a UI mostra quando vieram da Meta. */
   periodo: Periodo;
   /** true quando a Ação não tem datas próprias e herdou as da Meta. */
   periodoHerdado: boolean;
 };
 
-const DIA_MS = 24 * 60 * 60 * 1000;
-
 /**
- * Fração do período já decorrida, em 0–100.
+ * Nível exibido para uma Ação do painel.
  *
- * `null` quando falta alguma das pontas ou o período é degenerado (fim antes
- * do início) — sem denominador não há proporção a calcular.
+ * É o `semaforo` do backend, com uma única ressalva: sem quantidade planejada
+ * não há denominador, e o backend classifica esse caso como vermelho porque
+ * 0/0 vira 0%. Deixar passar colocaria um alarme falso justamente na seção mais
+ * visível da tela, então a UI o exibe como "Sem dado" — dizer que não se sabe é
+ * mais honesto que dizer que está crítico.
  */
-export function percentualEsperado(
-  periodo: Periodo,
-  hoje: Date = new Date(),
-): number | null {
-  const inicio = parseDateOnly(periodo.data_inicio);
-  const fim = parseDateOnly(periodo.data_fim);
-  if (!inicio || !fim) return null;
-
-  // O período é fechado nas duas pontas: uma Ação de 01/01 a 01/01 dura um dia,
-  // e no dia 01/01 ela já está 100% vencida.
-  const total = fim.getTime() - inicio.getTime() + DIA_MS;
-  if (total <= 0) return null;
-
-  const decorrido = hoje.getTime() - inicio.getTime();
-  const bruto = (decorrido / total) * 100;
-  return Math.min(100, Math.max(0, bruto));
+export function nivelDaApi(acao: PainelAcaoApi): NivelSemaforo {
+  if (Number(acao.quantidade_planejada) <= 0) return "sem-dado";
+  return acao.semaforo;
 }
 
-/** Datas da Ação, caindo para as da Meta quando a Ação não tem as suas. */
-function periodoEfetivo(
-  acao: Acao,
-  meta: Periodo | null,
-): { periodo: Periodo; herdado: boolean } {
-  if (acao.data_inicio && acao.data_fim) {
-    return {
-      periodo: { data_inicio: acao.data_inicio, data_fim: acao.data_fim },
-      herdado: false,
-    };
-  }
-  if (meta?.data_inicio && meta?.data_fim) {
-    return {
-      periodo: { data_inicio: meta.data_inicio, data_fim: meta.data_fim },
-      herdado: true,
-    };
-  }
-  return {
-    periodo: { data_inicio: acao.data_inicio, data_fim: acao.data_fim },
-    herdado: false,
-  };
+/** Decimal do DRF ("53.60") → number, ou `null` quando não há o que exibir. */
+function percentual(valor: string | null, temDenominador: boolean): number | null {
+  if (!temDenominador) return null;
+  const n = Number(valor);
+  return Number.isFinite(n) ? n : null;
 }
 
 /**
- * Classifica uma Ação no semáforo.
+ * Converte uma Ação do painel na forma que os componentes consomem.
  *
- * A ordem dos casos importa — cada um tira do caminho uma situação em que a
- * razão realizado/esperado não significaria nada:
- *
- * 1. sem quantidade planejada  → sem-dado (0/0 não é 0%)
- * 2. entrega completa          → verde, mesmo fora do prazo: está feito
- * 3. período não conhecido     → sem-dado (nada contra o que comparar)
- * 4. período ainda não começou → verde (esperado 0; nada devido ainda)
- * 5. demais                    → razão contra os limiares
- *
- * Ação com prazo vencido e entrega incompleta cai naturalmente no caso 5 com
- * esperado = 100, então a razão vira o próprio percentual realizado.
- *
- * `hoje` é injetável para manter a função pura e testável.
+ * O backend calcula `progresso_esperado` já herdando as datas da Meta, mas
+ * devolve `data_inicio`/`data_fim` crus. A herança é refeita aqui só para
+ * rotular o período — nenhum indicador é recalculado.
  */
-export function avaliarAcao(
-  acao: Acao,
+export function avaliacaoDaApi(
+  acao: PainelAcaoApi,
   meta: Periodo | null = null,
-  hoje: Date = new Date(),
 ): AvaliacaoSemaforo {
-  const { periodo, herdado } = periodoEfetivo(acao, meta);
-  const esperado = percentualEsperado(periodo, hoje);
-  const { percentual: realizado } = progressoAcao(acao);
+  const temDatasProprias = Boolean(acao.data_inicio && acao.data_fim);
+  const herdado = !temDatasProprias && Boolean(meta?.data_inicio && meta?.data_fim);
 
-  const base = { realizado, esperado, periodo, periodoHerdado: herdado };
+  const periodo: Periodo = herdado
+    ? { data_inicio: meta!.data_inicio, data_fim: meta!.data_fim }
+    : { data_inicio: acao.data_inicio, data_fim: acao.data_fim };
 
-  if (realizado === null) return { ...base, nivel: "sem-dado", razao: null };
-  if (realizado >= 100) return { ...base, nivel: "verde", razao: null };
-  if (esperado === null) return { ...base, nivel: "sem-dado", razao: null };
-  if (esperado <= 0) return { ...base, nivel: "verde", razao: null };
+  const temDenominador = Number(acao.quantidade_planejada) > 0;
+  const temPeriodo = Boolean(periodo.data_inicio && periodo.data_fim);
 
-  const razao = realizado / esperado;
-  const nivel: NivelSemaforo =
-    razao >= LIMIAR_VERDE
-      ? "verde"
-      : razao >= LIMIAR_VERMELHO
-        ? "amarelo"
-        : "vermelho";
-
-  return { ...base, nivel, razao };
+  return {
+    nivel: nivelDaApi(acao),
+    realizado: percentual(acao.percentual_realizado, temDenominador),
+    esperado: percentual(acao.progresso_esperado, temPeriodo),
+    periodo,
+    periodoHerdado: herdado,
+  };
 }
 
 // ─── Agregação ──────────────────────────────────────────────────────────────

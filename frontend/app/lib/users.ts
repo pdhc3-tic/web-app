@@ -4,6 +4,12 @@ import type { SelectOption } from "@/app/components/ui/Select/Select";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
+/** Autor de uma revogação — `acesso_revogado_por` do UserListSerializer. */
+export type RevogadoPor = {
+  id: number;
+  nome: string;
+};
+
 /** Espelha apps/core/serializers.py::UserListSerializer. */
 export type UserListItem = {
   id: number;
@@ -13,6 +19,21 @@ export type UserListItem = {
   territorios: Territorio[];
   ativo: boolean;
   ultimo_login: string | null;
+  /**
+   * Wipe remoto pendente: o app SCA apaga os dados locais no próximo sync e
+   * exige novo login. Independe de `ativo` — um usuário revogado continua
+   * ativo, então ele não some da listagem default (que filtra `ativo=true`).
+   */
+  acesso_revogado: boolean;
+  acesso_revogado_em: string | null;
+  acesso_revogado_por: RevogadoPor | null;
+  /**
+   * Só vêm preenchidos com `?com_dispositivo=true` — o backend anota os
+   * agregados apenas nesse caso, para não pagar o N+1 nas demais listagens
+   * (apps/core/views/users.py::UserViewSet.get_queryset).
+   */
+  qtd_dispositivos: number | null;
+  ultimo_sync_dispositivos: string | null;
 };
 
 /** Resposta paginada padrão do DRF (LimitOffsetPagination). */
@@ -37,6 +58,11 @@ export type ListUsersParams = {
   ultimoAcessoDe?: string;
   ultimoAcessoAte?: string;
   ordering?: string;
+  /**
+   * Restringe aos usuários com ao menos um dispositivo SCA vinculado e liga os
+   * agregados `qtd_dispositivos` / `ultimo_sync_dispositivos`.
+   */
+  comDispositivo?: boolean;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -50,6 +76,7 @@ function buildUsersQuery(params: ListUsersParams): string {
   if (params.perfil) qs.set("perfil", params.perfil);
   if (params.territorio) qs.set("territorio", params.territorio);
   if (params.ordering) qs.set("ordering", params.ordering);
+  if (params.comDispositivo) qs.set("com_dispositivo", "true");
 
   // Status → parâmetro `ativo`.
   // O backend só lista inativos quando `ativo` está presente na query
@@ -59,12 +86,12 @@ function buildUsersQuery(params: ListUsersParams): string {
   else if (params.status === "inativos") qs.set("ativo", "false");
   else if (params.status === "todos") qs.set("ativo", "");
 
-  // Range de último acesso (datas → datetime ISO em UTC).
-  if (params.ultimoAcessoDe) {
-    qs.set("ultimo_login_gte", `${params.ultimoAcessoDe}T00:00:00Z`);
-  }
+  // Range de último acesso: o "YYYY-MM-DD" do input vai cru. Desde a #212 o
+  // backend recorta o dia no TIME_ZONE do servidor — converter para ISO em UTC
+  // aqui era justamente o que deslocava a janela em horas.
+  if (params.ultimoAcessoDe) qs.set("ultimo_acesso_de", params.ultimoAcessoDe);
   if (params.ultimoAcessoAte) {
-    qs.set("ultimo_login_lte", `${params.ultimoAcessoAte}T23:59:59Z`);
+    qs.set("ultimo_acesso_ate", params.ultimoAcessoAte);
   }
 
   return qs.toString();
@@ -78,6 +105,53 @@ export async function listUsers(
   signal?: AbortSignal,
 ): Promise<Paginated<UserListItem>> {
   const res = await apiClient(`/api/v1/users/?${buildUsersQuery(params)}`, {
+    signal,
+  });
+  return res.json();
+}
+
+// ─── Acesso ao app SCA (revogar / reativar) ─────────────────────────────────
+
+/**
+ * Corpo devolvido por `revogar-acesso/` e `reativar-acesso/`.
+ *
+ * `message` já vem em pt-BR e descreve a consequência (wipe no próximo sync /
+ * necessidade de novo login) — a tela usa esse texto direto no toast em vez de
+ * manter uma segunda cópia da copy do lado do cliente.
+ */
+export type AcessoResponse = {
+  message: string;
+  acesso_revogado: boolean;
+  /** Refresh tokens colocados na blacklist — todas as sessões do usuário. */
+  sessoes_invalidadas: number;
+};
+
+/**
+ * PATCH /api/v1/users/{id}/revogar-acesso/ — marca `acesso_revogado` e derruba
+ * as sessões ativas. O apagamento dos dados locais acontece no próximo sync do
+ * dispositivo; o efeito no servidor é imediato.
+ */
+export async function revogarAcesso(
+  id: number,
+  signal?: AbortSignal,
+): Promise<AcessoResponse> {
+  const res = await apiClient(`/api/v1/users/${id}/revogar-acesso/`, {
+    method: "PATCH",
+    signal,
+  });
+  return res.json();
+}
+
+/**
+ * PATCH /api/v1/users/{id}/reativar-acesso/ — limpa a revogação. O backend
+ * invalida as sessões de novo, então o técnico precisa de um login completo.
+ */
+export async function reativarAcesso(
+  id: number,
+  signal?: AbortSignal,
+): Promise<AcessoResponse> {
+  const res = await apiClient(`/api/v1/users/${id}/reativar-acesso/`, {
+    method: "PATCH",
     signal,
   });
   return res.json();

@@ -77,8 +77,10 @@ function SkeletonCards() {
 export function AtividadesTable({ atividades, loading }: Props) {
   const router = useRouter();
 
+  // Clicar na linha abre a FICHA, não o formulário: consultar é o caso comum, e
+  // quem só tem leitura não deveria cair num modo de edição para ver os dados.
   function goToDetail(id: number) {
-    router.push(`/sgp/atividades/${id}/editar/`);
+    router.push(`/sgp/atividades/${id}/`);
   }
 
   return (

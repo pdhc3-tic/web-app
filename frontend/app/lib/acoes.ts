@@ -115,8 +115,14 @@ export type Progresso = {
  *
  * Planejada zero devolve `percentual: null` — sem denominador não há progresso,
  * e 0/0 não é 0%.
+ *
+ * Aceita qualquer objeto com as duas quantidades, e não só uma `Acao`: o Painel
+ * de Acompanhamento passa a Ação que vem do endpoint do painel, que carrega os
+ * mesmos dois campos sem ser o serializer completo.
  */
-export function progressoAcao(acao: Acao): Progresso {
+export function progressoAcao(
+  acao: Pick<Acao, "quantidade_realizada" | "quantidade_planejada">,
+): Progresso {
   const realizada = Number(acao.quantidade_realizada) || 0;
   const planejada = Number(acao.quantidade_planejada) || 0;
   if (planejada <= 0) return { realizada, planejada, percentual: null };
@@ -129,7 +135,9 @@ export function progressoAcao(acao: Acao): Progresso {
 }
 
 /** "2 de 12 intercâmbios" — o número legível quando a barra é fina demais. */
-export function progressoLabel(acao: Acao): string {
+export function progressoLabel(
+  acao: Pick<Acao, "quantidade_realizada" | "quantidade_planejada">,
+): string {
   const { realizada, planejada } = progressoAcao(acao);
   return `${formatQtd(realizada)} de ${formatQtd(planejada)}`;
 }

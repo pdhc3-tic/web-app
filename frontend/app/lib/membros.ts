@@ -1,4 +1,4 @@
-import { apiClient } from "@/app/lib/api";
+import { ApiError, apiClient } from "@/app/lib/api";
 
 // ─── Constantes espelhadas do backend ────────────────────────────────────────
 
@@ -16,13 +16,17 @@ export const PARENTESCO_OPTIONS: { value: string; label: string }[] = [
   { value: "outro", label: "Outro" },
 ];
 
-/** Espelha apps/sgp/constants.py::SAUDE_CHOICES. Valor cru + rótulo humano. */
+/**
+ * Espelha apps/sgp/constants.py::SAUDE_CHOICES. Valor cru + rótulo humano.
+ * `nenhuma` é mutuamente exclusiva com as demais (validate_saude no backend).
+ */
 export const SAUDE_OPTIONS: { value: string; label: string }[] = [
+  { value: "nenhuma", label: "Nenhuma" },
   { value: "diabetes", label: "Diabetes" },
   { value: "hipertensao", label: "Hipertensão" },
   { value: "deficiencia_visual", label: "Deficiência visual" },
   { value: "deficiencia_auditiva", label: "Deficiência auditiva" },
-  { value: "deficiencia_fisica", label: "Deficiência física" },
+  { value: "deficiencia_motora", label: "Deficiência motora" },
   { value: "deficiencia_intelectual", label: "Deficiência intelectual" },
   { value: "deficiencia_multipla", label: "Deficiência múltipla" },
   { value: "doenca_cardiaca", label: "Doença cardíaca" },
@@ -42,47 +46,73 @@ export function saudeLabel(value: string): string {
   return SAUDE_OPTIONS.find((s) => s.value === value)?.label ?? value;
 }
 
+/**
+ * Escolaridades que indicam vínculo escolar ativo, sobre
+ * apps/sgp/constants.py::ESCOLARIDADE_CHOICES: 2 (Fundamental incompleto),
+ * 3 (Fundamental completo) e 4 (Médio incompleto). Fora desse conjunto a
+ * pessoa não está matriculada, e perguntar a escola só gera ruído.
+ */
+export const ESCOLARIDADE_COM_VINCULO_ESCOLAR: number[] = [2, 3, 4];
+
+/** A escolaridade informada indica matrícula ativa? */
+export function temVinculoEscolar(
+  escolaridade: number | null | undefined,
+): boolean {
+  if (escolaridade === null || escolaridade === undefined) return false;
+  return ESCOLARIDADE_COM_VINCULO_ESCOLAR.includes(escolaridade);
+}
+
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
 /**
  * Espelha apps/sgp/serializers.py::MembroListSerializer.
  * genero/cor_raca são choices inteiros; use os `*_display` para exibição.
+ *
+ * `cor_raca`/`cor_raca_display` são omitidos pelo backend (BE-25/#187) quando o
+ * perfil do usuário não tem permissão de leitura — a ausência da chave é o
+ * sinal usado pelo frontend para não renderizar o campo (#192).
  */
 export type MembroListItem = {
   id: number;
-  nome: string;
-  data_nasc: string | null;
+  nome_completo: string;
+  data_nascimento: string | null;
   idade: number | null;
-  parentesco: string;
-  parentesco_display: string;
+  grau_parentesco: string;
+  grau_parentesco_display: string;
   cpf: string;
   genero: number | null;
   genero_display: string;
-  cor_raca: number | null;
-  cor_raca_display: string;
+  cor_raca?: number | null;
+  cor_raca_display?: string;
   criado_em: string;
 };
 
-/** Espelha apps/sgp/serializers.py::MembroDetailSerializer. */
+/**
+ * Espelha apps/sgp/serializers.py::MembroDetailSerializer.
+ *
+ * `cor_raca`/`cor_raca_display` e `saude` são omitidos pelo backend (BE-25/#187)
+ * quando o perfil do usuário não tem permissão de leitura — a ausência da chave
+ * é o sinal usado pelo frontend para não renderizar o campo (#192).
+ */
 export type MembroDetail = {
   id: number;
   upf: number;
-  nome: string;
-  data_nasc: string | null;
+  nome_completo: string;
+  data_nascimento: string | null;
   idade: number | null;
   cpf: string;
   rg: string;
   nis: string;
   caf: string;
-  parentesco: string;
-  parentesco_display: string;
+  grau_parentesco: string;
+  grau_parentesco_display: string;
   genero: number | null;
   genero_display: string;
-  cor_raca: number | null;
-  cor_raca_display: string;
+  cor_raca?: number | null;
+  cor_raca_display?: string;
   escola: string;
   seguridade_social: string[];
-  saude: string[];
+  saude?: string[];
   escolaridade: number | null;
   escolaridade_display: string;
   criado_por: number | null;
@@ -92,9 +122,9 @@ export type MembroDetail = {
 
 /** Campos graváveis (POST/PATCH). Campos opcionais podem ser omitidos. */
 export type MembroWritePayload = {
-  nome: string;
-  parentesco: string;
-  data_nasc?: string | null;
+  nome_completo: string;
+  grau_parentesco: string;
+  data_nascimento?: string | null;
   cpf?: string;
   rg?: string;
   nis?: string;
@@ -107,70 +137,223 @@ export type MembroWritePayload = {
   seguridade_social?: string[];
 };
 
+/**
+ * Espelha a resposta de GET /api/v1/sgp/upfs/{upfId}/membros/resumo/ (BE-23).
+ * As chaves de `faixa_etaria` são as do backend — use `FAIXAS_ETARIAS` para
+ * exibi-las na ordem e com os rótulos certos.
+ */
+export type ResumoMembros = {
+  total_membros: number;
+  faixa_etaria: Record<FaixaEtariaKey, number>;
+  genero: {
+    masculino: number;
+    feminino: number;
+    nao_binario: number;
+    nao_informado: number;
+  };
+  tem_titular: boolean;
+};
+
+export type FaixaEtariaKey =
+  | "0-11"
+  | "12-17"
+  | "18-59"
+  | "60+"
+  | "sem_data_nascimento";
+
+/**
+ * Ordem e rótulos das faixas etárias do card-resumo. A última não é uma faixa
+ * de idade: o backend joga ali quem está sem `data_nascimento`, e a soma das
+ * cinco fecha com `total_membros`.
+ */
+export const FAIXAS_ETARIAS: { key: FaixaEtariaKey; label: string }[] = [
+  { key: "0-11", label: "0 a 11 anos" },
+  { key: "12-17", label: "12 a 17 anos" },
+  { key: "18-59", label: "18 a 59 anos" },
+  { key: "60+", label: "60 anos ou mais" },
+  { key: "sem_data_nascimento", label: "Sem data de nascimento" },
+];
+
 // ─── API ─────────────────────────────────────────────────────────────────────
 
 type Envelope<T> = { count?: number; results?: T[] };
 
 /**
- * GET /api/v1/upfs/{upfId}/membros/ — lista todos os membros da UPF.
+ * GET /api/v1/sgp/upfs/{upfId}/membros/ — lista todos os membros da UPF.
  * Aceita resposta paginada (envelope) ou array cru — retorna sempre um array.
  */
 export async function listMembros(
   upfId: string | number,
   signal?: AbortSignal,
 ): Promise<MembroListItem[]> {
-  const res = await apiClient(`/api/v1/upfs/${upfId}/membros/?limit=1000`, {
+  const res = await apiClient(`/api/v1/sgp/upfs/${upfId}/membros/?limit=1000`, {
     signal,
   });
   const data = (await res.json()) as MembroListItem[] | Envelope<MembroListItem>;
   return Array.isArray(data) ? data : (data.results ?? []);
 }
 
-/** GET /api/v1/upfs/{upfId}/membros/{id}/ — detalhe completo do membro. */
+/** GET /api/v1/sgp/upfs/{upfId}/membros/{id}/ — detalhe completo do membro. */
 export async function getMembro(
   upfId: string | number,
   id: string | number,
   signal?: AbortSignal,
 ): Promise<MembroDetail> {
-  const res = await apiClient(`/api/v1/upfs/${upfId}/membros/${id}/`, {
+  const res = await apiClient(`/api/v1/sgp/upfs/${upfId}/membros/${id}/`, {
     signal,
   });
   return res.json();
 }
 
-/** POST /api/v1/upfs/{upfId}/membros/ — cria um membro. */
+/** POST /api/v1/sgp/upfs/{upfId}/membros/ — cria um membro. */
 export async function createMembro(
   upfId: string | number,
   payload: MembroWritePayload,
 ): Promise<MembroDetail> {
-  const res = await apiClient(`/api/v1/upfs/${upfId}/membros/`, {
+  const res = await apiClient(`/api/v1/sgp/upfs/${upfId}/membros/`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
   return res.json();
 }
 
-/** PATCH /api/v1/upfs/{upfId}/membros/{id}/ — atualiza um membro. */
+/** PATCH /api/v1/sgp/upfs/{upfId}/membros/{id}/ — atualiza um membro. */
 export async function updateMembro(
   upfId: string | number,
   id: string | number,
   payload: MembroWritePayload,
 ): Promise<MembroDetail> {
-  const res = await apiClient(`/api/v1/upfs/${upfId}/membros/${id}/`, {
+  const res = await apiClient(`/api/v1/sgp/upfs/${upfId}/membros/${id}/`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
   return res.json();
 }
 
-/** DELETE /api/v1/upfs/{upfId}/membros/{id}/ — remove um membro. */
+/** DELETE /api/v1/sgp/upfs/{upfId}/membros/{id}/ — remove um membro. */
 export async function deleteMembro(
   upfId: string | number,
   id: string | number,
 ): Promise<void> {
-  await apiClient(`/api/v1/upfs/${upfId}/membros/${id}/`, {
+  await apiClient(`/api/v1/sgp/upfs/${upfId}/membros/${id}/`, {
     method: "DELETE",
   });
+}
+
+/**
+ * GET /api/v1/sgp/upfs/{upfId}/membros/resumo/ — indicadores agregados da
+ * composição familiar (BE-23). É a fonte de `tem_titular` na aba: a listagem
+ * local pode estar desatualizada, o resumo vem direto do banco.
+ */
+export async function getResumoMembros(
+  upfId: string | number,
+  signal?: AbortSignal,
+): Promise<ResumoMembros> {
+  const res = await apiClient(`/api/v1/sgp/upfs/${upfId}/membros/resumo/`, {
+    signal,
+  });
+  return res.json();
+}
+
+// ─── BE-24: exportação de membros (CSV) — #191 ──────────────────────────────
+
+/** Estouro de tempo de espera do lado do cliente. Mesmo racional do BE-9/BE-20. */
+export const EXPORT_MEMBROS_TIMEOUT_MS = 60_000;
+
+export class ExportMembrosTimeoutError extends Error {
+  constructor() {
+    super("A geração do arquivo excedeu o tempo limite.");
+    this.name = "ExportMembrosTimeoutError";
+  }
+}
+
+/**
+ * Erro específico para "endpoint ainda não implementado no backend".
+ * Enquanto BE-24 não sai, o servidor responde 404 no path. O componente
+ * usa este erro para mostrar uma mensagem clara de pendência ao usuário
+ * (em vez de "não foi possível gerar o arquivo").
+ */
+export class ExportMembrosPendenteError extends Error {
+  constructor() {
+    super("A exportação ainda não está disponível — aguardando implementação no backend (BE-24).");
+    this.name = "ExportMembrosPendenteError";
+  }
+}
+
+function nomeDoContentDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(header);
+  if (!match) return null;
+  const bruto = match[1].trim();
+  try {
+    return decodeURIComponent(bruto);
+  } catch {
+    return bruto;
+  }
+}
+
+function nomeDerivadoLocalmente(upfId: string | number): string {
+  const agora = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp = [
+    agora.getFullYear(),
+    pad(agora.getMonth() + 1),
+    pad(agora.getDate()),
+    pad(agora.getHours()),
+    pad(agora.getMinutes()),
+    pad(agora.getSeconds()),
+  ].join("-");
+  return `membros_upf_${upfId}_${stamp}.csv`;
+}
+
+function dispararDownload(blob: Blob, nome: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nome;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/**
+ * GET /api/v1/sgp/upfs/{upfId}/membros/exportar/
+ *
+ * Baixa CSV de todos os membros da UPF. Colunas retornadas respeitam a
+ * matriz de permissão de BE-25 (#187) — Saúde/Cor-Raça só saem para perfis
+ * autorizados. O frontend não decide colunas: entrega o que o backend
+ * retornar (critério explícito da #191).
+ *
+ * Enquanto o endpoint não existir (404), lança `ExportMembrosPendenteError`
+ * — pequeno mimo para diferenciar "backend não tem" de "backend deu erro".
+ * Quando o BE-24 sair, funciona automaticamente sem mudança de código.
+ */
+export async function exportarMembrosCsv(
+  upfId: string | number,
+): Promise<string> {
+  let res: Response;
+  try {
+    res = await apiClient(
+      `/api/v1/sgp/upfs/${upfId}/membros/exportar/`,
+      { signal: AbortSignal.timeout(EXPORT_MEMBROS_TIMEOUT_MS) },
+    );
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "TimeoutError") {
+      throw new ExportMembrosTimeoutError();
+    }
+    if (e instanceof ApiError && e.status === 404) {
+      throw new ExportMembrosPendenteError();
+    }
+    throw e;
+  }
+
+  const nome =
+    nomeDoContentDisposition(res.headers.get("Content-Disposition")) ??
+    nomeDerivadoLocalmente(upfId);
+
+  dispararDownload(await res.blob(), nome);
+  return nome;
 }
 
 // ─── Helpers de UI ───────────────────────────────────────────────────────────

@@ -65,13 +65,11 @@ function buildUpfsQuery(params: ListUpfsParams): string {
   else if (params.status === "inativas") qs.set("ativa", "false");
   else if (params.status === "todas") qs.set("ativa", "");
 
-  // Range de "cadastrado em" (datas → datetime ISO em UTC).
-  if (params.cadastradoDe) {
-    qs.set("criado_em__gte", `${params.cadastradoDe}T00:00:00Z`);
-  }
-  if (params.cadastradoAte) {
-    qs.set("criado_em__lte", `${params.cadastradoAte}T23:59:59Z`);
-  }
+  // Range de "cadastrado em": o "YYYY-MM-DD" do input vai cru. Desde a #212 o
+  // backend recorta o dia no TIME_ZONE do servidor — converter para ISO em UTC
+  // aqui era justamente o que deslocava a janela em horas.
+  if (params.cadastradoDe) qs.set("cadastrado_de", params.cadastradoDe);
+  if (params.cadastradoAte) qs.set("cadastrado_ate", params.cadastradoAte);
 
   return qs.toString();
 }
@@ -222,19 +220,23 @@ export type NestedRef = { id: number; nome: string };
 /**
  * Titular aninhado no detalhe da UPF. Espelha
  * apps/sgp/serializers.py::TitularNestedSerializer. O titular é um MembroFamilia
- * (parentesco="titular"). CPF vem CRU (sem máscara) — mascarar na exibição.
+ * (grau_parentesco="titular"). CPF vem CRU (sem máscara) — mascarar na exibição.
  * Campos de choice (genero, cor_raca, escolaridade) são inteiros + `*_display`.
+ *
+ * `cor_raca`/`cor_raca_display` são omitidos pelo backend (BE-25/#187) quando o
+ * perfil do usuário não tem permissão de leitura — a ausência da chave é o
+ * sinal usado pelo frontend para não renderizar o campo (#192).
  */
 export type TitularNested = {
   id: number;
   nome_completo: string;
   cpf: string;
   rg: string;
-  data_nasc: string | null;
+  data_nascimento: string | null;
   genero: number | null;
   genero_display: string;
-  cor_raca: number | null;
-  cor_raca_display: string;
+  cor_raca?: number | null;
+  cor_raca_display?: string;
   escolaridade: number | null;
   escolaridade_display: string;
   nis: string;
@@ -283,6 +285,15 @@ export type UpfDetail = {
   ativa: boolean;
   criado_em: string;
   atualizado_em: string;
+  // ── Procedência SCA ────────────────────────────────────────────────────────
+  // Espelham os campos de sync do backend. `ultima_origem` é o que vale para a
+  // badge: `device_id` fica preenchido para sempre depois do primeiro sync,
+  // inclusive quando a última edição veio da web.
+  device_id: string;
+  uuid_local: string | null;
+  ultima_origem: "sca" | "web";
+  ultimo_sync_em: string | null;
+
 };
 
 /** GET /api/v1/upfs/{id}/ — detalhe completo da UPF. Lança ApiError (404/403). */
@@ -341,7 +352,7 @@ export type UpfWritePayload = {
   nome: string;
   cpf: string;
   rg?: string;
-  data_nasc?: string | null;
+  data_nascimento?: string | null;
   genero?: number | null;
   cor_raca?: number | null;
   escolaridade?: number | null;

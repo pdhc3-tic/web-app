@@ -24,7 +24,7 @@ export type UpfFormData = {
   cpf: string;
   rg: string;
   apelido: string;
-  data_nasc: string;
+  data_nascimento: string;
   genero: string;
   cor_raca: string;
   pct: string;
@@ -64,7 +64,7 @@ export const EMPTY_FORM: UpfFormData = {
   cpf: "",
   rg: "",
   apelido: "",
-  data_nasc: "",
+  data_nascimento: "",
   genero: "",
   cor_raca: "",
   pct: "",
@@ -113,7 +113,7 @@ export function detailToForm(upf: UpfDetail): UpfFormData {
     nome_titular: upf.titular.nome_completo,
     cpf: upf.titular.cpf,
     rg: upf.titular.rg,
-    data_nasc: upf.titular.data_nasc ?? "",
+    data_nascimento: upf.titular.data_nascimento ?? "",
     genero: intToStr(upf.titular.genero),
     cor_raca: intToStr(upf.titular.cor_raca),
     escolaridade: intToStr(upf.titular.escolaridade),
@@ -160,7 +160,7 @@ export function formToPayload(form: UpfFormData): UpfWritePayload {
     nome: form.nome_titular.trim(),
     cpf: digits(form.cpf),
     rg: form.rg,
-    data_nasc: form.data_nasc || null,
+    data_nascimento: form.data_nascimento || null,
     genero: strToInt(form.genero),
     cor_raca: strToInt(form.cor_raca),
     escolaridade: strToInt(form.escolaridade),
@@ -211,7 +211,7 @@ export const FIELD_STEP: Record<string, number> = {
   cpf: 1,
   rg: 1,
   apelido: 1,
-  data_nasc: 1,
+  data_nascimento: 1,
   genero: 1,
   cor_raca: 1,
   pct: 1,

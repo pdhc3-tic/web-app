@@ -11,7 +11,10 @@ export type BadgeStatus =
   | "cancelada"
   | "atrasada"
   | "ativo"
-  | "inativo";
+  | "inativo"
+  // Contexto neutro, sem juízo de valor: marca a procedência de um dado, não um
+  // estado bom ou ruim. Usa a paleta "Informação" do design system.
+  | "info";
 
 type BadgeStatusIconProps = {
   status: BadgeStatus;
@@ -107,6 +110,14 @@ export function BadgeStatusIcon({
       return (
         <svg {...common}>
           <circle cx="8" cy="8" r="3.25" />
+        </svg>
+      );
+    case "info":
+      return (
+        <svg {...common}>
+          <circle cx="8" cy="8" r="6" />
+          <path d="M8 7.25v3.5" />
+          <circle cx="8" cy="5.15" r="0.6" fill="currentColor" stroke="none" />
         </svg>
       );
   }

@@ -13,6 +13,7 @@ import {
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { CalendarActivityEvent } from "@/app/lib/atividadesCalendario";
+import { formatTime, parseDayStart } from "@/app/lib/datetime";
 
 type Props = {
   /** Data qualquer dentro do mês exibido. */
@@ -117,9 +118,9 @@ function groupEventsByDate(
   for (const d of visibleDays) map[format(d, "yyyy-MM-dd")] = [];
 
   for (const ev of events) {
-    // Datas vêm como YYYY-MM-DD — parse manual evita deslocamento de fuso.
-    const inicio = parseDateOnly(ev.data_inicio);
-    const fim = parseDateOnly(ev.data_fim);
+    const inicio = parseDayStart(ev.data_inicio);
+    const fim = parseDayStart(ev.data_fim);
+    if (!inicio || !fim) continue;
     for (const d of visibleDays) {
       if (d >= inicio && d <= fim) {
         map[format(d, "yyyy-MM-dd")].push(ev);
@@ -127,11 +128,6 @@ function groupEventsByDate(
     }
   }
   return map;
-}
-
-function parseDateOnly(iso: string): Date {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d);
 }
 
 // ── Reutilizado pelas outras views ──────────────────────────────────────────
@@ -143,6 +139,7 @@ type PillProps = {
 };
 
 export function EventPill({ event, onClick, compact }: PillProps) {
+  const horaInicio = formatTime(event.data_inicio);
   const bgClass = compact
     ? "bg-surface hover:bg-surface-muted/60"
     : "bg-surface hover:bg-surface-muted/60";
@@ -150,7 +147,11 @@ export function EventPill({ event, onClick, compact }: PillProps) {
     <button
       type="button"
       onClick={onClick}
-      title={`${event.titulo} · ${event.status_display}`}
+      title={
+        horaInicio
+          ? `${horaInicio} · ${event.titulo} · ${event.status_display}`
+          : `${event.titulo} · ${event.status_display}`
+      }
       className={`flex items-center gap-1 overflow-hidden rounded border border-border ${bgClass} px-1 py-0.5 text-left text-2xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary`}
       style={{ borderLeft: `3px solid ${event.cor}` }}
     >
@@ -160,9 +161,14 @@ export function EventPill({ event, onClick, compact }: PillProps) {
           aria-label="Atrasada"
         />
       )}
+      {horaInicio && (
+        <span className="shrink-0 font-medium tabular-nums text-text-muted">
+          {horaInicio}
+        </span>
+      )}
       <span className="truncate">{event.titulo}</span>
     </button>
   );
 }
 
-export { parseDateOnly };
+export { parseDayStart };

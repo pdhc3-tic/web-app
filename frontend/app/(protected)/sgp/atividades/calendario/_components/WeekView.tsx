@@ -11,7 +11,8 @@ import {
 import { ptBR } from "date-fns/locale";
 import { Plus } from "lucide-react";
 import type { CalendarActivityEvent } from "@/app/lib/atividadesCalendario";
-import { EventPill, parseDateOnly } from "./MonthView";
+import { EventPill } from "./MonthView";
+import { parseDayStart } from "@/app/lib/datetime";
 
 type Props = {
   anchor: Date;
@@ -34,8 +35,9 @@ export function WeekView({ anchor, events, onSelectEvent, onCreateAt }: Props) {
     const map: Record<string, CalendarActivityEvent[]> = {};
     for (const d of dias) map[format(d, "yyyy-MM-dd")] = [];
     for (const ev of events) {
-      const inicio = parseDateOnly(ev.data_inicio);
-      const fim = parseDateOnly(ev.data_fim);
+      const inicio = parseDayStart(ev.data_inicio);
+      const fim = parseDayStart(ev.data_fim);
+      if (!inicio || !fim) continue;
       for (const d of dias) {
         if (d >= inicio && d <= fim) {
           map[format(d, "yyyy-MM-dd")].push(ev);
