@@ -619,6 +619,109 @@ test.describe("SGP — Card de composição espera o resumo", () => {
     await expect(page.getByTestId("membros-resumo-total")).toHaveText("2");
   });
 
+  /**
+   * Revalidação (item 5 do 2º review): salvar ou remover membro dispara um novo
+   * GET do resumo, e o resumo anterior segue em memória durante essa consulta.
+   * Ele descreve o estado *antes* da alteração — afirmar o alerta a partir dele
+   * é afirmar por antecipação, do mesmo jeito que derivá-lo da listagem era.
+   *
+   * O cenário abaixo é o que distingue as duas implementações: o alerta está na
+   * tela quando a remoção começa. Sem a supressão durante `resumoLoading`, ele
+   * continua lá até a resposta chegar; com ela, sai assim que a consulta parte.
+   */
+  test("na revalidação após remover, o alerta sai da tela até o novo resumo chegar", async ({
+    page,
+  }) => {
+    const upfId = primeiroUpfId();
+
+    let resumoEmVoo!: () => void;
+    const segundaChamadaPartiu = new Promise<void>((r) => {
+      resumoEmVoo = r;
+    });
+
+    await page.route(LISTA_MEMBROS, async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          membroFake(9301, `${PREFIXO_TESTE} Filha`, "filho", "Filho(a)"),
+          membroFake(9302, `${PREFIXO_TESTE} Irmã`, "irmao", "Irmão(ã)"),
+        ]),
+      });
+    });
+
+    // 1ª resposta: imediata e sem Titular (o alerta entra na tela).
+    // 2ª: atrasada e com Titular — é durante esse intervalo que a asserção cai.
+    let chamadas = 0;
+    await page.route(RESUMO_MEMBROS, async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      chamadas += 1;
+      if (chamadas === 1) {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(resumoFake(false)),
+        });
+      }
+      resumoEmVoo();
+      await new Promise((r) => setTimeout(r, ATRASO_MS));
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ...resumoFake(true), total_membros: 1 }),
+      });
+    });
+
+    await page.route(/\/api\/v1\/sgp\/upfs\/\d+\/membros\/\d+\/$/, async (route) => {
+      if (route.request().method() !== "DELETE") return route.fallback();
+      await route.fulfill({ status: 204, body: "" });
+    });
+
+    await abrirAbaMembros(page, upfId);
+
+    const alerta = page.getByTestId("membros-sem-titular-alerta");
+    await expect(alerta).toBeVisible();
+    await expect(page.getByTestId("membros-resumo-total")).toHaveText("2");
+
+    await page
+      .getByTestId("membro-row-9302")
+      .getByRole("button", { name: "Remover" })
+      .click();
+    // `:has-text` e não `getByRole(name)`: o rodapé do SlideOver põe o rótulo
+    // num <span> interno e o nome acessível do <button> sai vazio — mesmo
+    // motivo pelo qual os testes do formulário clicam em "Salvar" assim.
+    await painelMembro(page).locator('button:has-text("Confirmar")').click();
+
+    // Com o GET comprovadamente em voo — e ainda faltando ATRASO_MS para
+    // responder —, o alerta não pode estar afirmando o resumo antigo.
+    //
+    // Timeout curto de propósito: com o retry padrão de 5s a asserção passaria
+    // pela porta dos fundos, esperando a resposta chegar e o alerta sumir por
+    // outro motivo. Ele precisa já estar fora quando a consulta parte.
+    await segundaChamadaPartiu;
+    await expect(alerta).toHaveCount(0, { timeout: 1000 });
+
+    // Os números anteriores seguem visíveis durante a revalidação: some o que
+    // é afirmação (o alerta), não o conteúdo já conferido.
+    await expect(page.getByTestId("membros-resumo-total")).toHaveText("2");
+    await expect(page.getByTestId("membros-resumo")).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+
+    // E, chegada a resposta, o alerta continua fora — agora porque o resumo diz
+    // que há Titular, e não porque ninguém sabe ainda.
+    await expect(page.getByTestId("membros-resumo-total")).toHaveText("1", {
+      timeout: ATRASO_MS * 3,
+    });
+    await expect(alerta).toHaveCount(0);
+    await expect(page.getByTestId("membros-resumo")).not.toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+  });
+
   test("com tem_titular=true o alerta nunca aparece, nem antes nem depois", async ({
     page,
   }) => {

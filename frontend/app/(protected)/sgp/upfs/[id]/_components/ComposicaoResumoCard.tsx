@@ -13,9 +13,9 @@ type Props = {
   resumo: ResumoMembros | null;
   loading: boolean;
   /**
-   * UPF sem Titular. `null` enquanto o resumo não respondeu — nesse estado o
-   * alerta não é renderizado, para não afirmar nada antes de a consulta
-   * concluir.
+   * UPF sem Titular. `null` sempre que o resumo estiver em voo — na primeira
+   * carga e nas revalidações — e nesse estado o alerta não é renderizado, para
+   * não afirmar nada antes de a consulta concluir.
    *
    * Vem do pai porque, quando o resumo falha, ele ainda consegue derivar o
    * sinal da listagem — o alerta é a parte que não pode sumir por causa de uma
@@ -45,6 +45,11 @@ export function ComposicaoResumoCard({
     <section
       data-testid="membros-resumo"
       aria-labelledby={tituloId}
+      // Na revalidação os números anteriores seguem na tela em vez de virar
+      // skeleton — o que muda de fato é raramente a faixa inteira, e piscar o
+      // card a cada gravação custa mais do que informa. `aria-busy` é o que
+      // conta ao leitor de tela que o conteúdo visível está sendo conferido.
+      aria-busy={loading || undefined}
       className="space-y-3 rounded-lg border border-border bg-surface p-4"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -93,8 +98,10 @@ export function ComposicaoResumoCard({
         </ul>
       )}
 
-      {/* `=== true` e não truthy: `null` é "ainda não sei", e nesse estado o
-          alerta fica fora da tela em vez de ser afirmado por antecipação. */}
+      {/* `=== true` e não truthy: `null` é "ainda não sei" — inclusive durante
+          uma revalidação, quando o resumo em memória ainda é o de antes da
+          gravação —, e nesse estado o alerta fica fora da tela em vez de ser
+          afirmado por antecipação. */}
       {semTitular === true && <AlertaSemTitular />}
     </section>
   );

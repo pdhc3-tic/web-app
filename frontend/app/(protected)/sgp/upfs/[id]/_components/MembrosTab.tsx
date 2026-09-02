@@ -161,17 +161,27 @@ export function MembrosTab({ upfId }: Props) {
    * Há Titular na UPF? `null` enquanto o resumo não respondeu — o alerta não
    * pode aparecer antes disso.
    *
-   * O resumo (BE-23) é a fonte da verdade: ele conta no banco, sem depender da
-   * página carregada. A listagem só entra como fallback depois de uma falha
-   * efetiva da chamada, para o alerta não sumir junto com ela. Derivar da
-   * listagem enquanto o resumo está em voo fazia o alerta piscar e, se as duas
-   * fontes divergissem, aparecer e sumir na transição.
+   * `resumoLoading` vem primeiro na cadeia, e não só a ausência de `resumo`:
+   * na revalidação disparada por salvar/remover, o resumo anterior continua em
+   * memória (de propósito — os números não devem sumir da tela a cada
+   * gravação), mas ele descreve o estado *antes* da alteração. Afirmar o
+   * alerta a partir dele é afirmar por antecipação do mesmo jeito que derivá-lo
+   * da listagem era: quem acabou de promover alguém a Titular veria o aviso
+   * insistir até a resposta chegar. Enquanto a consulta está em voo — primeira
+   * ou não — o valor é "ainda não sei".
+   *
+   * Fora do carregamento, o resumo (BE-23) é a fonte da verdade: ele conta no
+   * banco, sem depender da página carregada. A listagem só entra como fallback
+   * depois de uma falha efetiva da chamada, para o alerta não sumir junto com
+   * ela.
    */
-  const semTitular: boolean | null = resumo
-    ? !resumo.tem_titular
-    : resumoErro
-      ? !titularExists
-      : null;
+  const semTitular: boolean | null = resumoLoading
+    ? null
+    : resumo
+      ? !resumo.tem_titular
+      : resumoErro
+        ? !titularExists
+        : null;
 
   /**
    * Permissão do usuário para os campos sensíveis (#192/BE-25) — usada para o
@@ -259,9 +269,8 @@ export function MembrosTab({ upfId }: Props) {
       {/* Card-resumo — aparece também com a UPF vazia. Total zero e faixas
           zeradas são informação, e é justamente aí que o alerta de "sem
           Titular" mais importa; escondê-lo junto com a lista tirava da tela o
-          único aviso de que a UPF está irregular. O alerta não pisca à espera
-          do resumo: sem membros `semTitular` já é true pelo fallback da
-          listagem, então ele entra junto com o card e não muda depois. */}
+          único aviso de que a UPF está irregular. O alerta em si só entra
+          depois que o resumo responde — ver `semTitular`. */}
       {!loading && !error && (
         <ComposicaoResumoCard
           resumo={resumo}
