@@ -6,6 +6,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from apps.core.models import Municipality
+from apps.core.sensitive_fields import SensitiveFieldsSerializerMixin
 from apps.sgp.constants import SAUDE_CHOICES
 from apps.sgp.models import (
     Activity,
@@ -226,7 +227,7 @@ class ProductionSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class TitularNestedSerializer(serializers.ModelSerializer):
+class TitularNestedSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSerializer):
     idade = serializers.SerializerMethodField()
     genero_display = serializers.CharField(
         source="get_genero_display", read_only=True
@@ -237,6 +238,10 @@ class TitularNestedSerializer(serializers.ModelSerializer):
     escolaridade_display = serializers.CharField(
         source="get_escolaridade_display", read_only=True
     )
+
+    sensitive_fields = {
+        "cor_raca": ("cor_raca", "cor_raca_display"),
+    }
 
     class Meta:
         model = MembroFamilia
@@ -323,7 +328,9 @@ class UPFDocumentCreateSerializer(serializers.Serializer):
     data_documento = serializers.DateField()
 
 
-class UPFDetailSerializer(serializers.ModelSerializer):
+class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSerializer):
+    sensitive_fields = {"cor_raca": ("cor_raca",)}
+
     # ── Titular (escrita) — nomes originais do formulário ──
     nome = serializers.CharField(
         write_only=True, required=True, source="_titular_nome",
@@ -402,7 +409,7 @@ class UPFDetailSerializer(serializers.ModelSerializer):
 
     def get_membros(self, obj):
         membros = obj.membros.all()
-        return MembroListSerializer(membros, many=True).data
+        return MembroListSerializer(membros, many=True, context=self.context).data
 
     def validate_cpf(self, value):
         return validate_cpf(value)
@@ -511,7 +518,7 @@ class UPFDetailSerializer(serializers.ModelSerializer):
         return data
 
 
-class MembroListSerializer(serializers.ModelSerializer):
+class MembroListSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSerializer):
     idade = serializers.SerializerMethodField()
     grau_parentesco_display = serializers.CharField(
         source="get_grau_parentesco_display", read_only=True
@@ -523,13 +530,18 @@ class MembroListSerializer(serializers.ModelSerializer):
         source="get_cor_raca_display", read_only=True
     )
 
+    sensitive_fields = {
+        "saude": ("saude",),
+        "cor_raca": ("cor_raca", "cor_raca_display"),
+    }
+
     class Meta:
         model = MembroFamilia
         fields = [
             "id", "nome_completo", "data_nascimento", "idade",
             "grau_parentesco", "grau_parentesco_display", "cpf",
             "genero", "genero_display",
-            "cor_raca", "cor_raca_display",
+            "cor_raca", "cor_raca_display", "saude",
             "criado_em",
         ]
 
@@ -543,7 +555,7 @@ class MembroListSerializer(serializers.ModelSerializer):
         return None
 
 
-class MembroDetailSerializer(serializers.ModelSerializer):
+class MembroDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSerializer):
     idade = serializers.SerializerMethodField()
     grau_parentesco_display = serializers.CharField(
         source="get_grau_parentesco_display", read_only=True
@@ -560,6 +572,11 @@ class MembroDetailSerializer(serializers.ModelSerializer):
     cpf = serializers.CharField(
         max_length=14, required=False, allow_blank=True
     )
+
+    sensitive_fields = {
+        "saude": ("saude",),
+        "cor_raca": ("cor_raca", "cor_raca_display"),
+    }
 
     class Meta:
         model = MembroFamilia
@@ -670,6 +687,18 @@ class MembroDetailSerializer(serializers.ModelSerializer):
                 "A opção 'nenhum' é mutuamente exclusiva com outros benefícios."
             )
         return value
+
+
+class MembroExportQuerySerializer(serializers.Serializer):
+    """Filtros aceitos por `GET /api/v1/sgp/membros/exportar/` (Issue #186)."""
+
+    territorio_id = serializers.IntegerField(required=False, min_value=1)
+    municipio = serializers.IntegerField(
+        required=False, min_value=1, source="municipio_id"
+    )
+    projeto = serializers.IntegerField(
+        required=False, min_value=1, source="projeto_id"
+    )
 
 
 class HistoricoEntrySerializer(serializers.Serializer):

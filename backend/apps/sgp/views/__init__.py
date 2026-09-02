@@ -1,13 +1,17 @@
+import csv
 import logging
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+from io import StringIO
 
 from django.apps import apps
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Q
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 
 from rest_framework import filters, generics, serializers, status, viewsets
@@ -27,6 +31,7 @@ from rest_framework.response import Response
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsSuperAdmin, IsUGP
+from apps.core.services.membro_audit import log_membro_change, sensitive_fields_changed
 from apps.core.services.permissions import user_has_role, user_states, user_territories
 from apps.core.utils import get_config
 from apps.sgp.cache import UPF_MAP_CACHE_TIMEOUT, build_upf_map_cache_key
@@ -48,6 +53,12 @@ from apps.sgp.constants import (
 from apps.sgp.filters import ActivityFilter, UPFFilter
 from apps.sgp.models import (
     Activity, Comunidade, Cultura, EspecieAnimal, MembroFamilia, UPF, Projeto
+)
+from apps.sgp.services.membro_export import (
+    MEMBROS_EXPORT_UPF_LIMIT,
+    ExportLimitExceeded,
+    membro_export_rows_for_scope,
+    membro_export_rows_for_upf,
 )
 
 
@@ -94,6 +105,7 @@ from apps.sgp.serializers import (
     EspecieAnimalSerializer,
     HistoricoEntrySerializer,
     MembroDetailSerializer,
+    MembroExportQuerySerializer,
     MembroListSerializer,
     ProjetoSerializer,
     UPFDetailSerializer,
@@ -451,6 +463,17 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         instance = serializer.save(criado_por=self.request.user, ultima_origem="web")
         self._log_audit("UPF.create", instance)
+        log_membro_change(
+            user=self.request.user,
+            acao="MEMBRO.create",
+            membro=instance.titular,
+            origem="web",
+            campos_alterados=sensitive_fields_changed(
+                None, {"cor_raca": instance.titular.cor_raca}
+            ),
+            request=self.request,
+            extra_novos={"via": "upf.titular"},
+        )
 
     def perform_update(self, serializer):
         old = self.get_object()
@@ -464,8 +487,20 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
             "comunidade_id": old.comunidade_id,
             "ativa": old.ativa,
         }
+        anteriores_sensiveis = {"cor_raca": old.titular.cor_raca}
         instance = serializer.save(ultima_origem="web")
         self._log_audit("UPF.update", instance, valores_anteriores)
+        log_membro_change(
+            user=self.request.user,
+            acao="MEMBRO.update",
+            membro=instance.titular,
+            origem="web",
+            campos_alterados=sensitive_fields_changed(
+                anteriores_sensiveis, {"cor_raca": instance.titular.cor_raca}
+            ),
+            request=self.request,
+            extra_novos={"via": "upf.titular"},
+        )
 
     def perform_destroy(self, instance):
         valores_anteriores = {
@@ -622,6 +657,21 @@ class ComunidadeViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+def _membros_csv_response(columns, rows, filename):
+    """CSV UTF-8 com BOM, no mesmo formato de `WorkPlanExportView` (docs/export.md)."""
+    content = StringIO()
+    writer = csv.writer(content)
+    writer.writerow([label for _, label in columns])
+    for row in rows:
+        writer.writerow([row.get(key, "") for key, _ in columns])
+    response = HttpResponse(
+        "\ufeff" + content.getvalue(),
+        content_type="text/csv; charset=utf-8",
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
 class MembroViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedActiveAccess]
     http_method_names = ["get", "post", "put", "patch", "delete", "head", "options"]
@@ -653,20 +703,15 @@ class MembroViewSet(viewsets.ModelViewSet):
                     {"cpf": "Já existe um membro cadastrado com este CPF"}
                 )
             raise
-        AuditLog.objects.create(
+        log_membro_change(
             user=self.request.user,
             acao="MEMBRO.create",
-            modulo="sgp",
-            entidade="MembroFamilia",
-            entidade_id=str(instance.pk),
-            valores_novos={
-                "membro_id": instance.pk,
-                "nome_completo": instance.nome_completo,
-                "grau_parentesco": instance.grau_parentesco,
-                "upf_id": instance.upf_id,
-            },
-            ip=self.request.META.get("REMOTE_ADDR"),
-            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
+            membro=instance,
+            origem="web",
+            campos_alterados=sensitive_fields_changed(
+                None, {"saude": instance.saude, "cor_raca": instance.cor_raca}
+            ),
+            request=self.request,
         )
 
     def perform_update(self, serializer):
@@ -683,6 +728,7 @@ class MembroViewSet(viewsets.ModelViewSet):
             "grau_parentesco": old.grau_parentesco,
             "cpf": old.cpf,
         }
+        anteriores_sensiveis = {"saude": old.saude, "cor_raca": old.cor_raca}
         try:
             instance = serializer.save(ultima_origem="web")
         except IntegrityError as e:
@@ -691,21 +737,18 @@ class MembroViewSet(viewsets.ModelViewSet):
                     {"cpf": "Já existe um membro cadastrado com este CPF"}
                 )
             raise
-        AuditLog.objects.create(
+
+        # Nunca grava o valor de saúde/cor-raça, só o nome de quem mudou.
+        log_membro_change(
             user=self.request.user,
             acao="MEMBRO.update",
-            modulo="sgp",
-            entidade="MembroFamilia",
-            entidade_id=str(instance.pk),
+            membro=instance,
+            origem="web",
+            campos_alterados=sensitive_fields_changed(
+                anteriores_sensiveis, {"saude": instance.saude, "cor_raca": instance.cor_raca}
+            ),
+            request=self.request,
             valores_anteriores=valores_anteriores,
-            valores_novos={
-                "membro_id": instance.pk,
-                "nome_completo": instance.nome_completo,
-                "grau_parentesco": instance.grau_parentesco,
-                "upf_id": instance.upf_id,
-            },
-            ip=self.request.META.get("REMOTE_ADDR"),
-            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )
 
     def perform_destroy(self, instance):
@@ -719,23 +762,32 @@ class MembroViewSet(viewsets.ModelViewSet):
             raise serializers.ValidationError(
                 "Transfira a titularidade para outro membro antes de excluir"
             )
-        AuditLog.objects.create(
+        log_membro_change(
             user=self.request.user,
             acao="MEMBRO.delete",
-            modulo="sgp",
-            entidade="MembroFamilia",
-            entidade_id=str(instance.pk),
+            membro=instance,
+            origem="web",
+            campos_alterados=sensitive_fields_changed(
+                None, {"saude": instance.saude, "cor_raca": instance.cor_raca}
+            ),
+            request=self.request,
             valores_anteriores={
                 "membro_id": instance.pk,
                 "upf_id": instance.upf_id,
                 "nome_completo": instance.nome_completo,
                 "grau_parentesco": instance.grau_parentesco,
             },
-            valores_novos={},
-            ip=self.request.META.get("REMOTE_ADDR"),
-            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )
         instance.delete()
+
+    @action(detail=False, methods=["get"], url_path="exportar")
+    def exportar(self, request, upf_pk=None):
+        """Exporta em CSV os membros de uma UPF específica (Issue #186)."""
+        upf = self.get_upf()
+        columns, rows = membro_export_rows_for_upf(upf, user=request.user)
+        timestamp = timezone.localtime().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"membros_upf_{upf.pk}_{timestamp}.csv"
+        return _membros_csv_response(columns, rows, filename)
 
     @action(detail=False, methods=["get"], url_path="resumo")
     def resumo(self, request, upf_pk=None):
@@ -879,6 +931,51 @@ class MembroViewSet(viewsets.ModelViewSet):
                 "nome_completo": antigo_titular.nome_completo,
             } if antigo_titular else None,
         })
+
+
+class MembroExportView(APIView):
+    """
+    Exporta em CSV os membros de múltiplas UPFs dentro do escopo territorial
+    do usuário — relatório demográfico agregado (Issue #186).
+    """
+
+    permission_classes = [IsAuthenticatedActiveAccess]
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("territorio_id", OpenApiTypes.INT, OpenApiParameter.QUERY),
+            OpenApiParameter("municipio", OpenApiTypes.INT, OpenApiParameter.QUERY),
+            OpenApiParameter("projeto", OpenApiTypes.INT, OpenApiParameter.QUERY),
+        ],
+        description=(
+            "Exportação territorial agregada de membros, restrita às UPFs "
+            "acessíveis ao usuário autenticado. Limitada a "
+            f"{MEMBROS_EXPORT_UPF_LIMIT} UPFs por exportação — acima disso, "
+            "restrinja por territorio_id, municipio ou projeto."
+        ),
+    )
+    def get(self, request):
+        query_serializer = MembroExportQuerySerializer(data=request.query_params)
+        query_serializer.is_valid(raise_exception=True)
+        filtros = query_serializer.validated_data
+
+        try:
+            columns, rows = membro_export_rows_for_scope(user=request.user, **filtros)
+        except ExportLimitExceeded as exc:
+            return Response(
+                {
+                    "detail": (
+                        f"A exportação abrange {exc.upf_count} UPFs, acima do limite "
+                        f"de {exc.limit}. Restrinja por territorio_id, município ou "
+                        "projeto."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        timestamp = timezone.localtime().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"membros_{timestamp}.csv"
+        return _membros_csv_response(columns, rows, filename)
 
 
 class ProjetoViewSet(viewsets.ModelViewSet):

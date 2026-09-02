@@ -5,6 +5,8 @@ Models do módulo SCA — sincronização offline (delta sync) e gestão adminis
 from django.conf import settings
 from django.db import models
 
+from apps.core.fields import EncryptedJSONField
+
 
 class SyncDevice(models.Model):
     """Dispositivo de um técnico no app de campo (SCA offline)."""
@@ -150,8 +152,20 @@ class ConflictLog(models.Model):
     entidade = models.CharField(max_length=50, verbose_name="Entidade")
     uuid_local = models.UUIDField(verbose_name="UUID local")
     campo = models.CharField(max_length=255, verbose_name="Campo em conflito")
-    valor_local = models.JSONField(default=dict, verbose_name="Valor local (offline)")
-    valor_servidor = models.JSONField(default=dict, verbose_name="Valor no servidor")
+    valor_local = EncryptedJSONField(
+        default=dict,
+        verbose_name="Valor local (offline)",
+        help_text="Armazenado criptografado em repouso (AES-256-GCM) — pode conter "
+        "campo sensível (saúde, cor/raça). Leitura restrita por perfil — ver "
+        "apps.core.sensitive_fields.",
+    )
+    valor_servidor = EncryptedJSONField(
+        default=dict,
+        verbose_name="Valor no servidor",
+        help_text="Armazenado criptografado em repouso (AES-256-GCM) — pode conter "
+        "campo sensível (saúde, cor/raça). Leitura restrita por perfil — ver "
+        "apps.core.sensitive_fields.",
+    )
     estrategia = models.CharField(
         max_length=30,
         choices=Estrategia.choices,
@@ -165,7 +179,14 @@ class ConflictLog(models.Model):
         default=Status.RESOLVIDO_AUTO,
         verbose_name="Status de resolução",
     )
-    valor_final = models.JSONField(null=True, blank=True, verbose_name="Valor final aplicado")
+    valor_final = EncryptedJSONField(
+        null=True,
+        blank=True,
+        verbose_name="Valor final aplicado",
+        help_text="Armazenado criptografado em repouso (AES-256-GCM) — pode conter "
+        "campo sensível (saúde, cor/raça). Leitura restrita por perfil — ver "
+        "apps.core.sensitive_fields.",
+    )
     resolvido_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

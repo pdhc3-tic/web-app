@@ -372,15 +372,23 @@ class ConflictLogDetailSerializer(ConflictLogListSerializer):
             UPFDetailSerializer,
         )
 
+        # Propaga o `request` do contexto: `UPFDetailSerializer`/
+        # `MembroDetailSerializer` decidem se `saude`/`cor_raca` aparecem no
+        # snapshot com base em `context["request"].user` (Issue #187) — sem
+        # isso, os campos ficam sempre ocultos aqui, mesmo para Super Admin
+        # e Articulador Estadual, justamente na tela feita para revisar
+        # conflitos em campos sensíveis (#158).
+        context = {"request": self.context.get("request")}
+
         if obj.entidade == "upf":
             upf = UPF.objects.filter(uuid_local=obj.uuid_local).first()
-            return UPFDetailSerializer(upf).data if upf else None
+            return UPFDetailSerializer(upf, context=context).data if upf else None
         if obj.entidade == "member":
             membro = MembroFamilia.objects.filter(uuid_local=obj.uuid_local).first()
-            return MembroDetailSerializer(membro).data if membro else None
+            return MembroDetailSerializer(membro, context=context).data if membro else None
         if obj.entidade == "activity":
             act = Activity.objects.filter(uuid_local=obj.uuid_local).first()
-            return ActivityDetailSerializer(act).data if act else None
+            return ActivityDetailSerializer(act, context=context).data if act else None
         return None
 
 

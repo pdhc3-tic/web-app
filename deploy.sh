@@ -28,6 +28,19 @@ ensure_secret() {
   fi
 }
 
+# Fonte da FIELD_ENCRYPTION_KEY: prioriza o valor vindo do secret
+# FIELD_ENCRYPTION_KEY do GitHub Actions (backup durável, fora da VPS); se
+# ele não estiver configurado ainda, gera localmente como fallback. Em
+# qualquer caso, quem decide se o valor é GRAVADO é o ensure_secret logo
+# abaixo — que só escreve se backend/.env ainda não tiver essa chave.
+field_encryption_key_source() {
+  if [ -n "${FIELD_ENCRYPTION_KEY:-}" ]; then
+    printf '%s' "$FIELD_ENCRYPTION_KEY"
+  else
+    openssl rand -base64 32
+  fi
+}
+
 DEPLOY_PHASE="configuração de ambiente"
 echo "==> [1/11] Primeira configuração (.env)"
 
@@ -36,6 +49,13 @@ if [ ! -f backend/.env ]; then
   echo "    backend/.env criado a partir do exemplo"
 fi
 ensure_secret backend/.env DJANGO_SECRET_KEY "openssl rand -hex 32"
+# FIELD_ENCRYPTION_KEY criptografa em repouso os campos sensíveis de
+# MembroFamilia (saude, cor_raca). NUNCA sobrescrever um valor já existente:
+# trocar a chave torna os dados já gravados indecifráveis (perda de dado).
+# ensure_secret só gera/grava quando o valor está vazio, então é seguro
+# manter esta linha em todo deploy — mesmo que o secret do GitHub mude
+# depois, o valor já gravado na VPS não é tocado.
+ensure_secret backend/.env FIELD_ENCRYPTION_KEY field_encryption_key_source
 set_env backend/.env DEBUG False
 set_env backend/.env ALLOWED_HOSTS "$VPS_HOST,localhost,127.0.0.1,backend"
 set_env backend/.env POSTGRES_PASSWORD "${POSTGRES_PASSWORD:-postgres}"
