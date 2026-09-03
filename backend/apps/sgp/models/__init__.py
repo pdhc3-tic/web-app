@@ -1,5 +1,6 @@
 from .comunidade import Comunidade
 from .catalogos import Cultura, EspecieAnimal
+from .budget import BudgetRubrica, BudgetAllocation, BudgetTransaction
 from .form_response import FormResponse
 from .membro import MembroFamilia
 from .production import Production
@@ -16,6 +17,9 @@ __all__ = [
     "Activity",
     "ActivityDocument",
     "ActivityPhoto",
+    "BudgetAllocation",
+    "BudgetRubrica",
+    "BudgetTransaction",
     "Comunidade",
     "Cultura",
     "EspecieAnimal",

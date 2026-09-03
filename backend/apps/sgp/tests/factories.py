@@ -1,9 +1,12 @@
 import factory
 from django.utils import timezone
 
-from apps.core.tests.factories import MunicipalityFactory, UserFactory
+from apps.core.tests.factories import MunicipalityFactory, TerritoryFactory, UserFactory
 from apps.sgp.models import (
     Activity,
+    BudgetAllocation,
+    BudgetRubrica,
+    BudgetTransaction,
     Comunidade,
     Cultura,
     EspecieAnimal,
@@ -205,3 +208,45 @@ class ActivityFactory(factory.django.DjangoModelFactory):
     descricao_narrativa = factory.Sequence(lambda n: f"Narrativa da atividade {n}")
     status = "planejado"
     ativo = True
+
+
+# ---------------------------------------------------------------------------
+# Budget factories
+# ---------------------------------------------------------------------------
+
+class BudgetRubricaFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = BudgetRubrica
+        django_get_or_create = ("slug",)
+
+    nome = factory.Sequence(lambda n: f"Rubrica {n}")
+    slug = factory.Sequence(lambda n: f"rubrica-{n}")
+    ativo = True
+    ordem = factory.Sequence(lambda n: n)
+
+
+class BudgetAllocationFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = BudgetAllocation
+
+    meta = factory.SubFactory(WorkPlanMetaFactory)
+    rubrica = factory.SubFactory(BudgetRubricaFactory)
+    nivel = BudgetAllocation.Nivel.TERRITORIAL
+    estado = None
+    territorio = factory.SubFactory(TerritoryFactory)
+    valor_alocado = 0
+    valor_comprometido = 0
+    valor_executado = 0
+    criado_por = factory.SubFactory(UserFactory)
+
+
+class BudgetTransactionFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = BudgetTransaction
+
+    allocation = factory.SubFactory(BudgetAllocationFactory)
+    tipo = BudgetTransaction.Tipo.RESERVA
+    valor = 100
+    demanda_id = None
+    justificativa = ""
+    criado_por = factory.SubFactory(UserFactory)

@@ -2,6 +2,9 @@ from django.contrib import admin
 
 from apps.sgp.models import (
     Activity,
+    BudgetAllocation,
+    BudgetRubrica,
+    BudgetTransaction,
     Comunidade,
     Cultura,
     EspecieAnimal,
@@ -133,6 +136,46 @@ class WorkPlanAcaoAdmin(admin.ModelAdmin):
     list_filter = ["meta"]
     search_fields = ["descricao"]
     readonly_fields = ["valor_total", "status_execucao"]
+
+
+@admin.register(BudgetRubrica)
+class BudgetRubricaAdmin(admin.ModelAdmin):
+    list_display = ["nome", "slug", "ordem", "ativo"]
+    list_filter = ["ativo"]
+    search_fields = ["nome", "slug"]
+
+
+@admin.register(BudgetAllocation)
+class BudgetAllocationAdmin(admin.ModelAdmin):
+    list_display = [
+        "meta", "rubrica", "nivel", "estado", "territorio",
+        "valor_alocado", "valor_comprometido", "valor_executado",
+    ]
+    list_filter = ["nivel", "rubrica", "estado"]
+    search_fields = ["meta__titulo"]
+    readonly_fields = [
+        "valor_comprometido", "valor_executado", "criado_por", "criado_em",
+    ]
+
+
+@admin.register(BudgetTransaction)
+class BudgetTransactionAdmin(admin.ModelAdmin):
+    list_display = ["allocation", "tipo", "valor", "demanda_id", "criado_por", "criado_em"]
+    list_filter = ["tipo"]
+    search_fields = ["demanda_id", "justificativa"]
+    readonly_fields = [
+        "allocation", "tipo", "valor", "demanda_id",
+        "justificativa", "criado_por", "criado_em",
+    ]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Activity)
