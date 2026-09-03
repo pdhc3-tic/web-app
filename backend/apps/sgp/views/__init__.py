@@ -107,6 +107,7 @@ from apps.sgp.serializers import (
     MembroDetailSerializer,
     MembroExportQuerySerializer,
     MembroListSerializer,
+    MunicipioNestedSerializer,
     ProjetoSerializer,
     UPFDetailSerializer,
     UPFListSerializer,
@@ -271,7 +272,7 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
         queryset = (
             queryset.select_related(None)
             .prefetch_related(None)
-            .select_related("titular", "municipio", "territorio")
+            .select_related("titular", "municipio", "municipio__state", "territorio")
             .only(
                 "id",
                 "titular",
@@ -280,6 +281,9 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
                 "longitude",
                 "municipio",
                 "municipio__nome",
+                "municipio__state",
+                "municipio__state__sigla",
+                "municipio__state__nome",
                 "territorio",
                 "territorio__nome",
                 "ativa",
@@ -343,7 +347,7 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
             "properties": {
                 "id": upf.pk,
                 "nome_titular": upf.titular.nome_completo,
-                "municipio": upf.municipio.nome,
+                "municipio": MunicipioNestedSerializer(upf.municipio).data,
                 "territorio": upf.territorio.nome,
                 "ativa": upf.ativa,
             },
@@ -1042,7 +1046,7 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
     def get_queryset(self):
         qs = Activity.objects.select_related(
             "acao", "acao__meta",
-            "municipio", "municipio__territory",
+            "municipio", "municipio__territory", "municipio__state",
             "comunidade",
             "tecnico_responsavel",
             "criado_por",

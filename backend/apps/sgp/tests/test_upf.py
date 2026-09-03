@@ -232,6 +232,56 @@ class TestSerializers:
         assert "territorio" in response.data
         assert isinstance(response.data["territorio"], dict)
 
+    def test_detalhe_upf_inclui_estado(
+        self, auth_client, upf_payload_completo
+    ):
+        res = auth_client.post(
+            "/api/v1/upfs/", upf_payload_completo, format="json"
+        )
+        upf_id = res.data["id"]
+
+        response = auth_client.get(f"/api/v1/upfs/{upf_id}/")
+        assert response.status_code == 200
+        assert response.data["municipio"]["estado"]["sigla"] == "RN"
+
+    def test_lista_upf_inclui_estado(
+        self, auth_client, upf_payload_minimo
+    ):
+        auth_client.post(
+            "/api/v1/upfs/", upf_payload_minimo, format="json"
+        )
+        response = auth_client.get("/api/v1/upfs/")
+        assert response.status_code == 200
+
+        result = response.data["results"][0]
+        assert result["municipio"]["estado"]["sigla"] == "RN"
+
+    def test_sem_query_adicional_por_estado(
+        self, auth_client, projeto, municipio_rn, territory_rn
+    ):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        UPFFactory(
+            projeto=projeto, municipio=municipio_rn, territorio=territory_rn,
+        )
+        with CaptureQueriesContext(connection) as ctx_1:
+            auth_client.get("/api/v1/upfs/")
+        queries_com_1 = len(ctx_1.captured_queries)
+
+        UPFFactory.create_batch(
+            49, projeto=projeto, municipio=municipio_rn, territorio=territory_rn,
+            titular_cpf=factory.Sequence(lambda n: f"{n + 20000000000:011d}"),
+        )
+        # UPFPagination.page_size é 50 — sem parâmetro, a página já traz tudo.
+        with CaptureQueriesContext(connection) as ctx_50:
+            response = auth_client.get("/api/v1/upfs/")
+        queries_com_50 = len(ctx_50.captured_queries)
+
+        assert response.status_code == 200
+        assert len(response.data["results"]) == 50
+        assert queries_com_50 == queries_com_1
+
     def test_cpf_masked_in_list(
         self, auth_client, upf_payload_minimo
     ):

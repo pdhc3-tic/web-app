@@ -265,8 +265,27 @@ class TitularNestedSerializer(SensitiveFieldsSerializerMixin, serializers.ModelS
         return None
 
 
+class NestedSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    nome = serializers.CharField(read_only=True)
+
+
+class EstadoNestedSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    sigla = serializers.CharField(read_only=True)
+    nome = serializers.CharField(read_only=True)
+
+
+class MunicipioNestedSerializer(serializers.Serializer):
+    """Município com o estado embutido — NestedSerializer genérico não dava
+    conta disso e a UI ficava sem Estado (issue #226)."""
+    id = serializers.IntegerField(read_only=True)
+    nome = serializers.CharField(read_only=True)
+    estado = EstadoNestedSerializer(source="state", read_only=True)
+
+
 class UPFListSerializer(serializers.ModelSerializer):
-    municipio = serializers.CharField(source="municipio.nome", read_only=True)
+    municipio = MunicipioNestedSerializer(read_only=True)
     territorio = serializers.CharField(source="territorio.nome", read_only=True)
     nome_titular = serializers.CharField(source="titular.nome_completo", read_only=True)
     cpf = serializers.SerializerMethodField()
@@ -284,11 +303,6 @@ class UPFListSerializer(serializers.ModelSerializer):
         if cpf:
             return f"{cpf[:3]}.***.***-{cpf[-2:]}"
         return ""
-
-
-class NestedSerializer(serializers.Serializer):
-    id = serializers.IntegerField(read_only=True)
-    nome = serializers.CharField(read_only=True)
 
 
 class UPFDocumentSerializer(serializers.ModelSerializer):
@@ -505,7 +519,7 @@ class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeria
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        data["municipio"] = NestedSerializer(instance.municipio).data
+        data["municipio"] = MunicipioNestedSerializer(instance.municipio).data
         data["territorio"] = (
             NestedSerializer(instance.territorio).data
             if instance.territorio else None
@@ -1080,7 +1094,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         # Enriquecer FK com nome para leitura
-        data["municipio"] = NestedSerializer(instance.municipio).data
+        data["municipio"] = MunicipioNestedSerializer(instance.municipio).data
         if instance.comunidade_id:
             data["comunidade"] = NestedSerializer(instance.comunidade).data
         if instance.acao_id:

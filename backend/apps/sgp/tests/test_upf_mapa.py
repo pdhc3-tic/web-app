@@ -68,7 +68,15 @@ def test_mapa_returns_geojson_format(auth_client, projeto, municipio_rn, territo
     assert feature["properties"] == {
         "id": upf.pk,
         "nome_titular": "João Silva",
-        "municipio": municipio_rn.nome,
+        "municipio": {
+            "id": municipio_rn.pk,
+            "nome": municipio_rn.nome,
+            "estado": {
+                "id": municipio_rn.state_id,
+                "sigla": municipio_rn.state.sigla,
+                "nome": municipio_rn.state.nome,
+            },
+        },
         "territorio": territory_rn.nome,
         "ativa": True,
     }
@@ -293,3 +301,26 @@ def test_mapa_cache_invalidated_on_upf_save(
 
     assert second.status_code == 200
     assert feature_ids(second) == [first_upf.pk, new_upf.pk]
+
+
+def test_mapa_inclui_estado(auth_client, projeto, municipio_rn, territory_rn):
+    make_upf(projeto, municipio_rn, territory_rn, cpf="86288366757")
+
+    response = auth_client.get("/api/v1/upfs/mapa/")
+
+    assert response.status_code == 200
+    assert response.data["features"][0]["properties"]["municipio"]["estado"]["sigla"] == "RN"
+
+
+def test_mapa_nao_gera_query_adicional_por_estado(
+    auth_client, projeto, municipio_rn, territory_rn,
+):
+    for i in range(50):
+        make_upf(projeto, municipio_rn, territory_rn, cpf=f"{i + 10000000000:011d}")
+
+    with CaptureQueriesContext(connection) as ctx:
+        response = auth_client.get("/api/v1/upfs/mapa/")
+
+    assert response.status_code == 200
+    assert len(response.data["features"]) == 50
+    assert len(ctx.captured_queries) <= 3

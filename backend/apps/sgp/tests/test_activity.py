@@ -368,6 +368,15 @@ def test_campo_atrasada_false_quando_status_terminal(auth_ugp, municipio_rn):
     assert response.data["atrasada"] is False
 
 
+@pytest.mark.django_db
+def test_atividade_inclui_estado(auth_ugp, municipio_rn):
+    atividade = ActivityFactory(municipio=municipio_rn)
+
+    response = auth_ugp.get(detail_url(atividade.pk))
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["municipio"]["estado"]["sigla"] == "RN"
+
+
 # ===========================================================================
 # Teste 7 — RLS: território A não vê/edita atividade do território B
 # ===========================================================================
