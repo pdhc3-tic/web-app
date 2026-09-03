@@ -16,6 +16,7 @@ from .views import (
 )
 from .views.form_responses import (
     AvailableFormListView,
+    FormResponseFormularioOptionsView,
     FormResponseReceiveView,
     FormResponseViewSet,
 )
@@ -104,6 +105,11 @@ urlpatterns = router.urls + [
         "sgp/upfs/<int:upf_pk>/formularios/exportar/",
         form_response_export,
         name="upf-formularios-export",
+    ),
+    path(
+        "sgp/upfs/<int:upf_pk>/formularios/opcoes/",
+        FormResponseFormularioOptionsView.as_view(),
+        name="upf-formularios-opcoes",
     ),
     path(
         "sgp/upfs/<int:upf_pk>/formularios/<int:pk>/",

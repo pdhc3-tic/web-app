@@ -21,6 +21,7 @@ from apps.sgp.pagination import HistoricoPagination
 from apps.sgp.serializers import (
     AvailableFormSerializer,
     FormResponseDetailSerializer,
+    FormResponseFormularioOptionSerializer,
     FormResponseListSerializer,
     FormResponseReceiveSerializer,
 )
@@ -44,8 +45,29 @@ def accessible_upf_queryset(user):
     raise PermissionDenied("Você não tem acesso ao módulo SGP.")
 
 
+def get_scoped_upf(user, upf_pk):
+    return get_object_or_404(accessible_upf_queryset(user), pk=upf_pk)
+
+
 class FormResponseExportQuerySerializer(serializers.Serializer):
     formato = serializers.ChoiceField(choices=["csv", "pdf"])
+
+
+FORM_RESPONSE_FILTER_PARAMETERS = [
+    OpenApiParameter("formulario_id", OpenApiTypes.INT, OpenApiParameter.QUERY),
+    OpenApiParameter("data_inicio", OpenApiTypes.DATE, OpenApiParameter.QUERY),
+    OpenApiParameter("data_fim", OpenApiTypes.DATE, OpenApiParameter.QUERY),
+    OpenApiParameter("respondente", OpenApiTypes.STR, OpenApiParameter.QUERY),
+    OpenApiParameter(
+        "respondente_isnull",
+        OpenApiTypes.BOOL,
+        OpenApiParameter.QUERY,
+        description=(
+            "`true` retorna somente respostas sem respondente identificado "
+            "(anônimas); `false` retorna somente as com respondente."
+        ),
+    ),
+]
 
 
 class FormResponseViewSet(
@@ -64,15 +86,9 @@ class FormResponseViewSet(
             return FormResponseDetailSerializer
         return FormResponseListSerializer
 
-    def _accessible_upf_queryset(self):
-        return accessible_upf_queryset(self.request.user)
-
     def get_upf(self):
         if not hasattr(self, "_upf"):
-            self._upf = get_object_or_404(
-                self._accessible_upf_queryset(),
-                pk=self.kwargs["upf_pk"],
-            )
+            self._upf = get_scoped_upf(self.request.user, self.kwargs["upf_pk"])
         return self._upf
 
     def get_queryset(self):
@@ -81,12 +97,7 @@ class FormResponseViewSet(
         )
 
     @extend_schema(
-        parameters=[
-            OpenApiParameter("formulario_id", OpenApiTypes.INT, OpenApiParameter.QUERY),
-            OpenApiParameter("data_inicio", OpenApiTypes.DATE, OpenApiParameter.QUERY),
-            OpenApiParameter("data_fim", OpenApiTypes.DATE, OpenApiParameter.QUERY),
-            OpenApiParameter("respondente", OpenApiTypes.STR, OpenApiParameter.QUERY),
-        ],
+        parameters=FORM_RESPONSE_FILTER_PARAMETERS,
         responses=FormResponseListSerializer(many=True),
     )
     def list(self, request, *args, **kwargs):
@@ -105,10 +116,7 @@ class FormResponseViewSet(
                 required=True,
                 enum=["csv", "pdf"],
             ),
-            OpenApiParameter("formulario_id", OpenApiTypes.INT, OpenApiParameter.QUERY),
-            OpenApiParameter("data_inicio", OpenApiTypes.DATE, OpenApiParameter.QUERY),
-            OpenApiParameter("data_fim", OpenApiTypes.DATE, OpenApiParameter.QUERY),
-            OpenApiParameter("respondente", OpenApiTypes.STR, OpenApiParameter.QUERY),
+            *FORM_RESPONSE_FILTER_PARAMETERS,
         ],
         responses={200: OpenApiTypes.BINARY},
     )
@@ -247,6 +255,33 @@ class AvailableFormListView(APIView):
     def get(self, request):
         forms = get_available_upf_forms(request.user)
         return Response(AvailableFormSerializer(forms, many=True).data)
+
+
+class FormResponseFormularioOptionsView(APIView):
+    """Metadado não paginado com os formulários já respondidos na UPF.
+
+    Alimenta o filtro por formulário do histórico (BE-16): diferente da
+    listagem paginada, não é afetado pela página corrente nem pelos demais
+    filtros (período/respondente) — sempre reflete o conjunto completo.
+    """
+
+    permission_classes = [IsAuthenticatedActiveAccess]
+
+    @extend_schema(responses=FormResponseFormularioOptionSerializer(many=True))
+    def get(self, request, upf_pk):
+        upf = get_scoped_upf(request.user, upf_pk)
+
+        # distinct(campo) exige postgres e que o order_by comece pelo mesmo
+        # campo — por isso a ordenação por nome/versão é feita em memória.
+        opcoes = list(
+            FormResponse.objects.filter(upf=upf)
+            .order_by("formulario_id", "-data_preenchimento")
+            .distinct("formulario_id")
+            .values("formulario_id", "formulario_nome", "formulario_versao")
+        )
+        opcoes.sort(key=lambda o: (o["formulario_nome"], o["formulario_versao"]))
+
+        return Response(FormResponseFormularioOptionSerializer(opcoes, many=True).data)
 
 
 class FormResponseReceiveView(APIView):

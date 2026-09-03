@@ -46,6 +46,7 @@ from apps.sgp.models import (
     Comunidade,
     Cultura,
     EspecieAnimal,
+    FormResponse,
     MembroFamilia,
     Production,
     Projeto,
@@ -191,6 +192,12 @@ TITULOS_ATIVIDADE = {
     "ater": "Atendimento de ATER continuada",
     "pesquisa_de_campo": "Pesquisa de campo — diagnóstico produtivo",
 }
+
+# formulários de demonstração: (formulario_id, nome, versão)
+FORMULARIOS_DEMO = [
+    (2101, "Diagnóstico produtivo", "1.0"),
+    (2102, "Perfil socioeconômico da família", "2.0"),
+]
 
 # técnicos: (primeiro nome, sobrenome, slug do perfil)
 TECNICOS = [
@@ -397,6 +404,7 @@ class Command(BaseCommand):
             self._organizacoes(municipios)
             comunidades = self._comunidades(municipios, tecnicos[0])
             upfs = self._upfs(projeto, comunidades, tecnicos, options["upfs"])
+            self._form_responses(upfs)
             self._producoes(upfs)
             acoes = self._plano_trabalho(tecnicos[-2])
             self._atividades(acoes, comunidades, upfs, tecnicos, options["atividades"])
@@ -774,6 +782,76 @@ class Command(BaseCommand):
             )
             total += 1
         self.stdout.write(f"Documentos de UPF: {total}")
+
+    def _form_responses(self, upfs: list):
+        """Respostas de formulário (#180/#190) na primeira UPF do seed.
+
+        `frontend/e2e/formularios.spec.ts` ancora os cenários na UPF de menor
+        id (`primeiroUpfId()`), por isso o volume e a variação (formulário,
+        versão, período, respondente e status) ficam concentrados em
+        `upfs[0]`. As datas são embaralhadas para não deixar a ordenação
+        cronológica coincidir com a ordem de criação dos registros.
+        """
+        if not upfs:
+            return
+
+        upf_principal = upfs[0]
+        hoje = timezone.localdate()
+        tz = timezone.get_current_timezone()
+        total = 0
+
+        formulario_id, nome, versao = FORMULARIOS_DEMO[0]
+        dias_atras = list(range(28))
+        self.rnd.shuffle(dias_atras)
+        for i, dias in enumerate(dias_atras):
+            data = timezone.make_aware(
+                datetime.combine(hoje - timedelta(days=dias), time(9, 0)), tz
+            )
+            FormResponse.objects.create(
+                upf=upf_principal,
+                formulario_id=formulario_id,
+                formulario_nome=nome,
+                formulario_versao=versao,
+                data_preenchimento=data,
+                # amarrado à data (não ao índice do laço) pra garantir, de
+                # forma determinística, uma resposta de hoje com respondente.
+                respondente="Técnico de Campo" if dias % 2 == 0 else None,
+                status=(
+                    FormResponse.Status.RASCUNHO
+                    if i % 3 == 0
+                    else FormResponse.Status.SUBMETIDO
+                ),
+                respostas_json={
+                    "atividade_principal": self.rnd.choice(
+                        ["Agricultura", "Pecuária", "Artesanato"]
+                    ),
+                },
+                origem=FormResponse.Origem.SCA if i % 4 == 0 else FormResponse.Origem.WEB,
+            )
+            total += 1
+
+        # segundo formulário, com datas mais antigas que todas as anteriores —
+        # garante uma opção só alcançável além da primeira página da listagem
+        # (valida BE-16 "opções completas" e a paginação de HistoricoPagination).
+        formulario_id, nome, versao = FORMULARIOS_DEMO[1]
+        for i in range(3):
+            data = timezone.make_aware(
+                datetime.combine(hoje - timedelta(days=90 + i * 10), time(9, 0)), tz
+            )
+            FormResponse.objects.create(
+                upf=upf_principal,
+                formulario_id=formulario_id,
+                formulario_nome=nome,
+                formulario_versao=versao,
+                data_preenchimento=data,
+                respondente="Técnico de Campo",
+                status=FormResponse.Status.SUBMETIDO,
+                respostas_json={"renda_familiar_mensal": self.rnd.randint(800, 3000)},
+                origem=FormResponse.Origem.WEB,
+            )
+            total += 1
+
+        self.stdout.write(f"Respostas de formulário: {total} (UPF #{upf_principal.pk})")
 
     def _producoes(self, upfs: list):
         culturas = list(Cultura.objects.filter(ativa=True))
@@ -1331,8 +1409,8 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Seed de demonstração concluído."))
         for modelo in (
             Municipality, Organization, Comunidade, UPF, MembroFamilia, Production,
-            UPFDocument, WorkPlanMeta, WorkPlanAcao, Activity, ActivityPhoto,
-            ActivityDocument,
+            UPFDocument, FormResponse, WorkPlanMeta, WorkPlanAcao, Activity,
+            ActivityPhoto, ActivityDocument,
         ):
             self.stdout.write(
                 f"  {modelo._meta.verbose_name_plural}: {modelo.objects.count()}"

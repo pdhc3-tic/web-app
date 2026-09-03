@@ -52,6 +52,19 @@ class FormResponseDetailSerializer(FormResponseListSerializer):
         fields = [*FormResponseListSerializer.Meta.fields, "respostas_json"]
 
 
+class FormResponseFormularioOptionSerializer(serializers.Serializer):
+    """Opção do filtro de formulário: um formulário com resposta na UPF.
+
+    Distinto de `AvailableFormSerializer` — este cobre formulários já
+    respondidos na UPF corrente (para o filtro do histórico), não os
+    formulários publicados disponíveis para novo preenchimento.
+    """
+
+    formulario_id = serializers.IntegerField()
+    formulario_nome = serializers.CharField()
+    formulario_versao = serializers.CharField()
+
+
 class AvailableFormSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     nome = serializers.CharField()
