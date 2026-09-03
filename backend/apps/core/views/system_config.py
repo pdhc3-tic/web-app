@@ -1,6 +1,8 @@
 import json
+from datetime import timedelta
 
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import generics
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -12,6 +14,7 @@ from apps.core.permissions import (
     IsSuperAdminOrUGPReadOnly,
 )
 from apps.core.serializers import GoogleCalendarConfigSerializer, SystemConfigSerializer
+from apps.sgp.models import Activity, GoogleCalendarSyncEvent
 
 
 GOOGLE_CALENDAR_CONFIGS = {
@@ -118,3 +121,68 @@ class GoogleCalendarConfigView(APIView):
             field: _parse_config_value(config)
             for field, config in configs.items()
         }
+
+
+class GoogleCalendarStatusView(APIView):
+    """
+    GET /api/v1/core/config/google-calendar/status/ — status agregado da
+    integração, consumido por frontend/app/lib/integracoes.ts ::
+    fetchGoogleCalendarStatus.
+
+    `estado`: "pendente" se QUALQUER Activity tem
+    google_calendar_sync_status="pendente" (sync enfileirada/em andamento);
+    senão "nunca_executada" se nenhum GoogleCalendarSyncEvent existe; senão
+    "ok"/"erro" conforme o evento mais recente.
+
+    `ultima_sincronizacao` e `ultimo_erro` são calculados de forma
+    independente do `estado` atual — refletem, respectivamente, o evento de
+    sucesso mais recente e o evento de falha mais recente já ocorridos, ainda
+    que o `estado` atual seja outro (ex.: em "erro", `ultima_sincronizacao`
+    continua mostrando o último sucesso anterior; em "ok", `ultimo_erro` pode
+    mostrar uma falha anterior à recuperação). São histórico, não status "ao
+    vivo" do estado atual.
+
+    `falhas_recentes`: janela ROLLING de 24h (`ocorrido_em` nas últimas 24h),
+    não zera quando há um sucesso — decisão da Pendência 3 da issue #210.
+    """
+
+    permission_classes = [IsAuthenticatedActiveAccess, IsSuperAdmin]
+    http_method_names = ["get", "head", "options"]
+
+    JANELA_FALHAS_RECENTES = timedelta(hours=24)
+
+    def get(self, request):
+        if Activity.objects.filter(google_calendar_sync_status="pendente").exists():
+            estado = "pendente"
+        else:
+            ultimo_evento = GoogleCalendarSyncEvent.objects.order_by("-ocorrido_em").first()
+            if ultimo_evento is None:
+                estado = "nunca_executada"
+            else:
+                estado = "ok" if ultimo_evento.sucesso else "erro"
+
+        evento_sucesso = (
+            GoogleCalendarSyncEvent.objects.filter(sucesso=True)
+            .order_by("-ocorrido_em")
+            .first()
+        )
+        evento_falha = (
+            GoogleCalendarSyncEvent.objects.filter(sucesso=False)
+            .order_by("-ocorrido_em")
+            .first()
+        )
+        falhas_recentes = GoogleCalendarSyncEvent.objects.filter(
+            sucesso=False,
+            ocorrido_em__gte=timezone.now() - self.JANELA_FALHAS_RECENTES,
+        ).count()
+
+        return Response({
+            "estado": estado,
+            "ultima_sincronizacao": (
+                timezone.localtime(evento_sucesso.ocorrido_em).isoformat()
+                if evento_sucesso
+                else None
+            ),
+            "ultimo_erro": evento_falha.mensagem_erro if evento_falha else None,
+            "falhas_recentes": falhas_recentes,
+        })

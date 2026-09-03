@@ -19,6 +19,7 @@ from .power_bi_token import PowerBITokenRegenerateView, PowerBITokenView
 from .storage import LocalStorageUploadView
 from .system_config import (
     GoogleCalendarConfigView,
+    GoogleCalendarStatusView,
     SystemConfigDetailView,
     SystemConfigListView,
 )
@@ -44,6 +45,7 @@ __all__ = [
     "PowerBITokenView",
     "LocalStorageUploadView",
     "GoogleCalendarConfigView",
+    "GoogleCalendarStatusView",
     "SystemConfigDetailView",
     "SystemConfigListView",
     "MunicipalityViewSet",

@@ -10,6 +10,7 @@ from .workplan import WorkPlanAcao, WorkPlanMeta
 from .activity import Activity
 from .activity_photo import ActivityPhoto
 from .activity_document import ActivityDocument
+from .google_calendar_sync_event import GoogleCalendarSyncEvent
 
 __all__ = [
     "Activity",
@@ -19,6 +20,7 @@ __all__ = [
     "Cultura",
     "EspecieAnimal",
     "FormResponse",
+    "GoogleCalendarSyncEvent",
     "MembroFamilia",
     "Production",
     "Projeto",

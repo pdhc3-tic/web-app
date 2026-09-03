@@ -2,6 +2,7 @@ import logging
 
 from celery import shared_task
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
 from apps.core.utils import get_config
@@ -106,9 +107,17 @@ def sync_activity_to_google_calendar(activity_id):
             activity_id,
         )
         sentry_sdk.capture_exception(exc)
-        Activity.objects.filter(pk=activity_id).update(
-            google_calendar_sync_status="erro",
-        )
+        from apps.sgp.models import GoogleCalendarSyncEvent
+
+        with transaction.atomic():
+            Activity.objects.filter(pk=activity_id).update(
+                google_calendar_sync_status="erro",
+            )
+            GoogleCalendarSyncEvent.objects.create(
+                activity_id=activity_id,
+                sucesso=False,
+                mensagem_erro=str(exc),
+            )
         _notify_super_admins(activity_id, exc)
 
 
@@ -128,10 +137,14 @@ def _get_activity(activity_id):
 
 
 def _set_sync_success(activity_model, activity_id, event_id):
-    activity_model.objects.filter(pk=activity_id).update(
-        google_calendar_event_id=event_id,
-        google_calendar_sync_status="ok",
-    )
+    from apps.sgp.models import GoogleCalendarSyncEvent
+
+    with transaction.atomic():
+        activity_model.objects.filter(pk=activity_id).update(
+            google_calendar_event_id=event_id,
+            google_calendar_sync_status="ok",
+        )
+        GoogleCalendarSyncEvent.objects.create(activity_id=activity_id, sucesso=True)
 
 
 def _notify_super_admins(activity_id, exc):
