@@ -32,7 +32,9 @@ from rest_framework.response import Response
 from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsSuperAdmin, IsUGP
 from apps.core.services.membro_audit import log_membro_change, sensitive_fields_changed
-from apps.core.services.permissions import user_has_role, user_states, user_territories
+from apps.core.services.permissions import (
+    user_has_role, user_role_slugs, user_states, user_territories
+)
 from apps.core.utils import get_config
 from apps.sgp.cache import UPF_MAP_CACHE_TIMEOUT, build_upf_map_cache_key
 from apps.sgp.constants import (
@@ -62,17 +64,26 @@ from apps.sgp.services.membro_export import (
 )
 
 
-def upfs_acessiveis_ao_usuario(user):
-    """Retorna queryset de UPFs acessíveis ao usuário conforme regras territoriais."""
+UPF_ACCESS_ROLES = ("super-admin", "ugp", "articulador-estadual", "adt-acr")
+
+
+def upfs_acessiveis_ao_usuario(user, role_slugs=None):
+    """Retorna queryset de UPFs acessíveis ao usuário conforme regras territoriais.
+
+    `role_slugs` pode ser passado já computado (ver `UPFViewSet.get_queryset`)
+    para evitar refazer a checagem de roles do usuário em outra query.
+    """
     qs = UPF.objects.all()
-    if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
+    if role_slugs is None:
+        role_slugs = user_role_slugs(user, UPF_ACCESS_ROLES)
+    if "super-admin" in role_slugs or "ugp" in role_slugs:
         return qs
-    if user_has_role(user, "articulador-estadual"):
+    if "articulador-estadual" in role_slugs:
         states = user_states(user)
         if not states:
             return qs.none()
         return qs.filter(municipio__state__sigla__in=states)
-    if user_has_role(user, "adt-acr"):
+    if "adt-acr" in role_slugs:
         territories = user_territories(user)
         if not territories.exists():
             return qs.none()
@@ -201,15 +212,11 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
         ).prefetch_related("membros").all()
 
         user = self.request.user
-        if not (
-            user_has_role(user, "super-admin")
-            or user_has_role(user, "ugp")
-            or user_has_role(user, "articulador-estadual")
-            or user_has_role(user, "adt-acr")
-        ):
+        role_slugs = user_role_slugs(user, UPF_ACCESS_ROLES)
+        if not role_slugs:
             raise PermissionDenied("Você não tem acesso ao módulo SGP.")
 
-        pks = upfs_acessiveis_ao_usuario(user).values_list("pk", flat=True)
+        pks = upfs_acessiveis_ao_usuario(user, role_slugs=role_slugs).values_list("pk", flat=True)
         return qs.filter(pk__in=pks)
 
     @extend_schema(

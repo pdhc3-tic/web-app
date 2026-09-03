@@ -613,6 +613,15 @@ class TestIsolamentoTerritorial:
         response = auth_client_sem_acesso.get("/api/v1/upfs/")
         assert response.status_code == 403
 
+    def test_perfil_without_sgp_access_returns_403_on_mapa(
+        self, auth_client_sem_acesso, projeto, municipio_rn
+    ):
+        UPFFactory(
+            projeto=projeto, municipio=municipio_rn, titular_cpf="86288366757"
+        )
+        response = auth_client_sem_acesso.get("/api/v1/upfs/mapa/")
+        assert response.status_code == 403
+
 
 class TestPerformanceIndexes:
     def test_query_uses_index_on_municipio_and_territorio(

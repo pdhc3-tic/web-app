@@ -3,6 +3,7 @@ from django.core.cache import cache
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
+from apps.core.tests.factories import RoleFactory, TerritoryFactory, UserFactory
 from apps.sgp.tests.factories import UPFFactory
 from apps.sgp.views import UPFViewSet
 
@@ -324,3 +325,37 @@ def test_mapa_nao_gera_query_adicional_por_estado(
     assert response.status_code == 200
     assert len(response.data["features"]) == 50
     assert len(ctx.captured_queries) <= 3
+
+
+def test_mapa_nao_recheca_roles_do_usuario(auth_client, projeto, municipio_rn, territory_rn):
+    """Regressão: get_queryset não deve refazer a checagem de roles já feita
+    por upfs_acessiveis_ao_usuario (ver user_role_slugs)."""
+    make_upf(projeto, municipio_rn, territory_rn, cpf="86288366757")
+
+    with CaptureQueriesContext(connection) as ctx:
+        response = auth_client.get("/api/v1/upfs/mapa/")
+
+    assert response.status_code == 200
+    assert len(ctx.captured_queries) <= 2
+
+
+def test_mapa_articulador_sem_estado_retorna_lista_vazia(
+    api_client, projeto, municipio_rn, territory_rn,
+):
+    """Articulador com a role, mas cujo território não tem estado algum
+    vinculado, não vê UPFs — mas continua recebendo 200, não 403."""
+    make_upf(projeto, municipio_rn, territory_rn, cpf="86288366757")
+
+    territorio_sem_estado = TerritoryFactory(nome="Território Sem Estado", estados=[])
+    role = RoleFactory(slug="articulador-estadual", nome="Articulador Estadual")
+    usuario = UserFactory(
+        email="articulador-sem-estado@test.com",
+        nome="Articulador Sem Estado",
+        profiles=[(role, territorio_sem_estado)],
+    )
+    api_client.force_authenticate(user=usuario)
+
+    response = api_client.get("/api/v1/upfs/mapa/")
+
+    assert response.status_code == 200
+    assert response.data["features"] == []
