@@ -142,6 +142,16 @@ class ScaRefreshSerializer(serializers.Serializer):
 # Endpoints Administrativos SCA (#156, #157, #158)
 # ---------------------------------------------------------------------------
 
+class TecnicoOptionSerializer(serializers.Serializer):
+    """Opção do filtro por técnico (#157) — mesmo formato de `get_tecnico()`
+    em `SyncDeviceListSerializer`/`SyncEventListSerializer`, aqui como fonte
+    completa e não paginada."""
+
+    id = serializers.IntegerField()
+    nome = serializers.CharField()
+    email = serializers.EmailField()
+
+
 class SyncDeviceListSerializer(serializers.ModelSerializer):
     tecnico = serializers.SerializerMethodField()
     territorios = serializers.SerializerMethodField()

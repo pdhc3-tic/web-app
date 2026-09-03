@@ -10,6 +10,7 @@ from apps.sca.views import (
     SyncPullView,
     SyncPushView,
     SyncStatusView,
+    TecnicoListView,
 )
 
 urlpatterns = [
@@ -19,6 +20,7 @@ urlpatterns = [
     path("sca/sync/status/", SyncStatusView.as_view(), name="sca-sync-status"),
     path("sca/auth/refresh/", ScaAuthRefreshView.as_view(), name="sca-auth-refresh"),
     # Endpoints administrativos (#156, #157, #158)
+    path("sca/tecnicos/", TecnicoListView.as_view(), name="sca-tecnicos-list"),
     path("sca/devices/", SyncDeviceListView.as_view(), name="sca-devices-list"),
     path(
         "sca/devices/<int:pk>/",
