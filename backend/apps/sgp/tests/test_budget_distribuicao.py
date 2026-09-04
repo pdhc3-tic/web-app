@@ -121,30 +121,48 @@ class TestDistribuicaoEstadual:
         assert response.status_code == 400
 
     def test_reserva_ugp_nao_aceita_filhas(self, auth_client_super_admin, state_rn):
-        """"Reserva própria da UGP" = a própria linha nacional, já 100%
-        distribuída — tentar alocar mais é o teto normal estourando."""
+        """Uma reserva nacional bloqueia filhas mesmo quando ainda tem saldo."""
         meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL,
-            estado=None, territorio=None, valor_alocado=Decimal("1000"),
+        reserva = auth_client_super_admin.post(
+            alocacoes_url(meta.pk),
+            {
+                "rubrica_id": rubrica.pk, "nivel": "nacional",
+                "valor_alocado": "1000.00", "reserva_ugp": True,
+            },
+            format="json",
         )
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.ESTADUAL,
-            estado=state_rn, territorio=None, valor_alocado=Decimal("1000"),
-        )
-        outro_estado = StateFactory(sigla="CE", nome="Ceará")
+        assert reserva.status_code == 201
+        assert reserva.data["reserva_ugp"] is True
 
         response = auth_client_super_admin.post(
             alocacoes_url(meta.pk),
             {
                 "rubrica_id": rubrica.pk, "nivel": "estadual",
-                "estado_id": outro_estado.pk, "valor_alocado": "0.01",
+                "estado_id": state_rn.pk, "valor_alocado": "0.01",
             },
             format="json",
         )
 
         assert response.status_code == 400
+        assert "não pode receber alocações-filhas" in str(response.data)
+
+    def test_reserva_ugp_so_pode_ser_nacional(self, auth_client_super_admin, state_rn):
+        meta = WorkPlanMetaFactory()
+        rubrica = BudgetRubricaFactory()
+
+        response = auth_client_super_admin.post(
+            alocacoes_url(meta.pk),
+            {
+                "rubrica_id": rubrica.pk, "nivel": "estadual",
+                "estado_id": state_rn.pk, "valor_alocado": "100.00",
+                "reserva_ugp": True,
+            },
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert "só é aplicável ao nível nacional" in str(response.data)
 
 
 class TestReducaoDeAlocacao:

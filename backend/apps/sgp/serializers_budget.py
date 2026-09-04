@@ -36,7 +36,7 @@ class BudgetAllocationSerializer(serializers.ModelSerializer):
         fields = [
             "id", "meta", "rubrica", "nivel", "estado", "territorio",
             "valor_alocado", "valor_comprometido", "valor_executado",
-            "saldo_disponivel", "criado_por", "criado_em",
+            "reserva_ugp", "saldo_disponivel", "criado_por", "criado_em",
         ]
         read_only_fields = fields
 
@@ -74,6 +74,7 @@ class BudgetAllocationCreateSerializer(serializers.Serializer):
         required=False, allow_null=True, default=None,
     )
     valor_alocado = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
+    reserva_ugp = serializers.BooleanField(required=False, default=False)
 
     def validate(self, attrs):
         nivel = attrs["nivel"]
@@ -87,6 +88,10 @@ class BudgetAllocationCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError({"territorio_id": "Deve ser nulo para nível estadual."})
         if nivel == BudgetAllocation.Nivel.TERRITORIAL and not attrs.get("territorio"):
             raise serializers.ValidationError({"territorio_id": "Obrigatório para nível territorial."})
+        if attrs.get("reserva_ugp") and nivel != BudgetAllocation.Nivel.NACIONAL:
+            raise serializers.ValidationError({
+                "reserva_ugp": "Reserva própria da UGP só é aplicável ao nível nacional."
+            })
         return attrs
 
 

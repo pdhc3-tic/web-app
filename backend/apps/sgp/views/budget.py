@@ -57,6 +57,7 @@ class BudgetAllocationViewSet(viewsets.ViewSet):
             meta=meta, rubrica=dados["rubrica"], nivel=dados["nivel"],
             estado=dados.get("estado"), territorio=dados.get("territorio"),
             valor_alocado=dados["valor_alocado"], usuario=request.user,
+            reserva_ugp=dados.get("reserva_ugp", False),
         )
         return Response(
             BudgetAllocationSerializer(allocation).data, status=status.HTTP_201_CREATED,

@@ -216,6 +216,10 @@ def _travar_pai_e_checar_teto(*, meta, rubrica, nivel, territorio, estado,
     if pai is None:
         return None
     pai = BudgetAllocation.objects.select_for_update().get(pk=pai.pk)
+    if pai.reserva_ugp:
+        raise DRFValidationError({
+            "valor_alocado": "A reserva própria da UGP não pode receber alocações-filhas."
+        })
     _checar_teto(
         meta=meta, rubrica=rubrica, nivel=nivel, pai=pai,
         valor_total_pretendido=valor_pretendido, exclude_pk=exclude_pk,
@@ -225,13 +229,21 @@ def _travar_pai_e_checar_teto(*, meta, rubrica, nivel, territorio, estado,
 
 @transaction.atomic
 def criar_alocacao(*, meta, rubrica, nivel: str, valor_alocado: Decimal, usuario,
-                    estado=None, territorio=None) -> BudgetAllocation:
+                    estado=None, territorio=None, reserva_ugp: bool = False) -> BudgetAllocation:
     """Cria uma alocação validando o teto do nível pai.
 
     Só o nacional não tem pai — é o topo da hierarquia, o total aprovado no
     TED. Estadual/territorial sem pai (nível de cima ainda não distribuído)
     é rejeitado: sem pai não há teto contra o que validar.
+
+    `reserva_ugp` só se aplica ao nível nacional — uma linha marcada assim
+    fica retida com a UGP e nunca pode receber alocação-filha.
     """
+    if reserva_ugp and nivel != Nivel.NACIONAL:
+        raise DRFValidationError({
+            "reserva_ugp": "Reserva própria da UGP só é aplicável ao nível nacional."
+        })
+
     pai = _travar_pai_e_checar_teto(
         meta=meta, rubrica=rubrica, nivel=nivel, territorio=territorio, estado=estado,
         valor_pretendido=valor_alocado,
@@ -247,7 +259,7 @@ def criar_alocacao(*, meta, rubrica, nivel: str, valor_alocado: Decimal, usuario
     allocation = BudgetAllocation.objects.create(
         meta=meta, rubrica=rubrica, nivel=nivel,
         estado=estado, territorio=territorio,
-        valor_alocado=valor_alocado, criado_por=usuario,
+        valor_alocado=valor_alocado, reserva_ugp=reserva_ugp, criado_por=usuario,
     )
     BudgetTransaction.objects.create(
         allocation=allocation, tipo=BudgetTransaction.Tipo.REMANEJAMENTO,
