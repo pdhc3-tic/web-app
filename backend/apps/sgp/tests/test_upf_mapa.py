@@ -373,6 +373,8 @@ def test_mapa_openapi_schema_tipa_municipio_estado(auth_client_super_admin):
     components = schema["components"]["schemas"]
 
     def resolve(node):
+        if isinstance(node, dict) and "allOf" in node and len(node["allOf"]) == 1:
+            node = node["allOf"][0]
         if isinstance(node, dict) and "$ref" in node:
             name = node["$ref"].rsplit("/", 1)[-1]
             return components[name]
