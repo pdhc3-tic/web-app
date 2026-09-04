@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from apps.core.models import State, Territory
-from apps.sgp.models import BudgetAllocation, BudgetRubrica
+from apps.sgp.models import BudgetAllocation, BudgetRubrica, BudgetTransaction
 
 
 class EstadoNestedSerializer(serializers.ModelSerializer):
@@ -97,3 +97,39 @@ class BudgetAllocationCreateSerializer(serializers.Serializer):
 
 class BudgetAllocationUpdateSerializer(serializers.Serializer):
     valor_alocado = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
+
+
+class BudgetTransactionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BudgetTransaction
+        fields = [
+            "id", "allocation", "tipo", "valor", "demanda_id",
+            "justificativa", "criado_por", "criado_em",
+        ]
+        read_only_fields = fields
+
+
+class SaldoConsultaQuerySerializer(serializers.Serializer):
+    meta = serializers.IntegerField()
+    rubrica = serializers.SlugField()
+    valor = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
+
+
+class SaldoConsultaSerializer(serializers.Serializer):
+    """Resposta de `GET .../orcamento/saldo/` — espelha `SaldoCheck` mais o
+    nível/localização resolvidos do perfil do usuário."""
+
+    disponivel = serializers.BooleanField()
+    saldo = serializers.DecimalField(max_digits=14, decimal_places=2)
+    nivel = serializers.CharField()
+    estado = EstadoNestedSerializer(allow_null=True)
+    territorio = TerritorioNestedSerializer(allow_null=True)
+    allocation_id = serializers.IntegerField(allow_null=True)
+    motivo_bloqueio = serializers.CharField(allow_null=True)
+
+
+class RemanejamentoCreateSerializer(serializers.Serializer):
+    origem_allocation = serializers.PrimaryKeyRelatedField(queryset=BudgetAllocation.objects.all())
+    destino_allocation = serializers.PrimaryKeyRelatedField(queryset=BudgetAllocation.objects.all())
+    valor = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
+    justificativa = serializers.CharField()

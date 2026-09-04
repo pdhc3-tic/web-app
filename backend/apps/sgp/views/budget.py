@@ -1,8 +1,9 @@
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from rest_framework import status, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.core.services.permissions import user_has_role
@@ -11,6 +12,10 @@ from apps.sgp.serializers_budget import (
     BudgetAllocationCreateSerializer,
     BudgetAllocationSerializer,
     BudgetAllocationUpdateSerializer,
+    BudgetTransactionSerializer,
+    RemanejamentoCreateSerializer,
+    SaldoConsultaQuerySerializer,
+    SaldoConsultaSerializer,
 )
 from apps.sgp.services import budget as budget_service
 
@@ -93,3 +98,78 @@ class BudgetAllocationViewSet(viewsets.ViewSet):
         )
         budget_service.remover_alocacao(allocation)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @extend_schema(responses=BudgetTransactionSerializer(many=True))
+    def transacoes(self, request, pk=None):
+        allocation = get_object_or_404(BudgetAllocation, pk=pk)
+        escopo = budget_service.orcamento_detalhamento_scope(request.user)
+        if escopo is not None and not BudgetAllocation.objects.filter(pk=pk).filter(escopo).exists():
+            raise PermissionDenied("Você não tem acesso a esta alocação.")
+        # BudgetTransaction.Meta.ordering já é -criado_em.
+        qs = allocation.transactions.all()
+        return Response(BudgetTransactionSerializer(qs, many=True).data)
+
+
+class SaldoConsultaView(APIView):
+    """GET .../orcamento/saldo/ — contrato que o formulário de demanda do
+    SGD consulta. Nível/localização resolvidos do perfil, sem parâmetro."""
+
+    permission_classes = [IsAuthenticatedActiveAccess]
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("meta", OpenApiTypes.INT, OpenApiParameter.QUERY, required=True),
+            OpenApiParameter("rubrica", OpenApiTypes.STR, OpenApiParameter.QUERY, required=True),
+            OpenApiParameter("valor", OpenApiTypes.NUMBER, OpenApiParameter.QUERY, required=True),
+        ],
+        responses=SaldoConsultaSerializer,
+    )
+    def get(self, request):
+        query = SaldoConsultaQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        dados = query.validated_data
+
+        nivel, estado_sigla, territorio = budget_service.resolver_nivel_do_usuario(request.user)
+        check = budget_service.saldo_para_consulta(
+            meta_id=dados["meta"], rubrica_slug=dados["rubrica"], nivel=nivel,
+            estado_sigla=estado_sigla, territorio=territorio, valor=dados["valor"],
+        )
+
+        payload = {
+            "disponivel": check.disponivel,
+            "saldo": check.saldo,
+            "nivel": nivel,
+            "estado": check.allocation.estado if check.allocation else None,
+            "territorio": check.allocation.territorio if check.allocation else None,
+            "allocation_id": check.allocation.pk if check.allocation else None,
+            "motivo_bloqueio": check.motivo_bloqueio,
+        }
+        return Response(SaldoConsultaSerializer(payload).data)
+
+
+class RemanejamentoView(APIView):
+    """POST .../orcamento/remanejamentos/ — exceção da UGP pra furar a
+    hierarquia normal de distribuição."""
+
+    permission_classes = [IsAuthenticatedActiveAccess]
+
+    @extend_schema(
+        request=RemanejamentoCreateSerializer,
+        responses={201: BudgetTransactionSerializer(many=True)},
+    )
+    def post(self, request):
+        if not budget_service.is_global_budget_user(request.user):
+            raise PermissionDenied("Só UGP/Super Admin executam remanejamento.")
+
+        entrada = RemanejamentoCreateSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        dados = entrada.validated_data
+
+        debito, credito = budget_service.remanejar(
+            origem=dados["origem_allocation"], destino=dados["destino_allocation"],
+            valor=dados["valor"], usuario=request.user, justificativa=dados["justificativa"],
+        )
+        return Response(
+            BudgetTransactionSerializer([debito, credito], many=True).data,
+            status=status.HTTP_201_CREATED,
+        )
