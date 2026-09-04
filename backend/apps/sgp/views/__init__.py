@@ -179,8 +179,9 @@ class ComunidadePagination(LimitOffsetPagination):
     max_limit = 100
 
 
-# Serializers só para documentação OpenAPI da action UPFViewSet.mapa — o
-# payload real é montado à mão em _build_mapa_feature, sem passar por eles.
+# Documentação OpenAPI da action UPFViewSet.mapa — o payload real é montado
+# em _build_mapa_feature. Desvio entre os dois é pego por
+# test_mapa_openapi_schema_tipa_municipio_estado.
 class _UPFMapGeometrySerializer(serializers.Serializer):
     type = serializers.CharField(default="Point")
     coordinates = serializers.ListField(child=serializers.FloatField())
@@ -364,6 +365,8 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
         return lng_sw, lat_sw, lng_ne, lat_ne
 
     def _build_mapa_feature(self, upf):
+        # Dict puro (não usa _UPFMapFeatureSerializer) para evitar overhead
+        # de Serializer por item em listas de até MAPA_FEATURE_LIMIT UPFs.
         return {
             "type": "Feature",
             "geometry": {
