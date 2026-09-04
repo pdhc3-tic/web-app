@@ -290,6 +290,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "sgp.tasks.check_acao_progress_alert",
         "schedule": crontab(hour=12, minute=0),  # diariamente ao meio-dia
     },
+    "check_budget_threshold_alert": {
+        "task": "sgp.tasks.check_budget_threshold_alert",
+        "schedule": crontab(hour=12, minute=30),  # diariamente, 30min depois do alerta do PT físico
+    },
     "export_to_power_bi": {
         "task": "sgp.tasks.export_to_power_bi",
         "schedule": crontab(minute=0),  # a cada hora

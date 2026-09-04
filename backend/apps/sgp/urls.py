@@ -28,7 +28,12 @@ from .views.workplan import (
     WorkPlanMetaViewSet,
     WorkPlanPowerBIView,
 )
-from .views.budget import BudgetAllocationViewSet, RemanejamentoView, SaldoConsultaView
+from .views.budget import (
+    BudgetAllocationViewSet,
+    BudgetPainelView,
+    RemanejamentoView,
+    SaldoConsultaView,
+)
 
 router = DefaultRouter()
 router.register("upfs", UPFViewSet)
@@ -237,5 +242,10 @@ urlpatterns = router.urls + [
         "sgp/orcamento/remanejamentos/",
         RemanejamentoView.as_view(),
         name="budget-remanejamentos",
+    ),
+    path(
+        "sgp/orcamento/painel/",
+        BudgetPainelView.as_view(),
+        name="budget-painel",
     ),
 ]

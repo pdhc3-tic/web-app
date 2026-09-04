@@ -17,6 +17,7 @@ from setup.tasks import send_email_notification
 from apps.core.models.notifications import Notification, TipoNotificacao
 from apps.core.models.user import User
 from apps.sgp.services.workplan_dashboard import dashboard_actions, enrich_dashboard_action
+from apps.sgp.services.budget import alocacoes_em_vermelho
 from apps.sgp.cache import set_power_bi_snapshot
 from apps.sgp.services.workplan_export import workplan_export_rows
 
@@ -216,4 +217,52 @@ def check_acao_progress_alert() -> int:
     except Exception as exc:
         sentry_sdk.capture_exception(exc)
         logger.exception("Falha ao verificar alertas do Plano de Trabalho.")
+        raise
+
+
+@shared_task(name="sgp.tasks.check_budget_threshold_alert")
+def check_budget_threshold_alert() -> int:
+    """Notifica UGP e Super Admin sobre alocações em vermelho no semáforo do
+    orçamento (§5.3.3: comprometido ≥ 80% do alocado), em qualquer nível.
+
+    Mesmo padrão de `check_acao_progress_alert`: execução diária, uma notificação
+    por destinatário e alocação vermelha.
+    """
+    try:
+        recipients = User.objects.filter(
+            ativo=True,
+            profiles__perfil__slug__in=["ugp", "super-admin"],
+        ).distinct()
+        if not recipients.exists():
+            return 0
+
+        notifications_sent = 0
+        panel_url = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/sgp/orcamento"
+
+        for allocation in alocacoes_em_vermelho():
+            message = (
+                f"A alocação de {allocation.meta.titulo} / {allocation.rubrica.nome} "
+                f"({allocation.get_nivel_display()}) está em vermelho: "
+                f"R$ {allocation.valor_comprometido} comprometido de "
+                f"R$ {allocation.valor_alocado} aprovado."
+            )
+            for recipient in recipients:
+                Notification.objects.create(
+                    user=recipient,
+                    tipo=TipoNotificacao.EMAIL,
+                    titulo=(
+                        f"Alerta de orçamento: {allocation.meta.titulo} / "
+                        f"{allocation.rubrica.nome}"
+                    ),
+                    mensagem=message,
+                    link=panel_url,
+                    modulo_origem="sgp",
+                    evento="budget_allocation_red",
+                )
+                notifications_sent += 1
+
+        return notifications_sent
+    except Exception as exc:
+        sentry_sdk.capture_exception(exc)
+        logger.exception("Falha ao verificar alertas de orçamento.")
         raise

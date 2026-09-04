@@ -12,6 +12,8 @@ from apps.sgp.serializers_budget import (
     BudgetAllocationCreateSerializer,
     BudgetAllocationSerializer,
     BudgetAllocationUpdateSerializer,
+    BudgetPainelLinhaSerializer,
+    BudgetPainelQuerySerializer,
     BudgetTransactionSerializer,
     RemanejamentoCreateSerializer,
     SaldoConsultaQuerySerializer,
@@ -173,3 +175,46 @@ class RemanejamentoView(APIView):
             BudgetTransactionSerializer([debito, credito], many=True).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+class BudgetPainelView(APIView):
+    """GET .../orcamento/painel/ — matriz Meta × Rubrica com semáforo (§5.3.3).
+
+    Nível exibido por linha (nacional/estadual/territorial) resolvido pelo perfil do
+    usuário — `estado`/`territorio` fazem drill-down dentro do que o RBAC permite, ver
+    `services.budget.resolver_nivel_painel`.
+
+    Sem filtro: 5 queries (4 pro ADT/ACR — nível padrão territorial, sem "distribuído").
+    Cada `meta`/`rubrica`/`estado`/`territorio` informado soma +1 query de validação de
+    FK (`BudgetPainelQuerySerializer`); pior caso, 9 (Articulador Estadual com
+    `territorio`, que paga +1 confirmando posse em `resolver_nivel_painel` — 8 pros
+    demais perfis)."""
+
+    permission_classes = [IsAuthenticatedActiveAccess]
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("meta", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter("rubrica", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter("estado", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter("territorio", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
+        ],
+        responses=BudgetPainelLinhaSerializer(many=True),
+    )
+    def get(self, request):
+        query = BudgetPainelQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        dados = query.validated_data
+        meta = dados.get("meta")
+        rubrica = dados.get("rubrica")
+        estado = dados.get("estado")
+        territorio = dados.get("territorio")
+
+        linhas = budget_service.painel_orcamento_para_usuario(
+            request.user,
+            meta_id=meta.pk if meta else None,
+            rubrica_slug=rubrica.slug if rubrica else None,
+            estado_sigla=estado.sigla if estado else None,
+            territorio_id=territorio.pk if territorio else None,
+        )
+        return Response(BudgetPainelLinhaSerializer(linhas, many=True).data)
