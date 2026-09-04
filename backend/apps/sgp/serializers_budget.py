@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from apps.core.models import State, Territory
-from apps.sgp.models import BudgetAllocation, BudgetRubrica, BudgetTransaction
+from apps.sgp.models import BudgetAllocation, BudgetRubrica, BudgetTransaction, WorkPlanMeta
 
 
 class EstadoNestedSerializer(serializers.ModelSerializer):
@@ -133,3 +133,43 @@ class RemanejamentoCreateSerializer(serializers.Serializer):
     destino_allocation = serializers.PrimaryKeyRelatedField(queryset=BudgetAllocation.objects.all())
     valor = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
     justificativa = serializers.CharField()
+
+
+class WorkPlanMetaNestedSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WorkPlanMeta
+        fields = ["id", "numero", "titulo"]
+
+
+class BudgetPainelLinhaSerializer(serializers.Serializer):
+    """Uma célula da matriz Meta × Rubrica — espelha o dict devolvido por
+    `services.budget.painel_orcamento`."""
+
+    meta = WorkPlanMetaNestedSerializer()
+    rubrica = BudgetRubricaNestedSerializer()
+    nivel = serializers.CharField()
+    valor_aprovado = serializers.DecimalField(max_digits=14, decimal_places=2)
+    valor_distribuido = serializers.DecimalField(max_digits=14, decimal_places=2)
+    valor_comprometido = serializers.DecimalField(max_digits=14, decimal_places=2)
+    valor_executado = serializers.DecimalField(max_digits=14, decimal_places=2)
+    saldo_disponivel = serializers.DecimalField(max_digits=14, decimal_places=2)
+    semaforo = serializers.ChoiceField(choices=["verde", "amarelo", "vermelho"])
+    alerta_80 = serializers.BooleanField()
+
+
+class BudgetPainelQuerySerializer(serializers.Serializer):
+    """Filtros de `GET .../orcamento/painel/` — `estado`/`territorio` fazem drill-down
+    de nível dentro do que o perfil do usuário permite (ver `resolver_nivel_painel`)."""
+
+    meta = serializers.PrimaryKeyRelatedField(
+        queryset=WorkPlanMeta.objects.all(), required=False,
+    )
+    rubrica = serializers.SlugRelatedField(
+        slug_field="slug", queryset=BudgetRubrica.objects.filter(ativo=True), required=False,
+    )
+    estado = serializers.SlugRelatedField(
+        slug_field="sigla", queryset=State.objects.all(), required=False,
+    )
+    territorio = serializers.PrimaryKeyRelatedField(
+        queryset=Territory.objects.all(), required=False,
+    )

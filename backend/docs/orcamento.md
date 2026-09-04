@@ -76,3 +76,47 @@ Remanejamento emergencial — só UGP/Super Admin, com justificativa obrigatóri
 ### `GET /api/v1/sgp/orcamento/alocacoes/{id}/transacoes/`
 
 Histórico completo de `BudgetTransaction` de uma alocação, mais recente primeiro.
+
+### `GET /api/v1/sgp/orcamento/painel/?meta=&rubrica=&estado=&territorio=`
+
+Matriz Meta × Rubrica com semáforo (§5.3.3), pro painel executivo. Todos os parâmetros são
+opcionais: `meta` (id), `rubrica` (slug), `estado` (sigla) e `territorio` (id).
+
+O **nível exibido por linha é dinâmico**, resolvido pelo perfil do usuário autenticado — mesma
+política de RBAC do endpoint acima: `super-admin`/`ugp` → nacional por padrão, drill-down
+livre pra qualquer estado/território; `articulador-estadual` → **nacional agregado por
+padrão** (nacional não é dado sensível por território), com `estado`/`territorio` descendo
+só dentro do seu próprio estado; `adt-acr` → sempre o próprio território, sem acesso a
+nacional/estadual (`estado=` devolve `403` pra esse perfil). Filtro fora do escopo do perfil
+retorna `403`; qualquer um dos 4 filtros com id/slug/sigla inexistente retorna `400`
+(todos validados contra a FK real). `estado`/`territorio` juntos: `territorio` vence pra
+`super-admin`/`ugp`/`articulador-estadual` — `adt-acr` rejeita `estado=` com `403` mesmo
+que o `territorio` enviado junto seja o seu próprio (esse perfil não tem nível estadual).
+
+Sem filtro, 5 queries (4 pro ADT/ACR — nível padrão territorial, sem "distribuído"). Cada
+filtro informado soma +1 query de validação — pior caso, 9 (Articulador Estadual com
+`territorio`, que confirma posse com 1 query a mais; 8 pros demais perfis).
+
+```json
+[
+  {
+    "meta": {"id": 3, "numero": 3, "titulo": "Meta 3"},
+    "rubrica": {"id": 1, "nome": "Diárias", "slug": "diarias"},
+    "nivel": "nacional",
+    "valor_aprovado": "10000.00",
+    "valor_distribuido": "4000.00",
+    "valor_comprometido": "6000.00",
+    "valor_executado": "2000.00",
+    "saldo_disponivel": "-2000.00",
+    "semaforo": "vermelho",
+    "alerta_80": true
+  }
+]
+```
+
+`semaforo` ∈ `verde` (< 60% comprometido sobre o alocado), `amarelo` (60–79%), `vermelho`
+(≥ 80%) — `alerta_80` é `true` no mesmo limiar de `vermelho`. Alocação de valor 0 → `verde`,
+sem divisão por zero. A task diária `sgp.tasks.check_budget_threshold_alert` notifica UGP e
+Super Admin sobre toda `BudgetAllocation` em vermelho, em qualquer nível (nacional, estadual
+ou territorial), espelhando `sgp.tasks.check_acao_progress_alert` (que faz o mesmo para Ações
+do PT físico em vermelho).

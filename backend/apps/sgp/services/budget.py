@@ -30,6 +30,36 @@ def allowed_territories_for_user(user) -> QuerySet[Territory]:
     return user_territories(user)
 
 
+def _perfis_e_slugs(user) -> tuple[list[UserProfile], set[str]]:
+    """Perfis do usuário (`perfil`/`territorio` pré-carregados) e o set de slugs de
+    papel — 1 query, compartilhada pelas funções de RBAC do orçamento."""
+    perfis = list(
+        UserProfile.objects.filter(user=user).select_related("perfil", "territorio")
+    )
+    return perfis, {p.perfil.slug for p in perfis}
+
+
+def _estados_do_articulador(perfis: list[UserProfile], user) -> set[str]:
+    """Estados de todos os perfis `articulador-estadual` do usuário — perfil sem
+    território (papel "global") cai no fallback de `allowed_states_for_user`."""
+    states: set[str] = set()
+    sem_territorio = False
+    for p in perfis:
+        if p.perfil.slug != "articulador-estadual":
+            continue
+        if p.territorio is None:
+            sem_territorio = True
+        else:
+            states.update(p.territorio.estados or [])
+    if sem_territorio:
+        states.update(allowed_states_for_user(user))
+    return states
+
+
+def _territorios_do_adt(perfis: list[UserProfile]) -> set[int]:
+    return {p.territorio_id for p in perfis if p.perfil.slug == "adt-acr" and p.territorio_id}
+
+
 def orcamento_detalhamento_scope(user) -> Q | None:
     """Filtro do *detalhamento* (linhas estaduais/territoriais) visível ao usuário.
 
@@ -39,27 +69,13 @@ def orcamento_detalhamento_scope(user) -> Q | None:
     Uma query só (perfil + território via select_related), não user_has_role/
     user_states/user_territories encadeados — cada um faria a sua própria.
     """
-    perfis = list(
-        UserProfile.objects.filter(user=user).select_related("perfil", "territorio")
-    )
-    slugs = {p.perfil.slug for p in perfis}
+    perfis, slugs = _perfis_e_slugs(user)
 
     if "super-admin" in slugs or "ugp" in slugs:
         return None
 
     if "articulador-estadual" in slugs:
-        states: set[str] = set()
-        sem_territorio = False
-        for p in perfis:
-            if p.perfil.slug != "articulador-estadual":
-                continue
-            if p.territorio is None:
-                sem_territorio = True
-            else:
-                states.update(p.territorio.estados or [])
-        if sem_territorio:
-            # perfil sem território = global no papel; única saída sem outra query.
-            states.update(allowed_states_for_user(user))
+        states = _estados_do_articulador(perfis, user)
         if not states:
             return Q(pk__in=[])
         return Q(nivel=Nivel.ESTADUAL, estado__sigla__in=states) | Q(
@@ -67,12 +83,20 @@ def orcamento_detalhamento_scope(user) -> Q | None:
         )
 
     if "adt-acr" in slugs:
-        territorio_ids = {p.territorio_id for p in perfis if p.perfil.slug == "adt-acr" and p.territorio_id}
+        territorio_ids = _territorios_do_adt(perfis)
         if not territorio_ids:
             return Q(pk__in=[])
         return Q(nivel=Nivel.TERRITORIAL, territorio_id__in=territorio_ids)
 
     raise PermissionDenied("Você não tem acesso ao orçamento do SGP.")
+
+
+def _saldo_disponivel_matriz(
+    aprovado: Decimal, distribuido: Decimal, comprometido: Decimal, executado: Decimal,
+) -> Decimal:
+    """`saldo_disponivel` das 5 colunas de §5.3.3. Compartilhado por `orcamento_por_meta`
+    e `painel_orcamento`."""
+    return aprovado - distribuido - comprometido - executado
 
 
 def orcamento_por_meta(meta: WorkPlanMeta, user) -> list[dict]:
@@ -138,9 +162,9 @@ def orcamento_por_meta(meta: WorkPlanMeta, user) -> list[dict]:
             # única linha "nacional" possível por rubrica) — distribuído é o
             # que já desceu pra estados. Sem subtrair os dois, o saldo
             # pareceria maior do que o que realmente ainda cabe redistribuir.
-            "saldo_disponivel": (
-                rubrica.valor_aprovado - rubrica.valor_distribuido
-                - rubrica.valor_comprometido - rubrica.valor_executado
+            "saldo_disponivel": _saldo_disponivel_matriz(
+                rubrica.valor_aprovado, rubrica.valor_distribuido,
+                rubrica.valor_comprometido, rubrica.valor_executado,
             ),
             "detalhamento": detalhamento_por_rubrica.get(rubrica.pk, []),
         })
@@ -522,10 +546,7 @@ def resolver_nivel_do_usuario(user) -> tuple[str, str | None, Territory | None]:
     1 query. Não resolve um `State` (só a sigla): o lookup de alocação
     seguinte filtra `estado__sigla=` via join, sem precisar de outra query
     só pra ter a instância."""
-    perfis = list(
-        UserProfile.objects.filter(user=user).select_related("perfil", "territorio")
-    )
-    slugs = {p.perfil.slug for p in perfis}
+    perfis, slugs = _perfis_e_slugs(user)
 
     if "super-admin" in slugs or "ugp" in slugs:
         return Nivel.NACIONAL, None, None
@@ -584,3 +605,207 @@ def saldo_para_consulta(*, meta_id: int, rubrica_slug: str, nivel: str,
             motivo_bloqueio="Nenhuma alocação encontrada para este nível.",
         )
     return _saldo_check_de_allocation(allocation, valor)
+
+
+# ---------------------------------------------------------------------------
+# Painel de orçamento — matriz Meta × Rubrica com semáforo (§5.3.3, #224).
+# ---------------------------------------------------------------------------
+
+LIMIAR_SEMAFORO_AMARELO = Decimal("60")
+LIMIAR_SEMAFORO_VERMELHO = Decimal("80")
+
+
+def resolver_nivel_painel(
+    user, *, estado_sigla: str | None = None, territorio_id: int | None = None,
+) -> tuple[str, str | None, int | None]:
+    """(nivel, estado_sigla, territorio_id) do painel pro usuário — mesma política de
+    RBAC de `orcamento_detalhamento_scope`/`resolver_nivel_do_usuario`, aplicada à
+    escolha de qual nível é exibido (drill-down), não a uma lista de detalhamento.
+
+    Devolve o id do território (não a instância — só é usado pra filtrar
+    `BudgetAllocation.territorio_id`).
+
+    1 query base (perfil), +1 só quando um Articulador Estadual pede um `territorio_id`
+    explícito (confirma que pertence ao próprio estado). Se `estado_sigla` e
+    `territorio_id` vierem os dois, `territorio_id` vence pra super-admin/ugp/
+    articulador-estadual — ADT/ACR rejeita `estado_sigla` antes de olhar
+    `territorio_id` (não tem nível estadual, ver bloco abaixo).
+    """
+    perfis, slugs = _perfis_e_slugs(user)
+
+    if "super-admin" in slugs or "ugp" in slugs:
+        if territorio_id is not None:
+            return Nivel.TERRITORIAL, None, territorio_id
+        if estado_sigla is not None:
+            return Nivel.ESTADUAL, estado_sigla, None
+        return Nivel.NACIONAL, None, None
+
+    if "articulador-estadual" in slugs:
+        states = _estados_do_articulador(perfis, user)
+        if not states:
+            raise PermissionDenied("Você não tem acesso ao orçamento do SGP.")
+
+        if territorio_id is not None:
+            territorio = Territory.objects.filter(pk=territorio_id).only("estados").first()
+            if territorio is None or not set(territorio.estados or []) & states:
+                raise PermissionDenied("Este território não pertence ao seu estado.")
+            return Nivel.TERRITORIAL, None, territorio_id
+        if estado_sigla is not None:
+            if estado_sigla not in states:
+                raise PermissionDenied("Este estado não pertence ao seu escopo.")
+            return Nivel.ESTADUAL, estado_sigla, None
+        # Nacional não é dado sensível por território (§B2) — visível também sem filtro.
+        return Nivel.NACIONAL, None, None
+
+    if "adt-acr" in slugs:
+        territorio_ids = _territorios_do_adt(perfis)
+        if not territorio_ids:
+            raise PermissionDenied("Você não tem acesso ao orçamento do SGP.")
+        if estado_sigla is not None:
+            raise PermissionDenied("Você não tem acesso a dados no nível estadual.")
+        if territorio_id is not None and territorio_id not in territorio_ids:
+            raise PermissionDenied("Você não tem acesso a este território.")
+        escolhido = territorio_id if territorio_id is not None else next(iter(territorio_ids))
+        return Nivel.TERRITORIAL, None, escolhido
+
+    raise PermissionDenied("Você não tem acesso ao orçamento do SGP.")
+
+
+def _semaforo_orcamento(percentual: Decimal) -> tuple[str, bool]:
+    """(semaforo, alerta_80) — o alerta dispara no mesmo limiar de vermelho, uma
+    fonte só pros dois campos."""
+    if percentual >= LIMIAR_SEMAFORO_VERMELHO:
+        return "vermelho", True
+    if percentual >= LIMIAR_SEMAFORO_AMARELO:
+        return "amarelo", False
+    return "verde", False
+
+
+def alocacoes_em_vermelho() -> list[BudgetAllocation]:
+    """Toda `BudgetAllocation` (qualquer nível) com semáforo vermelho — usada por
+    `tasks.check_budget_threshold_alert`. Não usa `painel_orcamento` (mostra 1 nível por
+    vez): nacional/estadual/territorial são linhas independentes, cada uma pode estar em
+    vermelho por si só."""
+    vermelhas = []
+    allocations = (
+        BudgetAllocation.objects
+        .select_related("meta", "rubrica")
+        .filter(valor_alocado__gt=ZERO)
+    )
+    for allocation in allocations:
+        percentual = (allocation.valor_comprometido / allocation.valor_alocado) * Decimal("100")
+        semaforo, _ = _semaforo_orcamento(percentual)
+        if semaforo == "vermelho":
+            vermelhas.append(allocation)
+    return vermelhas
+
+
+def painel_orcamento(
+    *, nivel: str, estado_sigla: str | None = None, territorio_id: int | None = None,
+    meta_id: int | None = None, rubrica_slug: str | None = None,
+) -> list[dict]:
+    """Matriz Meta × Rubrica no `nivel` dado, com semáforo e alerta de 80%.
+
+    Motor sem RBAC — quem chama já resolveu o nível/localização (ver
+    `painel_orcamento_para_usuario`). Usada direto por
+    `tasks.check_budget_threshold_alert`, que roda sem usuário e sempre no nacional
+    (visão organização-inteira, mesmo padrão de `tasks.check_acao_progress_alert`).
+
+    4 queries (metas, rubricas, próprios, distribuído; 3 se `nivel` for territorial,
+    sem distribuído).
+    """
+    metas_qs = WorkPlanMeta.objects.order_by("numero")
+    if meta_id is not None:
+        metas_qs = metas_qs.filter(pk=meta_id)
+    metas = list(metas_qs)
+
+    rubricas_qs = BudgetRubrica.objects.filter(ativo=True).order_by("ordem")
+    if rubrica_slug is not None:
+        rubricas_qs = rubricas_qs.filter(slug=rubrica_slug)
+    rubricas = list(rubricas_qs)
+
+    filtros_proprios = {"nivel": nivel}
+    if nivel == Nivel.ESTADUAL:
+        filtros_proprios["estado__sigla"] = estado_sigla
+    elif nivel == Nivel.TERRITORIAL:
+        filtros_proprios["territorio_id"] = territorio_id
+
+    proprios = {
+        (linha["meta_id"], linha["rubrica_id"]): linha
+        for linha in (
+            BudgetAllocation.objects.filter(**filtros_proprios)
+            .values("meta_id", "rubrica_id")
+            .annotate(
+                valor_alocado=Sum("valor_alocado"),
+                valor_comprometido=Sum("valor_comprometido"),
+                valor_executado=Sum("valor_executado"),
+            )
+        )
+    }
+
+    # "Distribuído" = soma do nível filho — generaliza o mesmo cálculo já feito em
+    # `orcamento_por_meta` pro nível resolvido. Territorial é folha: sem filhos, sem query.
+    distribuido_qs = None
+    if nivel == Nivel.NACIONAL:
+        distribuido_qs = BudgetAllocation.objects.filter(nivel=Nivel.ESTADUAL)
+    elif nivel == Nivel.ESTADUAL:
+        distribuido_qs = BudgetAllocation.objects.filter(
+            nivel=Nivel.TERRITORIAL, territorio__estados__contains=[estado_sigla],
+        )
+
+    distribuido = {}
+    if distribuido_qs is not None:
+        distribuido = {
+            (linha["meta_id"], linha["rubrica_id"]): linha["total"]
+            for linha in (
+                distribuido_qs.values("meta_id", "rubrica_id")
+                .annotate(total=Sum("valor_alocado"))
+            )
+        }
+
+    resultado = []
+    for meta in metas:
+        for rubrica in rubricas:
+            chave = (meta.pk, rubrica.pk)
+            proprio = proprios.get(chave)
+            valor_aprovado = proprio["valor_alocado"] if proprio else ZERO
+            valor_comprometido = proprio["valor_comprometido"] if proprio else ZERO
+            valor_executado = proprio["valor_executado"] if proprio else ZERO
+            valor_distribuido = distribuido.get(chave, ZERO)
+            saldo_disponivel = _saldo_disponivel_matriz(
+                valor_aprovado, valor_distribuido, valor_comprometido, valor_executado,
+            )
+            percentual = (
+                ZERO if valor_aprovado <= ZERO
+                else (valor_comprometido / valor_aprovado) * Decimal("100")
+            )
+            semaforo, alerta_80 = _semaforo_orcamento(percentual)
+            resultado.append({
+                "meta": meta,
+                "rubrica": rubrica,
+                "nivel": nivel,
+                "valor_aprovado": valor_aprovado,
+                "valor_distribuido": valor_distribuido,
+                "valor_comprometido": valor_comprometido,
+                "valor_executado": valor_executado,
+                "saldo_disponivel": saldo_disponivel,
+                "semaforo": semaforo,
+                "alerta_80": alerta_80,
+            })
+    return resultado
+
+
+def painel_orcamento_para_usuario(
+    user, *, estado_sigla: str | None = None, territorio_id: int | None = None,
+    meta_id: int | None = None, rubrica_slug: str | None = None,
+) -> list[dict]:
+    """Resolve o nível/localização pelo RBAC do usuário (`resolver_nivel_painel`) e
+    delega o cálculo da matriz a `painel_orcamento` — usada por `BudgetPainelView`
+    (contagem de queries documentada lá)."""
+    nivel, estado_sigla, territorio_id = resolver_nivel_painel(
+        user, estado_sigla=estado_sigla, territorio_id=territorio_id,
+    )
+    return painel_orcamento(
+        nivel=nivel, estado_sigla=estado_sigla, territorio_id=territorio_id,
+        meta_id=meta_id, rubrica_slug=rubrica_slug,
+    )
