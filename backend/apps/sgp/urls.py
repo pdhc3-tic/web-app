@@ -27,6 +27,7 @@ from .views.workplan import (
     WorkPlanMetaViewSet,
     WorkPlanPowerBIView,
 )
+from .views.budget import BudgetAllocationViewSet
 
 router = DefaultRouter()
 router.register("upfs", UPFViewSet)
@@ -204,5 +205,20 @@ urlpatterns = router.urls + [
         'municipios/<int:municipio_id>/comunidades/',
         comunidade_list,
         name='comunidade-list-by-municipio',
+    ),
+    path(
+        "sgp/metas/<int:pk>/orcamento/",
+        WorkPlanMetaViewSet.as_view({"get": "orcamento"}),
+        name="workplanmeta-orcamento",
+    ),
+    path(
+        "sgp/metas/<int:meta_pk>/orcamento/alocacoes/",
+        BudgetAllocationViewSet.as_view({"post": "create"}),
+        name="budget-alocacoes-create",
+    ),
+    path(
+        "sgp/orcamento/alocacoes/<int:pk>/",
+        BudgetAllocationViewSet.as_view({"patch": "partial_update", "delete": "destroy"}),
+        name="budget-alocacoes-detail",
     ),
 ]

@@ -99,6 +99,14 @@ class TestAllocationConstraints:
                     estado=None, territorio=None,
                 )
 
+    def test_reserva_ugp_so_pode_ser_nacional(self, state_rn):
+        with pytest.raises(IntegrityError):
+            with transaction.atomic():
+                BudgetAllocationFactory(
+                    nivel=BudgetAllocation.Nivel.ESTADUAL,
+                    estado=state_rn, territorio=None, reserva_ugp=True,
+                )
+
 
 class TestTransactionImutavel:
     def test_transaction_e_imutavel(self):

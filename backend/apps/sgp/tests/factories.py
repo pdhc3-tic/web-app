@@ -237,6 +237,7 @@ class BudgetAllocationFactory(factory.django.DjangoModelFactory):
     valor_alocado = 0
     valor_comprometido = 0
     valor_executado = 0
+    reserva_ugp = False
     criado_por = factory.SubFactory(UserFactory)
 
 

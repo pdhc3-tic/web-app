@@ -80,6 +80,11 @@ class BudgetAllocation(models.Model):
         max_digits=14, decimal_places=2, default=0,
         verbose_name="Valor Executado (R$)",
     )
+    reserva_ugp = models.BooleanField(
+        default=False,
+        verbose_name="Reserva Própria da UGP",
+        help_text="Só em nível nacional. Uma reserva própria da UGP nunca recebe alocações-filhas.",
+    )
     criado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -110,6 +115,10 @@ class BudgetAllocation(models.Model):
                     | Q(nivel="territorial", territorio__isnull=False)
                 ),
                 name="ck_budget_allocation_nivel_consistente",
+            ),
+            models.CheckConstraint(
+                condition=Q(reserva_ugp=False) | Q(nivel="nacional"),
+                name="ck_budget_allocation_reserva_ugp_so_nacional",
             ),
         ]
         indexes = [
