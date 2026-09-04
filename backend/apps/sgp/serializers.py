@@ -17,6 +17,7 @@ from apps.sgp.models import (
     MembroFamilia,
     Production,
     Projeto,
+    Tecnico,
     UPF,
     UPFDocument,
     WorkPlanAcao,
@@ -768,6 +769,13 @@ class ComunidadeSerializer(serializers.ModelSerializer):
                     'nome': 'Já existe uma comunidade ativa com este nome neste município.',
                 })
         return attrs
+
+
+class TecnicoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Tecnico
+        fields = ['id', 'user', 'territorio', 'osc', 'papel', 'ativo']
+        read_only_fields = ['id']
 
 
 # ---------------------------------------------------------------------------

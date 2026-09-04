@@ -5,7 +5,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import Q
 
-from apps.sgp.models import Activity, FormResponse, UPF
+from apps.sgp.models import Activity, FormResponse, Tecnico, UPF
 
 
 class StrictBooleanWidget(forms.Select):
@@ -91,6 +91,10 @@ class ActivityFilter(django_filters.FilterSet):
     tecnico_id = django_filters.NumberFilter(
         field_name="tecnico_responsavel_id", label="Técnico Responsável"
     )
+    osc = django_filters.NumberFilter(
+        field_name="tecnico_responsavel__tecnico__osc_id",
+        label="OSC do Técnico Responsável",
+    )
     tipo_atividade = django_filters.ChoiceFilter(
         choices=[
             ("visita_tecnica", "Visita técnica"),
@@ -132,10 +136,21 @@ class ActivityFilter(django_filters.FilterSet):
     class Meta:
         model = Activity
         fields = [
-            "projeto", "acao", "territorio_id", "tecnico_id",
+            "projeto", "acao", "territorio_id", "tecnico_id", "osc",
             "tipo_atividade", "status",
             "data_inicio_after", "data_inicio_before",
         ]
+
+
+class TecnicoFilter(django_filters.FilterSet):
+    osc = django_filters.NumberFilter(field_name="osc_id", label="OSC")
+    territorio = django_filters.NumberFilter(field_name="territorio_id", label="Território")
+    ativo = django_filters.BooleanFilter()
+    papel = django_filters.CharFilter(lookup_expr="icontains")
+
+    class Meta:
+        model = Tecnico
+        fields = ["osc", "territorio", "ativo", "papel"]
 
 
 class FormResponseFilter(django_filters.FilterSet):

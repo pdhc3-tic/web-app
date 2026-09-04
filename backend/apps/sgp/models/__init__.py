@@ -5,6 +5,7 @@ from .form_response import FormResponse
 from .membro import MembroFamilia
 from .production import Production
 from .projeto import Projeto
+from .tecnico import Tecnico
 from .upf import UPF
 from .upf_document import UPFDocument
 from .workplan import WorkPlanAcao, WorkPlanMeta
@@ -28,6 +29,7 @@ __all__ = [
     "MembroFamilia",
     "Production",
     "Projeto",
+    "Tecnico",
     "UPF",
     "UPFDocument",
     "WorkPlanAcao",
