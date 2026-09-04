@@ -179,6 +179,27 @@ class ComunidadePagination(LimitOffsetPagination):
     max_limit = 100
 
 
+# Serializers só para documentação OpenAPI da action UPFViewSet.mapa — o
+# payload real é montado à mão em _build_mapa_feature, sem passar por eles.
+class _UPFMapGeometrySerializer(serializers.Serializer):
+    type = serializers.CharField(default="Point")
+    coordinates = serializers.ListField(child=serializers.FloatField())
+
+
+class _UPFMapPropertiesSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    nome_titular = serializers.CharField()
+    municipio = MunicipioNestedSerializer()
+    territorio = serializers.CharField()
+    ativa = serializers.BooleanField()
+
+
+class _UPFMapFeatureSerializer(serializers.Serializer):
+    type = serializers.CharField(default="Feature")
+    geometry = _UPFMapGeometrySerializer()
+    properties = _UPFMapPropertiesSerializer()
+
+
 class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
     MAPA_FEATURE_LIMIT = 10000
     queryset = UPF.objects.select_related(
@@ -237,9 +258,7 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
                 name="UPFMapFeatureCollection",
                 fields={
                     "type": serializers.CharField(default="FeatureCollection"),
-                    "features": serializers.ListField(
-                        child=serializers.DictField(),
-                    ),
+                    "features": _UPFMapFeatureSerializer(many=True),
                     "truncated": serializers.BooleanField(),
                     "message": serializers.CharField(required=False),
                 },
@@ -1291,6 +1310,7 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
         # Para o calendário não precisamos dos M2M pesados — override do QS
         qs = Activity.objects.select_related(
             "municipio",
+            "municipio__state",
             "comunidade",
             "tecnico_responsavel",
         ).filter(ativo=True)

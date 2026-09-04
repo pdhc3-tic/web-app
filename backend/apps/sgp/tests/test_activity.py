@@ -377,6 +377,21 @@ def test_atividade_inclui_estado(auth_ugp, municipio_rn):
     assert response.data["municipio"]["estado"]["sigla"] == "RN"
 
 
+@pytest.mark.django_db
+def test_atividade_list_inclui_estado(auth_ugp, municipio_rn):
+    """Mesmo tratamento de município+estado do detail deve valer na listagem."""
+    ActivityFactory(municipio=municipio_rn)
+
+    response = auth_ugp.get(LIST_URL)
+    assert response.status_code == status.HTTP_200_OK
+
+    item = response.data["results"][0]
+    assert item["municipio"]["id"] == municipio_rn.pk
+    assert item["municipio"]["nome"] == municipio_rn.nome
+    assert item["municipio"]["estado"]["sigla"] == "RN"
+    assert "municipio_nome" not in item
+
+
 # ===========================================================================
 # Teste 7 — RLS: território A não vê/edita atividade do território B
 # ===========================================================================

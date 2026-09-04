@@ -772,9 +772,7 @@ class ActivityListSerializer(serializers.ModelSerializer):
     ambito_display = serializers.CharField(
         source="get_ambito_display", read_only=True
     )
-    municipio_nome = serializers.CharField(
-        source="municipio.nome", read_only=True
-    )
+    municipio = MunicipioNestedSerializer(read_only=True)
     tecnico_nome = serializers.CharField(
         source="tecnico_responsavel.nome", read_only=True
     )
@@ -786,7 +784,7 @@ class ActivityListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "titulo", "tipo_atividade", "tipo_atividade_display",
             "forma_atuacao", "ambito", "ambito_display",
-            "municipio", "municipio_nome",
+            "municipio",
             "data_inicio", "data_fim",
             "status", "status_display",
             "tecnico_responsavel", "tecnico_nome",
@@ -1180,8 +1178,7 @@ class ActivityCalendarioSerializer(serializers.ModelSerializer):
         return {"id": u.pk, "nome": u.nome}
 
     def get_municipio(self, obj) -> dict:
-        m = obj.municipio
-        return {"id": m.pk, "nome": m.nome}
+        return MunicipioNestedSerializer(obj.municipio).data
 
     def get_comunidade(self, obj) -> dict | None:
         if obj.comunidade_id:

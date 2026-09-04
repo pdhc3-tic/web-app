@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from django.core.cache import cache
 from django.db import connection
@@ -359,3 +361,38 @@ def test_mapa_articulador_sem_estado_retorna_lista_vazia(
 
     assert response.status_code == 200
     assert response.data["features"] == []
+
+
+def test_mapa_openapi_schema_tipa_municipio_estado(auth_client_super_admin):
+    """O @extend_schema de /mapa/ deve tipar properties.municipio.estado, e não
+    documentar 'features' como uma lista de objetos genéricos (DictField)."""
+    response = auth_client_super_admin.get("/api/docs/schema/", {"format": "json"})
+    assert response.status_code == 200
+
+    schema = json.loads(response.content)
+    components = schema["components"]["schemas"]
+
+    def resolve(node):
+        if isinstance(node, dict) and "$ref" in node:
+            name = node["$ref"].rsplit("/", 1)[-1]
+            return components[name]
+        return node
+
+    mapa_get = schema["paths"]["/api/v1/upfs/mapa/"]["get"]
+    response_schema = resolve(
+        mapa_get["responses"]["200"]["content"]["application/json"]["schema"]
+    )
+
+    features_schema = resolve(response_schema["properties"]["features"])
+    assert features_schema["type"] == "array"
+
+    feature_item = resolve(features_schema["items"])
+    assert "additionalProperties" not in feature_item, (
+        "features não deve mais ser tipado como lista de objetos genéricos"
+    )
+
+    properties_schema = resolve(feature_item["properties"]["properties"])
+    municipio_schema = resolve(properties_schema["properties"]["municipio"])
+    estado_schema = resolve(municipio_schema["properties"]["estado"])
+
+    assert set(estado_schema["properties"]) == {"id", "sigla", "nome"}
