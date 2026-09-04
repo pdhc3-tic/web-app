@@ -1,15 +1,19 @@
 # Pendências de backend — sprint 9
 
 *Compilado em 04/09/2026, na branch `frontend/sprint-9a`, ao fechar as issues
-#133 (painel do Google Calendar) e #143 (painel do Power BI) contra o backend
-que já está na `main`. O documento da sprint anterior
+#133 (painel do Google Calendar), #143 (painel do Power BI) e #191 (exportação
+de membros em CSV) contra o backend que já está na `main`. O documento da sprint anterior
 (`pendencias-backend-sprint-8.md`) continua valendo para o que sobrou de lá — o
 resumo no fim deste arquivo diz o que caiu e o que ficou.*
 
-**Nenhum item aqui bloqueia entrega de frontend.** As duas telas estão
-completas e verificadas contra os endpoints reais. O que está listado ou (a)
-completa um critério que hoje é atendido pela metade, ou (b) transforma em E2E
-de verdade um teste que hoje só existe com a resposta fixada por stub.
+Os itens 1 a 5 e 7 **não bloqueiam entrega**: as telas de #133, #143 e #191
+estão completas e verificadas contra os endpoints reais. Eles ou (a) completam
+um critério hoje atendido pela metade, ou (b) transformam em E2E de verdade um
+teste que só existe com a resposta fixada por stub.
+
+**O item 6 é a exceção e é o mais importante daqui:** enquanto ele existir, o
+critério da #192 não é demonstrável em runtime por ninguém — nem por teste, nem
+à mão.
 
 ---
 
@@ -156,6 +160,82 @@ consequências que valem estar escritas:
 - rodar `e2e/power-bi.spec.ts` contra um ambiente compartilhado consome a cota
   do conector real daquele ambiente. São 4 chamadas por execução; em
   homologação, convém saber disso antes.
+
+---
+
+## 6. Nenhum perfil pode ter acesso ao SGP sem ler Saúde/Cor-Raça
+
+*Estado atual:* os dois conjuntos são **idênticos**.
+
+```python
+# backend/apps/sgp/views/__init__.py:67
+UPF_ACCESS_ROLES = ("super-admin", "ugp", "articulador-estadual", "adt-acr")
+
+# backend/apps/core/sensitive_fields.py:21
+SENSITIVE_FIELD_ROLES = {
+    "saude":    {"super-admin", "ugp", "articulador-estadual", "adt-acr"},
+    "cor_raca": {"super-admin", "ugp", "articulador-estadual", "adt-acr"},
+}
+```
+
+Consequência: **não existe, nem pode existir, usuário que abra a ficha de uma
+UPF e não leia os campos sensíveis.** Quem está fora da matriz está fora do
+módulo. Verificado com o único perfil seedado de fora, o `fgd`:
+
+```
+GET /api/v1/upfs/                         → {"detail":"Você não tem acesso ao módulo SGP."}
+GET /api/v1/sgp/upfs/80/membros/exportar/ → 404 (a UPF não entra no queryset dele)
+```
+
+Isto **não é falta de usuário no seed** — foi assim que o item 5 da sprint 8
+descreveu o sintoma, e por isso vale corrigir o registro. Nenhum usuário novo
+resolve enquanto as duas matrizes coincidirem.
+
+**O que atinge:**
+
+- **#192 (ocultar Saúde e Cor/Raça por perfil)** — aqui o critério *é* a
+  diferença de comportamento entre perfis. Não há como demonstrá-la, nem por
+  E2E nem manualmente: o recorte existe no código e é inalcançável em runtime.
+  Este é o item a resolver **antes** de tentar fechar a #192.
+- **#191, segundo teste** — o E2E do frontend fixa a resposta sem a coluna
+  (`membros.spec.ts`, "arquivo sem a coluna de Saúde"), e a omissão em si já
+  está provada no backend por
+  `test_membro_export.py::test_usuario_sem_permissao_de_saude_recebe_csv_sem_a_coluna`
+  — que precisa de `monkeypatch.setitem(sf.SENSITIVE_FIELD_ROLES, ...)`, ou
+  seja, esbarra na mesma parede. A #191 fecha assim; a #192 não.
+
+**Pedido:** decidir a política. O candidato natural é tirar o `adt-acr` de uma
+das duas chaves (ou de ambas) — é o perfil de campo, e o único dos quatro que
+não é coordenação. Mas é decisão de vocês com a coordenação do PDHC, não
+sugestão técnica do frontend: o comentário na própria matriz diz que ela deve
+ser ajustada "conforme a política de acesso do PDHC evoluir".
+
+---
+
+## 7. `Content-Disposition` não é exposto via CORS
+
+*Estado atual:* `CORS_ALLOWED_ORIGINS` está configurado em
+`backend/setup/settings.py:273`, mas não há `CORS_EXPOSE_HEADERS`.
+
+Sem isso o navegador **não deixa o JavaScript ler o `Content-Disposition`**,
+mesmo quando o Django o envia. Toda exportação da aplicação cai no nome
+derivado no cliente, e o nome que o backend escolheu é descartado. Já vale para
+a exportação do Plano de Trabalho (está comentado em `e2e/exportacao.spec.ts`)
+e agora para a de membros (#191).
+
+O efeito visível é pequeno — muda só o separador entre data e hora
+(`membros_upf_41_2026-09-04-17-38-40.csv` do cliente contra
+`..._2026-09-04_17-38-40.csv` do servidor) —, mas a duplicação de regra de
+nomeação é permanente enquanto isso não mudar.
+
+**Pedido** — uma linha em `settings.py`:
+
+```python
+CORS_EXPOSE_HEADERS = ["Content-Disposition"]
+```
+
+O frontend não precisa mudar: `exportarMembrosCsv` e o export do Plano de
+Trabalho já leem o header e só usam o fallback quando ele não vem.
 
 ---
 

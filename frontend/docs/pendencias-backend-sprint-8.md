@@ -249,7 +249,7 @@ A mesma PR traz o `respondente_isnull` do item 1 deste documento.
 | 2 | BE-25 (#187) | exibição condicional (#192) + coluna condicional do export (#191) | **na `main`** — PR #213 |
 | 3 | Admin de token Power BI | tela inteira (#143) | **na `main`** — PR #215 |
 | 4 | `GET .../membros/exportar/` | tela inteira (#191) | **na `main`** — PR #213 |
-| 5 | Seed com `FormResponse` + `MembroFamilia` com campos sensíveis | destrave dos E2E de #178/#179/#180/#181/#192 | **parcial** — o seed cria `FormResponse`; o resto segue aberto |
+| 5 | Seed com `FormResponse` + `MembroFamilia` com campos sensíveis | destrave dos E2E de #178/#179/#180/#181/#192 | **parcial, e mal diagnosticado** — o seed cria `FormResponse`; o "usuário sem permissão de Saúde" pedido aqui não é questão de seed (ver item 6 da sprint 9) |
 | 6 | Bug UTC | — | **na `main`** — PR #212 |
 | 7 | `ugp` fora do `ConflictLogViewSet` | recorte real de acesso aos conflitos (#158) | **na `main`** — PR #213 |
 | 8 | `GET /api/v1/sca/tecnicos/` | técnico sem dispositivo no select do log (#157) | **na `main`** — PR #217 |
