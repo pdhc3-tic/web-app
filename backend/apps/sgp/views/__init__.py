@@ -32,7 +32,9 @@ from rest_framework.response import Response
 from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsSuperAdmin, IsUGP
 from apps.core.services.membro_audit import log_membro_change, sensitive_fields_changed
-from apps.core.services.permissions import user_has_role, user_states, user_territories
+from apps.core.services.permissions import (
+    user_has_role, user_role_slugs, user_states, user_territories
+)
 from apps.core.utils import get_config
 from apps.sgp.cache import UPF_MAP_CACHE_TIMEOUT, build_upf_map_cache_key
 from apps.sgp.constants import (
@@ -62,17 +64,26 @@ from apps.sgp.services.membro_export import (
 )
 
 
-def upfs_acessiveis_ao_usuario(user):
-    """Retorna queryset de UPFs acessíveis ao usuário conforme regras territoriais."""
+UPF_ACCESS_ROLES = ("super-admin", "ugp", "articulador-estadual", "adt-acr")
+
+
+def upfs_acessiveis_ao_usuario(user, role_slugs=None):
+    """Retorna queryset de UPFs acessíveis ao usuário conforme regras territoriais.
+
+    `role_slugs` pode ser passado já computado (ver `UPFViewSet.get_queryset`)
+    para evitar refazer a checagem de roles do usuário em outra query.
+    """
     qs = UPF.objects.all()
-    if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
+    if role_slugs is None:
+        role_slugs = user_role_slugs(user, UPF_ACCESS_ROLES)
+    if "super-admin" in role_slugs or "ugp" in role_slugs:
         return qs
-    if user_has_role(user, "articulador-estadual"):
+    if "articulador-estadual" in role_slugs:
         states = user_states(user)
         if not states:
             return qs.none()
         return qs.filter(municipio__state__sigla__in=states)
-    if user_has_role(user, "adt-acr"):
+    if "adt-acr" in role_slugs:
         territories = user_territories(user)
         if not territories.exists():
             return qs.none()
@@ -107,6 +118,7 @@ from apps.sgp.serializers import (
     MembroDetailSerializer,
     MembroExportQuerySerializer,
     MembroListSerializer,
+    MunicipioNestedSerializer,
     ProjetoSerializer,
     UPFDetailSerializer,
     UPFListSerializer,
@@ -167,6 +179,28 @@ class ComunidadePagination(LimitOffsetPagination):
     max_limit = 100
 
 
+# Documentação OpenAPI da action UPFViewSet.mapa — o payload real é montado
+# em _build_mapa_feature. Desvio entre os dois é pego por
+# test_mapa_openapi_schema_tipa_municipio_estado.
+class _UPFMapGeometrySerializer(serializers.Serializer):
+    type = serializers.CharField(default="Point")
+    coordinates = serializers.ListField(child=serializers.FloatField())
+
+
+class _UPFMapPropertiesSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    nome_titular = serializers.CharField()
+    municipio = MunicipioNestedSerializer()
+    territorio = serializers.CharField()
+    ativa = serializers.BooleanField()
+
+
+class _UPFMapFeatureSerializer(serializers.Serializer):
+    type = serializers.CharField(default="Feature")
+    geometry = _UPFMapGeometrySerializer()
+    properties = _UPFMapPropertiesSerializer()
+
+
 class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
     MAPA_FEATURE_LIMIT = 10000
     queryset = UPF.objects.select_related(
@@ -200,15 +234,11 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
         ).prefetch_related("membros").all()
 
         user = self.request.user
-        if not (
-            user_has_role(user, "super-admin")
-            or user_has_role(user, "ugp")
-            or user_has_role(user, "articulador-estadual")
-            or user_has_role(user, "adt-acr")
-        ):
+        role_slugs = user_role_slugs(user, UPF_ACCESS_ROLES)
+        if not role_slugs:
             raise PermissionDenied("Você não tem acesso ao módulo SGP.")
 
-        pks = upfs_acessiveis_ao_usuario(user).values_list("pk", flat=True)
+        pks = upfs_acessiveis_ao_usuario(user, role_slugs=role_slugs).values_list("pk", flat=True)
         return qs.filter(pk__in=pks)
 
     @extend_schema(
@@ -229,9 +259,7 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
                 name="UPFMapFeatureCollection",
                 fields={
                     "type": serializers.CharField(default="FeatureCollection"),
-                    "features": serializers.ListField(
-                        child=serializers.DictField(),
-                    ),
+                    "features": _UPFMapFeatureSerializer(many=True),
                     "truncated": serializers.BooleanField(),
                     "message": serializers.CharField(required=False),
                 },
@@ -271,7 +299,7 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
         queryset = (
             queryset.select_related(None)
             .prefetch_related(None)
-            .select_related("titular", "municipio", "territorio")
+            .select_related("titular", "municipio", "municipio__state", "territorio")
             .only(
                 "id",
                 "titular",
@@ -280,6 +308,9 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
                 "longitude",
                 "municipio",
                 "municipio__nome",
+                "municipio__state",
+                "municipio__state__sigla",
+                "municipio__state__nome",
                 "territorio",
                 "territorio__nome",
                 "ativa",
@@ -334,6 +365,8 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
         return lng_sw, lat_sw, lng_ne, lat_ne
 
     def _build_mapa_feature(self, upf):
+        # Dict puro (não usa _UPFMapFeatureSerializer) para evitar overhead
+        # de Serializer por item em listas de até MAPA_FEATURE_LIMIT UPFs.
         return {
             "type": "Feature",
             "geometry": {
@@ -343,7 +376,7 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
             "properties": {
                 "id": upf.pk,
                 "nome_titular": upf.titular.nome_completo,
-                "municipio": upf.municipio.nome,
+                "municipio": MunicipioNestedSerializer(upf.municipio).data,
                 "territorio": upf.territorio.nome,
                 "ativa": upf.ativa,
             },
@@ -1042,7 +1075,7 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
     def get_queryset(self):
         qs = Activity.objects.select_related(
             "acao", "acao__meta",
-            "municipio", "municipio__territory",
+            "municipio", "municipio__territory", "municipio__state",
             "comunidade",
             "tecnico_responsavel",
             "criado_por",
@@ -1280,6 +1313,7 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
         # Para o calendário não precisamos dos M2M pesados — override do QS
         qs = Activity.objects.select_related(
             "municipio",
+            "municipio__state",
             "comunidade",
             "tecnico_responsavel",
         ).filter(ativo=True)

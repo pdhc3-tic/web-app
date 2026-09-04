@@ -10,6 +10,20 @@ def user_has_role(user, slug: str) -> bool:
     return UserProfile.objects.filter(user=user, perfil__slug=slug).exists()
 
 
+def user_role_slugs(user, slugs=None) -> set[str]:
+    """Slugs de perfil do usuário em uma única query.
+
+    Se `slugs` for informado, restringe a busca a esses slugs — mais barato
+    quando só interessam algumas roles (ex.: guard de acesso a um módulo).
+    """
+    if not user.is_authenticated:
+        return set()
+    qs = UserProfile.objects.filter(user=user)
+    if slugs is not None:
+        qs = qs.filter(perfil__slug__in=slugs)
+    return set(qs.values_list("perfil__slug", flat=True))
+
+
 def user_territories(user) -> QuerySet[Territory]:
     """Sem territórios vinculados → acesso global (Territory.objects.all())."""
     profile_territory_ids = list(
