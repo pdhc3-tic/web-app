@@ -43,6 +43,7 @@ export function Toggle({
 
       <button
         id={id}
+        data-testid={id}
         type="button"
         role="switch"
         aria-checked={checked}
