@@ -164,11 +164,11 @@ test.describe("Google Calendar — Super Admin", () => {
 // ─── Indicador de status (BE-4) ──────────────────────────────────────────────
 
 /**
- * O `seed_demo` não cria nenhum `GoogleCalendarSyncEvent`, então contra o banco
- * real o card só sabe dizer "nunca sincronizado". Os cenários com data e com
- * falha são montados interceptando `.../status/` — o mesmo recurso usado em
- * membros.spec.ts e formularios.spec.ts. A configuração continua vindo do
- * backend de verdade: só o status é fixado.
+ * O card de status depende de `GoogleCalendarSyncEvent`, cujo conteúdo varia
+ * com o que o `seed_demo` tiver criado — e cada cenário aqui precisa de uma
+ * combinação exata de data, contagem de falhas e erro histórico. Por isso o
+ * `.../status/` é interceptado, o mesmo recurso usado em membros.spec.ts e
+ * formularios.spec.ts; a configuração continua vindo do backend de verdade.
  */
 async function stubStatus(
   page: Page,

@@ -47,11 +47,11 @@ export function canManageWorkPlan(
  * O aceite libera apenas Articulador Estadual e Super Admin — a UGP fica de
  * fora, e é isso que esta regra reflete (menu e gate das telas).
  *
- * ATENÇÃO: isto é afordância, não segurança. `ConflictLogViewSet.get_queryset`
- * (backend/apps/sca/views.py) ainda devolve o queryset inteiro para o perfil
- * `ugp`, e a action `resolver` também o autoriza — quem tiver o token continua
- * lendo e resolvendo conflitos pela API. O recorte real depende da correção
- * correspondente no backend (ver docs/pendencias-backend-sprint-8.md).
+ * O recorte real é do backend e já existe: desde a PR #213,
+ * `ConflictLogViewSet.get_queryset` (backend/apps/sca/views.py) devolve
+ * `qs.none()` para o perfil `ugp`, e `resolver` nega pelo
+ * `has_object_permission`. Esta função é a afordância correspondente — esconde
+ * menu e tela de quem receberia lista vazia e 403.
  */
 export function canReviewSyncConflicts(
   user: Pick<NonNullable<User>, "perfis"> | null | undefined,
