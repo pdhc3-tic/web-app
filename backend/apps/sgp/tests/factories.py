@@ -1,7 +1,12 @@
 import factory
 from django.utils import timezone
 
-from apps.core.tests.factories import MunicipalityFactory, TerritoryFactory, UserFactory
+from apps.core.tests.factories import (
+    MunicipalityFactory,
+    OrganizationFactory,
+    TerritoryFactory,
+    UserFactory,
+)
 from apps.sgp.models import (
     Activity,
     BudgetAllocation,
@@ -14,6 +19,7 @@ from apps.sgp.models import (
     MembroFamilia,
     Production,
     Projeto,
+    Tecnico,
     UPF,
     UPFDocument,
 )
@@ -207,6 +213,21 @@ class ActivityFactory(factory.django.DjangoModelFactory):
     )
     descricao_narrativa = factory.Sequence(lambda n: f"Narrativa da atividade {n}")
     status = "planejado"
+    ativo = True
+
+
+# ---------------------------------------------------------------------------
+# Tecnico factory
+# ---------------------------------------------------------------------------
+
+class TecnicoFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Tecnico
+
+    user = factory.SubFactory(UserFactory)
+    territorio = factory.SubFactory(TerritoryFactory)
+    osc = factory.SubFactory(OrganizationFactory)
+    papel = "adt-acr"
     ativo = True
 
 

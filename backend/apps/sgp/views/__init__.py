@@ -52,9 +52,10 @@ from apps.sgp.constants import (
     SITUACAO_MORADIA_CHOICES,
     TIPO_MORADIA_CHOICES,
 )
-from apps.sgp.filters import ActivityFilter, UPFFilter
+from apps.core.models.territory import Territory
+from apps.sgp.filters import ActivityFilter, TecnicoFilter, UPFFilter
 from apps.sgp.models import (
-    Activity, Comunidade, Cultura, EspecieAnimal, MembroFamilia, UPF, Projeto
+    Activity, Comunidade, Cultura, EspecieAnimal, MembroFamilia, Tecnico, UPF, Projeto
 )
 from apps.sgp.services.membro_export import (
     MEMBROS_EXPORT_UPF_LIMIT,
@@ -91,6 +92,27 @@ def upfs_acessiveis_ao_usuario(user, role_slugs=None):
     return qs.none()
 
 
+def tecnicos_acessiveis_ao_usuario(user):
+    """Retorna queryset de Tecnicos acessíveis ao usuário conforme regras territoriais."""
+    qs = Tecnico.objects.all()
+    if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
+        return qs
+    if user_has_role(user, "articulador-estadual"):
+        states = user_states(user)
+        if not states:
+            return qs.none()
+        territorio_ids = [
+            t.pk for t in Territory.objects.all() if set(t.estados or []) & states
+        ]
+        return qs.filter(territorio_id__in=territorio_ids)
+    if user_has_role(user, "adt-acr"):
+        territories = user_territories(user)
+        if not territories.exists():
+            return qs.none()
+        return qs.filter(territorio__in=territories)
+    return qs.none()
+
+
 def data_limite_aniversario(hoje, anos):
     """Data mínima para quem ainda não completou `anos` anos hoje.
 
@@ -120,6 +142,7 @@ from apps.sgp.serializers import (
     MembroListSerializer,
     MunicipioNestedSerializer,
     ProjetoSerializer,
+    TecnicoSerializer,
     UPFDetailSerializer,
     UPFListSerializer,
 )
@@ -683,6 +706,39 @@ class ComunidadeViewSet(viewsets.ModelViewSet):
             ip=self.request.META.get('REMOTE_ADDR'),
             user_agent=self.request.META.get('HTTP_USER_AGENT', ''),
         )
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class TecnicoViewSet(viewsets.ModelViewSet):
+    serializer_class = TecnicoSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = TecnicoFilter
+    http_method_names = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options']
+
+    def get_permissions(self):
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            return [(IsSuperAdmin | IsUGP)()]
+        return [IsAuthenticatedActiveAccess()]
+
+    def get_queryset(self):
+        user = self.request.user
+        if not (
+            user_has_role(user, "super-admin")
+            or user_has_role(user, "ugp")
+            or user_has_role(user, "articulador-estadual")
+            or user_has_role(user, "adt-acr")
+        ):
+            raise PermissionDenied("Você não tem acesso ao módulo de Técnicos do SGP.")
+        return tecnicos_acessiveis_ao_usuario(user).select_related("user", "territorio", "osc")
+
+    def perform_destroy(self, instance):
+        """Soft-delete via ativo=False. Não afeta Activity.tecnico_responsavel (FK direta a User)."""
+        instance.ativo = False
+        instance.save(update_fields=["ativo"])
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
