@@ -5,6 +5,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from apps.sgp.models import BudgetAllocation, BudgetRubrica
+from apps.sgp.services import budget as budget_service
 from apps.sgp.tests.factories import (
     BudgetAllocationFactory,
     BudgetRubricaFactory,
@@ -162,3 +163,132 @@ class TestOrcamentoLeitura:
         # meta + escopo + agregação + detalhamento — fixo, não escala com
         # rubricas nem alocações.
         assert len(ctx.captured_queries) <= 4
+
+
+def saldo_url(meta_id, rubrica_slug, valor):
+    return f"/api/v1/sgp/orcamento/saldo/?meta={meta_id}&rubrica={rubrica_slug}&valor={valor}"
+
+
+class TestSaldoConsulta:
+    def test_saldo_suficiente(self, auth_client):
+        meta = WorkPlanMetaFactory()
+        rubrica = BudgetRubricaFactory()
+        BudgetAllocationFactory(
+            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL,
+            estado=None, territorio=None, valor_alocado=Decimal("1000"),
+        )
+
+        response = auth_client.get(saldo_url(meta.pk, rubrica.slug, "500.00"))
+
+        assert response.status_code == 200
+        assert response.data["disponivel"] is True
+        assert response.data["nivel"] == "nacional"
+
+    def test_saldo_insuficiente(self, auth_client):
+        meta = WorkPlanMetaFactory()
+        rubrica = BudgetRubricaFactory()
+        BudgetAllocationFactory(
+            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL,
+            estado=None, territorio=None, valor_alocado=Decimal("1000"),
+        )
+
+        response = auth_client.get(saldo_url(meta.pk, rubrica.slug, "1500.00"))
+
+        assert response.status_code == 200
+        assert response.data["disponivel"] is False
+        assert response.data["motivo_bloqueio"]
+
+    def test_saldo_zerado_bloqueia(self, auth_client):
+        meta = WorkPlanMetaFactory()
+        rubrica = BudgetRubricaFactory()
+        BudgetAllocationFactory(
+            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL,
+            estado=None, territorio=None,
+            valor_alocado=Decimal("1000"), valor_comprometido=Decimal("1000"),
+        )
+
+        response = auth_client.get(saldo_url(meta.pk, rubrica.slug, "10.00"))
+
+        assert response.status_code == 200
+        assert response.data["disponivel"] is False
+        assert response.data["motivo_bloqueio"] == budget_service.BLOQUEIO_SALDO_ZERO
+
+    # auth_client_* compartilham a mesma instância de APIClient (a fixture
+    # api_client é escopo função, sem parametrização) — combinar duas ou mais
+    # num teste só faz o último force_authenticate() vencer pras outras
+    # também. Por isso um teste por papel, não os três juntos.
+    def test_nivel_resolvido_por_perfil_adt(self, auth_client_adt_rn):
+        meta = WorkPlanMetaFactory()
+        rubrica = BudgetRubricaFactory()
+
+        response = auth_client_adt_rn.get(saldo_url(meta.pk, rubrica.slug, "10.00"))
+
+        assert response.data["nivel"] == "territorial"
+
+    def test_nivel_resolvido_por_perfil_articulador(self, auth_client_articulador_rn):
+        meta = WorkPlanMetaFactory()
+        rubrica = BudgetRubricaFactory()
+
+        response = auth_client_articulador_rn.get(saldo_url(meta.pk, rubrica.slug, "10.00"))
+
+        assert response.data["nivel"] == "estadual"
+
+    def test_nivel_resolvido_por_perfil_ugp(self, auth_client_super_admin):
+        meta = WorkPlanMetaFactory()
+        rubrica = BudgetRubricaFactory()
+
+        response = auth_client_super_admin.get(saldo_url(meta.pk, rubrica.slug, "10.00"))
+
+        assert response.data["nivel"] == "nacional"
+
+    def test_rubrica_invalida(self, auth_client):
+        meta = WorkPlanMetaFactory()
+
+        response = auth_client.get(saldo_url(meta.pk, "rubrica-inexistente", "10.00"))
+
+        assert response.status_code == 400
+
+    def test_numero_de_queries(self, auth_client, django_assert_num_queries):
+        meta = WorkPlanMetaFactory()
+        rubrica = BudgetRubricaFactory()
+        BudgetAllocationFactory(
+            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL,
+            estado=None, territorio=None, valor_alocado=Decimal("1000"),
+        )
+
+        with django_assert_num_queries(2):
+            response = auth_client.get(saldo_url(meta.pk, rubrica.slug, "10.00"))
+
+        assert response.status_code == 200
+
+    def test_rubrica_valida_sem_alocacao(self, auth_client):
+        meta = WorkPlanMetaFactory()
+        rubrica = BudgetRubricaFactory()  # sem nenhuma BudgetAllocation
+
+        response = auth_client.get(saldo_url(meta.pk, rubrica.slug, "10.00"))
+
+        # esse ramo (rubrica ok, nível resolvido, sem alocação) faz 1 query a
+        # mais que o caminho feliz — profile + allocation (miss) + rubrica
+        # (pra distinguir de rubrica inválida). Não escolhi otimizar pra 2
+        # aqui porque isso empurraria a query extra pro caminho feliz, que é
+        # o que o teste ≤2 da issue realmente cobre.
+        assert response.status_code == 200
+        assert response.data["disponivel"] is False
+
+    def test_perfil_global_nao_resolve_nivel_unico(self, db):
+        from apps.core.tests.factories import RoleFactory, UserFactory
+        from rest_framework.test import APIClient
+
+        role = RoleFactory(slug="articulador-estadual", nome="Articulador Estadual")
+        usuario = UserFactory(
+            email="articulador-global@test.com", nome="Articulador Global",
+            profiles=[(role, None)],  # territorio=None = perfil global
+        )
+        client = APIClient()
+        client.force_authenticate(user=usuario)
+        meta = WorkPlanMetaFactory()
+        rubrica = BudgetRubricaFactory()
+
+        response = client.get(saldo_url(meta.pk, rubrica.slug, "10.00"))
+
+        assert response.status_code == 403
