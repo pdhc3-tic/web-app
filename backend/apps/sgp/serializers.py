@@ -10,6 +10,8 @@ from apps.core.sensitive_fields import SensitiveFieldsSerializerMixin
 from apps.sgp.constants import SAUDE_CHOICES
 from apps.sgp.models import (
     Activity,
+    ActivityDocument,
+    ActivityPhoto,
     Comunidade,
     Cultura,
     EspecieAnimal,
@@ -815,12 +817,37 @@ class ActivityListSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_total_participantes(self, obj):
-        return obj.membros_participantes.count()
+        return len(obj.membros_participantes.all())
 
     def get_atrasada(self, obj):
         if obj.status in STATUS_TERMINAIS:
             return False
         return obj.data_fim < timezone.now()
+
+
+class ActivityPhotoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ActivityPhoto
+        fields = [
+            "id", "activity", "arquivo_url", "legenda",
+            "data_hora_captura", "latitude", "longitude",
+            "ordem", "content_type", "tamanho_bytes",
+            "ativa", "criado_em",
+        ]
+        read_only_fields = fields
+
+
+class ActivityDocumentSerializer(serializers.ModelSerializer):
+    tipo_display = serializers.CharField(source="get_tipo_display", read_only=True)
+
+    class Meta:
+        model = ActivityDocument
+        fields = [
+            "id", "activity", "tipo", "tipo_display", "descricao",
+            "nome_original", "content_type", "tamanho_bytes",
+            "data_documento", "ativo", "criado_em",
+        ]
+        read_only_fields = fields
 
 
 class ActivityDetailSerializer(serializers.ModelSerializer):
@@ -952,7 +979,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         return obj.data_fim < timezone.now()
 
     def get_total_participantes(self, obj):
-        return obj.membros_participantes.count()
+        return len(obj.membros_participantes.all())
 
     def get_transicoes_permitidas(self, obj):
         return sorted(obj.get_transicoes_permitidas())
@@ -1127,6 +1154,22 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             "nome": instance.tecnico_responsavel.nome,
             "email": instance.tecnico_responsavel.email,
         }
+        data["equipe_adicional"] = [
+            {"id": u.pk, "nome": u.nome, "email": u.email}
+            for u in instance.equipe_adicional.all()
+        ]
+        data["upfs_participantes"] = UPFListSerializer(
+            instance.upfs_participantes.all(), many=True, context=self.context
+        ).data
+        data["membros_participantes"] = MembroListSerializer(
+            instance.membros_participantes.all(), many=True, context=self.context
+        ).data
+        data["fotos"] = ActivityPhotoSerializer(
+            instance.fotos.all(), many=True
+        ).data
+        data["documentos"] = ActivityDocumentSerializer(
+            instance.documentos.all(), many=True
+        ).data
         return data
 
 
