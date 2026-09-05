@@ -206,10 +206,10 @@ test.describe("Conflitos de sincronização — Articulador de PB", () => {
  * revisão a Articulador Estadual e Super Admin.
  *
  * O que este bloco cobre é a afordância — menu escondido e rota bloqueada. O
- * recorte de dados continua sendo do backend: `ConflictLogViewSet.get_queryset`
- * ainda devolve tudo para o perfil `ugp` (ver docs/pendencias-backend-sprint-8.md),
- * então um teste de API contra `/api/v1/sca/conflicts/` com este mesmo usuário
- * hoje passaria — e é justamente o que precisa mudar do outro lado.
+ * recorte de dados é do backend e entrou na PR #213: `get_queryset` devolve
+ * `qs.none()` para o perfil `ugp` e `resolver` nega pelo
+ * `has_object_permission`. Uma coisa não substitui a outra — este bloco segue
+ * provando que a tela não oferece o caminho.
  */
 test.describe("Conflitos de sincronização — UGP não revisa conflitos", () => {
   test.use({ storageState: storageStatePath("ugp") });

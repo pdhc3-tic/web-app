@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { storageStatePath } from "./helpers/users";
 import { primeiroUpfId } from "./helpers/upf";
@@ -738,5 +739,172 @@ test.describe("SGP — Card de composição espera o resumo", () => {
       timeout: ATRASO_MS * 3,
     });
     await expect(page.getByTestId("membros-sem-titular-alerta")).toHaveCount(0);
+  });
+});
+
+// ─── Exportação CSV dos membros (#191) ───────────────────────────────────────
+
+/** GET do arquivo. Não colide com LISTA_MEMBROS, que exige `?` ou fim de path. */
+const EXPORTAR_MEMBROS = /\/api\/v1\/sgp\/upfs\/\d+\/membros\/exportar\/$/;
+
+/**
+ * Cabeçalho completo — espelha `BASE_EXPORT_COLUMNS` + `SENSITIVE_EXPORT_COLUMNS`
+ * (backend/apps/sgp/services/membro_export.py). O perfil `ugp` lê os dois campos
+ * sensíveis, então recebe o arquivo inteiro.
+ */
+const CABECALHO_MEMBROS = [
+  "ID",
+  "UPF",
+  "Nome completo",
+  "Parentesco",
+  "Data de nascimento",
+  "Idade",
+  "Gênero",
+  "CPF",
+  "Município",
+  "Território",
+  "Projeto",
+  "Cor/Raça",
+  "Condições de saúde",
+].join(",");
+
+/**
+ * `membros_upf_{id}_{carimbo}.csv`.
+ *
+ * O separador entre data e hora depende de QUEM nomeou o arquivo: o backend usa
+ * `_` no `Content-Disposition`, o fallback do cliente monta com `-`. Hoje vale
+ * sempre o fallback, porque o Django não expõe `Content-Disposition` via CORS
+ * (mesma observação de exportacao.spec.ts) — o regex aceita os dois para o
+ * teste não quebrar no dia em que isso for corrigido.
+ */
+const NOME_CSV_MEMBROS =
+  /^membros_upf_\d+_\d{4}-\d{2}-\d{2}[-_]\d{2}-\d{2}-\d{2}\.csv$/;
+
+/** O backend prefixa BOM para o Excel abrir os acentos corretamente. */
+function linhasDoCsv(conteudo: string): string[] {
+  return conteudo
+    .replace(/^﻿/, "")
+    .split(/\r?\n/)
+    .filter((linha) => linha !== "");
+}
+
+async function baixarCsvDeMembros(page: Page) {
+  return Promise.all([
+    page.waitForEvent("download"),
+    page.getByTestId("membros-exportar-csv").click(),
+  ]).then(([download]) => download);
+}
+
+test.describe("SGP — Exportação de membros (CSV)", () => {
+  test.use({ storageState: storageStatePath("ugp") });
+
+  test("exportar baixa o CSV com os membros daquela UPF", async ({ page }) => {
+    const upfId = primeiroUpfId();
+    await abrirAbaMembros(page, upfId);
+
+    // `count()` não re-tenta: sem esperar a listagem sair do skeleton, ele lê
+    // zero linhas e o teste compararia o CSV com uma tabela ainda vazia.
+    const linhasNaTela = page.locator('tr[data-testid^="membro-row-"]');
+    await expect(page.getByTestId("membros-loading")).toHaveCount(0);
+    await expect(linhasNaTela.first()).toBeVisible();
+    const naTela = await linhasNaTela.count();
+
+    const download = await baixarCsvDeMembros(page);
+    expect(download.suggestedFilename()).toMatch(NOME_CSV_MEMBROS);
+
+    const linhas = linhasDoCsv(await readFile(await download.path(), "utf8"));
+    expect(linhas[0]).toBe(CABECALHO_MEMBROS);
+
+    // "daquela UPF específica" (AC-1): uma linha por membro da ficha aberta, e
+    // nenhuma de outra UPF. As duas primeiras colunas são numéricas e nunca
+    // saem entre aspas, então split(",") basta para lê-las.
+    expect(linhas.length - 1).toBe(naTela);
+    const upfsNoArquivo = new Set(
+      linhas.slice(1).map((linha) => linha.split(",")[1]),
+    );
+    expect(upfsNoArquivo).toEqual(new Set([String(upfId)]));
+
+    const toast = page.getByTestId("toast");
+    await expect(toast).toBeVisible();
+    await expect(toast).toContainText(download.suggestedFilename());
+  });
+
+  test("o botão indica o progresso enquanto o arquivo é gerado", async ({
+    page,
+  }) => {
+    const upfId = primeiroUpfId();
+
+    // Atraso deliberado: contra o backend real a geração desta UPF é rápida
+    // demais para observar o estado intermediário sem corrida.
+    const ATRASO_EXPORT_MS = 2000;
+    await page.route(EXPORTAR_MEMBROS, async (route) => {
+      await new Promise((r) => setTimeout(r, ATRASO_EXPORT_MS));
+      await route.continue();
+    });
+
+    await abrirAbaMembros(page, upfId);
+
+    const botao = page.getByTestId("membros-exportar-csv");
+    const download = page.waitForEvent("download");
+    await botao.click();
+
+    await expect(botao).toContainText("Exportando…");
+    await expect(botao).toBeDisabled();
+
+    await download;
+    await expect(botao).toContainText("Exportar CSV");
+    await expect(botao).toBeEnabled();
+  });
+
+  /**
+   * AC-3 e o segundo teste da issue: com a coluna sensível ausente, o arquivo
+   * desce exatamente como o backend mandou e a tela não acusa erro.
+   *
+   * A resposta é FIXADA, e não produzida por um usuário sem permissão, porque
+   * esse usuário não pode existir hoje: `UPF_ACCESS_ROLES`
+   * (apps/sgp/views/__init__.py) e `SENSITIVE_FIELD_ROLES`
+   * (apps/core/sensitive_fields.py) são o MESMO conjunto de quatro perfis —
+   * quem não lê Saúde recebe "Você não tem acesso ao módulo SGP" e nem chega à
+   * ficha. O backend esbarrou na mesma parede e resolveu com `monkeypatch`, em
+   * `test_membro_export.py::test_usuario_sem_permissao_de_saude_recebe_csv_sem_a_coluna`,
+   * que é onde a omissão da coluna está provada.
+   *
+   * O que sobra para provar aqui é o lado do frontend, e é o que a issue pede
+   * dele: não completar coluna omitida e não quebrar. Ver
+   * `frontend/docs/pendencias-backend-sprint-9.md`.
+   */
+  test("arquivo sem a coluna de Saúde desce como veio, sem erro na tela", async ({
+    page,
+  }) => {
+    const upfId = primeiroUpfId();
+
+    const CSV_SEM_SAUDE =
+      "﻿ID,UPF,Nome completo,Parentesco,Data de nascimento,Idade,Gênero,CPF,Município,Território,Projeto,Cor/Raça\r\n" +
+      `1,${upfId},Maria da Silva,Titular,1980-05-02,45,Feminino,,Serra Talhada,Território PE,Projeto Dom Hélder Câmara III,Parda\r\n`;
+
+    await page.route(EXPORTAR_MEMBROS, (route) =>
+      route.fulfill({
+        status: 200,
+        headers: { "content-type": "text/csv; charset=utf-8" },
+        body: CSV_SEM_SAUDE,
+      }),
+    );
+
+    await abrirAbaMembros(page, upfId);
+    const download = await baixarCsvDeMembros(page);
+
+    // Byte a byte: nenhuma coluna acrescentada, nenhuma célula preenchida.
+    const conteudo = await readFile(await download.path(), "utf8");
+    expect(conteudo).toBe(CSV_SEM_SAUDE);
+
+    const linhas = linhasDoCsv(conteudo);
+    expect(linhas[0]).not.toContain("Condições de saúde");
+    expect(linhas[0]).toContain("Cor/Raça");
+
+    // "sem erro na tela": toast de sucesso e a aba intacta.
+    const toast = page.getByTestId("toast");
+    await expect(toast).toBeVisible();
+    await expect(toast).toHaveAttribute("data-variant", "success");
+    await expect(page.getByTestId("membros-tab")).toBeVisible();
   });
 });
