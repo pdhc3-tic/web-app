@@ -10,11 +10,21 @@ Cobertura:
     6. Campo atrasada=True quando data_fim passada e status não terminal
     7. RLS: usuário território A não acessa atividade do território B
     8. Paginação: >20 registros retorna count/next/previous/results
+
+Endpoint de detalhe consolidado (Issue #227):
+    9.  Detalhe traz fotos e documentos no payload
+    10. Fotos ordenadas com capa (ordem=0) primeiro
+    11. transicoes_permitidas coerente com STATUS_TRANSITIONS
+    12. Sem N+1: número de queries constante com 1 e com 10 fotos
+    13. Escopo territorial: ADT de outro território → 404
+    14. Atividade inativa (soft-deleted) → 404
 """
 import datetime
 from unittest.mock import patch
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -26,7 +36,8 @@ from apps.core.tests.factories import (
     UserFactory,
     MunicipalityFactory,
 )
-from apps.sgp.models import Activity
+from apps.sgp.models import Activity, ActivityDocument, ActivityPhoto
+from apps.sgp.models.activity import STATUS_TRANSITIONS
 from apps.sgp.tests.factories import ActivityFactory, WorkPlanAcaoFactory
 from django.utils import timezone
 import datetime
@@ -483,3 +494,152 @@ def test_paginacao_segunda_pagina(auth_ugp, municipio_rn):
     data = response.data
     assert len(data["results"]) >= 5
     assert data["previous"] is not None
+
+
+# ===========================================================================
+# Issue #227 — Endpoint de detalhe consolidado da Atividade
+# ===========================================================================
+
+# Teste 9 — Detalhe traz fotos e documentos no payload
+# ===========================================================================
+
+@pytest.mark.django_db
+def test_detalhe_traz_evidencias(auth_ugp, municipio_rn):
+    """Uma única chamada ao detalhe deve retornar fotos e documentos vinculados."""
+    atividade = ActivityFactory(municipio=municipio_rn)
+    ActivityPhoto.objects.create(
+        activity=atividade,
+        arquivo_key=f"atividades/{atividade.pk}/fotos/foto.jpg",
+        arquivo_url="https://cdn.example.com/foto.jpg",
+        ordem=0,
+        ativa=True,
+    )
+    ActivityDocument.objects.create(
+        activity=atividade,
+        arquivo_key=f"atividades/{atividade.pk}/documentos/doc.pdf",
+        arquivo_url="https://cdn.example.com/doc.pdf",
+        tipo=ActivityDocument.TIPO_ATA,
+        nome_original="ata.pdf",
+        data_documento=datetime.date(2026, 8, 1),
+        ativo=True,
+    )
+
+    response = auth_ugp.get(detail_url(atividade.pk))
+    assert response.status_code == status.HTTP_200_OK
+
+    assert len(response.data["fotos"]) == 1
+    assert response.data["fotos"][0]["arquivo_url"] == "https://cdn.example.com/foto.jpg"
+
+    assert len(response.data["documentos"]) == 1
+    assert response.data["documentos"][0]["nome_original"] == "ata.pdf"
+
+
+# ===========================================================================
+# Teste 10 — Fotos ordenadas com capa (ordem=0) primeiro
+# ===========================================================================
+
+@pytest.mark.django_db
+def test_fotos_ordenadas_capa_primeiro(auth_ugp, municipio_rn):
+    """Fotos devem vir ordenadas por `ordem` crescente, capa (ordem=0) primeiro."""
+    atividade = ActivityFactory(municipio=municipio_rn)
+    for ordem in (2, 0, 1):
+        ActivityPhoto.objects.create(
+            activity=atividade,
+            arquivo_key=f"atividades/{atividade.pk}/fotos/foto{ordem}.jpg",
+            arquivo_url=f"https://cdn.example.com/foto{ordem}.jpg",
+            ordem=ordem,
+            ativa=True,
+        )
+
+    response = auth_ugp.get(detail_url(atividade.pk))
+    assert response.status_code == status.HTTP_200_OK
+
+    ordens = [foto["ordem"] for foto in response.data["fotos"]]
+    assert ordens == [0, 1, 2]
+
+
+# ===========================================================================
+# Teste 11 — transicoes_permitidas coerente com STATUS_TRANSITIONS
+# ===========================================================================
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("status_atual", ["planejado", "agendado", "em_andamento", "concluido"])
+def test_transicoes_permitidas(auth_ugp, municipio_rn, status_atual):
+    """transicoes_permitidas deve refletir exatamente STATUS_TRANSITIONS do status atual."""
+    atividade = ActivityFactory(municipio=municipio_rn, status=status_atual)
+
+    response = auth_ugp.get(detail_url(atividade.pk))
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["transicoes_permitidas"] == sorted(STATUS_TRANSITIONS[status_atual])
+
+
+# ===========================================================================
+# Teste 12 — Sem N+1: queries constantes com 1 e com 10 fotos
+# ===========================================================================
+
+@pytest.mark.django_db
+def test_sem_n_mais_um(auth_ugp, municipio_rn):
+    """Número de queries do detalhe deve ser constante independente do nº de fotos."""
+    atividade_1_foto = ActivityFactory(municipio=municipio_rn)
+    ActivityPhoto.objects.create(
+        activity=atividade_1_foto,
+        arquivo_key=f"atividades/{atividade_1_foto.pk}/fotos/foto.jpg",
+        arquivo_url="https://cdn.example.com/foto.jpg",
+        ordem=0,
+        ativa=True,
+    )
+
+    atividade_10_fotos = ActivityFactory(municipio=municipio_rn)
+    for i in range(10):
+        ActivityPhoto.objects.create(
+            activity=atividade_10_fotos,
+            arquivo_key=f"atividades/{atividade_10_fotos.pk}/fotos/foto{i:02d}.jpg",
+            arquivo_url=f"https://cdn.example.com/foto{i:02d}.jpg",
+            ordem=i,
+            ativa=True,
+        )
+
+    with CaptureQueriesContext(connection) as ctx_1:
+        resp_1 = auth_ugp.get(detail_url(atividade_1_foto.pk))
+    assert resp_1.status_code == status.HTTP_200_OK
+    assert len(resp_1.data["fotos"]) == 1
+
+    with CaptureQueriesContext(connection) as ctx_10:
+        resp_10 = auth_ugp.get(detail_url(atividade_10_fotos.pk))
+    assert resp_10.status_code == status.HTTP_200_OK
+    assert len(resp_10.data["fotos"]) == 10
+
+    assert len(ctx_1.captured_queries) == len(ctx_10.captured_queries), (
+        f"Esperava número de queries constante, mas obteve "
+        f"{len(ctx_1.captured_queries)} (1 foto) vs {len(ctx_10.captured_queries)} (10 fotos)."
+    )
+
+
+# ===========================================================================
+# Teste 13 — Escopo territorial: ADT de outro território → 404
+# ===========================================================================
+
+@pytest.mark.django_db
+def test_escopo_territorial(auth_adt_rn, municipio_ce, usuario_adt_rn):
+    """Usuário ADT vinculado ao território RN não deve detalhar atividade do território CE."""
+    atividade_ce = ActivityFactory(
+        municipio=municipio_ce,
+        tecnico_responsavel=usuario_adt_rn,
+        status="planejado",
+    )
+
+    response = auth_adt_rn.get(detail_url(atividade_ce.pk))
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+# ===========================================================================
+# Teste 14 — Atividade inativa (soft-deleted) → 404
+# ===========================================================================
+
+@pytest.mark.django_db
+def test_atividade_inativa_404(auth_ugp, municipio_rn):
+    """Atividade com ativo=False deve retornar 404 no detalhe, mesmo para UGP."""
+    atividade = ActivityFactory(municipio=municipio_rn, ativo=False)
+
+    response = auth_ugp.get(detail_url(atividade.pk))
+    assert response.status_code == status.HTTP_404_NOT_FOUND
