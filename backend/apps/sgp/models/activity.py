@@ -167,12 +167,18 @@ class Activity(models.Model):
         verbose_name="Membros Participantes",
     )
 
-    # ── Parceiros (texto livre — BE-2 pode adicionar M2M Organization depois) ─
-    parceiros = models.TextField(
+    # ── Parceiros ────────────────────────────────────────────────────────────
+    parceiros_organizacoes = models.ManyToManyField(
+        "core.Organization",
+        related_name="atividades",
+        blank=True,
+        verbose_name="Organizações Parceiras",
+    )
+    parceiros_livres = models.TextField(
         blank=True,
         default="",
-        verbose_name="Parceiros",
-        help_text="Lista de parceiros em texto livre. Futura versão integrará com Organizations.",
+        verbose_name="Parceiros (texto livre)",
+        help_text="Parceiros em texto livre que não corresponderam a nenhuma Organization cadastrada.",
     )
 
     # ── Narrativa ────────────────────────────────────────────────────────────

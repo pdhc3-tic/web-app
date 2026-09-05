@@ -477,7 +477,7 @@ class ActivitySyncEntity(SyncEntity):
             "longitude": str(instance.longitude) if instance.longitude is not None else None,
             "data_inicio": instance.data_inicio.isoformat() if instance.data_inicio else None,
             "data_fim": instance.data_fim.isoformat() if instance.data_fim else None,
-            "parceiros": instance.parceiros,
+            "parceiros_livres": instance.parceiros_livres,
             "descricao_narrativa": instance.descricao_narrativa,
             "resultados_alcancados": instance.resultados_alcancados,
             "status": instance.status,

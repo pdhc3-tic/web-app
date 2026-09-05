@@ -1145,6 +1145,7 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
                 ),
             ),
             "membros_participantes",
+            "parceiros_organizacoes",
             Prefetch(
                 "fotos",
                 queryset=ActivityPhoto.objects.filter(ativa=True).order_by(
