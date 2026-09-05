@@ -26,6 +26,7 @@ from apps.core.models.audit_log import AuditLog
 from apps.core.storage import StorageObjectNotFound, get_storage
 from apps.sgp.models import Activity
 from apps.sgp.models.activity_photo import ActivityPhoto
+from apps.sgp.serializers import ActivityPhotoSerializer
 
 
 # ---------------------------------------------------------------------------
@@ -99,22 +100,6 @@ class ActivityPhotoReorderSerializer(serializers.Serializer):
         child=serializers.IntegerField(min_value=1),
         min_length=1,
     )
-
-
-# ---------------------------------------------------------------------------
-# Serializer de resposta
-# ---------------------------------------------------------------------------
-
-class ActivityPhotoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ActivityPhoto
-        fields = [
-            "id", "activity", "arquivo_url", "legenda",
-            "data_hora_captura", "latitude", "longitude",
-            "ordem", "content_type", "tamanho_bytes",
-            "ativa", "criado_em",
-        ]
-        read_only_fields = fields
 
 
 # ---------------------------------------------------------------------------

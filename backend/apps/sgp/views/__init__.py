@@ -8,7 +8,7 @@ from django.apps import apps
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -55,7 +55,8 @@ from apps.sgp.constants import (
 from apps.core.models.territory import Territory
 from apps.sgp.filters import ActivityFilter, TecnicoFilter, UPFFilter
 from apps.sgp.models import (
-    Activity, Comunidade, Cultura, EspecieAnimal, MembroFamilia, Tecnico, UPF, Projeto
+    Activity, ActivityDocument, ActivityPhoto, Comunidade, Cultura, EspecieAnimal,
+    MembroFamilia, Tecnico, UPF, Projeto
 )
 from apps.sgp.services.membro_export import (
     MEMBROS_EXPORT_UPF_LIMIT,
@@ -1137,9 +1138,26 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
             "criado_por",
         ).prefetch_related(
             "equipe_adicional",
-            "upfs_participantes",
+            Prefetch(
+                "upfs_participantes",
+                queryset=UPF.objects.select_related(
+                    "municipio", "municipio__state", "territorio", "titular"
+                ),
+            ),
             "membros_participantes",
             "parceiros_organizacoes",
+            Prefetch(
+                "fotos",
+                queryset=ActivityPhoto.objects.filter(ativa=True).order_by(
+                    "ordem", "criado_em"
+                ),
+            ),
+            Prefetch(
+                "documentos",
+                queryset=ActivityDocument.objects.filter(ativo=True).order_by(
+                    "-criado_em"
+                ),
+            ),
         ).filter(ativo=True)
 
         user = self.request.user

@@ -28,6 +28,7 @@ from rest_framework.response import Response
 from apps.core.models.audit_log import AuditLog
 from apps.core.storage import StorageObjectNotFound, get_storage
 from apps.sgp.models.activity_document import ActivityDocument
+from apps.sgp.serializers import ActivityDocumentSerializer
 
 
 # ---------------------------------------------------------------------------
@@ -79,19 +80,6 @@ class ActivityDocumentConfirmSerializer(serializers.Serializer):
         if not re.match(pattern, value):
             raise serializers.ValidationError("Key de upload inválida.")
         return value
-
-
-class ActivityDocumentSerializer(serializers.ModelSerializer):
-    tipo_display = serializers.CharField(source="get_tipo_display", read_only=True)
-
-    class Meta:
-        model = ActivityDocument
-        fields = [
-            "id", "activity", "tipo", "tipo_display", "descricao",
-            "nome_original", "content_type", "tamanho_bytes",
-            "data_documento", "ativo", "criado_em",
-        ]
-        read_only_fields = fields
 
 
 # ---------------------------------------------------------------------------
