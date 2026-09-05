@@ -215,6 +215,12 @@ class ActivityFactory(factory.django.DjangoModelFactory):
     status = "planejado"
     ativo = True
 
+    @factory.post_generation
+    def parceiros_organizacoes(self, create, extracted, **kwargs):
+        if not create or not extracted:
+            return
+        self.parceiros_organizacoes.set(extracted)
+
 
 # ---------------------------------------------------------------------------
 # Tecnico factory

@@ -97,7 +97,7 @@ class ActivitySyncSerializer(serializers.Serializer):
     longitude = serializers.DecimalField(max_digits=10, decimal_places=7, required=False, allow_null=True)
     data_inicio = serializers.DateField(required=False, allow_null=True)
     data_fim = serializers.DateField(required=False, allow_null=True)
-    parceiros = serializers.CharField(required=False, allow_blank=True)
+    parceiros_livres = serializers.CharField(required=False, allow_blank=True)
     descricao_narrativa = serializers.CharField(required=False, allow_blank=True)
     resultados_alcancados = serializers.CharField(required=False, allow_blank=True)
     status = serializers.CharField(required=False, allow_blank=True)
