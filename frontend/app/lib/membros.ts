@@ -1,4 +1,4 @@
-import { ApiError, apiClient } from "@/app/lib/api";
+import { apiClient } from "@/app/lib/api";
 
 // ─── Constantes espelhadas do backend ────────────────────────────────────────
 
@@ -267,19 +267,6 @@ export class ExportMembrosTimeoutError extends Error {
   }
 }
 
-/**
- * Erro específico para "endpoint ainda não implementado no backend".
- * Enquanto BE-24 não sai, o servidor responde 404 no path. O componente
- * usa este erro para mostrar uma mensagem clara de pendência ao usuário
- * (em vez de "não foi possível gerar o arquivo").
- */
-export class ExportMembrosPendenteError extends Error {
-  constructor() {
-    super("A exportação ainda não está disponível — aguardando implementação no backend (BE-24).");
-    this.name = "ExportMembrosPendenteError";
-  }
-}
-
 function nomeDoContentDisposition(header: string | null): string | null {
   if (!header) return null;
   const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(header);
@@ -318,16 +305,19 @@ function dispararDownload(blob: Blob, nome: string): void {
 }
 
 /**
- * GET /api/v1/sgp/upfs/{upfId}/membros/exportar/
+ * GET /api/v1/sgp/upfs/{upfId}/membros/exportar/ (BE-24)
  *
- * Baixa CSV de todos os membros da UPF. Colunas retornadas respeitam a
- * matriz de permissão de BE-25 (#187) — Saúde/Cor-Raça só saem para perfis
- * autorizados. O frontend não decide colunas: entrega o que o backend
- * retornar (critério explícito da #191).
+ * Baixa o CSV dos membros da UPF. As colunas respeitam a matriz de permissão
+ * de BE-25 (#187) — `Cor/Raça` e `Condições de saúde` só saem para perfis
+ * autorizados, e quem decide é `export_columns_for`
+ * (apps/sgp/services/membro_export.py).
  *
- * Enquanto o endpoint não existir (404), lança `ExportMembrosPendenteError`
- * — pequeno mimo para diferenciar "backend não tem" de "backend deu erro".
- * Quando o BE-24 sair, funciona automaticamente sem mudança de código.
+ * O frontend NÃO monta o arquivo nem completa coluna omitida: o corpo da
+ * resposta vira Blob e desce como veio. É o critério explícito da #191, e é
+ * o que faz esta função não ter nenhum ramo dependente de permissão.
+ *
+ * O 404 aqui é o da UPF fora do escopo territorial do usuário — o mesmo que a
+ * ficha inteira devolveria —, e sobe como `ApiError` para virar toast.
  */
 export async function exportarMembrosCsv(
   upfId: string | number,
@@ -341,9 +331,6 @@ export async function exportarMembrosCsv(
   } catch (e) {
     if (e instanceof DOMException && e.name === "TimeoutError") {
       throw new ExportMembrosTimeoutError();
-    }
-    if (e instanceof ApiError && e.status === 404) {
-      throw new ExportMembrosPendenteError();
     }
     throw e;
   }

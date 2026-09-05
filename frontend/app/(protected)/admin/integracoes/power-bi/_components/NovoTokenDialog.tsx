@@ -51,7 +51,11 @@ export function NovoTokenDialog({ token, onClose }: Props) {
       title="Novo token gerado"
       footer={
         <div className="flex items-center justify-end gap-2">
-          <Button variant="ghost" onClick={handleClose}>
+          <Button
+            variant="ghost"
+            onClick={handleClose}
+            data-testid="powerbi-novo-token-fechar"
+          >
             Fechar
           </Button>
         </div>

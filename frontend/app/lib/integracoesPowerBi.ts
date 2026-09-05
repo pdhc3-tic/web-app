@@ -1,95 +1,92 @@
-import { ApiError, apiClient } from "@/app/lib/api";
+import { apiClient } from "@/app/lib/api";
 
 /**
  * Painel administrativo da integração Power BI (#143).
  *
- * O endpoint público (`/api/v1/sgp/plano-trabalho/powerbi/`) é o que a
- * ferramenta Power BI consome — ele já existe (`WorkPlanPowerBIView`,
- * `backend/apps/sgp/urls.py:82`). O que **não existe ainda** é o endpoint
- * ADMIN que esta tela consome — para ver/mascarar/regerar o token de
- * serviço. As chamadas abaixo estão prontas para o dia em que o backend
- * subir o endpoint; enquanto isso, um 404 vira `PowerBiPendenteError` e
- * a tela mostra um aviso claro em vez de um erro genérico.
+ * São dois endpoints de papéis bem diferentes:
  *
- * Contrato esperado (a alinhar com o backend — está em
- * `frontend/docs/pendencias-backend-sprint-8.md`, item 3):
+ * - `/api/v1/sgp/plano-trabalho/powerbi/` é o endpoint PÚBLICO que a
+ *   ferramenta Power BI consome, autenticado pelo token de serviço
+ *   (`PowerBIServiceTokenAuthentication`). Esta tela só exibe a URL dele.
+ * - `/api/v1/admin/power-bi-token/` é o endpoint ADMIN que esta tela
+ *   consome, restrito a Super Admin (`PowerBITokenView`,
+ *   apps/core/views/power_bi_token.py).
  *
- *   GET  /api/v1/admin/power-bi-token/            → PowerBiConfig
- *   POST /api/v1/admin/power-bi-token/regenerar/  → PowerBiTokenRegenerado
+ * O valor em claro do token só existe no retorno da regeneração: o banco
+ * guarda apenas o SHA-256 e a versão mascarada (`PowerBIToken.gerar`), então
+ * não há como a tela recuperá-lo depois — daí o diálogo de exibição única.
  */
 
-/** Erro sentinel para "endpoint admin ainda não implementado". */
-export class PowerBiPendenteError extends Error {
-  constructor() {
-    super(
-      "O endpoint de administração do token Power BI ainda não está " +
-        "disponível — aguardando implementação no backend.",
-    );
-    this.name = "PowerBiPendenteError";
-  }
-}
+/** Status do snapshot calculado pelo servidor, com limite de 1h (AC-2). */
+export type StatusSnapshot = "sem_snapshot" | "em_dia" | "atrasado";
 
-/**
- * Estado atual da integração. `token_mascarado` deve vir com o mesmo
- * formato exibido: ex.: `••••••3f2a` (últimos 4 caracteres visíveis).
- * `atualizado_em` é o timestamp do último `refresh_power_bi_snapshot`
- * bem-sucedido — permite exibir "há X min" e o indicador de atraso
- * (verde/vermelho) se passou muito do intervalo esperado.
- */
+const STATUS_SNAPSHOT: StatusSnapshot[] = ["sem_snapshot", "em_dia", "atrasado"];
+
+/** Espelha PowerBITokenStatusSerializer (apps/core/serializers.py). */
 export type PowerBiConfig = {
-  /**
-   * URL pública do endpoint consumido pelo Power BI. Preencher com a URL
-   * absoluta (ex.: `https://app.exemplo.com.br/api/v1/sgp/plano-trabalho/powerbi/`)
-   * ou relativa — a tela apenas exibe.
-   */
+  /** URL do endpoint público consumido pelo Power BI. A tela apenas exibe. */
   url_endpoint: string;
-  /** Token mascarado para exibição (ex.: `••••••3f2a`). Nunca o valor cru. */
-  token_mascarado: string;
   /**
-   * Timestamp ISO do último snapshot atualizado com sucesso. `null` quando
-   * o backend nunca gerou o snapshot (integração recém-configurada).
+   * Token mascarado (`••••3f2a`, últimos 4 caracteres). `null` quando nunca
+   * se gerou nenhum token — estado inicial de qualquer ambiente novo, já que
+   * o `seed_demo` não cria `PowerBIToken`.
+   */
+  token_mascarado: string | null;
+  /**
+   * ISO do último `refresh_power_bi_snapshot` bem-sucedido, ou `null` se o
+   * snapshot nunca foi gerado.
    */
   atualizado_em: string | null;
+  /**
+   * `null` quando a resposta não traz o campo (ou traz valor desconhecido) —
+   * aí a tela recai no cálculo local. Fora isso, o servidor é a fonte de
+   * verdade: ele aplica o mesmo limite de 1h, mas com o relógio dele.
+   */
+  status_snapshot: StatusSnapshot | null;
 };
 
-/** Resposta da regeneração. `novo_token` é EXIBIDO UMA ÚNICA VEZ. */
+/**
+ * Espelha PowerBITokenRegenerateSerializer. `token` é o valor EM CLARO e
+ * chega uma única vez — o nome do campo é `token`, e não `novo_token` como
+ * chegou a ser pedido ao backend.
+ */
 export type PowerBiTokenRegenerado = {
-  novo_token: string;
+  token: string;
+  token_mascarado: string;
+  criado_em: string;
 };
 
 const ADMIN_TOKEN_PATH = "/api/v1/admin/power-bi-token/";
 const ADMIN_REGENERAR_PATH = "/api/v1/admin/power-bi-token/regenerar/";
 
-/** GET /api/v1/admin/power-bi-token/ — lê o estado atual. */
+function normalizeConfig(raw: Partial<PowerBiConfig>): PowerBiConfig {
+  const status = raw?.status_snapshot;
+  return {
+    url_endpoint:
+      typeof raw?.url_endpoint === "string" ? raw.url_endpoint : "",
+    // Campo anulável no serializer: `""` também vale como "não existe token".
+    token_mascarado: raw?.token_mascarado ? raw.token_mascarado : null,
+    atualizado_em: raw?.atualizado_em ?? null,
+    status_snapshot: STATUS_SNAPSHOT.includes(status as StatusSnapshot)
+      ? (status as StatusSnapshot)
+      : null,
+  };
+}
+
+/** GET — estado atual. Lança ApiError (403 para quem não é Super Admin). */
 export async function fetchPowerBiConfig(
   signal?: AbortSignal,
 ): Promise<PowerBiConfig> {
-  try {
-    const res = await apiClient(ADMIN_TOKEN_PATH, { signal });
-    return res.json();
-  } catch (e) {
-    if (e instanceof ApiError && e.status === 404) {
-      throw new PowerBiPendenteError();
-    }
-    throw e;
-  }
+  const res = await apiClient(ADMIN_TOKEN_PATH, { signal });
+  return normalizeConfig(await res.json());
 }
 
 /**
- * POST /api/v1/admin/power-bi-token/regenerar/ — gera novo token e invalida
- * o anterior. Retorna o novo token EM CLARO — a tela o exibe uma única vez
- * (não pode ser recuperado depois).
+ * POST — invalida o token ativo e emite outro, na mesma transação
+ * (`PowerBIToken.gerar`). O retorno traz o valor em claro; quem chama é
+ * responsável por exibi-lo uma única vez e não persistir em lugar nenhum.
  */
 export async function regenerarPowerBiToken(): Promise<PowerBiTokenRegenerado> {
-  try {
-    const res = await apiClient(ADMIN_REGENERAR_PATH, {
-      method: "POST",
-    });
-    return res.json();
-  } catch (e) {
-    if (e instanceof ApiError && e.status === 404) {
-      throw new PowerBiPendenteError();
-    }
-    throw e;
-  }
+  const res = await apiClient(ADMIN_REGENERAR_PATH, { method: "POST" });
+  return res.json();
 }

@@ -21,7 +21,6 @@ import { ApiError } from "@/app/lib/api";
 import {
   calcIdade,
   exportarMembrosCsv,
-  ExportMembrosPendenteError,
   ExportMembrosTimeoutError,
   getResumoMembros,
   listMembros,
@@ -77,10 +76,9 @@ export function MembrosTab({ upfId }: Props) {
   const { showToast } = useToast();
 
   /**
-   * Baixa o CSV de membros (#191). Enquanto BE-24 não existir, o endpoint
-   * responde 404 → `ExportMembrosPendenteError`, e o toast diz "aguardando
-   * backend" em vez do genérico "não foi possível gerar". Quando BE-24
-   * subir, esta função funciona sem mais mudança.
+   * Baixa o CSV de membros (#191). As colunas vêm prontas do backend, que
+   * omite as sensíveis conforme o perfil (BE-25) — nada aqui depende disso:
+   * o arquivo desce como veio.
    */
   async function handleExport() {
     if (exporting) return;
@@ -90,13 +88,11 @@ export function MembrosTab({ upfId }: Props) {
       showToast(`Download iniciado: ${nome}`);
     } catch (e) {
       const mensagem =
-        e instanceof ExportMembrosPendenteError
-          ? e.message
-          : e instanceof ExportMembrosTimeoutError
-            ? "A geração do arquivo excedeu o tempo limite. Tente novamente."
-            : e instanceof ApiError
-              ? e.message
-              : "Não foi possível gerar o arquivo. Tente novamente.";
+        e instanceof ExportMembrosTimeoutError
+          ? "A geração do arquivo excedeu o tempo limite. Tente novamente."
+          : e instanceof ApiError
+            ? e.message
+            : "Não foi possível gerar o arquivo. Tente novamente.";
       showToast(mensagem, "error");
     } finally {
       setExporting(false);

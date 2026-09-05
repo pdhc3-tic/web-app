@@ -5,6 +5,12 @@
 os itens levantados no review de PR do responsável pelo projeto — os três
 novos são os de número 7, 8 e 9.*
 
+> **Documento histórico.** Oito dos nove itens entraram na `main` entre 01/09
+> e 04/09/2026 — a tabela do fim do arquivo foi atualizada com a situação de
+> cada um. O estado atual das pendências está em
+> [`pendencias-backend-sprint-9.md`](./pendencias-backend-sprint-9.md); as
+> seções abaixo continuam aqui como registro do que foi pedido e por quê.
+
 Nenhum item aqui é destrave imediato do frontend — o frontend já foi
 entregue consumindo os endpoints/campos que existem hoje. Cada item
 bloqueia um critério específico de uma issue e/ou destrava testes E2E.
@@ -237,20 +243,23 @@ A mesma PR traz o `respondente_isnull` do item 1 deste documento.
 
 ## Resumo — o que fica pendente no backend para o sprint 8
 
-| # | Item | Bloqueia |
-|---|---|---|
-| 1 | `respondente_isnull` — **pronto na PR #214**, falta mergear                   | critério "Apenas anônimas" (#180) |
-| 2 | BE-25 (#187) — **pronto na PR #213**, falta mergear                            | exibição condicional (#192) + coluna condicional do export (#191) |
-| 3 | Admin de token Power BI — **pronto na PR #215**, falta mergear                 | tela inteira (#143) |
-| 4 | `GET .../membros/exportar/` — **pronto na PR #213**, falta mergear             | tela inteira (#191) |
-| 5 | Seed com `FormResponse` + `MembroFamilia` com campos sensíveis               | destrave dos E2E de #178/#179/#180/#181/#192 |
-| 7 | `ugp` fora do `ConflictLogViewSet` — **pronto na PR #213**, falta mergear      | recorte real de acesso aos conflitos (#158) |
-| 8 | `GET /api/v1/sca/tecnicos/` — **pronto na PR #217**, falta mergear            | técnico sem dispositivo no select do log (#157) |
-| 9 | `GET .../formularios/opcoes/` — **pronto na PR #214**, falta mergear           | opções completas do select da aba Formulários (#180) |
+| # | Item | Bloqueia | Situação em 04/09/2026 |
+|---|---|---|---|
+| 1 | `respondente_isnull` | critério "Apenas anônimas" (#180) | **na `main`** — PR #214 |
+| 2 | BE-25 (#187) | exibição condicional (#192) + coluna condicional do export (#191) | **na `main`** — PR #213 |
+| 3 | Admin de token Power BI | tela inteira (#143) | **na `main`** — PR #215 |
+| 4 | `GET .../membros/exportar/` | tela inteira (#191) | **na `main`** — PR #213 |
+| 5 | Seed com `FormResponse` + `MembroFamilia` com campos sensíveis | destrave dos E2E de #178/#179/#180/#181/#192 | **parcial, e mal diagnosticado** — o seed cria `FormResponse`; o "usuário sem permissão de Saúde" pedido aqui não é questão de seed (ver item 6 da sprint 9) |
+| 6 | Bug UTC | — | **na `main`** — PR #212 |
+| 7 | `ugp` fora do `ConflictLogViewSet` | recorte real de acesso aos conflitos (#158) | **na `main`** — PR #213 |
+| 8 | `GET /api/v1/sca/tecnicos/` | técnico sem dispositivo no select do log (#157) | **na `main`** — PR #217 |
+| 9 | `GET .../formularios/opcoes/` | opções completas do select da aba Formulários (#180) | **na `main`** — PR #214 |
 
-Situação em 01/09/2026: só o item 6 (bug UTC, PR #212) chegou à `main`. Todos
-os demais têm PR aberta — #213 cobre os itens 2, 4 e 7; #214 cobre 1 e 9; #215
-cobre o 3; #217 cobre o 8. Nenhuma está mergeada, e o frontend segue com o
-comportamento provisório documentado em cada seção até que entrem.
+Situação em 04/09/2026: as PRs #212 a #217 foram todas mergeadas, e com elas
+oito dos nove itens deste documento. Sobrou o item 5 (seed), que continua sem
+PR e volta ampliado no item 2 do documento da sprint 9 — o seed também não
+cria os dados dos painéis de integração.
 
-O item 5 (seed) é o único sem PR correspondente.
+O comportamento provisório descrito em cada seção acima foi retirado do
+frontend conforme os endpoints entraram; nenhum fallback de 404 permanece nas
+telas de #133 e #143.
