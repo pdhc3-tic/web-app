@@ -5,7 +5,7 @@ from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
-from apps.core.models import Municipality
+from apps.core.models import Municipality, Organization
 from apps.core.sensitive_fields import SensitiveFieldsSerializerMixin
 from apps.sgp.constants import SAUDE_CHOICES
 from apps.sgp.models import (
@@ -869,6 +869,10 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         queryset=MembroFamilia.objects.all(),
         many=True, required=False,
     )
+    parceiros_organizacoes = serializers.PrimaryKeyRelatedField(
+        queryset=Organization.objects.filter(ativa=True),
+        many=True, required=False,
+    )
 
     def _get_upfs_visiveis(self):
         user = self.context["request"].user
@@ -918,7 +922,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             "upfs_participantes", "membros_participantes",
             "total_participantes",
             # Parceiros
-            "parceiros",
+            "parceiros_organizacoes", "parceiros_livres",
             # Narrativa
             "descricao_narrativa", "resultados_alcancados",
             # Status
@@ -1080,6 +1084,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         equipe = validated_data.pop("equipe_adicional", [])
         upfs = validated_data.pop("upfs_participantes", [])
         membros = validated_data.pop("membros_participantes", [])
+        parceiros = validated_data.pop("parceiros_organizacoes", [])
 
         activity = Activity.objects.create(**validated_data)
 
@@ -1089,6 +1094,8 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             activity.upfs_participantes.set(upfs)
         if membros:
             activity.membros_participantes.set(membros)
+        if parceiros:
+            activity.parceiros_organizacoes.set(parceiros)
 
         return activity
 
@@ -1096,6 +1103,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         equipe = validated_data.pop("equipe_adicional", None)
         upfs = validated_data.pop("upfs_participantes", None)
         membros = validated_data.pop("membros_participantes", None)
+        parceiros = validated_data.pop("parceiros_organizacoes", None)
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
@@ -1107,6 +1115,8 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             instance.upfs_participantes.set(upfs)
         if membros is not None:
             instance.membros_participantes.set(membros)
+        if parceiros is not None:
+            instance.parceiros_organizacoes.set(parceiros)
 
         return instance
 

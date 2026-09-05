@@ -1139,6 +1139,7 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
             "equipe_adicional",
             "upfs_participantes",
             "membros_participantes",
+            "parceiros_organizacoes",
         ).filter(ativo=True)
 
         user = self.request.user

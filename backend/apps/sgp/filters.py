@@ -95,6 +95,9 @@ class ActivityFilter(django_filters.FilterSet):
         field_name="tecnico_responsavel__tecnico__osc_id",
         label="OSC do Técnico Responsável",
     )
+    parceiro = django_filters.NumberFilter(
+        field_name="parceiros_organizacoes", label="Parceiro (Organização)"
+    )
     tipo_atividade = django_filters.ChoiceFilter(
         choices=[
             ("visita_tecnica", "Visita técnica"),
@@ -136,7 +139,7 @@ class ActivityFilter(django_filters.FilterSet):
     class Meta:
         model = Activity
         fields = [
-            "projeto", "acao", "territorio_id", "tecnico_id", "osc",
+            "projeto", "acao", "territorio_id", "tecnico_id", "osc", "parceiro",
             "tipo_atividade", "status",
             "data_inicio_after", "data_inicio_before",
         ]

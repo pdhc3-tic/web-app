@@ -192,6 +192,7 @@ class ActivityAdmin(admin.ModelAdmin):
     ]
     filter_horizontal = [
         "equipe_adicional", "upfs_participantes", "membros_participantes",
+        "parceiros_organizacoes",
     ]
     fieldsets = [
         ("Identificação", {
@@ -207,7 +208,10 @@ class ActivityAdmin(admin.ModelAdmin):
             "fields": ["data_inicio", "data_fim"],
         }),
         ("Participantes", {
-            "fields": ["upfs_participantes", "membros_participantes", "parceiros"],
+            "fields": [
+                "upfs_participantes", "membros_participantes",
+                "parceiros_organizacoes", "parceiros_livres",
+            ],
         }),
         ("Narrativa", {
             "fields": ["descricao_narrativa", "resultados_alcancados"],

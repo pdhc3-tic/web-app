@@ -995,7 +995,7 @@ class Command(BaseCommand):
                 longitude=comunidade.lng,
                 data_inicio=inicio,
                 data_fim=fim,
-                parceiros=self.rnd.choice([
+                parceiros_livres=self.rnd.choice([
                     "", "", "Sindicato dos Trabalhadores Rurais",
                     "Prefeitura Municipal; EMATER", "Cooperativa local; Escola Família Agrícola",
                 ]),
