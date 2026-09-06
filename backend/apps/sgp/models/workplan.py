@@ -117,6 +117,16 @@ class WorkPlanAcao(models.Model):
     data_fim = models.DateField(
         null=True, blank=True, verbose_name="Data de Término"
     )
+    quantidade_realizada = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Quantidade Realizada",
+        help_text=(
+            "Materializado: conta Atividades com status='concluido' e ativo=True. "
+            "Atualizado por signal em apps.sgp.signals.workplan (issue #229) — "
+            "não editar diretamente; use `manage.py verificar_progresso_acoes` "
+            "para reconciliar em caso de divergência."
+        ),
+    )
 
     criado_em = models.DateTimeField(
         auto_now_add=True, verbose_name="Criado em"
@@ -145,10 +155,6 @@ class WorkPlanAcao(models.Model):
     @property
     def valor_total(self):
         return self.quantidade_planejada * self.valor_unitario
-
-    @property
-    def quantidade_realizada(self):
-        return self.atividades.filter(status='concluido').count()
 
     @property
     def status_execucao(self):

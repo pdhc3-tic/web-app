@@ -368,12 +368,14 @@ class TestAcaoQuantidadeRealizada:
         ActivityFactory(acao=acao, status="concluido")
         ActivityFactory(acao=acao, status="concluido")
         ActivityFactory(acao=acao, status="concluido")
+        acao.refresh_from_db(fields=["quantidade_realizada"])
         assert acao.quantidade_realizada == 3
 
     def test_ignores_non_concluido_activities(self, acao):
         ActivityFactory(acao=acao, status="planejado")
         ActivityFactory(acao=acao, status="agendado")
         ActivityFactory(acao=acao, status="concluido")
+        acao.refresh_from_db(fields=["quantidade_realizada"])
         assert acao.quantidade_realizada == 1
 
     def test_zero_when_no_activities(self, acao):
@@ -385,18 +387,21 @@ class TestAcaoStatusExecucao:
         acao.quantidade_planejada = Decimal("2")
         ActivityFactory(acao=acao, status="concluido")
         ActivityFactory(acao=acao, status="concluido")
+        acao.refresh_from_db(fields=["quantidade_realizada"])
         assert acao.status_execucao == "concluida"
 
     def test_em_atraso_when_past_and_not_atingida(self, acao):
         acao.data_fim = date.today() - timedelta(days=1)
         acao.quantidade_planejada = Decimal("2")
         ActivityFactory(acao=acao, status="concluido")
+        acao.refresh_from_db(fields=["quantidade_realizada"])
         assert acao.status_execucao == "em_atraso"
 
     def test_no_prazo_when_future_and_not_atingida(self, acao):
         acao.data_fim = date.today() + timedelta(days=365)
         acao.quantidade_planejada = Decimal("2")
         ActivityFactory(acao=acao, status="concluido")
+        acao.refresh_from_db(fields=["quantidade_realizada"])
         assert acao.status_execucao == "no_prazo"
 
 
