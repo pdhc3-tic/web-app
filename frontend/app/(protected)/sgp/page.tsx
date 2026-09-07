@@ -9,6 +9,7 @@ import {
   Gauge,
   Sprout,
   Users,
+  Wallet,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
@@ -62,6 +63,14 @@ const SUBMODULES: Submodule[] = [
       "Semáforo de execução das Ações e alerta das que exigem atenção.",
     Icon: Gauge,
     href: "/sgp/painel/",
+  },
+  {
+    key: "orcamento",
+    title: "Painel de Orçamento",
+    description:
+      "Matriz Meta × Rubrica com semáforo e alerta das alocações no limite.",
+    Icon: Wallet,
+    href: "/sgp/orcamento/",
   },
   {
     key: "producao",

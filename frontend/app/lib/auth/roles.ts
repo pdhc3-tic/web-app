@@ -12,6 +12,9 @@ export const UGP_SLUG = "ugp";
 /** Slug do Articulador Estadual — acesso restrito aos seus estados. */
 export const ARTICULADOR_ESTADUAL_SLUG = "articulador-estadual";
 
+/** Slug do ADT/ACR — técnico de campo, restrito ao próprio território. */
+export const ADT_ACR_SLUG = "adt-acr";
+
 /** Verifica se o usuário possui um perfil com o slug informado. */
 export function hasRole(
   user: Pick<NonNullable<User>, "perfis"> | null | undefined,
@@ -72,6 +75,21 @@ export function canViewScaAdmin(
   return isSuperAdmin(user) || hasRole(user, UGP_SLUG);
 }
 
+/**
+ * ADT/ACR — o perfil sem nenhum nível acima do próprio território.
+ *
+ * No orçamento (§5.3.3) isso é estrutural, não cosmético:
+ * `services/budget.py::resolver_nivel_painel` fixa esse perfil no nível
+ * territorial e responde 403 a `estado=`, mesmo quando o `territorio=` enviado
+ * junto é o dele. Oferecer os controles de estado/território a quem só receberia
+ * 403 seria uma afordância que não leva a lugar nenhum.
+ */
+export function isAdtAcr(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return hasRole(user, ADT_ACR_SLUG);
+}
+
 export type SuperAdminState = {
   /** true enquanto a sessão ainda está carregando. */
   loading: boolean;
@@ -106,6 +124,30 @@ export function useCanReviewSyncConflicts(): SyncConflictsAccessState {
   return {
     loading,
     canReview: !loading && canReviewSyncConflicts(session?.user),
+  };
+}
+
+export type OrcamentoScopeState = {
+  /** true enquanto a sessão ainda está carregando. */
+  loading: boolean;
+  /**
+   * true quando o usuário é ADT/ACR — a tela esconde os seletores de nível e o
+   * detalhamento nacional/estadual, e anuncia que a visão é do território dele.
+   */
+  soTerritorio: boolean;
+};
+
+/**
+ * Gate do Painel de Orçamento (`/sgp/orcamento`): a leitura é liberada a
+ * qualquer autenticado, então o que o perfil decide é o ALCANCE da tela, não o
+ * acesso a ela. Ver `isAdtAcr`.
+ */
+export function useOrcamentoScope(): OrcamentoScopeState {
+  const { data: session, status } = useSession();
+  const loading = status === "loading";
+  return {
+    loading,
+    soTerritorio: !loading && isAdtAcr(session?.user),
   };
 }
 
