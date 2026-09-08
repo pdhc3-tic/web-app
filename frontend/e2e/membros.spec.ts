@@ -745,6 +745,321 @@ test.describe("SGP — Card de composição espera o resumo", () => {
 // ─── Exportação CSV dos membros (#191) ───────────────────────────────────────
 
 /** GET do arquivo. Não colide com LISTA_MEMBROS, que exige `?` ou fim de path. */
+// ─── #192: exibição condicional de Saúde e Cor/Raça ─────────────────────────
+
+/** GET/PATCH do detalhe de um membro. Não casa `resumo/` nem `exportar/`. */
+const DETALHE_MEMBRO = /\/api\/v1\/sgp\/upfs\/\d+\/membros\/\d+\/$/;
+
+/** Id do membro fixado nos cenários abaixo. */
+const ID_MEMBRO = 9001;
+
+/**
+ * Detalhe completo de um membro, com os dois campos sensíveis presentes.
+ * Os cenários "sem permissão" partem daqui e **removem as chaves** — é a
+ * ausência, e não um valor vazio, que o frontend lê como "não pode ver".
+ */
+function detalheFake(): Record<string, unknown> {
+  return {
+    id: ID_MEMBRO,
+    upf: 1,
+    nome_completo: "Joana Ferreira da Mata",
+    data_nascimento: "1979-04-12",
+    idade: 47,
+    cpf: "52998224725",
+    rg: "",
+    nis: "12345678901",
+    caf: "CAF-001",
+    grau_parentesco: "titular",
+    grau_parentesco_display: "Titular",
+    genero: 2,
+    genero_display: "Feminino",
+    cor_raca: 3,
+    cor_raca_display: "Parda",
+    escola: "",
+    seguridade_social: ["bolsa_familia"],
+    saude: ["diabetes", "hipertensao"],
+    escolaridade: 2,
+    escolaridade_display: "Fundamental incompleto",
+    criado_por: 1,
+    criado_em: "2026-01-01T00:00:00Z",
+    atualizado_em: "2026-01-01T00:00:00Z",
+  };
+}
+
+/** O mesmo membro como item de listagem. */
+function listaFake(): Record<string, unknown> {
+  const d = detalheFake();
+  return {
+    id: d.id,
+    nome_completo: d.nome_completo,
+    data_nascimento: d.data_nascimento,
+    idade: d.idade,
+    grau_parentesco: d.grau_parentesco,
+    grau_parentesco_display: d.grau_parentesco_display,
+    cpf: d.cpf,
+    genero: d.genero,
+    genero_display: d.genero_display,
+    cor_raca: d.cor_raca,
+    cor_raca_display: d.cor_raca_display,
+    criado_em: d.criado_em,
+  };
+}
+
+/** Devolve o objeto sem as chaves pedidas — o que BE-25 faz na resposta. */
+function sem(
+  objeto: Record<string, unknown>,
+  ...chaves: string[]
+): Record<string, unknown> {
+  const copia = { ...objeto };
+  for (const chave of chaves) delete copia[chave];
+  return copia;
+}
+
+/** Chaves sensíveis que o backend omite por perfil (BE-25/#187). */
+const CHAVES_SENSIVEIS = ["cor_raca", "cor_raca_display", "saude"];
+
+/**
+ * Fixa listagem, resumo e detalhe do mesmo membro. `PATCH` no detalhe é
+ * devolvido com eco do corpo, para o fluxo de salvar completar sem tocar o
+ * banco de demo.
+ */
+async function stubMembroUnico(
+  page: Page,
+  lista: Record<string, unknown>,
+  detalhe: Record<string, unknown>,
+): Promise<void> {
+  await stubComposicao(page, [lista], {
+    total_membros: 1,
+    faixa_etaria: {
+      "0-11": 0,
+      "12-17": 0,
+      "18-59": 1,
+      "60+": 0,
+      sem_data_nascimento: 0,
+    },
+    genero: { masculino: 0, feminino: 1, nao_binario: 0, nao_informado: 0 },
+    tem_titular: true,
+  });
+  await page.route(DETALHE_MEMBRO, async (route) => {
+    const metodo = route.request().method();
+    if (metodo === "GET") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(detalhe),
+      });
+    }
+    if (metodo === "PATCH") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...detalhe,
+          ...(route.request().postDataJSON() as Record<string, unknown>),
+        }),
+      });
+    }
+    return route.fallback();
+  });
+}
+
+/** O `<dt>` de um rótulo dentro do `DefinitionList` do modo view. */
+function rotuloNoDetalhe(painel: Locator, rotulo: string): Locator {
+  return painel.locator("dt").filter({ hasText: new RegExp(`^${rotulo}$`) });
+}
+
+/** Abre o painel do único membro fixado, já no modo pedido. */
+async function abrirPainelDoMembro(
+  page: Page,
+  modo: "view" | "edit",
+): Promise<Locator> {
+  await abrirAbaMembros(page, primeiroUpfId());
+  await page.locator(`tr[data-testid="membro-row-${ID_MEMBRO}"]`).click();
+
+  const painel = painelMembro(page);
+  await expect(painel.getByTestId("membro-slideover")).toHaveAttribute(
+    "data-mode",
+    "view",
+  );
+  // O painel abre antes do GET do detalhe voltar; sem esperar por um campo do
+  // detalhe, as asserções de ausência passariam contra um painel ainda vazio.
+  await expect(rotuloNoDetalhe(painel, "Gênero")).toBeVisible();
+
+  if (modo === "edit") {
+    await painel.getByRole("button", { name: "Editar" }).click();
+    await expect(painel.getByTestId("membro-slideover")).toHaveAttribute(
+      "data-mode",
+      "edit",
+    );
+  }
+  return painel;
+}
+
+/**
+ * Exibição condicional de Saúde e Cor/Raça (#192).
+ *
+ * O critério é o **sinal**: o backend (BE-25/#187) omite as chaves da resposta
+ * para quem não tem permissão, e o frontend não renderiza o campo — sem
+ * placeholder, sem aviso de "sem acesso". Ausência ≠ valor vazio, e o par de
+ * cenários abaixo prova justamente essa diferença: com a chave presente e
+ * vazia o rótulo aparece com "—"; sem a chave, o rótulo não existe.
+ *
+ * Os cenários fixam a resposta com `page.route` por dois motivos, e não por
+ * conveniência:
+ *
+ * 1. o projeto não tem runner de teste de componente (mesma pendência que já
+ *    fez a asserção do badge do Titular morar neste arquivo);
+ * 2. **não existe perfil capaz de exercitar o caminho "sem permissão" em
+ *    runtime.** `UPF_ACCESS_ROLES` (`apps/sgp/views/__init__.py`) e
+ *    `SENSITIVE_FIELD_ROLES` (`apps/core/sensitive_fields.py`) são hoje o mesmo
+ *    conjunto — quem não lê os campos sensíveis não entra no módulo SGP e
+ *    recebe "Você não tem acesso ao módulo SGP" antes de chegar à ficha. Está
+ *    registrado no item 6 de `docs/pendencias-backend-sprint-9.md`; enquanto as
+ *    duas matrizes coincidirem, o stub é o único caminho. Quando divergirem,
+ *    estes testes trocam o `page.route` por um `storageState` do perfil sem
+ *    permissão e passam a valer como E2E de ponta a ponta.
+ *
+ * Listagem e exportação, as outras duas superfícies citadas no critério, já são
+ * cobertas neste arquivo: "UPF com membros lista os integrantes…" garante que a
+ * tabela nunca tem as colunas, e "arquivo sem a coluna de Saúde desce como
+ * veio…" cobre o CSV.
+ */
+test.describe("SGP — Campos sensíveis por perfil", () => {
+  test.use({ storageState: storageStatePath("ugp") });
+
+  test("sem as chaves na resposta, o detalhe não mostra Saúde nem Cor/Raça", async ({
+    page,
+  }) => {
+    await stubMembroUnico(
+      page,
+      sem(listaFake(), ...CHAVES_SENSIVEIS),
+      sem(detalheFake(), ...CHAVES_SENSIVEIS),
+    );
+    const painel = await abrirPainelDoMembro(page, "view");
+
+    await expect(rotuloNoDetalhe(painel, "Cor/Raça")).toHaveCount(0);
+    await expect(rotuloNoDetalhe(painel, "Saúde")).toHaveCount(0);
+
+    // Nem o valor, nem qualquer pista de que o dado existe: o critério proíbe
+    // placeholder e aviso de permissão.
+    await expect(painel.getByText("Parda")).toHaveCount(0);
+    await expect(painel.getByText(/sem permissão|sem acesso|oculto/i)).toHaveCount(0);
+
+    // E o resto do painel continua inteiro — a ausência é cirúrgica.
+    await expect(rotuloNoDetalhe(painel, "Gênero")).toBeVisible();
+    await expect(rotuloNoDetalhe(painel, "Seguridade")).toBeVisible();
+  });
+
+  test("com as chaves presentes e vazias, os rótulos continuam na tela", async ({
+    page,
+  }) => {
+    // Contraprova do critério "ausência do campo, e não valor vazio": aqui o
+    // perfil TEM permissão e o membro é que não tem dado preenchido. O rótulo
+    // precisa aparecer, com o travessão do DefinitionList.
+    await stubMembroUnico(
+      page,
+      { ...listaFake(), cor_raca: null, cor_raca_display: "" },
+      { ...detalheFake(), cor_raca: null, cor_raca_display: "", saude: [] },
+    );
+    const painel = await abrirPainelDoMembro(page, "view");
+
+    await expect(rotuloNoDetalhe(painel, "Cor/Raça")).toBeVisible();
+    await expect(rotuloNoDetalhe(painel, "Saúde")).toBeVisible();
+  });
+
+  test("no formulário de edição os campos somem e o PATCH não os envia", async ({
+    page,
+  }) => {
+    await stubMembroUnico(
+      page,
+      sem(listaFake(), ...CHAVES_SENSIVEIS),
+      sem(detalheFake(), ...CHAVES_SENSIVEIS),
+    );
+    const painel = await abrirPainelDoMembro(page, "edit");
+
+    // Os controles não existem — nem o Select de Cor/Raça, nem o grupo de Saúde.
+    await expect(painel.getByLabel("Cor/Raça", { exact: true })).toHaveCount(0);
+    await expect(
+      painel.locator('[role="group"][aria-label="Saúde"]'),
+    ).toHaveCount(0);
+    // Os vizinhos imediatos de cada um seguem lá, provando que o formulário
+    // renderizou e só os dois sumiram.
+    await expect(painel.getByLabel("Gênero", { exact: true })).toBeVisible();
+    await expect(
+      painel.locator('[role="group"][aria-label="Seguridade social"]'),
+    ).toBeVisible();
+
+    // Salvar não pode reintroduzir os campos pelo payload: sem permissão de
+    // leitura, mandar `cor_raca`/`saude` sobrescreveria valores que o usuário
+    // nem consegue ver.
+    const patch = page.waitForRequest(
+      (r) => DETALHE_MEMBRO.test(new URL(r.url()).pathname) && r.method() === "PATCH",
+    );
+    await painel.getByLabel("CAF", { exact: true }).fill("CAF-002");
+    await painel.getByRole("button", { name: "Salvar" }).click();
+
+    const corpo = (await patch).postDataJSON() as Record<string, unknown>;
+    expect(corpo).not.toHaveProperty("cor_raca");
+    expect(corpo).not.toHaveProperty("saude");
+    // O que o usuário de fato editou vai junto — o filtro é dos sensíveis, não
+    // do formulário inteiro.
+    expect(corpo.caf).toBe("CAF-002");
+  });
+
+  test("o cadastro de novo membro herda a permissão derivada da listagem", async ({
+    page,
+  }) => {
+    // Em `create` não há detalhe carregado: `MembrosTab` deriva a permissão da
+    // presença de `cor_raca_display` no primeiro item da listagem.
+    await stubMembroUnico(
+      page,
+      sem(listaFake(), ...CHAVES_SENSIVEIS),
+      sem(detalheFake(), ...CHAVES_SENSIVEIS),
+    );
+    await abrirAbaMembros(page, primeiroUpfId());
+    const painel = await abrirFormularioNovoMembro(page);
+
+    await expect(painel.getByLabel("Cor/Raça", { exact: true })).toHaveCount(0);
+    await expect(
+      painel.locator('[role="group"][aria-label="Saúde"]'),
+    ).toHaveCount(0);
+    await expect(painel.getByLabel("Nome completo", { exact: true })).toBeVisible();
+  });
+
+  test("perfil com permissão vê e edita os dois campos normalmente", async ({
+    page,
+  }) => {
+    await stubMembroUnico(page, listaFake(), detalheFake());
+    const painel = await abrirPainelDoMembro(page, "view");
+
+    // Modo view: rótulo e valor, incluindo os chips de Saúde.
+    await expect(rotuloNoDetalhe(painel, "Cor/Raça")).toBeVisible();
+    await expect(painel.getByText("Parda", { exact: true })).toBeVisible();
+    await expect(rotuloNoDetalhe(painel, "Saúde")).toBeVisible();
+    await expect(painel.getByText("Diabetes", { exact: true })).toBeVisible();
+    await expect(painel.getByText("Hipertensão", { exact: true })).toBeVisible();
+
+    // Modo edit: os controles existem e vêm preenchidos com o que foi lido.
+    await painel.getByRole("button", { name: "Editar" }).click();
+    await expect(painel.getByLabel("Cor/Raça", { exact: true })).toContainText(
+      "Parda",
+    );
+    await expect(chipSelecionado(painel, "Diabetes")).toBeVisible();
+
+    // E a edição chega ao backend: troca Cor/Raça e desmarca uma condição.
+    const patch = page.waitForRequest(
+      (r) => DETALHE_MEMBRO.test(new URL(r.url()).pathname) && r.method() === "PATCH",
+    );
+    await escolherNoSelect(painel, "Cor/Raça", "Branca");
+    await chipSelecionado(painel, "Hipertensão").click();
+    await painel.getByRole("button", { name: "Salvar" }).click();
+
+    const corpo = (await patch).postDataJSON() as Record<string, unknown>;
+    expect(corpo).toHaveProperty("cor_raca");
+    expect(corpo.saude).toEqual(["diabetes"]);
+  });
+});
+
 const EXPORTAR_MEMBROS = /\/api\/v1\/sgp\/upfs\/\d+\/membros\/exportar\/$/;
 
 /**
