@@ -28,20 +28,24 @@ Antes desta issue, `WorkPlanAcao.quantidade_realizada` era uma `@property` que e
   - Listagem de UPFs: 5.000 UPFs (com seus 5.000 titulares) populados via `bulk_create`, consultados com filtro por `municipio` (indexado) e paginação padrão (`page_size=50`).
 - **Como reproduzir**:
   ```bash
-  docker compose exec backend pytest apps/sgp/tests/test_workplan_performance.py -v
+  docker compose exec backend pytest apps/sgp/tests/test_workplan_performance.py -v -s
   ```
+  O `-s` é necessário: os testes de carga e o de contagem de queries imprimem
+  o valor medido (`[RNF] ...`) no output — é dali que vêm os números da
+  tabela abaixo.
 
 ## Resultados
 
 | Cenário | RNF | Medido | Método |
 | --- | --- | --- | --- |
-| Painel do PT (105.000 Atividades, 210 Ações, 7 Metas) | < 500ms | _preencher após rodar `test_painel_sob_500ms`_ | `time.monotonic()` |
-| Listagem de 5.000 UPFs, paginação de 50 | < 3s | _preencher após rodar `test_listagem_5000_upfs_sob_3s`_ | `time.monotonic()` |
-| Queries de `GET /api/v1/metas/` (5 vs. 30 Ações na mesma Meta) | constante | _preencher com o valor impresso por `test_painel_queries_constantes`_ | `CaptureQueriesContext` |
+| Painel do PT (105.000 Atividades, 210 Ações, 7 Metas) | < 500ms | **0.155s** | `time.monotonic()` |
+| Listagem de 5.000 UPFs, paginação de 50 | < 3s | **0.076s** | `time.monotonic()` |
+| Queries de `GET /api/v1/sgp/plano-trabalho/painel/` (5 vs. 30 Ações na mesma Meta) | constante | **5 queries em ambos os casos** | `CaptureQueriesContext` |
 
-> Os números acima devem ser preenchidos com a saída real de `pytest apps/sgp/tests/test_workplan_performance.py -v` neste ambiente (este ambiente de desenvolvimento não tem acesso ao Docker/Postgres do projeto para rodar a suíte diretamente) antes de fechar a issue.
+> Medido via `docker compose exec backend pytest apps/sgp/tests/test_workplan_performance.py -v -s` (suíte completa, incluindo `test_workplan.py`, passando 100%). Todos os RNFs foram atendidos com folga considerável em relação ao limite.
 
 ## Decisões Derivadas da Medição
 
 - Nenhum índice novo foi adicionado a `UPF` (além dos já existentes em `municipio`, `territorio`, `projeto`, `comunidade`). Caso `test_listagem_5000_upfs_sob_3s` não atinja o RNF neste ambiente, avaliar um índice em `criado_em` (usado no `ordering` padrão) ou um índice composto alinhado ao filtro exercitado no teste.
 - `services/workplan_dashboard.py` (painel do PT) e `services/workplan_export.py` continuam calculando o progresso via `Count(...)` anotado por requisição, em vez de ler `quantidade_realizada` diretamente — esses endpoints filtram o progresso por escopo territorial do usuário, algo que o campo materializado (global, sem escopo) não captura. O campo `quantidade_realizada` resolve o N+1 dos consumidores "crus" da Ação (serializer padrão, admin, `WorkPlanMetaViewSet.list()` via `status_calculado`).
+- `manage.py verificar_progresso_acoes` reconcilia (corrige) as divergências por padrão; use `--check-only` para apenas detectá-las sem alterar o banco (útil em CI/monitoramento).

@@ -7,14 +7,18 @@ from apps.sgp.models import WorkPlanAcao
 class Command(BaseCommand):
     help = (
         "Reconcilia WorkPlanAcao.quantidade_realizada contra a contagem real de "
-        "Atividades com status='concluido' e ativo=True."
+        "Atividades com status='concluido' e ativo=True. Por padrão corrige as "
+        "divergências encontradas; use --check-only para apenas detectá-las."
     )
 
     def add_arguments(self, parser):
         parser.add_argument(
-            "--fix",
+            "--check-only",
             action="store_true",
-            help="Corrige as divergências encontradas em vez de apenas reportá-las.",
+            help=(
+                "Apenas detecta divergências (levanta erro se houver alguma), "
+                "sem corrigir o campo."
+            ),
         )
 
     def handle(self, *args, **options):
@@ -26,30 +30,35 @@ class Command(BaseCommand):
             )
         ))
 
-        divergencias = []
-        corrigidas = []
-        for acao in acoes:
-            if acao.quantidade_realizada != acao._esperado:
-                divergencias.append(
+        divergentes = [
+            acao for acao in acoes if acao.quantidade_realizada != acao._esperado
+        ]
+
+        if options["check_only"]:
+            if divergentes:
+                divergencias = [
                     f"Ação #{acao.pk} ({acao.numero}): quantidade_realizada="
                     f"{acao.quantidade_realizada} mas a contagem real é {acao._esperado}"
+                    for acao in divergentes
+                ]
+                raise CommandError(
+                    f"{len(divergencias)} divergência(s) encontrada(s):\n"
+                    + "\n".join(divergencias)
                 )
-                if options["fix"]:
-                    acao.quantidade_realizada = acao._esperado
-                    corrigidas.append(acao)
-
-        if options["fix"] and corrigidas:
-            WorkPlanAcao.objects.bulk_update(corrigidas, ["quantidade_realizada"])
-
-        if divergencias and not options["fix"]:
-            raise CommandError(
-                f"{len(divergencias)} divergência(s) encontrada(s):\n" + "\n".join(divergencias)
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"{len(acoes)} ação(ões) reconciliada(s) sem divergência."
+                )
             )
+            return
 
-        if divergencias and options["fix"]:
+        if divergentes:
+            for acao in divergentes:
+                acao.quantidade_realizada = acao._esperado
+            WorkPlanAcao.objects.bulk_update(divergentes, ["quantidade_realizada"])
             self.stdout.write(
                 self.style.WARNING(
-                    f"{len(divergencias)} divergência(s) corrigida(s)."
+                    f"{len(divergentes)} divergência(s) corrigida(s)."
                 )
             )
         else:
