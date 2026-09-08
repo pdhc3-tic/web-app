@@ -361,3 +361,65 @@ export async function atualizarAlocacao(
   });
   return res.json();
 }
+
+// ─── Saldo por rubrica no território (Issue #232) ───────────────────────────
+
+/**
+ * Razão do bloqueio de uma rubrica sem saldo.
+ *
+ * Espelha `BLOQUEIO_SALDO_ZERO` em `apps/sgp/services/budget.py`. O painel NÃO
+ * devolve `motivo_bloqueio` — quem devolve é `GET /sgp/orcamento/saldo/`, que
+ * exige `meta`, `rubrica` e `valor` obrigatórios e responderia uma pergunta por
+ * vez (seis chamadas para montar este card). Como o texto é fixo no backend,
+ * espelhá-lo aqui custa uma constante e evita o N+1; mesma escolha já feita
+ * para as choices do SGP em `lib/choices.ts`.
+ */
+export const BLOQUEIO_SALDO_ZERO =
+  "Bloqueado para novas solicitações quando saldo da rubrica é zero.";
+
+/** Uma rubrica com o saldo do território do usuário, pronta para exibição. */
+export type SaldoRubrica = {
+  rubrica: RubricaApi;
+  /** Decimal como string, direto do backend. */
+  saldo: string;
+  /** Valor numérico — usado só para comparar com zero, nunca para exibir. */
+  saldoNumero: number;
+  /** Saldo zerado ou negativo: não cabe nova solicitação. */
+  bloqueada: boolean;
+  /** Remanejamento pode deixar o saldo abaixo de zero; a UI destaca, não esconde. */
+  negativa: boolean;
+};
+
+/**
+ * As rubricas de UMA Meta, com o saldo do nível que o perfil do usuário alcança.
+ *
+ * O painel devolve a matriz inteira (Metas × rubricas); filtrar por Meta no
+ * backend é o que reduz as 42 linhas às 6 que o card mostra. A Meta é
+ * obrigatória de propósito: cada uma tem teto próprio, então somar uma rubrica
+ * entre Metas produziria um número que não autoriza gasto nenhum — e a demanda
+ * do SGD é sempre por Meta + Rubrica, como mostra a assinatura de
+ * `SaldoConsultaView`.
+ *
+ * Para o ADT/ACR o backend resolve o nível como territorial sem receber filtro.
+ * Não chame esta função para um ADT sem território: `resolver_nivel_painel`
+ * responde 403, com a mesma mensagem de quem não tem acesso algum ao orçamento
+ * — a distinção tem de sair da sessão, ver `BudgetBalance`.
+ */
+export async function fetchSaldoPorRubrica(
+  metaId: number | string,
+  signal?: AbortSignal,
+): Promise<SaldoRubrica[]> {
+  const linhas = await fetchPainelOrcamento({ meta: String(metaId) }, signal);
+
+  return linhas.map((linha) => {
+    const saldoNumero = Number(linha.saldo_disponivel);
+    const numero = Number.isNaN(saldoNumero) ? 0 : saldoNumero;
+    return {
+      rubrica: linha.rubrica,
+      saldo: linha.saldo_disponivel,
+      saldoNumero: numero,
+      bloqueada: numero <= 0,
+      negativa: numero < 0,
+    };
+  });
+}

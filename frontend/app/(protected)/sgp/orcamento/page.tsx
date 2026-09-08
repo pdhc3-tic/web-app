@@ -29,6 +29,7 @@ import { AlertaAlocacoesCriticas } from "./_components/AlertaAlocacoesCriticas";
 import { CelulaDetalheSlideOver } from "./_components/CelulaDetalheSlideOver";
 import { MatrizOrcamento } from "./_components/MatrizOrcamento";
 import { MatrizSkeleton } from "./_components/MatrizSkeleton";
+import { BudgetBalance } from "@/app/components/sgp/BudgetBalance/BudgetBalance";
 import {
   FILTROS_VAZIOS,
   OrcamentoFilters,
@@ -364,6 +365,15 @@ function PainelOrcamentoConteudo() {
           optionsLoading={metas.length === 0}
           soTerritorio={soTerritorio}
         />
+
+        {/* Só para o ADT/ACR: para os demais perfis a própria matriz já mostra
+            estes números no nível que lhes cabe, e o card seria redundante. */}
+        {soTerritorio && (
+          <BudgetBalance
+            metaId={filtros.meta || null}
+            titulo="Saldo por rubrica no seu território"
+          />
+        )}
 
         {error ? (
           <div className="flex flex-col items-center gap-4 rounded-lg border border-border bg-surface px-6 py-16 text-center">
