@@ -122,9 +122,19 @@ export function detailToForm(atividade: AtividadeDetail): AtividadeFormData {
     longitude: atividade.longitude ?? "",
     data_inicio: atividade.data_inicio,
     data_fim: atividade.data_fim,
-    membros_participantes: atividade.membros_participantes.map((id) => ({
-      id,
-      nome: `Membro #${id}`,
+    // Nome e CPF vêm no detalhe desde a Issue #227 — não há mais uma requisição
+    // por participante para rotulá-los.
+    upfs_participantes: atividade.upfs_participantes.map((u) => ({
+      id: u.id,
+      nome: u.nome_titular,
+      cpf: u.cpf,
+    })),
+    // O detalhe já traz o nome desde a Issue #227; o `upfId` continua pendente
+    // porque o payload do membro não carrega a UPF, e é a ParticipantesSection
+    // que o resolve ao listar os membros das UPFs selecionadas.
+    membros_participantes: atividade.membros_participantes.map((m) => ({
+      id: m.id,
+      nome: m.nome_completo,
       upfId: PENDING_UPF_ID,
     })),
     parceiros: atividade.parceiros,

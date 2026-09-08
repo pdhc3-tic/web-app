@@ -503,11 +503,13 @@ export function DocumentList({ atividadeId, readOnly = false }: Props) {
             ))}
           </ul>
 
-          <p className="px-2 pt-2 text-xs text-text-muted">
+          {/* Em leitura a cota não é acionável — anunciar vagas que o usuário
+              não pode preencher lê como um controle quebrado. */}
+          {!readOnly && <p className="px-2 pt-2 text-xs text-text-muted">
             {vagasRestantes > 0
               ? `Você pode adicionar mais ${vagasRestantes} documento${vagasRestantes === 1 ? "" : "s"}.`
               : "Limite atingido. Remova um documento para adicionar outro."}
-          </p>
+          </p>}
         </div>
       )}
 

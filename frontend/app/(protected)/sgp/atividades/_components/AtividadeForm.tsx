@@ -30,7 +30,6 @@ import {
   fetchMunicipalitiesByState,
   fetchMunicipality,
   fetchStateOptions,
-  getUpfDetail,
   type MunicipalityOpt,
 } from "@/app/lib/upfs";
 // Reaproveitado do wizard de UPF — mesmo comportamento de captura de GPS.
@@ -145,32 +144,6 @@ export function AtividadeForm({
     };
   }, [mode, initialData]);
 
-  // ── Prefill de edição: rótulos das UPFs participantes ─────────────────────
-  // O detalhe devolve só os ids; buscamos cada UPF para exibir nome e CPF.
-  useEffect(() => {
-    if (mode !== "edit" || !initialData) return;
-    const ids = initialData.upfs_participantes;
-    if (ids.length === 0) return;
-
-    let active = true;
-    Promise.all(
-      ids.map((id) =>
-        getUpfDetail(id)
-          .then((upf) => ({
-            id: upf.id,
-            nome: upf.titular.nome_completo,
-            cpf: upf.titular.cpf,
-          }))
-          .catch(() => ({ id, nome: `UPF #${id}`, cpf: "" })),
-      ),
-    ).then((refs) => {
-      if (!active) return;
-      setForm((prev) => ({ ...prev, upfs_participantes: refs }));
-    });
-    return () => {
-      active = false;
-    };
-  }, [mode, initialData]);
 
   const patchForm = useCallback((patch: Partial<AtividadeFormData>) => {
     setDirty(true);

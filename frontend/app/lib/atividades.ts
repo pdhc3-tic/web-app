@@ -160,6 +160,36 @@ export type AtividadeListItem = {
  * `tecnico_responsavel` voltam como objetos aninhados, mas são ENVIADOS como
  * PK na escrita. Os M2M continuam como arrays de PK na leitura.
  */
+/** UPF participante, como vem no detalhe consolidado (Issue #227). */
+export type UpfParticipante = {
+  id: number;
+  nome_titular: string;
+  /** Mascarado pelo backend ("105.***.***-30"). */
+  cpf: string;
+  foto_url: string;
+  ativa: boolean;
+  municipio: { id: number; nome: string };
+  territorio: { id: number; nome: string } | null;
+  criado_em: string;
+};
+
+/** Membro participante, como vem no detalhe consolidado (Issue #227). */
+export type MembroParticipante = {
+  id: number;
+  nome_completo: string;
+  cpf: string;
+  data_nascimento: string | null;
+  idade: number | null;
+  grau_parentesco: string;
+  grau_parentesco_display: string;
+  genero: number | null;
+  genero_display: string;
+  cor_raca: number | null;
+  cor_raca_display: string;
+  saude: string[];
+  criado_em: string;
+};
+
 export type AtividadeDetail = {
   id: number;
   titulo: string;
@@ -179,9 +209,21 @@ export type AtividadeDetail = {
   longitude: string | null;
   data_inicio: string;
   data_fim: string;
-  upfs_participantes: number[];
-  membros_participantes: number[];
+  /**
+   * Objetos, NÃO ids — o detalhe passou a devolver o registro inteiro na Issue
+   * #227 (backend, 05/09). O tipo antigo dizia `number[]`, e por causa disso o
+   * prefill da edição chegou a montar `/api/v1/upfs/[object Object]/`.
+   * A ESCRITA continua enviando ids (ver AtividadeWritePayload).
+   */
+  upfs_participantes: UpfParticipante[];
+  membros_participantes: MembroParticipante[];
   total_participantes: number;
+  /**
+   * Espelha GOOGLE_CALENDAR_SYNC_STATUS_CHOICES em models/activity.py.
+   * `erro` é só um aviso na ficha (RF24): a atividade está salva, o que falhou
+   * foi criar o evento na agenda.
+   */
+  google_calendar_sync_status: "pendente" | "ok" | "erro";
   parceiros: string;
   descricao_narrativa: string;
   resultados_alcancados: string;
@@ -221,6 +263,7 @@ export type AtividadeWritePayload = {
   longitude: string | null;
   data_inicio: string;
   data_fim: string;
+  /** Na escrita são ids: o serializer usa PrimaryKeyRelatedField. */
   upfs_participantes: number[];
   membros_participantes: number[];
   parceiros: string;
