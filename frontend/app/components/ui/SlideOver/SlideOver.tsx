@@ -167,17 +167,24 @@ export function SlideOver({
   // ── Conteúdo do painel ───────────────────────────────────────────────────
   const panel = (
     // Backdrop — sobrepõe a tela por trás do painel.
+    //
+    // NÃO leva `aria-hidden`: este elemento ENVOLVE o dialog, e aria-hidden
+    // remove da árvore de acessibilidade o elemento e todos os descendentes.
+    // Com ele aqui, nenhum SlideOver do sistema existia para leitor de tela —
+    // título, botão de fechar e conteúdo, tudo invisível — e o foco programático
+    // no título caía dentro de uma subárvore oculta, o que os navegadores
+    // bloqueiam ("Blocked aria-hidden on an element because its descendant
+    // retained focus"). O atributo pertence ao scrim, que é decorativo.
     <div
       className={[
         "fixed inset-0 z-40 flex justify-end",
         "transition-opacity motion-reduce:transition-none duration-250 ease-out",
         visible ? "opacity-100" : "opacity-0",
       ].join(" ")}
-      aria-hidden="true"
       onClick={onClose}
     >
-      {/* Scrim semitransparente */}
-      <div className="absolute inset-0 bg-black/30" />
+      {/* Scrim semitransparente — puramente visual. */}
+      <div className="absolute inset-0 bg-black/30" aria-hidden="true" />
 
       {/*
         Painel — stopPropagation impede que cliques dentro do painel

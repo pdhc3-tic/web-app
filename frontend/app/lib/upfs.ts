@@ -6,12 +6,33 @@ import type { SelectOption } from "@/app/components/ui/Select/Select";
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
 /** Espelha apps/sgp/serializers.py::UPFListSerializer. */
+/**
+ * Município como vem nas listagens de UPF (`MunicipioNestedSerializer`).
+ *
+ * Era `string` até 5b63bde (21/07), quando o backend trocou o
+ * `CharField(source="municipio.nome")` pelo serializer aninhado. O tipo do
+ * front seguiu dizendo `string`, e a listagem passou a renderizar o objeto
+ * direto — "Objects are not valid as a React child" derrubava /sgp/upfs.
+ * Não havia E2E cobrindo a listagem, então ninguém percebeu.
+ */
+export type MunicipioResumo = {
+  id: number;
+  nome: string;
+  estado?: { id: number; sigla: string; nome: string };
+};
+
 export type UpfListItem = {
   id: number;
   nome_titular: string;
   /** Já vem mascarado do backend: "XXX.***.***-XX". */
   cpf: string;
-  municipio: string;
+  /**
+   * Objeto, NÃO string — o `UPFListSerializer` usa `MunicipioNestedSerializer`
+   * desde 5b63bde (21/07), que substituiu um `CharField(source="municipio.nome")`.
+   * O tipo seguiu dizendo `string` e a listagem renderizava o objeto direto,
+   * derrubando a página com "Objects are not valid as a React child".
+   */
+  municipio: MunicipioResumo;
   territorio: string | null;
   criado_em: string;
   ativa: boolean;
@@ -131,7 +152,7 @@ export async function fetchTerritoryOptions(
 export type UpfMapa = {
   id: number;
   nome_titular: string;
-  municipio: string;
+  municipio: MunicipioResumo;
   territorio: string | null;
   latitude: number;
   longitude: number;
@@ -163,7 +184,7 @@ type UpfMapaFeature = {
   properties: {
     id: number;
     nome_titular: string;
-    municipio: string;
+    municipio: MunicipioResumo;
     territorio: string | null;
     ativa: boolean;
   };

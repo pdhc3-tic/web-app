@@ -132,7 +132,7 @@ export function UpfsTable({ upfs, loading }: UpfsTableProps) {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-text-muted">
-                    {u.municipio || "—"}
+                    {u.municipio?.nome || "—"}
                   </td>
                   <td className="px-4 py-3">
                     {u.territorio ? (
@@ -215,7 +215,7 @@ export function UpfsTable({ upfs, loading }: UpfsTableProps) {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
-                    <span>{u.municipio || "—"}</span>
+                    <span>{u.municipio?.nome || "—"}</span>
                     {u.territorio && <Chip>{u.territorio}</Chip>}
                   </div>
 

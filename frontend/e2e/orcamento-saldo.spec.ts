@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import {
   criarOrcamentoFixture,
@@ -23,17 +25,66 @@ import { storageStatePath } from "./helpers/users";
 
 const RUBRICAS = 6;
 
-/** Slugs das cinco que ficam sem alocação territorial na fixture. */
+/** Rubrica que este spec deixa com saldo negativo. Ver `criarSaldoNegativo`. */
+const RUBRICA_NEGATIVA = { slug: "passagens-aereas", nome: "Passagens Aéreas" };
+
+/** Slugs das quatro que ficam sem alocação territorial na fixture. */
 const ZERADAS = [
-  "passagens-aereas",
   "locacao-veiculo",
   "alimentacao-refeicoes",
   "material-grafico",
   "equipamentos-capital",
 ];
 
+/**
+ * Saldo negativo no território do ADT: 1.000 alocado, 1.500 comprometido.
+ *
+ * Fica NESTE spec, e não na `orcamentoFixture` compartilhada, porque uma
+ * alocação a 150% acende o semáforo vermelho — e `orcamento.spec.ts` afirma
+ * que o ADT não vê banner de alerta. Semear lá quebraria aquela suíte.
+ *
+ * Não há como produzir o cenário pela interface: a tela de distribuição recusa
+ * reduzir abaixo do comprometido. O ORM cru é o mesmo caminho da fixture
+ * compartilhada, e o teardown dela apaga esta linha junto (filtra por Meta).
+ */
+function criarSaldoNegativo(): void {
+  execFileSync(
+    "docker",
+    [
+      "compose", "exec", "-T", "backend", "python", "manage.py", "shell", "-c",
+      `
+from decimal import Decimal
+from apps.core.models.user_profile import UserProfile
+from apps.sgp.models import BudgetAllocation, BudgetRubrica, WorkPlanMeta
+
+perfil = (
+    UserProfile.objects.select_related("territorio")
+    .filter(user__email="marina.albuquerque@demo.pdhc.local", perfil__slug="adt-acr")
+    .exclude(territorio__isnull=True)
+    .first()
+)
+if perfil is None:
+    raise RuntimeError("ADT dos E2E sem territorio: rode manage.py seed_demo")
+
+BudgetAllocation.objects.update_or_create(
+    meta=WorkPlanMeta.objects.get(numero=${META_COM_ORCAMENTO}),
+    rubrica=BudgetRubrica.objects.get(slug="${RUBRICA_NEGATIVA.slug}"),
+    nivel="territorial", estado=None, territorio=perfil.territorio,
+    defaults={
+        "valor_alocado": Decimal("1000.00"),
+        "valor_comprometido": Decimal("1500.00"),
+        "valor_executado": Decimal("200.00"),
+    },
+)
+`,
+    ],
+    { cwd: path.resolve(__dirname, ".."), encoding: "utf8", timeout: 120_000 },
+  );
+}
+
 test.beforeAll(() => {
   criarOrcamentoFixture();
+  criarSaldoNegativo();
 });
 
 test.afterAll(() => {
@@ -107,6 +158,27 @@ test.describe("Saldo por rubrica — ADT com território", () => {
     await expect(page.getByTestId("budget-balance-resumo")).toHaveText(
       /5 de 6 rubricas bloqueadas/,
     );
+  });
+
+  test("saldo negativo aparece em destaque, nunca escondido", async ({
+    page,
+  }) => {
+    await abrirCard(page);
+
+    const valor = page.getByTestId(
+      `budget-balance-valor-${RUBRICA_NEGATIVA.slug}`,
+    );
+    // O valor é EXIBIDO — o critério é explícito em não escondê-lo.
+    await expect(valor).toBeVisible();
+    await expect(valor).toHaveText(/-\s?R\$\s*700,00|R\$\s*-700,00/);
+
+    // E fica bloqueada, com a razão dizendo que veio de remanejamento.
+    await expect(
+      page.getByTestId(`budget-balance-rubrica-${RUBRICA_NEGATIVA.slug}`),
+    ).toHaveAttribute("data-bloqueada", "true");
+    await expect(
+      page.getByTestId(`budget-balance-motivo-${RUBRICA_NEGATIVA.slug}`),
+    ).toContainText(/Saldo negativo por remanejamento/i);
   });
 
   test("falha de rede exibe erro com ação de tentar novamente", async ({
