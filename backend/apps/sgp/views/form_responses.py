@@ -25,6 +25,10 @@ from apps.sgp.serializers import (
     FormResponseListSerializer,
     FormResponseReceiveSerializer,
 )
+from apps.sgp.services.form_response_render import (
+    build_field_styles,
+    build_respostas_flowables,
+)
 from apps.sgp.services.forms import get_available_upf_forms
 
 
@@ -192,13 +196,7 @@ class FormResponseViewSet(
             parent=styles["BodyText"],
             leading=15,
         )
-        json_style = ParagraphStyle(
-            "FormResponseJson",
-            parent=styles["Code"],
-            fontName="Courier",
-            fontSize=7,
-            leading=9,
-        )
+        field_styles = build_field_styles(styles)
         story = [Paragraph("Respostas de formulários", styles["Title"])]
 
         for index, response in enumerate(responses):
@@ -224,17 +222,7 @@ class FormResponseViewSet(
                     ),
                     Spacer(1, 0.4 * cm),
                     Paragraph("Respostas", styles["Heading2"]),
-                    Paragraph(
-                        escape(
-                            json.dumps(
-                                response.respostas_json,
-                                ensure_ascii=False,
-                                indent=2,
-                                default=str,
-                            )
-                        ).replace("\n", "<br/>"),
-                        json_style,
-                    ),
+                    *build_respostas_flowables(response.respostas_json, field_styles),
                 ]
             )
 
