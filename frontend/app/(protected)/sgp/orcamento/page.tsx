@@ -285,9 +285,14 @@ function PainelOrcamentoConteudo() {
           Painel de Orçamento
         </h1>
         {/* O painel é a leitura; a distribuição (§5.3.2) é a escrita que o
-            alimenta. Só aparece para quem o backend deixaria gravar. */}
+            alimenta. Só aparece para quem o backend deixaria gravar.
+
+            `as="a"` é obrigatório: `isAnchor` do Button testa `as === "a"`, não
+            a presença de `href`. Sem ele sai um <button> com um href
+            decorativo, que não navega para lugar nenhum. */}
         {podeDistribuir && (
           <Button
+            as="a"
             size="sm"
             variant="secondary"
             href="/sgp/orcamento/distribuicao"

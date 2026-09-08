@@ -66,6 +66,21 @@ async function idDoDestino(page: Page, nomeParcial: string): Promise<string> {
 test.describe("Distribuição orçamentária — UGP", () => {
   test.use({ storageState: storageStatePath("ugp") });
 
+  test("painel leva a distribuicao", async ({ page }) => {
+    await page.goto("/sgp/orcamento/");
+    await expect(page.getByTestId("orcamento-page")).toBeVisible();
+
+    // O <Button> do design system só vira <a> com `as="a"`; sem isso o `href`
+    // fica pendurado num <button> e o clique não navega. Nada na tela denuncia
+    // isso, então o caminho precisa de teste.
+    const ir = page.getByTestId("orcamento-ir-distribuicao");
+    await expect(ir).toBeVisible();
+    await ir.click();
+
+    await expect(page).toHaveURL(/\/sgp\/orcamento\/distribuicao/);
+    await expect(page.getByTestId("distribuicao-page")).toBeVisible();
+  });
+
   test("ugp distribui por estado", async ({ page }) => {
     await abrirRecorte(page);
 
