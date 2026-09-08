@@ -224,6 +224,15 @@ export type AtividadeDetail = {
    * foi criar o evento na agenda.
    */
   google_calendar_sync_status: "pendente" | "ok" | "erro";
+  /**
+   * Evidências vinculadas, como vêm no detalhe consolidado (Issue #227).
+   *
+   * O tipo declara só o que a UI consome — a presença de ao menos um item é o
+   * que decide se "Concluído" pode ser oferecido. A galeria carrega os dados
+   * completos por conta própria, pelos endpoints de fotos/documentos.
+   */
+  fotos?: { id: number; arquivo_url: string; legenda: string; ordem: number }[];
+  documentos?: { id: number; nome_original: string; tipo: string }[];
   parceiros: string;
   descricao_narrativa: string;
   resultados_alcancados: string;
@@ -419,4 +428,74 @@ export async function listTecnicos(
   } catch {
     return [];
   }
+}
+
+// ─── Transição guiada de status (Issue #234) ────────────────────────────────
+
+/**
+ * Status terminais: `STATUS_TRANSITIONS[status]` é vazio no backend, então
+ * nenhuma saída é possível. Espelha os `set()` de models/activity.py.
+ */
+export const STATUS_TERMINAIS = [
+  "concluido",
+  "concluido_sem_evidencia",
+  "nao_realizada",
+  "cancelada",
+];
+
+/** True quando a atividade não admite mais nenhuma transição. */
+export function isStatusTerminal(status: string): boolean {
+  return STATUS_TERMINAIS.includes(status);
+}
+
+/**
+ * O que o destino escolhido exige antes de submeter.
+ *
+ * `justificativa` e `evidencia` espelham regras que o backend REALMENTE aplica
+ * (ActivityDetailSerializer.validate). `novaData` é a exceção: a Issue #234
+ * pede a exigência ao sair de "Adiada", mas nenhuma validação equivalente
+ * existe no servidor — confirmado por PATCH direto, que devolve 200 sem data
+ * nova. Enquanto isso não mudar, a regra vale só nesta tela e uma chamada
+ * direta à API a contorna. Registrado em docs/pendencias-backend-sprint-9.md.
+ */
+export type ExigenciaTransicao = {
+  justificativa: boolean;
+  novaData: boolean;
+  evidencia: boolean;
+};
+
+export function exigenciasDaTransicao(
+  statusAtual: string,
+  destino: string,
+): ExigenciaTransicao {
+  return {
+    justificativa: STATUS_EXIGE_JUSTIFICATIVA.includes(destino),
+    novaData: statusAtual === "adiada" && destino === "agendado",
+    evidencia: destino === "concluido",
+  };
+}
+
+/** Payload da transição — só o que muda, para não reenviar a atividade toda. */
+export type TransicaoPayload = {
+  status: string;
+  justificativa?: string;
+  data_inicio?: string;
+  data_fim?: string;
+};
+
+/**
+ * PATCH /api/v1/sgp/atividades/{id}/ — aplica só a transição de status.
+ *
+ * Parcial de propósito: o modal não carrega o formulário inteiro, e mandar
+ * campos não tocados arriscaria sobrescrever edição concorrente.
+ */
+export async function transicionarStatus(
+  id: string | number,
+  payload: TransicaoPayload,
+): Promise<AtividadeDetail> {
+  const res = await apiClient(`/api/v1/sgp/atividades/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  return res.json();
 }

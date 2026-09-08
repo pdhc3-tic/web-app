@@ -6,7 +6,10 @@ de membros em CSV) contra o backend que já está na `main`. O documento da spri
 (`pendencias-backend-sprint-8.md`) continua valendo para o que sobrou de lá — o
 resumo no fim deste arquivo diz o que caiu e o que ficou.*
 
-Os itens 1 a 5 e 7 **não bloqueiam entrega**: as telas de #133, #143 e #191
+*O item 10 foi acrescentado em 08/09/2026, na branch `frontend/sprint-9c`, ao
+fechar a issue #234.*
+
+Os itens 1 a 5, 7 e 10 **não bloqueiam entrega**: as telas de #133, #143 e #191
 estão completas e verificadas contra os endpoints reais. Eles ou (a) completam
 um critério hoje atendido pela metade, ou (b) transformam em E2E de verdade um
 teste que só existe com a resposta fixada por stub.
@@ -305,6 +308,62 @@ estado.
 
 **Pedido** — preencher `nome` com o nome por extenso na criação dos `State` do
 `seed_demo`.
+
+---
+
+## 10. Sair de "Adiada" não exige nova data — a regra existe só no cliente
+
+*Levantado em 08/09/2026, ao implementar a issue #234 (fluxo guiado de
+transição de status) na branch `frontend/sprint-9c`.*
+
+O contexto da #234 afirma que o backend já implementa *"nova data obrigatória
+para sair de 'Adiada'"*. **Não implementa.** `ActivityDetailSerializer.validate`
+cobre as outras três regras da máquina de estados — transição permitida,
+justificativa obrigatória em `nao_realizada`/`cancelada` e bloqueio de
+`concluido` sem evidência —, mas não há nenhuma validação ligando
+`adiada → agendado` a uma data nova. Uma busca por `adiada` em
+`backend/apps/sgp/` só encontra o rótulo do choice, a entrada em
+`STATUS_TRANSITIONS` e o seed.
+
+*Verificado na API*, contra a atividade 100 (`status="adiada"`):
+
+```
+PATCH /api/v1/sgp/atividades/100/   {"status": "agendado"}
+→ 200 OK      # sem data nova, sem reclamação
+```
+
+*Estado atual no frontend:* o diálogo de transição
+(`TransicaoStatusDialog.tsx`) exige a nova data e bloqueia o envio sem ela,
+atendendo ao critério da issue. Mas a regra vale **apenas nesta tela** — o app
+de campo (SCA), o Django admin ou um `curl` reagendam sem data e a atividade
+volta a "Agendado" mantendo a data que já passou. É exatamente o que a #231
+estabeleceu que não deve acontecer: *"a validação do servidor continua sendo a
+autoridade; a do cliente é conveniência, nunca substituto"*.
+
+**Pedido** — acrescentar a `ActivityDetailSerializer.validate`, junto das
+regras que já moram lá:
+
+```python
+# Reagendar exige data nova: sem isto a atividade volta a "agendado"
+# carregando a data que já passou, e nasce atrasada.
+if (
+    self.instance is not None
+    and self.instance.status == "adiada"
+    and novo_status == "agendado"
+    and "data_inicio" not in attrs
+):
+    raise serializers.ValidationError({
+        "data_inicio": (
+            "Informe a nova data de início ao reagendar uma atividade adiada."
+        ),
+        "code": "VALIDATION_ERROR",
+    })
+```
+
+Custo: um bloco no `validate` que já existe. Nenhum model novo, nenhuma
+migration. Quando entrar, a exigência do cliente deixa de ser a única barreira
+e o teste 3 de `atividade-status.spec.ts` passa a cobrir uma regra real — hoje
+ele prova só o comportamento da UI.
 
 ---
 

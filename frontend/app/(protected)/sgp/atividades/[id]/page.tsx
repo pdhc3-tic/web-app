@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   CalendarX,
   MapPin,
+  RefreshCw,
   Pencil,
   User,
   Users,
@@ -21,6 +22,9 @@ import { DefinitionList } from "@/app/components/ui/DefinitionList/DefinitionLis
 import { RestrictedAccess } from "@/app/components/ui/RestrictedAccess/RestrictedAccess";
 import { OrigemScaBadge } from "@/app/components/sgp/OrigemScaBadge";
 import { EvidenceGallery } from "@/app/components/sgp/EvidenceGallery/EvidenceGallery";
+import { TransicaoStatusDialog } from "./_components/TransicaoStatusDialog";
+import { useToast } from "@/app/components/ui/Toast/Toast";
+import { isStatusTerminal } from "@/app/lib/atividades";
 import { ApiError } from "@/app/lib/api";
 import {
   badgeStatusFor,
@@ -58,6 +62,8 @@ export default function AtividadeFichaPage() {
   const [status, setStatus] = useState<Status>("loading");
   const [atividade, setAtividade] = useState<AtividadeDetail | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [transicaoAberta, setTransicaoAberta] = useState(false);
+  const { showToast } = useToast();
 
   useEffect(() => {
     if (!/^\d+$/.test(id)) {
@@ -83,6 +89,8 @@ export default function AtividadeFichaPage() {
 
     return () => controller.abort();
   }, [id, reloadKey]);
+
+  const terminal = atividade ? isStatusTerminal(atividade.status) : false;
 
   if (status === "notfound") {
     notFound();
@@ -191,7 +199,25 @@ export default function AtividadeFichaPage() {
             </div>
           </div>
 
-          <div className="shrink-0">
+          <div className="flex shrink-0 items-center gap-2">
+            {/* Estado terminal não admite saída: o controle aparece, mas
+                desabilitado e explicando o porquê — some seria pior, deixaria
+                o usuário procurando por ele. */}
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={<RefreshCw className="h-4 w-4" />}
+              onClick={() => setTransicaoAberta(true)}
+              disabled={terminal}
+              title={
+                terminal
+                  ? `"${statusLabel(atividade.status)}" é um estado final: não há transição possível a partir dele.`
+                  : "Alterar o status desta atividade"
+              }
+              data-testid="atividade-status-btn"
+            >
+              Alterar status
+            </Button>
             <Button
               as="a"
               href={`/sgp/atividades/${atividade.id}/editar/`}
@@ -281,6 +307,25 @@ export default function AtividadeFichaPage() {
             <Texto titulo="Justificativa" conteudo={atividade.justificativa} />
           </section>
         )}
+
+        <TransicaoStatusDialog
+          open={transicaoAberta}
+          onClose={() => setTransicaoAberta(false)}
+          atividade={atividade}
+          onTransicionado={(atualizada) => {
+            // Troca o badge na hora, sem recarregar a ficha.
+            setAtividade(atualizada);
+            showToast(
+              `Status alterado para "${statusLabel(atualizada.status)}".`,
+              "success",
+            );
+          }}
+          onIrParaEvidencias={() => {
+            document
+              .querySelector('[data-testid="atividade-evidencias"]')
+              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }}
+        />
 
         {!atividade.ativo && (
           <p className="flex items-center gap-2 text-sm text-text-muted">
