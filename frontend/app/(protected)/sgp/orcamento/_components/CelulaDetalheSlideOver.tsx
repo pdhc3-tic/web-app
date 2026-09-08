@@ -160,9 +160,15 @@ export function CelulaDetalheSlideOver({ celula, onClose, soTerritorio }: Props)
       }
     >
       {linha === null ? null : (
-      <div className="flex flex-col gap-5" data-testid="orcamento-detalhe">
+      // `px-4 py-4` + `gap-6`: mesmo corpo dos outros SlideOver de detalhe do
+      // sistema (DispositivoDetalheSlideOver, EventoDetailsSlideOver,
+      // AcaoSlideOver). O SlideOver não põe padding no children.
+      <div
+        className="flex flex-col gap-6 px-4 py-4"
+        data-testid="orcamento-detalhe"
+      >
         <section>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-text-muted">
+          <h3 className="mb-3 text-2xs font-semibold uppercase tracking-wide text-text-muted">
             Nível exibido na matriz — {nivelOrcamentoLabel(linha.nivel)}
           </h3>
           <DefinitionList
@@ -203,7 +209,7 @@ export function CelulaDetalheSlideOver({ celula, onClose, soTerritorio }: Props)
             desce um nível. Aqui ele volta como referência do teto. */}
         {!soTerritorio && daRubrica && (
           <section>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-text-muted">
+            <h3 className="mb-3 text-2xs font-semibold uppercase tracking-wide text-text-muted">
               Consolidado nacional da rubrica
             </h3>
             <DefinitionList
@@ -226,7 +232,7 @@ export function CelulaDetalheSlideOver({ celula, onClose, soTerritorio }: Props)
         )}
 
         <section>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-text-muted">
+          <h3 className="mb-3 text-2xs font-semibold uppercase tracking-wide text-text-muted">
             Detalhamento por nível
           </h3>
 

@@ -51,6 +51,18 @@ export const RUBRICA_TRANQUILA = {
   nome: "Passagens Aéreas",
 };
 
+/**
+ * Estado usado no drill-down estadual.
+ *
+ * Fixo, e não descoberto no banco: `seed_demo` cria os sete estados do projeto
+ * e PE está entre eles em qualquer re-seed. O que precisa ser descoberto é o
+ * TERRITÓRIO da Marina, que é sorteado — ver `territorioAdt`.
+ */
+export const ESTADO_DRILL = { sigla: "PE", nome: "Pernambuco" };
+
+/** Valor alocado no nível estadual de PE, distinto do nacional de propósito. */
+export const ESTADUAL_ALOCADO = "12000.00";
+
 export type OrcamentoFixture = {
   /** Nome do território da Marina, para o teste do recorte do ADT. */
   territorioAdt: string;
@@ -74,6 +86,7 @@ const SETUP_SCRIPT = `
 import json
 from decimal import Decimal
 
+from apps.core.models import State
 from apps.core.models.user_profile import UserProfile
 from apps.sgp.models import BudgetAllocation, BudgetRubrica, WorkPlanMeta
 
@@ -102,6 +115,8 @@ territorio = perfil.territorio
 diarias = BudgetRubrica.objects.get(slug="${RUBRICA_CRITICA.slug}")
 passagens = BudgetRubrica.objects.get(slug="${RUBRICA_TRANQUILA.slug}")
 
+estado_drill = State.objects.get(sigla="${ESTADO_DRILL.sigla}")
+
 def alocar(rubrica, nivel, alocado, comprometido, executado, **escopo):
     # update_or_create e nao create: a unique constraint da combinacao
     # (meta, rubrica, nivel, estado, territorio) recusaria uma segunda execucao,
@@ -119,6 +134,11 @@ def alocar(rubrica, nivel, alocado, comprometido, executado, **escopo):
 # Nacional — o que o UGP/super-admin ve por padrao.
 alocar(diarias, "nacional", "100000.00", "85000.00", "10000.00")
 alocar(passagens, "nacional", "50000.00", "10000.00", "2500.00")
+
+# Estadual em PE — o alvo do drill-down por estado. Valor DIFERENTE do
+# nacional: e o que permite provar que a matriz trocou de nivel, e nao apenas
+# filtrou as mesmas linhas.
+alocar(passagens, "estadual", "${ESTADUAL_ALOCADO}", "3000.00", "500.00", estado=estado_drill)
 
 # Territorial — o unico nivel que o ADT enxerga. Valores distintos dos
 # nacionais: e o que permite provar que ele nao esta vendo o consolidado.

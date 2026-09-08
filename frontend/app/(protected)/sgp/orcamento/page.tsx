@@ -23,7 +23,7 @@ import {
   type NivelOrcamento,
   type PainelOrcamentoLinhaApi,
 } from "@/app/lib/orcamento";
-import { fetchStateOptions, fetchTerritoryMap } from "@/app/lib/upfs";
+import { fetchStateSiglaOptions, fetchTerritoryMap } from "@/app/lib/upfs";
 import { AlertaAlocacoesCriticas } from "./_components/AlertaAlocacoesCriticas";
 import { CelulaDetalheSlideOver } from "./_components/CelulaDetalheSlideOver";
 import { MatrizOrcamento } from "./_components/MatrizOrcamento";
@@ -133,7 +133,8 @@ function PainelOrcamentoConteudo() {
     // O ADT não tem esses dois selects; poupar as chamadas evita dois 200
     // inúteis a cada abertura da tela.
     if (!soTerritorio) {
-      fetchStateOptions(controller.signal).then(setEstados).catch(() => {});
+      // Sigla, não id: `BudgetPainelQuerySerializer` valida `estado` por sigla.
+      fetchStateSiglaOptions(controller.signal).then(setEstados).catch(() => {});
 
       fetchTerritoryMap(controller.signal)
         .then((mapa) => {
@@ -232,7 +233,9 @@ function PainelOrcamentoConteudo() {
   const escopo: EscopoExibido = useMemo(() => {
     const nivel: NivelOrcamento = linhas?.[0]?.nivel ?? "nacional";
     if (nivel === "estadual") {
-      const opcao = estados.find((e) => e.label.includes(`(${filtros.estado})`));
+      // `value` é a própria sigla (ver fetchStateSiglaOptions), então a opção
+      // casa por igualdade — nada de procurar "(PE)" dentro do rótulo.
+      const opcao = estados.find((e) => e.value === filtros.estado);
       return { nivel, nomeLocal: opcao?.label ?? (filtros.estado || null) };
     }
     if (nivel === "territorial") {
@@ -245,12 +248,20 @@ function PainelOrcamentoConteudo() {
     return { nivel, nomeLocal: null };
   }, [linhas, estados, territorios, filtros.estado, filtros.territorio]);
 
+  // Ordenado aqui porque o backend não entrega ordenado: o `annotate(Sum(...))`
+  // de `WorkPlanMetaViewSet.get_queryset` derruba o ORDER BY do model, e o
+  // viewset não registra `OrderingFilter` — então o `?ordering=numero` que
+  // `listMetas` manda também é ignorado. Sem isto o select lista as Metas
+  // embaralhadas (4, 7, 5, 6, 2, 1, 3 no banco de demonstração).
+  // Ver frontend/docs/pendencias-backend-sprint-9.md.
   const metaOptions: SelectOption[] = useMemo(
     () =>
-      metas.map((m) => ({
-        value: String(m.id),
-        label: `Meta ${m.numero} – ${m.titulo}`,
-      })),
+      [...metas]
+        .sort((a, b) => a.numero - b.numero)
+        .map((m) => ({
+          value: String(m.id),
+          label: `Meta ${m.numero} – ${m.titulo}`,
+        })),
     [metas],
   );
 

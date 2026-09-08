@@ -420,6 +420,31 @@ export async function fetchStateOptions(
   }));
 }
 
+/**
+ * GET /api/v1/states/ — UFs identificadas pela SIGLA, não pelo id.
+ *
+ * A cascata da UPF manda o id do estado (`?state={id}`), mas nem toda API do
+ * projeto trabalha assim: o painel de orçamento (§5.3.3) valida `estado` por
+ * sigla e responde 400 a um id. Um `<Select>` alimentado por
+ * `fetchStateOptions` ali fica quebrado das duas pontas — o valor da URL
+ * ("PE") não casa com nenhuma opção e o select cai no placeholder, e o que
+ * ele grava de volta ("6") é descartado na leitura seguinte.
+ *
+ * Duas funções em vez de um parâmetro porque o que muda é o CONTRATO de quem
+ * consome o valor, não uma preferência de exibição: quem chama precisa
+ * escolher conscientemente qual chave vai mandar para a API.
+ */
+export async function fetchStateSiglaOptions(
+  signal?: AbortSignal,
+): Promise<SelectOption[]> {
+  const res = await apiClient("/api/v1/states/?limit=1000", { signal });
+  const data: Paginated<StateItem> = await res.json();
+  return data.results.map((s) => ({
+    value: s.sigla,
+    label: `${s.nome} (${s.sigla})`,
+  }));
+}
+
 /** Município para o select da cascata, carregando também seu território. */
 export type MunicipalityOpt = SelectOption & { territoryId: number | null };
 

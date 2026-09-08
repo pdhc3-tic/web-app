@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   criarOrcamentoFixture,
+  ESTADO_DRILL,
   META_COM_ORCAMENTO,
   META_SEM_ORCAMENTO,
   removerOrcamentoFixture,
@@ -179,6 +180,50 @@ test.describe("Painel de Orçamento — UGP", () => {
         .getByTestId(`orcamento-meta-${metaId}`)
         .locator('tr[data-testid^="orcamento-linha-"]'),
     ).toHaveCount(6);
+  });
+
+  test("filtro de estado desce de nivel", async ({ page }) => {
+    await abrirPainel(page);
+    const metaId = await idDaMeta(page, META_COM_ORCAMENTO);
+
+    // No nacional, Passagens vale 50.000.
+    await expect(linha(page, metaId, RUBRICA_TRANQUILA.slug)).toContainText(
+      /R\$\s*50\.000,00/,
+    );
+
+    await page.locator("#orcamento-filtro-estado").click();
+    await page
+      .locator('li[role="option"]')
+      .filter({ hasText: `(${ESTADO_DRILL.sigla})` })
+      .click();
+
+    // A URL leva a SIGLA, não o id do estado: `BudgetPainelQuerySerializer`
+    // resolve `estado` por `slug_field="sigla"`. Enviar o id fazia o filtro
+    // inteiro ser descartado na leitura, e a tela não saía do nacional.
+    await page.waitForURL(new RegExp(`estado=${ESTADO_DRILL.sigla}`));
+
+    // E os números mudaram: 12.000 do nível estadual no lugar dos 50.000
+    // nacionais. É o que distingue "desceu de nível" de "filtrou a mesma
+    // linha" — o valor nacional não pode sobrar em tela.
+    const estadual = linha(page, metaId, RUBRICA_TRANQUILA.slug);
+    await expect(estadual).toContainText(/R\$\s*12\.000,00/);
+    await expect(estadual).not.toContainText(/R\$\s*50\.000,00/);
+
+    // A matriz declara o nível que está exibindo, e o <caption> nomeia o
+    // estado — senão a leitura natural seria a errada (ver o aviso em
+    // OrcamentoFilters). O nome vem do rótulo do <Select>, não da sigla solta:
+    // no seed de demonstração `State.nome` é a própria sigla, então aqui sai
+    // "PE (PE)" onde um banco real traria "Pernambuco (PE)".
+    const matriz = page.getByTestId("orcamento-matriz");
+    await expect(matriz).toHaveAttribute("data-nivel-escopo", "estadual");
+    await expect(matriz.locator("caption")).toContainText(ESTADO_DRILL.sigla);
+
+    // Recarregar preserva o drill-down.
+    await page.reload();
+    await expect(page.getByTestId("orcamento-skeleton")).toHaveCount(0);
+    await expect(linha(page, metaId, RUBRICA_TRANQUILA.slug)).toContainText(
+      /R\$\s*12\.000,00/,
+    );
   });
 
   test("drill-down abre slideover", async ({ page }) => {

@@ -239,6 +239,75 @@ Trabalho já leem o header e só usam o fallback quando ele não vem.
 
 ---
 
+## 8. `GET /api/v1/metas/` devolve as Metas fora de ordem
+
+*Acrescentado em 07/09/2026, ao testar a #230 (Painel de Orçamento) na
+`frontend/sprint-9c`.*
+
+`WorkPlanMetaViewSet` declara `ordering = ["numero"]`, e o próprio model
+`WorkPlanMeta` declara `Meta.ordering = ["numero"]`. Mesmo assim a lista sai
+embaralhada. São duas causas somadas:
+
+1. `get_queryset` faz
+   `annotate(_valor_total=Sum(F("acoes__quantidade_planejada") * F("acoes__valor_unitario")))`.
+   O `annotate` com agregação **derruba o `ORDER BY`** do model — a SQL gerada
+   não tem cláusula de ordenação nenhuma.
+2. `filter_backends = [DjangoFilterBackend]` não inclui `OrderingFilter`, então
+   o `ordering = ["numero"]` do viewset nunca é aplicado e o `?ordering=numero`
+   que o frontend já envia é ignorado em silêncio.
+
+No banco de demonstração o efeito é direto — a ordem devolvida é
+`[4, 7, 5, 6, 2, 1, 3]`:
+
+```python
+>>> qs = WorkPlanMeta.objects.annotate(_valor_total=Sum(...)).all()
+>>> list(qs.values_list("numero", flat=True))
+[4, 7, 5, 6, 2, 1, 3]
+>>> list(WorkPlanMeta.objects.all().values_list("numero", flat=True))
+[1, 2, 3, 4, 5, 6, 7]
+```
+
+Isso vaza para **toda** tela que lista Metas, não só o painel de orçamento.
+
+**Pedido** — qualquer um dos dois resolve:
+
+```python
+# (a) reafirmar a ordenação depois do annotate
+return filter_workplan_metas_for_user(qs, user).order_by("numero")
+
+# (b) registrar o backend de ordenação, que também faz o `?ordering=` funcionar
+filter_backends = [DjangoFilterBackend, OrderingFilter]
+```
+
+*Contornado no frontend:* `metaOptions` em
+`app/(protected)/sgp/orcamento/page.tsx` ordena por `numero` no cliente. É
+defensivo e deve continuar mesmo depois da correção — mas as outras telas que
+listam Metas não têm esse contorno.
+
+---
+
+## 9. `seed_demo` grava `State.nome` igual à sigla
+
+*Acrescentado em 07/09/2026, mesma verificação da #230.*
+
+Os sete estados do seed têm `nome == sigla`:
+
+```python
+>>> list(State.objects.values_list("sigla", "nome"))
+[('AL', 'AL'), ('BA', 'BA'), ('MA', 'MA'), ('MG', 'MG'), ('PB', 'PB'), ('PE', 'PE'), ('RN', 'RN')]
+```
+
+Qualquer rótulo no padrão `{nome} ({sigla})` — usado por `fetchStateOptions` e
+`fetchStateSiglaOptions`, e daí pelos selects de várias telas — sai como
+`PE (PE)` em vez de `Pernambuco (PE)`. Não é bug de frontend e não aparece com
+dados reais, mas atrapalha a revisão visual de qualquer tela com filtro de
+estado.
+
+**Pedido** — preencher `nome` com o nome por extenso na criação dos `State` do
+`seed_demo`.
+
+---
+
 ## Resumo — situação do documento da sprint 8
 
 | # (sprint 8) | Item | Situação em 04/09/2026 |
