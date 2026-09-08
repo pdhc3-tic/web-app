@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { AlertTriangle, Wallet } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import Spinner from "@/app/components/icons/Spinner";
@@ -11,7 +12,7 @@ import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { RestrictedAccess } from "@/app/components/ui/RestrictedAccess/RestrictedAccess";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 import { ApiError } from "@/app/lib/api";
-import { useOrcamentoScope } from "@/app/lib/auth/roles";
+import { canDistribuirOrcamento, useOrcamentoScope } from "@/app/lib/auth/roles";
 import { listMetas, type MetaListItem } from "@/app/lib/metas";
 import {
   fetchPainelOrcamento,
@@ -48,7 +49,9 @@ function CenteredSpinner() {
 }
 
 function PainelOrcamentoConteudo() {
+  const { data: session } = useSession();
   const { loading: authLoading, soTerritorio } = useOrcamentoScope();
+  const podeDistribuir = canDistribuirOrcamento(session?.user);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -277,9 +280,23 @@ function PainelOrcamentoConteudo() {
 
   const header = (
     <PageHeader>
-      <h1 className="truncate text-base font-semibold text-text">
-        Painel de Orçamento
-      </h1>
+      <div className="flex w-full items-center justify-between gap-3">
+        <h1 className="truncate text-base font-semibold text-text">
+          Painel de Orçamento
+        </h1>
+        {/* O painel é a leitura; a distribuição (§5.3.2) é a escrita que o
+            alimenta. Só aparece para quem o backend deixaria gravar. */}
+        {podeDistribuir && (
+          <Button
+            size="sm"
+            variant="secondary"
+            href="/sgp/orcamento/distribuicao"
+            data-testid="orcamento-ir-distribuicao"
+          >
+            Distribuir
+          </Button>
+        )}
+      </div>
     </PageHeader>
   );
 

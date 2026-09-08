@@ -303,3 +303,61 @@ export function descreverEscopo(
     ? `Estado: ${nomeLocal}`
     : `Território: ${nomeLocal}`;
 }
+
+// ─── Escrita: distribuição orçamentária (§5.3.2) ────────────────────────────
+
+/**
+ * Payload de `POST /sgp/metas/{id}/orcamento/alocacoes/`.
+ *
+ * Os sufixos `_id` são do próprio contrato (`BudgetAllocationCreateSerializer`
+ * declara `rubrica_id`, `estado_id`, `territorio_id` com `source=`), não uma
+ * convenção nossa — mandar `rubrica` em vez de `rubrica_id` dá 400.
+ *
+ * `reserva_ugp` fica de fora: só se aplica ao nível nacional, que esta tela não
+ * grava.
+ */
+export type CriarAlocacaoPayload = {
+  rubrica_id: number;
+  nivel: Exclude<NivelOrcamento, "nacional">;
+  /** Obrigatório no nível estadual; ausente no territorial. */
+  estado_id?: number;
+  /** Obrigatório no nível territorial; ausente no estadual. */
+  territorio_id?: number;
+  /** Decimal em string, como o DRF espera: "1234.56". */
+  valor_alocado: string;
+};
+
+/**
+ * POST /api/v1/sgp/metas/{id}/orcamento/alocacoes/
+ *
+ * Erros de teto chegam como 400 com `{"valor_alocado": "..."}`, que o
+ * `normalizeErrorBody` de lib/api já converte em `ApiError.fieldErrors` — a
+ * tela ancora a mensagem no input em vez de mostrar um alerta solto.
+ */
+export async function criarAlocacao(
+  metaId: number,
+  payload: CriarAlocacaoPayload,
+): Promise<AlocacaoApi> {
+  const res = await apiClient(`/api/v1/sgp/metas/${metaId}/orcamento/alocacoes/`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+/**
+ * PATCH /api/v1/sgp/orcamento/alocacoes/{id}/ — só o valor muda.
+ *
+ * Reduzir abaixo de comprometido+executado é recusado pelo service com a
+ * mensagem e o mínimo exato, também em `valor_alocado`.
+ */
+export async function atualizarAlocacao(
+  alocacaoId: number,
+  valorAlocado: string,
+): Promise<AlocacaoApi> {
+  const res = await apiClient(`/api/v1/sgp/orcamento/alocacoes/${alocacaoId}/`, {
+    method: "PATCH",
+    body: JSON.stringify({ valor_alocado: valorAlocado }),
+  });
+  return res.json();
+}

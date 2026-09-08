@@ -406,7 +406,22 @@ export async function updateUpf(
 
 // ─── Cascata (Estado → Município → Comunidade) e Projeto ──────────────────────
 
-type StateItem = { id: number; sigla: string; nome: string };
+export type StateItem = { id: number; sigla: string; nome: string };
+
+/**
+ * GET /api/v1/states/ — os estados inteiros, id e sigla juntos.
+ *
+ * Existe porque as duas chaves são necessárias ao mesmo tempo na distribuição
+ * orçamentária: o painel identifica o estado por SIGLA (`estado=PE`), mas
+ * `BudgetAllocationCreateSerializer.estado_id` é uma PK. Um select alimentado
+ * só por sigla não consegue montar o payload de criação, e um alimentado só por
+ * id não consegue casar com o pai que veio do detalhamento.
+ */
+export async function fetchStates(signal?: AbortSignal): Promise<StateItem[]> {
+  const res = await apiClient("/api/v1/states/?limit=1000", { signal });
+  const data: Paginated<StateItem> = await res.json();
+  return data.results;
+}
 
 /** GET /api/v1/states/ — UFs para o primeiro nível da cascata. */
 export async function fetchStateOptions(
@@ -488,6 +503,25 @@ export async function fetchTerritoryMap(
   const res = await apiClient("/api/v1/territories/?limit=500", { signal });
   const data: Paginated<Territorio> = await res.json();
   return new Map(data.results.map((t) => [t.id, t.nome]));
+}
+
+/**
+ * GET /api/v1/territories/ — os territórios inteiros, com as siglas que cobrem.
+ *
+ * `fetchTerritoryMap` joga `estados` fora, e há tela que precisa dele: a
+ * distribuição orçamentária (§5.3.2) só pode oferecer ao Articulador os
+ * territórios que intersectam os estados dele, que é exatamente o teste de
+ * `BudgetAllocationViewSet._autorizar`
+ * (`territorio.estados & allowed_states_for_user`). Um território pode cobrir
+ * mais de um estado, então o campo é uma lista e a comparação é de interseção,
+ * nunca de igualdade.
+ */
+export async function fetchTerritorios(
+  signal?: AbortSignal,
+): Promise<Territorio[]> {
+  const res = await apiClient("/api/v1/territories/?limit=500", { signal });
+  const data: Paginated<Territorio> = await res.json();
+  return data.results;
 }
 
 /** GET /api/v1/municipios/{id}/comunidades/ — comunidades ativas do município. */
