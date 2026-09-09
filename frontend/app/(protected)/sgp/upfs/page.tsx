@@ -12,7 +12,7 @@ import {
   useRouter,
   useSearchParams,
 } from "next/navigation";
-import { AlertTriangle, Plus, SearchX, Users } from "lucide-react";
+import { AlertTriangle, Download, Plus, SearchX, Users } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { Button } from "@/app/components/ui/Button/Button";
 import Spinner from "@/app/components/icons/Spinner";
@@ -20,11 +20,14 @@ import type { SelectOption } from "@/app/components/ui/Select/Select";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { Pagination } from "@/app/components/ui/Pagination/Pagination";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
+import { useToast } from "@/app/components/ui/Toast/Toast";
 import { ApiError } from "@/app/lib/api";
 import {
+  exportarUpfs,
   listUpfs,
   fetchMunicipalityOptions,
   fetchTerritoryOptions,
+  EXPORT_UPFS_ASYNC_THRESHOLD,
   type StatusUpfFilter,
   type UpfListItem,
 } from "@/app/lib/upfs";
@@ -96,6 +99,8 @@ function UpfsView() {
   const [municipioOptions, setMunicipioOptions] = useState<SelectOption[]>([]);
   const [territorioOptions, setTerritorioOptions] = useState<SelectOption[]>([]);
   const [optionsLoading, setOptionsLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const { showToast } = useToast();
 
   const hasActiveFilters = useMemo(() => {
     return (
@@ -239,6 +244,34 @@ function UpfsView() {
     router.push("/sgp/upfs/nova/");
   }, [router]);
 
+  const handleExportar = useCallback(async () => {
+    if (exporting) return;
+    if (count > EXPORT_UPFS_ASYNC_THRESHOLD) {
+      showToast(
+        `O conjunto filtrado tem ${count.toLocaleString("pt-BR")} registros. A exportação pode levar alguns instantes.`,
+      );
+    }
+    setExporting(true);
+    try {
+      const nome = await exportarUpfs({
+        search: debouncedSearch,
+        municipio: filters.municipio || undefined,
+        territorio: filters.territorio || undefined,
+        projeto: filters.projeto || undefined,
+        status: filters.status,
+        cadastradoDe: filters.cadastradoDe || undefined,
+        cadastradoAte: filters.cadastradoAte || undefined,
+      });
+      showToast(`Download de ${nome} iniciado.`);
+    } catch (e) {
+      showToast(
+        e instanceof ApiError ? e.message : "Não foi possível exportar as UPFs.",
+      );
+    } finally {
+      setExporting(false);
+    }
+  }, [exporting, count, debouncedSearch, filters, showToast]);
+
   const showEmpty = !dataLoading && !error && upfs.length === 0;
 
   return (
@@ -248,6 +281,16 @@ function UpfsView() {
           <h1 className="truncate text-base font-semibold text-text">UPFs</h1>
           <div className="flex items-center gap-2">
             <ViewToggle active="lista" />
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={handleExportar}
+              loading={exporting}
+              leftIcon={<Download className="h-4 w-4" />}
+              data-testid="upfs-exportar-btn"
+            >
+              Exportar
+            </Button>
             <Button
               size="sm"
               onClick={handleNewUpf}

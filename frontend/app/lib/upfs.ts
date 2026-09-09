@@ -511,3 +511,57 @@ export async function fetchProjetoOptions(
     return [];
   }
 }
+
+// ─── Exportação da listagem ───────────────────────────────────────────────────
+
+export type ExportUpfsParams = {
+  search?: string;
+  municipio?: string;
+  territorio?: string;
+  projeto?: string;
+  status?: StatusUpfFilter;
+  cadastradoDe?: string;
+  cadastradoAte?: string;
+};
+
+export const EXPORT_UPFS_ASYNC_THRESHOLD = 1_000;
+
+function nomeDerivadoUpfs(): string {
+  const agora = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const data = [agora.getFullYear(), pad(agora.getMonth() + 1), pad(agora.getDate())].join("-");
+  return `upfs_${data}.csv`;
+}
+
+function dispararDownload(blob: Blob, nome: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nome;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+export async function exportarUpfs(params: ExportUpfsParams): Promise<string> {
+  const qs = new URLSearchParams({ formato: "csv" });
+  if (params.search?.trim()) qs.set("q", params.search.trim());
+  if (params.municipio) qs.set("municipio", params.municipio);
+  if (params.territorio) qs.set("territorio", params.territorio);
+  if (params.projeto) qs.set("projeto", params.projeto);
+  if (params.status && params.status !== "ativas") qs.set("status", params.status);
+  if (params.cadastradoDe) qs.set("de", params.cadastradoDe);
+  if (params.cadastradoAte) qs.set("ate", params.cadastradoAte);
+
+  const res = await apiClient(`/api/v1/sgp/upfs/exportar/?${qs}`, {
+    signal: AbortSignal.timeout(120_000),
+  });
+
+  const cd = res.headers.get("Content-Disposition");
+  const match = cd ? /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd) : null;
+  const nome = match ? decodeURIComponent(match[1].trim()) : nomeDerivadoUpfs();
+
+  dispararDownload(await res.blob(), nome);
+  return nome;
+}
