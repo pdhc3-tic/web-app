@@ -76,12 +76,14 @@ const SUBMODULES: Submodule[] = [
     title: "Produção da UPF",
     description: "Dados de produção e cadeias produtivas da unidade.",
     Icon: Sprout,
+    href: "/sgp/producao/",
   },
   {
     key: "relatorios",
     title: "Relatórios",
-    description: "Indicadores e relatórios consolidados do módulo.",
+    description: "Exportações consolidadas e indicadores do módulo.",
     Icon: BarChart3,
+    href: "/sgp/relatorios/",
   },
 ];
 
