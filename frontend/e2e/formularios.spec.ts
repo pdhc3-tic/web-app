@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { storageStatePath } from "./helpers/users";
 import { primeiroUpfId } from "./helpers/upf";
 
@@ -7,8 +7,11 @@ import { primeiroUpfId } from "./helpers/upf";
  * modal de detalhe (#179) + empty state com CTA (stub, wire em #181) +
  * filtros (#180: formulário, período, respondente + URL sync).
  *
- * O seed_demo (#193) hoje NÃO cria FormResponse — portanto todo cenário
- * "com respostas" fica marcado como `.fixme` até um seed cobrir a demo.
+ * O `seed_demo` passou a criar `FormResponse` (ver `_form_responses`), então os
+ * cenários de filtro saíram do `.fixme` e rodam contra o banco de demo — ver o
+ * describe "SGP — Filtros da aba Formulários". Seguem em `.fixme` apenas os
+ * dois cenários que dependem de `FormularioSGF` publicado no seed, que é outro
+ * contrato (BE-18) e não faz parte da #180.
  */
 
 test.describe("SGP — Aba Formulários na UPF", () => {
@@ -154,9 +157,10 @@ test.describe("SGP — Aba Formulários na UPF", () => {
   test.fixme(
     "tabela ordena por data decrescente e clicar em linha abre o modal de detalhe",
     async ({ page }) => {
-      // Depende de FormResponse no seed_demo — ainda não implementado. Assim
-      // que o seed cobrir, remover o .fixme e ancorar por `respostas_json`
-      // conhecido (ex.: um campo `atividade_principal`) na assertion do modal.
+      // O seed já cria FormResponse, então o `.fixme` aqui é só de escopo:
+      // ordenação e modal são critério da #178/#179, não da #180. Ao retomar,
+      // ancorar a assertion do modal em `respostas_json` conhecido — o seed
+      // grava `atividade_principal` no formulário recente.
       const upfId = primeiroUpfId();
       await page.goto(`/sgp/upfs/${upfId}#formularios`);
 
@@ -168,91 +172,335 @@ test.describe("SGP — Aba Formulários na UPF", () => {
       await expect(modal).toBeVisible();
     },
   );
+});
 
-  test.fixme(
-    "filtro por período restringe as respostas ao intervalo escolhido",
-    async ({ page }) => {
-      // Depende de seed com múltiplas FormResponses em datas conhecidas.
-      const upfId = primeiroUpfId();
-      await page.goto(`/sgp/upfs/${upfId}#formularios`);
+/**
+ * Filtros da aba (#180) contra o dado real do `seed_demo._form_responses`, que
+ * concentra as respostas na UPF de menor id — a mesma que `primeiroUpfId()`
+ * devolve. O contrato do seed, que é o que estes testes assumem:
+ *
+ * - `Diagnóstico produtivo` (v1.0): 28 respostas, **uma por dia**, do dia do
+ *   seed até 27 dias antes, com `respondente` alternando por paridade do dia —
+ *   "Técnico de Campo" nos pares, anônima (`NULL`) nos ímpares;
+ * - `Perfil socioeconômico da família` (v2.0): 3 respostas, 90/100/110 dias
+ *   antes — todas com respondente.
+ *
+ * Nada aqui é ancorado no relógio da máquina que roda a suíte. O seed pode ter
+ * rodado dias antes, e "hoje" deslocaria a janela para fora da faixa coberta;
+ * por isso o dia 0 é **lido da tabela** (`diaZeroDoSeed`), não calculado. Os
+ * únicos números fixos são os que independem da data: as 3 respostas do
+ * segundo formulário e o intervalo de 90 dias que separa os dois conjuntos.
+ */
+test.describe("SGP — Filtros da aba Formulários", () => {
+  test.use({ storageState: storageStatePath("ugp") });
 
-      const linhas = page.locator('tr[data-testid^="formulario-row-"]');
-      await expect(linhas.first()).toBeVisible();
-      const totalAntes = await linhas.count();
+  /** Nomes, id e versão de `FORMULARIOS_DEMO`, em `seed_demo.py`. */
+  const FORM_RECENTE = "Diagnóstico produtivo";
+  const FORM_ANTIGO = "Perfil socioeconômico da família";
+  const ID_FORM_ANTIGO = 2102;
+  const VERSAO_FORM_ANTIGO = "2.0";
 
-      const hoje = new Date().toISOString().slice(0, 10);
-      await page.getByLabel("De", { exact: true }).fill(hoje);
-      await page.getByLabel("Até", { exact: true }).fill(hoje);
+  /** Quantas respostas o seed cria para `FORM_ANTIGO`. Independe da data. */
+  const RESPOSTAS_FORM_ANTIGO = 3;
 
-      // URL deve refletir os filtros aplicados (critério explícito).
-      await expect(page).toHaveURL(
-        new RegExp(`data_inicio=${hoje}&data_fim=${hoje}`),
+  /** Tamanho da janela usada nos testes de período. */
+  const DIAS_DA_JANELA = 7;
+
+  /** Respondente gravado pelo seed. O filtro do backend é `icontains`. */
+  const RESPONDENTE_SEED = "Técnico de Campo";
+
+  /** Rótulo que a tabela usa quando `respondente` vem `NULL` (#178). */
+  const ROTULO_ANONIMO = "Anônimo";
+
+  /** `PAGE_SIZE` da aba — a listagem sem filtro enche a página. */
+  const PAGE_SIZE = 25;
+
+  /** Colunas da tabela, na ordem em que `FormulariosTab.Tabela` as monta. */
+  const COL = { formulario: 0, versao: 1, data: 2, respondente: 3 } as const;
+
+  function linhas(page: Page) {
+    return page.locator('tr[data-testid^="formulario-row-"]');
+  }
+
+  /** Texto de uma coluna em todas as linhas visíveis. */
+  function coluna(page: Page, indice: number): Promise<string[]> {
+    return linhas(page).locator(`td:nth-child(${indice + 1})`).allInnerTexts();
+  }
+
+  /**
+   * Converte o `dd/MM/yyyy` que a coluna Data exibe (`formatDate`) de volta
+   * para `YYYY-MM-DD`, que é o formato do input date e do parâmetro da API.
+   */
+  function isoDaCelula(texto: string): string {
+    const [dia, mes, ano] = texto.trim().split("/");
+    return `${ano}-${mes}-${dia}`;
+  }
+
+  /**
+   * Desloca um `YYYY-MM-DD` em `dias`, sem passar por `toISOString()`.
+   *
+   * O `toISOString()` converte para UTC e, a oeste de Greenwich, devolve o dia
+   * seguinte a partir das 21h — foi exatamente o bug corrigido na #157. A data
+   * é construída ao meio-dia justamente para nenhum ajuste de fuso atravessar
+   * a fronteira do dia.
+   */
+  function somaDias(iso: string, dias: number): string {
+    const [ano, mes, dia] = iso.split("-").map(Number);
+    const d = new Date(ano, mes - 1, dia, 12);
+    d.setDate(d.getDate() + dias);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  /**
+   * Data da resposta mais recente da UPF — o "dia 0" do seed.
+   *
+   * A listagem vem ordenada por `-data_preenchimento` (`FormResponse.Meta`),
+   * então a primeira linha da primeira página é sempre a mais nova. Toda janela
+   * destes testes é relativa a ela, e não a `new Date()`: o seed pode ter
+   * rodado dias antes da suíte, e aí uma janela ancorada em "hoje" cairia fora
+   * da faixa que ele cobre.
+   */
+  async function diaZeroDoSeed(page: Page): Promise<string> {
+    const celula = linhas(page).first().locator("td").nth(COL.data);
+    await expect(celula).toHaveText(/^\d{2}\/\d{2}\/\d{4}$/);
+    return isoDaCelula(await celula.innerText());
+  }
+
+  /**
+   * Promessa da listagem que carrega exatamente os pares de `esperado` na
+   * query. Precisa ser criada ANTES da interação: cada mudança de filtro
+   * dispara um fetch, e ler a tabela logo após digitar pegaria as linhas do
+   * resultado anterior, ainda em tela.
+   */
+  function aguardaListagem(page: Page, esperado: Record<string, string>) {
+    return page.waitForResponse((r) => {
+      const url = new URL(r.url());
+      if (!url.pathname.endsWith("/formularios/")) return false;
+      return Object.entries(esperado).every(
+        ([chave, valor]) => url.searchParams.get(chave) === valor,
       );
+    });
+  }
 
-      const totalDepois = await linhas.count();
-      expect(totalDepois).toBeLessThanOrEqual(totalAntes);
-    },
-  );
+  /**
+   * Conta as linhas depois que a tabela terminou de refletir o novo filtro.
+   *
+   * `waitForResponse` resolve quando a resposta chega à rede, mas o React só
+   * troca as linhas no render seguinte — um `count()` imediato leria ainda o
+   * resultado anterior. O `expect.poll` repete a leitura até o predicado
+   * passar, e é isso que serve de sinal de que o render veio.
+   */
+  async function contarJaRenderizado(
+    page: Page,
+    predicado: (n: number) => boolean,
+  ): Promise<number> {
+    await expect
+      .poll(async () => predicado(await linhas(page).count()))
+      .toBe(true);
+    return linhas(page).count();
+  }
 
-  test.fixme(
-    "filtro por formulário específico restringe às respostas daquele formulário",
-    async ({ page }) => {
-      // Depende de seed com respostas em >1 formulário distinto.
-      const upfId = primeiroUpfId();
-      await page.goto(`/sgp/upfs/${upfId}#formularios`);
+  /** Abre a aba já com a tabela carregada (não o empty state). */
+  async function abrirComRespostas(page: Page): Promise<void> {
+    const upfId = primeiroUpfId();
+    await page.goto(`/sgp/upfs/${upfId}#formularios`);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    // A UPF do seed tem 31 respostas: a primeira página vem cheia. Serve de
+    // linha de base para `contarJaRenderizado` distinguir o antes do depois.
+    await expect(linhas(page)).toHaveCount(PAGE_SIZE);
+  }
 
-      const linhas = page.locator('tr[data-testid^="formulario-row-"]');
-      await expect(linhas.first()).toBeVisible();
+  /**
+   * Aplica De/Até e só volta quando a listagem da janela chegou.
+   *
+   * A ordem importa: "De" tem `max={data_fim}` e "Até" tem `min={data_inicio}`,
+   * então mover a janela para trás no tempo exige preencher "De" primeiro
+   * (é ele que solta o piso do outro). Todos os chamadores respeitam isso.
+   */
+  async function aplicarJanela(
+    page: Page,
+    de: string,
+    ate: string,
+  ): Promise<void> {
+    await page.getByLabel("De", { exact: true }).fill(de);
+    const carregou = aguardaListagem(page, { data_inicio: de, data_fim: ate });
+    await page.getByLabel("Até", { exact: true }).fill(ate);
+    await carregou;
+  }
 
-      // Abre o select "Formulário" e escolhe a primeira opção não-vazia.
-      const selectFormulario = page.getByRole("combobox", {
-        name: "Formulário",
-      });
-      await selectFormulario.click();
-      const opcao = page
-        .locator('li[role="option"]')
-        .filter({ hasNotText: /^Todos$/ })
-        .first();
-      const nomeAlvo = (await opcao.innerText()).trim();
-      await opcao.click();
+  test("filtro por período restringe as respostas ao intervalo escolhido", async ({
+    page,
+  }) => {
+    await abrirComRespostas(page);
+    const dia0 = await diaZeroDoSeed(page);
 
-      // URL sincroniza com `formulario_id=`.
-      await expect(page).toHaveURL(/formulario_id=\d+/);
+    // ── Janela recente: os últimos 7 dias do bloco de uma resposta por dia.
+    const inicio = somaDias(dia0, -(DIAS_DA_JANELA - 1));
+    await aplicarJanela(page, inicio, dia0);
 
-      // Todas as linhas exibidas devem ser do formulário escolhido.
-      const total = await linhas.count();
-      for (let i = 0; i < total; i++) {
-        await expect(linhas.nth(i).locator("td").first()).toContainText(
-          nomeAlvo,
-        );
-      }
-    },
-  );
+    await expect(page).toHaveURL(
+      new RegExp(`data_inicio=${inicio}[^]*data_fim=${dia0}`),
+    );
 
-  test.fixme(
-    "combinar filtro de período + respondente restringe corretamente",
-    async ({ page }) => {
-      // Depende de seed com respostas variando data e respondente conhecidos.
-      const upfId = primeiroUpfId();
-      await page.goto(`/sgp/upfs/${upfId}#formularios`);
+    const naJanela = await contarJaRenderizado(
+      page,
+      (n) => n > 0 && n <= DIAS_DA_JANELA,
+    );
 
-      const linhas = page.locator('tr[data-testid^="formulario-row-"]');
-      await expect(linhas.first()).toBeVisible();
+    // O critério, literalmente: nenhuma data fora do intervalo pedido.
+    const datas = await coluna(page, COL.data);
+    for (const texto of datas) {
+      const iso = isoDaCelula(texto);
+      expect(iso >= inicio && iso <= dia0).toBe(true);
+    }
+    // Uma resposta por dia — a janela não pode trazer duas do mesmo dia.
+    expect(new Set(datas).size).toBe(naJanela);
+    // E só o bloco recente cabe aqui: o antigo está 90 dias atrás.
+    for (const nome of await coluna(page, COL.formulario)) {
+      expect(nome.trim()).toBe(FORM_RECENTE);
+    }
 
-      const hoje = new Date().toISOString().slice(0, 10);
-      await page.getByLabel("De", { exact: true }).fill(hoje);
-      await page.getByLabel("Até", { exact: true }).fill(hoje);
-      await page
-        .getByLabel("Respondente", { exact: true })
-        .fill("Técnico de campo");
+    // ── Janela antiga: cobre SÓ o bloco de 90/100/110 dias atrás. Os 33 dias
+    // de folga entre o fim do bloco recente (dia 27) e o começo do antigo
+    // (dia 90) são o que torna esta contagem exata, e não uma estimativa.
+    await aplicarJanela(page, somaDias(dia0, -120), somaDias(dia0, -60));
 
-      await expect(page).toHaveURL(
-        new RegExp(
-          `formulario_id=|data_inicio=${hoje}.*data_fim=${hoje}.*respondente=T`,
-        ),
-      );
-    },
-  );
+    await expect(linhas(page)).toHaveCount(RESPOSTAS_FORM_ANTIGO);
+    for (const nome of await coluna(page, COL.formulario)) {
+      expect(nome.trim()).toBe(FORM_ANTIGO);
+    }
+  });
+
+  test("filtro por formulário específico restringe às respostas daquele formulário", async ({
+    page,
+  }) => {
+    await abrirComRespostas(page);
+
+    const carregou = aguardaListagem(page, {
+      formulario_id: String(ID_FORM_ANTIGO),
+    });
+    await page.getByLabel("Formulário", { exact: true }).click();
+    await page.getByRole("option", { name: FORM_ANTIGO, exact: true }).click();
+    await carregou;
+
+    await expect(page).toHaveURL(new RegExp(`formulario_id=${ID_FORM_ANTIGO}`));
+
+    // As 3 do seed, e só elas — o outro formulário tem 28 e nenhuma pode vazar.
+    await expect(linhas(page)).toHaveCount(RESPOSTAS_FORM_ANTIGO);
+    for (const nome of await coluna(page, COL.formulario)) {
+      expect(nome.trim()).toBe(FORM_ANTIGO);
+    }
+    for (const versao of await coluna(page, COL.versao)) {
+      expect(versao.trim()).toBe(VERSAO_FORM_ANTIGO);
+    }
+  });
+
+  test("combinar filtro de período + respondente restringe corretamente", async ({
+    page,
+  }) => {
+    await abrirComRespostas(page);
+    const dia0 = await diaZeroDoSeed(page);
+
+    const inicio = somaDias(dia0, -(DIAS_DA_JANELA - 1));
+    await aplicarJanela(page, inicio, dia0);
+    const naJanela = await contarJaRenderizado(
+      page,
+      (n) => n > 1 && n <= DIAS_DA_JANELA,
+    );
+
+    // Soma o respondente à janela já aplicada. `fill` de uma vez (e não tecla a
+    // tecla) para o filtro sair num único evento de mudança.
+    const carregou = aguardaListagem(page, {
+      data_inicio: inicio,
+      data_fim: dia0,
+      respondente: RESPONDENTE_SEED,
+    });
+    await page.getByLabel("Respondente", { exact: true }).fill(RESPONDENTE_SEED);
+    await carregou;
+
+    await expect(page).toHaveURL(new RegExp(`data_inicio=${inicio}`));
+    await expect(page).toHaveURL(new RegExp(`data_fim=${dia0}`));
+    await expect(page).toHaveURL(/respondente=T/);
+
+    // O corte é de verdade: o seed alterna o respondente pela paridade do dia,
+    // então qualquer janela de dias corridos tem ao menos uma anônima — o
+    // resultado combinado é estritamente menor que o da janela sozinha.
+    const comRespondente = await contarJaRenderizado(
+      page,
+      (n) => n > 0 && n < naJanela,
+    );
+    expect(comRespondente).toBeGreaterThan(0);
+
+    // E os dois filtros valem ao mesmo tempo, não um de cada vez.
+    for (const texto of await coluna(page, COL.respondente)) {
+      expect(texto.trim()).toBe(RESPONDENTE_SEED);
+    }
+    for (const texto of await coluna(page, COL.data)) {
+      const iso = isoDaCelula(texto);
+      expect(iso >= inicio && iso <= dia0).toBe(true);
+    }
+  });
+
+  /**
+   * O subcritério "apenas Anônimas" ficou de fora quando a #180 foi
+   * implementada: o `FormResponseFilter` só tinha `respondente__icontains`, e
+   * filtrar no cliente quebraria a paginação (uma página de 25 podendo sobrar
+   * 3). A PR #214 acrescentou `respondente_isnull` ao backend — é o que este
+   * teste exercita, junto da exclusividade entre os dois campos.
+   */
+  test('"Apenas anônimas" e a busca por respondente particionam a janela', async ({
+    page,
+  }) => {
+    await abrirComRespostas(page);
+    const dia0 = await diaZeroDoSeed(page);
+
+    const inicio = somaDias(dia0, -(DIAS_DA_JANELA - 1));
+    await aplicarJanela(page, inicio, dia0);
+    const naJanela = await contarJaRenderizado(
+      page,
+      (n) => n > 1 && n <= DIAS_DA_JANELA,
+    );
+
+    const carregouAnonimas = aguardaListagem(page, {
+      data_inicio: inicio,
+      data_fim: dia0,
+      respondente_isnull: "true",
+    });
+    await page.getByTestId("formularios-filtro-anonimas").check();
+    await carregouAnonimas;
+
+    // Serializado como "1" na URL (booleano), e o `respondente` sai de lá.
+    await expect(page).toHaveURL(/apenas_anonimas=1/);
+    await expect(page).not.toHaveURL(/[?&]respondente=/);
+
+    // A busca textual fica travada enquanto isto está ligado: os dois filtros
+    // são mutuamente exclusivos, e "Anônimo" é rótulo de tela — não casa com
+    // nenhum `icontains` no banco.
+    await expect(page.getByLabel("Respondente", { exact: true })).toBeDisabled();
+
+    const anonimas = await contarJaRenderizado(
+      page,
+      (n) => n > 0 && n < naJanela,
+    );
+    for (const texto of await coluna(page, COL.respondente)) {
+      expect(texto.trim()).toBe(ROTULO_ANONIMO);
+    }
+
+    // Complemento exato: na mesma janela, anônimas + identificadas = total.
+    // É o que prova que o filtro é `IS NULL`, e não um `icontains` que por
+    // acaso não casou com nada.
+    const carregouIdentificadas = aguardaListagem(page, {
+      data_inicio: inicio,
+      data_fim: dia0,
+      respondente: RESPONDENTE_SEED,
+    });
+    await page.getByTestId("formularios-filtro-anonimas").uncheck();
+    await page.getByLabel("Respondente", { exact: true }).fill(RESPONDENTE_SEED);
+    await carregouIdentificadas;
+
+    await contarJaRenderizado(page, (n) => n === naJanela - anonimas);
+  });
 });
 
 /**
