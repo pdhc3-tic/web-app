@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Gauge,
   Sprout,
+  UserCog,
   Users,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -62,6 +63,13 @@ const SUBMODULES: Submodule[] = [
       "Semáforo de execução das Ações e alerta das que exigem atenção.",
     Icon: Gauge,
     href: "/sgp/painel/",
+  },
+  {
+    key: "tecnicos",
+    title: "Técnicos",
+    description: "Cadastro e vínculo de técnicos por território e OSC.",
+    Icon: UserCog,
+    href: "/sgp/tecnicos/",
   },
   {
     key: "producao",
