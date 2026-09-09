@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Gauge,
   Sprout,
+  UserCog,
   Users,
   Wallet,
 } from "lucide-react";
@@ -71,6 +72,13 @@ const SUBMODULES: Submodule[] = [
       "Matriz Meta × Rubrica com semáforo e alerta das alocações no limite.",
     Icon: Wallet,
     href: "/sgp/orcamento/",
+  },
+  {
+    key: "tecnicos",
+    title: "Técnicos",
+    description: "Cadastro e vínculo de técnicos por território e OSC.",
+    Icon: UserCog,
+    href: "/sgp/tecnicos/",
   },
   {
     key: "producao",
