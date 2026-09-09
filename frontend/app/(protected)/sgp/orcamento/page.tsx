@@ -66,6 +66,8 @@ function PainelOrcamentoConteudo() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
+  /** ADT/ACR sem vínculo com território: não é falta de permissão para a tela. */
+  const [semTerritorio, setSemTerritorio] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
   const [selecionada, setSelecionada] = useState<CelulaOrcamento | null>(null);
@@ -156,10 +158,18 @@ function PainelOrcamentoConteudo() {
 
   // ── Matriz (refeita a cada filtro) ────────────────────────────────────────
   useEffect(() => {
+    // Espera a sessão: `soTerritorio` nasce `false` enquanto ela carrega, e é
+    // ele que decide se um 403 é "sem território" ou "sem acesso". Disparar
+    // antes classificaria a negativa de um ADT como acesso restrito, e o
+    // reclassificar depois não desfaria a tela já trocada.
+    if (authLoading) return;
+
     const controller = new AbortController();
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError(null);
+    setForbidden(false);
+    setSemTerritorio(false);
 
     fetchPainelOrcamento(
       {
@@ -174,7 +184,15 @@ function PainelOrcamentoConteudo() {
       .catch((e: unknown) => {
         if (controller.signal.aborted) return;
         if (e instanceof ApiError && e.status === 403) {
-          setForbidden(true);
+          // Para um ADT/ACR, 403 aqui só pode significar "sem território".
+          // `resolver_nivel_painel` nega esse perfil em três casos — sem
+          // território, com `estado=`, ou com um `territorio=` que não é dele —
+          // e os dois últimos estão fora de alcance: os filtros já descartam
+          // ambos os parâmetros para quem é `soTerritorio`. Trocar a tela por
+          // RestrictedAccess escondia justamente o card que existe para
+          // explicar a falta do vínculo (Issue #232).
+          if (soTerritorio) setSemTerritorio(true);
+          else setForbidden(true);
           return;
         }
         setError(
@@ -193,6 +211,8 @@ function PainelOrcamentoConteudo() {
     filtros.rubrica,
     filtros.estado,
     filtros.territorio,
+    authLoading,
+    soTerritorio,
     reloadKey,
   ]);
 
@@ -372,10 +392,25 @@ function PainelOrcamentoConteudo() {
           <BudgetBalance
             metaId={filtros.meta || null}
             titulo="Saldo por rubrica no seu território"
+            semTerritorio={semTerritorio}
           />
         )}
 
-        {error ? (
+        {semTerritorio ? (
+          /* A matriz é por território; sem vínculo não há recorte que ela possa
+             desenhar. O card acima já explica o que fazer — aqui basta não
+             mostrar uma tabela vazia como se fosse falta de orçamento. */
+          <div
+            className="rounded-lg border border-border bg-surface"
+            data-testid="orcamento-sem-territorio"
+          >
+            <EmptyState
+              icon={<Wallet className="h-7 w-7" />}
+              title="Sem território vinculado ao seu perfil"
+              description="O Painel de Orçamento do ADT/ACR mostra os valores do território em que você atua. Enquanto o vínculo não existir, não há recorte a exibir — peça ao gestor do projeto para vincular o seu perfil a um território."
+            />
+          </div>
+        ) : error ? (
           <div className="flex flex-col items-center gap-4 rounded-lg border border-border bg-surface px-6 py-16 text-center">
             <span className="flex h-12 w-12 items-center justify-center rounded-full bg-error-bg text-error-text">
               <AlertTriangle className="h-6 w-6" aria-hidden />

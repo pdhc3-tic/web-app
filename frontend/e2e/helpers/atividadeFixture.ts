@@ -23,11 +23,35 @@ export type AtividadeFixture = {
   comEvidencias: number;
   /** Atividade marcada com `google_calendar_sync_status = "erro"`. */
   comErroDeAgenda: number;
+  /**
+   * Atividade com a ficha inteira preenchida: UPF e membro participantes,
+   * equipe adicional, coordenadas e parceiros em texto livre.
+   *
+   * Os campos escalares e a equipe são POSTOS pela fixture — o `seed_demo` os
+   * deixa vazios, e sem eles não há como afirmar que a ficha renderiza cada um.
+   * A UPF e o membro vêm do próprio seed: o vínculo entre eles é o que o teste
+   * do link precisa, e forjá-lo esconderia justamente o que está sendo testado.
+   */
+  comFichaCompleta: number;
+  /** UPF do membro participante — o destino esperado do link. */
+  upfDoMembro: number;
+  /** Id do membro participante cuja linha deve virar link. */
+  membroParticipante: number;
+  /** Valores gravados pela fixture, para o teste conferir o que está na tela. */
+  latitude: string;
+  longitude: string;
+  parceirosLivres: string;
 };
+
+/** Coordenadas e parceiros gravados pela fixture — valores só dela. */
+const LATITUDE = "-8.0476000";
+const LONGITUDE = "-34.8770000";
+const PARCEIROS_LIVRES = "Sindicato dos Trabalhadores Rurais de Serra Talhada";
 
 const SETUP_SCRIPT = `
 import json
-from django.db.models import Count, Q
+from decimal import Decimal
+from django.db.models import Count
 from apps.sgp.models import Activity
 
 com_evidencias = (
@@ -54,9 +78,49 @@ com_erro = (
 )
 Activity.objects.filter(pk=com_erro.pk).update(google_calendar_sync_status="erro")
 
+# ── Ficha completa ───────────────────────────────────────────────────────────
+# Uma atividade que ja tenha UPF E membro participantes. O vinculo membro->UPF
+# vem do seed: e ele que o link da ficha precisa resolver, e cria-lo aqui
+# testaria a fixture em vez da tela.
+# O filtro por n_equipe evita mexer no M2M: o seed ja sorteia de 0 a 2 pessoas
+# equipe adicional, entao basta ESCOLHER uma atividade que tenha, em vez de
+# adicionar uma e ter de repor a lista original no teardown.
+completa = None
+for candidata in (
+    Activity.objects.annotate(
+        n_upfs=Count("upfs_participantes", distinct=True),
+        n_membros=Count("membros_participantes", distinct=True),
+        n_equipe=Count("equipe_adicional", distinct=True),
+    )
+    .filter(n_upfs__gt=0, n_membros__gt=0, n_equipe__gt=0, ativo=True)
+    .exclude(pk__in=[com_evidencias.pk, com_erro.pk])
+    .order_by("pk")
+):
+    membro = candidata.membros_participantes.filter(upf__isnull=False).first()
+    if membro is not None:
+        completa = candidata
+        break
+
+if completa is None:
+    raise RuntimeError(
+        "Nenhuma atividade com UPF, membro e equipe adicional: "
+        "rode manage.py seed_demo --reset"
+    )
+
+completa.latitude = Decimal("${LATITUDE}")
+completa.longitude = Decimal("${LONGITUDE}")
+completa.parceiros_livres = "${PARCEIROS_LIVRES}"
+completa.save(update_fields=["latitude", "longitude", "parceiros_livres"])
+
 print("${MARCADOR}_SETUP " + json.dumps({
     "comEvidencias": com_evidencias.pk,
     "comErroDeAgenda": com_erro.pk,
+    "comFichaCompleta": completa.pk,
+    "upfDoMembro": membro.upf_id,
+    "membroParticipante": membro.pk,
+    "latitude": "${LATITUDE}",
+    "longitude": "${LONGITUDE}",
+    "parceirosLivres": "${PARCEIROS_LIVRES}",
 }))
 `;
 
@@ -73,6 +137,16 @@ from apps.sgp.models import Activity
 Activity.objects.exclude(google_calendar_sync_status="ok").update(
     google_calendar_sync_status="ok"
 )
+
+# Desfaz o enriquecimento da ficha completa. Filtra pelo TEXTO que so a fixture
+# grava, e nao por um id guardado: assim um run interrompido tambem sai limpo.
+# So os tres escalares que a fixture gravou. Filtra pelo TEXTO que so ela usa, e
+# nao por um id guardado: assim um run interrompido tambem sai limpo. O M2M da
+# equipe adicional nao entra aqui porque a fixture nao o toca.
+Activity.objects.filter(parceiros_livres="${PARCEIROS_LIVRES}").update(
+    parceiros_livres="", latitude=None, longitude=None
+)
+
 print("${MARCADOR}_TEARDOWN_OK")
 `;
 

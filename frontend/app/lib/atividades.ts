@@ -199,7 +199,13 @@ export type AtividadeDetail = {
   forma_atuacao: string;
   forma_atuacao_display: string;
   tecnico_responsavel: TecnicoNested;
-  equipe_adicional: number[];
+  /**
+   * Objetos na LEITURA, ids na escrita — mesma assimetria de
+   * `upfs_participantes`. `to_representation` do ActivityDetailSerializer
+   * reescreve o M2M como `{id, nome, email}`; o tipo dizia `number[]` e por
+   * isso o prefill da edição entregava objetos ao seletor de ids.
+   */
+  equipe_adicional: TecnicoNested[];
   municipio: NestedRef;
   territorio_id: number | null;
   comunidade: NestedRef | null;
@@ -233,7 +239,15 @@ export type AtividadeDetail = {
    */
   fotos?: { id: number; arquivo_url: string; legenda: string; ordem: number }[];
   documentos?: { id: number; nome_original: string; tipo: string }[];
-  parceiros: string;
+  /**
+   * Ids das `core.Organization` parceiras. O detalhe NÃO aninha nome — só o
+   * M2M cru —, e `OrganizationViewSet` restringe a listagem a
+   * super-admin/UGP/Articulador, então o ADT não tem como resolvê-los.
+   * Pedido aberto ao backend em docs/pendencias-backend-sprint-9.md.
+   */
+  parceiros_organizacoes: number[];
+  /** Parceiros em texto livre — o campo que o formulário preenche. */
+  parceiros_livres: string;
   descricao_narrativa: string;
   resultados_alcancados: string;
   status: string;
@@ -275,7 +289,17 @@ export type AtividadeWritePayload = {
   /** Na escrita são ids: o serializer usa PrimaryKeyRelatedField. */
   upfs_participantes: number[];
   membros_participantes: number[];
-  parceiros: string;
+  /**
+   * `parceiros` não existe no serializer: o campo é `parceiros_livres`. O
+   * formulário enviava a chave antiga, o DRF a descartava em silêncio e o que
+   * o técnico digitava nunca chegava ao banco.
+   *
+   * `parceiros_organizacoes` fica FORA do payload de propósito. O formulário
+   * não tem seletor de organizações, e mandar `[]` a cada PATCH apagaria os
+   * vínculos criados por outro caminho — o serializer só toca no M2M quando a
+   * chave vem, então omiti-la é o que preserva o que já está lá.
+   */
+  parceiros_livres: string;
   descricao_narrativa: string;
   resultados_alcancados: string;
   status: string;

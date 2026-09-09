@@ -12,8 +12,16 @@ type Props = {
   valor: string;
   onChange: (valor: string) => void;
   onDistribuir: () => void;
-  /** Excedente deste destino; 0 quando cabe. */
+  /** Excedente da gravação isolada deste destino; 0 quando cabe. */
   excedente: number;
+  /**
+   * Excedente da soma de TODOS os destinos em edição. Bloqueia esta linha
+   * mesmo quando ela cabe sozinha: as gravações são sequenciais e validadas
+   * uma a uma, então a primeira passaria e a seguinte levaria 400.
+   */
+  excedenteConjunto: number;
+  /** Quantos destinos têm rascunho — decide de quem é a culpa na mensagem. */
+  destinosEmEdicao: number;
   /** Mensagem de 400 do servidor ancorada neste destino, se houve. */
   erro?: string;
   salvando: boolean;
@@ -36,6 +44,8 @@ export function DestinoLinha({
   onChange,
   onDistribuir,
   excedente,
+  excedenteConjunto,
+  destinosEmEdicao,
   erro,
   salvando,
   desabilitado,
@@ -48,8 +58,12 @@ export function DestinoLinha({
       valorNumerico(destino.alocacao.valor_executado)
     : 0;
 
-  const estourou = excedente > 0;
   const vazio = valor.trim() === "";
+  // Só quem tem rascunho responde pelo excedente conjunto: uma linha intocada
+  // não é o que está estourando o teto, e desabilitá-la não daria ao usuário
+  // nada para corrigir.
+  const noConflitoConjunto = !vazio && excedenteConjunto > 0;
+  const estourou = excedente > 0 || noConflitoConjunto;
   // Gravar o mesmo valor que já está lá é uma requisição sem efeito; o botão
   // fica fora enquanto nada mudou.
   const inalterado =
@@ -110,6 +124,25 @@ export function DestinoLinha({
           {destino.alocacao ? "Ajustar" : "Distribuir"}
         </Button>
       </div>
+
+      {/* O botão desabilitado precisa dizer por quê — no campo, e não só na
+          barra: quando o estouro é do conjunto, a barra fala do total e é aqui
+          que o usuário descobre que ESTA linha entra na conta. O `erro` do
+          servidor já aparece no Input e tem prioridade sobre a projeção. */}
+      {estourou && !erro && (
+        <p
+          className="text-xs text-error-text"
+          data-testid={`distribuicao-motivo-${destino.id}`}
+        >
+          {excedente > 0
+            ? `Excede o disponível em ${formatCurrencyBRL(excedente)}.`
+            : `Somado aos outros ${destinosEmEdicao - 1} destino${
+                destinosEmEdicao - 1 > 1 ? "s" : ""
+              } em edição, ultrapassa o disponível em ${formatCurrencyBRL(
+                excedenteConjunto,
+              )}.`}
+        </p>
+      )}
     </li>
   );
 }

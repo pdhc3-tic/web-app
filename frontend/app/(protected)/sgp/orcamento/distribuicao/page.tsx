@@ -20,7 +20,6 @@ import {
   fetchOrcamentoDaMeta,
   nivelOrcamentoLabel,
   RUBRICAS,
-  valorNumerico,
   type RubricaOrcamentoApi,
 } from "@/app/lib/orcamento";
 import { fetchStates, fetchTerritorios, type StateItem } from "@/app/lib/upfs";
@@ -32,7 +31,7 @@ import {
 } from "./_components/ConfirmarDistribuicaoDialog";
 import { DestinoLinha } from "./_components/DestinoLinha";
 import {
-  excedente as calcularExcedente,
+  projetar,
   SEM_PAI,
   tetoEstadual,
   tetoTerritorial,
@@ -229,33 +228,38 @@ export default function DistribuicaoOrcamentoPage() {
 
   const tetoResolvido = teto !== null && teto !== SEM_PAI ? teto : null;
 
-  /** Soma dos gravados com o texto em edição substituindo o próprio destino. */
-  const projetado = useMemo(() => {
-    if (!tetoResolvido) return 0;
-    return destinos.reduce((soma, d) => {
-      const digitado = valores[d.id];
-      const gravado = d.alocacao ? valorNumerico(d.alocacao.valor_alocado) : 0;
-      if (digitado === undefined || digitado.trim() === "") return soma + gravado;
-      return soma + Number(moneyOrNull(digitado) ?? "0");
-    }, 0);
-  }, [destinos, valores, tetoResolvido]);
-
-  const excedentePorDestino = useMemo(() => {
-    const mapa: Record<number, number> = {};
-    if (!tetoResolvido) return mapa;
+  /** Os rascunhos já em número; ausente = linha intocada. */
+  const rascunhos = useMemo(() => {
+    const mapa: Record<number, number | undefined> = {};
     for (const d of destinos) {
       const digitado = valores[d.id];
       if (digitado === undefined || digitado.trim() === "") continue;
-      mapa[d.id] = calcularExcedente(
-        tetoResolvido,
-        d,
-        Number(moneyOrNull(digitado) ?? "0"),
-      );
+      mapa[d.id] = Number(moneyOrNull(digitado) ?? "0");
     }
     return mapa;
-  }, [destinos, valores, tetoResolvido]);
+  }, [destinos, valores]);
 
-  const excedenteMaximo = Math.max(0, ...Object.values(excedentePorDestino), 0);
+  /**
+   * Uma projeção só para a barra e para as linhas.
+   *
+   * O bloqueio é do CONJUNTO, não de cada linha isolada: com dois destinos em
+   * edição, dois valores que cabem sozinhos podem estourar somados. Enquanto o
+   * excedente era calculado destino a destino, a barra desenhava o total acima
+   * do teto e os dois botões continuavam habilitados — a tela contradizia a si
+   * mesma na mesma renderização.
+   */
+  const projecao = useMemo(
+    () =>
+      tetoResolvido
+        ? projetar(tetoResolvido, destinos, rascunhos)
+        : {
+            total: 0,
+            excedenteConjunto: 0,
+            excedentePorDestino: {} as Record<number, number>,
+            emEdicao: [] as number[],
+          },
+    [tetoResolvido, destinos, rascunhos],
+  );
 
   // ── Gravação ──────────────────────────────────────────────────────────────
   const abrirConfirmacao = useCallback(
@@ -478,8 +482,9 @@ export default function DistribuicaoOrcamentoPage() {
           >
             <BarraSaldo
               teto={tetoResolvido}
-              projetado={projetado}
-              excedente={excedenteMaximo}
+              projetado={projecao.total}
+              excedente={projecao.excedenteConjunto}
+              emEdicao={projecao.emEdicao.length}
               origem={origem}
             />
 
@@ -505,7 +510,11 @@ export default function DistribuicaoOrcamentoPage() {
                       setValores((atual) => ({ ...atual, [destino.id]: v }))
                     }
                     onDistribuir={() => abrirConfirmacao(destino)}
-                    excedente={excedentePorDestino[destino.id] ?? 0}
+                    excedente={
+                      projecao.excedentePorDestino[destino.id] ?? 0
+                    }
+                    excedenteConjunto={projecao.excedenteConjunto}
+                    destinosEmEdicao={projecao.emEdicao.length}
                     erro={erros[destino.id] || undefined}
                     salvando={salvandoId === destino.id}
                     desabilitado={

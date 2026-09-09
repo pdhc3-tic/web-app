@@ -176,6 +176,47 @@ test.describe("Transição de status", () => {
     await expect(page.getByTestId("transicao-ir-evidencias")).toBeVisible();
   });
 
+  /**
+   * O atalho precisa ANEXAR, não apenas rolar até a galeria.
+   *
+   * A ficha é de leitura e a galeria nasce `readOnly`. O atalho fechava o modal
+   * e rolava até esse mesmo bloco travado: nenhum controle de upload aparecia, e
+   * o botão prometia uma ação que a tela não oferecia. Agora ele destrava a
+   * galeria — e o "Concluir anexos" recarrega o detalhe, de onde o modal tira o
+   * "falta evidência".
+   */
+  test("atalho de anexar destrava a galeria", async ({ page }) => {
+    await abrirDialogo(page, ATIVIDADES.emAndamentoSemEvidencia);
+    await escolherDestino(page, "Concluído");
+
+    const evidencias = page.getByTestId("atividade-evidencias");
+    // Antes do atalho: leitura pura.
+    await expect(evidencias).toHaveAttribute("data-anexando", "nao");
+    await expect(
+      evidencias.getByRole("button", { name: /Adicionar fotos/i }),
+    ).toHaveCount(0);
+
+    await page.getByTestId("transicao-ir-evidencias").click();
+
+    // O modal sai da frente e a galeria fica editável.
+    await expect(page.getByTestId("transicao-dialog")).toHaveCount(0);
+    await expect(evidencias).toHaveAttribute("data-anexando", "sim");
+    await expect(page.getByTestId("atividade-anexo-aviso")).toBeVisible();
+    await expect(
+      evidencias.getByRole("button", { name: /Adicionar fotos/i }),
+    ).toBeVisible();
+    await expect(
+      evidencias.getByRole("button", { name: /Adicionar documentos/i }),
+    ).toBeVisible();
+
+    // E o modo é reversível: a ficha volta a ser só leitura.
+    await page.getByTestId("atividade-anexo-concluir").click();
+    await expect(evidencias).toHaveAttribute("data-anexando", "nao");
+    await expect(
+      evidencias.getByRole("button", { name: /Adicionar fotos/i }),
+    ).toHaveCount(0);
+  });
+
   test("estado terminal não oferece transição", async ({ page }) => {
     await page.goto(`/sgp/atividades/${ATIVIDADES.terminal}/`);
     await expect(page.getByTestId("atividade-ficha-page")).toBeVisible();

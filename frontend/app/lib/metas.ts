@@ -58,9 +58,13 @@ export type MetaStatus = "no_prazo" | "em_atraso" | "concluida";
  * Mapeia o status calculado para um status do design system. Reaproveita os
  * tokens semânticos já existentes no Badge em vez de criar variantes novas:
  * no prazo → info, em atraso → erro, concluída → sucesso.
+ *
+ * `no_prazo` usa a variante `info` diretamente, e não `planejado`: esta é a
+ * Meta, não a Atividade, e a variante `planejado` passou a seguir a matiz do
+ * mapa de status do domínio (cinza). Uma Meta em dia não é um rascunho inerte.
  */
 const BADGE_STATUS: Record<MetaStatus, BadgeStatus> = {
-  no_prazo: "planejado",
+  no_prazo: "info",
   em_atraso: "atrasada",
   concluida: "concluido",
 };
@@ -72,7 +76,8 @@ const STATUS_LABEL: Record<MetaStatus, string> = {
 };
 
 export function badgeStatusForMeta(status: string): BadgeStatus {
-  return BADGE_STATUS[status as MetaStatus] ?? "planejado";
+  // Status novo no backend cai no neutro, e não num juízo de valor errado.
+  return BADGE_STATUS[status as MetaStatus] ?? "inativo";
 }
 
 export function metaStatusLabel(status: string): string {

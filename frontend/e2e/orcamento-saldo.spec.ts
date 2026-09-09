@@ -3,8 +3,10 @@ import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import {
   criarOrcamentoFixture,
+  desvincularTerritorioDoAdt,
   META_COM_ORCAMENTO,
   removerOrcamentoFixture,
+  revincularTerritorioDoAdt,
   RUBRICA_CRITICA,
 } from "./helpers/orcamentoFixture";
 import { storageStatePath } from "./helpers/users";
@@ -217,14 +219,30 @@ test.describe("Saldo por rubrica — ADT sem território", () => {
   test.use({ storageState: storageStatePath("semPermissao") });
 
   /**
-   * O componente decide pela SESSÃO, não pela resposta da API: um ADT sem
-   * território recebe 403 de `resolver_nivel_painel` com a mesma mensagem de
-   * quem não tem acesso nenhum ao orçamento, e os dois casos pedem telas
-   * diferentes. Por isso o teste esvazia `territorios` na sessão em vez de
-   * mexer no banco — o token já foi emitido no login e não olharia o banco de
-   * novo.
+   * "Sem território" tem DOIS caminhos, e eles precisam de testes separados.
+   *
+   * Antes havia só o primeiro, e ele era um falso positivo enquanto era o
+   * único: esvaziava `territorios` na resposta da sessão, mas o banco continuava
+   * com o território da Marina, então `resolver_nivel_painel` respondia 200 e
+   * nenhum 403 chegava à página. O que passava era o ramo em que o COMPONENTE
+   * decide pela sessão — nunca o caminho real, em que a API nega e a PÁGINA
+   * precisa sobreviver à negativa. E era justamente ali que estava o defeito:
+   * a tela de orçamento convertia aquele 403 em `RestrictedAccess`, e o card
+   * com o estado vazio explicativo sequer chegava a renderizar.
+   *
+   * O primeiro teste continua valendo pelo que de fato cobre, com o banco
+   * INTACTO; o segundo remove o vínculo de verdade e cobre o resto.
    */
-  test("usuário sem território vê estado vazio, sem erro", async ({ page }) => {
+  test("sessão sem território decide sem gastar requisição", async ({
+    page,
+  }) => {
+    const chamadasAoPainel: string[] = [];
+    page.on("request", (req) => {
+      if (req.url().includes("/api/v1/sgp/orcamento/painel/")) {
+        chamadasAoPainel.push(req.url());
+      }
+    });
+
     await page.route("**/api/auth/session", async (route) => {
       // O handler sobrevive ao fim do teste; sem o catch, a corrida entre a
       // última chamada da página e o teardown vira erro fora de qualquer teste.
@@ -240,7 +258,12 @@ test.describe("Saldo por rubrica — ADT sem território", () => {
       }
     });
 
+    // COM filtro de Meta: sem território, o card nem assim vai buscar o saldo —
+    // é isso que separa "decidiu pela sessão" de "perguntou e recebeu vazio".
     await page.goto("/sgp/orcamento/");
+    const metaId = await idDaMeta(page, META_COM_ORCAMENTO);
+    chamadasAoPainel.length = 0;
+    await page.goto(`/sgp/orcamento/?meta=${metaId}`);
 
     const card = page.getByTestId("budget-balance");
     await expect(card).toBeVisible();
@@ -249,5 +272,54 @@ test.describe("Saldo por rubrica — ADT sem território", () => {
     // Estado vazio não é erro: nada de alerta nem de botão de retry.
     await expect(page.getByTestId("budget-balance-erro")).toHaveCount(0);
     await expect(page.getByTestId("budget-balance-lista")).toHaveCount(0);
+
+    // A página em volta chama o painel uma vez para montar a matriz. O card não
+    // acrescenta a segunda: ele já sabia a resposta antes de perguntar.
+    expect(chamadasAoPainel.length).toBeLessThanOrEqual(1);
+  });
+
+  /**
+   * O caminho que o falso positivo escondia: a API nega de verdade.
+   *
+   * O vínculo é removido no BANCO — só assim `resolver_nivel_painel` devolve
+   * 403. A sessão não é tocada: o JWT do storageState ainda carrega o território
+   * antigo, porque `territorios` é gravado no login e nunca mais relido (ver
+   * auth.ts). É exatamente o que acontece com quem tem o vínculo desfeito no
+   * meio da sessão.
+   *
+   * O `finally` repõe o território mesmo se a asserção falhar: sem ele, todas as
+   * outras specs do ADT quebrariam em cascata.
+   */
+  test("403 do painel não vira acesso restrito", async ({ page }) => {
+    const territorioId = desvincularTerritorioDoAdt();
+    try {
+      const respostas: number[] = [];
+      page.on("response", (res) => {
+        if (res.url().includes("/api/v1/sgp/orcamento/painel/")) {
+          respostas.push(res.status());
+        }
+      });
+
+      await page.goto("/sgp/orcamento/");
+
+      const card = page.getByTestId("budget-balance");
+      await expect(card).toBeVisible();
+      await expect(card).toContainText("Nenhum território atribuído");
+
+      // A negativa aconteceu mesmo — é o que separa este teste do anterior.
+      await expect(() => expect(respostas).toContain(403)).toPass();
+
+      // O que a regressão produzia: a tela inteira trocada pelo acesso restrito.
+      await expect(
+        page.getByRole("heading", { name: "Conteúdo restrito" }),
+      ).toHaveCount(0);
+      await expect(page.getByTestId("orcamento-sem-territorio")).toBeVisible();
+
+      // E o 403 não é apresentado como falha de rede: nada de "tentar
+      // novamente", que aqui só repetiria a mesma negativa.
+      await expect(page.getByTestId("budget-balance-erro")).toHaveCount(0);
+    } finally {
+      revincularTerritorioDoAdt(territorioId);
+    }
   });
 });

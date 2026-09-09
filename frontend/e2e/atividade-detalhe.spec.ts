@@ -106,6 +106,97 @@ test.describe("Ficha da Atividade", () => {
     await expect(primeiraUpf).toHaveAttribute("href", /^\/sgp\/upfs\/\d+\/?$/);
   });
 
+  /**
+   * A ficha é COMPLETA — o critério não é "abre sem erro".
+   *
+   * Faltavam equipe adicional, coordenadas e auditoria, e os parceiros eram
+   * lidos de `atividade.parceiros`, chave que o serializer não devolve: a
+   * linha ficava permanentemente vazia enquanto a API entregava
+   * `parceiros_organizacoes` e `parceiros_livres`.
+   */
+  test("ficha traz equipe adicional, coordenadas, parceiros e auditoria", async ({
+    page,
+  }) => {
+    await abrirFicha(page, fixture.comFichaCompleta);
+
+    // Equipe adicional: o M2M vem como objetos no detalhe, não como ids.
+    const equipe = page.getByTestId("atividade-equipe-adicional");
+    await expect(equipe).toBeVisible();
+    await expect(equipe.getByRole("listitem").first()).not.toBeEmpty();
+
+    await expect(page.getByTestId("atividade-coordenadas")).toContainText(
+      `${fixture.latitude}, ${fixture.longitude}`,
+    );
+
+    await expect(page.getByTestId("atividade-parceiros")).toContainText(
+      fixture.parceirosLivres,
+    );
+
+    const auditoria = page.getByTestId("atividade-auditoria");
+    await expect(auditoria).toContainText("Criado por");
+    await expect(auditoria).toContainText("Criado em");
+    await expect(auditoria).toContainText("Última atualização");
+    // Datas resolvidas, e não o em-dash de "campo ausente".
+    await expect(auditoria).toContainText(/\d{2}\/\d{2}\/\d{4}/);
+  });
+
+  /**
+   * O membro também navega.
+   *
+   * As UPFs tinham link e os membros eram texto morto. O membro não tem rota
+   * própria — a dele é a aba de membros da UPF —, e o payload da atividade não
+   * diz qual UPF é; a ficha resolve o vínculo cruzando com os membros das UPFs
+   * participantes.
+   */
+  test("membro participante leva à aba de membros da UPF", async ({ page }) => {
+    await abrirFicha(page, fixture.comFichaCompleta);
+
+    const membro = page.getByTestId(
+      `participante-membro-${fixture.membroParticipante}`,
+    );
+    await expect(membro).toBeVisible();
+    await expect(membro).toHaveAttribute(
+      "href",
+      new RegExp(`^/sgp/upfs/${fixture.upfDoMembro}/?#membros$`),
+    );
+
+    await membro.click();
+    await expect(page).toHaveURL(
+      new RegExp(`/sgp/upfs/${fixture.upfDoMembro}/?#membros$`),
+    );
+    // Chegou na aba certa, e não só na ficha da UPF — e o membro clicado está
+    // naquela lista. Afirmar a LINHA dele é mais forte que procurar um título:
+    // prova que o cruzamento membro → UPF acertou a ficha, não só a rota.
+    await expect(page.getByTestId("membros-tab")).toBeVisible();
+    await expect(
+      page.getByTestId(`membro-row-${fixture.membroParticipante}`),
+    ).toBeVisible();
+  });
+
+  /**
+   * Ícone por TIPO de documento, não a mesma folha de PDF em toda linha.
+   *
+   * O upload aceita só PDF, então um ícone por formato não informaria nada — o
+   * que distingue uma ata de uma lista de presença é a função do documento.
+   */
+  test("documentos trazem ícone por tipo", async ({ page }) => {
+    await abrirFicha(page, fixture.comEvidencias);
+
+    const icone = page
+      .getByTestId("atividade-evidencias")
+      .locator('[data-testid^="documento-icone-"]')
+      .first();
+    await expect(icone).toBeVisible();
+
+    // O tipo do documento vai no testid e no rótulo acessível: o ícone é a
+    // única marca do tipo antes da etiqueta na leitura por voz.
+    const testid = await icone.getAttribute("data-testid");
+    expect(testid).toMatch(
+      /^documento-icone-(lista_presenca|ata|relatorio_parcial|declaracao|contrato|outro)$/,
+    );
+    await expect(icone).toHaveAttribute("aria-label", /.+/);
+  });
+
   test("badge de erro do Google Calendar aparece sem quebrar a página", async ({
     page,
   }) => {

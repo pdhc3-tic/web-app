@@ -149,3 +149,34 @@ print("${MARCADOR}_VALOR " + (str(a.valor_alocado) if a else "NENHUMA"))
   const valor = linha.slice(marca.length).trim();
   return valor === "NENHUMA" ? null : valor;
 }
+
+/**
+ * Compromete parte do teto NACIONAL, sem mexer nas estaduais.
+ *
+ * Existe para o teste da barra de saldo: enquanto o pai tem comprometido zero,
+ * "alocado" e "saldo disponível" são o mesmo número, e a barra podia omitir o
+ * alocado sem que nada denunciasse. Com valor comprometido os dois divergem —
+ * e é aí que a conta precisa aparecer inteira na tela.
+ *
+ * Chamar DEPOIS de `criarDistribuicaoFixture`, e só nos testes que precisam: o
+ * comprometido reduz o teto e mudaria a aritmética dos outros.
+ */
+export function comprometerNacional(valor: number): void {
+  const saida = djangoShell(`
+from decimal import Decimal
+from apps.sgp.models import BudgetAllocation, BudgetRubrica, WorkPlanMeta
+
+atualizados = BudgetAllocation.objects.filter(
+    meta=WorkPlanMeta.objects.get(numero=${META_DISTRIBUICAO}),
+    rubrica=BudgetRubrica.objects.get(slug="${RUBRICA.slug}"),
+    nivel="nacional",
+).update(valor_comprometido=Decimal("${valor}.00"))
+if not atualizados:
+    raise RuntimeError("Alocacao nacional da fixture nao encontrada")
+
+print("${MARCADOR}_COMPROMETIDO_OK")
+`);
+  if (!saida.includes(`${MARCADOR}_COMPROMETIDO_OK`)) {
+    throw new Error(`Falha ao comprometer o nacional:\n${saida}`);
+  }
+}

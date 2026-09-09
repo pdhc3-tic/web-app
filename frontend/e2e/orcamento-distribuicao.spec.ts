@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
+  APROVADO_NACIONAL,
+  comprometerNacional,
   criarDistribuicaoFixture,
   ESTADO_COM_COMPROMETIDO,
   ESTADO_LIVRE,
@@ -128,6 +130,90 @@ test.describe("Distribuição orçamentária — UGP", () => {
     await page.getByTestId(`distribuicao-valor-${id}`).fill("5000000");
     await expect(page.getByTestId(`distribuicao-submit-${id}`)).toBeEnabled();
     await expect(page.getByTestId("distribuicao-excedente")).toHaveCount(0);
+  });
+
+  /**
+   * A barra mostra a conta INTEIRA, e não só o saldo já líquido.
+   *
+   * Com comprometido no pai, `saldoDoPai` fica menor que o alocado. A barra
+   * começava justamente no saldo, então o total de origem sumia da tela e a
+   * diferença não tinha explicação nenhuma — parecia que o sistema havia
+   * perdido dinheiro. As quatro parcelas precisam fechar:
+   *
+   *     100.000 alocado − 25.000 comprometido − 10.000 distribuído = 65.000
+   */
+  test("barra mostra alocado, comprometido, distribuido e disponivel", async ({
+    page,
+  }) => {
+    const comprometido = 25000;
+    comprometerNacional(comprometido);
+
+    await abrirRecorte(page);
+
+    const brl = (n: number) =>
+      new RegExp(`R\\$\\s*${n.toLocaleString("pt-BR")},00`);
+
+    await expect(page.getByTestId("distribuicao-alocado")).toHaveText(
+      brl(APROVADO_NACIONAL),
+    );
+    await expect(page.getByTestId("distribuicao-consumido")).toContainText(
+      brl(comprometido),
+    );
+    await expect(page.getByTestId("distribuicao-distribuido")).toHaveText(
+      brl(ESTADO_COM_COMPROMETIDO.alocado),
+    );
+    await expect(page.getByTestId("distribuicao-disponivel")).toHaveText(
+      brl(APROVADO_NACIONAL - comprometido - ESTADO_COM_COMPROMETIDO.alocado),
+    );
+  });
+
+  /**
+   * Dois destinos editados ao mesmo tempo.
+   *
+   * Cada valor cabe sozinho contra o teto, mas os dois somados o estouram. Era
+   * o buraco do bloqueio antigo: o excedente era medido destino a destino, a
+   * barra somava os dois rascunhos e desenhava o total acima do teto, e mesmo
+   * assim os DOIS botões continuavam habilitados, sem mensagem nenhuma. Na
+   * prática a primeira gravação passaria e a segunda levaria 400 — cada POST é
+   * validado sozinho contra o que já está no banco.
+   */
+  test("bloqueia dois destinos que so estouram somados", async ({ page }) => {
+    await abrirRecorte(page);
+
+    const idPe = await idDoDestino(page, ESTADO_LIVRE.sigla);
+    const idPb = await idDoDestino(page, ESTADO_COM_COMPROMETIDO.sigla);
+
+    // 10.000 já distribuídos em PB. Cada um sozinho cabe no teto de 100.000:
+    // PE → 10.000 + 80.000 = 90.000; PB → 0 + 90.000 = 90.000.
+    await page.getByTestId(`distribuicao-valor-${idPe}`).fill("8000000");
+    await expect(page.getByTestId(`distribuicao-submit-${idPe}`)).toBeEnabled();
+
+    await page.getByTestId(`distribuicao-valor-${idPb}`).fill("9000000");
+
+    // Juntos: 170.000 contra 100.000.
+    const excedente = page.getByTestId("distribuicao-excedente");
+    await expect(excedente).toBeVisible();
+    await expect(excedente).toContainText(/R\$\s*70\.000,00/);
+    await expect(excedente).toContainText(/2 valores em edição/i);
+
+    await expect(page.getByTestId("distribuicao-barra-saldo")).toHaveAttribute(
+      "data-estourou",
+      "sim",
+    );
+
+    // Os dois botões travam: nenhum dos dois valores é "o culpado" sozinho.
+    await expect(page.getByTestId(`distribuicao-submit-${idPe}`)).toBeDisabled();
+    await expect(page.getByTestId(`distribuicao-submit-${idPb}`)).toBeDisabled();
+
+    // E cada linha diz por que travou, sem obrigar a ler a barra.
+    await expect(page.getByTestId(`distribuicao-motivo-${idPe}`)).toContainText(
+      /somado aos outros/i,
+    );
+
+    // Reduzindo um deles, os dois voltam: a trava é da soma.
+    await page.getByTestId(`distribuicao-valor-${idPb}`).fill("1000000");
+    await expect(page.getByTestId("distribuicao-excedente")).toHaveCount(0);
+    await expect(page.getByTestId(`distribuicao-submit-${idPe}`)).toBeEnabled();
   });
 
   test("erro do servidor no campo certo", async ({ page }) => {

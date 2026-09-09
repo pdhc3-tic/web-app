@@ -9,6 +9,11 @@ resumo no fim deste arquivo diz o que caiu e o que ficou.*
 *O item 10 foi acrescentado em 08/09/2026, na branch `frontend/sprint-9c`, ao
 fechar a issue #234.*
 
+*Os itens 11 a 14 foram acrescentados em 09/09/2026, na mesma branch, ao
+corrigir os apontamentos de revisão das issues #232 e #233. Nenhum deles bloqueia
+a entrega — o frontend contorna os quatro —, mas os quatro deixam um critério de
+aceitação sendo cumprido pela metade ou por dedução.*
+
 Os itens 1 a 5, 7 e 10 **não bloqueiam entrega**: as telas de #133, #143 e #191
 estão completas e verificadas contra os endpoints reais. Eles ou (a) completam
 um critério hoje atendido pela metade, ou (b) transformam em E2E de verdade um
@@ -364,6 +369,136 @@ Custo: um bloco no `validate` que já existe. Nenhum model novo, nenhuma
 migration. Quando entrar, a exigência do cliente deixa de ser a única barreira
 e o teste 3 de `atividade-status.spec.ts` passa a cobrir uma regra real — hoje
 ele prova só o comportamento da UI.
+
+---
+
+## 11. `parceiros_organizacoes` chega como ids crus, e quem mais lê a ficha não pode resolvê-los
+
+*Levantado em 09/09/2026, ao corrigir os apontamentos de revisão da issue #233
+na branch `frontend/sprint-9c`.*
+
+`ActivityDetailSerializer.to_representation` enriquece `acao`,
+`tecnico_responsavel`, `equipe_adicional`, `upfs_participantes`,
+`membros_participantes`, `fotos` e `documentos` — todos saem com nome. **Menos
+`parceiros_organizacoes`**, que continua sendo o `PrimaryKeyRelatedField` cru:
+
+```json
+"parceiros_organizacoes": [3, 17],
+"parceiros_livres": "Sindicato dos Trabalhadores Rurais de Serra Talhada"
+```
+
+Resolver esses ids por fora não é opção para quem mais abre a ficha:
+`OrganizationViewSet.get_permissions` libera `list`/`retrieve` apenas a
+`IsSuperAdmin | IsUGP | IsArticuladorEstadual`. O ADT/ACR — o técnico de campo,
+autor da maioria das atividades — recebe **403** ao tentar `GET
+/api/v1/organizations/`.
+
+*Estado atual no frontend:* a ficha imprime `parceiros_livres` inteiro e, para o
+M2M, declara a quantidade ("2 organizações parceiras cadastradas"). É o máximo
+honesto com o payload de hoje: números de banco na tela não ajudam ninguém, e
+omitir o vínculo esconderia informação real.
+
+**Pedido** — uma linha em `to_representation`, no mesmo padrão de
+`equipe_adicional`:
+
+```python
+data["parceiros_organizacoes"] = [
+    {"id": o.pk, "nome": o.nome}
+    for o in instance.parceiros_organizacoes.all()
+]
+```
+
+Custo: nenhum model novo, nenhuma migration, nenhuma permissão mexida — o dado
+já está no `prefetch`. Quando entrar, a ficha passa a listar os parceiros pelo
+nome e o critério "ficha completa" da #233 fecha de verdade.
+
+---
+
+## 12. `MembroListSerializer` não devolve a UPF do membro
+
+*Mesmo levantamento do item 11.*
+
+O critério da #233 pede *"participantes (UPFs e membros) com link para as
+respectivas fichas"*. O membro não tem rota própria — a dele é a aba de membros
+da UPF (`/sgp/upfs/{id}/#membros`) —, mas o payload não diz **qual** UPF:
+
+```python
+# apps/sgp/serializers.py, MembroListSerializer.Meta.fields
+["id", "nome_completo", "data_nascimento", "idade", "grau_parentesco", ...]
+```
+
+Sem `upf`, o frontend não tem como montar o link a partir do detalhe da
+atividade. E o membro só é alcançável aninhado (`/sgp/upfs/{upf_pk}/membros/`),
+então nem uma busca por id resolve.
+
+*Estado atual no frontend:* a ficha resolve o vínculo por dedução. Com **uma**
+UPF participante o link sai de graça — `ActivityDetailSerializer.validate`
+recusa membro que não pertença às UPFs selecionadas, então o vínculo é garantido
+pelo próprio contrato. Com mais de uma, a ficha cruza com `listMembros` de cada
+UPF participante: **N requisições** só para descobrir a que já estava no banco.
+Falhando o cruzamento, a linha volta a ser texto simples — melhor sem link do
+que apontando para a ficha errada.
+
+**Pedido** — `"upf"` em `MembroListSerializer.Meta.fields` (o FK já existe no
+model e é usado em `validate_membros_participantes`). Elimina as N requisições e
+torna o link determinístico.
+
+---
+
+## 13. `criado_por` é um id, e `/api/v1/users/` é `IsSuperAdmin`
+
+*Mesmo levantamento do item 11.*
+
+O critério de auditoria da ficha (#233) pede "quem criou". O detalhe devolve
+`"criado_por": 12` e nada mais — e `UserViewSet` é `IsSuperAdmin`, então nenhum
+perfil que abre a ficha na prática consegue trocar o id por um nome. É o mesmo
+403 já anotado em `listTecnicos` (`app/lib/atividades.ts`).
+
+*Estado atual no frontend:* a ficha procura o id entre as pessoas que ela já tem
+com nome — o técnico responsável, a equipe adicional, o próprio usuário logado
+—, o que cobre a grande maioria das atividades. Sem correspondência, mostra
+`Usuário #12`. Dizer o id é honesto; inventar um nome, não.
+
+**Pedido** — aninhar como já se faz com `tecnico_responsavel`:
+
+```python
+data["criado_por"] = (
+    {"id": instance.criado_por.pk, "nome": instance.criado_por.nome}
+    if instance.criado_por_id else None
+)
+```
+
+---
+
+## 14. 403 de "sem território" é indistinguível de 403 de "sem acesso"
+
+*Levantado em 09/09/2026, ao corrigir os apontamentos da issue #232.*
+
+`services/budget.py::resolver_nivel_painel` levanta `PermissionDenied` com a
+**mesma** mensagem — *"Você não tem acesso ao orçamento do SGP."* — em dois
+casos que pedem telas opostas:
+
+```python
+if "adt-acr" in slugs:
+    territorio_ids = _territorios_do_adt(perfis)
+    if not territorio_ids:
+        raise PermissionDenied("Você não tem acesso ao orçamento do SGP.")   # (a)
+    ...
+raise PermissionDenied("Você não tem acesso ao orçamento do SGP.")           # (b)
+```
+
+(a) é um ADT sem vínculo: o critério da #232 pede *estado vazio explicativo,
+sem erro*. (b) é um perfil sem acesso nenhum: pede `RestrictedAccess`. Pela
+resposta é impossível separar os dois.
+
+*Estado atual no frontend:* a tela deduz pelo perfil. Para um ADT/ACR, o 403 do
+painel só pode ser (a) — a página nunca manda `estado` nem `territorio` para
+esse perfil, e esses são os outros dois motivos de negativa no bloco `adt-acr`.
+A dedução é sólida, mas depende de o front continuar não enviando aqueles dois
+parâmetros: qualquer filtro novo para o ADT a invalida em silêncio.
+
+**Pedido** — um `code` distinto no detalhe do 403 de (a), por exemplo
+`SEM_TERRITORIO`, para o frontend ler a causa em vez de inferi-la.
 
 ---
 

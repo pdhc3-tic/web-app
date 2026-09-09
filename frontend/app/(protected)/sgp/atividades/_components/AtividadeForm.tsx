@@ -510,12 +510,12 @@ export function AtividadeForm({
       {/* ── Parceiros e narrativa ────────────────────────────────────────── */}
       <Section title="Parceiros e narrativa" columns={1}>
         <Textarea
-          id={fieldId("parceiros")}
+          id={fieldId("parceiros_livres")}
           label="Parceiros"
           rows={2}
-          value={form.parceiros}
-          onChange={(e) => patchForm({ parceiros: e.target.value })}
-          error={errors.parceiros}
+          value={form.parceiros_livres}
+          onChange={(e) => patchForm({ parceiros_livres: e.target.value })}
+          error={errors.parceiros_livres}
           helperText="Um parceiro por linha ou separados por vírgula."
         />
         <Textarea

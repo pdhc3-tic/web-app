@@ -194,3 +194,67 @@ export function removerOrcamentoFixture(): void {
     throw new Error(`Falha ao remover a fixture de orçamento:\n${saida}`);
   }
 }
+
+// ─── Vínculo do ADT com o território ────────────────────────────────────────
+
+/**
+ * Desfaz e refaz o vínculo do ADT dos E2E com o território dele.
+ *
+ * Existe para o teste do "usuário sem território" (Issue #232) poder exercer o
+ * caminho REAL: `resolver_nivel_painel` só devolve 403 a quem de fato não tem
+ * `UserProfile.territorio`. Enquanto o teste apenas esvaziava `territorios` na
+ * resposta da sessão, o backend seguia respondendo 200 — o 403 nunca chegava à
+ * página, e o estado vazio que o teste via era o do componente decidindo pela
+ * sessão, não o da tela sobrevivendo à negativa da API.
+ *
+ * O território é devolvido para que o teste o reponha: perdê-lo quebraria todas
+ * as outras specs do ADT, que dependem dele. Por isso o `revincular` roda num
+ * `finally`, e não no corpo do teste — uma asserção que falha no meio não pode
+ * deixar o banco de demonstração sem o vínculo.
+ */
+export function desvincularTerritorioDoAdt(): number {
+  const saida = djangoShell(`
+from apps.core.models.user_profile import UserProfile
+
+perfil = (
+    UserProfile.objects
+    .filter(user__email="${EMAIL_ADT}", perfil__slug="adt-acr")
+    .exclude(territorio__isnull=True)
+    .first()
+)
+if perfil is None:
+    raise RuntimeError("ADT dos E2E sem territorio: rode manage.py seed_demo")
+
+territorio_id = perfil.territorio_id
+perfil.territorio = None
+perfil.save(update_fields=["territorio"])
+
+print("${MARCADOR}_DESVINCULADO " + str(territorio_id))
+`);
+  const marca = `${MARCADOR}_DESVINCULADO `;
+  const linha = saida.split("\n").find((l) => l.startsWith(marca));
+  if (!linha) {
+    throw new Error(`Falha ao desvincular o território do ADT:\n${saida}`);
+  }
+  return Number(linha.slice(marca.length).trim());
+}
+
+/** Repõe o vínculo. Idempotente: repetir com o mesmo id não faz mal. */
+export function revincularTerritorioDoAdt(territorioId: number): void {
+  const saida = djangoShell(`
+from apps.core.models.user_profile import UserProfile
+
+atualizados = (
+    UserProfile.objects
+    .filter(user__email="${EMAIL_ADT}", perfil__slug="adt-acr")
+    .update(territorio_id=${territorioId})
+)
+if not atualizados:
+    raise RuntimeError("Perfil ADT dos E2E nao encontrado para revincular")
+
+print("${MARCADOR}_REVINCULADO_OK")
+`);
+  if (!saida.includes(`${MARCADOR}_REVINCULADO_OK`)) {
+    throw new Error(`Falha ao repor o território do ADT:\n${saida}`);
+  }
+}

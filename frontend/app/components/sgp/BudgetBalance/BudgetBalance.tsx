@@ -22,6 +22,13 @@ type Props = {
   metaId: number | string | null;
   /** Cabeçalho do card. O SGD passará o seu próprio ao embutir o componente. */
   titulo?: string;
+  /**
+   * Força o estado vazio de "sem território". Serve a quem já descobriu a falta
+   * do vínculo por conta própria — a tela de orçamento leva o 403 do painel
+   * antes de montar o card, e sem isso ele mostraria "Selecione uma Meta"
+   * enquanto o resto da página já sabe que não há saldo nenhum a apurar.
+   */
+  semTerritorio?: boolean;
 };
 
 /**
@@ -41,26 +48,47 @@ type Props = {
  *
  * A sessão já sabe a diferença: `user.territorios` vem do /me. Então o
  * componente decide ANTES de chamar a API e nem gasta a requisição.
+ *
+ * A sessão pode estar VELHA, no entanto: `territorios` é gravado no JWT no
+ * login (ver auth.ts) e não é relido do /me depois. Quem tiver o vínculo
+ * removido no meio da sessão continua com a lista antiga no token, chama a API
+ * e leva 403. Por isso o 403 também vira "sem território" — para um ADT/ACR
+ * essa é a única leitura possível: a chamada não manda `estado` nem
+ * `territorio`, e esses são os outros dois motivos de `PermissionDenied` em
+ * `resolver_nivel_painel`.
  */
-export function BudgetBalance({ metaId, titulo = "Saldo por rubrica" }: Props) {
+export function BudgetBalance({
+  metaId,
+  titulo = "Saldo por rubrica",
+  semTerritorio: semTerritorioForcado = false,
+}: Props) {
   const { data: session, status } = useSession();
   const sessaoCarregando = status === "loading";
   const user = session?.user;
 
   // Só o ADT/ACR depende de território para ter saldo; os demais perfis são
   // resolvidos pelo backend em nível estadual ou nacional.
-  const semTerritorio =
-    !sessaoCarregando && isAdtAcr(user) && (user?.territorios ?? []).length === 0;
+  const adt = !sessaoCarregando && isAdtAcr(user);
+  const semTerritorioNaSessao =
+    semTerritorioForcado ||
+    (adt && (user?.territorios ?? []).length === 0);
 
   const [saldos, setSaldos] = useState<SaldoRubrica[] | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  /** 403 do painel para um ADT/ACR — a sessão estava velha. */
+  const [negadoSemTerritorio, setNegadoSemTerritorio] = useState(false);
   const [tentativa, setTentativa] = useState(0);
 
   const recarregar = useCallback(() => setTentativa((n) => n + 1), []);
 
   useEffect(() => {
-    if (sessaoCarregando || semTerritorio || metaId === null || metaId === "") {
+    if (
+      sessaoCarregando ||
+      semTerritorioNaSessao ||
+      metaId === null ||
+      metaId === ""
+    ) {
       return;
     }
 
@@ -68,6 +96,7 @@ export function BudgetBalance({ metaId, titulo = "Saldo por rubrica" }: Props) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setCarregando(true);
     setErro(null);
+    setNegadoSemTerritorio(false);
 
     fetchSaldoPorRubrica(metaId, controller.signal)
       .then((lista) => {
@@ -77,6 +106,14 @@ export function BudgetBalance({ metaId, titulo = "Saldo por rubrica" }: Props) {
       .catch((e: unknown) => {
         if (controller.signal.aborted) return;
         setSaldos(null);
+        if (e instanceof ApiError && e.status === 403 && adt) {
+          // Não é falha de rede nem falta de permissão para a tela: é o
+          // vínculo com o território que sumiu. Cai no mesmo estado vazio, com
+          // a instrução do que fazer — um "tentar novamente" aqui só repetiria
+          // o 403.
+          setNegadoSemTerritorio(true);
+          return;
+        }
         setErro(
           e instanceof ApiError
             ? e.message
@@ -88,7 +125,9 @@ export function BudgetBalance({ metaId, titulo = "Saldo por rubrica" }: Props) {
       });
 
     return () => controller.abort();
-  }, [metaId, sessaoCarregando, semTerritorio, tentativa]);
+  }, [metaId, sessaoCarregando, semTerritorioNaSessao, adt, tentativa]);
+
+  const semTerritorio = semTerritorioNaSessao || negadoSemTerritorio;
 
   const bloqueadas = useMemo(
     () => (saldos ?? []).filter((s) => s.bloqueada).length,
