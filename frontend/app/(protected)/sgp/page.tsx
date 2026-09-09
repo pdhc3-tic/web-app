@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Gauge,
   Sprout,
+  UserCog,
   Users,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -64,16 +65,25 @@ const SUBMODULES: Submodule[] = [
     href: "/sgp/painel/",
   },
   {
+    key: "tecnicos",
+    title: "Técnicos",
+    description: "Cadastro e vínculo de técnicos por território e OSC.",
+    Icon: UserCog,
+    href: "/sgp/tecnicos/",
+  },
+  {
     key: "producao",
     title: "Produção da UPF",
     description: "Dados de produção e cadeias produtivas da unidade.",
     Icon: Sprout,
+    href: "/sgp/producao/",
   },
   {
     key: "relatorios",
     title: "Relatórios",
-    description: "Indicadores e relatórios consolidados do módulo.",
+    description: "Exportações consolidadas e indicadores do módulo.",
     Icon: BarChart3,
+    href: "/sgp/relatorios/",
   },
 ];
 

@@ -220,6 +220,73 @@ export async function deleteProducao(upfId: string, id: number): Promise<void> {
   await apiClient(`/api/v1/upfs/${upfId}/producao/${id}/`, { method: "DELETE" });
 }
 
+// ─── Listagem consolidada ─────────────────────────────────────────────────────
+
+export type ProducaoConsolidadaItem = Producao & {
+  upf_id: number;
+  upf_nome_titular: string;
+  municipio: string;
+  territorio: string | null;
+};
+
+export type ListProducaoConsolidadaParams = {
+  limit: number;
+  offset: number;
+  tipo?: string;
+  cultura?: string;
+  especie?: string;
+  municipio?: string;
+  territorio?: string;
+};
+
+type ProducaoConsolidadaApi = Omit<ProducaoConsolidadaItem, "cultura" | "especie"> & {
+  cultura: CatalogoApiItem | null;
+  especie: CatalogoApiItem | null;
+};
+
+function toConsolidada(raw: ProducaoConsolidadaApi): ProducaoConsolidadaItem {
+  return {
+    ...raw,
+    cultura: raw.cultura ? toCatalogoItem(raw.cultura, CULTURA_CATEGORIA_LABELS) : null,
+    especie: raw.especie ? toCatalogoItem(raw.especie, ESPECIE_CATEGORIA_LABELS) : null,
+  };
+}
+
+export type IndicadoresProducao = {
+  total_upfs_produtoras: number;
+  area_total_ha: string | null;
+  principais_culturas: Array<{ nome: string; count: number }>;
+};
+
+export async function listProducaoConsolidada(
+  params: ListProducaoConsolidadaParams,
+  signal?: AbortSignal,
+): Promise<Paginated<ProducaoConsolidadaItem>> {
+  const qs = new URLSearchParams();
+  qs.set("page", String(Math.floor(params.offset / params.limit) + 1));
+  qs.set("page_size", String(params.limit));
+  if (params.tipo) qs.set("tipo", params.tipo);
+  if (params.cultura) qs.set("cultura", params.cultura);
+  if (params.especie) qs.set("especie", params.especie);
+  if (params.municipio) qs.set("municipio", params.municipio);
+  if (params.territorio) qs.set("territorio", params.territorio);
+
+  const res = await apiClient(`/api/v1/sgp/producao/?${qs}`, { signal });
+  const data: Paginated<ProducaoConsolidadaApi> = await res.json();
+  return { ...data, results: data.results.map(toConsolidada) };
+}
+
+export async function fetchIndicadoresProducao(
+  params: Pick<ListProducaoConsolidadaParams, "territorio" | "municipio">,
+  signal?: AbortSignal,
+): Promise<IndicadoresProducao> {
+  const qs = new URLSearchParams();
+  if (params.territorio) qs.set("territorio", params.territorio);
+  if (params.municipio) qs.set("municipio", params.municipio);
+  const res = await apiClient(`/api/v1/sgp/producao/indicadores/?${qs}`, { signal });
+  return res.json();
+}
+
 // ─── Catálogos ───────────────────────────────────────────────────────────────
 
 async function buscarCatalogo(

@@ -250,6 +250,7 @@ export type ListAtividadesParams = {
   inicioDe?: string;
   inicioAte?: string;
   ordering?: string;
+  atrasada?: boolean;
 };
 
 /**
@@ -277,6 +278,7 @@ function buildAtividadesQuery(params: ListAtividadesParams): string {
   if (params.status) qs.set("status", params.status);
   if (params.inicioDe) qs.set("data_inicio_after", params.inicioDe);
   if (params.inicioAte) qs.set("data_inicio_before", params.inicioAte);
+  if (params.atrasada != null) qs.set("atrasada", String(params.atrasada));
   qs.set("ordering", params.ordering ?? "-data_inicio");
 
   return qs.toString();
@@ -292,6 +294,20 @@ export async function listAtividades(
     { signal },
   );
   return res.json();
+}
+
+/** GET /api/v1/sgp/atividades/?page_size=1 — retorna apenas a contagem. */
+export async function fetchAtividadeCount(
+  params: { status?: string; atrasada?: boolean; territorioId?: string },
+  signal?: AbortSignal,
+): Promise<number> {
+  const qs = new URLSearchParams({ page_size: "1" });
+  if (params.status) qs.set("status", params.status);
+  if (params.atrasada != null) qs.set("atrasada", String(params.atrasada));
+  if (params.territorioId) qs.set("territorio_id", params.territorioId);
+  const res = await apiClient(`/api/v1/sgp/atividades/?${qs}`, { signal });
+  const data: Paginated<AtividadeListItem> = await res.json();
+  return data.count;
 }
 
 // ─── API — Atividade ─────────────────────────────────────────────────────────
