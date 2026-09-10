@@ -46,11 +46,12 @@ async function abrirAbaMembros(page: Page, upfId: number): Promise<void> {
  * O painel inteiro do SlideOver. O corpo tem `data-testid`, mas o rodapé com
  * Salvar/Cancelar é irmão dele — este escopo cobre os dois.
  *
- * É seletor de atributo, e não `getByRole("dialog")`, porque o backdrop que
- * envolve o painel é `aria-hidden` e some das buscas por role.
+ * `getByRole` funciona desde que o `aria-hidden` saiu do wrapper do SlideOver e
+ * foi para o scrim: antes disso o painel inteiro sumia da árvore de
+ * acessibilidade, e este seletor precisava ser por atributo.
  */
 function painelMembro(page: Page): Locator {
-  return page.locator('[role="dialog"]');
+  return page.getByRole("dialog");
 }
 
 /** Abre o formulário de novo membro pelo botão do cabeçalho da aba. */

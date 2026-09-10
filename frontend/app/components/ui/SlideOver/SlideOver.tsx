@@ -45,6 +45,20 @@ export type SlideOverProps = {
   /** Conteúdo scrollável do corpo do painel. */
   children: ReactNode;
   /**
+   * Torna o painel um diálogo modal de verdade: prende o foco dentro dele
+   * (Tab e Shift+Tab circulam) e declara `aria-modal="true"`.
+   *
+   * Opt-in, e não o padrão, porque os painéis de consulta do sistema convivem
+   * com a página atrás — prendê-los todos de uma vez mudaria o comportamento
+   * de 39 telas. Use em diálogos que EXIGEM uma decisão antes de continuar;
+   * para painéis de leitura, o padrão continua correto.
+   *
+   * Os dois andam juntos de propósito: `aria-modal="true"` sem armadilha de
+   * foco faz o leitor de tela esconder o resto da página enquanto o teclado
+   * ainda navega por ela — pior que não ter nenhum dos dois.
+   */
+  modal?: boolean;
+  /**
    * Largura do painel em desktop (≥ breakpoint sm).
    * - "default" → max-w-[480px]
    * - "wide"    → max-w-[600px]
@@ -86,6 +100,7 @@ export function SlideOver({
   footer,
   children,
   width = "default",
+  modal = false,
 }: SlideOverProps) {
   const titleId = useId();
 
@@ -108,6 +123,9 @@ export function SlideOver({
 
   // O título do painel recebe foco programático ao abrir.
   const titleRef = useRef<HTMLHeadingElement>(null);
+
+  // O painel em si — usado pela armadilha de foco para enumerar os focáveis.
+  const panelRef = useRef<HTMLDivElement>(null);
 
   // ── Montar / desmontar com animação ──────────────────────────────────────
   useEffect(() => {
@@ -148,6 +166,48 @@ export function SlideOver({
     }
   }, [visible]);
 
+  // ── Armadilha de foco (só quando `modal`) ────────────────────────────────
+  //
+  // Enumera os focáveis a cada Tab, e não uma vez ao abrir: o conteúdo do
+  // painel muda (campos aparecem conforme o destino escolhido, botões
+  // desabilitam durante o envio), e uma lista capturada na montagem mandaria o
+  // foco para um elemento que já não aceita.
+  useEffect(() => {
+    if (!open || !modal) return;
+
+    function handleTab(e: KeyboardEvent) {
+      if (e.key !== "Tab" || !panelRef.current) return;
+
+      const focaveis = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+
+      if (focaveis.length === 0) {
+        // Nada focável: mantém o foco no título em vez de deixá-lo escapar.
+        e.preventDefault();
+        titleRef.current?.focus();
+        return;
+      }
+
+      const primeiro = focaveis[0];
+      const ultimo = focaveis[focaveis.length - 1];
+      const atual = document.activeElement;
+
+      if (e.shiftKey && (atual === primeiro || atual === titleRef.current)) {
+        e.preventDefault();
+        ultimo.focus();
+      } else if (!e.shiftKey && atual === ultimo) {
+        e.preventDefault();
+        primeiro.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleTab);
+    return () => document.removeEventListener("keydown", handleTab);
+  }, [open, modal]);
+
   // ── Tecla Escape ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!open) return;
@@ -167,25 +227,33 @@ export function SlideOver({
   // ── Conteúdo do painel ───────────────────────────────────────────────────
   const panel = (
     // Backdrop — sobrepõe a tela por trás do painel.
+    //
+    // NÃO leva `aria-hidden`: este elemento ENVOLVE o dialog, e aria-hidden
+    // remove da árvore de acessibilidade o elemento e todos os descendentes.
+    // Com ele aqui, nenhum SlideOver do sistema existia para leitor de tela —
+    // título, botão de fechar e conteúdo, tudo invisível — e o foco programático
+    // no título caía dentro de uma subárvore oculta, o que os navegadores
+    // bloqueiam ("Blocked aria-hidden on an element because its descendant
+    // retained focus"). O atributo pertence ao scrim, que é decorativo.
     <div
       className={[
         "fixed inset-0 z-40 flex justify-end",
         "transition-opacity motion-reduce:transition-none duration-250 ease-out",
         visible ? "opacity-100" : "opacity-0",
       ].join(" ")}
-      aria-hidden="true"
       onClick={onClose}
     >
-      {/* Scrim semitransparente */}
-      <div className="absolute inset-0 bg-black/30" />
+      {/* Scrim semitransparente — puramente visual. */}
+      <div className="absolute inset-0 bg-black/30" aria-hidden="true" />
 
       {/*
         Painel — stopPropagation impede que cliques dentro do painel
         fechem via o handler do backdrop acima.
       */}
       <div
+        ref={panelRef}
         role="dialog"
-        aria-modal="false"
+        aria-modal={modal ? "true" : "false"}
         aria-labelledby={titleId}
         className={[
           // Layout

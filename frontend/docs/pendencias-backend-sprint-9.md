@@ -6,7 +6,15 @@ de membros em CSV) contra o backend que já está na `main`. O documento da spri
 (`pendencias-backend-sprint-8.md`) continua valendo para o que sobrou de lá — o
 resumo no fim deste arquivo diz o que caiu e o que ficou.*
 
-Os itens 1 a 5 e 7 **não bloqueiam entrega**: as telas de #133, #143 e #191
+*O item 10 foi acrescentado em 08/09/2026, na branch `frontend/sprint-9c`, ao
+fechar a issue #234.*
+
+*Os itens 11 a 14 foram acrescentados em 09/09/2026, na mesma branch, ao
+corrigir os apontamentos de revisão das issues #232 e #233. Nenhum deles bloqueia
+a entrega — o frontend contorna os quatro —, mas os quatro deixam um critério de
+aceitação sendo cumprido pela metade ou por dedução.*
+
+Os itens 1 a 5, 7 e 10 **não bloqueiam entrega**: as telas de #133, #143 e #191
 estão completas e verificadas contra os endpoints reais. Eles ou (a) completam
 um critério hoje atendido pela metade, ou (b) transformam em E2E de verdade um
 teste que só existe com a resposta fixada por stub.
@@ -236,6 +244,261 @@ CORS_EXPOSE_HEADERS = ["Content-Disposition"]
 
 O frontend não precisa mudar: `exportarMembrosCsv` e o export do Plano de
 Trabalho já leem o header e só usam o fallback quando ele não vem.
+
+---
+
+## 8. `GET /api/v1/metas/` devolve as Metas fora de ordem
+
+*Acrescentado em 07/09/2026, ao testar a #230 (Painel de Orçamento) na
+`frontend/sprint-9c`.*
+
+`WorkPlanMetaViewSet` declara `ordering = ["numero"]`, e o próprio model
+`WorkPlanMeta` declara `Meta.ordering = ["numero"]`. Mesmo assim a lista sai
+embaralhada. São duas causas somadas:
+
+1. `get_queryset` faz
+   `annotate(_valor_total=Sum(F("acoes__quantidade_planejada") * F("acoes__valor_unitario")))`.
+   O `annotate` com agregação **derruba o `ORDER BY`** do model — a SQL gerada
+   não tem cláusula de ordenação nenhuma.
+2. `filter_backends = [DjangoFilterBackend]` não inclui `OrderingFilter`, então
+   o `ordering = ["numero"]` do viewset nunca é aplicado e o `?ordering=numero`
+   que o frontend já envia é ignorado em silêncio.
+
+No banco de demonstração o efeito é direto — a ordem devolvida é
+`[4, 7, 5, 6, 2, 1, 3]`:
+
+```python
+>>> qs = WorkPlanMeta.objects.annotate(_valor_total=Sum(...)).all()
+>>> list(qs.values_list("numero", flat=True))
+[4, 7, 5, 6, 2, 1, 3]
+>>> list(WorkPlanMeta.objects.all().values_list("numero", flat=True))
+[1, 2, 3, 4, 5, 6, 7]
+```
+
+Isso vaza para **toda** tela que lista Metas, não só o painel de orçamento.
+
+**Pedido** — qualquer um dos dois resolve:
+
+```python
+# (a) reafirmar a ordenação depois do annotate
+return filter_workplan_metas_for_user(qs, user).order_by("numero")
+
+# (b) registrar o backend de ordenação, que também faz o `?ordering=` funcionar
+filter_backends = [DjangoFilterBackend, OrderingFilter]
+```
+
+*Contornado no frontend:* `metaOptions` em
+`app/(protected)/sgp/orcamento/page.tsx` ordena por `numero` no cliente. É
+defensivo e deve continuar mesmo depois da correção — mas as outras telas que
+listam Metas não têm esse contorno.
+
+---
+
+## 9. `seed_demo` grava `State.nome` igual à sigla
+
+*Acrescentado em 07/09/2026, mesma verificação da #230.*
+
+Os sete estados do seed têm `nome == sigla`:
+
+```python
+>>> list(State.objects.values_list("sigla", "nome"))
+[('AL', 'AL'), ('BA', 'BA'), ('MA', 'MA'), ('MG', 'MG'), ('PB', 'PB'), ('PE', 'PE'), ('RN', 'RN')]
+```
+
+Qualquer rótulo no padrão `{nome} ({sigla})` — usado por `fetchStateOptions` e
+`fetchStateSiglaOptions`, e daí pelos selects de várias telas — sai como
+`PE (PE)` em vez de `Pernambuco (PE)`. Não é bug de frontend e não aparece com
+dados reais, mas atrapalha a revisão visual de qualquer tela com filtro de
+estado.
+
+**Pedido** — preencher `nome` com o nome por extenso na criação dos `State` do
+`seed_demo`.
+
+---
+
+## 10. Sair de "Adiada" não exige nova data — a regra existe só no cliente
+
+*Levantado em 08/09/2026, ao implementar a issue #234 (fluxo guiado de
+transição de status) na branch `frontend/sprint-9c`.*
+
+O contexto da #234 afirma que o backend já implementa *"nova data obrigatória
+para sair de 'Adiada'"*. **Não implementa.** `ActivityDetailSerializer.validate`
+cobre as outras três regras da máquina de estados — transição permitida,
+justificativa obrigatória em `nao_realizada`/`cancelada` e bloqueio de
+`concluido` sem evidência —, mas não há nenhuma validação ligando
+`adiada → agendado` a uma data nova. Uma busca por `adiada` em
+`backend/apps/sgp/` só encontra o rótulo do choice, a entrada em
+`STATUS_TRANSITIONS` e o seed.
+
+*Verificado na API*, contra a atividade 100 (`status="adiada"`):
+
+```
+PATCH /api/v1/sgp/atividades/100/   {"status": "agendado"}
+→ 200 OK      # sem data nova, sem reclamação
+```
+
+*Estado atual no frontend:* o diálogo de transição
+(`TransicaoStatusDialog.tsx`) exige a nova data e bloqueia o envio sem ela,
+atendendo ao critério da issue. Mas a regra vale **apenas nesta tela** — o app
+de campo (SCA), o Django admin ou um `curl` reagendam sem data e a atividade
+volta a "Agendado" mantendo a data que já passou. É exatamente o que a #231
+estabeleceu que não deve acontecer: *"a validação do servidor continua sendo a
+autoridade; a do cliente é conveniência, nunca substituto"*.
+
+**Pedido** — acrescentar a `ActivityDetailSerializer.validate`, junto das
+regras que já moram lá:
+
+```python
+# Reagendar exige data nova: sem isto a atividade volta a "agendado"
+# carregando a data que já passou, e nasce atrasada.
+if (
+    self.instance is not None
+    and self.instance.status == "adiada"
+    and novo_status == "agendado"
+    and "data_inicio" not in attrs
+):
+    raise serializers.ValidationError({
+        "data_inicio": (
+            "Informe a nova data de início ao reagendar uma atividade adiada."
+        ),
+        "code": "VALIDATION_ERROR",
+    })
+```
+
+Custo: um bloco no `validate` que já existe. Nenhum model novo, nenhuma
+migration. Quando entrar, a exigência do cliente deixa de ser a única barreira
+e o teste 3 de `atividade-status.spec.ts` passa a cobrir uma regra real — hoje
+ele prova só o comportamento da UI.
+
+---
+
+## 11. `parceiros_organizacoes` chega como ids crus, e quem mais lê a ficha não pode resolvê-los
+
+*Levantado em 09/09/2026, ao corrigir os apontamentos de revisão da issue #233
+na branch `frontend/sprint-9c`.*
+
+`ActivityDetailSerializer.to_representation` enriquece `acao`,
+`tecnico_responsavel`, `equipe_adicional`, `upfs_participantes`,
+`membros_participantes`, `fotos` e `documentos` — todos saem com nome. **Menos
+`parceiros_organizacoes`**, que continua sendo o `PrimaryKeyRelatedField` cru:
+
+```json
+"parceiros_organizacoes": [3, 17],
+"parceiros_livres": "Sindicato dos Trabalhadores Rurais de Serra Talhada"
+```
+
+Resolver esses ids por fora não é opção para quem mais abre a ficha:
+`OrganizationViewSet.get_permissions` libera `list`/`retrieve` apenas a
+`IsSuperAdmin | IsUGP | IsArticuladorEstadual`. O ADT/ACR — o técnico de campo,
+autor da maioria das atividades — recebe **403** ao tentar `GET
+/api/v1/organizations/`.
+
+*Estado atual no frontend:* a ficha imprime `parceiros_livres` inteiro e, para o
+M2M, declara a quantidade ("2 organizações parceiras cadastradas"). É o máximo
+honesto com o payload de hoje: números de banco na tela não ajudam ninguém, e
+omitir o vínculo esconderia informação real.
+
+**Pedido** — uma linha em `to_representation`, no mesmo padrão de
+`equipe_adicional`:
+
+```python
+data["parceiros_organizacoes"] = [
+    {"id": o.pk, "nome": o.nome}
+    for o in instance.parceiros_organizacoes.all()
+]
+```
+
+Custo: nenhum model novo, nenhuma migration, nenhuma permissão mexida — o dado
+já está no `prefetch`. Quando entrar, a ficha passa a listar os parceiros pelo
+nome e o critério "ficha completa" da #233 fecha de verdade.
+
+---
+
+## 12. `MembroListSerializer` não devolve a UPF do membro
+
+*Mesmo levantamento do item 11.*
+
+O critério da #233 pede *"participantes (UPFs e membros) com link para as
+respectivas fichas"*. O membro não tem rota própria — a dele é a aba de membros
+da UPF (`/sgp/upfs/{id}/#membros`) —, mas o payload não diz **qual** UPF:
+
+```python
+# apps/sgp/serializers.py, MembroListSerializer.Meta.fields
+["id", "nome_completo", "data_nascimento", "idade", "grau_parentesco", ...]
+```
+
+Sem `upf`, o frontend não tem como montar o link a partir do detalhe da
+atividade. E o membro só é alcançável aninhado (`/sgp/upfs/{upf_pk}/membros/`),
+então nem uma busca por id resolve.
+
+*Estado atual no frontend:* a ficha resolve o vínculo por dedução. Com **uma**
+UPF participante o link sai de graça — `ActivityDetailSerializer.validate`
+recusa membro que não pertença às UPFs selecionadas, então o vínculo é garantido
+pelo próprio contrato. Com mais de uma, a ficha cruza com `listMembros` de cada
+UPF participante: **N requisições** só para descobrir a que já estava no banco.
+Falhando o cruzamento, a linha volta a ser texto simples — melhor sem link do
+que apontando para a ficha errada.
+
+**Pedido** — `"upf"` em `MembroListSerializer.Meta.fields` (o FK já existe no
+model e é usado em `validate_membros_participantes`). Elimina as N requisições e
+torna o link determinístico.
+
+---
+
+## 13. `criado_por` é um id, e `/api/v1/users/` é `IsSuperAdmin`
+
+*Mesmo levantamento do item 11.*
+
+O critério de auditoria da ficha (#233) pede "quem criou". O detalhe devolve
+`"criado_por": 12` e nada mais — e `UserViewSet` é `IsSuperAdmin`, então nenhum
+perfil que abre a ficha na prática consegue trocar o id por um nome. É o mesmo
+403 já anotado em `listTecnicos` (`app/lib/atividades.ts`).
+
+*Estado atual no frontend:* a ficha procura o id entre as pessoas que ela já tem
+com nome — o técnico responsável, a equipe adicional, o próprio usuário logado
+—, o que cobre a grande maioria das atividades. Sem correspondência, mostra
+`Usuário #12`. Dizer o id é honesto; inventar um nome, não.
+
+**Pedido** — aninhar como já se faz com `tecnico_responsavel`:
+
+```python
+data["criado_por"] = (
+    {"id": instance.criado_por.pk, "nome": instance.criado_por.nome}
+    if instance.criado_por_id else None
+)
+```
+
+---
+
+## 14. 403 de "sem território" é indistinguível de 403 de "sem acesso"
+
+*Levantado em 09/09/2026, ao corrigir os apontamentos da issue #232.*
+
+`services/budget.py::resolver_nivel_painel` levanta `PermissionDenied` com a
+**mesma** mensagem — *"Você não tem acesso ao orçamento do SGP."* — em dois
+casos que pedem telas opostas:
+
+```python
+if "adt-acr" in slugs:
+    territorio_ids = _territorios_do_adt(perfis)
+    if not territorio_ids:
+        raise PermissionDenied("Você não tem acesso ao orçamento do SGP.")   # (a)
+    ...
+raise PermissionDenied("Você não tem acesso ao orçamento do SGP.")           # (b)
+```
+
+(a) é um ADT sem vínculo: o critério da #232 pede *estado vazio explicativo,
+sem erro*. (b) é um perfil sem acesso nenhum: pede `RestrictedAccess`. Pela
+resposta é impossível separar os dois.
+
+*Estado atual no frontend:* a tela deduz pelo perfil. Para um ADT/ACR, o 403 do
+painel só pode ser (a) — a página nunca manda `estado` nem `territorio` para
+esse perfil, e esses são os outros dois motivos de negativa no bloco `adt-acr`.
+A dedução é sólida, mas depende de o front continuar não enviando aqueles dois
+parâmetros: qualquer filtro novo para o ADT a invalida em silêncio.
+
+**Pedido** — um `code` distinto no detalhe do 403 de (a), por exemplo
+`SEM_TERRITORIO`, para o frontend ler a causa em vez de inferi-la.
 
 ---
 

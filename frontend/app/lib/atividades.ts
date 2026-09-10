@@ -160,6 +160,36 @@ export type AtividadeListItem = {
  * `tecnico_responsavel` voltam como objetos aninhados, mas são ENVIADOS como
  * PK na escrita. Os M2M continuam como arrays de PK na leitura.
  */
+/** UPF participante, como vem no detalhe consolidado (Issue #227). */
+export type UpfParticipante = {
+  id: number;
+  nome_titular: string;
+  /** Mascarado pelo backend ("105.***.***-30"). */
+  cpf: string;
+  foto_url: string;
+  ativa: boolean;
+  municipio: { id: number; nome: string };
+  territorio: { id: number; nome: string } | null;
+  criado_em: string;
+};
+
+/** Membro participante, como vem no detalhe consolidado (Issue #227). */
+export type MembroParticipante = {
+  id: number;
+  nome_completo: string;
+  cpf: string;
+  data_nascimento: string | null;
+  idade: number | null;
+  grau_parentesco: string;
+  grau_parentesco_display: string;
+  genero: number | null;
+  genero_display: string;
+  cor_raca: number | null;
+  cor_raca_display: string;
+  saude: string[];
+  criado_em: string;
+};
+
 export type AtividadeDetail = {
   id: number;
   titulo: string;
@@ -169,7 +199,13 @@ export type AtividadeDetail = {
   forma_atuacao: string;
   forma_atuacao_display: string;
   tecnico_responsavel: TecnicoNested;
-  equipe_adicional: number[];
+  /**
+   * Objetos na LEITURA, ids na escrita — mesma assimetria de
+   * `upfs_participantes`. `to_representation` do ActivityDetailSerializer
+   * reescreve o M2M como `{id, nome, email}`; o tipo dizia `number[]` e por
+   * isso o prefill da edição entregava objetos ao seletor de ids.
+   */
+  equipe_adicional: TecnicoNested[];
   municipio: NestedRef;
   territorio_id: number | null;
   comunidade: NestedRef | null;
@@ -179,10 +215,39 @@ export type AtividadeDetail = {
   longitude: string | null;
   data_inicio: string;
   data_fim: string;
-  upfs_participantes: number[];
-  membros_participantes: number[];
+  /**
+   * Objetos, NÃO ids — o detalhe passou a devolver o registro inteiro na Issue
+   * #227 (backend, 05/09). O tipo antigo dizia `number[]`, e por causa disso o
+   * prefill da edição chegou a montar `/api/v1/upfs/[object Object]/`.
+   * A ESCRITA continua enviando ids (ver AtividadeWritePayload).
+   */
+  upfs_participantes: UpfParticipante[];
+  membros_participantes: MembroParticipante[];
   total_participantes: number;
-  parceiros: string;
+  /**
+   * Espelha GOOGLE_CALENDAR_SYNC_STATUS_CHOICES em models/activity.py.
+   * `erro` é só um aviso na ficha (RF24): a atividade está salva, o que falhou
+   * foi criar o evento na agenda.
+   */
+  google_calendar_sync_status: "pendente" | "ok" | "erro";
+  /**
+   * Evidências vinculadas, como vêm no detalhe consolidado (Issue #227).
+   *
+   * O tipo declara só o que a UI consome — a presença de ao menos um item é o
+   * que decide se "Concluído" pode ser oferecido. A galeria carrega os dados
+   * completos por conta própria, pelos endpoints de fotos/documentos.
+   */
+  fotos?: { id: number; arquivo_url: string; legenda: string; ordem: number }[];
+  documentos?: { id: number; nome_original: string; tipo: string }[];
+  /**
+   * Ids das `core.Organization` parceiras. O detalhe NÃO aninha nome — só o
+   * M2M cru —, e `OrganizationViewSet` restringe a listagem a
+   * super-admin/UGP/Articulador, então o ADT não tem como resolvê-los.
+   * Pedido aberto ao backend em docs/pendencias-backend-sprint-9.md.
+   */
+  parceiros_organizacoes: number[];
+  /** Parceiros em texto livre — o campo que o formulário preenche. */
+  parceiros_livres: string;
   descricao_narrativa: string;
   resultados_alcancados: string;
   status: string;
@@ -221,9 +286,20 @@ export type AtividadeWritePayload = {
   longitude: string | null;
   data_inicio: string;
   data_fim: string;
+  /** Na escrita são ids: o serializer usa PrimaryKeyRelatedField. */
   upfs_participantes: number[];
   membros_participantes: number[];
-  parceiros: string;
+  /**
+   * `parceiros` não existe no serializer: o campo é `parceiros_livres`. O
+   * formulário enviava a chave antiga, o DRF a descartava em silêncio e o que
+   * o técnico digitava nunca chegava ao banco.
+   *
+   * `parceiros_organizacoes` fica FORA do payload de propósito. O formulário
+   * não tem seletor de organizações, e mandar `[]` a cada PATCH apagaria os
+   * vínculos criados por outro caminho — o serializer só toca no M2M quando a
+   * chave vem, então omiti-la é o que preserva o que já está lá.
+   */
+  parceiros_livres: string;
   descricao_narrativa: string;
   resultados_alcancados: string;
   status: string;
@@ -376,4 +452,74 @@ export async function listTecnicos(
   } catch {
     return [];
   }
+}
+
+// ─── Transição guiada de status (Issue #234) ────────────────────────────────
+
+/**
+ * Status terminais: `STATUS_TRANSITIONS[status]` é vazio no backend, então
+ * nenhuma saída é possível. Espelha os `set()` de models/activity.py.
+ */
+export const STATUS_TERMINAIS = [
+  "concluido",
+  "concluido_sem_evidencia",
+  "nao_realizada",
+  "cancelada",
+];
+
+/** True quando a atividade não admite mais nenhuma transição. */
+export function isStatusTerminal(status: string): boolean {
+  return STATUS_TERMINAIS.includes(status);
+}
+
+/**
+ * O que o destino escolhido exige antes de submeter.
+ *
+ * `justificativa` e `evidencia` espelham regras que o backend REALMENTE aplica
+ * (ActivityDetailSerializer.validate). `novaData` é a exceção: a Issue #234
+ * pede a exigência ao sair de "Adiada", mas nenhuma validação equivalente
+ * existe no servidor — confirmado por PATCH direto, que devolve 200 sem data
+ * nova. Enquanto isso não mudar, a regra vale só nesta tela e uma chamada
+ * direta à API a contorna. Registrado em docs/pendencias-backend-sprint-9.md.
+ */
+export type ExigenciaTransicao = {
+  justificativa: boolean;
+  novaData: boolean;
+  evidencia: boolean;
+};
+
+export function exigenciasDaTransicao(
+  statusAtual: string,
+  destino: string,
+): ExigenciaTransicao {
+  return {
+    justificativa: STATUS_EXIGE_JUSTIFICATIVA.includes(destino),
+    novaData: statusAtual === "adiada" && destino === "agendado",
+    evidencia: destino === "concluido",
+  };
+}
+
+/** Payload da transição — só o que muda, para não reenviar a atividade toda. */
+export type TransicaoPayload = {
+  status: string;
+  justificativa?: string;
+  data_inicio?: string;
+  data_fim?: string;
+};
+
+/**
+ * PATCH /api/v1/sgp/atividades/{id}/ — aplica só a transição de status.
+ *
+ * Parcial de propósito: o modal não carrega o formulário inteiro, e mandar
+ * campos não tocados arriscaria sobrescrever edição concorrente.
+ */
+export async function transicionarStatus(
+  id: string | number,
+  payload: TransicaoPayload,
+): Promise<AtividadeDetail> {
+  const res = await apiClient(`/api/v1/sgp/atividades/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  return res.json();
 }

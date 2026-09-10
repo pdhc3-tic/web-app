@@ -60,7 +60,8 @@ export type AtividadeFormData = {
   upfs_participantes: UpfRef[];
   membros_participantes: MembroRef[];
   // Parceiros e narrativa
-  parceiros: string;
+  /** Texto livre: espelha `Activity.parceiros_livres`. */
+  parceiros_livres: string;
   descricao_narrativa: string;
   resultados_alcancados: string;
   // Status
@@ -85,7 +86,7 @@ export const EMPTY_FORM: AtividadeFormData = {
   data_fim: "",
   upfs_participantes: [],
   membros_participantes: [],
-  parceiros: "",
+  parceiros_livres: "",
   descricao_narrativa: "",
   resultados_alcancados: "",
   status: "planejado",
@@ -114,7 +115,8 @@ export function detailToForm(atividade: AtividadeDetail): AtividadeFormData {
     },
     forma_atuacao: atividade.forma_atuacao,
     tecnico_responsavel: String(atividade.tecnico_responsavel.id),
-    equipe_adicional: atividade.equipe_adicional,
+    // O detalhe devolve objetos; o seletor trabalha com ids.
+    equipe_adicional: atividade.equipe_adicional.map((u) => u.id),
     municipio: String(atividade.municipio.id),
     comunidade: atividade.comunidade ? String(atividade.comunidade.id) : "",
     ambito: atividade.ambito,
@@ -122,12 +124,22 @@ export function detailToForm(atividade: AtividadeDetail): AtividadeFormData {
     longitude: atividade.longitude ?? "",
     data_inicio: atividade.data_inicio,
     data_fim: atividade.data_fim,
-    membros_participantes: atividade.membros_participantes.map((id) => ({
-      id,
-      nome: `Membro #${id}`,
+    // Nome e CPF vêm no detalhe desde a Issue #227 — não há mais uma requisição
+    // por participante para rotulá-los.
+    upfs_participantes: atividade.upfs_participantes.map((u) => ({
+      id: u.id,
+      nome: u.nome_titular,
+      cpf: u.cpf,
+    })),
+    // O detalhe já traz o nome desde a Issue #227; o `upfId` continua pendente
+    // porque o payload do membro não carrega a UPF, e é a ParticipantesSection
+    // que o resolve ao listar os membros das UPFs selecionadas.
+    membros_participantes: atividade.membros_participantes.map((m) => ({
+      id: m.id,
+      nome: m.nome_completo,
       upfId: PENDING_UPF_ID,
     })),
-    parceiros: atividade.parceiros,
+    parceiros_livres: atividade.parceiros_livres,
     descricao_narrativa: atividade.descricao_narrativa,
     resultados_alcancados: atividade.resultados_alcancados,
     status: atividade.status,
@@ -162,7 +174,7 @@ export function formToPayload(
     data_fim: form.data_fim,
     upfs_participantes: form.upfs_participantes.map((u) => u.id),
     membros_participantes: form.membros_participantes.map((m) => m.id),
-    parceiros: form.parceiros.trim(),
+    parceiros_livres: form.parceiros_livres.trim(),
     descricao_narrativa: form.descricao_narrativa.trim(),
     resultados_alcancados: form.resultados_alcancados.trim(),
     status: form.status,
@@ -253,7 +265,7 @@ export const FIELD_ORDER: string[] = [
   "longitude",
   "upfs_participantes",
   "membros_participantes",
-  "parceiros",
+  "parceiros_livres",
   "descricao_narrativa",
   "resultados_alcancados",
   "status",
