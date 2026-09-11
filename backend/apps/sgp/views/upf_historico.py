@@ -8,8 +8,7 @@ from apps.core.models.audit_log import AuditLog
 from apps.sgp.pagination import HistoricoPagination
 from apps.sgp.serializers import HistoricoEntrySerializer
 
-# Extraído de UPFViewSet (issue #262) para manter `views/upf.py` sob 400
-# linhas — mesmo padrão de mixin já usado por UPFPhotoMixin/UPFDocumentMixin.
+# Mesmo padrão de mixin de UPFPhotoMixin/UPFDocumentMixin.
 
 
 class UPFHistoricoMixin:

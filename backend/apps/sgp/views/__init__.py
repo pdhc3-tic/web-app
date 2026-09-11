@@ -1,9 +1,5 @@
-"""Reexporta a API pública de `apps.sgp.views` (issue #262).
-
-`views/__init__.py` (1444 linhas, 8 classes/funções) virou um arquivo por
-entidade, espelhando `apps/sgp/models/`. Este `__init__.py` só reexporta; a
-lógica de cada view está intacta nos submódulos.
-"""
+"""Reexporta a API pública de `apps.sgp.views` — a lógica de cada view está
+nos submódulos, um por entidade."""
 
 from apps.sgp.views.activity import ActivityViewSet
 from apps.sgp.views.activity_documentos import ActivityDocumentMixin

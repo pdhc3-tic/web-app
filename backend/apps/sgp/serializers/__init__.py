@@ -1,9 +1,5 @@
-"""Reexporta a API pública de `apps.sgp.serializers` (issue #262).
-
-`serializers.py` (1260 linhas, 29 classes) virou este pacote — um arquivo por
-entidade, espelhando `apps/sgp/models/`. Este `__init__.py` só reexporta; a
-lógica de cada serializer está intacta nos submódulos.
-"""
+"""Reexporta a API pública de `apps.sgp.serializers` — a lógica de cada
+serializer está nos submódulos, um por entidade."""
 
 from apps.sgp.serializers.activity import ActivityDetailSerializer, ActivityListSerializer
 from apps.sgp.serializers.activity_calendario import (
