@@ -71,10 +71,12 @@ def test_adt_com_territorio_ve_seu_territorio(role_adt, territory_rn):
 
 
 def test_adt_sem_territorio_nao_recebe_acesso_global(role_adt, territory_rn, territory_ce):
-    """O gap: territorio=None para adt-acr não pode virar acesso global —
-    diferente de articulador-estadual, aqui é lacuna de cadastro, não concessão."""
+    """territorio=None para adt-acr não pode virar acesso global — diferente
+    de articulador-estadual, aqui é lacuna de cadastro, não concessão.
+    "vazio" (não "negado"): o usuário tem o papel, só não vê nada — resposta
+    é lista vazia, não 403."""
     user = UserFactory(profiles=[(role_adt, None)])
-    assert resolver_escopo(user) == ("negado", None)
+    assert resolver_escopo(user) == ("vazio", None)
 
 
 def test_adt_com_multiplos_territorios_ignora_perfil_sem_territorio(role_adt, territory_rn, territory_ce):
@@ -155,4 +157,14 @@ def test_scope_queryset_adt_sem_territorio_nao_vaza_via_queryset(role_adt, terri
     result = scope_queryset(
         UPF.objects.all(), user, raise_on_no_role=False, **UPF_LOOKUPS,
     )
+    assert list(result) == []
+
+
+def test_scope_queryset_papel_reconhecido_com_escopo_vazio_nunca_levanta(role_adt, territory_rn, municipio_rn, projeto):
+    """adt-acr sem território é "vazio", não "negado" — mesmo com
+    raise_on_no_role=True (padrão), a resposta é lista vazia, nunca
+    PermissionDenied. Só a ausência completa de papel levanta."""
+    user = UserFactory(profiles=[(role_adt, None)])
+    UPFFactory(municipio=municipio_rn, projeto=projeto)
+    result = scope_queryset(UPF.objects.all(), user, **UPF_LOOKUPS)
     assert list(result) == []

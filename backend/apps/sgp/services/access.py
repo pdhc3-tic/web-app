@@ -35,6 +35,10 @@ def resolver_escopo(user, *, role_slugs=None):
     - `("global", None)` — sem filtro, vê tudo.
     - `("estados", {siglas})` — restrito às siglas de estado.
     - `("territorios", [ids])` — restrito aos ids de território.
+    - `("vazio", None)` — tem um papel com escopo territorial, mas o
+      escopo em si está vazio (ex.: adt-acr sem território atribuído).
+      Diferente de "negado": aqui a resposta é sempre lista vazia, nunca
+      403 — o usuário tem o papel, só não tem nada visível ainda.
     - `("negado", None)` — nenhum papel com escopo territorial.
 
     `role_slugs` pode vir pré-computado (ex.: `user_role_slugs(user, ...)`
@@ -48,11 +52,11 @@ def resolver_escopo(user, *, role_slugs=None):
 
     if "articulador-estadual" in role_slugs:
         states = user_states(user)
-        return ("estados", states) if states else ("negado", None)
+        return ("estados", states) if states else ("vazio", None)
 
     if "adt-acr" in role_slugs:
         territory_ids = _territorios_do_papel(user, "adt-acr")
-        return ("territorios", territory_ids) if territory_ids else ("negado", None)
+        return ("territorios", territory_ids) if territory_ids else ("vazio", None)
 
     return "negado", None
 
@@ -77,6 +81,9 @@ def scope_queryset(
     `PermissionDenied` quando o usuário não tem nenhum papel com escopo —
     necessário para funções cujo contrato público já é "queryset vazio,
     nunca exceção" (`upfs_acessiveis_ao_usuario`, `tecnicos_acessiveis_ao_usuario`).
+    Um papel reconhecido com escopo vazio (`"vazio"`) sempre devolve
+    `qs.none()`, nunca levanta — só a ausência de papel (`"negado"`) é
+    afetada por `raise_on_no_role`.
     """
     tipo, valor = resolver_escopo(user, role_slugs=role_slugs)
 
@@ -86,6 +93,8 @@ def scope_queryset(
         return qs.filter(**{state_lookup: list(valor)})
     if tipo == "territorios":
         return qs.filter(**{territory_lookup: valor})
+    if tipo == "vazio":
+        return qs.none()
 
     if raise_on_no_role:
         raise PermissionDenied(deny_message)
