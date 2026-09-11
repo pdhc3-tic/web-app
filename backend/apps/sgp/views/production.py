@@ -1,12 +1,11 @@
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers, viewsets
-from rest_framework.exceptions import PermissionDenied
 from apps.core.permissions import IsAuthenticatedActiveAccess
 
 from apps.core.models.audit_log import AuditLog
-from apps.core.services.permissions import user_has_role, user_states, user_territories
 from apps.sgp.models import Production, UPF
 from apps.sgp.serializers import ProductionSerializer
+from apps.sgp.services.access import scope_queryset
 
 
 class ProductionViewSet(viewsets.ModelViewSet):
@@ -24,24 +23,12 @@ class ProductionViewSet(viewsets.ModelViewSet):
 
     def _accessible_upf_queryset(self):
         qs = UPF.objects.select_related("municipio", "municipio__state", "territorio")
-        user = self.request.user
-
-        if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
-            return qs
-
-        if user_has_role(user, "articulador-estadual"):
-            states = user_states(user)
-            if not states:
-                return qs.none()
-            return qs.filter(municipio__state__sigla__in=states)
-
-        if user_has_role(user, "adt-acr"):
-            territories = user_territories(user)
-            if not territories.exists():
-                return qs.none()
-            return qs.filter(territorio__in=territories)
-
-        raise PermissionDenied("Você não tem acesso ao módulo SGP.")
+        return scope_queryset(
+            qs,
+            self.request.user,
+            state_lookup="municipio__state__sigla__in",
+            territory_lookup="territorio__in",
+        )
 
     def get_queryset(self):
         return (
