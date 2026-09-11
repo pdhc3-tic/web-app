@@ -42,9 +42,11 @@ from apps.sgp.serializers.upf import (
     HistoricoEntrySerializer,
     TitularNestedSerializer,
     UPFDetailSerializer,
+    UPFListSerializer,
+)
+from apps.sgp.serializers.upf_documentos import (
     UPFDocumentCreateSerializer,
     UPFDocumentSerializer,
-    UPFListSerializer,
 )
 
 __all__ = [
