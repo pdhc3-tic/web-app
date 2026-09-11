@@ -3,12 +3,13 @@ from rest_framework import serializers
 
 from apps.core.models import Municipality, Organization
 from apps.sgp.models import Activity, Comunidade, MembroFamilia, UPF, WorkPlanAcao
-from apps.sgp.models.activity import STATUS_TERMINAIS, STATUS_TRANSITIONS
+from apps.sgp.models.activity import STATUS_TERMINAIS
 from apps.sgp.serializers.activity_documentos import ActivityDocumentSerializer
 from apps.sgp.serializers.activity_foto import ActivityPhotoSerializer
 from apps.sgp.serializers.common import MunicipioNestedSerializer, NestedSerializer
 from apps.sgp.serializers.membro import MembroListSerializer
 from apps.sgp.serializers.upf import UPFListSerializer
+from apps.sgp.services.activity_status import ActivityStatusError, validar_transicao
 
 # ---------------------------------------------------------------------------
 # Activity serializers
@@ -196,38 +197,6 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
     def get_territorio_id(self, obj):
         return obj.territorio_id
 
-    # ── Validação de transição de status ─────────────────────────────────────
-
-    def _validate_status_transition(self, novo_status: str) -> None:
-        """Valida se a transição do status atual para o novo é permitida."""
-        if self.instance is None:
-            # Criação: status inicial deve ser 'planejado' ou outro estado inicial válido
-            status_iniciais = {"planejado", "agendado"}
-            if novo_status not in status_iniciais:
-                raise serializers.ValidationError({
-                    "status": (
-                        f"Ao criar uma atividade o status inicial deve ser "
-                        f"'planejado' ou 'agendado'. Recebido: '{novo_status}'."
-                    ),
-                    "code": "VALIDATION_ERROR",
-                })
-            return
-
-        status_atual = self.instance.status
-        if novo_status == status_atual:
-            return  # sem mudança — ok
-
-        permitidos = STATUS_TRANSITIONS.get(status_atual, set())
-        if novo_status not in permitidos:
-            raise serializers.ValidationError({
-                "status": (
-                    f"Transição inválida: '{status_atual}' → '{novo_status}'. "
-                    f"Transições permitidas a partir de '{status_atual}': "
-                    f"{sorted(permitidos) if permitidos else ['nenhuma (estado terminal)']}"
-                ),
-                "code": "VALIDATION_ERROR",
-            })
-
     # ── Validações de campo ───────────────────────────────────────────────────
 
     def validate_data_fim(self, value):
@@ -248,48 +217,26 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         novo_status = attrs.get("status")
-
-        # Validação de transição de status
-        if novo_status is not None:
-            self._validate_status_transition(novo_status)
-        else:
+        if novo_status is None:
             novo_status = self.instance.status if self.instance else "planejado"
 
-        # Justificativa obrigatória para estados de encerramento sem conclusão
-        status_exige_justificativa = {"nao_realizada", "cancelada"}
         justificativa = attrs.get(
             "justificativa",
             self.instance.justificativa if self.instance else "",
         )
-        if novo_status in status_exige_justificativa and not justificativa:
+
+        try:
+            validar_transicao(
+                self.instance,
+                novo_status,
+                justificativa=justificativa,
+                nova_data=attrs.get("data_inicio"),
+            )
+        except ActivityStatusError as exc:
             raise serializers.ValidationError({
-                "justificativa": (
-                    f"Justificativa é obrigatória quando o status é "
-                    f"'{novo_status}'."
-                ),
+                exc.field: exc.message,
                 "code": "VALIDATION_ERROR",
             })
-
-        # Regra de negócio: concluido exige evidência vinculada
-        if novo_status == "concluido":
-            instance = self.instance
-            if instance is not None and not instance.has_evidencias():
-                raise serializers.ValidationError({
-                    "status": (
-                        "Não é possível concluir uma atividade sem ao menos "
-                        "uma foto ou documento vinculado. "
-                        "Adicione evidências antes de marcar como Concluído."
-                    ),
-                    "code": "VALIDATION_ERROR",
-                })
-            elif instance is None:
-                raise serializers.ValidationError({
-                    "status": (
-                        "Não é possível criar uma atividade já com status 'concluido'. "
-                        "Inicie como 'planejado' e avance o status progressivamente."
-                    ),
-                    "code": "VALIDATION_ERROR",
-                })
 
         # Validação cruzada: membros devem pertencer às UPFs selecionadas
         upfs_ids = set()

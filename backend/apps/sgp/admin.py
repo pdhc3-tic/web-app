@@ -1,3 +1,4 @@
+from django import forms
 from django.contrib import admin
 
 from apps.sgp.models import (
@@ -16,6 +17,7 @@ from apps.sgp.models import (
     WorkPlanAcao,
     WorkPlanMeta,
 )
+from apps.sgp.services.activity_status import ActivityStatusError, validar_transicao
 
 
 @admin.register(FormResponse)
@@ -178,8 +180,32 @@ class BudgetTransactionAdmin(admin.ModelAdmin):
         return False
 
 
+class ActivityAdminForm(forms.ModelForm):
+    """Aplica a mesma validação de transição de status usada pela API web."""
+
+    class Meta:
+        model = Activity
+        fields = "__all__"
+
+    def clean(self):
+        cleaned_data = super().clean()
+        novo_status = cleaned_data.get("status")
+        if novo_status is not None:
+            try:
+                validar_transicao(
+                    self.instance,
+                    novo_status,
+                    justificativa=cleaned_data.get("justificativa", ""),
+                    nova_data=cleaned_data.get("data_inicio"),
+                )
+            except ActivityStatusError as exc:
+                self.add_error(exc.field, exc.message)
+        return cleaned_data
+
+
 @admin.register(Activity)
 class ActivityAdmin(admin.ModelAdmin):
+    form = ActivityAdminForm
     list_display = [
         "titulo", "tipo_atividade", "status", "forma_atuacao",
         "municipio", "tecnico_responsavel", "data_inicio", "data_fim",

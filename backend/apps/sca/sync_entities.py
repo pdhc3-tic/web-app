@@ -17,6 +17,7 @@ from django.db import models
 from django.utils import timezone
 
 from apps.sgp.models import Activity, MembroFamilia, UPF
+from apps.sgp.services.activity_status import ActivityStatusError, transition
 
 
 def _resolve_fk_ids(model, data: dict) -> dict:
@@ -435,7 +436,10 @@ class ActivitySyncEntity(SyncEntity):
     def create(self, data, *, user, device_id, uuid_local, uuid_map):
         upfs = [self._resolve_participante(item, uuid_map, UPF) for item in data.pop("upfs_participantes", [])]
         membros = [self._resolve_participante(item, uuid_map, MembroFamilia) for item in data.pop("membros_participantes", [])]
-        instance = Activity.objects.create(
+        novo_status = data.pop("status", None)
+        justificativa = data.pop("justificativa", "")
+
+        instance = Activity(
             criado_por=user,
             device_id=device_id,
             uuid_local=uuid_local,
@@ -443,6 +447,12 @@ class ActivitySyncEntity(SyncEntity):
             ultimo_sync_em=timezone.now(),
             **_resolve_fk_ids(Activity, data),
         )
+        if novo_status is not None:
+            try:
+                transition(instance, novo_status, usuario=user, justificativa=justificativa)
+            except ActivityStatusError as exc:
+                raise SyncEntityError(f"{exc.sync_code}: {exc.message}") from exc
+        instance.save()
         if upfs:
             instance.upfs_participantes.set(upfs)
         if membros:
@@ -457,6 +467,18 @@ class ActivitySyncEntity(SyncEntity):
 
     def apply_changes(self, instance, changes: dict):
         changes = _resolve_fk_ids(Activity, changes)
+        novo_status = changes.pop("status", None)
+        if novo_status is not None:
+            try:
+                transition(
+                    instance,
+                    novo_status,
+                    usuario=None,
+                    justificativa=changes.get("justificativa", instance.justificativa),
+                    nova_data=changes.get("data_inicio"),
+                )
+            except ActivityStatusError as exc:
+                raise SyncEntityError(f"{exc.sync_code}: {exc.message}") from exc
         for field, value in changes.items():
             setattr(instance, field, value)
         instance.ultima_origem = "sca"
