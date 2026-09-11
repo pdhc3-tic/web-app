@@ -5,6 +5,7 @@ que UPF, Atividade e Técnico nunca vazam dado entre territórios/estados.
 """
 import pytest
 from rest_framework import status
+from rest_framework.test import APIClient
 
 from apps.core.tests.factories import RoleFactory, UserFactory
 from apps.sgp.tests.factories import ActivityFactory, TecnicoFactory, UPFFactory
@@ -47,21 +48,31 @@ def entidade_ce(municipio_ce, territory_ce, projeto):
 @pytest.mark.parametrize("endpoint", ["upfs", "atividades", "tecnicos"])
 def test_matriz_endpoints_x_perfis(
     endpoint, entidade_rn, entidade_ce,
-    auth_client_super_admin, auth_client_articulador_rn, auth_client_adt_rn,
+    usuario_super_admin, usuario_articulador_rn, usuario_adt_rn,
 ):
+    # Cliente próprio por perfil — os fixtures auth_client_* de conftest.py
+    # compartilham a mesma instância de api_client (força autenticação nela),
+    # o que quebra ao pedir mais de um no mesmo teste: o último force_authenticate
+    # vence pros três. Aqui cada perfil autentica numa instância nova.
     url = LIST_URLS[endpoint]
     id_rn = entidade_rn[endpoint].pk
     id_ce = entidade_ce[endpoint].pk
 
-    resp_super = auth_client_super_admin.get(url)
+    client_super = APIClient()
+    client_super.force_authenticate(user=usuario_super_admin)
+    resp_super = client_super.get(url)
     assert resp_super.status_code == status.HTTP_200_OK
     assert {id_rn, id_ce} <= _ids(resp_super)
 
-    resp_art = auth_client_articulador_rn.get(url)
+    client_art = APIClient()
+    client_art.force_authenticate(user=usuario_articulador_rn)
+    resp_art = client_art.get(url)
     assert resp_art.status_code == status.HTTP_200_OK
     assert _ids(resp_art) == {id_rn}
 
-    resp_adt = auth_client_adt_rn.get(url)
+    client_adt = APIClient()
+    client_adt.force_authenticate(user=usuario_adt_rn)
+    resp_adt = client_adt.get(url)
     assert resp_adt.status_code == status.HTTP_200_OK
     assert _ids(resp_adt) == {id_rn}
 

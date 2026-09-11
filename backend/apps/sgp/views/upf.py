@@ -22,11 +22,11 @@ from apps.sgp.filters import UPFFilter
 from apps.sgp.models import UPF
 from apps.sgp.pagination import UPFPagination
 from apps.sgp.serializers import HistoricoEntrySerializer, MunicipioNestedSerializer, UPFDetailSerializer, UPFListSerializer
-from apps.sgp.services.access import scope_queryset
+from apps.sgp.services.access import ROLES_COM_ESCOPO, scope_queryset
 from apps.sgp.views.upf_foto import UPFPhotoMixin
 from apps.sgp.views.upf_historico import UPFHistoricoMixin
 
-UPF_ACCESS_ROLES = ("super-admin", "ugp", "articulador-estadual", "adt-acr")
+UPF_ACCESS_ROLES = ROLES_COM_ESCOPO
 
 
 def upfs_acessiveis_ao_usuario(user, role_slugs=None):
