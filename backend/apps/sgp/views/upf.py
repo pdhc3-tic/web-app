@@ -16,16 +16,17 @@ from rest_framework.response import Response
 from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.core.services.membro_audit import log_membro_change, sensitive_fields_changed
-from apps.core.services.permissions import user_role_slugs, user_states, user_territories
+from apps.core.services.permissions import user_role_slugs
 from apps.sgp.cache import UPF_MAP_CACHE_TIMEOUT, build_upf_map_cache_key
 from apps.sgp.filters import UPFFilter
 from apps.sgp.models import UPF
 from apps.sgp.pagination import UPFPagination
 from apps.sgp.serializers import HistoricoEntrySerializer, MunicipioNestedSerializer, UPFDetailSerializer, UPFListSerializer
+from apps.sgp.services.access import ROLES_COM_ESCOPO, scope_queryset
 from apps.sgp.views.upf_foto import UPFPhotoMixin
 from apps.sgp.views.upf_historico import UPFHistoricoMixin
 
-UPF_ACCESS_ROLES = ("super-admin", "ugp", "articulador-estadual", "adt-acr")
+UPF_ACCESS_ROLES = ROLES_COM_ESCOPO
 
 
 def upfs_acessiveis_ao_usuario(user, role_slugs=None):
@@ -34,22 +35,14 @@ def upfs_acessiveis_ao_usuario(user, role_slugs=None):
     `role_slugs` pode ser passado já computado (ver `UPFViewSet.get_queryset`)
     para evitar refazer a checagem de roles do usuário em outra query.
     """
-    qs = UPF.objects.all()
-    if role_slugs is None:
-        role_slugs = user_role_slugs(user, UPF_ACCESS_ROLES)
-    if "super-admin" in role_slugs or "ugp" in role_slugs:
-        return qs
-    if "articulador-estadual" in role_slugs:
-        states = user_states(user)
-        if not states:
-            return qs.none()
-        return qs.filter(municipio__state__sigla__in=states)
-    if "adt-acr" in role_slugs:
-        territories = user_territories(user)
-        if not territories.exists():
-            return qs.none()
-        return qs.filter(territorio__in=territories)
-    return qs.none()
+    return scope_queryset(
+        UPF.objects.all(),
+        user,
+        state_lookup="municipio__state__sigla__in",
+        territory_lookup="territorio__in",
+        role_slugs=role_slugs,
+        raise_on_no_role=False,
+    )
 
 
 # Documentação OpenAPI da action UPFViewSet.mapa — o payload real é montado
