@@ -145,8 +145,14 @@ export function TecnicoSlideOver({
   const isReadOnly = mode === "view";
 
   const footer = isReadOnly ? (
+    <div className="flex justify-end">
+      <Button variant="secondary" onClick={onClose}>
+        Fechar
+      </Button>
+    </div>
+  ) : (
     <div className="flex items-center justify-between gap-2">
-      {tecnico?.ativo && (
+      {mode === "edit" && tecnico?.ativo && (
         <Button
           variant="danger"
           onClick={() => setConfirmDeactivate(true)}
@@ -155,18 +161,14 @@ export function TecnicoSlideOver({
           Desativar
         </Button>
       )}
-      <Button variant="secondary" onClick={onClose}>
-        Fechar
-      </Button>
-    </div>
-  ) : (
-    <div className="flex items-center justify-end gap-2">
-      <Button variant="ghost" onClick={onClose} disabled={saving}>
-        Cancelar
-      </Button>
-      <Button onClick={handleSave} loading={saving}>
-        Salvar
-      </Button>
+      <div className="ml-auto flex items-center gap-2">
+        <Button variant="ghost" onClick={onClose} disabled={saving}>
+          Cancelar
+        </Button>
+        <Button onClick={handleSave} loading={saving}>
+          Salvar
+        </Button>
+      </div>
     </div>
   );
 

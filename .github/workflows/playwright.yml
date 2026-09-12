@@ -1,0 +1,80 @@
+name: Playwright E2E
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: playwright-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Testes E2E (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Criar .env do backend para CI
+        run: |
+          cat > backend/.env <<'EOF'
+          DJANGO_SECRET_KEY=ci-only-secret
+          DEBUG=False
+          ALLOWED_HOSTS=localhost,127.0.0.1,backend
+          DB_NAME=app_db
+          DB_USER=postgres
+          DB_PASSWORD=postgres
+          DB_HOST=db
+          DB_PORT=5432
+          POSTGRES_DB=app_db
+          POSTGRES_USER=postgres
+          POSTGRES_PASSWORD=postgres
+          REDIS_HOST=redis
+          REDIS_PORT=6379
+          EOF
+
+      - name: Criar .env do frontend para CI
+        run: |
+          cat > frontend/.env.local <<'EOF'
+          NEXTAUTH_SECRET=ci-only-secret
+          NEXTAUTH_URL=http://localhost:3000
+          NEXT_PUBLIC_API_URL=http://backend:8000
+          EOF
+
+      - name: Subir stack Docker
+        run: docker compose up -d --build --wait
+        timeout-minutes: 10
+
+      - name: Aplicar migrações
+        run: docker compose exec -T backend python manage.py migrate --noinput
+
+      - name: Seed de demonstração
+        run: docker compose exec -T backend python manage.py seed_demo
+
+      - name: Instalar Playwright
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Executar testes Playwright
+        working-directory: frontend
+        env:
+          E2E_BASE_URL: http://localhost:3000
+          CI: "true"
+        run: npx playwright test --timeout=60000
+        timeout-minutes: 10
+
+      - name: Publicar artefatos de falha
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: .playwright/test-results/
+          retention-days: 7
+
+      - name: Parar stack Docker
+        if: always()
+        run: docker compose down -v

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BarChart3, Download, ExternalLink } from "lucide-react";
 import { useSession } from "next-auth/react";
@@ -9,11 +9,11 @@ import { PageHeader } from "@/app/components/layout/PageHeader";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
 import { Button } from "@/app/components/ui/Button/Button";
 import { Input } from "@/app/components/ui/Input/Input";
-import { Select } from "@/app/components/ui/Select/Select";
+import { Select, type SelectOption } from "@/app/components/ui/Select/Select";
 import Spinner from "@/app/components/icons/Spinner";
 import { useToast } from "@/app/components/ui/Toast/Toast";
 import { ApiError } from "@/app/lib/api";
-import { canManageWorkPlan, isSuperAdmin } from "@/app/lib/auth/roles";
+import { canExportWorkPlan, isSuperAdmin } from "@/app/lib/auth/roles";
 import {
   baixarPlanoTrabalho,
   ExportTimeoutError,
@@ -24,6 +24,9 @@ import {
   baixarAtividades,
   type ExportAtividadesFiltros,
 } from "@/app/lib/exportarAtividades";
+import { fetchTerritoryOptions } from "@/app/lib/upfs";
+import { listTodasAcoes } from "@/app/lib/painel";
+import type { Acao } from "@/app/lib/acoes";
 
 type CardState = "idle" | "exporting" | "error";
 
@@ -58,8 +61,26 @@ export default function RelatoriosPage() {
   const { data: session } = useSession();
   const { showToast } = useToast();
 
-  const canExport = canManageWorkPlan(session?.user);
+  const canExport = canExportWorkPlan(session?.user);
   const isAdmin = isSuperAdmin(session?.user);
+
+  const [territorioOptions, setTerritorioOptions] = useState<SelectOption[]>([]);
+  const [acaoOptions, setAcaoOptions] = useState<SelectOption[]>([]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    Promise.all([
+      fetchTerritoryOptions(controller.signal).catch(() => [] as SelectOption[]),
+      listTodasAcoes(controller.signal).catch(() => [] as Acao[]),
+    ]).then(([territorios, acoes]) => {
+      if (controller.signal.aborted) return;
+      setTerritorioOptions(territorios);
+      setAcaoOptions(
+        acoes.map((a) => ({ value: String(a.id), label: `${a.numero} — ${a.descricao}` })),
+      );
+    });
+    return () => controller.abort();
+  }, []);
 
   // ── Exportação do Plano de Trabalho ────────────────────────────────────────
   const [ptFormato, setPtFormato] = useState<FormatoExport>("csv");
@@ -99,6 +120,8 @@ export default function RelatoriosPage() {
   const [atFormato, setAtFormato] = useState<FormatoExport>("csv");
   const [atInicio, setAtInicio] = useState("");
   const [atFim, setAtFim] = useState("");
+  const [atTerritorio, setAtTerritorio] = useState("");
+  const [atAcao, setAtAcao] = useState("");
   const [atState, setAtState] = useState<CardState>("idle");
   const [atErro, setAtErro] = useState<string | null>(null);
 
@@ -114,6 +137,8 @@ export default function RelatoriosPage() {
         formato: atFormato,
         periodo_inicio: atInicio || undefined,
         periodo_fim: atFim || undefined,
+        territorio_id: atTerritorio || undefined,
+        acao_id: atAcao || undefined,
       };
       const nome = await baixarAtividades(filtros);
       showToast(`Download de ${nome} iniciado.`);
@@ -201,7 +226,7 @@ export default function RelatoriosPage() {
               </Button>
               {!canExport && (
                 <p className="text-xs text-text-muted">
-                  Disponível para UGP e Super Admin.
+                  Disponível para UGP, ADT e Super Admin.
                 </p>
               )}
             </div>
@@ -237,6 +262,31 @@ export default function RelatoriosPage() {
                   disabled={atState === "exporting"}
                 />
               </div>
+              {territorioOptions.length > 0 && (
+                <Select
+                  label="Território"
+                  options={territorioOptions}
+                  value={atTerritorio}
+                  onChange={setAtTerritorio}
+                  placeholder="Todos"
+                  disabled={atState === "exporting"}
+                />
+              )}
+              {acaoOptions.length > 0 ? (
+                <Select
+                  label="Ação"
+                  options={acaoOptions}
+                  value={atAcao}
+                  onChange={setAtAcao}
+                  placeholder="Todas"
+                  disabled={atState === "exporting"}
+                />
+              ) : (
+                <div className="flex items-center gap-2 text-xs text-text-muted">
+                  <Spinner className="h-3 w-3 animate-spin" />
+                  Carregando ações…
+                </div>
+              )}
               {atErro && <ErrorNote message={atErro} />}
               <Button
                 onClick={handleExportarAt}

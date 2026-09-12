@@ -12,6 +12,9 @@ export const UGP_SLUG = "ugp";
 /** Slug do Articulador Estadual — acesso restrito aos seus estados. */
 export const ARTICULADOR_ESTADUAL_SLUG = "articulador-estadual";
 
+/** Slug do ADT/ACR — acesso restrito aos seus territórios. */
+export const ADT_ACR_SLUG = "adt-acr";
+
 /** Verifica se o usuário possui um perfil com o slug informado. */
 export function hasRole(
   user: Pick<NonNullable<User>, "perfis"> | null | undefined,
@@ -39,6 +42,22 @@ export function canManageWorkPlan(
   user: Pick<NonNullable<User>, "perfis"> | null | undefined,
 ): boolean {
   return isSuperAdmin(user) || hasRole(user, UGP_SLUG);
+}
+
+/**
+ * Exportação do Plano de Trabalho e de Atividades.
+ *
+ * UGP e Super Admin têm visão global; ADT/ACR tem visão territorial — o
+ * backend já aplica o escopo via RLS, então o frontend apenas libera o botão.
+ */
+export function canExportWorkPlan(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return (
+    isSuperAdmin(user) ||
+    hasRole(user, UGP_SLUG) ||
+    hasRole(user, ADT_ACR_SLUG)
+  );
 }
 
 /**
