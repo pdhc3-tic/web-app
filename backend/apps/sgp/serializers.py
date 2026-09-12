@@ -832,7 +832,7 @@ class ActivityPhotoSerializer(serializers.ModelSerializer):
             "id", "activity", "arquivo_url", "legenda",
             "data_hora_captura", "latitude", "longitude",
             "ordem", "content_type", "tamanho_bytes",
-            "ativa", "criado_em",
+            "ativo", "criado_em",
         ]
         read_only_fields = fields
 
