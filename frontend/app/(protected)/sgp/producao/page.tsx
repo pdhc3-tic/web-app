@@ -111,6 +111,7 @@ function ProducaoView() {
   const [reloadKey, setReloadKey] = useState(0);
 
   const [indicadores, setIndicadores] = useState<IndicadoresProducao | null>(null);
+  const [indicadoresError, setIndicadoresError] = useState(false);
 
   const [territorioOptions, setTerritorioOptions] = useState<SelectOption[]>([]);
   const [municipioOptions, setMunicipioOptions] = useState<SelectOption[]>([]);
@@ -143,12 +144,13 @@ function ProducaoView() {
 
   useEffect(() => {
     const controller = new AbortController();
+    setIndicadoresError(false);
     fetchIndicadoresProducao(
       { territorio: filters.territorio || undefined, municipio: filters.municipio || undefined },
       controller.signal,
     )
       .then((data) => { if (!controller.signal.aborted) setIndicadores(data); })
-      .catch(() => {});
+      .catch(() => { if (!controller.signal.aborted) setIndicadoresError(true); });
     return () => controller.abort();
   }, [filters.territorio, filters.municipio, reloadKey]);
 
@@ -207,7 +209,13 @@ function ProducaoView() {
         </p>
       </div>
 
-      {indicadores && <IndicadoresBar indicadores={indicadores} />}
+      {indicadoresError && (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-3 text-sm text-text-muted">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          Não foi possível carregar os indicadores.
+        </div>
+      )}
+      {!indicadoresError && indicadores && <IndicadoresBar indicadores={indicadores} />}
 
       <div className="flex flex-wrap items-end gap-3">
         <Select
