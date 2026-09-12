@@ -100,9 +100,7 @@ class ActivityDocumentMixin:
     @action(detail=True, methods=["get"], url_path="documentos")
     def documentos_list(self, request, pk=None):
         activity = self._get_activity_for_doc(pk)
-        docs = ActivityDocument.objects.filter(
-            activity=activity, ativo=True
-        ).order_by("-criado_em")
+        docs = ActivityDocument.objects.filter(activity=activity).order_by("-criado_em")
         serializer = ActivityDocumentSerializer(docs, many=True)
         return Response(serializer.data)
 
@@ -112,7 +110,7 @@ class ActivityDocumentMixin:
     def documentos_upload_url(self, request, pk=None):
         activity = self._get_activity_for_doc(pk)
 
-        count = ActivityDocument.objects.filter(activity=activity, ativo=True).count()
+        count = ActivityDocument.objects.filter(activity=activity).count()
         if count >= MAX_DOCUMENTS_PER_ACTIVITY:
             return Response(
                 {
@@ -159,7 +157,7 @@ class ActivityDocumentMixin:
     def documentos_confirm(self, request, pk=None):
         activity = self._get_activity_for_doc(pk)
 
-        count = ActivityDocument.objects.filter(activity=activity, ativo=True).count()
+        count = ActivityDocument.objects.filter(activity=activity).count()
         if count >= MAX_DOCUMENTS_PER_ACTIVITY:
             return Response(
                 {
@@ -241,9 +239,7 @@ class ActivityDocumentMixin:
     )
     def documentos_download(self, request, pk=None, doc_id=None):
         activity = self._get_activity_for_doc(pk)
-        doc = get_object_or_404(
-            ActivityDocument, pk=doc_id, activity=activity, ativo=True
-        )
+        doc = get_object_or_404(ActivityDocument, pk=doc_id, activity=activity)
         expires_in = 300
         storage = get_storage()
         url = storage.generate_presigned_get(doc.arquivo_key, expires_in)
@@ -266,14 +262,11 @@ class ActivityDocumentMixin:
     )
     def documentos_delete(self, request, pk=None, doc_id=None):
         activity = self._get_activity_for_doc(pk)
-        doc = get_object_or_404(
-            ActivityDocument, pk=doc_id, activity=activity, ativo=True
-        )
+        doc = get_object_or_404(ActivityDocument, pk=doc_id, activity=activity)
         snapshot = self._doc_snapshot(doc)
 
         # Soft-delete — mantém arquivo no R2
-        doc.ativo = False
-        doc.save(update_fields=["ativo"])
+        doc.soft_delete()
 
         self._log_doc_audit(
             "activity_document.deleted",

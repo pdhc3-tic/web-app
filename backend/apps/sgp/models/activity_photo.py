@@ -5,8 +5,10 @@ Armazenamento no Cloudflare R2 via URL presignada.
 from django.conf import settings
 from django.db import models
 
+from .base import SoftDeleteModel
 
-class ActivityPhoto(models.Model):
+
+class ActivityPhoto(SoftDeleteModel):
     activity = models.ForeignKey(
         "sgp.Activity",
         on_delete=models.CASCADE,
@@ -59,8 +61,7 @@ class ActivityPhoto(models.Model):
         verbose_name="Tamanho em bytes",
     )
 
-    # Soft-delete
-    ativa = models.BooleanField(default=True, verbose_name="Ativa")
+    # Soft-delete: campo `ativo`/`deleted_at` herdados de SoftDeleteModel.
 
     criado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -71,12 +72,12 @@ class ActivityPhoto(models.Model):
     )
     criado_em = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
 
-    class Meta:
+    class Meta(SoftDeleteModel.Meta):
         verbose_name = "Foto da Atividade"
         verbose_name_plural = "Fotos da Atividade"
         ordering = ["ordem", "criado_em"]
         indexes = [
-            models.Index(fields=["activity", "ativa"], name="idx_actphoto_activity_ativa"),
+            models.Index(fields=["activity", "ativo"], name="idx_actphoto_activity_ativa"),
             models.Index(fields=["activity", "ordem"], name="idx_actphoto_activity_ordem"),
         ]
 

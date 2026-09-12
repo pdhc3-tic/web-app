@@ -58,7 +58,7 @@ def workplan_export_rows(
 def _export_actions_for_scope(*, user, territorio_id: int | None) -> QuerySet[WorkPlanAcao]:
     """Restringe tanto as linhas quanto a contagem de execução à mesma visibilidade."""
     activity_filter = Q(atividades__ativo=True)
-    visible_activities = Activity.objects.filter(acao_id=OuterRef("pk"), ativo=True)
+    visible_activities = Activity.objects.filter(acao_id=OuterRef("pk"))
 
     if user is not None:
         activity_scope = activity_scope_for_user(user)

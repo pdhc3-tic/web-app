@@ -156,8 +156,8 @@ class TestDeleteUPF:
         self, auth_client, upf, membro
     ):
         auth_client.delete(f"/api/v1/upfs/{upf.pk}/")
-        upf_atualizada = UPF.objects.get(pk=upf.pk)
-        assert upf_atualizada.ativa is False
+        upf_atualizada = UPF.all_objects.get(pk=upf.pk)
+        assert upf_atualizada.ativo is False
         assert MembroFamilia.objects.filter(
             upf=upf, pk=membro.pk
         ).exists()

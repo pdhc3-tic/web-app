@@ -151,7 +151,7 @@ export function UpfsTable({ upfs, loading }: UpfsTableProps) {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <Badge status={u.ativa ? "ativo" : "inativo"} />
+                    <Badge status={u.ativo ? "ativo" : "inativo"} />
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
@@ -211,7 +211,7 @@ export function UpfsTable({ upfs, loading }: UpfsTableProps) {
                         </span>
                       </div>
                     </div>
-                    <Badge status={u.ativa ? "ativo" : "inativo"} />
+                    <Badge status={u.ativo ? "ativo" : "inativo"} />
                   </div>
 
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">

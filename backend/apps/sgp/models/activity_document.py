@@ -5,8 +5,10 @@ Armazenamento no Cloudflare R2. Apenas PDF aceito (máx. 10 MB, máx. 5 docs).
 from django.conf import settings
 from django.db import models
 
+from .base import SoftDeleteModel
 
-class ActivityDocument(models.Model):
+
+class ActivityDocument(SoftDeleteModel):
     TIPO_LISTA_PRESENCA = "lista_presenca"
     TIPO_ATA = "ata"
     TIPO_RELATORIO_PARCIAL = "relatorio_parcial"
@@ -64,8 +66,7 @@ class ActivityDocument(models.Model):
         verbose_name="Data do documento",
     )
 
-    # Soft-delete
-    ativo = models.BooleanField(default=True, verbose_name="Ativo")
+    # Soft-delete: campo `ativo`/`deleted_at` herdados de SoftDeleteModel.
 
     criado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -76,7 +77,7 @@ class ActivityDocument(models.Model):
     )
     criado_em = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
 
-    class Meta:
+    class Meta(SoftDeleteModel.Meta):
         verbose_name = "Documento da Atividade"
         verbose_name_plural = "Documentos da Atividade"
         ordering = ["-criado_em"]

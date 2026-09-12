@@ -54,13 +54,22 @@ class EspecieAnimalAdmin(admin.ModelAdmin):
 class UPFAdmin(admin.ModelAdmin):
     list_display = [
         "get_nome_titular", "get_cpf", "projeto",
-        "municipio", "territorio", "ativa", "criado_em",
+        "municipio", "territorio", "ativo", "criado_em",
     ]
-    list_filter = ["ativa", "projeto", "territorio"]
+    list_filter = ["ativo", "projeto", "territorio"]
     search_fields = ["titular__nome_completo", "titular__cpf"]
     readonly_fields = [
         "territorio", "criado_em", "atualizado_em", "criado_por",
     ]
+
+    def get_queryset(self, request):
+        # Manager padrão (UPF.objects) exclui inativas — admin precisa ver
+        # tudo, com list_filter["ativo"] continuando a funcionar.
+        qs = self.model.all_objects.get_queryset()
+        ordering = self.get_ordering(request)
+        if ordering:
+            qs = qs.order_by(*ordering)
+        return qs
 
     def get_nome_titular(self, obj):
         return obj.titular.nome_completo
@@ -190,6 +199,15 @@ class ActivityAdmin(admin.ModelAdmin):
     readonly_fields = [
         "criado_por", "criado_em", "atualizado_em",
     ]
+
+    def get_queryset(self, request):
+        # Manager padrão (Activity.objects) exclui inativos — admin precisa
+        # ver tudo, com list_filter["ativo"] continuando a funcionar.
+        qs = self.model.all_objects.get_queryset()
+        ordering = self.get_ordering(request)
+        if ordering:
+            qs = qs.order_by(*ordering)
+        return qs
     filter_horizontal = [
         "equipe_adicional", "upfs_participantes", "membros_participantes",
         "parceiros_organizacoes",

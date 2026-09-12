@@ -458,8 +458,8 @@ class Command(BaseCommand):
         self.stdout.write("Removendo dados de demonstração anteriores...")
 
         if self.gerar_arquivos:
-            chaves = list(ActivityPhoto.objects.values_list("arquivo_key", flat=True))
-            chaves += list(ActivityDocument.objects.values_list("arquivo_key", flat=True))
+            chaves = list(ActivityPhoto.all_objects.values_list("arquivo_key", flat=True))
+            chaves += list(ActivityDocument.all_objects.values_list("arquivo_key", flat=True))
             chaves += list(UPFDocument.objects.values_list("arquivo_key", flat=True))
             for chave in chaves:
                 caminho = self.media_root / chave
@@ -467,9 +467,9 @@ class Command(BaseCommand):
                     caminho.unlink()
 
         with transaction.atomic():
-            ActivityPhoto.objects.all().delete()
-            ActivityDocument.objects.all().delete()
-            Activity.objects.all().delete()
+            ActivityPhoto.all_objects.all().delete()
+            ActivityDocument.all_objects.all().delete()
+            Activity.all_objects.all().delete()
             WorkPlanAcao.objects.all().delete()
             WorkPlanMeta.objects.all().delete()
             Production.objects.all().delete()
@@ -477,7 +477,7 @@ class Command(BaseCommand):
             # ciclo de exclusão: UPF.titular é PROTECT e Membro.upf é CASCADE —
             # desligar os membros das UPFs antes de apagar destrava as duas pontas
             MembroFamilia.objects.update(upf=None)
-            UPF.objects.all().delete()
+            UPF.all_objects.all().delete()
             MembroFamilia.objects.all().delete()
             Comunidade.objects.all().delete()
             Organization.objects.all().delete()
@@ -702,7 +702,7 @@ class Command(BaseCommand):
                 nis=str(self.rnd.randint(10000000000, 99999999999)),
                 seguridade_social=self.rnd.sample(SEGURIDADE, self.rnd.randint(0, 2)),
                 criado_por=criador,
-                ativa=self.rnd.random() < 0.94,
+                ativo=self.rnd.random() < 0.94,
             )
 
             titular.upf = upf

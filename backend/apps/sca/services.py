@@ -555,7 +555,7 @@ def build_pull(user, device, since, tipo_conexao: str | None = None) -> dict:
 
     group_key = {"upf": "upfs", "member": "members", "activity": "activities"}
     for entity in ENTITY_REGISTRY.values():
-        qs = entity.filter_by_territories(entity.model.objects.all(), territory_ids)
+        qs = entity.filter_by_territories(entity.base_queryset(), territory_ids)
         if since is not None:
             qs = entity.filter_since(qs, since)
         qs = qs.select_related(*_pull_select_related(entity)).prefetch_related(*_pull_prefetch(entity)).order_by("atualizado_em")
@@ -612,7 +612,7 @@ def count_pending_records(user, device) -> int:
     since = device.ultimo_pull_em if device else None
     total = 0
     for entity in ENTITY_REGISTRY.values():
-        qs = entity.filter_by_territories(entity.model.objects.all(), territory_ids)
+        qs = entity.filter_by_territories(entity.base_queryset(), territory_ids)
         if since is not None:
             qs = entity.filter_since(qs, since)
         total += qs.count()
@@ -630,7 +630,7 @@ def count_pending_records_by_entity(user, device) -> dict[str, int]:
     since = device.ultimo_pull_em if device else None
     result = {}
     for name, entity in ENTITY_REGISTRY.items():
-        qs = entity.filter_by_territories(entity.model.objects.all(), territory_ids)
+        qs = entity.filter_by_territories(entity.base_queryset(), territory_ids)
         if since is not None:
             qs = entity.filter_since(qs, since)
         result[name] = qs.count()
@@ -666,7 +666,7 @@ def bulk_count_pending_records(devices, territory_ids_by_user) -> dict[int, int]
             if device.ultimo_pull_em is not None:
                 condition &= Q(atualizado_em__gt=device.ultimo_pull_em)
             conditional[f"dev_{device.pk}"] = Count("pk", filter=condition)
-        row = entity.model.objects.aggregate(**conditional)
+        row = entity.base_queryset().aggregate(**conditional)
         for key, value in row.items():
             totals[int(key[4:])] += value or 0
     return totals

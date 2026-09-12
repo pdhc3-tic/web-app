@@ -55,7 +55,7 @@ export function UpfHeader({ upf, onPhotoChange }: UpfHeaderProps) {
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <Chip>{upf.municipio.nome}</Chip>
             {upf.territorio && <Chip>{upf.territorio.nome}</Chip>}
-            <Badge status={upf.ativa ? "ativo" : "inativo"} />
+            <Badge status={upf.ativo ? "ativo" : "inativo"} />
             <OrigemScaBadge registro={upf} />
           </div>
         </div>

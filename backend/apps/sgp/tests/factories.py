@@ -44,7 +44,7 @@ class UPFFactory(factory.django.DjangoModelFactory):
     projeto = factory.SubFactory(ProjetoFactory)
     municipio = factory.SubFactory(MunicipalityFactory)
     territorio = factory.SelfAttribute("municipio.territory")
-    ativa = True
+    ativo = True
 
     @classmethod
     def _create(cls, model_class, *args, **kwargs):

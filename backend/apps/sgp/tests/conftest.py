@@ -117,7 +117,7 @@ def upf(db, municipio_rn, projeto):
     return UPFFactory(
         municipio=municipio_rn,
         projeto=projeto,
-        ativa=True,
+        ativo=True,
     )
 
 
@@ -126,7 +126,7 @@ def upf_inativa(db, municipio_rn, projeto):
     return UPFFactory(
         municipio=municipio_rn,
         projeto=projeto,
-        ativa=False,
+        ativo=False,
     )
 
 
@@ -136,7 +136,7 @@ def outra_upf(db, municipio, projeto):
         municipio=municipio,
         projeto=projeto,
         titular_cpf="52998224725",
-        ativa=True,
+        ativo=True,
     )
 
 
@@ -145,7 +145,7 @@ def upf_ce(db, municipio_ce, projeto):
     return UPFFactory(
         municipio=municipio_ce,
         projeto=projeto,
-        ativa=True,
+        ativo=True,
     )
 
 
