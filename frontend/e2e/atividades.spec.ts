@@ -37,6 +37,7 @@ function atividadeFake(
     justificativa: "",
     fotos: [],
     documentos: [],
+    transicoes_permitidas: ["concluido"],
     criado_em: "2026-06-01T10:00:00Z",
     atualizado_em: "2026-06-01T10:00:00Z",
   };
@@ -95,26 +96,120 @@ test.describe("SGP — Criação de atividade", () => {
   test("criação bem-sucedida redireciona para edição da atividade", async ({
     page,
   }) => {
-    let savedId: number | null = null;
+    // Mock dos dropdowns que o formulário carrega ao montar
+    await page.route("**/api/v1/acoes/**", async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          count: 1, next: null, previous: null,
+          results: [{ id: 1, meta: 1, numero: "1.1", descricao: "Ação teste" }],
+        }),
+      });
+    });
+
+    await page.route("**/api/v1/users/**", async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          count: 1, next: null, previous: null,
+          results: [{ id: 10, nome_completo: "Beatriz Nogueira" }],
+        }),
+      });
+    });
+
+    await page.route("**/api/v1/states/**", async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          count: 1, next: null, previous: null,
+          results: [{ id: 17, sigla: "PE", nome: "Pernambuco" }],
+        }),
+      });
+    });
+
+    await page.route("**/api/v1/municipalities/**", async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          count: 1, next: null, previous: null,
+          results: [{ id: 1001, nome: "Ouricuri", state: 17, territory: null }],
+        }),
+      });
+    });
+
+    await page.route("**/api/v1/municipios/**", async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ count: 0, next: null, previous: null, results: [] }),
+      });
+    });
 
     await page.route(ATIVIDADES_API, async (route) => {
       if (route.request().method() !== "POST") return route.fallback();
-      savedId = 4242;
       await route.fulfill({
         status: 201,
         contentType: "application/json",
-        body: JSON.stringify(atividadeFake(savedId, "Visita E2E", "planejado")),
+        body: JSON.stringify(atividadeFake(4242, "Visita E2E", "planejado")),
       });
     });
 
     await page.goto("/sgp/atividades/nova");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await page.waitForTimeout(500);
+    // Aguarda carregamento dos dados relacionados (ações, técnicos, estados)
+    await expect(page.getByText("Carregando atividades…")).not.toBeVisible({
+      timeout: 10_000,
+    });
 
-    const tituloInput = page.locator("#atividade-titulo");
-    if (await tituloInput.count() > 0) {
-      await tituloInput.fill("Visita E2E");
-    }
+    await page.locator("#atividade-titulo").fill("Visita E2E");
+
+    await page.locator("#atividade-tipo-atividade").click();
+    await page.getByRole("option", { name: "Visita técnica" }).click();
+
+    await page.locator("#atividade-forma-atuacao").click();
+    await page.getByRole("option", { name: "Realização" }).click();
+
+    // AcaoCombobox: campo de texto com dropdown; digitar abre e filtra a lista
+    await page.locator("#atividade-acao").fill("1.1");
+    await page.getByRole("option", { name: /1\.1 — Ação teste/ }).click();
+
+    await page.locator("#atividade-tecnico-responsavel").click();
+    await page.getByRole("option", { name: "Beatriz Nogueira" }).click();
+
+    // Cascata estado → município
+    await page.locator("#atividade-estado").click();
+    await page.getByRole("option", { name: "Pernambuco (PE)" }).click();
+
+    // Aguarda o select de município ser habilitado após a seleção do estado
+    await expect(page.locator("#atividade-municipio")).not.toBeDisabled({
+      timeout: 5_000,
+    });
+    await page.locator("#atividade-municipio").click();
+    await page.getByRole("option", { name: "Ouricuri" }).click();
+
+    await page.locator("#atividade-ambito").click();
+    await page.getByRole("option", { name: "Municipal" }).click();
+
+    await page.locator("#atividade-data-inicio").fill("2026-06-01");
+    await page.locator("#atividade-data-fim").fill("2026-06-01");
+
+    await page.locator("#atividade-descricao-narrativa").fill(
+      "Visita de acompanhamento.",
+    );
+
+    await page.getByRole("button", { name: "Salvar atividade" }).click();
+
+    // Verifica que o formulário redirecionou para a tela de edição da nova atividade
+    await page.waitForURL("**/sgp/atividades/4242/**", { timeout: 10_000 });
   });
 });
 
@@ -236,7 +331,7 @@ test.describe("SGP — Evidências (fotos e documentos)", () => {
   });
 
   test("upload de foto é enviado ao endpoint correto", async ({ page }) => {
-    let uploadRequest: string | null = null;
+    const STORAGE_URL = "https://storage.example.com/upload";
 
     await page.route(`**/api/v1/sgp/atividades/9001/`, async (route) => {
       if (route.request().method() !== "GET") return route.fallback();
@@ -247,23 +342,54 @@ test.describe("SGP — Evidências (fotos e documentos)", () => {
       });
     });
 
+    // Endpoint de solicitação da URL pré-assinada
+    await page.route(
+      "**/api/v1/sgp/atividades/9001/fotos/upload-url/",
+      async (route) => {
+        if (route.request().method() !== "POST") return route.fallback();
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            url: STORAGE_URL,
+            key: "test-key-123",
+            expires_in: 3600,
+          }),
+        });
+      },
+    );
+
+    // Simulação do storage externo (R2 / S3 pré-assinado)
+    await page.route("https://storage.example.com/**", async (route) => {
+      await route.fulfill({ status: 200 });
+    });
+
+    // Endpoint de confirmação do upload
+    await page.route(
+      "**/api/v1/sgp/atividades/9001/fotos/confirm/",
+      async (route) => {
+        if (route.request().method() !== "POST") return route.fallback();
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            id: 1,
+            url: `${STORAGE_URL}/foto.jpg`,
+            legenda: "",
+            ordem: 0,
+          }),
+        });
+      },
+    );
+
+    // Listagem de fotos e documentos (GET)
     await page.route(FOTOS_API, async (route) => {
-      if (route.request().method() === "GET") {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify([]),
-        });
-      } else if (route.request().method() === "POST") {
-        uploadRequest = route.request().url();
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({ upload_url: "https://storage.example.com/upload", foto_id: 1 }),
-        });
-      } else {
-        await route.fallback();
-      }
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      });
     });
 
     await page.route(DOCUMENTOS_API, async (route) => {
@@ -278,13 +404,27 @@ test.describe("SGP — Evidências (fotos e documentos)", () => {
     await page.goto("/sgp/atividades/9001/editar");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
+    // O input de arquivo deve existir no DOM (não condicional)
     const fileInput = page.locator('input[type="file"]').first();
-    if (await fileInput.count() > 0) {
-      await fileInput.setInputFiles({
-        name: "foto-teste.jpg",
-        mimeType: "image/jpeg",
-        buffer: Buffer.alloc(1024),
-      });
-    }
+    await expect(fileInput).toBeAttached({ timeout: 5_000 });
+
+    await fileInput.setInputFiles({
+      name: "foto-teste.jpg",
+      mimeType: "image/jpeg",
+      buffer: Buffer.alloc(1024),
+    });
+
+    // Após selecionar o arquivo, o botão "Enviar" deve aparecer para confirmar o envio
+    const uploadBtn = page.getByRole("button", { name: /Enviar .* foto/i });
+    await expect(uploadBtn).toBeVisible({ timeout: 5_000 });
+
+    // Aguarda a requisição ao endpoint de upload-url e então clica em Enviar
+    const uploadUrlRequest = page.waitForRequest(
+      (req) =>
+        req.url().includes("/fotos/upload-url/") && req.method() === "POST",
+      { timeout: 10_000 },
+    );
+    await uploadBtn.click();
+    await uploadUrlRequest;
   });
 });

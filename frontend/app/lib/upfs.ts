@@ -550,9 +550,13 @@ export async function exportarUpfs(params: ExportUpfsParams): Promise<string> {
   if (params.municipio) qs.set("municipio", params.municipio);
   if (params.territorio) qs.set("territorio", params.territorio);
   if (params.projeto) qs.set("projeto", params.projeto);
-  if (params.status && params.status !== "ativas") qs.set("status", params.status);
-  if (params.cadastradoDe) qs.set("de", params.cadastradoDe);
-  if (params.cadastradoAte) qs.set("ate", params.cadastradoAte);
+  if (params.status === "ativas") qs.set("ativa", "true");
+  else if (params.status === "inativas") qs.set("ativa", "false");
+  else if (params.status === "todas") qs.set("ativa", "");
+  const criadoDe = localDayStartISO(params.cadastradoDe);
+  const criadoAte = localDayEndISO(params.cadastradoAte);
+  if (criadoDe) qs.set("criado_em__gte", criadoDe);
+  if (criadoAte) qs.set("criado_em__lte", criadoAte);
 
   const res = await apiClient(`/api/v1/sgp/upfs/exportar/?${qs}`, {
     signal: AbortSignal.timeout(120_000),
