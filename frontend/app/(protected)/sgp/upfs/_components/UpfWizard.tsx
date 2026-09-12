@@ -181,11 +181,11 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
           fetchMunicipalitiesByState(estado).catch(
             () => [] as MunicipalityOpt[],
           ),
-          initialData.comunidade
-            ? fetchComunidadeOptions(initialData.municipio.id).catch(
-                () => [] as SelectOption[],
-              )
-            : Promise.resolve([] as SelectOption[]),
+          // Sempre carrega as comunidades do município, mesmo que a UPF não
+          // tenha comunidade — o usuário pode querer adicionar uma na edição.
+          fetchComunidadeOptions(initialData.municipio.id).catch(
+            () => [] as SelectOption[],
+          ),
         ]);
         if (!active) return;
         setMunicipioOptions(munis);
@@ -222,16 +222,22 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
     });
   }, []);
 
+  const estadoCascadeRef = useRef<AbortController | null>(null);
+  const municipioCascadeRef = useRef<AbortController | null>(null);
+
   function handleEstadoChange(value: string) {
     dirty.current = true;
     setForm((prev) => ({ ...prev, estado: value, municipio: "", comunidade: "" }));
     setErrors((prev) => ({ ...prev, estado: "", municipio: "" }));
     setMunicipioOptions([]);
     setComunidadeOptions([]);
+    estadoCascadeRef.current?.abort();
     if (value) {
-      fetchMunicipalitiesByState(value)
-        .then(setMunicipioOptions)
-        .catch(() => setMunicipioOptions([]));
+      const ctrl = new AbortController();
+      estadoCascadeRef.current = ctrl;
+      fetchMunicipalitiesByState(value, ctrl.signal)
+        .then((opts) => { if (!ctrl.signal.aborted) setMunicipioOptions(opts); })
+        .catch(() => { if (!estadoCascadeRef.current?.signal.aborted) setMunicipioOptions([]); });
     }
   }
 
@@ -240,10 +246,13 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
     setForm((prev) => ({ ...prev, municipio: value, comunidade: "" }));
     setErrors((prev) => ({ ...prev, municipio: "" }));
     setComunidadeOptions([]);
+    municipioCascadeRef.current?.abort();
     if (value) {
-      fetchComunidadeOptions(value)
-        .then(setComunidadeOptions)
-        .catch(() => setComunidadeOptions([]));
+      const ctrl = new AbortController();
+      municipioCascadeRef.current = ctrl;
+      fetchComunidadeOptions(value, ctrl.signal)
+        .then((opts) => { if (!ctrl.signal.aborted) setComunidadeOptions(opts); })
+        .catch(() => { if (!municipioCascadeRef.current?.signal.aborted) setComunidadeOptions([]); });
     }
   }
 
