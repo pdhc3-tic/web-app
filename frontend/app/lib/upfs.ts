@@ -35,7 +35,7 @@ export type UpfListItem = {
   municipio: MunicipioResumo;
   territorio: string | null;
   criado_em: string;
-  ativa: boolean;
+  ativo: boolean;
   /**
    * Opcional: UPFListSerializer ainda não expõe este campo (pendente no
    * backend). Quando ausente, o avatar da listagem cai para as iniciais.
@@ -43,7 +43,7 @@ export type UpfListItem = {
   foto_url?: string | null;
 };
 
-/** Filtro de status mapeado para o parâmetro `ativa` do backend. */
+/** Filtro de status mapeado para o parâmetro `ativo` do backend. */
 export type StatusUpfFilter = "ativas" | "inativas" | "todas";
 
 export type ListUpfsParams = {
@@ -79,12 +79,12 @@ function buildUpfsQuery(params: ListUpfsParams): string {
   if (params.projeto) qs.set("projeto", params.projeto);
   if (params.ordering) qs.set("ordering", params.ordering);
 
-  // Status → parâmetro `ativa`.
-  // O UPFViewSet só retorna inativas quando `ativa` aparece na query
-  // (default: ativa=True). "todas" passa string vazia para desligar o default.
-  if (params.status === "ativas") qs.set("ativa", "true");
-  else if (params.status === "inativas") qs.set("ativa", "false");
-  else if (params.status === "todas") qs.set("ativa", "");
+  // Status → parâmetro `ativo`.
+  // O UPFViewSet só retorna inativas quando `ativo` aparece na query
+  // (default: ativo=True). "todas" passa string vazia para desligar o default.
+  if (params.status === "ativas") qs.set("ativo", "true");
+  else if (params.status === "inativas") qs.set("ativo", "false");
+  else if (params.status === "todas") qs.set("ativo", "");
 
   // Range de "cadastrado em": o "YYYY-MM-DD" do input vai cru. Desde a #212 o
   // backend recorta o dia no TIME_ZONE do servidor — converter para ISO em UTC
@@ -156,7 +156,7 @@ export type UpfMapa = {
   territorio: string | null;
   latitude: number;
   longitude: number;
-  ativa: boolean;
+  ativo: boolean;
 };
 
 export type UpfMapaResponse = {
@@ -186,7 +186,7 @@ type UpfMapaFeature = {
     nome_titular: string;
     municipio: MunicipioResumo;
     territorio: string | null;
-    ativa: boolean;
+    ativo: boolean;
   };
 };
 
@@ -209,11 +209,11 @@ export async function fetchUpfsMapa(
   if (filters.projeto) qs.set("projeto", filters.projeto);
   if (filters.bbox) qs.set("bbox", filters.bbox);
 
-  // Mesmo mapeamento status → `ativa` da listagem: o UPFViewSet.filter_queryset
-  // aplica ativa=True por padrão, e "todas" desliga esse default.
-  if (filters.status === "ativas") qs.set("ativa", "true");
-  else if (filters.status === "inativas") qs.set("ativa", "false");
-  else if (filters.status === "todas") qs.set("ativa", "");
+  // Mesmo mapeamento status → `ativo` da listagem: o UPFViewSet.filter_queryset
+  // aplica ativo=True por padrão, e "todas" desliga esse default.
+  if (filters.status === "ativas") qs.set("ativo", "true");
+  else if (filters.status === "inativas") qs.set("ativo", "false");
+  else if (filters.status === "todas") qs.set("ativo", "");
 
   const query = qs.toString();
   const res = await apiClient(`/api/v1/upfs/mapa/${query ? `?${query}` : ""}`, {
@@ -303,7 +303,7 @@ export type UpfDetail = {
   seguridade_social: string[];
   foto_url: string;
   criado_por: string | null;
-  ativa: boolean;
+  ativo: boolean;
   criado_em: string;
   atualizado_em: string;
   // ── Procedência SCA ────────────────────────────────────────────────────────

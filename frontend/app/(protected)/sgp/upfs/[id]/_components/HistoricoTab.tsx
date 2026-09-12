@@ -46,7 +46,10 @@ function narrate(entry: HistoricoEntry): string {
   if (campo === null) {
     return valor_anterior == null ? "criou a UPF" : "atualizou a UPF";
   }
-  if (campo === "ativa") {
+  // Entradas gravadas antes da unificação de soft-delete (Issue #267) usam a
+  // chave antiga "ativa"; o histórico é um log imutável, então continuamos
+  // reconhecendo as duas para narrar corretamente os registros antigos.
+  if (campo === "ativa" || campo === "ativo") {
     return valor_novo ? "reativou a UPF" : "inativou a UPF";
   }
 

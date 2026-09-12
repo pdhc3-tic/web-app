@@ -161,7 +161,7 @@ function UpfsMapaContent() {
     return data.results.map((u) => ({
       id: u.id,
       position: [u.latitude, u.longitude] as [number, number],
-      status: u.ativa ? "active" : "inactive",
+      status: u.ativo ? "active" : "inactive",
       popup: (
         <div>
           <p className="font-medium text-text">{u.nome_titular}</p>

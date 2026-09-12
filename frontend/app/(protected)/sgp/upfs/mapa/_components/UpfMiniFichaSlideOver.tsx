@@ -68,7 +68,7 @@ export function UpfMiniFichaSlideOver({ upf, onClose }: Props) {
             <div className="min-w-0">
               <p className="truncate text-base font-semibold text-text">{upf.nome_titular}</p>
               <p className="text-xs text-text-muted">
-                {upf.ativa ? "UPF ativa" : "UPF inativa"}
+                {upf.ativo ? "UPF ativa" : "UPF inativa"}
               </p>
             </div>
           </div>
