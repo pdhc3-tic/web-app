@@ -458,8 +458,8 @@ class Command(BaseCommand):
         self.stdout.write("Removendo dados de demonstração anteriores...")
 
         if self.gerar_arquivos:
-            chaves = list(ActivityPhoto.objects.values_list("arquivo_key", flat=True))
-            chaves += list(ActivityDocument.objects.values_list("arquivo_key", flat=True))
+            chaves = list(ActivityPhoto.all_objects.values_list("arquivo_key", flat=True))
+            chaves += list(ActivityDocument.all_objects.values_list("arquivo_key", flat=True))
             chaves += list(UPFDocument.objects.values_list("arquivo_key", flat=True))
             for chave in chaves:
                 caminho = self.media_root / chave
@@ -467,9 +467,9 @@ class Command(BaseCommand):
                     caminho.unlink()
 
         with transaction.atomic():
-            ActivityPhoto.objects.all().delete()
-            ActivityDocument.objects.all().delete()
-            Activity.objects.all().delete()
+            ActivityPhoto.all_objects.all().delete()
+            ActivityDocument.all_objects.all().delete()
+            Activity.all_objects.all().delete()
             WorkPlanAcao.objects.all().delete()
             WorkPlanMeta.objects.all().delete()
             Production.objects.all().delete()

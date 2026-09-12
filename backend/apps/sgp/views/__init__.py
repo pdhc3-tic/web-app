@@ -1148,17 +1148,13 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
             "parceiros_organizacoes",
             Prefetch(
                 "fotos",
-                queryset=ActivityPhoto.objects.filter(ativa=True).order_by(
-                    "ordem", "criado_em"
-                ),
+                queryset=ActivityPhoto.objects.order_by("ordem", "criado_em"),
             ),
             Prefetch(
                 "documentos",
-                queryset=ActivityDocument.objects.filter(ativo=True).order_by(
-                    "-criado_em"
-                ),
+                queryset=ActivityDocument.objects.order_by("-criado_em"),
             ),
-        ).filter(ativo=True)
+        )
 
         user = self.request.user
 
@@ -1202,8 +1198,7 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
     def perform_destroy(self, instance):
         """Soft-delete via ativo=False."""
         valores_anteriores = self._snapshot(instance)
-        instance.ativo = False
-        instance.save(update_fields=["ativo"])
+        instance.soft_delete()
         self._log_audit("activity.soft_delete", instance, valores_anteriores)
 
     def destroy(self, request, *args, **kwargs):
@@ -1391,7 +1386,7 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
             "municipio__state",
             "comunidade",
             "tecnico_responsavel",
-        ).filter(ativo=True)
+        )
 
         # RLS inline (mesma lógica de get_queryset, sem os prefetch_related desnecessarios)
         user = request.user

@@ -127,11 +127,22 @@ class SyncEntity:
     # ------------------------------------------------------------------
     # Lookup
     # ------------------------------------------------------------------
+    def base_queryset(self):
+        """Queryset usado pelo sync (pull, contagens, lookup por uuid_local).
+
+        Precisa enxergar registros soft-deletados para propagar a exclusão
+        aos dispositivos — usa `all_objects` quando o model o expõe (Issue
+        #267: UPF/Activity), com fallback para `objects` nos demais (ex.:
+        MembroFamilia, que não tem soft-delete).
+        """
+        manager = getattr(self.model, "all_objects", self.model.objects)
+        return manager.all()
+
     def get_by_uuid_local(self, uuid):
         if uuid is None:
             return None
         try:
-            return self.model.objects.filter(uuid_local=uuid).first()
+            return self.base_queryset().filter(uuid_local=uuid).first()
         except self.model.DoesNotExist:
             return None
 

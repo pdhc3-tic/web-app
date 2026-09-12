@@ -190,6 +190,15 @@ class ActivityAdmin(admin.ModelAdmin):
     readonly_fields = [
         "criado_por", "criado_em", "atualizado_em",
     ]
+
+    def get_queryset(self, request):
+        # Manager padrão (Activity.objects) exclui inativos — admin precisa
+        # ver tudo, com list_filter["ativo"] continuando a funcionar.
+        qs = self.model.all_objects.get_queryset()
+        ordering = self.get_ordering(request)
+        if ordering:
+            qs = qs.order_by(*ordering)
+        return qs
     filter_horizontal = [
         "equipe_adicional", "upfs_participantes", "membros_participantes",
         "parceiros_organizacoes",
