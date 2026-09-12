@@ -61,7 +61,7 @@ class UPFSyncSerializer(serializers.Serializer):
     nis = serializers.CharField(required=False, allow_blank=True)
     seguridade_social = serializers.ListField(required=False, default=list)
     foto_url = serializers.URLField(required=False, allow_blank=True)
-    ativa = serializers.BooleanField(required=False)
+    ativo = serializers.BooleanField(required=False)
 
     titular = TitularSyncSerializer(required=False)
 

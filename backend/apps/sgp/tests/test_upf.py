@@ -22,7 +22,7 @@ class TestUPFCriacao:
         )
         assert response.status_code == 201
         assert response.data["titular"]["nome_completo"] == "Maria da Silva"
-        assert response.data["ativa"] is True
+        assert response.data["ativo"] is True
 
     def test_create_upf_with_all_fields(
         self, auth_client, upf_payload_completo
@@ -151,7 +151,7 @@ class TestTerritorioAutomatico:
 
 
 class TestSoftDelete:
-    def test_soft_delete_sets_ativa_false_keeps_record(
+    def test_soft_delete_sets_ativo_false_keeps_record(
         self, auth_client, upf_payload_minimo
     ):
         res = auth_client.post(
@@ -162,8 +162,8 @@ class TestSoftDelete:
         response = auth_client.delete(f"/api/v1/upfs/{upf_id}/")
         assert response.status_code == 204
 
-        upf = UPF.objects.get(pk=upf_id)
-        assert upf.ativa is False
+        upf = UPF.all_objects.get(pk=upf_id)
+        assert upf.ativo is False
 
 
 class TestSerializers:
@@ -184,7 +184,7 @@ class TestSerializers:
             "municipio",
             "territorio",
             "criado_em",
-            "ativa",
+            "ativo",
             "foto_url",
         }
         assert set(result.keys()) == expected_keys
@@ -348,13 +348,13 @@ class TestFiltrosEBusca:
         self, auth_client, projeto, municipio_rn
     ):
         UPFFactory(
-            projeto=projeto, municipio=municipio_rn, titular_cpf="86288366757", ativa=True
+            projeto=projeto, municipio=municipio_rn, titular_cpf="86288366757", ativo=True
         )
         UPFFactory(
-            projeto=projeto, municipio=municipio_rn, titular_cpf="52998224725", ativa=False
+            projeto=projeto, municipio=municipio_rn, titular_cpf="52998224725", ativo=False
         )
         response = auth_client.get(
-            f"/api/v1/upfs/?municipio={municipio_rn.pk}&ativa=true"
+            f"/api/v1/upfs/?municipio={municipio_rn.pk}&ativo=true"
         )
         assert response.status_code == 200
         assert len(response.data["results"]) == 1
@@ -503,11 +503,11 @@ class TestAtivaPadrao:
     ):
         ativa = UPFFactory(
             projeto=projeto, municipio=municipio_rn,
-            _titular_nome="Ativa", titular_cpf="86288366757", ativa=True,
+            _titular_nome="Ativa", titular_cpf="86288366757", ativo=True,
         )
         UPFFactory(
             projeto=projeto, municipio=municipio_rn,
-            _titular_nome="Inativa", titular_cpf="52998224725", ativa=False,
+            _titular_nome="Inativa", titular_cpf="52998224725", ativo=False,
         )
         response = auth_client.get("/api/v1/upfs/")
         assert response.status_code == 200
@@ -515,7 +515,7 @@ class TestAtivaPadrao:
         assert "Ativa" in nomes
         assert "Inativa" not in nomes
 
-        response_inativas = auth_client.get("/api/v1/upfs/?ativa=false")
+        response_inativas = auth_client.get("/api/v1/upfs/?ativo=false")
         assert response_inativas.status_code == 200
         nomes_inativas = [
             u["nome_titular"] for u in response_inativas.data["results"]
@@ -686,7 +686,7 @@ class TestPerformanceIndexes:
                 municipio=municipio_rn,
                 territorio=territory_rn,
                 titular=t,
-                ativa=True,
+                ativo=True,
             )
             for t in titulars
         ]

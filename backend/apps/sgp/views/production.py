@@ -23,7 +23,9 @@ class ProductionViewSet(viewsets.ModelViewSet):
         return self._upf
 
     def _accessible_upf_queryset(self):
-        qs = UPF.objects.select_related("municipio", "municipio__state", "territorio")
+        # all_objects: a checagem de ativo é feita explicitamente em
+        # perform_create (UPF inativa não pode receber produção), não aqui.
+        qs = UPF.all_objects.select_related("municipio", "municipio__state", "territorio")
         user = self.request.user
 
         if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
@@ -52,7 +54,7 @@ class ProductionViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         upf = self.get_upf()
-        if not upf.ativa:
+        if not upf.ativo:
             raise serializers.ValidationError(
                 "Não é possível adicionar produção a uma UPF inativa."
             )

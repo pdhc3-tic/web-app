@@ -212,7 +212,7 @@ def test_listagem_5000_upfs_sob_3s(auth_client, projeto, municipio, territory):
             municipio=municipio,
             territorio=territory,
             titular=titular,
-            ativa=True,
+            ativo=True,
         )
         for titular in titulares
     ]

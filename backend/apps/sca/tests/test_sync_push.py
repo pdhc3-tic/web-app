@@ -241,7 +241,7 @@ def test_push_excluido_no_servidor_descarta_e_notifica(auth_client, upf_inativa,
 
     # exclusão prevalece: registro permanece inativo e sem a alteração local
     upf.refresh_from_db()
-    assert upf.ativa is False
+    assert upf.ativo is False
     assert upf.whatsapp != "local editado"
 
     assert ConflictLog.objects.filter(
@@ -253,7 +253,7 @@ def test_push_excluido_no_servidor_descarta_e_notifica(auth_client, upf_inativa,
 def upf_inativa(db, municipio, projeto):
     from apps.sgp.tests.factories import UPFFactory
 
-    upf = UPFFactory(municipio=municipio, projeto=projeto, ativa=False, titular_cpf="11144477735")
+    upf = UPFFactory(municipio=municipio, projeto=projeto, ativo=False, titular_cpf="11144477735")
     upf.uuid_local = uuid4()
     upf.save(update_fields=["uuid_local"])
     return upf

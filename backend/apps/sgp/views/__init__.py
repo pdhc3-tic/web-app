@@ -74,8 +74,12 @@ def upfs_acessiveis_ao_usuario(user, role_slugs=None):
 
     `role_slugs` pode ser passado já computado (ver `UPFViewSet.get_queryset`)
     para evitar refazer a checagem de roles do usuário em outra query.
+
+    Usa `all_objects`: RLS territorial e soft-delete são preocupações
+    independentes — quem filtra por ativo=True é `UPFViewSet.filter_queryset`
+    (ou, no caso de `MembroViewSet.get_upf`, a checagem explícita abaixo).
     """
-    qs = UPF.objects.all()
+    qs = UPF.all_objects.all()
     if role_slugs is None:
         role_slugs = user_role_slugs(user, UPF_ACCESS_ROLES)
     if "super-admin" in role_slugs or "ugp" in role_slugs:
@@ -216,7 +220,7 @@ class _UPFMapPropertiesSerializer(serializers.Serializer):
     nome_titular = serializers.CharField()
     municipio = MunicipioNestedSerializer()
     territorio = serializers.CharField()
-    ativa = serializers.BooleanField()
+    ativo = serializers.BooleanField()
 
 
 class _UPFMapFeatureSerializer(serializers.Serializer):
@@ -247,12 +251,14 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
         return UPFDetailSerializer
 
     def filter_queryset(self, queryset):
-        if "ativa" not in self.request.query_params:
-            queryset = queryset.filter(ativa=True)
+        if "ativo" not in self.request.query_params:
+            queryset = queryset.filter(ativo=True)
         return super().filter_queryset(queryset)
 
     def get_queryset(self):
-        qs = UPF.objects.select_related(
+        # all_objects: o padrão ativo=True é aplicado por filter_queryset,
+        # que também permite `?ativo=false`/`?ativo=` sobrepor o default.
+        qs = UPF.all_objects.select_related(
             "municipio", "municipio__state", "territorio", "projeto",
             "criado_por", "titular",
         ).prefetch_related("membros").all()
@@ -276,7 +282,7 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
             OpenApiParameter("municipio", OpenApiTypes.INT, OpenApiParameter.QUERY),
             OpenApiParameter("territorio", OpenApiTypes.INT, OpenApiParameter.QUERY),
             OpenApiParameter("projeto", OpenApiTypes.INT, OpenApiParameter.QUERY),
-            OpenApiParameter("ativa", OpenApiTypes.BOOL, OpenApiParameter.QUERY),
+            OpenApiParameter("ativo", OpenApiTypes.BOOL, OpenApiParameter.QUERY),
         ],
         responses={
             200: inline_serializer(
@@ -292,7 +298,7 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
         description=(
             "Retorna UPFs georreferenciadas em GeoJSON FeatureCollection. "
             "Cada feature possui geometry.coordinates na ordem [lng, lat] "
-            "e properties mínimo: id, nome_titular, municipio, territorio e ativa."
+            "e properties mínimo: id, nome_titular, municipio, territorio e ativo."
         ),
     )
     @action(detail=False, methods=["get"], url_path="mapa")
@@ -337,7 +343,7 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
                 "municipio__state__nome",
                 "territorio",
                 "territorio__nome",
-                "ativa",
+                "ativo",
             )
             .order_by("id")
         )
@@ -402,13 +408,24 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
                 "nome_titular": upf.titular.nome_completo,
                 "municipio": MunicipioNestedSerializer(upf.municipio).data,
                 "territorio": upf.territorio.nome,
-                "ativa": upf.ativa,
+                "ativo": upf.ativo,
             },
         }
 
+    def _get_upf_including_inativas(self, pk):
+        """Resolve a UPF via all_objects — histórico precisa enxergar
+        inativas (Issue #267) —, mantendo o mesmo RLS territorial de
+        get_queryset()."""
+        user = self.request.user
+        role_slugs = user_role_slugs(user, UPF_ACCESS_ROLES)
+        if not role_slugs:
+            raise PermissionDenied("Você não tem acesso ao módulo SGP.")
+        pks = upfs_acessiveis_ao_usuario(user, role_slugs=role_slugs).values_list("pk", flat=True)
+        return get_object_or_404(UPF.all_objects.filter(pk__in=pks), pk=pk)
+
     @action(detail=True, methods=["get"], url_path="historico")
     def historico(self, request, pk=None):
-        upf = self.get_object()
+        upf = self._get_upf_including_inativas(pk)
         q = Q(entidade="UPF", entidade_id=str(upf.pk))
 
         incluir_membros = request.query_params.get("incluir_membros") == "true"
@@ -511,7 +528,7 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
                 "municipio_id": instance.municipio_id,
                 "territorio_id": instance.territorio_id,
                 "comunidade_id": instance.comunidade_id,
-                "ativa": instance.ativa,
+                "ativo": instance.ativo,
             },
             ip=self.request.META.get("REMOTE_ADDR"),
             user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
@@ -542,7 +559,7 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
             "municipio_id": old.municipio_id,
             "territorio_id": old.territorio_id,
             "comunidade_id": old.comunidade_id,
-            "ativa": old.ativa,
+            "ativo": old.ativo,
         }
         anteriores_sensiveis = {"cor_raca": old.titular.cor_raca}
         instance = serializer.save(ultima_origem="web")
@@ -568,10 +585,9 @@ class UPFViewSet(UPFPhotoMixin, viewsets.ModelViewSet):
             "municipio_id": instance.municipio_id,
             "territorio_id": instance.territorio_id,
             "comunidade_id": instance.comunidade_id,
-            "ativa": instance.ativa,
+            "ativo": instance.ativo,
         }
-        instance.ativa = False
-        instance.save(update_fields=["ativa"])
+        instance.soft_delete()
         self._log_audit("UPF.deactivate", instance, valores_anteriores)
 
     def destroy(self, request, *args, **kwargs):
@@ -781,7 +797,7 @@ class MembroViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         upf = self.get_upf()
-        if not upf.ativa:
+        if not upf.ativo:
             raise serializers.ValidationError(
                 "Não é possível adicionar membros a uma UPF inativa"
             )

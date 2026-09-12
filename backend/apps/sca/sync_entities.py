@@ -208,7 +208,7 @@ class SyncEntity:
 class UPFSyncEntity(SyncEntity):
     name = "upf"
     model = UPF
-    soft_delete_field = "ativa"
+    soft_delete_field = "ativo"
     id_fields = frozenset({"projeto", "comunidade", "municipio", "territorio"})
     sensitive_paths = (
         "titular.nome_completo", "titular.cpf", "latitude", "longitude",
@@ -239,7 +239,7 @@ class UPFSyncEntity(SyncEntity):
 
     def get_deleted_by_natural(self, data):
         upf = self.get_by_natural(data)
-        if upf is not None and not upf.ativa:
+        if upf is not None and not upf.ativo:
             return upf
         return None
 
@@ -329,7 +329,7 @@ class UPFSyncEntity(SyncEntity):
             "nis": instance.nis,
             "seguridade_social": list(instance.seguridade_social or []),
             "foto_url": instance.foto_url,
-            "ativa": instance.ativa,
+            "ativo": instance.ativo,
             "titular": {
                 "nome_completo": titular.nome_completo,
                 "cpf": titular.cpf,

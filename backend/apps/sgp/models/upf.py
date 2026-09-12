@@ -11,9 +11,10 @@ from apps.sgp.constants import (
     SITUACAO_MORADIA_CHOICES,
     TIPO_MORADIA_CHOICES,
 )
+from .base import SoftDeleteModel
 
 
-class UPF(models.Model):
+class UPF(SoftDeleteModel):
     projeto = models.ForeignKey(
         "sgp.Projeto",
         on_delete=models.CASCADE,
@@ -147,7 +148,7 @@ class UPF(models.Model):
         null=True, blank=True, verbose_name="Criado por",
     )
 
-    ativa = models.BooleanField(default=True, verbose_name="Ativa")
+    # Soft-delete: campo `ativo`/`deleted_at` herdados de SoftDeleteModel.
     criado_em = models.DateTimeField(
         auto_now_add=True, verbose_name="Criado em"
     )
@@ -182,7 +183,7 @@ class UPF(models.Model):
         help_text="Timestamp da última sincronização bem-sucedida via SCA.",
     )
 
-    class Meta:
+    class Meta(SoftDeleteModel.Meta):
         verbose_name = "UPF"
         verbose_name_plural = "UPFs"
         ordering = ["-criado_em"]

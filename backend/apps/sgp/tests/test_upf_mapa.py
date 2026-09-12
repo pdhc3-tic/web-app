@@ -28,7 +28,7 @@ def make_upf(
     nome="João Silva",
     latitude="-5.160000",
     longitude="-37.840000",
-    ativa=True,
+    ativo=True,
 ):
     return UPFFactory(
         projeto=projeto,
@@ -38,7 +38,7 @@ def make_upf(
         titular_cpf=cpf,
         latitude=latitude,
         longitude=longitude,
-        ativa=ativa,
+        ativo=ativo,
     )
 
 
@@ -81,7 +81,7 @@ def test_mapa_returns_geojson_format(auth_client, projeto, municipio_rn, territo
             },
         },
         "territorio": territory_rn.nome,
-        "ativa": True,
+        "ativo": True,
     }
 
 
@@ -113,14 +113,14 @@ def test_mapa_excludes_inactive_upfs_by_default(auth_client, projeto, municipio_
         municipio_rn,
         territory_rn,
         cpf="86288366757",
-        ativa=True,
+        ativo=True,
     )
     make_upf(
         projeto,
         municipio_rn,
         territory_rn,
         cpf="52998224725",
-        ativa=False,
+        ativo=False,
     )
 
     response = auth_client.get("/api/v1/upfs/mapa/")
@@ -129,23 +129,23 @@ def test_mapa_excludes_inactive_upfs_by_default(auth_client, projeto, municipio_
     assert feature_ids(response) == [active.pk]
 
 
-def test_mapa_filter_by_ativa_false(auth_client, projeto, municipio_rn, territory_rn):
+def test_mapa_filter_by_ativo_false(auth_client, projeto, municipio_rn, territory_rn):
     make_upf(
         projeto,
         municipio_rn,
         territory_rn,
         cpf="86288366757",
-        ativa=True,
+        ativo=True,
     )
     inactive = make_upf(
         projeto,
         municipio_rn,
         territory_rn,
         cpf="52998224725",
-        ativa=False,
+        ativo=False,
     )
 
-    response = auth_client.get("/api/v1/upfs/mapa/?ativa=false")
+    response = auth_client.get("/api/v1/upfs/mapa/?ativo=false")
 
     assert response.status_code == 200
     assert feature_ids(response) == [inactive.pk]
