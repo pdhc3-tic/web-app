@@ -3,40 +3,37 @@
 from django.db.models import Q, QuerySet
 from rest_framework.exceptions import PermissionDenied
 
-from apps.core.services.permissions import user_has_role, user_states, user_territories
 from apps.sgp.models import WorkPlanAcao, WorkPlanMeta
+from apps.sgp.services.access import resolver_escopo
 
 
 def is_global_workplan_user(user) -> bool:
-    return user_has_role(user, "super-admin") or user_has_role(user, "ugp")
+    tipo, _ = resolver_escopo(user)
+    return tipo == "global"
 
 
 def activity_scope_for_user(user, *, prefix: str = "atividades__") -> Q | None:
     """Retorna o filtro de atividade do usuário, ou ``None`` para visão global."""
-    if is_global_workplan_user(user):
+    tipo, valor = resolver_escopo(user)
+
+    if tipo == "global":
         return None
-
-    if user_has_role(user, "articulador-estadual"):
-        states = user_states(user)
-        if not states:
-            return Q(pk__in=[])
+    if tipo == "estados":
         return Q(
             **{
                 f"{prefix}ativo": True,
-                f"{prefix}municipio__state__sigla__in": states,
+                f"{prefix}municipio__state__sigla__in": valor,
             }
         )
-
-    if user_has_role(user, "adt-acr"):
-        territories = user_territories(user)
-        if not territories.exists():
-            return Q(pk__in=[])
+    if tipo == "territorios":
         return Q(
             **{
                 f"{prefix}ativo": True,
-                f"{prefix}municipio__territory__in": territories,
+                f"{prefix}municipio__territory__in": valor,
             }
         )
+    if tipo == "vazio":
+        return Q(pk__in=[])
 
     raise PermissionDenied("Você não tem acesso ao Plano de Trabalho.")
 
