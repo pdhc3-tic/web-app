@@ -152,51 +152,56 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
   }, [initialData]);
 
   // Carrega as opções de cascata para um formulário já preenchido (edição/rascunho).
-  const hydrateCascade = useCallback(async (data: UpfFormData) => {
-    if (data.estado) {
-      const munis = await fetchMunicipalitiesByState(data.estado).catch(
-        () => [] as MunicipalityOpt[],
-      );
-      setMunicipioOptions(munis);
-    }
-    if (data.municipio) {
-      const comus = await fetchComunidadeOptions(data.municipio).catch(
-        () => [] as SelectOption[],
-      );
-      setComunidadeOptions(comus);
-    }
-  }, []);
+  const hydrateCascade = useCallback(
+    async (data: UpfFormData, signal?: AbortSignal) => {
+      if (data.estado) {
+        const munis = await fetchMunicipalitiesByState(data.estado, signal).catch(
+          () => [] as MunicipalityOpt[],
+        );
+        if (!signal?.aborted) setMunicipioOptions(munis);
+      }
+      if (data.municipio) {
+        const comus = await fetchComunidadeOptions(data.municipio, signal).catch(
+          () => [] as SelectOption[],
+        );
+        if (!signal?.aborted) setComunidadeOptions(comus);
+      }
+    },
+    [],
+  );
 
   // Prefill de edição: descobre o estado a partir do município e hidrata a cascata.
   useEffect(() => {
     if (mode !== "edit" || !initialData) return;
-    let active = true;
+    const controller = new AbortController();
     (async () => {
       try {
-        const muni = await fetchMunicipality(initialData.municipio.id);
-        if (!active) return;
+        const muni = await fetchMunicipality(
+          initialData.municipio.id,
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
         const estado = String(muni.state);
         setForm((prev) => ({ ...prev, estado }));
         const [munis, comus] = await Promise.all([
-          fetchMunicipalitiesByState(estado).catch(
+          fetchMunicipalitiesByState(estado, controller.signal).catch(
             () => [] as MunicipalityOpt[],
           ),
-          initialData.comunidade
-            ? fetchComunidadeOptions(initialData.municipio.id).catch(
-                () => [] as SelectOption[],
-              )
-            : Promise.resolve([] as SelectOption[]),
+          // Sempre carrega as comunidades do município, mesmo que a UPF não
+          // tenha comunidade — o usuário pode querer adicionar uma na edição.
+          fetchComunidadeOptions(
+            initialData.municipio.id,
+            controller.signal,
+          ).catch(() => [] as SelectOption[]),
         ]);
-        if (!active) return;
+        if (controller.signal.aborted) return;
         setMunicipioOptions(munis);
         setComunidadeOptions(comus);
       } catch {
         /* mantém o que já foi preenchido */
       }
     })();
-    return () => {
-      active = false;
-    };
+    return () => controller.abort();
   }, [mode, initialData]);
 
   // Salva rascunho a cada mudança (após a primeira interação do usuário).
@@ -222,16 +227,26 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
     });
   }, []);
 
+  const estadoCascadeRef = useRef<AbortController | null>(null);
+  const municipioCascadeRef = useRef<AbortController | null>(null);
+  const hydrateCascadeRef = useRef<AbortController | null>(null);
+
+  // Cancela a hidratação de rascunho pendente ao desmontar.
+  useEffect(() => () => { hydrateCascadeRef.current?.abort(); }, []);
+
   function handleEstadoChange(value: string) {
     dirty.current = true;
     setForm((prev) => ({ ...prev, estado: value, municipio: "", comunidade: "" }));
     setErrors((prev) => ({ ...prev, estado: "", municipio: "" }));
     setMunicipioOptions([]);
     setComunidadeOptions([]);
+    estadoCascadeRef.current?.abort();
     if (value) {
-      fetchMunicipalitiesByState(value)
-        .then(setMunicipioOptions)
-        .catch(() => setMunicipioOptions([]));
+      const ctrl = new AbortController();
+      estadoCascadeRef.current = ctrl;
+      fetchMunicipalitiesByState(value, ctrl.signal)
+        .then((opts) => { if (!ctrl.signal.aborted) setMunicipioOptions(opts); })
+        .catch(() => { if (!estadoCascadeRef.current?.signal.aborted) setMunicipioOptions([]); });
     }
   }
 
@@ -240,10 +255,13 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
     setForm((prev) => ({ ...prev, municipio: value, comunidade: "" }));
     setErrors((prev) => ({ ...prev, municipio: "" }));
     setComunidadeOptions([]);
+    municipioCascadeRef.current?.abort();
     if (value) {
-      fetchComunidadeOptions(value)
-        .then(setComunidadeOptions)
-        .catch(() => setComunidadeOptions([]));
+      const ctrl = new AbortController();
+      municipioCascadeRef.current = ctrl;
+      fetchComunidadeOptions(value, ctrl.signal)
+        .then((opts) => { if (!ctrl.signal.aborted) setComunidadeOptions(opts); })
+        .catch(() => { if (!municipioCascadeRef.current?.signal.aborted) setComunidadeOptions([]); });
     }
   }
 
@@ -358,7 +376,10 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
     dirty.current = true;
     setForm(existing.data);
     setDraftDismissed(true);
-    hydrateCascade(existing.data);
+    hydrateCascadeRef.current?.abort();
+    const ctrl = new AbortController();
+    hydrateCascadeRef.current = ctrl;
+    hydrateCascade(existing.data, ctrl.signal);
   }
 
   function discardDraft() {
