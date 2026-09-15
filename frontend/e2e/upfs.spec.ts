@@ -2,45 +2,50 @@ import { expect, test } from "@playwright/test";
 import { storageStatePath } from "./helpers/users";
 import { primeiroUpfId } from "./helpers/upf";
 
-const ESTADOS_API = "**/api/v1/estados/**";
-const MUNICIPIOS_API = "**/api/v1/municipios/**";
-const COMUNIDADES_API = "**/api/v1/comunidades/**";
+// Rotas reais chamadas pelo frontend (ver app/lib/upfs.ts)
+const STATES_API = "**/api/v1/states/**";
+const MUNICIPALITIES_API = "**/api/v1/municipalities/**";
+const MUNICIPIOS_COMUNIDADES_API = "**/api/v1/municipios/*/comunidades/**";
 const PROJETOS_API = "**/api/v1/projetos/**";
-const UPF_API = "**/api/v1/sgp/upfs/**";
+const UPF_API = "**/api/v1/upfs/**";
+
+function paginated<T>(results: T[]) {
+  return { count: results.length, next: null, previous: null, results };
+}
 
 function estadoFake(id: number, sigla: string, nome: string) {
   return { id, sigla, nome };
 }
 
 function municipioFake(id: number, nome: string, stateId: number) {
-  return { id, nome, state: stateId, state_sigla: "PE" };
+  return { id, nome, state: stateId, territory: null };
 }
 
 async function stubWizardOptions(page: import("@playwright/test").Page) {
-  await page.route(ESTADOS_API, async (route) => {
+  await page.route(STATES_API, async (route) => {
     if (route.request().method() !== "GET") return route.fallback();
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify([estadoFake(17, "PE", "Pernambuco")]),
+      body: JSON.stringify(paginated([estadoFake(17, "PE", "Pernambuco")])),
     });
   });
 
-  await page.route(MUNICIPIOS_API, async (route) => {
+  await page.route(MUNICIPALITIES_API, async (route) => {
     if (route.request().method() !== "GET") return route.fallback();
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify([municipioFake(1001, "Ouricuri", 17)]),
+      body: JSON.stringify(paginated([municipioFake(1001, "Ouricuri", 17)])),
     });
   });
 
-  await page.route(COMUNIDADES_API, async (route) => {
+  await page.route(MUNICIPIOS_COMUNIDADES_API, async (route) => {
     if (route.request().method() !== "GET") return route.fallback();
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ count: 1, results: [{ id: 501, nome: "Cacimba Velha" }] }),
+      body: JSON.stringify(paginated([{ id: 501, nome: "Cacimba Velha" }])),
     });
   });
 
@@ -49,7 +54,7 @@ async function stubWizardOptions(page: import("@playwright/test").Page) {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ count: 1, results: [{ id: 3, nome: "PDHC III" }] }),
+      body: JSON.stringify(paginated([{ id: 3, nome: "PDHC III" }])),
     });
   });
 }
@@ -134,6 +139,32 @@ test.describe("SGP — Wizard de cadastro de UPF", () => {
     ).toBeVisible();
   });
 
+  test("continuar rascunho restaura todos os valores do passo 0", async ({
+    page,
+  }) => {
+    await stubWizardOptions(page);
+    await page.goto("/sgp/upfs/nova");
+    await expect(page.getByText("Passo 1 de 4")).toBeVisible();
+
+    // Preenche passo 0 completo
+    await escolherNoSelect(page, "Estado", "Pernambuco");
+    await escolherNoSelect(page, "Município", "Ouricuri");
+    await escolherNoSelect(page, "Projeto", "PDHC III");
+    await page.waitForTimeout(700);
+
+    // Navega para fora e volta
+    await page.goto("/sgp/atividades");
+    await page.goto("/sgp/upfs/nova");
+
+    const continuar = page.getByRole("button", { name: /Continuar rascunho/i });
+    await expect(continuar).toBeVisible();
+    await continuar.click();
+
+    // Se o rascunho foi restaurado, o passo 0 já está válido e podemos avançar
+    await page.getByRole("button", { name: "Avançar" }).click();
+    await expect(page.getByText("Passo 2 de 4")).toBeVisible();
+  });
+
   test("descartar rascunho limpa o formulário", async ({ page }) => {
     await stubWizardOptions(page);
     await page.goto("/sgp/upfs/nova");
@@ -161,14 +192,19 @@ test.describe("SGP — Wizard de cadastro de UPF", () => {
         contentType: "application/json",
         body: JSON.stringify({
           id: 9999,
-          nome_titular: "João Silva",
-          cpf: "12345678909",
-          municipio: { id: 1001, nome: "Ouricuri", state: 17 },
           projeto: { id: 3, nome: "PDHC III" },
-          comunidade: null,
-          territorio: null,
-          foto_url: null,
-          ativo: true,
+          titular: { id: 1, nome_completo: "João Silva", cpf: "12345678909", rg: "", data_nascimento: null, genero: null, genero_display: "", escolaridade: null, escolaridade_display: "", nis: "", idade: null },
+          apelido: "", celular: "", whatsapp: "", internet: false,
+          dispositivo: null, cep: "", logradouro: "", numero: "",
+          complemento: "", bairro: "",
+          municipio: { id: 1001, nome: "Ouricuri" },
+          territorio: null, comunidade: null,
+          latitude: null, longitude: null, pct: null, posse_terra: null,
+          area_terra_ha: null, situacao_moradia: null, tipo_moradia: null,
+          material_construcao: null, num_comodos: null, energia: null, agua: null,
+          daf_caf: "", seguridade_social: [], foto_url: "", criado_por: null,
+          ativa: true, criado_em: "2026-06-01T00:00:00Z", atualizado_em: "2026-06-01T00:00:00Z",
+          device_id: "", uuid_local: null, ultima_origem: "web", ultimo_sync_em: null,
         }),
       });
     });

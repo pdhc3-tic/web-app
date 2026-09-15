@@ -175,7 +175,7 @@ export default function DashboardPage() {
             title="Ações críticas"
             description="Ações do Plano de Trabalho com execução abaixo do esperado"
             state={acoesCriticas}
-            href="/sgp/painel"
+            href="/sgp/painel?situacao=em_atraso"
           />
         </section>
       </div>
