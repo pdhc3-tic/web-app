@@ -32,7 +32,20 @@ def allowed_territories_for_user(user) -> QuerySet[Territory]:
 
 def _perfis_e_slugs(user) -> tuple[list[UserProfile], set[str]]:
     """Perfis do usuário (`perfil`/`territorio` pré-carregados) e o set de slugs de
-    papel — 1 query, compartilhada pelas funções de RBAC do orçamento."""
+    papel — 1 query, compartilhada por `orcamento_detalhamento_scope`,
+    `resolver_nivel_do_usuario` e `resolver_nivel_painel`.
+
+    Implementação de escopo territorial separada de `services/access.py`
+    por necessidade, não por descuido: as três funções abaixo precisam do
+    mesmo perfil pré-carregado várias vezes por request (evitando N
+    queries) e, no caso de `resolver_nivel_do_usuario`/`resolver_nivel_painel`,
+    resolvem "um único nível/localização" (drill-down, `estados[0]` de um
+    território específico) — não "o conjunto de estados/territórios do
+    usuário" que `resolver_escopo()` devolve. Os dois tratam
+    `adt-acr`/`territorio=None` do mesmo jeito que `access.py` corrige
+    (ignora o perfil, nunca vira acesso global) — `test_budget_motor.py`
+    tem um teste dedicado a essa paridade.
+    """
     perfis = list(
         UserProfile.objects.filter(user=user).select_related("perfil", "territorio")
     )
@@ -57,6 +70,8 @@ def _estados_do_articulador(perfis: list[UserProfile], user) -> set[str]:
 
 
 def _territorios_do_adt(perfis: list[UserProfile]) -> set[int]:
+    """Perfil `adt-acr` sem território (`territorio=None`) é ignorado — nunca
+    concede acesso global. Mesma regra que `services/access.py::_territorios_do_papel`."""
     return {p.territorio_id for p in perfis if p.perfil.slug == "adt-acr" and p.territorio_id}
 
 

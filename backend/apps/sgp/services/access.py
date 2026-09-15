@@ -7,9 +7,18 @@ seus territórios; qualquer outro papel não tem escopo.
 from rest_framework.exceptions import PermissionDenied
 
 from apps.core.models.user_profile import UserProfile
-from apps.core.services.permissions import user_role_slugs, user_states
+from apps.core.services.permissions import user_has_role, user_role_slugs, user_states
 
 ROLES_COM_ESCOPO = ("super-admin", "ugp", "articulador-estadual", "adt-acr")
+
+
+def is_global_user(user) -> bool:
+    """super-admin/ugp — sem escopo territorial nenhum, vê tudo.
+
+    Não é sobre território: usado também por decisões binárias de
+    visibilidade não-territoriais (ex.: quem pode listar registros
+    inativos com `?ativa=false`)."""
+    return user_has_role(user, "super-admin") or user_has_role(user, "ugp")
 
 
 def _territorios_do_papel(user, role_slug):
