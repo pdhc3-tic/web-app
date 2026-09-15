@@ -12,7 +12,7 @@ jobs:
   e2e:
     name: Testes E2E (Playwright)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
 
     steps:
       - uses: actions/checkout@v4
@@ -40,18 +40,18 @@ jobs:
           cat > frontend/.env.local <<'EOF'
           NEXTAUTH_SECRET=ci-only-secret
           NEXTAUTH_URL=http://localhost:3000
-          NEXT_PUBLIC_API_URL=http://backend:8000
+          NEXT_PUBLIC_API_URL=http://localhost:8000
           EOF
 
       - name: Subir stack Docker
         run: docker compose up -d --build --wait
-        timeout-minutes: 10
+        timeout-minutes: 4
 
       - name: Aplicar migrações
         run: docker compose exec -T backend python manage.py migrate --noinput
 
       - name: Seed de demonstração
-        run: docker compose exec -T backend python manage.py seed_demo
+        run: docker compose exec -T backend python manage.py seed_demo --reset
 
       - name: Instalar Playwright
         working-directory: frontend
@@ -64,15 +64,21 @@ jobs:
         env:
           E2E_BASE_URL: http://localhost:3000
           CI: "true"
-        run: npx playwright test --timeout=60000
-        timeout-minutes: 10
+        run: |
+          start=$(date +%s)
+          npx playwright test --timeout=60000
+          end=$(date +%s)
+          echo "Duração da suíte: $((end - start))s"
+        timeout-minutes: 5
 
       - name: Publicar artefatos de falha
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-${{ github.run_id }}
-          path: .playwright/test-results/
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
           retention-days: 7
 
       - name: Parar stack Docker

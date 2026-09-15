@@ -108,14 +108,24 @@ export function TecnicoSlideOver({
           : await createTecnico(payload);
       onSaved(saved);
     } catch (e) {
-      if (e instanceof ApiError && e.fieldErrors?.length) {
-        const mapped: Record<string, string> = {};
-        for (const fe of e.fieldErrors) mapped[fe.field] = fe.message;
-        setErrors(mapped);
+      if (e instanceof ApiError) {
+        if (e.status === 403) {
+          setGlobalError("Sem permissão para esta ação.");
+        } else if (e.fieldErrors?.length) {
+          const mapped: Record<string, string> = {};
+          for (const fe of e.fieldErrors) mapped[fe.field] = fe.message;
+          setErrors(mapped);
+        } else if (/j[aá] exist|duplicate|unique/i.test(e.message)) {
+          setGlobalError("Técnico já cadastrado para este usuário neste território.");
+        } else if (/inativ/i.test(e.message)) {
+          setGlobalError("Este técnico já está inativo.");
+        } else if (/v[ií]nculo|conflito/i.test(e.message)) {
+          setGlobalError("Conflito de vínculo: usuário já está associado a outro técnico.");
+        } else {
+          setGlobalError(e.message || "Não foi possível salvar.");
+        }
       } else {
-        setGlobalError(
-          e instanceof ApiError ? e.message : "Não foi possível salvar.",
-        );
+        setGlobalError("Não foi possível salvar.");
       }
     } finally {
       setSaving(false);
@@ -129,8 +139,14 @@ export function TecnicoSlideOver({
     try {
       await deactivateTecnico(tecnico.id);
       onDeactivated(tecnico.id);
-    } catch {
-      setGlobalError("Não foi possível desativar o técnico.");
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 403) {
+        setGlobalError("Sem permissão para desativar este técnico.");
+      } else if (e instanceof ApiError && /inativ/i.test(e.message)) {
+        setGlobalError("Este técnico já está inativo.");
+      } else {
+        setGlobalError("Não foi possível desativar o técnico.");
+      }
       setDeactivating(false);
     }
   }
