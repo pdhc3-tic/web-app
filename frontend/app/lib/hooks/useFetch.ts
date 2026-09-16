@@ -31,10 +31,12 @@ export function useFetch<T>(
   const [reloadKey, setReloadKey] = useState(0);
 
   const fetcherRef = useRef(fetcher);
+  // eslint-disable-next-line react-hooks/refs
   fetcherRef.current = fetcher;
 
   useEffect(() => {
     const controller = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError(null);
 
