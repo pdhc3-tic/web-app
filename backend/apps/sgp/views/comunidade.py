@@ -6,9 +6,9 @@ from rest_framework.response import Response
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsAuthenticatedActiveAccess, IsSuperAdmin, IsUGP
-from apps.core.services.permissions import user_has_role
 from apps.sgp.models import Comunidade
 from apps.sgp.serializers import ComunidadeSerializer
+from apps.sgp.services.access import is_global_user
 
 
 class QSearchFilter(filters.SearchFilter):
@@ -45,10 +45,7 @@ class ComunidadeViewSet(viewsets.ModelViewSet):
         ativa_param = self.request.query_params.get('ativa')
         if ativa_param is not None and ativa_param.lower() == 'false':
             user = self.request.user
-            if (
-                user.is_authenticated
-                and (user_has_role(user, "super-admin") or user_has_role(user, "ugp"))
-            ):
+            if user.is_authenticated and is_global_user(user):
                 return qs.filter(ativa=False)
         return qs.filter(ativa=True)
 

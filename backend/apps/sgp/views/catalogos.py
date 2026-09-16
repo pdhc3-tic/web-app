@@ -1,10 +1,10 @@
 from rest_framework import generics
 
 from apps.core.permissions import IsAuthenticatedActiveAccess
-from apps.core.services.permissions import user_has_role
 from apps.sgp.models import Cultura, EspecieAnimal
 from apps.sgp.pagination import CatalogoPagination
 from apps.sgp.serializers import CulturaSerializer, EspecieAnimalSerializer
+from apps.sgp.services.access import is_global_user
 
 
 class CatalogoListView(generics.ListAPIView):
@@ -17,9 +17,7 @@ class CatalogoListView(generics.ListAPIView):
         qs = self.model.objects.all()
 
         ativa_param = self.request.query_params.get("ativa", "").lower()
-        is_admin = user_has_role(self.request.user, "super-admin") or user_has_role(
-            self.request.user, "ugp"
-        )
+        is_admin = is_global_user(self.request.user)
         if ativa_param != "false" or not is_admin:
             qs = qs.filter(ativa=True)
 

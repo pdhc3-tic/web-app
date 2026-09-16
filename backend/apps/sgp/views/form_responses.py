@@ -9,12 +9,10 @@ from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, OpenApiTypes, extend_schema
 from rest_framework import mixins, serializers, status, viewsets
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.permissions import IsAuthenticatedActiveAccess
-from apps.core.services.permissions import user_has_role, user_states, user_territories
 from apps.sgp.filters import FormResponseFilter
 from apps.sgp.models import FormResponse, UPF
 from apps.sgp.pagination import HistoricoPagination
@@ -25,6 +23,7 @@ from apps.sgp.serializers import (
     FormResponseListSerializer,
     FormResponseReceiveSerializer,
 )
+from apps.sgp.services.access import scope_queryset
 from apps.sgp.services.form_response_render import (
     build_field_styles,
     build_respostas_flowables,
@@ -34,19 +33,12 @@ from apps.sgp.services.forms import get_available_upf_forms
 
 def accessible_upf_queryset(user):
     queryset = UPF.objects.select_related("municipio", "municipio__state", "territorio")
-
-    if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
-        return queryset
-
-    if user_has_role(user, "articulador-estadual"):
-        states = user_states(user)
-        return queryset.filter(municipio__state__sigla__in=states) if states else queryset.none()
-
-    if user_has_role(user, "adt-acr"):
-        territories = user_territories(user)
-        return queryset.filter(territorio__in=territories) if territories.exists() else queryset.none()
-
-    raise PermissionDenied("Você não tem acesso ao módulo SGP.")
+    return scope_queryset(
+        queryset,
+        user,
+        state_lookup="municipio__state__sigla__in",
+        territory_lookup="territorio__in",
+    )
 
 
 def get_scoped_upf(user, upf_pk):

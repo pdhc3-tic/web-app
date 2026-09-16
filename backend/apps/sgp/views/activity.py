@@ -4,12 +4,10 @@ from django.db.models import Prefetch
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsAuthenticatedActiveAccess
-from apps.core.services.permissions import user_has_role, user_states, user_territories
 from apps.core.utils import get_config
 from apps.sgp.filters import ActivityFilter
 from apps.sgp.models import Activity, ActivityDocument, ActivityPhoto, UPF
@@ -19,6 +17,7 @@ from apps.sgp.serializers import (
     ActivityDetailSerializer,
     ActivityListSerializer,
 )
+from apps.sgp.services.access import scope_queryset
 from apps.sgp.tasks import sync_activity_to_google_calendar
 from apps.sgp.views.activity_documentos import ActivityDocumentMixin
 from apps.sgp.views.activity_foto import ActivityPhotoMixin
@@ -85,27 +84,13 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
             ),
         ).filter(ativo=True)
 
-        user = self.request.user
-
-        # RLS — acesso global (sem filtro territorial)
-        if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
-            return qs
-
-        # RLS — articulador estadual: filtra por estados do usuário
-        if user_has_role(user, "articulador-estadual"):
-            states = user_states(user)
-            if not states:
-                return qs.none()
-            return qs.filter(municipio__state__sigla__in=states)
-
-        # RLS — ADT/ACR: filtra por territórios vinculados
-        if user_has_role(user, "adt-acr"):
-            territories = user_territories(user)
-            if not territories.exists():
-                return qs.none()
-            return qs.filter(municipio__territory__in=territories)
-
-        raise PermissionDenied("Você não tem acesso ao módulo de Atividades do SGP.")
+        return scope_queryset(
+            qs,
+            self.request.user,
+            state_lookup="municipio__state__sigla__in",
+            territory_lookup="municipio__territory__in",
+            deny_message="Você não tem acesso ao módulo de Atividades do SGP.",
+        )
 
     def perform_create(self, serializer):
         instance = serializer.save(criado_por=self.request.user, ultima_origem="web")
@@ -318,18 +303,13 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
             "tecnico_responsavel",
         ).filter(ativo=True)
 
-        # RLS inline (mesma lógica de get_queryset, sem os prefetch_related desnecessarios)
-        user = request.user
-        if user_has_role(user, "super-admin") or user_has_role(user, "ugp"):
-            pass  # sem filtro territorial
-        elif user_has_role(user, "articulador-estadual"):
-            states = user_states(user)
-            qs = qs.filter(municipio__state__sigla__in=states) if states else qs.none()
-        elif user_has_role(user, "adt-acr"):
-            territories = user_territories(user)
-            qs = qs.filter(municipio__territory__in=territories) if territories.exists() else qs.none()
-        else:
-            raise PermissionDenied("Você não tem acesso ao módulo de Atividades do SGP.")
+        qs = scope_queryset(
+            qs,
+            request.user,
+            state_lookup="municipio__state__sigla__in",
+            territory_lookup="municipio__territory__in",
+            deny_message="Você não tem acesso ao módulo de Atividades do SGP.",
+        )
 
         inicio_dt = timezone.make_aware(datetime.combine(inicio, time.min))
         fim_dt = timezone.make_aware(datetime.combine(fim, time.max))
