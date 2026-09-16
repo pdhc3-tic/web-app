@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { AlertTriangle, Pencil, Plus, Sprout, Trash2 } from "lucide-react";
 import { Button } from "@/app/components/ui/Button/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { useToast } from "@/app/components/ui/Toast/Toast";
+import { useFetch } from "@/app/lib/hooks/useFetch";
 import {
   listProducoes,
   SISTEMA_CRIACAO_OPTIONS,
@@ -19,31 +20,17 @@ type Props = { upfId: string };
 type SlideOverState = { open: false } | { open: true; mode: SlideOverMode; producao?: Producao };
 
 export function ProducaoTab({ upfId }: Props) {
-  const [producoes, setProducoes] = useState<Producao[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
+  const {
+    data: producoes,
+    setData: setProducoes,
+    loading,
+    error,
+    reload,
+  } = useFetch((signal) => listProducoes(upfId, signal), [] as Producao[], [upfId]);
 
   const [slideOver, setSlideOver] = useState<SlideOverState>({ open: false });
   const [remover, setRemover] = useState<Producao | null>(null);
   const { showToast } = useToast();
-
-  useEffect(() => {
-    const controller = new AbortController();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true);
-    setError(null);
-    listProducoes(upfId, controller.signal)
-      .then((data) => setProducoes(data))
-      .catch((e: unknown) => {
-        if (controller.signal.aborted) return;
-        setError(e instanceof Error ? e.message : "Não foi possível carregar as atividades.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [upfId, reloadKey]);
 
   function handleSaved(saved: Producao) {
     setProducoes((prev) => {
@@ -83,7 +70,7 @@ export function ProducaoTab({ upfId }: Props) {
 
       {loading && <TabelaSkeleton />}
 
-      {!loading && error && <ErroSection message={error} onRetry={() => setReloadKey((k) => k + 1)} />}
+      {!loading && error && <ErroSection message={error} onRetry={reload} />}
 
       {!loading && !error && producoes.length === 0 && (
         <EmptyState

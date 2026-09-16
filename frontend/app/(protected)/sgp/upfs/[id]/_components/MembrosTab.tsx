@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   Download,
@@ -18,6 +18,7 @@ import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { useToast } from "@/app/components/ui/Toast/Toast";
 import Spinner from "@/app/components/icons/Spinner";
 import { ApiError } from "@/app/lib/api";
+import { useFetch } from "@/app/lib/hooks/useFetch";
 import {
   calcIdade,
   exportarMembrosCsv,
@@ -59,16 +60,26 @@ function idadeLabel(membro: MembroListItem): string {
 // ─── Componente principal ────────────────────────────────────────────────────
 
 export function MembrosTab({ upfId }: Props) {
-  const [membros, setMembros] = useState<MembroListItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
+  const {
+    data: membros,
+    setData: setMembros,
+    loading,
+    error,
+    reload,
+  } = useFetch((signal) => listMembros(upfId, signal), [] as MembroListItem[], [upfId]);
 
-  const [resumo, setResumo] = useState<ResumoMembros | null>(null);
-  const [resumoLoading, setResumoLoading] = useState(true);
-  /** Distingue "resumo ainda em voo" de "resumo falhou" — ver `semTitular`. */
-  const [resumoErro, setResumoErro] = useState(false);
-  const [resumoKey, setResumoKey] = useState(0);
+  const {
+    data: resumo,
+    loading: resumoLoading,
+    error: resumoError,
+    reload: reloadResumo,
+  } = useFetch(
+    (signal) => getResumoMembros(upfId, signal),
+    null as ResumoMembros | null,
+    [upfId],
+  );
+
+  const resumoErro = resumoError !== null;
 
   const [slideOver, setSlideOver] = useState<SlideOverState>({ open: false });
   const [remover, setRemover] = useState<MembroListItem | null>(null);
@@ -99,54 +110,6 @@ export function MembrosTab({ upfId }: Props) {
     }
   }
 
-  // ── Carrega a lista ────────────────────────────────────────────────────────
-  useEffect(() => {
-    const controller = new AbortController();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true);
-    setError(null);
-
-    listMembros(upfId, controller.signal)
-      .then((data) => setMembros(data))
-      .catch((e: unknown) => {
-        if (controller.signal.aborted) return;
-        setError(
-          e instanceof ApiError
-            ? e.message
-            : "Não foi possível carregar os membros.",
-        );
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-
-    return () => controller.abort();
-  }, [upfId, reloadKey]);
-
-  // ── Carrega o resumo agregado (BE-23) ──────────────────────────────────────
-  // Chave própria: a listagem é atualizada de forma otimista após salvar ou
-  // remover, mas os agregados só o backend sabe recalcular.
-  useEffect(() => {
-    const controller = new AbortController();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setResumoLoading(true);
-
-    setResumoErro(false);
-
-    getResumoMembros(upfId, controller.signal)
-      .then((data) => setResumo(data))
-      .catch(() => {
-        if (controller.signal.aborted) return;
-        // Só aqui o fallback da listagem passa a valer para o alerta.
-        setResumo(null);
-        setResumoErro(true);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setResumoLoading(false);
-      });
-
-    return () => controller.abort();
-  }, [upfId, resumoKey]);
 
   const titularExists = useMemo(
     () => membros.some((m) => m.grau_parentesco === "titular"),
@@ -240,7 +203,7 @@ export function MembrosTab({ upfId }: Props) {
       return next;
     });
 
-    setResumoKey((k) => k + 1);
+    reloadResumo();
     showToast(
       slideOver.open && slideOver.mode === "edit"
         ? "Membro atualizado."
@@ -253,7 +216,7 @@ export function MembrosTab({ upfId }: Props) {
   // Basta remover a linha da lista, fechar o diálogo e disparar o toast.
   function handleDeleteConfirmed(id: number) {
     setMembros((prev) => prev.filter((m) => m.id !== id));
-    setResumoKey((k) => k + 1);
+    reloadResumo();
     setRemover(null);
     showToast("Membro removido.");
   }
@@ -272,7 +235,7 @@ export function MembrosTab({ upfId }: Props) {
           resumo={resumo}
           loading={resumoLoading}
           semTitular={semTitular}
-          onRetry={() => setResumoKey((k) => k + 1)}
+          onRetry={reloadResumo}
         />
       )}
 
@@ -313,8 +276,8 @@ export function MembrosTab({ upfId }: Props) {
         <ErroSection
           message={error}
           onRetry={() => {
-            setReloadKey((k) => k + 1);
-            setResumoKey((k) => k + 1);
+            reload();
+            reloadResumo();
           }}
         />
       )}

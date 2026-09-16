@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowDown,
@@ -14,6 +14,7 @@ import {
 import { Button } from "@/app/components/ui/Button/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { useToast } from "@/app/components/ui/Toast/Toast";
+import { useFetch } from "@/app/lib/hooks/useFetch";
 import { absoluteDateTime, formatDate, relativeTime } from "@/app/lib/datetime";
 import { FileTypeIcon } from "./FileTypeIcon";
 import {
@@ -47,33 +48,19 @@ function formatBytes(bytes: number): string {
 }
 
 export function DocumentosTab({ upfId }: Props) {
-  const [documentos, setDocumentos] = useState<Documento[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
+  const {
+    data: documentos,
+    setData: setDocumentos,
+    loading,
+    error,
+    reload,
+  } = useFetch((signal) => listDocumentos(upfId, signal), [] as Documento[], [upfId]);
 
   const [slideOverOpen, setSlideOverOpen] = useState(false);
   const [remover, setRemover] = useState<Documento | null>(null);
   const { showToast } = useToast();
   const [sortKey, setSortKey] = useState<SortKey>("criado_em");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-
-  useEffect(() => {
-    const controller = new AbortController();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true);
-    setError(null);
-    listDocumentos(upfId, controller.signal)
-      .then((data) => setDocumentos(data))
-      .catch((e: unknown) => {
-        if (controller.signal.aborted) return;
-        setError(e instanceof Error ? e.message : "Não foi possível carregar os documentos.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [upfId, reloadKey]);
 
   const ordenados = useMemo(() => {
     const arr = [...documentos];
@@ -133,7 +120,7 @@ export function DocumentosTab({ upfId }: Props) {
 
       {loading && <TabelaSkeleton />}
 
-      {!loading && error && <ErroSection message={error} onRetry={() => setReloadKey((k) => k + 1)} />}
+      {!loading && error && <ErroSection message={error} onRetry={reload} />}
 
       {!loading && !error && documentos.length === 0 && (
         <EmptyState

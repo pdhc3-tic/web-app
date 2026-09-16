@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { AlertTriangle, History } from "lucide-react";
 import { Button } from "@/app/components/ui/Button/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { Pagination } from "@/app/components/ui/Pagination/Pagination";
 import Spinner from "@/app/components/icons/Spinner";
-import { ApiError } from "@/app/lib/api";
+import { useFetch } from "@/app/lib/hooks/useFetch";
 import { fetchUpfHistorico, type HistoricoEntry } from "@/app/lib/upfs";
 import { relativeTime, absoluteDateTime } from "@/app/lib/datetime";
 
@@ -66,37 +66,19 @@ type HistoricoTabProps = {
 
 export function HistoricoTab({ upfId }: HistoricoTabProps) {
   const [page, setPage] = useState(1);
-  const [entries, setEntries] = useState<HistoricoEntry[]>([]);
-  const [count, setCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true);
-    setError(null);
+  const {
+    data,
+    loading,
+    error,
+    reload,
+  } = useFetch(
+    (signal) => fetchUpfHistorico(upfId, { page, pageSize: PAGE_SIZE }, signal),
+    { results: [] as HistoricoEntry[], count: 0, next: null, previous: null },
+    [upfId, page],
+  );
 
-    fetchUpfHistorico(upfId, { page, pageSize: PAGE_SIZE }, controller.signal)
-      .then((data) => {
-        setEntries(data.results);
-        setCount(data.count);
-      })
-      .catch((e: unknown) => {
-        if (controller.signal.aborted) return;
-        setError(
-          e instanceof ApiError
-            ? e.message
-            : "Não foi possível carregar o histórico.",
-        );
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-
-    return () => controller.abort();
-  }, [upfId, page, reloadKey]);
+  const { results: entries, count } = data;
 
   if (loading) {
     return (
@@ -113,7 +95,7 @@ export function HistoricoTab({ upfId }: HistoricoTabProps) {
           <AlertTriangle className="h-6 w-6" />
         </span>
         <p className="max-w-sm text-sm text-text-muted">{error}</p>
-        <Button variant="secondary" onClick={() => setReloadKey((k) => k + 1)}>
+        <Button variant="secondary" onClick={reload}>
           Tentar novamente
         </Button>
       </div>
