@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { notFound, useParams } from "next/navigation";
+import { notFound, useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
@@ -45,32 +45,6 @@ const TAB_IDS = [
 type TabId = (typeof TAB_IDS)[number];
 
 type Status = "loading" | "ok" | "notfound" | "forbidden" | "error";
-
-/** Aba ativa espelhada no hash da URL (ex.: #moradia). */
-function useHashTab(): [TabId, (id: string) => void] {
-  const [tab, setTab] = useState<TabId>("localizacao");
-
-  useEffect(() => {
-    const read = () => {
-      const hash = window.location.hash.replace(/^#/, "");
-      setTab(
-        (TAB_IDS as readonly string[]).includes(hash)
-          ? (hash as TabId)
-          : "localizacao",
-      );
-    };
-    read();
-    window.addEventListener("hashchange", read);
-    return () => window.removeEventListener("hashchange", read);
-  }, []);
-
-  const change = (id: string) => {
-    history.replaceState(null, "", `#${id}`);
-    setTab(id as TabId);
-  };
-
-  return [tab, change];
-}
 
 function joinAddress(upf: UpfDetail): string {
   const line = [upf.logradouro, upf.numero].filter(Boolean).join(", ");
@@ -231,10 +205,20 @@ export default function UpfDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
 
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
   const [status, setStatus] = useState<Status>("loading");
   const [upf, setUpf] = useState<UpfDetail | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const [tab, setTab] = useHashTab();
+
+  const rawTab = searchParams.get("tab") ?? "";
+  const tab: TabId = (TAB_IDS as readonly string[]).includes(rawTab)
+    ? (rawTab as TabId)
+    : "localizacao";
+  const setTab = (id: string) =>
+    router.replace(`${pathname}?tab=${id}`, { scroll: false });
 
   useEffect(() => {
     // Protege contra ids não numéricos (ex.: colisão com /sgp/upfs/nova/).
