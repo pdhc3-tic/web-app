@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import {
-  AlertTriangle,
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
@@ -14,6 +13,7 @@ import {
 import { Button } from "@/app/components/ui/Button/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { useToast } from "@/app/components/ui/Toast/Toast";
+import { CrudTab } from "@/app/components/ui/CrudTab/CrudTab";
 import { useFetch } from "@/app/lib/hooks/useFetch";
 import { absoluteDateTime, formatDate, relativeTime } from "@/app/lib/datetime";
 import { FileTypeIcon } from "./FileTypeIcon";
@@ -106,45 +106,43 @@ export function DocumentosTab({ upfId }: Props) {
 
   return (
     <div className="space-y-4">
-      {!loading && !error && documentos.length > 0 && (
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm text-text-muted">
-            {documentos.length}{" "}
-            {documentos.length === 1 ? "documento anexado" : "documentos anexados"}
-          </p>
-          <Button size="sm" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setSlideOverOpen(true)}>
-            Adicionar documento
-          </Button>
-        </div>
-      )}
-
-      {loading && <TabelaSkeleton />}
-
-      {!loading && error && <ErroSection message={error} onRetry={reload} />}
-
-      {!loading && !error && documentos.length === 0 && (
-        <EmptyState
-          icon={<FileText className="h-7 w-7" />}
-          title="Nenhum documento anexado"
-          description="Adicione DAPs, contratos, laudos e outros documentos da UPF."
-          action={
-            <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setSlideOverOpen(true)}>
-              Adicionar primeiro documento
+      <CrudTab loading={loading} error={error} onRetry={reload} skeleton={<TabelaSkeleton />}>
+        {documentos.length > 0 && (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-text-muted">
+              {documentos.length}{" "}
+              {documentos.length === 1 ? "documento anexado" : "documentos anexados"}
+            </p>
+            <Button size="sm" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setSlideOverOpen(true)}>
+              Adicionar documento
             </Button>
-          }
-        />
-      )}
+          </div>
+        )}
 
-      {!loading && !error && documentos.length > 0 && (
-        <Tabela
-          documentos={ordenados}
-          sortKey={sortKey}
-          sortDir={sortDir}
-          onSort={toggleSort}
-          onDownload={handleDownload}
-          onRemove={(d) => setRemover(d)}
-        />
-      )}
+        {documentos.length === 0 && (
+          <EmptyState
+            icon={<FileText className="h-7 w-7" />}
+            title="Nenhum documento anexado"
+            description="Adicione DAPs, contratos, laudos e outros documentos da UPF."
+            action={
+              <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setSlideOverOpen(true)}>
+                Adicionar primeiro documento
+              </Button>
+            }
+          />
+        )}
+
+        {documentos.length > 0 && (
+          <Tabela
+            documentos={ordenados}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSort={toggleSort}
+            onDownload={handleDownload}
+            onRemove={(d) => setRemover(d)}
+          />
+        )}
+      </CrudTab>
 
       <DocumentoSlideOver
         open={slideOverOpen}
@@ -331,15 +329,4 @@ function TabelaSkeleton() {
   );
 }
 
-function ErroSection({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="flex flex-col items-center gap-4 rounded-lg border border-border bg-surface px-6 py-16 text-center">
-      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-error-bg text-error-text">
-        <AlertTriangle className="h-6 w-6" />
-      </span>
-      <p className="max-w-sm text-sm text-text-muted">{message}</p>
-      <Button variant="secondary" onClick={onRetry}>Tentar novamente</Button>
-    </div>
-  );
-}
 
