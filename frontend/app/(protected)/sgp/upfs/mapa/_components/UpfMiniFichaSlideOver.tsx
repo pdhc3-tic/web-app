@@ -76,7 +76,7 @@ export function UpfMiniFichaSlideOver({ upf, onClose }: Props) {
           <DefinitionList
             items={[
               { label: "CPF", value: cpf },
-              { label: "Município", value: upf.municipio },
+              { label: "Município", value: upf.municipio?.nome },
               { label: "Território", value: upf.territorio ?? undefined },
               { label: "Comunidade", value: detalhe?.comunidade?.nome },
               {

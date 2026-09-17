@@ -521,11 +521,13 @@ export function PhotoGallery({ atividadeId, readOnly = false }: Props) {
             ))}
           </ul>
 
-          <p className="mt-3 text-xs text-text-muted">
+          {/* Em leitura a cota não é acionável — anunciar vagas que o usuário
+              não pode preencher lê como um controle quebrado. */}
+          {!readOnly && <p className="mt-3 text-xs text-text-muted">
             {vagasRestantes > 0
               ? `Você pode adicionar mais ${vagasRestantes} foto${vagasRestantes === 1 ? "" : "s"}.`
               : "Limite atingido. Remova uma foto para adicionar outra."}
-          </p>
+          </p>}
         </div>
       )}
 

@@ -165,7 +165,7 @@ function UpfsMapaContent() {
       popup: (
         <div>
           <p className="font-medium text-text">{u.nome_titular}</p>
-          <p className="text-xs text-text-muted">{u.municipio}{u.territorio ? ` · ${u.territorio}` : ""}</p>
+          <p className="text-xs text-text-muted">{u.municipio?.nome}{u.territorio ? ` · ${u.territorio}` : ""}</p>
         </div>
       ),
     }));

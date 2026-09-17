@@ -21,7 +21,6 @@ import { ApiError } from "@/app/lib/api";
 import {
   calcIdade,
   exportarMembrosCsv,
-  ExportMembrosPendenteError,
   ExportMembrosTimeoutError,
   getResumoMembros,
   listMembros,
@@ -67,6 +66,8 @@ export function MembrosTab({ upfId }: Props) {
 
   const [resumo, setResumo] = useState<ResumoMembros | null>(null);
   const [resumoLoading, setResumoLoading] = useState(true);
+  /** Distingue "resumo ainda em voo" de "resumo falhou" — ver `semTitular`. */
+  const [resumoErro, setResumoErro] = useState(false);
   const [resumoKey, setResumoKey] = useState(0);
 
   const [slideOver, setSlideOver] = useState<SlideOverState>({ open: false });
@@ -75,10 +76,9 @@ export function MembrosTab({ upfId }: Props) {
   const { showToast } = useToast();
 
   /**
-   * Baixa o CSV de membros (#191). Enquanto BE-24 não existir, o endpoint
-   * responde 404 → `ExportMembrosPendenteError`, e o toast diz "aguardando
-   * backend" em vez do genérico "não foi possível gerar". Quando BE-24
-   * subir, esta função funciona sem mais mudança.
+   * Baixa o CSV de membros (#191). As colunas vêm prontas do backend, que
+   * omite as sensíveis conforme o perfil (BE-25) — nada aqui depende disso:
+   * o arquivo desce como veio.
    */
   async function handleExport() {
     if (exporting) return;
@@ -88,13 +88,11 @@ export function MembrosTab({ upfId }: Props) {
       showToast(`Download iniciado: ${nome}`);
     } catch (e) {
       const mensagem =
-        e instanceof ExportMembrosPendenteError
-          ? e.message
-          : e instanceof ExportMembrosTimeoutError
-            ? "A geração do arquivo excedeu o tempo limite. Tente novamente."
-            : e instanceof ApiError
-              ? e.message
-              : "Não foi possível gerar o arquivo. Tente novamente.";
+        e instanceof ExportMembrosTimeoutError
+          ? "A geração do arquivo excedeu o tempo limite. Tente novamente."
+          : e instanceof ApiError
+            ? e.message
+            : "Não foi possível gerar o arquivo. Tente novamente.";
       showToast(mensagem, "error");
     } finally {
       setExporting(false);
@@ -133,10 +131,15 @@ export function MembrosTab({ upfId }: Props) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setResumoLoading(true);
 
+    setResumoErro(false);
+
     getResumoMembros(upfId, controller.signal)
       .then((data) => setResumo(data))
       .catch(() => {
-        if (!controller.signal.aborted) setResumo(null);
+        if (controller.signal.aborted) return;
+        // Só aqui o fallback da listagem passa a valer para o alerta.
+        setResumo(null);
+        setResumoErro(true);
       })
       .finally(() => {
         if (!controller.signal.aborted) setResumoLoading(false);
@@ -150,9 +153,31 @@ export function MembrosTab({ upfId }: Props) {
     [membros],
   );
 
-  // O resumo é a fonte da verdade sobre o Titular; a listagem só cobre o caso
-  // em que a chamada do resumo falhou, para o alerta não sumir junto com ela.
-  const semTitular = resumo ? !resumo.tem_titular : !titularExists;
+  /**
+   * Há Titular na UPF? `null` enquanto o resumo não respondeu — o alerta não
+   * pode aparecer antes disso.
+   *
+   * `resumoLoading` vem primeiro na cadeia, e não só a ausência de `resumo`:
+   * na revalidação disparada por salvar/remover, o resumo anterior continua em
+   * memória (de propósito — os números não devem sumir da tela a cada
+   * gravação), mas ele descreve o estado *antes* da alteração. Afirmar o
+   * alerta a partir dele é afirmar por antecipação do mesmo jeito que derivá-lo
+   * da listagem era: quem acabou de promover alguém a Titular veria o aviso
+   * insistir até a resposta chegar. Enquanto a consulta está em voo — primeira
+   * ou não — o valor é "ainda não sei".
+   *
+   * Fora do carregamento, o resumo (BE-23) é a fonte da verdade: ele conta no
+   * banco, sem depender da página carregada. A listagem só entra como fallback
+   * depois de uma falha efetiva da chamada, para o alerta não sumir junto com
+   * ela.
+   */
+  const semTitular: boolean | null = resumoLoading
+    ? null
+    : resumo
+      ? !resumo.tem_titular
+      : resumoErro
+        ? !titularExists
+        : null;
 
   /**
    * Permissão do usuário para os campos sensíveis (#192/BE-25) — usada para o
@@ -237,42 +262,49 @@ export function MembrosTab({ upfId }: Props) {
 
   return (
     <div className="space-y-4" data-testid="membros-tab">
-      {/* Card-resumo + botão de adicionar. Com a UPF vazia nada disso aparece:
-          o EmptyState já diz o total (nenhum) e pede o Titular. */}
+      {/* Card-resumo — aparece também com a UPF vazia. Total zero e faixas
+          zeradas são informação, e é justamente aí que o alerta de "sem
+          Titular" mais importa; escondê-lo junto com a lista tirava da tela o
+          único aviso de que a UPF está irregular. O alerta em si só entra
+          depois que o resumo responde — ver `semTitular`. */}
+      {!loading && !error && (
+        <ComposicaoResumoCard
+          resumo={resumo}
+          loading={resumoLoading}
+          semTitular={semTitular}
+          onRetry={() => setResumoKey((k) => k + 1)}
+        />
+      )}
+
+      {/* A barra de ações continua atrelada à lista: exportar CSV de uma UPF
+          sem membros não tem o que gerar, e o CTA de cadastro com zero membros
+          é o do EmptyState logo abaixo ("Adicionar primeiro membro"). */}
       {!loading && !error && membros.length > 0 && (
-        <>
-          <ComposicaoResumoCard
-            resumo={resumo}
-            loading={resumoLoading}
-            semTitular={semTitular}
-            onRetry={() => setResumoKey((k) => k + 1)}
-          />
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              leftIcon={
-                exporting ? (
-                  <Spinner className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Download className="h-4 w-4" />
-                )
-              }
-              disabled={exporting}
-              onClick={handleExport}
-              data-testid="membros-exportar-csv"
-            >
-              {exporting ? "Exportando…" : "Exportar CSV"}
-            </Button>
-            <Button
-              size="sm"
-              leftIcon={<Plus className="h-4 w-4" />}
-              onClick={openCreate}
-            >
-              Adicionar membro
-            </Button>
-          </div>
-        </>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            leftIcon={
+              exporting ? (
+                <Spinner className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )
+            }
+            disabled={exporting}
+            onClick={handleExport}
+            data-testid="membros-exportar-csv"
+          >
+            {exporting ? "Exportando…" : "Exportar CSV"}
+          </Button>
+          <Button
+            size="sm"
+            leftIcon={<Plus className="h-4 w-4" />}
+            onClick={openCreate}
+          >
+            Adicionar membro
+          </Button>
+        </div>
       )}
 
       {loading && <CarregandoSection />}

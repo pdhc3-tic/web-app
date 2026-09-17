@@ -201,6 +201,48 @@ test.describe("Conflitos de sincronização — Articulador de PB", () => {
   });
 });
 
+/**
+ * A UGP enxerga o restante do SCA, mas não os conflitos: o aceite limita a
+ * revisão a Articulador Estadual e Super Admin.
+ *
+ * O que este bloco cobre é a afordância — menu escondido e rota bloqueada. O
+ * recorte de dados é do backend e entrou na PR #213: `get_queryset` devolve
+ * `qs.none()` para o perfil `ugp` e `resolver` nega pelo
+ * `has_object_permission`. Uma coisa não substitui a outra — este bloco segue
+ * provando que a tela não oferece o caminho.
+ */
+test.describe("Conflitos de sincronização — UGP não revisa conflitos", () => {
+  test.use({ storageState: storageStatePath("ugp") });
+
+  test("não vê o item de menu de conflitos", async ({ page }) => {
+    await page.goto("/dashboard");
+
+    // Âncora: o menu precisa ter renderizado, senão uma sidebar ausente
+    // passaria por "item escondido". "SCA" é item de módulo, visível a todos.
+    await expect(
+      page.getByRole("link", { name: "SCA", exact: true }).first(),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "Conflitos SCA" })).toHaveCount(
+      0,
+    );
+  });
+
+  test("acesso direto à lista e ao detalhe cai no estado de acesso negado", async ({
+    page,
+  }) => {
+    await page.goto("/sca/conflitos");
+    await expect(page.getByTestId("conflitos-page")).toHaveCount(0);
+    await expect(page.locator("main").getByRole("alert")).toBeVisible();
+    await expect(page.locator("main").getByRole("alert")).toContainText(
+      "Conteúdo restrito",
+    );
+
+    // O gate do detalhe é independente do da lista — vale checar os dois.
+    await page.goto("/sca/conflitos/1");
+    await expect(page.locator("main").getByRole("alert")).toBeVisible();
+  });
+});
+
 test.describe("Conflitos de sincronização — perfil sem acesso", () => {
   test.use({ storageState: storageStatePath("semPermissao") });
 

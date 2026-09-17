@@ -200,6 +200,16 @@ def usuario_sem_acesso(db):
 
 
 @pytest.fixture
+def usuario_fgd(db):
+    role = RoleFactory(slug="fgd", nome="FGD")
+    return UserFactory(
+        email="fgd@test.com",
+        nome="FGD",
+        profiles=[(role, None)],
+    )
+
+
+@pytest.fixture
 def auth_client(api_client, usuario):
     api_client.force_authenticate(user=usuario)
     return api_client
@@ -226,6 +236,12 @@ def auth_client_adt_rn(api_client, usuario_adt_rn):
 @pytest.fixture
 def auth_client_sem_acesso(api_client, usuario_sem_acesso):
     api_client.force_authenticate(user=usuario_sem_acesso)
+    return api_client
+
+
+@pytest.fixture
+def auth_client_fgd(api_client, usuario_fgd):
+    api_client.force_authenticate(user=usuario_fgd)
     return api_client
 
 

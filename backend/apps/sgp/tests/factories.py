@@ -1,9 +1,17 @@
 import factory
 from django.utils import timezone
 
-from apps.core.tests.factories import MunicipalityFactory, UserFactory
+from apps.core.tests.factories import (
+    MunicipalityFactory,
+    OrganizationFactory,
+    TerritoryFactory,
+    UserFactory,
+)
 from apps.sgp.models import (
     Activity,
+    BudgetAllocation,
+    BudgetRubrica,
+    BudgetTransaction,
     Comunidade,
     Cultura,
     EspecieAnimal,
@@ -11,6 +19,7 @@ from apps.sgp.models import (
     MembroFamilia,
     Production,
     Projeto,
+    Tecnico,
     UPF,
     UPFDocument,
 )
@@ -205,3 +214,67 @@ class ActivityFactory(factory.django.DjangoModelFactory):
     descricao_narrativa = factory.Sequence(lambda n: f"Narrativa da atividade {n}")
     status = "planejado"
     ativo = True
+
+    @factory.post_generation
+    def parceiros_organizacoes(self, create, extracted, **kwargs):
+        if not create or not extracted:
+            return
+        self.parceiros_organizacoes.set(extracted)
+
+
+# ---------------------------------------------------------------------------
+# Tecnico factory
+# ---------------------------------------------------------------------------
+
+class TecnicoFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Tecnico
+
+    user = factory.SubFactory(UserFactory)
+    territorio = factory.SubFactory(TerritoryFactory)
+    osc = factory.SubFactory(OrganizationFactory)
+    papel = "adt-acr"
+    ativo = True
+
+
+# ---------------------------------------------------------------------------
+# Budget factories
+# ---------------------------------------------------------------------------
+
+class BudgetRubricaFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = BudgetRubrica
+        django_get_or_create = ("slug",)
+
+    nome = factory.Sequence(lambda n: f"Rubrica {n}")
+    slug = factory.Sequence(lambda n: f"rubrica-{n}")
+    ativo = True
+    ordem = factory.Sequence(lambda n: n)
+
+
+class BudgetAllocationFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = BudgetAllocation
+
+    meta = factory.SubFactory(WorkPlanMetaFactory)
+    rubrica = factory.SubFactory(BudgetRubricaFactory)
+    nivel = BudgetAllocation.Nivel.TERRITORIAL
+    estado = None
+    territorio = factory.SubFactory(TerritoryFactory)
+    valor_alocado = 0
+    valor_comprometido = 0
+    valor_executado = 0
+    reserva_ugp = False
+    criado_por = factory.SubFactory(UserFactory)
+
+
+class BudgetTransactionFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = BudgetTransaction
+
+    allocation = factory.SubFactory(BudgetAllocationFactory)
+    tipo = BudgetTransaction.Tipo.RESERVA
+    valor = 100
+    demanda_id = None
+    justificativa = ""
+    criado_por = factory.SubFactory(UserFactory)

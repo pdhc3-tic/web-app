@@ -1,6 +1,12 @@
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 
+/**
+ * Card de submódulo das telas-índice de módulo (SGP, SCA). Nasceu no SGP e
+ * subiu para cá quando ganhou o segundo consumidor — o comportamento é o mesmo
+ * nas duas: `href` ausente marca o card como "Em breve", e `count` opcional
+ * mostra o número do submódulo ativo.
+ */
 type SubmoduleCardProps = {
   title: string;
   description: string;

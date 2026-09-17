@@ -17,6 +17,7 @@ from django.db import models
 from django.utils import timezone
 
 from apps.sgp.models import Activity, MembroFamilia, UPF
+from apps.sgp.services.activity_status import ActivityStatusError, transition
 
 
 def _resolve_fk_ids(model, data: dict) -> dict:
@@ -46,6 +47,10 @@ class SyncEntity:
     name: str = ""
     model = None
     sensitive_paths: tuple = ()
+    # Caminho achatado -> nome do campo em SENSITIVE_FIELD_ROLES. Distinto de
+    # sensitive_paths (que cobre nome/CPF/geo para fins de conflito): este
+    # cobre só os campos com leitura restrita por perfil (saúde, cor/raça).
+    restricted_paths: dict = {}
     natural_key_paths: tuple = ()
     id_fields: frozenset = frozenset()
     soft_delete_field: str | None = None
@@ -90,6 +95,35 @@ class SyncEntity:
 
     def syncable(self, path: str) -> bool:
         return True
+
+    @staticmethod
+    def _pop_path(data: dict, path: str) -> None:
+        """Remove a chave em `path` (dotted) de um dict aninhado, se existir."""
+        parts = path.split(".")
+        current = data
+        for part in parts[:-1]:
+            current = current.get(part) if isinstance(current, dict) else None
+            if current is None:
+                return
+        if isinstance(current, dict):
+            current.pop(parts[-1], None)
+
+    def redact_restricted(self, data: dict, visible_fields: set[str]) -> dict:
+        """Remove de `data` os campos de `restricted_paths` que `visible_fields` não autoriza."""
+        for path, sensitive_field in self.restricted_paths.items():
+            if sensitive_field in visible_fields:
+                continue
+            self._pop_path(data, path)
+        return data
+
+    def restricted_paths_written(self, data: dict) -> dict[str, str]:
+        """Subconjunto de `restricted_paths` presente em `data` (achatado)."""
+        flat = self.flatten(data)
+        return {
+            path: sensitive_field
+            for path, sensitive_field in self.restricted_paths.items()
+            if path in flat
+        }
 
     # ------------------------------------------------------------------
     # Lookup
@@ -166,7 +200,11 @@ class UPFSyncEntity(SyncEntity):
     model = UPF
     soft_delete_field = "ativa"
     id_fields = frozenset({"projeto", "comunidade", "municipio", "territorio"})
-    sensitive_paths = ("titular.nome_completo", "titular.cpf", "latitude", "longitude")
+    sensitive_paths = (
+        "titular.nome_completo", "titular.cpf", "latitude", "longitude",
+        "titular.cor_raca", "titular.saude",
+    )
+    restricted_paths = {"titular.cor_raca": "cor_raca", "titular.saude": "saude"}
     natural_key_paths = ("titular.cpf",)
     territory_lookup = "territorio_id"
 
@@ -304,7 +342,8 @@ class MemberSyncEntity(SyncEntity):
     name = "member"
     model = MembroFamilia
     id_fields = frozenset({"upf"})
-    sensitive_paths = ("nome_completo", "cpf")
+    sensitive_paths = ("nome_completo", "cpf", "cor_raca", "saude")
+    restricted_paths = {"cor_raca": "cor_raca", "saude": "saude"}
     natural_key_paths = ("cpf",)
     territory_lookup = "upf__territorio_id"
 
@@ -397,7 +436,10 @@ class ActivitySyncEntity(SyncEntity):
     def create(self, data, *, user, device_id, uuid_local, uuid_map):
         upfs = [self._resolve_participante(item, uuid_map, UPF) for item in data.pop("upfs_participantes", [])]
         membros = [self._resolve_participante(item, uuid_map, MembroFamilia) for item in data.pop("membros_participantes", [])]
-        instance = Activity.objects.create(
+        novo_status = data.pop("status", None)
+        justificativa = data.pop("justificativa", "")
+
+        instance = Activity(
             criado_por=user,
             device_id=device_id,
             uuid_local=uuid_local,
@@ -405,6 +447,12 @@ class ActivitySyncEntity(SyncEntity):
             ultimo_sync_em=timezone.now(),
             **_resolve_fk_ids(Activity, data),
         )
+        if novo_status is not None:
+            try:
+                transition(instance, novo_status, usuario=user, justificativa=justificativa)
+            except ActivityStatusError as exc:
+                raise SyncEntityError(f"{exc.sync_code}: {exc.message}") from exc
+        instance.save()
         if upfs:
             instance.upfs_participantes.set(upfs)
         if membros:
@@ -419,6 +467,18 @@ class ActivitySyncEntity(SyncEntity):
 
     def apply_changes(self, instance, changes: dict):
         changes = _resolve_fk_ids(Activity, changes)
+        novo_status = changes.pop("status", None)
+        if novo_status is not None:
+            try:
+                transition(
+                    instance,
+                    novo_status,
+                    usuario=None,
+                    justificativa=changes.get("justificativa", instance.justificativa),
+                    nova_data=changes.get("data_inicio"),
+                )
+            except ActivityStatusError as exc:
+                raise SyncEntityError(f"{exc.sync_code}: {exc.message}") from exc
         for field, value in changes.items():
             setattr(instance, field, value)
         instance.ultima_origem = "sca"
@@ -439,7 +499,7 @@ class ActivitySyncEntity(SyncEntity):
             "longitude": str(instance.longitude) if instance.longitude is not None else None,
             "data_inicio": instance.data_inicio.isoformat() if instance.data_inicio else None,
             "data_fim": instance.data_fim.isoformat() if instance.data_fim else None,
-            "parceiros": instance.parceiros,
+            "parceiros_livres": instance.parceiros_livres,
             "descricao_narrativa": instance.descricao_narrativa,
             "resultados_alcancados": instance.resultados_alcancados,
             "status": instance.status,

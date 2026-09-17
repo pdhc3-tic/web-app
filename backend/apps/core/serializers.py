@@ -429,3 +429,18 @@ class AuditLogSerializer(serializers.ModelSerializer):
             "timestamp",
         ]
         read_only_fields = fields
+
+
+class PowerBITokenStatusSerializer(serializers.Serializer):
+    url_endpoint = serializers.CharField()
+    token_mascarado = serializers.CharField(allow_null=True)
+    atualizado_em = serializers.CharField(allow_null=True)
+    status_snapshot = serializers.ChoiceField(
+        choices=["sem_snapshot", "em_dia", "atrasado"]
+    )
+
+
+class PowerBITokenRegenerateSerializer(serializers.Serializer):
+    token = serializers.CharField()
+    token_mascarado = serializers.CharField()
+    criado_em = serializers.DateTimeField()

@@ -53,6 +53,7 @@ Preencha os valores obrigatórios:
 | Arquivo | Variável | Como gerar |
 |---------|----------|------------|
 | `backend/.env` | `DJANGO_SECRET_KEY` | `python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"` |
+| `backend/.env` | `FIELD_ENCRYPTION_KEY` | `openssl rand -base64 32` — chave AES-256 usada para criptografar em repouso os campos sensíveis de `MembroFamilia` (saúde, cor/raça). Sem ela, qualquer operação que crie/leia/edite membros falha com `ImproperlyConfigured`. |
 | `frontend/.env.local` | `AUTH_SECRET` | `openssl rand -base64 32` |
 
 > **Nota:** As demais variáveis já possuem valores padrão adequados para desenvolvimento local. Consulte os arquivos `.env.example` para referência completa.
@@ -127,6 +128,7 @@ Configure em **Settings → Secrets and variables → Actions → Repository sec
 | `SUPERUSER_NAME` | Nome do administrador inicial |
 | `SUPERUSER_PASSWORD` | Senha do administrador inicial |
 | `SLACK_WEBHOOK_URL` | Webhook usado nas notificações de sucesso e falha |
+| `FIELD_ENCRYPTION_KEY` | Chave AES-256 de criptografia em repouso de `saude`/`cor_raca` (Issue #187). **Opcional, mas fortemente recomendado em produção** — gere uma vez com `openssl rand -base64 32` e cadastre antes do primeiro deploy. Serve como backup durável, fora da VPS, dessa chave: se ela não for cadastrada, o `deploy.sh` gera uma sozinha na VPS na primeira execução, mas aí ela só existe lá — perder o disco da VPS sem essa cópia é perda permanente dos dados de saúde/cor-raça já gravados. |
 
 O workflow não versiona nem transporta os XLSX. O `SEED_DATA_DIR` é apenas
 enviado ao script remoto. Não coloque valores de secrets em arquivos do
@@ -162,7 +164,18 @@ permissões restritas. Veja o formato e o relatório em
 
 Na primeira execução, o script cria `backend/.env` e `frontend/.env.local` a
 partir dos exemplos e gera `DJANGO_SECRET_KEY` e `AUTH_SECRET` se estiverem
-vazios. Revise os demais valores de produção, especialmente `ALLOWED_HOSTS`,
+vazios. `FIELD_ENCRYPTION_KEY` segue a mesma lógica de "só grava se estiver
+vazia", mas com uma fonte diferente: se o secret `FIELD_ENCRYPTION_KEY` do
+GitHub Actions estiver cadastrado, o valor gravado no `.env` da VPS vem dele;
+senão, cai no fallback de gerar localmente. **Atenção:** diferente das outras
+chaves, ela não pode ser trocada depois que existirem membros com
+`saude`/`cor_raca` preenchidos — trocar o valor torna esses dados já gravados
+indecifráveis (perda de dado, não apenas de acesso), e o `deploy.sh` nunca
+sobrescreve um valor já existente no `.env`, mesmo que o secret do GitHub
+mude depois. Por isso, cadastre `FIELD_ENCRYPTION_KEY` nos secrets do GitHub
+**antes do primeiro deploy em produção** — assim ela fica com um backup
+durável fora da VPS desde o início, em vez de existir só localmente. Revise
+os demais valores de produção, especialmente `ALLOWED_HOSTS`,
 `CORS_ALLOWED_ORIGINS`, storage R2 e `NEXT_PUBLIC_API_URL` no `.env` da raiz.
 O `DB_PASSWORD` de `backend/.env` precisa corresponder à senha do usuário
 `app_user` criado no PostgreSQL; a instalação inicial usa `app_pass` conforme

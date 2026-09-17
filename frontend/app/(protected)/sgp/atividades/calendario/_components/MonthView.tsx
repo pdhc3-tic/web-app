@@ -26,7 +26,14 @@ type Props = {
 const WEEKDAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const MAX_EVENTS_PER_CELL = 3;
 
-/** Grade de 6×7 iniciada no domingo — padrão brasileiro. */
+/**
+ * Grade mensal iniciada no domingo — padrão brasileiro.
+ *
+ * O número de linhas VARIA: a grade vai de `startOfWeek(início do mês)` a
+ * `endOfWeek(fim do mês)`, o que dá 4 a 6 semanas conforme onde o mês cai
+ * (setembro/2026, por exemplo, rende 5 linhas / 35 células). Sempre semanas
+ * completas, nunca 6 fixas.
+ */
 export function MonthView({ anchor, events, onSelectEvent, onCreateAt }: Props) {
   const dias = useMemo(() => {
     const gridStart = startOfWeek(startOfMonth(anchor), { weekStartsOn: 0 });
@@ -51,7 +58,7 @@ export function MonthView({ anchor, events, onSelectEvent, onCreateAt }: Props) 
         ))}
       </div>
 
-      <div className="grid grid-cols-7 auto-rows-fr">
+      <div className="grid grid-cols-7 auto-rows-fr" data-testid="calendario-grade-mes">
         {dias.map((dia) => {
           const key = format(dia, "yyyy-MM-dd");
           const doMes = isSameMonth(dia, anchor);
@@ -60,45 +67,65 @@ export function MonthView({ anchor, events, onSelectEvent, onCreateAt }: Props) 
           const excedente = eventosDoDia.length - MAX_EVENTS_PER_CELL;
 
           return (
-            <button
-              type="button"
+            <div
               key={key}
-              onClick={() => onCreateAt(dia)}
-              aria-label={`Criar atividade em ${format(dia, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}`}
-              className={`group relative flex min-h-24 flex-col gap-1 border-b border-r border-border p-1.5 text-left transition-colors hover:bg-surface-warm/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+              data-testid={`calendario-dia-${key}`}
+              className={`relative flex min-h-24 flex-col border-b border-r border-border transition-colors hover:bg-surface-warm/40 ${
                 doMes ? "bg-surface" : "bg-surface-muted/40"
               }`}
             >
-              <span
-                className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium ${
-                  hoje
-                    ? "bg-primary text-surface"
-                    : doMes
-                      ? "text-text"
-                      : "text-text-muted"
-                }`}
-              >
-                {format(dia, "d")}
-              </span>
+              {/* Alvo de "criar neste dia": uma camada de fundo, e não a célula
+                  inteira. A célula era um <button> com as pílulas de evento —
+                  outros <button> — dentro dele, o que é HTML inválido e
+                  quebrava a hidratação ("<button> cannot be a descendant of
+                  <button>"). Aqui os dois cliques ficam em elementos irmãos.
 
-              {eventosDoDia.slice(0, MAX_EVENTS_PER_CELL).map((ev) => (
-                <EventPill
-                  key={`${key}-${ev.id}`}
-                  event={ev}
-                  compact
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectEvent(ev);
-                  }}
-                />
-              ))}
+                  O outline entra com offset NEGATIVO porque este botão cobre a
+                  célula inteira: um anel para fora seria cortado pelo
+                  `overflow-hidden` da grade. */}
+              <button
+                type="button"
+                onClick={() => onCreateAt(dia)}
+                aria-label={`Criar atividade em ${format(dia, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}`}
+                data-testid={`calendario-criar-${key}`}
+                className="absolute inset-0 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
+              />
 
-              {excedente > 0 && (
-                <span className="mt-auto self-start text-2xs font-medium text-text-muted">
-                  +{excedente} mais
+              {/* `pointer-events-none` deixa o clique no vazio e no número do
+                  dia atravessar para o botão de fundo; as pílulas reativam o
+                  ponteiro para si. */}
+              <div className="pointer-events-none relative flex flex-1 flex-col gap-1 p-1.5">
+                <span
+                  className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium ${
+                    hoje
+                      ? "bg-primary text-surface"
+                      : doMes
+                        ? "text-text"
+                        : "text-text-muted"
+                  }`}
+                >
+                  {format(dia, "d")}
                 </span>
-              )}
-            </button>
+
+                {eventosDoDia.slice(0, MAX_EVENTS_PER_CELL).map((ev) => (
+                  <EventPill
+                    key={`${key}-${ev.id}`}
+                    event={ev}
+                    compact
+                    className="pointer-events-auto"
+                    // Sem stopPropagation: o botão de fundo é IRMÃO desta
+                    // pílula, não ancestral, então o clique não chega nele.
+                    onClick={() => onSelectEvent(ev)}
+                  />
+                ))}
+
+                {excedente > 0 && (
+                  <span className="mt-auto self-start text-2xs font-medium text-text-muted">
+                    +{excedente} mais
+                  </span>
+                )}
+              </div>
+            </div>
           );
         })}
       </div>
@@ -136,9 +163,11 @@ type PillProps = {
   event: CalendarActivityEvent;
   onClick: (e: React.MouseEvent) => void;
   compact?: boolean;
+  /** Classes extras — a grade do mês usa para reativar o ponteiro na pílula. */
+  className?: string;
 };
 
-export function EventPill({ event, onClick, compact }: PillProps) {
+export function EventPill({ event, onClick, compact, className }: PillProps) {
   const horaInicio = formatTime(event.data_inicio);
   const bgClass = compact
     ? "bg-surface hover:bg-surface-muted/60"
@@ -152,7 +181,10 @@ export function EventPill({ event, onClick, compact }: PillProps) {
           ? `${horaInicio} · ${event.titulo} · ${event.status_display}`
           : `${event.titulo} · ${event.status_display}`
       }
-      className={`flex items-center gap-1 overflow-hidden rounded border border-border ${bgClass} px-1 py-0.5 text-left text-2xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary`}
+      data-testid={`calendario-evento-${event.id}`}
+      className={`flex items-center gap-1 overflow-hidden rounded border border-border ${bgClass} px-1 py-0.5 text-left text-2xs text-text focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary ${
+        className ?? ""
+      }`}
       style={{ borderLeft: `3px solid ${event.cor}` }}
     >
       {event.atrasada && (

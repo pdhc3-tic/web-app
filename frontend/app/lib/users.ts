@@ -1,5 +1,4 @@
 import { apiClient } from "@/app/lib/api";
-import { localDayEndISO, localDayStartISO } from "@/app/lib/datetime";
 import type { Perfil, Territorio } from "@/app/lib/auth/types";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 
@@ -87,13 +86,13 @@ function buildUsersQuery(params: ListUsersParams): string {
   else if (params.status === "inativos") qs.set("ativo", "false");
   else if (params.status === "todos") qs.set("ativo", "");
 
-  // Range de último acesso: input local → ISO em UTC preservando o fuso do
-  // navegador. Concatenar `T…Z` puro deslocaria a janela em horas — ver
-  // localDayStartISO/localDayEndISO em lib/datetime.
-  const loginDe = localDayStartISO(params.ultimoAcessoDe);
-  const loginAte = localDayEndISO(params.ultimoAcessoAte);
-  if (loginDe) qs.set("ultimo_login_gte", loginDe);
-  if (loginAte) qs.set("ultimo_login_lte", loginAte);
+  // Range de último acesso: o "YYYY-MM-DD" do input vai cru. Desde a #212 o
+  // backend recorta o dia no TIME_ZONE do servidor — converter para ISO em UTC
+  // aqui era justamente o que deslocava a janela em horas.
+  if (params.ultimoAcessoDe) qs.set("ultimo_acesso_de", params.ultimoAcessoDe);
+  if (params.ultimoAcessoAte) {
+    qs.set("ultimo_acesso_ate", params.ultimoAcessoAte);
+  }
 
   return qs.toString();
 }

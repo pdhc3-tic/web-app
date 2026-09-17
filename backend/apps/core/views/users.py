@@ -34,11 +34,11 @@ class UserFilter(django_filters.FilterSet):
     perfil = django_filters.NumberFilter(field_name="profiles__perfil_id")
     territorio = django_filters.NumberFilter(field_name="profiles__territorio_id")
     ativo = django_filters.BooleanFilter()
-    ultimo_login_gte = django_filters.DateTimeFilter(
-        field_name="ultimo_login", lookup_expr="gte"
+    ultimo_acesso_de = django_filters.DateFilter(
+        field_name="ultimo_login", lookup_expr="date__gte"
     )
-    ultimo_login_lte = django_filters.DateTimeFilter(
-        field_name="ultimo_login", lookup_expr="lte"
+    ultimo_acesso_ate = django_filters.DateFilter(
+        field_name="ultimo_login", lookup_expr="date__lte"
     )
     com_dispositivo = django_filters.BooleanFilter(method="filter_com_dispositivo")
 
@@ -46,7 +46,7 @@ class UserFilter(django_filters.FilterSet):
         model = User
         fields = [
             "perfil", "territorio", "ativo",
-            "ultimo_login_gte", "ultimo_login_lte",
+            "ultimo_acesso_de", "ultimo_acesso_ate",
             "com_dispositivo",
         ]
 

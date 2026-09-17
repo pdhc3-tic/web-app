@@ -41,6 +41,12 @@ SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "False") == "True"
 
+# Chave AES-256 (base64 de 32 bytes) usada para criptografar campos sensíveis
+# em repouso — ver apps/core/crypto.py. Validada de forma lazy no primeiro
+# uso (ImproperlyConfigured), não no import das settings, para não quebrar
+# comandos que não tocam em campos criptografados.
+FIELD_ENCRYPTION_KEY = os.getenv("FIELD_ENCRYPTION_KEY", "")
+
 # POWER BI
 POWER_BI_SERVICE_TOKEN = os.getenv("POWER_BI_SERVICE_TOKEN", "")
 POWER_BI_RATE_LIMIT = os.getenv("POWER_BI_RATE_LIMIT", "100/hour")
@@ -283,6 +289,10 @@ CELERY_BEAT_SCHEDULE = {
     "check_acao_progress_alert": {
         "task": "sgp.tasks.check_acao_progress_alert",
         "schedule": crontab(hour=12, minute=0),  # diariamente ao meio-dia
+    },
+    "check_budget_threshold_alert": {
+        "task": "sgp.tasks.check_budget_threshold_alert",
+        "schedule": crontab(hour=12, minute=30),  # diariamente, 30min depois do alerta do PT físico
     },
     "export_to_power_bi": {
         "task": "sgp.tasks.export_to_power_bi",

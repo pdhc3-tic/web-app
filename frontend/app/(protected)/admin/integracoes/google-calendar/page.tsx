@@ -72,7 +72,7 @@ export default function GoogleCalendarConfigPage() {
 
     Promise.all([
       fetchGoogleCalendarConfig(controller.signal),
-      // Nunca rejeita: sem o endpoint agregado devolve `indisponivel`.
+      // Nunca rejeita: qualquer falha na consulta vira `indisponivel`.
       fetchGoogleCalendarStatus(controller.signal),
     ])
       .then(([config, statusResult]) => {
@@ -171,7 +171,10 @@ export default function GoogleCalendarConfigPage() {
     <>
       <HeaderSlot />
 
-      <div className="mx-auto flex max-w-3xl flex-col gap-6">
+      <div
+        data-testid="google-calendar-page"
+        className="mx-auto flex max-w-3xl flex-col gap-6"
+      >
         <Breadcrumb
           items={[
             { label: "Início", href: "/dashboard" },
@@ -193,7 +196,10 @@ export default function GoogleCalendarConfigPage() {
         {loading ? (
           <CenteredSpinner />
         ) : loadError ? (
-          <div className="flex flex-col items-center gap-4 rounded-lg border border-border bg-surface px-6 py-16 text-center">
+          <div
+            data-testid="gcal-erro-carregamento"
+            className="flex flex-col items-center gap-4 rounded-lg border border-border bg-surface px-6 py-16 text-center"
+          >
             <span className="flex h-12 w-12 items-center justify-center rounded-full bg-error-bg text-error-text">
               <AlertTriangle className="h-6 w-6" />
             </span>
@@ -216,6 +222,7 @@ export default function GoogleCalendarConfigPage() {
 
               <Input
                 id={CALENDAR_ID_FIELD}
+                data-testid={CALENDAR_ID_FIELD}
                 label="Calendário destino (ID)"
                 value={form.calendario_destino_id}
                 onChange={(e) =>
@@ -249,11 +256,19 @@ export default function GoogleCalendarConfigPage() {
 
             <div className="flex items-center justify-end gap-3">
               {dirty && (
-                <span className="text-xs text-text-muted">
+                <span
+                  data-testid="gcal-alteracoes-nao-salvas"
+                  className="text-xs text-text-muted"
+                >
                   Alterações não salvas
                 </span>
               )}
-              <Button onClick={handleSave} loading={saving} disabled={!dirty}>
+              <Button
+                data-testid="gcal-salvar"
+                onClick={handleSave}
+                loading={saving}
+                disabled={!dirty}
+              >
                 Salvar alterações
               </Button>
             </div>
@@ -267,7 +282,10 @@ export default function GoogleCalendarConfigPage() {
 /** Bloco meramente informativo — nenhuma credencial é lida, exibida ou editável. */
 function CredenciaisSection() {
   return (
-    <section className="flex items-start gap-3 rounded-lg border border-border bg-surface p-6">
+    <section
+      data-testid="gcal-credenciais"
+      className="flex items-start gap-3 rounded-lg border border-border bg-surface p-6"
+    >
       <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-muted text-text-muted">
         <KeyRound className="h-4 w-4" />
       </span>
@@ -300,27 +318,46 @@ const ESTADO_BADGE: Record<
 function StatusSection({ status }: { status: GoogleCalendarStatus | null }) {
   const estado = status?.estado ?? "indisponivel";
   const badge = ESTADO_BADGE[estado];
+  const falhasRecentes = status?.falhasRecentes ?? 0;
 
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-6">
+    <section
+      data-testid="gcal-status"
+      data-estado={estado}
+      className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-6"
+    >
       <div className="flex items-center justify-between gap-3">
         <h3 className="flex items-center gap-2 text-sm font-medium text-text">
           <RefreshCw className="h-4 w-4 text-text-muted" aria-hidden="true" />
           Status da sincronização
         </h3>
-        <Badge status={badge.status} label={badge.label} />
+        <div className="flex items-center gap-2">
+          <Badge status={badge.status} label={badge.label} />
+          {/* Em "erro" o badge de estado já é o vermelho; repeti-lo com a
+              contagem só duplicaria o mesmo aviso. Nos demais estados ele é a
+              única marca visual de que houve falha nas últimas 24h. */}
+          {estado !== "erro" && falhasRecentes > 0 && (
+            <Badge
+              status="nao-realizada"
+              label={`${falhasRecentes} falha(s) em 24h`}
+            />
+          )}
+        </div>
       </div>
 
       {estado === "indisponivel" ? (
         <p className="text-sm text-text-muted">
-          O backend ainda não expõe o status agregado da integração. A
-          sincronização é registrada por atividade, no campo{" "}
+          Não foi possível consultar o status da integração agora. A
+          sincronização de cada atividade continua registrada no campo{" "}
           <span className="font-medium text-text">Status de sincronização</span>{" "}
-          de cada uma.
+          da própria atividade.
         </p>
       ) : (
         <>
-          <p className="text-sm text-text-muted">
+          <p
+            data-testid="gcal-ultima-sincronizacao"
+            className="text-sm text-text-muted"
+          >
             Última sincronização:{" "}
             {status?.ultimaSincronizacao ? (
               <span
@@ -334,15 +371,24 @@ function StatusSection({ status }: { status: GoogleCalendarStatus | null }) {
             )}
           </p>
 
-          {status && status.falhasRecentes > 0 && (
-            <p className="text-sm text-error-text">
-              {status.falhasRecentes} falha(s) registrada(s) recentemente.
+          {falhasRecentes > 0 && (
+            <p
+              data-testid="gcal-falhas-recentes"
+              className="text-sm text-error-text"
+            >
+              {falhasRecentes} falha(s) registrada(s) nas últimas 24 horas.
             </p>
           )}
 
+          {/* O backend devolve a falha mais recente já ocorrida, mesmo quando o
+              estado atual é "ok" — daí o rótulo dizer "registrado", e não dar a
+              entender que a integração está falhando agora. */}
           {status?.ultimoErro && (
-            <p className="rounded-md bg-error-bg px-3 py-2 text-xs text-error-text">
-              {status.ultimoErro}
+            <p
+              data-testid="gcal-ultimo-erro"
+              className="rounded-md bg-error-bg px-3 py-2 text-xs text-error-text"
+            >
+              Último erro registrado: {status.ultimoErro}
             </p>
           )}
         </>

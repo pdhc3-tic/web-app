@@ -223,7 +223,9 @@ class TestHistoricoIncluirMembros:
         response_com = auth_client.get(
             f"/api/v1/upfs/{upf_id}/historico/?incluir_membros=true"
         )
-        assert response_com.data["count"] == 2
+        # UPF.create + MEMBRO.create do titular (criado junto com a UPF) +
+        # MEMBRO.create do "Filho Teste".
+        assert response_com.data["count"] == 3
 
 
 class TestPerformanceIndexes:

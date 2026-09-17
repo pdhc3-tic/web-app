@@ -360,9 +360,31 @@ def test_calendario_payload_campos_corretos(auth_ugp, municipio_rn, tecnico_a):
         "'email' não deve aparecer no payload reduzido do calendário"
     )
 
-    # municipio deve ter id e nome
+    # municipio deve ter id, nome e estado
     assert "id" in item["municipio"]
     assert "nome" in item["municipio"]
+    assert "estado" in item["municipio"]
+
+
+@pytest.mark.django_db
+def test_calendario_municipio_inclui_estado(auth_ugp, municipio_rn, tecnico_a):
+    """municipio no payload do calendário deve trazer estado {id, sigla, nome}."""
+    ActivityFactory(
+        municipio=municipio_rn,
+        tecnico_responsavel=tecnico_a,
+        status="agendado",
+        data_inicio=aware_dt(2026, 8, 5),
+        data_fim=aware_dt(2026, 8, 5),
+    )
+
+    resp = auth_ugp.get(
+        CALENDARIO_URL,
+        {"inicio": "2026-08-01", "fim": "2026-08-07"},
+    )
+    assert resp.status_code == status.HTTP_200_OK
+
+    item = resp.data["results"][0]
+    assert item["municipio"]["estado"]["sigla"] == "RN"
 
 
 # ===========================================================================

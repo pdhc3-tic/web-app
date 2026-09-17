@@ -15,6 +15,10 @@ def export_url(upf):
     return f"/api/v1/sgp/upfs/{upf.pk}/formularios/exportar/"
 
 
+def list_url(upf):
+    return f"/api/v1/sgp/upfs/{upf.pk}/formularios/"
+
+
 def aware(year, month, day):
     return timezone.make_aware(datetime(year, month, day, 12, 0))
 
@@ -70,6 +74,39 @@ def test_export_rejects_unsupported_format(auth_client, upf):
 
     assert response.status_code == 400
     assert "formato" in response.data
+
+
+def test_export_respects_respondente_isnull_filter(auth_client, upf):
+    anonima = FormResponseFactory(upf=upf, respondente=None)
+    FormResponseFactory(upf=upf, respondente="Maria Silva")
+
+    response = auth_client.get(
+        export_url(upf),
+        {"formato": "csv", "respondente_isnull": "true"},
+    )
+
+    assert response.status_code == 200
+    rows = list(csv.DictReader(StringIO(response.content.decode("utf-8-sig"))))
+    assert [row["ID"] for row in rows] == [str(anonima.pk)]
+    assert rows[0]["Respondente"] == "Anônimo"
+
+
+def test_export_matches_filtered_list_for_respondente_isnull(auth_client, upf):
+    FormResponseFactory(upf=upf, respondente=None)
+    FormResponseFactory(upf=upf, respondente=None)
+    FormResponseFactory(upf=upf, respondente="Maria Silva")
+
+    filtros = {"respondente_isnull": "true"}
+    listagem = auth_client.get(list_url(upf), filtros)
+    exportacao = auth_client.get(export_url(upf), {**filtros, "formato": "csv"})
+
+    ids_lista = {item["id"] for item in listagem.data["results"]}
+    ids_exportacao = {
+        int(row["ID"])
+        for row in csv.DictReader(StringIO(exportacao.content.decode("utf-8-sig")))
+    }
+    assert len(ids_lista) == 2
+    assert ids_exportacao == ids_lista
 
 
 def test_export_respects_completion_period_filter(auth_client, upf):

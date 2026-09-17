@@ -113,10 +113,11 @@ export function configEquals(
 // ─── Status de sincronização ─────────────────────────────────────────────────
 
 /**
- * `pendente` está na lista porque é o vocabulário que o backend já usa em
- * `Activity.google_calendar_sync_status` (ok/pendente/erro) — é provável que o
- * endpoint agregado espelhe esses mesmos valores. `indisponivel` é local: marca
- * "não consegui falar com o endpoint", nunca vem do servidor.
+ * Os quatro primeiros são os que `GoogleCalendarStatusView` devolve — o mesmo
+ * vocabulário de `Activity.google_calendar_sync_status` (ok/pendente/erro),
+ * mais `nunca_executada` para quando não há nenhum `GoogleCalendarSyncEvent`.
+ * `indisponivel` é local: marca "não consegui falar com o endpoint", nunca vem
+ * do servidor.
  */
 export type SyncEstado =
   | "ok"
@@ -160,8 +161,8 @@ const STATUS_URL = `${CONFIG_URL}status/`;
  * Avisa no console quando o endpoint responde mas fora do contrato.
  *
  * Sem isto a divergência é invisível: o fallback devolve `indisponivel` e a tela
- * fica idêntica à de quando o endpoint ainda não existia — dando a impressão de
- * que o backend não entregou, quando na verdade entregou diferente.
+ * diz "não foi possível consultar o status" — dando a impressão de que o backend
+ * está fora do ar, quando na verdade respondeu fora do contrato.
  */
 function avisarContratoDivergente(motivo: string, recebido: unknown): void {
   console.warn(
@@ -175,14 +176,18 @@ function avisarContratoDivergente(motivo: string, recebido: unknown): void {
 /**
  * GET /api/v1/core/config/google-calendar/status/
  *
- * **Este endpoint ainda não existe.** O backend rastreia a sincronização por
- * atividade (`Activity.google_calendar_sync_status`), sem visão agregada da
- * integração — não há "última sincronização" nem contagem de falhas em lugar
- * nenhum, e o campo por atividade nem é filtrável no ActivityFilter.
+ * Status agregado da integração (BE-4), servido por `GoogleCalendarStatusView`
+ * (apps/core/views/system_config.py). Dois detalhes do contrato que a tela
+ * precisa respeitar ao exibir:
  *
- * A função já consome o contrato pedido ao time do backend. Nunca lança:
- * 404 é o estado esperado hoje e passa calado; qualquer outra divergência
- * avisa no console para não passar despercebida.
+ * - `ultima_sincronizacao` e `ultimo_erro` são HISTÓRICO, calculados
+ *   independentemente do `estado` atual: em `ok` o `ultimo_erro` pode trazer
+ *   uma falha anterior à recuperação.
+ * - `falhas_recentes` é uma janela ROLLING de 24h — não zera depois de um
+ *   sucesso.
+ *
+ * Nunca lança: qualquer falha vira `indisponivel` e avisa no console, para a
+ * divergência não se disfarçar de "sem status".
  */
 export async function fetchGoogleCalendarStatus(
   signal?: AbortSignal,
@@ -193,10 +198,10 @@ export async function fetchGoogleCalendarStatus(
     const res = await apiClient(STATUS_URL, { signal });
     raw = (await res.json()) as RawStatus;
   } catch (e) {
-    // 404 = endpoint ainda não implementado. É o estado normal hoje, sem ruído.
-    if (e instanceof ApiError && e.status === 404) return STATUS_INDISPONIVEL;
     // Abort não é erro: a tela foi desmontada no meio da requisição.
     if (signal?.aborted) return STATUS_INDISPONIVEL;
+    // 404 já foi o estado normal, enquanto a BE-4 não existia; depois dela é
+    // sinal de backend defasado, e merece o mesmo aviso das demais falhas.
     avisarContratoDivergente(
       e instanceof ApiError ? `HTTP ${e.status}` : "falha de rede",
       e,

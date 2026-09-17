@@ -8,7 +8,7 @@ Testes dos endpoints administrativos SCA (#194):
 - Filtro e anotação do UserViewSet (#160)
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -320,6 +320,30 @@ class TestSyncEventsEndpoint:
         assert response.status_code == 200
         assert [e["id"] for e in response.data["results"]] == [com_erro.pk]
 
+    def test_filtra_por_data_inicio_fim_usa_dia_do_servidor(self, auth_client_super_admin, usuario):
+        """`data_inicio/data_fim` filtram pelo dia LOCAL (TIME_ZONE do servidor),
+        não por uma janela UTC fixa — ver DIVIDA_TECNICA_FILTROS_DATA_UTC.md."""
+
+        def aware(year, month, day, hour, minute):
+            return timezone.make_aware(datetime(year, month, day, hour, minute))
+
+        # 28/08 21:04 no fuso do servidor ainda é dia 28 local.
+        dentro = SyncEventFactory(user=usuario, iniciado_em=aware(2026, 8, 28, 21, 4))
+        # 27/08 22:00 no fuso do servidor é dia 27 local: não deve entrar no filtro "28".
+        dia_anterior = SyncEventFactory(user=usuario, iniciado_em=aware(2026, 8, 27, 22, 0))
+        dia_seguinte = SyncEventFactory(user=usuario, iniciado_em=aware(2026, 8, 29, 5, 0))
+
+        response = auth_client_super_admin.get(
+            "/api/v1/sca/sync-events/",
+            data={"data_inicio": "2026-08-28", "data_fim": "2026-08-28"},
+        )
+
+        assert response.status_code == 200
+        result_ids = {e["id"] for e in response.data["results"]}
+        assert dentro.pk in result_ids
+        assert dia_anterior.pk not in result_ids
+        assert dia_seguinte.pk not in result_ids
+
     def test_listagem_oculta_erros_detalhes_detalhe_exibe(self, auth_client_super_admin, usuario):
         evento = SyncEventFactory(
             user=usuario,
@@ -469,16 +493,111 @@ class TestConflictResolution:
         ids_ce = {c["id"] for c in api_client.get("/api/v1/sca/conflicts/").data["results"]}
         assert ids_ce == {conflito_ce.pk}
 
-        # conflito de outro estado nem é visível para resolução (queryset escopado)
+        # conflito de outro estado: quem barra é has_object_permission
+        # (IsArticuladorEstadual), não o queryset — resposta é 403, não 404.
         resposta_fora = api_client.post(
             f"/api/v1/sca/conflicts/{conflito_rn.pk}/resolver/",
             data={"decisao": "local"},
             format="json",
         )
-        assert resposta_fora.status_code in (403, 404)
+        assert resposta_fora.status_code == 403
 
         todos = auth_client_super_admin.get("/api/v1/sca/conflicts/")
         assert {c["id"] for c in todos.data["results"]} == {conflito_rn.pk, conflito_ce.pk}
+
+    def test_articulador_de_outro_estado_recebe_403_no_detalhe(
+        self, api_client, articulador_ce, upf_existente, territory
+    ):
+        """Mesmo antipadrão do teste acima, mas para GET de detalhe: sem
+        filtrar o queryset por estado em retrieve, `has_object_permission`
+        é quem decide — 403 real, não 404 por queryset vazio."""
+        conflito = self._conflito_pendente(upf_existente, territory)
+
+        api_client.force_authenticate(user=articulador_ce)
+        response = api_client.get(f"/api/v1/sca/conflicts/{conflito.pk}/")
+
+        assert response.status_code == 403
+
+    def test_ugp_nao_lista_nem_detalha_nem_resolve_conflitos(
+        self, auth_client_ugp, upf_existente, territory
+    ):
+        """Correção de auditoria: UGP tinha acesso total a conflitos, o que
+        contraria o critério de aceite da Issue #158 (acesso restrito a
+        Articulador Estadual e Super Admin)."""
+        conflito = self._conflito_pendente(upf_existente, territory)
+
+        assert auth_client_ugp.get("/api/v1/sca/conflicts/").status_code == 403
+        assert (
+            auth_client_ugp.get(f"/api/v1/sca/conflicts/{conflito.pk}/").status_code
+            == 403
+        )
+        resposta = auth_client_ugp.post(
+            f"/api/v1/sca/conflicts/{conflito.pk}/resolver/",
+            data={"decisao": "local"},
+            format="json",
+        )
+        assert resposta.status_code == 403
+
+        # nada foi alterado
+        conflito.refresh_from_db()
+        assert conflito.status == ConflictLog.Status.PENDENTE
+
+    def test_perfil_sem_acesso_a_conflitos_recebe_403(self, auth_client):
+        """`auth_client` (fixture padrão do módulo) autentica como adt-acr —
+        perfil que nunca teve acesso a conflitos; cobre o caso geral de
+        `has_permission` barrando antes de qualquer queryset."""
+        response = auth_client.get("/api/v1/sca/conflicts/")
+        assert response.status_code == 403
+
+    def test_registro_atual_de_conflito_de_membro_expoe_sensiveis_para_super_admin(
+        self, auth_client_super_admin, upf_existente, territory
+    ):
+        """Corrige efeito colateral da Issue #187: `get_registro_atual` não
+        propagava `context`, então saude/cor_raca ficavam sempre ocultos no
+        snapshot — mesmo para Super Admin."""
+        from apps.sgp.tests.factories import MembroFactory
+
+        membro = MembroFactory(
+            upf=upf_existente,
+            grau_parentesco="filho",
+            cor_raca=2,
+            saude=["hipertensao"],
+            uuid_local=uuid4(),
+        )
+        conflito = self._conflito_pendente(
+            upf_existente, territory,
+            entidade="member", uuid_local=membro.uuid_local, campo="saude",
+        )
+
+        response = auth_client_super_admin.get(f"/api/v1/sca/conflicts/{conflito.pk}/")
+
+        assert response.status_code == 200
+        assert response.data["registro_atual"]["cor_raca"] == 2
+        assert response.data["registro_atual"]["saude"] == ["hipertensao"]
+
+    def test_registro_atual_de_conflito_de_membro_expoe_sensiveis_para_articulador(
+        self, api_client, articulador, upf_existente, territory
+    ):
+        from apps.sgp.tests.factories import MembroFactory
+
+        membro = MembroFactory(
+            upf=upf_existente,
+            grau_parentesco="filho",
+            cor_raca=1,
+            saude=["diabetes"],
+            uuid_local=uuid4(),
+        )
+        conflito = self._conflito_pendente(
+            upf_existente, territory,
+            entidade="member", uuid_local=membro.uuid_local, campo="cor_raca",
+        )
+
+        api_client.force_authenticate(user=articulador)
+        response = api_client.get(f"/api/v1/sca/conflicts/{conflito.pk}/")
+
+        assert response.status_code == 200
+        assert response.data["registro_atual"]["cor_raca"] == 1
+        assert response.data["registro_atual"]["saude"] == ["diabetes"]
 
     def test_detalhe_trae_snapshot_registro_atual(
         self, auth_client_super_admin, upf_existente, territory

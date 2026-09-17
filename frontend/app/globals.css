@@ -39,6 +39,15 @@
   --color-info-text: #0d47a1;
   --color-neutral-bg: #f1efe8;
   --color-neutral-text: #6b6b68;
+  /* Pendência e reagendamento — os dois estados de Atividade que o mapa de
+     domínio (STATUS_COR_MAP, apps/sgp/serializers.py) pinta com matiz próprio:
+     teal para "concluído sem evidência" e violeta para "adiada". Sem eles os
+     dois caíam em `warning`, e a ficha contradizia a cor do calendário, que já
+     espelha o mapa (calendario/_components/statusColor.ts). */
+  --color-pendente-bg: #e0f2f1;
+  --color-pendente-text: #00675b;
+  --color-reagendado-bg: #ede9fe;
+  --color-reagendado-text: #5b21b6;
 
   /* ── Aliases (mantidos para classes Tailwind existentes) ── */
   --color-error: #c62828;
@@ -131,6 +140,10 @@
     --color-info-text: #64b5f6;
     --color-neutral-bg: #2a2a27;
     --color-neutral-text: #9e9b93;
+    --color-pendente-bg: #0d2f2b;
+    --color-pendente-text: #4db6ac;
+    --color-reagendado-bg: #241a3d;
+    --color-reagendado-text: #a78bfa;
 
     --color-error: #ef5350;
     --color-success: #4a9c6d;
@@ -162,6 +175,10 @@
   --color-info-text: #64b5f6;
   --color-neutral-bg: #2a2a27;
   --color-neutral-text: #9e9b93;
+  --color-pendente-bg: #0d2f2b;
+  --color-pendente-text: #4db6ac;
+  --color-reagendado-bg: #241a3d;
+  --color-reagendado-text: #a78bfa;
 
   --color-error: #ef5350;
   --color-success: #4a9c6d;

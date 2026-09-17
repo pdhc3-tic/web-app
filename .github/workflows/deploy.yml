@@ -42,10 +42,17 @@ jobs:
       - name: Construir imagem de testes
         run: docker build -t pdhc-backend-test -f backend/Dockerfile.prod backend
 
+      # Gerada em runtime, nunca versionada — só criptografa o banco efêmero
+      # do CI (destruído ao fim do job). Não é a chave de produção, que é
+      # gerada/preservada por deploy.sh no .env da VPS.
+      - name: Gerar chave de criptografia do CI
+        run: echo "CI_FIELD_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+
       - name: Verificar migrations
         run: >-
           docker run --rm --network host
           -e DJANGO_SECRET_KEY=ci-only-secret
+          -e FIELD_ENCRYPTION_KEY="$CI_FIELD_ENCRYPTION_KEY"
           -e DEBUG=False
           -e ALLOWED_HOSTS=localhost,127.0.0.1,backend
           -e DB_NAME=app_db
@@ -60,6 +67,7 @@ jobs:
         run: >-
           docker run --rm --network host
           -e DJANGO_SECRET_KEY=ci-only-secret
+          -e FIELD_ENCRYPTION_KEY="$CI_FIELD_ENCRYPTION_KEY"
           -e DEBUG=False
           -e ALLOWED_HOSTS=localhost,127.0.0.1,backend
           -e DB_NAME=app_db
@@ -87,7 +95,7 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           command_timeout: "30m"
-          envs: VPS_APP_DIR,POSTGRES_PASSWORD,VPS_HOST,SEED_DATA_DIR,SUPERUSER_EMAIL,SUPERUSER_NAME,SUPERUSER_PASSWORD
+          envs: VPS_APP_DIR,POSTGRES_PASSWORD,VPS_HOST,SEED_DATA_DIR,SUPERUSER_EMAIL,SUPERUSER_NAME,SUPERUSER_PASSWORD,FIELD_ENCRYPTION_KEY
           script: |
             export VPS_APP_DIR="$VPS_APP_DIR"
             export POSTGRES_PASSWORD="$POSTGRES_PASSWORD"
@@ -96,6 +104,7 @@ jobs:
             export SUPERUSER_EMAIL="$SUPERUSER_EMAIL"
             export SUPERUSER_NAME="$SUPERUSER_NAME"
             export SUPERUSER_PASSWORD="$SUPERUSER_PASSWORD"
+            export FIELD_ENCRYPTION_KEY="$FIELD_ENCRYPTION_KEY"
             cd "$VPS_APP_DIR"
             bash deploy.sh
         env:
@@ -106,6 +115,11 @@ jobs:
           SUPERUSER_EMAIL: ${{ secrets.SUPERUSER_EMAIL }}
           SUPERUSER_NAME: ${{ secrets.SUPERUSER_NAME }}
           SUPERUSER_PASSWORD: ${{ secrets.SUPERUSER_PASSWORD }}
+          # Backup durável, fora da VPS, da chave de criptografia em repouso
+          # (Issue #187). deploy.sh só grava esse valor no .env da VPS na
+          # PRIMEIRA vez (quando a variável ainda está vazia lá) — nunca
+          # sobrescreve uma chave já em uso, mesmo que este secret mude.
+          FIELD_ENCRYPTION_KEY: ${{ secrets.FIELD_ENCRYPTION_KEY }}
 
   notify:
     name: Notificar Slack

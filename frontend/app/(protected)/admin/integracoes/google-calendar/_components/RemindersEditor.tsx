@@ -82,6 +82,7 @@ export function RemindersEditor({
       <div className="flex items-start gap-2">
         <input
           id={id}
+          data-testid={`${id}-input`}
           type="number"
           inputMode="numeric"
           min={1}
@@ -101,6 +102,7 @@ export function RemindersEditor({
         />
         <Button
           type="button"
+          data-testid={`${id}-adicionar`}
           variant="secondary"
           onClick={adicionar}
           disabled={disabled || cheio}
@@ -132,6 +134,8 @@ export function RemindersEditor({
           {value.map((minutos) => (
             <li
               key={minutos}
+              data-testid={`${id}-chip`}
+              data-minutos={minutos}
               className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-muted py-1 pl-3 pr-1 text-xs text-text"
             >
               <span>{formatReminder(minutos)}</span>

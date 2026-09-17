@@ -41,11 +41,16 @@ def usuarios_sca():
 
 
 class TestSeedDemoSca:
-    def test_dispositivos_nas_tres_faixas_de_territorios_distintos(self):
+    def test_dispositivos_nas_quatro_faixas_de_territorios_distintos(self):
         rodar_seed()
 
         devices = {d.device_id: d for d in SyncDevice.objects.all()}
-        assert set(devices) == {"dev-seed-verde", "dev-seed-laranja", "dev-seed-vermelho"}
+        assert set(devices) == {
+            "dev-seed-verde",
+            "dev-seed-laranja",
+            "dev-seed-vermelho",
+            "dev-seed-revogado",
+        }
 
         limiar = limiar_dias()
         assert idade_do_sync(devices["dev-seed-verde"]) <= timedelta(hours=2)
@@ -82,24 +87,40 @@ class TestSeedDemoSca:
         assert espalhamento.days >= limiar_dias()
         assert all(e.finalizado_em >= e.iniciado_em for e in eventos)
 
-    def test_conflitos_pendente_sensivel_e_resolvido_auto_em_estados_distintos(self):
+    def test_conflitos_pendentes_sensiveis_em_estados_distintos_e_resolvido_auto(self):
         rodar_seed()
 
-        pendente = ConflictLog.objects.get(status=ConflictLog.Status.PENDENTE)
-        assert pendente.campo_sensivel is True
-        assert pendente.campo == "cpf"
-        assert pendente.valor_final is None
-        assert pendente.territorio is not None
+        conflitos = ConflictLog.objects.all()
+        assert conflitos.count() == 3
 
-        resolvido = ConflictLog.objects.get(status=ConflictLog.Status.RESOLVIDO_AUTO)
+        pendentes = conflitos.filter(status=ConflictLog.Status.PENDENTE)
+        assert pendentes.count() == 2
+        assert set(pendentes.values_list("campo", flat=True)) == {
+            "titular.cpf",
+            "titular.nome_completo",
+        }
+
+        for conflito in pendentes:
+            assert conflito.campo_sensivel is True
+            assert conflito.valor_final is None
+            assert conflito.territorio is not None
+
+        pendente_cpf = pendentes.get(campo="titular.cpf")
+        pendente_nome = pendentes.get(campo="titular.nome_completo")
+
+        # Par que torna o recorte por território verificável dos dois lados.
+        assert pendente_cpf.territorio_id != pendente_nome.territorio_id
+        assert set(pendente_cpf.territorio.estados or []).isdisjoint(
+            pendente_nome.territorio.estados or []
+        )
+
+        resolvido = conflitos.get(
+            status=ConflictLog.Status.RESOLVIDO_AUTO,
+            campo="whatsapp",
+        )
         assert resolvido.campo_sensivel is False
         assert resolvido.valor_final is not None
         assert resolvido.resolvido_em is not None
-
-        estados_a = set(pendente.territorio.estados or [])
-        estados_b = set(resolvido.territorio.estados or [])
-        assert pendente.territorio_id != resolvido.territorio_id
-        assert estados_a & estados_b == set()
 
     def test_badges_de_origem_sca_e_registro_sem_device(self):
         rodar_seed()

@@ -15,9 +15,11 @@ from .notifications import (
     unread_count,
 )
 from .organizations import OrganizationViewSet
+from .power_bi_token import PowerBITokenRegenerateView, PowerBITokenView
 from .storage import LocalStorageUploadView
 from .system_config import (
     GoogleCalendarConfigView,
+    GoogleCalendarStatusView,
     SystemConfigDetailView,
     SystemConfigListView,
 )
@@ -39,8 +41,11 @@ __all__ = [
     "mark_all_read",
     "unread_count",
     "OrganizationViewSet",
+    "PowerBITokenRegenerateView",
+    "PowerBITokenView",
     "LocalStorageUploadView",
     "GoogleCalendarConfigView",
+    "GoogleCalendarStatusView",
     "SystemConfigDetailView",
     "SystemConfigListView",
     "MunicipalityViewSet",

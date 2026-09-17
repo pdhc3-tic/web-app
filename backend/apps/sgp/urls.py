@@ -6,15 +6,18 @@ from .views import (
     ComunidadeViewSet,
     CulturaListView,
     EspecieAnimalListView,
+    MembroExportView,
     MembroViewSet,
     ProductionViewSet,
     SGPChoicesView,
+    TecnicoViewSet,
     UPFViewSet,
     UPFDocumentViewSet,
     ProjetoViewSet,
 )
 from .views.form_responses import (
     AvailableFormListView,
+    FormResponseFormularioOptionsView,
     FormResponseReceiveView,
     FormResponseViewSet,
 )
@@ -24,6 +27,12 @@ from .views.workplan import (
     WorkPlanExportView,
     WorkPlanMetaViewSet,
     WorkPlanPowerBIView,
+)
+from .views.budget import (
+    BudgetAllocationViewSet,
+    BudgetPainelView,
+    RemanejamentoView,
+    SaldoConsultaView,
 )
 
 router = DefaultRouter()
@@ -35,6 +44,7 @@ router.register("acoes", WorkPlanAcaoViewSet, basename="workplanacao")
 
 sgp_router = DefaultRouter()
 sgp_router.register("atividades", ActivityViewSet, basename="atividade")
+sgp_router.register("tecnicos", TecnicoViewSet, basename="tecnico")
 
 comunidade_list = ComunidadeViewSet.as_view({
     'get': 'list',
@@ -103,6 +113,11 @@ urlpatterns = router.urls + [
         "sgp/upfs/<int:upf_pk>/formularios/exportar/",
         form_response_export,
         name="upf-formularios-export",
+    ),
+    path(
+        "sgp/upfs/<int:upf_pk>/formularios/opcoes/",
+        FormResponseFormularioOptionsView.as_view(),
+        name="upf-formularios-opcoes",
     ),
     path(
         "sgp/upfs/<int:upf_pk>/formularios/<int:pk>/",
@@ -184,8 +199,53 @@ urlpatterns = router.urls + [
         name="upf-membros-transferir-titularidade",
     ),
     path(
+        "sgp/upfs/<int:upf_pk>/membros/exportar/",
+        MembroViewSet.as_view({"get": "exportar"}),
+        name="upf-membros-exportar",
+    ),
+    path(
+        "sgp/membros/exportar/",
+        MembroExportView.as_view(),
+        name="membros-exportar",
+    ),
+    path(
         'municipios/<int:municipio_id>/comunidades/',
         comunidade_list,
         name='comunidade-list-by-municipio',
+    ),
+    path(
+        "sgp/metas/<int:pk>/orcamento/",
+        WorkPlanMetaViewSet.as_view({"get": "orcamento"}),
+        name="workplanmeta-orcamento",
+    ),
+    path(
+        "sgp/metas/<int:meta_pk>/orcamento/alocacoes/",
+        BudgetAllocationViewSet.as_view({"post": "create"}),
+        name="budget-alocacoes-create",
+    ),
+    path(
+        "sgp/orcamento/alocacoes/<int:pk>/",
+        BudgetAllocationViewSet.as_view({"patch": "partial_update", "delete": "destroy"}),
+        name="budget-alocacoes-detail",
+    ),
+    path(
+        "sgp/orcamento/alocacoes/<int:pk>/transacoes/",
+        BudgetAllocationViewSet.as_view({"get": "transacoes"}),
+        name="budget-alocacoes-transacoes",
+    ),
+    path(
+        "sgp/orcamento/saldo/",
+        SaldoConsultaView.as_view(),
+        name="budget-saldo",
+    ),
+    path(
+        "sgp/orcamento/remanejamentos/",
+        RemanejamentoView.as_view(),
+        name="budget-remanejamentos",
+    ),
+    path(
+        "sgp/orcamento/painel/",
+        BudgetPainelView.as_view(),
+        name="budget-painel",
     ),
 ]

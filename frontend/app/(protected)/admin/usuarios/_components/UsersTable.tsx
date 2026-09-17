@@ -10,13 +10,30 @@ import type { Perfil, Territorio } from "@/app/lib/auth/types";
 const TH_BASE =
   "sticky top-0 z-10 bg-surface-muted px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-[0.08em] text-text-muted whitespace-nowrap";
 
+/**
+ * `perfis` do backend é um item por **vínculo** (`UserProfile`), não por perfil
+ * distinto — ver `get_perfis` em apps/core/serializers.py. Quem tem o mesmo
+ * perfil em vários territórios (o Articulador Estadual vinculado a 4 estados,
+ * por exemplo) chega aqui com o id repetido quatro vezes.
+ *
+ * A coluna mostra o perfil, e o território tem coluna própria: deduplicar por
+ * id evita quatro chips idênticos e, de quebra, a colisão de `key`.
+ */
+function perfisDistintos(perfis: Perfil[]): Perfil[] {
+  const porId = new Map<number, Perfil>();
+  for (const p of perfis) {
+    if (!porId.has(p.id)) porId.set(p.id, p);
+  }
+  return Array.from(porId.values());
+}
+
 function PerfisCell({ perfis }: { perfis: Perfil[] }) {
   if (!perfis || perfis.length === 0) {
     return <span className="text-text-muted">—</span>;
   }
   return (
     <div className="flex flex-wrap gap-1">
-      {perfis.map((p) => (
+      {perfisDistintos(perfis).map((p) => (
         <Chip key={p.id}>{p.nome}</Chip>
       ))}
     </div>

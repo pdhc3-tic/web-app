@@ -11,15 +11,21 @@ import {
 } from "react";
 import {
   AlertTriangle,
+  ClipboardList,
   Download,
+  FileBadge,
+  FileCheck2,
   FilePlus,
+  FileSignature,
   FileText,
+  Gavel,
   Loader2,
   Pencil,
   Trash2,
   X,
   CloudOff,
   CheckCircle2,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/app/components/ui/Button/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
@@ -503,11 +509,13 @@ export function DocumentList({ atividadeId, readOnly = false }: Props) {
             ))}
           </ul>
 
-          <p className="px-2 pt-2 text-xs text-text-muted">
+          {/* Em leitura a cota não é acionável — anunciar vagas que o usuário
+              não pode preencher lê como um controle quebrado. */}
+          {!readOnly && <p className="px-2 pt-2 text-xs text-text-muted">
             {vagasRestantes > 0
               ? `Você pode adicionar mais ${vagasRestantes} documento${vagasRestantes === 1 ? "" : "s"}.`
               : "Limite atingido. Remova um documento para adicionar outro."}
-          </p>
+          </p>}
         </div>
       )}
 
@@ -605,7 +613,7 @@ function DocumentRow({
 }) {
   return (
     <div className="flex items-start gap-3 rounded-md px-2 py-2 hover:bg-surface-muted/40">
-      <FileText className="mt-0.5 h-5 w-5 shrink-0 text-error-text" aria-label="PDF" />
+      <IconeDoTipo tipo={doc.tipo} label={doc.tipo_display} />
 
       <div className="min-w-0 flex-1">
         {editing ? (
@@ -710,6 +718,41 @@ function DocumentRow({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Ícone por TIPO de documento — o critério da Issue #233 ("lista de documentos
+ * com ícone por tipo").
+ *
+ * O tipo aqui é o do domínio (`ActivityDocument.tipo`), não o MIME: o upload
+ * aceita só PDF, então um ícone por formato mostraria a mesma folha vermelha em
+ * toda linha e não informaria nada. O que distingue uma ata de uma lista de
+ * presença numa lista de cinco anexos é a função do documento, e é isso que o
+ * ícone passa a dizer.
+ *
+ * As cores acompanham o `TipoBadge` logo abaixo, para o ícone e a etiqueta da
+ * mesma linha não puxarem para lados diferentes.
+ */
+const ICONE_POR_TIPO: Record<string, { Icon: LucideIcon; cor: string }> = {
+  lista_presenca: { Icon: ClipboardList, cor: "text-primary" },
+  ata: { Icon: Gavel, cor: "text-success-text" },
+  relatorio_parcial: { Icon: FileBadge, cor: "text-warning-text" },
+  declaracao: { Icon: FileCheck2, cor: "text-text-muted" },
+  contrato: { Icon: FileSignature, cor: "text-text-muted" },
+  outro: { Icon: FileText, cor: "text-text-muted" },
+};
+
+function IconeDoTipo({ tipo, label }: { tipo: string; label?: string }) {
+  const { Icon, cor } = ICONE_POR_TIPO[tipo] ?? ICONE_POR_TIPO.outro;
+  return (
+    <Icon
+      className={`mt-0.5 h-5 w-5 shrink-0 ${cor}`}
+      // O ícone é a única marca do tipo antes da etiqueta na leitura por voz;
+      // rotulá-lo com o tipo evita anunciar "PDF" para tudo.
+      aria-label={label ?? tipoDocumentoAtividadeLabel(tipo)}
+      data-testid={`documento-icone-${tipo}`}
+    />
   );
 }
 

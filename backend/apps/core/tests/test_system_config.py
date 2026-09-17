@@ -1,10 +1,15 @@
+from datetime import timedelta
+
 import pytest
 from django.core.cache import cache
+from django.utils import timezone
 from rest_framework import status
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.models.system_config import SystemConfig, TipoConfiguracao
 from apps.core.utils import get_config
+from apps.sgp.models import GoogleCalendarSyncEvent
+from apps.sgp.tests.factories import ActivityFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -264,3 +269,157 @@ class TestGoogleCalendarConfigAPI:
 
         invalid_response = api_client.patch(self.url, {"lembretes": [0]})
         assert invalid_response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+class TestGoogleCalendarStatusAPI:
+    url = "/api/v1/core/config/google-calendar/status/"
+
+    def test_unauthenticated_receives_401(self, api_client):
+        response = api_client.get(self.url)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_non_super_admin_receives_403(self, api_client, ugp_user):
+        api_client.force_authenticate(user=ugp_user)
+        response = api_client.get(self.url)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_nunca_executada_quando_nenhum_evento_existe(
+        self, api_client, super_admin_user
+    ):
+        api_client.force_authenticate(user=super_admin_user)
+
+        response = api_client.get(self.url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == {
+            "estado": "nunca_executada",
+            "ultima_sincronizacao": None,
+            "ultimo_erro": None,
+            "falhas_recentes": 0,
+        }
+
+    def test_estado_ok_apos_sucesso(self, api_client, super_admin_user):
+        api_client.force_authenticate(user=super_admin_user)
+        activity = ActivityFactory()
+        GoogleCalendarSyncEvent.objects.create(activity=activity, sucesso=True)
+
+        response = api_client.get(self.url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["estado"] == "ok"
+        assert response.data["ultima_sincronizacao"] is not None
+        assert response.data["ultima_sincronizacao"].endswith("-03:00")
+        assert response.data["ultimo_erro"] is None
+        assert response.data["falhas_recentes"] == 0
+
+    def test_estado_erro_mantem_ultima_sincronizacao_do_sucesso_anterior(
+        self, api_client, super_admin_user
+    ):
+        api_client.force_authenticate(user=super_admin_user)
+        activity = ActivityFactory()
+        sucesso = GoogleCalendarSyncEvent.objects.create(activity=activity, sucesso=True)
+        GoogleCalendarSyncEvent.objects.filter(pk=sucesso.pk).update(
+            ocorrido_em=timezone.now() - timedelta(hours=2)
+        )
+        GoogleCalendarSyncEvent.objects.create(
+            activity=activity, sucesso=False, mensagem_erro="Google indisponível"
+        )
+
+        response = api_client.get(self.url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["estado"] == "erro"
+        assert response.data["ultimo_erro"] == "Google indisponível"
+        assert response.data["ultima_sincronizacao"] is not None
+
+    def test_falhas_dentro_de_24h_sao_somadas(self, api_client, super_admin_user):
+        api_client.force_authenticate(user=super_admin_user)
+        activity = ActivityFactory()
+        for _ in range(3):
+            GoogleCalendarSyncEvent.objects.create(
+                activity=activity, sucesso=False, mensagem_erro="erro"
+            )
+
+        response = api_client.get(self.url)
+
+        assert response.data["falhas_recentes"] == 3
+
+    def test_falha_fora_de_24h_nao_e_contada(self, api_client, super_admin_user):
+        api_client.force_authenticate(user=super_admin_user)
+        activity = ActivityFactory()
+        antiga = GoogleCalendarSyncEvent.objects.create(
+            activity=activity, sucesso=False, mensagem_erro="erro antigo"
+        )
+        GoogleCalendarSyncEvent.objects.filter(pk=antiga.pk).update(
+            ocorrido_em=timezone.now() - timedelta(hours=25)
+        )
+
+        response = api_client.get(self.url)
+
+        assert response.data["falhas_recentes"] == 0
+        assert response.data["estado"] == "erro"
+
+    def test_falhas_recentes_nao_zera_apos_sucesso(self, api_client, super_admin_user):
+        api_client.force_authenticate(user=super_admin_user)
+        activity = ActivityFactory()
+        GoogleCalendarSyncEvent.objects.create(
+            activity=activity, sucesso=False, mensagem_erro="erro 1"
+        )
+        GoogleCalendarSyncEvent.objects.create(
+            activity=activity, sucesso=False, mensagem_erro="erro 2"
+        )
+        GoogleCalendarSyncEvent.objects.create(activity=activity, sucesso=True)
+
+        response = api_client.get(self.url)
+
+        assert response.data["estado"] == "ok"
+        assert response.data["falhas_recentes"] == 2
+
+    def test_pendente_tem_prioridade_sobre_eventos_passados(
+        self, api_client, super_admin_user
+    ):
+        api_client.force_authenticate(user=super_admin_user)
+        GoogleCalendarSyncEvent.objects.create(
+            activity=ActivityFactory(), sucesso=True
+        )
+        GoogleCalendarSyncEvent.objects.create(
+            activity=ActivityFactory(), sucesso=False, mensagem_erro="erro"
+        )
+        ActivityFactory(google_calendar_sync_status="pendente")
+
+        response = api_client.get(self.url)
+
+        assert response.data["estado"] == "pendente"
+
+    def test_editar_activity_sem_sync_nao_altera_status(
+        self, api_client, super_admin_user
+    ):
+        api_client.force_authenticate(user=super_admin_user)
+        activity = ActivityFactory()
+        GoogleCalendarSyncEvent.objects.create(activity=activity, sucesso=True)
+
+        antes = api_client.get(self.url).data
+
+        activity.descricao_narrativa = "Texto alterado diretamente no teste."
+        activity.save(update_fields=["descricao_narrativa"])
+
+        depois = api_client.get(self.url).data
+
+        assert antes == depois
+        assert GoogleCalendarSyncEvent.objects.count() == 1
+
+    def test_resposta_bate_com_contrato_do_frontend(
+        self, api_client, super_admin_user
+    ):
+        api_client.force_authenticate(user=super_admin_user)
+
+        response = api_client.get(self.url)
+
+        assert set(response.data.keys()) == {
+            "estado",
+            "ultima_sincronizacao",
+            "ultimo_erro",
+            "falhas_recentes",
+        }
+        assert response.data["estado"] in {"ok", "pendente", "erro", "nunca_executada"}
+        assert isinstance(response.data["falhas_recentes"], int)

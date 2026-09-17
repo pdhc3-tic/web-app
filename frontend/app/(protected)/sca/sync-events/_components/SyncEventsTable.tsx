@@ -42,11 +42,15 @@ export function SyncEventsTable({ events, loading }: Props) {
         </div>
       )}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-240 border-collapse text-sm">
+        {/* min-width acompanha a coluna "Fim": abaixo disso as datas quebravam
+            em duas linhas. O wrapper `overflow-x-auto` mantém todos os campos
+            alcançáveis por rolagem horizontal em telas menores. */}
+        <table className="w-full min-w-280 border-collapse text-sm">
           <thead className="bg-surface-muted text-left text-2xs font-semibold uppercase tracking-wide text-text-muted">
             <tr>
               <th className="w-6 px-2 py-2.5" aria-label="Expandir" />
               <th className="px-4 py-2.5">Início</th>
+              <th className="px-4 py-2.5">Fim</th>
               <th className="px-4 py-2.5">Duração</th>
               <th className="px-4 py-2.5">Tipo</th>
               <th className="px-4 py-2.5">Técnico</th>
@@ -100,6 +104,10 @@ function LinhaEvento({ evento }: { evento: SyncEventListItem }) {
   }
 
   const inicio = evento.iniciado_em ?? evento.finalizado_em;
+  // Data e hora absolutas nas duas colunas — o critério pede o término legível,
+  // não só o tempo relativo; o "há N minutos" migrou para o tooltip. Evento em
+  // andamento não tem `finalizado_em`: cai no travessão, sem data inventada.
+  const fim = absoluteDateTime(evento.finalizado_em);
   const dur = duracao(evento.iniciado_em, evento.finalizado_em);
   const rowBase =
     "border-t border-border align-middle transition hover:bg-surface-muted/40";
@@ -135,14 +143,26 @@ function LinhaEvento({ evento }: { evento: SyncEventListItem }) {
             )
           ) : null}
         </td>
-        <td className="px-4 py-3">
-          <span title={absoluteDateTime(inicio)}>{relativeTime(inicio)}</span>
+        <td className="px-4 py-3 whitespace-nowrap" data-testid="sync-event-inicio">
+          <span title={relativeTime(inicio)}>
+            {absoluteDateTime(inicio) ?? "—"}
+          </span>
+        </td>
+        <td
+          className="px-4 py-3 whitespace-nowrap"
+          data-testid="sync-event-fim"
+        >
+          {fim ? (
+            <span title={relativeTime(evento.finalizado_em)}>{fim}</span>
+          ) : (
+            <span className="text-text-muted">—</span>
+          )}
         </td>
         <td className="px-4 py-3 text-text-muted">{dur}</td>
         <td className="px-4 py-3">
           <SyncEventTipoBadge tipo={evento.tipo} />
         </td>
-        <td className="px-4 py-3">
+        <td className="px-4 py-3" data-testid="sync-event-tecnico">
           <span className="block truncate text-text">{evento.tecnico.nome}</span>
           <span className="block truncate text-2xs text-text-muted">
             {evento.tecnico.email}
@@ -189,7 +209,7 @@ function LinhaEvento({ evento }: { evento: SyncEventListItem }) {
           data-testid={`sync-event-erros-${evento.id}`}
         >
           <td className="px-2 py-3" />
-          <td className="px-4 py-3" colSpan={9}>
+          <td className="px-4 py-3" colSpan={10}>
             {loadingErros ? (
               <div className="flex items-center gap-2 text-sm text-text-muted">
                 <Spinner className="h-4 w-4 animate-spin" />

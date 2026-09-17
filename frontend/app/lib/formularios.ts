@@ -1,4 +1,4 @@
-import { apiClient } from "@/app/lib/api";
+import { ApiError, apiClient } from "@/app/lib/api";
 import type { Paginated } from "@/app/lib/users";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
@@ -102,6 +102,100 @@ export async function listFormResponses(
   const url = `/api/v1/sgp/upfs/${upfId}/formularios/${qs ? `?${qs}` : ""}`;
   const res = await apiClient(url, { signal });
   return res.json();
+}
+
+/**
+ * `HistoricoPagination.max_page_size` no backend (apps/sgp/pagination.py).
+ * Pedir mais que isso é silenciosamente reduzido — por isso o fallback abaixo
+ * pagina de verdade em vez de mandar um número grande e torcer.
+ */
+const OPCOES_PAGE_SIZE = 200;
+
+/** Trava de segurança do laço de paginação do fallback. */
+const MAX_PAGINAS = 100;
+
+/** Par `{formulario_id, formulario_nome}` para o select da aba Formulários. */
+export type FormularioRespondidoOption = {
+  formulario_id: number;
+  formulario_nome: string;
+};
+
+function ordenarOpcoes(
+  opcoes: FormularioRespondidoOption[],
+): FormularioRespondidoOption[] {
+  return [...opcoes].sort((a, b) =>
+    a.formulario_nome.localeCompare(b.formulario_nome, "pt-BR"),
+  );
+}
+
+/**
+ * Fallback: percorre TODAS as páginas da listagem sem filtro e deduplica por
+ * `formulario_id`. Usado só enquanto o endpoint de opções não existir no
+ * backend implantado — completude vem de esgotar as páginas, nunca de supor
+ * que um `page_size` grande cobre tudo.
+ */
+async function varrerFormulariosRespondidos(
+  upfId: string | number,
+  signal?: AbortSignal,
+): Promise<FormularioRespondidoOption[]> {
+  const porId = new Map<number, string>();
+
+  for (let page = 1; page <= MAX_PAGINAS; page++) {
+    const data = await listFormResponses(
+      upfId,
+      { page, page_size: OPCOES_PAGE_SIZE },
+      signal,
+    );
+    for (const r of data.results) {
+      if (!porId.has(r.formulario_id)) {
+        porId.set(r.formulario_id, r.formulario_nome);
+      }
+    }
+    if (!data.next || data.results.length === 0) break;
+  }
+
+  return ordenarOpcoes(
+    Array.from(porId, ([formulario_id, formulario_nome]) => ({
+      formulario_id,
+      formulario_nome,
+    })),
+  );
+}
+
+/**
+ * Formulários com ao menos uma resposta nesta UPF, para popular o filtro.
+ *
+ * Consome `GET /api/v1/sgp/upfs/{id}/formularios/opcoes/` — metadado não
+ * paginado, que sempre reflete o conjunto completo e não é afetado pela página
+ * corrente nem pelos demais filtros. Não confundir com a BE-18
+ * (`formularios-disponiveis`), que lista o que está publicado para *novo*
+ * preenchimento: um formulário despublicado sai de lá e continua no histórico.
+ *
+ * Enquanto esse endpoint não estiver implantado, cai numa varredura de todas as
+ * páginas da listagem — mais cara, mas igualmente completa.
+ */
+export async function listFormulariosRespondidos(
+  upfId: string | number,
+  signal?: AbortSignal,
+): Promise<FormularioRespondidoOption[]> {
+  try {
+    const res = await apiClient(
+      `/api/v1/sgp/upfs/${upfId}/formularios/opcoes/`,
+      { signal },
+    );
+    const data = (await res.json()) as FormularioRespondidoOption[];
+    return ordenarOpcoes(
+      data.map((o) => ({
+        formulario_id: o.formulario_id,
+        formulario_nome: o.formulario_nome,
+      })),
+    );
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) {
+      return varrerFormulariosRespondidos(upfId, signal);
+    }
+    throw e;
+  }
 }
 
 /** GET /api/v1/sgp/upfs/{upfId}/formularios/{id}/ — resposta + respostas_json. */

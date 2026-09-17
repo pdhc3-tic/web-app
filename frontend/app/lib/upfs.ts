@@ -1,5 +1,4 @@
 import { apiClient } from "@/app/lib/api";
-import { localDayEndISO, localDayStartISO } from "@/app/lib/datetime";
 import type { Paginated } from "@/app/lib/users";
 import type { Territorio } from "@/app/lib/auth/types";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
@@ -7,12 +6,33 @@ import type { SelectOption } from "@/app/components/ui/Select/Select";
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
 /** Espelha apps/sgp/serializers.py::UPFListSerializer. */
+/**
+ * Município como vem nas listagens de UPF (`MunicipioNestedSerializer`).
+ *
+ * Era `string` até 5b63bde (21/07), quando o backend trocou o
+ * `CharField(source="municipio.nome")` pelo serializer aninhado. O tipo do
+ * front seguiu dizendo `string`, e a listagem passou a renderizar o objeto
+ * direto — "Objects are not valid as a React child" derrubava /sgp/upfs.
+ * Não havia E2E cobrindo a listagem, então ninguém percebeu.
+ */
+export type MunicipioResumo = {
+  id: number;
+  nome: string;
+  estado?: { id: number; sigla: string; nome: string };
+};
+
 export type UpfListItem = {
   id: number;
   nome_titular: string;
   /** Já vem mascarado do backend: "XXX.***.***-XX". */
   cpf: string;
-  municipio: string;
+  /**
+   * Objeto, NÃO string — o `UPFListSerializer` usa `MunicipioNestedSerializer`
+   * desde 5b63bde (21/07), que substituiu um `CharField(source="municipio.nome")`.
+   * O tipo seguiu dizendo `string` e a listagem renderizava o objeto direto,
+   * derrubando a página com "Objects are not valid as a React child".
+   */
+  municipio: MunicipioResumo;
   territorio: string | null;
   criado_em: string;
   ativa: boolean;
@@ -48,16 +68,17 @@ type MunicipalityOption = {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function buildUpfsQuery(params: ListUpfsParams): string {
+/**
+ * Parâmetros de filtro comuns à listagem e à exportação de UPFs.
+ * Fonte única de verdade — tanto `buildUpfsQuery` quanto `exportarUpfs` usam
+ * esta função para garantir que listagem e arquivo gerado sejam idênticos.
+ */
+function buildUpfsFilterParams(params: ExportUpfsParams): URLSearchParams {
   const qs = new URLSearchParams();
-  qs.set("limit", String(params.limit));
-  qs.set("offset", String(params.offset));
-
   if (params.search?.trim()) qs.set("q", params.search.trim());
   if (params.municipio) qs.set("municipio", params.municipio);
   if (params.territorio) qs.set("territorio", params.territorio);
   if (params.projeto) qs.set("projeto", params.projeto);
-  if (params.ordering) qs.set("ordering", params.ordering);
 
   // Status → parâmetro `ativa`.
   // O UPFViewSet só retorna inativas quando `ativa` aparece na query
@@ -66,14 +87,20 @@ function buildUpfsQuery(params: ListUpfsParams): string {
   else if (params.status === "inativas") qs.set("ativa", "false");
   else if (params.status === "todas") qs.set("ativa", "");
 
-  // Range de "cadastrado em": input local → ISO em UTC preservando o fuso do
-  // navegador. Concatenar `T…Z` puro deslocaria a janela em horas — ver
-  // localDayStartISO/localDayEndISO em lib/datetime.
-  const criadoDe = localDayStartISO(params.cadastradoDe);
-  const criadoAte = localDayEndISO(params.cadastradoAte);
-  if (criadoDe) qs.set("criado_em__gte", criadoDe);
-  if (criadoAte) qs.set("criado_em__lte", criadoAte);
+  // Range de "cadastrado em": o "YYYY-MM-DD" do input vai cru. Desde a #212 o
+  // backend recorta o dia no TIME_ZONE do servidor — converter para ISO em UTC
+  // aqui era justamente o que deslocava a janela em horas.
+  if (params.cadastradoDe) qs.set("cadastrado_de", params.cadastradoDe);
+  if (params.cadastradoAte) qs.set("cadastrado_ate", params.cadastradoAte);
 
+  return qs;
+}
+
+function buildUpfsQuery(params: ListUpfsParams): string {
+  const qs = buildUpfsFilterParams(params);
+  qs.set("limit", String(params.limit));
+  qs.set("offset", String(params.offset));
+  if (params.ordering) qs.set("ordering", params.ordering);
   return qs.toString();
 }
 
@@ -134,7 +161,7 @@ export async function fetchTerritoryOptions(
 export type UpfMapa = {
   id: number;
   nome_titular: string;
-  municipio: string;
+  municipio: MunicipioResumo;
   territorio: string | null;
   latitude: number;
   longitude: number;
@@ -166,7 +193,7 @@ type UpfMapaFeature = {
   properties: {
     id: number;
     nome_titular: string;
-    municipio: string;
+    municipio: MunicipioResumo;
     territorio: string | null;
     ativa: boolean;
   };
@@ -409,7 +436,22 @@ export async function updateUpf(
 
 // ─── Cascata (Estado → Município → Comunidade) e Projeto ──────────────────────
 
-type StateItem = { id: number; sigla: string; nome: string };
+export type StateItem = { id: number; sigla: string; nome: string };
+
+/**
+ * GET /api/v1/states/ — os estados inteiros, id e sigla juntos.
+ *
+ * Existe porque as duas chaves são necessárias ao mesmo tempo na distribuição
+ * orçamentária: o painel identifica o estado por SIGLA (`estado=PE`), mas
+ * `BudgetAllocationCreateSerializer.estado_id` é uma PK. Um select alimentado
+ * só por sigla não consegue montar o payload de criação, e um alimentado só por
+ * id não consegue casar com o pai que veio do detalhamento.
+ */
+export async function fetchStates(signal?: AbortSignal): Promise<StateItem[]> {
+  const res = await apiClient("/api/v1/states/?limit=1000", { signal });
+  const data: Paginated<StateItem> = await res.json();
+  return data.results;
+}
 
 /** GET /api/v1/states/ — UFs para o primeiro nível da cascata. */
 export async function fetchStateOptions(
@@ -419,6 +461,31 @@ export async function fetchStateOptions(
   const data: Paginated<StateItem> = await res.json();
   return data.results.map((s) => ({
     value: String(s.id),
+    label: `${s.nome} (${s.sigla})`,
+  }));
+}
+
+/**
+ * GET /api/v1/states/ — UFs identificadas pela SIGLA, não pelo id.
+ *
+ * A cascata da UPF manda o id do estado (`?state={id}`), mas nem toda API do
+ * projeto trabalha assim: o painel de orçamento (§5.3.3) valida `estado` por
+ * sigla e responde 400 a um id. Um `<Select>` alimentado por
+ * `fetchStateOptions` ali fica quebrado das duas pontas — o valor da URL
+ * ("PE") não casa com nenhuma opção e o select cai no placeholder, e o que
+ * ele grava de volta ("6") é descartado na leitura seguinte.
+ *
+ * Duas funções em vez de um parâmetro porque o que muda é o CONTRATO de quem
+ * consome o valor, não uma preferência de exibição: quem chama precisa
+ * escolher conscientemente qual chave vai mandar para a API.
+ */
+export async function fetchStateSiglaOptions(
+  signal?: AbortSignal,
+): Promise<SelectOption[]> {
+  const res = await apiClient("/api/v1/states/?limit=1000", { signal });
+  const data: Paginated<StateItem> = await res.json();
+  return data.results.map((s) => ({
+    value: s.sigla,
     label: `${s.nome} (${s.sigla})`,
   }));
 }
@@ -466,6 +533,25 @@ export async function fetchTerritoryMap(
   const res = await apiClient("/api/v1/territories/?limit=500", { signal });
   const data: Paginated<Territorio> = await res.json();
   return new Map(data.results.map((t) => [t.id, t.nome]));
+}
+
+/**
+ * GET /api/v1/territories/ — os territórios inteiros, com as siglas que cobrem.
+ *
+ * `fetchTerritoryMap` joga `estados` fora, e há tela que precisa dele: a
+ * distribuição orçamentária (§5.3.2) só pode oferecer ao Articulador os
+ * territórios que intersectam os estados dele, que é exatamente o teste de
+ * `BudgetAllocationViewSet._autorizar`
+ * (`territorio.estados & allowed_states_for_user`). Um território pode cobrir
+ * mais de um estado, então o campo é uma lista e a comparação é de interseção,
+ * nunca de igualdade.
+ */
+export async function fetchTerritorios(
+  signal?: AbortSignal,
+): Promise<Territorio[]> {
+  const res = await apiClient("/api/v1/territories/?limit=500", { signal });
+  const data: Paginated<Territorio> = await res.json();
+  return data.results;
 }
 
 /** GET /api/v1/municipios/{id}/comunidades/ — comunidades ativas do município. */
@@ -545,20 +631,10 @@ function dispararDownload(blob: Blob, nome: string): void {
 }
 
 export async function exportarUpfs(params: ExportUpfsParams): Promise<string> {
-  const qs = new URLSearchParams({ formato: "csv" });
-  if (params.search?.trim()) qs.set("q", params.search.trim());
-  if (params.municipio) qs.set("municipio", params.municipio);
-  if (params.territorio) qs.set("territorio", params.territorio);
-  if (params.projeto) qs.set("projeto", params.projeto);
-  if (params.status === "ativas") qs.set("ativa", "true");
-  else if (params.status === "inativas") qs.set("ativa", "false");
-  else if (params.status === "todas") qs.set("ativa", "");
-  const criadoDe = localDayStartISO(params.cadastradoDe);
-  const criadoAte = localDayEndISO(params.cadastradoAte);
-  if (criadoDe) qs.set("criado_em__gte", criadoDe);
-  if (criadoAte) qs.set("criado_em__lte", criadoAte);
+  const qs = buildUpfsFilterParams(params);
+  qs.set("formato", "csv");
 
-  const res = await apiClient(`/api/v1/sgp/upfs/exportar/?${qs}`, {
+  const res = await apiClient(`/api/v1/upfs/exportar/?${qs}`, {
     signal: AbortSignal.timeout(120_000),
   });
 

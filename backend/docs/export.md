@@ -13,13 +13,81 @@ listagem de formulários da UPF. Os parâmetros opcionais são `formulario_id`,
 | Formato | Content-Type | Conteúdo |
 |---|---|---|
 | `csv` | `text/csv; charset=utf-8` | Uma linha por resposta, com ID, formulário, versão, data, respondente, status, origem e `respostas_json` serializado em JSON. |
-| `pdf` | `application/pdf` | Uma seção por resposta, com metadados e `respostas_json` indentado de forma legível. |
+| `pdf` | `application/pdf` | Uma seção por resposta, com metadados e as respostas renderizadas de forma estruturada (rótulo humanizado + valor por campo, grupos aninhados para objetos/listas de objetos e listas de valores simples exibidas em linha), seguindo as mesmas regras de apresentação da visualização completa (FE-17/BE-17). |
 
-O schema e o layout original dos formulários SGF ainda não são persistidos no SGP.
-Consequentemente, o PDF representa as respostas pelo JSON hierárquico armazenado;
-essa representação deverá ser substituída pelo renderizador do SGF quando esse
-contrato estiver disponível. `formato` ausente ou diferente de `csv` e `pdf`
-retorna `400 Bad Request`.
+A partir da issue #205, o PDF não imprime mais `respostas_json` como JSON bruto:
+`apps/sgp/services/form_response_render.py` percorre o dicionário recursivamente e
+despacha por tipo de valor — `None`/ausente e listas ou objetos vazios viram "—";
+booleano vira "Sim"/"Não"; lista cujos itens são todos primitivos vira uma linha
+única com os valores separados por vírgula; lista contendo objetos vira um grupo
+numerado ("Item 1", "Item 2", ...) com cada item renderizado recursivamente;
+objeto não vazio vira uma subseção com o título derivado da chave; qualquer outro
+valor é exibido como texto simples, sem formatação especial de data/moeda. Uma
+resposta sem nenhum campo preenchido exibe a mensagem "Este formulário foi
+submetido sem respostas registradas.", a mesma usada pelo modal de visualização
+completa.
+
+**Limitação conhecida e comportamento documentado**: o SGP ainda não persiste um
+schema/definição versionada dos formulários do SGF (`apps/sgf` não possui modelos
+hoje). Por isso, tanto o PDF quanto o modal FE-17 exibem as chaves de
+`respostas_json` como rótulos **humanizados** (ex.: `renda_familiar` → "Renda
+familiar"), e não como os rótulos reais de pergunta/opção definidos no formulário
+original; campos de seleção mostram o valor armazenado, não um rótulo de opção
+resolvido. `formulario_nome` e `formulario_versao` são sempre o snapshot gravado em
+`FormResponse` no momento do preenchimento — nunca resolvidos dinamicamente a
+partir de uma definição externa — portanto não existe hoje um cenário de
+"definição da versão original indisponível" a tratar; isso fica pendente de uma
+futura definição de schema versionado do SGF.
+
+A ordem das seções/campos no PDF segue a ordem das chaves em `respostas_json`
+conforme armazenada no banco (a mesma usada pela visualização completa). O
+Postgres `jsonb` não garante preservar a ordem de inserção original do JSON
+recebido, mas como as duas visualizações leem o mesmo valor persistido, elas
+permanecem consistentes entre si.
+
+A exportação em CSV não foi alterada por essa issue: `respostas_json` continua
+embutido, serializado em JSON, na coluna "Respostas".
+
+`formato` ausente ou diferente de `csv` e `pdf` retorna `400 Bad Request`.
+
+## Exportação de Membros (Issue #186)
+
+```http
+GET /api/v1/sgp/upfs/{upf_pk}/membros/exportar/
+GET /api/v1/sgp/membros/exportar/?territorio_id=&municipio=&projeto=
+```
+
+Requer autenticação JWT. A primeira rota exporta os membros de uma única UPF,
+respeitando o mesmo escopo territorial de acesso à UPF (`upfs_acessiveis_ao_usuario`).
+A segunda exporta membros de múltiplas UPFs dentro do escopo territorial do
+usuário — um relatório demográfico agregado —, com os filtros opcionais
+`territorio_id`, `municipio` e `projeto` (IDs inteiros).
+
+Resposta: CSV UTF-8 com BOM (`text/csv; charset=utf-8`), uma linha por membro,
+com `Content-Disposition: attachment`. Colunas: ID, UPF, nome completo,
+parentesco, data de nascimento, idade, gênero, CPF, município, território e
+projeto.
+
+**Campos sensíveis.** As colunas `Cor/Raça` e `Condições de saúde` só aparecem
+no CSV se o perfil do usuário autenticado tiver permissão de leitura sobre
+esses campos (mesma matriz da Issue #187, `apps.core.sensitive_fields`).
+Perfis sem permissão recebem o CSV **sem essas colunas** — nunca com valores
+vazios ou mascarados, para não sugerir a um perfil sem permissão que o dado
+existe.
+
+**Limite da exportação agregada.** Restrita a
+`apps.sgp.services.membro_export.MEMBROS_EXPORT_UPF_LIMIT` (500) UPFs por
+exportação. Acima disso, a API responde `400 Bad Request` pedindo para
+restringir por `territorio_id`, `municipio` ou `projeto`, em vez de truncar o
+resultado silenciosamente — um relatório demográfico incompleto sem aviso
+seria pior do que um erro explícito.
+
+| Cenário | Status |
+| :--- | :--- |
+| JWT ausente ou inválido | `401 Unauthorized` |
+| UPF fora do escopo do usuário (rota por UPF) | `404 Not Found` |
+| `territorio_id`/`municipio`/`projeto` inválidos | `400 Bad Request` |
+| Escopo territorial acima do limite de UPFs (rota agregada) | `400 Bad Request` |
 
 ## 1. Resumo
 

@@ -1,7 +1,11 @@
+from django import forms
 from django.contrib import admin
 
 from apps.sgp.models import (
     Activity,
+    BudgetAllocation,
+    BudgetRubrica,
+    BudgetTransaction,
     Comunidade,
     Cultura,
     EspecieAnimal,
@@ -13,6 +17,7 @@ from apps.sgp.models import (
     WorkPlanAcao,
     WorkPlanMeta,
 )
+from apps.sgp.services.activity_status import ActivityStatusError, validar_transicao
 
 
 @admin.register(FormResponse)
@@ -128,15 +133,79 @@ class WorkPlanMetaAdmin(admin.ModelAdmin):
 class WorkPlanAcaoAdmin(admin.ModelAdmin):
     list_display = [
         "meta", "numero", "descricao", "tipo_unidade",
-        "quantidade_planejada", "valor_total", "status_execucao",
+        "quantidade_planejada", "quantidade_realizada", "valor_total", "status_execucao",
     ]
     list_filter = ["meta"]
     search_fields = ["descricao"]
-    readonly_fields = ["valor_total", "status_execucao"]
+    readonly_fields = ["quantidade_realizada", "valor_total", "status_execucao"]
+
+
+@admin.register(BudgetRubrica)
+class BudgetRubricaAdmin(admin.ModelAdmin):
+    list_display = ["nome", "slug", "ordem", "ativo"]
+    list_filter = ["ativo"]
+    search_fields = ["nome", "slug"]
+
+
+@admin.register(BudgetAllocation)
+class BudgetAllocationAdmin(admin.ModelAdmin):
+    list_display = [
+        "meta", "rubrica", "nivel", "estado", "territorio",
+        "valor_alocado", "valor_comprometido", "valor_executado",
+    ]
+    list_filter = ["nivel", "rubrica", "estado"]
+    search_fields = ["meta__titulo"]
+    readonly_fields = [
+        "valor_comprometido", "valor_executado", "criado_por", "criado_em",
+    ]
+
+
+@admin.register(BudgetTransaction)
+class BudgetTransactionAdmin(admin.ModelAdmin):
+    list_display = ["allocation", "tipo", "valor", "demanda_id", "criado_por", "criado_em"]
+    list_filter = ["tipo"]
+    search_fields = ["demanda_id", "justificativa"]
+    readonly_fields = [
+        "allocation", "tipo", "valor", "demanda_id",
+        "justificativa", "criado_por", "criado_em",
+    ]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+class ActivityAdminForm(forms.ModelForm):
+    """Aplica a mesma validação de transição de status usada pela API web."""
+
+    class Meta:
+        model = Activity
+        fields = "__all__"
+
+    def clean(self):
+        cleaned_data = super().clean()
+        novo_status = cleaned_data.get("status")
+        if novo_status is not None:
+            try:
+                validar_transicao(
+                    self.instance,
+                    novo_status,
+                    justificativa=cleaned_data.get("justificativa", ""),
+                    nova_data=cleaned_data.get("data_inicio"),
+                )
+            except ActivityStatusError as exc:
+                self.add_error(exc.field, exc.message)
+        return cleaned_data
 
 
 @admin.register(Activity)
 class ActivityAdmin(admin.ModelAdmin):
+    form = ActivityAdminForm
     list_display = [
         "titulo", "tipo_atividade", "status", "forma_atuacao",
         "municipio", "tecnico_responsavel", "data_inicio", "data_fim",
@@ -149,6 +218,7 @@ class ActivityAdmin(admin.ModelAdmin):
     ]
     filter_horizontal = [
         "equipe_adicional", "upfs_participantes", "membros_participantes",
+        "parceiros_organizacoes",
     ]
     fieldsets = [
         ("Identificação", {
@@ -164,7 +234,10 @@ class ActivityAdmin(admin.ModelAdmin):
             "fields": ["data_inicio", "data_fim"],
         }),
         ("Participantes", {
-            "fields": ["upfs_participantes", "membros_participantes", "parceiros"],
+            "fields": [
+                "upfs_participantes", "membros_participantes",
+                "parceiros_organizacoes", "parceiros_livres",
+            ],
         }),
         ("Narrativa", {
             "fields": ["descricao_narrativa", "resultados_alcancados"],

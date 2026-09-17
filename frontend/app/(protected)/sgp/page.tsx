@@ -10,12 +10,13 @@ import {
   Sprout,
   UserCog,
   Users,
+  Wallet,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
+import { SubmoduleCard } from "@/app/components/ui/SubmoduleCard/SubmoduleCard";
 import { fetchUpfCount } from "@/app/lib/upfs";
-import { SubmoduleCard } from "./_components/SubmoduleCard";
 
 type Submodule = {
   key: string;
@@ -63,6 +64,14 @@ const SUBMODULES: Submodule[] = [
       "Semáforo de execução das Ações e alerta das que exigem atenção.",
     Icon: Gauge,
     href: "/sgp/painel/",
+  },
+  {
+    key: "orcamento",
+    title: "Painel de Orçamento",
+    description:
+      "Matriz Meta × Rubrica com semáforo e alerta das alocações no limite.",
+    Icon: Wallet,
+    href: "/sgp/orcamento/",
   },
   {
     key: "tecnicos",

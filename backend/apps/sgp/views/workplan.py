@@ -4,8 +4,10 @@ from io import BytesIO, StringIO
 
 from django.db.models import F, Sum
 from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.views import APIView
@@ -44,6 +46,8 @@ from apps.sgp.services.workplan_dashboard import (
     dashboard_actions_for_user,
     enrich_dashboard_action,
 )
+from apps.sgp.services import budget as budget_service
+from apps.sgp.serializers_budget import BudgetRubricaOrcamentoSerializer
 
 logger = logging.getLogger("apps.sgp.views.workplan")
 
@@ -212,6 +216,19 @@ class WorkPlanMetaViewSet(viewsets.ModelViewSet):
             return qs.none()
 
         return filter_workplan_metas_for_user(qs, user)
+
+    @extend_schema(responses=BudgetRubricaOrcamentoSerializer(many=True))
+    def orcamento(self, request, pk=None):
+        """Sem `@action`: exposta só via `path()` manual em urls.py, pra não
+        duplicar rota pelo router (metas já é registrado nele).
+
+        get_object_or_404 direto, não self.get_object() — get_queryset()
+        filtra por visibilidade de Atividade, uma política diferente da de
+        orçamento.
+        """
+        meta = get_object_or_404(WorkPlanMeta, pk=pk)
+        dados = budget_service.orcamento_por_meta(meta, request.user)
+        return Response(BudgetRubricaOrcamentoSerializer(dados, many=True).data)
 
     def perform_create(self, serializer):
         instance = serializer.save(criado_por=self.request.user)

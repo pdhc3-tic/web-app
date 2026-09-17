@@ -1,7 +1,15 @@
 # Pendências de backend — sprint 8 (pós-audit)
 
 *Compilado após o merge dos commits da sprint-8 em `frontend/sprint-8`
-(commits `cceb2b2` até `36599a5`, em 31/08/2026).*
+(commits `cceb2b2` até `36599a5`, em 31/08/2026). Revisado em 01/09/2026 com
+os itens levantados no review de PR do responsável pelo projeto — os três
+novos são os de número 7, 8 e 9.*
+
+> **Documento histórico.** Oito dos nove itens entraram na `main` entre 01/09
+> e 04/09/2026 — a tabela do fim do arquivo foi atualizada com a situação de
+> cada um. O estado atual das pendências está em
+> [`pendencias-backend-sprint-9.md`](./pendencias-backend-sprint-9.md); as
+> seções abaixo continuam aqui como registro do que foi pedido e por quê.
 
 Nenhum item aqui é destrave imediato do frontend — o frontend já foi
 entregue consumindo os endpoints/campos que existem hoje. Cada item
@@ -145,26 +153,113 @@ FormResponse no seed_demo" e as suítes de #192 nem existem.
 
 ---
 
-## 6. Bug UTC — resolvido, sem ação no backend
+## 6. Bug UTC — resolvido nas duas pontas
 
-Reportado como o "bug UTC" na sessão de auditoria. Frontend fixado no
-commit `cceb2b2` (issue 157) — helpers `localDayStartISO` /
-`localDayEndISO` em `frontend/app/lib/datetime.ts` substituindo a
-concatenação `T00:00:00Z` em `sync-events`, `users` e `upfs`. Backend
-não precisou mexer — recebia UTC correto, o problema era o frontend
-enviar UTC deslocado.
+O frontend foi corrigido no commit `cceb2b2` (issue 157), trocando a
+concatenação `T00:00:00Z` pelos helpers `localDayStartISO` / `localDayEndISO`.
 
-Registrado aqui para memória: se aparecer padrão semelhante em nova
-tela, usar os helpers em vez de recriar a concatenação.
+Depois disso a **PR #212 (mergeada em 01/09/2026)** atacou a mesma classe de bug
+pelo lado do backend: os filtros de data passaram a receber o `YYYY-MM-DD` cru e
+a recortar o dia no `TIME_ZONE` do servidor, com renomeação dos parâmetros.
+
+O frontend foi adaptado junto: `data_inicio`/`data_fim` no log de sincronização,
+`ultimo_acesso_de`/`ultimo_acesso_ate` em usuários e
+`cadastrado_de`/`cadastrado_ate` em UPFs, sem mais conversão para ISO em UTC
+nesses três pontos. Os helpers continuam existindo para outros usos.
+
+Fica o registro do risco, caso apareça mudança parecida: o django-filter
+descarta parâmetro desconhecido **em silêncio**, sem 400. Uma renomeação de
+parâmetro que entre sem o frontend correspondente não gera erro na tela — o
+filtro simplesmente deixa de filtrar, e a lista completa passa por resultado.
+
+---
+
+## 7. UGP ainda lê e resolve conflitos de sincronização — bloqueia o aceite de #158
+
+*Estado atual:* `ConflictLogViewSet.get_queryset` (`backend/apps/sca/views.py:308`)
+devolve o queryset **inteiro** para o perfil `ugp`, e a action `resolver`
+(`:331`) também o autoriza.
+
+O aceite limita a revisão de conflitos a Articulador Estadual e Super Admin. O
+frontend já foi ajustado: `canReviewSyncConflicts` não inclui mais a UGP, o
+item de menu some e as rotas `/sca/conflitos` e `/sca/conflitos/{id}` caem no
+403 da tela. Isso é **afordância, não recorte** — um usuário UGP com o token na
+mão continua lendo e resolvendo conflitos direto na API.
+
+**Fix sugerido** — em `get_queryset`, tirar `ugp` do ramo que retorna tudo, e em
+`resolver` trocar o `elif not (super-admin or ugp)` por só `super-admin`.
+Cuidado: a UGP continua com acesso legítimo ao restante do SCA
+(`SyncDeviceListView` e `SyncEventViewSet` usam `IsSuperAdminOrUGPReadOnly`) —
+o recorte é só nos conflitos.
+
+**Teste sugerido:** `GET /api/v1/sca/conflicts/` autenticado como `ugp` deve
+responder 403 (ou lista vazia, se preferirem manter o padrão de queryset
+vazio dos demais perfis).
+
+---
+
+## 8. Fonte de técnicos para o filtro do log de sincronização — atendida pela PR #217
+
+*Estado atual:* endpoint proposto em `backend/fonte-tecnicos` (PR #217, aberta),
+ainda **não mergeado**: `GET /api/v1/sca/tecnicos/`, não paginado, com
+`IsSuperAdminOrUGPReadOnly` e cobrindo quem tem dispositivo **ou** evento.
+
+É exatamente o contrato que faltava. O frontend já consome esse endereço e cai
+num fallback enquanto ele responde 404: percorre **todas** as páginas de
+`/sca/devices/` seguindo `next`, em vez de supor que uma resposta é a lista
+completa — o `?limit=500` anterior era silenciosamente reduzido a 100 pelo
+`SCAPagination.max_limit`, então nem a listagem de dispositivos vinha inteira.
+
+O fallback continua sem o técnico que não tem dispositivo; só o endpoint resolve
+esse caso. Assim que a #217 entrar na main, o caminho dedicado passa a valer
+sozinho, sem mais mudança de frontend.
+
+**Ação:** mergear a #217.
+
+---
+
+## 9. Formulários distintos por UPF — atendida pela PR #214
+
+*Estado atual:* endpoint proposto em `backend/filtros-formularios` (PR #214,
+aberta), ainda **não mergeado**:
+`GET /api/v1/sgp/upfs/{upf_pk}/formularios/opcoes/`, não paginado, devolvendo
+`{formulario_id, formulario_nome, formulario_versao}` distintos da UPF.
+
+Não confundir com a BE-18 (`/api/v1/sgp/formularios-disponiveis/`), que lista o
+que está publicado para **novo** preenchimento — um formulário despublicado sai
+de lá e continua no histórico da família.
+
+O frontend já consome o endereço novo e cai num fallback enquanto ele responde
+404: percorre **todas** as páginas da listagem de respostas, seguindo `next`, e
+deduplica por `formulario_id`. A varredura anterior mandava um `page_size=200` e
+tratava a primeira resposta como completa — o que deixava de fora formulário
+cuja primeira resposta ficasse além do corte.
+
+A mesma PR traz o `respondente_isnull` do item 1 deste documento.
+
+**Ação:** mergear a #214 — ela fecha os itens 1 e 9 de uma vez.
 
 ---
 
 ## Resumo — o que fica pendente no backend para o sprint 8
 
-| # | Item | Bloqueia |
-|---|---|---|
-| 1 | `respondente_isnull` no `FormResponseFilter`                                | critério "Apenas anônimas" (#180) |
-| 2 | BE-25 (#187) — omitir `saude`/`cor_raca` por perfil                          | critério de exibição condicional (#192) + coluna condicional do export de membros (#191) |
-| 3 | Endpoint admin de token Power BI (`GET` + `POST /regenerar`)                 | tela inteira (#143) |
-| 4 | Endpoint `GET /api/v1/sgp/upfs/{upf_pk}/membros/exportar/`                   | tela inteira (#191) |
-| 5 | Seed com `FormResponse` + `MembroFamilia` com campos sensíveis               | destrave dos E2E de #178/#179/#180/#181/#192 |
+| # | Item | Bloqueia | Situação em 04/09/2026 |
+|---|---|---|---|
+| 1 | `respondente_isnull` | critério "Apenas anônimas" (#180) | **na `main`** — PR #214 |
+| 2 | BE-25 (#187) | exibição condicional (#192) + coluna condicional do export (#191) | **na `main`** — PR #213 |
+| 3 | Admin de token Power BI | tela inteira (#143) | **na `main`** — PR #215 |
+| 4 | `GET .../membros/exportar/` | tela inteira (#191) | **na `main`** — PR #213 |
+| 5 | Seed com `FormResponse` + `MembroFamilia` com campos sensíveis | destrave dos E2E de #178/#179/#180/#181/#192 | **parcial, e mal diagnosticado** — o seed cria `FormResponse`; o "usuário sem permissão de Saúde" pedido aqui não é questão de seed (ver item 6 da sprint 9) |
+| 6 | Bug UTC | — | **na `main`** — PR #212 |
+| 7 | `ugp` fora do `ConflictLogViewSet` | recorte real de acesso aos conflitos (#158) | **na `main`** — PR #213 |
+| 8 | `GET /api/v1/sca/tecnicos/` | técnico sem dispositivo no select do log (#157) | **na `main`** — PR #217 |
+| 9 | `GET .../formularios/opcoes/` | opções completas do select da aba Formulários (#180) | **na `main`** — PR #214 |
+
+Situação em 04/09/2026: as PRs #212 a #217 foram todas mergeadas, e com elas
+oito dos nove itens deste documento. Sobrou o item 5 (seed), que continua sem
+PR e volta ampliado no item 2 do documento da sprint 9 — o seed também não
+cria os dados dos painéis de integração.
+
+O comportamento provisório descrito em cada seção acima foi retirado do
+frontend conforme os endpoints entraram; nenhum fallback de 404 permanece nas
+telas de #133 e #143.

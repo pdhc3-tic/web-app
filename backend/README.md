@@ -179,6 +179,7 @@ Referência completa em [`.env.example`](.env.example):
 | Variável | Obrigatória | Descrição |
 |----------|-------------|-----------|
 | `DJANGO_SECRET_KEY` | ✅ | Chave secreta do Django |
+| `FIELD_ENCRYPTION_KEY` | ✅ | Chave AES-256 (base64 de 32 bytes) para criptografia em repouso de campos sensíveis (`saude`, `cor_raca` de `MembroFamilia`) — gere com `openssl rand -base64 32`. Ver [`apps/core/crypto.py`](apps/core/crypto.py) |
 | `DEBUG` | — | `True` para desenvolvimento |
 | `DB_NAME` | — | Nome do banco (padrão: `app_db`) |
 | `DB_USER` | — | Usuário do banco (padrão: `app_user`) |

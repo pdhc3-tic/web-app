@@ -1,6 +1,6 @@
 import factory
 import pytest
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from django.utils import timezone
@@ -232,6 +232,56 @@ class TestSerializers:
         assert "territorio" in response.data
         assert isinstance(response.data["territorio"], dict)
 
+    def test_detalhe_upf_inclui_estado(
+        self, auth_client, upf_payload_completo
+    ):
+        res = auth_client.post(
+            "/api/v1/upfs/", upf_payload_completo, format="json"
+        )
+        upf_id = res.data["id"]
+
+        response = auth_client.get(f"/api/v1/upfs/{upf_id}/")
+        assert response.status_code == 200
+        assert response.data["municipio"]["estado"]["sigla"] == "RN"
+
+    def test_lista_upf_inclui_estado(
+        self, auth_client, upf_payload_minimo
+    ):
+        auth_client.post(
+            "/api/v1/upfs/", upf_payload_minimo, format="json"
+        )
+        response = auth_client.get("/api/v1/upfs/")
+        assert response.status_code == 200
+
+        result = response.data["results"][0]
+        assert result["municipio"]["estado"]["sigla"] == "RN"
+
+    def test_sem_query_adicional_por_estado(
+        self, auth_client, projeto, municipio_rn, territory_rn
+    ):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        UPFFactory(
+            projeto=projeto, municipio=municipio_rn, territorio=territory_rn,
+        )
+        with CaptureQueriesContext(connection) as ctx_1:
+            auth_client.get("/api/v1/upfs/")
+        queries_com_1 = len(ctx_1.captured_queries)
+
+        UPFFactory.create_batch(
+            49, projeto=projeto, municipio=municipio_rn, territorio=territory_rn,
+            titular_cpf=factory.Sequence(lambda n: f"{n + 20000000000:011d}"),
+        )
+        # UPFPagination.page_size é 50 — sem parâmetro, a página já traz tudo.
+        with CaptureQueriesContext(connection) as ctx_50:
+            response = auth_client.get("/api/v1/upfs/")
+        queries_com_50 = len(ctx_50.captured_queries)
+
+        assert response.status_code == 200
+        assert len(response.data["results"]) == 50
+        assert queries_com_50 == queries_com_1
+
     def test_cpf_masked_in_list(
         self, auth_client, upf_payload_minimo
     ):
@@ -308,6 +358,41 @@ class TestFiltrosEBusca:
         )
         assert response.status_code == 200
         assert len(response.data["results"]) == 1
+
+    def test_list_filter_by_cadastrado_de_ate_usa_dia_do_servidor(
+        self, auth_client, projeto, municipio_rn
+    ):
+        """`cadastrado_de/ate` filtram pelo dia LOCAL (TIME_ZONE do servidor),
+        não por uma janela UTC fixa — ver DIVIDA_TECNICA_FILTROS_DATA_UTC.md."""
+
+        def aware(year, month, day, hour, minute):
+            return timezone.make_aware(datetime(year, month, day, hour, minute))
+
+        # 28/08 21:04 no fuso do servidor ainda é dia 28 local.
+        dentro = UPFFactory(
+            projeto=projeto, municipio=municipio_rn, titular_cpf="86288366757"
+        )
+        UPF.objects.filter(pk=dentro.pk).update(criado_em=aware(2026, 8, 28, 21, 4))
+        # 27/08 22:00 no fuso do servidor é dia 27 local: não deve entrar no filtro "28".
+        dia_anterior = UPFFactory(
+            projeto=projeto, municipio=municipio_rn, titular_cpf="52998224725"
+        )
+        UPF.objects.filter(pk=dia_anterior.pk).update(criado_em=aware(2026, 8, 27, 22, 0))
+        dia_seguinte = UPFFactory(
+            projeto=projeto, municipio=municipio_rn, titular_cpf="11144477735"
+        )
+        UPF.objects.filter(pk=dia_seguinte.pk).update(criado_em=aware(2026, 8, 29, 5, 0))
+
+        response = auth_client.get(
+            "/api/v1/upfs/",
+            {"cadastrado_de": "2026-08-28", "cadastrado_ate": "2026-08-28"},
+        )
+
+        assert response.status_code == 200
+        ids = {u["id"] for u in response.data["results"]}
+        assert dentro.pk in ids
+        assert dia_anterior.pk not in ids
+        assert dia_seguinte.pk not in ids
 
     def test_list_search_by_nome_titular(
         self, auth_client, projeto, municipio_rn
@@ -526,6 +611,15 @@ class TestIsolamentoTerritorial:
             projeto=projeto, municipio=municipio_rn, titular_cpf="86288366757"
         )
         response = auth_client_sem_acesso.get("/api/v1/upfs/")
+        assert response.status_code == 403
+
+    def test_perfil_without_sgp_access_returns_403_on_mapa(
+        self, auth_client_sem_acesso, projeto, municipio_rn
+    ):
+        UPFFactory(
+            projeto=projeto, municipio=municipio_rn, titular_cpf="86288366757"
+        )
+        response = auth_client_sem_acesso.get("/api/v1/upfs/mapa/")
         assert response.status_code == 403
 
 

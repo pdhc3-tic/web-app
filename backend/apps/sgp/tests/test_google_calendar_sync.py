@@ -9,7 +9,7 @@ from rest_framework.test import APIClient
 from apps.core.models import UserProfile
 from apps.core.models.system_config import SystemConfig, TipoConfiguracao
 from apps.core.tests.factories import RoleFactory, UserFactory
-from apps.sgp.models import Activity
+from apps.sgp.models import Activity, GoogleCalendarSyncEvent
 from apps.sgp.tasks import sync_activity_to_google_calendar
 from apps.sgp.tests.factories import ActivityFactory
 
@@ -97,6 +97,9 @@ def test_transicao_para_agendada_chama_events_insert_com_payload_correto():
     activity.refresh_from_db()
     assert activity.google_calendar_event_id == "event-123"
     assert activity.google_calendar_sync_status == "ok"
+    evento = GoogleCalendarSyncEvent.objects.get(activity=activity)
+    assert evento.sucesso is True
+    assert evento.mensagem_erro == ""
 
 
 def test_alteracao_em_atividade_agendada_chama_events_update():
@@ -161,6 +164,32 @@ def test_falha_da_api_marca_erro_notifica_sentry_e_super_admin():
     capture_exception.assert_called_once()
     send_email.assert_called_once()
     assert send_email.call_args.args[2] == ["super@example.com"]
+    evento = GoogleCalendarSyncEvent.objects.get(activity=activity)
+    assert evento.sucesso is False
+    assert evento.mensagem_erro == "Google indisponível"
+
+
+def test_multiplas_falhas_mesma_activity_geram_eventos_distintos():
+    configure_google_calendar(active=True)
+    role = RoleFactory(slug="super-admin", nome="Super Admin")
+    super_admin = UserFactory(email="super2@example.com", nome="Super Admin 2")
+    UserProfile.objects.create(user=super_admin, perfil=role)
+    activity = ActivityFactory(status="agendado")
+    service = mock_google_service()
+    service.events.return_value.insert.return_value.execute.side_effect = RuntimeError(
+        "Google indisponível"
+    )
+
+    with patch("apps.sgp.tasks.get_google_calendar_service", return_value=service), \
+        patch("apps.sgp.tasks.sentry_sdk.capture_exception"), \
+        patch("apps.sgp.tasks.send_email_notification.delay"):
+        sync_activity_to_google_calendar(activity.pk)
+        sync_activity_to_google_calendar(activity.pk)
+        sync_activity_to_google_calendar(activity.pk)
+
+    eventos = GoogleCalendarSyncEvent.objects.filter(activity=activity)
+    assert eventos.count() == 3
+    assert all(e.sucesso is False for e in eventos)
 
 
 def test_integracao_desativada_nao_enfileira_task():
