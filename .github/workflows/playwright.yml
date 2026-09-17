@@ -50,6 +50,16 @@ jobs:
           NEXT_PUBLIC_API_URL=http://localhost:8000
           EOF
 
+      # Antes de subir o Docker, de proposito: o compose monta ./frontend:/app
+      # com um volume anonimo em /app/node_modules, e ao preparar esse mount o
+      # Docker cria ./frontend/node_modules no host pertencendo ao root. Depois
+      # disso o npm ci do runner morre com EACCES ao escrever ali.
+      - name: Instalar Playwright
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
       - name: Subir stack Docker
         run: docker compose up -d --build --wait
         timeout-minutes: 4
@@ -67,12 +77,6 @@ jobs:
 
       - name: Seed de demonstração
         run: docker compose exec -T backend python manage.py seed_demo --reset
-
-      - name: Instalar Playwright
-        working-directory: frontend
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
 
       - name: Executar testes Playwright
         working-directory: frontend
