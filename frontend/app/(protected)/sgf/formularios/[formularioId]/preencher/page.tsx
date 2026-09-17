@@ -46,7 +46,7 @@ function PreencherView() {
   const searchParams = useSearchParams();
   const upfId = searchParams.get("upf") ?? "";
 
-  const voltarHref = upfId ? `/sgp/upfs/${upfId}#formularios` : "/sgp/upfs";
+  const voltarHref = upfId ? `/sgp/upfs/${upfId}?tab=formularios` : "/sgp/upfs";
 
   return (
     <div data-testid="preencher-formulario-placeholder">

@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Gauge,
   Sprout,
+  UserCog,
   Users,
   Wallet,
 } from "lucide-react";
@@ -73,16 +74,25 @@ const SUBMODULES: Submodule[] = [
     href: "/sgp/orcamento/",
   },
   {
+    key: "tecnicos",
+    title: "Técnicos",
+    description: "Gestão de técnicos do território.",
+    Icon: UserCog,
+    href: "/sgp/tecnicos/",
+  },
+  {
     key: "producao",
     title: "Produção da UPF",
     description: "Dados de produção e cadeias produtivas da unidade.",
     Icon: Sprout,
+    href: "/sgp/producao/",
   },
   {
     key: "relatorios",
     title: "Relatórios",
     description: "Indicadores e relatórios consolidados do módulo.",
     Icon: BarChart3,
+    href: "/sgp/relatorios/",
   },
 ];
 

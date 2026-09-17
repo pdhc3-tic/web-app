@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { AlertTriangle, Pencil, Plus, Sprout, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { Pencil, Plus, Sprout, Trash2 } from "lucide-react";
 import { Button } from "@/app/components/ui/Button/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { useToast } from "@/app/components/ui/Toast/Toast";
+import { CrudTab } from "@/app/components/ui/CrudTab/CrudTab";
+import { useFetch } from "@/app/lib/hooks/useFetch";
 import {
   listProducoes,
   SISTEMA_CRIACAO_OPTIONS,
@@ -19,31 +21,17 @@ type Props = { upfId: string };
 type SlideOverState = { open: false } | { open: true; mode: SlideOverMode; producao?: Producao };
 
 export function ProducaoTab({ upfId }: Props) {
-  const [producoes, setProducoes] = useState<Producao[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
+  const {
+    data: producoes,
+    setData: setProducoes,
+    loading,
+    error,
+    reload,
+  } = useFetch((signal) => listProducoes(upfId, signal), [] as Producao[], [upfId]);
 
   const [slideOver, setSlideOver] = useState<SlideOverState>({ open: false });
   const [remover, setRemover] = useState<Producao | null>(null);
   const { showToast } = useToast();
-
-  useEffect(() => {
-    const controller = new AbortController();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true);
-    setError(null);
-    listProducoes(upfId, controller.signal)
-      .then((data) => setProducoes(data))
-      .catch((e: unknown) => {
-        if (controller.signal.aborted) return;
-        setError(e instanceof Error ? e.message : "Não foi possível carregar as atividades.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [upfId, reloadKey]);
 
   function handleSaved(saved: Producao) {
     setProducoes((prev) => {
@@ -65,49 +53,47 @@ export function ProducaoTab({ upfId }: Props) {
 
   return (
     <div className="space-y-4">
-      {!loading && !error && producoes.length > 0 && (
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm text-text-muted">
-            {producoes.length}{" "}
-            {producoes.length === 1 ? "atividade cadastrada" : "atividades cadastradas"}
-          </p>
-          <Button
-            size="sm"
-            leftIcon={<Plus className="h-4 w-4" />}
-            onClick={() => setSlideOver({ open: true, mode: "create" })}
-          >
-            Adicionar atividade produtiva
-          </Button>
-        </div>
-      )}
-
-      {loading && <TabelaSkeleton />}
-
-      {!loading && error && <ErroSection message={error} onRetry={() => setReloadKey((k) => k + 1)} />}
-
-      {!loading && !error && producoes.length === 0 && (
-        <EmptyState
-          icon={<Sprout className="h-7 w-7" />}
-          title="Nenhuma atividade produtiva cadastrada"
-          description="Cadastre culturas agrícolas, criações pecuárias ou outras atividades."
-          action={
+      <CrudTab loading={loading} error={error} onRetry={reload} skeleton={<TabelaSkeleton />}>
+        {producoes.length > 0 && (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-text-muted">
+              {producoes.length}{" "}
+              {producoes.length === 1 ? "atividade cadastrada" : "atividades cadastradas"}
+            </p>
             <Button
+              size="sm"
               leftIcon={<Plus className="h-4 w-4" />}
               onClick={() => setSlideOver({ open: true, mode: "create" })}
             >
               Adicionar atividade produtiva
             </Button>
-          }
-        />
-      )}
+          </div>
+        )}
 
-      {!loading && !error && producoes.length > 0 && (
-        <Tabela
-          producoes={producoes}
-          onEdit={(p) => setSlideOver({ open: true, mode: "edit", producao: p })}
-          onRemove={(p) => setRemover(p)}
-        />
-      )}
+        {producoes.length === 0 && (
+          <EmptyState
+            icon={<Sprout className="h-7 w-7" />}
+            title="Nenhuma atividade produtiva cadastrada"
+            description="Cadastre culturas agrícolas, criações pecuárias ou outras atividades."
+            action={
+              <Button
+                leftIcon={<Plus className="h-4 w-4" />}
+                onClick={() => setSlideOver({ open: true, mode: "create" })}
+              >
+                Adicionar atividade produtiva
+              </Button>
+            }
+          />
+        )}
+
+        {producoes.length > 0 && (
+          <Tabela
+            producoes={producoes}
+            onEdit={(p) => setSlideOver({ open: true, mode: "edit", producao: p })}
+            onRemove={(p) => setRemover(p)}
+          />
+        )}
+      </CrudTab>
 
       <ProducaoSlideOver
         open={slideOver.open}
@@ -292,15 +278,4 @@ function TabelaSkeleton() {
   );
 }
 
-function ErroSection({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="flex flex-col items-center gap-4 rounded-lg border border-border bg-surface px-6 py-16 text-center">
-      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-error-bg text-error-text">
-        <AlertTriangle className="h-6 w-6" />
-      </span>
-      <p className="max-w-sm text-sm text-text-muted">{message}</p>
-      <Button variant="secondary" onClick={onRetry}>Tentar novamente</Button>
-    </div>
-  );
-}
 

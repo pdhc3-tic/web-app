@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
-  AlertTriangle,
   Download,
   Eye,
   Pencil,
@@ -18,6 +17,8 @@ import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { useToast } from "@/app/components/ui/Toast/Toast";
 import Spinner from "@/app/components/icons/Spinner";
 import { ApiError } from "@/app/lib/api";
+import { CrudTab } from "@/app/components/ui/CrudTab/CrudTab";
+import { useFetch } from "@/app/lib/hooks/useFetch";
 import {
   calcIdade,
   exportarMembrosCsv,
@@ -59,16 +60,26 @@ function idadeLabel(membro: MembroListItem): string {
 // ─── Componente principal ────────────────────────────────────────────────────
 
 export function MembrosTab({ upfId }: Props) {
-  const [membros, setMembros] = useState<MembroListItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
+  const {
+    data: membros,
+    setData: setMembros,
+    loading,
+    error,
+    reload,
+  } = useFetch((signal) => listMembros(upfId, signal), [] as MembroListItem[], [upfId]);
 
-  const [resumo, setResumo] = useState<ResumoMembros | null>(null);
-  const [resumoLoading, setResumoLoading] = useState(true);
-  /** Distingue "resumo ainda em voo" de "resumo falhou" — ver `semTitular`. */
-  const [resumoErro, setResumoErro] = useState(false);
-  const [resumoKey, setResumoKey] = useState(0);
+  const {
+    data: resumo,
+    loading: resumoLoading,
+    error: resumoError,
+    reload: reloadResumo,
+  } = useFetch(
+    (signal) => getResumoMembros(upfId, signal),
+    null as ResumoMembros | null,
+    [upfId],
+  );
+
+  const resumoErro = resumoError !== null;
 
   const [slideOver, setSlideOver] = useState<SlideOverState>({ open: false });
   const [remover, setRemover] = useState<MembroListItem | null>(null);
@@ -99,54 +110,6 @@ export function MembrosTab({ upfId }: Props) {
     }
   }
 
-  // ── Carrega a lista ────────────────────────────────────────────────────────
-  useEffect(() => {
-    const controller = new AbortController();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true);
-    setError(null);
-
-    listMembros(upfId, controller.signal)
-      .then((data) => setMembros(data))
-      .catch((e: unknown) => {
-        if (controller.signal.aborted) return;
-        setError(
-          e instanceof ApiError
-            ? e.message
-            : "Não foi possível carregar os membros.",
-        );
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-
-    return () => controller.abort();
-  }, [upfId, reloadKey]);
-
-  // ── Carrega o resumo agregado (BE-23) ──────────────────────────────────────
-  // Chave própria: a listagem é atualizada de forma otimista após salvar ou
-  // remover, mas os agregados só o backend sabe recalcular.
-  useEffect(() => {
-    const controller = new AbortController();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setResumoLoading(true);
-
-    setResumoErro(false);
-
-    getResumoMembros(upfId, controller.signal)
-      .then((data) => setResumo(data))
-      .catch(() => {
-        if (controller.signal.aborted) return;
-        // Só aqui o fallback da listagem passa a valer para o alerta.
-        setResumo(null);
-        setResumoErro(true);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setResumoLoading(false);
-      });
-
-    return () => controller.abort();
-  }, [upfId, resumoKey]);
 
   const titularExists = useMemo(
     () => membros.some((m) => m.grau_parentesco === "titular"),
@@ -240,7 +203,7 @@ export function MembrosTab({ upfId }: Props) {
       return next;
     });
 
-    setResumoKey((k) => k + 1);
+    reloadResumo();
     showToast(
       slideOver.open && slideOver.mode === "edit"
         ? "Membro atualizado."
@@ -253,7 +216,7 @@ export function MembrosTab({ upfId }: Props) {
   // Basta remover a linha da lista, fechar o diálogo e disparar o toast.
   function handleDeleteConfirmed(id: number) {
     setMembros((prev) => prev.filter((m) => m.id !== id));
-    setResumoKey((k) => k + 1);
+    reloadResumo();
     setRemover(null);
     showToast("Membro removido.");
   }
@@ -272,78 +235,73 @@ export function MembrosTab({ upfId }: Props) {
           resumo={resumo}
           loading={resumoLoading}
           semTitular={semTitular}
-          onRetry={() => setResumoKey((k) => k + 1)}
+          onRetry={reloadResumo}
         />
       )}
 
       {/* A barra de ações continua atrelada à lista: exportar CSV de uma UPF
           sem membros não tem o que gerar, e o CTA de cadastro com zero membros
           é o do EmptyState logo abaixo ("Adicionar primeiro membro"). */}
-      {!loading && !error && membros.length > 0 && (
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button
-            size="sm"
-            variant="secondary"
-            leftIcon={
-              exporting ? (
-                <Spinner className="h-4 w-4 animate-spin" />
-              ) : (
-                <Download className="h-4 w-4" />
-              )
-            }
-            disabled={exporting}
-            onClick={handleExport}
-            data-testid="membros-exportar-csv"
-          >
-            {exporting ? "Exportando…" : "Exportar CSV"}
-          </Button>
-          <Button
-            size="sm"
-            leftIcon={<Plus className="h-4 w-4" />}
-            onClick={openCreate}
-          >
-            Adicionar membro
-          </Button>
-        </div>
-      )}
-
-      {loading && <CarregandoSection />}
-
-      {!loading && error && (
-        <ErroSection
-          message={error}
-          onRetry={() => {
-            setReloadKey((k) => k + 1);
-            setResumoKey((k) => k + 1);
-          }}
-        />
-      )}
-
-      {!loading && !error && membros.length === 0 && (
-        <EmptyState
-          icon={<Users className="h-7 w-7" />}
-          title="Nenhum membro cadastrado ainda."
-          description="O primeiro membro cadastrado deve ser o Titular da UPF."
-          action={
+      <CrudTab
+        loading={loading}
+        error={error}
+        onRetry={() => { reload(); reloadResumo(); }}
+        skeleton={<CarregandoSection />}
+      >
+        {membros.length > 0 && (
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <Button
-              leftIcon={<UserPlus className="h-4 w-4" />}
-              onClick={openCreate}
-              data-testid="membros-adicionar-primeiro"
+              size="sm"
+              variant="secondary"
+              leftIcon={
+                exporting ? (
+                  <Spinner className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )
+              }
+              disabled={exporting}
+              onClick={handleExport}
+              data-testid="membros-exportar-csv"
             >
-              Adicionar primeiro membro
+              {exporting ? "Exportando…" : "Exportar CSV"}
             </Button>
-          }
-        />
-      )}
+            <Button
+              size="sm"
+              leftIcon={<Plus className="h-4 w-4" />}
+              onClick={openCreate}
+            >
+              Adicionar membro
+            </Button>
+          </div>
+        )}
 
-      {!loading && !error && membros.length > 0 && (
-        <Tabela
-          membros={membros}
-          onView={openView}
-          onEdit={openEdit}
-          onRemove={(m) => setRemover(m)}
-        />
-      )}
+        {membros.length === 0 && (
+          <EmptyState
+            icon={<Users className="h-7 w-7" />}
+            title="Nenhum membro cadastrado ainda."
+            description="O primeiro membro cadastrado deve ser o Titular da UPF."
+            action={
+              <Button
+                leftIcon={<UserPlus className="h-4 w-4" />}
+                onClick={openCreate}
+                data-testid="membros-adicionar-primeiro"
+              >
+                Adicionar primeiro membro
+              </Button>
+            }
+          />
+        )}
+
+        {membros.length > 0 && (
+          <Tabela
+            membros={membros}
+            onView={openView}
+            onEdit={openEdit}
+            onRemove={(m) => setRemover(m)}
+          />
+        )}
+      </CrudTab>
 
       <MembroSlideOver
         open={slideOver.open}
@@ -559,24 +517,3 @@ function TabelaSkeleton() {
   );
 }
 
-// ─── Erro de carregamento ────────────────────────────────────────────────────
-
-function ErroSection({
-  message,
-  onRetry,
-}: {
-  message: string;
-  onRetry: () => void;
-}) {
-  return (
-    <div className="flex flex-col items-center gap-4 rounded-lg border border-border bg-surface px-6 py-16 text-center">
-      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-error-bg text-error-text">
-        <AlertTriangle className="h-6 w-6" />
-      </span>
-      <p className="max-w-sm text-sm text-text-muted">{message}</p>
-      <Button variant="secondary" onClick={onRetry}>
-        Tentar novamente
-      </Button>
-    </div>
-  );
-}

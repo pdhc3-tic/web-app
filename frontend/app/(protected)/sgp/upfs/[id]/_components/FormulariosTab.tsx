@@ -89,9 +89,9 @@ function readFiltersFromSearchParams(
 }
 
 /**
- * Reflete os filtros na URL preservando o hash da aba (#formularios) e demais
- * query params que não fazem parte deste conjunto. Usa `replaceState` para não
- * poluir o histórico do browser em cada tecla digitada.
+ * Reflete os filtros na URL preservando o `?tab=` e demais query params que não
+ * fazem parte deste conjunto. Usa `replaceState` para não poluir o histórico do
+ * browser em cada tecla digitada.
  */
 function syncFiltersToUrl(filters: FormulariosFiltrosValue) {
   if (typeof window === "undefined") return;
