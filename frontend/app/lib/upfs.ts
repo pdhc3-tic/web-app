@@ -68,16 +68,17 @@ type MunicipalityOption = {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function buildUpfsQuery(params: ListUpfsParams): string {
+/**
+ * Parâmetros de filtro comuns à listagem e à exportação de UPFs.
+ * Fonte única de verdade — tanto `buildUpfsQuery` quanto `exportarUpfs` usam
+ * esta função para garantir que listagem e arquivo gerado sejam idênticos.
+ */
+function buildUpfsFilterParams(params: ExportUpfsParams): URLSearchParams {
   const qs = new URLSearchParams();
-  qs.set("limit", String(params.limit));
-  qs.set("offset", String(params.offset));
-
   if (params.search?.trim()) qs.set("q", params.search.trim());
   if (params.municipio) qs.set("municipio", params.municipio);
   if (params.territorio) qs.set("territorio", params.territorio);
   if (params.projeto) qs.set("projeto", params.projeto);
-  if (params.ordering) qs.set("ordering", params.ordering);
 
   // Status → parâmetro `ativa`.
   // O UPFViewSet só retorna inativas quando `ativa` aparece na query
@@ -92,6 +93,14 @@ function buildUpfsQuery(params: ListUpfsParams): string {
   if (params.cadastradoDe) qs.set("cadastrado_de", params.cadastradoDe);
   if (params.cadastradoAte) qs.set("cadastrado_ate", params.cadastradoAte);
 
+  return qs;
+}
+
+function buildUpfsQuery(params: ListUpfsParams): string {
+  const qs = buildUpfsFilterParams(params);
+  qs.set("limit", String(params.limit));
+  qs.set("offset", String(params.offset));
+  if (params.ordering) qs.set("ordering", params.ordering);
   return qs.toString();
 }
 
@@ -587,4 +596,52 @@ export async function fetchProjetoOptions(
   } catch {
     return [];
   }
+}
+
+// ─── Exportação da listagem ───────────────────────────────────────────────────
+
+export type ExportUpfsParams = {
+  search?: string;
+  municipio?: string;
+  territorio?: string;
+  projeto?: string;
+  status?: StatusUpfFilter;
+  cadastradoDe?: string;
+  cadastradoAte?: string;
+};
+
+export const EXPORT_UPFS_ASYNC_THRESHOLD = 1_000;
+
+function nomeDerivadoUpfs(): string {
+  const agora = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const data = [agora.getFullYear(), pad(agora.getMonth() + 1), pad(agora.getDate())].join("-");
+  return `upfs_${data}.csv`;
+}
+
+function dispararDownload(blob: Blob, nome: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nome;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+export async function exportarUpfs(params: ExportUpfsParams): Promise<string> {
+  const qs = buildUpfsFilterParams(params);
+  qs.set("formato", "csv");
+
+  const res = await apiClient(`/api/v1/upfs/exportar/?${qs}`, {
+    signal: AbortSignal.timeout(120_000),
+  });
+
+  const cd = res.headers.get("Content-Disposition");
+  const match = cd ? /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd) : null;
+  const nome = match ? decodeURIComponent(match[1].trim()) : nomeDerivadoUpfs();
+
+  dispararDownload(await res.blob(), nome);
+  return nome;
 }

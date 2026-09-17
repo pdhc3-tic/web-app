@@ -54,6 +54,9 @@ function AtividadesView() {
     inicioDe: searchParams.get("de") ?? "",
     inicioAte: searchParams.get("ate") ?? "",
   }));
+  const [apenasAtrasadas, setApenasAtrasadas] = useState<boolean>(
+    () => searchParams.get("atrasada") === "true",
+  );
   const [limit, setLimit] = useState<number>(() => {
     const l = Number(searchParams.get("limit"));
     return PAGE_SIZES.includes(l) ? l : DEFAULT_LIMIT;
@@ -91,11 +94,12 @@ function AtividadesView() {
     if (filters.status) qs.set("status", filters.status);
     if (filters.inicioDe) qs.set("de", filters.inicioDe);
     if (filters.inicioAte) qs.set("ate", filters.inicioAte);
+    if (apenasAtrasadas) qs.set("atrasada", "true");
     if (limit !== DEFAULT_LIMIT) qs.set("limit", String(limit));
     if (offset > 0) qs.set("offset", String(offset));
     const query = qs.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [filters, limit, offset, pathname, router]);
+  }, [filters, apenasAtrasadas, limit, offset, pathname, router]);
 
   // ── Opções dos filtros ───────────────────────────────────────────────────
   useEffect(() => {
@@ -142,6 +146,7 @@ function AtividadesView() {
         status: filters.status || undefined,
         inicioDe: filters.inicioDe || undefined,
         inicioAte: filters.inicioAte || undefined,
+        atrasada: apenasAtrasadas || undefined,
       },
       controller.signal,
     )
@@ -163,7 +168,7 @@ function AtividadesView() {
       });
 
     return () => controller.abort();
-  }, [limit, offset, filters, reloadKey]);
+  }, [limit, offset, filters, apenasAtrasadas, reloadKey]);
 
   // A query string guarda só o id da ação; o combobox precisa do objeto.
   // Até `listAcoes` responder, o campo aparece vazio — e um id órfão (ação fora
