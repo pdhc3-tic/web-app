@@ -57,6 +57,14 @@ jobs:
       - name: Aplicar migrações
         run: docker compose exec -T backend python manage.py migrate --noinput
 
+      # seed_demo depende dos dados de referência do core: sem eles, _tecnicos()
+      # aborta em Role.DoesNotExist. É o passo 5 do README, anterior ao seed
+      # de demonstração. A ressalva do docstring de seed_core ("não usar em
+      # CI") vale para os testes unitários, que montam fixtures com
+      # factory_boy; o E2E exerce a aplicação real e precisa da massa real.
+      - name: Seed de referência do core
+        run: docker compose exec -T backend python manage.py seed_core
+
       - name: Seed de demonstração
         run: docker compose exec -T backend python manage.py seed_demo --reset
 
