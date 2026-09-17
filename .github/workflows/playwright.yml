@@ -12,7 +12,10 @@ jobs:
   e2e:
     name: Testes E2E (Playwright)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Orçamento do job inteiro: build da imagem, migrações, seed e instalação do
+    # Playwright vêm antes dos testes. O limite de 5 min pedido no review vale
+    # para a suíte, e está no timeout do passo "Executar testes Playwright".
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -34,6 +37,10 @@ jobs:
           REDIS_HOST=redis
           REDIS_PORT=6379
           EOF
+          # AES-256 em base64 de 32 bytes, exigida por apps/core/crypto.py; sem
+          # ela as migrações abortam com ImproperlyConfigured. Efêmera: a massa
+          # do seed_demo nasce e morre dentro do job.
+          echo "FIELD_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> backend/.env
 
       - name: Criar .env do frontend para CI
         run: |
@@ -71,6 +78,13 @@ jobs:
           echo "Duração da suíte: $((end - start))s"
         timeout-minutes: 5
 
+      - name: Coletar logs dos containers
+        if: failure()
+        run: |
+          mkdir -p ci-logs
+          docker compose logs --no-color --timestamps > ci-logs/containers.log 2>&1 || true
+          docker compose ps --all > ci-logs/containers-ps.txt 2>&1 || true
+
       - name: Publicar artefatos de falha
         if: failure()
         uses: actions/upload-artifact@v4
@@ -79,6 +93,8 @@ jobs:
           path: |
             frontend/playwright-report/
             frontend/test-results/
+            ci-logs/
+          if-no-files-found: warn
           retention-days: 7
 
       - name: Parar stack Docker
