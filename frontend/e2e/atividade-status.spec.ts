@@ -21,62 +21,85 @@ import { storageStatePath } from "./helpers/users";
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 
 /**
- * Atividades da demonstração escolhidas por status e evidência.
+ * Atividades da demonstração, DESCOBERTAS por status no `beforeAll`.
  *
- * Ids fixos porque o `seed_demo` é determinístico (SEED fixo em seed_demo.py).
- * O `beforeAll` confere que cada uma está no status esperado e falha cedo, com
- * mensagem clara, se um re-seed tiver mudado a distribuição.
+ * Ids fixos não sobrevivem: o `seed_demo` cria 45 atividades e os PKs dependem
+ * de quantas vezes o banco já foi semeado. Num CI limpo vão de 1 a 45; numa
+ * base local re-semeada passam de 100 — que é de onde vinham os ids antigos
+ * (99, 91, 100, 105, 93), inexistentes no CI. Descobrir por status é o mesmo
+ * padrão de `helpers/atividadeFixture.ts`, e falha cedo com mensagem clara se
+ * o seed deixar de produzir algum dos estados.
  */
 const ATIVIDADES = {
-  planejado: 99,
-  agendado: 91,
-  adiada: 100,
-  emAndamentoSemEvidencia: 105,
-  terminal: 93,
-} as const;
-
-const STATUS_ESPERADO: Record<number, string> = {
-  99: "planejado",
-  91: "agendado",
-  100: "adiada",
-  105: "em_andamento",
-  93: "concluido",
+  planejado: 0,
+  agendado: 0,
+  adiada: 0,
+  emAndamentoSemEvidencia: 0,
+  terminal: 0,
 };
 
-function statusNoBanco(): Record<number, string> {
+const DESCOBRE_SCRIPT = `
+import json
+from django.db.models import Count
+from apps.sgp.models import Activity
+
+
+def primeira(status):
+    a = Activity.objects.filter(status=status, ativo=True).order_by("pk").first()
+    if a is None:
+        raise RuntimeError(
+            "seed_demo nao produziu atividade em '%s'. Rode "
+            "manage.py seed_demo --reset." % status
+        )
+    return a.pk
+
+
+# O aviso de evidencia so aparece quando nao ha foto nem documento: filtrar
+# pelo status sozinho pegaria uma atividade ja com anexo, e o teste passaria
+# a afirmar o contrario do que quer.
+sem_evidencia = (
+    Activity.objects.annotate(
+        n_fotos=Count("fotos", distinct=True),
+        n_docs=Count("documentos", distinct=True),
+    )
+    .filter(status="em_andamento", ativo=True, n_fotos=0, n_docs=0)
+    .order_by("pk")
+    .first()
+)
+if sem_evidencia is None:
+    raise RuntimeError(
+        "seed_demo nao produziu atividade em andamento sem evidencia. "
+        "Rode manage.py seed_demo --reset."
+    )
+
+print("ATIVIDADES " + json.dumps({
+    "planejado": primeira("planejado"),
+    "agendado": primeira("agendado"),
+    "adiada": primeira("adiada"),
+    "emAndamentoSemEvidencia": sem_evidencia.pk,
+    "terminal": primeira("concluido"),
+}))
+`;
+
+function descobreAtividades(): Record<string, number> {
   const saida = execFileSync(
     "docker",
     [
       "compose", "exec", "-T", "backend", "python", "manage.py", "shell", "-c",
-      `
-import json
-from apps.sgp.models import Activity
-ids = [${Object.keys(STATUS_ESPERADO).join(", ")}]
-print("STATUS " + json.dumps({
-    a.pk: a.status for a in Activity.objects.filter(pk__in=ids)
-}))
-`,
+      DESCOBRE_SCRIPT,
     ],
     { cwd: REPO_ROOT, encoding: "utf8", timeout: 120_000 },
   );
-  const linha = saida.split("\n").map((l) => l.trim()).find((l) => l.startsWith("STATUS "));
-  if (!linha) throw new Error(`Não consegui ler os status:\n${saida}`);
-  const bruto = JSON.parse(linha.slice("STATUS ".length)) as Record<string, string>;
-  return Object.fromEntries(
-    Object.entries(bruto).map(([k, v]) => [Number(k), v]),
-  );
+  const linha = saida
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l.startsWith("ATIVIDADES "));
+  if (!linha) throw new Error(`Não consegui descobrir as atividades:\n${saida}`);
+  return JSON.parse(linha.slice("ATIVIDADES ".length)) as Record<string, number>;
 }
 
 test.beforeAll(() => {
-  const atual = statusNoBanco();
-  for (const [id, esperado] of Object.entries(STATUS_ESPERADO)) {
-    const encontrado = atual[Number(id)];
-    expect(
-      encontrado,
-      `Atividade ${id} deveria estar em "${esperado}" e está em "${encontrado}". ` +
-        `Rode manage.py seed_demo --reset para restaurar a distribuição.`,
-    ).toBe(esperado);
-  }
+  Object.assign(ATIVIDADES, descobreAtividades());
 });
 
 /** Abre a ficha e o diálogo de transição. */

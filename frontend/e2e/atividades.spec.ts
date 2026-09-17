@@ -59,7 +59,7 @@ test.describe("SGP — Criação de atividade", () => {
     await page.goto("/sgp/atividades/nova");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
-    await page.getByRole("button", { name: "Salvar atividade" }).click();
+    await page.getByRole("button", { name: "Salvar", exact: true }).click();
 
     await expect(page.getByText("Informe o título da atividade.")).toBeVisible();
     await expect(page.getByText("Selecione o tipo de atividade.")).toBeVisible();
@@ -75,7 +75,7 @@ test.describe("SGP — Criação de atividade", () => {
 
     await page.locator("#atividade-data-inicio").fill("2026-06-10");
     await page.locator("#atividade-data-fim").fill("2026-06-05");
-    await page.getByRole("button", { name: "Salvar atividade" }).click();
+    await page.getByRole("button", { name: "Salvar", exact: true }).click();
 
     await expect(
       page.getByText("A data de fim não pode ser anterior à data de início."),
@@ -88,7 +88,7 @@ test.describe("SGP — Criação de atividade", () => {
     await page.goto("/sgp/atividades/nova");
 
     await page.locator("#atividade-titulo").fill("Teste de justificativa");
-    await page.getByRole("button", { name: "Salvar atividade" }).click();
+    await page.getByRole("button", { name: "Salvar", exact: true }).click();
 
     await expect(page.getByText("Selecione o tipo de atividade.")).toBeVisible();
   });
@@ -206,7 +206,7 @@ test.describe("SGP — Criação de atividade", () => {
       "Visita de acompanhamento.",
     );
 
-    await page.getByRole("button", { name: "Salvar atividade" }).click();
+    await page.getByRole("button", { name: "Salvar", exact: true }).click();
 
     // Verifica que o formulário redirecionou para a tela de edição da nova atividade
     await page.waitForURL("**/sgp/atividades/4242/**", { timeout: 10_000 });
