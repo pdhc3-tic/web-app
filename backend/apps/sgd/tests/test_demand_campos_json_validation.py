@@ -59,7 +59,9 @@ def test_passagem_cpf_invalido_bloqueia(activity_rn):
 def test_diaria_calcula_numero_diarias_e_valor_total(activity_rn, municipio_rn):
     from apps.core.models.system_config import SystemConfig, TipoConfiguracao
 
-    SystemConfig.objects.create(chave="sgd_valor_diaria_padrao", valor="200", tipo=TipoConfiguracao.STRING)
+    SystemConfig.objects.update_or_create(
+        chave="sgd_valor_diaria_padrao", defaults={"valor": "200", "tipo": TipoConfiguracao.STRING},
+    )
 
     campos = {
         "beneficiario_nome": "Fulano", "beneficiario_cpf": "52998224725",
