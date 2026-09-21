@@ -419,6 +419,20 @@ def _transacao_existente(demanda_id: str, tipo: str) -> BudgetTransaction | None
     return BudgetTransaction.objects.filter(demanda_id=demanda_id, tipo=tipo).first()
 
 
+_VERBO_PASSADO = {
+    BudgetTransaction.Tipo.EXECUCAO: "executada",
+    BudgetTransaction.Tipo.LIBERACAO: "liberada",
+}
+
+
+def _rejeitar_se_finalizada(demanda_id: str, *, tipos_bloqueantes: list[str], acao: str) -> None:
+    for tipo in tipos_bloqueantes:
+        if _transacao_existente(demanda_id, tipo) is not None:
+            raise DemandaInvalidaError(
+                f"Demanda {demanda_id!r} já foi {_VERBO_PASSADO[tipo]} — não pode ser {acao}."
+            )
+
+
 def _valor_total_reservado(demanda_id: str) -> Decimal:
     """Reserva original + todo `ajustar_reserva` aplicado depois. `executar`/
     `liberar` usam isto, não `reserva.valor` puro, senão um ajuste ficaria
@@ -472,10 +486,11 @@ def ajustar_reserva(*, demanda_id: str, novo_valor: Decimal, usuario, justificat
     reserva = BudgetTransaction.objects.filter(demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.RESERVA).first()
     if reserva is None:
         raise DemandaInvalidaError(f"Nenhuma reserva encontrada para a demanda {demanda_id!r}.")
-    if _transacao_existente(demanda_id, BudgetTransaction.Tipo.EXECUCAO) is not None:
-        raise DemandaInvalidaError(f"Demanda {demanda_id!r} já foi executada — não pode ser ajustada.")
-    if _transacao_existente(demanda_id, BudgetTransaction.Tipo.LIBERACAO) is not None:
-        raise DemandaInvalidaError(f"Demanda {demanda_id!r} já foi liberada — não pode ser ajustada.")
+    _rejeitar_se_finalizada(
+        demanda_id,
+        tipos_bloqueantes=[BudgetTransaction.Tipo.EXECUCAO, BudgetTransaction.Tipo.LIBERACAO],
+        acao="ajustada",
+    )
 
     allocation = BudgetAllocation.objects.select_for_update().get(pk=reserva.allocation_id)
     valor_atual = _valor_total_reservado(demanda_id)
@@ -508,8 +523,7 @@ def executar(*, demanda_id: str, usuario, valor_executado: Decimal | None = None
     existente = _transacao_existente(demanda_id, BudgetTransaction.Tipo.EXECUCAO)
     if existente is not None:
         return existente
-    if _transacao_existente(demanda_id, BudgetTransaction.Tipo.LIBERACAO) is not None:
-        raise DemandaInvalidaError(f"Demanda {demanda_id!r} já foi liberada — não pode ser executada.")
+    _rejeitar_se_finalizada(demanda_id, tipos_bloqueantes=[BudgetTransaction.Tipo.LIBERACAO], acao="executada")
 
     valor_final = valor_reservado if valor_executado is None else valor_executado
     diferenca = valor_reservado - valor_final
@@ -544,8 +558,7 @@ def liberar(*, demanda_id: str, usuario, motivo: str) -> BudgetTransaction:
     existente = _transacao_existente(demanda_id, BudgetTransaction.Tipo.LIBERACAO)
     if existente is not None:
         return existente
-    if _transacao_existente(demanda_id, BudgetTransaction.Tipo.EXECUCAO) is not None:
-        raise DemandaInvalidaError(f"Demanda {demanda_id!r} já foi executada — não pode ser liberada.")
+    _rejeitar_se_finalizada(demanda_id, tipos_bloqueantes=[BudgetTransaction.Tipo.EXECUCAO], acao="liberada")
 
     allocation.valor_comprometido -= valor_reservado
     allocation.save(update_fields=["valor_comprometido"])

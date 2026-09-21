@@ -6,6 +6,7 @@ from rest_framework import serializers, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from apps.core.models.audit_log import AuditLog
 from apps.core.storage import StorageObjectNotFound, get_storage
 from apps.sgd.models.demand_document import DemandDocument
 from apps.sgd.serializers.demand_document import DemandDocumentSerializer
@@ -38,6 +39,7 @@ class DemandDocumentConfirmSerializer(serializers.Serializer):
     tipo = serializers.ChoiceField(choices=DemandDocument._meta.get_field("tipo").choices)
     descricao = serializers.CharField(required=False, allow_blank=True, default="")
     nome_original = serializers.CharField(max_length=255)
+    fornecedor = serializers.CharField(required=False, allow_blank=True, default="")
 
     def validate_key(self, value):
         demand = self.context["demand"]
@@ -45,6 +47,11 @@ class DemandDocumentConfirmSerializer(serializers.Serializer):
         if not re.match(pattern, value):
             raise serializers.ValidationError("Key de upload inválida.")
         return value
+
+    def validate(self, data):
+        if data["tipo"] == "cotacao" and not data.get("fornecedor"):
+            raise serializers.ValidationError({"fornecedor": "Obrigatório para cotações (§3.6)."})
+        return data
 
 
 class DemandDocumentMixin:
@@ -82,6 +89,11 @@ class DemandDocumentMixin:
         url = storage.generate_presigned_put(key, content_type, size, expires_in)
         if url.startswith("/"):
             url = request.build_absolute_uri(url)
+
+        self._log_doc_audit(
+            request, "demand_document.upload_url", demand,
+            valores_novos={"demanda_id": demand.pk, "key": key, "content_type": content_type, "size": size},
+        )
         return Response({"url": url, "key": key, "expires_in": expires_in})
 
     @action(detail=True, methods=["post"], url_path="documentos/confirm")
@@ -126,8 +138,10 @@ class DemandDocumentMixin:
             demanda=demand, arquivo_key=key, arquivo_url=storage.get_public_url(key),
             tipo=serializer.validated_data["tipo"], descricao=serializer.validated_data.get("descricao", ""),
             nome_original=serializer.validated_data["nome_original"],
+            fornecedor=serializer.validated_data.get("fornecedor", ""),
             content_type=content_type, tamanho_bytes=tamanho_bytes, enviado_por=request.user,
         )
+        self._log_doc_audit(request, "demand_document.created", demand, valores_novos=self._doc_snapshot(doc))
         return Response(DemandDocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get"], url_path=r"documentos/(?P<doc_id>\d+)/download")
@@ -139,12 +153,34 @@ class DemandDocumentMixin:
         url = storage.generate_presigned_get(doc.arquivo_key, expires_in)
         if url.startswith("/"):
             url = request.build_absolute_uri(url)
+        self._log_doc_audit(
+            request, "demand_document.download", demand, valores_novos={"doc_id": doc.pk, "key": doc.arquivo_key},
+        )
         return Response({"url": url, "expires_in": expires_in})
 
     @action(detail=True, methods=["delete"], url_path=r"documentos/(?P<doc_id>\d+)")
     def documentos_delete(self, request, pk=None, doc_id=None):
         demand = self._get_demand_for_doc(pk)
         doc = get_object_or_404(DemandDocument, pk=doc_id, demanda=demand, ativo=True)
+        snapshot = self._doc_snapshot(doc)
         doc.ativo = False
         doc.save(update_fields=["ativo"])
+        self._log_doc_audit(request, "demand_document.deleted", demand, valores_anteriores=snapshot)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @staticmethod
+    def _doc_snapshot(doc) -> dict:
+        return {
+            "doc_id": doc.pk, "demanda_id": doc.demanda_id, "tipo": doc.tipo,
+            "nome_original": doc.nome_original, "arquivo_key": doc.arquivo_key,
+            "tamanho_bytes": doc.tamanho_bytes, "ativo": doc.ativo,
+        }
+
+    @staticmethod
+    def _log_doc_audit(request, acao, demand, valores_anteriores=None, valores_novos=None):
+        AuditLog.objects.create(
+            user=request.user, acao=acao, modulo="sgd", entidade="DemandDocument",
+            entidade_id=str(demand.pk), valores_anteriores=valores_anteriores or {},
+            valores_novos=valores_novos or {}, ip=request.META.get("REMOTE_ADDR"),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+        )

@@ -103,7 +103,7 @@ def test_autorizar_excedente_exige_justificativa(demand_request_rn, solicitante_
     from rest_framework.exceptions import ValidationError as DRFValidationError
 
     origem = BudgetAllocationFactory(
-        meta=demand_request_rn.demanda.activity.acao.meta, rubrica=demand_request_rn.rubrica,
+        meta=demand_request_rn.meta, rubrica=demand_request_rn.rubrica,
         nivel=BudgetAllocation.Nivel.ESTADUAL, territorio=None,
         estado=StateFactory(sigla="RN", nome="Rio Grande do Norte"), valor_alocado=5000,
     )
@@ -112,3 +112,35 @@ def test_autorizar_excedente_exige_justificativa(demand_request_rn, solicitante_
             demand_request=demand_request_rn, origem_allocation=origem,
             valor_excedente=Decimal("500"), justificativa="", usuario=solicitante_rn,
         )
+
+
+def test_autorizar_excedente_com_justificativa_remaneja_e_eleva_limite(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    from apps.core.tests.factories import StateFactory
+    from apps.sgp.models.budget import BudgetAllocation, BudgetTransaction
+    from apps.sgp.tests.factories import BudgetAllocationFactory
+
+    origem = BudgetAllocationFactory(
+        meta=demand_request_rn.meta, rubrica=demand_request_rn.rubrica,
+        nivel=BudgetAllocation.Nivel.ESTADUAL, territorio=None,
+        estado=StateFactory(sigla="RN", nome="Rio Grande do Norte"), valor_alocado=Decimal("5000"),
+    )
+    valor_limite_antes = limite_individual_rn.valor_limite
+
+    balance_service.autorizar_excedente(
+        demand_request=demand_request_rn, origem_allocation=origem,
+        valor_excedente=Decimal("500"), justificativa="Demanda urgente aprovada pela UGP.",
+        usuario=solicitante_rn,
+    )
+
+    origem.refresh_from_db()
+    allocation_territorial_rn.refresh_from_db()
+    limite_individual_rn.refresh_from_db()
+
+    assert origem.valor_alocado == Decimal("4500")
+    assert allocation_territorial_rn.valor_alocado == Decimal("10500")
+    assert limite_individual_rn.valor_limite == valor_limite_antes + Decimal("500")
+    assert BudgetTransaction.objects.filter(
+        allocation=origem, tipo=BudgetTransaction.Tipo.REMANEJAMENTO,
+    ).exists()

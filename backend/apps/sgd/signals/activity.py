@@ -16,7 +16,6 @@ def _cancelar_demandas_nao_atendidas(sender, instance, **kwargs):
     from apps.sgd.models.demand import STATUS_TERMINAIS, Demand
     from apps.sgd.services import balance as balance_service
     from apps.sgd.services import notifications as notifications_service
-    from apps.sgd.services.approval import usuarios_articuladores_do_estado
 
     demandas = Demand.objects.filter(activity=instance).exclude(status__in=STATUS_TERMINAIS)
     for demand in demandas:
@@ -30,5 +29,5 @@ def _cancelar_demandas_nao_atendidas(sender, instance, **kwargs):
 
         sigla = instance.municipio.state.sigla
         notifications_service.notificar_cancelamento_automatico(
-            demand, usuarios_articuladores_do_estado(sigla),
+            demand, notifications_service.usuarios_articuladores_do_estado(sigla),
         )

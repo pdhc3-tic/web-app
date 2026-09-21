@@ -101,3 +101,79 @@ def test_equipamento_com_3_cotacoes_nao_bloqueia(demand_rascunho_rn):
         DemandDocumentFactory(demanda=demand_rascunho_rn, tipo="cotacao")
 
     _exigir_minimo_cotacoes_equipamento(demand_rascunho_rn)
+
+
+def test_equipamento_3_cotacoes_do_mesmo_fornecedor_bloqueia(demand_rascunho_rn):
+    from apps.sgd.services.demand import _exigir_minimo_cotacoes_equipamento
+    from apps.sgd.tests.factories import DemandDocumentFactory, DemandRequestFactory
+
+    DemandRequestFactory(demanda=demand_rascunho_rn, tipo="equipamento", campos_json={
+        "descricao_equipamento": "Notebook", "especificacao_tecnica_detalhada": "16GB RAM",
+        "quantidade": 1, "finalidade_justificativa": "Uso em campo.", "urgencia": "normal",
+    })
+    for _ in range(3):
+        DemandDocumentFactory(demanda=demand_rascunho_rn, tipo="cotacao", fornecedor="Fornecedor Único Ltda")
+
+    with pytest.raises(DRFValidationError):
+        _exigir_minimo_cotacoes_equipamento(demand_rascunho_rn)
+
+
+def test_rubrica_slug_para_tipo_corresponde_ao_mapeamento_configurado():
+    from apps.core.models.system_config import SystemConfig, TipoConfiguracao
+    from apps.sgd.services.demand_request import rubrica_slug_para_tipo
+
+    SystemConfig.objects.update_or_create(
+        chave="sgd_mapeamento_tipo_rubrica",
+        defaults={"valor": '{"diaria": "diarias-teste"}', "tipo": TipoConfiguracao.JSON},
+    )
+
+    assert rubrica_slug_para_tipo("diaria") == "diarias-teste"
+
+
+def test_atualizar_solicitacao_em_rascunho_permitido(demand_rascunho_rn, municipio_rn):
+    from apps.sgd.services.demand import atualizar_solicitacao
+    from apps.sgd.tests.factories import DemandRequestFactory
+
+    solicitacao = DemandRequestFactory(
+        demanda=demand_rascunho_rn, tipo="grafico", campos_json={
+            "tipo_material": "banner", "quantidade": 1,
+            "especificacoes_tecnicas": "1x1m", "prazo_entrega": "2026-12-01",
+        },
+    )
+
+    atualizado = atualizar_solicitacao(solicitacao, campos_json={
+        "tipo_material": "banner", "quantidade": 5,
+        "especificacoes_tecnicas": "2x2m", "prazo_entrega": "2026-12-15",
+    })
+
+    assert atualizado.campos_json["quantidade"] == 5
+
+
+def test_atualizar_solicitacao_bloqueada_fora_de_rascunho_devolvida(demand_rascunho_rn):
+    from apps.sgd.services.demand import atualizar_solicitacao
+    from apps.sgd.tests.factories import DemandRequestFactory
+
+    demand_rascunho_rn.status = "autorizada"
+    demand_rascunho_rn.save(update_fields=["status"])
+    solicitacao = DemandRequestFactory(demanda=demand_rascunho_rn, tipo="grafico", campos_json={
+        "tipo_material": "banner", "quantidade": 1,
+        "especificacoes_tecnicas": "1x1m", "prazo_entrega": "2026-12-01",
+    })
+
+    with pytest.raises(DRFValidationError):
+        atualizar_solicitacao(solicitacao, campos_json={"quantidade": 2})
+
+
+def test_rubrica_slug_para_tipo_sem_mapeamento_configurado_usa_default():
+    from django.core.cache import cache
+
+    from apps.core.models.system_config import SystemConfig
+    from apps.sgd.services.demand_request import DEFAULT_TIPO_RUBRICA_MAP, rubrica_slug_para_tipo
+
+    # delete() não invalida o cache de SystemConfig (só post_save o faz) —
+    # limpa manualmente pra não ler o valor seedado pela migration 0002.
+    SystemConfig.objects.filter(chave="sgd_mapeamento_tipo_rubrica").delete()
+    cache.delete("system_config:sgd_mapeamento_tipo_rubrica")
+
+    for tipo, slug_esperado in DEFAULT_TIPO_RUBRICA_MAP.items():
+        assert rubrica_slug_para_tipo(tipo) == slug_esperado

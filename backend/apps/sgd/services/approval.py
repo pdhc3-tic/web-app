@@ -13,6 +13,7 @@ from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.models.individual_limit import DemandIndividualLimit
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
+from apps.sgd.services.demand_request import rubrica_slug_para_tipo
 
 
 class TransicaoInvalidaError(DRFValidationError):
@@ -50,24 +51,18 @@ def demand_visibility_scope(user) -> Q | None:
         return None
 
     if user_has_role(user, "articulador-estadual"):
+        # RF18: só "Submetidas" do seu estado, além das próprias e das que
+        # ele já decidiu (para manter acesso ao que já pré-autorizou/devolveu).
         states = user_states(user)
         if not states:
-            return Q(solicitante=user)
-        return Q(solicitante=user) | Q(activity__municipio__state__sigla__in=states)
+            return Q(solicitante=user) | Q(etapas__responsavel=user)
+        return (
+            Q(solicitante=user)
+            | Q(etapas__responsavel=user)
+            | Q(status="submetida", activity__municipio__state__sigla__in=states)
+        )
 
     return Q(solicitante=user)
-
-
-def usuarios_articuladores_do_estado(sigla: str):
-    return User.objects.filter(
-        ativo=True, profiles__perfil__slug="articulador-estadual",
-    ).filter(
-        Q(profiles__territorio__isnull=True) | Q(profiles__territorio__estados__contains=[sigla])
-    ).distinct()
-
-
-def usuarios_por_perfil(slug: str):
-    return User.objects.filter(ativo=True, profiles__perfil__slug=slug).distinct()
 
 
 def responsaveis_pela_etapa_atual(demand):
@@ -75,18 +70,18 @@ def responsaveis_pela_etapa_atual(demand):
         return User.objects.filter(pk=demand.solicitante_id)
     if demand.status == "submetida":
         sigla = demand.activity.municipio.state.sigla
-        return usuarios_articuladores_do_estado(sigla)
+        return notifications_service.usuarios_articuladores_do_estado(sigla)
     if demand.status == "pre_autorizada":
-        return usuarios_por_perfil("ugp")
+        return notifications_service.usuarios_por_perfil("ugp")
     if demand.status in {"autorizada", "em_atendimento"}:
-        return usuarios_por_perfil("fgd")
+        return notifications_service.usuarios_por_perfil("fgd")
     return User.objects.none()
 
 
 def preview_impacto(demand_request, valor: Decimal) -> dict:
     solicitante = demand_request.demanda.solicitante
     rubrica = demand_request.rubrica
-    meta = demand_request.demanda.activity.acao.meta
+    meta = demand_request.meta
 
     check = balance_service.verificar_duas_travas(
         solicitante=solicitante, rubrica=rubrica, meta=meta, valor=valor,
@@ -125,8 +120,6 @@ def preview_impacto(demand_request, valor: Decimal) -> dict:
 def alerta_rubrica_fora_do_previsto(demand_request) -> bool:
     # Não há campo de "rubricas previstas da Ação" no SGP — usa o mapeamento
     # tipo→rubrica como proxy do esperado.
-    from apps.sgd.services.demand_request import rubrica_slug_para_tipo
-
     esperado = rubrica_slug_para_tipo(demand_request.tipo)
     return demand_request.rubrica.slug != esperado
 
@@ -138,7 +131,7 @@ def pre_autorizar(demand, *, responsavel) -> object:
     ApprovalStep.objects.create(
         demanda=demand, etapa="pre_autorizacao", responsavel=responsavel, acao="aprovado",
     )
-    notifications_service.notificar_pre_autorizacao(demand, usuarios_por_perfil("ugp"))
+    notifications_service.notificar_pre_autorizacao(demand, notifications_service.usuarios_por_perfil("ugp"))
     return demand
 
 
@@ -175,7 +168,7 @@ def autorizar(demand, *, responsavel, ajustes: dict | None = None, excedente_aut
         demanda=demand, etapa="autorizacao", responsavel=responsavel,
         acao="aprovado", excedente_autorizado=excedente_autorizado,
     )
-    notifications_service.notificar_autorizacao(demand, usuarios_por_perfil("fgd"))
+    notifications_service.notificar_autorizacao(demand, notifications_service.usuarios_por_perfil("fgd"))
     return demand
 
 

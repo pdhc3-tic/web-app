@@ -1,9 +1,8 @@
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
-from apps.core.services.permissions import user_has_role
+from apps.core.permissions import IsArticuladorEstadual, IsAuthenticatedActiveAccess, IsFGD, IsUGP
 from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.serializers.approval import (
     AutorizarExcedenteSerializer,
@@ -19,25 +18,37 @@ from apps.sgd.services import balance as balance_service
 from apps.sgp.models.budget import BudgetAllocation
 
 
-def _exigir_role(request, slug: str, mensagem: str) -> None:
-    if not user_has_role(request.user, slug):
-        raise PermissionDenied(mensagem)
-
-
 class DemandApprovalMixin:
+    # Uma role por action, além de IsAuthenticatedActiveAccess (sempre
+    # exigida) — o host (DemandViewSet) delega pra cá em get_permissions()
+    # quando a action está aqui, senão usa a permissão padrão dele.
+    _PERMISSAO_POR_ACTION = {
+        "pre_autorizar": IsArticuladorEstadual,
+        "devolver": IsArticuladorEstadual,
+        "autorizar": IsUGP,
+        "recusar": IsUGP,
+        "autorizar_excedente": IsUGP,
+        "atender": IsFGD,
+        "concluir": IsFGD,
+    }
+
+    def get_permissions(self):
+        role_permission = self._PERMISSAO_POR_ACTION.get(self.action)
+        if role_permission is not None:
+            return [IsAuthenticatedActiveAccess(), role_permission()]
+        return super().get_permissions()
+
     def _get_demand(self, pk):
         return get_object_or_404(self.get_queryset(), pk=pk)
 
     @action(detail=True, methods=["post"], url_path="pre-autorizar")
     def pre_autorizar(self, request, pk=None):
-        _exigir_role(request, "articulador-estadual", "Só o Articulador Estadual pode pré-autorizar.")
         demand = self._get_demand(pk)
         demand = approval_service.pre_autorizar(demand, responsavel=request.user)
         return Response(DemandSerializer(demand).data)
 
     @action(detail=True, methods=["post"], url_path="devolver")
     def devolver(self, request, pk=None):
-        _exigir_role(request, "articulador-estadual", "Só o Articulador Estadual pode devolver.")
         demand = self._get_demand(pk)
         entrada = DevolverSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
@@ -46,7 +57,6 @@ class DemandApprovalMixin:
 
     @action(detail=True, methods=["post"], url_path="autorizar")
     def autorizar(self, request, pk=None):
-        _exigir_role(request, "ugp", "Só a UGP pode autorizar.")
         demand = self._get_demand(pk)
         entrada = AutorizarSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
@@ -55,7 +65,6 @@ class DemandApprovalMixin:
 
     @action(detail=True, methods=["post"], url_path="recusar")
     def recusar(self, request, pk=None):
-        _exigir_role(request, "ugp", "Só a UGP pode recusar.")
         demand = self._get_demand(pk)
         entrada = RecusarSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
@@ -64,7 +73,6 @@ class DemandApprovalMixin:
 
     @action(detail=True, methods=["post"], url_path="autorizar-excedente")
     def autorizar_excedente(self, request, pk=None):
-        _exigir_role(request, "ugp", "Só a UGP pode autorizar excedente (RF16).")
         demand = self._get_demand(pk)
         entrada = AutorizarExcedenteSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
@@ -80,14 +88,12 @@ class DemandApprovalMixin:
 
     @action(detail=True, methods=["post"], url_path="atender")
     def atender(self, request, pk=None):
-        _exigir_role(request, "fgd", "Só a FGD pode iniciar o atendimento.")
         demand = self._get_demand(pk)
         demand = approval_service.atender(demand, responsavel=request.user)
         return Response(DemandSerializer(demand).data)
 
     @action(detail=True, methods=["post"], url_path="concluir")
     def concluir(self, request, pk=None):
-        _exigir_role(request, "fgd", "Só a FGD pode concluir a demanda.")
         demand = self._get_demand(pk)
         entrada = ConcluirSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)

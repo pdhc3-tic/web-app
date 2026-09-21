@@ -68,3 +68,18 @@ def test_editar_demanda_autorizada_bloqueado(demand_rascunho_rn):
     demand_rascunho_rn.save(update_fields=["status"])
     with pytest.raises(DRFValidationError):
         demand_service.atualizar_demanda(demand_rascunho_rn, titulo="Outro título")
+
+
+def test_serializer_rejeita_alteracao_de_activity_id():
+    from apps.sgd.serializers.demand import DemandUpdateSerializer
+
+    entrada = DemandUpdateSerializer(data={"titulo": "Novo", "activity_id": 999}, partial=True)
+    assert not entrada.is_valid()
+    assert "activity_id" in entrada.errors
+
+
+def test_serializer_aceita_update_sem_activity_id():
+    from apps.sgd.serializers.demand import DemandUpdateSerializer
+
+    entrada = DemandUpdateSerializer(data={"titulo": "Novo título"}, partial=True)
+    assert entrada.is_valid(), entrada.errors

@@ -9,7 +9,11 @@ from apps.core.models.municipality import Municipality
 from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.sgd.models.demand import Demand
 from apps.sgd.serializers.demand import DemandCreateSerializer, DemandSerializer, DemandUpdateSerializer
-from apps.sgd.serializers.demand_request import DemandRequestCreateSerializer, DemandRequestSerializer
+from apps.sgd.serializers.demand_request import (
+    DemandRequestCreateSerializer,
+    DemandRequestSerializer,
+    DemandRequestUpdateSerializer,
+)
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services.approval import demand_visibility_scope
 from apps.sgd.views.approval import DemandApprovalMixin
@@ -105,17 +109,24 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
         solicitacao = demand_service.adicionar_solicitacao(demand, **entrada.validated_data)
         return Response(DemandRequestSerializer(solicitacao).data, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=["delete"], url_path=r"solicitacoes/(?P<solicitacao_id>\d+)")
-    def remover_solicitacao(self, request, pk=None, solicitacao_id=None):
-        from apps.sgd.models.demand import STATUS_EDITAVEIS
-
+    @action(detail=True, methods=["patch", "delete"], url_path=r"solicitacoes/(?P<solicitacao_id>\d+)")
+    def solicitacao_detail(self, request, pk=None, solicitacao_id=None):
         demand = get_object_or_404(self.get_queryset(), pk=pk)
         if demand.solicitante_id != request.user.pk:
-            raise PermissionDenied("Só o solicitante pode remover solicitações.")
+            raise PermissionDenied("Só o solicitante pode alterar solicitações.")
+        solicitacao = get_object_or_404(demand.solicitacoes, pk=solicitacao_id)
+
+        if request.method == "PATCH":
+            entrada = DemandRequestUpdateSerializer(data=request.data, partial=True)
+            entrada.is_valid(raise_exception=True)
+            solicitacao = demand_service.atualizar_solicitacao(solicitacao, **entrada.validated_data)
+            return Response(DemandRequestSerializer(solicitacao).data)
+
+        from apps.sgd.models.demand import STATUS_EDITAVEIS
+
         if demand.status not in STATUS_EDITAVEIS:
             raise DRFValidationError({
                 "status": f"Demanda em status '{demand.get_status_display()}' não pode ser editada (RF07)."
             })
-        solicitacao = get_object_or_404(demand.solicitacoes, pk=solicitacao_id)
         solicitacao.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

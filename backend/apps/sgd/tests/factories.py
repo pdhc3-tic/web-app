@@ -58,6 +58,7 @@ class DemandDocumentFactory(factory.django.DjangoModelFactory):
     arquivo_url = factory.Sequence(lambda n: f"https://r2.example.com/demandas/1/documentos/{n}.pdf")
     tipo = "cotacao"
     nome_original = "cotacao.pdf"
+    fornecedor = factory.Sequence(lambda n: f"Fornecedor {n}")
     content_type = "application/pdf"
     tamanho_bytes = 1024
     ativo = True

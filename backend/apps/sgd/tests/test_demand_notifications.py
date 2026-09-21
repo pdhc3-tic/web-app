@@ -1,3 +1,4 @@
+from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
@@ -69,3 +70,40 @@ def test_atender_notifica_apenas_in_app(mocked_delay, demand_rascunho_rn, solici
     notifs = solicitante_rn.notifications.filter(evento="demand_em_atendimento")
     assert notifs.count() == 1
     assert notifs.first().tipo == TipoNotificacao.IN_APP
+
+
+@patch("apps.core.tasks.notifications.send_email_notification.delay")
+def test_reservar_notifica_quando_semaforo_individual_piora(
+    mocked_delay, demand_request_rn, solicitante_rn, allocation_territorial_rn,
+):
+    from apps.sgd.tests.factories import DemandIndividualLimitFactory
+
+    # limite apertado (1000/1100 ≈ 91%) — cruza de verde direto pra vermelho.
+    DemandIndividualLimitFactory(
+        solicitante=solicitante_rn, rubrica=demand_request_rn.rubrica, valor_limite=Decimal("1100"),
+    )
+
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+
+    assert solicitante_rn.notifications.filter(evento="demand_semaforo_mudou").exists()
+
+
+@patch("apps.core.tasks.notifications.send_email_notification.delay")
+def test_reservar_nao_notifica_quando_semaforo_nao_piora(
+    mocked_delay, demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+
+    assert not solicitante_rn.notifications.filter(evento="demand_semaforo_mudou").exists()
+
+
+def test_alerta_rubrica_fora_do_previsto_aparece_no_payload(demand_request_rn):
+    from apps.sgd.serializers.demand_request import DemandRequestSerializer
+    from apps.sgp.tests.factories import BudgetRubricaFactory
+
+    demand_request_rn.rubrica = BudgetRubricaFactory(slug="rubrica-inesperada-para-diaria")
+    demand_request_rn.save(update_fields=["rubrica"])
+
+    data = DemandRequestSerializer(demand_request_rn).data
+
+    assert data["alerta_rubrica_fora_do_previsto"] is True

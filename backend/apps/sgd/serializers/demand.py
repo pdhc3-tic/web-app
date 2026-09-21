@@ -97,3 +97,10 @@ class DemandCreateSerializer(serializers.Serializer):
 class DemandUpdateSerializer(serializers.Serializer):
     titulo = serializers.CharField(max_length=255, required=False)
     justificativa = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, data):
+        if isinstance(self.initial_data, dict) and "activity_id" in self.initial_data:
+            raise serializers.ValidationError({
+                "activity_id": "Não pode ser alterado após a criação da demanda."
+            })
+        return data

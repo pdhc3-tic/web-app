@@ -69,3 +69,7 @@ class DemandRequest(models.Model):
 
     def __str__(self):
         return f"{self.get_tipo_display()} — {self.demanda_id}"
+
+    @property
+    def meta(self):
+        return self.demanda.meta

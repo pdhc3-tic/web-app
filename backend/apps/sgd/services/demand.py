@@ -4,11 +4,13 @@ from django.db import transaction
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from apps.sgd.models.demand import STATUS_EDITAVEIS, Demand
+from apps.sgd.models.demand_document import DemandDocument
+from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
-from apps.sgd.services.approval import pode_cancelar, transition, usuarios_articuladores_do_estado
+from apps.sgd.services.approval import pode_cancelar, transition
 from apps.sgd.services.demand_request import rubrica_slug_para_tipo, validar_campos_json
-from apps.sgp.models import BudgetRubrica
+from apps.sgp.models import Activity, BudgetRubrica
 
 ACTIVITY_STATUS_BLOQUEIAM_NOVA_DEMANDA = {"cancelada", "nao_realizada"}
 ACTIVITY_STATUS_EXIGEM_JUSTIFICATIVA = {"em_andamento", "concluido", "concluido_sem_evidencia"}
@@ -27,8 +29,6 @@ def criar_activity_inline(*, titulo, tipo_atividade, acao, municipio, data_previ
     # Activity tem outros campos NOT NULL sem default (técnico, forma de
     # atuação, âmbito, data_fim, descrição narrativa) que este formulário
     # mínimo não coleta — preenchidos com um valor editável depois.
-    from apps.sgp.models import Activity
-
     return Activity.objects.create(
         titulo=titulo, tipo_atividade=tipo_atividade, acao=acao, municipio=municipio,
         forma_atuacao="realizacao", ambito="municipal",
@@ -75,7 +75,6 @@ def atualizar_demanda(demand, *, titulo=None, justificativa=None) -> Demand:
 @transaction.atomic
 def adicionar_solicitacao(demand, *, tipo, campos_json, valor_estimado=None, ordem=0):
     _exigir_editavel(demand)
-    from apps.sgd.models.demand_request import DemandRequest
 
     validado = validar_campos_json(tipo, campos_json, demand.activity)
     rubrica = BudgetRubrica.objects.get(slug=rubrica_slug_para_tipo(tipo))
@@ -90,15 +89,47 @@ def adicionar_solicitacao(demand, *, tipo, campos_json, valor_estimado=None, ord
     )
 
 
-def _exigir_minimo_cotacoes_equipamento(demand) -> None:
-    from apps.sgd.models.demand_document import DemandDocument
+@transaction.atomic
+def atualizar_solicitacao(solicitacao, *, tipo=None, campos_json=None, valor_estimado=None):
+    """RF07 — editar uma solicitação de uma demanda em Rascunho/Devolvida,
+    sem precisar remover e recriar."""
+    demand = solicitacao.demanda
+    _exigir_editavel(demand)
 
+    tipo_final = tipo or solicitacao.tipo
+    campos_final = campos_json if campos_json is not None else solicitacao.campos_json
+    validado = validar_campos_json(tipo_final, campos_final, demand.activity)
+    rubrica = BudgetRubrica.objects.get(slug=rubrica_slug_para_tipo(tipo_final))
+
+    valor_final = validado.valor_estimado_auto
+    if valor_final is None:
+        valor_final = valor_estimado if valor_estimado is not None else solicitacao.valor_estimado
+
+    solicitacao.tipo = tipo_final
+    solicitacao.rubrica = rubrica
+    solicitacao.campos_json = validado.campos_json
+    solicitacao.beneficiario_cpf = validado.beneficiario_cpf
+    solicitacao.valor_estimado = valor_final
+    solicitacao.save(update_fields=[
+        "tipo", "rubrica", "campos_json", "beneficiario_cpf", "valor_estimado", "atualizado_em",
+    ])
+    return solicitacao
+
+
+def _exigir_minimo_cotacoes_equipamento(demand) -> None:
     if not demand.solicitacoes.filter(tipo="equipamento").exists():
         return
-    cotacoes = DemandDocument.objects.filter(demanda=demand, tipo="cotacao", ativo=True).count()
-    if cotacoes < 3:
+    fornecedores = list(
+        DemandDocument.objects.filter(demanda=demand, tipo="cotacao", ativo=True)
+        .values_list("fornecedor", flat=True)
+    )
+    if len(fornecedores) < 3:
         raise DRFValidationError({
             "documentos": "Solicitação de Aquisição de Equipamentos exige no mínimo 3 cotações em PDF (§3.6)."
+        })
+    if len(set(fornecedores)) < len(fornecedores):
+        raise DRFValidationError({
+            "documentos": "As cotações precisam ser de fornecedores distintos (§3.6)."
         })
 
 
@@ -112,7 +143,7 @@ def submeter_demanda(demand, *, usuario) -> Demand:
     if not solicitacoes:
         raise DRFValidationError({"solicitacoes": "A demanda precisa ter ao menos uma solicitação de recurso."})
 
-    meta = demand.activity.acao.meta
+    meta = demand.meta
     bloqueios = {}
     for solicitacao in solicitacoes:
         check = balance_service.verificar_duas_travas(
@@ -133,7 +164,7 @@ def submeter_demanda(demand, *, usuario) -> Demand:
     demand.save(update_fields=["status", "atualizado_em"])
 
     sigla = demand.activity.municipio.state.sigla
-    notifications_service.notificar_submissao(demand, usuarios_articuladores_do_estado(sigla))
+    notifications_service.notificar_submissao(demand, notifications_service.usuarios_articuladores_do_estado(sigla))
     return demand
 
 

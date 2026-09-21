@@ -22,6 +22,11 @@ class DemandDocument(models.Model):
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, verbose_name="Tipo")
     descricao = models.TextField(blank=True, default="", verbose_name="Descrição")
     nome_original = models.CharField(max_length=255, verbose_name="Nome original do arquivo")
+    fornecedor = models.CharField(
+        max_length=255, blank=True, default="",
+        verbose_name="Fornecedor",
+        help_text="Obrigatório para tipo='cotacao' — exigido para checar distinção entre as 3 cotações mínimas.",
+    )
     content_type = models.CharField(
         max_length=100, default="application/pdf", verbose_name="Content-Type",
     )

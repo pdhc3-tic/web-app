@@ -91,6 +91,10 @@ class Demand(models.Model):
         return f"{self.titulo} [{self.get_status_display()}]"
 
     @property
+    def meta(self):
+        return self.activity.acao.meta
+
+    @property
     def valor_estimado_total(self):
         from django.db.models import Sum
         return self.solicitacoes.aggregate(total=Sum("valor_estimado"))["total"] or 0

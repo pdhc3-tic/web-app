@@ -9,7 +9,7 @@ class DemandDocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = DemandDocument
         fields = [
-            "id", "demanda", "tipo", "tipo_display", "arquivo_url", "descricao",
+            "id", "demanda", "tipo", "tipo_display", "arquivo_url", "descricao", "fornecedor",
             "nome_original", "content_type", "tamanho_bytes", "enviado_por", "enviado_em",
         ]
         read_only_fields = fields

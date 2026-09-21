@@ -1,12 +1,26 @@
 from __future__ import annotations
 
 from django.conf import settings
+from django.db.models import Q
 
 from apps.core.models.notifications import Notification, TipoNotificacao
+from apps.core.models.user import User
 
 
 def _link_demanda(demand) -> str:
     return f"{settings.FRONTEND_BASE_URL.rstrip('/')}/sgd/demandas/{demand.pk}"
+
+
+def usuarios_articuladores_do_estado(sigla: str):
+    return User.objects.filter(
+        ativo=True, profiles__perfil__slug="articulador-estadual",
+    ).filter(
+        Q(profiles__territorio__isnull=True) | Q(profiles__territorio__estados__contains=[sigla])
+    ).distinct()
+
+
+def usuarios_por_perfil(slug: str):
+    return User.objects.filter(ativo=True, profiles__perfil__slug=slug).distinct()
 
 
 def _notificar(*, usuarios, titulo: str, mensagem: str, link: str, evento: str, canais):
@@ -99,12 +113,12 @@ def notificar_cancelamento_automatico(demand, articuladores) -> None:
     )
 
 
-def notificar_mudanca_semaforo(*, usuarios, rubrica_nome: str, trava: str, semaforo: str, link: str) -> None:
+def notificar_mudanca_semaforo(*, usuarios, demand, rubrica_nome: str, trava: str, semaforo: str) -> None:
     _notificar(
         usuarios=usuarios,
         titulo=f"Saldo de {rubrica_nome} entrou na faixa {semaforo}",
         mensagem=f"O saldo da trava {trava} para a rubrica {rubrica_nome} entrou na faixa {semaforo}.",
-        link=link, evento="demand_semaforo_mudou", canais=_EMAIL_E_IN_APP,
+        link=_link_demanda(demand), evento="demand_semaforo_mudou", canais=_EMAIL_E_IN_APP,
     )
 
 
