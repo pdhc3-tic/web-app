@@ -143,6 +143,7 @@ class BudgetTransaction(models.Model):
         LIBERACAO = "liberacao", "Liberação"
         EXECUCAO = "execucao", "Execução"
         REMANEJAMENTO = "remanejamento", "Remanejamento"
+        AJUSTE = "ajuste", "Ajuste"
 
     allocation = models.ForeignKey(
         BudgetAllocation,

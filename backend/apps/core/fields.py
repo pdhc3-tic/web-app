@@ -77,6 +77,19 @@ class EncryptedIntChoiceField(EncryptedFieldMixin, models.IntegerField):
         return int(text)
 
 
+class EncryptedCharField(EncryptedFieldMixin, models.CharField):
+    """Texto curto (ex.: CPF) armazenado criptografado. `max_length` continua
+    validando o texto plano — a coluna real (`db_type` acima) é `text`."""
+
+    empty_value = ""
+
+    def value_to_plaintext(self, value) -> str:
+        return str(value)
+
+    def plaintext_to_value(self, text: str):
+        return text
+
+
 class EncryptedJSONField(EncryptedFieldMixin, models.JSONField):
     """Estrutura JSON (ex.: lista de strings) armazenada criptografada como texto."""
 

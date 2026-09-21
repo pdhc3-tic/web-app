@@ -1,0 +1,101 @@
+from decimal import Decimal
+
+import pytest
+from rest_framework.exceptions import ValidationError as DRFValidationError
+
+from apps.sgd.services.demand_request import validar_campos_json
+
+pytestmark = pytest.mark.django_db
+
+
+def _campos_passagem(**overrides):
+    campos = {
+        "passageiro_nome": "Fulano", "passageiro_cpf": "52998224725",
+        "passageiro_data_nascimento": "1990-01-01", "aeroporto_origem": "NAT",
+        "aeroporto_destino": "GRU", "data_hora_ida": "2026-06-01T08:00:00Z",
+        "ida_e_volta": False, "bagagem_despachada": True, "classe": "economica",
+        "urgencia": "normal",
+    }
+    campos.update(overrides)
+    return campos
+
+
+def test_passagem_ida_e_volta_sem_data_volta_bloqueia(activity_rn):
+    campos = _campos_passagem(ida_e_volta=True)
+    with pytest.raises(DRFValidationError):
+        validar_campos_json("passagem", campos, activity_rn)
+
+
+def test_passagem_ida_e_volta_com_data_volta_ok(activity_rn):
+    campos = _campos_passagem(ida_e_volta=True, data_hora_volta="2026-06-05T20:00:00Z")
+    validado = validar_campos_json("passagem", campos, activity_rn)
+    assert validado.beneficiario_cpf == "52998224725"
+
+
+def test_passagem_ida_e_volta_false_nao_exige_data_volta(activity_rn):
+    campos = _campos_passagem(ida_e_volta=False)
+    validado = validar_campos_json("passagem", campos, activity_rn)
+    assert "data_hora_volta" not in validado.campos_json or not validado.campos_json.get("data_hora_volta")
+
+
+def test_passagem_classe_executiva_sem_justificativa_bloqueia(activity_rn):
+    campos = _campos_passagem(classe="executiva")
+    with pytest.raises(DRFValidationError):
+        validar_campos_json("passagem", campos, activity_rn)
+
+
+def test_passagem_classe_executiva_com_justificativa_ok(activity_rn):
+    campos = _campos_passagem(classe="executiva", justificativa_executiva="Único voo disponível.")
+    validado = validar_campos_json("passagem", campos, activity_rn)
+    assert validado.campos_json["classe"] == "executiva"
+
+
+def test_passagem_cpf_invalido_bloqueia(activity_rn):
+    campos = _campos_passagem(passageiro_cpf="11111111111")
+    with pytest.raises(DRFValidationError):
+        validar_campos_json("passagem", campos, activity_rn)
+
+
+def test_diaria_calcula_numero_diarias_e_valor_total(activity_rn, municipio_rn):
+    from apps.core.models.system_config import SystemConfig, TipoConfiguracao
+
+    SystemConfig.objects.create(chave="sgd_valor_diaria_padrao", valor="200", tipo=TipoConfiguracao.STRING)
+
+    campos = {
+        "beneficiario_nome": "Fulano", "beneficiario_cpf": "52998224725",
+        "beneficiario_cargo": "Técnico", "beneficiario_vinculo": "servidor_ufersa",
+        "municipio_destino_id": municipio_rn.pk, "data_inicio": "2026-06-01", "data_fim": "2026-06-04",
+        "meio_transporte": "rodoviario", "justificativa": "Visita técnica.",
+    }
+    validado = validar_campos_json("diaria", campos, activity_rn)
+    assert validado.campos_json["numero_diarias"] == 3
+    assert validado.valor_estimado_auto == Decimal("600")
+
+
+def test_equipamento_menos_de_3_cotacoes_bloqueia_submissao(demand_rascunho_rn):
+    from apps.sgd.services.demand import _exigir_minimo_cotacoes_equipamento
+    from apps.sgd.tests.factories import DemandDocumentFactory, DemandRequestFactory
+
+    DemandRequestFactory(demanda=demand_rascunho_rn, tipo="equipamento", campos_json={
+        "descricao_equipamento": "Notebook", "especificacao_tecnica_detalhada": "16GB RAM",
+        "quantidade": 1, "finalidade_justificativa": "Uso em campo.", "urgencia": "normal",
+    })
+    DemandDocumentFactory(demanda=demand_rascunho_rn, tipo="cotacao")
+    DemandDocumentFactory(demanda=demand_rascunho_rn, tipo="cotacao")
+
+    with pytest.raises(DRFValidationError):
+        _exigir_minimo_cotacoes_equipamento(demand_rascunho_rn)
+
+
+def test_equipamento_com_3_cotacoes_nao_bloqueia(demand_rascunho_rn):
+    from apps.sgd.services.demand import _exigir_minimo_cotacoes_equipamento
+    from apps.sgd.tests.factories import DemandDocumentFactory, DemandRequestFactory
+
+    DemandRequestFactory(demanda=demand_rascunho_rn, tipo="equipamento", campos_json={
+        "descricao_equipamento": "Notebook", "especificacao_tecnica_detalhada": "16GB RAM",
+        "quantidade": 1, "finalidade_justificativa": "Uso em campo.", "urgencia": "normal",
+    })
+    for _ in range(3):
+        DemandDocumentFactory(demanda=demand_rascunho_rn, tipo="cotacao")
+
+    _exigir_minimo_cotacoes_equipamento(demand_rascunho_rn)

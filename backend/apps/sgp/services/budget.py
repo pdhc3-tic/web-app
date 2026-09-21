@@ -419,6 +419,19 @@ def _transacao_existente(demanda_id: str, tipo: str) -> BudgetTransaction | None
     return BudgetTransaction.objects.filter(demanda_id=demanda_id, tipo=tipo).first()
 
 
+def _valor_total_reservado(demanda_id: str) -> Decimal:
+    """Reserva original + todo `ajustar_reserva` aplicado depois. `executar`/
+    `liberar` usam isto, não `reserva.valor` puro, senão um ajuste ficaria
+    fora da conta."""
+    reserva = BudgetTransaction.objects.filter(demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.RESERVA).first()
+    if reserva is None:
+        return ZERO
+    ajustes = BudgetTransaction.objects.filter(
+        demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.AJUSTE,
+    ).aggregate(total=Coalesce(Sum("valor"), ZERO))["total"]
+    return reserva.valor + ajustes
+
+
 @transaction.atomic
 def reservar(*, allocation: BudgetAllocation, valor: Decimal, demanda_id: str, usuario,
              justificativa: str = "") -> BudgetTransaction:
@@ -451,15 +464,46 @@ def reservar(*, allocation: BudgetAllocation, valor: Decimal, demanda_id: str, u
 
 
 @transaction.atomic
-def executar(*, demanda_id: str, usuario) -> BudgetTransaction:
-    """Move o valor da reserva original (achada por demanda_id) de
-    comprometido pra executado, na mesma alocação — nunca mexe no pai."""
-    reserva = BudgetTransaction.objects.filter(
-        demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.RESERVA,
-    ).first()
+def ajustar_reserva(*, demanda_id: str, novo_valor: Decimal, usuario, justificativa: str = "") -> BudgetTransaction:
+    """Registra o delta como uma `BudgetTransaction` própria (`Tipo.AJUSTE`)
+    em vez de reescrever a reserva original. Não é idempotente — ao
+    contrário de reservar/executar/liberar, quem chama garante que só
+    invoca isto uma vez por decisão."""
+    reserva = BudgetTransaction.objects.filter(demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.RESERVA).first()
     if reserva is None:
         raise DemandaInvalidaError(f"Nenhuma reserva encontrada para a demanda {demanda_id!r}.")
+    if _transacao_existente(demanda_id, BudgetTransaction.Tipo.EXECUCAO) is not None:
+        raise DemandaInvalidaError(f"Demanda {demanda_id!r} já foi executada — não pode ser ajustada.")
+    if _transacao_existente(demanda_id, BudgetTransaction.Tipo.LIBERACAO) is not None:
+        raise DemandaInvalidaError(f"Demanda {demanda_id!r} já foi liberada — não pode ser ajustada.")
 
+    allocation = BudgetAllocation.objects.select_for_update().get(pk=reserva.allocation_id)
+    valor_atual = _valor_total_reservado(demanda_id)
+    delta = novo_valor - valor_atual
+    if delta > ZERO and delta > _saldo_disponivel(allocation):
+        raise SaldoInsuficienteError(
+            f"Saldo insuficiente para o ajuste: R$ {_saldo_disponivel(allocation)} disponível, "
+            f"R$ {delta} a mais solicitado."
+        )
+
+    allocation.valor_comprometido += delta
+    allocation.save(update_fields=["valor_comprometido"])
+    return BudgetTransaction.objects.create(
+        allocation=allocation, tipo=BudgetTransaction.Tipo.AJUSTE, valor=delta,
+        demanda_id=demanda_id, criado_por=usuario, justificativa=justificativa or "Ajuste de valor autorizado.",
+    )
+
+
+@transaction.atomic
+def executar(*, demanda_id: str, usuario, valor_executado: Decimal | None = None) -> BudgetTransaction:
+    """`valor_executado=None` executa o valor reservado por inteiro. Um
+    valor menor executa só essa parte e registra a diferença como uma
+    `BudgetTransaction` de liberação própria."""
+    valor_reservado = _valor_total_reservado(demanda_id)
+    if valor_reservado <= ZERO:
+        raise DemandaInvalidaError(f"Nenhuma reserva encontrada para a demanda {demanda_id!r}.")
+
+    reserva = BudgetTransaction.objects.filter(demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.RESERVA).first()
     allocation = BudgetAllocation.objects.select_for_update().get(pk=reserva.allocation_id)
     existente = _transacao_existente(demanda_id, BudgetTransaction.Tipo.EXECUCAO)
     if existente is not None:
@@ -467,26 +511,35 @@ def executar(*, demanda_id: str, usuario) -> BudgetTransaction:
     if _transacao_existente(demanda_id, BudgetTransaction.Tipo.LIBERACAO) is not None:
         raise DemandaInvalidaError(f"Demanda {demanda_id!r} já foi liberada — não pode ser executada.")
 
-    allocation.valor_comprometido -= reserva.valor
-    allocation.valor_executado += reserva.valor
+    valor_final = valor_reservado if valor_executado is None else valor_executado
+    diferenca = valor_reservado - valor_final
+
+    allocation.valor_comprometido -= valor_reservado
+    allocation.valor_executado += valor_final
     allocation.save(update_fields=["valor_comprometido", "valor_executado"])
-    return BudgetTransaction.objects.create(
-        allocation=allocation, tipo=BudgetTransaction.Tipo.EXECUCAO, valor=reserva.valor,
+    execucao = BudgetTransaction.objects.create(
+        allocation=allocation, tipo=BudgetTransaction.Tipo.EXECUCAO, valor=valor_final,
         demanda_id=demanda_id, criado_por=usuario, justificativa="Execução da demanda.",
     )
+    if diferenca > ZERO:
+        BudgetTransaction.objects.create(
+            allocation=allocation, tipo=BudgetTransaction.Tipo.LIBERACAO, valor=diferenca,
+            demanda_id=demanda_id, criado_por=usuario,
+            justificativa="Diferença entre valor reservado e valor efetivamente pago na execução.",
+        )
+    return execucao
 
 
 @transaction.atomic
 def liberar(*, demanda_id: str, usuario, motivo: str) -> BudgetTransaction:
-    """Devolve o valor reservado ao comprometido da mesma alocação da reserva
-    original — como nunca toca no pai, a devolução ao nível do solicitante já
-    sai correta por construção."""
-    reserva = BudgetTransaction.objects.filter(
-        demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.RESERVA,
-    ).first()
-    if reserva is None:
+    """Devolve o valor reservado (reserva original + ajustes, se houver) ao
+    comprometido da mesma alocação — como nunca toca no pai, a devolução ao
+    nível do solicitante já sai correta por construção."""
+    valor_reservado = _valor_total_reservado(demanda_id)
+    if valor_reservado <= ZERO:
         raise DemandaInvalidaError(f"Nenhuma reserva encontrada para a demanda {demanda_id!r}.")
 
+    reserva = BudgetTransaction.objects.filter(demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.RESERVA).first()
     allocation = BudgetAllocation.objects.select_for_update().get(pk=reserva.allocation_id)
     existente = _transacao_existente(demanda_id, BudgetTransaction.Tipo.LIBERACAO)
     if existente is not None:
@@ -494,10 +547,10 @@ def liberar(*, demanda_id: str, usuario, motivo: str) -> BudgetTransaction:
     if _transacao_existente(demanda_id, BudgetTransaction.Tipo.EXECUCAO) is not None:
         raise DemandaInvalidaError(f"Demanda {demanda_id!r} já foi executada — não pode ser liberada.")
 
-    allocation.valor_comprometido -= reserva.valor
+    allocation.valor_comprometido -= valor_reservado
     allocation.save(update_fields=["valor_comprometido"])
     return BudgetTransaction.objects.create(
-        allocation=allocation, tipo=BudgetTransaction.Tipo.LIBERACAO, valor=reserva.valor,
+        allocation=allocation, tipo=BudgetTransaction.Tipo.LIBERACAO, valor=valor_reservado,
         demanda_id=demanda_id, justificativa=motivo, criado_por=usuario,
     )
 
