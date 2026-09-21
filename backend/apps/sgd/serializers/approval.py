@@ -12,9 +12,17 @@ class AutorizarSerializer(serializers.Serializer):
         help_text="{demand_request_id: novo_valor} — omitido para autorizar sem ajuste.",
     )
     excedente_autorizado = serializers.BooleanField(required=False, default=False)
+    justificativa = serializers.CharField(required=False, allow_blank=True, default="")
 
     def validate_ajustes(self, value):
         return {int(k): v for k, v in value.items()}
+
+    def validate(self, data):
+        if data.get("excedente_autorizado") and not data.get("justificativa"):
+            raise serializers.ValidationError({
+                "justificativa": "Obrigatória para autorizar excedendo o limite individual (RF16)."
+            })
+        return data
 
 
 class RecusarSerializer(serializers.Serializer):

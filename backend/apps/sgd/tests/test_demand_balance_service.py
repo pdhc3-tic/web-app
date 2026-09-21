@@ -1,8 +1,10 @@
 from decimal import Decimal
 
 import pytest
+from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from apps.sgd.services import balance as balance_service
+from apps.sgd.services import demand as demand_service
 from apps.sgd.tests.factories import DemandIndividualLimitFactory, DemandRequestFactory
 
 pytestmark = pytest.mark.django_db
@@ -174,3 +176,35 @@ def test_autorizar_excedente_com_justificativa_remaneja_sem_elevar_limite_indivi
     assert BudgetTransaction.objects.filter(
         allocation=origem, tipo=BudgetTransaction.Tipo.REMANEJAMENTO,
     ).exists()
+
+
+def test_submeter_demanda_bloqueio_de_uma_solicitacao_identifica_so_a_bloqueada(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    """§4.1: verificação é rubrica a rubrica — a solicitação sem bloqueio não
+    deve aparecer na lista de bloqueios, mesmo a submissão inteira falhando
+    (tudo-ou-nada, RF13: nada é reservado até todas passarem)."""
+    from apps.sgp.tests.factories import BudgetRubricaFactory
+
+    demand = demand_request_rn.demanda
+    rubrica_sem_limite = BudgetRubricaFactory(slug="rubrica-sem-limite-sgd")
+    solicitacao_bloqueada = DemandRequestFactory(
+        demanda=demand, rubrica=rubrica_sem_limite, tipo="grafico", valor_estimado=Decimal("100"),
+        campos_json={
+            "tipo_material": "banner", "quantidade": 1,
+            "especificacoes_tecnicas": "x", "prazo_entrega": "2026-12-01",
+        },
+    )
+
+    with pytest.raises(DRFValidationError) as excinfo:
+        demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+
+    bloqueios = excinfo.value.detail["solicitacoes_bloqueadas"]
+    assert str(solicitacao_bloqueada.pk) in bloqueios
+    assert str(demand_request_rn.pk) not in bloqueios
+
+    demand.refresh_from_db()
+    assert demand.status == "rascunho"
+    assert demand.solicitacoes.count() == 2
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == Decimal("0")

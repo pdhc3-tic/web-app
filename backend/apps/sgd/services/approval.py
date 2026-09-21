@@ -150,8 +150,14 @@ def devolver(demand, *, responsavel, justificativa: str) -> object:
 
 
 @transaction.atomic
-def autorizar(demand, *, responsavel, ajustes: dict | None = None, excedente_autorizado: bool = False) -> object:
+def autorizar(
+    demand, *, responsavel, ajustes: dict | None = None,
+    excedente_autorizado: bool = False, justificativa: str = "",
+) -> object:
     """`ajustes`: {demand_request_id: novo_valor}."""
+    if excedente_autorizado and not justificativa:
+        raise JustificativaObrigatoriaError("Obrigatória para autorizar excedendo o limite individual (RF16).")
+
     ajustes = ajustes or {}
     for solicitacao in demand.solicitacoes.all():
         novo_valor = ajustes.get(solicitacao.pk, solicitacao.valor_estimado)
@@ -167,7 +173,7 @@ def autorizar(demand, *, responsavel, ajustes: dict | None = None, excedente_aut
     demand.save(update_fields=["status", "atualizado_em"])
     ApprovalStep.objects.create(
         demanda=demand, etapa="autorizacao", responsavel=responsavel,
-        acao="aprovado", excedente_autorizado=excedente_autorizado,
+        acao="aprovado", excedente_autorizado=excedente_autorizado, justificativa=justificativa,
     )
     notifications_service.notificar_autorizacao(demand, notifications_service.usuarios_por_perfil("fgd"))
     return demand

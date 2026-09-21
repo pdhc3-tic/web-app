@@ -4,7 +4,8 @@ import pytest
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from apps.sgd.models.demand import Demand
-from apps.sgd.services.approval import demand_visibility_scope, devolver, preview_impacto
+from apps.sgd.services import balance as balance_service
+from apps.sgd.services.approval import autorizar, demand_visibility_scope, devolver, preview_impacto
 from apps.sgd.tests.factories import DemandFactory
 
 pytestmark = pytest.mark.django_db
@@ -35,6 +36,49 @@ def test_devolver_sem_justificativa_bloqueia(demand_rascunho_rn, usuario_articul
     demand_rascunho_rn.save(update_fields=["status"])
     with pytest.raises(Exception):
         devolver(demand_rascunho_rn, responsavel=usuario_articulador_rn, justificativa="")
+
+
+def test_autorizar_excedente_sem_justificativa_bloqueia(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    """RF16: excedente_autorizado=True bypassa o limite individual — exige
+    justificativa como qualquer outra decisão que se desvia do padrão."""
+    demand = demand_request_rn.demanda
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    demand.status = "pre_autorizada"
+    demand.save(update_fields=["status"])
+
+    with pytest.raises(DRFValidationError):
+        autorizar(
+            demand, responsavel=solicitante_rn,
+            ajustes={demand_request_rn.pk: limite_individual_rn.valor_limite + Decimal("1")},
+            excedente_autorizado=True, justificativa="",
+        )
+
+
+def test_autorizar_excedente_com_justificativa_autoriza_sem_elevar_limite(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    demand = demand_request_rn.demanda
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    demand.status = "pre_autorizada"
+    demand.save(update_fields=["status"])
+    valor_limite_antes = limite_individual_rn.valor_limite
+    novo_valor = valor_limite_antes + Decimal("1")
+
+    autorizar(
+        demand, responsavel=solicitante_rn, ajustes={demand_request_rn.pk: novo_valor},
+        excedente_autorizado=True, justificativa="Demanda urgente aprovada pela UGP.",
+    )
+
+    demand_request_rn.refresh_from_db()
+    assert demand_request_rn.valor_autorizado == novo_valor
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_limite == valor_limite_antes
+
+    ultimo_step = demand.etapas.latest("criado_em")
+    assert ultimo_step.excedente_autorizado is True
+    assert ultimo_step.justificativa == "Demanda urgente aprovada pela UGP."
 
 
 def test_preview_decisao_retorna_semaforo(demand_request_rn, allocation_territorial_rn, limite_individual_rn):
