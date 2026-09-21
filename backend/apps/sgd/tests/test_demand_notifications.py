@@ -97,13 +97,28 @@ def test_reservar_nao_notifica_quando_semaforo_nao_piora(
     assert not solicitante_rn.notifications.filter(evento="demand_semaforo_mudou").exists()
 
 
-def test_alerta_rubrica_fora_do_previsto_aparece_no_payload(demand_request_rn):
+def test_alerta_rubrica_fora_do_previsto_aparece_no_payload(demand_request_rn, rubrica_diarias):
     from apps.sgd.serializers.demand_request import DemandRequestSerializer
     from apps.sgp.tests.factories import BudgetRubricaFactory
 
+    acao = demand_request_rn.demanda.activity.acao
+    acao.rubricas_previstas.set([rubrica_diarias])
     demand_request_rn.rubrica = BudgetRubricaFactory(slug="rubrica-inesperada-para-diaria")
     demand_request_rn.save(update_fields=["rubrica"])
 
     data = DemandRequestSerializer(demand_request_rn).data
 
     assert data["alerta_rubrica_fora_do_previsto"] is True
+
+
+def test_alerta_rubrica_fora_do_previsto_sem_previsao_cadastrada_nao_alerta(demand_request_rn):
+    from apps.sgd.serializers.demand_request import DemandRequestSerializer
+    from apps.sgp.tests.factories import BudgetRubricaFactory
+
+    # Ação sem `rubricas_previstas` configurada — sem opinião, nunca alerta.
+    demand_request_rn.rubrica = BudgetRubricaFactory(slug="rubrica-qualquer")
+    demand_request_rn.save(update_fields=["rubrica"])
+
+    data = DemandRequestSerializer(demand_request_rn).data
+
+    assert data["alerta_rubrica_fora_do_previsto"] is False

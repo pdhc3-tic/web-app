@@ -91,7 +91,7 @@ class DemandDocumentMixin:
             url = request.build_absolute_uri(url)
 
         self._log_doc_audit(
-            request, "demand_document.upload_url", demand,
+            "demand_document.upload_url", demand,
             valores_novos={"demanda_id": demand.pk, "key": key, "content_type": content_type, "size": size},
         )
         return Response({"url": url, "key": key, "expires_in": expires_in})
@@ -141,7 +141,7 @@ class DemandDocumentMixin:
             fornecedor=serializer.validated_data.get("fornecedor", ""),
             content_type=content_type, tamanho_bytes=tamanho_bytes, enviado_por=request.user,
         )
-        self._log_doc_audit(request, "demand_document.created", demand, valores_novos=self._doc_snapshot(doc))
+        self._log_doc_audit("demand_document.created", demand, valores_novos=self._doc_snapshot(doc))
         return Response(DemandDocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get"], url_path=r"documentos/(?P<doc_id>\d+)/download")
@@ -154,7 +154,7 @@ class DemandDocumentMixin:
         if url.startswith("/"):
             url = request.build_absolute_uri(url)
         self._log_doc_audit(
-            request, "demand_document.download", demand, valores_novos={"doc_id": doc.pk, "key": doc.arquivo_key},
+            "demand_document.download", demand, valores_novos={"doc_id": doc.pk, "key": doc.arquivo_key},
         )
         return Response({"url": url, "expires_in": expires_in})
 
@@ -165,7 +165,7 @@ class DemandDocumentMixin:
         snapshot = self._doc_snapshot(doc)
         doc.ativo = False
         doc.save(update_fields=["ativo"])
-        self._log_doc_audit(request, "demand_document.deleted", demand, valores_anteriores=snapshot)
+        self._log_doc_audit("demand_document.deleted", demand, valores_anteriores=snapshot)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @staticmethod
@@ -176,11 +176,10 @@ class DemandDocumentMixin:
             "tamanho_bytes": doc.tamanho_bytes, "ativo": doc.ativo,
         }
 
-    @staticmethod
-    def _log_doc_audit(request, acao, demand, valores_anteriores=None, valores_novos=None):
+    def _log_doc_audit(self, acao, demand, valores_anteriores=None, valores_novos=None):
         AuditLog.objects.create(
-            user=request.user, acao=acao, modulo="sgd", entidade="DemandDocument",
+            user=self.request.user, acao=acao, modulo="sgd", entidade="DemandDocument",
             entidade_id=str(demand.pk), valores_anteriores=valores_anteriores or {},
-            valores_novos=valores_novos or {}, ip=request.META.get("REMOTE_ADDR"),
-            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            valores_novos=valores_novos or {}, ip=self.request.META.get("REMOTE_ADDR"),
+            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )

@@ -163,7 +163,7 @@ class BudgetTransaction(models.Model):
         blank=True,
         default=None,
         verbose_name="ID da Demanda",
-        help_text="Referência fraca ao SGD, que ainda não existe.",
+        help_text="Referência fraca a uma Demand do SGD (apps.sgd) — sem FK de propósito, o motor não importa apps.sgd.",
     )
     justificativa = models.TextField(
         blank=True, default="", verbose_name="Justificativa",

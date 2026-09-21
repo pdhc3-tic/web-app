@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.sgd.serializers.saldo import SaldoConsultaQuerySerializer, SaldoConsultaSerializer
 from apps.sgd.services import balance as balance_service
+from apps.sgp.models import Activity
 from apps.sgp.models.budget import BudgetRubrica
 
 
@@ -13,8 +14,6 @@ class SaldoConsultaView(APIView):
     permission_classes = [IsAuthenticatedActiveAccess]
 
     def get(self, request):
-        from apps.sgp.models import Activity
-
         query = SaldoConsultaQuerySerializer(data=request.query_params)
         query.is_valid(raise_exception=True)
         dados = query.validated_data

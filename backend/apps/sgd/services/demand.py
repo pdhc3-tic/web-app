@@ -116,6 +116,11 @@ def atualizar_solicitacao(solicitacao, *, tipo=None, campos_json=None, valor_est
     return solicitacao
 
 
+def remover_solicitacao(solicitacao) -> None:
+    _exigir_editavel(solicitacao.demanda)
+    solicitacao.delete()
+
+
 def _exigir_minimo_cotacoes_equipamento(demand) -> None:
     if not demand.solicitacoes.filter(tipo="equipamento").exists():
         return

@@ -13,7 +13,6 @@ from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.models.individual_limit import DemandIndividualLimit
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
-from apps.sgd.services.demand_request import rubrica_slug_para_tipo
 
 
 class TransicaoInvalidaError(DRFValidationError):
@@ -118,10 +117,11 @@ def preview_impacto(demand_request, valor: Decimal) -> dict:
 
 
 def alerta_rubrica_fora_do_previsto(demand_request) -> bool:
-    # Não há campo de "rubricas previstas da Ação" no SGP — usa o mapeamento
-    # tipo→rubrica como proxy do esperado.
-    esperado = rubrica_slug_para_tipo(demand_request.tipo)
-    return demand_request.rubrica.slug != esperado
+    previstas = demand_request.demanda.activity.acao.rubricas_previstas
+    if not previstas.exists():
+        # Sem previsão cadastrada na Ação — não é falso positivo, é "sem opinião".
+        return False
+    return not previstas.filter(pk=demand_request.rubrica_id).exists()
 
 
 @transaction.atomic
@@ -158,6 +158,7 @@ def autorizar(demand, *, responsavel, ajustes: dict | None = None, excedente_aut
         if novo_valor != solicitacao.valor_estimado:
             balance_service.ajustar_duas_travas(
                 demand_request=solicitacao, novo_valor=novo_valor, usuario=responsavel,
+                ignorar_limite_individual=excedente_autorizado,
             )
         solicitacao.valor_autorizado = novo_valor
         solicitacao.save(update_fields=["valor_autorizado"])

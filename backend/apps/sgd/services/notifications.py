@@ -122,6 +122,18 @@ def notificar_mudanca_semaforo(*, usuarios, demand, rubrica_nome: str, trava: st
     )
 
 
+def notificar_atividade_adiada(demand, responsaveis, *, nova_data) -> None:
+    _notificar(
+        usuarios=responsaveis,
+        titulo=f"Atividade adiada — demanda mantida: {demand.titulo}",
+        mensagem=(
+            f"A atividade vinculada à demanda '{demand.titulo}' foi adiada para "
+            f"{nova_data:%d/%m/%Y}. A demanda e a reserva de saldo continuam válidas."
+        ),
+        link=_link_demanda(demand), evento="demand_atividade_adiada", canais=_EMAIL_E_IN_APP,
+    )
+
+
 def notificar_inatividade(demand, responsaveis) -> None:
     _notificar(
         usuarios=responsaveis,

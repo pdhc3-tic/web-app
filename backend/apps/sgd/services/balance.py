@@ -134,18 +134,17 @@ def verificar_duas_travas(*, solicitante, rubrica, meta, valor: Decimal) -> Duas
     return DuasTravasCheck(individual=individual, territorial=territorial)
 
 
-def _log_movimento_individual(*, acao: str, limite: DemandIndividualLimit, demand_request, valor: Decimal, usuario) -> bool:
-    """Devolve False sem criar nada se este movimento já foi registrado —
-    idempotência por `demand_request.pk` + `acao`."""
-    entidade_id = str(demand_request.pk)
-    if AuditLog.objects.filter(entidade=_ENTIDADE_LIMITE, entidade_id=entidade_id, acao=acao).exists():
-        return False
+def _ja_registrado(*, acao: str, entidade_id: str) -> bool:
+    return AuditLog.objects.filter(entidade=_ENTIDADE_LIMITE, entidade_id=entidade_id, acao=acao).exists()
+
+
+def _registrar_movimento_individual(
+    *, acao: str, entidade_id: str, usuario, valores_anteriores: dict | None = None, valores_novos: dict | None = None,
+) -> None:
     AuditLog.objects.create(
-        user=usuario, acao=acao, modulo="sgd", entidade=_ENTIDADE_LIMITE,
-        entidade_id=entidade_id,
-        valores_novos={"limite_id": limite.pk, "valor": str(valor)},
+        user=usuario, acao=acao, modulo="sgd", entidade=_ENTIDADE_LIMITE, entidade_id=entidade_id,
+        valores_anteriores=valores_anteriores or {}, valores_novos=valores_novos or {},
     )
-    return True
 
 
 @transaction.atomic
@@ -156,13 +155,12 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
     valor = demand_request.valor_estimado
     meta = demand_request.meta
 
+    entidade_id = str(demand_request.pk)
     limite = DemandIndividualLimit.objects.select_for_update().get(
         solicitante=solicitante, rubrica=rubrica,
     )
     comprometido_individual_antes = limite.valor_comprometido
-    if _log_movimento_individual(
-        acao="reserva", limite=limite, demand_request=demand_request, valor=valor, usuario=usuario,
-    ):
+    if not _ja_registrado(acao="reserva", entidade_id=entidade_id):
         # Reconfere o saldo com a linha já travada (select_for_update acima)
         # — sem isso, duas reservas concorrentes que passaram no
         # verificar_duas_travas (antes do lock) comprometeriam o limite além
@@ -176,6 +174,10 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
             })
         limite.valor_comprometido += valor
         limite.save(update_fields=["valor_comprometido"])
+        _registrar_movimento_individual(
+            acao="reserva", entidade_id=entidade_id, usuario=usuario,
+            valores_novos={"limite_id": limite.pk, "valor": str(valor)},
+        )
         _notificar_se_piorou(
             usuarios=[solicitante], demand=demand_request.demanda, rubrica_nome=rubrica.nome,
             trava=TRAVA_INDIVIDUAL, comprometido_antes=comprometido_individual_antes,
@@ -204,7 +206,11 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
 
 
 @transaction.atomic
-def ajustar_duas_travas(*, demand_request, novo_valor: Decimal, usuario) -> None:
+def ajustar_duas_travas(
+    *, demand_request, novo_valor: Decimal, usuario, ignorar_limite_individual: bool = False,
+) -> None:
+    """`ignorar_limite_individual=True` autoriza um excedente pontual (RF16) sem
+    alterar `valor_limite` — usada só pelo fluxo de remanejamento emergencial da UGP."""
     rubrica = demand_request.rubrica
     solicitante = demand_request.demanda.solicitante
     valor_anterior = demand_request.valor_estimado
@@ -215,8 +221,8 @@ def ajustar_duas_travas(*, demand_request, novo_valor: Decimal, usuario) -> None
         solicitante=solicitante, rubrica=rubrica,
     )
     comprometido_individual_antes = limite.valor_comprometido
-    if not AuditLog.objects.filter(entidade=_ENTIDADE_LIMITE, entidade_id=entidade_id, acao="ajuste").exists():
-        if diferenca > ZERO and diferenca > limite.saldo_disponivel:
+    if not _ja_registrado(acao="ajuste", entidade_id=entidade_id):
+        if not ignorar_limite_individual and diferenca > ZERO and diferenca > limite.saldo_disponivel:
             raise DRFValidationError({
                 "detail": (
                     f"Limite individual insuficiente para o ajuste: R$ {limite.saldo_disponivel} "
@@ -225,9 +231,8 @@ def ajustar_duas_travas(*, demand_request, novo_valor: Decimal, usuario) -> None
             })
         limite.valor_comprometido += diferenca
         limite.save(update_fields=["valor_comprometido"])
-        AuditLog.objects.create(
-            user=usuario, acao="ajuste", modulo="sgd", entidade=_ENTIDADE_LIMITE,
-            entidade_id=entidade_id,
+        _registrar_movimento_individual(
+            acao="ajuste", entidade_id=entidade_id, usuario=usuario,
             valores_anteriores={"valor": str(valor_anterior)},
             valores_novos={"valor": str(novo_valor)},
         )
@@ -271,11 +276,13 @@ def liberar_duas_travas(*, demand_request, usuario, motivo: str) -> None:
     limite = DemandIndividualLimit.objects.select_for_update().filter(
         solicitante=solicitante, rubrica=rubrica,
     ).first()
-    if limite is not None and _log_movimento_individual(
-        acao="liberacao", limite=limite, demand_request=demand_request, valor=valor, usuario=usuario,
-    ):
+    if limite is not None and not _ja_registrado(acao="liberacao", entidade_id=entidade_id):
         limite.valor_comprometido -= valor
         limite.save(update_fields=["valor_comprometido"])
+        _registrar_movimento_individual(
+            acao="liberacao", entidade_id=entidade_id, usuario=usuario,
+            valores_novos={"limite_id": limite.pk, "valor": str(valor)},
+        )
 
     try:
         budget_service.liberar(demanda_id=str(demand_request.pk), usuario=usuario, motivo=motivo)
@@ -295,13 +302,12 @@ def executar_duas_travas(*, demand_request, valor_pago: Decimal, usuario) -> Non
     limite = DemandIndividualLimit.objects.select_for_update().get(
         solicitante=solicitante, rubrica=rubrica,
     )
-    if not AuditLog.objects.filter(entidade=_ENTIDADE_LIMITE, entidade_id=entidade_id, acao="execucao").exists():
+    if not _ja_registrado(acao="execucao", entidade_id=entidade_id):
         limite.valor_comprometido -= valor_reservado
         limite.valor_executado += valor_pago
         limite.save(update_fields=["valor_comprometido", "valor_executado"])
-        AuditLog.objects.create(
-            user=usuario, acao="execucao", modulo="sgd", entidade=_ENTIDADE_LIMITE,
-            entidade_id=entidade_id,
+        _registrar_movimento_individual(
+            acao="execucao", entidade_id=entidade_id, usuario=usuario,
             valores_novos={"valor_pago": str(valor_pago), "diferenca_liberada": str(diferenca)},
         )
 
@@ -331,11 +337,10 @@ def autorizar_excedente(*, demand_request, origem_allocation, valor_excedente: D
         usuario=usuario, justificativa=justificativa,
     )
 
-    limite = DemandIndividualLimit.objects.select_for_update().get(
-        solicitante=solicitante, rubrica=rubrica,
-    )
-    limite.valor_limite += valor_excedente
-    limite.save(update_fields=["valor_limite"])
+    # Remanejamento é pontual: só move o pool territorial de origem pro destino
+    # e libera esta solicitação específica via `ignorar_limite_individual` (em
+    # `ajustar_duas_travas`) — não eleva `valor_limite`, ou o solicitante
+    # ganharia teto maior permanentemente por um excedente de uma única vez.
     AuditLog.objects.create(
         user=usuario, acao="remanejamento_emergencial", modulo="sgd", entidade=_ENTIDADE_LIMITE,
         entidade_id=str(demand_request.pk),

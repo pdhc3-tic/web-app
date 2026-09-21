@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.db.models import Sum
 
 
 STATUS_CHOICES = [
@@ -94,20 +95,20 @@ class Demand(models.Model):
     def meta(self):
         return self.activity.acao.meta
 
+    def _total_solicitacoes(self, campo: str):
+        return self.solicitacoes.aggregate(total=Sum(campo))["total"] or 0
+
     @property
     def valor_estimado_total(self):
-        from django.db.models import Sum
-        return self.solicitacoes.aggregate(total=Sum("valor_estimado"))["total"] or 0
+        return self._total_solicitacoes("valor_estimado")
 
     @property
     def valor_autorizado_total(self):
-        from django.db.models import Sum
-        return self.solicitacoes.aggregate(total=Sum("valor_autorizado"))["total"] or 0
+        return self._total_solicitacoes("valor_autorizado")
 
     @property
     def valor_pago_total(self):
-        from django.db.models import Sum
-        return self.solicitacoes.aggregate(total=Sum("valor_pago"))["total"] or 0
+        return self._total_solicitacoes("valor_pago")
 
     def get_transicoes_permitidas(self) -> set[str]:
         return STATUS_TRANSITIONS.get(self.status, set())

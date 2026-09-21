@@ -2,7 +2,6 @@ from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
-from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.response import Response
 
 from apps.core.models.municipality import Municipality
@@ -18,6 +17,8 @@ from apps.sgd.services import demand as demand_service
 from apps.sgd.services.approval import demand_visibility_scope
 from apps.sgd.views.approval import DemandApprovalMixin
 from apps.sgd.views.demand_document import DemandDocumentMixin
+from apps.sgp.models import Activity
+from apps.sgp.models.workplan import WorkPlanAcao
 
 
 class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
@@ -46,9 +47,6 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
         return Response(DemandSerializer(demand).data)
 
     def create(self, request):
-        from apps.sgp.models import Activity
-        from apps.sgp.models.workplan import WorkPlanAcao
-
         entrada = DemandCreateSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
         dados = entrada.validated_data
@@ -122,11 +120,5 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
             solicitacao = demand_service.atualizar_solicitacao(solicitacao, **entrada.validated_data)
             return Response(DemandRequestSerializer(solicitacao).data)
 
-        from apps.sgd.models.demand import STATUS_EDITAVEIS
-
-        if demand.status not in STATUS_EDITAVEIS:
-            raise DRFValidationError({
-                "status": f"Demanda em status '{demand.get_status_display()}' não pode ser editada (RF07)."
-            })
-        solicitacao.delete()
+        demand_service.remover_solicitacao(solicitacao)
         return Response(status=status.HTTP_204_NO_CONTENT)

@@ -69,6 +69,33 @@ def test_ajustar_duas_travas_valor_menor_libera_diferenca(demand_request_rn, sol
     assert allocation_territorial_rn.valor_comprometido == novo_valor
 
 
+def test_ajustar_duas_travas_acima_do_limite_bloqueia_sem_bypass(demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn):
+    from rest_framework.exceptions import ValidationError as DRFValidationError
+
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    novo_valor = limite_individual_rn.valor_limite + Decimal("1")
+
+    with pytest.raises(DRFValidationError):
+        balance_service.ajustar_duas_travas(demand_request=demand_request_rn, novo_valor=novo_valor, usuario=solicitante_rn)
+
+
+def test_ajustar_duas_travas_com_bypass_autoriza_excedente_sem_elevar_limite(demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn):
+    """RF16: `ignorar_limite_individual=True` autoriza o ajuste pontual acima do
+    saldo individual disponível, mas `valor_limite` continua o mesmo."""
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    valor_limite_antes = limite_individual_rn.valor_limite
+    novo_valor = valor_limite_antes + Decimal("1")
+
+    balance_service.ajustar_duas_travas(
+        demand_request=demand_request_rn, novo_valor=novo_valor, usuario=solicitante_rn,
+        ignorar_limite_individual=True,
+    )
+
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == novo_valor
+    assert limite_individual_rn.valor_limite == valor_limite_antes
+
+
 def test_liberar_duas_travas_libera_100_por_cento(demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn):
     balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
     balance_service.liberar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn, motivo="Recusada.")
@@ -114,9 +141,12 @@ def test_autorizar_excedente_exige_justificativa(demand_request_rn, solicitante_
         )
 
 
-def test_autorizar_excedente_com_justificativa_remaneja_e_eleva_limite(
+def test_autorizar_excedente_com_justificativa_remaneja_sem_elevar_limite_individual(
     demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
 ):
+    """RF16: o remanejamento emergencial move o pool territorial, mas nunca eleva
+    `valor_limite` — senão o solicitante ganharia teto maior permanentemente por
+    causa de um excedente pontual."""
     from apps.core.tests.factories import StateFactory
     from apps.sgp.models.budget import BudgetAllocation, BudgetTransaction
     from apps.sgp.tests.factories import BudgetAllocationFactory
@@ -140,7 +170,7 @@ def test_autorizar_excedente_com_justificativa_remaneja_e_eleva_limite(
 
     assert origem.valor_alocado == Decimal("4500")
     assert allocation_territorial_rn.valor_alocado == Decimal("10500")
-    assert limite_individual_rn.valor_limite == valor_limite_antes + Decimal("500")
+    assert limite_individual_rn.valor_limite == valor_limite_antes
     assert BudgetTransaction.objects.filter(
         allocation=origem, tipo=BudgetTransaction.Tipo.REMANEJAMENTO,
     ).exists()

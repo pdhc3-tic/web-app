@@ -128,6 +128,18 @@ class WorkPlanAcao(models.Model):
         ),
     )
 
+    rubricas_previstas = models.ManyToManyField(
+        "sgp.BudgetRubrica",
+        blank=True,
+        related_name="acoes_previstas",
+        verbose_name="Rubricas previstas",
+        help_text=(
+            "Rubricas orçamentárias esperadas para esta Ação — usado pelo SGD "
+            "(RF23) pra alertar quando uma solicitação usa rubrica fora do "
+            "previsto. Vazio = sem previsão cadastrada, não gera alerta."
+        ),
+    )
+
     criado_em = models.DateTimeField(
         auto_now_add=True, verbose_name="Criado em"
     )
