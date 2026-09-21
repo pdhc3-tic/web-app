@@ -81,6 +81,55 @@ def test_autorizar_excedente_com_justificativa_autoriza_sem_elevar_limite(
     assert ultimo_step.justificativa == "Demanda urgente aprovada pela UGP."
 
 
+def test_remanejamento_territorial_seguido_de_autorizar_completa_a_decisao(
+    demand_request_rn, solicitante_rn, limite_individual_rn,
+):
+    """RF16, caso pool territorial: `autorizar-excedente` só remaneja o saldo
+    entre alocações — quem efetivamente transiciona a demanda e registra o
+    `ApprovalStep` é a chamada seguinte a `autorizar` (duas chamadas
+    ordenadas, documentado no corpo do PR)."""
+    from apps.core.tests.factories import StateFactory
+    from apps.sgp.models.budget import BudgetAllocation
+    from apps.sgp.tests.factories import BudgetAllocationFactory
+
+    territorio = demand_request_rn.demanda.activity.municipio.territory
+    allocation_territorial = BudgetAllocationFactory(
+        meta=demand_request_rn.meta, rubrica=demand_request_rn.rubrica,
+        nivel=BudgetAllocation.Nivel.TERRITORIAL, territorio=territorio, valor_alocado=Decimal("1000"),
+    )
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+
+    origem = BudgetAllocationFactory(
+        meta=demand_request_rn.meta, rubrica=demand_request_rn.rubrica,
+        nivel=BudgetAllocation.Nivel.ESTADUAL, territorio=None,
+        estado=StateFactory(sigla="RN", nome="Rio Grande do Norte"), valor_alocado=Decimal("5000"),
+    )
+    novo_valor = Decimal("1500")
+
+    balance_service.autorizar_excedente(
+        demand_request=demand_request_rn, origem_allocation=origem,
+        valor_excedente=Decimal("500"), justificativa="Remanejamento aprovado pela UGP.",
+        usuario=solicitante_rn,
+    )
+
+    demand = demand_request_rn.demanda
+    demand.status = "pre_autorizada"
+    demand.save(update_fields=["status"])
+
+    autorizar(
+        demand, responsavel=solicitante_rn, ajustes={demand_request_rn.pk: novo_valor},
+        excedente_autorizado=True, justificativa="Remanejamento aprovado pela UGP.",
+    )
+
+    demand.refresh_from_db()
+    assert demand.status == "autorizada"
+    demand_request_rn.refresh_from_db()
+    assert demand_request_rn.valor_autorizado == novo_valor
+    allocation_territorial.refresh_from_db()
+    assert allocation_territorial.valor_alocado == Decimal("1500")
+    assert allocation_territorial.valor_comprometido == novo_valor
+
+
 def test_preview_decisao_retorna_semaforo(demand_request_rn, allocation_territorial_rn, limite_individual_rn):
     preview = preview_impacto(demand_request_rn, Decimal("4600"))
     assert preview["individual"]["semaforo_apos"] in {"verde", "amarelo", "vermelho"}

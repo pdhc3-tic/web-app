@@ -72,8 +72,6 @@ def test_ajustar_duas_travas_valor_menor_libera_diferenca(demand_request_rn, sol
 
 
 def test_ajustar_duas_travas_acima_do_limite_bloqueia_sem_bypass(demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn):
-    from rest_framework.exceptions import ValidationError as DRFValidationError
-
     balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
     novo_valor = limite_individual_rn.valor_limite + Decimal("1")
 
@@ -129,7 +127,6 @@ def test_autorizar_excedente_exige_justificativa(demand_request_rn, solicitante_
     from apps.core.tests.factories import StateFactory
     from apps.sgp.models.budget import BudgetAllocation
     from apps.sgp.tests.factories import BudgetAllocationFactory
-    from rest_framework.exceptions import ValidationError as DRFValidationError
 
     origem = BudgetAllocationFactory(
         meta=demand_request_rn.meta, rubrica=demand_request_rn.rubrica,
