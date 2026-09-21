@@ -57,6 +57,8 @@ def test_passagem_cpf_invalido_bloqueia(activity_rn):
 
 
 def test_diaria_calcula_numero_diarias_e_valor_total(activity_rn, municipio_rn):
+    from django.core.cache import cache
+
     from apps.core.models.system_config import SystemConfig, TipoConfiguracao
 
     SystemConfig.objects.update_or_create(
@@ -69,9 +71,14 @@ def test_diaria_calcula_numero_diarias_e_valor_total(activity_rn, municipio_rn):
         "municipio_destino_id": municipio_rn.pk, "data_inicio": "2026-06-01", "data_fim": "2026-06-04",
         "meio_transporte": "rodoviario", "justificativa": "Visita técnica.",
     }
-    validado = validar_campos_json("diaria", campos, activity_rn)
-    assert validado.campos_json["numero_diarias"] == 3
-    assert validado.valor_estimado_auto == Decimal("600")
+    try:
+        validado = validar_campos_json("diaria", campos, activity_rn)
+        assert validado.campos_json["numero_diarias"] == 3
+        assert validado.valor_estimado_auto == Decimal("600")
+    finally:
+        # Cache de SystemConfig não é transacional — limpa pra não vazar
+        # "200" pros testes seguintes.
+        cache.delete("system_config:sgd_valor_diaria_padrao")
 
 
 def test_equipamento_menos_de_3_cotacoes_bloqueia_submissao(demand_rascunho_rn):
@@ -119,6 +126,8 @@ def test_equipamento_3_cotacoes_do_mesmo_fornecedor_bloqueia(demand_rascunho_rn)
 
 
 def test_rubrica_slug_para_tipo_corresponde_ao_mapeamento_configurado():
+    from django.core.cache import cache
+
     from apps.core.models.system_config import SystemConfig, TipoConfiguracao
     from apps.sgd.services.demand_request import rubrica_slug_para_tipo
 
@@ -126,8 +135,13 @@ def test_rubrica_slug_para_tipo_corresponde_ao_mapeamento_configurado():
         chave="sgd_mapeamento_tipo_rubrica",
         defaults={"valor": '{"diaria": "diarias-teste"}', "tipo": TipoConfiguracao.JSON},
     )
-
-    assert rubrica_slug_para_tipo("diaria") == "diarias-teste"
+    try:
+        assert rubrica_slug_para_tipo("diaria") == "diarias-teste"
+    finally:
+        # O cache de SystemConfig não é transacional (não é desfeito com o
+        # rollback do teste) — sem isso, o mapeamento estreito vaza pros
+        # testes seguintes que dependem do default completo.
+        cache.delete("system_config:sgd_mapeamento_tipo_rubrica")
 
 
 def test_atualizar_solicitacao_em_rascunho_permitido(demand_rascunho_rn, municipio_rn):
