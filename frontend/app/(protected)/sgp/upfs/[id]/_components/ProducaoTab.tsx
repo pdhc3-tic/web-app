@@ -1,13 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Sprout, Trash2 } from "lucide-react";
 import { Button } from "@/app/components/ui/Button/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { useToast } from "@/app/components/ui/Toast/Toast";
-import { CrudTab } from "@/app/components/ui/CrudTab/CrudTab";
-import { useFetch } from "@/app/lib/hooks/useFetch";
+import { CrudTab } from "@/app/components/sgp/CrudTab/CrudTab";
+import { ConfirmDeleteDialog } from "@/app/components/ui/ConfirmDeleteDialog/ConfirmDeleteDialog";
+import { ApiError } from "@/app/lib/api";
+import { qk } from "@/app/lib/queryKeys";
 import {
+  deleteProducao,
   listProducoes,
   SISTEMA_CRIACAO_OPTIONS,
   TIPO_OUTRA_OPTIONS,
@@ -15,26 +19,38 @@ import {
   type TipoProducao,
 } from "@/app/lib/producao";
 import { ProducaoSlideOver, type SlideOverMode } from "./ProducaoSlideOver";
-import { RemoverProducaoDialog } from "./RemoverProducaoDialog";
 
 type Props = { upfId: string };
 type SlideOverState = { open: false } | { open: true; mode: SlideOverMode; producao?: Producao };
 
 export function ProducaoTab({ upfId }: Props) {
+  const queryClient = useQueryClient();
+  const queryKey = qk.upf(upfId).producao;
+
   const {
-    data: producoes,
-    setData: setProducoes,
-    loading,
+    data: producoes = [] as Producao[],
+    isPending: loading,
     error,
-    reload,
-  } = useFetch((signal) => listProducoes(upfId, signal), [] as Producao[], [upfId]);
+    refetch,
+  } = useQuery({
+    queryKey,
+    queryFn: ({ signal }) => listProducoes(upfId, signal),
+  });
+
+  const errorMessage =
+    error instanceof ApiError
+      ? error.message
+      : error
+        ? "Não foi possível carregar."
+        : null;
 
   const [slideOver, setSlideOver] = useState<SlideOverState>({ open: false });
   const [remover, setRemover] = useState<Producao | null>(null);
   const { showToast } = useToast();
 
+  // Otimista via `setQueryData`: replace se já existe, insere no topo caso contrário.
   function handleSaved(saved: Producao) {
-    setProducoes((prev) => {
+    queryClient.setQueryData<Producao[]>(queryKey, (prev = []) => {
       const idx = prev.findIndex((p) => p.id === saved.id);
       if (idx === -1) return [saved, ...prev];
       const next = [...prev];
@@ -46,14 +62,21 @@ export function ProducaoTab({ upfId }: Props) {
   }
 
   function handleDeleted(id: number) {
-    setProducoes((prev) => prev.filter((p) => p.id !== id));
+    queryClient.setQueryData<Producao[]>(queryKey, (prev = []) =>
+      prev.filter((p) => p.id !== id),
+    );
     setRemover(null);
     showToast("Atividade removida.");
   }
 
   return (
     <div className="space-y-4">
-      <CrudTab loading={loading} error={error} onRetry={reload} skeleton={<TabelaSkeleton />}>
+      <CrudTab
+        loading={loading}
+        error={errorMessage}
+        onRetry={() => refetch()}
+        skeleton={<TabelaSkeleton />}
+      >
         {producoes.length > 0 && (
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm text-text-muted">
@@ -104,13 +127,16 @@ export function ProducaoTab({ upfId }: Props) {
         onSaved={handleSaved}
       />
 
-      <RemoverProducaoDialog
+      <ConfirmDeleteDialog
         open={remover !== null}
         onClose={() => setRemover(null)}
-        upfId={upfId}
-        producaoId={remover?.id ?? null}
-        descricao={remover ? atividadeNome(remover) : ""}
-        onDeleted={handleDeleted}
+        title="Remover atividade produtiva"
+        itemName={remover ? atividadeNome(remover) : ""}
+        onConfirm={async () => {
+          if (remover === null) return;
+          await deleteProducao(upfId, remover.id);
+          handleDeleted(remover.id);
+        }}
       />
 
     </div>
