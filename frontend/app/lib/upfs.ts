@@ -68,16 +68,17 @@ type MunicipalityOption = {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function buildUpfsQuery(params: ListUpfsParams): string {
+/**
+ * Parâmetros de filtro comuns à listagem e à exportação de UPFs.
+ * Fonte única de verdade — tanto `buildUpfsQuery` quanto `exportarUpfs` usam
+ * esta função para garantir que listagem e arquivo gerado sejam idênticos.
+ */
+function buildUpfsFilterParams(params: ExportUpfsParams): URLSearchParams {
   const qs = new URLSearchParams();
-  qs.set("limit", String(params.limit));
-  qs.set("offset", String(params.offset));
-
   if (params.search?.trim()) qs.set("q", params.search.trim());
   if (params.municipio) qs.set("municipio", params.municipio);
   if (params.territorio) qs.set("territorio", params.territorio);
   if (params.projeto) qs.set("projeto", params.projeto);
-  if (params.ordering) qs.set("ordering", params.ordering);
 
   // Status → parâmetro `ativa`.
   // O UPFViewSet só retorna inativas quando `ativa` aparece na query
@@ -92,6 +93,14 @@ function buildUpfsQuery(params: ListUpfsParams): string {
   if (params.cadastradoDe) qs.set("cadastrado_de", params.cadastradoDe);
   if (params.cadastradoAte) qs.set("cadastrado_ate", params.cadastradoAte);
 
+  return qs;
+}
+
+function buildUpfsQuery(params: ListUpfsParams): string {
+  const qs = buildUpfsFilterParams(params);
+  qs.set("limit", String(params.limit));
+  qs.set("offset", String(params.offset));
+  if (params.ordering) qs.set("ordering", params.ordering);
   return qs.toString();
 }
 
@@ -239,6 +248,22 @@ export async function fetchUpfsMapa(
 export type NestedRef = { id: number; nome: string };
 
 /**
+ * Município aninhado no `UpfDetail`. O backend serializa o Estado junto (id,
+ * sigla e nome) via `MunicipioNestedSerializer`, então a ficha nunca precisa
+ * de uma segunda requisição só para descobrir o Estado — a listagem já usa a
+ * mesma forma em `MunicipioResumo`.
+ *
+ * `estado` é opcional na tipagem para não quebrar respostas antigas em cache
+ * de dev, mas é obrigatório no contrato atual: a ficha da UPF sinaliza erro
+ * explícito quando vem ausente (ver `upfs/[id]/page.tsx`).
+ */
+export type MunicipioNested = {
+  id: number;
+  nome: string;
+  estado?: { id: number; sigla: string; nome: string };
+};
+
+/**
  * Titular aninhado no detalhe da UPF. Espelha
  * apps/sgp/serializers.py::TitularNestedSerializer. O titular é um MembroFamilia
  * (grau_parentesco="titular"). CPF vem CRU (sem máscara) — mascarar na exibição.
@@ -285,7 +310,7 @@ export type UpfDetail = {
   numero: string;
   complemento: string;
   bairro: string;
-  municipio: NestedRef;
+  municipio: MunicipioNested;
   territorio: NestedRef | null;
   comunidade: NestedRef | null;
   latitude: string | null;
@@ -587,4 +612,52 @@ export async function fetchProjetoOptions(
   } catch {
     return [];
   }
+}
+
+// ─── Exportação da listagem ───────────────────────────────────────────────────
+
+export type ExportUpfsParams = {
+  search?: string;
+  municipio?: string;
+  territorio?: string;
+  projeto?: string;
+  status?: StatusUpfFilter;
+  cadastradoDe?: string;
+  cadastradoAte?: string;
+};
+
+export const EXPORT_UPFS_ASYNC_THRESHOLD = 1_000;
+
+function nomeDerivadoUpfs(): string {
+  const agora = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const data = [agora.getFullYear(), pad(agora.getMonth() + 1), pad(agora.getDate())].join("-");
+  return `upfs_${data}.csv`;
+}
+
+function dispararDownload(blob: Blob, nome: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nome;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+export async function exportarUpfs(params: ExportUpfsParams): Promise<string> {
+  const qs = buildUpfsFilterParams(params);
+  qs.set("formato", "csv");
+
+  const res = await apiClient(`/api/v1/upfs/exportar/?${qs}`, {
+    signal: AbortSignal.timeout(120_000),
+  });
+
+  const cd = res.headers.get("Content-Disposition");
+  const match = cd ? /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd) : null;
+  const nome = match ? decodeURIComponent(match[1].trim()) : nomeDerivadoUpfs();
+
+  dispararDownload(await res.blob(), nome);
+  return nome;
 }

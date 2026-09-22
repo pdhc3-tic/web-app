@@ -26,10 +26,7 @@ type Submodule = {
   href?: string;
 };
 
-// Submódulos do SGP conforme Doc SGP §1.1. Ativos: UPFs, Atividades, Calendário,
-// Plano de Trabalho, Painel e Orçamento. Técnicos, Produção e Relatórios ficam
-// como "Em breve" (sem href) enquanto o PR do sprint 9d não mergeia — as páginas
-// só existem naquela branch, então manter os hrefs aqui levaria a 404.
+// Submódulos do SGP conforme Doc SGP §1.1.
 const SUBMODULES: Submodule[] = [
   {
     key: "upfs",
@@ -78,20 +75,23 @@ const SUBMODULES: Submodule[] = [
   {
     key: "tecnicos",
     title: "Técnicos",
-    description: "Gestão de técnicos do território.",
+    description: "Cadastro e vínculo de técnicos por território e OSC.",
     Icon: UserCog,
+    href: "/sgp/tecnicos/",
   },
   {
     key: "producao",
     title: "Produção da UPF",
     description: "Dados de produção e cadeias produtivas da unidade.",
     Icon: Sprout,
+    href: "/sgp/producao/",
   },
   {
     key: "relatorios",
     title: "Relatórios",
-    description: "Indicadores e relatórios consolidados do módulo.",
+    description: "Exportações consolidadas e indicadores do módulo.",
     Icon: BarChart3,
+    href: "/sgp/relatorios/",
   },
 ];
 
