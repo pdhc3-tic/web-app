@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, History } from "lucide-react";
 import { Button } from "@/app/components/ui/Button/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { Pagination } from "@/app/components/ui/Pagination/Pagination";
 import Spinner from "@/app/components/icons/Spinner";
-import { useFetch } from "@/app/lib/hooks/useFetch";
+import { ApiError } from "@/app/lib/api";
+import { qk } from "@/app/lib/queryKeys";
 import { fetchUpfHistorico, type HistoricoEntry } from "@/app/lib/upfs";
 import { relativeTime, absoluteDateTime } from "@/app/lib/datetime";
 
@@ -69,16 +71,26 @@ export function HistoricoTab({ upfId }: HistoricoTabProps) {
 
   const {
     data,
-    loading,
+    isPending: loading,
     error,
-    reload,
-  } = useFetch(
-    (signal) => fetchUpfHistorico(upfId, { page, pageSize: PAGE_SIZE }, signal),
-    { results: [] as HistoricoEntry[], count: 0, next: null, previous: null },
-    [upfId, page],
-  );
+    refetch,
+  } = useQuery({
+    queryKey: qk.upf(upfId).historico(page, PAGE_SIZE),
+    queryFn: ({ signal }) =>
+      fetchUpfHistorico(upfId, { page, pageSize: PAGE_SIZE }, signal),
+    // Mantém a página anterior enquanto a próxima carrega (Pagination fica
+    // estável — sem "página em branco" durante a troca).
+    placeholderData: (prev) => prev,
+  });
 
-  const { results: entries, count } = data;
+  const entries: HistoricoEntry[] = data?.results ?? [];
+  const count: number = data?.count ?? 0;
+  const errorMessage =
+    error instanceof ApiError
+      ? error.message
+      : error
+        ? "Não foi possível carregar."
+        : null;
 
   if (loading) {
     return (
@@ -88,14 +100,14 @@ export function HistoricoTab({ upfId }: HistoricoTabProps) {
     );
   }
 
-  if (error) {
+  if (errorMessage) {
     return (
       <div className="flex flex-col items-center gap-4 rounded-lg border border-border bg-surface px-6 py-16 text-center">
         <span className="flex h-12 w-12 items-center justify-center rounded-full bg-error-bg text-error-text">
           <AlertTriangle className="h-6 w-6" />
         </span>
-        <p className="max-w-sm text-sm text-text-muted">{error}</p>
-        <Button variant="secondary" onClick={reload}>
+        <p className="max-w-sm text-sm text-text-muted">{errorMessage}</p>
+        <Button variant="secondary" onClick={() => refetch()}>
           Tentar novamente
         </Button>
       </div>
