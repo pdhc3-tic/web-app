@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
   ArrowUp,
@@ -13,11 +14,14 @@ import {
 import { Button } from "@/app/components/ui/Button/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { useToast } from "@/app/components/ui/Toast/Toast";
-import { CrudTab } from "@/app/components/ui/CrudTab/CrudTab";
-import { useFetch } from "@/app/lib/hooks/useFetch";
+import { CrudTab } from "@/app/components/sgp/CrudTab/CrudTab";
+import { ConfirmDeleteDialog } from "@/app/components/ui/ConfirmDeleteDialog/ConfirmDeleteDialog";
+import { ApiError } from "@/app/lib/api";
+import { qk } from "@/app/lib/queryKeys";
 import { absoluteDateTime, formatDate, relativeTime } from "@/app/lib/datetime";
 import { FileTypeIcon } from "./FileTypeIcon";
 import {
+  deleteDocumento,
   downloadDocumento,
   listDocumentos,
   tipoDocumentoLabel,
@@ -25,7 +29,6 @@ import {
   type TipoDocumento,
 } from "@/app/lib/upfDocumentos";
 import { DocumentoSlideOver } from "./DocumentoSlideOver";
-import { RemoverDocumentoDialog } from "./RemoverDocumentoDialog";
 
 type Props = { upfId: string };
 type SortKey = "tipo" | "descricao" | "data_documento" | "tamanho_bytes" | "criado_em" | "criado_por";
@@ -48,13 +51,25 @@ function formatBytes(bytes: number): string {
 }
 
 export function DocumentosTab({ upfId }: Props) {
+  const queryClient = useQueryClient();
+  const queryKey = qk.upf(upfId).documentos;
+
   const {
-    data: documentos,
-    setData: setDocumentos,
-    loading,
+    data: documentos = [] as Documento[],
+    isPending: loading,
     error,
-    reload,
-  } = useFetch((signal) => listDocumentos(upfId, signal), [] as Documento[], [upfId]);
+    refetch,
+  } = useQuery({
+    queryKey,
+    queryFn: ({ signal }) => listDocumentos(upfId, signal),
+  });
+
+  const errorMessage =
+    error instanceof ApiError
+      ? error.message
+      : error
+        ? "Não foi possível carregar."
+        : null;
 
   const [slideOverOpen, setSlideOverOpen] = useState(false);
   const [remover, setRemover] = useState<Documento | null>(null);
@@ -84,14 +99,23 @@ export function DocumentosTab({ upfId }: Props) {
     }
   }
 
+  // Otimista: `setQueryData` insere o novo item direto no cache do
+  // TanStack Query — sem refetch e sem "piscar" na tela. Se o backend
+  // rejeitasse depois, o cache voltaria ao estado real na próxima
+  // invalidação; aqui o `saved` já é a resposta do POST, então é seguro.
   function handleSaved(saved: Documento) {
-    setDocumentos((prev) => [saved, ...prev]);
+    queryClient.setQueryData<Documento[]>(queryKey, (prev = []) => [
+      saved,
+      ...prev,
+    ]);
     showToast("Documento adicionado.");
     setSlideOverOpen(false);
   }
 
   function handleDeleted(id: number) {
-    setDocumentos((prev) => prev.filter((d) => d.id !== id));
+    queryClient.setQueryData<Documento[]>(queryKey, (prev = []) =>
+      prev.filter((d) => d.id !== id),
+    );
     setRemover(null);
     showToast("Documento removido.");
   }
@@ -106,7 +130,12 @@ export function DocumentosTab({ upfId }: Props) {
 
   return (
     <div className="space-y-4">
-      <CrudTab loading={loading} error={error} onRetry={reload} skeleton={<TabelaSkeleton />}>
+      <CrudTab
+        loading={loading}
+        error={errorMessage}
+        onRetry={() => refetch()}
+        skeleton={<TabelaSkeleton />}
+      >
         {documentos.length > 0 && (
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm text-text-muted">
@@ -151,13 +180,16 @@ export function DocumentosTab({ upfId }: Props) {
         onSaved={handleSaved}
       />
 
-      <RemoverDocumentoDialog
+      <ConfirmDeleteDialog
         open={remover !== null}
         onClose={() => setRemover(null)}
-        upfId={upfId}
-        documentoId={remover?.id ?? null}
-        nome={remover?.nome_original ?? ""}
-        onDeleted={handleDeleted}
+        title="Remover documento"
+        itemName={remover?.nome_original ?? ""}
+        onConfirm={async () => {
+          if (remover === null) return;
+          await deleteDocumento(upfId, remover.id);
+          handleDeleted(remover.id);
+        }}
       />
     </div>
   );
