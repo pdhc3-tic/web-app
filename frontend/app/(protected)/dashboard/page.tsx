@@ -175,7 +175,10 @@ export default function DashboardPage() {
             title="Ações críticas"
             description="Ações do Plano de Trabalho com execução abaixo do esperado"
             state={acoesCriticas}
-            href="/sgp/painel?situacao=em_atraso"
+            // `?criticas=1` liga o filtro dedicado do painel (semaforo vermelho).
+            // Antes ia para `situacao=em_atraso`, que é outro critério — a
+            // listagem podia trazer menos ou mais linhas que a contagem do card.
+            href="/sgp/painel?criticas=1"
           />
         </section>
       </div>
