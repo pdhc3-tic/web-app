@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { notFound, useParams } from "next/navigation";
+import { notFound, useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
@@ -45,32 +45,6 @@ const TAB_IDS = [
 type TabId = (typeof TAB_IDS)[number];
 
 type Status = "loading" | "ok" | "notfound" | "forbidden" | "error";
-
-/** Aba ativa espelhada no hash da URL (ex.: #moradia). */
-function useHashTab(): [TabId, (id: string) => void] {
-  const [tab, setTab] = useState<TabId>("localizacao");
-
-  useEffect(() => {
-    const read = () => {
-      const hash = window.location.hash.replace(/^#/, "");
-      setTab(
-        (TAB_IDS as readonly string[]).includes(hash)
-          ? (hash as TabId)
-          : "localizacao",
-      );
-    };
-    read();
-    window.addEventListener("hashchange", read);
-    return () => window.removeEventListener("hashchange", read);
-  }, []);
-
-  const change = (id: string) => {
-    history.replaceState(null, "", `#${id}`);
-    setTab(id as TabId);
-  };
-
-  return [tab, change];
-}
 
 function joinAddress(upf: UpfDetail): string {
   const line = [upf.logradouro, upf.numero].filter(Boolean).join(", ");
@@ -231,10 +205,46 @@ export default function UpfDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
 
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
   const [status, setStatus] = useState<Status>("loading");
   const [upf, setUpf] = useState<UpfDetail | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const [tab, setTab] = useHashTab();
+
+  const rawTab = searchParams.get("tab") ?? "";
+  const tab: TabId = (TAB_IDS as readonly string[]).includes(rawTab)
+    ? (rawTab as TabId)
+    : "localizacao";
+
+  /**
+   * Trocar de aba é ação do usuário — usa `router.push` para o Voltar do
+   * browser percorrer as abas visitadas. Parte de uma cópia dos `searchParams`
+   * para não descartar outros params (ex.: filtros da aba Formulários) ao
+   * reescrever a URL.
+   */
+  const setTab = (id: string) => {
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("tab", id);
+    router.push(`${pathname}?${next.toString()}`, { scroll: false });
+  };
+
+  /**
+   * Compatibilidade com URLs antigas: quando a página abre sem `?tab=` mas com
+   * um hash de aba válido (`#membros`, `#producao`, …), converte para
+   * `?tab=<id>` via `router.replace` — não polui o histórico e mantém quem já
+   * tinha o link salvo aterrizando na aba correta.
+   */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (searchParams.get("tab")) return;
+    const hash = window.location.hash.replace(/^#/, "");
+    if (!(TAB_IDS as readonly string[]).includes(hash)) return;
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("tab", hash);
+    router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+  }, [searchParams, router, pathname]);
 
   useEffect(() => {
     // Protege contra ids não numéricos (ex.: colisão com /sgp/upfs/nova/).

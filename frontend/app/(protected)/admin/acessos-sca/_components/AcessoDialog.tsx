@@ -61,7 +61,7 @@ type Props = {
 /**
  * Confirmação de revogação / reativação de acesso ao app SCA.
  *
- * Segue o padrão dos diálogos de confirmação da casa (RemoverMembroDialog):
+ * Segue o padrão dos diálogos de confirmação da casa (ConfirmDeleteDialog):
  * SlideOver com os botões no prop `footer` — nunca inline no corpo —, o padding
  * aplicado aqui pelo chamador (`px-4 py-6`) e o estado `saving` vivendo neste
  * componente, que é quem renderiza o SlideOver.

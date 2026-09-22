@@ -15,6 +15,8 @@ type SubmoduleCardProps = {
   href?: string;
   /** Contador do card ativo: número exibido, `null` = carregando/erro ("—"). Omitir = sem contador. */
   count?: number | null;
+  /** Data-testid do wrapper (Link quando ativo, div quando desabilitado). */
+  testId?: string;
 };
 
 const CARD_BASE =
@@ -73,11 +75,13 @@ export function SubmoduleCard({
   Icon,
   href,
   count,
+  testId,
 }: SubmoduleCardProps) {
   if (href) {
     return (
       <Link
         href={href}
+        data-testid={testId}
         className={`${CARD_BASE} hover:border-primary/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary`}
       >
         <CardBody
@@ -94,6 +98,7 @@ export function SubmoduleCard({
   return (
     <div
       aria-disabled="true"
+      data-testid={testId}
       className={`${CARD_BASE} cursor-not-allowed opacity-60`}
     >
       <CardBody

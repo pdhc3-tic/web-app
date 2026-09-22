@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/app/components/layout/AppShell";
 import { Sidebar } from "@/app/components/layout/Sidebar";
 import { ToastProvider } from "@/app/components/ui/Toast/Toast";
+import { QueryProvider } from "@/app/providers/QueryProvider";
 
 export default async function ProtectedLayout({
   children,
@@ -12,8 +13,10 @@ export default async function ProtectedLayout({
   const session = await auth();
   if (!session) redirect("/login");
   return (
-    <ToastProvider>
-      <AppShell sidebar={<Sidebar />}>{children}</AppShell>
-    </ToastProvider>
+    <QueryProvider>
+      <ToastProvider>
+        <AppShell sidebar={<Sidebar />}>{children}</AppShell>
+      </ToastProvider>
+    </QueryProvider>
   );
 }
