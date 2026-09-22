@@ -217,8 +217,34 @@ export default function UpfDetailPage() {
   const tab: TabId = (TAB_IDS as readonly string[]).includes(rawTab)
     ? (rawTab as TabId)
     : "localizacao";
-  const setTab = (id: string) =>
-    router.replace(`${pathname}?tab=${id}`, { scroll: false });
+
+  /**
+   * Trocar de aba é ação do usuário — usa `router.push` para o Voltar do
+   * browser percorrer as abas visitadas. Parte de uma cópia dos `searchParams`
+   * para não descartar outros params (ex.: filtros da aba Formulários) ao
+   * reescrever a URL.
+   */
+  const setTab = (id: string) => {
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("tab", id);
+    router.push(`${pathname}?${next.toString()}`, { scroll: false });
+  };
+
+  /**
+   * Compatibilidade com URLs antigas: quando a página abre sem `?tab=` mas com
+   * um hash de aba válido (`#membros`, `#producao`, …), converte para
+   * `?tab=<id>` via `router.replace` — não polui o histórico e mantém quem já
+   * tinha o link salvo aterrizando na aba correta.
+   */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (searchParams.get("tab")) return;
+    const hash = window.location.hash.replace(/^#/, "");
+    if (!(TAB_IDS as readonly string[]).includes(hash)) return;
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("tab", hash);
+    router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+  }, [searchParams, router, pathname]);
 
   useEffect(() => {
     // Protege contra ids não numéricos (ex.: colisão com /sgp/upfs/nova/).
