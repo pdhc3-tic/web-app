@@ -170,10 +170,16 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
     [],
   );
 
-  // Prefill de edição: descobre o estado a partir do município e hidrata a cascata.
+  // Prefill de edição: descobre o estado a partir do município e hidrata a
+  // cascata. Compartilha `hydrateCascadeRef` com `continueDraft` — assim,
+  // quando o usuário clica "Continuar rascunho" no meio da hidratação inicial
+  // da edição, o abort no continueDraft encerra estas requisições em voo
+  // (senão elas resolveriam depois com dados da edição por cima do rascunho).
   useEffect(() => {
     if (mode !== "edit" || !initialData) return;
+    hydrateCascadeRef.current?.abort();
     const controller = new AbortController();
+    hydrateCascadeRef.current = controller;
     (async () => {
       try {
         const muni = await fetchMunicipality(
@@ -231,8 +237,21 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
   const municipioCascadeRef = useRef<AbortController | null>(null);
   const hydrateCascadeRef = useRef<AbortController | null>(null);
 
-  // Cancela a hidratação de rascunho pendente ao desmontar.
-  useEffect(() => () => { hydrateCascadeRef.current?.abort(); }, []);
+  // Cancela TODAS as requisições em voo ao desmontar o wizard: as cascatas
+  // ativas (estado/município) e a hidratação (edição inicial ou rascunho
+  // retomado). Antes o cleanup só cobria a hidratação — se o usuário fechava
+  // o wizard enquanto a cascata do estado estava carregando municípios, a
+  // resposta chegava depois do unmount e batia num setState de componente
+  // desmontado. Todas as requisições ficam sob controladores versionados
+  // pela ref, então abortá-las aqui garante quiescência completa.
+  useEffect(
+    () => () => {
+      hydrateCascadeRef.current?.abort();
+      estadoCascadeRef.current?.abort();
+      municipioCascadeRef.current?.abort();
+    },
+    [],
+  );
 
   function handleEstadoChange(value: string) {
     dirty.current = true;
@@ -246,7 +265,13 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
       estadoCascadeRef.current = ctrl;
       fetchMunicipalitiesByState(value, ctrl.signal)
         .then((opts) => { if (!ctrl.signal.aborted) setMunicipioOptions(opts); })
-        .catch(() => { if (!estadoCascadeRef.current?.signal.aborted) setMunicipioOptions([]); });
+        // Verifica o `ctrl` do próprio closure, não o ref: numa troca rápida
+        // (troca Estado A → B), a promise da chamada de A resolve depois que o
+        // ref já aponta para o controller de B. Ler `estadoCascadeRef.current`
+        // aqui daria o ctrl de B (que não foi abortado) e essa branch
+        // limparia os municípios que a chamada de B já havia acabado de
+        // preencher. Amarrar no `ctrl` local corta essa condição.
+        .catch(() => { if (!ctrl.signal.aborted) setMunicipioOptions([]); });
     }
   }
 
@@ -261,7 +286,10 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
       municipioCascadeRef.current = ctrl;
       fetchComunidadeOptions(value, ctrl.signal)
         .then((opts) => { if (!ctrl.signal.aborted) setComunidadeOptions(opts); })
-        .catch(() => { if (!municipioCascadeRef.current?.signal.aborted) setComunidadeOptions([]); });
+        // Mesmo motivo do handleEstadoChange: capturar o próprio `ctrl` do
+        // closure em vez do ref, para não zerar comunidades já povoadas por
+        // uma troca rápida subsequente.
+        .catch(() => { if (!ctrl.signal.aborted) setComunidadeOptions([]); });
     }
   }
 
@@ -378,6 +406,11 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
     setDraftDismissed(true);
     hydrateCascadeRef.current?.abort();
     const ctrl = new AbortController();
+    // Reset do controller de hidratação a partir de event handler (clique do
+    // usuário), não de effect: escrever no ref é seguro aqui, mas a nova
+    // regra `react-hooks/immutability` do React 19 não distingue os dois
+    // contextos porque o mesmo ref é usado dentro de `useEffect` da edição.
+    // eslint-disable-next-line react-hooks/immutability
     hydrateCascadeRef.current = ctrl;
     hydrateCascade(existing.data, ctrl.signal);
   }
