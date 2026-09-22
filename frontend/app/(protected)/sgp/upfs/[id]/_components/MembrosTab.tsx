@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Download,
   Eye,
@@ -17,17 +18,18 @@ import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { useToast } from "@/app/components/ui/Toast/Toast";
 import Spinner from "@/app/components/icons/Spinner";
 import { ApiError } from "@/app/lib/api";
-import { CrudTab } from "@/app/components/ui/CrudTab/CrudTab";
-import { useFetch } from "@/app/lib/hooks/useFetch";
+import { CrudTab } from "@/app/components/sgp/CrudTab/CrudTab";
+import { ConfirmDeleteDialog } from "@/app/components/ui/ConfirmDeleteDialog/ConfirmDeleteDialog";
+import { qk } from "@/app/lib/queryKeys";
 import {
   calcIdade,
+  deleteMembro,
   exportarMembrosCsv,
   ExportMembrosTimeoutError,
   getResumoMembros,
   listMembros,
   type MembroDetail,
   type MembroListItem,
-  type ResumoMembros,
 } from "@/app/lib/membros";
 import { maskCpf } from "@/app/lib/format";
 import { ComposicaoResumoCard } from "./ComposicaoResumoCard";
@@ -36,7 +38,6 @@ import {
   type SensitivePermissions,
   type SlideOverMode,
 } from "./MembroSlideOver";
-import { RemoverMembroDialog } from "./RemoverMembroDialog";
 
 type Props = {
   upfId: string;
@@ -60,26 +61,41 @@ function idadeLabel(membro: MembroListItem): string {
 // ─── Componente principal ────────────────────────────────────────────────────
 
 export function MembrosTab({ upfId }: Props) {
+  const queryClient = useQueryClient();
+  const listaKey = qk.upf(upfId).membros;
+  const resumoKey = qk.upf(upfId).membrosResumo;
+
   const {
-    data: membros,
-    setData: setMembros,
-    loading,
+    data: membros = [] as MembroListItem[],
+    isPending: loading,
     error,
-    reload,
-  } = useFetch((signal) => listMembros(upfId, signal), [] as MembroListItem[], [upfId]);
+    refetch: refetchLista,
+  } = useQuery({
+    queryKey: listaKey,
+    queryFn: ({ signal }) => listMembros(upfId, signal),
+  });
 
   const {
-    data: resumo,
-    loading: resumoLoading,
+    data: resumo = null,
+    isPending: resumoLoading,
     error: resumoError,
-    reload: reloadResumo,
-  } = useFetch(
-    (signal) => getResumoMembros(upfId, signal),
-    null as ResumoMembros | null,
-    [upfId],
-  );
+    refetch: refetchResumo,
+  } = useQuery({
+    queryKey: resumoKey,
+    queryFn: ({ signal }) => getResumoMembros(upfId, signal),
+  });
 
+  const errorMessage =
+    error instanceof ApiError
+      ? error.message
+      : error
+        ? "Não foi possível carregar."
+        : null;
   const resumoErro = resumoError !== null;
+
+  const reloadResumo = () => {
+    void refetchResumo();
+  };
 
   const [slideOver, setSlideOver] = useState<SlideOverState>({ open: false });
   const [remover, setRemover] = useState<MembroListItem | null>(null);
@@ -195,7 +211,7 @@ export function MembrosTab({ upfId }: Props) {
         : {}),
     };
 
-    setMembros((prev) => {
+    queryClient.setQueryData<MembroListItem[]>(listaKey, (prev = []) => {
       const idx = prev.findIndex((m) => m.id === saved.id);
       if (idx === -1) return [listItem, ...prev];
       const next = [...prev];
@@ -203,7 +219,10 @@ export function MembrosTab({ upfId }: Props) {
       return next;
     });
 
-    reloadResumo();
+    // Resumo (BE-23) precisa refazer o count — não dá para simular otimista
+    // com precisão (ele agrega faixas etárias e gênero, cálculos que o backend
+    // faz). `invalidateQueries` marca stale e refaz a chamada.
+    void queryClient.invalidateQueries({ queryKey: resumoKey });
     showToast(
       slideOver.open && slideOver.mode === "edit"
         ? "Membro atualizado."
@@ -215,8 +234,10 @@ export function MembrosTab({ upfId }: Props) {
   // Callback do diálogo — DELETE já foi confirmado pelo backend nesse ponto.
   // Basta remover a linha da lista, fechar o diálogo e disparar o toast.
   function handleDeleteConfirmed(id: number) {
-    setMembros((prev) => prev.filter((m) => m.id !== id));
-    reloadResumo();
+    queryClient.setQueryData<MembroListItem[]>(listaKey, (prev = []) =>
+      prev.filter((m) => m.id !== id),
+    );
+    void queryClient.invalidateQueries({ queryKey: resumoKey });
     setRemover(null);
     showToast("Membro removido.");
   }
@@ -244,8 +265,11 @@ export function MembrosTab({ upfId }: Props) {
           é o do EmptyState logo abaixo ("Adicionar primeiro membro"). */}
       <CrudTab
         loading={loading}
-        error={error}
-        onRetry={() => { reload(); reloadResumo(); }}
+        error={errorMessage}
+        onRetry={() => {
+          void refetchLista();
+          void refetchResumo();
+        }}
         skeleton={<CarregandoSection />}
       >
         {membros.length > 0 && (
@@ -327,13 +351,17 @@ export function MembrosTab({ upfId }: Props) {
         }
       />
 
-      <RemoverMembroDialog
+      <ConfirmDeleteDialog
         open={remover !== null}
         onClose={() => setRemover(null)}
-        upfId={upfId}
-        membroId={remover?.id ?? null}
-        membroNome={remover?.nome_completo ?? ""}
-        onDeleted={handleDeleteConfirmed}
+        title="Remover membro"
+        itemName={remover?.nome_completo ?? ""}
+        description="Esta ação será registrada no histórico mas não poderá ser desfeita."
+        onConfirm={async () => {
+          if (remover === null) return;
+          await deleteMembro(upfId, remover.id);
+          handleDeleteConfirmed(remover.id);
+        }}
       />
     </div>
   );
