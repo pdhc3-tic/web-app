@@ -17,7 +17,8 @@ type CrudTabProps = {
  * seção de erro com botão "Tentar novamente" em caso de falha, ou o conteúdo
  * quando os dados chegaram.
  *
- * Use com `useFetch` — passe `loading`, `error` e `reload` diretamente.
+ * Ligado ao TanStack Query: passe `isPending` como `loading`, a mensagem de
+ * erro (derivada de `ApiError.message`) como `error` e `refetch` como `onRetry`.
  */
 export function CrudTab({ loading, error, onRetry, skeleton, children }: CrudTabProps) {
   if (loading) return <>{skeleton}</>;
