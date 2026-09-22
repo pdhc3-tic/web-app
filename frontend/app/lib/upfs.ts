@@ -248,6 +248,22 @@ export async function fetchUpfsMapa(
 export type NestedRef = { id: number; nome: string };
 
 /**
+ * Município aninhado no `UpfDetail`. O backend serializa o Estado junto (id,
+ * sigla e nome) via `MunicipioNestedSerializer`, então a ficha nunca precisa
+ * de uma segunda requisição só para descobrir o Estado — a listagem já usa a
+ * mesma forma em `MunicipioResumo`.
+ *
+ * `estado` é opcional na tipagem para não quebrar respostas antigas em cache
+ * de dev, mas é obrigatório no contrato atual: a ficha da UPF sinaliza erro
+ * explícito quando vem ausente (ver `upfs/[id]/page.tsx`).
+ */
+export type MunicipioNested = {
+  id: number;
+  nome: string;
+  estado?: { id: number; sigla: string; nome: string };
+};
+
+/**
  * Titular aninhado no detalhe da UPF. Espelha
  * apps/sgp/serializers.py::TitularNestedSerializer. O titular é um MembroFamilia
  * (grau_parentesco="titular"). CPF vem CRU (sem máscara) — mascarar na exibição.
@@ -294,7 +310,7 @@ export type UpfDetail = {
   numero: string;
   complemento: string;
   bairro: string;
-  municipio: NestedRef;
+  municipio: MunicipioNested;
   territorio: NestedRef | null;
   comunidade: NestedRef | null;
   latitude: string | null;

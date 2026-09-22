@@ -11,7 +11,7 @@ import { DefinitionList } from "@/app/components/ui/DefinitionList/DefinitionLis
 import { RestrictedAccess } from "@/app/components/ui/RestrictedAccess/RestrictedAccess";
 import { Tabs, type TabItem } from "@/app/components/ui/Tabs/Tabs";
 import { ApiError } from "@/app/lib/api";
-import { getUpfDetail, fetchMunicipality, fetchStateOptions, type UpfDetail } from "@/app/lib/upfs";
+import { getUpfDetail, type UpfDetail } from "@/app/lib/upfs";
 import { formatDate } from "@/app/lib/datetime";
 import {
   formatArea,
@@ -57,7 +57,7 @@ function gps(upf: UpfDetail): string {
     : "";
 }
 
-function buildTabs(upf: UpfDetail, choices: SgpChoices, estadoNome: string): TabItem[] {
+function buildTabs(upf: UpfDetail, choices: SgpChoices): TabItem[] {
   const seguridade =
     upf.seguridade_social.length > 0 ? (
       <div className="flex flex-wrap gap-1.5">
@@ -67,6 +67,21 @@ function buildTabs(upf: UpfDetail, choices: SgpChoices, estadoNome: string): Tab
       </div>
     ) : undefined;
 
+  // Estado vem embutido em `upf.municipio.estado` (contrato do
+  // `MunicipioNestedSerializer`). Quando o backend deixa de enviar essa chave
+  // — cadastro legado, resposta parcial —, a ficha exibe um chip vermelho de
+  // erro no lugar do valor. Nunca cai em "—", que sugeriria "não preencheu".
+  const estadoValor: React.ReactNode = upf.municipio.estado ? (
+    upf.municipio.estado.nome
+  ) : (
+    <span
+      className="inline-flex items-center rounded-full border border-error-text bg-error-bg px-2 py-0.5 text-2xs font-semibold text-error-text"
+      role="alert"
+    >
+      Localização incompleta — contate o suporte
+    </span>
+  );
+
   return [
     {
       id: "localizacao",
@@ -74,7 +89,7 @@ function buildTabs(upf: UpfDetail, choices: SgpChoices, estadoNome: string): Tab
       content: (
         <DefinitionList
           items={[
-            { label: "Estado", value: estadoNome || undefined },
+            { label: "Estado", value: estadoValor },
             { label: "Município", value: upf.municipio.nome },
             { label: "Comunidade", value: upf.comunidade?.nome },
             { label: "Território", value: upf.territorio?.nome },
@@ -209,7 +224,6 @@ export default function UpfDetailPage() {
 
   const [status, setStatus] = useState<Status>("loading");
   const [upf, setUpf] = useState<UpfDetail | null>(null);
-  const [estadoNome, setEstadoNome] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
 
   const rawTab = searchParams.get("tab") ?? "";
@@ -272,25 +286,10 @@ export default function UpfDetailPage() {
     return () => controller.abort();
   }, [id, reloadKey]);
 
-  useEffect(() => {
-    if (!upf) return;
-    const controller = new AbortController();
-    Promise.all([
-      fetchMunicipality(upf.municipio.id, controller.signal),
-      fetchStateOptions(controller.signal),
-    ])
-      .then(([muni, opts]) => {
-        const match = opts.find((o) => o.value === String(muni.state));
-        if (match) setEstadoNome(match.label);
-      })
-      .catch(() => {});
-    return () => controller.abort();
-  }, [upf?.municipio.id]);
-
   const choices = useSgpChoices();
   const tabs = useMemo(
-    () => (upf ? buildTabs(upf, choices, estadoNome) : []),
-    [upf, choices, estadoNome],
+    () => (upf ? buildTabs(upf, choices) : []),
+    [upf, choices],
   );
 
   function handlePhotoChange(url: string | null) {
