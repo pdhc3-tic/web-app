@@ -83,19 +83,28 @@ function PainelAcompanhamentoConteudo() {
       return /^\d+$/.test(bruto) ? bruto : "";
     };
     const situacao = searchParams.get("situacao") ?? "";
+    // `criticas=1` na URL liga o filtro; qualquer outro valor é ignorado.
+    // Precisa desta forma explícita porque `criticas` é boolean no state e o
+    // laço genérico abaixo trata `valor` como string.
+    const criticas = searchParams.get("criticas") === "1";
     return {
       meta: id("meta"),
       territorio: id("territorio"),
       situacao: SITUACOES_VALIDAS.includes(situacao) ? situacao : "",
+      criticas,
     };
   }, [searchParams]);
 
   const escreverFiltros = useCallback(
     (proximos: PainelFiltersValue) => {
       const qs = new URLSearchParams();
-      for (const [chave, valor] of Object.entries(proximos)) {
-        if (valor) qs.set(chave, valor);
-      }
+      // Serializa cada filtro conforme o seu tipo. `criticas` é boolean e vai
+      // como "1" (quando ligado) — o valor "0"/"false" não entra na URL, para
+      // manter o link limpo quando o filtro está desligado.
+      if (proximos.meta) qs.set("meta", proximos.meta);
+      if (proximos.territorio) qs.set("territorio", proximos.territorio);
+      if (proximos.situacao) qs.set("situacao", proximos.situacao);
+      if (proximos.criticas) qs.set("criticas", "1");
       const query = qs.toString();
       // `replace` e não `push`: mexer num Select não é navegação, e empilhar
       // uma entrada por tecla obrigaria o usuário a voltar N vezes.
@@ -203,7 +212,7 @@ function PainelAcompanhamentoConteudo() {
     if (!grupos) return [];
     const metaPorId = new Map(metas.map((m) => [m.id, m]));
 
-    return grupos.map((grupo) => {
+    const gruposMontados = grupos.map((grupo) => {
       const completa = metaPorId.get(grupo.meta.id);
       const meta = {
         ...grupo.meta,
@@ -222,7 +231,18 @@ function PainelAcompanhamentoConteudo() {
 
       return { meta, acoes };
     });
-  }, [grupos, metas, detalhes]);
+
+    // Filtro "criticas" recorta cada Meta para conter só as ações vermelhas e
+    // remove Metas que ficaram sem nenhuma ação — assim a contagem do card do
+    // Dashboard (Σ acoes vermelhas) bate exatamente com o que aparece na tela.
+    if (!filtros.criticas) return gruposMontados;
+    return gruposMontados
+      .map((g) => ({
+        ...g,
+        acoes: g.acoes.filter((i) => i.avaliacao.nivel === "vermelho"),
+      }))
+      .filter((g) => g.acoes.length > 0);
+  }, [grupos, metas, detalhes, filtros.criticas]);
 
   const criticas = useMemo(
     () =>
