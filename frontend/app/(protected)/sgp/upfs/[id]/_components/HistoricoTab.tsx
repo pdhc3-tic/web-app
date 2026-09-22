@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, History } from "lucide-react";
 import { Button } from "@/app/components/ui/Button/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { Pagination } from "@/app/components/ui/Pagination/Pagination";
 import Spinner from "@/app/components/icons/Spinner";
 import { ApiError } from "@/app/lib/api";
+import { qk } from "@/app/lib/queryKeys";
 import { fetchUpfHistorico, type HistoricoEntry } from "@/app/lib/upfs";
 import { relativeTime, absoluteDateTime } from "@/app/lib/datetime";
 
@@ -69,37 +71,29 @@ type HistoricoTabProps = {
 
 export function HistoricoTab({ upfId }: HistoricoTabProps) {
   const [page, setPage] = useState(1);
-  const [entries, setEntries] = useState<HistoricoEntry[]>([]);
-  const [count, setCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true);
-    setError(null);
+  const {
+    data,
+    isPending: loading,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: qk.upf(upfId).historico(page, PAGE_SIZE),
+    queryFn: ({ signal }) =>
+      fetchUpfHistorico(upfId, { page, pageSize: PAGE_SIZE }, signal),
+    // Mantém a página anterior enquanto a próxima carrega (Pagination fica
+    // estável — sem "página em branco" durante a troca).
+    placeholderData: (prev) => prev,
+  });
 
-    fetchUpfHistorico(upfId, { page, pageSize: PAGE_SIZE }, controller.signal)
-      .then((data) => {
-        setEntries(data.results);
-        setCount(data.count);
-      })
-      .catch((e: unknown) => {
-        if (controller.signal.aborted) return;
-        setError(
-          e instanceof ApiError
-            ? e.message
-            : "Não foi possível carregar o histórico.",
-        );
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-
-    return () => controller.abort();
-  }, [upfId, page, reloadKey]);
+  const entries: HistoricoEntry[] = data?.results ?? [];
+  const count: number = data?.count ?? 0;
+  const errorMessage =
+    error instanceof ApiError
+      ? error.message
+      : error
+        ? "Não foi possível carregar."
+        : null;
 
   if (loading) {
     return (
@@ -109,14 +103,14 @@ export function HistoricoTab({ upfId }: HistoricoTabProps) {
     );
   }
 
-  if (error) {
+  if (errorMessage) {
     return (
       <div className="flex flex-col items-center gap-4 rounded-lg border border-border bg-surface px-6 py-16 text-center">
         <span className="flex h-12 w-12 items-center justify-center rounded-full bg-error-bg text-error-text">
           <AlertTriangle className="h-6 w-6" />
         </span>
-        <p className="max-w-sm text-sm text-text-muted">{error}</p>
-        <Button variant="secondary" onClick={() => setReloadKey((k) => k + 1)}>
+        <p className="max-w-sm text-sm text-text-muted">{errorMessage}</p>
+        <Button variant="secondary" onClick={() => refetch()}>
           Tentar novamente
         </Button>
       </div>

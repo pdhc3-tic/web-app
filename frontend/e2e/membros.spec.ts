@@ -35,7 +35,7 @@ const RESUMO_MEMBROS = /\/api\/v1\/sgp\/upfs\/\d+\/membros\/resumo\/$/;
 const PREFIXO_TESTE = "E2E Membro";
 
 async function abrirAbaMembros(page: Page, upfId: number): Promise<void> {
-  await page.goto(`/sgp/upfs/${upfId}#membros`);
+  await page.goto(`/sgp/upfs/${upfId}?tab=membros`);
   // Sem isto a aba ainda pode estar sob o skeleton do fetch da própria UPF.
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Membros" })).toBeVisible();

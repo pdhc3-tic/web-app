@@ -5,11 +5,14 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import connection
+from django.db.models import Q
 from django.test import TransactionTestCase
+from rest_framework.exceptions import PermissionDenied
 
-from apps.core.tests.factories import UserFactory
+from apps.core.tests.factories import RoleFactory, UserFactory
 from apps.sgp.models import BudgetAllocation, BudgetTransaction
 from apps.sgp.services import budget as budget_service
+from apps.sgp.services.access import resolver_escopo
 from apps.sgp.tests.factories import (
     BudgetAllocationFactory,
     BudgetRubricaFactory,
@@ -258,3 +261,40 @@ class TestReservaConcorrente(TransactionTestCase):
         assert sorted(resultados) == ["falhou", "ok"]
         self.allocation.refresh_from_db()
         assert self.allocation.valor_comprometido <= Decimal("100")
+
+
+def test_adt_sem_territorio_nao_vaza_orcamento():
+    """orcamento_detalhamento_scope() tem sua própria implementação da regra
+    de escopo (não delega a services/access.py — motivo documentado ali).
+    Este teste garante que ela não diverge da regra canônica no caso mais
+    arriscado: adt-acr sem território não pode virar acesso global."""
+    role_adt = RoleFactory(slug="adt-acr", nome="ADT/ACR")
+    user = UserFactory(profiles=[(role_adt, None)])
+
+    assert resolver_escopo(user) == ("vazio", None)
+
+    scope = budget_service.orcamento_detalhamento_scope(user)
+    assert scope == Q(pk__in=[])
+
+
+def test_adt_sem_territorio_falha_fechado_em_resolver_nivel_do_usuario():
+    """resolver_nivel_do_usuario() e resolver_nivel_painel() usam a mesma
+    hierarquia (_perfis_e_slugs/_territorios_do_adt), mas com formato de
+    retorno diferente de resolver_escopo() — 'escolher um nível/localização'
+    em vez de 'o conjunto todo' (por isso não delegam a services/access.py,
+    ver docstring de _perfis_e_slugs). Aqui a paridade é: as duas falham
+    fechado (PermissionDenied), nunca resolvem um nível a partir de um
+    perfil sem território."""
+    role_adt = RoleFactory(slug="adt-acr", nome="ADT/ACR")
+    user = UserFactory(profiles=[(role_adt, None)])
+
+    with pytest.raises(PermissionDenied):
+        budget_service.resolver_nivel_do_usuario(user)
+
+
+def test_adt_sem_territorio_falha_fechado_em_resolver_nivel_painel():
+    role_adt = RoleFactory(slug="adt-acr", nome="ADT/ACR")
+    user = UserFactory(profiles=[(role_adt, None)])
+
+    with pytest.raises(PermissionDenied):
+        budget_service.resolver_nivel_painel(user)

@@ -1,28 +1,11 @@
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 
 /**
- * As listas de choice moram em @/app/lib/choices.ts, onde servem de fallback
- * para o GET /api/v1/choices/. Reexportadas aqui por compatibilidade com os
- * imports já existentes do módulo UPF.
- *
- * Em componente, prefira `useSgpChoices()` (SgpChoicesProvider): ele devolve o
- * que o backend serve, caindo nestas listas quando o endpoint não responde.
- * Estas constantes diretas só fazem sentido fora de React.
+ * SEGURIDADE_OPTIONS não é publicado pelo endpoint /api/v1/choices/, por isso
+ * permanece como constante estática. Para todas as demais listas, use
+ * `useSgpChoices()` (SgpChoicesProvider), que devolve o que o backend serve.
  */
-export {
-  GENERO_OPTIONS,
-  COR_RACA_OPTIONS,
-  ESCOLARIDADE_OPTIONS,
-  DISPOSITIVO_OPTIONS,
-  PCT_OPTIONS,
-  POSSE_TERRA_OPTIONS,
-  SITUACAO_MORADIA_OPTIONS,
-  TIPO_MORADIA_OPTIONS,
-  MATERIAL_CONSTRUCAO_OPTIONS,
-  ENERGIA_OPTIONS,
-  AGUA_OPTIONS,
-  SEGURIDADE_OPTIONS,
-} from "@/app/lib/choices";
+export { SEGURIDADE_OPTIONS } from "@/app/lib/choices";
 
 /**
  * Garante que o valor atual apareça no select mesmo que não esteja na lista

@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, ClipboardList, Download, Plus } from "lucide-react";
 import { Button } from "@/app/components/ui/Button/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
@@ -89,29 +89,28 @@ function readFiltersFromSearchParams(
 }
 
 /**
- * Reflete os filtros na URL preservando o hash da aba (#formularios) e demais
- * query params que não fazem parte deste conjunto. Usa `replaceState` para não
- * poluir o histórico do browser em cada tecla digitada.
+ * Aplica os filtros a uma cópia dos `searchParams` sem tocar em params alheios
+ * (ex.: `?tab=`). Devolve a query string pronta para o router.replace.
  */
-function syncFiltersToUrl(filters: FormulariosFiltrosValue) {
-  if (typeof window === "undefined") return;
-  const url = new URL(window.location.href);
+function buildFiltersQueryString(
+  searchParams: URLSearchParams,
+  filters: FormulariosFiltrosValue,
+): string {
+  const next = new URLSearchParams(searchParams);
   for (const key of FILTER_QS_KEYS) {
     const raw = filters[key];
     // Booleano vira "1" (só quando true); strings vão como estão.
     const value = typeof raw === "boolean" ? (raw ? "1" : "") : raw;
-    if (value) url.searchParams.set(key, value);
-    else url.searchParams.delete(key);
+    if (value) next.set(key, value);
+    else next.delete(key);
   }
-  window.history.replaceState(
-    null,
-    "",
-    `${url.pathname}${url.search}${url.hash}`,
-  );
+  return next.toString();
 }
 
 function FormulariosTabView({ upfId }: Props) {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const [filters, setFilters] = useState<FormulariosFiltrosValue>(() =>
     readFiltersFromSearchParams(new URLSearchParams(searchParams.toString())),
   );
@@ -172,7 +171,18 @@ function FormulariosTabView({ upfId }: Props) {
   ]);
 
   useEffect(() => {
-    syncFiltersToUrl(filters);
+    // Usa `router.replace` do Next em vez de `window.history.replaceState` para
+    // manter o estado do roteador em sincronia com a URL — sem isso, um `push`
+    // subsequente (ex.: troca de aba) partiria da URL antiga. O `replace` não
+    // polui o histórico do browser, mesmo comportamento do código anterior.
+    const qs = buildFiltersQueryString(
+      new URLSearchParams(searchParams.toString()),
+      filters,
+    );
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    // Só o `filters` importa aqui: o resto muda por navegação externa, que já
+    // dispara nova hidratação natural do provider do Next.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
 
   useEffect(() => {

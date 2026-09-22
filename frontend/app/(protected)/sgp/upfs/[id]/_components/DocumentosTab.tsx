@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle,
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
@@ -14,9 +14,14 @@ import {
 import { Button } from "@/app/components/ui/Button/Button";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { useToast } from "@/app/components/ui/Toast/Toast";
+import { CrudTab } from "@/app/components/sgp/CrudTab/CrudTab";
+import { ConfirmDeleteDialog } from "@/app/components/ui/ConfirmDeleteDialog/ConfirmDeleteDialog";
+import { ApiError } from "@/app/lib/api";
+import { qk } from "@/app/lib/queryKeys";
 import { absoluteDateTime, formatDate, relativeTime } from "@/app/lib/datetime";
 import { FileTypeIcon } from "./FileTypeIcon";
 import {
+  deleteDocumento,
   downloadDocumento,
   listDocumentos,
   tipoDocumentoLabel,
@@ -24,7 +29,6 @@ import {
   type TipoDocumento,
 } from "@/app/lib/upfDocumentos";
 import { DocumentoSlideOver } from "./DocumentoSlideOver";
-import { RemoverDocumentoDialog } from "./RemoverDocumentoDialog";
 
 type Props = { upfId: string };
 type SortKey = "tipo" | "descricao" | "data_documento" | "tamanho_bytes" | "criado_em" | "criado_por";
@@ -47,33 +51,31 @@ function formatBytes(bytes: number): string {
 }
 
 export function DocumentosTab({ upfId }: Props) {
-  const [documentos, setDocumentos] = useState<Documento[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
+  const queryClient = useQueryClient();
+  const queryKey = qk.upf(upfId).documentos;
+
+  const {
+    data: documentos = [] as Documento[],
+    isPending: loading,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey,
+    queryFn: ({ signal }) => listDocumentos(upfId, signal),
+  });
+
+  const errorMessage =
+    error instanceof ApiError
+      ? error.message
+      : error
+        ? "Não foi possível carregar."
+        : null;
 
   const [slideOverOpen, setSlideOverOpen] = useState(false);
   const [remover, setRemover] = useState<Documento | null>(null);
   const { showToast } = useToast();
   const [sortKey, setSortKey] = useState<SortKey>("criado_em");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-
-  useEffect(() => {
-    const controller = new AbortController();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true);
-    setError(null);
-    listDocumentos(upfId, controller.signal)
-      .then((data) => setDocumentos(data))
-      .catch((e: unknown) => {
-        if (controller.signal.aborted) return;
-        setError(e instanceof Error ? e.message : "Não foi possível carregar os documentos.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [upfId, reloadKey]);
 
   const ordenados = useMemo(() => {
     const arr = [...documentos];
@@ -97,14 +99,23 @@ export function DocumentosTab({ upfId }: Props) {
     }
   }
 
+  // Otimista: `setQueryData` insere o novo item direto no cache do
+  // TanStack Query — sem refetch e sem "piscar" na tela. Se o backend
+  // rejeitasse depois, o cache voltaria ao estado real na próxima
+  // invalidação; aqui o `saved` já é a resposta do POST, então é seguro.
   function handleSaved(saved: Documento) {
-    setDocumentos((prev) => [saved, ...prev]);
+    queryClient.setQueryData<Documento[]>(queryKey, (prev = []) => [
+      saved,
+      ...prev,
+    ]);
     showToast("Documento adicionado.");
     setSlideOverOpen(false);
   }
 
   function handleDeleted(id: number) {
-    setDocumentos((prev) => prev.filter((d) => d.id !== id));
+    queryClient.setQueryData<Documento[]>(queryKey, (prev = []) =>
+      prev.filter((d) => d.id !== id),
+    );
     setRemover(null);
     showToast("Documento removido.");
   }
@@ -119,45 +130,48 @@ export function DocumentosTab({ upfId }: Props) {
 
   return (
     <div className="space-y-4">
-      {!loading && !error && documentos.length > 0 && (
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm text-text-muted">
-            {documentos.length}{" "}
-            {documentos.length === 1 ? "documento anexado" : "documentos anexados"}
-          </p>
-          <Button size="sm" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setSlideOverOpen(true)}>
-            Adicionar documento
-          </Button>
-        </div>
-      )}
-
-      {loading && <TabelaSkeleton />}
-
-      {!loading && error && <ErroSection message={error} onRetry={() => setReloadKey((k) => k + 1)} />}
-
-      {!loading && !error && documentos.length === 0 && (
-        <EmptyState
-          icon={<FileText className="h-7 w-7" />}
-          title="Nenhum documento anexado"
-          description="Adicione DAPs, contratos, laudos e outros documentos da UPF."
-          action={
-            <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setSlideOverOpen(true)}>
-              Adicionar primeiro documento
+      <CrudTab
+        loading={loading}
+        error={errorMessage}
+        onRetry={() => refetch()}
+        skeleton={<TabelaSkeleton />}
+      >
+        {documentos.length > 0 && (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-text-muted">
+              {documentos.length}{" "}
+              {documentos.length === 1 ? "documento anexado" : "documentos anexados"}
+            </p>
+            <Button size="sm" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setSlideOverOpen(true)}>
+              Adicionar documento
             </Button>
-          }
-        />
-      )}
+          </div>
+        )}
 
-      {!loading && !error && documentos.length > 0 && (
-        <Tabela
-          documentos={ordenados}
-          sortKey={sortKey}
-          sortDir={sortDir}
-          onSort={toggleSort}
-          onDownload={handleDownload}
-          onRemove={(d) => setRemover(d)}
-        />
-      )}
+        {documentos.length === 0 && (
+          <EmptyState
+            icon={<FileText className="h-7 w-7" />}
+            title="Nenhum documento anexado"
+            description="Adicione DAPs, contratos, laudos e outros documentos da UPF."
+            action={
+              <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setSlideOverOpen(true)}>
+                Adicionar primeiro documento
+              </Button>
+            }
+          />
+        )}
+
+        {documentos.length > 0 && (
+          <Tabela
+            documentos={ordenados}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSort={toggleSort}
+            onDownload={handleDownload}
+            onRemove={(d) => setRemover(d)}
+          />
+        )}
+      </CrudTab>
 
       <DocumentoSlideOver
         open={slideOverOpen}
@@ -166,13 +180,16 @@ export function DocumentosTab({ upfId }: Props) {
         onSaved={handleSaved}
       />
 
-      <RemoverDocumentoDialog
+      <ConfirmDeleteDialog
         open={remover !== null}
         onClose={() => setRemover(null)}
-        upfId={upfId}
-        documentoId={remover?.id ?? null}
-        nome={remover?.nome_original ?? ""}
-        onDeleted={handleDeleted}
+        title="Remover documento"
+        itemName={remover?.nome_original ?? ""}
+        onConfirm={async () => {
+          if (remover === null) return;
+          await deleteDocumento(upfId, remover.id);
+          handleDeleted(remover.id);
+        }}
       />
     </div>
   );
@@ -344,15 +361,4 @@ function TabelaSkeleton() {
   );
 }
 
-function ErroSection({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="flex flex-col items-center gap-4 rounded-lg border border-border bg-surface px-6 py-16 text-center">
-      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-error-bg text-error-text">
-        <AlertTriangle className="h-6 w-6" />
-      </span>
-      <p className="max-w-sm text-sm text-text-muted">{message}</p>
-      <Button variant="secondary" onClick={onRetry}>Tentar novamente</Button>
-    </div>
-  );
-}
 

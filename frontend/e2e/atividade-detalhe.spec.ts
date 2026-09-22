@@ -157,12 +157,12 @@ test.describe("Ficha da Atividade", () => {
     await expect(membro).toBeVisible();
     await expect(membro).toHaveAttribute(
       "href",
-      new RegExp(`^/sgp/upfs/${fixture.upfDoMembro}/?#membros$`),
+      new RegExp(`^/sgp/upfs/${fixture.upfDoMembro}/?\\?tab=membros$`),
     );
 
     await membro.click();
     await expect(page).toHaveURL(
-      new RegExp(`/sgp/upfs/${fixture.upfDoMembro}/?#membros$`),
+      new RegExp(`/sgp/upfs/${fixture.upfDoMembro}/?\\?tab=membros$`),
     );
     // Chegou na aba certa, e não só na ficha da UPF — e o membro clicado está
     // naquela lista. Afirmar a LINHA dele é mais forte que procurar um título:

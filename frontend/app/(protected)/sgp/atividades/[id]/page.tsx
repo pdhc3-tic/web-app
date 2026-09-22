@@ -698,7 +698,7 @@ function Participantes({ atividade }: { atividade: AtividadeDetail }) {
                     </span>
                   ) : (
                     <Link
-                      href={`/sgp/upfs/${upfId}/#membros`}
+                      href={`/sgp/upfs/${upfId}?tab=membros`}
                       className={linhaNavegavel}
                       data-testid={`participante-membro-${membro.id}`}
                     >

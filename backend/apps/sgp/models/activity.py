@@ -8,6 +8,8 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from apps.sgp.models.mixins import ScaSyncableModel
+
 from .base import SoftDeleteModel
 
 
@@ -83,7 +85,7 @@ GOOGLE_CALENDAR_SYNC_STATUS_CHOICES = [
 # Model
 # ---------------------------------------------------------------------------
 
-class Activity(SoftDeleteModel):
+class Activity(SoftDeleteModel, ScaSyncableModel):
     # ── Identificação ────────────────────────────────────────────────────────
     titulo = models.CharField(max_length=255, verbose_name="Título")
 
@@ -219,33 +221,6 @@ class Activity(SoftDeleteModel):
     criado_em = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
     atualizado_em = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
 
-    # ── Sync SCA (compatibilidade com dispositivos offline) ──────────────────
-    device_id = models.CharField(
-        max_length=100,
-        blank=True, default="",
-        verbose_name="Device ID",
-        help_text="Identificador do dispositivo de origem (sync SCA).",
-    )
-    uuid_local = models.UUIDField(
-        null=True, blank=True,
-        unique=True,
-        verbose_name="UUID Local",
-        help_text="UUID gerado pelo dispositivo para idempotência no sync SCA.",
-    )
-    ultima_origem = models.CharField(
-        max_length=10,
-        choices=[("sca", "SCA"), ("web", "Web")],
-        default="web",
-        verbose_name="Última Origem",
-        help_text="Indica se a última alteração partiu do app SCA ou da plataforma Web.",
-    )
-    ultimo_sync_em = models.DateTimeField(
-        null=True,
-        blank=True,
-        verbose_name="Último Sync SCA",
-        help_text="Timestamp da última sincronização bem-sucedida via SCA.",
-    )
-
     # ── Integração Google Calendar ────────────────────────────────────────────
     google_calendar_event_id = models.CharField(
         max_length=255,
@@ -286,7 +261,7 @@ class Activity(SoftDeleteModel):
     def get_transicoes_permitidas(self) -> set[str]:
         return STATUS_TRANSITIONS.get(self.status, set())
 
-    class Meta(SoftDeleteModel.Meta):
+    class Meta(SoftDeleteModel.Meta, ScaSyncableModel.Meta):
         verbose_name = "Atividade"
         verbose_name_plural = "Atividades"
         ordering = ["-data_inicio", "-criado_em"]

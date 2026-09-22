@@ -7,9 +7,13 @@ Cobre a tabela de testes da issue: manager padrão exclui inativos,
 continua enxergando UPFs inativas.
 """
 import pytest
+from django.db import connection
+from django.db.migrations.executor import MigrationExecutor
+from django.test import TransactionTestCase
 
-from apps.sgp.models import Activity, ActivityDocument, ActivityPhoto, UPF
-from apps.sgp.tests.factories import ActivityFactory, UPFFactory
+from apps.core.tests.factories import MunicipalityFactory, TerritoryFactory
+from apps.sgp.models import Activity, ActivityDocument, ActivityPhoto, MembroFamilia, UPF
+from apps.sgp.tests.factories import ActivityFactory, ProjetoFactory, UPFFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -175,3 +179,63 @@ class TestHistoricoVeInativos:
     ):
         response = auth_client.get(f"/api/v1/upfs/{upf_inativa.pk}/historico/")
         assert response.status_code == 200
+
+
+class TestMigrationRenomeiaAtivaParaAtivoPreservandoDados(TransactionTestCase):
+    """Exercita a migration de verdade (não só o schema final).
+
+    Cria uma UPF inativa no estado anterior ao rename (`ativa`, migration
+    0029), migra para frente até 0031 e confirma que o registro continua
+    existindo com `ativo=False`. Complementa `TestMigracaoPreservaDados`
+    (que só valida o schema atual) provando o que a issue pede — que o
+    RenameField preserva os dados de um registro que já existia antes da
+    migration rodar — via `MigrationExecutor`, como sugerido no review do
+    PR #284.
+    """
+
+    migrate_from = [("sgp", "0029_activitydocument_deleted_at")]
+    migrate_to = [("sgp", "0031_upf_ativa_para_ativo")]
+
+    def setUp(self):
+        super().setUp()
+        self.territorio = TerritoryFactory()
+        self.municipio = MunicipalityFactory(territory=self.territorio)
+        self.projeto = ProjetoFactory()
+        self.titular = MembroFamilia.objects.create(
+            nome_completo="Titular Histórico",
+            cpf="12345678900",
+            grau_parentesco="titular",
+        )
+
+        executor = MigrationExecutor(connection)
+        executor.migrate(self.migrate_from)
+
+        HistoricalUPF = executor.loader.project_state(self.migrate_from).apps.get_model(
+            "sgp", "UPF"
+        )
+        self.upf_id = HistoricalUPF.objects.create(
+            projeto_id=self.projeto.pk,
+            municipio_id=self.municipio.pk,
+            territorio_id=self.territorio.pk,
+            titular_id=self.titular.pk,
+            ativa=False,
+        ).pk
+
+        # Recarrega o executor: a migração para trás mudou o grafo carregado.
+        executor = MigrationExecutor(connection)
+        executor.migrate(self.migrate_to)
+        self.apps_final = executor.loader.project_state(self.migrate_to).apps
+
+    def tearDown(self):
+        # MigrationExecutor não devolve o schema ao HEAD sozinho — sem isso,
+        # os próximos testes do processo rodariam contra o schema de 0031.
+        executor = MigrationExecutor(connection)
+        executor.loader.build_graph()
+        executor.migrate(executor.loader.graph.leaf_nodes())
+        super().tearDown()
+
+    def test_ativa_preservado_como_ativo_false(self):
+        UPFFinal = self.apps_final.get_model("sgp", "UPF")
+        upf = UPFFinal.objects.get(pk=self.upf_id)
+        assert upf.ativo is False
+        assert not hasattr(upf, "ativa")
