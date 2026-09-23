@@ -4,7 +4,6 @@ from time import monotonic
 
 from django.db import connection
 from django.test import TransactionTestCase
-from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from apps.core.tests.factories import MunicipalityFactory, RoleFactory, StateFactory, TerritoryFactory, UserFactory
 from apps.sgd.services import balance as balance_service
@@ -80,25 +79,24 @@ class TestReservarDuasTravasConcorrente(TransactionTestCase):
 
 
 class TestSubmissaoConcorrenteEstouraPoolTerritorial(TransactionTestCase):
-    """A4: dois solicitantes distintos, cada um com limite individual de
-    sobra, disputando a mesma alocação territorial apertada — o perdedor da
-    corrida (`SaldoInsuficienteError` do motor do SGP, dentro do
-    `select_for_update` da alocação) precisa virar 400, não vazar como
-    exceção genérica (500)."""
+    """Dois solicitantes distintos, cada um com limite individual de sobra,
+    disputando a mesma alocação territorial apertada — o perdedor da corrida
+    (`SaldoInsuficienteError` do motor do SGP, dentro do `select_for_update`
+    da alocação) precisa virar 400, não vazar como exceção genérica (500)."""
 
     def setUp(self):
-        territory = TerritoryFactory(nome="Território Concorrência A4", estados=["RN"])
+        territory = TerritoryFactory(nome="Território Concorrência Territorial SGD", estados=["RN"])
         state = StateFactory(sigla="RN", nome="Rio Grande do Norte")
         municipio = MunicipalityFactory(
-            nome="Mossoró A4", state=state, territory=territory, codigo_ibge="2408902",
+            nome="Mossoró Territorial", state=state, territory=territory, codigo_ibge="2408902",
         )
         role = RoleFactory(slug="adt-acr", nome="ADT / ACR")
-        self.solicitante_1 = UserFactory(email="a4.um@test.com", profiles=[(role, territory)])
-        self.solicitante_2 = UserFactory(email="a4.dois@test.com", profiles=[(role, territory)])
+        self.solicitante_1 = UserFactory(email="territorial.um@test.com", profiles=[(role, territory)])
+        self.solicitante_2 = UserFactory(email="territorial.dois@test.com", profiles=[(role, territory)])
         activity = ActivityFactory(
             municipio=municipio, tecnico_responsavel=self.solicitante_1, acao=WorkPlanAcaoFactory(),
         )
-        rubrica = BudgetRubricaFactory(slug="rubrica-a4-sgd")
+        rubrica = BudgetRubricaFactory(slug="rubrica-territorial-concorrencia-sgd")
         BudgetAllocationFactory(
             meta=activity.acao.meta, rubrica=rubrica, territorio=territory, valor_alocado=Decimal("100"),
         )
@@ -120,16 +118,19 @@ class TestSubmissaoConcorrenteEstouraPoolTerritorial(TransactionTestCase):
             campos_json=campos_grafico,
         )
 
-    def test_perdedor_da_corrida_recebe_validation_error_nao_excecao_crua(self):
-        excecoes = []
+    def test_perdedor_da_corrida_recebe_400_pela_api_nao_500(self):
+        # Via APIView de verdade (não a função de service direto) — o que a
+        # revisão pediu foi o código de status HTTP, não só o tipo da exceção.
+        from rest_framework.test import APIClient
+
+        status_codes = []
 
         def tentar_submeter(demand, usuario):
             connection.close()
-            try:
-                demand_service.submeter_demanda(demand, usuario=usuario)
-                excecoes.append(None)
-            except Exception as exc:
-                excecoes.append(exc)
+            client = APIClient()
+            client.force_authenticate(user=usuario)
+            response = client.post(f"/api/v1/sgd/demandas/{demand.pk}/submeter/")
+            status_codes.append(response.status_code)
 
         t1 = threading.Thread(target=tentar_submeter, args=(self.demand_1, self.solicitante_1))
         t2 = threading.Thread(target=tentar_submeter, args=(self.demand_2, self.solicitante_2))
@@ -138,9 +139,7 @@ class TestSubmissaoConcorrenteEstouraPoolTerritorial(TransactionTestCase):
         t1.join()
         t2.join()
 
-        falhas = [exc for exc in excecoes if exc is not None]
-        assert len(falhas) == 1
-        assert isinstance(falhas[0], DRFValidationError)
+        assert sorted(status_codes) == [200, 400]
 
 
 class TestVerificarDuasTravasPerformance(TransactionTestCase):

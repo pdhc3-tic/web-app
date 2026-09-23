@@ -147,7 +147,7 @@ def test_preview_decisao_retorna_semaforo(demand_request_rn, allocation_territor
 def test_preview_decisao_nao_conta_reserva_ja_feita_em_dobro(
     demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
 ):
-    """A3: a solicitação já está reservada pelo valor estimado — perguntar o
+    """A solicitação já está reservada pelo valor estimado — perguntar o
     preview pelo mesmo valor não pode mudar a faixa nem bloquear (antes
     contava o valor inteiro de novo, por cima da própria reserva)."""
     balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
@@ -185,8 +185,8 @@ def test_articulador_nao_pode_devolver_a_propria_demanda(activity_rn, usuario_ar
 def test_autorizar_com_ajuste_de_id_de_outra_demanda_rejeitado(
     demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
 ):
-    """M8: um `demand_request_id` em `ajustes` que não pertence à demanda
-    sendo autorizada era ignorado em silêncio — agora vira 400."""
+    """Um `demand_request_id` em `ajustes` que não pertence à demanda sendo
+    autorizada era ignorado em silêncio — agora vira 400."""
     demand = demand_request_rn.demanda
     balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
     demand.status = "pre_autorizada"
@@ -200,8 +200,8 @@ def test_autorizar_com_ajuste_de_id_de_outra_demanda_rejeitado(
 def test_concluir_valor_pago_acima_do_autorizado_rejeitado(
     demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
 ):
-    """M6: pagar mais do que foi autorizado não é um caminho documentado
-    (§4.2 só descreve pago ≤ autorizado) — bloqueado direto."""
+    """Pagar mais do que foi autorizado não é um caminho documentado (§4.2
+    só descreve pago ≤ autorizado) — bloqueado direto."""
     demand = demand_request_rn.demanda
     balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
     demand_request_rn.valor_autorizado = demand_request_rn.valor_estimado

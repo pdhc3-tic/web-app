@@ -51,8 +51,8 @@ def test_passagem_classe_executiva_com_justificativa_ok(activity_rn):
 
 
 def test_passagem_ida_e_volta_string_truthy_rejeitada(activity_rn):
-    """M3: `"false"` (string) é truthy em Python — sem checagem estrita,
-    seria tratado como ida_e_volta=True."""
+    """`"false"` (string) é truthy em Python — sem checagem estrita, seria
+    tratado como ida_e_volta=True."""
     campos = _campos_passagem(ida_e_volta="false")
     with pytest.raises(DRFValidationError):
         validar_campos_json("passagem", campos, activity_rn)

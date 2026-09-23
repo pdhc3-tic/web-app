@@ -211,7 +211,7 @@ def test_submeter_demanda_bloqueio_de_uma_solicitacao_identifica_so_a_bloqueada(
 def test_editar_valor_em_devolvida_ajusta_reserva_ativa(
     demand_request_rn, solicitante_rn, usuario_articulador_rn, limite_individual_rn, allocation_territorial_rn,
 ):
-    """A2: em Devolvida a reserva é mantida (§4.2) — editar o valor de uma
+    """Em Devolvida a reserva é mantida (§4.2) — editar o valor de uma
     solicitação com reserva ativa ajusta a reserva na hora, não só o campo."""
     demand = demand_request_rn.demanda
     demand_service.submeter_demanda(demand, usuario=solicitante_rn)
@@ -229,8 +229,8 @@ def test_editar_valor_em_devolvida_ajusta_reserva_ativa(
 def test_resubmissao_apos_edicao_nao_bloqueia_a_toa(
     demand_request_rn, solicitante_rn, usuario_articulador_rn, limite_individual_rn, allocation_territorial_rn,
 ):
-    """A2: a solicitação editada em Devolvida já está com a reserva ajustada
-    — ressubmeter não deve checar o valor cheio de novo (isso bloquearia à
+    """A solicitação editada em Devolvida já está com a reserva ajustada —
+    ressubmeter não deve checar o valor cheio de novo (isso bloquearia à
     toa, já que o saldo já desconta essa própria reserva)."""
     demand = demand_request_rn.demanda
     demand_service.submeter_demanda(demand, usuario=solicitante_rn)

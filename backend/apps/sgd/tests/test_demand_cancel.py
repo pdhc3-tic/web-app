@@ -12,7 +12,7 @@ pytestmark = pytest.mark.django_db
 def test_cancelar_rascunho_nunca_reservado_nao_altera_saldo(
     demand_request_rn, solicitante_rn, limite_individual_rn, allocation_territorial_rn,
 ):
-    """A1: um Rascunho nunca chegou a reservar — cancelar não pode mexer no
+    """Um Rascunho nunca chegou a reservar — cancelar não pode mexer no
     comprometido de ninguém."""
     demand = demand_request_rn.demanda
     assert demand.status == "rascunho"
@@ -74,7 +74,7 @@ def test_cancelar_duas_vezes_nao_libera_duas_vezes(
     """Chamar `liberar_duas_travas` de novo numa reserva já liberada (ex.: o
     signal de atividade cancelada rodando sobre uma demanda que o próprio
     solicitante acabou de cancelar) não pode decrementar `valor_comprometido`
-    além de zero (A1)."""
+    além de zero."""
     demand = demand_request_rn.demanda
     demand_service.submeter_demanda(demand, usuario=solicitante_rn)
 

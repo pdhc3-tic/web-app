@@ -52,7 +52,7 @@ def test_demanda_terminal_nunca_dispara(activity_rn):
 
 
 def test_demanda_em_rascunho_nunca_dispara(activity_rn):
-    """M11: Rascunho nunca foi submetida — não tem etapa aguardando ninguém."""
+    """Rascunho nunca foi submetida — não tem etapa aguardando ninguém."""
     demand = DemandFactory(activity=activity_rn, status="rascunho")
     _voltar_no_tempo_dias_uteis(demand, 30)
 
@@ -64,8 +64,8 @@ def test_demanda_em_rascunho_nunca_dispara(activity_rn):
 
 
 def test_nao_notifica_duas_vezes_pelo_mesmo_periodo_parado(activity_rn, usuario_articulador_rn):
-    """M11: rodar a task duas vezes seguidas sobre a mesma demanda parada não
-    pode gerar duas notificações do mesmo período de inatividade.
+    """Rodar a task duas vezes seguidas sobre a mesma demanda parada não pode
+    gerar duas notificações do mesmo período de inatividade.
     `usuario_articulador_rn` precisa existir — sem responsável nenhum
     recebendo a notificação, nenhuma `Notification` é criada e a
     deduplicação (que olha pra essas linhas) não teria o que comparar."""

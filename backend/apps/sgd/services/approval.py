@@ -85,7 +85,7 @@ def preview_impacto(demand_request, valor: Decimal) -> dict:
     """`valor` é o novo valor proposto pelo aprovador — a solicitação já está
     reservada (pré-autorizada/autorizada) pelo valor atual, então só o delta
     entre os dois pesa no saldo; contar `valor` inteiro de novo dobraria a
-    reserva já feita (bug #A3 do review do PR #300)."""
+    reserva já feita."""
     solicitante = demand_request.demanda.solicitante
     rubrica = demand_request.rubrica
     meta = demand_request.meta
