@@ -208,43 +208,90 @@ def test_submeter_demanda_bloqueio_de_uma_solicitacao_identifica_so_a_bloqueada(
     assert limite_individual_rn.valor_comprometido == Decimal("0")
 
 
+def _editar_data_fim_da_diaria(demand_request, *, municipio, dias_a_mais: int) -> dict:
+    """`demand_request_rn` é tipo "diaria" — esse tipo sempre recalcula
+    valor_estimado a partir das datas (validado.valor_estimado_auto nunca é
+    None), então passar `valor_estimado` direto pro service não muda nada
+    sozinho: precisa editar os campos que o auto-cálculo usa."""
+    from datetime import date, timedelta
+
+    nova_data_fim = date.fromisoformat("2026-06-01") + timedelta(days=dias_a_mais)
+    return {
+        "beneficiario_nome": "Fulano de Tal", "beneficiario_cpf": "52998224725",
+        "beneficiario_cargo": "Técnico", "beneficiario_vinculo": "servidor_ufersa",
+        "municipio_destino_id": municipio.pk, "data_inicio": "2026-06-01",
+        "data_fim": nova_data_fim.isoformat(),
+        "meio_transporte": "rodoviario", "justificativa": "Visita técnica estendida.",
+    }
+
+
 def test_editar_valor_em_devolvida_ajusta_reserva_ativa(
     demand_request_rn, solicitante_rn, usuario_articulador_rn, limite_individual_rn, allocation_territorial_rn,
+    municipio_rn,
 ):
     """Em Devolvida a reserva é mantida (§4.2) — editar o valor de uma
     solicitação com reserva ativa ajusta a reserva na hora, não só o campo."""
-    demand = demand_request_rn.demanda
-    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
-    approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Ajustar valor.")
+    from django.core.cache import cache
 
-    novo_valor = demand_request_rn.valor_estimado + Decimal("200")
-    demand_service.atualizar_solicitacao(demand_request_rn, usuario=solicitante_rn, valor_estimado=novo_valor)
+    from apps.core.models.system_config import SystemConfig, TipoConfiguracao
 
-    limite_individual_rn.refresh_from_db()
-    allocation_territorial_rn.refresh_from_db()
-    assert limite_individual_rn.valor_comprometido == novo_valor
-    assert allocation_territorial_rn.valor_comprometido == novo_valor
+    SystemConfig.objects.update_or_create(
+        chave="sgd_valor_diaria_padrao", defaults={"valor": "200", "tipo": TipoConfiguracao.STRING},
+    )
+    try:
+        demand = demand_request_rn.demanda
+        demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+        approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Ajustar valor.")
+
+        campos = _editar_data_fim_da_diaria(demand_request_rn, municipio=municipio_rn, dias_a_mais=4)
+        demand_service.atualizar_solicitacao(demand_request_rn, usuario=solicitante_rn, campos_json=campos)
+        novo_valor = demand_request_rn.valor_estimado  # 4 diárias x R$200 — mutado in place pelo service
+
+        limite_individual_rn.refresh_from_db()
+        allocation_territorial_rn.refresh_from_db()
+        assert limite_individual_rn.valor_comprometido == novo_valor
+        assert allocation_territorial_rn.valor_comprometido == novo_valor
+    finally:
+        cache.delete("system_config:sgd_valor_diaria_padrao")
 
 
 def test_resubmissao_apos_edicao_nao_bloqueia_a_toa(
     demand_request_rn, solicitante_rn, usuario_articulador_rn, limite_individual_rn, allocation_territorial_rn,
+    municipio_rn,
 ):
     """A solicitação editada em Devolvida já está com a reserva ajustada —
     ressubmeter não deve checar o valor cheio de novo (isso bloquearia à
     toa, já que o saldo já desconta essa própria reserva)."""
-    demand = demand_request_rn.demanda
-    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
-    approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Ajustar valor.")
+    from django.core.cache import cache
 
-    novo_valor = limite_individual_rn.valor_limite  # usa 100% do limite — sem folga pra "pedir de novo"
-    demand_service.atualizar_solicitacao(demand_request_rn, usuario=solicitante_rn, valor_estimado=novo_valor)
+    from apps.core.models.system_config import SystemConfig, TipoConfiguracao
 
-    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    SystemConfig.objects.update_or_create(
+        chave="sgd_valor_diaria_padrao", defaults={"valor": "200", "tipo": TipoConfiguracao.STRING},
+    )
+    try:
+        demand = demand_request_rn.demanda
+        demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+        approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Ajustar valor.")
 
-    demand.refresh_from_db()
-    assert demand.status == "submetida"
-    limite_individual_rn.refresh_from_db()
-    assert limite_individual_rn.valor_comprometido == novo_valor
+        # Edita pro valor EXATO do limite — sem folga nenhuma pra "pedir de
+        # novo". Se a ressubmissão checasse o valor cheio de novo (em vez de
+        # pular quem já tem reserva ativa), contaria essa reserva em dobro e
+        # bloquearia aqui; com folga o teste passaria mesmo com o bug antigo.
+        dias_no_limite = int(limite_individual_rn.valor_limite / Decimal("200"))
+        campos = _editar_data_fim_da_diaria(demand_request_rn, municipio=municipio_rn, dias_a_mais=dias_no_limite)
+        demand_service.atualizar_solicitacao(demand_request_rn, usuario=solicitante_rn, campos_json=campos)
+        novo_valor = demand_request_rn.valor_estimado
+        assert novo_valor == limite_individual_rn.valor_limite
+
+        demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+
+        demand.refresh_from_db()
+        assert demand.status == "submetida"
+        limite_individual_rn.refresh_from_db()
+        assert limite_individual_rn.valor_comprometido == novo_valor
+    finally:
+        cache.delete("system_config:sgd_valor_diaria_padrao")
 
 
 def test_remover_solicitacao_com_reserva_ativa_libera_saldo(
@@ -314,12 +361,17 @@ def test_autorizar_excedente_rejeita_origem_territorial(
 ):
     """RF16: remanejamento emergencial só pode vir de saldo estadual ou
     nacional, nunca de outro pool territorial."""
+    from apps.core.tests.factories import TerritoryFactory
     from apps.sgp.models.budget import BudgetAllocation
     from apps.sgp.tests.factories import BudgetAllocationFactory
 
+    # Território diferente do de allocation_territorial_rn — mesma
+    # combinação (meta, rubrica, nivel, território) já existe naquela
+    # fixture, e colidiria com a unique constraint de BudgetAllocation.
+    outro_territorio = TerritoryFactory(nome="Território Origem Excedente", estados=["RN"])
     origem_territorial = BudgetAllocationFactory(
         meta=demand_request_rn.meta, rubrica=demand_request_rn.rubrica,
-        nivel=BudgetAllocation.Nivel.TERRITORIAL, territorio=allocation_territorial_rn.territorio,
+        nivel=BudgetAllocation.Nivel.TERRITORIAL, territorio=outro_territorio,
         valor_alocado=Decimal("5000"),
     )
 
