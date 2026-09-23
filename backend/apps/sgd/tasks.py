@@ -8,7 +8,7 @@ from django.utils import timezone
 from apps.core.models.notifications import Notification
 from apps.sgd.models.demand import STATUS_TERMINAIS, Demand
 from apps.sgd.services.approval import responsaveis_pela_etapa_atual
-from apps.sgd.services.notifications import evento_inatividade, notificar_inatividade
+from apps.sgd.services.notifications import EVENTO_INATIVIDADE, link_inatividade, notificar_inatividade
 
 try:
     import sentry_sdk
@@ -78,8 +78,8 @@ def _verificar_inatividade() -> int:
         referencia = max(filter(None, [ultima_etapa_em, demand.atualizado_em])).date()
         if _dias_uteis_entre(referencia, hoje) < DIAS_UTEIS_LIMITE:
             continue
-        evento = evento_inatividade(demand, referencia=referencia)
-        if Notification.objects.filter(evento=evento).exists():
+        link = link_inatividade(demand, referencia=referencia)
+        if Notification.objects.filter(evento=EVENTO_INATIVIDADE, link=link).exists():
             continue
         responsaveis = responsaveis_pela_etapa_atual(demand)
         notificar_inatividade(demand, responsaveis, referencia=referencia)
