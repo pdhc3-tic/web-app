@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
@@ -22,30 +23,14 @@ def _cancelar_demandas_nao_atendidas(sender, instance, **kwargs):
     if instance.status not in ACTIVITY_STATUS_CANCELAM_DEMANDAS:
         return
 
-    # Query só pega Demands ainda não-terminais — uma vez cancelada, saves
-    # subsequentes da mesma Activity não a encontram mais de novo.
-    # "Em atendimento" fica de fora do cancelamento automático — já está
-    # sendo atendida pela FGD, não é uma "demanda não atendida" (RF10).
-    from apps.sgd.models.demand import STATUS_TERMINAIS, Demand
-    from apps.sgd.services import balance as balance_service
-    from apps.sgd.services import notifications as notifications_service
-
-    demandas = Demand.objects.filter(activity=instance).exclude(
-        status__in=STATUS_TERMINAIS | {"em_atendimento"}
-    )
-    for demand in demandas:
-        for solicitacao in demand.solicitacoes.all():
-            balance_service.liberar_duas_travas(
-                demand_request=solicitacao, usuario=None,
-                motivo=f"Atividade vinculada em status '{instance.get_status_display()}'.",
-            )
-        demand.status = "cancelada"
-        demand.save(update_fields=["status", "atualizado_em"])
-
-        sigla = instance.municipio.state.sigla
-        notifications_service.notificar_cancelamento_automatico(
-            demand, notifications_service.usuarios_articuladores_do_estado(sigla),
-        )
+    # Despachada via Celery depois do commit, não executada direto aqui: a
+    # query de Demand vinculadas passa pela política RLS de sgd_demand, que
+    # só enxerga tudo com a sessão certa setada (ver apps.sgd.tasks); fazer
+    # esse SET LOCAL aqui, no meio da transação de quem salvou a Activity,
+    # vazaria a sessão privilegiada pro resto dela (SET LOCAL sobrevive a um
+    # savepoint liberado, só é desfeito num rollback pra ele).
+    from apps.sgd.tasks import cancelar_demandas_da_atividade
+    transaction.on_commit(lambda: cancelar_demandas_da_atividade.delay(instance.pk))
 
 
 @receiver(post_save, sender=Activity)
@@ -55,12 +40,5 @@ def _notificar_demandas_atividade_adiada(sender, instance, **kwargs):
     if instance.status != "adiada" or getattr(instance, "_status_anterior", None) == "adiada":
         return
 
-    from apps.sgd.models.demand import STATUS_TERMINAIS, Demand
-    from apps.sgd.services import notifications as notifications_service
-    from apps.sgd.services.approval import responsaveis_pela_etapa_atual
-
-    demandas = Demand.objects.filter(activity=instance).exclude(status__in=STATUS_TERMINAIS)
-    for demand in demandas:
-        notifications_service.notificar_atividade_adiada(
-            demand, responsaveis_pela_etapa_atual(demand), nova_data=instance.data_inicio,
-        )
+    from apps.sgd.tasks import notificar_demandas_atividade_adiada
+    transaction.on_commit(lambda: notificar_demandas_atividade_adiada.delay(instance.pk))

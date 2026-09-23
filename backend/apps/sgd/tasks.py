@@ -85,3 +85,90 @@ def _verificar_inatividade() -> int:
         notificar_inatividade(demand, responsaveis, referencia=referencia)
         notificadas += 1
     return notificadas
+
+
+ACTIVITY_STATUS_CANCELAM_DEMANDAS = {"cancelada", "nao_realizada"}
+
+
+@shared_task(name="sgd.tasks.cancelar_demandas_da_atividade")
+def cancelar_demandas_da_atividade(activity_id: int) -> int:
+    """Despachada por `apps.sgd.signals.activity._cancelar_demandas_nao_atendidas`
+    via `transaction.on_commit`, em vez de rodar direto no `post_save` — o
+    signal roda dentro da transação de quem salvou a Activity, e setar a
+    sessão privilegiada ali (ver `_sem_contexto_de_sessao_rls`) vazaria pro
+    resto dessa transação, já que `SET LOCAL` não é revertido por um
+    savepoint que só é liberado (não revertido)."""
+    try:
+        return _sem_contexto_de_sessao_rls(lambda: _cancelar_demandas_da_atividade(activity_id))
+    except Exception as exc:
+        sentry_sdk.capture_exception(exc)
+        logger.exception("Falha ao cancelar demandas da atividade %s.", activity_id)
+        raise
+
+
+def _cancelar_demandas_da_atividade(activity_id: int) -> int:
+    from apps.sgd.services import balance as balance_service
+    from apps.sgd.services import notifications as notifications_service
+    from apps.sgp.models.activity import Activity
+
+    try:
+        activity = Activity.objects.select_related("municipio__state").get(pk=activity_id)
+    except Activity.DoesNotExist:
+        return 0
+    if activity.status not in ACTIVITY_STATUS_CANCELAM_DEMANDAS:
+        # Mudou de status de novo entre o commit e a task rodar — nada a fazer.
+        return 0
+
+    # "Em atendimento" fica de fora — já está sendo atendida pela FGD, não é
+    # uma "demanda não atendida" (RF10).
+    demandas = Demand.objects.filter(activity=activity).exclude(
+        status__in=STATUS_TERMINAIS | {"em_atendimento"}
+    )
+    canceladas = 0
+    for demand in demandas:
+        for solicitacao in demand.solicitacoes.all():
+            balance_service.liberar_duas_travas(
+                demand_request=solicitacao, usuario=None,
+                motivo=f"Atividade vinculada em status '{activity.get_status_display()}'.",
+            )
+        demand.status = "cancelada"
+        demand.save(update_fields=["status", "atualizado_em"])
+        sigla = activity.municipio.state.sigla
+        notifications_service.notificar_cancelamento_automatico(
+            demand, notifications_service.usuarios_articuladores_do_estado(sigla),
+        )
+        canceladas += 1
+    return canceladas
+
+
+@shared_task(name="sgd.tasks.notificar_demandas_atividade_adiada")
+def notificar_demandas_atividade_adiada(activity_id: int) -> int:
+    """Mesmo motivo de `cancelar_demandas_da_atividade`: despachada via
+    `transaction.on_commit` pelo signal, não rodada direto nele."""
+    try:
+        return _sem_contexto_de_sessao_rls(lambda: _notificar_demandas_atividade_adiada(activity_id))
+    except Exception as exc:
+        sentry_sdk.capture_exception(exc)
+        logger.exception("Falha ao notificar demandas da atividade adiada %s.", activity_id)
+        raise
+
+
+def _notificar_demandas_atividade_adiada(activity_id: int) -> int:
+    from apps.sgd.services import notifications as notifications_service
+    from apps.sgp.models.activity import Activity
+
+    try:
+        activity = Activity.objects.get(pk=activity_id)
+    except Activity.DoesNotExist:
+        return 0
+    if activity.status != "adiada":
+        return 0
+
+    demandas = Demand.objects.filter(activity=activity).exclude(status__in=STATUS_TERMINAIS)
+    notificadas = 0
+    for demand in demandas:
+        notifications_service.notificar_atividade_adiada(
+            demand, responsaveis_pela_etapa_atual(demand), nova_data=activity.data_inicio,
+        )
+        notificadas += 1
+    return notificadas
