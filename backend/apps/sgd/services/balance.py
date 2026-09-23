@@ -74,6 +74,45 @@ def percentual_comprometido(comprometido: Decimal, limite: Decimal) -> Decimal:
     return (comprometido / limite) * Decimal("100")
 
 
+def semaforo_allocation(allocation) -> str | None:
+    """Semáforo 70/90 do SGD (LIMIAR_AMARELO_SGD/VERMELHO_SGD) — fonte única
+    pras duas travas, a mesma que `preview_impacto` já usa pro territorial.
+    Não é o 60/80 do painel do SGP: esse é o painel de execução geral, este
+    é o semáforo de bloqueio da submissão de demandas (§5.2), item distinto
+    conforme SGD_Requisitos_v1_1.md."""
+    if allocation is None:
+        return None
+    return semaforo_sgd(percentual_comprometido(allocation.valor_comprometido, allocation.valor_alocado))
+
+
+def semaforo_individual(*, solicitante, rubrica) -> str | None:
+    limite = DemandIndividualLimit.objects.filter(solicitante=solicitante, rubrica=rubrica).first()
+    if limite is None:
+        return None
+    return semaforo_sgd(percentual_comprometido(limite.valor_comprometido, limite.valor_limite))
+
+
+def payload_saldo_consulta(check: "DuasTravasCheck", *, solicitante, rubrica) -> dict:
+    return {
+        "individual": {
+            "disponivel": check.individual.disponivel,
+            "saldo": check.individual.saldo,
+            "motivo_bloqueio": check.individual.motivo_bloqueio,
+            "acao_sugerida": check.individual.acao_sugerida,
+            "semaforo": semaforo_individual(solicitante=solicitante, rubrica=rubrica),
+        },
+        "territorial": {
+            "disponivel": check.territorial.disponivel,
+            "saldo": check.territorial.saldo,
+            "motivo_bloqueio": check.territorial.motivo_bloqueio,
+            "acao_sugerida": None if check.territorial.disponivel else ACAO_SUGERIDA[TRAVA_TERRITORIAL],
+            "semaforo": semaforo_allocation(check.territorial.allocation),
+        },
+        "disponivel": check.disponivel,
+        "trava_bloqueada": check.trava_bloqueada,
+    }
+
+
 _ORDEM_SEMAFORO = {"verde": 0, "amarelo": 1, "vermelho": 2}
 
 
@@ -316,7 +355,6 @@ def ajustar_duas_travas(
 def liberar_duas_travas(*, demand_request, usuario, motivo: str) -> None:
     rubrica = demand_request.rubrica
     solicitante = demand_request.demanda.solicitante
-    valor = demand_request.valor_estimado
     entidade_id = str(demand_request.pk)
 
     limite = DemandIndividualLimit.objects.select_for_update().filter(
@@ -324,8 +362,11 @@ def liberar_duas_travas(*, demand_request, usuario, motivo: str) -> None:
     ).first()
     # Só libera se há reserva ativa agora — cancelar um Rascunho (nunca
     # reservado) ou liberar duas vezes seguidas não pode decrementar o
-    # comprometido de novo.
+    # comprometido de novo. E libera o valor efetivamente reservado agora
+    # (último reserva/ajuste), não `valor_estimado` — que fica congelado no
+    # valor original mesmo depois de um ajuste na autorização ou numa edição.
     if limite is not None and reserva_ativa(demand_request):
+        valor = _valor_reservado_individual(entidade_id, fallback=demand_request.valor_estimado)
         limite.valor_comprometido -= valor
         limite.save(update_fields=["valor_comprometido"])
         _registrar_movimento_individual(
