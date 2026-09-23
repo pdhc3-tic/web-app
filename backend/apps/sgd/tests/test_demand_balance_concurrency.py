@@ -4,6 +4,7 @@ from time import monotonic
 
 from django.db import connection
 from django.test import TransactionTestCase
+from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from apps.core.tests.factories import MunicipalityFactory, RoleFactory, StateFactory, TerritoryFactory, UserFactory
 from apps.sgd.services import balance as balance_service
@@ -76,6 +77,70 @@ class TestReservarDuasTravasConcorrente(TransactionTestCase):
         assert sorted(resultados) == ["falhou", "ok"]
         self.limite.refresh_from_db()
         assert self.limite.valor_comprometido <= Decimal("100")
+
+
+class TestSubmissaoConcorrenteEstouraPoolTerritorial(TransactionTestCase):
+    """A4: dois solicitantes distintos, cada um com limite individual de
+    sobra, disputando a mesma alocação territorial apertada — o perdedor da
+    corrida (`SaldoInsuficienteError` do motor do SGP, dentro do
+    `select_for_update` da alocação) precisa virar 400, não vazar como
+    exceção genérica (500)."""
+
+    def setUp(self):
+        territory = TerritoryFactory(nome="Território Concorrência A4", estados=["RN"])
+        state = StateFactory(sigla="RN", nome="Rio Grande do Norte")
+        municipio = MunicipalityFactory(
+            nome="Mossoró A4", state=state, territory=territory, codigo_ibge="2408902",
+        )
+        role = RoleFactory(slug="adt-acr", nome="ADT / ACR")
+        self.solicitante_1 = UserFactory(email="a4.um@test.com", profiles=[(role, territory)])
+        self.solicitante_2 = UserFactory(email="a4.dois@test.com", profiles=[(role, territory)])
+        activity = ActivityFactory(
+            municipio=municipio, tecnico_responsavel=self.solicitante_1, acao=WorkPlanAcaoFactory(),
+        )
+        rubrica = BudgetRubricaFactory(slug="rubrica-a4-sgd")
+        BudgetAllocationFactory(
+            meta=activity.acao.meta, rubrica=rubrica, territorio=territory, valor_alocado=Decimal("100"),
+        )
+        DemandIndividualLimitFactory(solicitante=self.solicitante_1, rubrica=rubrica, valor_limite=Decimal("1000"))
+        DemandIndividualLimitFactory(solicitante=self.solicitante_2, rubrica=rubrica, valor_limite=Decimal("1000"))
+
+        campos_grafico = {
+            "tipo_material": "banner", "quantidade": 1,
+            "especificacoes_tecnicas": "x", "prazo_entrega": "2026-12-01",
+        }
+        self.demand_1 = DemandFactory(activity=activity, solicitante=self.solicitante_1, status="rascunho")
+        DemandRequestFactory(
+            demanda=self.demand_1, rubrica=rubrica, tipo="grafico", valor_estimado=Decimal("60"),
+            campos_json=campos_grafico,
+        )
+        self.demand_2 = DemandFactory(activity=activity, solicitante=self.solicitante_2, status="rascunho")
+        DemandRequestFactory(
+            demanda=self.demand_2, rubrica=rubrica, tipo="grafico", valor_estimado=Decimal("60"),
+            campos_json=campos_grafico,
+        )
+
+    def test_perdedor_da_corrida_recebe_validation_error_nao_excecao_crua(self):
+        excecoes = []
+
+        def tentar_submeter(demand, usuario):
+            connection.close()
+            try:
+                demand_service.submeter_demanda(demand, usuario=usuario)
+                excecoes.append(None)
+            except Exception as exc:
+                excecoes.append(exc)
+
+        t1 = threading.Thread(target=tentar_submeter, args=(self.demand_1, self.solicitante_1))
+        t2 = threading.Thread(target=tentar_submeter, args=(self.demand_2, self.solicitante_2))
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        falhas = [exc for exc in excecoes if exc is not None]
+        assert len(falhas) == 1
+        assert isinstance(falhas[0], DRFValidationError)
 
 
 class TestVerificarDuasTravasPerformance(TransactionTestCase):

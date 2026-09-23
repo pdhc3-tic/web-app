@@ -11,6 +11,8 @@ class TravaSerializer(serializers.Serializer):
     disponivel = serializers.BooleanField()
     saldo = serializers.DecimalField(max_digits=14, decimal_places=2)
     motivo_bloqueio = serializers.CharField(allow_null=True)
+    acao_sugerida = serializers.CharField(allow_null=True)
+    semaforo = serializers.CharField(allow_null=True)
 
 
 class SaldoConsultaSerializer(serializers.Serializer):

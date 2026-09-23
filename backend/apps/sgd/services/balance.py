@@ -28,11 +28,18 @@ TRAVA_TERRITORIAL = "territorial"
 _ENTIDADE_LIMITE = "DemandIndividualLimit"
 
 
+ACAO_SUGERIDA = {
+    TRAVA_INDIVIDUAL: "solicitar_recurso_extra",
+    TRAVA_TERRITORIAL: "acionar_articulador",
+}
+
+
 @dataclass
 class TravaCheck:
     disponivel: bool
     saldo: Decimal
     motivo_bloqueio: str | None = None
+    acao_sugerida: str | None = None
 
 
 @dataclass
@@ -104,6 +111,7 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal) -> TravaCheck:
                 f"Nenhum limite individual configurado para você nesta rubrica. "
                 f"R$ 0.00 disponível, R$ {valor} solicitado. Solicite ao Super Admin."
             ),
+            acao_sugerida=ACAO_SUGERIDA[TRAVA_INDIVIDUAL],
         )
     saldo = limite.saldo_disponivel
     if saldo <= ZERO:
@@ -113,11 +121,13 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal) -> TravaCheck:
                 f"Limite individual esgotado para esta rubrica: R$ {saldo} disponível, "
                 f"R$ {valor} solicitado."
             ),
+            acao_sugerida=ACAO_SUGERIDA[TRAVA_INDIVIDUAL],
         )
     if valor > saldo:
         return TravaCheck(
             disponivel=False, saldo=saldo,
             motivo_bloqueio=f"Limite individual insuficiente: R$ {saldo} disponível, R$ {valor} solicitado.",
+            acao_sugerida=ACAO_SUGERIDA[TRAVA_INDIVIDUAL],
         )
     return TravaCheck(disponivel=True, saldo=saldo, motivo_bloqueio=None)
 
@@ -136,6 +146,17 @@ def verificar_duas_travas(*, solicitante, rubrica, meta, valor: Decimal) -> Duas
 
 def _ja_registrado(*, acao: str, entidade_id: str) -> bool:
     return AuditLog.objects.filter(entidade=_ENTIDADE_LIMITE, entidade_id=entidade_id, acao=acao).exists()
+
+
+def reserva_ativa(demand_request) -> bool:
+    """Estado atual da reserva desta solicitação — não "já reservou alguma
+    vez", mas "está reservada agora". Distingue o ciclo reserva → liberação →
+    nova reserva (edição em Devolvida, resubmissão) olhando só o último
+    evento, não a existência histórica de um tipo de evento."""
+    ultimo = AuditLog.objects.filter(
+        entidade=_ENTIDADE_LIMITE, entidade_id=str(demand_request.pk), acao__in=["reserva", "liberacao"],
+    ).order_by("-criado_em", "-id").values_list("acao", flat=True).first()
+    return ultimo == "reserva"
 
 
 def _registrar_movimento_individual(
@@ -160,7 +181,7 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
         solicitante=solicitante, rubrica=rubrica,
     )
     comprometido_individual_antes = limite.valor_comprometido
-    if not _ja_registrado(acao="reserva", entidade_id=entidade_id):
+    if not reserva_ativa(demand_request):
         # Reconfere o saldo com a linha já travada (select_for_update acima)
         # — sem isso, duas reservas concorrentes que passaram no
         # verificar_duas_travas (antes do lock) comprometeriam o limite além
@@ -192,10 +213,13 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
     if check.allocation is None:
         raise DRFValidationError({"detail": "Nenhuma alocação orçamentária territorial encontrada."})
     comprometido_territorial_antes = check.allocation.valor_comprometido
-    budget_service.reservar(
-        allocation=check.allocation, valor=valor, demanda_id=str(demand_request.pk), usuario=usuario,
-        justificativa=f"Reserva SGD — solicitação #{demand_request.pk}.",
-    )
+    try:
+        budget_service.reservar(
+            allocation=check.allocation, valor=valor, demanda_id=str(demand_request.pk), usuario=usuario,
+            justificativa=f"Reserva SGD — solicitação #{demand_request.pk}.",
+        )
+    except (budget_service.SaldoInsuficienteError, ValueError) as exc:
+        raise DRFValidationError({"detail": str(exc)}) from exc
     check.allocation.refresh_from_db(fields=["valor_comprometido"])
     _notificar_se_piorou(
         usuarios=_destinatarios_saldo_territorial(nivel=nivel, estado_sigla=estado_sigla, territorio=territorio),
@@ -205,23 +229,42 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
     )
 
 
+def _valor_reservado_individual(entidade_id: str, *, fallback: Decimal) -> Decimal:
+    """Última reserva/ajuste aplicado para esta entidade — nunca um campo
+    congelado do model. Reaplicar `ajustar_duas_travas` com o mesmo
+    `novo_valor` (retry) dá diferença zero por construção, sem precisar de
+    uma guarda de "já processei esse evento"."""
+    ultimo = AuditLog.objects.filter(
+        entidade=_ENTIDADE_LIMITE, entidade_id=entidade_id, acao__in=["reserva", "ajuste"],
+    ).order_by("-criado_em", "-id").first()
+    if ultimo is None:
+        return fallback
+    valor = (ultimo.valores_novos or {}).get("valor")
+    return Decimal(valor) if valor is not None else fallback
+
+
 @transaction.atomic
 def ajustar_duas_travas(
     *, demand_request, novo_valor: Decimal, usuario, ignorar_limite_individual: bool = False,
 ) -> None:
     """`ignorar_limite_individual=True` autoriza um excedente pontual (RF16) sem
-    alterar `valor_limite` — usada só pelo fluxo de remanejamento emergencial da UGP."""
+    alterar `valor_limite` — usada só pelo fluxo de remanejamento emergencial da UGP.
+
+    Reutilizável mais de uma vez para a mesma solicitação (autorização com
+    valor ajustado, depois edição em Devolvida, depois nova autorização
+    etc.) — cada chamada reconsulta o valor efetivamente reservado agora,
+    nunca um total acumulado só em memória."""
     rubrica = demand_request.rubrica
     solicitante = demand_request.demanda.solicitante
-    valor_anterior = demand_request.valor_estimado
-    diferenca = novo_valor - valor_anterior
     entidade_id = str(demand_request.pk)
 
     limite = DemandIndividualLimit.objects.select_for_update().get(
         solicitante=solicitante, rubrica=rubrica,
     )
+    valor_anterior = _valor_reservado_individual(entidade_id, fallback=demand_request.valor_estimado)
+    diferenca = novo_valor - valor_anterior
     comprometido_individual_antes = limite.valor_comprometido
-    if not _ja_registrado(acao="ajuste", entidade_id=entidade_id):
+    if diferenca != ZERO:
         if not ignorar_limite_individual and diferenca > ZERO and diferenca > limite.saldo_disponivel:
             raise DRFValidationError({
                 "detail": (
@@ -250,10 +293,13 @@ def ajustar_duas_travas(
     )
     comprometido_territorial_antes = allocation_antes.valor_comprometido if allocation_antes else ZERO
 
-    budget_service.ajustar_reserva(
-        demanda_id=entidade_id, novo_valor=novo_valor, usuario=usuario,
-        justificativa=f"Ajuste SGD — solicitação #{demand_request.pk}.",
-    )
+    try:
+        budget_service.ajustar_reserva(
+            demanda_id=entidade_id, novo_valor=novo_valor, usuario=usuario,
+            justificativa=f"Ajuste SGD — solicitação #{demand_request.pk}.",
+        )
+    except (budget_service.SaldoInsuficienteError, budget_service.DemandaInvalidaError, ValueError) as exc:
+        raise DRFValidationError({"detail": str(exc)}) from exc
 
     if allocation_antes is not None:
         allocation_antes.refresh_from_db(fields=["valor_comprometido", "valor_alocado"])
@@ -276,7 +322,10 @@ def liberar_duas_travas(*, demand_request, usuario, motivo: str) -> None:
     limite = DemandIndividualLimit.objects.select_for_update().filter(
         solicitante=solicitante, rubrica=rubrica,
     ).first()
-    if limite is not None and not _ja_registrado(acao="liberacao", entidade_id=entidade_id):
+    # Só libera se há reserva ativa agora — cancelar um Rascunho (nunca
+    # reservado) ou liberar duas vezes seguidas não pode decrementar o
+    # comprometido de novo.
+    if limite is not None and reserva_ativa(demand_request):
         limite.valor_comprometido -= valor
         limite.save(update_fields=["valor_comprometido"])
         _registrar_movimento_individual(
@@ -311,7 +360,10 @@ def executar_duas_travas(*, demand_request, valor_pago: Decimal, usuario) -> Non
             valores_novos={"valor_pago": str(valor_pago), "diferenca_liberada": str(diferenca)},
         )
 
-    budget_service.executar(demanda_id=str(demand_request.pk), usuario=usuario, valor_executado=valor_pago)
+    try:
+        budget_service.executar(demanda_id=str(demand_request.pk), usuario=usuario, valor_executado=valor_pago)
+    except (budget_service.DemandaInvalidaError, ValueError) as exc:
+        raise DRFValidationError({"detail": str(exc)}) from exc
 
 
 @transaction.atomic
@@ -319,6 +371,10 @@ def autorizar_excedente(*, demand_request, origem_allocation, valor_excedente: D
                          justificativa: str, usuario) -> None:
     if not justificativa:
         raise DRFValidationError({"justificativa": "Obrigatória para autorizar excedente."})
+    if origem_allocation.nivel not in (budget_service.Nivel.ESTADUAL, budget_service.Nivel.NACIONAL):
+        raise DRFValidationError({
+            "origem_allocation": "Remanejamento emergencial (RF16) só pode vir de saldo estadual ou nacional."
+        })
 
     rubrica = demand_request.rubrica
     solicitante = demand_request.demanda.solicitante
