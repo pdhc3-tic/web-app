@@ -233,3 +233,35 @@ class TestBuildSessionContextFallbackDoBanco:
         context = middleware._build_session_context({"user_id": user.pk}, user)
 
         assert context["role"] == ""
+
+    def test_usuario_com_multiplos_perfis_resolve_o_de_maior_prioridade(self):
+        """Mesma propriedade que demand_visibility_scope garante via OR
+        entre user_has_role(...): um usuário com UGP e Articulador ao mesmo
+        tempo tem acesso total (UGP), não fica restrito ao critério
+        territorial do Articulador."""
+        from apps.core.tests.factories import RoleFactory, TerritoryFactory, UserFactory
+
+        ugp = RoleFactory(slug="ugp")
+        articulador = RoleFactory(slug="articulador-estadual")
+        territorio = TerritoryFactory()
+        user = UserFactory(profiles=[(ugp, None), (articulador, territorio)])
+        middleware = SessionContextMiddleware(lambda request: "ok")
+
+        context = middleware._build_session_context({"user_id": user.pk}, user)
+
+        assert context["role"] == "ugp"
+
+    def test_articulador_sem_territorio_especifico_resolve_territorios_vazio(self):
+        """Perfil global (territorio=None) — a policy trata "" como "todos
+        os territórios" pro Articulador, mesmo critério de
+        apps.core.services.permissions.user_territories."""
+        from apps.core.tests.factories import RoleFactory, UserFactory
+
+        role = RoleFactory(slug="articulador-estadual")
+        user = UserFactory(profiles=[(role, None)])
+        middleware = SessionContextMiddleware(lambda request: "ok")
+
+        context = middleware._build_session_context({"user_id": user.pk}, user)
+
+        assert context["role"] == "articulador-estadual"
+        assert context["territorios"] == ""

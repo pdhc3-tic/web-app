@@ -92,6 +92,11 @@ class SessionContextMiddleware:
             from apps.core.services.permissions import user_role_slugs
             slugs = user_role_slugs(user, slugs=cls._ROLES_RLS)
         except Exception:
+            # Fail-safe: role vazio nunca é um dos papéis privilegiados na
+            # policy, então isso só restringe (cai no "vê as próprias"),
+            # nunca abre acesso — mas logamos, porque essa mesma forma de
+            # engolir exceção em silêncio foi o que escondeu o bug original.
+            logger.exception("session_context.user_role_from_db_failed user_id=%s", getattr(user, "pk", None))
             return ""
         for role in cls._ROLES_RLS:
             if role in slugs:
@@ -109,7 +114,13 @@ class SessionContextMiddleware:
             )
             return ",".join(str(i) for i in ids) if ids else ""
         except Exception:
-            pass
+            # Ao contrário do role, "" aqui significa "todos os territórios"
+            # pra um Articulador (fail-open) — mas só importa se o role
+            # também resolveu pra articulador-estadual; se a mesma falha
+            # atingiu os dois lookups, o role já veio "" e essa policy nem
+            # olha pro território. Loga pra não repetir o silêncio que
+            # escondeu o bug original.
+            logger.exception("session_context.user_territories_from_db_failed user_id=%s", getattr(user, "pk", None))
         return ""
 
     def _authenticate_request(self, request):
