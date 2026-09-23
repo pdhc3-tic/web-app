@@ -31,23 +31,23 @@ class SessionContextMiddleware:
     def __call__(self, request):
         auth_result = self._authenticate_request(request)
         is_authenticated = bool(getattr(request.user, "is_authenticated", False))
-        if auth_result is None or not is_authenticated:
+
+        if auth_result is not None and is_authenticated:
+            _, token = auth_result
+            context = self._build_session_context(token)
+        elif is_authenticated and getattr(request.user, "is_staff", False):
+            # Sessão do Django (ex.: /admin/), não JWT — AuthenticationMiddleware
+            # já rodou antes (settings.MIDDLEWARE) e populou request.user pelo
+            # cookie de sessão, mas não há token JWT pra extrair role/território
+            # daqui. Quem chega até aqui já passou pelo próprio gate do Django
+            # (is_staff) — trata como acesso total pra RLS, a mesma política que
+            # já libera "ugp"/"fgd"/"super-admin". Sem isso, RLS (apps.sgd
+            # sgd_demand e futuras tabelas) deixa o Admin com listas vazias pra
+            # qualquer staff, já que superusuário do Django não tem nenhuma
+            # relação com privilégio de role no Postgres.
+            context = {"user_id": str(request.user.pk), "territorios": "", "role": "super-admin"}
+        else:
             return self.get_response(request)
-
-        _, token = auth_result
-        context = self._build_session_context(token)
-        user_id = token["user_id"]
-        user = request.user
-
-        territorios = self._format_territorios(
-            token.get("territorios") or self._user_territories_from_db(user)
-        )
-        role = str(
-            token.get("role")
-            or token.get("perfil")
-            or self._user_role_from_db(user)
-            or ""
-        )
 
         # SET LOCAL only survives inside the current database transaction.
         with transaction.atomic():
