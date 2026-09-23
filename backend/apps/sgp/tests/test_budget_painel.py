@@ -230,7 +230,9 @@ class TestPainelEscopoTerritorial:
 
 class TestBudgetThresholdAlertTask:
     @patch("apps.core.tasks.notifications.send_email_notification.delay")
-    def test_task_notifica_vermelhos(self, mocked_delay, usuario, usuario_super_admin):
+    def test_task_notifica_vermelhos(
+        self, mocked_delay, usuario, usuario_super_admin, django_capture_on_commit_callbacks,
+    ):
         meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
         BudgetAllocationFactory(
@@ -238,7 +240,10 @@ class TestBudgetThresholdAlertTask:
             valor_alocado=Decimal("10000"), valor_comprometido=Decimal("9000"),
         )
 
-        total = check_budget_threshold_alert()
+        # Notification.save() só enfileira o e-mail via transaction.on_commit
+        # — captura os callbacks pra executá-los aqui.
+        with django_capture_on_commit_callbacks(execute=True):
+            total = check_budget_threshold_alert()
 
         assert total == 2
         assert mocked_delay.call_count == 2
