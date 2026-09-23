@@ -1,11 +1,19 @@
 from decimal import Decimal
 
 import pytest
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from apps.sgd.models.demand import Demand
 from apps.sgd.services import balance as balance_service
-from apps.sgd.services.approval import autorizar, demand_visibility_scope, devolver, preview_impacto
+from apps.sgd.services.approval import (
+    autorizar,
+    concluir,
+    demand_visibility_scope,
+    devolver,
+    pre_autorizar,
+    preview_impacto,
+)
 from apps.sgd.tests.factories import DemandFactory
 
 pytestmark = pytest.mark.django_db
@@ -134,6 +142,78 @@ def test_preview_decisao_retorna_semaforo(demand_request_rn, allocation_territor
     preview = preview_impacto(demand_request_rn, Decimal("4600"))
     assert preview["individual"]["semaforo_apos"] in {"verde", "amarelo", "vermelho"}
     assert preview["territorial"]["semaforo_apos"] in {"verde", "amarelo", "vermelho"}
+
+
+def test_preview_decisao_nao_conta_reserva_ja_feita_em_dobro(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    """A3: a solicitação já está reservada pelo valor estimado — perguntar o
+    preview pelo mesmo valor não pode mudar a faixa nem bloquear (antes
+    contava o valor inteiro de novo, por cima da própria reserva)."""
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    demand_request_rn.valor_autorizado = demand_request_rn.valor_estimado
+    demand_request_rn.save(update_fields=["valor_autorizado"])
+
+    preview = preview_impacto(demand_request_rn, demand_request_rn.valor_estimado)
+
+    assert preview["disponivel"] is True
+    assert preview["trava_bloqueada"] is None
+    assert preview["individual"]["semaforo_apos"] == preview["individual"]["semaforo_antes"]
+
+
+def test_articulador_nao_pode_pre_autorizar_a_propria_demanda(activity_rn, usuario_articulador_rn):
+    demand = DemandFactory(activity=activity_rn, solicitante=usuario_articulador_rn, status="submetida")
+
+    with pytest.raises(PermissionDenied):
+        pre_autorizar(demand, responsavel=usuario_articulador_rn)
+
+
+def test_articulador_de_outro_estado_nao_pode_pre_autorizar(activity_rn, usuario_articulador_ce):
+    demand = DemandFactory(activity=activity_rn, status="submetida")
+
+    with pytest.raises(PermissionDenied):
+        pre_autorizar(demand, responsavel=usuario_articulador_ce)
+
+
+def test_articulador_nao_pode_devolver_a_propria_demanda(activity_rn, usuario_articulador_rn):
+    demand = DemandFactory(activity=activity_rn, solicitante=usuario_articulador_rn, status="submetida")
+
+    with pytest.raises(PermissionDenied):
+        devolver(demand, responsavel=usuario_articulador_rn, justificativa="Corrigir.")
+
+
+def test_autorizar_com_ajuste_de_id_de_outra_demanda_rejeitado(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    """M8: um `demand_request_id` em `ajustes` que não pertence à demanda
+    sendo autorizada era ignorado em silêncio — agora vira 400."""
+    demand = demand_request_rn.demanda
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    demand.status = "pre_autorizada"
+    demand.save(update_fields=["status"])
+    id_inexistente = demand_request_rn.pk + 10_000
+
+    with pytest.raises(DRFValidationError):
+        autorizar(demand, responsavel=solicitante_rn, ajustes={id_inexistente: Decimal("100")})
+
+
+def test_concluir_valor_pago_acima_do_autorizado_rejeitado(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    """M6: pagar mais do que foi autorizado não é um caminho documentado
+    (§4.2 só descreve pago ≤ autorizado) — bloqueado direto."""
+    demand = demand_request_rn.demanda
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    demand_request_rn.valor_autorizado = demand_request_rn.valor_estimado
+    demand_request_rn.save(update_fields=["valor_autorizado"])
+    demand.status = "em_atendimento"
+    demand.save(update_fields=["status"])
+
+    with pytest.raises(DRFValidationError):
+        concluir(
+            demand, responsavel=solicitante_rn,
+            valores_pagos={demand_request_rn.pk: demand_request_rn.valor_autorizado + Decimal("1")},
+        )
 
 
 def test_articulador_nao_ve_demanda_em_rascunho_de_outro_solicitante_no_proprio_estado(
