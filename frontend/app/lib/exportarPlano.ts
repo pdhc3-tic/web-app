@@ -98,7 +98,7 @@ function nomeDerivadoLocalmente(formato: FormatoExport): string {
 }
 
 /** Entrega o blob ao browser por um <a download> descartável. */
-function dispararDownload(blob: Blob, nome: string): void {
+export function dispararDownload(blob: Blob, nome: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;

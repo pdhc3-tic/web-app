@@ -1,4 +1,9 @@
 import { apiClient } from "@/app/lib/api";
+import {
+  dispararDownload,
+  ExportTimeoutError,
+  nomeDoContentDisposition,
+} from "@/app/lib/exportarPlano";
 import type { Paginated } from "@/app/lib/users";
 import type { Territorio } from "@/app/lib/auth/types";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
@@ -70,7 +75,7 @@ type MunicipalityOption = {
 
 /**
  * Parâmetros de filtro comuns à listagem e à exportação de UPFs.
- * Fonte única de verdade — tanto `buildUpfsQuery` quanto `exportarUpfs` usam
+ * Fonte única de verdade — tanto `buildUpfsQuery` quanto `iniciarExportacaoUpfs` usam
  * esta função para garantir que listagem e arquivo gerado sejam idênticos.
  */
 function buildUpfsFilterParams(params: ExportUpfsParams): URLSearchParams {
@@ -615,6 +620,19 @@ export async function fetchProjetoOptions(
 }
 
 // ─── Exportação da listagem ───────────────────────────────────────────────────
+//
+// Contrato proposto ao backend (#240) — o endpoint ainda não existe:
+//
+//   GET /api/v1/upfs/exportar/?<mesmos filtros da listagem>&formato=csv
+//     200 text/csv          → até EXPORT_UPFS_ASYNC_THRESHOLD registros: arquivo direto.
+//     202 ExportacaoUpfs    → acima disso: tarefa criada em segundo plano.
+//     400 {message}         → parâmetro desconhecido/inválido; a mensagem vai para a tela.
+//   GET /api/v1/upfs/exportar/{id}/          → ExportacaoUpfs (polling).
+//   GET /api/v1/upfs/exportar/{id}/arquivo/  → o CSV da tarefa concluída.
+//
+// Quem decide entre síncrono e assíncrono é o BACKEND, que conhece o total real
+// no escopo do usuário: a tela só reage ao status da resposta. Assim o limite de
+// 1.000 é aplicado no servidor mesmo que alguém chame o endpoint diretamente.
 
 export type ExportUpfsParams = {
   search?: string;
@@ -626,7 +644,35 @@ export type ExportUpfsParams = {
   cadastradoAte?: string;
 };
 
+/** Acima deste total o backend responde 202 e processa em segundo plano. */
 export const EXPORT_UPFS_ASYNC_THRESHOLD = 1_000;
+
+export type StatusExportacaoUpfs =
+  | "pendente"
+  | "processando"
+  | "concluida"
+  | "falhou";
+
+export type ExportacaoUpfs = {
+  id: string;
+  status: StatusExportacaoUpfs;
+  /** Total de UPFs no conjunto filtrado. */
+  total: number | null;
+  /** 0–100; `null` enquanto o backend não souber estimar. */
+  progresso: number | null;
+  /** Mensagem do backend quando `status === "falhou"`. */
+  erro: string | null;
+  arquivo_nome: string | null;
+};
+
+export type ResultadoExportacaoUpfs =
+  | { tipo: "arquivo"; nome: string }
+  | { tipo: "tarefa"; exportacao: ExportacaoUpfs };
+
+const EXPORT_UPFS_PATH = "/api/v1/upfs/exportar/";
+
+/** Teto da resposta síncrona: até 1.000 linhas cabem com folga em 60s. */
+const EXPORT_UPFS_TIMEOUT_MS = 60_000;
 
 function nomeDerivadoUpfs(): string {
   const agora = new Date();
@@ -635,29 +681,62 @@ function nomeDerivadoUpfs(): string {
   return `upfs_${data}.csv`;
 }
 
-function dispararDownload(blob: Blob, nome: string): void {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = nome;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+async function baixarResposta(res: Response, nomePadrao: string): Promise<string> {
+  const nome =
+    nomeDoContentDisposition(res.headers.get("Content-Disposition")) ?? nomePadrao;
+  dispararDownload(await res.blob(), nome);
+  return nome;
 }
 
-export async function exportarUpfs(params: ExportUpfsParams): Promise<string> {
+/**
+ * Pede a exportação com os filtros da listagem (mesmo `buildUpfsFilterParams`).
+ *
+ * Devolve `arquivo` quando o download já foi disparado (≤ 1.000 registros) ou
+ * `tarefa` quando o backend enfileirou a geração. Lança `ExportTimeoutError`
+ * no estouro do tempo e `ApiError` nos erros da API.
+ */
+export async function iniciarExportacaoUpfs(
+  params: ExportUpfsParams,
+): Promise<ResultadoExportacaoUpfs> {
   const qs = buildUpfsFilterParams(params);
   qs.set("formato", "csv");
 
-  const res = await apiClient(`/api/v1/upfs/exportar/?${qs}`, {
-    signal: AbortSignal.timeout(120_000),
-  });
+  let res: Response;
+  try {
+    res = await apiClient(`${EXPORT_UPFS_PATH}?${qs}`, {
+      signal: AbortSignal.timeout(EXPORT_UPFS_TIMEOUT_MS),
+    });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "TimeoutError") {
+      throw new ExportTimeoutError();
+    }
+    throw e;
+  }
 
-  const cd = res.headers.get("Content-Disposition");
-  const match = cd ? /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd) : null;
-  const nome = match ? decodeURIComponent(match[1].trim()) : nomeDerivadoUpfs();
+  if (res.status === 202) {
+    return { tipo: "tarefa", exportacao: (await res.json()) as ExportacaoUpfs };
+  }
+  return { tipo: "arquivo", nome: await baixarResposta(res, nomeDerivadoUpfs()) };
+}
 
-  dispararDownload(await res.blob(), nome);
-  return nome;
+/** GET /api/v1/upfs/exportar/{id}/ — estado atual da tarefa. */
+export async function fetchExportacaoUpfs(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ExportacaoUpfs> {
+  const res = await apiClient(
+    `${EXPORT_UPFS_PATH}${encodeURIComponent(id)}/`,
+    { signal },
+  );
+  return res.json();
+}
+
+/** GET /api/v1/upfs/exportar/{id}/arquivo/ — baixa o CSV de uma tarefa concluída. */
+export async function baixarExportacaoUpfs(
+  exportacao: ExportacaoUpfs,
+): Promise<string> {
+  const res = await apiClient(
+    `${EXPORT_UPFS_PATH}${encodeURIComponent(exportacao.id)}/arquivo/`,
+  );
+  return baixarResposta(res, exportacao.arquivo_nome ?? nomeDerivadoUpfs());
 }

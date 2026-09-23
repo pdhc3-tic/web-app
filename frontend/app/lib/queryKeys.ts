@@ -24,4 +24,6 @@ export const qk = {
         ["upf", upfId, "historico", { page, pageSize }] as const,
     };
   },
+  /** Tarefa assíncrona de exportação da listagem de UPFs (#240). */
+  exportacaoUpfs: (id: string) => ["upfs", "exportacao", id] as const,
 } as const;
