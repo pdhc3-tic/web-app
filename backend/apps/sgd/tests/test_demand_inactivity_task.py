@@ -64,10 +64,10 @@ def test_demanda_em_rascunho_nunca_dispara(activity_rn):
 
 
 def test_resubmissao_sem_novo_approval_step_nao_dispara_pela_data_antiga(activity_rn):
-    """M10: resubmeter uma Devolvida não cria ApprovalStep novo — sem o
-    max() com atualizado_em, a referência ficaria presa na data da
-    devolução antiga (aqui, há dias) e dispararia mesmo a demanda tendo
-    sido movimentada agora."""
+    """Resubmeter uma Devolvida não cria ApprovalStep novo — sem o max()
+    com atualizado_em, a referência ficaria presa na data da devolução
+    antiga (aqui, há dias) e dispararia mesmo a demanda tendo sido
+    movimentada agora."""
     from apps.sgd.models.approval_step import ApprovalStep
 
     demand = DemandFactory(activity=activity_rn, status="submetida")

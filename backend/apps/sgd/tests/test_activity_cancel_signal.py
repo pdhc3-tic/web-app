@@ -54,7 +54,7 @@ def test_task_cancela_demandas_nao_atendidas_e_libera_saldo(
 
 
 def test_task_nao_cancela_demanda_em_atendimento(activity_rn):
-    """M2: "não atendidas" exclui quem já está sendo atendida pela FGD —
+    """RF10: "não atendida" exclui quem já está sendo atendida pela FGD —
     só Rascunho/Submetida/Devolvida/Pré-autorizada/Autorizada são
     canceladas automaticamente."""
     demand = DemandFactory(activity=activity_rn, status="em_atendimento")

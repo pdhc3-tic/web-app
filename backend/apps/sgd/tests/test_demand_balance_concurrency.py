@@ -119,8 +119,9 @@ class TestSubmissaoConcorrenteEstouraPoolTerritorial(TransactionTestCase):
         )
 
     def test_perdedor_da_corrida_recebe_400_pela_api_nao_500(self):
-        # Via APIView de verdade (não a função de service direto) — o que a
-        # revisão pediu foi o código de status HTTP, não só o tipo da exceção.
+        # Via APIView de verdade (não a função de service direto) — o que
+        # importa aqui é o código de status HTTP que chega no cliente, não
+        # só o tipo da exceção de serviço internamente.
         from rest_framework.test import APIClient
 
         status_codes = []
