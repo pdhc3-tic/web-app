@@ -10,6 +10,7 @@ from apps.core.models.audit_log import AuditLog
 from apps.core.storage import StorageObjectNotFound, get_storage
 from apps.sgd.models.demand_document import DemandDocument
 from apps.sgd.serializers.demand_document import DemandDocumentSerializer
+from apps.sgd.services.demand_document import exigir_pode_gerenciar_documento
 
 ALLOWED_DOCUMENT_CONTENT_TYPES = {"application/pdf": "pdf"}
 MAX_DOCUMENT_SIZE_BYTES = 10_485_760
@@ -20,6 +21,7 @@ class DemandDocumentUploadURLSerializer(serializers.Serializer):
     filename = serializers.CharField()
     content_type = serializers.CharField()
     size = serializers.IntegerField(min_value=1)
+    tipo = serializers.ChoiceField(choices=DemandDocument._meta.get_field("tipo").choices)
 
     def validate_content_type(self, value):
         if value not in ALLOWED_DOCUMENT_CONTENT_TYPES:
@@ -79,6 +81,7 @@ class DemandDocumentMixin:
 
         serializer = DemandDocumentUploadURLSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        exigir_pode_gerenciar_documento(demand, request.user, serializer.validated_data["tipo"])
         content_type = serializer.validated_data["content_type"]
         size = serializer.validated_data["size"]
         ext = ALLOWED_DOCUMENT_CONTENT_TYPES[content_type]
@@ -108,6 +111,7 @@ class DemandDocumentMixin:
 
         serializer = DemandDocumentConfirmSerializer(data=request.data, context={"demand": demand})
         serializer.is_valid(raise_exception=True)
+        exigir_pode_gerenciar_documento(demand, request.user, serializer.validated_data["tipo"])
         key = serializer.validated_data["key"]
 
         storage = get_storage()
@@ -162,6 +166,7 @@ class DemandDocumentMixin:
     def documentos_delete(self, request, pk=None, doc_id=None):
         demand = self._get_demand_for_doc(pk)
         doc = get_object_or_404(DemandDocument, pk=doc_id, demanda=demand, ativo=True)
+        exigir_pode_gerenciar_documento(demand, request.user, doc.tipo)
         snapshot = self._doc_snapshot(doc)
         doc.ativo = False
         doc.save(update_fields=["ativo"])
