@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -51,22 +52,26 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
         entrada.is_valid(raise_exception=True)
         dados = entrada.validated_data
 
-        if dados.get("activity_id"):
-            activity = get_object_or_404(Activity, pk=dados["activity_id"])
-        else:
-            activity = demand_service.criar_activity_inline(
-                titulo=dados["activity_titulo"],
-                tipo_atividade=dados["activity_tipo_atividade"],
-                acao=get_object_or_404(WorkPlanAcao, pk=dados["activity_acao_id"]),
-                municipio=get_object_or_404(Municipality, pk=dados["activity_municipio_id"]),
-                data_prevista=dados["activity_data_prevista"],
-                usuario=request.user,
-            )
+        # Activity inline + Demand numa única transação — se criar_demanda
+        # falhar (ex.: bloqueio de status), a Activity recém-criada não fica
+        # órfã no banco.
+        with transaction.atomic():
+            if dados.get("activity_id"):
+                activity = get_object_or_404(Activity, pk=dados["activity_id"])
+            else:
+                activity = demand_service.criar_activity_inline(
+                    titulo=dados["activity_titulo"],
+                    tipo_atividade=dados["activity_tipo_atividade"],
+                    acao=get_object_or_404(WorkPlanAcao, pk=dados["activity_acao_id"]),
+                    municipio=get_object_or_404(Municipality, pk=dados["activity_municipio_id"]),
+                    data_prevista=dados["activity_data_prevista"],
+                    usuario=request.user,
+                )
 
-        demand = demand_service.criar_demanda(
-            titulo=dados["titulo"], activity=activity,
-            justificativa=dados.get("justificativa", ""), solicitante=request.user,
-        )
+            demand = demand_service.criar_demanda(
+                titulo=dados["titulo"], activity=activity,
+                justificativa=dados.get("justificativa", ""), solicitante=request.user,
+            )
         return Response(DemandSerializer(demand).data, status=status.HTTP_201_CREATED)
 
     def partial_update(self, request, pk=None):
@@ -117,8 +122,10 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
         if request.method == "PATCH":
             entrada = DemandRequestUpdateSerializer(data=request.data, partial=True)
             entrada.is_valid(raise_exception=True)
-            solicitacao = demand_service.atualizar_solicitacao(solicitacao, **entrada.validated_data)
+            solicitacao = demand_service.atualizar_solicitacao(
+                solicitacao, usuario=request.user, **entrada.validated_data,
+            )
             return Response(DemandRequestSerializer(solicitacao).data)
 
-        demand_service.remover_solicitacao(solicitacao)
+        demand_service.remover_solicitacao(solicitacao, usuario=request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)

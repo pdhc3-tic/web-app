@@ -82,6 +82,8 @@ def adicionar_solicitacao(demand, *, tipo, campos_json, valor_estimado=None, ord
     valor_final = validado.valor_estimado_auto if validado.valor_estimado_auto is not None else valor_estimado
     if valor_final is None:
         raise DRFValidationError({"valor_estimado": "Obrigatório para este tipo de solicitação."})
+    if valor_final <= 0:
+        raise DRFValidationError({"valor_estimado": "Deve ser maior que zero."})
 
     return DemandRequest.objects.create(
         demanda=demand, tipo=tipo, rubrica=rubrica, campos_json=validado.campos_json,
@@ -90,9 +92,13 @@ def adicionar_solicitacao(demand, *, tipo, campos_json, valor_estimado=None, ord
 
 
 @transaction.atomic
-def atualizar_solicitacao(solicitacao, *, tipo=None, campos_json=None, valor_estimado=None):
+def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, valor_estimado=None):
     """RF07 — editar uma solicitação de uma demanda em Rascunho/Devolvida,
-    sem precisar remover e recriar."""
+    sem precisar remover e recriar.
+
+    Em Devolvida a reserva de saldo é mantida (§4.2) — se a solicitação já
+    tem reserva ativa e o valor muda, ajusta a reserva existente em vez de
+    só trocar o campo; a resubmissão não pede saldo adicional pra ela."""
     demand = solicitacao.demanda
     _exigir_editavel(demand)
 
@@ -104,6 +110,19 @@ def atualizar_solicitacao(solicitacao, *, tipo=None, campos_json=None, valor_est
     valor_final = validado.valor_estimado_auto
     if valor_final is None:
         valor_final = valor_estimado if valor_estimado is not None else solicitacao.valor_estimado
+    if valor_final <= 0:
+        raise DRFValidationError({"valor_estimado": "Deve ser maior que zero."})
+
+    tem_reserva = balance_service.reserva_ativa(solicitacao)
+    if tem_reserva and rubrica.pk != solicitacao.rubrica_id:
+        raise DRFValidationError({
+            "tipo": (
+                "Não é possível trocar o tipo de uma solicitação com reserva de saldo ativa "
+                "(mudaria a rubrica). Remova e crie uma nova solicitação."
+            )
+        })
+    if tem_reserva and valor_final != solicitacao.valor_estimado:
+        balance_service.ajustar_duas_travas(demand_request=solicitacao, novo_valor=valor_final, usuario=usuario)
 
     solicitacao.tipo = tipo_final
     solicitacao.rubrica = rubrica
@@ -116,8 +135,14 @@ def atualizar_solicitacao(solicitacao, *, tipo=None, campos_json=None, valor_est
     return solicitacao
 
 
-def remover_solicitacao(solicitacao) -> None:
+@transaction.atomic
+def remover_solicitacao(solicitacao, *, usuario) -> None:
     _exigir_editavel(solicitacao.demanda)
+    if balance_service.reserva_ativa(solicitacao):
+        balance_service.liberar_duas_travas(
+            demand_request=solicitacao, usuario=usuario,
+            motivo="Solicitação removida durante edição da demanda.",
+        )
     solicitacao.delete()
 
 
@@ -144,13 +169,20 @@ def submeter_demanda(demand, *, usuario) -> Demand:
     # de reservar qualquer uma.
     _exigir_minimo_cotacoes_equipamento(demand)
 
-    solicitacoes = list(demand.solicitacoes.select_related("rubrica").all())
+    # Ordenadas por rubrica: solicitações de demandas concorrentes sempre
+    # travam BudgetAllocation na mesma ordem, evitando deadlock.
+    solicitacoes = list(demand.solicitacoes.select_related("rubrica").order_by("rubrica_id", "pk").all())
     if not solicitacoes:
         raise DRFValidationError({"solicitacoes": "A demanda precisa ter ao menos uma solicitação de recurso."})
 
     meta = demand.meta
     bloqueios = {}
     for solicitacao in solicitacoes:
+        # Com reserva já ativa (ex.: ressubmissão de Devolvida sem edição
+        # nessa solicitação específica), o saldo já desconta essa reserva —
+        # checar o valor cheio de novo bloquearia à toa.
+        if balance_service.reserva_ativa(solicitacao):
+            continue
         check = balance_service.verificar_duas_travas(
             solicitante=demand.solicitante, rubrica=solicitacao.rubrica, meta=meta,
             valor=solicitacao.valor_estimado,
@@ -158,7 +190,9 @@ def submeter_demanda(demand, *, usuario) -> Demand:
         if not check.disponivel:
             trava = check.trava_bloqueada
             motivo = (check.individual if trava == "individual" else check.territorial).motivo_bloqueio
-            bloqueios[str(solicitacao.pk)] = {"trava": trava, "motivo": motivo}
+            bloqueios[str(solicitacao.pk)] = {
+                "trava": trava, "motivo": motivo, "acao_sugerida": balance_service.ACAO_SUGERIDA[trava],
+            }
     if bloqueios:
         raise DRFValidationError({"solicitacoes_bloqueadas": bloqueios})
 

@@ -50,6 +50,14 @@ def test_passagem_classe_executiva_com_justificativa_ok(activity_rn):
     assert validado.campos_json["classe"] == "executiva"
 
 
+def test_passagem_ida_e_volta_string_truthy_rejeitada(activity_rn):
+    """M3: `"false"` (string) é truthy em Python — sem checagem estrita,
+    seria tratado como ida_e_volta=True."""
+    campos = _campos_passagem(ida_e_volta="false")
+    with pytest.raises(DRFValidationError):
+        validar_campos_json("passagem", campos, activity_rn)
+
+
 def test_passagem_cpf_invalido_bloqueia(activity_rn):
     campos = _campos_passagem(passageiro_cpf="11111111111")
     with pytest.raises(DRFValidationError):
@@ -155,7 +163,7 @@ def test_atualizar_solicitacao_em_rascunho_permitido(demand_rascunho_rn, municip
         },
     )
 
-    atualizado = atualizar_solicitacao(solicitacao, campos_json={
+    atualizado = atualizar_solicitacao(solicitacao, usuario=demand_rascunho_rn.solicitante, campos_json={
         "tipo_material": "banner", "quantidade": 5,
         "especificacoes_tecnicas": "2x2m", "prazo_entrega": "2026-12-15",
     })
@@ -175,7 +183,7 @@ def test_atualizar_solicitacao_bloqueada_fora_de_rascunho_devolvida(demand_rascu
     })
 
     with pytest.raises(DRFValidationError):
-        atualizar_solicitacao(solicitacao, campos_json={"quantidade": 2})
+        atualizar_solicitacao(solicitacao, usuario=demand_rascunho_rn.solicitante, campos_json={"quantidade": 2})
 
 
 def test_rubrica_slug_para_tipo_sem_mapeamento_configurado_usa_default():

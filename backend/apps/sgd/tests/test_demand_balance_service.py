@@ -3,6 +3,7 @@ from decimal import Decimal
 import pytest
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
+from apps.sgd.services import approval as approval_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
 from apps.sgd.tests.factories import DemandIndividualLimitFactory, DemandRequestFactory
@@ -205,3 +206,81 @@ def test_submeter_demanda_bloqueio_de_uma_solicitacao_identifica_so_a_bloqueada(
     assert demand.solicitacoes.count() == 2
     limite_individual_rn.refresh_from_db()
     assert limite_individual_rn.valor_comprometido == Decimal("0")
+
+
+def test_editar_valor_em_devolvida_ajusta_reserva_ativa(
+    demand_request_rn, solicitante_rn, usuario_articulador_rn, limite_individual_rn, allocation_territorial_rn,
+):
+    """A2: em Devolvida a reserva é mantida (§4.2) — editar o valor de uma
+    solicitação com reserva ativa ajusta a reserva na hora, não só o campo."""
+    demand = demand_request_rn.demanda
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Ajustar valor.")
+
+    novo_valor = demand_request_rn.valor_estimado + Decimal("200")
+    demand_service.atualizar_solicitacao(demand_request_rn, usuario=solicitante_rn, valor_estimado=novo_valor)
+
+    limite_individual_rn.refresh_from_db()
+    allocation_territorial_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == novo_valor
+    assert allocation_territorial_rn.valor_comprometido == novo_valor
+
+
+def test_resubmissao_apos_edicao_nao_bloqueia_a_toa(
+    demand_request_rn, solicitante_rn, usuario_articulador_rn, limite_individual_rn, allocation_territorial_rn,
+):
+    """A2: a solicitação editada em Devolvida já está com a reserva ajustada
+    — ressubmeter não deve checar o valor cheio de novo (isso bloquearia à
+    toa, já que o saldo já desconta essa própria reserva)."""
+    demand = demand_request_rn.demanda
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Ajustar valor.")
+
+    novo_valor = limite_individual_rn.valor_limite  # usa 100% do limite — sem folga pra "pedir de novo"
+    demand_service.atualizar_solicitacao(demand_request_rn, usuario=solicitante_rn, valor_estimado=novo_valor)
+
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+
+    demand.refresh_from_db()
+    assert demand.status == "submetida"
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == novo_valor
+
+
+def test_remover_solicitacao_com_reserva_ativa_libera_saldo(
+    demand_request_rn, solicitante_rn, usuario_articulador_rn, limite_individual_rn, allocation_territorial_rn,
+):
+    demand = demand_request_rn.demanda
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Remover item.")
+
+    demand_service.remover_solicitacao(demand_request_rn, usuario=solicitante_rn)
+
+    limite_individual_rn.refresh_from_db()
+    allocation_territorial_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == Decimal("0")
+    assert allocation_territorial_rn.valor_comprometido == Decimal("0")
+
+
+def test_trocar_tipo_com_reserva_ativa_bloqueado(
+    demand_request_rn, solicitante_rn, usuario_articulador_rn, limite_individual_rn, allocation_territorial_rn,
+):
+    """Trocar `tipo` muda a rubrica — o motor de saldo do SGP não suporta
+    trocar a alocação de uma reserva em andamento, então isso é rejeitado
+    enquanto há reserva ativa; remover e recriar é o caminho suportado."""
+    from apps.sgp.tests.factories import BudgetRubricaFactory
+
+    BudgetRubricaFactory(slug="alimentacao-refeicoes")
+
+    demand = demand_request_rn.demanda
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Tipo errado.")
+
+    with pytest.raises(DRFValidationError):
+        demand_service.atualizar_solicitacao(
+            demand_request_rn, usuario=solicitante_rn, tipo="alimentacao",
+            campos_json={
+                "tipo_refeicao": "almoco", "data_horario_servico": "2026-06-01T12:00:00",
+                "numero_pessoas": 10,
+            },
+        )
