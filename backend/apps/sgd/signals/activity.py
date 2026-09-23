@@ -24,11 +24,15 @@ def _cancelar_demandas_nao_atendidas(sender, instance, **kwargs):
 
     # Query só pega Demands ainda não-terminais — uma vez cancelada, saves
     # subsequentes da mesma Activity não a encontram mais de novo.
+    # "Em atendimento" fica de fora do cancelamento automático — já está
+    # sendo atendida pela FGD, não é uma "demanda não atendida" (RF10).
     from apps.sgd.models.demand import STATUS_TERMINAIS, Demand
     from apps.sgd.services import balance as balance_service
     from apps.sgd.services import notifications as notifications_service
 
-    demandas = Demand.objects.filter(activity=instance).exclude(status__in=STATUS_TERMINAIS)
+    demandas = Demand.objects.filter(activity=instance).exclude(
+        status__in=STATUS_TERMINAIS | {"em_atendimento"}
+    )
     for demand in demandas:
         for solicitacao in demand.solicitacoes.all():
             balance_service.liberar_duas_travas(
