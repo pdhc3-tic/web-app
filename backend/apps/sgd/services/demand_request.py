@@ -131,7 +131,9 @@ def _validar_passagem(campos: dict, activity) -> CamposValidados:
     ])
     _choice(campos, "classe", _CLASSE_CHOICES)
     _choice(campos, "urgencia", _URGENCIA_CHOICES)
-    if campos["ida_e_volta"] not in (True, False):
+    if not isinstance(campos["ida_e_volta"], bool):
+        # `1 in (True, False)` é True em Python (1 == True) — checar o tipo
+        # direto, não só o valor, senão 1/0 passariam pela checagem "estrita".
         raise DRFValidationError({"ida_e_volta": "Deve ser um booleano."})
 
     if campos["ida_e_volta"] and not campos.get("data_hora_volta"):

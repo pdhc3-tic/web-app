@@ -87,9 +87,6 @@ def _verificar_inatividade() -> int:
     return notificadas
 
 
-ACTIVITY_STATUS_CANCELAM_DEMANDAS = {"cancelada", "nao_realizada"}
-
-
 @shared_task(name="sgd.tasks.cancelar_demandas_da_atividade")
 def cancelar_demandas_da_atividade(activity_id: int) -> int:
     """Despachada por `apps.sgd.signals.activity._cancelar_demandas_nao_atendidas`
@@ -109,6 +106,7 @@ def cancelar_demandas_da_atividade(activity_id: int) -> int:
 def _cancelar_demandas_da_atividade(activity_id: int) -> int:
     from apps.sgd.services import balance as balance_service
     from apps.sgd.services import notifications as notifications_service
+    from apps.sgd.signals.activity import ACTIVITY_STATUS_CANCELAM_DEMANDAS
     from apps.sgp.models.activity import Activity
 
     try:
