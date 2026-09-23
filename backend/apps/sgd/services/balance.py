@@ -194,7 +194,7 @@ def reserva_ativa(demand_request) -> bool:
     evento, não a existência histórica de um tipo de evento."""
     ultimo = AuditLog.objects.filter(
         entidade=_ENTIDADE_LIMITE, entidade_id=str(demand_request.pk), acao__in=["reserva", "liberacao"],
-    ).order_by("-criado_em", "-id").values_list("acao", flat=True).first()
+    ).order_by("-timestamp", "-id").values_list("acao", flat=True).first()
     return ultimo == "reserva"
 
 
@@ -275,7 +275,7 @@ def _valor_reservado_individual(entidade_id: str, *, fallback: Decimal) -> Decim
     uma guarda de "já processei esse evento"."""
     ultimo = AuditLog.objects.filter(
         entidade=_ENTIDADE_LIMITE, entidade_id=entidade_id, acao__in=["reserva", "ajuste"],
-    ).order_by("-criado_em", "-id").first()
+    ).order_by("-timestamp", "-id").first()
     if ultimo is None:
         return fallback
     valor = (ultimo.valores_novos or {}).get("valor")
