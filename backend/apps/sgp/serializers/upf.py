@@ -59,7 +59,7 @@ class UPFListSerializer(serializers.ModelSerializer):
         model = UPF
         fields = [
             "id", "nome_titular", "cpf",
-            "municipio", "territorio", "criado_em", "ativa",
+            "municipio", "territorio", "criado_em", "ativo",
             "foto_url",
         ]
 
@@ -137,7 +137,7 @@ class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeria
             "situacao_moradia", "tipo_moradia", "material_construcao",
             "num_comodos", "energia", "agua",
             "daf_caf", "seguridade_social",
-            "foto_url", "criado_por", "ativa", "criado_em",
+            "foto_url", "criado_por", "ativo", "criado_em",
             "atualizado_em", "membros",
             # Sync SCA
             "device_id", "uuid_local", "ultima_origem", "ultimo_sync_em",
@@ -165,7 +165,7 @@ class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeria
         if cpf and projeto:
             projeto_pk = projeto.pk if hasattr(projeto, "pk") else projeto
             titular_ids = MembroFamilia.objects.filter(
-                cpf=cpf, upf__projeto_id=projeto_pk, upf__ativa=True,
+                cpf=cpf, upf__projeto_id=projeto_pk, upf__ativo=True,
             ).exclude(
                 upf=self.instance,
             ).values_list("pk", flat=True)
@@ -216,7 +216,7 @@ class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeria
             "latitude", "longitude", "pct", "posse_terra", "area_terra_ha",
             "situacao_moradia", "tipo_moradia", "material_construcao",
             "num_comodos", "energia", "agua", "seguridade_social",
-            "foto_url", "ativa", "ultima_origem",
+            "foto_url", "ativo", "ultima_origem",
         }
         daf_caf = attrs.pop("numero_dap", None)
         if daf_caf is not None:
