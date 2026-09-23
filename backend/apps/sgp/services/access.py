@@ -17,7 +17,7 @@ def is_global_user(user) -> bool:
 
     Não é sobre território: usado também por decisões binárias de
     visibilidade não-territoriais (ex.: quem pode listar registros
-    inativos com `?ativa=false`)."""
+    inativos com `?ativo=false`)."""
     return user_has_role(user, "super-admin") or user_has_role(user, "ugp")
 
 

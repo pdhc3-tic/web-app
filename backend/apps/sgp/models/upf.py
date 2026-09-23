@@ -13,8 +13,10 @@ from apps.sgp.constants import (
 )
 from apps.sgp.models.mixins import ScaSyncableModel
 
+from .base import SoftDeleteModel
 
-class UPF(ScaSyncableModel):
+
+class UPF(SoftDeleteModel, ScaSyncableModel):
     projeto = models.ForeignKey(
         "sgp.Projeto",
         on_delete=models.CASCADE,
@@ -148,7 +150,7 @@ class UPF(ScaSyncableModel):
         null=True, blank=True, verbose_name="Criado por",
     )
 
-    ativa = models.BooleanField(default=True, verbose_name="Ativa")
+    # Soft-delete: campo `ativo`/`deleted_at` herdados de SoftDeleteModel.
     criado_em = models.DateTimeField(
         auto_now_add=True, verbose_name="Criado em"
     )
@@ -156,7 +158,7 @@ class UPF(ScaSyncableModel):
         auto_now=True, verbose_name="Atualizado em"
     )
 
-    class Meta:
+    class Meta(SoftDeleteModel.Meta, ScaSyncableModel.Meta):
         verbose_name = "UPF"
         verbose_name_plural = "UPFs"
         ordering = ["-criado_em"]

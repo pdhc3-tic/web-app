@@ -52,7 +52,7 @@ class UPFFilter(django_filters.FilterSet):
     territorio = django_filters.NumberFilter(field_name="territorio_id")
     projeto = django_filters.NumberFilter(field_name="projeto_id")
     comunidade = django_filters.NumberFilter(field_name="comunidade_id")
-    ativa = django_filters.BooleanFilter()
+    ativo = django_filters.BooleanFilter()
     cadastrado_de = django_filters.DateFilter(
         field_name="criado_em", lookup_expr="date__gte"
     )
@@ -68,7 +68,7 @@ class UPFFilter(django_filters.FilterSet):
             "territorio",
             "projeto",
             "comunidade",
-            "ativa",
+            "ativo",
             "cadastrado_de",
             "cadastrado_ate",
             "q",

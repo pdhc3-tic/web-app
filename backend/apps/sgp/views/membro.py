@@ -77,7 +77,7 @@ class MembroViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         upf = self.get_upf()
-        if not upf.ativa:
+        if not upf.ativo:
             raise serializers.ValidationError(
                 "Não é possível adicionar membros a uma UPF inativa"
             )
@@ -250,7 +250,7 @@ class MembroViewSet(viewsets.ModelViewSet):
             )
 
         with transaction.atomic():
-            upf = UPF.objects.select_for_update().get(pk=self.kwargs["upf_pk"])
+            upf = UPF.all_objects.select_for_update().get(pk=self.kwargs["upf_pk"])
             upfs_visiveis = upfs_acessiveis_ao_usuario(request.user)
             if not upfs_visiveis.filter(pk=upf.pk).exists():
                 from django.shortcuts import get_object_or_404

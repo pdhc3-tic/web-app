@@ -169,7 +169,7 @@ def test_upload_foto_valida_retorna_201(auth_ugp, atividade):
     assert resp_confirm.data["arquivo_url"] == "https://cdn.example.com/atividades/1/fotos/img.jpg"
 
     # Verificar persistência no banco
-    assert ActivityPhoto.objects.filter(activity=atividade, ativa=True).count() == 1
+    assert ActivityPhoto.objects.filter(activity=atividade, ativo=True).count() == 1
 
 
 @pytest.mark.django_db
@@ -206,10 +206,10 @@ def test_upload_11a_foto_retorna_400(auth_ugp, atividade):
             arquivo_key=f"atividades/{atividade.pk}/fotos/foto{i:02d}.jpg",
             arquivo_url=f"https://cdn.example.com/foto{i:02d}.jpg",
             ordem=i,
-            ativa=True,
+            ativo=True,
         )
 
-    assert ActivityPhoto.objects.filter(activity=atividade, ativa=True).count() == 10
+    assert ActivityPhoto.objects.filter(activity=atividade, ativo=True).count() == 10
 
     storage_mock = _make_storage_mock()
     with patch("apps.sgp.views.activity_foto.get_storage", return_value=storage_mock):
@@ -236,7 +236,7 @@ def test_confirm_11a_foto_retorna_400(auth_ugp, atividade):
             arquivo_key=f"atividades/{atividade.pk}/fotos/foto{i:02d}.jpg",
             arquivo_url=f"https://cdn.example.com/foto{i:02d}.jpg",
             ordem=i,
-            ativa=True,
+            ativo=True,
         )
 
     storage_mock = _make_storage_mock()
@@ -383,15 +383,15 @@ def test_reordenacao_fotos_persiste_e_listagem_reflete(auth_ugp, atividade):
     """
     foto_a = ActivityPhoto.objects.create(
         activity=atividade, arquivo_key="k/a.jpg",
-        arquivo_url="https://cdn.example.com/a.jpg", ordem=0, ativa=True,
+        arquivo_url="https://cdn.example.com/a.jpg", ordem=0, ativo=True,
     )
     foto_b = ActivityPhoto.objects.create(
         activity=atividade, arquivo_key="k/b.jpg",
-        arquivo_url="https://cdn.example.com/b.jpg", ordem=1, ativa=True,
+        arquivo_url="https://cdn.example.com/b.jpg", ordem=1, ativo=True,
     )
     foto_c = ActivityPhoto.objects.create(
         activity=atividade, arquivo_key="k/c.jpg",
-        arquivo_url="https://cdn.example.com/c.jpg", ordem=2, ativa=True,
+        arquivo_url="https://cdn.example.com/c.jpg", ordem=2, ativo=True,
     )
 
     # Reordenar: C → A → B
@@ -424,7 +424,7 @@ def test_reordenacao_com_id_invalido_retorna_400(auth_ugp, atividade):
     """IDs de outra atividade ou inexistentes devem retornar 400."""
     foto = ActivityPhoto.objects.create(
         activity=atividade, arquivo_key="k/f.jpg",
-        arquivo_url="https://cdn.example.com/f.jpg", ordem=0, ativa=True,
+        arquivo_url="https://cdn.example.com/f.jpg", ordem=0, ativo=True,
     )
 
     resp = auth_ugp.patch(
@@ -437,18 +437,18 @@ def test_reordenacao_com_id_invalido_retorna_400(auth_ugp, atividade):
 
 @pytest.mark.django_db
 def test_soft_delete_foto(auth_ugp, atividade):
-    """DELETE deve marcar ativa=False sem remover do banco."""
+    """DELETE deve marcar ativo=False sem remover do banco."""
     foto = ActivityPhoto.objects.create(
         activity=atividade, arquivo_key="k/del.jpg",
-        arquivo_url="https://cdn.example.com/del.jpg", ordem=0, ativa=True,
+        arquivo_url="https://cdn.example.com/del.jpg", ordem=0, ativo=True,
     )
 
     resp = auth_ugp.delete(fotos_delete_url(atividade.pk, foto.pk))
     assert resp.status_code == status.HTTP_204_NO_CONTENT
 
     foto.refresh_from_db()
-    assert foto.ativa is False  # soft-delete — objeto ainda existe
-    assert ActivityPhoto.objects.filter(pk=foto.pk).exists()
+    assert foto.ativo is False  # soft-delete — objeto ainda existe
+    assert ActivityPhoto.all_objects.filter(pk=foto.pk).exists()
 
 
 # ===========================================================================
@@ -470,7 +470,7 @@ def test_integracao_foto_permite_concluir_atividade(auth_ugp, atividade):
         arquivo_key=f"atividades/{atividade.pk}/fotos/capa.jpg",
         arquivo_url="https://cdn.example.com/capa.jpg",
         ordem=0,
-        ativa=True,
+        ativo=True,
     )
 
     # Verificar que has_evidencias() retorna True

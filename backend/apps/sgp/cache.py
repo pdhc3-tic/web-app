@@ -19,7 +19,7 @@ def build_upf_map_cache_key(user_id, query_params):
     normalized_params = sorted(
         (key, tuple(query_params.getlist(key)))
         for key in query_params.keys()
-        if key in {"bbox", "municipio", "territorio", "projeto", "ativa"}
+        if key in {"bbox", "municipio", "territorio", "projeto", "ativo"}
     )
     return f"sgp:upfs:mapa:v{version}:user:{user_id}:params:{normalized_params}"
 

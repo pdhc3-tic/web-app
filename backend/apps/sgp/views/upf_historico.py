@@ -12,9 +12,31 @@ from apps.sgp.serializers import HistoricoEntrySerializer
 
 
 class UPFHistoricoMixin:
+    def _get_upf_including_inativas(self, pk):
+        """Resolve a UPF via all_objects — histórico precisa enxergar
+        inativas (Issue #267) —, mantendo o mesmo RLS territorial de
+        `UPFViewSet.get_queryset()`.
+
+        Import local para evitar import circular com `apps.sgp.views.upf`
+        (que importa este mixin).
+        """
+        from django.shortcuts import get_object_or_404
+        from rest_framework.exceptions import PermissionDenied
+
+        from apps.core.services.permissions import user_role_slugs
+        from apps.sgp.models import UPF
+        from apps.sgp.views.upf import UPF_ACCESS_ROLES, upfs_acessiveis_ao_usuario
+
+        user = self.request.user
+        role_slugs = user_role_slugs(user, UPF_ACCESS_ROLES)
+        if not role_slugs:
+            raise PermissionDenied("Você não tem acesso ao módulo SGP.")
+        pks = upfs_acessiveis_ao_usuario(user, role_slugs=role_slugs).values_list("pk", flat=True)
+        return get_object_or_404(UPF.all_objects.filter(pk__in=pks), pk=pk)
+
     @action(detail=True, methods=["get"], url_path="historico")
     def historico(self, request, pk=None):
-        upf = self.get_object()
+        upf = self._get_upf_including_inativas(pk)
         q = Q(entidade="UPF", entidade_id=str(upf.pk))
 
         incluir_membros = request.query_params.get("incluir_membros") == "true"

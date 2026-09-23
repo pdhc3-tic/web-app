@@ -167,7 +167,7 @@ export type UpfParticipante = {
   /** Mascarado pelo backend ("105.***.***-30"). */
   cpf: string;
   foto_url: string;
-  ativa: boolean;
+  ativo: boolean;
   municipio: { id: number; nome: string };
   territorio: { id: number; nome: string } | null;
   criado_em: string;

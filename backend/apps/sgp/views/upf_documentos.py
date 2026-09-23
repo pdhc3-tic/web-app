@@ -59,7 +59,9 @@ class UPFDocumentViewSet(viewsets.GenericViewSet):
         return self._upf
 
     def _accessible_upf_queryset(self):
-        qs = UPF.objects.select_related("municipio", "municipio__state", "territorio")
+        # all_objects: acessar documentos de uma UPF inativa continua
+        # funcionando (soft-delete não deve se misturar com RLS) — Issue #267.
+        qs = UPF.all_objects.select_related("municipio", "municipio__state", "territorio")
         return scope_queryset(
             qs,
             self.request.user,

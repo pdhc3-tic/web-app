@@ -121,9 +121,9 @@ class ActivityPhotoMixin:
     @action(detail=True, methods=["get"], url_path="fotos")
     def fotos_list(self, request, pk=None):
         activity = self._get_activity_for_upload(pk)
-        fotos = ActivityPhoto.objects.filter(
-            activity=activity, ativa=True
-        ).order_by("ordem", "criado_em")
+        fotos = ActivityPhoto.objects.filter(activity=activity).order_by(
+            "ordem", "criado_em"
+        )
         serializer = ActivityPhotoSerializer(fotos, many=True)
         return Response(serializer.data)
 
@@ -134,7 +134,7 @@ class ActivityPhotoMixin:
         activity = self._get_activity_for_upload(pk)
 
         # Limite de 10 fotos ativas
-        count = ActivityPhoto.objects.filter(activity=activity, ativa=True).count()
+        count = ActivityPhoto.objects.filter(activity=activity).count()
         if count >= MAX_PHOTOS_PER_ACTIVITY:
             return Response(
                 {
@@ -182,7 +182,7 @@ class ActivityPhotoMixin:
         activity = self._get_activity_for_upload(pk)
 
         # Verificar limite antes de confirmar
-        count = ActivityPhoto.objects.filter(activity=activity, ativa=True).count()
+        count = ActivityPhoto.objects.filter(activity=activity).count()
         if count >= MAX_PHOTOS_PER_ACTIVITY:
             return Response(
                 {
@@ -233,7 +233,7 @@ class ActivityPhotoMixin:
 
         # Calcular a próxima ordem (max + 1)
         ultima_ordem = (
-            ActivityPhoto.objects.filter(activity=activity, ativa=True)
+            ActivityPhoto.objects.filter(activity=activity)
             .order_by("-ordem")
             .values_list("ordem", flat=True)
             .first()
@@ -283,9 +283,7 @@ class ActivityPhotoMixin:
     )
     def fotos_delete(self, request, pk=None, foto_id=None):
         activity = self._get_activity_for_upload(pk)
-        foto = get_object_or_404(
-            ActivityPhoto, pk=foto_id, activity=activity, ativa=True
-        )
+        foto = get_object_or_404(ActivityPhoto, pk=foto_id, activity=activity)
 
         snapshot = {
             "foto_id": foto.pk,
@@ -295,8 +293,7 @@ class ActivityPhotoMixin:
         }
 
         # Soft-delete — mantém o arquivo no R2 por ora (pode ser GC depois)
-        foto.ativa = False
-        foto.save(update_fields=["ativa"])
+        foto.soft_delete()
 
         self._log_foto_audit(
             "activity_photo.deleted",
@@ -321,7 +318,7 @@ class ActivityPhotoMixin:
 
         # Validar que todos os IDs pertencem a esta atividade
         fotos_ativas = ActivityPhoto.objects.filter(
-            activity=activity, ativa=True, pk__in=ids_ordenados
+            activity=activity, pk__in=ids_ordenados
         )
         ids_validos = set(fotos_ativas.values_list("pk", flat=True))
         ids_enviados = set(ids_ordenados)
@@ -352,9 +349,9 @@ class ActivityPhotoMixin:
         )
 
         # Retornar fotos com a nova ordenação
-        fotos_atualizadas = ActivityPhoto.objects.filter(
-            activity=activity, ativa=True
-        ).order_by("ordem", "criado_em")
+        fotos_atualizadas = ActivityPhoto.objects.filter(activity=activity).order_by(
+            "ordem", "criado_em"
+        )
         return Response(
             ActivityPhotoSerializer(fotos_atualizadas, many=True).data,
             status=status.HTTP_200_OK,

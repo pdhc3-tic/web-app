@@ -624,7 +624,7 @@ def test_detalhe_traz_evidencias(auth_ugp, municipio_rn):
         arquivo_key=f"atividades/{atividade.pk}/fotos/foto.jpg",
         arquivo_url="https://cdn.example.com/foto.jpg",
         ordem=0,
-        ativa=True,
+        ativo=True,
     )
     ActivityDocument.objects.create(
         activity=atividade,
@@ -660,7 +660,7 @@ def test_fotos_ordenadas_capa_primeiro(auth_ugp, municipio_rn):
             arquivo_key=f"atividades/{atividade.pk}/fotos/foto{ordem}.jpg",
             arquivo_url=f"https://cdn.example.com/foto{ordem}.jpg",
             ordem=ordem,
-            ativa=True,
+            ativo=True,
         )
 
     response = auth_ugp.get(detail_url(atividade.pk))
@@ -698,7 +698,7 @@ def test_sem_n_mais_um(auth_ugp, municipio_rn):
         arquivo_key=f"atividades/{atividade_1_foto.pk}/fotos/foto.jpg",
         arquivo_url="https://cdn.example.com/foto.jpg",
         ordem=0,
-        ativa=True,
+        ativo=True,
     )
 
     atividade_10_fotos = ActivityFactory(municipio=municipio_rn)
@@ -708,7 +708,7 @@ def test_sem_n_mais_um(auth_ugp, municipio_rn):
             arquivo_key=f"atividades/{atividade_10_fotos.pk}/fotos/foto{i:02d}.jpg",
             arquivo_url=f"https://cdn.example.com/foto{i:02d}.jpg",
             ordem=i,
-            ativa=True,
+            ativo=True,
         )
 
     with CaptureQueriesContext(connection) as ctx_1:

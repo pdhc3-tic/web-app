@@ -79,8 +79,8 @@ def test_pull_sem_since_retorna_conjunto_completo(auth_client, usuario, municipi
 
 @pytest.mark.django_db
 def test_pull_soft_delete_vem_com_ativo_false(auth_client, usuario, municipio, projeto):
-    inativa = UPFFactory(municipio=municipio, projeto=projeto, ativa=False, titular_cpf="11144477735")
-    _set_updated_at(UPF.objects.filter(pk=inativa.pk), timezone.now() - timedelta(minutes=5))
+    inativa = UPFFactory(municipio=municipio, projeto=projeto, ativo=False, titular_cpf="11144477735")
+    _set_updated_at(UPF.all_objects.filter(pk=inativa.pk), timezone.now() - timedelta(minutes=5))
 
     response = get_pull(auth_client, since=timezone.now() - timedelta(days=1))
 
