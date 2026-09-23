@@ -53,6 +53,22 @@ def test_task_cancela_demandas_nao_atendidas_e_libera_saldo(
     ).exists()
 
 
+def test_task_nao_cancela_demanda_em_atendimento(activity_rn):
+    """M2: "não atendidas" exclui quem já está sendo atendida pela FGD —
+    só Rascunho/Submetida/Devolvida/Pré-autorizada/Autorizada são
+    canceladas automaticamente."""
+    demand = DemandFactory(activity=activity_rn, status="em_atendimento")
+
+    activity_rn.status = "cancelada"
+    activity_rn.justificativa = "Cancelada."
+    activity_rn.save(update_fields=["status", "justificativa"])
+
+    cancelar_demandas_da_atividade(activity_rn.pk)
+
+    demand.refresh_from_db()
+    assert demand.status == "em_atendimento"
+
+
 def test_task_nao_afeta_demanda_ja_concluida(activity_rn):
     demand = DemandFactory(activity=activity_rn, status="concluida")
 

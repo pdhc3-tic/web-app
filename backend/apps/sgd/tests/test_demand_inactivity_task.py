@@ -63,6 +63,29 @@ def test_demanda_em_rascunho_nunca_dispara(activity_rn):
     notificar.assert_not_called()
 
 
+def test_resubmissao_sem_novo_approval_step_nao_dispara_pela_data_antiga(activity_rn):
+    """M10: resubmeter uma Devolvida não cria ApprovalStep novo — sem o
+    max() com atualizado_em, a referência ficaria presa na data da
+    devolução antiga (aqui, há dias) e dispararia mesmo a demanda tendo
+    sido movimentada agora."""
+    from apps.sgd.models.approval_step import ApprovalStep
+
+    demand = DemandFactory(activity=activity_rn, status="submetida")
+    ApprovalStep.objects.create(
+        demanda=demand, etapa="pre_autorizacao", responsavel=demand.solicitante,
+        acao="devolvido", justificativa="Corrigir X.",
+    )
+    ApprovalStep.objects.filter(demanda=demand).update(criado_em=timezone.now() - timedelta(days=10))
+    # atualizado_em fica "agora" — a resubmissão acabou de acontecer.
+    Demand.objects.filter(pk=demand.pk).update(atualizado_em=timezone.now())
+
+    with patch("apps.sgd.tasks.notificar_inatividade") as notificar:
+        total = check_demand_inactivity_alert()
+
+    assert total == 0
+    notificar.assert_not_called()
+
+
 def test_nao_notifica_duas_vezes_pelo_mesmo_periodo_parado(activity_rn, usuario_articulador_rn):
     """Rodar a task duas vezes seguidas sobre a mesma demanda parada não pode
     gerar duas notificações do mesmo período de inatividade.

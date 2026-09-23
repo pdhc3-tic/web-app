@@ -284,3 +284,47 @@ def test_trocar_tipo_com_reserva_ativa_bloqueado(
                 "numero_pessoas": 10,
             },
         )
+
+
+def test_liberar_apos_ajuste_libera_o_valor_ajustado_nao_o_congelado(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    """Depois de um ajuste, `liberar_duas_travas` precisa liberar o valor
+    efetivamente reservado agora — não `valor_estimado`, que fica congelado
+    no valor original e ficaria dessincronizado do que está em
+    `valor_comprometido`."""
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    novo_valor = demand_request_rn.valor_estimado + Decimal("300")
+    balance_service.ajustar_duas_travas(
+        demand_request=demand_request_rn, novo_valor=novo_valor, usuario=solicitante_rn,
+    )
+
+    balance_service.liberar_duas_travas(
+        demand_request=demand_request_rn, usuario=solicitante_rn, motivo="Teste.",
+    )
+
+    limite_individual_rn.refresh_from_db()
+    allocation_territorial_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == Decimal("0")
+    assert allocation_territorial_rn.valor_comprometido == Decimal("0")
+
+
+def test_autorizar_excedente_rejeita_origem_territorial(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    """RF16: remanejamento emergencial só pode vir de saldo estadual ou
+    nacional, nunca de outro pool territorial."""
+    from apps.sgp.models.budget import BudgetAllocation
+    from apps.sgp.tests.factories import BudgetAllocationFactory
+
+    origem_territorial = BudgetAllocationFactory(
+        meta=demand_request_rn.meta, rubrica=demand_request_rn.rubrica,
+        nivel=BudgetAllocation.Nivel.TERRITORIAL, territorio=allocation_territorial_rn.territorio,
+        valor_alocado=Decimal("5000"),
+    )
+
+    with pytest.raises(DRFValidationError):
+        balance_service.autorizar_excedente(
+            demand_request=demand_request_rn, origem_allocation=origem_territorial,
+            valor_excedente=Decimal("500"), justificativa="Tentativa inválida.", usuario=solicitante_rn,
+        )

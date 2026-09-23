@@ -44,7 +44,8 @@ def _ids_visiveis_para(*, user_id, role, territorios: str) -> set[int]:
 
 @pytest.mark.django_db(transaction=True)
 def test_rls_filtra_por_territorio_e_papel(activity_rn, solicitante_rn, municipio_ce,
-                                            usuario_articulador_rn, usuario_articulador_ce, usuario_ugp):
+                                            usuario_articulador_rn, usuario_articulador_ce, usuario_ugp,
+                                            usuario_fgd):
     outro_solicitante = UserFactory()
     activity_ce = ActivityFactory(
         municipio=municipio_ce, tecnico_responsavel=outro_solicitante, status="planejado",
@@ -77,3 +78,7 @@ def test_rls_filtra_por_territorio_e_papel(activity_rn, solicitante_rn, municipi
     # UGP vê todas, de qualquer território.
     vistos_ugp = _ids_visiveis_para(user_id=usuario_ugp.pk, role="ugp", territorios="")
     assert {demand_rn.pk, demand_ce.pk} <= vistos_ugp
+
+    # FGD também vê todas.
+    vistos_fgd = _ids_visiveis_para(user_id=usuario_fgd.pk, role="fgd", territorios="")
+    assert {demand_rn.pk, demand_ce.pk} <= vistos_fgd

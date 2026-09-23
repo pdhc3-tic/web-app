@@ -58,10 +58,31 @@ def test_passagem_ida_e_volta_string_truthy_rejeitada(activity_rn):
         validar_campos_json("passagem", campos, activity_rn)
 
 
+def test_passagem_ida_e_volta_inteiro_truthy_rejeitado(activity_rn):
+    """`1 == True` em Python — checar `isinstance(..., bool)`, não só o
+    valor contra `(True, False)`, senão 1/0 passariam pela checagem."""
+    campos = _campos_passagem(ida_e_volta=1)
+    with pytest.raises(DRFValidationError):
+        validar_campos_json("passagem", campos, activity_rn)
+
+
 def test_passagem_cpf_invalido_bloqueia(activity_rn):
     campos = _campos_passagem(passageiro_cpf="11111111111")
     with pytest.raises(DRFValidationError):
         validar_campos_json("passagem", campos, activity_rn)
+
+
+def test_diaria_com_valor_padrao_zero_bloqueia(activity_rn, municipio_rn):
+    """`sgd_valor_diaria_padrao` não configurado (seed default "0") não pode
+    deixar seguir com uma solicitação de R$0 — bloqueia direto."""
+    campos = {
+        "beneficiario_nome": "Fulano", "beneficiario_cpf": "52998224725",
+        "beneficiario_cargo": "Técnico", "beneficiario_vinculo": "servidor_ufersa",
+        "municipio_destino_id": municipio_rn.pk, "data_inicio": "2026-06-01", "data_fim": "2026-06-03",
+        "meio_transporte": "rodoviario", "justificativa": "Visita técnica.",
+    }
+    with pytest.raises(DRFValidationError):
+        validar_campos_json("diaria", campos, activity_rn)
 
 
 def test_diaria_calcula_numero_diarias_e_valor_total(activity_rn, municipio_rn):
