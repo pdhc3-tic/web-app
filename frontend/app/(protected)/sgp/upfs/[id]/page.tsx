@@ -57,8 +57,6 @@ function gps(upf: UpfDetail): string {
     : "";
 }
 
-// `choices` entra por parâmetro porque buildTabs não é componente e não pode
-// chamar useSgpChoices() — o hook fica no componente, que repassa aqui.
 function buildTabs(upf: UpfDetail, choices: SgpChoices): TabItem[] {
   const seguridade =
     upf.seguridade_social.length > 0 ? (
@@ -69,6 +67,21 @@ function buildTabs(upf: UpfDetail, choices: SgpChoices): TabItem[] {
       </div>
     ) : undefined;
 
+  // Estado vem embutido em `upf.municipio.estado` (contrato do
+  // `MunicipioNestedSerializer`). Quando o backend deixa de enviar essa chave
+  // — cadastro legado, resposta parcial —, a ficha exibe um chip vermelho de
+  // erro no lugar do valor. Nunca cai em "—", que sugeriria "não preencheu".
+  const estadoValor: React.ReactNode = upf.municipio.estado ? (
+    upf.municipio.estado.nome
+  ) : (
+    <span
+      className="inline-flex items-center rounded-full border border-error-text bg-error-bg px-2 py-0.5 text-2xs font-semibold text-error-text"
+      role="alert"
+    >
+      Localização incompleta — contate o suporte
+    </span>
+  );
+
   return [
     {
       id: "localizacao",
@@ -76,7 +89,7 @@ function buildTabs(upf: UpfDetail, choices: SgpChoices): TabItem[] {
       content: (
         <DefinitionList
           items={[
-            { label: "Estado", value: undefined },
+            { label: "Estado", value: estadoValor },
             { label: "Município", value: upf.municipio.nome },
             { label: "Comunidade", value: upf.comunidade?.nome },
             { label: "Território", value: upf.territorio?.nome },

@@ -12,12 +12,25 @@ export type PainelFiltersValue = {
   territorio: string;
   /** status_execucao da Ação. "" = todas as situações. */
   situacao: string;
+  /**
+   * Apenas ações com semáforo vermelho (`avaliacao.nivel === "vermelho"`).
+   * Filtro frontend-only: o backend não conhece "criticas"; a página já recebe
+   * a avaliação calculada pelo backend e recorta localmente.
+   *
+   * Existe explicitamente porque `situacao=em_atraso` NÃO é sinônimo de
+   * "crítica" — uma Ação `concluida` pode aparecer vermelha (execução abaixo
+   * do esperado no encerramento) e uma Ação `em_atraso` pode não ser vermelha
+   * (se realizado ainda cobre o esperado). O card "Ações críticas" do
+   * Dashboard aponta pra cá justamente por esse motivo.
+   */
+  criticas: boolean;
 };
 
 export const FILTROS_VAZIOS: PainelFiltersValue = {
   meta: "",
   territorio: "",
   situacao: "",
+  criticas: false,
 };
 
 /**
@@ -51,7 +64,10 @@ export function PainelFilters({
   optionsLoading,
 }: Props) {
   const temFiltro =
-    value.meta !== "" || value.territorio !== "" || value.situacao !== "";
+    value.meta !== "" ||
+    value.territorio !== "" ||
+    value.situacao !== "" ||
+    value.criticas;
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4">
@@ -95,6 +111,20 @@ export function PainelFilters({
             placeholder="Todas as situações"
           />
         </div>
+
+        <label
+          className="inline-flex h-9 shrink-0 items-center gap-2 self-end px-3 text-sm text-text"
+          data-testid="painel-filtro-criticas-label"
+        >
+          <input
+            type="checkbox"
+            data-testid="painel-filtro-criticas"
+            className="h-4 w-4 accent-error-text"
+            checked={value.criticas}
+            onChange={(e) => onChange({ criticas: e.target.checked })}
+          />
+          Apenas ações críticas
+        </label>
 
         {temFiltro && (
           <button
