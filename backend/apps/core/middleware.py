@@ -94,8 +94,8 @@ class SessionContextMiddleware:
         except Exception:
             # Fail-safe: role vazio nunca é um dos papéis privilegiados na
             # policy, então isso só restringe (cai no "vê as próprias"),
-            # nunca abre acesso — mas logamos, porque essa mesma forma de
-            # engolir exceção em silêncio foi o que escondeu o bug original.
+            # nunca abre acesso — mas um lookup de RLS falhando em silêncio,
+            # sem log nenhum, não pode passar despercebido.
             logger.exception("session_context.user_role_from_db_failed user_id=%s", getattr(user, "pk", None))
             return ""
         for role in cls._ROLES_RLS:
@@ -118,8 +118,7 @@ class SessionContextMiddleware:
             # pra um Articulador (fail-open) — mas só importa se o role
             # também resolveu pra articulador-estadual; se a mesma falha
             # atingiu os dois lookups, o role já veio "" e essa policy nem
-            # olha pro território. Loga pra não repetir o silêncio que
-            # escondeu o bug original.
+            # olha pro território.
             logger.exception("session_context.user_territories_from_db_failed user_id=%s", getattr(user, "pk", None))
         return ""
 

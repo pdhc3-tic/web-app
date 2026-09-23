@@ -208,7 +208,7 @@ def test_submeter_demanda_bloqueio_de_uma_solicitacao_identifica_so_a_bloqueada(
     assert limite_individual_rn.valor_comprometido == Decimal("0")
 
 
-def _editar_data_fim_da_diaria(demand_request, *, municipio, dias_a_mais: int) -> dict:
+def _campos_diaria_com_dias(*, municipio, dias_a_mais: int) -> dict:
     """`demand_request_rn` é tipo "diaria" — esse tipo sempre recalcula
     valor_estimado a partir das datas (validado.valor_estimado_auto nunca é
     None), então passar `valor_estimado` direto pro service não muda nada
@@ -243,7 +243,7 @@ def test_editar_valor_em_devolvida_ajusta_reserva_ativa(
         demand_service.submeter_demanda(demand, usuario=solicitante_rn)
         approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Ajustar valor.")
 
-        campos = _editar_data_fim_da_diaria(demand_request_rn, municipio=municipio_rn, dias_a_mais=4)
+        campos = _campos_diaria_com_dias(municipio=municipio_rn, dias_a_mais=4)
         demand_service.atualizar_solicitacao(demand_request_rn, usuario=solicitante_rn, campos_json=campos)
         novo_valor = demand_request_rn.valor_estimado  # 4 diárias x R$200 — mutado in place pelo service
 
@@ -279,7 +279,7 @@ def test_resubmissao_apos_edicao_nao_bloqueia_a_toa(
         # pular quem já tem reserva ativa), contaria essa reserva em dobro e
         # bloquearia aqui; com folga o teste passaria mesmo com o bug antigo.
         dias_no_limite = int(limite_individual_rn.valor_limite / Decimal("200"))
-        campos = _editar_data_fim_da_diaria(demand_request_rn, municipio=municipio_rn, dias_a_mais=dias_no_limite)
+        campos = _campos_diaria_com_dias(municipio=municipio_rn, dias_a_mais=dias_no_limite)
         demand_service.atualizar_solicitacao(demand_request_rn, usuario=solicitante_rn, campos_json=campos)
         novo_valor = demand_request_rn.valor_estimado
         assert novo_valor == limite_individual_rn.valor_limite
