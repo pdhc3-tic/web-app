@@ -108,6 +108,10 @@ def _validar_diaria(campos: dict, activity) -> CamposValidados:
 
     numero_diarias = max((data_fim - data_inicio).days, 1)
     valor_por_diaria = _parse_decimal(get_config("sgd_valor_diaria_padrao", "0"))
+    if valor_por_diaria <= 0:
+        raise DRFValidationError({
+            "valor_por_diaria": "Valor de diária não configurado — contate o Super Admin (sgd_valor_diaria_padrao)."
+        })
     valor_total = numero_diarias * valor_por_diaria
 
     campos_limpos = {k: v for k, v in campos.items() if k != "beneficiario_cpf"}
@@ -127,6 +131,8 @@ def _validar_passagem(campos: dict, activity) -> CamposValidados:
     ])
     _choice(campos, "classe", _CLASSE_CHOICES)
     _choice(campos, "urgencia", _URGENCIA_CHOICES)
+    if campos["ida_e_volta"] not in (True, False):
+        raise DRFValidationError({"ida_e_volta": "Deve ser um booleano."})
 
     if campos["ida_e_volta"] and not campos.get("data_hora_volta"):
         raise DRFValidationError(
