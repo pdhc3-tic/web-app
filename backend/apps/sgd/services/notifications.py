@@ -134,10 +134,19 @@ def notificar_atividade_adiada(demand, responsaveis, *, nova_data) -> None:
     )
 
 
-def notificar_inatividade(demand, responsaveis) -> None:
+def evento_inatividade(demand, *, referencia) -> str:
+    """`referencia` (a data do último evento da demanda) faz parte da chave —
+    dedup por período parado: uma vez notificado por esse período de
+    inatividade, não notifica de novo até a demanda se mexer e abrir um
+    novo período (nova `referencia`)."""
+    return f"demand_inatividade:{demand.pk}:{referencia.isoformat()}"
+
+
+def notificar_inatividade(demand, responsaveis, *, referencia) -> None:
     _notificar(
         usuarios=responsaveis,
         titulo=f"Demanda sem movimentação há 5 dias úteis: {demand.titulo}",
         mensagem=f"A demanda '{demand.titulo}' está parada em '{demand.get_status_display()}' há 5 dias úteis.",
-        link=_link_demanda(demand), evento="demand_inatividade", canais=_EMAIL_E_IN_APP,
+        link=_link_demanda(demand), evento=evento_inatividade(demand, referencia=referencia),
+        canais=_EMAIL_E_IN_APP,
     )

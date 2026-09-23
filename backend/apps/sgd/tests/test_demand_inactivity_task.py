@@ -49,3 +49,31 @@ def test_demanda_terminal_nunca_dispara(activity_rn):
         check_demand_inactivity_alert()
 
     notificar.assert_not_called()
+
+
+def test_demanda_em_rascunho_nunca_dispara(activity_rn):
+    """M11: Rascunho nunca foi submetida — não tem etapa aguardando ninguém."""
+    demand = DemandFactory(activity=activity_rn, status="rascunho")
+    _voltar_no_tempo_dias_uteis(demand, 30)
+
+    with patch("apps.sgd.tasks.notificar_inatividade") as notificar:
+        total = check_demand_inactivity_alert()
+
+    assert total == 0
+    notificar.assert_not_called()
+
+
+def test_nao_notifica_duas_vezes_pelo_mesmo_periodo_parado(activity_rn, usuario_articulador_rn):
+    """M11: rodar a task duas vezes seguidas sobre a mesma demanda parada não
+    pode gerar duas notificações do mesmo período de inatividade.
+    `usuario_articulador_rn` precisa existir — sem responsável nenhum
+    recebendo a notificação, nenhuma `Notification` é criada e a
+    deduplicação (que olha pra essas linhas) não teria o que comparar."""
+    demand = DemandFactory(activity=activity_rn, status="submetida")
+    _voltar_no_tempo_dias_uteis(demand, 7)
+
+    total_1 = check_demand_inactivity_alert()
+    total_2 = check_demand_inactivity_alert()
+
+    assert total_1 == 1
+    assert total_2 == 0
