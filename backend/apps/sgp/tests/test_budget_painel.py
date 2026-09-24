@@ -70,7 +70,7 @@ class TestPainelSemaforo:
         assert linha["semaforo"] == "amarelo"
         assert linha["alerta_80"] is False
 
-    def test_semaforo_vermelho_em_80(self, auth_client_super_admin):
+    def test_semaforo_amarelo_em_80(self, auth_client_super_admin):
         meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
         BudgetAllocationFactory(
@@ -83,8 +83,51 @@ class TestPainelSemaforo:
         )
 
         linha = _linha(response, meta, rubrica)
+        assert linha["semaforo"] == "amarelo"
+        assert linha["alerta_80"] is False
+
+    def test_semaforo_vermelho_em_90(self, auth_client_super_admin):
+        meta = WorkPlanMetaFactory()
+        rubrica = BudgetRubricaFactory()
+        BudgetAllocationFactory(
+            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL, estado=None, territorio=None,
+            valor_alocado=Decimal("10000"), valor_comprometido=Decimal("9000"),
+        )
+
+        response = auth_client_super_admin.get(
+            f"{PAINEL_URL}?meta={meta.pk}&rubrica={rubrica.slug}"
+        )
+
+        linha = _linha(response, meta, rubrica)
         assert linha["semaforo"] == "vermelho"
         assert linha["alerta_80"] is True
+
+    def test_semaforo_segue_limiares_configurados_no_core(self, auth_client_super_admin):
+        from django.core.cache import cache
+
+        from apps.core.models.system_config import SystemConfig, TipoConfiguracao
+
+        meta = WorkPlanMetaFactory()
+        rubrica = BudgetRubricaFactory()
+        BudgetAllocationFactory(
+            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL, estado=None, territorio=None,
+            valor_alocado=Decimal("10000"), valor_comprometido=Decimal("8000"),
+        )
+        SystemConfig.objects.update_or_create(
+            chave="budget_alert_red_pct", defaults={"valor": "75", "tipo": TipoConfiguracao.INTEGER},
+        )
+        try:
+            response = auth_client_super_admin.get(
+                f"{PAINEL_URL}?meta={meta.pk}&rubrica={rubrica.slug}"
+            )
+
+            linha = _linha(response, meta, rubrica)
+            assert linha["semaforo"] == "vermelho"
+            assert linha["alerta_80"] is True
+        finally:
+            # Cache de SystemConfig não é transacional — limpa pra não vazar
+            # o limiar de 75% pros testes seguintes.
+            cache.delete("system_config:budget_alert_red_pct")
 
     def test_alocacao_zerada_nao_quebra(self, auth_client_super_admin):
         meta = WorkPlanMetaFactory()

@@ -189,7 +189,10 @@ def submeter_demanda(demand, *, usuario) -> Demand:
         )
         if not check.disponivel:
             trava = check.trava_bloqueada
-            motivo = (check.individual if trava == "individual" else check.territorial).motivo_bloqueio
+            if trava == balance_service.TRAVA_INDIVIDUAL:
+                motivo = check.individual.motivo_bloqueio
+            else:
+                motivo = balance_service.motivo_territorial(check.territorial)
             bloqueios[str(solicitacao.pk)] = {
                 "trava": trava, "motivo": motivo, "acao_sugerida": balance_service.ACAO_SUGERIDA[trava],
             }

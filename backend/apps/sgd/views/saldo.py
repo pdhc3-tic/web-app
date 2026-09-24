@@ -26,5 +26,7 @@ class SaldoConsultaView(APIView):
         check = balance_service.verificar_duas_travas(
             solicitante=request.user, rubrica=rubrica, meta=activity.acao.meta, valor=dados["valor"],
         )
-        payload = balance_service.payload_saldo_consulta(check, solicitante=request.user, rubrica=rubrica)
+        payload = balance_service.payload_saldo_consulta(
+            check, solicitante=request.user, rubrica=rubrica, valor=dados["valor"],
+        )
         return Response(SaldoConsultaSerializer(payload).data)

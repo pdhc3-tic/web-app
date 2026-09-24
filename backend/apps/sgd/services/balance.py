@@ -16,11 +16,9 @@ from apps.core.models.audit_log import AuditLog
 from apps.sgd.models import DemandIndividualLimit
 from apps.sgd.services import notifications as notifications_service
 from apps.sgp.services import budget as budget_service
+from apps.sgp.services.budget import faixa_semaforo, percentual_comprometido
 
 ZERO = Decimal("0")
-
-LIMIAR_AMARELO_SGD = Decimal("70")
-LIMIAR_VERMELHO_SGD = Decimal("90")
 
 TRAVA_INDIVIDUAL = "individual"
 TRAVA_TERRITORIAL = "territorial"
@@ -32,6 +30,17 @@ ACAO_SUGERIDA = {
     TRAVA_INDIVIDUAL: "solicitar_recurso_extra",
     TRAVA_TERRITORIAL: "acionar_articulador",
 }
+
+ORIENTACAO = {
+    TRAVA_INDIVIDUAL: "Use a opção 'Solicitar recurso extra'.",
+    TRAVA_TERRITORIAL: "Território esgotado nesta rubrica — acione o Articulador Estadual.",
+}
+
+
+def com_orientacao(motivo: str | None, trava: str) -> str | None:
+    if not motivo:
+        return motivo
+    return f"{motivo} {ORIENTACAO[trava]}"
 
 
 @dataclass
@@ -60,53 +69,47 @@ class DuasTravasCheck:
         return None
 
 
-def semaforo_sgd(percentual: Decimal) -> str:
-    if percentual >= LIMIAR_VERMELHO_SGD:
-        return "vermelho"
-    if percentual >= LIMIAR_AMARELO_SGD:
-        return "amarelo"
-    return "verde"
+def _semaforos(comprometido: Decimal, total: Decimal, valor: Decimal) -> dict:
+    return {
+        "semaforo_atual": faixa_semaforo(percentual_comprometido(comprometido, total)),
+        "semaforo_apos": faixa_semaforo(percentual_comprometido(comprometido + valor, total)),
+    }
 
 
-def percentual_comprometido(comprometido: Decimal, limite: Decimal) -> Decimal:
-    if limite <= ZERO:
-        return ZERO
-    return (comprometido / limite) * Decimal("100")
-
-
-def semaforo_allocation(allocation) -> str | None:
-    """Semáforo 70/90 do SGD (LIMIAR_AMARELO_SGD/VERMELHO_SGD) — fonte única
-    pras duas travas, a mesma que `preview_impacto` já usa pro territorial.
-    Não é o 60/80 do painel do SGP: esse é o painel de execução geral, este
-    é o semáforo de bloqueio da submissão de demandas (§5.2), item distinto
-    conforme SGD_Requisitos_v1_1.md."""
-    if allocation is None:
-        return None
-    return semaforo_sgd(percentual_comprometido(allocation.valor_comprometido, allocation.valor_alocado))
-
-
-def semaforo_individual(*, solicitante, rubrica) -> str | None:
+def _semaforos_individual(*, solicitante, rubrica, valor: Decimal) -> dict:
     limite = DemandIndividualLimit.objects.filter(solicitante=solicitante, rubrica=rubrica).first()
     if limite is None:
-        return None
-    return semaforo_sgd(percentual_comprometido(limite.valor_comprometido, limite.valor_limite))
+        return {"semaforo_atual": None, "semaforo_apos": None}
+    return _semaforos(limite.valor_comprometido, limite.valor_limite, valor)
 
 
-def payload_saldo_consulta(check: "DuasTravasCheck", *, solicitante, rubrica) -> dict:
+def _semaforos_allocation(allocation, *, valor: Decimal) -> dict:
+    if allocation is None:
+        return {"semaforo_atual": None, "semaforo_apos": None}
+    return _semaforos(allocation.valor_comprometido, allocation.valor_alocado, valor)
+
+
+def motivo_territorial(check: "budget_service.SaldoCheck") -> str | None:
+    if check.disponivel:
+        return check.motivo_bloqueio
+    return com_orientacao(check.motivo_bloqueio, TRAVA_TERRITORIAL)
+
+
+def payload_saldo_consulta(check: "DuasTravasCheck", *, solicitante, rubrica, valor: Decimal) -> dict:
     return {
         "individual": {
             "disponivel": check.individual.disponivel,
             "saldo": check.individual.saldo,
             "motivo_bloqueio": check.individual.motivo_bloqueio,
             "acao_sugerida": check.individual.acao_sugerida,
-            "semaforo": semaforo_individual(solicitante=solicitante, rubrica=rubrica),
+            **_semaforos_individual(solicitante=solicitante, rubrica=rubrica, valor=valor),
         },
         "territorial": {
             "disponivel": check.territorial.disponivel,
             "saldo": check.territorial.saldo,
-            "motivo_bloqueio": check.territorial.motivo_bloqueio,
+            "motivo_bloqueio": motivo_territorial(check.territorial),
             "acao_sugerida": None if check.territorial.disponivel else ACAO_SUGERIDA[TRAVA_TERRITORIAL],
-            "semaforo": semaforo_allocation(check.territorial.allocation),
+            **_semaforos_allocation(check.territorial.allocation, valor=valor),
         },
         "disponivel": check.disponivel,
         "trava_bloqueada": check.trava_bloqueada,
@@ -133,8 +136,8 @@ def _destinatarios_saldo_territorial(*, nivel, estado_sigla, territorio):
 
 
 def _notificar_se_piorou(*, usuarios, demand, rubrica_nome, trava, comprometido_antes, comprometido_depois, limite) -> None:
-    antes = semaforo_sgd(percentual_comprometido(comprometido_antes, limite))
-    depois = semaforo_sgd(percentual_comprometido(comprometido_depois, limite))
+    antes = faixa_semaforo(percentual_comprometido(comprometido_antes, limite))
+    depois = faixa_semaforo(percentual_comprometido(comprometido_depois, limite))
     if _ORDEM_SEMAFORO[depois] > _ORDEM_SEMAFORO[antes]:
         notifications_service.notificar_mudanca_semaforo(
             usuarios=usuarios, demand=demand, rubrica_nome=rubrica_nome, trava=trava, semaforo=depois,
@@ -146,9 +149,10 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal) -> TravaCheck:
     if limite is None:
         return TravaCheck(
             disponivel=False, saldo=ZERO,
-            motivo_bloqueio=(
-                f"Nenhum limite individual configurado para você nesta rubrica. "
-                f"R$ 0.00 disponível, R$ {valor} solicitado. Solicite ao Super Admin."
+            motivo_bloqueio=com_orientacao(
+                f"Nenhum limite individual configurado para você nesta rubrica: "
+                f"R$ 0.00 disponível, R$ {valor} solicitado.",
+                TRAVA_INDIVIDUAL,
             ),
             acao_sugerida=ACAO_SUGERIDA[TRAVA_INDIVIDUAL],
         )
@@ -156,16 +160,20 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal) -> TravaCheck:
     if saldo <= ZERO:
         return TravaCheck(
             disponivel=False, saldo=saldo,
-            motivo_bloqueio=(
+            motivo_bloqueio=com_orientacao(
                 f"Limite individual esgotado para esta rubrica: R$ {saldo} disponível, "
-                f"R$ {valor} solicitado."
+                f"R$ {valor} solicitado.",
+                TRAVA_INDIVIDUAL,
             ),
             acao_sugerida=ACAO_SUGERIDA[TRAVA_INDIVIDUAL],
         )
     if valor > saldo:
         return TravaCheck(
             disponivel=False, saldo=saldo,
-            motivo_bloqueio=f"Limite individual insuficiente: R$ {saldo} disponível, R$ {valor} solicitado.",
+            motivo_bloqueio=com_orientacao(
+                f"Limite individual insuficiente: R$ {saldo} disponível, R$ {valor} solicitado.",
+                TRAVA_INDIVIDUAL,
+            ),
             acao_sugerida=ACAO_SUGERIDA[TRAVA_INDIVIDUAL],
         )
     return TravaCheck(disponivel=True, saldo=saldo, motivo_bloqueio=None)
@@ -227,9 +235,10 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
         # do valor_limite.
         if valor > limite.saldo_disponivel:
             raise DRFValidationError({
-                "detail": (
+                "detail": com_orientacao(
                     f"Limite individual insuficiente: R$ {limite.saldo_disponivel} disponível, "
-                    f"R$ {valor} solicitado."
+                    f"R$ {valor} solicitado.",
+                    TRAVA_INDIVIDUAL,
                 )
             })
         limite.valor_comprometido += valor
@@ -257,7 +266,9 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
             allocation=check.allocation, valor=valor, demanda_id=str(demand_request.pk), usuario=usuario,
             justificativa=f"Reserva SGD — solicitação #{demand_request.pk}.",
         )
-    except (budget_service.SaldoInsuficienteError, ValueError) as exc:
+    except budget_service.SaldoInsuficienteError as exc:
+        raise DRFValidationError({"detail": com_orientacao(str(exc), TRAVA_TERRITORIAL)}) from exc
+    except ValueError as exc:
         raise DRFValidationError({"detail": str(exc)}) from exc
     check.allocation.refresh_from_db(fields=["valor_comprometido"])
     _notificar_se_piorou(

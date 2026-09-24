@@ -12,6 +12,7 @@ from rest_framework.exceptions import ValidationError as DRFValidationError
 from apps.core.models import Territory
 from apps.core.models.user_profile import UserProfile
 from apps.core.services.permissions import user_has_role, user_states, user_territories
+from apps.core.utils import get_config
 from apps.sgp.models import BudgetAllocation, BudgetRubrica, BudgetTransaction, WorkPlanMeta
 
 Nivel = BudgetAllocation.Nivel
@@ -692,8 +693,28 @@ def saldo_para_consulta(*, meta_id: int, rubrica_slug: str, nivel: str,
 # Painel de orçamento — matriz Meta × Rubrica com semáforo (§5.3.3, #224).
 # ---------------------------------------------------------------------------
 
-LIMIAR_SEMAFORO_AMARELO = Decimal("60")
-LIMIAR_SEMAFORO_VERMELHO = Decimal("80")
+LIMIAR_SEMAFORO_AMARELO_PADRAO = 70
+LIMIAR_SEMAFORO_VERMELHO_PADRAO = 90
+
+
+def percentual_comprometido(comprometido: Decimal, total: Decimal) -> Decimal:
+    if total <= ZERO:
+        return ZERO
+    return (comprometido / total) * Decimal("100")
+
+
+def faixa_semaforo(percentual: Decimal) -> str:
+    """Faixa do semáforo orçamentário — a mesma pra todo nível (limite
+    individual, pools, Meta/Submeta/Ação) e pra todo módulo que consome saldo,
+    com os limiares globais `budget_alert_yellow_pct`/`budget_alert_red_pct`
+    do Core."""
+    amarelo = Decimal(get_config("budget_alert_yellow_pct", LIMIAR_SEMAFORO_AMARELO_PADRAO))
+    vermelho = Decimal(get_config("budget_alert_red_pct", LIMIAR_SEMAFORO_VERMELHO_PADRAO))
+    if percentual >= vermelho:
+        return "vermelho"
+    if percentual >= amarelo:
+        return "amarelo"
+    return "verde"
 
 
 def resolver_nivel_painel(
@@ -754,12 +775,10 @@ def resolver_nivel_painel(
 
 def _semaforo_orcamento(percentual: Decimal) -> tuple[str, bool]:
     """(semaforo, alerta_80) — o alerta dispara no mesmo limiar de vermelho, uma
-    fonte só pros dois campos."""
-    if percentual >= LIMIAR_SEMAFORO_VERMELHO:
-        return "vermelho", True
-    if percentual >= LIMIAR_SEMAFORO_AMARELO:
-        return "amarelo", False
-    return "verde", False
+    fonte só pros dois campos. `alerta_80` mantém o nome por contrato com o
+    front, mas segue o limiar configurado, não 80 fixo."""
+    semaforo = faixa_semaforo(percentual)
+    return semaforo, semaforo == "vermelho"
 
 
 def alocacoes_em_vermelho() -> list[BudgetAllocation]:
@@ -774,9 +793,8 @@ def alocacoes_em_vermelho() -> list[BudgetAllocation]:
         .filter(valor_alocado__gt=ZERO)
     )
     for allocation in allocations:
-        percentual = (allocation.valor_comprometido / allocation.valor_alocado) * Decimal("100")
-        semaforo, _ = _semaforo_orcamento(percentual)
-        if semaforo == "vermelho":
+        percentual = percentual_comprometido(allocation.valor_comprometido, allocation.valor_alocado)
+        if faixa_semaforo(percentual) == "vermelho":
             vermelhas.append(allocation)
     return vermelhas
 
@@ -785,7 +803,7 @@ def painel_orcamento(
     *, nivel: str, estado_sigla: str | None = None, territorio_id: int | None = None,
     meta_id: int | None = None, rubrica_slug: str | None = None,
 ) -> list[dict]:
-    """Matriz Meta × Rubrica no `nivel` dado, com semáforo e alerta de 80%.
+    """Matriz Meta × Rubrica no `nivel` dado, com semáforo e alerta de vermelho.
 
     Motor sem RBAC — quem chama já resolveu o nível/localização (ver
     `painel_orcamento_para_usuario`). Usada direto por
@@ -856,10 +874,7 @@ def painel_orcamento(
             saldo_disponivel = _saldo_disponivel_matriz(
                 valor_aprovado, valor_distribuido, valor_comprometido, valor_executado,
             )
-            percentual = (
-                ZERO if valor_aprovado <= ZERO
-                else (valor_comprometido / valor_aprovado) * Decimal("100")
-            )
+            percentual = percentual_comprometido(valor_comprometido, valor_aprovado)
             semaforo, alerta_80 = _semaforo_orcamento(percentual)
             resultado.append({
                 "meta": meta,

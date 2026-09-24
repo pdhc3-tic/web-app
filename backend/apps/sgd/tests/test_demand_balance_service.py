@@ -208,6 +208,40 @@ def test_submeter_demanda_bloqueio_de_uma_solicitacao_identifica_so_a_bloqueada(
     assert limite_individual_rn.valor_comprometido == Decimal("0")
 
 
+def test_submeter_demanda_bloqueio_territorial_orienta_acionar_articulador(
+    demand_request_rn, solicitante_rn, activity_rn, rubrica_diarias, limite_individual_rn,
+):
+    from apps.sgp.tests.factories import BudgetAllocationFactory
+
+    BudgetAllocationFactory(
+        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
+        valor_alocado=Decimal("500"), valor_comprometido=Decimal("0"),
+    )
+
+    with pytest.raises(DRFValidationError) as excinfo:
+        demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
+
+    bloqueio = excinfo.value.detail["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
+    assert bloqueio["trava"] == "territorial"
+    assert bloqueio["acao_sugerida"] == "acionar_articulador"
+    assert "acione o Articulador Estadual" in str(bloqueio["motivo"])
+
+
+def test_submeter_demanda_bloqueio_individual_orienta_recurso_extra(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    limite_individual_rn.valor_limite = Decimal("500")
+    limite_individual_rn.save(update_fields=["valor_limite"])
+
+    with pytest.raises(DRFValidationError) as excinfo:
+        demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
+
+    bloqueio = excinfo.value.detail["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
+    assert bloqueio["trava"] == "individual"
+    assert bloqueio["acao_sugerida"] == "solicitar_recurso_extra"
+    assert "Solicitar recurso extra" in str(bloqueio["motivo"])
+
+
 def _campos_diaria_com_dias(*, municipio, dias_a_mais: int) -> dict:
     """`demand_request_rn` é tipo "diaria" — esse tipo sempre recalcula
     valor_estimado a partir das datas (validado.valor_estimado_auto nunca é
