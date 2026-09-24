@@ -703,16 +703,29 @@ def percentual_comprometido(comprometido: Decimal, total: Decimal) -> Decimal:
     return (comprometido / total) * Decimal("100")
 
 
-def faixa_semaforo(percentual: Decimal) -> str:
+@dataclass(frozen=True)
+class LimiaresSemaforo:
+    amarelo: Decimal
+    vermelho: Decimal
+
+
+def limiares_semaforo() -> LimiaresSemaforo:
+    """Limiares globais `budget_alert_yellow_pct`/`budget_alert_red_pct` do
+    Core. Quem classifica várias faixas na mesma operação (células do painel,
+    antes/depois de uma reserva) lê uma vez e repassa — com o cache frio ou
+    sem a linha no SystemConfig, cada leitura é uma query."""
+    return LimiaresSemaforo(
+        amarelo=Decimal(get_config("budget_alert_yellow_pct", LIMIAR_SEMAFORO_AMARELO_PADRAO)),
+        vermelho=Decimal(get_config("budget_alert_red_pct", LIMIAR_SEMAFORO_VERMELHO_PADRAO)),
+    )
+
+
+def faixa_semaforo(percentual: Decimal, limiares: LimiaresSemaforo) -> str:
     """Faixa do semáforo orçamentário — a mesma pra todo nível (limite
-    individual, pools, Meta/Submeta/Ação) e pra todo módulo que consome saldo,
-    com os limiares globais `budget_alert_yellow_pct`/`budget_alert_red_pct`
-    do Core."""
-    amarelo = Decimal(get_config("budget_alert_yellow_pct", LIMIAR_SEMAFORO_AMARELO_PADRAO))
-    vermelho = Decimal(get_config("budget_alert_red_pct", LIMIAR_SEMAFORO_VERMELHO_PADRAO))
-    if percentual >= vermelho:
+    individual, pools, Meta/Submeta/Ação) e pra todo módulo que consome saldo."""
+    if percentual >= limiares.vermelho:
         return "vermelho"
-    if percentual >= amarelo:
+    if percentual >= limiares.amarelo:
         return "amarelo"
     return "verde"
 
@@ -773,11 +786,11 @@ def resolver_nivel_painel(
     raise PermissionDenied("Você não tem acesso ao orçamento do SGP.")
 
 
-def _semaforo_orcamento(percentual: Decimal) -> tuple[str, bool]:
+def _semaforo_orcamento(percentual: Decimal, limiares: LimiaresSemaforo) -> tuple[str, bool]:
     """(semaforo, alerta_80) — o alerta dispara no mesmo limiar de vermelho, uma
     fonte só pros dois campos. `alerta_80` mantém o nome por contrato com o
     front, mas segue o limiar configurado, não 80 fixo."""
-    semaforo = faixa_semaforo(percentual)
+    semaforo = faixa_semaforo(percentual, limiares)
     return semaforo, semaforo == "vermelho"
 
 
@@ -786,6 +799,7 @@ def alocacoes_em_vermelho() -> list[BudgetAllocation]:
     `tasks.check_budget_threshold_alert`. Não usa `painel_orcamento` (mostra 1 nível por
     vez): nacional/estadual/territorial são linhas independentes, cada uma pode estar em
     vermelho por si só."""
+    limiares = limiares_semaforo()
     vermelhas = []
     allocations = (
         BudgetAllocation.objects
@@ -794,7 +808,7 @@ def alocacoes_em_vermelho() -> list[BudgetAllocation]:
     )
     for allocation in allocations:
         percentual = percentual_comprometido(allocation.valor_comprometido, allocation.valor_alocado)
-        if faixa_semaforo(percentual) == "vermelho":
+        if faixa_semaforo(percentual, limiares) == "vermelho":
             vermelhas.append(allocation)
     return vermelhas
 
@@ -811,7 +825,7 @@ def painel_orcamento(
     (visão organização-inteira, mesmo padrão de `tasks.check_acao_progress_alert`).
 
     4 queries (metas, rubricas, próprios, distribuído; 3 se `nivel` for territorial,
-    sem distribuído).
+    sem distribuído), +2 só com o cache dos limiares do semáforo frio.
     """
     metas_qs = WorkPlanMeta.objects.order_by("numero")
     if meta_id is not None:
@@ -862,6 +876,7 @@ def painel_orcamento(
             )
         }
 
+    limiares = limiares_semaforo()
     resultado = []
     for meta in metas:
         for rubrica in rubricas:
@@ -875,7 +890,7 @@ def painel_orcamento(
                 valor_aprovado, valor_distribuido, valor_comprometido, valor_executado,
             )
             percentual = percentual_comprometido(valor_comprometido, valor_aprovado)
-            semaforo, alerta_80 = _semaforo_orcamento(percentual)
+            semaforo, alerta_80 = _semaforo_orcamento(percentual, limiares)
             resultado.append({
                 "meta": meta,
                 "rubrica": rubrica,

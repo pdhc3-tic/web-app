@@ -336,6 +336,15 @@ class TestBudgetThresholdAlertTask:
 
 
 class TestPainelPerformance:
+    @pytest.fixture(autouse=True)
+    def _limiares_em_cache(self):
+        # Os limiares do semáforo vêm do SystemConfig via cache, que persiste
+        # entre testes — sem aquecer aqui, a contagem mudaria (+2) conforme
+        # a ordem em que os testes rodam.
+        from apps.sgp.services.budget import limiares_semaforo
+
+        limiares_semaforo()
+
     def test_numero_de_queries(
         self, auth_client_super_admin, django_assert_num_queries, state_rn, territory_rn,
     ):

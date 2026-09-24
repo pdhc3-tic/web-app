@@ -16,7 +16,6 @@ from apps.core.models.audit_log import AuditLog
 from apps.sgd.models import DemandIndividualLimit
 from apps.sgd.services import notifications as notifications_service
 from apps.sgp.services import budget as budget_service
-from apps.sgp.services.budget import faixa_semaforo, percentual_comprometido
 
 ZERO = Decimal("0")
 
@@ -69,24 +68,38 @@ class DuasTravasCheck:
         return None
 
 
-def _semaforos(comprometido: Decimal, total: Decimal, valor: Decimal) -> dict:
-    return {
-        "semaforo_atual": faixa_semaforo(percentual_comprometido(comprometido, total)),
-        "semaforo_apos": faixa_semaforo(percentual_comprometido(comprometido + valor, total)),
-    }
+def faixas_antes_e_depois(
+    *, comprometido: Decimal, total: Decimal, delta: Decimal, limiares: "budget_service.LimiaresSemaforo",
+) -> tuple[str, str]:
+    return (
+        budget_service.faixa_semaforo(budget_service.percentual_comprometido(comprometido, total), limiares),
+        budget_service.faixa_semaforo(budget_service.percentual_comprometido(comprometido + delta, total), limiares),
+    )
 
 
-def _semaforos_individual(*, solicitante, rubrica, valor: Decimal) -> dict:
+_SEM_SEMAFORO = {"semaforo_atual": None, "semaforo_apos": None}
+
+
+def _semaforos(*, comprometido: Decimal, total: Decimal, valor: Decimal, limiares) -> dict:
+    atual, apos = faixas_antes_e_depois(comprometido=comprometido, total=total, delta=valor, limiares=limiares)
+    return {"semaforo_atual": atual, "semaforo_apos": apos}
+
+
+def _semaforos_individual(*, solicitante, rubrica, valor: Decimal, limiares) -> dict:
     limite = DemandIndividualLimit.objects.filter(solicitante=solicitante, rubrica=rubrica).first()
     if limite is None:
-        return {"semaforo_atual": None, "semaforo_apos": None}
-    return _semaforos(limite.valor_comprometido, limite.valor_limite, valor)
+        return dict(_SEM_SEMAFORO)
+    return _semaforos(
+        comprometido=limite.valor_comprometido, total=limite.valor_limite, valor=valor, limiares=limiares,
+    )
 
 
-def _semaforos_allocation(allocation, *, valor: Decimal) -> dict:
+def _semaforos_allocation(allocation, *, valor: Decimal, limiares) -> dict:
     if allocation is None:
-        return {"semaforo_atual": None, "semaforo_apos": None}
-    return _semaforos(allocation.valor_comprometido, allocation.valor_alocado, valor)
+        return dict(_SEM_SEMAFORO)
+    return _semaforos(
+        comprometido=allocation.valor_comprometido, total=allocation.valor_alocado, valor=valor, limiares=limiares,
+    )
 
 
 def motivo_territorial(check: "budget_service.SaldoCheck") -> str | None:
@@ -96,20 +109,21 @@ def motivo_territorial(check: "budget_service.SaldoCheck") -> str | None:
 
 
 def payload_saldo_consulta(check: "DuasTravasCheck", *, solicitante, rubrica, valor: Decimal) -> dict:
+    limiares = budget_service.limiares_semaforo()
     return {
         "individual": {
             "disponivel": check.individual.disponivel,
             "saldo": check.individual.saldo,
             "motivo_bloqueio": check.individual.motivo_bloqueio,
             "acao_sugerida": check.individual.acao_sugerida,
-            **_semaforos_individual(solicitante=solicitante, rubrica=rubrica, valor=valor),
+            **_semaforos_individual(solicitante=solicitante, rubrica=rubrica, valor=valor, limiares=limiares),
         },
         "territorial": {
             "disponivel": check.territorial.disponivel,
             "saldo": check.territorial.saldo,
             "motivo_bloqueio": motivo_territorial(check.territorial),
             "acao_sugerida": None if check.territorial.disponivel else ACAO_SUGERIDA[TRAVA_TERRITORIAL],
-            **_semaforos_allocation(check.territorial.allocation, valor=valor),
+            **_semaforos_allocation(check.territorial.allocation, valor=valor, limiares=limiares),
         },
         "disponivel": check.disponivel,
         "trava_bloqueada": check.trava_bloqueada,
@@ -136,8 +150,10 @@ def _destinatarios_saldo_territorial(*, nivel, estado_sigla, territorio):
 
 
 def _notificar_se_piorou(*, usuarios, demand, rubrica_nome, trava, comprometido_antes, comprometido_depois, limite) -> None:
-    antes = faixa_semaforo(percentual_comprometido(comprometido_antes, limite))
-    depois = faixa_semaforo(percentual_comprometido(comprometido_depois, limite))
+    antes, depois = faixas_antes_e_depois(
+        comprometido=comprometido_antes, total=limite, delta=comprometido_depois - comprometido_antes,
+        limiares=budget_service.limiares_semaforo(),
+    )
     if _ORDEM_SEMAFORO[depois] > _ORDEM_SEMAFORO[antes]:
         notifications_service.notificar_mudanca_semaforo(
             usuarios=usuarios, demand=demand, rubrica_nome=rubrica_nome, trava=trava, semaforo=depois,

@@ -108,26 +108,20 @@ def preview_impacto(demand_request, valor: Decimal) -> dict:
         ).allocation
         disponivel, trava_bloqueada = True, None
 
+    limiares = budget_service.limiares_semaforo()
     limite = DemandIndividualLimit.objects.filter(solicitante=solicitante, rubrica=rubrica).first()
     individual = {"semaforo_antes": None, "semaforo_apos": None, "saldo_apos": None}
     if limite is not None:
-        individual["semaforo_antes"] = budget_service.faixa_semaforo(
-            budget_service.percentual_comprometido(limite.valor_comprometido, limite.valor_limite)
-        )
-        individual["semaforo_apos"] = budget_service.faixa_semaforo(
-            budget_service.percentual_comprometido(limite.valor_comprometido + delta, limite.valor_limite)
+        individual["semaforo_antes"], individual["semaforo_apos"] = balance_service.faixas_antes_e_depois(
+            comprometido=limite.valor_comprometido, total=limite.valor_limite, delta=delta, limiares=limiares,
         )
         individual["saldo_apos"] = limite.saldo_disponivel - delta
 
     territorial = {"semaforo_antes": None, "semaforo_apos": None, "saldo_apos": None}
     if allocation is not None:
-        territorial["semaforo_antes"] = budget_service.faixa_semaforo(
-            budget_service.percentual_comprometido(allocation.valor_comprometido, allocation.valor_alocado)
-        )
-        territorial["semaforo_apos"] = budget_service.faixa_semaforo(
-            budget_service.percentual_comprometido(
-                allocation.valor_comprometido + delta, allocation.valor_alocado,
-            )
+        territorial["semaforo_antes"], territorial["semaforo_apos"] = balance_service.faixas_antes_e_depois(
+            comprometido=allocation.valor_comprometido, total=allocation.valor_alocado, delta=delta,
+            limiares=limiares,
         )
         territorial["saldo_apos"] = allocation.valor_alocado - allocation.valor_comprometido - delta
 
