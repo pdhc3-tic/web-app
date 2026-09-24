@@ -1,6 +1,7 @@
 import logging
 from datetime import date, timedelta
 
+import holidays
 from celery import shared_task
 from django.db import connection, transaction
 from django.utils import timezone
@@ -25,14 +26,22 @@ logger = logging.getLogger(__name__)
 DIAS_UTEIS_LIMITE = 5
 
 
-def _dias_uteis_entre(inicio: date, fim: date) -> int:
-    """Dias úteis (segunda–sexta) entre `inicio` (exclusive) e `fim`
-    (inclusive). Sem calendário de feriados — nenhuma lib de feriados no repo."""
+def _feriados(uf: str | None, inicio: date, fim: date) -> holidays.HolidayBase:
+    """Feriados nacionais + estaduais da UF. Feriado municipal fica de fora —
+    a lib não cobre municípios."""
+    subdiv = uf if uf in holidays.BR.subdivisions else None
+    return holidays.country_holidays("BR", subdiv=subdiv, years=range(inicio.year, fim.year + 1))
+
+
+def _dias_uteis_entre(inicio: date, fim: date, *, uf: str | None = None) -> int:
+    """Dias úteis (segunda–sexta, fora feriados) entre `inicio` (exclusive) e
+    `fim` (inclusive)."""
+    feriados = _feriados(uf, inicio, fim)
     dias = 0
     atual = inicio
     while atual < fim:
         atual += timedelta(days=1)
-        if atual.weekday() < 5:
+        if atual.weekday() < 5 and atual not in feriados:
             dias += 1
     return dias
 
@@ -70,7 +79,8 @@ def _verificar_inatividade() -> int:
     ).select_related("activity__municipio__state", "solicitante")
     for demand in demandas:
         referencia = timezone.localdate(demand.status_alterado_em)
-        if _dias_uteis_entre(referencia, hoje) < DIAS_UTEIS_LIMITE:
+        uf = demand.activity.municipio.state.sigla
+        if _dias_uteis_entre(referencia, hoje, uf=uf) < DIAS_UTEIS_LIMITE:
             continue
         link = link_inatividade(demand, referencia=referencia)
         if Notification.objects.filter(evento=EVENTO_INATIVIDADE, link=link).exists():

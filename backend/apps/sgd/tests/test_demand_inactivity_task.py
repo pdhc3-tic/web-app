@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -114,3 +114,21 @@ def test_nao_notifica_duas_vezes_pelo_mesmo_periodo_parado(activity_rn, usuario_
 
     assert total_1 == 1
     assert total_2 == 0
+
+
+@pytest.mark.parametrize(
+    ("inicio", "fim", "uf", "esperado"),
+    [
+        # 20/11/2026 (sexta) — Consciência Negra, feriado nacional.
+        (date(2026, 11, 16), date(2026, 11, 23), "RN", 4),
+        # 07/08/2026 (sexta) — Dia do Rio Grande do Norte, só estadual.
+        (date(2026, 8, 3), date(2026, 8, 10), "RN", 4),
+        (date(2026, 8, 3), date(2026, 8, 10), "CE", 5),
+        # UF desconhecida cai pro calendário nacional em vez de quebrar.
+        (date(2026, 8, 3), date(2026, 8, 10), "XX", 5),
+    ],
+)
+def test_dias_uteis_desconta_feriados_nacionais_e_estaduais(inicio, fim, uf, esperado):
+    from apps.sgd.tasks import _dias_uteis_entre
+
+    assert _dias_uteis_entre(inicio, fim, uf=uf) == esperado
