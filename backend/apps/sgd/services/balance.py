@@ -30,16 +30,21 @@ ACAO_SUGERIDA = {
     TRAVA_TERRITORIAL: "acionar_articulador",
 }
 
+# "Esgotado" só vale quando há alocação e ela não cobre o valor — sem
+# alocação nenhuma, afirmar que o território esgotou seria falso.
+_TERRITORIAL_SEM_ALOCACAO = "territorial_sem_alocacao"
+
 ORIENTACAO = {
     TRAVA_INDIVIDUAL: "Use a opção 'Solicitar recurso extra'.",
-    TRAVA_TERRITORIAL: "Acione o Articulador Estadual para redistribuir saldo ao território.",
+    TRAVA_TERRITORIAL: "Território esgotado nesta rubrica para este valor. Acione o Articulador Estadual.",
+    _TERRITORIAL_SEM_ALOCACAO: "Acione o Articulador Estadual para alocar saldo ao território.",
 }
 
 
-def com_orientacao(motivo: str | None, trava: str) -> str | None:
+def com_orientacao(motivo: str | None, chave: str) -> str | None:
     if not motivo:
         return motivo
-    return f"{motivo} {ORIENTACAO[trava]}"
+    return f"{motivo} {ORIENTACAO[chave]}"
 
 
 @dataclass
@@ -200,7 +205,10 @@ def verificar_duas_travas(*, solicitante, rubrica, meta, valor: Decimal) -> Duas
     )
     if not territorial.disponivel:
         territorial = replace(
-            territorial, motivo_bloqueio=com_orientacao(territorial.motivo_bloqueio, TRAVA_TERRITORIAL),
+            territorial, motivo_bloqueio=com_orientacao(
+                territorial.motivo_bloqueio,
+                TRAVA_TERRITORIAL if territorial.allocation is not None else _TERRITORIAL_SEM_ALOCACAO,
+            ),
         )
     return DuasTravasCheck(individual=individual, territorial=territorial)
 
@@ -274,7 +282,7 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
     )
     if check.allocation is None:
         raise DRFValidationError({
-            "detail": com_orientacao("Nenhuma alocação orçamentária territorial encontrada.", TRAVA_TERRITORIAL)
+            "detail": com_orientacao("Nenhuma alocação orçamentária territorial encontrada.", _TERRITORIAL_SEM_ALOCACAO)
         })
     comprometido_territorial_antes = check.allocation.valor_comprometido
     try:

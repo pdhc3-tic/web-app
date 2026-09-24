@@ -95,6 +95,7 @@ def test_ajustar_duas_travas_acima_do_pool_territorial_orienta_acionar_articulad
         )
 
     assert "Acione o Articulador Estadual" in str(excinfo.value.detail["detail"])
+    assert "Território esgotado" in str(excinfo.value.detail["detail"])
 
 
 def test_ajustar_duas_travas_com_bypass_autoriza_excedente_sem_elevar_limite(demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn):
@@ -242,6 +243,7 @@ def test_submeter_demanda_bloqueio_territorial_orienta_acionar_articulador(
     assert bloqueio["trava"] == "territorial"
     assert bloqueio["acao_sugerida"] == "acionar_articulador"
     assert "Acione o Articulador Estadual" in str(bloqueio["motivo"])
+    assert "Território esgotado" in str(bloqueio["motivo"])
 
 
 def test_submeter_demanda_bloqueio_individual_orienta_recurso_extra(
