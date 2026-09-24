@@ -201,7 +201,7 @@ def autorizar(
             "ajustes": f"Solicitação(ões) {sorted(ids_desconhecidos)} não pertence(m) a esta demanda."
         })
 
-    for solicitacao in demand.solicitacoes.all():
+    for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
         novo_valor = ajustes.get(solicitacao.pk, solicitacao.valor_estimado)
         if novo_valor != solicitacao.valor_estimado:
             balance_service.ajustar_duas_travas(
@@ -225,7 +225,7 @@ def autorizar(
 def recusar(demand, *, responsavel, justificativa: str) -> object:
     if not justificativa:
         raise JustificativaObrigatoriaError("Obrigatória para recusar a demanda.")
-    for solicitacao in demand.solicitacoes.all():
+    for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
         balance_service.liberar_duas_travas(
             demand_request=solicitacao, usuario=responsavel, motivo="Demanda recusada pela UGP.",
         )
@@ -253,7 +253,7 @@ def atender(demand, *, responsavel) -> object:
 @transaction.atomic
 def concluir(demand, *, responsavel, valores_pagos: dict) -> object:
     """`valores_pagos`: {demand_request_id: valor_pago}."""
-    for solicitacao in demand.solicitacoes.all():
+    for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
         if solicitacao.pk not in valores_pagos:
             raise DRFValidationError({
                 "valores_pagos": f"Valor pago obrigatório para a solicitação #{solicitacao.pk}."

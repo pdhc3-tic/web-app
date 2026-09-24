@@ -83,3 +83,26 @@ def test_serializer_aceita_update_sem_activity_id():
 
     entrada = DemandUpdateSerializer(data={"titulo": "Novo título"}, partial=True)
     assert entrada.is_valid(), entrada.errors
+
+
+@pytest.mark.parametrize("valor", ["0", "0.00", "-1"])
+def test_serializer_de_solicitacao_rejeita_valor_estimado_nao_positivo(valor):
+    from apps.sgd.serializers.demand_request import (
+        DemandRequestCreateSerializer,
+        DemandRequestUpdateSerializer,
+    )
+
+    create = DemandRequestCreateSerializer(data={"tipo": "grafico", "campos_json": {}, "valor_estimado": valor})
+    update = DemandRequestUpdateSerializer(data={"valor_estimado": valor})
+
+    assert not create.is_valid()
+    assert "valor_estimado" in create.errors
+    assert not update.is_valid()
+    assert "valor_estimado" in update.errors
+
+
+def test_serializer_de_solicitacao_aceita_um_centavo():
+    from apps.sgd.serializers.demand_request import DemandRequestUpdateSerializer
+
+    serializer = DemandRequestUpdateSerializer(data={"valor_estimado": "0.01"})
+    assert serializer.is_valid(), serializer.errors

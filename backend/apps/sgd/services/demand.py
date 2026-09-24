@@ -215,7 +215,7 @@ def cancelar_demanda(demand, *, usuario, motivo: str = "") -> Demand:
     if not pode_cancelar(demand, usuario):
         raise DRFValidationError({"status": "Você não pode cancelar esta demanda neste status (RF09)."})
 
-    for solicitacao in demand.solicitacoes.all():
+    for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
         balance_service.liberar_duas_travas(
             demand_request=solicitacao, usuario=usuario,
             motivo=motivo or "Cancelada pelo solicitante.",

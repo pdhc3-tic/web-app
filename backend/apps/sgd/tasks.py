@@ -124,7 +124,7 @@ def _cancelar_demandas_da_atividade(activity_id: int) -> int:
     )
     canceladas = 0
     for demand in demandas:
-        for solicitacao in demand.solicitacoes.all():
+        for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
             balance_service.liberar_duas_travas(
                 demand_request=solicitacao, usuario=None,
                 motivo=f"Atividade vinculada em status '{activity.get_status_display()}'.",

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from apps.sgd.models.demand_request import DemandRequest
@@ -37,11 +39,15 @@ class DemandRequestSerializer(serializers.ModelSerializer):
 class DemandRequestCreateSerializer(serializers.Serializer):
     tipo = serializers.ChoiceField(choices=DemandRequest._meta.get_field("tipo").choices)
     campos_json = serializers.JSONField()
-    valor_estimado = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, min_value=0)
+    valor_estimado = serializers.DecimalField(
+        max_digits=14, decimal_places=2, required=False, min_value=Decimal("0.01"),
+    )
     ordem = serializers.IntegerField(required=False, default=0)
 
 
 class DemandRequestUpdateSerializer(serializers.Serializer):
     tipo = serializers.ChoiceField(choices=DemandRequest._meta.get_field("tipo").choices, required=False)
     campos_json = serializers.JSONField(required=False)
-    valor_estimado = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, min_value=0)
+    valor_estimado = serializers.DecimalField(
+        max_digits=14, decimal_places=2, required=False, min_value=Decimal("0.01"),
+    )
