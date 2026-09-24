@@ -4,7 +4,13 @@ from rest_framework import serializers
 
 from apps.core.sensitive_fields import SensitiveFieldsSerializerMixin
 from apps.sgp.constants import SAUDE_CHOICES
-from apps.sgp.models import MembroFamilia, UPF
+from apps.sgp.models import MembroFamilia
+from apps.sgp.services.membro_rules import (
+    CPFDuplicadoError,
+    TitularDuplicadoError,
+    validar_cpf_unico,
+    validar_titular_unico,
+)
 from apps.sgp.validators import validate_cpf
 
 
@@ -94,13 +100,12 @@ class MembroDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSe
                 view_upf_id = self.context.get("view").kwargs.get("upf_pk") if self.context.get("view") else None
                 if view_upf_id:
                     upf_id = view_upf_id
-            if upf_id:
-                upf = UPF.objects.filter(pk=upf_id).first()
-                if upf and upf.titular_id:
-                    if not self.instance or upf.titular_id != self.instance.pk:
-                        raise serializers.ValidationError(
-                            "Já existe um titular cadastrado para esta UPF"
-                        )
+            try:
+                validar_titular_unico(upf_id, membro_atual=self.instance)
+            except TitularDuplicadoError:
+                raise serializers.ValidationError(
+                    "Já existe um titular cadastrado para esta UPF"
+                )
         return value
 
     def get_idade(self, obj):
@@ -116,11 +121,10 @@ class MembroDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSe
         if not value:
             return ""
         value = validate_cpf(value)
-        qs = MembroFamilia.objects.filter(cpf=value)
-        if self.instance:
-            qs = qs.exclude(pk=self.instance.pk)
-        duplicado = qs.first()
-        if duplicado:
+        try:
+            validar_cpf_unico(value, membro_atual=self.instance)
+        except CPFDuplicadoError as exc:
+            duplicado = exc.duplicado
             user = self.context["request"].user
             from apps.sgp.views import upfs_acessiveis_ao_usuario
             upfs_visiveis = upfs_acessiveis_ao_usuario(user)

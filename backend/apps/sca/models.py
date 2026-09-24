@@ -129,6 +129,7 @@ class ConflictLog(models.Model):
         DUPLICATE_REJEITADO = "duplicate_rejeitado", "Duplicata rejeitada"
         EXCLUSAO_PREVALECE = "exclusao_prevalece", "Exclusão do servidor prevalece"
         MERGE_AUTOMATICO = "merge_automatico", "Merge automático"
+        REGRA_NEGOCIO_REJEITADA = "regra_negocio_rejeitada", "Regra de negócio rejeitada"
 
     class Status(models.TextChoices):
         PENDENTE = "pendente", "Pendente"

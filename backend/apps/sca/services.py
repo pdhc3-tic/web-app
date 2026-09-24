@@ -27,6 +27,20 @@ from apps.core.services.permissions import user_territories
 from apps.sca.models import ConflictLog, SyncDevice, SyncEvent
 from apps.sca.serializers import ENTITY_SERIALIZERS
 from apps.sca.sync_entities import SyncEntityError, get_sync_entity
+from apps.sgp.services.activity_status import (
+    EvidenciaObrigatoriaError,
+    JustificativaObrigatoriaError,
+    NovaDataObrigatoriaError,
+    TransicaoInvalidaError,
+)
+from apps.sgp.services.membro_rules import REGRA_NEGOCIO_SYNC_CODES as MEMBRO_REGRA_SYNC_CODES
+
+REGRA_NEGOCIO_SYNC_CODES = MEMBRO_REGRA_SYNC_CODES | {
+    TransicaoInvalidaError.sync_code,
+    EvidenciaObrigatoriaError.sync_code,
+    JustificativaObrigatoriaError.sync_code,
+    NovaDataObrigatoriaError.sync_code,
+}
 
 logger = logging.getLogger(__name__)
 
@@ -238,9 +252,13 @@ class PushProcessor:
 
         self._reject_unauthorized_sensitive_write(entity, data)
 
-        if item["operacao"] == "create":
-            return self._handle_create(entity, item, data)
-        return self._handle_update(entity, item, data)
+        try:
+            if item["operacao"] == "create":
+                return self._handle_create(entity, item, data)
+            return self._handle_update(entity, item, data)
+        except SyncEntityError as exc:
+            self._maybe_log_regra_negocio(entity, item, data, exc)
+            return self._result(item, "erro", erro=str(exc))
 
     def _reject_unauthorized_sensitive_write(self, entity, data) -> None:
         negados = [
@@ -253,6 +271,29 @@ class PushProcessor:
                 "CAMPO_SENSIVEL_NAO_AUTORIZADO: seu perfil não tem permissão "
                 f"para gravar os campos: {', '.join(sorted(negados))}."
             )
+
+    def _maybe_log_regra_negocio(self, entity, item, data, exc: SyncEntityError) -> None:
+        """Regra de negócio (mesma fonte da API web) impediu a escrita no sync.
+
+        Além do erro de item já reportado ao app (`erros_detalhes`), registra
+        em `conflict_log` para não ficar visível só no dispositivo offline —
+        UGP/Articulador acompanham pela tela administrativa de conflitos.
+        """
+        if exc.sync_code not in REGRA_NEGOCIO_SYNC_CODES:
+            return
+        ConflictLog.objects.create(
+            user=self.user,
+            device=self.device,
+            entidade=entity.name,
+            uuid_local=item["uuid_local"],
+            campo=exc.campo or "__regra_negocio__",
+            valor_local=self._norm_payload(entity, data),
+            valor_servidor={},
+            estrategia=ConflictLog.Estrategia.REGRA_NEGOCIO_REJEITADA,
+            campo_sensivel=False,
+            status=ConflictLog.Status.PENDENTE,
+            territorio_id=entity.territorio_id_from_payload(data, self.uuid_map),
+        )
 
     # -- helpers ------------------------------------------------------------
     def _result(self, item, status: str, id_servidor=None, erro=None) -> dict:
