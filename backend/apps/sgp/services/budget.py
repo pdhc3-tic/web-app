@@ -214,8 +214,8 @@ def _linha_pai(*, meta, rubrica, nivel: str, territorio=None, estado=None) -> Bu
             estado__sigla__in=estados_do_territorio,
         ).order_by("pk").first()
     if nivel == Nivel.ESTADUAL:
-        # UniqueConstraint de #219 garante no máximo 1 linha nacional por
-        # (meta, rubrica) — .first() aqui nunca é ambíguo.
+        # A UniqueConstraint de BudgetAllocation garante no máximo 1 linha
+        # nacional por (meta, rubrica) — .first() aqui nunca é ambíguo.
         return BudgetAllocation.objects.filter(
             meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL,
         ).first()
@@ -690,7 +690,7 @@ def saldo_para_consulta(*, meta_id: int, rubrica_slug: str, nivel: str,
 
 
 # ---------------------------------------------------------------------------
-# Painel de orçamento — matriz Meta × Rubrica com semáforo (§5.3.3, #224).
+# Painel de orçamento — matriz Meta × Rubrica com semáforo (§5.3.3).
 # ---------------------------------------------------------------------------
 
 LIMIAR_SEMAFORO_AMARELO_PADRAO = 70
