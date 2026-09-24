@@ -291,10 +291,16 @@ export default function RelatoriosPage() {
               <Button
                 onClick={handleExportarAt}
                 loading={atState === "exporting"}
+                disabled={!canExport}
                 leftIcon={<Download className="h-4 w-4" />}
               >
                 Exportar
               </Button>
+              {!canExport && (
+                <p className="text-xs text-text-muted">
+                  Disponível para UGP, ADT e Super Admin.
+                </p>
+              )}
             </div>
           </ExportCard>
         </div>
