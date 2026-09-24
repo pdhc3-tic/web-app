@@ -255,3 +255,31 @@ def test_api_pre_autorizar_rejeita_usuario_sem_role_articulador(auth_client_ugp,
     response = auth_client_ugp.post(f"/api/v1/sgd/demandas/{demand_rascunho_rn.pk}/pre-autorizar/", {})
 
     assert response.status_code == 403
+
+
+@pytest.mark.parametrize("cliente", ["auth_client_solicitante", "auth_client_super_admin"])
+def test_adt_e_super_admin_criam_demanda(request, cliente, activity_rn):
+    client = request.getfixturevalue(cliente)
+
+    response = client.post(
+        "/api/v1/sgd/demandas/", {"titulo": "Diárias para oficina", "activity_id": activity_rn.pk}, format="json",
+    )
+
+    assert response.status_code == 201
+    assert Demand.objects.filter(activity=activity_rn).count() == 1
+
+
+@pytest.mark.parametrize(
+    "cliente", ["auth_client_articulador_rn", "auth_client_ugp", "auth_client_fgd"],
+)
+def test_quem_decide_nao_cria_demanda(request, cliente, activity_rn):
+    """SGD §1 / Core §2.1: Articulador pré-autoriza, UGP autoriza e FGD
+    atende — nenhum deles cria demanda (e por isso não aprova a própria)."""
+    client = request.getfixturevalue(cliente)
+
+    response = client.post(
+        "/api/v1/sgd/demandas/", {"titulo": "Diárias para oficina", "activity_id": activity_rn.pk}, format="json",
+    )
+
+    assert response.status_code == 403
+    assert not Demand.objects.filter(activity=activity_rn).exists()

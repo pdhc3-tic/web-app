@@ -6,7 +6,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from apps.core.models.municipality import Municipality
-from apps.core.permissions import IsAuthenticatedActiveAccess
+from apps.core.permissions import IsADTInTerritory, IsAuthenticatedActiveAccess, IsSuperAdmin
 from apps.sgd.models.demand import Demand
 from apps.sgd.serializers.demand import DemandCreateSerializer, DemandSerializer, DemandUpdateSerializer
 from apps.sgd.serializers.demand_request import (
@@ -24,6 +24,14 @@ from apps.sgp.models.workplan import WorkPlanAcao
 
 class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
     permission_classes = [IsAuthenticatedActiveAccess]
+
+    def get_permissions(self):
+        # Criar demanda é do ADT/ACR (e Super Admin): Articulador, UGP e FGD
+        # só decidem sobre ela (SGD §1, matriz do Core §2.1). Sem objeto em
+        # jogo no create, IsADTInTerritory checa só o perfil.
+        if self.action == "create":
+            return [IsAuthenticatedActiveAccess(), (IsADTInTerritory | IsSuperAdmin)()]
+        return super().get_permissions()
 
     def get_queryset(self):
         qs = Demand.objects.select_related(
