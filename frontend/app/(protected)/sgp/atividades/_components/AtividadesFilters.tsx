@@ -1,6 +1,6 @@
 "use client";
 
-import { X } from "lucide-react";
+import { Clock, X } from "lucide-react";
 import { Select, type SelectOption } from "@/app/components/ui/Select/Select";
 import type { AcaoPT } from "@/app/lib/atividades";
 import type { SgpChoices } from "@/app/lib/choices";
@@ -45,6 +45,8 @@ type Props = {
   territorioOptions: SelectOption[];
   tecnicoOptions: SelectOption[];
   optionsLoading: boolean;
+  apenasAtrasadas?: boolean;
+  onApenasAtrasadasChange?: (v: boolean) => void;
 };
 
 function withTodos(options: SelectOption[], label: string): SelectOption[] {
@@ -63,6 +65,8 @@ export function AtividadesFilters({
   territorioOptions,
   tecnicoOptions,
   optionsLoading,
+  apenasAtrasadas,
+  onApenasAtrasadasChange,
 }: Props) {
   // O endpoint de usuários é restrito a Super Admin: sem opções, o filtro de
   // técnico não tem como funcionar. Mesmo tratamento do formulário.
@@ -174,6 +178,22 @@ export function AtividadesFilters({
             />
           </div>
         </div>
+
+        {onApenasAtrasadasChange && (
+          <button
+            type="button"
+            onClick={() => onApenasAtrasadasChange(!apenasAtrasadas)}
+            aria-pressed={apenasAtrasadas}
+            className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-3 text-sm transition-colors ${
+              apenasAtrasadas
+                ? "border-warning-text bg-warning-bg font-medium text-warning-text"
+                : "border-border text-text-muted hover:bg-surface-muted hover:text-text"
+            }`}
+          >
+            <Clock className="h-3.5 w-3.5" />
+            Apenas atrasadas
+          </button>
+        )}
 
         {hasActiveFilters && (
           <button
