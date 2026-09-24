@@ -6,7 +6,7 @@ podem deadlockar.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from django.db import transaction
@@ -32,7 +32,7 @@ ACAO_SUGERIDA = {
 
 ORIENTACAO = {
     TRAVA_INDIVIDUAL: "Use a opção 'Solicitar recurso extra'.",
-    TRAVA_TERRITORIAL: "Território esgotado nesta rubrica — acione o Articulador Estadual.",
+    TRAVA_TERRITORIAL: "Acione o Articulador Estadual para redistribuir saldo ao território.",
 }
 
 
@@ -102,12 +102,6 @@ def _semaforos_allocation(allocation, *, valor: Decimal, limiares) -> dict:
     )
 
 
-def motivo_territorial(check: "budget_service.SaldoCheck") -> str | None:
-    if check.disponivel:
-        return check.motivo_bloqueio
-    return com_orientacao(check.motivo_bloqueio, TRAVA_TERRITORIAL)
-
-
 def payload_saldo_consulta(check: "DuasTravasCheck", *, solicitante, rubrica, valor: Decimal) -> dict:
     limiares = budget_service.limiares_semaforo()
     return {
@@ -121,7 +115,7 @@ def payload_saldo_consulta(check: "DuasTravasCheck", *, solicitante, rubrica, va
         "territorial": {
             "disponivel": check.territorial.disponivel,
             "saldo": check.territorial.saldo,
-            "motivo_bloqueio": motivo_territorial(check.territorial),
+            "motivo_bloqueio": check.territorial.motivo_bloqueio,
             "acao_sugerida": None if check.territorial.disponivel else ACAO_SUGERIDA[TRAVA_TERRITORIAL],
             **_semaforos_allocation(check.territorial.allocation, valor=valor, limiares=limiares),
         },
@@ -204,6 +198,10 @@ def verificar_duas_travas(*, solicitante, rubrica, meta, valor: Decimal) -> Duas
         meta_id=meta.pk, rubrica_slug=rubrica.slug, nivel=nivel,
         estado_sigla=estado_sigla, territorio=territorio, valor=valor,
     )
+    if not territorial.disponivel:
+        territorial = replace(
+            territorial, motivo_bloqueio=com_orientacao(territorial.motivo_bloqueio, TRAVA_TERRITORIAL),
+        )
     return DuasTravasCheck(individual=individual, territorial=territorial)
 
 
@@ -275,7 +273,9 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
         estado_sigla=estado_sigla, territorio=territorio, valor=valor,
     )
     if check.allocation is None:
-        raise DRFValidationError({"detail": "Nenhuma alocação orçamentária territorial encontrada."})
+        raise DRFValidationError({
+            "detail": com_orientacao("Nenhuma alocação orçamentária territorial encontrada.", TRAVA_TERRITORIAL)
+        })
     comprometido_territorial_antes = check.allocation.valor_comprometido
     try:
         budget_service.reservar(
@@ -333,9 +333,10 @@ def ajustar_duas_travas(
     if diferenca != ZERO:
         if not ignorar_limite_individual and diferenca > ZERO and diferenca > limite.saldo_disponivel:
             raise DRFValidationError({
-                "detail": (
+                "detail": com_orientacao(
                     f"Limite individual insuficiente para o ajuste: R$ {limite.saldo_disponivel} "
-                    f"disponível, R$ {diferenca} a mais solicitado."
+                    f"disponível, R$ {diferenca} a mais solicitado.",
+                    TRAVA_INDIVIDUAL,
                 )
             })
         limite.valor_comprometido += diferenca
@@ -364,7 +365,9 @@ def ajustar_duas_travas(
             demanda_id=entidade_id, novo_valor=novo_valor, usuario=usuario,
             justificativa=f"Ajuste SGD — solicitação #{demand_request.pk}.",
         )
-    except (budget_service.SaldoInsuficienteError, budget_service.DemandaInvalidaError, ValueError) as exc:
+    except budget_service.SaldoInsuficienteError as exc:
+        raise DRFValidationError({"detail": com_orientacao(str(exc), TRAVA_TERRITORIAL)}) from exc
+    except (budget_service.DemandaInvalidaError, ValueError) as exc:
         raise DRFValidationError({"detail": str(exc)}) from exc
 
     if allocation_antes is not None:

@@ -76,8 +76,25 @@ def test_ajustar_duas_travas_acima_do_limite_bloqueia_sem_bypass(demand_request_
     balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
     novo_valor = limite_individual_rn.valor_limite + Decimal("1")
 
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(DRFValidationError) as excinfo:
         balance_service.ajustar_duas_travas(demand_request=demand_request_rn, novo_valor=novo_valor, usuario=solicitante_rn)
+
+    assert "Solicitar recurso extra" in str(excinfo.value.detail["detail"])
+
+
+def test_ajustar_duas_travas_acima_do_pool_territorial_orienta_acionar_articulador(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    novo_valor = allocation_territorial_rn.valor_alocado + Decimal("1")
+
+    with pytest.raises(DRFValidationError) as excinfo:
+        balance_service.ajustar_duas_travas(
+            demand_request=demand_request_rn, novo_valor=novo_valor, usuario=solicitante_rn,
+            ignorar_limite_individual=True,
+        )
+
+    assert "Acione o Articulador Estadual" in str(excinfo.value.detail["detail"])
 
 
 def test_ajustar_duas_travas_com_bypass_autoriza_excedente_sem_elevar_limite(demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn):
@@ -224,7 +241,7 @@ def test_submeter_demanda_bloqueio_territorial_orienta_acionar_articulador(
     bloqueio = excinfo.value.detail["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
     assert bloqueio["trava"] == "territorial"
     assert bloqueio["acao_sugerida"] == "acionar_articulador"
-    assert "acione o Articulador Estadual" in str(bloqueio["motivo"])
+    assert "Acione o Articulador Estadual" in str(bloqueio["motivo"])
 
 
 def test_submeter_demanda_bloqueio_individual_orienta_recurso_extra(

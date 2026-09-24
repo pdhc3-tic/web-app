@@ -16,7 +16,7 @@ def test_saldo_bloqueio_individual_traz_acao_sugerida(
     assert data["individual"]["disponivel"] is False
     assert data["individual"]["acao_sugerida"] == "solicitar_recurso_extra"
     # Sem limite configurado a orientação é a mesma da trava individual
-    # esgotada — não "procure o Super Admin".
+    # esgotada (SGP §6.5).
     assert "Solicitar recurso extra" in data["individual"]["motivo_bloqueio"]
 
 
@@ -36,7 +36,22 @@ def test_saldo_bloqueio_territorial_traz_acao_sugerida(
     data = response.json()
     assert data["territorial"]["disponivel"] is False
     assert data["territorial"]["acao_sugerida"] == "acionar_articulador"
-    assert "acione o Articulador Estadual" in data["territorial"]["motivo_bloqueio"]
+    assert "Acione o Articulador Estadual" in data["territorial"]["motivo_bloqueio"]
+
+
+def test_saldo_sem_alocacao_territorial_orienta_sem_dizer_que_esgotou(
+    auth_client_solicitante, activity_rn, rubrica_diarias, limite_individual_rn,
+):
+    response = auth_client_solicitante.get(
+        "/api/v1/sgd/saldo/", {"activity_id": activity_rn.pk, "rubrica": rubrica_diarias.slug, "valor": "50"},
+    )
+    assert response.status_code == 200
+    territorial = response.json()["territorial"]
+    assert territorial["disponivel"] is False
+    assert territorial["motivo_bloqueio"].startswith("Nenhuma alocação encontrada")
+    assert "Acione o Articulador Estadual" in territorial["motivo_bloqueio"]
+    assert "esgotad" not in territorial["motivo_bloqueio"]
+    assert territorial["semaforo_atual"] is None
 
 
 def test_saldo_disponivel_traz_semaforo(
