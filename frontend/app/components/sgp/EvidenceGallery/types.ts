@@ -22,7 +22,7 @@ export type EvidencePhoto = {
   ordem: number;
   content_type: string;
   tamanho_bytes: number;
-  ativa: boolean;
+  ativo: boolean;
   criado_em: string;
   /**
    * Marcado true quando o registro chegou por sincronização do SCA mas ainda

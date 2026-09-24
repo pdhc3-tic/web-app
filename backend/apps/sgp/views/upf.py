@@ -34,9 +34,13 @@ def upfs_acessiveis_ao_usuario(user, role_slugs=None):
 
     `role_slugs` pode ser passado já computado (ver `UPFViewSet.get_queryset`)
     para evitar refazer a checagem de roles do usuário em outra query.
+
+    Usa `all_objects`: RLS territorial e soft-delete são preocupações
+    independentes — quem filtra por ativo=True é `UPFViewSet.filter_queryset`
+    (ou, no caso de `MembroViewSet.get_upf`, a checagem explícita de `upf.ativo`).
     """
     return scope_queryset(
-        UPF.objects.all(),
+        UPF.all_objects.all(),
         user,
         state_lookup="municipio__state__sigla__in",
         territory_lookup="territorio__in",
@@ -58,7 +62,7 @@ class _UPFMapPropertiesSerializer(serializers.Serializer):
     nome_titular = serializers.CharField()
     municipio = MunicipioNestedSerializer()
     territorio = serializers.CharField()
-    ativa = serializers.BooleanField()
+    ativo = serializers.BooleanField()
 
 
 class _UPFMapFeatureSerializer(serializers.Serializer):
@@ -89,12 +93,14 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
         return UPFDetailSerializer
 
     def filter_queryset(self, queryset):
-        if "ativa" not in self.request.query_params:
-            queryset = queryset.filter(ativa=True)
+        if "ativo" not in self.request.query_params:
+            queryset = queryset.filter(ativo=True)
         return super().filter_queryset(queryset)
 
     def get_queryset(self):
-        qs = UPF.objects.select_related(
+        # all_objects: o padrão ativo=True é aplicado por filter_queryset,
+        # que também permite `?ativo=false`/`?ativo=` sobrepor o default.
+        qs = UPF.all_objects.select_related(
             "municipio", "municipio__state", "territorio", "projeto",
             "criado_por", "titular",
         ).prefetch_related("membros").all()
@@ -118,7 +124,7 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
             OpenApiParameter("municipio", OpenApiTypes.INT, OpenApiParameter.QUERY),
             OpenApiParameter("territorio", OpenApiTypes.INT, OpenApiParameter.QUERY),
             OpenApiParameter("projeto", OpenApiTypes.INT, OpenApiParameter.QUERY),
-            OpenApiParameter("ativa", OpenApiTypes.BOOL, OpenApiParameter.QUERY),
+            OpenApiParameter("ativo", OpenApiTypes.BOOL, OpenApiParameter.QUERY),
         ],
         responses={
             200: inline_serializer(
@@ -134,7 +140,7 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
         description=(
             "Retorna UPFs georreferenciadas em GeoJSON FeatureCollection. "
             "Cada feature possui geometry.coordinates na ordem [lng, lat] "
-            "e properties mínimo: id, nome_titular, municipio, territorio e ativa."
+            "e properties mínimo: id, nome_titular, municipio, territorio e ativo."
         ),
     )
     @action(detail=False, methods=["get"], url_path="mapa")
@@ -179,7 +185,7 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
                 "municipio__state__nome",
                 "territorio",
                 "territorio__nome",
-                "ativa",
+                "ativo",
             )
             .order_by("id")
         )
@@ -244,7 +250,7 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
                 "nome_titular": upf.titular.nome_completo,
                 "municipio": MunicipioNestedSerializer(upf.municipio).data,
                 "territorio": upf.territorio.nome,
-                "ativa": upf.ativa,
+                "ativo": upf.ativo,
             },
         }
 
@@ -264,7 +270,7 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
                 "municipio_id": instance.municipio_id,
                 "territorio_id": instance.territorio_id,
                 "comunidade_id": instance.comunidade_id,
-                "ativa": instance.ativa,
+                "ativo": instance.ativo,
             },
             ip=self.request.META.get("REMOTE_ADDR"),
             user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
@@ -295,7 +301,7 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
             "municipio_id": old.municipio_id,
             "territorio_id": old.territorio_id,
             "comunidade_id": old.comunidade_id,
-            "ativa": old.ativa,
+            "ativo": old.ativo,
         }
         anteriores_sensiveis = {"cor_raca": old.titular.cor_raca}
         instance = serializer.save(ultima_origem="web")
@@ -321,10 +327,9 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
             "municipio_id": instance.municipio_id,
             "territorio_id": instance.territorio_id,
             "comunidade_id": instance.comunidade_id,
-            "ativa": instance.ativa,
+            "ativo": instance.ativo,
         }
-        instance.ativa = False
-        instance.save(update_fields=["ativa"])
+        instance.soft_delete()
         self._log_audit("UPF.deactivate", instance, valores_anteriores)
 
     def destroy(self, request, *args, **kwargs):

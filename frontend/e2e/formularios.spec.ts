@@ -21,7 +21,7 @@ test.describe("SGP — Aba Formulários na UPF", () => {
     page,
   }) => {
     const upfId = primeiroUpfId();
-    await page.goto(`/sgp/upfs/${upfId}#formularios`);
+    await page.goto(`/sgp/upfs/${upfId}?tab=formularios`);
 
     // Aguarda a ficha carregar — sem isto a aba pode ainda estar mostrando o
     // skeleton do fetch da UPF.
@@ -39,7 +39,7 @@ test.describe("SGP — Aba Formulários na UPF", () => {
       }),
     ).toBeVisible();
 
-    // #formularios já ativa a aba via useHashTab — o CTA do empty state deve
+    // ?tab=formularios já ativa a aba via searchParams — o CTA do empty state deve
     // aparecer sem clique adicional.
     const cta = page.getByTestId("formularios-preencher-novo");
     await expect(cta).toBeVisible();
@@ -56,7 +56,7 @@ test.describe("SGP — Aba Formulários na UPF", () => {
     const upfId = primeiroUpfId();
     // Filtro que não casa com nada: o texto do aceite não pode aparecer aqui,
     // senão sugere que a família nunca respondeu formulário algum.
-    await page.goto(`/sgp/upfs/${upfId}?respondente=zzz-inexistente#formularios`);
+    await page.goto(`/sgp/upfs/${upfId}?respondente=zzz-inexistente&tab=formularios`);
 
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await expect(
@@ -75,7 +75,7 @@ test.describe("SGP — Aba Formulários na UPF", () => {
     // Verifica só a abertura do SlideOver — não depende de seed de
     // FormularioSGF, o SlideOver mostra empty state se não houver forms.
     const upfId = primeiroUpfId();
-    await page.goto(`/sgp/upfs/${upfId}#formularios`);
+    await page.goto(`/sgp/upfs/${upfId}?tab=formularios`);
 
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await page.getByTestId("formularios-preencher-novo").click();
@@ -102,7 +102,7 @@ test.describe("SGP — Aba Formulários na UPF", () => {
         : route.fallback(),
     );
 
-    await page.goto(`/sgp/upfs/${upfId}#formularios`);
+    await page.goto(`/sgp/upfs/${upfId}?tab=formularios`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await page.getByTestId("formularios-preencher-novo").click();
 
@@ -131,7 +131,7 @@ test.describe("SGP — Aba Formulários na UPF", () => {
     async ({ page }) => {
       // Depende de FormularioSGF publicado no seed — ainda não coberto.
       const upfId = primeiroUpfId();
-      await page.goto(`/sgp/upfs/${upfId}#formularios`);
+      await page.goto(`/sgp/upfs/${upfId}?tab=formularios`);
       await page.getByTestId("formularios-preencher-novo").click();
 
       const seletor = page.getByTestId("preencher-formulario-slideover");
@@ -162,7 +162,7 @@ test.describe("SGP — Aba Formulários na UPF", () => {
       // ancorar a assertion do modal em `respostas_json` conhecido — o seed
       // grava `atividade_principal` no formulário recente.
       const upfId = primeiroUpfId();
-      await page.goto(`/sgp/upfs/${upfId}#formularios`);
+      await page.goto(`/sgp/upfs/${upfId}?tab=formularios`);
 
       const linhas = page.locator('tr[data-testid^="formulario-row-"]');
       await expect(linhas.first()).toBeVisible();
@@ -304,7 +304,7 @@ test.describe("SGP — Filtros da aba Formulários", () => {
   /** Abre a aba já com a tabela carregada (não o empty state). */
   async function abrirComRespostas(page: Page): Promise<void> {
     const upfId = primeiroUpfId();
-    await page.goto(`/sgp/upfs/${upfId}#formularios`);
+    await page.goto(`/sgp/upfs/${upfId}?tab=formularios`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     // A UPF do seed tem 31 respostas: a primeira página vem cheia. Serve de
     // linha de base para `contarJaRenderizado` distinguir o antes do depois.
@@ -574,7 +574,7 @@ test.describe("SGP — Opções do filtro de formulário", () => {
     const upfId = primeiroUpfId();
     await stubRespostasEmDuasPaginas(page);
 
-    await page.goto(`/sgp/upfs/${upfId}#formularios`);
+    await page.goto(`/sgp/upfs/${upfId}?tab=formularios`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
     // Sem clicar em nada nem paginar: a opção distante já está no select.
@@ -656,7 +656,7 @@ test.describe("SGP — Opções do filtro de formulário", () => {
     const upfId = primeiroUpfId();
     await stubComPaginacaoNaTabela(page);
 
-    await page.goto(`/sgp/upfs/${upfId}#formularios`);
+    await page.goto(`/sgp/upfs/${upfId}?tab=formularios`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
     await page.getByLabel("Formulário", { exact: true }).click();
@@ -704,7 +704,7 @@ test.describe("SGP — Opções do filtro de formulário", () => {
     const upfId = primeiroUpfId();
     await stubRespostasEmDuasPaginas(page);
 
-    await page.goto(`/sgp/upfs/${upfId}#formularios`);
+    await page.goto(`/sgp/upfs/${upfId}?tab=formularios`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
     await page.getByLabel("Formulário", { exact: true }).click();

@@ -32,7 +32,9 @@ from apps.sgp.services.forms import get_available_upf_forms
 
 
 def accessible_upf_queryset(user):
-    queryset = UPF.objects.select_related("municipio", "municipio__state", "territorio")
+    # all_objects: acessar formulários de uma UPF inativa continua
+    # funcionando (soft-delete não deve se misturar com RLS) — Issue #267.
+    queryset = UPF.all_objects.select_related("municipio", "municipio__state", "territorio")
     return scope_queryset(
         queryset,
         user,

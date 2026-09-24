@@ -152,51 +152,62 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
   }, [initialData]);
 
   // Carrega as opções de cascata para um formulário já preenchido (edição/rascunho).
-  const hydrateCascade = useCallback(async (data: UpfFormData) => {
-    if (data.estado) {
-      const munis = await fetchMunicipalitiesByState(data.estado).catch(
-        () => [] as MunicipalityOpt[],
-      );
-      setMunicipioOptions(munis);
-    }
-    if (data.municipio) {
-      const comus = await fetchComunidadeOptions(data.municipio).catch(
-        () => [] as SelectOption[],
-      );
-      setComunidadeOptions(comus);
-    }
-  }, []);
+  const hydrateCascade = useCallback(
+    async (data: UpfFormData, signal?: AbortSignal) => {
+      if (data.estado) {
+        const munis = await fetchMunicipalitiesByState(data.estado, signal).catch(
+          () => [] as MunicipalityOpt[],
+        );
+        if (!signal?.aborted) setMunicipioOptions(munis);
+      }
+      if (data.municipio) {
+        const comus = await fetchComunidadeOptions(data.municipio, signal).catch(
+          () => [] as SelectOption[],
+        );
+        if (!signal?.aborted) setComunidadeOptions(comus);
+      }
+    },
+    [],
+  );
 
-  // Prefill de edição: descobre o estado a partir do município e hidrata a cascata.
+  // Prefill de edição: descobre o estado a partir do município e hidrata a
+  // cascata. Compartilha `hydrateCascadeRef` com `continueDraft` — assim,
+  // quando o usuário clica "Continuar rascunho" no meio da hidratação inicial
+  // da edição, o abort no continueDraft encerra estas requisições em voo
+  // (senão elas resolveriam depois com dados da edição por cima do rascunho).
   useEffect(() => {
     if (mode !== "edit" || !initialData) return;
-    let active = true;
+    hydrateCascadeRef.current?.abort();
+    const controller = new AbortController();
+    hydrateCascadeRef.current = controller;
     (async () => {
       try {
-        const muni = await fetchMunicipality(initialData.municipio.id);
-        if (!active) return;
+        const muni = await fetchMunicipality(
+          initialData.municipio.id,
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
         const estado = String(muni.state);
         setForm((prev) => ({ ...prev, estado }));
         const [munis, comus] = await Promise.all([
-          fetchMunicipalitiesByState(estado).catch(
+          fetchMunicipalitiesByState(estado, controller.signal).catch(
             () => [] as MunicipalityOpt[],
           ),
-          initialData.comunidade
-            ? fetchComunidadeOptions(initialData.municipio.id).catch(
-                () => [] as SelectOption[],
-              )
-            : Promise.resolve([] as SelectOption[]),
+          // Sempre carrega as comunidades do município, mesmo que a UPF não
+          // tenha comunidade — o usuário pode querer adicionar uma na edição.
+          fetchComunidadeOptions(
+            initialData.municipio.id,
+            controller.signal,
+          ).catch(() => [] as SelectOption[]),
         ]);
-        if (!active) return;
+        if (controller.signal.aborted) return;
         setMunicipioOptions(munis);
         setComunidadeOptions(comus);
       } catch {
         /* mantém o que já foi preenchido */
       }
     })();
-    return () => {
-      active = false;
-    };
+    return () => controller.abort();
   }, [mode, initialData]);
 
   // Salva rascunho a cada mudança (após a primeira interação do usuário).
@@ -222,16 +233,45 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
     });
   }, []);
 
+  const estadoCascadeRef = useRef<AbortController | null>(null);
+  const municipioCascadeRef = useRef<AbortController | null>(null);
+  const hydrateCascadeRef = useRef<AbortController | null>(null);
+
+  // Cancela TODAS as requisições em voo ao desmontar o wizard: as cascatas
+  // ativas (estado/município) e a hidratação (edição inicial ou rascunho
+  // retomado). Antes o cleanup só cobria a hidratação — se o usuário fechava
+  // o wizard enquanto a cascata do estado estava carregando municípios, a
+  // resposta chegava depois do unmount e batia num setState de componente
+  // desmontado. Todas as requisições ficam sob controladores versionados
+  // pela ref, então abortá-las aqui garante quiescência completa.
+  useEffect(
+    () => () => {
+      hydrateCascadeRef.current?.abort();
+      estadoCascadeRef.current?.abort();
+      municipioCascadeRef.current?.abort();
+    },
+    [],
+  );
+
   function handleEstadoChange(value: string) {
     dirty.current = true;
     setForm((prev) => ({ ...prev, estado: value, municipio: "", comunidade: "" }));
     setErrors((prev) => ({ ...prev, estado: "", municipio: "" }));
     setMunicipioOptions([]);
     setComunidadeOptions([]);
+    estadoCascadeRef.current?.abort();
     if (value) {
-      fetchMunicipalitiesByState(value)
-        .then(setMunicipioOptions)
-        .catch(() => setMunicipioOptions([]));
+      const ctrl = new AbortController();
+      estadoCascadeRef.current = ctrl;
+      fetchMunicipalitiesByState(value, ctrl.signal)
+        .then((opts) => { if (!ctrl.signal.aborted) setMunicipioOptions(opts); })
+        // Verifica o `ctrl` do próprio closure, não o ref: numa troca rápida
+        // (troca Estado A → B), a promise da chamada de A resolve depois que o
+        // ref já aponta para o controller de B. Ler `estadoCascadeRef.current`
+        // aqui daria o ctrl de B (que não foi abortado) e essa branch
+        // limparia os municípios que a chamada de B já havia acabado de
+        // preencher. Amarrar no `ctrl` local corta essa condição.
+        .catch(() => { if (!ctrl.signal.aborted) setMunicipioOptions([]); });
     }
   }
 
@@ -240,10 +280,16 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
     setForm((prev) => ({ ...prev, municipio: value, comunidade: "" }));
     setErrors((prev) => ({ ...prev, municipio: "" }));
     setComunidadeOptions([]);
+    municipioCascadeRef.current?.abort();
     if (value) {
-      fetchComunidadeOptions(value)
-        .then(setComunidadeOptions)
-        .catch(() => setComunidadeOptions([]));
+      const ctrl = new AbortController();
+      municipioCascadeRef.current = ctrl;
+      fetchComunidadeOptions(value, ctrl.signal)
+        .then((opts) => { if (!ctrl.signal.aborted) setComunidadeOptions(opts); })
+        // Mesmo motivo do handleEstadoChange: capturar o próprio `ctrl` do
+        // closure em vez do ref, para não zerar comunidades já povoadas por
+        // uma troca rápida subsequente.
+        .catch(() => { if (!ctrl.signal.aborted) setComunidadeOptions([]); });
     }
   }
 
@@ -358,7 +404,15 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
     dirty.current = true;
     setForm(existing.data);
     setDraftDismissed(true);
-    hydrateCascade(existing.data);
+    hydrateCascadeRef.current?.abort();
+    const ctrl = new AbortController();
+    // Reset do controller de hidratação a partir de event handler (clique do
+    // usuário), não de effect: escrever no ref é seguro aqui, mas a nova
+    // regra `react-hooks/immutability` do React 19 não distingue os dois
+    // contextos porque o mesmo ref é usado dentro de `useEffect` da edição.
+    // eslint-disable-next-line react-hooks/immutability
+    hydrateCascadeRef.current = ctrl;
+    hydrateCascade(existing.data, ctrl.signal);
   }
 
   function discardDraft() {

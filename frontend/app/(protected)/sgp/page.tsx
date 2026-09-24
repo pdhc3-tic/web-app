@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Gauge,
   Sprout,
+  UserCog,
   Users,
   Wallet,
 } from "lucide-react";
@@ -25,8 +26,7 @@ type Submodule = {
   href?: string;
 };
 
-// Submódulos do SGP conforme Doc SGP §1.1. Apenas Famílias/UPFs está ativo nesta sprint;
-// os demais entram como "Em breve" (sem href) para dar a visão do escopo total do módulo.
+// Submódulos do SGP conforme Doc SGP §1.1.
 const SUBMODULES: Submodule[] = [
   {
     key: "upfs",
@@ -73,16 +73,25 @@ const SUBMODULES: Submodule[] = [
     href: "/sgp/orcamento/",
   },
   {
+    key: "tecnicos",
+    title: "Técnicos",
+    description: "Cadastro e vínculo de técnicos por território e OSC.",
+    Icon: UserCog,
+    href: "/sgp/tecnicos/",
+  },
+  {
     key: "producao",
     title: "Produção da UPF",
     description: "Dados de produção e cadeias produtivas da unidade.",
     Icon: Sprout,
+    href: "/sgp/producao/",
   },
   {
     key: "relatorios",
     title: "Relatórios",
-    description: "Indicadores e relatórios consolidados do módulo.",
+    description: "Exportações consolidadas e indicadores do módulo.",
     Icon: BarChart3,
+    href: "/sgp/relatorios/",
   },
 ];
 
@@ -108,7 +117,7 @@ export default function SGPPage() {
         <span className="truncate text-base font-semibold text-text">SGP</span>
       </PageHeader>
 
-      <div className="mx-auto max-w-6xl space-y-6">
+      <div data-testid="sgp-hub-page" className="mx-auto max-w-6xl space-y-6">
         <div>
           <Breadcrumb
             items={[{ label: "Início", href: "/dashboard" }, { label: "SGP" }]}
@@ -132,6 +141,7 @@ export default function SGPPage() {
               Icon={sub.Icon}
               href={sub.href}
               count={sub.key === "upfs" ? upfCount : undefined}
+              testId={`sgp-hub-card-${sub.key}`}
             />
           ))}
         </div>

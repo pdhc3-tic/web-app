@@ -10,6 +10,8 @@ from django.utils import timezone
 
 from apps.sgp.models.mixins import ScaSyncableModel
 
+from .base import SoftDeleteModel
+
 
 # ---------------------------------------------------------------------------
 # Choices
@@ -83,7 +85,7 @@ GOOGLE_CALENDAR_SYNC_STATUS_CHOICES = [
 # Model
 # ---------------------------------------------------------------------------
 
-class Activity(ScaSyncableModel):
+class Activity(SoftDeleteModel, ScaSyncableModel):
     # ── Identificação ────────────────────────────────────────────────────────
     titulo = models.CharField(max_length=255, verbose_name="Título")
 
@@ -204,7 +206,8 @@ class Activity(ScaSyncableModel):
         help_text="Obrigatório quando status = Não realizada ou Cancelada.",
     )
 
-    # ── Soft-delete ───────────────────────────────────────────────────────────
+    # ── Soft-delete (campo `ativo` herdado de SoftDeleteModel) ─────────────────
+    # Redeclarado para preservar o db_index=True já existente no schema atual.
     ativo = models.BooleanField(default=True, verbose_name="Ativo", db_index=True)
 
     # ── Auditoria ────────────────────────────────────────────────────────────
@@ -244,11 +247,13 @@ class Activity(ScaSyncableModel):
     # ── Lógica de evidências (BE-2 stub) ──────────────────────────────────────
     def has_evidencias(self) -> bool:
         """
-        Retorna True se a atividade possui ao menos 1 foto ativa
-        ou 1 documento ativo vinculado.
+        Retorna True se a atividade possui ao menos 1 foto ou 1 documento
+        ativo vinculado. Filtro explícito porque `self.fotos`/`self.documentos`
+        (relação reversa sem queryset explícito) passam por `_base_manager`
+        (`all_objects`, sem filtro) — Issue #267.
         """
         return (
-            self.fotos.filter(ativa=True).exists()
+            self.fotos.filter(ativo=True).exists()
             or self.documentos.filter(ativo=True).exists()
         )
 
@@ -256,7 +261,7 @@ class Activity(ScaSyncableModel):
     def get_transicoes_permitidas(self) -> set[str]:
         return STATUS_TRANSITIONS.get(self.status, set())
 
-    class Meta:
+    class Meta(SoftDeleteModel.Meta, ScaSyncableModel.Meta):
         verbose_name = "Atividade"
         verbose_name_plural = "Atividades"
         ordering = ["-data_inicio", "-criado_em"]

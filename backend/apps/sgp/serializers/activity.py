@@ -95,7 +95,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         many=True, required=False,
     )
     upfs_participantes = serializers.PrimaryKeyRelatedField(
-        queryset=UPF.objects.filter(ativa=True),
+        queryset=UPF.objects.all(),
         many=True, required=False,
     )
     membros_participantes = serializers.PrimaryKeyRelatedField(
