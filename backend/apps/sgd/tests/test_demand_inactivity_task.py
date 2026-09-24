@@ -13,8 +13,9 @@ pytestmark = pytest.mark.django_db
 
 def _voltar_no_tempo_dias_uteis(demand, dias_uteis: int) -> None:
     """Recua `status_alterado_em` até cobrir `dias_uteis` dias úteis no mesmo
-    calendário da task (RN, com feriados) — um número fixo de dias corridos
-    faria o resultado depender do dia da semana e de feriados na janela."""
+    calendário da task — um número fixo de dias corridos faria o resultado
+    depender do dia da semana e de feriados na janela. "RN" é a UF de
+    `activity_rn`; meio-dia evita que a conversão pra data local vire o dia."""
     from apps.sgd.tasks import _dias_uteis_entre
 
     hoje = timezone.localdate()
@@ -37,9 +38,9 @@ def test_demanda_sem_movimentacao_ha_5_dias_uteis_dispara(activity_rn):
     notificar.assert_called_once()
 
 
-def test_demanda_com_4_dias_nao_dispara(activity_rn):
+def test_demanda_com_4_dias_uteis_nao_dispara(activity_rn):
     demand = DemandFactory(activity=activity_rn, status="submetida")
-    Demand.objects.filter(pk=demand.pk).update(status_alterado_em=timezone.now() - timedelta(days=4))
+    _voltar_no_tempo_dias_uteis(demand, 4)
 
     with patch("apps.sgd.tasks.notificar_inatividade") as notificar:
         total = check_demand_inactivity_alert()
