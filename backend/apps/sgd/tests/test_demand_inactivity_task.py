@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -12,16 +12,23 @@ pytestmark = pytest.mark.django_db
 
 
 def _voltar_no_tempo_dias_uteis(demand, dias_uteis: int) -> None:
-    """Aproxima dias corridos suficientes pra cobrir `dias_uteis` úteis —
-    não precisa ser exato porque os testes usam 4 e 5, bem afastados de um
-    fim de semana no meio (ver `_dias_uteis_entre`)."""
-    referencia = timezone.now() - timedelta(days=dias_uteis + 2)
-    Demand.objects.filter(pk=demand.pk).update(status_alterado_em=referencia)
+    """Recua `status_alterado_em` até cobrir `dias_uteis` dias úteis no mesmo
+    calendário da task (RN, com feriados) — um número fixo de dias corridos
+    faria o resultado depender do dia da semana e de feriados na janela."""
+    from apps.sgd.tasks import _dias_uteis_entre
+
+    hoje = timezone.localdate()
+    referencia = hoje
+    while _dias_uteis_entre(referencia, hoje, uf="RN") < dias_uteis:
+        referencia -= timedelta(days=1)
+    Demand.objects.filter(pk=demand.pk).update(
+        status_alterado_em=timezone.make_aware(datetime.combine(referencia, time(12))),
+    )
 
 
 def test_demanda_sem_movimentacao_ha_5_dias_uteis_dispara(activity_rn):
     demand = DemandFactory(activity=activity_rn, status="submetida")
-    _voltar_no_tempo_dias_uteis(demand, 7)  # >= 5 dias úteis com folga
+    _voltar_no_tempo_dias_uteis(demand, 5)
 
     with patch("apps.sgd.tasks.notificar_inatividade") as notificar:
         total = check_demand_inactivity_alert()
