@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
@@ -41,6 +42,7 @@ def validar_transicao(demand, novo_status: str) -> None:
 def transition(demand, novo_status: str) -> None:
     validar_transicao(demand, novo_status)
     demand.status = novo_status
+    demand.status_alterado_em = timezone.now()
 
 
 def pode_cancelar(demand, usuario) -> bool:
@@ -161,7 +163,7 @@ def _exigir_pode_decidir_articulador(demand, responsavel) -> None:
 def pre_autorizar(demand, *, responsavel) -> object:
     _exigir_pode_decidir_articulador(demand, responsavel)
     transition(demand, "pre_autorizada")
-    demand.save(update_fields=["status", "atualizado_em"])
+    demand.save(update_fields=["status", "status_alterado_em", "atualizado_em"])
     ApprovalStep.objects.create(
         demanda=demand, etapa="pre_autorizacao", responsavel=responsavel, acao="aprovado",
     )
@@ -175,7 +177,7 @@ def devolver(demand, *, responsavel, justificativa: str) -> object:
     if not justificativa:
         raise JustificativaObrigatoriaError("Obrigatória para devolver a demanda.")
     transition(demand, "devolvida")
-    demand.save(update_fields=["status", "atualizado_em"])
+    demand.save(update_fields=["status", "status_alterado_em", "atualizado_em"])
     ApprovalStep.objects.create(
         demanda=demand, etapa="pre_autorizacao", responsavel=responsavel,
         acao="devolvido", justificativa=justificativa,
@@ -212,7 +214,7 @@ def autorizar(
         solicitacao.save(update_fields=["valor_autorizado"])
 
     transition(demand, "autorizada")
-    demand.save(update_fields=["status", "atualizado_em"])
+    demand.save(update_fields=["status", "status_alterado_em", "atualizado_em"])
     ApprovalStep.objects.create(
         demanda=demand, etapa="autorizacao", responsavel=responsavel,
         acao="aprovado", excedente_autorizado=excedente_autorizado, justificativa=justificativa,
@@ -230,7 +232,7 @@ def recusar(demand, *, responsavel, justificativa: str) -> object:
             demand_request=solicitacao, usuario=responsavel, motivo="Demanda recusada pela UGP.",
         )
     transition(demand, "recusada")
-    demand.save(update_fields=["status", "atualizado_em"])
+    demand.save(update_fields=["status", "status_alterado_em", "atualizado_em"])
     ApprovalStep.objects.create(
         demanda=demand, etapa="autorizacao", responsavel=responsavel,
         acao="recusado", justificativa=justificativa,
@@ -242,7 +244,7 @@ def recusar(demand, *, responsavel, justificativa: str) -> object:
 @transaction.atomic
 def atender(demand, *, responsavel) -> object:
     transition(demand, "em_atendimento")
-    demand.save(update_fields=["status", "atualizado_em"])
+    demand.save(update_fields=["status", "status_alterado_em", "atualizado_em"])
     ApprovalStep.objects.create(
         demanda=demand, etapa="atendimento", responsavel=responsavel, acao="atendido",
     )
@@ -274,7 +276,7 @@ def concluir(demand, *, responsavel, valores_pagos: dict) -> object:
         solicitacao.save(update_fields=["valor_pago"])
 
     transition(demand, "concluida")
-    demand.save(update_fields=["status", "atualizado_em"])
+    demand.save(update_fields=["status", "status_alterado_em", "atualizado_em"])
     ApprovalStep.objects.create(
         demanda=demand, etapa="atendimento", responsavel=responsavel, acao="atendido",
     )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.db import transaction
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from apps.sgd.models.demand import STATUS_EDITAVEIS, Demand
@@ -203,7 +204,7 @@ def submeter_demanda(demand, *, usuario) -> Demand:
         balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=usuario)
 
     transition(demand, "submetida")
-    demand.save(update_fields=["status", "atualizado_em"])
+    demand.save(update_fields=["status", "status_alterado_em", "atualizado_em"])
 
     sigla = demand.activity.municipio.state.sigla
     notifications_service.notificar_submissao(demand, notifications_service.usuarios_articuladores_do_estado(sigla))
@@ -222,5 +223,6 @@ def cancelar_demanda(demand, *, usuario, motivo: str = "") -> Demand:
         )
 
     demand.status = "cancelada"
-    demand.save(update_fields=["status", "atualizado_em"])
+    demand.status_alterado_em = timezone.now()
+    demand.save(update_fields=["status", "status_alterado_em", "atualizado_em"])
     return demand

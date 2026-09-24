@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.db import models
 from django.db.models import Sum
+from django.utils import timezone
 
 
 STATUS_CHOICES = [
@@ -72,6 +73,15 @@ class Demand(models.Model):
             "Capturado na criação quando a atividade vinculada já estava em "
             "Em andamento/Concluída/Concluída sem evidência — sinaliza ao "
             "aprovador, não é recalculado depois."
+        ),
+    )
+
+    status_alterado_em = models.DateTimeField(
+        default=timezone.now,
+        verbose_name="Status alterado em",
+        help_text=(
+            "Última mudança de status — referência do alerta de inatividade. "
+            "Diferente de atualizado_em, não muda em edições que mantêm o status."
         ),
     )
 

@@ -69,13 +69,7 @@ def _verificar_inatividade() -> int:
         status__in=STATUS_TERMINAIS | {"rascunho"},
     ).select_related("activity__municipio__state", "solicitante")
     for demand in demandas:
-        ultima_etapa_em = demand.etapas.order_by("-criado_em").values_list(
-            "criado_em", flat=True,
-        ).first()
-        # Resubmissão de uma Devolvida não cria ApprovalStep novo — sem o
-        # max() com atualizado_em, a referência ficaria presa na data da
-        # devolução antiga e o alerta dispararia cedo demais.
-        referencia = max(filter(None, [ultima_etapa_em, demand.atualizado_em])).date()
+        referencia = timezone.localdate(demand.status_alterado_em)
         if _dias_uteis_entre(referencia, hoje) < DIAS_UTEIS_LIMITE:
             continue
         link = link_inatividade(demand, referencia=referencia)
@@ -130,7 +124,8 @@ def _cancelar_demandas_da_atividade(activity_id: int) -> int:
                 motivo=f"Atividade vinculada em status '{activity.get_status_display()}'.",
             )
         demand.status = "cancelada"
-        demand.save(update_fields=["status", "atualizado_em"])
+        demand.status_alterado_em = timezone.now()
+        demand.save(update_fields=["status", "status_alterado_em", "atualizado_em"])
         sigla = activity.municipio.state.sigla
         notifications_service.notificar_cancelamento_automatico(
             demand, notifications_service.usuarios_articuladores_do_estado(sigla),
