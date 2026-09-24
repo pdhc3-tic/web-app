@@ -18,6 +18,11 @@ from django.utils import timezone
 
 from apps.sgp.models import Activity, MembroFamilia, UPF
 from apps.sgp.services.activity_status import ActivityStatusError, transition
+from apps.sgp.services.membro_rules import (
+    MembroRuleError,
+    validar_cpf_unico,
+    validar_titular_unico,
+)
 
 
 def _resolve_fk_ids(model, data: dict) -> dict:
@@ -41,6 +46,11 @@ def _resolve_fk_ids(model, data: dict) -> dict:
 
 class SyncEntityError(Exception):
     """Erro controlado por item no push — não interrompe o restante do batch."""
+
+    def __init__(self, message, *, sync_code: str = "", campo: str = ""):
+        super().__init__(message)
+        self.sync_code = sync_code
+        self.campo = campo
 
 
 class SyncEntity:
@@ -250,6 +260,15 @@ class UPFSyncEntity(SyncEntity):
         if not titular_data.get("nome_completo"):
             raise SyncEntityError("nome_completo do titular é obrigatório para criar UPF.")
 
+        cpf = (titular_data.get("cpf") or "").strip()
+        if cpf:
+            try:
+                validar_cpf_unico(cpf)
+            except MembroRuleError as exc:
+                raise SyncEntityError(
+                    f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
+                ) from exc
+
         titular = MembroFamilia.objects.create(
             upf=None,
             grau_parentesco="titular",
@@ -285,6 +304,15 @@ class UPFSyncEntity(SyncEntity):
                 titular_changes[path.split(".", 1)[1]] = value
             else:
                 upf_changes[path] = value
+
+        if titular_changes.get("cpf"):
+            try:
+                validar_cpf_unico(titular_changes["cpf"], membro_atual=instance.titular)
+            except MembroRuleError as exc:
+                raise SyncEntityError(
+                    f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
+                ) from exc
+
         upf_changes = _resolve_fk_ids(UPF, upf_changes)
         for field, value in upf_changes.items():
             setattr(instance, field, value)
@@ -388,6 +416,14 @@ class MemberSyncEntity(SyncEntity):
         if upf_id is None:
             raise SyncEntityError("Campo 'upf' (ou 'upf_uuid_local') é obrigatório para criar membro.")
         data["upf_id"] = upf_id
+        try:
+            validar_cpf_unico((data.get("cpf") or "").strip())
+            if data.get("grau_parentesco") == "titular":
+                validar_titular_unico(upf_id)
+        except MembroRuleError as exc:
+            raise SyncEntityError(
+                f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
+            ) from exc
         return MembroFamilia.objects.create(
             criado_por=user,
             device_id=device_id,
@@ -398,6 +434,17 @@ class MemberSyncEntity(SyncEntity):
         )
 
     def apply_changes(self, instance, changes: dict):
+        novo_grau = changes.get("grau_parentesco", instance.grau_parentesco)
+        novo_upf_id = changes.get("upf", instance.upf_id)
+        try:
+            if changes.get("cpf"):
+                validar_cpf_unico(changes["cpf"], membro_atual=instance)
+            if novo_grau == "titular":
+                validar_titular_unico(novo_upf_id, membro_atual=instance)
+        except MembroRuleError as exc:
+            raise SyncEntityError(
+                f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
+            ) from exc
         for field, value in changes.items():
             setattr(instance, field, value)
         instance.ultima_origem = "sca"
@@ -462,7 +509,9 @@ class ActivitySyncEntity(SyncEntity):
             try:
                 transition(instance, novo_status, usuario=user, justificativa=justificativa)
             except ActivityStatusError as exc:
-                raise SyncEntityError(f"{exc.sync_code}: {exc.message}") from exc
+                raise SyncEntityError(
+                    f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
+                ) from exc
         instance.save()
         if upfs:
             instance.upfs_participantes.set(upfs)
@@ -489,7 +538,9 @@ class ActivitySyncEntity(SyncEntity):
                     nova_data=changes.get("data_inicio"),
                 )
             except ActivityStatusError as exc:
-                raise SyncEntityError(f"{exc.sync_code}: {exc.message}") from exc
+                raise SyncEntityError(
+                    f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
+                ) from exc
         for field, value in changes.items():
             setattr(instance, field, value)
         instance.ultima_origem = "sca"

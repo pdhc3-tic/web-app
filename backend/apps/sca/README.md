@@ -31,7 +31,34 @@ Cada item rejeitado no push gera um objeto:
 ```
 
 Códigos possíveis: `PAYLOAD_INVALIDO`, `ENTIDADE_NAO_SUPORTADA`, `DUPLICATA`,
-`NAO_ENCONTRADO`, `FORA_TERRITORIO`, `ERRO_INTERNO`.
+`NAO_ENCONTRADO`, `FORA_TERRITORIO`, `ERRO_INTERNO`, `EXCLUIDO_NO_SERVIDOR`,
+`CAMPO_SENSIVEL_NAO_AUTORIZADO`, e os códigos de regra de negócio (ver seção
+abaixo): `TRANSICAO_INVALIDA`, `EVIDENCIA_OBRIGATORIA`,
+`JUSTIFICATIVA_OBRIGATORIA`, `NOVA_DATA_OBRIGATORIA`, `CPF_DUPLICADO`,
+`TITULAR_DUPLICADO`.
+
+## Conflitos de regra de negócio (`estrategia=regra_negocio_rejeitada`)
+
+UPF, Membro e Atividade são gravados tanto pela API web quanto pelo sync do
+SCA — as duas portas de entrada aplicam exatamente as mesmas regras de
+negócio, consumindo os mesmos serviços de domínio do app `sgp`:
+
+- `apps.sgp.services.activity_status` — transição de status, evidência
+  obrigatória para concluir, justificativa obrigatória, nova data obrigatória
+  ao reagendar (Activity).
+- `apps.sgp.services.membro_rules` — unicidade global de CPF, titular único
+  por UPF (Membro/UPF).
+
+Quando um item do push viola uma dessas regras, o sync **nunca grava
+silenciosamente em estado inválido**: o item é rejeitado normalmente (erro
+por item em `erros_detalhes`, códigos acima) **e**, adicionalmente, é
+registrada uma entrada em `ConflictLog` com
+`estrategia=regra_negocio_rejeitada` e `status=pendente`, visível em
+`GET /api/v1/sca/conflicts/` para acompanhamento administrativo (UGP/
+Articulador). Isso cobre, por exemplo, uma atividade marcada como
+"concluída" offline sem evidência ainda confirmada no servidor — a regra
+rejeita a transição e o caso fica registrado para follow-up manual; não há
+fila de reprocessamento automático (o app mobile decide se reenvia depois).
 
 ## Decisões de contrato V1
 

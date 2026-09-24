@@ -8,6 +8,7 @@ from apps.core.sensitive_fields import SensitiveFieldsSerializerMixin
 from apps.sgp.models import Comunidade, MembroFamilia, Projeto, UPF
 from apps.sgp.serializers.common import MunicipioNestedSerializer, NestedSerializer
 from apps.sgp.serializers.membro import MembroListSerializer
+from apps.sgp.services.membro_rules import CPFDuplicadoError, validar_cpf_unico
 from apps.sgp.validators import validate_cpf
 
 
@@ -160,18 +161,14 @@ class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeria
         cpf = attrs.get("_titular_cpf") or (
             self.instance.titular.cpf if self.instance else None
         )
-        projeto = attrs.get("projeto")
 
-        if cpf and projeto:
-            projeto_pk = projeto.pk if hasattr(projeto, "pk") else projeto
-            titular_ids = MembroFamilia.objects.filter(
-                cpf=cpf, upf__projeto_id=projeto_pk, upf__ativo=True,
-            ).exclude(
-                upf=self.instance,
-            ).values_list("pk", flat=True)
-            if titular_ids:
+        if cpf:
+            membro_atual = self.instance.titular if self.instance else None
+            try:
+                validar_cpf_unico(cpf, membro_atual=membro_atual)
+            except CPFDuplicadoError:
                 raise serializers.ValidationError(
-                    {"cpf": "Já existe uma UPF ativa cadastrada com este CPF neste projeto"}
+                    {"cpf": "Já existe uma UPF ativa cadastrada com este CPF"}
                 )
 
         return attrs
