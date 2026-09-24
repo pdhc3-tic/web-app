@@ -30,21 +30,25 @@ ACAO_SUGERIDA = {
     TRAVA_TERRITORIAL: "acionar_articulador",
 }
 
-# "Esgotado" só vale quando há alocação e ela não cobre o valor — sem
-# alocação nenhuma, afirmar que o território esgotou seria falso.
-_TERRITORIAL_SEM_ALOCACAO = "territorial_sem_alocacao"
-
-ORIENTACAO = {
-    TRAVA_INDIVIDUAL: "Use a opção 'Solicitar recurso extra'.",
-    TRAVA_TERRITORIAL: "Território esgotado nesta rubrica para este valor. Acione o Articulador Estadual.",
-    _TERRITORIAL_SEM_ALOCACAO: "Acione o Articulador Estadual para alocar saldo ao território.",
-}
+ORIENTACAO_INDIVIDUAL = "Use a opção 'Solicitar recurso extra'."
 
 
-def com_orientacao(motivo: str | None, chave: str) -> str | None:
+def orientacao_territorial(*, allocation, saldo: Decimal | None) -> str:
+    """Sem alocação nenhuma, afirmar que o território esgotou seria falso — só
+    orienta. Com alocação, "esgotado" puro quando o saldo zerou; com saldo
+    ainda positivo (ou desconhecido, numa corrida detectada pelo motor), o
+    que esgotou foi a cobertura deste valor."""
+    if allocation is None:
+        return "Acione o Articulador Estadual para alocar saldo ao território."
+    if saldo is not None and saldo <= ZERO:
+        return "Território esgotado nesta rubrica. Acione o Articulador Estadual."
+    return "Território esgotado nesta rubrica para este valor. Acione o Articulador Estadual."
+
+
+def com_orientacao(motivo: str | None, orientacao: str) -> str | None:
     if not motivo:
         return motivo
-    return f"{motivo} {ORIENTACAO[chave]}"
+    return f"{motivo} {orientacao}"
 
 
 @dataclass
@@ -167,7 +171,7 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal) -> TravaCheck:
             motivo_bloqueio=com_orientacao(
                 f"Nenhum limite individual configurado para você nesta rubrica: "
                 f"R$ 0.00 disponível, R$ {valor} solicitado.",
-                TRAVA_INDIVIDUAL,
+                ORIENTACAO_INDIVIDUAL,
             ),
             acao_sugerida=ACAO_SUGERIDA[TRAVA_INDIVIDUAL],
         )
@@ -178,7 +182,7 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal) -> TravaCheck:
             motivo_bloqueio=com_orientacao(
                 f"Limite individual esgotado para esta rubrica: R$ {saldo} disponível, "
                 f"R$ {valor} solicitado.",
-                TRAVA_INDIVIDUAL,
+                ORIENTACAO_INDIVIDUAL,
             ),
             acao_sugerida=ACAO_SUGERIDA[TRAVA_INDIVIDUAL],
         )
@@ -187,7 +191,7 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal) -> TravaCheck:
             disponivel=False, saldo=saldo,
             motivo_bloqueio=com_orientacao(
                 f"Limite individual insuficiente: R$ {saldo} disponível, R$ {valor} solicitado.",
-                TRAVA_INDIVIDUAL,
+                ORIENTACAO_INDIVIDUAL,
             ),
             acao_sugerida=ACAO_SUGERIDA[TRAVA_INDIVIDUAL],
         )
@@ -207,7 +211,7 @@ def verificar_duas_travas(*, solicitante, rubrica, meta, valor: Decimal) -> Duas
         territorial = replace(
             territorial, motivo_bloqueio=com_orientacao(
                 territorial.motivo_bloqueio,
-                TRAVA_TERRITORIAL if territorial.allocation is not None else _TERRITORIAL_SEM_ALOCACAO,
+                orientacao_territorial(allocation=territorial.allocation, saldo=territorial.saldo),
             ),
         )
     return DuasTravasCheck(individual=individual, territorial=territorial)
@@ -260,7 +264,7 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
                 "detail": com_orientacao(
                     f"Limite individual insuficiente: R$ {limite.saldo_disponivel} disponível, "
                     f"R$ {valor} solicitado.",
-                    TRAVA_INDIVIDUAL,
+                    ORIENTACAO_INDIVIDUAL,
                 )
             })
         limite.valor_comprometido += valor
@@ -282,7 +286,10 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
     )
     if check.allocation is None:
         raise DRFValidationError({
-            "detail": com_orientacao("Nenhuma alocação orçamentária territorial encontrada.", _TERRITORIAL_SEM_ALOCACAO)
+            "detail": com_orientacao(
+                "Nenhuma alocação orçamentária territorial encontrada.",
+                orientacao_territorial(allocation=None, saldo=None),
+            )
         })
     comprometido_territorial_antes = check.allocation.valor_comprometido
     try:
@@ -291,7 +298,9 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
             justificativa=f"Reserva SGD — solicitação #{demand_request.pk}.",
         )
     except budget_service.SaldoInsuficienteError as exc:
-        raise DRFValidationError({"detail": com_orientacao(str(exc), TRAVA_TERRITORIAL)}) from exc
+        raise DRFValidationError({
+            "detail": com_orientacao(str(exc), orientacao_territorial(allocation=check.allocation, saldo=None))
+        }) from exc
     except ValueError as exc:
         raise DRFValidationError({"detail": str(exc)}) from exc
     check.allocation.refresh_from_db(fields=["valor_comprometido"])
@@ -344,7 +353,7 @@ def ajustar_duas_travas(
                 "detail": com_orientacao(
                     f"Limite individual insuficiente para o ajuste: R$ {limite.saldo_disponivel} "
                     f"disponível, R$ {diferenca} a mais solicitado.",
-                    TRAVA_INDIVIDUAL,
+                    ORIENTACAO_INDIVIDUAL,
                 )
             })
         limite.valor_comprometido += diferenca
@@ -374,7 +383,9 @@ def ajustar_duas_travas(
             justificativa=f"Ajuste SGD — solicitação #{demand_request.pk}.",
         )
     except budget_service.SaldoInsuficienteError as exc:
-        raise DRFValidationError({"detail": com_orientacao(str(exc), TRAVA_TERRITORIAL)}) from exc
+        raise DRFValidationError({
+            "detail": com_orientacao(str(exc), orientacao_territorial(allocation=allocation_antes, saldo=None))
+        }) from exc
     except (budget_service.DemandaInvalidaError, ValueError) as exc:
         raise DRFValidationError({"detail": str(exc)}) from exc
 

@@ -243,7 +243,9 @@ def test_submeter_demanda_bloqueio_territorial_orienta_acionar_articulador(
     assert bloqueio["trava"] == "territorial"
     assert bloqueio["acao_sugerida"] == "acionar_articulador"
     assert "Acione o Articulador Estadual" in str(bloqueio["motivo"])
-    assert "Território esgotado" in str(bloqueio["motivo"])
+    # Pool de 500 com 500 livres: o território ainda tem saldo, só não
+    # cobre os 1.000 pedidos.
+    assert "Território esgotado nesta rubrica para este valor" in str(bloqueio["motivo"])
 
 
 def test_submeter_demanda_bloqueio_individual_orienta_recurso_extra(
@@ -433,3 +435,16 @@ def test_autorizar_excedente_rejeita_origem_territorial(
             demand_request=demand_request_rn, origem_allocation=origem_territorial,
             valor_excedente=Decimal("500"), justificativa="Tentativa inválida.", usuario=solicitante_rn,
         )
+
+
+@pytest.mark.parametrize(
+    ("allocation", "saldo", "esperado"),
+    [
+        (None, None, "Acione o Articulador Estadual para alocar saldo ao território."),
+        (object(), Decimal("0"), "Território esgotado nesta rubrica. Acione o Articulador Estadual."),
+        (object(), Decimal("500"), "Território esgotado nesta rubrica para este valor. Acione o Articulador Estadual."),
+        (object(), None, "Território esgotado nesta rubrica para este valor. Acione o Articulador Estadual."),
+    ],
+)
+def test_orientacao_territorial_por_situacao_do_pool(allocation, saldo, esperado):
+    assert balance_service.orientacao_territorial(allocation=allocation, saldo=saldo) == esperado

@@ -38,6 +38,8 @@ def test_saldo_bloqueio_territorial_traz_acao_sugerida(
     assert data["territorial"]["acao_sugerida"] == "acionar_articulador"
     assert "Acione o Articulador Estadual" in data["territorial"]["motivo_bloqueio"]
     assert "Território esgotado" in data["territorial"]["motivo_bloqueio"]
+    # Saldo zerado: esgotado de vez, não só "para este valor".
+    assert "para este valor" not in data["territorial"]["motivo_bloqueio"]
 
 
 def test_saldo_sem_alocacao_territorial_orienta_sem_dizer_que_esgotou(
