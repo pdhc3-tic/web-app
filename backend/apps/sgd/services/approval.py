@@ -39,10 +39,29 @@ def validar_transicao(demand, novo_status: str) -> None:
         )
 
 
-def transition(demand, novo_status: str) -> None:
-    validar_transicao(demand, novo_status)
+_CAMPOS_DE_STATUS = ["status", "status_alterado_em", "atualizado_em"]
+
+
+def _marcar_status(demand, novo_status: str) -> None:
     demand.status = novo_status
     demand.status_alterado_em = timezone.now()
+
+
+def transition(demand, novo_status: str) -> None:
+    validar_transicao(demand, novo_status)
+    _marcar_status(demand, novo_status)
+
+
+def aplicar_transicao(demand, novo_status: str) -> None:
+    transition(demand, novo_status)
+    demand.save(update_fields=_CAMPOS_DE_STATUS)
+
+
+def marcar_cancelada(demand) -> None:
+    """Fora de `STATUS_TRANSITIONS` de propósito (ver `models.demand`) — quem
+    chama já decidiu se a demanda pode ser cancelada."""
+    _marcar_status(demand, "cancelada")
+    demand.save(update_fields=_CAMPOS_DE_STATUS)
 
 
 def pode_cancelar(demand, usuario) -> bool:
@@ -156,8 +175,7 @@ def _exigir_pode_decidir_articulador(demand, responsavel) -> None:
 @transaction.atomic
 def pre_autorizar(demand, *, responsavel) -> object:
     _exigir_pode_decidir_articulador(demand, responsavel)
-    transition(demand, "pre_autorizada")
-    demand.save(update_fields=["status", "status_alterado_em", "atualizado_em"])
+    aplicar_transicao(demand, "pre_autorizada")
     ApprovalStep.objects.create(
         demanda=demand, etapa="pre_autorizacao", responsavel=responsavel, acao="aprovado",
     )
@@ -170,8 +188,7 @@ def devolver(demand, *, responsavel, justificativa: str) -> object:
     _exigir_pode_decidir_articulador(demand, responsavel)
     if not justificativa:
         raise JustificativaObrigatoriaError("Obrigatória para devolver a demanda.")
-    transition(demand, "devolvida")
-    demand.save(update_fields=["status", "status_alterado_em", "atualizado_em"])
+    aplicar_transicao(demand, "devolvida")
     ApprovalStep.objects.create(
         demanda=demand, etapa="pre_autorizacao", responsavel=responsavel,
         acao="devolvido", justificativa=justificativa,
@@ -207,8 +224,7 @@ def autorizar(
         solicitacao.valor_autorizado = novo_valor
         solicitacao.save(update_fields=["valor_autorizado"])
 
-    transition(demand, "autorizada")
-    demand.save(update_fields=["status", "status_alterado_em", "atualizado_em"])
+    aplicar_transicao(demand, "autorizada")
     ApprovalStep.objects.create(
         demanda=demand, etapa="autorizacao", responsavel=responsavel,
         acao="aprovado", excedente_autorizado=excedente_autorizado, justificativa=justificativa,
@@ -225,8 +241,7 @@ def recusar(demand, *, responsavel, justificativa: str) -> object:
         balance_service.liberar_duas_travas(
             demand_request=solicitacao, usuario=responsavel, motivo="Demanda recusada pela UGP.",
         )
-    transition(demand, "recusada")
-    demand.save(update_fields=["status", "status_alterado_em", "atualizado_em"])
+    aplicar_transicao(demand, "recusada")
     ApprovalStep.objects.create(
         demanda=demand, etapa="autorizacao", responsavel=responsavel,
         acao="recusado", justificativa=justificativa,
@@ -237,8 +252,7 @@ def recusar(demand, *, responsavel, justificativa: str) -> object:
 
 @transaction.atomic
 def atender(demand, *, responsavel) -> object:
-    transition(demand, "em_atendimento")
-    demand.save(update_fields=["status", "status_alterado_em", "atualizado_em"])
+    aplicar_transicao(demand, "em_atendimento")
     ApprovalStep.objects.create(
         demanda=demand, etapa="atendimento", responsavel=responsavel, acao="atendido",
     )
@@ -269,8 +283,7 @@ def concluir(demand, *, responsavel, valores_pagos: dict) -> object:
         solicitacao.valor_pago = valor_pago
         solicitacao.save(update_fields=["valor_pago"])
 
-    transition(demand, "concluida")
-    demand.save(update_fields=["status", "status_alterado_em", "atualizado_em"])
+    aplicar_transicao(demand, "concluida")
     ApprovalStep.objects.create(
         demanda=demand, etapa="atendimento", responsavel=responsavel, acao="atendido",
     )

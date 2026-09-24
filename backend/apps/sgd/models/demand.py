@@ -19,7 +19,7 @@ STATUS_CHOICES = [
 STATUS_TERMINAIS = {"concluida", "recusada", "cancelada"}
 
 # "cancelada" nunca aparece como destino aqui de propósito: cancelamento é
-# tratado fora desta tabela, em apps.sgd.services.approval/signals.activity.
+# tratado fora desta tabela, por apps.sgd.services.approval.marcar_cancelada.
 STATUS_TRANSITIONS: dict[str, set[str]] = {
     "rascunho": {"submetida"},
     "submetida": {"pre_autorizada", "devolvida"},

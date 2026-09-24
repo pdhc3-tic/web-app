@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from django.db import transaction
-from django.utils import timezone
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from apps.sgd.models.demand import STATUS_EDITAVEIS, Demand
@@ -9,7 +8,7 @@ from apps.sgd.models.demand_document import DemandDocument
 from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
-from apps.sgd.services.approval import pode_cancelar, transition
+from apps.sgd.services.approval import aplicar_transicao, marcar_cancelada, pode_cancelar
 from apps.sgd.services.demand_request import rubrica_slug_para_tipo, validar_campos_json
 from apps.sgp.models import Activity, BudgetRubrica
 
@@ -200,8 +199,7 @@ def submeter_demanda(demand, *, usuario) -> Demand:
     for solicitacao in solicitacoes:
         balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=usuario)
 
-    transition(demand, "submetida")
-    demand.save(update_fields=["status", "status_alterado_em", "atualizado_em"])
+    aplicar_transicao(demand, "submetida")
 
     sigla = demand.activity.municipio.state.sigla
     notifications_service.notificar_submissao(demand, notifications_service.usuarios_articuladores_do_estado(sigla))
@@ -219,7 +217,5 @@ def cancelar_demanda(demand, *, usuario, motivo: str = "") -> Demand:
             motivo=motivo or "Cancelada pelo solicitante.",
         )
 
-    demand.status = "cancelada"
-    demand.status_alterado_em = timezone.now()
-    demand.save(update_fields=["status", "status_alterado_em", "atualizado_em"])
+    marcar_cancelada(demand)
     return demand

@@ -8,7 +8,7 @@ from django.utils import timezone
 
 from apps.core.models.notifications import Notification
 from apps.sgd.models.demand import STATUS_TERMINAIS, Demand
-from apps.sgd.services.approval import responsaveis_pela_etapa_atual
+from apps.sgd.services.approval import marcar_cancelada, responsaveis_pela_etapa_atual
 from apps.sgd.services.notifications import EVENTO_INATIVIDADE, link_inatividade, notificar_inatividade
 
 try:
@@ -133,9 +133,7 @@ def _cancelar_demandas_da_atividade(activity_id: int) -> int:
                 demand_request=solicitacao, usuario=None,
                 motivo=f"Atividade vinculada em status '{activity.get_status_display()}'.",
             )
-        demand.status = "cancelada"
-        demand.status_alterado_em = timezone.now()
-        demand.save(update_fields=["status", "status_alterado_em", "atualizado_em"])
+        marcar_cancelada(demand)
         sigla = activity.municipio.state.sigla
         notifications_service.notificar_cancelamento_automatico(
             demand, notifications_service.usuarios_articuladores_do_estado(sigla),
