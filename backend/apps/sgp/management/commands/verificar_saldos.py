@@ -19,13 +19,16 @@ class Command(BaseCommand):
         Tipo = BudgetTransaction.Tipo
         alocacoes = list(BudgetAllocation.objects.annotate(
             reserva=Coalesce(Sum("transactions__valor", filter=Q(transactions__tipo=Tipo.RESERVA)), ZERO),
+            ajuste=Coalesce(Sum("transactions__valor", filter=Q(transactions__tipo=Tipo.AJUSTE)), ZERO),
             execucao=Coalesce(Sum("transactions__valor", filter=Q(transactions__tipo=Tipo.EXECUCAO)), ZERO),
             liberacao=Coalesce(Sum("transactions__valor", filter=Q(transactions__tipo=Tipo.LIBERACAO)), ZERO),
         ))
 
         divergencias = []
         for alocacao in alocacoes:
-            comprometido_esperado = alocacao.reserva - alocacao.execucao - alocacao.liberacao
+            # `ajuste` soma os deltas de `ajustar_reserva` (SGD) — sem somar
+            # aqui, uma alocação com ajuste aplicado sempre divergiria.
+            comprometido_esperado = alocacao.reserva + alocacao.ajuste - alocacao.execucao - alocacao.liberacao
             executado_esperado = alocacao.execucao
 
             if alocacao.valor_comprometido != comprometido_esperado:

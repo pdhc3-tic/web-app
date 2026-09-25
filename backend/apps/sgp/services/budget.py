@@ -12,6 +12,7 @@ from rest_framework.exceptions import ValidationError as DRFValidationError
 from apps.core.models import Territory
 from apps.core.models.user_profile import UserProfile
 from apps.core.services.permissions import user_has_role, user_states, user_territories
+from apps.core.utils import get_config
 from apps.sgp.models import BudgetAllocation, BudgetRubrica, BudgetTransaction, WorkPlanMeta
 
 Nivel = BudgetAllocation.Nivel
@@ -213,8 +214,8 @@ def _linha_pai(*, meta, rubrica, nivel: str, territorio=None, estado=None) -> Bu
             estado__sigla__in=estados_do_territorio,
         ).order_by("pk").first()
     if nivel == Nivel.ESTADUAL:
-        # UniqueConstraint de #219 garante no máximo 1 linha nacional por
-        # (meta, rubrica) — .first() aqui nunca é ambíguo.
+        # A UniqueConstraint de BudgetAllocation garante no máximo 1 linha
+        # nacional por (meta, rubrica) — .first() aqui nunca é ambíguo.
         return BudgetAllocation.objects.filter(
             meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL,
         ).first()
@@ -419,6 +420,33 @@ def _transacao_existente(demanda_id: str, tipo: str) -> BudgetTransaction | None
     return BudgetTransaction.objects.filter(demanda_id=demanda_id, tipo=tipo).first()
 
 
+_VERBO_PASSADO = {
+    BudgetTransaction.Tipo.EXECUCAO: "executada",
+    BudgetTransaction.Tipo.LIBERACAO: "liberada",
+}
+
+
+def _rejeitar_se_finalizada(demanda_id: str, *, tipos_bloqueantes: list[str], acao: str) -> None:
+    for tipo in tipos_bloqueantes:
+        if _transacao_existente(demanda_id, tipo) is not None:
+            raise DemandaInvalidaError(
+                f"Demanda {demanda_id!r} já foi {_VERBO_PASSADO[tipo]} — não pode ser {acao}."
+            )
+
+
+def _valor_total_reservado(demanda_id: str) -> Decimal:
+    """Reserva original + todo `ajustar_reserva` aplicado depois. `executar`/
+    `liberar` usam isto, não `reserva.valor` puro, senão um ajuste ficaria
+    fora da conta."""
+    reserva = BudgetTransaction.objects.filter(demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.RESERVA).first()
+    if reserva is None:
+        return ZERO
+    ajustes = BudgetTransaction.objects.filter(
+        demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.AJUSTE,
+    ).aggregate(total=Coalesce(Sum("valor"), ZERO))["total"]
+    return reserva.valor + ajustes
+
+
 @transaction.atomic
 def reservar(*, allocation: BudgetAllocation, valor: Decimal, demanda_id: str, usuario,
              justificativa: str = "") -> BudgetTransaction:
@@ -451,53 +479,92 @@ def reservar(*, allocation: BudgetAllocation, valor: Decimal, demanda_id: str, u
 
 
 @transaction.atomic
-def executar(*, demanda_id: str, usuario) -> BudgetTransaction:
-    """Move o valor da reserva original (achada por demanda_id) de
-    comprometido pra executado, na mesma alocação — nunca mexe no pai."""
-    reserva = BudgetTransaction.objects.filter(
-        demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.RESERVA,
-    ).first()
+def ajustar_reserva(*, demanda_id: str, novo_valor: Decimal, usuario, justificativa: str = "") -> BudgetTransaction:
+    """Registra o delta como uma `BudgetTransaction` própria (`Tipo.AJUSTE`)
+    em vez de reescrever a reserva original. Não é idempotente — ao
+    contrário de reservar/executar/liberar, quem chama garante que só
+    invoca isto uma vez por decisão."""
+    reserva = BudgetTransaction.objects.filter(demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.RESERVA).first()
     if reserva is None:
         raise DemandaInvalidaError(f"Nenhuma reserva encontrada para a demanda {demanda_id!r}.")
+    _rejeitar_se_finalizada(
+        demanda_id,
+        tipos_bloqueantes=[BudgetTransaction.Tipo.EXECUCAO, BudgetTransaction.Tipo.LIBERACAO],
+        acao="ajustada",
+    )
 
     allocation = BudgetAllocation.objects.select_for_update().get(pk=reserva.allocation_id)
-    existente = _transacao_existente(demanda_id, BudgetTransaction.Tipo.EXECUCAO)
-    if existente is not None:
-        return existente
-    if _transacao_existente(demanda_id, BudgetTransaction.Tipo.LIBERACAO) is not None:
-        raise DemandaInvalidaError(f"Demanda {demanda_id!r} já foi liberada — não pode ser executada.")
+    valor_atual = _valor_total_reservado(demanda_id)
+    delta = novo_valor - valor_atual
+    if delta > ZERO and delta > _saldo_disponivel(allocation):
+        raise SaldoInsuficienteError(
+            f"Saldo insuficiente para o ajuste: R$ {_saldo_disponivel(allocation)} disponível, "
+            f"R$ {delta} a mais solicitado."
+        )
 
-    allocation.valor_comprometido -= reserva.valor
-    allocation.valor_executado += reserva.valor
-    allocation.save(update_fields=["valor_comprometido", "valor_executado"])
+    allocation.valor_comprometido += delta
+    allocation.save(update_fields=["valor_comprometido"])
     return BudgetTransaction.objects.create(
-        allocation=allocation, tipo=BudgetTransaction.Tipo.EXECUCAO, valor=reserva.valor,
-        demanda_id=demanda_id, criado_por=usuario, justificativa="Execução da demanda.",
+        allocation=allocation, tipo=BudgetTransaction.Tipo.AJUSTE, valor=delta,
+        demanda_id=demanda_id, criado_por=usuario, justificativa=justificativa or "Ajuste de valor autorizado.",
     )
 
 
 @transaction.atomic
-def liberar(*, demanda_id: str, usuario, motivo: str) -> BudgetTransaction:
-    """Devolve o valor reservado ao comprometido da mesma alocação da reserva
-    original — como nunca toca no pai, a devolução ao nível do solicitante já
-    sai correta por construção."""
-    reserva = BudgetTransaction.objects.filter(
-        demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.RESERVA,
-    ).first()
-    if reserva is None:
+def executar(*, demanda_id: str, usuario, valor_executado: Decimal | None = None) -> BudgetTransaction:
+    """`valor_executado=None` executa o valor reservado por inteiro. Um
+    valor menor executa só essa parte e registra a diferença como uma
+    `BudgetTransaction` de liberação própria."""
+    valor_reservado = _valor_total_reservado(demanda_id)
+    if valor_reservado <= ZERO:
         raise DemandaInvalidaError(f"Nenhuma reserva encontrada para a demanda {demanda_id!r}.")
 
+    reserva = BudgetTransaction.objects.filter(demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.RESERVA).first()
+    allocation = BudgetAllocation.objects.select_for_update().get(pk=reserva.allocation_id)
+    existente = _transacao_existente(demanda_id, BudgetTransaction.Tipo.EXECUCAO)
+    if existente is not None:
+        return existente
+    _rejeitar_se_finalizada(demanda_id, tipos_bloqueantes=[BudgetTransaction.Tipo.LIBERACAO], acao="executada")
+
+    valor_final = valor_reservado if valor_executado is None else valor_executado
+    diferenca = valor_reservado - valor_final
+
+    allocation.valor_comprometido -= valor_reservado
+    allocation.valor_executado += valor_final
+    allocation.save(update_fields=["valor_comprometido", "valor_executado"])
+    execucao = BudgetTransaction.objects.create(
+        allocation=allocation, tipo=BudgetTransaction.Tipo.EXECUCAO, valor=valor_final,
+        demanda_id=demanda_id, criado_por=usuario, justificativa="Execução da demanda.",
+    )
+    if diferenca > ZERO:
+        BudgetTransaction.objects.create(
+            allocation=allocation, tipo=BudgetTransaction.Tipo.LIBERACAO, valor=diferenca,
+            demanda_id=demanda_id, criado_por=usuario,
+            justificativa="Diferença entre valor reservado e valor efetivamente pago na execução.",
+        )
+    return execucao
+
+
+@transaction.atomic
+def liberar(*, demanda_id: str, usuario, motivo: str) -> BudgetTransaction:
+    """Devolve o valor reservado (reserva original + ajustes, se houver) ao
+    comprometido da mesma alocação — como nunca toca no pai, a devolução ao
+    nível do solicitante já sai correta por construção."""
+    valor_reservado = _valor_total_reservado(demanda_id)
+    if valor_reservado <= ZERO:
+        raise DemandaInvalidaError(f"Nenhuma reserva encontrada para a demanda {demanda_id!r}.")
+
+    reserva = BudgetTransaction.objects.filter(demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.RESERVA).first()
     allocation = BudgetAllocation.objects.select_for_update().get(pk=reserva.allocation_id)
     existente = _transacao_existente(demanda_id, BudgetTransaction.Tipo.LIBERACAO)
     if existente is not None:
         return existente
-    if _transacao_existente(demanda_id, BudgetTransaction.Tipo.EXECUCAO) is not None:
-        raise DemandaInvalidaError(f"Demanda {demanda_id!r} já foi executada — não pode ser liberada.")
+    _rejeitar_se_finalizada(demanda_id, tipos_bloqueantes=[BudgetTransaction.Tipo.EXECUCAO], acao="liberada")
 
-    allocation.valor_comprometido -= reserva.valor
+    allocation.valor_comprometido -= valor_reservado
     allocation.save(update_fields=["valor_comprometido"])
     return BudgetTransaction.objects.create(
-        allocation=allocation, tipo=BudgetTransaction.Tipo.LIBERACAO, valor=reserva.valor,
+        allocation=allocation, tipo=BudgetTransaction.Tipo.LIBERACAO, valor=valor_reservado,
         demanda_id=demanda_id, justificativa=motivo, criado_por=usuario,
     )
 
@@ -623,11 +690,44 @@ def saldo_para_consulta(*, meta_id: int, rubrica_slug: str, nivel: str,
 
 
 # ---------------------------------------------------------------------------
-# Painel de orçamento — matriz Meta × Rubrica com semáforo (§5.3.3, #224).
+# Painel de orçamento — matriz Meta × Rubrica com semáforo (§5.3.3).
 # ---------------------------------------------------------------------------
 
-LIMIAR_SEMAFORO_AMARELO = Decimal("60")
-LIMIAR_SEMAFORO_VERMELHO = Decimal("80")
+LIMIAR_SEMAFORO_AMARELO_PADRAO = 70
+LIMIAR_SEMAFORO_VERMELHO_PADRAO = 90
+
+
+def percentual_comprometido(comprometido: Decimal, total: Decimal) -> Decimal:
+    if total <= ZERO:
+        return ZERO
+    return (comprometido / total) * Decimal("100")
+
+
+@dataclass(frozen=True)
+class LimiaresSemaforo:
+    amarelo: Decimal
+    vermelho: Decimal
+
+
+def limiares_semaforo() -> LimiaresSemaforo:
+    """Limiares globais `budget_alert_yellow_pct`/`budget_alert_red_pct` do
+    Core. Quem classifica várias faixas na mesma operação (células do painel,
+    antes/depois de uma reserva) lê uma vez e repassa — com o cache frio ou
+    sem a linha no SystemConfig, cada leitura é uma query."""
+    return LimiaresSemaforo(
+        amarelo=Decimal(get_config("budget_alert_yellow_pct", LIMIAR_SEMAFORO_AMARELO_PADRAO)),
+        vermelho=Decimal(get_config("budget_alert_red_pct", LIMIAR_SEMAFORO_VERMELHO_PADRAO)),
+    )
+
+
+def faixa_semaforo(percentual: Decimal, limiares: LimiaresSemaforo) -> str:
+    """Faixa do semáforo orçamentário — a mesma pra todo nível (limite
+    individual, pools, Meta/Submeta/Ação) e pra todo módulo que consome saldo."""
+    if percentual >= limiares.vermelho:
+        return "vermelho"
+    if percentual >= limiares.amarelo:
+        return "amarelo"
+    return "verde"
 
 
 def resolver_nivel_painel(
@@ -686,14 +786,12 @@ def resolver_nivel_painel(
     raise PermissionDenied("Você não tem acesso ao orçamento do SGP.")
 
 
-def _semaforo_orcamento(percentual: Decimal) -> tuple[str, bool]:
+def _semaforo_orcamento(percentual: Decimal, limiares: LimiaresSemaforo) -> tuple[str, bool]:
     """(semaforo, alerta_80) — o alerta dispara no mesmo limiar de vermelho, uma
-    fonte só pros dois campos."""
-    if percentual >= LIMIAR_SEMAFORO_VERMELHO:
-        return "vermelho", True
-    if percentual >= LIMIAR_SEMAFORO_AMARELO:
-        return "amarelo", False
-    return "verde", False
+    fonte só pros dois campos. `alerta_80` mantém o nome por contrato com o
+    front, mas segue o limiar configurado, não 80 fixo."""
+    semaforo = faixa_semaforo(percentual, limiares)
+    return semaforo, semaforo == "vermelho"
 
 
 def alocacoes_em_vermelho() -> list[BudgetAllocation]:
@@ -701,6 +799,7 @@ def alocacoes_em_vermelho() -> list[BudgetAllocation]:
     `tasks.check_budget_threshold_alert`. Não usa `painel_orcamento` (mostra 1 nível por
     vez): nacional/estadual/territorial são linhas independentes, cada uma pode estar em
     vermelho por si só."""
+    limiares = limiares_semaforo()
     vermelhas = []
     allocations = (
         BudgetAllocation.objects
@@ -708,9 +807,8 @@ def alocacoes_em_vermelho() -> list[BudgetAllocation]:
         .filter(valor_alocado__gt=ZERO)
     )
     for allocation in allocations:
-        percentual = (allocation.valor_comprometido / allocation.valor_alocado) * Decimal("100")
-        semaforo, _ = _semaforo_orcamento(percentual)
-        if semaforo == "vermelho":
+        percentual = percentual_comprometido(allocation.valor_comprometido, allocation.valor_alocado)
+        if faixa_semaforo(percentual, limiares) == "vermelho":
             vermelhas.append(allocation)
     return vermelhas
 
@@ -719,7 +817,7 @@ def painel_orcamento(
     *, nivel: str, estado_sigla: str | None = None, territorio_id: int | None = None,
     meta_id: int | None = None, rubrica_slug: str | None = None,
 ) -> list[dict]:
-    """Matriz Meta × Rubrica no `nivel` dado, com semáforo e alerta de 80%.
+    """Matriz Meta × Rubrica no `nivel` dado, com semáforo e alerta de vermelho.
 
     Motor sem RBAC — quem chama já resolveu o nível/localização (ver
     `painel_orcamento_para_usuario`). Usada direto por
@@ -727,7 +825,7 @@ def painel_orcamento(
     (visão organização-inteira, mesmo padrão de `tasks.check_acao_progress_alert`).
 
     4 queries (metas, rubricas, próprios, distribuído; 3 se `nivel` for territorial,
-    sem distribuído).
+    sem distribuído), +2 só com o cache dos limiares do semáforo frio.
     """
     metas_qs = WorkPlanMeta.objects.order_by("numero")
     if meta_id is not None:
@@ -778,6 +876,7 @@ def painel_orcamento(
             )
         }
 
+    limiares = limiares_semaforo()
     resultado = []
     for meta in metas:
         for rubrica in rubricas:
@@ -790,11 +889,8 @@ def painel_orcamento(
             saldo_disponivel = _saldo_disponivel_matriz(
                 valor_aprovado, valor_distribuido, valor_comprometido, valor_executado,
             )
-            percentual = (
-                ZERO if valor_aprovado <= ZERO
-                else (valor_comprometido / valor_aprovado) * Decimal("100")
-            )
-            semaforo, alerta_80 = _semaforo_orcamento(percentual)
+            percentual = percentual_comprometido(valor_comprometido, valor_aprovado)
+            semaforo, alerta_80 = _semaforo_orcamento(percentual, limiares)
             resultado.append({
                 "meta": meta,
                 "rubrica": rubrica,
