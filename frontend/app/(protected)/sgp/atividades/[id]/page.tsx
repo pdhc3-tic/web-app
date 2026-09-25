@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { notFound, useParams } from "next/navigation";
+import {
+  notFound,
+  useParams,
+  usePathname,
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   AlertTriangle,
@@ -26,8 +32,10 @@ import { Button } from "@/app/components/ui/Button/Button";
 import { Chip } from "@/app/components/ui/Chip/Chip";
 import { DefinitionList } from "@/app/components/ui/DefinitionList/DefinitionList";
 import { RestrictedAccess } from "@/app/components/ui/RestrictedAccess/RestrictedAccess";
+import { Tabs } from "@/app/components/ui/Tabs/Tabs";
 import { OrigemScaBadge } from "@/app/components/sgp/OrigemScaBadge";
 import { EvidenceGallery } from "@/app/components/sgp/EvidenceGallery/EvidenceGallery";
+import { DemandasTab } from "./_components/DemandasTab";
 import { TransicaoStatusDialog } from "./_components/TransicaoStatusDialog";
 import { useToast } from "@/app/components/ui/Toast/Toast";
 import { isStatusTerminal } from "@/app/lib/atividades";
@@ -47,6 +55,9 @@ import {
 } from "@/app/lib/datetime";
 
 type Status = "loading" | "ok" | "notfound" | "forbidden" | "error";
+
+const TAB_IDS = ["detalhes", "demandas"] as const;
+type TabId = (typeof TAB_IDS)[number];
 
 function HeaderSlot() {
   return (
@@ -93,6 +104,22 @@ export default function AtividadeFichaPage() {
    */
   const silenciosaRef = useRef(false);
   const { showToast } = useToast();
+
+  // Abas via `?tab=` (#275), no mesmo formato da ficha da UPF.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const rawTab = searchParams.get("tab") ?? "";
+  const tab: TabId = (TAB_IDS as readonly string[]).includes(rawTab)
+    ? (rawTab as TabId)
+    : "detalhes";
+
+  /** Trocar de aba entra no histórico: o Voltar percorre as abas visitadas. */
+  const setTab = (tabId: string) => {
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("tab", tabId);
+    router.push(`${pathname}?${next.toString()}`, { scroll: false });
+  };
 
   useEffect(() => {
     if (!/^\d+$/.test(id)) {
@@ -270,142 +297,172 @@ export default function AtividadeFichaPage() {
           </div>
         </div>
 
-        <section className="rounded-lg border border-border bg-surface p-6">
-          <h2 className="mb-4 text-sm font-medium text-text">
-            Vínculo com o Plano de Trabalho
-          </h2>
-          <DefinitionList
-            items={[
-              {
-                label: "Ação",
-                value: `${atividade.acao.numero} — ${atividade.acao.descricao}`,
-              },
-              { label: "Âmbito", value: atividade.ambito_display },
-              {
-                label: "Forma de atuação",
-                value: atividade.forma_atuacao_display,
-              },
-            ]}
-          />
-        </section>
+        <Tabs
+          value={tab}
+          onValueChange={setTab}
+          aria-label="Seções da atividade"
+          items={[
+            {
+              id: "detalhes",
+              label: "Detalhes",
+              content: (
+                <div className="flex flex-col gap-6">
+                  <section className="rounded-lg border border-border bg-surface p-6">
+                    <h2 className="mb-4 text-sm font-medium text-text">
+                      Vínculo com o Plano de Trabalho
+                    </h2>
+                    <DefinitionList
+                      items={[
+                        {
+                          label: "Ação",
+                          value: `${atividade.acao.numero} — ${atividade.acao.descricao}`,
+                        },
+                        { label: "Âmbito", value: atividade.ambito_display },
+                        {
+                          label: "Forma de atuação",
+                          value: atividade.forma_atuacao_display,
+                        },
+                      ]}
+                    />
+                  </section>
 
-        <section
-          className="rounded-lg border border-border bg-surface p-6"
-          data-testid="atividade-equipe-local"
-        >
-          <h2 className="mb-4 text-sm font-medium text-text">
-            Equipe e local
-          </h2>
-          <DefinitionList
-            items={[
-              {
-                label: "Técnico responsável",
-                value: (
-                  <span className="inline-flex items-center gap-1.5">
-                    <User className="h-3.5 w-3.5 text-text-muted" aria-hidden />
-                    {atividade.tecnico_responsavel.nome}
-                  </span>
-                ),
-              },
-              {
-                label: "Equipe adicional",
-                value:
-                  atividade.equipe_adicional.length > 0 ? (
-                    <ul
-                      className="flex list-none flex-wrap gap-1.5"
-                      data-testid="atividade-equipe-adicional"
-                    >
-                      {atividade.equipe_adicional.map((membro) => (
-                        <li key={membro.id}>
-                          <Chip>{membro.nome}</Chip>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null,
-              },
-              {
-                label: "Local",
-                value: (
-                  <span className="inline-flex items-center gap-1.5">
-                    <MapPin className="h-3.5 w-3.5 text-text-muted" aria-hidden />
-                    {atividade.comunidade
-                      ? `${atividade.municipio.nome} · ${atividade.comunidade.nome}`
-                      : atividade.municipio.nome}
-                  </span>
-                ),
-              },
-              {
-                label: "Coordenadas",
-                value: <Coordenadas atividade={atividade} />,
-              },
-              {
-                label: "Parceiros",
-                value: <Parceiros atividade={atividade} />,
-              },
-            ]}
-          />
-        </section>
+                  <section
+                    className="rounded-lg border border-border bg-surface p-6"
+                    data-testid="atividade-equipe-local"
+                  >
+                    <h2 className="mb-4 text-sm font-medium text-text">
+                      Equipe e local
+                    </h2>
+                    <DefinitionList
+                      items={[
+                        {
+                          label: "Técnico responsável",
+                          value: (
+                            <span className="inline-flex items-center gap-1.5">
+                              <User className="h-3.5 w-3.5 text-text-muted" aria-hidden />
+                              {atividade.tecnico_responsavel.nome}
+                            </span>
+                          ),
+                        },
+                        {
+                          label: "Equipe adicional",
+                          value:
+                            atividade.equipe_adicional.length > 0 ? (
+                              <ul
+                                className="flex list-none flex-wrap gap-1.5"
+                                data-testid="atividade-equipe-adicional"
+                              >
+                                {atividade.equipe_adicional.map((membro) => (
+                                  <li key={membro.id}>
+                                    <Chip>{membro.nome}</Chip>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null,
+                        },
+                        {
+                          label: "Local",
+                          value: (
+                            <span className="inline-flex items-center gap-1.5">
+                              <MapPin className="h-3.5 w-3.5 text-text-muted" aria-hidden />
+                              {atividade.comunidade
+                                ? `${atividade.municipio.nome} · ${atividade.comunidade.nome}`
+                                : atividade.municipio.nome}
+                            </span>
+                          ),
+                        },
+                        {
+                          label: "Coordenadas",
+                          value: <Coordenadas atividade={atividade} />,
+                        },
+                        {
+                          label: "Parceiros",
+                          value: <Parceiros atividade={atividade} />,
+                        },
+                      ]}
+                    />
+                  </section>
 
-        <Participantes atividade={atividade} />
+                  <Participantes atividade={atividade} />
 
-        <section
-          className="rounded-lg border border-border bg-surface p-6"
-          data-testid="atividade-evidencias"
-          data-anexando={anexando ? "sim" : "nao"}
-        >
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-medium text-text">Evidências</h2>
-            {anexando && (
-              <Button
-                size="sm"
-                variant="secondary"
-                leftIcon={<Check className="h-3.5 w-3.5" />}
-                onClick={sairDoModoAnexo}
-                data-testid="atividade-anexo-concluir"
-              >
-                Concluir anexos
-              </Button>
-            )}
-          </div>
+                  <section
+                    className="rounded-lg border border-border bg-surface p-6"
+                    data-testid="atividade-evidencias"
+                    data-anexando={anexando ? "sim" : "nao"}
+                  >
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                      <h2 className="text-sm font-medium text-text">Evidências</h2>
+                      {anexando && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          leftIcon={<Check className="h-3.5 w-3.5" />}
+                          onClick={sairDoModoAnexo}
+                          data-testid="atividade-anexo-concluir"
+                        >
+                          Concluir anexos
+                        </Button>
+                      )}
+                    </div>
 
-          {anexando && (
-            <p
-              className="mb-4 flex items-start gap-2 rounded-md border border-info-text bg-info-bg px-3 py-2.5 text-xs leading-relaxed text-info-text"
-              role="status"
-              data-testid="atividade-anexo-aviso"
-            >
-              <ImagePlus className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-              <span>
-                Anexe a foto ou o documento abaixo e depois use{" "}
-                <strong>Concluir anexos</strong>: a ficha recarrega as
-                evidências e o botão de alterar status volta a oferecer
-                &quot;Concluído&quot;.
-              </span>
-            </p>
-          )}
+                    {anexando && (
+                      <p
+                        className="mb-4 flex items-start gap-2 rounded-md border border-info-text bg-info-bg px-3 py-2.5 text-xs leading-relaxed text-info-text"
+                        role="status"
+                        data-testid="atividade-anexo-aviso"
+                      >
+                        <ImagePlus className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                        <span>
+                          Anexe a foto ou o documento abaixo e depois use{" "}
+                          <strong>Concluir anexos</strong>: a ficha recarrega as
+                          evidências e o botão de alterar status volta a oferecer
+                          &quot;Concluído&quot;.
+                        </span>
+                      </p>
+                    )}
 
-          {/* Fora do modo de anexo a galeria é só leitura: o upload e a remoção
-              vivem no formulário de edição. */}
-          <EvidenceGallery
-            atividadeId={String(atividade.id)}
-            readOnly={!anexando}
-          />
-        </section>
+                    {/* Fora do modo de anexo a galeria é só leitura: o upload e a remoção
+                        vivem no formulário de edição. */}
+                    <EvidenceGallery
+                      atividadeId={String(atividade.id)}
+                      readOnly={!anexando}
+                    />
+                  </section>
 
-        {(atividade.descricao_narrativa ||
-          atividade.resultados_alcancados ||
-          atividade.justificativa) && (
-          <section className="flex flex-col gap-5 rounded-lg border border-border bg-surface p-6">
-            <h2 className="text-sm font-medium text-text">Registro</h2>
+                  {(atividade.descricao_narrativa ||
+                    atividade.resultados_alcancados ||
+                    atividade.justificativa) && (
+                    <section className="flex flex-col gap-5 rounded-lg border border-border bg-surface p-6">
+                      <h2 className="text-sm font-medium text-text">Registro</h2>
 
-            <Texto titulo="Descrição" conteudo={atividade.descricao_narrativa} />
-            <Texto
-              titulo="Resultados alcançados"
-              conteudo={atividade.resultados_alcancados}
-            />
-            <Texto titulo="Justificativa" conteudo={atividade.justificativa} />
-          </section>
-        )}
+                      <Texto titulo="Descrição" conteudo={atividade.descricao_narrativa} />
+                      <Texto
+                        titulo="Resultados alcançados"
+                        conteudo={atividade.resultados_alcancados}
+                      />
+                      <Texto titulo="Justificativa" conteudo={atividade.justificativa} />
+                    </section>
+                  )}
+
+
+                  <Auditoria atividade={atividade} />
+
+                  {!atividade.ativo && (
+                    <p className="flex items-center gap-2 text-sm text-text-muted">
+                      <Chip>Excluída</Chip>
+                      Esta atividade foi removida e está visível apenas para consulta.
+                    </p>
+                  )}
+                </div>
+              ),
+            },
+            {
+              id: "demandas",
+              label: "Demandas",
+              content: <DemandasTab atividade={atividade} />,
+            },
+          ]}
+        />
 
         <TransicaoStatusDialog
           open={transicaoAberta}
@@ -424,6 +481,8 @@ export default function AtividadeFichaPage() {
             // leitura era exatamente o que fazia o atalho não cumprir o que
             // prometia.
             setAnexando(true);
+            // A galeria mora na aba Detalhes: garante que ela esteja aberta.
+            if (tab !== "detalhes") setTab("detalhes");
             // O scroll espera o próximo quadro para a galeria já estar no modo
             // de edição — ela cresce ao mostrar os controles de upload, e sem
             // isso a rolagem para no lugar errado.
@@ -434,15 +493,6 @@ export default function AtividadeFichaPage() {
             });
           }}
         />
-
-        <Auditoria atividade={atividade} />
-
-        {!atividade.ativo && (
-          <p className="flex items-center gap-2 text-sm text-text-muted">
-            <Chip>Excluída</Chip>
-            Esta atividade foi removida e está visível apenas para consulta.
-          </p>
-        )}
       </div>
     </>
   );

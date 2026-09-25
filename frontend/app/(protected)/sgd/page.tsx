@@ -1,5 +1,6 @@
 import { FileText } from "lucide-react";
 import { ModulePlaceholder } from "@/app/components/layout/ModulePlaceholder";
+import { NovaDemandaAtalho } from "./_components/NovaDemandaAtalho";
 
 export default function SGDPage() {
   return (
@@ -7,6 +8,7 @@ export default function SGDPage() {
       shortName="SGD"
       fullName="Sistema de Gestão de Demandas"
       Icon={FileText}
+      action={<NovaDemandaAtalho />}
       description="Acompanhamento de pedidos, ordens e demandas geradas pelas equipes em campo e pelas instâncias gestoras do PDHC III."
       features={[
         "Cadastro e rastreamento de demandas por território",

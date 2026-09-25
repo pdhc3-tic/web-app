@@ -118,6 +118,12 @@ export type AcaoNested = {
   id: number;
   numero: string;
   descricao: string;
+  /**
+   * Meta da Ação — ainda NÃO vem no detalhe. O contexto somente leitura da
+   * nova demanda (#294) precisa dela; pedido em
+   * docs/pendencias-backend-sprint-10.md, item 8. Opcional até lá.
+   */
+  meta?: { id: number; numero: number; titulo: string };
 };
 
 /** Técnico aninhado no detalhe. */
@@ -208,6 +214,12 @@ export type AtividadeDetail = {
   equipe_adicional: TecnicoNested[];
   municipio: NestedRef;
   territorio_id: number | null;
+  /**
+   * Território com nome — ainda NÃO vem no detalhe (só `territorio_id`). O
+   * contexto da nova demanda (#294) precisa exibi-lo; pedido em
+   * docs/pendencias-backend-sprint-10.md, item 8. Opcional até lá.
+   */
+  territorio?: NestedRef | null;
   comunidade: NestedRef | null;
   ambito: string;
   ambito_display: string;

@@ -521,6 +521,19 @@ type MunicipalityItem = {
   territory: number | null;
 };
 
+/** GET /api/v1/municipalities/?territory={id} — municípios de um território. */
+export async function fetchMunicipiosDoTerritorio(
+  territoryId: string | number,
+  signal?: AbortSignal,
+): Promise<SelectOption[]> {
+  const res = await apiClient(
+    `/api/v1/municipalities/?territory=${territoryId}&limit=1000`,
+    { signal },
+  );
+  const data: Paginated<MunicipalityItem> = await res.json();
+  return data.results.map((m) => ({ value: String(m.id), label: m.nome }));
+}
+
 /** GET /api/v1/municipalities/?state={id} — municípios do estado, com território. */
 export async function fetchMunicipalitiesByState(
   stateId: string | number,
