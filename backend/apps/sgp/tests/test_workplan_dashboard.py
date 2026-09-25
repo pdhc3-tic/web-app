@@ -152,12 +152,15 @@ class TestWorkPlanDashboard:
 class TestWorkPlanProgressAlerts:
     @patch("apps.core.tasks.notifications.send_email_notification.delay")
     def test_creates_email_notifications_for_ugp_and_super_admin(
-        self, mocked_delay, usuario, usuario_super_admin, municipio
+        self, mocked_delay, usuario, usuario_super_admin, municipio, django_capture_on_commit_callbacks,
     ):
         meta = WorkPlanMetaFactory(numero=1)
         action = create_action_with_progress(meta, "1.1", municipio, completed=1)
 
-        total = check_acao_progress_alert()
+        # Notification.save() só enfileira o e-mail via transaction.on_commit
+        # — captura os callbacks pra executá-los aqui.
+        with django_capture_on_commit_callbacks(execute=True):
+            total = check_acao_progress_alert()
 
         assert total == 2
         assert mocked_delay.call_count == 2
