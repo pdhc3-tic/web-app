@@ -1,9 +1,7 @@
 from rest_framework import serializers
-from rest_framework.exceptions import ValidationError
 
 from apps.sgp.models import ExportJob
 from apps.sgp.serializers_workplan import WorkPlanExportQuerySerializer
-from apps.sgp.services.exportacao import validar_filtros
 
 
 class AtividadesExportQuerySerializer(WorkPlanExportQuerySerializer):
@@ -25,13 +23,9 @@ class ExportJobSerializer(serializers.ModelSerializer):
 
 
 class ExportJobCreateSerializer(serializers.Serializer):
+    """Só a forma do pedido; os filtros de cada tipo são validados em
+    `services.exportacao.validar_filtros`."""
+
     tipo = serializers.ChoiceField(choices=ExportJob.Tipo.choices)
     formato = serializers.ChoiceField(choices=ExportJob.Formato.choices)
     filtros = serializers.DictField(required=False, default=dict)
-
-    def validate(self, attrs):
-        try:
-            attrs["filtros"] = validar_filtros(attrs["tipo"], attrs["formato"], attrs["filtros"])
-        except ValidationError as exc:
-            raise serializers.ValidationError({"filtros": exc.detail})
-        return attrs

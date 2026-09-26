@@ -28,11 +28,9 @@ from apps.sgp.serializers_workplan import (
     WorkPlanDashboardAcaoSerializer,
     WorkPlanDashboardMetaSerializer,
     WorkPlanDashboardQuerySerializer,
-    WorkPlanExportQuerySerializer,
 )
 from apps.sgp.cache import get_power_bi_snapshot
-from apps.sgp.services.exportacao import CONTENT_TYPES, gerar_arquivo, nome_arquivo
-from apps.sgp.services.workplan_export import EXPORT_COLUMNS, workplan_export_rows
+from apps.sgp.services.exportacao import exportar_sincrono
 from apps.sgp.views.exportacao import arquivo_response
 from apps.sgp.services.workplan_access import (
     filter_workplan_actions_for_user,
@@ -56,17 +54,10 @@ class WorkPlanExportView(APIView):
     permission_classes = [IsAuthenticatedActiveAccess]
 
     def get(self, request):
-        query_serializer = WorkPlanExportQuerySerializer(data=request.query_params)
-        query_serializer.is_valid(raise_exception=True)
-        options = query_serializer.validated_data
-        formato = options.pop("formato")
-        rows = workplan_export_rows(user=request.user, **options)
-        conteudo = gerar_arquivo(EXPORT_COLUMNS, rows, formato, "Plano de Trabalho")
-        return arquivo_response(
-            conteudo,
-            nome_arquivo(ExportJob.Tipo.PLANO_TRABALHO, formato),
-            CONTENT_TYPES[formato],
+        arquivo = exportar_sincrono(
+            ExportJob.Tipo.PLANO_TRABALHO, user=request.user, params=request.query_params.dict()
         )
+        return arquivo_response(arquivo)
 
 
 class WorkPlanPowerBIView(APIView):

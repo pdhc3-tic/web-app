@@ -9,7 +9,6 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from apps.sgp.models import Activity
-from apps.sgp.models.activity import STATUS_TERMINAIS
 from apps.sgp.services.access import scope_queryset
 
 EXPORT_COLUMNS = (
@@ -93,7 +92,6 @@ def _serialize(activity: Activity, agora) -> dict[str, str]:
     municipio = activity.municipio
     territorio = municipio.territory
     acao = activity.acao
-    atrasada = activity.status not in STATUS_TERMINAIS and activity.data_fim < agora
     return {
         "id": str(activity.pk),
         "titulo": activity.titulo,
@@ -110,5 +108,5 @@ def _serialize(activity: Activity, agora) -> dict[str, str]:
         "tecnico_responsavel": activity.tecnico_responsavel.nome,
         "total_upfs": str(activity._total_upfs),
         "total_participantes": str(activity._total_participantes),
-        "atrasada": "Sim" if atrasada else "Não",
+        "atrasada": "Sim" if activity.esta_atrasada(agora) else "Não",
     }

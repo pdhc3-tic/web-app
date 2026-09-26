@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 from rest_framework import status
+from rest_framework.test import APIClient
 
 from apps.sgp.models import Production
 from apps.sgp.tests.factories import (
@@ -83,12 +84,16 @@ def test_filtros(ugp_client, upf_rn, upf_ce, milho, feijao, municipio_rn, territ
     assert _ids(ugp_client.get(LIST_URL, {"territorio": territory_ce.pk})) == {feijao_ce.pk}
 
 
-def test_escopo_adt_ve_so_o_proprio_territorio(auth_client_adt_rn, ugp_client, upf_rn, upf_ce):
+def test_escopo_adt_ve_so_o_proprio_territorio(auth_client_adt_rn, usuario, upf_rn, upf_ce):
     do_rn = ProductionFactory(upf=upf_rn)
     do_ce = ProductionFactory(upf=upf_ce)
+    # As fixtures auth_client_* autenticam a mesma instância de APIClient; a UGP
+    # precisa de um cliente próprio para não sobrescrever o login do ADT.
+    cliente_ugp = APIClient()
+    cliente_ugp.force_authenticate(user=usuario)
 
     assert _ids(auth_client_adt_rn.get(LIST_URL)) == {do_rn.pk}
-    assert _ids(ugp_client.get(LIST_URL)) == {do_rn.pk, do_ce.pk}
+    assert _ids(cliente_ugp.get(LIST_URL)) == {do_rn.pk, do_ce.pk}
 
 
 def test_upf_inativa_fica_de_fora(ugp_client, upf_rn, municipio_rn):

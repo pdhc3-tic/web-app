@@ -16,6 +16,7 @@ import importlib
 import pytest
 from django.apps import apps as django_apps
 from rest_framework import status
+from rest_framework.test import APIClient
 
 from apps.core.tests.factories import (
     OrganizationFactory,
@@ -179,7 +180,7 @@ def test_desativar_preserva_atividades(auth_client_super_admin):
 
 
 # ===========================================================================
-# Pendências da Sprint 9d — nomes, paginação, elegíveis e erros com `code`
+# Nomes, paginação, usuários elegíveis e erros com `code`
 # ===========================================================================
 
 ELEGIVEIS_URL = "/api/v1/sgp/tecnicos/usuarios-elegiveis/"
@@ -241,9 +242,14 @@ def test_usuarios_elegiveis_exclui_quem_ja_e_tecnico(ugp_client):
 
 
 @pytest.mark.django_db
-def test_usuarios_elegiveis_restrito_a_ugp_e_super_admin(auth_client_adt_rn, auth_client_super_admin):
+def test_usuarios_elegiveis_restrito_a_ugp_e_super_admin(auth_client_adt_rn, usuario_super_admin):
+    # As fixtures auth_client_* autenticam a mesma instância de APIClient; o
+    # Super Admin precisa de um cliente próprio para não sobrescrever o do ADT.
+    cliente_super_admin = APIClient()
+    cliente_super_admin.force_authenticate(user=usuario_super_admin)
+
     assert auth_client_adt_rn.get(ELEGIVEIS_URL).status_code == status.HTTP_403_FORBIDDEN
-    assert auth_client_super_admin.get(ELEGIVEIS_URL).status_code == status.HTTP_200_OK
+    assert cliente_super_admin.get(ELEGIVEIS_URL).status_code == status.HTTP_200_OK
 
 
 @pytest.mark.django_db

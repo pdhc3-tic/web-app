@@ -9,22 +9,27 @@ from __future__ import annotations
 
 import csv
 import logging
+from dataclasses import dataclass
 from datetime import date, timedelta
 from io import BytesIO, StringIO
+from typing import Callable
 
 from django.db import transaction
 from django.utils import timezone
+from rest_framework import status
 from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
 
 from apps.sgp.exceptions import ErroComCodigo
 from apps.sgp.models import ExportJob
+from apps.sgp.serializers.exportacao import AtividadesExportQuerySerializer
+from apps.sgp.serializers_workplan import WorkPlanExportQuerySerializer
 from apps.sgp.services import activity_export, upf_export, workplan_export
 
 logger = logging.getLogger(__name__)
 
 CONTENT_TYPES = {
-    "csv": "text/csv; charset=utf-8",
-    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ExportJob.Formato.CSV: "text/csv; charset=utf-8",
+    ExportJob.Formato.XLSX: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
 
 VALIDADE_ARQUIVO = timedelta(hours=24)
@@ -32,15 +37,46 @@ VALIDADE_ARQUIVO = timedelta(hours=24)
 # têm `expira_em`; somem depois deste prazo.
 RETENCAO_SEM_ARQUIVO = timedelta(days=7)
 
-TITULOS = {
-    ExportJob.Tipo.PLANO_TRABALHO: ("plano_trabalho", "Plano de Trabalho"),
-    ExportJob.Tipo.ATIVIDADES: ("atividades", "Atividades"),
-    ExportJob.Tipo.UPFS: ("upfs", "UPFs"),
+
+@dataclass(frozen=True)
+class TipoExportacao:
+    prefixo_arquivo: str
+    titulo_planilha: str
+    colunas: tuple
+    linhas: Callable[..., list[dict[str, str]]]
+    # None: os filtros são os do UPFFilter, validados por `upf_export`.
+    query_serializer: type | None
+
+
+def _linhas_upfs(*, user, **filtros):
+    queryset = upf_export.upf_export_queryset(user=user, filtros=filtros)
+    return upf_export.upf_export_rows(queryset, user=user)
+
+
+TIPOS = {
+    ExportJob.Tipo.PLANO_TRABALHO: TipoExportacao(
+        "plano_trabalho", "Plano de Trabalho", workplan_export.EXPORT_COLUMNS,
+        workplan_export.workplan_export_rows, WorkPlanExportQuerySerializer,
+    ),
+    ExportJob.Tipo.ATIVIDADES: TipoExportacao(
+        "atividades", "Atividades", activity_export.EXPORT_COLUMNS,
+        activity_export.activity_export_rows, AtividadesExportQuerySerializer,
+    ),
+    ExportJob.Tipo.UPFS: TipoExportacao(
+        "upfs", "UPFs", upf_export.EXPORT_COLUMNS, _linhas_upfs, None,
+    ),
 }
 
 
+@dataclass(frozen=True)
+class Arquivo:
+    conteudo: bytes
+    nome: str
+    content_type: str
+
+
 def gerar_arquivo(columns, rows, formato: str, titulo_planilha: str) -> bytes:
-    if formato == "csv":
+    if formato == ExportJob.Formato.CSV:
         content = StringIO()
         writer = csv.writer(content)
         writer.writerow([label for _, label in columns])
@@ -61,62 +97,72 @@ def gerar_arquivo(columns, rows, formato: str, titulo_planilha: str) -> bytes:
     return content.getvalue()
 
 
-def nome_arquivo(tipo: str, formato: str) -> str:
-    prefixo, _ = TITULOS[tipo]
+def _montar_arquivo(tipo: str, formato: str, rows) -> Arquivo:
+    definicao = TIPOS[tipo]
     timestamp = timezone.localtime().strftime("%Y-%m-%d_%H-%M-%S")
-    return f"{prefixo}_{timestamp}.{formato}"
+    return Arquivo(
+        conteudo=gerar_arquivo(definicao.colunas, rows, formato, definicao.titulo_planilha),
+        nome=f"{definicao.prefixo_arquivo}_{timestamp}.{formato}",
+        content_type=CONTENT_TYPES[formato],
+    )
 
 
-def _query_serializer(tipo):
-    from apps.sgp.serializers.exportacao import AtividadesExportQuerySerializer
-    from apps.sgp.serializers_workplan import WorkPlanExportQuerySerializer
+def _opcoes(tipo: str, params: dict) -> tuple[str, dict]:
+    """Valida `params` (filtros + `formato`) e devolve `(formato, opcoes)`,
+    com as opções já no tipo que a função de linhas do `tipo` espera."""
+    definicao = TIPOS[tipo]
+    if definicao.query_serializer is None:
+        return upf_export.separar_parametros(params)
 
-    if tipo == ExportJob.Tipo.PLANO_TRABALHO:
-        return WorkPlanExportQuerySerializer
-    return AtividadesExportQuerySerializer
+    serializer = definicao.query_serializer(data=params)
+    serializer.is_valid(raise_exception=True)
+    opcoes = dict(serializer.validated_data)
+    return opcoes.pop("formato"), opcoes
 
 
 def validar_filtros(tipo: str, formato: str, filtros: dict) -> dict:
     """Valida `filtros` para o `tipo` e devolve a versão serializável em JSON
     que fica gravada no ExportJob."""
-    if tipo == ExportJob.Tipo.UPFS:
-        _, filtros_upf = upf_export.separar_parametros({**filtros, "formato": formato})
-        return {
-            chave: "" if valor is None else str(valor)
-            for chave, valor in filtros_upf.items()
-        }
-
-    serializer = _query_serializer(tipo)(data={**filtros, "formato": formato})
-    serializer.is_valid(raise_exception=True)
-    validados = dict(serializer.validated_data)
-    validados.pop("formato")
+    try:
+        _, opcoes = _opcoes(tipo, {**filtros, "formato": formato})
+    except ValidationError as exc:
+        raise ValidationError({"filtros": exc.detail})
+    if TIPOS[tipo].query_serializer is None:
+        return {chave: "" if valor is None else str(valor) for chave, valor in opcoes.items()}
     return {
         chave: valor.isoformat() if isinstance(valor, date) else valor
-        for chave, valor in validados.items()
+        for chave, valor in opcoes.items()
     }
 
 
-def montar_dataset(tipo: str, *, user, formato: str, filtros: dict):
-    """Devolve `(columns, rows)` do dataset do `tipo` no escopo do usuário."""
-    if tipo == ExportJob.Tipo.UPFS:
-        queryset = upf_export.upf_export_queryset(user=user, filtros=filtros)
-        return upf_export.EXPORT_COLUMNS, upf_export.upf_export_rows(queryset, user=user)
+def exportar_sincrono(tipo: str, *, user, params: dict) -> Arquivo:
+    """Arquivo gerado na própria requisição, a partir dos query params."""
+    formato, opcoes = _opcoes(tipo, params)
+    return _montar_arquivo(tipo, formato, TIPOS[tipo].linhas(user=user, **opcoes))
 
-    serializer = _query_serializer(tipo)(data={**filtros, "formato": formato})
-    serializer.is_valid(raise_exception=True)
-    opcoes = dict(serializer.validated_data)
-    opcoes.pop("formato")
 
-    if tipo == ExportJob.Tipo.PLANO_TRABALHO:
-        return workplan_export.EXPORT_COLUMNS, workplan_export.workplan_export_rows(
-            user=user, **opcoes
+def exportar_upfs(*, user, params: dict) -> Arquivo | ExportJob:
+    """Até `UPF_EXPORT_SYNC_LIMIT` registros devolve o arquivo; acima disso cria
+    um ExportJob para o worker."""
+    formato, filtros = _opcoes(ExportJob.Tipo.UPFS, params)
+    queryset = upf_export.upf_export_queryset(user=user, filtros=filtros)
+
+    total = queryset.count()
+    if total > upf_export.UPF_EXPORT_SYNC_LIMIT:
+        return criar_exportacao(
+            user=user,
+            tipo=ExportJob.Tipo.UPFS,
+            formato=formato,
+            filtros=validar_filtros(ExportJob.Tipo.UPFS, formato, filtros),
+            total_registros=total,
         )
-    return activity_export.EXPORT_COLUMNS, activity_export.activity_export_rows(
-        user=user, **opcoes
+    return _montar_arquivo(
+        ExportJob.Tipo.UPFS, formato, upf_export.upf_export_rows(queryset, user=user)
     )
 
 
 def criar_exportacao(*, user, tipo: str, formato: str, filtros: dict, total_registros=None) -> ExportJob:
+    """`filtros` já validados por `validar_filtros`."""
     job = ExportJob.objects.create(
         tipo=tipo,
         formato=formato,
@@ -133,7 +179,7 @@ def repetir_exportacao(job: ExportJob) -> ExportJob:
         raise ErroComCodigo(
             "exportacao_nao_repetivel",
             "Só é possível repetir uma exportação que terminou com erro.",
-            status_code=409,
+            status_code=status.HTTP_409_CONFLICT,
         )
     job.status = ExportJob.Status.PENDENTE
     job.progresso = 0
@@ -143,6 +189,23 @@ def repetir_exportacao(job: ExportJob) -> ExportJob:
     job.save(update_fields=["status", "progresso", "erro", "iniciado_em", "concluido_em"])
     _enfileirar(job.pk)
     return job
+
+
+def arquivo_do_job(job: ExportJob) -> Arquivo:
+    if job.status != ExportJob.Status.CONCLUIDA:
+        raise ErroComCodigo(
+            "exportacao_nao_concluida",
+            "A exportação ainda não terminou.",
+            status_code=status.HTTP_409_CONFLICT,
+            status=job.status,
+        )
+    if job.conteudo is None or (job.expira_em and job.expira_em <= timezone.now()):
+        raise ErroComCodigo(
+            "exportacao_expirada",
+            "O arquivo desta exportação expirou. Gere uma nova exportação.",
+            status_code=status.HTTP_410_GONE,
+        )
+    return Arquivo(bytes(job.conteudo), job.nome_arquivo, job.content_type)
 
 
 def _enfileirar(job_id: int) -> None:
@@ -168,15 +231,10 @@ def executar_exportacao(job_id: int) -> None:
         job.save(update_fields=["status", "progresso", "iniciado_em"])
 
     try:
-        columns, rows = montar_dataset(
-            job.tipo,
-            user=job.solicitante,
-            formato=job.formato,
-            filtros=job.filtros,
-        )
+        formato, opcoes = _opcoes(job.tipo, {**job.filtros, "formato": job.formato})
+        rows = TIPOS[job.tipo].linhas(user=job.solicitante, **opcoes)
         ExportJob.objects.filter(pk=job.pk).update(progresso=60, total_registros=len(rows))
-        _, titulo = TITULOS[job.tipo]
-        conteudo = gerar_arquivo(columns, rows, job.formato, titulo)
+        arquivo = _montar_arquivo(job.tipo, formato, rows)
     except (PermissionDenied, ValidationError, ErroComCodigo) as exc:
         _marcar_erro(job.pk, _mensagem_de(exc))
         return
@@ -189,9 +247,9 @@ def executar_exportacao(job_id: int) -> None:
     ExportJob.objects.filter(pk=job.pk).update(
         status=ExportJob.Status.CONCLUIDA,
         progresso=100,
-        conteudo=conteudo,
-        nome_arquivo=nome_arquivo(job.tipo, job.formato),
-        content_type=CONTENT_TYPES[job.formato],
+        conteudo=arquivo.conteudo,
+        nome_arquivo=arquivo.nome,
+        content_type=arquivo.content_type,
         concluido_em=agora,
         expira_em=agora + VALIDADE_ARQUIVO,
     )

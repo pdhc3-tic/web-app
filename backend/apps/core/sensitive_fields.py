@@ -24,7 +24,8 @@ SENSITIVE_FIELD_ROLES: dict[str, set[str]] = {
 
 
 # CPF não segue a matriz acima: em vez de omitido, sai mascarado para quem
-# não está aqui, porque o dígito inicial e final ainda ajudam na conferência.
+# não está aqui, porque os 3 primeiros e os 2 últimos dígitos ainda ajudam na
+# conferência.
 CPF_COMPLETO_ROLES: set[str] = {"super-admin", "ugp"}
 
 

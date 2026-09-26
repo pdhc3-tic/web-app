@@ -7,7 +7,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.sgp.models import Activity, FormResponse, Production, Tecnico, UPF
-from apps.sgp.models.activity import STATUS_TERMINAIS
+from apps.sgp.models.activity import filtro_atrasada
 
 
 class StrictBooleanWidget(forms.Select):
@@ -150,9 +150,7 @@ class ActivityFilter(django_filters.FilterSet):
         ]
 
     def filter_atrasada(self, queryset, name, value):
-        # Mesma regra de `get_atrasada` dos serializers de atividade, para que a
-        # contagem do filtro bata com o campo `atrasada` de cada item.
-        atrasadas = Q(data_fim__lt=timezone.now()) & ~Q(status__in=STATUS_TERMINAIS)
+        atrasadas = filtro_atrasada(timezone.now())
         return queryset.filter(atrasadas if value else ~atrasadas)
 
 

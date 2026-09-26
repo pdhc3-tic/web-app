@@ -17,10 +17,8 @@ from apps.sgp.serializers import (
     ActivityDetailSerializer,
     ActivityListSerializer,
 )
-from apps.sgp.serializers.exportacao import AtividadesExportQuerySerializer
 from apps.sgp.services.access import scope_queryset
-from apps.sgp.services.activity_export import EXPORT_COLUMNS, activity_export_rows
-from apps.sgp.services.exportacao import CONTENT_TYPES, gerar_arquivo, nome_arquivo
+from apps.sgp.services.exportacao import exportar_sincrono
 from apps.sgp.tasks import sync_activity_to_google_calendar
 from apps.sgp.views.activity_documentos import ActivityDocumentMixin
 from apps.sgp.views.activity_foto import ActivityPhotoMixin
@@ -235,16 +233,10 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
 
         Download direto no escopo territorial do usuário. O mesmo dataset está
         disponível pelo fluxo assíncrono (`POST /sgp/exportacoes/`, tipo `atividades`)."""
-        query_serializer = AtividadesExportQuerySerializer(data=request.query_params)
-        query_serializer.is_valid(raise_exception=True)
-        options = dict(query_serializer.validated_data)
-        formato = options.pop("formato")
-        rows = activity_export_rows(user=request.user, **options)
-        return arquivo_response(
-            gerar_arquivo(EXPORT_COLUMNS, rows, formato, "Atividades"),
-            nome_arquivo(ExportJob.Tipo.ATIVIDADES, formato),
-            CONTENT_TYPES[formato],
+        arquivo = exportar_sincrono(
+            ExportJob.Tipo.ATIVIDADES, user=request.user, params=request.query_params.dict()
         )
+        return arquivo_response(arquivo)
 
     @action(detail=False, methods=["get"], url_path="calendario")
     def calendario(self, request):

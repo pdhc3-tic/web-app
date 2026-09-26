@@ -213,7 +213,7 @@ class TestFluxoAssincrono:
         )
         parametro_upf = cliente_ugp.post(
             EXPORTACOES_URL,
-            data={"tipo": "upfs", "formato": "csv", "filtros": {"ativa": "true"}},
+            data={"tipo": "upfs", "formato": "csv", "filtros": {"situacao": "ativas"}},
             format="json",
         )
 
@@ -421,11 +421,28 @@ class TestExportacaoUPFs:
         assert self._titulares_exportados(auth_client_adt_rn, {}) == {"Do RN"}
 
     def test_parametro_desconhecido_retorna_400(self, cliente_ugp):
-        response = cliente_ugp.get(UPFS_EXPORT_URL, {"ativa": "true", "municipo": "1"})
+        response = cliente_ugp.get(UPFS_EXPORT_URL, {"situacao": "ativas", "municipo": "1"})
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert response.data["code"] == "parametro_desconhecido"
-        assert response.data["parametros"] == ["ativa", "municipo"]
+        assert response.data["parametros"] == ["municipo", "situacao"]
+
+    @pytest.mark.parametrize("valor", ["true", "false", ""])
+    def test_ativa_e_aceito_como_sinonimo_de_ativo(self, cliente_ugp, municipio_rn, valor):
+        UPFFactory(municipio=municipio_rn, _titular_nome="Ativa")
+        UPFFactory(municipio=municipio_rn, _titular_nome="Inativa", ativo=False)
+
+        assert self._titulares_exportados(cliente_ugp, {"ativa": valor}) == (
+            self._titulares_exportados(cliente_ugp, {"ativo": valor})
+        )
+
+    def test_ativo_prevalece_sobre_ativa(self, cliente_ugp, municipio_rn):
+        UPFFactory(municipio=municipio_rn, _titular_nome="Ativa")
+        UPFFactory(municipio=municipio_rn, _titular_nome="Inativa", ativo=False)
+
+        exportados = self._titulares_exportados(cliente_ugp, {"ativo": "false", "ativa": "true"})
+
+        assert exportados == {"Inativa"}
 
     def test_filtro_com_valor_invalido_retorna_400(self, cliente_ugp):
         response = cliente_ugp.get(UPFS_EXPORT_URL, {"municipio": "abc"})

@@ -8,7 +8,7 @@ from rest_framework import serializers
 from apps.core.sensitive_fields import mascarar_cpf, pode_ver_cpf_completo
 from apps.sgp.exceptions import ErroComCodigo
 from apps.sgp.filters import UPFFilter
-from apps.sgp.models import UPF
+from apps.sgp.models import UPF, ExportJob
 from apps.sgp.services.access import scope_queryset
 
 # Até este total o arquivo é devolvido na própria requisição; acima, vira
@@ -25,7 +25,10 @@ EXPORT_COLUMNS = (
     ("data_cadastro", "Data de cadastro"),
 )
 
-FORMATOS = ("csv", "xlsx")
+# Débito técnico: o front ainda envia `ativa` (nome anterior do campo `ativo`
+# da UPF). Aceito como sinônimo só na exportação, onde parâmetro desconhecido
+# é 400; sai quando o front passar a enviar `ativo`.
+ALIASES_DE_FILTRO = {"ativa": "ativo"}
 
 
 def separar_parametros(params: dict) -> tuple[str, dict]:
@@ -35,9 +38,16 @@ def separar_parametros(params: dict) -> tuple[str, dict]:
     um parâmetro desconhecido seria ignorado pelo django-filter e geraria a
     base inteira em silêncio."""
     filtros = dict(params)
-    formato = filtros.pop("formato", "csv") or "csv"
-    if formato not in FORMATOS:
-        raise serializers.ValidationError({"formato": f"Use um de: {', '.join(FORMATOS)}."})
+    formato = filtros.pop("formato", None) or ExportJob.Formato.CSV
+    if formato not in ExportJob.Formato.values:
+        raise serializers.ValidationError(
+            {"formato": f"Use um de: {', '.join(ExportJob.Formato.values)}."}
+        )
+
+    for alias, nome in ALIASES_DE_FILTRO.items():
+        if alias in filtros:
+            valor = filtros.pop(alias)
+            filtros.setdefault(nome, valor)
 
     desconhecidos = sorted(set(filtros) - set(UPFFilter.base_filters))
     if desconhecidos:

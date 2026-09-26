@@ -1,6 +1,3 @@
-from decimal import Decimal
-
-from django.db.models import Count, Sum
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import mixins, serializers, viewsets
@@ -14,8 +11,7 @@ from apps.sgp.models import Production, UPF
 from apps.sgp.pagination import ProducaoPagination
 from apps.sgp.serializers import ProducaoConsolidadaSerializer, ProductionSerializer
 from apps.sgp.services.access import scope_queryset
-
-PRINCIPAIS_CULTURAS_LIMITE = 5
+from apps.sgp.services.producao import indicadores_producao
 
 
 class ProductionViewSet(viewsets.ModelViewSet):
@@ -156,23 +152,4 @@ class ProducaoConsolidadaViewSet(mixins.ListModelMixin, viewsets.GenericViewSet)
 
     @action(detail=False, methods=["get"])
     def indicadores(self, request):
-        qs = self.filter_queryset(self.get_queryset()).order_by()
-        totais = qs.aggregate(
-            total_upfs_produtoras=Count("upf", distinct=True),
-            area_total_ha=Sum("area_ha"),
-        )
-        principais_culturas = (
-            qs.filter(cultura__isnull=False)
-            .values("cultura__nome")
-            .annotate(count=Count("upf", distinct=True))
-            .order_by("-count", "cultura__nome")[:PRINCIPAIS_CULTURAS_LIMITE]
-        )
-        area_total = totais["area_total_ha"] or Decimal("0")
-        return Response({
-            "total_upfs_produtoras": totais["total_upfs_produtoras"],
-            "area_total_ha": f"{area_total:.2f}",
-            "principais_culturas": [
-                {"nome": item["cultura__nome"], "count": item["count"]}
-                for item in principais_culturas
-            ],
-        })
+        return Response(indicadores_producao(self.filter_queryset(self.get_queryset())))

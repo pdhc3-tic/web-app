@@ -4,7 +4,6 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
-from apps.core.models import User
 from apps.core.permissions import IsAuthenticatedActiveAccess, IsSuperAdmin, IsUGP
 from apps.core.services.permissions import user_role_slugs
 from apps.sgp.exceptions import ErroComCodigo
@@ -14,6 +13,7 @@ from apps.sgp.pagination import TecnicoPagination
 from apps.sgp.serializers import TecnicoSerializer
 from apps.sgp.serializers.tecnico import UsuarioElegivelSerializer
 from apps.sgp.services.access import ROLES_COM_ESCOPO, scope_queryset
+from apps.sgp.services.tecnico import usuarios_elegiveis_a_tecnico
 
 
 def tecnicos_acessiveis_ao_usuario(user, role_slugs=None):
@@ -74,16 +74,6 @@ class TecnicoViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="usuarios-elegiveis")
     def usuarios_elegiveis(self, request):
-        """Usuários ativos que ainda não são técnicos — opções do cadastro.
-
-        `Tecnico.user` é OneToOne, então quem já tem vínculo (mesmo inativo)
-        não pode ganhar outro."""
-        queryset = User.objects.filter(
-            ativo=True, acesso_revogado=False, tecnico__isnull=True
-        ).order_by("nome", "pk")
-        q = request.query_params.get("q", "").strip()
-        if q:
-            queryset = queryset.filter(nome__icontains=q)
+        queryset = usuarios_elegiveis_a_tecnico(request.query_params.get("q", ""))
         page = self.paginate_queryset(queryset)
-        serializer = UsuarioElegivelSerializer(page, many=True)
-        return self.get_paginated_response(serializer.data)
+        return self.get_paginated_response(UsuarioElegivelSerializer(page, many=True).data)
