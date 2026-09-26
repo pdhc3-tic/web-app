@@ -1,7 +1,6 @@
 from rest_framework import serializers
 
 from apps.sgp.models import Activity
-from apps.sgp.models.activity import STATUS_TERMINAIS
 from apps.sgp.serializers.common import MunicipioNestedSerializer
 
 # ---------------------------------------------------------------------------
@@ -60,10 +59,7 @@ class ActivityCalendarioSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_atrasada(self, obj) -> bool:
-        if obj.status in STATUS_TERMINAIS:
-            return False
-        from django.utils import timezone
-        return obj.data_fim < timezone.now()
+        return obj.esta_atrasada()
 
     def get_cor(self, obj) -> str:
         return STATUS_COR_MAP.get(obj.status, "#6B7280")

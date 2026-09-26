@@ -31,7 +31,7 @@ from uuid import uuid4
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
@@ -54,6 +54,12 @@ from apps.sgp.models import (
     UPFDocument,
     WorkPlanAcao,
     WorkPlanMeta,
+)
+from apps.sgp.models.activity import filtro_atrasada
+from apps.sgp.services.workplan_dashboard import (
+    dashboard_actions,
+    dashboard_actions_for_user,
+    enrich_dashboard_action,
 )
 
 User = get_user_model()
@@ -396,6 +402,14 @@ class Command(BaseCommand):
             ))
             return
 
+        faltando = sorted({sigla for _, _, sigla, _, _ in MUNICIPIOS} - set(
+            State.objects.values_list("sigla", flat=True)
+        ))
+        if faltando:
+            raise CommandError(
+                f"Estados ausentes ({', '.join(faltando)}). Rode `manage.py seed_core` antes."
+            )
+
         with transaction.atomic():
             projeto = self._projeto()
             tecnicos = self._tecnicos()
@@ -409,8 +423,95 @@ class Command(BaseCommand):
             acoes = self._plano_trabalho(tecnicos[-2])
             self._atividades(acoes, comunidades, upfs, tecnicos, options["atividades"])
             self._sca(tecnicos, upfs)
+            self._cenarios_e2e(projeto, acoes, comunidades, tecnicos)
 
         self._resumo()
+
+    def _cenarios_e2e(self, projeto, acoes, comunidades, tecnicos):
+        """Garante os cenários de que as specs do Playwright dependem.
+
+        Ficam no território do ADT com que os E2E fazem login (o primeiro de
+        TECNICOS), então aparecem para ele e para os perfis globais. Cada cenário
+        só é criado ou ajustado se o sorteio não o produziu, e roda depois de
+        todo o uso de `self.rnd` anterior: os ids e a distribuição que as specs
+        já fixam continuam os mesmos."""
+        hoje = timezone.localdate()
+        agora = timezone.now()
+        adt = tecnicos[0]
+        perfil = UserProfile.objects.filter(
+            user=adt, perfil__slug="adt-acr", territorio__isnull=False
+        ).select_related("territorio").first()
+        if perfil is None:
+            raise CommandError(f"{adt.email} está sem território de ADT.")
+        territorio = perfil.territorio
+
+        upf = UPF.objects.filter(
+            territorio=territorio, ativo=True, comunidade__isnull=False
+        ).first()
+        if upf is None:
+            comunidade = next(
+                (c for c in comunidades if c.municipio.territory_id == territorio.pk), None
+            )
+            if comunidade is None:
+                raise CommandError(f"Nenhuma comunidade no território {territorio.nome}.")
+            upf = self._upfs(projeto, [comunidade], tecnicos, 1)[0]
+            if not upf.ativo:
+                UPF.all_objects.filter(pk=upf.pk).update(ativo=True)
+                upf.ativo = True
+
+        atividades_do_adt = Activity.objects.filter(municipio__territory=territorio)
+        if not atividades_do_adt.filter(status="concluido_sem_evidencia").exists():
+            self._atividade_cenario(
+                "Visita técnica sem registro de evidência", acoes[0], upf, adt,
+                inicio=agora - timedelta(days=10), status="concluido_sem_evidencia",
+            )
+        if not atividades_do_adt.filter(filtro_atrasada(agora)).exists():
+            self._atividade_cenario(
+                "Oficina com encerramento pendente", acoes[0], upf, adt,
+                inicio=agora - timedelta(days=5), status="em_andamento",
+            )
+
+        def vermelhas(queryset):
+            return {
+                a.pk for a in queryset
+                if enrich_dashboard_action(a, today=hoje).dashboard_semaforo == "vermelho"
+            }
+
+        visiveis_ao_adt = list(dashboard_actions_for_user(adt))
+        if not vermelhas(visiveis_ao_adt) & vermelhas(dashboard_actions()):
+            # Prazo encerrado exige 100% do planejado; menos da metade disso é
+            # vermelho. O total global de concluídas é o maior possível, então a
+            # Ação fica vermelha também no recorte do ADT.
+            acao = WorkPlanAcao.objects.get(pk=visiveis_ao_adt[0].pk)
+            concluidas = acao.atividades.filter(status="concluido", ativo=True).count()
+            acao.data_fim = hoje - timedelta(days=1)
+            acao.quantidade_planejada = max(
+                acao.quantidade_planejada, Decimal(concluidas * 2 + 2)
+            )
+            acao.save(update_fields=["data_fim", "quantidade_planejada"])
+
+        self.stdout.write(f"Cenários do E2E conferidos no território {territorio.nome}.")
+
+    def _atividade_cenario(self, titulo, acao, upf, tecnico, *, inicio, status):
+        atividade = Activity.objects.create(
+            titulo=f"{titulo} — {upf.comunidade.nome}",
+            tipo_atividade="visita_tecnica",
+            acao=acao,
+            forma_atuacao="realizacao",
+            tecnico_responsavel=tecnico,
+            municipio=upf.municipio,
+            comunidade=upf.comunidade,
+            ambito="municipal",
+            latitude=upf.comunidade.lat,
+            longitude=upf.comunidade.lng,
+            data_inicio=inicio,
+            data_fim=inicio + timedelta(hours=4),
+            descricao_narrativa="Cenário fixo da demonstração, usado pelos testes E2E.",
+            status=status,
+            criado_por=tecnico,
+        )
+        atividade.upfs_participantes.set([upf])
+        return atividade
 
     # ── Reset ──────────────────────────────────────────────────────────────────
 

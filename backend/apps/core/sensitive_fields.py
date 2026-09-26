@@ -23,6 +23,24 @@ SENSITIVE_FIELD_ROLES: dict[str, set[str]] = {
 }
 
 
+# CPF não segue a matriz acima: em vez de omitido, sai mascarado para quem
+# não está aqui, porque os 3 primeiros e os 2 últimos dígitos ainda ajudam na
+# conferência.
+CPF_COMPLETO_ROLES: set[str] = {"super-admin", "ugp"}
+
+
+def pode_ver_cpf_completo(user) -> bool:
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+    return any(user_has_role(user, role) for role in CPF_COMPLETO_ROLES)
+
+
+def mascarar_cpf(cpf: str | None) -> str:
+    if not cpf:
+        return ""
+    return f"{cpf[:3]}.***.***-{cpf[-2:]}"
+
+
 def sensitive_fields_visible_to(user) -> set[str]:
     """Retorna os nomes dos campos sensíveis que `user` tem permissão de ler."""
     if user is None or not getattr(user, "is_authenticated", False):

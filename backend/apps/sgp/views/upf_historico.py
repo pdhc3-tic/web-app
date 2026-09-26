@@ -2,11 +2,16 @@ from datetime import datetime
 
 from django.apps import apps
 from django.db.models import Q
+from django.shortcuts import get_object_or_404
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 
 from apps.core.models.audit_log import AuditLog
+from apps.core.services.permissions import user_role_slugs
+from apps.sgp.models import UPF
 from apps.sgp.pagination import HistoricoPagination
 from apps.sgp.serializers import HistoricoEntrySerializer
+from apps.sgp.services.access import ROLES_COM_ESCOPO, upfs_acessiveis_ao_usuario
 
 # Mesmo padrão de mixin de UPFPhotoMixin/UPFDocumentMixin.
 
@@ -16,19 +21,9 @@ class UPFHistoricoMixin:
         """Resolve a UPF via all_objects — histórico precisa enxergar
         inativas (Issue #267) —, mantendo o mesmo RLS territorial de
         `UPFViewSet.get_queryset()`.
-
-        Import local para evitar import circular com `apps.sgp.views.upf`
-        (que importa este mixin).
         """
-        from django.shortcuts import get_object_or_404
-        from rest_framework.exceptions import PermissionDenied
-
-        from apps.core.services.permissions import user_role_slugs
-        from apps.sgp.models import UPF
-        from apps.sgp.views.upf import UPF_ACCESS_ROLES, upfs_acessiveis_ao_usuario
-
         user = self.request.user
-        role_slugs = user_role_slugs(user, UPF_ACCESS_ROLES)
+        role_slugs = user_role_slugs(user, ROLES_COM_ESCOPO)
         if not role_slugs:
             raise PermissionDenied("Você não tem acesso ao módulo SGP.")
         pks = upfs_acessiveis_ao_usuario(user, role_slugs=role_slugs).values_list("pk", flat=True)

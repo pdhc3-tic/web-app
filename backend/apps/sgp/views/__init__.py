@@ -7,6 +7,7 @@ from apps.sgp.views.activity_foto import ActivityPhotoMixin
 from apps.sgp.views.catalogos import CatalogoListView, CulturaListView, EspecieAnimalListView
 from apps.sgp.views.choices import SGPChoicesView
 from apps.sgp.views.comunidade import ComunidadePagination, ComunidadeViewSet, QSearchFilter
+from apps.sgp.views.exportacao import ExportacaoViewSet
 from apps.sgp.views.membro import (
     MembroExportView,
     MembroViewSet,
@@ -14,14 +15,10 @@ from apps.sgp.views.membro import (
     data_limite_aniversario,
 )
 from apps.sgp.tasks import sync_activity_to_google_calendar
-from apps.sgp.views.production import ProductionViewSet
+from apps.sgp.views.production import ProducaoConsolidadaViewSet, ProductionViewSet
 from apps.sgp.views.projeto import ProjetoViewSet
-from apps.sgp.views.tecnico import TecnicoViewSet, tecnicos_acessiveis_ao_usuario
-from apps.sgp.views.upf import (
-    UPF_ACCESS_ROLES,
-    UPFViewSet,
-    upfs_acessiveis_ao_usuario,
-)
+from apps.sgp.views.tecnico import TecnicoViewSet
+from apps.sgp.views.upf import UPF_ACCESS_ROLES, UPFViewSet
 from apps.sgp.views.upf_documentos import UPFDocumentViewSet
 from apps.sgp.views.upf_foto import UPFPhotoMixin
 
@@ -34,8 +31,10 @@ __all__ = [
     "ComunidadeViewSet",
     "CulturaListView",
     "EspecieAnimalListView",
+    "ExportacaoViewSet",
     "MembroExportView",
     "MembroViewSet",
+    "ProducaoConsolidadaViewSet",
     "ProductionViewSet",
     "ProjetoViewSet",
     "QSearchFilter",
@@ -48,6 +47,4 @@ __all__ = [
     "_membros_csv_response",
     "data_limite_aniversario",
     "sync_activity_to_google_calendar",
-    "tecnicos_acessiveis_ao_usuario",
-    "upfs_acessiveis_ao_usuario",
 ]

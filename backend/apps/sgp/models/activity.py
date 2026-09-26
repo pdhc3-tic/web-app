@@ -81,6 +81,12 @@ GOOGLE_CALENDAR_SYNC_STATUS_CHOICES = [
 ]
 
 
+def filtro_atrasada(agora) -> models.Q:
+    """Atividade ainda não encerrada cujo fim já passou — mesma regra de
+    `Activity.esta_atrasada`, em forma de filtro de queryset."""
+    return models.Q(data_fim__lt=agora) & ~models.Q(status__in=STATUS_TERMINAIS)
+
+
 # ---------------------------------------------------------------------------
 # Model
 # ---------------------------------------------------------------------------
@@ -260,6 +266,11 @@ class Activity(SoftDeleteModel, ScaSyncableModel):
     # ── Utilitário de status ───────────────────────────────────────────────────
     def get_transicoes_permitidas(self) -> set[str]:
         return STATUS_TRANSITIONS.get(self.status, set())
+
+    def esta_atrasada(self, agora=None) -> bool:
+        if self.status in STATUS_TERMINAIS:
+            return False
+        return self.data_fim < (agora or timezone.now())
 
     class Meta(SoftDeleteModel.Meta, ScaSyncableModel.Meta):
         verbose_name = "Atividade"

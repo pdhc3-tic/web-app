@@ -89,6 +89,91 @@ seria pior do que um erro explícito.
 | `territorio_id`/`municipio`/`projeto` inválidos | `400 Bad Request` |
 | Escopo territorial acima do limite de UPFs (rota agregada) | `400 Bad Request` |
 
+## Exportação de Atividades
+
+```http
+GET /api/v1/sgp/atividades/exportar/?formato={csv|xlsx}&periodo_inicio=&periodo_fim=&territorio_id=&acao_id=
+```
+
+Download direto, no escopo territorial do usuário (mesma regra da listagem de
+atividades). `periodo_inicio`/`periodo_fim` recortam por `data_inicio` da
+atividade, e `periodo_inicio` posterior a `periodo_fim` retorna `400`. Colunas:
+ID, título, tipo, status, data de início e de fim, estado, município, território,
+comunidade, Meta, Ação, técnico responsável, UPFs participantes, participantes e
+atrasada (mesma regra do campo `atrasada` da API). Dataset em
+`apps/sgp/services/activity_export.py`.
+
+## Exportação de UPFs
+
+```http
+GET /api/v1/upfs/exportar/?formato={csv|xlsx}&<filtros da listagem>
+```
+
+Aceita **exatamente** os filtros de `GET /api/v1/upfs/` (os declarados em
+`UPFFilter`: `q`, `municipio`, `territorio`, `projeto`, `comunidade`, `ativo`,
+`cadastrado_de`, `cadastrado_ate`), com o mesmo padrão de só UPFs ativas quando
+`ativo` não é informado. `ativa` é aceito como sinônimo de `ativo` (ver
+"Débito técnico" abaixo); se os dois vierem, vale `ativo`. Qualquer outro
+parâmetro retorna `400` com `{"code": "parametro_desconhecido", "parametros": [...]}`
+— o django-filter ignoraria o parâmetro e o arquivo sairia com a base inteira.
+Pelo mesmo motivo, `ativo` com valor que não seja booleano (`true`/`false`/`1`/`0`
+ou vazio) retorna `400`, aqui e na listagem.
+
+Colunas: Estado, Município, Território, Comunidade, Titular, CPF e Data de
+cadastro. O CPF sai completo para Super Admin e UGP e mascarado
+(`123.***.***-45`) para os demais perfis (`CPF_COMPLETO_ROLES` em
+`apps/core/sensitive_fields.py`). Saúde e Cor/Raça não fazem parte do arquivo.
+
+Até `UPF_EXPORT_SYNC_LIMIT` (1.000) registros a resposta é o arquivo. Acima
+disso a API cria uma exportação assíncrona e responde `202` com o mesmo corpo de
+`GET /api/v1/sgp/exportacoes/{id}/`.
+
+## Exportação assíncrona
+
+```http
+POST /api/v1/sgp/exportacoes/              {"tipo": "plano_trabalho|atividades|upfs", "formato": "csv|xlsx", "filtros": {...}}
+GET  /api/v1/sgp/exportacoes/{id}/
+GET  /api/v1/sgp/exportacoes/{id}/download/
+POST /api/v1/sgp/exportacoes/{id}/repetir/
+```
+
+`filtros` aceita os mesmos parâmetros da rota síncrona de cada tipo, validados
+na criação; chave desconhecida em `filtros` retorna `400` com
+`code: parametro_desconhecido` em qualquer tipo. O `POST` responde `202` com `{id, status: "pendente", ...}` e a task
+`sgp.tasks.processar_exportacao` gera o arquivo no worker, no escopo do
+solicitante no momento da execução. O status passa por
+`pendente → processando → concluida | erro`, com `progresso` de 0 a 100 e `erro`
+preenchido quando falha.
+
+| Situação | Resposta |
+| :--- | :--- |
+| Exportação de outro usuário | `404 Not Found` |
+| `download` antes de concluir | `409` com `code: exportacao_nao_concluida` e o `status` atual |
+| `download` depois de expirar | `410` com `code: exportacao_expirada` |
+| `repetir` de exportação que não está em `erro` nem travada | `409` com `code: exportacao_nao_repetivel` |
+
+O arquivo gerado fica no próprio registro (`ExportJob.conteudo`) e vale 24 h:
+backend e worker rodam em containers que não compartilham disco, então gravar em
+`MEDIA_ROOT` deixaria o download sem acesso ao arquivo. A task
+`sgp.tasks.limpar_exportacoes_expiradas` (Celery Beat, a cada hora) apaga as
+exportações expiradas e as que ficaram mais de 7 dias sem gerar arquivo.
+
+**Exportação travada.** Se a mensagem não chega ao worker ou o worker morre no
+meio, o job ficaria para sempre em `pendente` ou `processando`. A task
+`sgp.tasks.marcar_exportacoes_travadas` (Celery Beat, a cada 10 min) passa para
+`erro` os jobs parados há mais de `PRAZO_JOB_TRAVADO` (30 min), contados de
+`enfileirado_em` em `pendente` e de `iniciado_em` em `processando`; com isso o
+polling termina e o `repetir` fica disponível. O `repetir` também aceita um job
+travado antes de essa task rodar. A geração tem `soft_time_limit` de 20 min e
+`time_limit` de 25 min, abaixo do prazo, então um worker ainda vivo nunca é
+tratado como travado.
+
+### Débito técnico
+
+| Item | Situação | Saída |
+| :--- | :--- | :--- |
+| Alias `ativa` → `ativo` em `GET /api/v1/upfs/exportar/` e no `filtros` de `tipo=upfs` | O campo da UPF foi renomeado de `ativa` para `ativo` (migration `0031_upf_ativa_para_ativo`), mas o front (`frontend/app/lib/upfs.ts`, `buildUpfsFilterParams`) ainda envia `ativa`, na exportação e na listagem. Na listagem o parâmetro é ignorado em silêncio e vale o padrão de só ativas, então as opções "inativas" e "todas" da tela não têm efeito. | O front passa a enviar `ativo`; depois disso, remover `ALIASES_DE_FILTRO` de `apps/sgp/services/upf_export.py` e os testes `test_ativa_e_aceito_como_sinonimo_de_ativo` e `test_ativo_prevalece_sobre_ativa`. |
+
 ## 1. Resumo
 
 Foram implementadas a exportação do Plano de Trabalho em CSV/XLSX e uma API autenticada para consumo consolidado pelo Power BI. A solução aplica filtros e regras de escopo territorial na exportação, além de manter um snapshot em Redis atualizado periodicamente pelo Celery para reduzir o custo de leitura do conector BI.

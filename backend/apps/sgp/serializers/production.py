@@ -87,3 +87,19 @@ class ProductionSerializer(serializers.ModelSerializer):
         if errors:
             raise serializers.ValidationError(errors)
         return attrs
+
+
+class ProducaoConsolidadaSerializer(ProductionSerializer):
+    upf_id = serializers.IntegerField(read_only=True)
+    upf_nome_titular = serializers.CharField(
+        source="upf.titular.nome_completo", read_only=True
+    )
+    municipio = serializers.CharField(source="upf.municipio.nome", read_only=True)
+    territorio = serializers.CharField(
+        source="upf.territorio.nome", read_only=True, allow_null=True
+    )
+
+    class Meta(ProductionSerializer.Meta):
+        fields = ProductionSerializer.Meta.fields + [
+            "upf_id", "upf_nome_titular", "municipio", "territorio",
+        ]
