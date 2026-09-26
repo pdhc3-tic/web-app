@@ -34,6 +34,9 @@ jobs:
           REDIS_HOST=redis
           REDIS_PORT=6379
           EOF
+          # Chave descartável: o banco do E2E nasce vazio a cada execução, então
+          # nada criptografado precisa ser lido com a chave de outra rodada.
+          echo "FIELD_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> backend/.env
 
       - name: Criar .env do frontend para CI
         run: |
@@ -49,6 +52,9 @@ jobs:
 
       - name: Aplicar migrações
         run: docker compose exec -T backend python manage.py migrate --noinput
+
+      - name: Seed de referência (perfis, estados, territórios)
+        run: docker compose exec -T backend python manage.py seed_core
 
       - name: Seed de demonstração
         run: docker compose exec -T backend python manage.py seed_demo --reset

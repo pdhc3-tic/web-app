@@ -89,6 +89,71 @@ seria pior do que um erro explícito.
 | `territorio_id`/`municipio`/`projeto` inválidos | `400 Bad Request` |
 | Escopo territorial acima do limite de UPFs (rota agregada) | `400 Bad Request` |
 
+## Exportação de Atividades
+
+```http
+GET /api/v1/sgp/atividades/exportar/?formato={csv|xlsx}&periodo_inicio=&periodo_fim=&territorio_id=&acao_id=
+```
+
+Download direto, no escopo territorial do usuário (mesma regra da listagem de
+atividades). `periodo_inicio`/`periodo_fim` recortam por `data_inicio` da
+atividade, e `periodo_inicio` posterior a `periodo_fim` retorna `400`. Colunas:
+ID, título, tipo, status, data de início e de fim, estado, município, território,
+comunidade, Meta, Ação, técnico responsável, UPFs participantes, participantes e
+atrasada (mesma regra do campo `atrasada` da API). Dataset em
+`apps/sgp/services/activity_export.py`.
+
+## Exportação de UPFs
+
+```http
+GET /api/v1/upfs/exportar/?formato={csv|xlsx}&<filtros da listagem>
+```
+
+Aceita **exatamente** os filtros de `GET /api/v1/upfs/` (os declarados em
+`UPFFilter`: `q`, `municipio`, `territorio`, `projeto`, `comunidade`, `ativo`,
+`cadastrado_de`, `cadastrado_ate`), com o mesmo padrão de só UPFs ativas quando
+`ativo` não é informado. Qualquer outro parâmetro retorna `400` com
+`{"code": "parametro_desconhecido", "parametros": [...]}` — o django-filter
+ignoraria o parâmetro e o arquivo sairia com a base inteira.
+
+Colunas: Estado, Município, Território, Comunidade, Titular, CPF e Data de
+cadastro. O CPF sai completo para Super Admin e UGP e mascarado
+(`123.***.***-45`) para os demais perfis (`CPF_COMPLETO_ROLES` em
+`apps/core/sensitive_fields.py`). Saúde e Cor/Raça não fazem parte do arquivo.
+
+Até `UPF_EXPORT_SYNC_LIMIT` (1.000) registros a resposta é o arquivo. Acima
+disso a API cria uma exportação assíncrona e responde `202` com o mesmo corpo de
+`GET /api/v1/sgp/exportacoes/{id}/`.
+
+## Exportação assíncrona
+
+```http
+POST /api/v1/sgp/exportacoes/              {"tipo": "plano_trabalho|atividades|upfs", "formato": "csv|xlsx", "filtros": {...}}
+GET  /api/v1/sgp/exportacoes/{id}/
+GET  /api/v1/sgp/exportacoes/{id}/download/
+POST /api/v1/sgp/exportacoes/{id}/repetir/
+```
+
+`filtros` aceita os mesmos parâmetros da rota síncrona de cada tipo, validados
+na criação. O `POST` responde `202` com `{id, status: "pendente", ...}` e a task
+`sgp.tasks.processar_exportacao` gera o arquivo no worker, no escopo do
+solicitante no momento da execução. O status passa por
+`pendente → processando → concluida | erro`, com `progresso` de 0 a 100 e `erro`
+preenchido quando falha.
+
+| Situação | Resposta |
+| :--- | :--- |
+| Exportação de outro usuário | `404 Not Found` |
+| `download` antes de concluir | `409` com `code: exportacao_nao_concluida` e o `status` atual |
+| `download` depois de expirar | `410` com `code: exportacao_expirada` |
+| `repetir` fora do status `erro` | `409` com `code: exportacao_nao_repetivel` |
+
+O arquivo gerado fica no próprio registro (`ExportJob.conteudo`) e vale 24 h:
+backend e worker rodam em containers que não compartilham disco, então gravar em
+`MEDIA_ROOT` deixaria o download sem acesso ao arquivo. A task
+`sgp.tasks.limpar_exportacoes_expiradas` (Celery Beat, a cada hora) apaga as
+exportações expiradas e as que ficaram mais de 7 dias sem gerar arquivo.
+
 ## 1. Resumo
 
 Foram implementadas a exportação do Plano de Trabalho em CSV/XLSX e uma API autenticada para consumo consolidado pelo Power BI. A solução aplica filtros e regras de escopo territorial na exportação, além de manter um snapshot em Redis atualizado periodicamente pelo Celery para reduzir o custo de leitura do conector BI.

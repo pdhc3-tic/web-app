@@ -1,11 +1,21 @@
+from decimal import Decimal
+
+from django.db.models import Count, Sum
 from django.shortcuts import get_object_or_404
-from rest_framework import serializers, viewsets
-from apps.core.permissions import IsAuthenticatedActiveAccess
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import mixins, serializers, viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
 from apps.core.models.audit_log import AuditLog
+from apps.core.permissions import IsAuthenticatedActiveAccess
+from apps.sgp.filters import ProducaoConsolidadaFilter
 from apps.sgp.models import Production, UPF
-from apps.sgp.serializers import ProductionSerializer
+from apps.sgp.pagination import ProducaoPagination
+from apps.sgp.serializers import ProducaoConsolidadaSerializer, ProductionSerializer
 from apps.sgp.services.access import scope_queryset
+
+PRINCIPAIS_CULTURAS_LIMITE = 5
 
 
 class ProductionViewSet(viewsets.ModelViewSet):
@@ -122,3 +132,47 @@ class ProductionViewSet(viewsets.ModelViewSet):
         if value is None:
             return None
         return str(value)
+
+
+class ProducaoConsolidadaViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    """Produção de todas as UPFs ativas no escopo territorial do usuário."""
+
+    serializer_class = ProducaoConsolidadaSerializer
+    permission_classes = [IsAuthenticatedActiveAccess]
+    pagination_class = ProducaoPagination
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = ProducaoConsolidadaFilter
+
+    def get_queryset(self):
+        qs = Production.objects.filter(upf__ativo=True).select_related(
+            "cultura", "especie", "upf__titular", "upf__municipio", "upf__territorio"
+        )
+        return scope_queryset(
+            qs,
+            self.request.user,
+            state_lookup="upf__municipio__state__sigla__in",
+            territory_lookup="upf__territorio__in",
+        ).order_by("-criado_em", "-pk")
+
+    @action(detail=False, methods=["get"])
+    def indicadores(self, request):
+        qs = self.filter_queryset(self.get_queryset()).order_by()
+        totais = qs.aggregate(
+            total_upfs_produtoras=Count("upf", distinct=True),
+            area_total_ha=Sum("area_ha"),
+        )
+        principais_culturas = (
+            qs.filter(cultura__isnull=False)
+            .values("cultura__nome")
+            .annotate(count=Count("upf", distinct=True))
+            .order_by("-count", "cultura__nome")[:PRINCIPAIS_CULTURAS_LIMITE]
+        )
+        area_total = totais["area_total_ha"] or Decimal("0")
+        return Response({
+            "total_upfs_produtoras": totais["total_upfs_produtoras"],
+            "area_total_ha": f"{area_total:.2f}",
+            "principais_culturas": [
+                {"nome": item["cultura__nome"], "count": item["count"]}
+                for item in principais_culturas
+            ],
+        })

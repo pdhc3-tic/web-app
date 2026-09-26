@@ -4,8 +4,10 @@ import django_filters
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import Q
+from django.utils import timezone
 
-from apps.sgp.models import Activity, FormResponse, Tecnico, UPF
+from apps.sgp.models import Activity, FormResponse, Production, Tecnico, UPF
+from apps.sgp.models.activity import STATUS_TERMINAIS
 
 
 class StrictBooleanWidget(forms.Select):
@@ -135,14 +137,35 @@ class ActivityFilter(django_filters.FilterSet):
     data_inicio_before = django_filters.DateFilter(
         field_name="data_inicio", lookup_expr="lte", label="Data Início (antes)"
     )
+    atrasada = StrictBooleanFilter(
+        method="filter_atrasada", widget=StrictBooleanWidget, label="Atrasada"
+    )
 
     class Meta:
         model = Activity
         fields = [
             "projeto", "acao", "territorio_id", "tecnico_id", "osc", "parceiro",
             "tipo_atividade", "status",
-            "data_inicio_after", "data_inicio_before",
+            "data_inicio_after", "data_inicio_before", "atrasada",
         ]
+
+    def filter_atrasada(self, queryset, name, value):
+        # Mesma regra de `get_atrasada` dos serializers de atividade, para que a
+        # contagem do filtro bata com o campo `atrasada` de cada item.
+        atrasadas = Q(data_fim__lt=timezone.now()) & ~Q(status__in=STATUS_TERMINAIS)
+        return queryset.filter(atrasadas if value else ~atrasadas)
+
+
+class ProducaoConsolidadaFilter(django_filters.FilterSet):
+    tipo = django_filters.ChoiceFilter(choices=Production.TIPO_CHOICES)
+    cultura = django_filters.NumberFilter(field_name="cultura_id")
+    especie = django_filters.NumberFilter(field_name="especie_id")
+    municipio = django_filters.NumberFilter(field_name="upf__municipio_id")
+    territorio = django_filters.NumberFilter(field_name="upf__territorio_id")
+
+    class Meta:
+        model = Production
+        fields = ["tipo", "cultura", "especie", "municipio", "territorio"]
 
 
 class TecnicoFilter(django_filters.FilterSet):

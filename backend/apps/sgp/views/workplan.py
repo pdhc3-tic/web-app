@@ -1,11 +1,7 @@
 import logging
-import csv
-from io import BytesIO, StringIO
 
 from django.db.models import F, Sum
-from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
@@ -22,7 +18,7 @@ from apps.core.authentication import PowerBIServiceTokenAuthentication
 from apps.core.throttling import PowerBIServiceTokenThrottle
 from apps.core.services.permissions import user_has_role
 from apps.sgp.filters_workplan import WorkPlanAcaoFilter, WorkPlanMetaFilter
-from apps.sgp.models import WorkPlanAcao, WorkPlanMeta
+from apps.sgp.models import ExportJob, WorkPlanAcao, WorkPlanMeta
 from apps.sgp.pagination import UPFPagination
 from apps.sgp.serializers_workplan import (
     WorkPlanAcaoListSerializer,
@@ -35,7 +31,9 @@ from apps.sgp.serializers_workplan import (
     WorkPlanExportQuerySerializer,
 )
 from apps.sgp.cache import get_power_bi_snapshot
+from apps.sgp.services.exportacao import CONTENT_TYPES, gerar_arquivo, nome_arquivo
 from apps.sgp.services.workplan_export import EXPORT_COLUMNS, workplan_export_rows
+from apps.sgp.views.exportacao import arquivo_response
 from apps.sgp.services.workplan_access import (
     filter_workplan_actions_for_user,
     filter_workplan_metas_for_user,
@@ -63,46 +61,12 @@ class WorkPlanExportView(APIView):
         options = query_serializer.validated_data
         formato = options.pop("formato")
         rows = workplan_export_rows(user=request.user, **options)
-        timestamp = timezone.localtime().strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f"plano_trabalho_{timestamp}.{formato}"
-
-        if formato == "csv":
-            return self._csv_response(rows, filename)
-        return self._xlsx_response(rows, filename)
-
-    @staticmethod
-    def _csv_response(rows, filename):
-        content = StringIO()
-        writer = csv.writer(content)
-        writer.writerow([label for _, label in EXPORT_COLUMNS])
-        for row in rows:
-            writer.writerow([row[key] for key, _ in EXPORT_COLUMNS])
-        response = HttpResponse(
-            "\ufeff" + content.getvalue(),
-            content_type="text/csv; charset=utf-8",
+        conteudo = gerar_arquivo(EXPORT_COLUMNS, rows, formato, "Plano de Trabalho")
+        return arquivo_response(
+            conteudo,
+            nome_arquivo(ExportJob.Tipo.PLANO_TRABALHO, formato),
+            CONTENT_TYPES[formato],
         )
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return response
-
-    @staticmethod
-    def _xlsx_response(rows, filename):
-        from openpyxl import Workbook
-
-        workbook = Workbook(write_only=True)
-        worksheet = workbook.create_sheet("Plano de Trabalho")
-        worksheet.append([label for _, label in EXPORT_COLUMNS])
-        for row in rows:
-            worksheet.append([row[key] for key, _ in EXPORT_COLUMNS])
-        content = BytesIO()
-        workbook.save(content)
-        response = HttpResponse(
-            content.getvalue(),
-            content_type=(
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            ),
-        )
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return response
 
 
 class WorkPlanPowerBIView(APIView):

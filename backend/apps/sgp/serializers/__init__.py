@@ -32,7 +32,10 @@ from apps.sgp.serializers.membro import (
     MembroExportQuerySerializer,
     MembroListSerializer,
 )
-from apps.sgp.serializers.production import ProductionSerializer
+from apps.sgp.serializers.production import (
+    ProducaoConsolidadaSerializer,
+    ProductionSerializer,
+)
 from apps.sgp.serializers.tecnico import TecnicoSerializer
 from apps.sgp.serializers.upf import (
     HistoricoEntrySerializer,
@@ -67,6 +70,7 @@ __all__ = [
     "MembroListSerializer",
     "MunicipioNestedSerializer",
     "NestedSerializer",
+    "ProducaoConsolidadaSerializer",
     "ProductionSerializer",
     "ProjetoSerializer",
     "STATUS_COR_MAP",

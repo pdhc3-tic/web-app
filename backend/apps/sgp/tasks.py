@@ -20,6 +20,7 @@ from apps.sgp.services.workplan_dashboard import dashboard_actions, enrich_dashb
 from apps.sgp.services.budget import alocacoes_em_vermelho
 from apps.sgp.cache import set_power_bi_snapshot
 from apps.sgp.services.workplan_export import workplan_export_rows
+from apps.sgp.services import exportacao as exportacao_service
 
 
 try:
@@ -267,3 +268,16 @@ def check_budget_threshold_alert() -> int:
         sentry_sdk.capture_exception(exc)
         logger.exception("Falha ao verificar alertas de orçamento.")
         raise
+
+
+@shared_task(name="sgp.tasks.processar_exportacao")
+def processar_exportacao(job_id: int) -> None:
+    """Gera o arquivo de um ExportJob. Falhas previstas (filtro inválido, perda
+    de acesso) e imprevistas terminam com o job em `erro`, nunca em exceção,
+    para o solicitante ver o motivo e poder repetir."""
+    exportacao_service.executar_exportacao(job_id)
+
+
+@shared_task(name="sgp.tasks.limpar_exportacoes_expiradas")
+def limpar_exportacoes_expiradas() -> int:
+    return exportacao_service.limpar_exportacoes_expiradas()

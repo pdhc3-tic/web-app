@@ -19,10 +19,19 @@ from apps.core.services.membro_audit import log_membro_change, sensitive_fields_
 from apps.core.services.permissions import user_role_slugs
 from apps.sgp.cache import UPF_MAP_CACHE_TIMEOUT, build_upf_map_cache_key
 from apps.sgp.filters import UPFFilter
-from apps.sgp.models import UPF
+from apps.sgp.models import ExportJob, UPF
 from apps.sgp.pagination import UPFPagination
 from apps.sgp.serializers import HistoricoEntrySerializer, MunicipioNestedSerializer, UPFDetailSerializer, UPFListSerializer
+from apps.sgp.serializers.exportacao import ExportJobSerializer
+from apps.sgp.services import upf_export
 from apps.sgp.services.access import ROLES_COM_ESCOPO, scope_queryset
+from apps.sgp.services.exportacao import (
+    CONTENT_TYPES,
+    criar_exportacao,
+    gerar_arquivo,
+    nome_arquivo,
+)
+from apps.sgp.views.exportacao import arquivo_response
 from apps.sgp.views.upf_foto import UPFPhotoMixin
 from apps.sgp.views.upf_historico import UPFHistoricoMixin
 
@@ -143,6 +152,34 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
             "e properties mínimo: id, nome_titular, municipio, territorio e ativo."
         ),
     )
+    @action(detail=False, methods=["get"], url_path="exportar")
+    def exportar(self, request):
+        """GET /api/v1/upfs/exportar/?formato=csv|xlsx&<filtros da listagem>
+
+        Até `UPF_EXPORT_SYNC_LIMIT` registros devolve o arquivo; acima disso cria
+        um ExportJob e responde 202 com o `id` para acompanhar em
+        `/api/v1/sgp/exportacoes/{id}/`."""
+        formato, filtros = upf_export.separar_parametros(request.query_params.dict())
+        queryset = upf_export.upf_export_queryset(user=request.user, filtros=filtros)
+
+        total = queryset.count()
+        if total > upf_export.UPF_EXPORT_SYNC_LIMIT:
+            job = criar_exportacao(
+                user=request.user,
+                tipo=ExportJob.Tipo.UPFS,
+                formato=formato,
+                filtros=filtros,
+                total_registros=total,
+            )
+            return Response(ExportJobSerializer(job).data, status=status.HTTP_202_ACCEPTED)
+
+        rows = upf_export.upf_export_rows(queryset, user=request.user)
+        return arquivo_response(
+            gerar_arquivo(upf_export.EXPORT_COLUMNS, rows, formato, "UPFs"),
+            nome_arquivo(ExportJob.Tipo.UPFS, formato),
+            CONTENT_TYPES[formato],
+        )
+
     @action(detail=False, methods=["get"], url_path="mapa")
     def mapa(self, request):
         bbox = self._parse_bbox(request.query_params.get("bbox"))

@@ -31,7 +31,7 @@ from uuid import uuid4
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
@@ -55,6 +55,8 @@ from apps.sgp.models import (
     WorkPlanAcao,
     WorkPlanMeta,
 )
+from apps.sgp.models.activity import STATUS_TERMINAIS
+from apps.sgp.services.workplan_dashboard import dashboard_actions, enrich_dashboard_action
 
 User = get_user_model()
 
@@ -396,6 +398,14 @@ class Command(BaseCommand):
             ))
             return
 
+        faltando = sorted({sigla for _, _, sigla, _, _ in MUNICIPIOS} - set(
+            State.objects.values_list("sigla", flat=True)
+        ))
+        if faltando:
+            raise CommandError(
+                f"Estados ausentes ({', '.join(faltando)}). Rode `manage.py seed_core` antes."
+            )
+
         with transaction.atomic():
             projeto = self._projeto()
             tecnicos = self._tecnicos()
@@ -409,8 +419,77 @@ class Command(BaseCommand):
             acoes = self._plano_trabalho(tecnicos[-2])
             self._atividades(acoes, comunidades, upfs, tecnicos, options["atividades"])
             self._sca(tecnicos, upfs)
+            self._cenarios_e2e(acoes, upfs, tecnicos)
 
         self._resumo()
+
+    def _cenarios_e2e(self, acoes, upfs, tecnicos):
+        """Garante os cenários de que as specs do Playwright dependem.
+
+        Cada cenário só é criado ou ajustado se o sorteio não o produziu, e
+        roda depois de todo o uso de `self.rnd`: os ids e a distribuição que as
+        specs já fixam continuam os mesmos."""
+        hoje = timezone.localdate()
+        agora = timezone.now()
+
+        upf = next(
+            (u for u in upfs if u.ativo and u.territorio_id and u.comunidade_id), None
+        )
+        if upf is None:
+            raise CommandError(
+                "Nenhuma UPF ativa com Estado, Município, Território e Comunidade. "
+                "Confira se o `seed_core` criou os Territórios."
+            )
+
+        if not Activity.objects.filter(status="concluido_sem_evidencia").exists():
+            self._atividade_cenario(
+                "Visita técnica sem registro de evidência", acoes[0], upf, tecnicos[0],
+                inicio=agora - timedelta(days=10), status="concluido_sem_evidencia",
+            )
+
+        atrasadas = Activity.objects.filter(data_fim__lt=agora).exclude(
+            status__in=STATUS_TERMINAIS
+        )
+        if not atrasadas.exists():
+            self._atividade_cenario(
+                "Oficina com encerramento pendente", acoes[0], upf, tecnicos[0],
+                inicio=agora - timedelta(days=5), status="em_andamento",
+            )
+
+        acoes_painel = [enrich_dashboard_action(a, today=hoje) for a in dashboard_actions()]
+        if not any(a.dashboard_semaforo == "vermelho" for a in acoes_painel):
+            # Prazo encerrado exige 100% do planejado; menos da metade disso
+            # é vermelho no painel.
+            acao = WorkPlanAcao.objects.get(pk=acoes[0].pk)
+            concluidas = acao.atividades.filter(status="concluido", ativo=True).count()
+            acao.data_fim = hoje - timedelta(days=1)
+            acao.quantidade_planejada = max(
+                acao.quantidade_planejada, Decimal(concluidas * 2 + 2)
+            )
+            acao.save(update_fields=["data_fim", "quantidade_planejada"])
+
+        self.stdout.write("Cenários do E2E conferidos.")
+
+    def _atividade_cenario(self, titulo, acao, upf, tecnico, *, inicio, status):
+        atividade = Activity.objects.create(
+            titulo=f"{titulo} — {upf.comunidade.nome}",
+            tipo_atividade="visita_tecnica",
+            acao=acao,
+            forma_atuacao="realizacao",
+            tecnico_responsavel=tecnico,
+            municipio=upf.municipio,
+            comunidade=upf.comunidade,
+            ambito="municipal",
+            latitude=upf.comunidade.lat,
+            longitude=upf.comunidade.lng,
+            data_inicio=inicio,
+            data_fim=inicio + timedelta(hours=4),
+            descricao_narrativa="Cenário fixo da demonstração, usado pelos testes E2E.",
+            status=status,
+            criado_por=tecnico,
+        )
+        atividade.upfs_participantes.set([upf])
+        return atividade
 
     # ── Reset ──────────────────────────────────────────────────────────────────
 
