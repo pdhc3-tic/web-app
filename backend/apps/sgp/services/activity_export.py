@@ -31,14 +31,14 @@ EXPORT_COLUMNS = (
 )
 
 
-def _contagem_m2m(through, coluna_activity="activity_id"):
+def _contagem_m2m(through):
     # Subquery em vez de Count() anotado: dois M2M no mesmo JOIN multiplicam
     # as linhas (UPFs × membros) antes do DISTINCT.
     return Coalesce(
         Subquery(
-            through.objects.filter(**{coluna_activity: OuterRef("pk")})
+            through.objects.filter(activity_id=OuterRef("pk"))
             .order_by()
-            .values(coluna_activity)
+            .values("activity_id")
             .annotate(total=Count("*"))
             .values("total"),
             output_field=IntegerField(),

@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 from django.utils import timezone
 from rest_framework import status
+from rest_framework.test import APIClient
 
 from apps.core.tests.factories import RoleFactory, UserFactory
 from apps.sgp.models import UPF, ExportJob
@@ -30,6 +31,14 @@ def _linhas_csv(conteudo: bytes) -> list[list[str]]:
 
 def _detalhe(job_id):
     return f"{EXPORTACOES_URL}{job_id}/"
+
+
+def _cliente(user):
+    # As fixtures de cliente autenticado compartilham uma única instância de
+    # APIClient; um segundo perfil no mesmo teste precisa da sua.
+    cliente = APIClient()
+    cliente.force_authenticate(user=user)
+    return cliente
 
 
 @pytest.fixture
@@ -128,14 +137,13 @@ class TestFluxoAssincrono:
         assert download.status_code == status.HTTP_410_GONE
         assert download.data["code"] == "exportacao_expirada"
 
-    def test_so_o_dono_acessa(self, cliente_ugp, api_client, usuario_ugp):
+    def test_so_o_dono_acessa(self, usuario_ugp):
         job = ExportJob.objects.create(tipo="atividades", formato="csv", solicitante=usuario_ugp)
-        outro = UserFactory(profiles=[(RoleFactory(slug="ugp", nome="UGP"), None)])
-        api_client.force_authenticate(user=outro)
+        outro = _cliente(UserFactory(profiles=[(RoleFactory(slug="ugp", nome="UGP"), None)]))
 
-        assert api_client.get(_detalhe(job.pk)).status_code == status.HTTP_404_NOT_FOUND
-        assert api_client.get(f"{_detalhe(job.pk)}download/").status_code == status.HTTP_404_NOT_FOUND
-        assert api_client.post(f"{_detalhe(job.pk)}repetir/").status_code == status.HTTP_404_NOT_FOUND
+        assert outro.get(_detalhe(job.pk)).status_code == status.HTTP_404_NOT_FOUND
+        assert outro.get(f"{_detalhe(job.pk)}download/").status_code == status.HTTP_404_NOT_FOUND
+        assert outro.post(f"{_detalhe(job.pk)}repetir/").status_code == status.HTTP_404_NOT_FOUND
 
     def test_filtro_invalido_termina_em_erro_e_pode_repetir(
         self, cliente_ugp, usuario_ugp, django_capture_on_commit_callbacks
@@ -222,6 +230,17 @@ class TestFluxoAssincrono:
         assert "filtros" in periodo_invertido.data
         assert parametro_upf.status_code == status.HTTP_400_BAD_REQUEST
         assert parametro_upf.data["code"] == "parametro_desconhecido"
+        assert ExportJob.objects.count() == 0
+
+    def test_valor_invalido_de_filtro_de_upf_e_recusado_na_criacao(self, cliente_ugp):
+        response = cliente_ugp.post(
+            EXPORTACOES_URL,
+            data={"tipo": "upfs", "formato": "csv", "filtros": {"municipio": "abc"}},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "municipio" in response.data["filtros"]
         assert ExportJob.objects.count() == 0
 
     def test_usuario_sem_perfil_sgp_recebe_403(self, auth_client_sem_acesso):
@@ -397,12 +416,11 @@ class TestExportacaoUPFs:
         assert registro["Estado"] == "RN"
         assert registro["Território"] == municipio_rn.territory.nome
 
-    def test_cpf_completo_para_ugp_e_mascarado_para_adt(self, cliente_ugp, municipio_rn, api_client, usuario_adt_rn):
+    def test_cpf_completo_para_ugp_e_mascarado_para_adt(self, cliente_ugp, municipio_rn, usuario_adt_rn):
         UPFFactory(municipio=municipio_rn, cpf="12345678901")
 
         ugp = dict(zip(*_linhas_csv(cliente_ugp.get(UPFS_EXPORT_URL).content)[:2]))
-        api_client.force_authenticate(user=usuario_adt_rn)
-        adt = dict(zip(*_linhas_csv(api_client.get(UPFS_EXPORT_URL).content)[:2]))
+        adt = dict(zip(*_linhas_csv(_cliente(usuario_adt_rn).get(UPFS_EXPORT_URL).content)[:2]))
 
         assert ugp["CPF"] == "12345678901"
         assert adt["CPF"] == "123.***.***-01"

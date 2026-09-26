@@ -18,38 +18,18 @@ from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.core.services.membro_audit import log_membro_change, sensitive_fields_changed
 from apps.core.services.permissions import user_role_slugs
 from apps.sgp.cache import UPF_MAP_CACHE_TIMEOUT, build_upf_map_cache_key
-from apps.sgp.filters import UPFFilter
+from apps.sgp.filters import UPFFilter, somente_ativas_sem_filtro_ativo
 from apps.sgp.models import ExportJob, UPF
 from apps.sgp.pagination import UPFPagination
 from apps.sgp.serializers import HistoricoEntrySerializer, MunicipioNestedSerializer, UPFDetailSerializer, UPFListSerializer
 from apps.sgp.serializers.exportacao import ExportJobSerializer
-from apps.sgp.services.access import ROLES_COM_ESCOPO, scope_queryset
+from apps.sgp.services.access import ROLES_COM_ESCOPO, upfs_acessiveis_ao_usuario
 from apps.sgp.services.exportacao import exportar_upfs
 from apps.sgp.views.exportacao import arquivo_response
 from apps.sgp.views.upf_foto import UPFPhotoMixin
 from apps.sgp.views.upf_historico import UPFHistoricoMixin
 
 UPF_ACCESS_ROLES = ROLES_COM_ESCOPO
-
-
-def upfs_acessiveis_ao_usuario(user, role_slugs=None):
-    """Retorna queryset de UPFs acessíveis ao usuário conforme regras territoriais.
-
-    `role_slugs` pode ser passado já computado (ver `UPFViewSet.get_queryset`)
-    para evitar refazer a checagem de roles do usuário em outra query.
-
-    Usa `all_objects`: RLS territorial e soft-delete são preocupações
-    independentes — quem filtra por ativo=True é `UPFViewSet.filter_queryset`
-    (ou, no caso de `MembroViewSet.get_upf`, a checagem explícita de `upf.ativo`).
-    """
-    return scope_queryset(
-        UPF.all_objects.all(),
-        user,
-        state_lookup="municipio__state__sigla__in",
-        territory_lookup="territorio__in",
-        role_slugs=role_slugs,
-        raise_on_no_role=False,
-    )
 
 
 # Documentação OpenAPI da action UPFViewSet.mapa — o payload real é montado
@@ -96,8 +76,7 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
         return UPFDetailSerializer
 
     def filter_queryset(self, queryset):
-        if "ativo" not in self.request.query_params:
-            queryset = queryset.filter(ativo=True)
+        queryset = somente_ativas_sem_filtro_ativo(queryset, self.request.query_params)
         return super().filter_queryset(queryset)
 
     def get_queryset(self):
@@ -120,12 +99,15 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
     def exportar(self, request):
         """GET /api/v1/upfs/exportar/?formato=csv|xlsx&<filtros da listagem>
 
-        Até 1.000 registros devolve o arquivo; acima disso responde 202 com o
-        `id` da exportação, acompanhada em `/api/v1/sgp/exportacoes/{id}/`."""
-        resultado = exportar_upfs(user=request.user, params=request.query_params.dict())
-        if isinstance(resultado, ExportJob):
-            return Response(ExportJobSerializer(resultado).data, status=status.HTTP_202_ACCEPTED)
-        return arquivo_response(resultado)
+        Até `upf_export.UPF_EXPORT_SYNC_LIMIT` registros devolve o arquivo; acima
+        disso responde 202 com a exportação criada, acompanhada em
+        `/api/v1/sgp/exportacoes/{id}/`."""
+        arquivo_ou_job = exportar_upfs(user=request.user, params=request.query_params.dict())
+        if isinstance(arquivo_ou_job, ExportJob):
+            return Response(
+                ExportJobSerializer(arquivo_ou_job).data, status=status.HTTP_202_ACCEPTED
+            )
+        return arquivo_response(arquivo_ou_job)
 
     @extend_schema(
         parameters=[

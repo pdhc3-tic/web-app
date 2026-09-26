@@ -7,9 +7,9 @@ from rest_framework import serializers
 
 from apps.core.sensitive_fields import mascarar_cpf, pode_ver_cpf_completo
 from apps.sgp.exceptions import ErroComCodigo
-from apps.sgp.filters import UPFFilter
+from apps.sgp.filters import UPFFilter, somente_ativas_sem_filtro_ativo
 from apps.sgp.models import UPF, ExportJob
-from apps.sgp.services.access import scope_queryset
+from apps.sgp.services.access import upfs_acessiveis_ao_usuario
 
 # Até este total o arquivo é devolvido na própria requisição; acima, vira
 # ExportJob processado pelo worker.
@@ -56,27 +56,25 @@ def separar_parametros(params: dict) -> tuple[str, dict]:
             "Parâmetro(s) não aceito(s) na exportação: " + ", ".join(desconhecidos) + ".",
             parametros=desconhecidos,
         )
+    # Valida os valores já aqui, sem consultar o banco, para que o pedido
+    # assíncrono seja recusado na criação e não só dentro do job.
+    _filterset(filtros, UPF.objects.none())
     return formato, filtros
 
 
-def upf_export_queryset(*, user, filtros: dict):
-    qs = scope_queryset(
-        UPF.all_objects.select_related(
-            "municipio", "municipio__state", "territorio", "comunidade", "titular",
-        ),
-        user,
-        state_lookup="municipio__state__sigla__in",
-        territory_lookup="territorio__in",
-        deny_message="Você não tem acesso ao módulo SGP.",
-    )
-    filterset = UPFFilter(data=filtros, queryset=qs)
+def _filterset(filtros: dict, queryset) -> UPFFilter:
+    filterset = UPFFilter(data=filtros, queryset=queryset)
     if not filterset.is_valid():
         raise serializers.ValidationError(filterset.errors)
-    qs = filterset.qs
-    # Mesmo padrão de `UPFViewSet.filter_queryset`: sem `ativo` na query, só ativas.
-    if "ativo" not in filtros:
-        qs = qs.filter(ativo=True)
-    return qs.order_by("-criado_em", "-pk")
+    return filterset
+
+
+def upf_export_queryset(*, user, filtros: dict):
+    queryset = upfs_acessiveis_ao_usuario(user, raise_on_no_role=True).select_related(
+        "municipio", "municipio__state", "territorio", "comunidade", "titular",
+    )
+    queryset = somente_ativas_sem_filtro_ativo(_filterset(filtros, queryset).qs, filtros)
+    return queryset.order_by("-criado_em", "-pk")
 
 
 def upf_export_rows(queryset, *, user) -> list[dict[str, str]]:

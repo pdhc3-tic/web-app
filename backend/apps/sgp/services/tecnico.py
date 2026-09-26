@@ -1,4 +1,7 @@
+from rest_framework import status
+
 from apps.core.models import User
+from apps.sgp.exceptions import ErroComCodigo
 
 
 def usuarios_elegiveis_a_tecnico(q: str = ""):
@@ -13,3 +16,15 @@ def usuarios_elegiveis_a_tecnico(q: str = ""):
     if q:
         queryset = queryset.filter(nome__icontains=q)
     return queryset
+
+
+def desativar_tecnico(tecnico) -> None:
+    """Soft-delete via ativo=False. Não afeta Activity.tecnico_responsavel (FK direta a User)."""
+    if not tecnico.ativo:
+        raise ErroComCodigo(
+            "tecnico_ja_inativo",
+            "Este técnico já está inativo.",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+    tecnico.ativo = False
+    tecnico.save(update_fields=["ativo"])

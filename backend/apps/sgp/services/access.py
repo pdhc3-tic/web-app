@@ -8,6 +8,7 @@ from rest_framework.exceptions import PermissionDenied
 
 from apps.core.models.user_profile import UserProfile
 from apps.core.services.permissions import user_has_role, user_role_slugs, user_states
+from apps.sgp.models import UPF
 
 ROLES_COM_ESCOPO = ("super-admin", "ugp", "articulador-estadual", "adt-acr")
 
@@ -108,3 +109,23 @@ def scope_queryset(
     if raise_on_no_role:
         raise PermissionDenied(deny_message)
     return qs.none()
+
+
+def upfs_acessiveis_ao_usuario(user, role_slugs=None, *, raise_on_no_role=False):
+    """Retorna queryset de UPFs acessíveis ao usuário conforme regras territoriais.
+
+    `role_slugs` pode ser passado já computado (ver `UPFViewSet.get_queryset`)
+    para evitar refazer a checagem de roles do usuário em outra query.
+
+    Usa `all_objects`: RLS territorial e soft-delete são preocupações
+    independentes — quem filtra por ativo=True é `UPFViewSet.filter_queryset`
+    (ou, no caso de `MembroViewSet.get_upf`, a checagem explícita de `upf.ativo`).
+    """
+    return scope_queryset(
+        UPF.all_objects.all(),
+        user,
+        state_lookup="municipio__state__sigla__in",
+        territory_lookup="territorio__in",
+        role_slugs=role_slugs,
+        raise_on_no_role=raise_on_no_role,
+    )

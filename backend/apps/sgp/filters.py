@@ -84,6 +84,14 @@ class UPFFilter(django_filters.FilterSet):
         return queryset.filter(q)
 
 
+def somente_ativas_sem_filtro_ativo(queryset, params):
+    """Sem `ativo` na query, a listagem de UPFs traz só as ativas; `?ativo=`
+    vazio desliga esse padrão."""
+    if "ativo" not in params:
+        return queryset.filter(ativo=True)
+    return queryset
+
+
 class ActivityFilter(django_filters.FilterSet):
     projeto = django_filters.NumberFilter(field_name="acao__meta__projeto_id", label="Projeto")
     acao = django_filters.NumberFilter(field_name="acao_id", label="Ação")

@@ -6,14 +6,13 @@ from rest_framework.response import Response
 
 from apps.core.permissions import IsAuthenticatedActiveAccess, IsSuperAdmin, IsUGP
 from apps.core.services.permissions import user_role_slugs
-from apps.sgp.exceptions import ErroComCodigo
 from apps.sgp.filters import TecnicoFilter
 from apps.sgp.models import Tecnico
 from apps.sgp.pagination import TecnicoPagination
 from apps.sgp.serializers import TecnicoSerializer
 from apps.sgp.serializers.tecnico import UsuarioElegivelSerializer
 from apps.sgp.services.access import ROLES_COM_ESCOPO, scope_queryset
-from apps.sgp.services.tecnico import usuarios_elegiveis_a_tecnico
+from apps.sgp.services.tecnico import desativar_tecnico, usuarios_elegiveis_a_tecnico
 
 
 def tecnicos_acessiveis_ao_usuario(user, role_slugs=None):
@@ -56,20 +55,8 @@ class TecnicoViewSet(viewsets.ModelViewSet):
             "user", "territorio", "osc"
         )
 
-    def perform_destroy(self, instance):
-        """Soft-delete via ativo=False. Não afeta Activity.tecnico_responsavel (FK direta a User)."""
-        instance.ativo = False
-        instance.save(update_fields=["ativo"])
-
     def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        if not instance.ativo:
-            raise ErroComCodigo(
-                "tecnico_ja_inativo",
-                "Este técnico já está inativo.",
-                status_code=status.HTTP_409_CONFLICT,
-            )
-        self.perform_destroy(instance)
+        desativar_tecnico(self.get_object())
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=["get"], url_path="usuarios-elegiveis")

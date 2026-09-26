@@ -24,6 +24,7 @@ from apps.sgp.models import ExportJob
 from apps.sgp.serializers.exportacao import AtividadesExportQuerySerializer
 from apps.sgp.serializers_workplan import WorkPlanExportQuerySerializer
 from apps.sgp.services import activity_export, upf_export, workplan_export
+from apps.sgp.services.access import resolver_escopo
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,7 @@ def _montar_arquivo(tipo: str, formato: str, rows) -> Arquivo:
     )
 
 
-def _opcoes(tipo: str, params: dict) -> tuple[str, dict]:
+def _validar_parametros(tipo: str, params: dict) -> tuple[str, dict]:
     """Valida `params` (filtros + `formato`) e devolve `(formato, opcoes)`,
     com as opções já no tipo que a função de linhas do `tipo` espera."""
     definicao = TIPOS[tipo]
@@ -120,13 +121,7 @@ def _opcoes(tipo: str, params: dict) -> tuple[str, dict]:
     return opcoes.pop("formato"), opcoes
 
 
-def validar_filtros(tipo: str, formato: str, filtros: dict) -> dict:
-    """Valida `filtros` para o `tipo` e devolve a versão serializável em JSON
-    que fica gravada no ExportJob."""
-    try:
-        _, opcoes = _opcoes(tipo, {**filtros, "formato": formato})
-    except ValidationError as exc:
-        raise ValidationError({"filtros": exc.detail})
+def _filtros_para_json(tipo: str, opcoes: dict) -> dict:
     if TIPOS[tipo].query_serializer is None:
         return {chave: "" if valor is None else str(valor) for chave, valor in opcoes.items()}
     return {
@@ -135,16 +130,26 @@ def validar_filtros(tipo: str, formato: str, filtros: dict) -> dict:
     }
 
 
+def validar_filtros(tipo: str, formato: str, filtros: dict) -> dict:
+    """Valida `filtros` para o `tipo` e devolve a versão serializável em JSON
+    que fica gravada no ExportJob."""
+    try:
+        _, opcoes = _validar_parametros(tipo, {**filtros, "formato": formato})
+    except ValidationError as exc:
+        raise ValidationError({"filtros": exc.detail})
+    return _filtros_para_json(tipo, opcoes)
+
+
 def exportar_sincrono(tipo: str, *, user, params: dict) -> Arquivo:
     """Arquivo gerado na própria requisição, a partir dos query params."""
-    formato, opcoes = _opcoes(tipo, params)
+    formato, opcoes = _validar_parametros(tipo, params)
     return _montar_arquivo(tipo, formato, TIPOS[tipo].linhas(user=user, **opcoes))
 
 
 def exportar_upfs(*, user, params: dict) -> Arquivo | ExportJob:
     """Até `UPF_EXPORT_SYNC_LIMIT` registros devolve o arquivo; acima disso cria
     um ExportJob para o worker."""
-    formato, filtros = _opcoes(ExportJob.Tipo.UPFS, params)
+    formato, filtros = _validar_parametros(ExportJob.Tipo.UPFS, params)
     queryset = upf_export.upf_export_queryset(user=user, filtros=filtros)
 
     total = queryset.count()
@@ -153,7 +158,7 @@ def exportar_upfs(*, user, params: dict) -> Arquivo | ExportJob:
             user=user,
             tipo=ExportJob.Tipo.UPFS,
             formato=formato,
-            filtros=validar_filtros(ExportJob.Tipo.UPFS, formato, filtros),
+            filtros=_filtros_para_json(ExportJob.Tipo.UPFS, filtros),
             total_registros=total,
         )
     return _montar_arquivo(
@@ -161,8 +166,18 @@ def exportar_upfs(*, user, params: dict) -> Arquivo | ExportJob:
     )
 
 
+def solicitar_exportacao(*, user, tipo: str, formato: str, filtros: dict) -> ExportJob:
+    """Pedido de exportação assíncrona feito pelo usuário."""
+    escopo, _ = resolver_escopo(user)
+    if escopo == "negado":
+        raise PermissionDenied("Você não tem acesso ao módulo SGP.")
+    return criar_exportacao(
+        user=user, tipo=tipo, formato=formato, filtros=validar_filtros(tipo, formato, filtros)
+    )
+
+
 def criar_exportacao(*, user, tipo: str, formato: str, filtros: dict, total_registros=None) -> ExportJob:
-    """`filtros` já validados por `validar_filtros`."""
+    """`filtros` já validados e na forma gravada no ExportJob."""
     job = ExportJob.objects.create(
         tipo=tipo,
         formato=formato,
@@ -231,7 +246,7 @@ def executar_exportacao(job_id: int) -> None:
         job.save(update_fields=["status", "progresso", "iniciado_em"])
 
     try:
-        formato, opcoes = _opcoes(job.tipo, {**job.filtros, "formato": job.formato})
+        formato, opcoes = _validar_parametros(job.tipo, {**job.filtros, "formato": job.formato})
         rows = TIPOS[job.tipo].linhas(user=job.solicitante, **opcoes)
         ExportJob.objects.filter(pk=job.pk).update(progresso=60, total_registros=len(rows))
         arquivo = _montar_arquivo(job.tipo, formato, rows)
