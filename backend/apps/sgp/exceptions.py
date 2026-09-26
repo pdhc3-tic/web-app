@@ -14,3 +14,15 @@ class ErroComCodigo(APIException):
         super().__init__({"code": code, "message": message, **extra})
         if status_code is not None:
             self.status_code = status_code
+
+
+def recusar_parametros_desconhecidos(recebidos, aceitos) -> None:
+    """400 com a lista dos parâmetros fora de `aceitos`. Usado onde um filtro
+    ignorado em silêncio geraria um arquivo com a base inteira."""
+    desconhecidos = sorted(set(recebidos) - set(aceitos))
+    if desconhecidos:
+        raise ErroComCodigo(
+            "parametro_desconhecido",
+            "Parâmetro(s) não aceito(s) na exportação: " + ", ".join(desconhecidos) + ".",
+            parametros=desconhecidos,
+        )

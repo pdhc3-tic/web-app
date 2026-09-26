@@ -116,6 +116,8 @@ Aceita **exatamente** os filtros de `GET /api/v1/upfs/` (os declarados em
 "Débito técnico" abaixo); se os dois vierem, vale `ativo`. Qualquer outro
 parâmetro retorna `400` com `{"code": "parametro_desconhecido", "parametros": [...]}`
 — o django-filter ignoraria o parâmetro e o arquivo sairia com a base inteira.
+Pelo mesmo motivo, `ativo` com valor que não seja booleano (`true`/`false`/`1`/`0`
+ou vazio) retorna `400`, aqui e na listagem.
 
 Colunas: Estado, Município, Território, Comunidade, Titular, CPF e Data de
 cadastro. O CPF sai completo para Super Admin e UGP e mascarado
@@ -136,7 +138,8 @@ POST /api/v1/sgp/exportacoes/{id}/repetir/
 ```
 
 `filtros` aceita os mesmos parâmetros da rota síncrona de cada tipo, validados
-na criação. O `POST` responde `202` com `{id, status: "pendente", ...}` e a task
+na criação; chave desconhecida em `filtros` retorna `400` com
+`code: parametro_desconhecido` em qualquer tipo. O `POST` responde `202` com `{id, status: "pendente", ...}` e a task
 `sgp.tasks.processar_exportacao` gera o arquivo no worker, no escopo do
 solicitante no momento da execução. O status passa por
 `pendente → processando → concluida | erro`, com `progresso` de 0 a 100 e `erro`
@@ -147,13 +150,23 @@ preenchido quando falha.
 | Exportação de outro usuário | `404 Not Found` |
 | `download` antes de concluir | `409` com `code: exportacao_nao_concluida` e o `status` atual |
 | `download` depois de expirar | `410` com `code: exportacao_expirada` |
-| `repetir` fora do status `erro` | `409` com `code: exportacao_nao_repetivel` |
+| `repetir` de exportação que não está em `erro` nem travada | `409` com `code: exportacao_nao_repetivel` |
 
 O arquivo gerado fica no próprio registro (`ExportJob.conteudo`) e vale 24 h:
 backend e worker rodam em containers que não compartilham disco, então gravar em
 `MEDIA_ROOT` deixaria o download sem acesso ao arquivo. A task
 `sgp.tasks.limpar_exportacoes_expiradas` (Celery Beat, a cada hora) apaga as
 exportações expiradas e as que ficaram mais de 7 dias sem gerar arquivo.
+
+**Exportação travada.** Se a mensagem não chega ao worker ou o worker morre no
+meio, o job ficaria para sempre em `pendente` ou `processando`. A task
+`sgp.tasks.marcar_exportacoes_travadas` (Celery Beat, a cada 10 min) passa para
+`erro` os jobs parados há mais de `PRAZO_JOB_TRAVADO` (30 min), contados de
+`enfileirado_em` em `pendente` e de `iniciado_em` em `processando`; com isso o
+polling termina e o `repetir` fica disponível. O `repetir` também aceita um job
+travado antes de essa task rodar. A geração tem `soft_time_limit` de 20 min e
+`time_limit` de 25 min, abaixo do prazo, então um worker ainda vivo nunca é
+tratado como travado.
 
 ### Débito técnico
 

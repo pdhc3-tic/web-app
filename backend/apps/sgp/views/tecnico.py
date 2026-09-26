@@ -7,31 +7,11 @@ from rest_framework.response import Response
 from apps.core.permissions import IsAuthenticatedActiveAccess, IsSuperAdmin, IsUGP
 from apps.core.services.permissions import user_role_slugs
 from apps.sgp.filters import TecnicoFilter
-from apps.sgp.models import Tecnico
 from apps.sgp.pagination import TecnicoPagination
 from apps.sgp.serializers import TecnicoSerializer
 from apps.sgp.serializers.tecnico import UsuarioElegivelSerializer
-from apps.sgp.services.access import ROLES_COM_ESCOPO, scope_queryset
+from apps.sgp.services.access import ROLES_COM_ESCOPO, tecnicos_acessiveis_ao_usuario
 from apps.sgp.services.tecnico import desativar_tecnico, usuarios_elegiveis_a_tecnico
-
-
-def tecnicos_acessiveis_ao_usuario(user, role_slugs=None):
-    """Retorna queryset de Tecnicos acessíveis ao usuário conforme regras territoriais.
-
-    `Territory.estados` é `ArrayField` — `territorio__estados__overlap` é o
-    lookup Postgres equivalente ao antigo loop Python que cruzava
-    `Territory.objects.all()` contra os estados do usuário. `role_slugs`
-    pode vir pré-computado (ver `TecnicoViewSet.get_queryset`) para evitar
-    refazer a checagem de roles do usuário em outra query.
-    """
-    return scope_queryset(
-        Tecnico.objects.all(),
-        user,
-        state_lookup="territorio__estados__overlap",
-        territory_lookup="territorio__in",
-        role_slugs=role_slugs,
-        raise_on_no_role=False,
-    )
 
 
 class TecnicoViewSet(viewsets.ModelViewSet):

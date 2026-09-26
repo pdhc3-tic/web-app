@@ -23,7 +23,9 @@ from apps.core.tests.factories import (
     RoleFactory,
     UserFactory,
 )
+from apps.sgp.exceptions import ErroComCodigo
 from apps.sgp.models import Tecnico
+from apps.sgp.serializers import TecnicoSerializer
 from apps.sgp.tests.factories import ActivityFactory, TecnicoFactory
 
 LIST_URL = "/api/v1/sgp/tecnicos/"
@@ -336,3 +338,20 @@ def test_erro_tecnico_ja_inativo(auth_client_super_admin):
 
     assert response.status_code == status.HTTP_409_CONFLICT
     assert response.data["code"] == "tecnico_ja_inativo"
+
+
+@pytest.mark.django_db
+def test_cadastro_simultaneo_do_mesmo_usuario_vira_tecnico_duplicado():
+    """Os dois pedidos passam pelo `validate` antes de qualquer um gravar; o que
+    perde a corrida bate na unicidade de `user` e deve receber o mesmo erro."""
+    user = UserFactory()
+    serializer = TecnicoSerializer(data={"user": user.pk, "papel": "adt-acr"})
+    assert serializer.is_valid(), serializer.errors
+    TecnicoFactory(user=user)
+
+    with pytest.raises(ErroComCodigo) as erro:
+        serializer.save()
+
+    assert erro.value.status_code == status.HTTP_400_BAD_REQUEST
+    assert erro.value.detail["code"] == "tecnico_duplicado"
+    assert Tecnico.objects.filter(user=user).count() == 1

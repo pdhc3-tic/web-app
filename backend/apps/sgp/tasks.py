@@ -270,7 +270,13 @@ def check_budget_threshold_alert() -> int:
         raise
 
 
-@shared_task(name="sgp.tasks.processar_exportacao")
+# Abaixo de `PRAZO_JOB_TRAVADO` (30 min): um job só é tido como travado depois
+# que o worker que o processava com certeza já foi interrompido.
+@shared_task(
+    name="sgp.tasks.processar_exportacao",
+    soft_time_limit=20 * 60,
+    time_limit=25 * 60,
+)
 def processar_exportacao(job_id: int) -> None:
     """Gera o arquivo de um ExportJob. Falhas previstas (filtro inválido, perda
     de acesso) e imprevistas terminam com o job em `erro`, nunca em exceção,
@@ -281,3 +287,10 @@ def processar_exportacao(job_id: int) -> None:
 @shared_task(name="sgp.tasks.limpar_exportacoes_expiradas")
 def limpar_exportacoes_expiradas() -> int:
     return exportacao_service.limpar_exportacoes_expiradas()
+
+
+@shared_task(name="sgp.tasks.marcar_exportacoes_travadas")
+def marcar_exportacoes_travadas() -> int:
+    """Passa para `erro` os jobs parados além de `PRAZO_JOB_TRAVADO`, para o
+    polling do front terminar e o solicitante poder repetir."""
+    return exportacao_service.marcar_exportacoes_travadas()

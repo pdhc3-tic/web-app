@@ -225,7 +225,7 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
             for campo in campos_monitorados
         )
 
-    # ── Endpoint de Calendário ────────────────────────────────────────────
+    # ── Exportação ────────────────────────────────────────────────────────
 
     @action(detail=False, methods=["get"], url_path="exportar")
     def exportar(self, request):
@@ -237,6 +237,8 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
             ExportJob.Tipo.ATIVIDADES, user=request.user, params=request.query_params.dict()
         )
         return arquivo_response(arquivo)
+
+    # ── Endpoint de Calendário ────────────────────────────────────────────
 
     @action(detail=False, methods=["get"], url_path="calendario")
     def calendario(self, request):

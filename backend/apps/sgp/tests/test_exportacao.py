@@ -14,7 +14,12 @@ from apps.core.tests.factories import RoleFactory, UserFactory
 from apps.sgp.models import UPF, ExportJob
 from apps.sgp.services import exportacao as exportacao_service
 from apps.sgp.services import upf_export
-from apps.sgp.tests.factories import ActivityFactory, UPFFactory, WorkPlanAcaoFactory
+from apps.sgp.tests.factories import (
+    ActivityFactory,
+    ComunidadeFactory,
+    UPFFactory,
+    WorkPlanAcaoFactory,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -188,6 +193,53 @@ class TestFluxoAssincrono:
         assert job.status == ExportJob.Status.ERRO
         assert "acesso" in job.erro
 
+    def test_criacao_registra_enfileirado_em(self, cliente_ugp, django_capture_on_commit_callbacks):
+        response, _ = _criar_exportacao(
+            cliente_ugp, django_capture_on_commit_callbacks, tipo="atividades", formato="csv",
+        )
+
+        assert ExportJob.objects.get(pk=response.data["id"]).enfileirado_em is not None
+
+    @pytest.mark.parametrize("status_job,campo", [
+        (ExportJob.Status.PENDENTE, "enfileirado_em"),
+        (ExportJob.Status.PROCESSANDO, "iniciado_em"),
+    ])
+    def test_job_travado_pode_ser_repetido(
+        self, cliente_ugp, usuario_ugp, django_capture_on_commit_callbacks, status_job, campo
+    ):
+        antigo = timezone.now() - exportacao_service.PRAZO_JOB_TRAVADO - timedelta(minutes=1)
+        job = ExportJob.objects.create(
+            tipo="atividades", formato="csv", solicitante=usuario_ugp,
+            status=status_job, **{campo: antigo},
+        )
+
+        with patch(DELAY) as delay:
+            with django_capture_on_commit_callbacks(execute=True):
+                response = cliente_ugp.post(f"{_detalhe(job.pk)}repetir/")
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        job.refresh_from_db()
+        assert job.status == ExportJob.Status.PENDENTE
+        assert job.enfileirado_em > antigo
+        delay.assert_called_once_with(job.pk)
+
+    @pytest.mark.parametrize("status_job,campo", [
+        (ExportJob.Status.PENDENTE, "enfileirado_em"),
+        (ExportJob.Status.PROCESSANDO, "iniciado_em"),
+    ])
+    def test_job_em_andamento_dentro_do_prazo_nao_pode_ser_repetido(
+        self, cliente_ugp, usuario_ugp, status_job, campo
+    ):
+        job = ExportJob.objects.create(
+            tipo="atividades", formato="csv", solicitante=usuario_ugp,
+            status=status_job, **{campo: timezone.now()},
+        )
+
+        response = cliente_ugp.post(f"{_detalhe(job.pk)}repetir/")
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.data["code"] == "exportacao_nao_repetivel"
+
     def test_repetir_so_com_erro(self, cliente_ugp, usuario_ugp):
         job = ExportJob.objects.create(tipo="atividades", formato="csv", solicitante=usuario_ugp)
 
@@ -249,6 +301,74 @@ class TestFluxoAssincrono:
         )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    @pytest.mark.parametrize("tipo,filtros", [
+        ("atividades", {"territorio": "1"}),
+        ("atividades", {"meta_id": "1"}),
+        ("plano_trabalho", {"acao_id": "1"}),
+        ("plano_trabalho", {"formato": "xlsx"}),
+    ])
+    def test_filtro_desconhecido_e_recusado_em_qualquer_tipo(self, cliente_ugp, tipo, filtros):
+        response = cliente_ugp.post(
+            EXPORTACOES_URL, data={"tipo": tipo, "formato": "csv", "filtros": filtros}, format="json"
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data["code"] == "parametro_desconhecido"
+        assert response.data["parametros"] == sorted(filtros)
+        assert ExportJob.objects.count() == 0
+
+    def test_job_respeita_o_escopo_do_solicitante(self, usuario_adt_rn, municipio_rn, municipio_ce):
+        do_rn = ActivityFactory(municipio=municipio_rn)
+        ActivityFactory(municipio=municipio_ce)
+        UPFFactory(municipio=municipio_rn, _titular_nome="Do RN")
+        UPFFactory(municipio=municipio_ce, _titular_nome="Do CE")
+        atividades = ExportJob.objects.create(tipo="atividades", formato="csv", solicitante=usuario_adt_rn)
+        upfs = ExportJob.objects.create(tipo="upfs", formato="csv", solicitante=usuario_adt_rn)
+
+        exportacao_service.executar_exportacao(atividades.pk)
+        exportacao_service.executar_exportacao(upfs.pk)
+
+        atividades.refresh_from_db()
+        upfs.refresh_from_db()
+        assert [linha[0] for linha in _linhas_csv(bytes(atividades.conteudo))[1:]] == [str(do_rn.pk)]
+        linhas_upfs = _linhas_csv(bytes(upfs.conteudo))
+        coluna_titular = linhas_upfs[0].index("Titular")
+        assert [linha[coluna_titular] for linha in linhas_upfs[1:]] == ["Do RN"]
+
+
+class TestJobsTravados:
+    def test_marca_como_erro_so_os_parados_alem_do_prazo(self, usuario_ugp):
+        agora = timezone.now()
+        antigo = agora - exportacao_service.PRAZO_JOB_TRAVADO - timedelta(minutes=1)
+
+        def job(**campos):
+            return ExportJob.objects.create(
+                tipo="atividades", formato="csv", solicitante=usuario_ugp, **campos
+            )
+
+        pendente_perdido = job(status=ExportJob.Status.PENDENTE, enfileirado_em=antigo)
+        worker_morto = job(status=ExportJob.Status.PROCESSANDO, iniciado_em=antigo)
+        pendente_recente = job(status=ExportJob.Status.PENDENTE, enfileirado_em=agora)
+        processando_recente = job(status=ExportJob.Status.PROCESSANDO, iniciado_em=agora)
+        concluida_antiga = job(status=ExportJob.Status.CONCLUIDA, iniciado_em=antigo)
+
+        assert exportacao_service.marcar_exportacoes_travadas() == 2
+
+        status_por_job = dict(ExportJob.objects.values_list("pk", "status"))
+        assert status_por_job[pendente_perdido.pk] == ExportJob.Status.ERRO
+        assert status_por_job[worker_morto.pk] == ExportJob.Status.ERRO
+        assert status_por_job[pendente_recente.pk] == ExportJob.Status.PENDENTE
+        assert status_por_job[processando_recente.pk] == ExportJob.Status.PROCESSANDO
+        assert status_por_job[concluida_antiga.pk] == ExportJob.Status.CONCLUIDA
+        worker_morto.refresh_from_db()
+        assert worker_morto.erro == exportacao_service.MENSAGEM_JOB_TRAVADO
+
+    def test_task_e_interrompida_antes_de_o_job_contar_como_travado(self):
+        from apps.sgp.tasks import processar_exportacao
+
+        prazo = exportacao_service.PRAZO_JOB_TRAVADO.total_seconds()
+        assert processar_exportacao.soft_time_limit < processar_exportacao.time_limit < prazo
 
 
 class TestLimpeza:
@@ -376,23 +496,39 @@ class TestExportacaoUPFs:
         coluna = linhas[0].index("Titular")
         return {linha[coluna] for linha in linhas[1:]}
 
+    @pytest.fixture
+    def cenario_upfs(self, municipio_rn, municipio_ce, projeto, outro_projeto):
+        comunidade = ComunidadeFactory(municipio=municipio_rn)
+        UPFFactory(
+            municipio=municipio_rn, projeto=projeto, comunidade=comunidade,
+            _titular_nome="Maria Ativa RN",
+        )
+        UPFFactory(municipio=municipio_ce, projeto=outro_projeto, _titular_nome="Maria Ativa CE")
+        UPFFactory(
+            municipio=municipio_rn, projeto=projeto, _titular_nome="Maria Inativa", ativo=False,
+        )
+        UPFFactory(municipio=municipio_rn, projeto=outro_projeto, _titular_nome="José Ativo")
+        return {
+            "municipio": str(municipio_rn.pk),
+            "territorio": str(municipio_ce.territory_id),
+            "projeto": str(projeto.pk),
+            "comunidade": str(comunidade.pk),
+        }
+
     @pytest.mark.parametrize("params", [
         {},
         {"q": "Maria"},
-        {"municipio": "MUNICIPIO_RN"},
+        {"municipio": "{municipio}"},
+        {"territorio": "{territorio}"},
+        {"projeto": "{projeto}"},
+        {"comunidade": "{comunidade}"},
+        {"projeto": "{projeto}", "ativo": ""},
         {"ativo": "false"},
         {"ativo": ""},
         {"cadastrado_de": "2000-01-01", "cadastrado_ate": "2100-01-01"},
     ])
-    def test_paridade_com_a_listagem(self, cliente_ugp, municipio_rn, municipio_ce, params):
-        params = {
-            chave: (str(municipio_rn.pk) if valor == "MUNICIPIO_RN" else valor)
-            for chave, valor in params.items()
-        }
-        UPFFactory(municipio=municipio_rn, _titular_nome="Maria Ativa RN")
-        UPFFactory(municipio=municipio_ce, _titular_nome="Maria Ativa CE")
-        UPFFactory(municipio=municipio_rn, _titular_nome="Maria Inativa", ativo=False)
-        UPFFactory(municipio=municipio_rn, _titular_nome="José Ativo")
+    def test_paridade_com_a_listagem(self, cliente_ugp, cenario_upfs, params):
+        params = {chave: valor.format(**cenario_upfs) for chave, valor in params.items()}
 
         listagem = self._ids_listagem(cliente_ugp, params)
         esperados = set(
@@ -401,7 +537,22 @@ class TestExportacaoUPFs:
             )
         )
 
+        assert esperados, "o cenário deveria produzir ao menos uma UPF para o filtro"
         assert self._titulares_exportados(cliente_ugp, params) == esperados
+
+    @pytest.mark.parametrize("params", [{"ativo": "xyz"}, {"ativa": "xyz"}])
+    def test_ativo_invalido_retorna_400_em_vez_de_exportar_tudo(self, cliente_ugp, municipio_rn, params):
+        UPFFactory(municipio=municipio_rn, ativo=False)
+
+        response = cliente_ugp.get(UPFS_EXPORT_URL, params)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "ativo" in response.data
+
+    def test_ativo_invalido_tambem_e_400_na_listagem(self, cliente_ugp):
+        response = cliente_ugp.get(UPFS_URL, {"ativo": "xyz"})
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_colunas(self, cliente_ugp, municipio_rn):
         UPFFactory(municipio=municipio_rn, _titular_nome="Maria", cpf="12345678901")
@@ -424,6 +575,17 @@ class TestExportacaoUPFs:
 
         assert ugp["CPF"] == "12345678901"
         assert adt["CPF"] == "123.***.***-01"
+
+    def test_cpf_completo_para_super_admin_e_mascarado_para_articulador(
+        self, municipio_rn, usuario_super_admin, usuario_articulador_rn
+    ):
+        UPFFactory(municipio=municipio_rn, cpf="12345678901")
+
+        super_admin = _cliente(usuario_super_admin).get(UPFS_EXPORT_URL)
+        articulador = _cliente(usuario_articulador_rn).get(UPFS_EXPORT_URL)
+
+        assert dict(zip(*_linhas_csv(super_admin.content)[:2]))["CPF"] == "12345678901"
+        assert dict(zip(*_linhas_csv(articulador.content)[:2]))["CPF"] == "123.***.***-01"
 
     def test_sem_campos_sensiveis(self, cliente_ugp, municipio_rn):
         UPFFactory(municipio=municipio_rn)

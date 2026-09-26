@@ -6,7 +6,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from apps.core.sensitive_fields import mascarar_cpf, pode_ver_cpf_completo
-from apps.sgp.exceptions import ErroComCodigo
+from apps.sgp.exceptions import recusar_parametros_desconhecidos
 from apps.sgp.filters import UPFFilter, somente_ativas_sem_filtro_ativo
 from apps.sgp.models import UPF, ExportJob
 from apps.sgp.services.access import upfs_acessiveis_ao_usuario
@@ -30,6 +30,8 @@ EXPORT_COLUMNS = (
 # é 400; sai quando o front passar a enviar `ativo`.
 ALIASES_DE_FILTRO = {"ativa": "ativo"}
 
+FILTROS_ACEITOS = frozenset(UPFFilter.base_filters) | frozenset(ALIASES_DE_FILTRO)
+
 
 def separar_parametros(params: dict) -> tuple[str, dict]:
     """Valida os parâmetros da exportação e devolve `(formato, filtros)`.
@@ -49,13 +51,7 @@ def separar_parametros(params: dict) -> tuple[str, dict]:
             valor = filtros.pop(alias)
             filtros.setdefault(nome, valor)
 
-    desconhecidos = sorted(set(filtros) - set(UPFFilter.base_filters))
-    if desconhecidos:
-        raise ErroComCodigo(
-            "parametro_desconhecido",
-            "Parâmetro(s) não aceito(s) na exportação: " + ", ".join(desconhecidos) + ".",
-            parametros=desconhecidos,
-        )
+    recusar_parametros_desconhecidos(filtros, UPFFilter.base_filters)
     # Valida os valores já aqui, sem consultar o banco, para que o pedido
     # assíncrono seja recusado na criação e não só dentro do job.
     _filterset(filtros, UPF.objects.none())

@@ -15,11 +15,12 @@ from io import BytesIO, StringIO
 from typing import Callable
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
 
-from apps.sgp.exceptions import ErroComCodigo
+from apps.sgp.exceptions import ErroComCodigo, recusar_parametros_desconhecidos
 from apps.sgp.models import ExportJob
 from apps.sgp.serializers.exportacao import AtividadesExportQuerySerializer
 from apps.sgp.serializers_workplan import WorkPlanExportQuerySerializer
@@ -37,6 +38,11 @@ VALIDADE_ARQUIVO = timedelta(hours=24)
 # Exportações que nunca chegaram a gerar arquivo (erro ou worker parado) não
 # têm `expira_em`; somem depois deste prazo.
 RETENCAO_SEM_ARQUIVO = timedelta(days=7)
+# Job parado em `pendente` ou `processando` além disto é tido como perdido
+# (mensagem que não chegou ao worker, ou worker que morreu). Precisa ser maior
+# que o `time_limit` da task, para nunca pegar um job que ainda está rodando.
+PRAZO_JOB_TRAVADO = timedelta(minutes=30)
+MENSAGEM_JOB_TRAVADO = "A exportação não terminou no tempo esperado. Tente novamente."
 
 
 @dataclass(frozen=True)
@@ -45,8 +51,36 @@ class TipoExportacao:
     titulo_planilha: str
     colunas: tuple
     linhas: Callable[..., list[dict[str, str]]]
-    # None: os filtros são os do UPFFilter, validados por `upf_export`.
-    query_serializer: type | None
+    # params (filtros + `formato`) → (formato, opções já tipadas para `linhas`).
+    validar: Callable[[dict], tuple[str, dict]]
+    # opções validadas → forma gravada em `ExportJob.filtros`.
+    para_json: Callable[[dict], dict]
+    filtros_aceitos: frozenset
+
+
+def _validador(serializer_class):
+    def validar(params: dict) -> tuple[str, dict]:
+        serializer = serializer_class(data=params)
+        serializer.is_valid(raise_exception=True)
+        opcoes = dict(serializer.validated_data)
+        return opcoes.pop("formato"), opcoes
+
+    return validar
+
+
+def _filtros_do_serializer(serializer_class) -> frozenset:
+    return frozenset(serializer_class().fields) - {"formato"}
+
+
+def _opcoes_tipadas_para_json(opcoes: dict) -> dict:
+    return {
+        chave: valor.isoformat() if isinstance(valor, date) else valor
+        for chave, valor in opcoes.items()
+    }
+
+
+def _filtros_upf_para_json(filtros: dict) -> dict:
+    return {chave: "" if valor is None else str(valor) for chave, valor in filtros.items()}
 
 
 def _linhas_upfs(*, user, **filtros):
@@ -56,15 +90,31 @@ def _linhas_upfs(*, user, **filtros):
 
 TIPOS = {
     ExportJob.Tipo.PLANO_TRABALHO: TipoExportacao(
-        "plano_trabalho", "Plano de Trabalho", workplan_export.EXPORT_COLUMNS,
-        workplan_export.workplan_export_rows, WorkPlanExportQuerySerializer,
+        prefixo_arquivo="plano_trabalho",
+        titulo_planilha="Plano de Trabalho",
+        colunas=workplan_export.EXPORT_COLUMNS,
+        linhas=workplan_export.workplan_export_rows,
+        validar=_validador(WorkPlanExportQuerySerializer),
+        para_json=_opcoes_tipadas_para_json,
+        filtros_aceitos=_filtros_do_serializer(WorkPlanExportQuerySerializer),
     ),
     ExportJob.Tipo.ATIVIDADES: TipoExportacao(
-        "atividades", "Atividades", activity_export.EXPORT_COLUMNS,
-        activity_export.activity_export_rows, AtividadesExportQuerySerializer,
+        prefixo_arquivo="atividades",
+        titulo_planilha="Atividades",
+        colunas=activity_export.EXPORT_COLUMNS,
+        linhas=activity_export.activity_export_rows,
+        validar=_validador(AtividadesExportQuerySerializer),
+        para_json=_opcoes_tipadas_para_json,
+        filtros_aceitos=_filtros_do_serializer(AtividadesExportQuerySerializer),
     ),
     ExportJob.Tipo.UPFS: TipoExportacao(
-        "upfs", "UPFs", upf_export.EXPORT_COLUMNS, _linhas_upfs, None,
+        prefixo_arquivo="upfs",
+        titulo_planilha="UPFs",
+        colunas=upf_export.EXPORT_COLUMNS,
+        linhas=_linhas_upfs,
+        validar=upf_export.separar_parametros,
+        para_json=_filtros_upf_para_json,
+        filtros_aceitos=upf_export.FILTROS_ACEITOS,
     ),
 }
 
@@ -84,7 +134,7 @@ def gerar_arquivo(columns, rows, formato: str, titulo_planilha: str) -> bytes:
         for row in rows:
             writer.writerow([row[key] for key, _ in columns])
         # BOM para o Excel reconhecer UTF-8 ao abrir o CSV direto.
-        return ("﻿" + content.getvalue()).encode("utf-8")
+        return ("\ufeff" + content.getvalue()).encode("utf-8")
 
     from openpyxl import Workbook
 
@@ -108,48 +158,30 @@ def _montar_arquivo(tipo: str, formato: str, rows) -> Arquivo:
     )
 
 
-def _validar_parametros(tipo: str, params: dict) -> tuple[str, dict]:
-    """Valida `params` (filtros + `formato`) e devolve `(formato, opcoes)`,
-    com as opções já no tipo que a função de linhas do `tipo` espera."""
-    definicao = TIPOS[tipo]
-    if definicao.query_serializer is None:
-        return upf_export.separar_parametros(params)
-
-    serializer = definicao.query_serializer(data=params)
-    serializer.is_valid(raise_exception=True)
-    opcoes = dict(serializer.validated_data)
-    return opcoes.pop("formato"), opcoes
-
-
-def _filtros_para_json(tipo: str, opcoes: dict) -> dict:
-    if TIPOS[tipo].query_serializer is None:
-        return {chave: "" if valor is None else str(valor) for chave, valor in opcoes.items()}
-    return {
-        chave: valor.isoformat() if isinstance(valor, date) else valor
-        for chave, valor in opcoes.items()
-    }
-
-
 def validar_filtros(tipo: str, formato: str, filtros: dict) -> dict:
-    """Valida `filtros` para o `tipo` e devolve a versão serializável em JSON
-    que fica gravada no ExportJob."""
+    """Valida os `filtros` de um pedido assíncrono e devolve a forma gravada
+    no ExportJob. Diferente da rota síncrona, recusa chave desconhecida em
+    qualquer tipo: o corpo JSON é um contrato novo, sem cliente legado."""
+    definicao = TIPOS[tipo]
+    recusar_parametros_desconhecidos(filtros, definicao.filtros_aceitos)
     try:
-        _, opcoes = _validar_parametros(tipo, {**filtros, "formato": formato})
+        _, opcoes = definicao.validar({**filtros, "formato": formato})
     except ValidationError as exc:
         raise ValidationError({"filtros": exc.detail})
-    return _filtros_para_json(tipo, opcoes)
+    return definicao.para_json(opcoes)
 
 
 def exportar_sincrono(tipo: str, *, user, params: dict) -> Arquivo:
     """Arquivo gerado na própria requisição, a partir dos query params."""
-    formato, opcoes = _validar_parametros(tipo, params)
-    return _montar_arquivo(tipo, formato, TIPOS[tipo].linhas(user=user, **opcoes))
+    definicao = TIPOS[tipo]
+    formato, opcoes = definicao.validar(params)
+    return _montar_arquivo(tipo, formato, definicao.linhas(user=user, **opcoes))
 
 
 def exportar_upfs(*, user, params: dict) -> Arquivo | ExportJob:
     """Até `UPF_EXPORT_SYNC_LIMIT` registros devolve o arquivo; acima disso cria
     um ExportJob para o worker."""
-    formato, filtros = _validar_parametros(ExportJob.Tipo.UPFS, params)
+    formato, filtros = upf_export.separar_parametros(params)
     queryset = upf_export.upf_export_queryset(user=user, filtros=filtros)
 
     total = queryset.count()
@@ -158,7 +190,7 @@ def exportar_upfs(*, user, params: dict) -> Arquivo | ExportJob:
             user=user,
             tipo=ExportJob.Tipo.UPFS,
             formato=formato,
-            filtros=_filtros_para_json(ExportJob.Tipo.UPFS, filtros),
+            filtros=TIPOS[ExportJob.Tipo.UPFS].para_json(filtros),
             total_registros=total,
         )
     return _montar_arquivo(
@@ -184,26 +216,50 @@ def criar_exportacao(*, user, tipo: str, formato: str, filtros: dict, total_regi
         filtros=filtros,
         solicitante=user,
         total_registros=total_registros,
+        enfileirado_em=timezone.now(),
     )
     _enfileirar(job.pk)
     return job
 
 
+def _travados(agora) -> Q:
+    limite = agora - PRAZO_JOB_TRAVADO
+    return Q(status=ExportJob.Status.PENDENTE, enfileirado_em__lt=limite) | Q(
+        status=ExportJob.Status.PROCESSANDO, iniciado_em__lt=limite
+    )
+
+
 def repetir_exportacao(job: ExportJob) -> ExportJob:
-    if job.status != ExportJob.Status.ERRO:
+    """Reenfileira um job que terminou em `erro` ou que está travado (ver
+    `PRAZO_JOB_TRAVADO`) — o segundo caso cobre o intervalo até
+    `marcar_exportacoes_travadas` rodar."""
+    travado = ExportJob.objects.filter(_travados(timezone.now()), pk=job.pk).exists()
+    if job.status != ExportJob.Status.ERRO and not travado:
         raise ErroComCodigo(
             "exportacao_nao_repetivel",
-            "Só é possível repetir uma exportação que terminou com erro.",
+            "Só é possível repetir uma exportação que terminou com erro ou que parou de avançar.",
             status_code=status.HTTP_409_CONFLICT,
         )
     job.status = ExportJob.Status.PENDENTE
     job.progresso = 0
     job.erro = ""
+    job.enfileirado_em = timezone.now()
     job.iniciado_em = None
     job.concluido_em = None
-    job.save(update_fields=["status", "progresso", "erro", "iniciado_em", "concluido_em"])
+    job.save(update_fields=[
+        "status", "progresso", "erro", "enfileirado_em", "iniciado_em", "concluido_em",
+    ])
     _enfileirar(job.pk)
     return job
+
+
+def marcar_exportacoes_travadas() -> int:
+    agora = timezone.now()
+    return ExportJob.objects.filter(_travados(agora)).update(
+        status=ExportJob.Status.ERRO,
+        erro=MENSAGEM_JOB_TRAVADO,
+        concluido_em=agora,
+    )
 
 
 def arquivo_do_job(job: ExportJob) -> Arquivo:
@@ -245,9 +301,10 @@ def executar_exportacao(job_id: int) -> None:
         job.iniciado_em = timezone.now()
         job.save(update_fields=["status", "progresso", "iniciado_em"])
 
+    definicao = TIPOS[job.tipo]
     try:
-        formato, opcoes = _validar_parametros(job.tipo, {**job.filtros, "formato": job.formato})
-        rows = TIPOS[job.tipo].linhas(user=job.solicitante, **opcoes)
+        formato, opcoes = definicao.validar({**job.filtros, "formato": job.formato})
+        rows = definicao.linhas(user=job.solicitante, **opcoes)
         ExportJob.objects.filter(pk=job.pk).update(progresso=60, total_registros=len(rows))
         arquivo = _montar_arquivo(job.tipo, formato, rows)
     except (PermissionDenied, ValidationError, ErroComCodigo) as exc:

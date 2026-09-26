@@ -306,6 +306,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "sgp.tasks.limpar_exportacoes_expiradas",
         "schedule": crontab(minute=15),  # a cada hora; arquivos valem 24h
     },
+    "marcar_exportacoes_travadas": {
+        "task": "sgp.tasks.marcar_exportacoes_travadas",
+        "schedule": crontab(minute="*/10"),  # job parado há mais de 30 min vira erro
+    },
 }
 
 # E-MAIL

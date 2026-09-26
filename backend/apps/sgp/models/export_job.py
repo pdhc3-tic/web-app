@@ -52,6 +52,9 @@ class ExportJob(models.Model):
         verbose_name="Solicitante",
     )
     criado_em = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    # Última vez que o job foi para a fila (criação ou `repetir`): é a
+    # referência para decidir que um job `pendente` se perdeu no broker.
+    enfileirado_em = models.DateTimeField(null=True, blank=True, verbose_name="Enfileirado em")
     iniciado_em = models.DateTimeField(null=True, blank=True, verbose_name="Iniciado em")
     concluido_em = models.DateTimeField(null=True, blank=True, verbose_name="Concluído em")
     expira_em = models.DateTimeField(null=True, blank=True, verbose_name="Expira em")

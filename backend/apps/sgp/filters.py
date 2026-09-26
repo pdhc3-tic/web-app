@@ -54,7 +54,10 @@ class UPFFilter(django_filters.FilterSet):
     territorio = django_filters.NumberFilter(field_name="territorio_id")
     projeto = django_filters.NumberFilter(field_name="projeto_id")
     comunidade = django_filters.NumberFilter(field_name="comunidade_id")
-    ativo = django_filters.BooleanFilter()
+    # Estrito: um valor não reconhecido seria tratado como "não informado",
+    # mas a presença da chave já desliga o padrão de só ativas — o resultado
+    # seria a base inteira, ativas e inativas.
+    ativo = StrictBooleanFilter(widget=StrictBooleanWidget)
     cadastrado_de = django_filters.DateFilter(
         field_name="criado_em", lookup_expr="date__gte"
     )

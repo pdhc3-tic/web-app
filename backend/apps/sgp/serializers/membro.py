@@ -5,6 +5,7 @@ from rest_framework import serializers
 from apps.core.sensitive_fields import SensitiveFieldsSerializerMixin
 from apps.sgp.constants import SAUDE_CHOICES
 from apps.sgp.models import MembroFamilia, UPF
+from apps.sgp.services.access import upfs_acessiveis_ao_usuario
 from apps.sgp.validators import validate_cpf
 
 
@@ -121,9 +122,7 @@ class MembroDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSe
             qs = qs.exclude(pk=self.instance.pk)
         duplicado = qs.first()
         if duplicado:
-            user = self.context["request"].user
-            from apps.sgp.views import upfs_acessiveis_ao_usuario
-            upfs_visiveis = upfs_acessiveis_ao_usuario(user)
+            upfs_visiveis = upfs_acessiveis_ao_usuario(self.context["request"].user)
             if duplicado.upf_id in upfs_visiveis.values_list("pk", flat=True):
                 raise serializers.ValidationError(
                     "Já existe um membro cadastrado com este CPF: "

@@ -8,7 +8,7 @@ from rest_framework.exceptions import PermissionDenied
 
 from apps.core.models.user_profile import UserProfile
 from apps.core.services.permissions import user_has_role, user_role_slugs, user_states
-from apps.sgp.models import UPF
+from apps.sgp.models import UPF, Tecnico
 
 ROLES_COM_ESCOPO = ("super-admin", "ugp", "articulador-estadual", "adt-acr")
 
@@ -118,8 +118,9 @@ def upfs_acessiveis_ao_usuario(user, role_slugs=None, *, raise_on_no_role=False)
     para evitar refazer a checagem de roles do usuário em outra query.
 
     Usa `all_objects`: RLS territorial e soft-delete são preocupações
-    independentes — quem filtra por ativo=True é `UPFViewSet.filter_queryset`
-    (ou, no caso de `MembroViewSet.get_upf`, a checagem explícita de `upf.ativo`).
+    independentes — o padrão de só ativas fica em
+    `apps.sgp.filters.somente_ativas_sem_filtro_ativo` (listagem e exportação),
+    e quem precisa de uma UPF ativa específica checa `upf.ativo` por conta própria.
     """
     return scope_queryset(
         UPF.all_objects.all(),
@@ -128,4 +129,23 @@ def upfs_acessiveis_ao_usuario(user, role_slugs=None, *, raise_on_no_role=False)
         territory_lookup="territorio__in",
         role_slugs=role_slugs,
         raise_on_no_role=raise_on_no_role,
+    )
+
+
+def tecnicos_acessiveis_ao_usuario(user, role_slugs=None):
+    """Retorna queryset de Tecnicos acessíveis ao usuário conforme regras territoriais.
+
+    `Territory.estados` é `ArrayField` — `territorio__estados__overlap` é o
+    lookup Postgres equivalente ao antigo loop Python que cruzava
+    `Territory.objects.all()` contra os estados do usuário. `role_slugs`
+    pode vir pré-computado (ver `TecnicoViewSet.get_queryset`) para evitar
+    refazer a checagem de roles do usuário em outra query.
+    """
+    return scope_queryset(
+        Tecnico.objects.all(),
+        user,
+        state_lookup="territorio__estados__overlap",
+        territory_lookup="territorio__in",
+        role_slugs=role_slugs,
+        raise_on_no_role=False,
     )

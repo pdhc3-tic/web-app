@@ -1,8 +1,13 @@
+from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
 from apps.core.models import User
 from apps.sgp.exceptions import ErroComCodigo
 from apps.sgp.models import Tecnico
+
+
+def _erro_tecnico_duplicado():
+    return ErroComCodigo("tecnico_duplicado", "Este usuário já está cadastrado como técnico.")
 
 
 class TecnicoSerializer(serializers.ModelSerializer):
@@ -33,9 +38,7 @@ class TecnicoSerializer(serializers.ModelSerializer):
         if instance is not None:
             outros = outros.exclude(pk=instance.pk)
         if outros.exists():
-            raise ErroComCodigo(
-                "tecnico_duplicado", "Este usuário já está cadastrado como técnico."
-            )
+            raise _erro_tecnico_duplicado()
 
         # OSC sem território cadastrado não tem área de atuação conhecida, então
         # não há como afirmar conflito.
@@ -47,6 +50,22 @@ class TecnicoSerializer(serializers.ModelSerializer):
                 )
 
         return attrs
+
+    # A checagem de `validate` não fecha a corrida entre dois cadastros
+    # simultâneos do mesmo usuário; quem perde bate na unicidade de `user`.
+    def create(self, validated_data):
+        try:
+            with transaction.atomic():
+                return super().create(validated_data)
+        except IntegrityError:
+            raise _erro_tecnico_duplicado()
+
+    def update(self, instance, validated_data):
+        try:
+            with transaction.atomic():
+                return super().update(instance, validated_data)
+        except IntegrityError:
+            raise _erro_tecnico_duplicado()
 
 
 class UsuarioElegivelSerializer(serializers.ModelSerializer):

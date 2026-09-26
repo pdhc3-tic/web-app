@@ -61,12 +61,6 @@ STATUS_CHOICES = [
 # Estados terminais — não permitem mais transições
 STATUS_TERMINAIS = {"concluido", "concluido_sem_evidencia", "nao_realizada", "cancelada"}
 
-
-def filtro_atrasada(agora) -> models.Q:
-    """Atividade ainda não encerrada cujo fim já passou — mesma regra de
-    `Activity.esta_atrasada`, em forma de filtro de queryset."""
-    return models.Q(data_fim__lt=agora) & ~models.Q(status__in=STATUS_TERMINAIS)
-
 # Tabela de transições permitidas: status_atual → {próximos válidos}
 STATUS_TRANSITIONS: dict[str, set[str]] = {
     "planejado": {"agendado", "cancelada"},
@@ -85,6 +79,12 @@ GOOGLE_CALENDAR_SYNC_STATUS_CHOICES = [
     ("ok", "OK"),
     ("erro", "Erro"),
 ]
+
+
+def filtro_atrasada(agora) -> models.Q:
+    """Atividade ainda não encerrada cujo fim já passou — mesma regra de
+    `Activity.esta_atrasada`, em forma de filtro de queryset."""
+    return models.Q(data_fim__lt=agora) & ~models.Q(status__in=STATUS_TERMINAIS)
 
 
 # ---------------------------------------------------------------------------
@@ -251,11 +251,6 @@ class Activity(SoftDeleteModel, ScaSyncableModel):
         return self.municipio.territory_id if self.municipio_id else None
 
     # ── Lógica de evidências (BE-2 stub) ──────────────────────────────────────
-    def esta_atrasada(self, agora=None) -> bool:
-        if self.status in STATUS_TERMINAIS:
-            return False
-        return self.data_fim < (agora or timezone.now())
-
     def has_evidencias(self) -> bool:
         """
         Retorna True se a atividade possui ao menos 1 foto ou 1 documento
@@ -271,6 +266,11 @@ class Activity(SoftDeleteModel, ScaSyncableModel):
     # ── Utilitário de status ───────────────────────────────────────────────────
     def get_transicoes_permitidas(self) -> set[str]:
         return STATUS_TRANSITIONS.get(self.status, set())
+
+    def esta_atrasada(self, agora=None) -> bool:
+        if self.status in STATUS_TERMINAIS:
+            return False
+        return self.data_fim < (agora or timezone.now())
 
     class Meta(SoftDeleteModel.Meta, ScaSyncableModel.Meta):
         verbose_name = "Atividade"

@@ -17,12 +17,8 @@ from apps.sgp.views.membro import (
 from apps.sgp.tasks import sync_activity_to_google_calendar
 from apps.sgp.views.production import ProducaoConsolidadaViewSet, ProductionViewSet
 from apps.sgp.views.projeto import ProjetoViewSet
-from apps.sgp.views.tecnico import TecnicoViewSet, tecnicos_acessiveis_ao_usuario
-from apps.sgp.views.upf import (
-    UPF_ACCESS_ROLES,
-    UPFViewSet,
-    upfs_acessiveis_ao_usuario,
-)
+from apps.sgp.views.tecnico import TecnicoViewSet
+from apps.sgp.views.upf import UPF_ACCESS_ROLES, UPFViewSet
 from apps.sgp.views.upf_documentos import UPFDocumentViewSet
 from apps.sgp.views.upf_foto import UPFPhotoMixin
 
@@ -51,6 +47,4 @@ __all__ = [
     "_membros_csv_response",
     "data_limite_aniversario",
     "sync_activity_to_google_calendar",
-    "tecnicos_acessiveis_ao_usuario",
-    "upfs_acessiveis_ao_usuario",
 ]
