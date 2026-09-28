@@ -60,6 +60,14 @@ class TestCadastro:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "codigo" in response.data
 
+    def test_codigo_duplicado_com_outra_caixa_retorna_400(self, auth_client, payload):
+        auth_client.post(URL, {**payload, "codigo": "IND-TESTE"}, format="json")
+
+        response = auth_client.post(URL, {**payload, "codigo": " ind-teste "}, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "codigo" in response.data
+
     @pytest.mark.parametrize("campo,valor", [
         ("ods_ids", [99]),
         ("ods_ids", "1"),

@@ -1,3 +1,5 @@
+import copy
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
@@ -5,7 +7,10 @@ from apps.core.services.permissions import user_has_role
 from apps.sgp.constants import ODS_CHOICES
 from apps.sgp.models import Indicator, WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
 from apps.sgp.models.indicator import DESAGREGACAO_CHOICES, FORMA_MANUAL
-from apps.sgp.services.workplan_access import filter_workplan_actions_for_user
+from apps.sgp.services.workplan_access import (
+    filter_workplan_actions_for_user,
+    filter_workplan_submetas_for_user,
+)
 
 
 def _validar_ods(value):
@@ -22,13 +27,38 @@ def _validar_ods(value):
 
 def _clean_do_model(instance, attrs):
     """Roda `clean()` do model sobre o estado resultante do pedido, para que as
-    regras de consistência valham igual no admin e na API."""
+    regras de consistência valham igual no admin e na API.
+
+    Trabalha numa cópia: a instância original ainda é lida depois da validação
+    (auditoria de "antes", detecção de mudança de número) e não pode chegar lá
+    com os valores novos."""
+    candidato = copy.copy(instance)
     for campo, valor in attrs.items():
-        setattr(instance, campo, valor)
+        setattr(candidato, campo, valor)
     try:
-        instance.clean()
+        candidato.clean()
     except DjangoValidationError as exc:
         raise serializers.ValidationError(exc.message_dict)
+
+
+def _exigir_numero_unico(queryset, instance, mensagem):
+    if instance is not None:
+        queryset = queryset.exclude(pk=instance.pk)
+    if queryset.exists():
+        raise serializers.ValidationError({"numero": mensagem})
+
+
+def _exigir_contidos(filhos, inicio, fim, mensagem):
+    """400 quando o novo período do nó deixa filhos (Submetas ou Ações) de fora."""
+    fora = filhos.exclude(data_inicio__gte=inicio, data_fim__lte=fim)
+    if fora.exists():
+        raise serializers.ValidationError({
+            "data_inicio": (
+                f"{mensagem}: "
+                + ", ".join(fora.order_by("numero").values_list("numero", flat=True))
+                + "."
+            )
+        })
 
 
 # ---------------------------------------------------------------------------
@@ -55,13 +85,22 @@ class IndicatorSerializer(serializers.ModelSerializer):
             "criado_por", "criado_em", "atualizado_em",
         ]
         read_only_fields = ["id", "criado_por", "criado_em", "atualizado_em"]
+        # A unicidade é checada em `validate_codigo`, depois de normalizar para
+        # maiúsculas; o validador padrão compararia o valor ainda cru.
+        extra_kwargs = {"codigo": {"validators": []}}
 
     def get_total_acoes(self, obj) -> int:
         anotado = getattr(obj, "_total_acoes", None)
         return anotado if anotado is not None else obj.acoes.count()
 
     def validate_codigo(self, value):
-        return value.strip().upper()
+        codigo = value.strip().upper()
+        existentes = Indicator.objects.filter(codigo=codigo)
+        if self.instance is not None:
+            existentes = existentes.exclude(pk=self.instance.pk)
+        if existentes.exists():
+            raise serializers.ValidationError("Já existe um Indicador com este código.")
+        return codigo
 
     def validate_ods_ids(self, value):
         return _validar_ods(value)
@@ -104,6 +143,11 @@ class WorkPlanAcaoSerializer(serializers.ModelSerializer):
     )
     custo_unitario_realizado = serializers.DecimalField(
         max_digits=14, decimal_places=2, read_only=True, allow_null=True
+    )
+    # Decimal na saída, como antes das formas de apuração; na entrada (só na
+    # forma manual) precisa ser inteiro, porque o campo guarda unidades.
+    quantidade_realizada = serializers.DecimalField(
+        max_digits=12, decimal_places=2, min_value=0, required=False
     )
     status_execucao = serializers.CharField(read_only=True)
 
@@ -162,16 +206,19 @@ class WorkPlanAcaoSerializer(serializers.ModelSerializer):
 
         submeta = attrs.get("submeta", instance.submeta if instance else None)
         numero = attrs.get("numero", instance.numero if instance else None)
-        duplicada = WorkPlanAcao.objects.filter(submeta=submeta, numero=numero)
-        if instance is not None:
-            duplicada = duplicada.exclude(pk=instance.pk)
-        if duplicada.exists():
-            raise serializers.ValidationError(
-                {"numero": "Já existe uma Ação com este número nesta Submeta."}
-            )
+        _exigir_numero_unico(
+            WorkPlanAcao.objects.filter(submeta=submeta, numero=numero),
+            instance,
+            "Já existe uma Ação com este número nesta Submeta.",
+        )
 
         _clean_do_model(instance or WorkPlanAcao(), attrs)
         return attrs
+
+    def validate_quantidade_realizada(self, value):
+        if value != value.to_integral_value():
+            raise serializers.ValidationError("Informe um número inteiro de unidades.")
+        return int(value)
 
 
 class WorkPlanAcaoListSerializer(WorkPlanAcaoSerializer):
@@ -216,28 +263,21 @@ class WorkPlanSubmetaSerializer(serializers.ModelSerializer):
         instance = self.instance
         meta = attrs.get("meta", instance.meta if instance else None)
         numero = attrs.get("numero", instance.numero if instance else None)
-        duplicada = WorkPlanSubmeta.objects.filter(meta=meta, numero=numero)
-        if instance is not None:
-            duplicada = duplicada.exclude(pk=instance.pk)
-        if duplicada.exists():
-            raise serializers.ValidationError(
-                {"numero": "Já existe uma Submeta com este número nesta Meta."}
-            )
+        _exigir_numero_unico(
+            WorkPlanSubmeta.objects.filter(meta=meta, numero=numero),
+            instance,
+            "Já existe uma Submeta com este número nesta Meta.",
+        )
 
         _clean_do_model(instance or WorkPlanSubmeta(), attrs)
 
         if instance is not None:
-            inicio = attrs.get("data_inicio", instance.data_inicio)
-            fim = attrs.get("data_fim", instance.data_fim)
-            fora = instance.acoes.exclude(data_inicio__gte=inicio, data_fim__lte=fim)
-            if fora.exists():
-                raise serializers.ValidationError({
-                    "data_inicio": (
-                        "O novo período deixa Ações fora da Submeta: "
-                        + ", ".join(fora.order_by("numero").values_list("numero", flat=True))
-                        + "."
-                    )
-                })
+            _exigir_contidos(
+                instance.acoes.all(),
+                attrs.get("data_inicio", instance.data_inicio),
+                attrs.get("data_fim", instance.data_fim),
+                "O novo período deixa Ações fora da Submeta",
+            )
         return attrs
 
 
@@ -363,36 +403,42 @@ class WorkPlanMetaDetailSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         instance = self.instance
         if instance is not None:
-            inicio = attrs.get("data_inicio", instance.data_inicio)
-            fim = attrs.get("data_fim", instance.data_fim)
-            fora = instance.submetas.exclude(data_inicio__gte=inicio, data_fim__lte=fim)
-            if fora.exists():
-                raise serializers.ValidationError({
-                    "data_inicio": (
-                        "O novo período deixa Submetas fora da Meta: "
-                        + ", ".join(fora.order_by("numero").values_list("numero", flat=True))
-                        + "."
-                    )
-                })
+            _exigir_contidos(
+                instance.submetas.all(),
+                attrs.get("data_inicio", instance.data_inicio),
+                attrs.get("data_fim", instance.data_fim),
+                "O novo período deixa Submetas fora da Meta",
+            )
         return attrs
 
+    def _acoes_serializadas(self, obj) -> list[dict]:
+        """Ações visíveis da Meta, serializadas uma vez só: alimentam `acoes`
+        (lista plana, como antes das Submetas) e as `acoes` de cada Submeta."""
+        cache = self.__dict__.setdefault("_acoes_por_meta", {})
+        if obj.pk not in cache:
+            cache[obj.pk] = WorkPlanAcaoSerializer(
+                _acoes_visiveis(obj.acoes.all(), self.context),
+                many=True,
+                context=self.context,
+            ).data
+        return cache[obj.pk]
+
     def get_submetas(self, obj):
+        submetas = obj.submetas.all()
+        request = self.context.get("request")
+        if request is not None and request.user.is_authenticated:
+            submetas = filter_workplan_submetas_for_user(submetas, request.user)
+        acoes = self._acoes_serializadas(obj)
         return [
             {
                 **WorkPlanSubmetaSerializer(submeta, context=self.context).data,
-                "acoes": WorkPlanAcaoSerializer(
-                    _acoes_visiveis(submeta.acoes.all(), self.context),
-                    many=True,
-                    context=self.context,
-                ).data,
+                "acoes": [acao for acao in acoes if acao["submeta"] == submeta.pk],
             }
-            for submeta in obj.submetas.all()
+            for submeta in submetas
         ]
 
     def get_acoes(self, obj):
-        return WorkPlanAcaoSerializer(
-            _acoes_visiveis(obj.acoes.all(), self.context), many=True, context=self.context
-        ).data
+        return self._acoes_serializadas(obj)
 
 
 # ---------------------------------------------------------------------------
@@ -452,8 +498,8 @@ class _NoVisaoIndicadorSerializer(serializers.Serializer):
     numero = serializers.CharField()
     titulo = serializers.CharField()
     quantidade_planejada = serializers.DecimalField(max_digits=14, decimal_places=2)
-    quantidade_realizada = serializers.DecimalField(max_digits=14, decimal_places=2)
-    percentual_realizado = serializers.DecimalField(max_digits=7, decimal_places=2)
+    quantidade_realizada = serializers.DecimalField(max_digits=14, decimal_places=2, allow_null=True)
+    percentual_realizado = serializers.DecimalField(max_digits=7, decimal_places=2, allow_null=True)
 
 
 class _TerritorioVisaoIndicadorSerializer(serializers.Serializer):
@@ -465,12 +511,14 @@ class _TerritorioVisaoIndicadorSerializer(serializers.Serializer):
 class VisaoIndicadorSerializer(serializers.Serializer):
     """Planejado e realizado de um Indicador somando todas as Ações que o usam.
     `por_territorio` só traz realizado (o planejado não é territorial) e deixa
-    de fora as Ações de apuração manual, que não têm recorte territorial."""
+    de fora as Ações de apuração manual, que não têm recorte territorial; pelo
+    mesmo motivo, o realizado de um Indicador manual vem nulo quando se pede
+    território ou período."""
 
     indicador = IndicatorResumoSerializer()
     quantidade_planejada = serializers.DecimalField(max_digits=14, decimal_places=2)
-    quantidade_realizada = serializers.DecimalField(max_digits=14, decimal_places=2)
-    percentual_realizado = serializers.DecimalField(max_digits=7, decimal_places=2)
+    quantidade_realizada = serializers.DecimalField(max_digits=14, decimal_places=2, allow_null=True)
+    percentual_realizado = serializers.DecimalField(max_digits=7, decimal_places=2, allow_null=True)
     por_meta = _NoVisaoIndicadorSerializer(many=True)
     por_submeta = _NoVisaoIndicadorSerializer(many=True)
     por_territorio = _TerritorioVisaoIndicadorSerializer(many=True)

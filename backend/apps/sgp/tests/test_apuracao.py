@@ -20,6 +20,17 @@ def _acao(forma, **kwargs):
     return WorkPlanAcaoFactory(indicador=IndicatorFactory(forma_apuracao=forma), **kwargs)
 
 
+@pytest.fixture
+def nova_upf(municipio_rn):
+    """UFPA com território: a UPFFactory sozinha cria município sem território."""
+    return lambda: UPFFactory(municipio=municipio_rn)
+
+
+@pytest.fixture
+def novo_membro(nova_upf):
+    return lambda: MembroFactory(upf=nova_upf())
+
+
 def _realizado(acao):
     acao.refresh_from_db(fields=["quantidade_realizada"])
     return acao.quantidade_realizada
@@ -59,9 +70,9 @@ class TestContagemDeAtividades:
 
 
 class TestSomaDeUfpas:
-    def test_ufpa_em_varias_atividades_conta_uma_vez(self):
+    def test_ufpa_em_varias_atividades_conta_uma_vez(self, nova_upf):
         acao = _acao("soma_ufpas")
-        repetida, outra = UPFFactory(), UPFFactory()
+        repetida, outra = nova_upf(), nova_upf()
         primeira = ActivityFactory(acao=acao, status="concluido")
         segunda = ActivityFactory(acao=acao, status="concluido")
         primeira.upfs_participantes.add(repetida, outra)
@@ -69,10 +80,10 @@ class TestSomaDeUfpas:
 
         assert _realizado(acao) == 2
 
-    def test_so_atividades_concluidas_contam(self):
+    def test_so_atividades_concluidas_contam(self, nova_upf):
         acao = _acao("soma_ufpas")
         pendente = ActivityFactory(acao=acao, status="em_andamento")
-        pendente.upfs_participantes.add(UPFFactory())
+        pendente.upfs_participantes.add(nova_upf())
 
         assert _realizado(acao) == 0
 
@@ -80,9 +91,9 @@ class TestSomaDeUfpas:
         pendente.save()
         assert _realizado(acao) == 1
 
-    def test_remover_e_limpar_vinculos_pela_atividade(self):
+    def test_remover_e_limpar_vinculos_pela_atividade(self, nova_upf):
         acao = _acao("soma_ufpas")
-        upf_a, upf_b = UPFFactory(), UPFFactory()
+        upf_a, upf_b = nova_upf(), nova_upf()
         atividade = ActivityFactory(acao=acao, status="concluido")
         atividade.upfs_participantes.add(upf_a, upf_b)
 
@@ -92,9 +103,9 @@ class TestSomaDeUfpas:
         atividade.upfs_participantes.clear()
         assert _realizado(acao) == 0
 
-    def test_alterar_vinculos_pelo_lado_da_ufpa(self):
+    def test_alterar_vinculos_pelo_lado_da_ufpa(self, nova_upf):
         acao = _acao("soma_ufpas")
-        upf = UPFFactory()
+        upf = nova_upf()
         atividade = ActivityFactory(acao=acao, status="concluido")
 
         upf.atividades.add(atividade)
@@ -105,9 +116,9 @@ class TestSomaDeUfpas:
 
 
 class TestSomaDeParticipantes:
-    def test_membro_em_varias_atividades_conta_uma_vez(self):
+    def test_membro_em_varias_atividades_conta_uma_vez(self, novo_membro):
         acao = _acao("soma_participantes")
-        membro, outro = MembroFactory(), MembroFactory()
+        membro, outro = novo_membro(), novo_membro()
         primeira = ActivityFactory(acao=acao, status="concluido")
         segunda = ActivityFactory(acao=acao, status="concluido")
         primeira.membros_participantes.add(membro, outro)
@@ -115,9 +126,9 @@ class TestSomaDeParticipantes:
 
         assert _realizado(acao) == 2
 
-    def test_remover_pelo_lado_do_membro(self):
+    def test_remover_pelo_lado_do_membro(self, novo_membro):
         acao = _acao("soma_participantes")
-        membro = MembroFactory()
+        membro = novo_membro()
         atividade = ActivityFactory(acao=acao, status="concluido")
         atividade.membros_participantes.add(membro)
 
@@ -141,7 +152,17 @@ class TestManual:
         )
 
         assert response.status_code == status.HTTP_200_OK, response.data
+        assert response.data["quantidade_realizada"] == "12.00"
         assert _realizado(acao) == 12
+
+    def test_lancamento_manual_precisa_ser_inteiro(self, auth_client):
+        acao = _acao("manual")
+
+        response = auth_client.patch(
+            f"/api/v1/acoes/{acao.pk}/", {"quantidade_realizada": "2.50"}, format="json"
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_lancamento_manual_recusado_nas_outras_formas(self, auth_client):
         acao = _acao("soma_ufpas")
@@ -154,11 +175,55 @@ class TestManual:
         assert "quantidade_realizada" in response.data
 
 
+class TestTrocaDeIndicadorDaAcao:
+    def test_reapura_pela_forma_do_novo_indicador(self, auth_client, nova_upf):
+        acao = _acao("contagem_atividades")
+        upf = nova_upf()
+        for _ in range(3):
+            ActivityFactory(acao=acao, status="concluido").upfs_participantes.add(upf)
+        assert _realizado(acao) == 3
+
+        response = auth_client.patch(
+            f"/api/v1/acoes/{acao.pk}/",
+            {"indicador": IndicatorFactory(forma_apuracao="soma_ufpas").pk},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_200_OK, response.data
+        assert response.data["quantidade_realizada"] == "1.00"
+        assert _realizado(acao) == 1
+
+    def test_sair_da_forma_manual_descarta_o_lancamento(self, auth_client):
+        acao = _acao("manual", quantidade_realizada=40)
+        ActivityFactory(acao=acao, status="concluido")
+
+        auth_client.patch(
+            f"/api/v1/acoes/{acao.pk}/",
+            {"indicador": IndicatorFactory(forma_apuracao="contagem_atividades").pk},
+            format="json",
+        )
+
+        assert _realizado(acao) == 1
+
+
+class TestExclusaoDeParticipantes:
+    def test_excluir_membro_reapura(self, novo_membro):
+        acao = _acao("soma_participantes")
+        membro, outro = novo_membro(), novo_membro()
+        atividade = ActivityFactory(acao=acao, status="concluido")
+        atividade.membros_participantes.add(membro, outro)
+        assert _realizado(acao) == 2
+
+        membro.delete()
+
+        assert _realizado(acao) == 1
+
+
 class TestReconciliacao:
-    def test_check_only_detecta_e_correcao_ajusta(self):
+    def test_check_only_detecta_e_correcao_ajusta(self, nova_upf):
         acao = _acao("soma_ufpas")
         atividade = ActivityFactory(acao=acao, status="concluido")
-        atividade.upfs_participantes.add(UPFFactory(), UPFFactory())
+        atividade.upfs_participantes.add(nova_upf(), nova_upf())
         WorkPlanAcao.objects.filter(pk=acao.pk).update(quantidade_realizada=9)
 
         with pytest.raises(CommandError, match="apuração dá 2"):

@@ -204,8 +204,8 @@ class WorkPlanSubmetaFactory(factory.django.DjangoModelFactory):
 
 
 class WorkPlanAcaoFactory(factory.django.DjangoModelFactory):
-    """Aceita `meta=` como antes das Submetas: sem `submeta=`, cria uma Submeta
-    nessa Meta. A Meta gravada na Ação sempre vem da Submeta."""
+    """Com `meta=` e sem `submeta=`, cria uma Submeta nessa Meta. A Meta
+    gravada na Ação sempre vem da Submeta."""
 
     class Meta:
         model = WorkPlanAcao

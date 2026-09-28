@@ -77,9 +77,9 @@ def enrich_dashboard_action(
     valor_total = Decimal(action.valor_total or ZERO)
     valor_executado = Decimal(action.valor_executado or ZERO)
 
-    percentual_realizado = _percentual(quantidade_realizada, quantidade_planejada)
+    percentual_realizado = percentual(quantidade_realizada, quantidade_planejada)
     progresso_esperado = _expected_progress(action.data_inicio, action.data_fim, today)
-    percentual_financeiro = _percentual(valor_executado, valor_total)
+    percentual_financeiro = percentual(valor_executado, valor_total)
 
     action.dashboard_quantidade_realizada = quantidade_realizada
     action.dashboard_percentual_realizado = _round_percentage(percentual_realizado)
@@ -115,20 +115,18 @@ def consolidar_no(
     acoes: Iterable[WorkPlanAcao],
     data_inicio: date,
     data_fim: date,
-    today: date | None = None,
-    limiares: LimiaresSemaforo | None = None,
+    today: date,
+    limiares: LimiaresSemaforo,
 ) -> ConsolidadoNo:
-    today = today or date.today()
-    limiares = limiares or limiares_semaforo()
     acoes = list(acoes)
     planejado = sum((Decimal(a.quantidade_planejada) for a in acoes), ZERO)
     realizado = sum((a.dashboard_quantidade_realizada for a in acoes), ZERO)
     valor_total = sum((Decimal(a.valor_total) for a in acoes), ZERO)
     valor_executado = sum((a.dashboard_valor_executado for a in acoes), ZERO)
 
-    percentual_realizado = _percentual(realizado, planejado)
+    percentual_realizado = percentual(realizado, planejado)
     progresso_esperado = _expected_progress(data_inicio, data_fim, today)
-    percentual_financeiro = _percentual(valor_executado, valor_total)
+    percentual_financeiro = percentual(valor_executado, valor_total)
     concluido = bool(acoes) and all(
         a.dashboard_status_execucao == "concluida" for a in acoes
     )
@@ -138,9 +136,7 @@ def consolidar_no(
         percentual_realizado=_round_percentage(percentual_realizado),
         progresso_esperado=_round_percentage(progresso_esperado),
         semaforo=_semaphore(percentual_realizado, progresso_esperado),
-        status_execucao=(
-            "concluida" if concluido else "em_atraso" if today > data_fim else "no_prazo"
-        ),
+        status_execucao=_status(concluido, data_fim, today),
         valor_total=valor_total,
         valor_executado=valor_executado,
         percentual_financeiro=_round_percentage(percentual_financeiro),
@@ -148,12 +144,15 @@ def consolidar_no(
     )
 
 
-def arvore_do_painel(acoes: Iterable[WorkPlanAcao], today: date | None = None) -> list[dict]:
+def arvore_do_painel(
+    acoes: Iterable[WorkPlanAcao],
+    limiares: LimiaresSemaforo,
+    today: date | None = None,
+) -> list[dict]:
     """Agrupa Ações já enriquecidas em Meta → Submeta, com o consolidado de cada
     nó calculado sobre as Ações recebidas (o filtro de status do painel, se
     aplicado, vale também para os consolidados)."""
     today = today or date.today()
-    limiares = limiares_semaforo()
     metas: dict[int, dict] = {}
     for acao in acoes:
         grupo = metas.setdefault(acao.meta_id, {
@@ -189,10 +188,16 @@ def arvore_do_painel(acoes: Iterable[WorkPlanAcao], today: date | None = None) -
     return arvore
 
 
-def _percentual(parte: Decimal, total: Decimal) -> Decimal:
+def percentual(parte: Decimal, total: Decimal) -> Decimal:
+    """Percentual sem arredondar, para comparar com limiares; exibição passa por
+    `percentual_arredondado`."""
     if total <= ZERO:
         return ZERO
-    return (parte / total) * ONE_HUNDRED
+    return (Decimal(parte) / total) * ONE_HUNDRED
+
+
+def percentual_arredondado(parte: Decimal, total: Decimal) -> Decimal:
+    return _round_percentage(percentual(parte, total))
 
 
 def _expected_progress(data_inicio: date, data_fim: date, today: date) -> Decimal:
@@ -222,7 +227,11 @@ def _execution_status(
     data_fim: date,
     today: date,
 ) -> str:
-    if quantidade_realizada >= quantidade_planejada:
+    return _status(quantidade_realizada >= quantidade_planejada, data_fim, today)
+
+
+def _status(concluido: bool, data_fim: date, today: date) -> str:
+    if concluido:
         return "concluida"
     if today > data_fim:
         return "em_atraso"

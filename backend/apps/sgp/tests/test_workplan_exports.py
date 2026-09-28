@@ -49,9 +49,10 @@ class TestWorkPlanExport:
         content = response.content.decode("utf-8-sig")
         rows = list(csv.reader(StringIO(content)))
         assert rows[0] == [label for _, label in EXPORT_COLUMNS]
-        assert rows[1][0] == "1 - Meta de exportação"
-        assert rows[1][1] == f"{action.numero} - {action.descricao}"
-        assert rows[1][6] == "1"
+        linha = dict(zip(rows[0], rows[1]))
+        assert linha["Meta"] == "1 - Meta de exportação"
+        assert linha["Ação"] == f"{action.numero} - {action.descricao}"
+        assert linha["Quantidade realizada"] == "1"
 
     def test_xlsx_opens_and_has_same_columns(self, auth_client, municipio):
         meta = WorkPlanMetaFactory(numero=1)
@@ -65,7 +66,9 @@ class TestWorkPlanExport:
         worksheet = workbook.active
         rows = list(worksheet.iter_rows(values_only=True))
         assert list(rows[0]) == [label for _, label in EXPORT_COLUMNS]
-        assert rows[1][1] == f"{action.numero} - {action.descricao}"
+        linha = dict(zip(rows[0], rows[1]))
+        assert linha["Ação"] == f"{action.numero} - {action.descricao}"
+        assert linha["Submeta"] == f"{action.submeta.numero} - {action.submeta.titulo}"
 
     def test_rejects_unsupported_format(self, auth_client):
         response = auth_client.get(f"{EXPORT_URL}?formato=pdf")

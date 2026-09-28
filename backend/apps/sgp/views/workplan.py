@@ -153,7 +153,7 @@ class WorkPlanDashboardView(APIView):
                             grupo["acoes"], many=True
                         ).data,
                     }
-                    for grupo in arvore_do_painel(actions)
+                    for grupo in arvore_do_painel(actions, limiares)
                 ],
             })
         except PermissionDenied:
@@ -192,7 +192,9 @@ class WorkPlanMetaViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = WorkPlanMeta.objects.annotate(
             _valor_total=Sum(F("acoes__quantidade_planejada") * F("acoes__valor_unitario"))
-        ).prefetch_related("submetas__acoes")
+        )
+        if self.action == "retrieve":
+            qs = qs.prefetch_related("submetas__acoes")
 
         user = self.request.user
         if not user.is_authenticated:
@@ -323,59 +325,10 @@ class WorkPlanAcaoViewSet(viewsets.ModelViewSet):
         return filter_workplan_actions_for_user(qs, user)
 
     def perform_create(self, serializer):
-        instance = serializer.save()
-        AuditLog.objects.create(
-            user=self.request.user,
-            acao="WorkPlanAcao.create",
-            modulo="sgp",
-            entidade="WorkPlanAcao",
-            entidade_id=str(instance.pk),
-            valores_novos={
-                "meta_id": instance.meta_id,
-                "submeta_id": instance.submeta_id,
-                "indicador_id": instance.indicador_id,
-                "numero": instance.numero,
-                "descricao": instance.descricao,
-                "quantidade_planejada": str(instance.quantidade_planejada),
-                "valor_unitario": str(instance.valor_unitario),
-            },
-            ip=self.request.META.get("REMOTE_ADDR"),
-            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
-        )
+        workplan_cadastro.criar_acao(serializer, request=self.request)
 
     def perform_update(self, serializer):
-        old = self.get_object()
-        valores_anteriores = {
-            "meta_id": old.meta_id,
-            "submeta_id": old.submeta_id,
-            "indicador_id": old.indicador_id,
-            "numero": old.numero,
-            "descricao": old.descricao,
-            "quantidade_planejada": str(old.quantidade_planejada),
-            "quantidade_realizada": old.quantidade_realizada,
-            "valor_unitario": str(old.valor_unitario),
-        }
-        instance = serializer.save()
-        AuditLog.objects.create(
-            user=self.request.user,
-            acao="WorkPlanAcao.update",
-            modulo="sgp",
-            entidade="WorkPlanAcao",
-            entidade_id=str(instance.pk),
-            valores_anteriores=valores_anteriores,
-            valores_novos={
-                "meta_id": instance.meta_id,
-                "submeta_id": instance.submeta_id,
-                "indicador_id": instance.indicador_id,
-                "numero": instance.numero,
-                "descricao": instance.descricao,
-                "quantidade_planejada": str(instance.quantidade_planejada),
-                "quantidade_realizada": instance.quantidade_realizada,
-                "valor_unitario": str(instance.valor_unitario),
-            },
-            ip=self.request.META.get("REMOTE_ADDR"),
-            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
-        )
+        workplan_cadastro.atualizar_acao(serializer, request=self.request)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()

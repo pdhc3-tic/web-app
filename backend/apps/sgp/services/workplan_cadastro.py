@@ -2,6 +2,7 @@
 único registro: Indicador em uso, recálculo ao trocar a forma de apuração e
 Ações que acompanham a Submeta quando ela muda de número ou de Meta."""
 
+from django.db import transaction
 from rest_framework import status
 
 from apps.core.services.audit import log_audit
@@ -22,6 +23,21 @@ def _snapshot_indicador(indicador) -> dict:
     }
 
 
+def _snapshot_acao(acao) -> dict:
+    return {
+        "meta_id": acao.meta_id,
+        "submeta_id": acao.submeta_id,
+        "indicador_id": acao.indicador_id,
+        "numero": acao.numero,
+        "descricao": acao.descricao,
+        "quantidade_planejada": str(acao.quantidade_planejada),
+        "quantidade_realizada": acao.quantidade_realizada,
+        "valor_unitario": str(acao.valor_unitario),
+        "data_inicio": str(acao.data_inicio),
+        "data_fim": str(acao.data_fim),
+    }
+
+
 def _snapshot_submeta(submeta) -> dict:
     return {
         "meta_id": submeta.meta_id,
@@ -34,6 +50,7 @@ def _snapshot_submeta(submeta) -> dict:
     }
 
 
+@transaction.atomic
 def criar_indicador(serializer, *, request):
     serializer.validated_data.pop("confirmar_recalculo", None)
     indicador = serializer.save(criado_por=request.user)
@@ -44,6 +61,7 @@ def criar_indicador(serializer, *, request):
     return indicador
 
 
+@transaction.atomic
 def atualizar_indicador(serializer, *, request):
     """Trocar a forma de apuração de um Indicador com Ações recalcula as
     quantidades já reportadas (SGP §5.4), então exige confirmação explícita."""
@@ -74,6 +92,7 @@ def atualizar_indicador(serializer, *, request):
     return indicador
 
 
+@transaction.atomic
 def excluir_indicador(indicador, *, request):
     if indicador.acoes.exists():
         raise ErroComCodigo(
@@ -89,6 +108,7 @@ def excluir_indicador(indicador, *, request):
     indicador.delete()
 
 
+@transaction.atomic
 def criar_submeta(serializer, *, request):
     submeta = serializer.save(criado_por=request.user)
     log_audit(
@@ -99,6 +119,7 @@ def criar_submeta(serializer, *, request):
     return submeta
 
 
+@transaction.atomic
 def atualizar_submeta(serializer, *, request):
     submeta = serializer.instance
     antes = _snapshot_submeta(submeta)
@@ -120,6 +141,7 @@ def atualizar_submeta(serializer, *, request):
     return submeta
 
 
+@transaction.atomic
 def excluir_submeta(submeta, *, request):
     if submeta.acoes.exists():
         raise ErroComCodigo(
@@ -133,3 +155,31 @@ def excluir_submeta(submeta, *, request):
         valores_anteriores=_snapshot_submeta(submeta), request=request,
     )
     submeta.delete()
+
+
+@transaction.atomic
+def criar_acao(serializer, *, request):
+    acao = serializer.save()
+    log_audit(
+        user=request.user, acao="WorkPlanAcao.create", modulo="sgp", entidade="WorkPlanAcao",
+        entidade_id=acao.pk, valores_novos=_snapshot_acao(acao), request=request,
+    )
+    return acao
+
+
+@transaction.atomic
+def atualizar_acao(serializer, *, request):
+    acao = serializer.instance
+    antes = _snapshot_acao(acao)
+    acao = serializer.save()
+    # A quantidade realizada depende da forma de apuração do Indicador: trocar o
+    # Indicador (inclusive saindo da forma manual) muda a regra da contagem.
+    if acao.indicador_id != antes["indicador_id"]:
+        recalcular_quantidade_realizada([acao.pk])
+        acao.refresh_from_db(fields=["quantidade_realizada"])
+    log_audit(
+        user=request.user, acao="WorkPlanAcao.update", modulo="sgp", entidade="WorkPlanAcao",
+        entidade_id=acao.pk, valores_anteriores=antes, valores_novos=_snapshot_acao(acao),
+        request=request,
+    )
+    return acao

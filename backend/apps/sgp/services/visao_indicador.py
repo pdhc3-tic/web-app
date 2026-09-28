@@ -17,12 +17,13 @@ from apps.core.models import Territory
 from apps.sgp.models import Activity, WorkPlanAcao
 from apps.sgp.models.indicator import (
     FORMA_CONTAGEM_ATIVIDADES,
+    FORMA_MANUAL,
     FORMA_SOMA_PARTICIPANTES,
     FORMA_SOMA_UFPAS,
 )
 from apps.sgp.services.apuracao import FiltroAtividades, expressao_quantidade_realizada
 from apps.sgp.services.workplan_access import filter_workplan_actions_for_user
-from apps.sgp.services.workplan_dashboard import filtro_de_escopo
+from apps.sgp.services.workplan_dashboard import filtro_de_escopo, percentual_arredondado
 
 ZERO = Decimal("0")
 
@@ -45,12 +46,6 @@ def _filtro(user, territorio_id, periodo_inicio, periodo_fim) -> FiltroAtividade
     return filtro
 
 
-def _percentual(parte: Decimal, total: Decimal) -> Decimal:
-    if total <= ZERO:
-        return ZERO
-    return (Decimal(parte) / total * 100).quantize(Decimal("0.01"))
-
-
 def _realizado_por_territorio(acoes, filtro: FiltroAtividades) -> dict[int, dict[int, int]]:
     """Realizado de cada Ação (chave: pk) por território, nas formas calculadas.
     A forma manual não tem recorte territorial e fica de fora."""
@@ -66,7 +61,7 @@ def _realizado_por_territorio(acoes, filtro: FiltroAtividades) -> dict[int, dict
                 Q(status="concluido", ativo=True) & filtro(""),
                 acao_id__in=ids_por_forma[FORMA_CONTAGEM_ATIVIDADES],
             )
-            .values(acao=F("acao_id"), territorio=F("municipio__territory_id"))
+            .values(id_acao=F("acao_id"), id_territorio=F("municipio__territory_id"))
             .annotate(total=Count("pk"))
         )
     for forma, through, campo in (
@@ -76,15 +71,18 @@ def _realizado_por_territorio(acoes, filtro: FiltroAtividades) -> dict[int, dict
         if ids_por_forma[forma]:
             consultas.append(
                 through.objects.filter(via_vinculo, activity__acao_id__in=ids_por_forma[forma])
-                .values(acao=F("activity__acao_id"), territorio=F("activity__municipio__territory_id"))
+                .values(
+                    id_acao=F("activity__acao_id"),
+                    id_territorio=F("activity__municipio__territory_id"),
+                )
                 .annotate(total=Count(campo, distinct=True))
             )
 
     por_acao: dict[int, dict[int, int]] = defaultdict(dict)
     for consulta in consultas:
         for linha in consulta.order_by():
-            if linha["territorio"] is not None:
-                por_acao[linha["acao"]][linha["territorio"]] = linha["total"]
+            if linha["id_territorio"] is not None:
+                por_acao[linha["id_acao"]][linha["id_territorio"]] = linha["total"]
     return por_acao
 
 
@@ -98,6 +96,9 @@ def visao_por_indicador(
     periodo_fim: date | None = None,
 ) -> list[dict]:
     filtro = _filtro(user, territorio_id, periodo_inicio, periodo_fim)
+    # Lançamento manual é um número único por Ação, sem território nem data:
+    # sob recorte explícito não há como dizer quanto dele cabe no recorte.
+    com_recorte = any(v is not None for v in (territorio_id, periodo_inicio, periodo_fim))
     acoes = filter_workplan_actions_for_user(
         WorkPlanAcao.objects.select_related("meta", "submeta", "indicador"), user
     )
@@ -137,26 +138,37 @@ def visao_por_indicador(
         ).values_list("pk", "nome")
     )
 
-    def no(alvo_dict, campos):
+    def realizado(grupo, valor):
+        if com_recorte and grupo["indicador"].forma_apuracao == FORMA_MANUAL:
+            return None
+        return valor
+
+    def percentual_de(realizado_do_no, planejado):
+        return None if realizado_do_no is None else percentual_arredondado(realizado_do_no, planejado)
+
+    def no(grupo, alvo_dict, campos):
+        valor = realizado(grupo, alvo_dict["realizado"])
         return {
             **campos,
             "quantidade_planejada": alvo_dict["planejado"],
-            "quantidade_realizada": alvo_dict["realizado"],
-            "percentual_realizado": _percentual(alvo_dict["realizado"], alvo_dict["planejado"]),
+            "quantidade_realizada": valor,
+            "percentual_realizado": percentual_de(valor, alvo_dict["planejado"]),
         }
 
     return [
         {
             "indicador": grupo["indicador"],
             "quantidade_planejada": grupo["planejado"],
-            "quantidade_realizada": grupo["realizado"],
-            "percentual_realizado": _percentual(grupo["realizado"], grupo["planejado"]),
+            "quantidade_realizada": realizado(grupo, grupo["realizado"]),
+            "percentual_realizado": percentual_de(
+                realizado(grupo, grupo["realizado"]), grupo["planejado"]
+            ),
             "por_meta": [
-                no(item, {"id": item["alvo"].pk, "numero": item["alvo"].numero, "titulo": item["alvo"].titulo})
+                no(grupo, item, {"id": item["alvo"].pk, "numero": item["alvo"].numero, "titulo": item["alvo"].titulo})
                 for item in grupo["por_meta"].values()
             ],
             "por_submeta": [
-                no(item, {"id": item["alvo"].pk, "numero": item["alvo"].numero, "titulo": item["alvo"].titulo})
+                no(grupo, item, {"id": item["alvo"].pk, "numero": item["alvo"].numero, "titulo": item["alvo"].titulo})
                 for item in grupo["por_submeta"].values()
             ],
             "por_territorio": [

@@ -41,7 +41,7 @@ def test_listagem_traz_submeta_e_indicador_no_join(
     with CaptureQueriesContext(connection) as consultas:
         response = auth_client_solicitante.get(URL)
 
-    assert len(response.data["results"]) == 3
+    assert len(response.data) == 3
     avulsas = [
         q["sql"] for q in consultas.captured_queries
         if q["sql"].lstrip().startswith(('SELECT "sgp_workplansubmeta"', 'SELECT "sgp_indicator"'))

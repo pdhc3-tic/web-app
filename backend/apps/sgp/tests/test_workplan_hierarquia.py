@@ -196,6 +196,23 @@ class TestVisaoPorIndicador:
         [item] = response.data["indicadores"]
         assert item["quantidade_realizada"] == "4.00"
 
+    def test_indicador_manual_nao_tem_realizado_sob_recorte(
+        self, auth_client, meta, territory_rn
+    ):
+        manual = IndicatorFactory(forma_apuracao="manual")
+        WorkPlanAcaoFactory(meta=meta, indicador=manual, quantidade_realizada=7)
+
+        sem_recorte = auth_client.get(VISAO_URL, {"indicador_id": manual.pk})
+        com_recorte = auth_client.get(
+            VISAO_URL, {"indicador_id": manual.pk, "territorio_id": territory_rn.pk}
+        )
+
+        assert sem_recorte.data["indicadores"][0]["quantidade_realizada"] == "7.00"
+        [item] = com_recorte.data["indicadores"]
+        assert item["quantidade_realizada"] is None
+        assert item["percentual_realizado"] is None
+        assert item["por_meta"][0]["quantidade_realizada"] is None
+
     def test_periodo_invertido_retorna_400(self, auth_client):
         response = auth_client.get(
             VISAO_URL, {"periodo_inicio": "2026-12-01", "periodo_fim": "2026-01-01"}
@@ -278,8 +295,9 @@ class TestAtividades:
         )
 
         assert response.status_code == status.HTTP_200_OK
-        assert len(response.data) == 5
-        assert {item["plano_trabalho"]["submeta"]["numero"] for item in response.data} == {"1.1", "1.2"}
+        itens = response.data["results"]
+        assert len(itens) == 5
+        assert {item["plano_trabalho"]["submeta"]["numero"] for item in itens} == {"1.1", "1.2"}
 
     @pytest.mark.parametrize("filtro", ["meta", "submeta", "indicador"])
     def test_filtros_da_hierarquia(self, auth_client, arvore, filtro):

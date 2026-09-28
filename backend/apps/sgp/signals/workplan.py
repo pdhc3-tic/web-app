@@ -5,10 +5,12 @@ O valor é recalculado pela regra da forma de apuração do Indicador
 UFPAs e de participantes o resultado depende dos vínculos da Atividade, não
 só do status dela.
 """
-from django.db.models.signals import m2m_changed, post_save, pre_save
+from django.db.models.signals import m2m_changed, post_delete, post_save, pre_delete, pre_save
 from django.dispatch import receiver
 
 from apps.sgp.models.activity import Activity
+from apps.sgp.models.membro import MembroFamilia
+from apps.sgp.models.upf import UPF
 from apps.sgp.services.apuracao import (
     recalcular_quantidade_realizada,
     recalcular_valor_executado,
@@ -31,10 +33,11 @@ def _recalcular_apos_salvar(sender, instance, **kwargs):
     acoes = {instance.acao_id, getattr(instance, "_acao_anterior_id", None)}
     recalcular_quantidade_realizada(acoes)
     # O valor executado só depende da Atividade pela Ação a que ela pertence e
-    # por estar ativa; as demandas concluídas são recalculadas pelo SGD.
-    if (
-        getattr(instance, "_acao_anterior_id", None) != instance.acao_id
-        or getattr(instance, "_ativo_anterior", None) != instance.ativo
+    # por estar ativa; as demandas concluídas são recalculadas pelo SGD. Uma
+    # Atividade recém-criada ainda não tem demanda nenhuma.
+    ativo_anterior = getattr(instance, "_ativo_anterior", None)
+    if ativo_anterior is not None and (
+        instance._acao_anterior_id != instance.acao_id or ativo_anterior != instance.ativo
     ):
         recalcular_valor_executado(acoes)
 
@@ -70,3 +73,19 @@ m2m_changed.connect(
     sender=Activity.membros_participantes.through,
     dispatch_uid="sgp_apuracao_membros_participantes",
 )
+
+
+# Excluir de fato uma UFPA ou um membro apaga os vínculos em cascata sem
+# disparar m2m_changed; as Ações das Atividades afetadas são lidas antes.
+@receiver(pre_delete, sender=UPF, dispatch_uid="sgp_apuracao_upf_pre_delete")
+@receiver(pre_delete, sender=MembroFamilia, dispatch_uid="sgp_apuracao_membro_pre_delete")
+def _capturar_acoes_antes_de_excluir(sender, instance, **kwargs):
+    instance._acoes_afetadas = set(
+        instance.atividades.values_list("acao_id", flat=True)
+    )
+
+
+@receiver(post_delete, sender=UPF, dispatch_uid="sgp_apuracao_upf_post_delete")
+@receiver(post_delete, sender=MembroFamilia, dispatch_uid="sgp_apuracao_membro_post_delete")
+def _recalcular_apos_excluir(sender, instance, **kwargs):
+    recalcular_quantidade_realizada(getattr(instance, "_acoes_afetadas", set()))

@@ -24,8 +24,10 @@ A 0034 converte o modelo antigo:
 - Ação sem período herda o da Submeta.
 
 As três migrations são reversíveis. Depois de migrar um banco que já tinha
-demandas concluídas, rode `manage.py verificar_progresso_acoes` para preencher
-o valor executado.
+dados, rode `manage.py verificar_progresso_acoes`: a migration não recalcula
+nada, então a quantidade realizada das Ações que passaram para uma forma de
+apuração diferente da contagem de atividades (ex.: IND-FAM, soma de UFPAs) e o
+valor executado só ficam corretos depois do comando.
 
 ## Indicador
 
@@ -52,8 +54,10 @@ Fonte única: `apps/sgp/services/apuracao.py`.
 | `soma_participantes` | Membros **distintos** vinculados às Atividades concluídas da Ação |
 | `manual` | Valor lançado pela UGP no `PATCH /api/v1/acoes/{id}/` (`quantidade_realizada`); nas outras formas esse campo dá 400 |
 
-- `WorkPlanAcao.quantidade_realizada` é materializado e recalculado pelos signals de `apps/sgp/signals/workplan.py`: ao salvar uma Atividade (inclusive trocando de Ação ou sendo desativada) e ao alterar UFPAs e membros participantes, pelos dois lados da relação.
-- O painel, a exportação e a visão por Indicador apuram de novo, com a mesma regra, só sobre as Atividades do escopo do usuário (e do território e período pedidos). Na forma manual vale o número lançado, que não tem recorte territorial.
+- `WorkPlanAcao.quantidade_realizada` é materializado e recalculado:
+  - pelos signals de `apps/sgp/signals/workplan.py`: ao salvar uma Atividade (inclusive trocando de Ação ou sendo desativada), ao alterar UFPAs e membros participantes pelos dois lados da relação e ao excluir de fato uma UFPA ou um membro;
+  - ao trocar o Indicador de uma Ação ou a forma de apuração de um Indicador.
+- O painel, a exportação e a visão por Indicador apuram de novo, com a mesma regra, só sobre as Atividades do escopo do usuário (e do território e período pedidos). Na forma manual vale o número lançado, que não tem recorte territorial; na visão por Indicador com `territorio_id` ou período, o realizado de um Indicador manual vem `null`.
 
 ## Valor executado
 

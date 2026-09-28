@@ -10,6 +10,8 @@
 O mapeamento fica aqui, e não importado do app, porque migrations precisam
 continuar rodando depois que as constantes antigas deixarem de existir.
 """
+from collections import defaultdict
+
 from django.db import migrations
 
 # tipo_unidade → (código, nome, unidade de medida, forma de apuração, categoria)
@@ -79,15 +81,32 @@ def para_hierarquia_antiga(apps, schema_editor):
     WorkPlanAcao = apps.get_model("sgp", "WorkPlanAcao")
 
     tipo_por_codigo = {codigo: tipo for tipo, (codigo, *_resto) in CATALOGO_INICIAL.items()}
-    for acao in WorkPlanAcao.objects.select_related("indicador"):
-        partes = acao.numero.split(".")
-        if len(partes) == 3:
-            acao.numero = f"{partes[0]}.{partes[2]}"
-        if acao.indicador_id:
-            acao.tipo_unidade = tipo_por_codigo.get(acao.indicador.codigo, TIPO_UNIDADE_OUTRO)
-        acao.submeta = None
-        acao.indicador = None
-        acao.save(update_fields=["numero", "tipo_unidade", "submeta", "indicador"])
+    por_meta = defaultdict(list)
+    for acao in WorkPlanAcao.objects.select_related("indicador", "submeta").order_by(
+        "meta_id", "submeta__numero", "numero"
+    ):
+        por_meta[acao.meta_id].append(acao)
+
+    for acoes in por_meta.values():
+        # X.Y.Z volta a X.Z. Submetas diferentes podem repetir o Z (1.1.1 e
+        # 1.2.1); a segunda recebe o próximo sequencial livre da Meta, porque
+        # a unicidade por Meta já está de volta quando este passo roda.
+        sequenciais = [acao.numero.rsplit(".", 1)[-1] for acao in acoes]
+        proximo = max([int(z) for z in sequenciais if z.isdigit()] + [0]) + 1
+        usados = set()
+        for acao, sequencial in zip(acoes, sequenciais):
+            partes = acao.numero.split(".")
+            if len(partes) == 3:
+                if sequencial in usados or not sequencial.isdigit():
+                    sequencial = str(proximo)
+                    proximo += 1
+                usados.add(sequencial)
+                acao.numero = f"{partes[0]}.{sequencial}"
+            if acao.indicador_id:
+                acao.tipo_unidade = tipo_por_codigo.get(acao.indicador.codigo, TIPO_UNIDADE_OUTRO)
+            acao.submeta = None
+            acao.indicador = None
+            acao.save(update_fields=["numero", "tipo_unidade", "submeta", "indicador"])
 
     WorkPlanSubmeta.objects.all().delete()
     Indicator.objects.all().delete()

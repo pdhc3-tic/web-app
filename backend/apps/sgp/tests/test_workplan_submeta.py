@@ -134,6 +134,17 @@ class TestPermissoes:
 
         assert cliente.post(URL, payload, format="json").status_code == status.HTTP_403_FORBIDDEN
 
+    @pytest.mark.parametrize("fixture", ["usuario_adt_rn", "usuario_articulador_rn", "usuario_fgd"])
+    def test_sem_edicao_nem_exclusao_para_outros_perfis(self, request, meta, fixture):
+        submeta = WorkPlanSubmetaFactory(meta=meta)
+        cliente = _cliente(request.getfixturevalue(fixture))
+
+        assert (
+            cliente.patch(_detalhe(submeta.pk), {"titulo": "X"}, format="json").status_code
+            == status.HTTP_403_FORBIDDEN
+        )
+        assert cliente.delete(_detalhe(submeta.pk)).status_code == status.HTTP_403_FORBIDDEN
+
     def test_ugp_e_super_admin_escrevem(self, auth_client, payload, usuario_super_admin):
         assert auth_client.post(URL, payload, format="json").status_code == status.HTTP_201_CREATED
         segunda = {**payload, "numero": "1.2"}
@@ -205,7 +216,9 @@ class TestEdicaoEExclusao:
         assert response.status_code == status.HTTP_200_OK, response.data
         acao.refresh_from_db()
         assert acao.numero == "1.4.3"
-        assert AuditLog.objects.filter(acao="WorkPlanSubmeta.update").exists()
+        registro = AuditLog.objects.get(acao="WorkPlanSubmeta.update")
+        assert registro.valores_anteriores["numero"] == "1.1"
+        assert registro.valores_novos["numero"] == "1.4"
 
     def test_mover_submeta_de_meta_leva_as_acoes(self, auth_client, meta):
         outra = WorkPlanMetaFactory(
@@ -272,6 +285,19 @@ class TestConsistenciaComMeta:
         meta.data_fim = date(2026, 1, 31)
         assert meta.status_calculado == "em_atraso"
 
+    def test_detalhe_da_meta_so_traz_submetas_do_escopo(
+        self, auth_client_adt_rn, meta, municipio_rn, municipio_ce
+    ):
+        visivel = WorkPlanSubmetaFactory(meta=meta, numero="1.1")
+        oculta = WorkPlanSubmetaFactory(meta=meta, numero="1.2")
+        ActivityFactory(acao=WorkPlanAcaoFactory(submeta=visivel, meta=meta), municipio=municipio_rn)
+        ActivityFactory(acao=WorkPlanAcaoFactory(submeta=oculta, meta=meta), municipio=municipio_ce)
+
+        response = auth_client_adt_rn.get(f"/api/v1/metas/{meta.pk}/")
+
+        assert [s["numero"] for s in response.data["submetas"]] == ["1.1"]
+        assert len(response.data["acoes"]) == 1
+
     def test_detalhe_da_meta_traz_submetas(self, auth_client, meta):
         submeta = WorkPlanSubmetaFactory(meta=meta, numero="1.1")
         WorkPlanAcaoFactory(submeta=submeta, meta=meta)
@@ -330,6 +356,22 @@ class TestAcaoNaSubmeta:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "data_inicio" in response.data
+
+    def test_mover_acao_para_submeta_de_outro_prefixo_sem_renumerar_retorna_400(
+        self, auth_client, submeta, meta
+    ):
+        acao = WorkPlanAcaoFactory(submeta=submeta, meta=meta, numero="1.1.1")
+        outra_meta = WorkPlanMetaFactory(numero=4, data_inicio=meta.data_inicio, data_fim=meta.data_fim)
+        destino = WorkPlanSubmetaFactory(meta=outra_meta, numero="4.1")
+
+        response = auth_client.patch(
+            f"/api/v1/acoes/{acao.pk}/", {"submeta": destino.pk}, format="json"
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "numero" in response.data
+        acao.refresh_from_db()
+        assert acao.submeta_id == submeta.pk
 
     def test_submeta_e_indicador_obrigatorios(self, auth_client, submeta):
         payload = self._payload(submeta, IndicatorFactory())

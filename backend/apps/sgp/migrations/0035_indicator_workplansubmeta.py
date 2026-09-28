@@ -67,6 +67,13 @@ class Migration(migrations.Migration):
             name="submeta",
             field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, related_name="acoes", to="sgp.workplansubmeta", verbose_name="Submeta"),
         ),
+        # O tamanho novo do número entra antes dos dados: no rollback, a coluna
+        # só volta a encolher depois de a 0034 converter X.Y.Z de volta em X.Y.
+        migrations.AlterField(
+            model_name="workplanacao",
+            name="numero",
+            field=models.CharField(help_text="Numeração X.Y.Z, com X.Y igual ao número da Submeta.", max_length=12, validators=[apps.sgp.models.workplan.validate_numero_acao], verbose_name="Número"),
+        ),
         # Nulável aqui para a 0035 poder removê-la e, no rollback, recriá-la
         # vazia até a 0034 reverter os valores; só esta migration volta a
         # exigir o campo, quando já está preenchido.
