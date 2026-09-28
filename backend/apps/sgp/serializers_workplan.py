@@ -3,8 +3,7 @@ import copy
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from apps.core.services.permissions import user_has_role
-from apps.sgp.constants import ODS_CHOICES
+from apps.sgp.constants import ODS_CHOICES, STATUS_WORKPLAN
 from apps.sgp.models import Indicator, WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
 from apps.sgp.models.indicator import DESAGREGACAO_CHOICES, FORMA_MANUAL
 from apps.sgp.services.workplan_access import (
@@ -26,8 +25,9 @@ def _validar_ods(value):
 
 
 def _clean_do_model(instance, attrs):
-    """Roda `clean()` do model sobre o estado resultante do pedido, para que as
-    regras de consistência valham igual no admin e na API.
+    """Roda `clean()` do model sobre o estado resultante do pedido: as regras de
+    consistência do Plano de Trabalho moram no model e valem igual no admin e
+    na API.
 
     Trabalha numa cópia: a instância original ainda é lida depois da validação
     (auditoria de "antes", detecção de mudança de número) e não pode chegar lá
@@ -41,24 +41,11 @@ def _clean_do_model(instance, attrs):
         raise serializers.ValidationError(exc.message_dict)
 
 
-def _exigir_numero_unico(queryset, instance, mensagem):
+def _ja_existe(queryset, instance) -> bool:
+    """Unicidade checada no serializer, com mensagem própria, fora o próprio registro."""
     if instance is not None:
         queryset = queryset.exclude(pk=instance.pk)
-    if queryset.exists():
-        raise serializers.ValidationError({"numero": mensagem})
-
-
-def _exigir_contidos(filhos, inicio, fim, mensagem):
-    """400 quando o novo período do nó deixa filhos (Submetas ou Ações) de fora."""
-    fora = filhos.exclude(data_inicio__gte=inicio, data_fim__lte=fim)
-    if fora.exists():
-        raise serializers.ValidationError({
-            "data_inicio": (
-                f"{mensagem}: "
-                + ", ".join(fora.order_by("numero").values_list("numero", flat=True))
-                + "."
-            )
-        })
+    return queryset.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -94,11 +81,8 @@ class IndicatorSerializer(serializers.ModelSerializer):
         return anotado if anotado is not None else obj.acoes.count()
 
     def validate_codigo(self, value):
-        codigo = value.strip().upper()
-        existentes = Indicator.objects.filter(codigo=codigo)
-        if self.instance is not None:
-            existentes = existentes.exclude(pk=self.instance.pk)
-        if existentes.exists():
+        codigo = Indicator.normalizar_codigo(value)
+        if _ja_existe(Indicator.objects.filter(codigo=codigo), self.instance):
             raise serializers.ValidationError("Já existe um Indicador com este código.")
         return codigo
 
@@ -190,12 +174,6 @@ class WorkPlanAcaoSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         instance = self.instance
         indicador = attrs.get("indicador", instance.indicador if instance else None)
-        troca_indicador = instance is None or indicador.pk != instance.indicador_id
-        if troca_indicador and not indicador.ativo:
-            raise serializers.ValidationError(
-                {"indicador": "Indicador inativo não pode ser vinculado a uma Ação."}
-            )
-
         if "quantidade_realizada" in attrs and indicador.forma_apuracao != FORMA_MANUAL:
             raise serializers.ValidationError({
                 "quantidade_realizada": (
@@ -206,11 +184,10 @@ class WorkPlanAcaoSerializer(serializers.ModelSerializer):
 
         submeta = attrs.get("submeta", instance.submeta if instance else None)
         numero = attrs.get("numero", instance.numero if instance else None)
-        _exigir_numero_unico(
-            WorkPlanAcao.objects.filter(submeta=submeta, numero=numero),
-            instance,
-            "Já existe uma Ação com este número nesta Submeta.",
-        )
+        if _ja_existe(WorkPlanAcao.objects.filter(submeta=submeta, numero=numero), instance):
+            raise serializers.ValidationError(
+                {"numero": "Já existe uma Ação com este número nesta Submeta."}
+            )
 
         _clean_do_model(instance or WorkPlanAcao(), attrs)
         return attrs
@@ -254,30 +231,16 @@ class WorkPlanSubmetaSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "criado_por", "criado_em", "atualizado_em"]
         validators = []
 
-    def validate_responsavel(self, value):
-        if value is not None and not user_has_role(value, "ugp"):
-            raise serializers.ValidationError("O responsável precisa ser um usuário da UGP.")
-        return value
-
     def validate(self, attrs):
         instance = self.instance
         meta = attrs.get("meta", instance.meta if instance else None)
         numero = attrs.get("numero", instance.numero if instance else None)
-        _exigir_numero_unico(
-            WorkPlanSubmeta.objects.filter(meta=meta, numero=numero),
-            instance,
-            "Já existe uma Submeta com este número nesta Meta.",
-        )
+        if _ja_existe(WorkPlanSubmeta.objects.filter(meta=meta, numero=numero), instance):
+            raise serializers.ValidationError(
+                {"numero": "Já existe uma Submeta com este número nesta Meta."}
+            )
 
         _clean_do_model(instance or WorkPlanSubmeta(), attrs)
-
-        if instance is not None:
-            _exigir_contidos(
-                instance.acoes.all(),
-                attrs.get("data_inicio", instance.data_inicio),
-                attrs.get("data_fim", instance.data_fim),
-                "O novo período deixa Ações fora da Submeta",
-            )
         return attrs
 
 
@@ -379,21 +342,9 @@ class WorkPlanMetaDetailSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "Número da meta deve estar entre 1 e 7."
             )
-        qs = WorkPlanMeta.objects.filter(numero=value)
-        if self.instance:
-            qs = qs.exclude(pk=self.instance.pk)
-        if qs.exists():
+        if _ja_existe(WorkPlanMeta.objects.filter(numero=value), self.instance):
             raise serializers.ValidationError(
                 "Já existe uma meta com este número."
-            )
-        if (
-            self.instance is not None
-            and value != self.instance.numero
-            and self.instance.submetas.exists()
-        ):
-            raise serializers.ValidationError(
-                "Não é possível mudar o número de uma Meta que já tem Submetas: "
-                "a numeração delas começa com o número da Meta."
             )
         return value
 
@@ -401,14 +352,7 @@ class WorkPlanMetaDetailSerializer(serializers.ModelSerializer):
         return _validar_ods(value)
 
     def validate(self, attrs):
-        instance = self.instance
-        if instance is not None:
-            _exigir_contidos(
-                instance.submetas.all(),
-                attrs.get("data_inicio", instance.data_inicio),
-                attrs.get("data_fim", instance.data_fim),
-                "O novo período deixa Submetas fora da Meta",
-            )
+        _clean_do_model(self.instance or WorkPlanMeta(), attrs)
         return attrs
 
     def _acoes_serializadas(self, obj) -> list[dict]:
@@ -451,7 +395,7 @@ class WorkPlanDashboardQuerySerializer(serializers.Serializer):
     meta_id = serializers.IntegerField(min_value=1, required=False)
     territorio_id = serializers.IntegerField(min_value=1, required=False)
     status_execucao = serializers.ChoiceField(
-        choices=["concluida", "em_atraso", "no_prazo"], required=False
+        choices=STATUS_WORKPLAN, required=False
     )
 
 
@@ -536,7 +480,7 @@ class WorkPlanDashboardSubmetaSerializer(serializers.ModelSerializer):
         fields = ["id", "numero", "titulo"]
 
 
-class ConsolidadoNoSerializer(serializers.Serializer):
+class WorkPlanDashboardNodeSerializer(serializers.Serializer):
     """Consolidado de um nó da árvore do painel (Submeta ou Meta)."""
 
     quantidade_planejada = serializers.DecimalField(max_digits=14, decimal_places=2)

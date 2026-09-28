@@ -3,6 +3,7 @@ from datetime import date, timedelta
 import pytest
 from decimal import Decimal
 
+from apps.core.models.audit_log import AuditLog
 from apps.sgp.models import WorkPlanMeta, WorkPlanAcao
 from apps.sgp.tests.factories import (
     ActivityFactory,
@@ -160,8 +161,8 @@ class TestMetaPermissoes:
     ):
         visible_meta = WorkPlanMetaFactory(numero=1)
         hidden_meta = WorkPlanMetaFactory(numero=2)
-        visible_action = WorkPlanAcaoFactory(meta=visible_meta, numero="1.1")
-        hidden_action = WorkPlanAcaoFactory(meta=hidden_meta, numero="2.1")
+        visible_action = WorkPlanAcaoFactory(meta=visible_meta)
+        hidden_action = WorkPlanAcaoFactory(meta=hidden_meta)
         ActivityFactory(acao=visible_action, municipio=municipio_rn, status="concluido")
         ActivityFactory(acao=hidden_action, municipio=municipio_ce, status="concluido")
 
@@ -174,8 +175,8 @@ class TestMetaPermissoes:
         self, auth_client_adt_rn, municipio_rn, municipio_ce
     ):
         meta = WorkPlanMetaFactory(numero=1)
-        visible_action = WorkPlanAcaoFactory(meta=meta, numero="1.1")
-        hidden_action = WorkPlanAcaoFactory(meta=meta, numero="1.2")
+        visible_action = WorkPlanAcaoFactory(meta=meta)
+        hidden_action = WorkPlanAcaoFactory(meta=meta)
         ActivityFactory(acao=visible_action, municipio=municipio_rn, status="concluido")
         ActivityFactory(acao=hidden_action, municipio=municipio_ce, status="concluido")
 
@@ -189,8 +190,8 @@ class TestMetaPermissoes:
     ):
         visible_meta = WorkPlanMetaFactory(numero=1)
         hidden_meta = WorkPlanMetaFactory(numero=2)
-        visible_action = WorkPlanAcaoFactory(meta=visible_meta, numero="1.1")
-        hidden_action = WorkPlanAcaoFactory(meta=hidden_meta, numero="2.1")
+        visible_action = WorkPlanAcaoFactory(meta=visible_meta)
+        hidden_action = WorkPlanAcaoFactory(meta=hidden_meta)
         ActivityFactory(acao=visible_action, municipio=municipio_rn, status="concluido")
         ActivityFactory(acao=hidden_action, municipio=municipio_ce, status="concluido")
 
@@ -219,27 +220,27 @@ class TestMetaStatusCalculado:
         assert meta.status_calculado == "no_prazo"
 
     def test_concluida_when_all_acoes_concluidas(self, meta):
-        acao1 = WorkPlanAcaoFactory(meta=meta, numero="1.1", quantidade_planejada=Decimal("2"))
+        acao1 = WorkPlanAcaoFactory(meta=meta, quantidade_planejada=Decimal("2"))
         ActivityFactory(acao=acao1, status="concluido")
         ActivityFactory(acao=acao1, status="concluido")
-        acao2 = WorkPlanAcaoFactory(meta=meta, numero="1.2", quantidade_planejada=Decimal("1"))
+        acao2 = WorkPlanAcaoFactory(meta=meta, quantidade_planejada=Decimal("1"))
         ActivityFactory(acao=acao2, status="concluido")
         assert meta.status_calculado == "concluida"
 
     def test_em_atraso_when_past_and_pending(self, meta):
         meta.data_fim = date.today() - timedelta(days=1)
         meta.save(update_fields=["data_fim"])
-        acao1 = WorkPlanAcaoFactory(meta=meta, numero="1.1", quantidade_planejada=Decimal("1"))
+        acao1 = WorkPlanAcaoFactory(meta=meta, quantidade_planejada=Decimal("1"))
         ActivityFactory(acao=acao1, status="concluido")
-        acao2 = WorkPlanAcaoFactory(meta=meta, numero="1.2", quantidade_planejada=Decimal("1"))
+        acao2 = WorkPlanAcaoFactory(meta=meta, quantidade_planejada=Decimal("1"))
         assert meta.status_calculado == "em_atraso"
 
     def test_no_prazo_when_future_and_pending(self, meta):
         meta.data_fim = date.today() + timedelta(days=365)
         meta.save(update_fields=["data_fim"])
-        acao1 = WorkPlanAcaoFactory(meta=meta, numero="1.1", quantidade_planejada=Decimal("1"))
+        acao1 = WorkPlanAcaoFactory(meta=meta, quantidade_planejada=Decimal("1"))
         ActivityFactory(acao=acao1, status="concluido")
-        acao2 = WorkPlanAcaoFactory(meta=meta, numero="1.2", quantidade_planejada=Decimal("1"))
+        acao2 = WorkPlanAcaoFactory(meta=meta, quantidade_planejada=Decimal("1"))
         assert meta.status_calculado == "no_prazo"
 
 
@@ -249,12 +250,12 @@ class TestMetaValorTotalPlanejado:
 
     def test_sums_acoes(self, meta):
         WorkPlanAcaoFactory(
-            meta=meta, numero="1.1",
+            meta=meta,
             quantidade_planejada=Decimal("100"),
             valor_unitario=Decimal("500"),
         )
         WorkPlanAcaoFactory(
-            meta=meta, numero="1.2",
+            meta=meta,
             quantidade_planejada=Decimal("60"),
             valor_unitario=Decimal("500"),
         )
@@ -267,7 +268,7 @@ class TestMetaExclusao:
         assert not WorkPlanMeta.objects.filter(pk=meta.pk).exists()
 
     def test_delete_with_acoes_returns_400(self, auth_client, meta):
-        WorkPlanAcaoFactory(meta=meta, numero="1.1")
+        WorkPlanAcaoFactory(meta=meta)
         response = auth_client.delete(f"/api/v1/metas/{meta.pk}/")
         assert response.status_code == 400
         assert "Ações vinculadas" in response.data["detail"]
@@ -449,8 +450,8 @@ class TestAcaoPermissoes:
     def test_adt_lists_only_actions_in_own_territory(
         self, auth_client_adt_rn, meta, municipio_rn, municipio_ce
     ):
-        visible_action = WorkPlanAcaoFactory(meta=meta, numero="1.1")
-        hidden_action = WorkPlanAcaoFactory(meta=meta, numero="1.2")
+        visible_action = WorkPlanAcaoFactory(meta=meta)
+        hidden_action = WorkPlanAcaoFactory(meta=meta)
         ActivityFactory(acao=visible_action, municipio=municipio_rn, status="concluido")
         ActivityFactory(acao=hidden_action, municipio=municipio_ce, status="concluido")
 
@@ -462,8 +463,8 @@ class TestAcaoPermissoes:
     def test_articulador_lists_only_actions_in_own_states(
         self, auth_client_articulador_rn, meta, municipio_rn, municipio_ce
     ):
-        visible_action = WorkPlanAcaoFactory(meta=meta, numero="1.1")
-        hidden_action = WorkPlanAcaoFactory(meta=meta, numero="1.2")
+        visible_action = WorkPlanAcaoFactory(meta=meta)
+        hidden_action = WorkPlanAcaoFactory(meta=meta)
         ActivityFactory(acao=visible_action, municipio=municipio_rn, status="concluido")
         ActivityFactory(acao=hidden_action, municipio=municipio_ce, status="concluido")
 
@@ -475,7 +476,7 @@ class TestAcaoPermissoes:
     def test_adt_cannot_retrieve_action_from_another_territory(
         self, auth_client_adt_rn, meta, municipio_ce
     ):
-        hidden_action = WorkPlanAcaoFactory(meta=meta, numero="1.1")
+        hidden_action = WorkPlanAcaoFactory(meta=meta)
         ActivityFactory(acao=hidden_action, municipio=municipio_ce, status="concluido")
 
         response = auth_client_adt_rn.get(f"/api/v1/acoes/{hidden_action.pk}/")
@@ -484,7 +485,7 @@ class TestAcaoPermissoes:
 
     def test_filter_by_meta(self, auth_client, acao, meta):
         meta2 = WorkPlanMetaFactory(numero=3, titulo="Outra")
-        WorkPlanAcaoFactory(meta=meta2, numero="3.1")
+        WorkPlanAcaoFactory(meta=meta2)
         response = auth_client.get(f"/api/v1/acoes/?meta={meta.pk}")
         assert response.status_code == 200
         assert len(response.data["results"]) == 1
@@ -496,12 +497,20 @@ class TestAcaoExclusao:
         assert auth_client.delete(f"/api/v1/acoes/{acao.pk}/").status_code == 204
         assert not WorkPlanAcao.objects.filter(pk=acao.pk).exists()
 
-    def test_delete_blocked_when_activities_exist(self, auth_client, meta):
-        """Quando o model Activity existir (Sprint 8), o DELETE será bloqueado.
-        Este teste valida que o endpoint funciona sem erros."""
-        acao = WorkPlanAcaoFactory(meta=meta, numero="1.1")
+    def test_delete_blocked_when_activities_exist(self, auth_client, acao):
+        ActivityFactory(acao=acao)
+
         response = auth_client.delete(f"/api/v1/acoes/{acao.pk}/")
-        assert response.status_code == 204
+
+        assert response.status_code == 400
+        assert response.data["code"] == "acao_com_atividades"
+        assert WorkPlanAcao.objects.filter(pk=acao.pk).exists()
+
+    def test_delete_registers_audit(self, auth_client, acao):
+        auth_client.delete(f"/api/v1/acoes/{acao.pk}/")
+
+        registro = AuditLog.objects.get(acao="WorkPlanAcao.delete", entidade_id=str(acao.pk))
+        assert registro.valores_anteriores["numero"] == "1.1.1"
 
 
 class TestAcaoListagemDetalhe:

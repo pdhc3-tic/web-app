@@ -3,7 +3,7 @@
 O valor é recalculado pela regra da forma de apuração do Indicador
 (`apps.sgp.services.apuracao`), e não incrementado: nas formas por soma de
 UFPAs e de participantes o resultado depende dos vínculos da Atividade, não
-só do status dela.
+só do status dela. Trocar o Indicador de uma Ação também muda a regra.
 """
 from django.db.models.signals import m2m_changed, post_delete, post_save, pre_delete, pre_save
 from django.dispatch import receiver
@@ -11,6 +11,7 @@ from django.dispatch import receiver
 from apps.sgp.models.activity import Activity
 from apps.sgp.models.membro import MembroFamilia
 from apps.sgp.models.upf import UPF
+from apps.sgp.models.workplan import WorkPlanAcao
 from apps.sgp.services.apuracao import (
     recalcular_quantidade_realizada,
     recalcular_valor_executado,
@@ -40,6 +41,22 @@ def _recalcular_apos_salvar(sender, instance, **kwargs):
         instance._acao_anterior_id != instance.acao_id or ativo_anterior != instance.ativo
     ):
         recalcular_valor_executado(acoes)
+
+
+@receiver(pre_save, sender=WorkPlanAcao, dispatch_uid="sgp_apuracao_acao_pre_save")
+def _capturar_indicador_anterior(sender, instance, update_fields=None, **kwargs):
+    instance._indicador_anterior_id = (
+        WorkPlanAcao.objects.filter(pk=instance.pk).values_list("indicador_id", flat=True).first()
+        if instance.pk and (update_fields is None or "indicador" in update_fields)
+        else None
+    )
+
+
+@receiver(post_save, sender=WorkPlanAcao, dispatch_uid="sgp_apuracao_acao_post_save")
+def _reapurar_apos_trocar_indicador(sender, instance, created, **kwargs):
+    anterior = getattr(instance, "_indicador_anterior_id", None)
+    if not created and anterior is not None and anterior != instance.indicador_id:
+        recalcular_quantidade_realizada([instance.pk])
 
 
 def _recalcular_apos_vinculos(sender, instance, action, reverse, pk_set, **kwargs):

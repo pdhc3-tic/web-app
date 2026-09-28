@@ -5,16 +5,14 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from django.db.models import Exists, OuterRef, Q, QuerySet
+from django.db.models import Exists, OuterRef, QuerySet
 
 from apps.sgp.models import Activity, WorkPlanAcao
+from apps.sgp.models.workplan import arredondar, custo_unitario
+from apps.sgp.services.apuracao import RecorteAtividades, filtro_de_atividades
 from apps.sgp.services.budget import limiares_semaforo
 from apps.sgp.services.workplan_access import is_global_workplan_user
-from apps.sgp.services.workplan_dashboard import (
-    dashboard_actions,
-    enrich_dashboard_action,
-    filtro_de_escopo,
-)
+from apps.sgp.services.workplan_dashboard import dashboard_actions, enrich_dashboard_action
 
 
 EXPORT_COLUMNS = (
@@ -64,24 +62,14 @@ def workplan_export_rows(
 
 def _export_actions_for_scope(*, user, territorio_id: int | None) -> QuerySet[WorkPlanAcao]:
     """Restringe tanto as linhas quanto a apuração à mesma visibilidade."""
-    escopo = filtro_de_escopo(user) if user is not None else None
-
-    def filtro(prefixo: str) -> Q | None:
-        q = escopo(prefixo) if escopo is not None else None
-        if territorio_id is not None:
-            por_territorio = Q(**{f"{prefixo}municipio__territory_id": territorio_id})
-            q = por_territorio if q is None else q & por_territorio
-        return q
-
-    visible_activities = Activity.objects.filter(acao_id=OuterRef("pk"))
-    restricao = filtro("")
-    if restricao is not None:
-        visible_activities = visible_activities.filter(restricao)
-
-    actions = dashboard_actions(filtro if restricao is not None else None)
+    filtro = filtro_de_atividades(user, RecorteAtividades(territorio_id=territorio_id))
+    actions = dashboard_actions(filtro)
 
     # Ações sem atividade são visíveis somente para perfis com visão global.
     if (user is not None and not is_global_workplan_user(user)) or territorio_id is not None:
+        visible_activities = Activity.objects.filter(acao_id=OuterRef("pk"))
+        if filtro is not None:
+            visible_activities = visible_activities.filter(filtro(""))
         actions = actions.filter(Exists(visible_activities))
 
     return actions.order_by("meta__numero", "submeta__numero", "numero")
@@ -90,7 +78,7 @@ def _export_actions_for_scope(*, user, territorio_id: int | None) -> QuerySet[Wo
 def _serialize_action(action: WorkPlanAcao) -> dict[str, str]:
     valor_total = action.valor_total
     valor_executado = action.dashboard_valor_executado
-    realizado = action.dashboard_quantidade_realizada
+    custo = custo_unitario(valor_executado, action.dashboard_quantidade_realizada)
     return {
         "meta": f"{action.meta.numero} - {action.meta.titulo}",
         "submeta": f"{action.submeta.numero} - {action.submeta.titulo}",
@@ -105,14 +93,11 @@ def _serialize_action(action: WorkPlanAcao) -> dict[str, str]:
         "quantidade_planejada": _decimal_string(action.quantidade_planejada),
         "valor_unitario": _decimal_string(action.valor_unitario),
         "valor_total": _decimal_string(valor_total),
-        "quantidade_realizada": _decimal_string(realizado),
+        "quantidade_realizada": _decimal_string(action.dashboard_quantidade_realizada),
         "percentual_realizado": _decimal_string(action.dashboard_percentual_realizado),
         "valor_executado": _decimal_string(valor_executado),
-        "custo_unitario_realizado": (
-            _decimal_string((valor_executado / realizado).quantize(Decimal("0.01")))
-            if realizado else ""
-        ),
-        "saldo": _decimal_string((valor_total - valor_executado).quantize(Decimal("0.01"))),
+        "custo_unitario_realizado": "" if custo is None else _decimal_string(custo),
+        "saldo": _decimal_string(arredondar(valor_total - valor_executado)),
         "status_execucao": action.dashboard_status_execucao,
         "semaforo": action.dashboard_semaforo,
     }

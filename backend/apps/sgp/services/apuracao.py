@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import date
 from typing import Callable, Iterable
 
 from django.apps import apps
@@ -43,18 +45,79 @@ from apps.sgp.models.indicator import (
     FORMA_SOMA_PARTICIPANTES,
     FORMA_SOMA_UFPAS,
 )
+from apps.sgp.services.workplan_access import activity_scope_for_user
 
-# Recebe o prefixo do caminho até Activity ("" ou "activity__") e devolve o Q
-# das Atividades que entram na conta, ou None para não restringir.
-FiltroAtividades = Callable[[str], "Q | None"]
+# Recebe o prefixo do caminho até Activity ("" ou "activity__", como em
+# `activity_scope_for_user`) e devolve o Q das Atividades que entram na conta.
+FiltroAtividades = Callable[[str], Q]
 
-FORMAS_RECALCULADAS = (FORMA_CONTAGEM_ATIVIDADES, FORMA_SOMA_UFPAS, FORMA_SOMA_PARTICIPANTES)
+# Formas por soma de participantes distintos: tabela de vínculo com a
+# Atividade e coluna contada.
+_VINCULOS_POR_FORMA = {
+    FORMA_SOMA_UFPAS: (Activity.upfs_participantes.through, "upf_id"),
+    FORMA_SOMA_PARTICIPANTES: (Activity.membros_participantes.through, "membrofamilia_id"),
+}
+
+FORMAS_RECALCULADAS = (FORMA_CONTAGEM_ATIVIDADES, *_VINCULOS_POR_FORMA)
+
+
+@dataclass(frozen=True)
+class RecorteAtividades:
+    """Território e período pedidos explicitamente sobre as Atividades apuradas.
+    O período vale pela data de término da Atividade."""
+
+    territorio_id: int | None = None
+    periodo_inicio: date | None = None
+    periodo_fim: date | None = None
+
+    @property
+    def vazio(self) -> bool:
+        return self.territorio_id is None and self.periodo_inicio is None and self.periodo_fim is None
+
+    def q(self, prefixo: str) -> Q:
+        q = Q()
+        if self.territorio_id is not None:
+            q &= Q(**{f"{prefixo}municipio__territory_id": self.territorio_id})
+        if self.periodo_inicio is not None:
+            q &= Q(**{f"{prefixo}data_fim__date__gte": self.periodo_inicio})
+        if self.periodo_fim is not None:
+            q &= Q(**{f"{prefixo}data_fim__date__lte": self.periodo_fim})
+        return q
+
+
+def filtro_de_atividades(
+    user=None, recorte: RecorteAtividades = RecorteAtividades()
+) -> FiltroAtividades | None:
+    """Escopo territorial do usuário somado ao recorte pedido; None quando nada
+    restringe (visão global, sem recorte). Sem usuário (Power BI), só o recorte."""
+    com_escopo = user is not None and activity_scope_for_user(user) is not None
+    if not com_escopo and recorte.vazio:
+        return None
+
+    def filtro(prefixo: str) -> Q:
+        q = recorte.q(prefixo)
+        if com_escopo:
+            q &= activity_scope_for_user(user, prefix=prefixo)
+        return q
+
+    return filtro
 
 
 def _concluidas(prefixo: str, filtro: FiltroAtividades | None) -> Q:
     q = Q(**{f"{prefixo}status": "concluido", f"{prefixo}ativo": True})
-    extra = filtro(prefixo) if filtro else None
-    return q & extra if extra is not None else q
+    return q & filtro(prefixo) if filtro else q
+
+
+def _linhas_apuradas(forma: str, filtro: FiltroAtividades | None):
+    """O que uma forma calculada conta: as linhas (Atividades concluídas ou os
+    vínculos delas), o prefixo até a Atividade e o agregado."""
+    if forma == FORMA_CONTAGEM_ATIVIDADES:
+        return Activity.all_objects.filter(_concluidas("", filtro)), "", Count("pk")
+    if forma in _VINCULOS_POR_FORMA:
+        through, campo = _VINCULOS_POR_FORMA[forma]
+        vinculos = through.objects.filter(_concluidas("activity__", filtro))
+        return vinculos, "activity__", Count(campo, distinct=True)
+    raise ValueError(f"Forma de apuração sem cálculo automático: {forma}")
 
 
 def _por_acao(queryset, campo_acao: str, agregado, output_field) -> Coalesce:
@@ -73,20 +136,8 @@ def _por_acao(queryset, campo_acao: str, agregado, output_field) -> Coalesce:
 
 def expressao_por_forma(forma: str, filtro: FiltroAtividades | None = None):
     """Quantidade realizada de uma Ação (via OuterRef) para uma forma calculada."""
-    if forma == FORMA_CONTAGEM_ATIVIDADES:
-        atividades = Activity.all_objects.filter(_concluidas("", filtro))
-        return _por_acao(atividades, "acao_id", Count("pk"), IntegerField())
-    if forma == FORMA_SOMA_UFPAS:
-        through = Activity.upfs_participantes.through
-        vinculos = through.objects.filter(_concluidas("activity__", filtro))
-        return _por_acao(vinculos, "activity__acao_id", Count("upf_id", distinct=True), IntegerField())
-    if forma == FORMA_SOMA_PARTICIPANTES:
-        through = Activity.membros_participantes.through
-        vinculos = through.objects.filter(_concluidas("activity__", filtro))
-        return _por_acao(
-            vinculos, "activity__acao_id", Count("membrofamilia_id", distinct=True), IntegerField()
-        )
-    raise ValueError(f"Forma de apuração sem cálculo automático: {forma}")
+    linhas, prefixo, agregado = _linhas_apuradas(forma, filtro)
+    return _por_acao(linhas, f"{prefixo}acao_id", agregado, IntegerField())
 
 
 def expressao_quantidade_realizada(filtro: FiltroAtividades | None = None) -> Case:
@@ -101,6 +152,34 @@ def expressao_quantidade_realizada(filtro: FiltroAtividades | None = None) -> Ca
         default=F("quantidade_realizada"),
         output_field=IntegerField(),
     )
+
+
+def realizado_por_territorio(
+    acoes: Iterable[WorkPlanAcao], filtro: FiltroAtividades | None = None
+) -> dict[int, dict[int, int]]:
+    """Realizado de cada Ação (chave: pk) por território, nas formas calculadas.
+    A forma manual não tem recorte territorial e fica de fora."""
+    ids_por_forma: dict[str, list[int]] = defaultdict(list)
+    for acao in acoes:
+        if acao.indicador.forma_apuracao in FORMAS_RECALCULADAS:
+            ids_por_forma[acao.indicador.forma_apuracao].append(acao.pk)
+
+    por_acao: dict[int, dict[int, int]] = defaultdict(dict)
+    for forma, ids in ids_por_forma.items():
+        linhas, prefixo, agregado = _linhas_apuradas(forma, filtro)
+        consulta = (
+            linhas.filter(**{f"{prefixo}acao_id__in": ids})
+            .values(
+                id_acao=F(f"{prefixo}acao_id"),
+                id_territorio=F(f"{prefixo}municipio__territory_id"),
+            )
+            .annotate(total=agregado)
+            .order_by()
+        )
+        for linha in consulta:
+            if linha["id_territorio"] is not None:
+                por_acao[linha["id_acao"]][linha["id_territorio"]] = linha["total"]
+    return por_acao
 
 
 def expressao_valor_executado() -> Coalesce:

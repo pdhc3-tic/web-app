@@ -8,97 +8,68 @@ território, no escopo territorial do usuário.
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date
+from dataclasses import dataclass
 from decimal import Decimal
 
-from django.db.models import Count, F, Q
-
 from apps.core.models import Territory
-from apps.sgp.models import Activity, WorkPlanAcao
-from apps.sgp.models.indicator import (
-    FORMA_CONTAGEM_ATIVIDADES,
-    FORMA_MANUAL,
-    FORMA_SOMA_PARTICIPANTES,
-    FORMA_SOMA_UFPAS,
+from apps.sgp.models import WorkPlanAcao
+from apps.sgp.models.indicator import FORMA_MANUAL
+from apps.sgp.models.workplan import arredondar, percentual
+from apps.sgp.services.apuracao import (
+    RecorteAtividades,
+    expressao_quantidade_realizada,
+    filtro_de_atividades,
+    realizado_por_territorio,
 )
-from apps.sgp.services.apuracao import FiltroAtividades, expressao_quantidade_realizada
 from apps.sgp.services.workplan_access import filter_workplan_actions_for_user
-from apps.sgp.services.workplan_dashboard import filtro_de_escopo, percentual_arredondado
 
 ZERO = Decimal("0")
 
 
-def _filtro(user, territorio_id, periodo_inicio, periodo_fim) -> FiltroAtividades:
-    escopo = filtro_de_escopo(user)
+@dataclass
+class _Soma:
+    """Planejado e realizado acumulados de um nó (Indicador, Meta ou Submeta)."""
 
-    def filtro(prefixo: str) -> Q:
-        q = Q()
-        if escopo is not None:
-            q &= escopo(prefixo)
-        if territorio_id is not None:
-            q &= Q(**{f"{prefixo}municipio__territory_id": territorio_id})
-        if periodo_inicio is not None:
-            q &= Q(**{f"{prefixo}data_fim__date__gte": periodo_inicio})
-        if periodo_fim is not None:
-            q &= Q(**{f"{prefixo}data_fim__date__lte": periodo_fim})
-        return q
+    alvo: object = None
+    planejado: Decimal = ZERO
+    realizado: Decimal = ZERO
 
-    return filtro
+    def somar(self, acao: WorkPlanAcao) -> None:
+        self.planejado += Decimal(acao.quantidade_planejada)
+        self.realizado += Decimal(acao._realizado)
 
 
-def _realizado_por_territorio(acoes, filtro: FiltroAtividades) -> dict[int, dict[int, int]]:
-    """Realizado de cada Ação (chave: pk) por território, nas formas calculadas.
-    A forma manual não tem recorte territorial e fica de fora."""
-    ids_por_forma: dict[str, list[int]] = defaultdict(list)
-    for acao in acoes:
-        ids_por_forma[acao.indicador.forma_apuracao].append(acao.pk)
+def _quantidades(soma: _Soma, sem_realizado: bool) -> dict:
+    realizado = None if sem_realizado else soma.realizado
+    return {
+        "quantidade_planejada": soma.planejado,
+        "quantidade_realizada": realizado,
+        "percentual_realizado": (
+            None if realizado is None else arredondar(percentual(realizado, soma.planejado))
+        ),
+    }
 
-    via_vinculo = Q(activity__status="concluido", activity__ativo=True) & filtro("activity__")
-    consultas = []
-    if ids_por_forma[FORMA_CONTAGEM_ATIVIDADES]:
-        consultas.append(
-            Activity.all_objects.filter(
-                Q(status="concluido", ativo=True) & filtro(""),
-                acao_id__in=ids_por_forma[FORMA_CONTAGEM_ATIVIDADES],
-            )
-            .values(id_acao=F("acao_id"), id_territorio=F("municipio__territory_id"))
-            .annotate(total=Count("pk"))
-        )
-    for forma, through, campo in (
-        (FORMA_SOMA_UFPAS, Activity.upfs_participantes.through, "upf_id"),
-        (FORMA_SOMA_PARTICIPANTES, Activity.membros_participantes.through, "membrofamilia_id"),
-    ):
-        if ids_por_forma[forma]:
-            consultas.append(
-                through.objects.filter(via_vinculo, activity__acao_id__in=ids_por_forma[forma])
-                .values(
-                    id_acao=F("activity__acao_id"),
-                    id_territorio=F("activity__municipio__territory_id"),
-                )
-                .annotate(total=Count(campo, distinct=True))
-            )
 
-    por_acao: dict[int, dict[int, int]] = defaultdict(dict)
-    for consulta in consultas:
-        for linha in consulta.order_by():
-            if linha["id_territorio"] is not None:
-                por_acao[linha["id_acao"]][linha["id_territorio"]] = linha["total"]
-    return por_acao
+def _quebra(somas: dict[int, _Soma], sem_realizado: bool) -> list[dict]:
+    return [
+        {
+            "id": soma.alvo.pk,
+            "numero": soma.alvo.numero,
+            "titulo": soma.alvo.titulo,
+            **_quantidades(soma, sem_realizado),
+        }
+        for soma in somas.values()
+    ]
 
 
 def visao_por_indicador(
     user,
     *,
-    territorio_id: int | None = None,
+    recorte: RecorteAtividades = RecorteAtividades(),
     meta_id: int | None = None,
     indicador_id: int | None = None,
-    periodo_inicio: date | None = None,
-    periodo_fim: date | None = None,
 ) -> list[dict]:
-    filtro = _filtro(user, territorio_id, periodo_inicio, periodo_fim)
-    # Lançamento manual é um número único por Ação, sem território nem data:
-    # sob recorte explícito não há como dizer quanto dele cabe no recorte.
-    com_recorte = any(v is not None for v in (territorio_id, periodo_inicio, periodo_fim))
+    filtro = filtro_de_atividades(user, recorte)
     acoes = filter_workplan_actions_for_user(
         WorkPlanAcao.objects.select_related("meta", "submeta", "indicador"), user
     )
@@ -109,26 +80,20 @@ def visao_por_indicador(
     acoes = list(acoes.annotate(_realizado=expressao_quantidade_realizada(filtro)).order_by(
         "indicador__codigo", "meta__numero", "numero"
     ))
-    realizado_territorial = _realizado_por_territorio(acoes, filtro)
+    realizado_territorial = realizado_por_territorio(acoes, filtro)
 
     grupos: dict[int, dict] = {}
     for acao in acoes:
         grupo = grupos.setdefault(acao.indicador_id, {
             "indicador": acao.indicador,
-            "planejado": ZERO,
-            "realizado": ZERO,
+            "total": _Soma(),
             "por_meta": {},
             "por_submeta": {},
             "por_territorio": defaultdict(int),
         })
-        planejado = Decimal(acao.quantidade_planejada)
-        realizado = Decimal(acao._realizado)
-        grupo["planejado"] += planejado
-        grupo["realizado"] += realizado
-        for chave, alvo in (("por_meta", acao.meta), ("por_submeta", acao.submeta)):
-            no = grupo[chave].setdefault(alvo.pk, {"alvo": alvo, "planejado": ZERO, "realizado": ZERO})
-            no["planejado"] += planejado
-            no["realizado"] += realizado
+        grupo["total"].somar(acao)
+        grupo["por_meta"].setdefault(acao.meta_id, _Soma(alvo=acao.meta)).somar(acao)
+        grupo["por_submeta"].setdefault(acao.submeta_id, _Soma(alvo=acao.submeta)).somar(acao)
         for territorio, total in realizado_territorial.get(acao.pk, {}).items():
             grupo["por_territorio"][territorio] += total
 
@@ -138,45 +103,21 @@ def visao_por_indicador(
         ).values_list("pk", "nome")
     )
 
-    def realizado(grupo, valor):
-        if com_recorte and grupo["indicador"].forma_apuracao == FORMA_MANUAL:
-            return None
-        return valor
-
-    def percentual_de(realizado_do_no, planejado):
-        return None if realizado_do_no is None else percentual_arredondado(realizado_do_no, planejado)
-
-    def no(grupo, alvo_dict, campos):
-        valor = realizado(grupo, alvo_dict["realizado"])
-        return {
-            **campos,
-            "quantidade_planejada": alvo_dict["planejado"],
-            "quantidade_realizada": valor,
-            "percentual_realizado": percentual_de(valor, alvo_dict["planejado"]),
-        }
-
-    return [
-        {
+    visao = []
+    for grupo in grupos.values():
+        # Lançamento manual é um número único por Ação, sem território nem data:
+        # sob recorte explícito não há como dizer quanto dele cabe no recorte.
+        sem_realizado = not recorte.vazio and grupo["indicador"].forma_apuracao == FORMA_MANUAL
+        visao.append({
             "indicador": grupo["indicador"],
-            "quantidade_planejada": grupo["planejado"],
-            "quantidade_realizada": realizado(grupo, grupo["realizado"]),
-            "percentual_realizado": percentual_de(
-                realizado(grupo, grupo["realizado"]), grupo["planejado"]
-            ),
-            "por_meta": [
-                no(grupo, item, {"id": item["alvo"].pk, "numero": item["alvo"].numero, "titulo": item["alvo"].titulo})
-                for item in grupo["por_meta"].values()
-            ],
-            "por_submeta": [
-                no(grupo, item, {"id": item["alvo"].pk, "numero": item["alvo"].numero, "titulo": item["alvo"].titulo})
-                for item in grupo["por_submeta"].values()
-            ],
+            **_quantidades(grupo["total"], sem_realizado),
+            "por_meta": _quebra(grupo["por_meta"], sem_realizado),
+            "por_submeta": _quebra(grupo["por_submeta"], sem_realizado),
             "por_territorio": [
                 {"id": territorio, "nome": nomes.get(territorio, ""), "quantidade_realizada": total}
                 for territorio, total in sorted(
                     grupo["por_territorio"].items(), key=lambda item: nomes.get(item[0], "")
                 )
             ],
-        }
-        for grupo in grupos.values()
-    ]
+        })
+    return visao

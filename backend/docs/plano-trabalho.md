@@ -16,6 +16,13 @@ A Ação continua gravando `meta` porque o orçamento (`BudgetAllocation.meta`),
 o SGD e os filtros por Meta leem dela. Mudar o número ou a Meta de uma Submeta
 renumera as Ações dela e atualiza a Meta delas.
 
+As regras da tabela ficam nos models: `clean()` valida (prefixo, períodos,
+filhos que ficariam fora do novo período, responsável da UGP, Indicador
+inativo) e o `save()` da Submeta renumera as Ações. A API chama o `clean()`
+pelos serializers, então as regras valem igual na API e no admin do Django.
+No admin, a forma de apuração de um Indicador em uso é só leitura, porque a
+troca exige a confirmação e a auditoria da API.
+
 ### Migração dos dados (0033–0035)
 
 A 0034 converte o modelo antigo:
@@ -56,7 +63,7 @@ Fonte única: `apps/sgp/services/apuracao.py`.
 
 - `WorkPlanAcao.quantidade_realizada` é materializado e recalculado:
   - pelos signals de `apps/sgp/signals/workplan.py`: ao salvar uma Atividade (inclusive trocando de Ação ou sendo desativada), ao alterar UFPAs e membros participantes pelos dois lados da relação e ao excluir de fato uma UFPA ou um membro;
-  - ao trocar o Indicador de uma Ação ou a forma de apuração de um Indicador.
+  - ao trocar o Indicador de uma Ação (signal do `WorkPlanAcao`, vale também no admin) ou a forma de apuração de um Indicador.
 - O painel, a exportação e a visão por Indicador apuram de novo, com a mesma regra, só sobre as Atividades do escopo do usuário (e do território e período pedidos). Na forma manual vale o número lançado, que não tem recorte territorial; na visão por Indicador com `territorio_id` ou período, o realizado de um Indicador manual vem `null`.
 
 ## Valor executado
@@ -88,7 +95,7 @@ manual) e o valor executado; `--check-only` só detecta.
 | :--- | :--- | :--- |
 | CRUD | `/api/v1/sgp/indicadores/` | Escrita: Super Admin/UGP. Leitura: autenticado (catálogo, sem escopo territorial) |
 | CRUD | `/api/v1/sgp/submetas/` | Escrita: Super Admin/UGP. Leitura: escopo territorial, como as Metas |
-| CRUD | `/api/v1/acoes/` | Escrita: Super Admin/UGP |
+| CRUD | `/api/v1/acoes/` | Escrita: Super Admin/UGP. Excluir Ação com Atividades: `400 acao_com_atividades` |
 | GET | `/api/v1/sgp/plano-trabalho/painel/` | Escopo territorial |
 | GET | `/api/v1/sgp/plano-trabalho/indicadores/` | Escopo territorial |
 | GET | `/api/v1/sgp/plano-trabalho/exportar/` | Escopo territorial |

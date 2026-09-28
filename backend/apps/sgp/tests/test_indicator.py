@@ -1,5 +1,6 @@
 """Catálogo de Indicadores (SGP §5.4, RF20)."""
 import pytest
+from django.core.exceptions import ValidationError
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -59,6 +60,16 @@ class TestCadastro:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "codigo" in response.data
+
+    def test_clean_normaliza_codigo_antes_da_unicidade(self):
+        IndicatorFactory(codigo="IND-TESTE")
+        indicador = IndicatorFactory.build(codigo=" ind-teste ")
+
+        with pytest.raises(ValidationError) as erro:
+            indicador.full_clean()
+
+        assert indicador.codigo == "IND-TESTE"
+        assert "codigo" in erro.value.message_dict
 
     def test_codigo_duplicado_com_outra_caixa_retorna_400(self, auth_client, payload):
         auth_client.post(URL, {**payload, "codigo": "IND-TESTE"}, format="json")

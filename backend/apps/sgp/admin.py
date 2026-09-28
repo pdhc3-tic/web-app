@@ -175,6 +175,13 @@ class IndicatorAdmin(admin.ModelAdmin):
     search_fields = ["codigo", "nome"]
     readonly_fields = ["criado_por", "criado_em", "atualizado_em"]
 
+    def get_readonly_fields(self, request, obj=None):
+        # Trocar a forma de apuração de um Indicador em uso recalcula as Ações e
+        # exige confirmação e auditoria: só pela API, com confirmar_recalculo.
+        if obj is not None and obj.acoes.exists():
+            return [*self.readonly_fields, "forma_apuracao"]
+        return self.readonly_fields
+
 
 @admin.register(WorkPlanAcao)
 class WorkPlanAcaoAdmin(admin.ModelAdmin):

@@ -2,31 +2,24 @@
 
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 from typing import Iterable
 
 from django.db.models import QuerySet
 
+from apps.sgp.constants import STATUS_CONCLUIDA
 from apps.sgp.models import WorkPlanAcao
-from apps.sgp.services.apuracao import FiltroAtividades, expressao_quantidade_realizada
-from apps.sgp.services.budget import LimiaresSemaforo, faixa_semaforo, limiares_semaforo
-from apps.sgp.services.workplan_access import (
-    activity_scope_for_user,
-    filter_workplan_actions_for_user,
+from apps.sgp.models.workplan import CEM, arredondar, percentual, status_execucao
+from apps.sgp.services.apuracao import (
+    FiltroAtividades,
+    expressao_quantidade_realizada,
+    filtro_de_atividades,
 )
+from apps.sgp.services.budget import LimiaresSemaforo, faixa_semaforo, limiares_semaforo
+from apps.sgp.services.workplan_access import filter_workplan_actions_for_user
 
 
 ZERO = Decimal("0")
-ONE_HUNDRED = Decimal("100")
-PERCENTAGE_QUANTUM = Decimal("0.01")
-
-
-def filtro_de_escopo(user) -> FiltroAtividades | None:
-    """Filtro de Atividades do escopo territorial do usuário, no formato que a
-    apuração espera; None para quem tem visão global."""
-    if activity_scope_for_user(user) is None:
-        return None
-    return lambda prefixo: activity_scope_for_user(user, prefix=prefixo)
 
 
 def dashboard_actions(filtro: FiltroAtividades | None = None) -> QuerySet[WorkPlanAcao]:
@@ -43,7 +36,7 @@ def dashboard_actions_for_user(user) -> QuerySet[WorkPlanAcao]:
     Ações sem atividades ficam restritas a UGP e Super Admin. Alterações futuras
     nessa política devem ser feitas nesta função.
     """
-    return filter_workplan_actions_for_user(dashboard_actions(filtro_de_escopo(user)), user)
+    return filter_workplan_actions_for_user(dashboard_actions(filtro_de_atividades(user)), user)
 
 
 def apply_dashboard_filters(
@@ -82,20 +75,20 @@ def enrich_dashboard_action(
     percentual_financeiro = percentual(valor_executado, valor_total)
 
     action.dashboard_quantidade_realizada = quantidade_realizada
-    action.dashboard_percentual_realizado = _round_percentage(percentual_realizado)
-    action.dashboard_progresso_esperado = _round_percentage(progresso_esperado)
+    action.dashboard_percentual_realizado = arredondar(percentual_realizado)
+    action.dashboard_progresso_esperado = arredondar(progresso_esperado)
     action.dashboard_semaforo = _semaphore(percentual_realizado, progresso_esperado)
-    action.dashboard_status_execucao = _execution_status(
-        quantidade_planejada, quantidade_realizada, action.data_fim, today
+    action.dashboard_status_execucao = status_execucao(
+        quantidade_realizada >= quantidade_planejada, action.data_fim, today
     )
     action.dashboard_valor_executado = valor_executado
-    action.dashboard_percentual_financeiro = _round_percentage(percentual_financeiro)
+    action.dashboard_percentual_financeiro = arredondar(percentual_financeiro)
     action.dashboard_semaforo_financeiro = faixa_semaforo(percentual_financeiro, limiares)
     return action
 
 
 @dataclass(frozen=True)
-class ConsolidadoNo:
+class NodeSummary:
     """Consolidado de um nó da árvore do PT (Submeta ou Meta) a partir das
     Ações já enriquecidas por `enrich_dashboard_action`."""
 
@@ -111,13 +104,13 @@ class ConsolidadoNo:
     semaforo_financeiro: str
 
 
-def consolidar_no(
+def summarize_node(
     acoes: Iterable[WorkPlanAcao],
-    data_inicio: date,
-    data_fim: date,
+    node,
     today: date,
     limiares: LimiaresSemaforo,
-) -> ConsolidadoNo:
+) -> NodeSummary:
+    """`node` é a Meta ou a Submeta: dá o período do progresso esperado."""
     acoes = list(acoes)
     planejado = sum((Decimal(a.quantidade_planejada) for a in acoes), ZERO)
     realizado = sum((a.dashboard_quantidade_realizada for a in acoes), ZERO)
@@ -125,26 +118,26 @@ def consolidar_no(
     valor_executado = sum((a.dashboard_valor_executado for a in acoes), ZERO)
 
     percentual_realizado = percentual(realizado, planejado)
-    progresso_esperado = _expected_progress(data_inicio, data_fim, today)
+    progresso_esperado = _expected_progress(node.data_inicio, node.data_fim, today)
     percentual_financeiro = percentual(valor_executado, valor_total)
     concluido = bool(acoes) and all(
-        a.dashboard_status_execucao == "concluida" for a in acoes
+        a.dashboard_status_execucao == STATUS_CONCLUIDA for a in acoes
     )
-    return ConsolidadoNo(
+    return NodeSummary(
         quantidade_planejada=planejado,
         quantidade_realizada=realizado,
-        percentual_realizado=_round_percentage(percentual_realizado),
-        progresso_esperado=_round_percentage(progresso_esperado),
+        percentual_realizado=arredondar(percentual_realizado),
+        progresso_esperado=arredondar(progresso_esperado),
         semaforo=_semaphore(percentual_realizado, progresso_esperado),
-        status_execucao=_status(concluido, data_fim, today),
+        status_execucao=status_execucao(concluido, node.data_fim, today),
         valor_total=valor_total,
         valor_executado=valor_executado,
-        percentual_financeiro=_round_percentage(percentual_financeiro),
+        percentual_financeiro=arredondar(percentual_financeiro),
         semaforo_financeiro=faixa_semaforo(percentual_financeiro, limiares),
     )
 
 
-def arvore_do_painel(
+def dashboard_tree(
     acoes: Iterable[WorkPlanAcao],
     limiares: LimiaresSemaforo,
     today: date | None = None,
@@ -168,16 +161,11 @@ def arvore_do_painel(
 
     arvore = []
     for grupo in metas.values():
-        meta = grupo["meta"]
-        grupo["consolidado"] = consolidar_no(
-            grupo["acoes"], meta.data_inicio, meta.data_fim, today, limiares
-        )
+        grupo["consolidado"] = summarize_node(grupo["acoes"], grupo["meta"], today, limiares)
         grupo["submetas"] = [
             {
                 "submeta": submeta,
-                "consolidado": consolidar_no(
-                    acoes_da_submeta, submeta.data_inicio, submeta.data_fim, today, limiares
-                ),
+                "consolidado": summarize_node(acoes_da_submeta, submeta, today, limiares),
                 "acoes": [a.pk for a in acoes_da_submeta],
             }
             for submeta, acoes_da_submeta in sorted(
@@ -188,29 +176,17 @@ def arvore_do_painel(
     return arvore
 
 
-def percentual(parte: Decimal, total: Decimal) -> Decimal:
-    """Percentual sem arredondar, para comparar com limiares; exibição passa por
-    `percentual_arredondado`."""
-    if total <= ZERO:
-        return ZERO
-    return (Decimal(parte) / total) * ONE_HUNDRED
-
-
-def percentual_arredondado(parte: Decimal, total: Decimal) -> Decimal:
-    return _round_percentage(percentual(parte, total))
-
-
 def _expected_progress(data_inicio: date, data_fim: date, today: date) -> Decimal:
-    """Calcula o percentual de tempo transcorrido, limitado ao intervalo da Ação."""
+    """Calcula o percentual de tempo transcorrido, limitado ao intervalo informado."""
     if today <= data_inicio:
         return ZERO
     if today >= data_fim:
-        return ONE_HUNDRED
+        return CEM
 
     total_days = (data_fim - data_inicio).days
     if total_days <= 0:
-        return ONE_HUNDRED
-    return Decimal((today - data_inicio).days) / Decimal(total_days) * ONE_HUNDRED
+        return CEM
+    return Decimal((today - data_inicio).days) / Decimal(total_days) * CEM
 
 
 def _semaphore(percentual_realizado: Decimal, progresso_esperado: Decimal) -> str:
@@ -220,23 +196,3 @@ def _semaphore(percentual_realizado: Decimal, progresso_esperado: Decimal) -> st
         return "amarelo"
     return "vermelho"
 
-
-def _execution_status(
-    quantidade_planejada: Decimal,
-    quantidade_realizada: Decimal,
-    data_fim: date,
-    today: date,
-) -> str:
-    return _status(quantidade_realizada >= quantidade_planejada, data_fim, today)
-
-
-def _status(concluido: bool, data_fim: date, today: date) -> str:
-    if concluido:
-        return "concluida"
-    if today > data_fim:
-        return "em_atraso"
-    return "no_prazo"
-
-
-def _round_percentage(value: Decimal) -> Decimal:
-    return value.quantize(PERCENTAGE_QUANTUM, rounding=ROUND_HALF_UP)

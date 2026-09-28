@@ -26,12 +26,12 @@ from apps.sgp.filters_workplan import (
 from apps.sgp.models import ExportJob, Indicator, WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
 from apps.sgp.pagination import UPFPagination
 from apps.sgp.serializers_workplan import (
-    ConsolidadoNoSerializer,
     IndicatorSerializer,
     WorkPlanAcaoListSerializer,
     WorkPlanAcaoSerializer,
     WorkPlanDashboardAcaoSerializer,
     WorkPlanDashboardMetaSerializer,
+    WorkPlanDashboardNodeSerializer,
     WorkPlanDashboardQuerySerializer,
     WorkPlanDashboardSubmetaSerializer,
     WorkPlanMetaDetailSerializer,
@@ -53,12 +53,13 @@ from apps.sgp.services.workplan_access import (
 from apps.sgp.tasks import refresh_power_bi_snapshot
 from apps.sgp.services.workplan_dashboard import (
     apply_dashboard_filters,
-    arvore_do_painel,
     dashboard_actions_for_user,
+    dashboard_tree,
     enrich_dashboard_action,
 )
 from apps.sgp.services import budget as budget_service
 from apps.sgp.services.budget import limiares_semaforo
+from apps.sgp.services.apuracao import RecorteAtividades
 from apps.sgp.services.visao_indicador import visao_por_indicador
 from apps.sgp.serializers_budget import BudgetRubricaOrcamentoSerializer
 
@@ -90,7 +91,17 @@ class WorkPlanVisaoIndicadorView(APIView):
     def get(self, request):
         query_serializer = WorkPlanVisaoIndicadorQuerySerializer(data=request.query_params)
         query_serializer.is_valid(raise_exception=True)
-        grupos = visao_por_indicador(request.user, **query_serializer.validated_data)
+        dados = query_serializer.validated_data
+        grupos = visao_por_indicador(
+            request.user,
+            recorte=RecorteAtividades(
+                territorio_id=dados.get("territorio_id"),
+                periodo_inicio=dados.get("periodo_inicio"),
+                periodo_fim=dados.get("periodo_fim"),
+            ),
+            meta_id=dados.get("meta_id"),
+            indicador_id=dados.get("indicador_id"),
+        )
         return Response({"indicadores": VisaoIndicadorSerializer(grupos, many=True).data})
 
 
@@ -140,11 +151,11 @@ class WorkPlanDashboardView(APIView):
                     {
                         "meta": WorkPlanDashboardMetaSerializer(grupo["meta"]).data,
                         "resumo": grupo["resumo"],
-                        "consolidado": ConsolidadoNoSerializer(grupo["consolidado"]).data,
+                        "consolidado": WorkPlanDashboardNodeSerializer(grupo["consolidado"]).data,
                         "submetas": [
                             {
                                 "submeta": WorkPlanDashboardSubmetaSerializer(no["submeta"]).data,
-                                "consolidado": ConsolidadoNoSerializer(no["consolidado"]).data,
+                                "consolidado": WorkPlanDashboardNodeSerializer(no["consolidado"]).data,
                                 "acoes": no["acoes"],
                             }
                             for no in grupo["submetas"]
@@ -153,7 +164,7 @@ class WorkPlanDashboardView(APIView):
                             grupo["acoes"], many=True
                         ).data,
                     }
-                    for grupo in arvore_do_painel(actions, limiares)
+                    for grupo in dashboard_tree(actions, limiares)
                 ],
             })
         except PermissionDenied:
@@ -330,38 +341,8 @@ class WorkPlanAcaoViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         workplan_cadastro.atualizar_acao(serializer, request=self.request)
 
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        try:
-            has_atividades = instance.atividades.exists()
-        except Exception:
-            has_atividades = False
-        if has_atividades:
-            return Response(
-                {
-                    "detail": (
-                        "Não é possível excluir esta Ação: "
-                        "existem Atividades de Campo vinculadas a ela."
-                    )
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        AuditLog.objects.create(
-            user=request.user,
-            acao="WorkPlanAcao.delete",
-            modulo="sgp",
-            entidade="WorkPlanAcao",
-            entidade_id=str(instance.pk),
-            valores_anteriores={
-                "numero": instance.numero,
-                "descricao": instance.descricao,
-            },
-            valores_novos={},
-            ip=request.META.get("REMOTE_ADDR"),
-            user_agent=request.META.get("HTTP_USER_AGENT", ""),
-        )
-        instance.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+    def perform_destroy(self, instance):
+        workplan_cadastro.excluir_acao(instance, request=self.request)
 
 
 # ---------------------------------------------------------------------------

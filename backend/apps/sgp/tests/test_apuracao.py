@@ -206,6 +206,18 @@ class TestTrocaDeIndicadorDaAcao:
         assert _realizado(acao) == 1
 
 
+class TestTrocaDeIndicadorForaDaApi:
+    def test_salvar_a_acao_com_outro_indicador_reapura(self, nova_upf):
+        acao = _acao("contagem_atividades")
+        ActivityFactory(acao=acao, status="concluido").upfs_participantes.add(nova_upf(), nova_upf())
+        assert _realizado(acao) == 1
+
+        acao.indicador = IndicatorFactory(forma_apuracao="soma_ufpas")
+        acao.save()
+
+        assert _realizado(acao) == 2
+
+
 class TestExclusaoDeParticipantes:
     def test_excluir_membro_reapura(self, novo_membro):
         acao = _acao("soma_participantes")

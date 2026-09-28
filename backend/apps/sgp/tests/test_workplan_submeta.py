@@ -2,11 +2,13 @@
 from datetime import date
 
 import pytest
+from django.contrib.admin.sites import site
+from django.core.exceptions import ValidationError
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.core.models.audit_log import AuditLog
-from apps.sgp.models import WorkPlanSubmeta
+from apps.sgp.models import Indicator, WorkPlanSubmeta
 from apps.sgp.tests.factories import (
     ActivityFactory,
     IndicatorFactory,
@@ -44,6 +46,14 @@ def payload(meta):
         "data_inicio": "2026-02-01",
         "data_fim": "2026-11-30",
     }
+
+
+@pytest.fixture
+def submeta(meta):
+    return WorkPlanSubmetaFactory(
+        meta=meta, numero="1.1",
+        data_inicio=date(2026, 2, 1), data_fim=date(2026, 11, 30),
+    )
 
 
 def _cliente(user):
@@ -309,13 +319,6 @@ class TestConsistenciaComMeta:
 
 
 class TestAcaoNaSubmeta:
-    @pytest.fixture
-    def submeta(self, meta):
-        return WorkPlanSubmetaFactory(
-            meta=meta, numero="1.1",
-            data_inicio=date(2026, 2, 1), data_fim=date(2026, 11, 30),
-        )
-
     def _payload(self, submeta, indicador, **extra):
         return {
             "submeta": submeta.pk,
@@ -399,3 +402,74 @@ class TestAcaoNaSubmeta:
 
         assert response.data["tipo_unidade_display"] == acao.indicador.nome
         assert response.data["indicador_detalhe"]["codigo"] == acao.indicador.codigo
+
+
+class TestRegrasValemForaDaApi:
+    """As regras moram nos models: o admin do Django (e qualquer outro caminho
+    que salve pelo ORM) não consegue deixar a hierarquia inconsistente."""
+
+    def test_mudar_numero_e_meta_da_submeta_renumera_as_acoes(self, meta):
+        outra = WorkPlanMetaFactory(numero=2, data_inicio=meta.data_inicio, data_fim=meta.data_fim)
+        submeta = WorkPlanSubmetaFactory(meta=meta, numero="1.1")
+        acao = WorkPlanAcaoFactory(submeta=submeta, meta=meta, numero="1.1.4")
+
+        submeta.meta, submeta.numero = outra, "2.3"
+        submeta.save()
+
+        acao.refresh_from_db()
+        assert (acao.numero, acao.meta_id) == ("2.3.4", outra.pk)
+
+    def test_responsavel_fora_da_ugp_nao_passa_no_clean(self, meta, usuario_adt_rn):
+        submeta = WorkPlanSubmetaFactory(meta=meta, numero="1.1", responsavel=None)
+        submeta.responsavel = usuario_adt_rn
+
+        with pytest.raises(ValidationError) as erro:
+            submeta.full_clean()
+
+        assert "responsavel" in erro.value.message_dict
+
+    def test_periodo_da_submeta_nao_deixa_acoes_de_fora(self, meta):
+        submeta = WorkPlanSubmetaFactory(meta=meta, numero="1.1")
+        WorkPlanAcaoFactory(
+            submeta=submeta, meta=meta, numero="1.1.1",
+            data_inicio=date(2026, 3, 1), data_fim=date(2026, 9, 30),
+        )
+        submeta.data_fim = date(2026, 6, 30)
+
+        with pytest.raises(ValidationError) as erro:
+            submeta.clean()
+
+        assert "1.1.1" in erro.value.message_dict["data_inicio"][0]
+
+    def test_meta_com_submetas_nao_muda_de_numero(self, meta):
+        WorkPlanSubmetaFactory(meta=meta, numero="1.1")
+        meta.numero = 5
+
+        with pytest.raises(ValidationError) as erro:
+            meta.clean()
+
+        assert "numero" in erro.value.message_dict
+
+    def test_acao_nao_troca_para_indicador_inativo(self, submeta, meta):
+        acao = WorkPlanAcaoFactory(submeta=submeta, meta=meta, numero="1.1.1")
+        acao.indicador = IndicatorFactory(ativo=False)
+
+        with pytest.raises(ValidationError) as erro:
+            acao.clean()
+
+        assert "indicador" in erro.value.message_dict
+
+    def test_acao_que_ja_usa_indicador_inativo_continua_valida(self, submeta, meta):
+        acao = WorkPlanAcaoFactory(submeta=submeta, meta=meta, numero="1.1.1")
+        Indicator.objects.filter(pk=acao.indicador_id).update(ativo=False)
+        acao.refresh_from_db()
+
+        acao.clean()
+
+    def test_admin_nao_troca_forma_de_apuracao_de_indicador_em_uso(self, rf, submeta, meta):
+        admin_do_indicador = site._registry[Indicator]
+        em_uso = WorkPlanAcaoFactory(submeta=submeta, meta=meta).indicador
+        livre = IndicatorFactory()
+
+        assert "forma_apuracao" in admin_do_indicador.get_readonly_fields(rf.get("/"), em_uso)
+        assert "forma_apuracao" not in admin_do_indicador.get_readonly_fields(rf.get("/"), livre)

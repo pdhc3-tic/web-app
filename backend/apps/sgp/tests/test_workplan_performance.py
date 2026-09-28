@@ -118,8 +118,7 @@ def test_comando_check_only_detecta_sem_corrigir():
 
 def test_painel_queries_constantes(auth_client):
     meta = WorkPlanMetaFactory(numero=1)
-    for indice in range(5):
-        WorkPlanAcaoFactory(meta=meta, numero=f"1.{indice + 1}")
+    WorkPlanAcaoFactory.create_batch(5, meta=meta)
     # Os limiares do semáforo financeiro vêm do SystemConfig com cache: sem
     # aquecer, só a primeira medição pagaria a leitura e a comparação falharia
     # por um motivo que não é consulta por Ação.
@@ -129,8 +128,7 @@ def test_painel_queries_constantes(auth_client):
         response_5 = auth_client.get(PANEL_URL)
     queries_com_5 = len(ctx_5.captured_queries)
 
-    for indice in range(5, 30):
-        WorkPlanAcaoFactory(meta=meta, numero=f"1.{indice + 1}")
+    WorkPlanAcaoFactory.create_batch(25, meta=meta)
 
     with CaptureQueriesContext(connection) as ctx_30:
         response_30 = auth_client.get(PANEL_URL)
@@ -154,14 +152,9 @@ def test_painel_sob_500ms(auth_client, municipio):
     acoes = []
     for numero_meta in range(1, 8):
         meta = WorkPlanMetaFactory(numero=numero_meta)
-        for indice in range(30):
-            acoes.append(
-                WorkPlanAcaoFactory(
-                    meta=meta,
-                    numero=f"{numero_meta}.{indice + 1}",
-                    quantidade_planejada=Decimal("500"),
-                )
-            )
+        acoes.extend(
+            WorkPlanAcaoFactory.create_batch(30, meta=meta, quantidade_planejada=Decimal("500"))
+        )
 
     atividades = [
         Activity(

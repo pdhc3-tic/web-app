@@ -1,6 +1,7 @@
-"""Regras de cadastro do Plano de Trabalho que vão além da validação de um
-único registro: Indicador em uso, recálculo ao trocar a forma de apuração e
-Ações que acompanham a Submeta quando ela muda de número ou de Meta."""
+"""Cadastro do Plano de Trabalho pela API: auditoria de Indicadores, Submetas e
+Ações, Indicador em uso e confirmação do recálculo ao trocar a forma de
+apuração. As regras de consistência de cada registro ficam nos models (valem
+também no admin)."""
 
 from django.db import transaction
 from rest_framework import status
@@ -124,15 +125,6 @@ def atualizar_submeta(serializer, *, request):
     submeta = serializer.instance
     antes = _snapshot_submeta(submeta)
     submeta = serializer.save()
-
-    # As Ações carregam o número da Submeta como prefixo e a Meta como campo
-    # derivado; as duas coisas acompanham a Submeta.
-    if submeta.numero != antes["numero"] or submeta.meta_id != antes["meta_id"]:
-        for acao in submeta.acoes.all():
-            sequencial = acao.numero.rsplit(".", 1)[-1]
-            acao.numero = f"{submeta.numero}.{sequencial}"
-            acao.save(update_fields=["numero", "submeta"])
-
     log_audit(
         user=request.user, acao="WorkPlanSubmeta.update", modulo="sgp",
         entidade="WorkPlanSubmeta", entidade_id=submeta.pk, valores_anteriores=antes,
@@ -172,10 +164,8 @@ def atualizar_acao(serializer, *, request):
     acao = serializer.instance
     antes = _snapshot_acao(acao)
     acao = serializer.save()
-    # A quantidade realizada depende da forma de apuração do Indicador: trocar o
-    # Indicador (inclusive saindo da forma manual) muda a regra da contagem.
     if acao.indicador_id != antes["indicador_id"]:
-        recalcular_quantidade_realizada([acao.pk])
+        # O signal reapurou pela forma do novo Indicador.
         acao.refresh_from_db(fields=["quantidade_realizada"])
     log_audit(
         user=request.user, acao="WorkPlanAcao.update", modulo="sgp", entidade="WorkPlanAcao",
@@ -183,3 +173,18 @@ def atualizar_acao(serializer, *, request):
         request=request,
     )
     return acao
+
+
+@transaction.atomic
+def excluir_acao(acao, *, request):
+    if acao.atividades.exists():
+        raise ErroComCodigo(
+            "acao_com_atividades",
+            "Não é possível excluir esta Ação: existem Atividades de Campo vinculadas a ela.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    log_audit(
+        user=request.user, acao="WorkPlanAcao.delete", modulo="sgp", entidade="WorkPlanAcao",
+        entidade_id=acao.pk, valores_anteriores=_snapshot_acao(acao), request=request,
+    )
+    acao.delete()

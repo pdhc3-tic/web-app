@@ -1,11 +1,17 @@
 import re
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
+
+from apps.core.services.permissions import user_has_role
+from apps.sgp.constants import STATUS_CONCLUIDA, STATUS_EM_ATRASO, STATUS_NO_PRAZO
+
+CEM = Decimal("100")
+CENTAVO = Decimal("0.01")
 
 
 def validate_numero_submeta(value):
@@ -18,12 +24,43 @@ def validate_numero_acao(value):
         raise ValidationError("Formato inválido. Use X.Y.Z (ex: 1.1.1, 2.3.4).")
 
 
-def _status_execucao(concluida: bool, data_fim) -> str:
+# Cálculos de execução do Plano de Trabalho. Os properties dos models e o
+# painel/exportação (que apuram só o escopo do usuário) usam as mesmas funções.
+
+def status_execucao(concluida: bool, data_fim, hoje=None) -> str:
     if concluida:
-        return "concluida"
-    if data_fim and timezone.localdate() > data_fim:
-        return "em_atraso"
-    return "no_prazo"
+        return STATUS_CONCLUIDA
+    if data_fim and (hoje or timezone.localdate()) > data_fim:
+        return STATUS_EM_ATRASO
+    return STATUS_NO_PRAZO
+
+
+def percentual(parte, total) -> Decimal:
+    """Sem arredondar, para comparar com limiares; exibição passa por `arredondar`."""
+    if total <= 0:
+        return Decimal("0")
+    return Decimal(parte) / Decimal(total) * CEM
+
+
+def arredondar(valor: Decimal) -> Decimal:
+    return valor.quantize(CENTAVO, rounding=ROUND_HALF_UP)
+
+
+def custo_unitario(valor_executado, quantidade_realizada) -> Decimal | None:
+    if not quantidade_realizada:
+        return None
+    return arredondar(Decimal(valor_executado) / Decimal(quantidade_realizada))
+
+
+def _filhos_fora_do_periodo(filhos, data_inicio, data_fim) -> list[str]:
+    """Números dos filhos (Submetas ou Ações) que o período deixaria de fora."""
+    if not (data_inicio and data_fim):
+        return []
+    return list(
+        filhos.exclude(data_inicio__gte=data_inicio, data_fim__lte=data_fim)
+        .order_by("numero")
+        .values_list("numero", flat=True)
+    )
 
 
 class WorkPlanMeta(models.Model):
@@ -70,6 +107,22 @@ class WorkPlanMeta(models.Model):
     def __str__(self):
         return f"Meta {self.numero} – {self.titulo}"
 
+    def clean(self):
+        if not self.pk:
+            return
+        erros = {}
+        numero_salvo = WorkPlanMeta.objects.filter(pk=self.pk).values_list("numero", flat=True).first()
+        if numero_salvo is not None and numero_salvo != self.numero and self.submetas.exists():
+            erros["numero"] = (
+                "Não é possível mudar o número de uma Meta que já tem Submetas: "
+                "a numeração delas começa com o número da Meta."
+            )
+        fora = _filhos_fora_do_periodo(self.submetas.all(), self.data_inicio, self.data_fim)
+        if fora:
+            erros["data_inicio"] = f"O novo período deixa Submetas fora da Meta: {', '.join(fora)}."
+        if erros:
+            raise ValidationError(erros)
+
     @property
     def valor_total_planejado(self):
         from django.db.models import F
@@ -89,9 +142,9 @@ class WorkPlanMeta(models.Model):
     def status_calculado(self):
         submetas = list(self.submetas.all())
         if not submetas:
-            return "no_prazo"
-        return _status_execucao(
-            all(s.status_execucao == "concluida" for s in submetas), self.data_fim
+            return STATUS_NO_PRAZO
+        return status_execucao(
+            all(s.status_execucao == STATUS_CONCLUIDA for s in submetas), self.data_fim
         )
 
 
@@ -152,8 +205,26 @@ class WorkPlanSubmeta(models.Model):
     def __str__(self):
         return f"{self.numero} – {self.titulo}"
 
+    def save(self, *args, **kwargs):
+        # As Ações carregam o número da Submeta como prefixo e a Meta como campo
+        # derivado: as duas coisas acompanham a Submeta, venha a mudança da API
+        # ou do admin.
+        anterior = (
+            WorkPlanSubmeta.objects.filter(pk=self.pk).values("numero", "meta_id").first()
+            if self.pk
+            else None
+        )
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            if anterior and (anterior["numero"], anterior["meta_id"]) != (self.numero, self.meta_id):
+                for acao in self.acoes.all():
+                    acao.numero = f"{self.numero}.{acao.numero.rsplit('.', 1)[-1]}"
+                    acao.save(update_fields=["numero", "submeta"])
+
     def clean(self):
         erros = {}
+        if self.responsavel_id and not user_has_role(self.responsavel, "ugp"):
+            erros["responsavel"] = "O responsável precisa ser um usuário da UGP."
         if self.meta_id and self.numero and not self.numero.startswith(f"{self.meta.numero}."):
             erros["numero"] = f"O número da Submeta deve começar com {self.meta.numero}. (número da Meta)."
         if self.data_inicio and self.data_fim and self.data_inicio > self.data_fim:
@@ -165,6 +236,10 @@ class WorkPlanSubmeta(models.Model):
                 "O período da Submeta deve estar contido no período da Meta "
                 f"({self.meta.data_inicio:%d/%m/%Y} a {self.meta.data_fim:%d/%m/%Y})."
             )
+        elif self.pk:
+            fora = _filhos_fora_do_periodo(self.acoes.all(), self.data_inicio, self.data_fim)
+            if fora:
+                erros["data_inicio"] = f"O novo período deixa Ações fora da Submeta: {', '.join(fora)}."
         if erros:
             raise ValidationError(erros)
 
@@ -187,8 +262,8 @@ class WorkPlanSubmeta(models.Model):
     @property
     def status_execucao(self):
         acoes = list(self.acoes.all())
-        return _status_execucao(
-            bool(acoes) and all(a.status_execucao == "concluida" for a in acoes),
+        return status_execucao(
+            bool(acoes) and all(a.status_execucao == STATUS_CONCLUIDA for a in acoes),
             self.data_fim,
         )
 
@@ -309,6 +384,16 @@ class WorkPlanAcao(models.Model):
 
     def clean(self):
         erros = {}
+        if self.indicador_id and not self.indicador.ativo:
+            # Ação que já usa um Indicador inativo continua válida; só não se
+            # vincula (nem se troca para) um inativo.
+            indicador_salvo = (
+                WorkPlanAcao.objects.filter(pk=self.pk).values_list("indicador_id", flat=True).first()
+                if self.pk
+                else None
+            )
+            if indicador_salvo != self.indicador_id:
+                erros["indicador"] = "Indicador inativo não pode ser vinculado a uma Ação."
         if self.submeta_id:
             submeta = self.submeta
             if self.numero and not self.numero.startswith(f"{submeta.numero}."):
@@ -333,20 +418,14 @@ class WorkPlanAcao(models.Model):
 
     @property
     def percentual_realizado(self):
-        if self.quantidade_planejada <= 0:
-            return Decimal("0")
-        return (Decimal(self.quantidade_realizada) / self.quantidade_planejada * 100).quantize(
-            Decimal("0.01")
-        )
+        return arredondar(percentual(self.quantidade_realizada, self.quantidade_planejada))
 
     @property
     def custo_unitario_realizado(self):
-        if not self.quantidade_realizada:
-            return None
-        return (self.valor_executado / self.quantidade_realizada).quantize(Decimal("0.01"))
+        return custo_unitario(self.valor_executado, self.quantidade_realizada)
 
     @property
     def status_execucao(self):
-        return _status_execucao(
+        return status_execucao(
             self.quantidade_realizada >= self.quantidade_planejada, self.data_fim
         )

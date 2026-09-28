@@ -15,6 +15,22 @@ pytestmark = pytest.mark.django_db
 
 URL = "/api/v1/sgd/demandas/"
 
+TABELAS_DA_CADEIA = (
+    'SELECT "sgp_workplanacao"',
+    'SELECT "sgp_workplansubmeta"',
+    'SELECT "sgp_workplanmeta"',
+    'SELECT "sgp_indicator"',
+)
+
+
+def _consultas_avulsas_da_cadeia(consultas):
+    """Consultas próprias a Ação, Submeta, Meta ou Indicador: a cadeia tem de vir
+    no select_related da consulta principal."""
+    return [
+        q["sql"] for q in consultas.captured_queries
+        if q["sql"].lstrip().startswith(TABELAS_DA_CADEIA)
+    ]
+
 
 def test_contexto_traz_submeta_e_indicador(auth_client_solicitante, demand_rascunho_rn):
     acao = demand_rascunho_rn.activity.acao
@@ -31,22 +47,24 @@ def test_contexto_traz_submeta_e_indicador(auth_client_solicitante, demand_rascu
     assert contexto["indicador_unidade_medida"] == acao.indicador.unidade_medida
 
 
-def test_listagem_traz_submeta_e_indicador_no_join(
+def test_detalhe_traz_a_cadeia_sem_consulta_a_mais(auth_client_solicitante, demand_rascunho_rn):
+    with CaptureQueriesContext(connection) as consultas:
+        response = auth_client_solicitante.get(f"{URL}{demand_rascunho_rn.pk}/")
+
+    assert response.status_code == 200
+    assert _consultas_avulsas_da_cadeia(consultas) == []
+
+
+def test_listagem_traz_a_cadeia_sem_consulta_a_mais(
     auth_client_solicitante, activity_rn, solicitante_rn
 ):
-    """A cadeia vem no select_related da consulta principal: nenhuma consulta
-    própria a Submeta ou Indicador, qualquer que seja o número de demandas."""
     DemandFactory.create_batch(3, activity=activity_rn, solicitante=solicitante_rn)
 
     with CaptureQueriesContext(connection) as consultas:
         response = auth_client_solicitante.get(URL)
 
     assert len(response.data) == 3
-    avulsas = [
-        q["sql"] for q in consultas.captured_queries
-        if q["sql"].lstrip().startswith(('SELECT "sgp_workplansubmeta"', 'SELECT "sgp_indicator"'))
-    ]
-    assert avulsas == []
+    assert _consultas_avulsas_da_cadeia(consultas) == []
 
 
 def test_concluir_atualiza_valor_executado_da_acao(

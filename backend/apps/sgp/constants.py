@@ -137,10 +137,14 @@ PARENTESCO_CHOICES = [
 # Plano de Trabalho — Metas & Ações
 # ---------------------------------------------------------------------------
 
+STATUS_NO_PRAZO = "no_prazo"
+STATUS_EM_ATRASO = "em_atraso"
+STATUS_CONCLUIDA = "concluida"
+
 STATUS_WORKPLAN = [
-    ("no_prazo", "No Prazo"),
-    ("em_atraso", "Em Atraso"),
-    ("concluida", "Concluída"),
+    (STATUS_NO_PRAZO, "No Prazo"),
+    (STATUS_EM_ATRASO, "Em Atraso"),
+    (STATUS_CONCLUIDA, "Concluída"),
 ]
 
 ODS_CHOICES = [
