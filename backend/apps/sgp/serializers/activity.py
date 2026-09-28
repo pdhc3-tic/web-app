@@ -9,7 +9,14 @@ from apps.sgp.serializers.activity_foto import ActivityPhotoSerializer
 from apps.sgp.serializers.common import MunicipioNestedSerializer, NestedSerializer
 from apps.sgp.serializers.membro import MembroListSerializer
 from apps.sgp.serializers.upf import UPFListSerializer
-from apps.sgp.services.activity_status import ActivityStatusError, validar_transicao
+from apps.sgp.services.activity_status import (
+    ActivityStatusError,
+    DataFimInvalidaError,
+    MembroForaUPFError,
+    validar_datas,
+    validar_membros_participantes,
+    validar_transicao,
+)
 
 # ---------------------------------------------------------------------------
 # Activity serializers
@@ -197,22 +204,6 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
     def get_territorio_id(self, obj):
         return obj.territorio_id
 
-    # ── Validações de campo ───────────────────────────────────────────────────
-
-    def validate_data_fim(self, value):
-        data_inicio = self.initial_data.get("data_inicio")
-        if data_inicio and value:
-            from rest_framework.fields import DateTimeField as DRFDateTimeField
-            try:
-                di = DRFDateTimeField().to_internal_value(data_inicio)
-                if value < di:
-                    raise serializers.ValidationError(
-                        "data_fim não pode ser anterior a data_inicio."
-                    )
-            except Exception:
-                pass  # deixa a validação de data_inicio cuidar
-        return value
-
     # ── Validação cruzada (validate) ──────────────────────────────────────────
 
     def validate(self, attrs):
@@ -238,6 +229,20 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
                 "code": "VALIDATION_ERROR",
             })
 
+        # data_fim não pode ficar antes de data_inicio — com fallback pro
+        # valor atual da atividade, igual ao sync (ActivitySyncEntity),
+        # senão um PATCH que só toca data_fim escaparia da checagem.
+        data_inicio = attrs.get(
+            "data_inicio", self.instance.data_inicio if self.instance else None
+        )
+        data_fim = attrs.get(
+            "data_fim", self.instance.data_fim if self.instance else None
+        )
+        try:
+            validar_datas(data_inicio, data_fim)
+        except DataFimInvalidaError as exc:
+            raise serializers.ValidationError({exc.field: exc.message})
+
         # Validação cruzada: membros devem pertencer às UPFs selecionadas
         upfs_ids = set()
         if "upfs_participantes" in attrs:
@@ -246,14 +251,11 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             upfs_ids = set(self.instance.upfs_participantes.values_list("pk", flat=True))
 
         membros = attrs.get("membros_participantes")
-        if membros is not None and upfs_ids:
-            invalidos = [m.pk for m in membros if m.upf_id not in upfs_ids]
-            if invalidos:
-                raise serializers.ValidationError({
-                    "membros_participantes": (
-                        f"Membros {invalidos} não pertencem às UPFs participantes selecionadas."
-                    ),
-                })
+        if membros is not None:
+            try:
+                validar_membros_participantes(upfs_ids, [m.pk for m in membros])
+            except MembroForaUPFError as exc:
+                raise serializers.ValidationError({exc.field: exc.message})
 
         return attrs
 

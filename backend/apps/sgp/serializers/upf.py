@@ -8,8 +8,7 @@ from apps.core.sensitive_fields import SensitiveFieldsSerializerMixin
 from apps.sgp.models import Comunidade, MembroFamilia, Projeto, UPF
 from apps.sgp.serializers.common import MunicipioNestedSerializer, NestedSerializer
 from apps.sgp.serializers.membro import MembroListSerializer
-from apps.sgp.services.membro_rules import CPFDuplicadoError, validar_cpf_unico
-from apps.sgp.validators import validate_cpf
+from apps.sgp.services.membro_rules import CPFDuplicadoError, CPFInvalidoError, validar_cpf
 
 
 class TitularNestedSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSerializer):
@@ -155,23 +154,15 @@ class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeria
         return MembroListSerializer(membros, many=True, context=self.context).data
 
     def validate_cpf(self, value):
-        return validate_cpf(value)
-
-    def validate(self, attrs):
-        cpf = attrs.get("_titular_cpf") or (
-            self.instance.titular.cpf if self.instance else None
-        )
-
-        if cpf:
-            membro_atual = self.instance.titular if self.instance else None
-            try:
-                validar_cpf_unico(cpf, membro_atual=membro_atual)
-            except CPFDuplicadoError:
-                raise serializers.ValidationError(
-                    {"cpf": "Já existe uma UPF ativa cadastrada com este CPF"}
-                )
-
-        return attrs
+        membro_atual = self.instance.titular if self.instance else None
+        try:
+            return validar_cpf(value, membro_atual=membro_atual)
+        except CPFInvalidoError as exc:
+            raise serializers.ValidationError(exc.message)
+        except CPFDuplicadoError:
+            raise serializers.ValidationError(
+                "Já existe uma UPF ativa cadastrada com este CPF"
+            )
 
     def _extract_titular_data(self, attrs):
         field_map = {

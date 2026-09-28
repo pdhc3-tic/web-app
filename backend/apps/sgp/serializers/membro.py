@@ -7,11 +7,11 @@ from apps.sgp.constants import SAUDE_CHOICES
 from apps.sgp.models import MembroFamilia
 from apps.sgp.services.membro_rules import (
     CPFDuplicadoError,
+    CPFInvalidoError,
     TitularDuplicadoError,
-    validar_cpf_unico,
+    validar_cpf,
     validar_titular_unico,
 )
-from apps.sgp.validators import validate_cpf
 
 
 class MembroListSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSerializer):
@@ -120,9 +120,10 @@ class MembroDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSe
     def validate_cpf(self, value):
         if not value:
             return ""
-        value = validate_cpf(value)
         try:
-            validar_cpf_unico(value, membro_atual=self.instance)
+            return validar_cpf(value, membro_atual=self.instance)
+        except CPFInvalidoError as exc:
+            raise serializers.ValidationError(exc.message)
         except CPFDuplicadoError as exc:
             duplicado = exc.duplicado
             user = self.context["request"].user
@@ -136,7 +137,6 @@ class MembroDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSe
             raise serializers.ValidationError(
                 "Já existe um membro cadastrado com este CPF"
             )
-        return value
 
     def validate_data_nascimento(self, value):
         if value and value > date.today():

@@ -34,8 +34,8 @@ Códigos possíveis: `PAYLOAD_INVALIDO`, `ENTIDADE_NAO_SUPORTADA`, `DUPLICATA`,
 `NAO_ENCONTRADO`, `FORA_TERRITORIO`, `ERRO_INTERNO`, `EXCLUIDO_NO_SERVIDOR`,
 `CAMPO_SENSIVEL_NAO_AUTORIZADO`, e os códigos de regra de negócio (ver seção
 abaixo): `TRANSICAO_INVALIDA`, `EVIDENCIA_OBRIGATORIA`,
-`JUSTIFICATIVA_OBRIGATORIA`, `NOVA_DATA_OBRIGATORIA`, `CPF_DUPLICADO`,
-`TITULAR_DUPLICADO`.
+`JUSTIFICATIVA_OBRIGATORIA`, `NOVA_DATA_OBRIGATORIA`, `DATA_FIM_INVALIDA`,
+`MEMBRO_FORA_UPF`, `CPF_INVALIDO`, `CPF_DUPLICADO`, `TITULAR_DUPLICADO`.
 
 ## Conflitos de regra de negócio (`estrategia=regra_negocio_rejeitada`)
 
@@ -45,9 +45,15 @@ negócio, consumindo os mesmos serviços de domínio do app `sgp`:
 
 - `apps.sgp.services.activity_status` — transição de status, evidência
   obrigatória para concluir, justificativa obrigatória, nova data obrigatória
-  ao reagendar (Activity).
-- `apps.sgp.services.membro_rules` — unicidade global de CPF, titular único
-  por UPF (Membro/UPF).
+  ao reagendar, `data_fim` não anterior a `data_inicio`, membros
+  participantes pertencentes às UPFs participantes selecionadas (Activity).
+  A validação de status/justificativa/`data_fim` roda em toda atualização,
+  mesmo quando o campo em questão não vem no payload — com fallback pro
+  valor atual da atividade, igual à API web (senão um update que só toca
+  outro campo escaparia da regra).
+- `apps.sgp.services.membro_rules` — CPF normalizado (só dígitos) e validado
+  (dígito verificador, mesma checagem de `apps.sgp.validators.validate_cpf`)
+  antes de checar unicidade global; titular único por UPF (Membro/UPF).
 
 Quando um item do push viola uma dessas regras, o sync **nunca grava
 silenciosamente em estado inválido**: o item é rejeitado normalmente (erro
@@ -59,6 +65,35 @@ Articulador). Isso cobre, por exemplo, uma atividade marcada como
 "concluída" offline sem evidência ainda confirmada no servidor — a regra
 rejeita a transição e o caso fica registrado para follow-up manual; não há
 fila de reprocessamento automático (o app mobile decide se reenvia depois).
+
+**Corrida entre pushes concorrentes.** A checagem de CPF único/titular único
+é feita em memória antes de gravar; se dois pushes concorrentes passarem
+juntos por ela (nenhum viu o outro ainda commitado), só a `UniqueConstraint`
+do banco barra o segundo. Esse caso também vira `CPF_DUPLICADO`/
+`TITULAR_DUPLICADO` com entrada em `conflict_log` — nunca um `ERRO_INTERNO`
+genérico — porque `PushProcessor._process_item` reconhece a
+`IntegrityError` pelo nome da constraint (`unique_cpf_global`/
+`unique_titular_por_upf`) e a reclassifica antes de responder ao item; o log
+é gravado fora da transação que sofreu rollback, senão seria descartado
+junto.
+
+**CPF duplicado: create vs. update.** No **create**, um CPF já cadastrado no
+servidor é pego antes mesmo de chamar `entity.create()`, pela busca por
+identificador natural (Estratégia 1) — vira `DUPLICATA` com
+`estrategia=duplicate_rejeitado`, `status=resolvido_auto` (não chega a ser
+`regra_negocio_rejeitada`). Só no **update** — trocar o CPF de um registro
+já existente para um CPF usado por outro — é que a checagem nova desta
+issue entra em ação, com `estrategia=regra_negocio_rejeitada`,
+`status=pendente`.
+
+**Mudança de comportamento na API web:** a unicidade de CPF no cadastro de
+UPF (`POST/PATCH /api/v1/upfs/`) passou a ser **global**, no mesmo escopo da
+constraint do banco — antes era só "por projeto" (`upf__projeto_id`), o que
+deixava passar um CPF já usado por um membro não-titular ou por titular de
+UPF em outro projeto, e que acabava batendo na constraint do banco como
+`IntegrityError` não tratado. A mensagem de erro também mudou (não cita mais
+"neste projeto"). Times de frontend que dependem dessa mensagem devem
+revisar.
 
 ## Decisões de contrato V1
 

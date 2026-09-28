@@ -7,8 +7,10 @@ sync SCA converte em SyncEntityError).
 """
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from rest_framework.serializers import ValidationError as DRFValidationError
 
 from apps.sgp.models import MembroFamilia, UPF
+from apps.sgp.validators import validate_cpf as _validar_formato_cpf
 
 
 class MembroRuleError(DjangoValidationError):
@@ -21,6 +23,13 @@ class MembroRuleError(DjangoValidationError):
 
     def __init__(self, message):
         super().__init__(message, code="VALIDATION_ERROR")
+
+
+class CPFInvalidoError(MembroRuleError):
+    """Formato incorreto ou dígito verificador inválido — mesma checagem que
+    `apps.sgp.validators.validate_cpf`, agora também aplicada pelo sync."""
+
+    sync_code = "CPF_INVALIDO"
 
 
 class CPFDuplicadoError(MembroRuleError):
@@ -36,18 +45,32 @@ class TitularDuplicadoError(MembroRuleError):
     sync_code = "TITULAR_DUPLICADO"
 
 
-REGRA_NEGOCIO_SYNC_CODES = {CPFDuplicadoError.sync_code, TitularDuplicadoError.sync_code}
+REGRA_NEGOCIO_SYNC_CODES = {
+    CPFInvalidoError.sync_code,
+    CPFDuplicadoError.sync_code,
+    TitularDuplicadoError.sync_code,
+}
 
 
-def validar_cpf_unico(cpf, *, membro_atual=None):
-    """Levanta CPFDuplicadoError se `cpf` já pertence a outro MembroFamilia.
+def validar_cpf(cpf, *, membro_atual=None):
+    """Normaliza, valida formato/dígito verificador e checa unicidade GLOBAL
+    (mesmo escopo da constraint `unique_cpf_global`).
 
-    Unicidade GLOBAL — mesmo escopo da constraint `unique_cpf_global`.
-    CPF vazio nunca é considerado duplicata.
+    CPF vazio retorna "" sem validar nada. Levanta `CPFInvalidoError` para
+    formato/dígito inválido (mesma regra de `apps.sgp.validators.validate_cpf`,
+    reaproveitada aqui) e `CPFDuplicadoError` para duplicata. Retorna o CPF
+    normalizado (só dígitos) — é esse valor que o chamador deve persistir,
+    nunca o texto bruto recebido.
     """
     if not cpf:
-        return
-    qs = MembroFamilia.objects.filter(cpf=cpf)
+        return ""
+    try:
+        cpf_normalizado = _validar_formato_cpf(cpf)
+    except DRFValidationError as exc:
+        detail = exc.detail[0] if isinstance(exc.detail, list) else exc.detail
+        raise CPFInvalidoError(str(detail)) from exc
+
+    qs = MembroFamilia.objects.filter(cpf=cpf_normalizado)
     if membro_atual is not None and membro_atual.pk:
         qs = qs.exclude(pk=membro_atual.pk)
     duplicado = qs.first()
@@ -56,6 +79,7 @@ def validar_cpf_unico(cpf, *, membro_atual=None):
             f"Já existe um membro cadastrado com este CPF (UPF {duplicado.upf_id}).",
             duplicado=duplicado,
         )
+    return cpf_normalizado
 
 
 def validar_titular_unico(upf_id, *, membro_atual=None):

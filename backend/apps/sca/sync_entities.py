@@ -17,10 +17,16 @@ from django.db import models
 from django.utils import timezone
 
 from apps.sgp.models import Activity, MembroFamilia, UPF
-from apps.sgp.services.activity_status import ActivityStatusError, transition
+from apps.sgp.services.activity_status import (
+    ActivityRuleError,
+    transition,
+    validar_datas,
+    validar_membros_participantes,
+    validar_transicao,
+)
 from apps.sgp.services.membro_rules import (
     MembroRuleError,
-    validar_cpf_unico,
+    validar_cpf,
     validar_titular_unico,
 )
 
@@ -260,14 +266,12 @@ class UPFSyncEntity(SyncEntity):
         if not titular_data.get("nome_completo"):
             raise SyncEntityError("nome_completo do titular é obrigatório para criar UPF.")
 
-        cpf = (titular_data.get("cpf") or "").strip()
-        if cpf:
-            try:
-                validar_cpf_unico(cpf)
-            except MembroRuleError as exc:
-                raise SyncEntityError(
-                    f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
-                ) from exc
+        try:
+            titular_data["cpf"] = validar_cpf(titular_data.get("cpf"))
+        except MembroRuleError as exc:
+            raise SyncEntityError(
+                f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
+            ) from exc
 
         titular = MembroFamilia.objects.create(
             upf=None,
@@ -307,7 +311,9 @@ class UPFSyncEntity(SyncEntity):
 
         if titular_changes.get("cpf"):
             try:
-                validar_cpf_unico(titular_changes["cpf"], membro_atual=instance.titular)
+                titular_changes["cpf"] = validar_cpf(
+                    titular_changes["cpf"], membro_atual=instance.titular
+                )
             except MembroRuleError as exc:
                 raise SyncEntityError(
                     f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
@@ -417,7 +423,7 @@ class MemberSyncEntity(SyncEntity):
             raise SyncEntityError("Campo 'upf' (ou 'upf_uuid_local') é obrigatório para criar membro.")
         data["upf_id"] = upf_id
         try:
-            validar_cpf_unico((data.get("cpf") or "").strip())
+            data["cpf"] = validar_cpf(data.get("cpf"))
             if data.get("grau_parentesco") == "titular":
                 validar_titular_unico(upf_id)
         except MembroRuleError as exc:
@@ -438,7 +444,7 @@ class MemberSyncEntity(SyncEntity):
         novo_upf_id = changes.get("upf", instance.upf_id)
         try:
             if changes.get("cpf"):
-                validar_cpf_unico(changes["cpf"], membro_atual=instance)
+                changes["cpf"] = validar_cpf(changes["cpf"], membro_atual=instance)
             if novo_grau == "titular":
                 validar_titular_unico(novo_upf_id, membro_atual=instance)
         except MembroRuleError as exc:
@@ -497,6 +503,14 @@ class ActivitySyncEntity(SyncEntity):
         novo_status = data.pop("status", None)
         justificativa = data.pop("justificativa", "")
 
+        try:
+            validar_datas(data.get("data_inicio"), data.get("data_fim"))
+            validar_membros_participantes(upfs, membros)
+        except ActivityRuleError as exc:
+            raise SyncEntityError(
+                f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
+            ) from exc
+
         instance = Activity(
             criado_por=user,
             device_id=device_id,
@@ -508,7 +522,7 @@ class ActivitySyncEntity(SyncEntity):
         if novo_status is not None:
             try:
                 transition(instance, novo_status, usuario=user, justificativa=justificativa)
-            except ActivityStatusError as exc:
+            except ActivityRuleError as exc:
                 raise SyncEntityError(
                     f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
                 ) from exc
@@ -527,20 +541,34 @@ class ActivitySyncEntity(SyncEntity):
 
     def apply_changes(self, instance, changes: dict):
         changes = _resolve_fk_ids(Activity, changes)
-        novo_status = changes.pop("status", None)
-        if novo_status is not None:
-            try:
-                transition(
-                    instance,
-                    novo_status,
-                    usuario=None,
-                    justificativa=changes.get("justificativa", instance.justificativa),
-                    nova_data=changes.get("data_inicio"),
-                )
-            except ActivityStatusError as exc:
-                raise SyncEntityError(
-                    f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
-                ) from exc
+
+        # Resolvidos com fallback pro valor atual da atividade — igual à API
+        # web (`ActivityDetailSerializer.validate`): a regra roda em toda
+        # atualização, não só quando o campo em questão está no payload.
+        novo_status = changes.get("status", instance.status)
+        justificativa = changes.get("justificativa", instance.justificativa)
+        nova_data = changes.get("data_inicio")
+        data_inicio = changes.get("data_inicio", instance.data_inicio)
+        data_fim = changes.get("data_fim", instance.data_fim)
+
+        if "upfs_participantes" in changes:
+            upfs_ids = set(changes["upfs_participantes"])
+        else:
+            upfs_ids = set(instance.upfs_participantes.values_list("pk", flat=True))
+        membros_ids = changes.get("membros_participantes")
+
+        try:
+            validar_transicao(
+                instance, novo_status, justificativa=justificativa, nova_data=nova_data
+            )
+            validar_datas(data_inicio, data_fim)
+            if membros_ids is not None:
+                validar_membros_participantes(upfs_ids, membros_ids)
+        except ActivityRuleError as exc:
+            raise SyncEntityError(
+                f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
+            ) from exc
+
         for field, value in changes.items():
             setattr(instance, field, value)
         instance.ultima_origem = "sca"
