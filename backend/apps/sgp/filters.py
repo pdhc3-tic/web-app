@@ -98,6 +98,9 @@ def somente_ativas_sem_filtro_ativo(queryset, params):
 class ActivityFilter(django_filters.FilterSet):
     projeto = django_filters.NumberFilter(field_name="acao__meta__projeto_id", label="Projeto")
     acao = django_filters.NumberFilter(field_name="acao_id", label="Ação")
+    meta = django_filters.NumberFilter(field_name="acao__meta_id", label="Meta")
+    submeta = django_filters.NumberFilter(field_name="acao__submeta_id", label="Submeta")
+    indicador = django_filters.NumberFilter(field_name="acao__indicador_id", label="Indicador")
     territorio_id = django_filters.NumberFilter(
         field_name="municipio__territory_id", label="Território"
     )
@@ -155,7 +158,7 @@ class ActivityFilter(django_filters.FilterSet):
     class Meta:
         model = Activity
         fields = [
-            "projeto", "acao", "territorio_id", "tecnico_id", "osc", "parceiro",
+            "projeto", "meta", "submeta", "acao", "indicador", "territorio_id", "tecnico_id", "osc", "parceiro",
             "tipo_atividade", "status",
             "data_inicio_after", "data_inicio_before", "atrasada",
         ]

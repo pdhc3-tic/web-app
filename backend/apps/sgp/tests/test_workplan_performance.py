@@ -30,6 +30,7 @@ from django.utils import timezone
 
 from apps.core.tests.factories import UserFactory
 from apps.sgp.models import UPF, Activity, MembroFamilia, WorkPlanAcao
+from apps.sgp.services.budget import limiares_semaforo
 from apps.sgp.tests.factories import (
     ActivityFactory,
     WorkPlanAcaoFactory,
@@ -119,6 +120,10 @@ def test_painel_queries_constantes(auth_client):
     meta = WorkPlanMetaFactory(numero=1)
     for indice in range(5):
         WorkPlanAcaoFactory(meta=meta, numero=f"1.{indice + 1}")
+    # Os limiares do semáforo financeiro vêm do SystemConfig com cache: sem
+    # aquecer, só a primeira medição pagaria a leitura e a comparação falharia
+    # por um motivo que não é consulta por Ação.
+    limiares_semaforo()
 
     with CaptureQueriesContext(connection) as ctx_5:
         response_5 = auth_client.get(PANEL_URL)

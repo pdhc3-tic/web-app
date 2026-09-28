@@ -4,7 +4,13 @@ import pytest
 from decimal import Decimal
 
 from apps.sgp.models import WorkPlanMeta, WorkPlanAcao
-from apps.sgp.tests.factories import ActivityFactory, WorkPlanAcaoFactory, WorkPlanMetaFactory
+from apps.sgp.tests.factories import (
+    ActivityFactory,
+    IndicatorFactory,
+    WorkPlanAcaoFactory,
+    WorkPlanMetaFactory,
+    WorkPlanSubmetaFactory,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -37,12 +43,22 @@ def meta_payload(usuario):
 
 
 @pytest.fixture
-def acao_payload(meta):
+def submeta(meta):
+    return WorkPlanSubmetaFactory(meta=meta, numero="1.1", titulo="Submeta Teste")
+
+
+@pytest.fixture
+def indicador(db):
+    return IndicatorFactory()
+
+
+@pytest.fixture
+def acao_payload(submeta, indicador):
     return {
-        "meta": meta.pk,
-        "numero": "1.1",
+        "submeta": submeta.pk,
+        "indicador": indicador.pk,
+        "numero": "1.1.1",
         "descricao": "Ação de teste",
-        "tipo_unidade": 11,
         "quantidade_planejada": "100.00",
         "valor_unitario": "500.00",
         "data_inicio": "2025-11-01",
@@ -51,10 +67,11 @@ def acao_payload(meta):
 
 
 @pytest.fixture
-def acao(meta):
+def acao(meta, submeta):
     return WorkPlanAcaoFactory(
         meta=meta,
-        numero="1.1",
+        submeta=submeta,
+        numero="1.1.1",
         quantidade_planejada=Decimal("100.00"),
         valor_unitario=Decimal("500.00"),
     )
@@ -284,7 +301,7 @@ class TestAcaoCriacao:
     def test_create_acao(self, auth_client, acao_payload):
         response = auth_client.post("/api/v1/acoes/", acao_payload, format="json")
         assert response.status_code == 201
-        assert response.data["numero"] == "1.1"
+        assert response.data["numero"] == "1.1.1"
         assert response.data["descricao"] == "Ação de teste"
 
     def test_create_acao_auto_valor_total(self, auth_client, acao_payload):
@@ -297,12 +314,12 @@ class TestAcaoCriacao:
         assert response.status_code == 201
         assert response.data["status_execucao"] == "no_prazo"
 
-    def test_quantidade_realizada_read_only(self, auth_client, acao_payload):
+    def test_quantidade_realizada_so_e_lancada_na_forma_manual(self, auth_client, acao_payload):
         response = auth_client.post(
-            "/api/v1/acoes/", {**acao_payload, "quantidade_realizada": "999"}, format="json"
+            "/api/v1/acoes/", {**acao_payload, "quantidade_realizada": 999}, format="json"
         )
-        assert response.status_code == 201
-        assert response.data["quantidade_realizada"] == "0.00"
+        assert response.status_code == 400
+        assert "quantidade_realizada" in response.data
 
 
 class TestAcaoNumeroFormato:
@@ -319,33 +336,33 @@ class TestAcaoNumeroFormato:
         )
         assert response.status_code == 400
 
-    def test_valid_formats_accepted(self, auth_client, meta):
-        for num in ["1.1", "2.10", "7.99"]:
-            payload = {
-                "meta": meta.pk,
-                "numero": num,
-                "descricao": f"Ação {num}",
-                "tipo_unidade": 11,
-                "quantidade_planejada": "10.00",
-                "valor_unitario": "100.00",
-            }
+    def test_formato_x_y_da_hierarquia_antiga_retorna_400(self, auth_client, acao_payload):
+        response = auth_client.post(
+            "/api/v1/acoes/", {**acao_payload, "numero": "1.1"}, format="json"
+        )
+        assert response.status_code == 400
+        assert "numero" in response.data
+
+    def test_valid_formats_accepted(self, auth_client, acao_payload):
+        for num in ["1.1.1", "1.1.10", "1.1.99"]:
+            payload = {**acao_payload, "numero": num, "descricao": f"Ação {num}"}
             response = auth_client.post("/api/v1/acoes/", payload, format="json")
             assert response.status_code == 201, f"numero={num} falhou: {response.data}"
 
 
 class TestAcaoUnicidadeNumero:
-    def test_duplicate_within_same_meta_returns_400(self, auth_client, acao_payload):
+    def test_duplicate_within_same_submeta_returns_400(self, auth_client, acao_payload):
         auth_client.post("/api/v1/acoes/", acao_payload, format="json")
         response = auth_client.post("/api/v1/acoes/", acao_payload, format="json")
         assert response.status_code == 400
         assert "numero" in response.data
 
-    def test_same_numero_different_meta_allowed(self, auth_client, acao_payload, meta):
+    def test_mesmo_sequencial_em_outra_submeta_e_permitido(self, auth_client, acao_payload, meta):
         auth_client.post("/api/v1/acoes/", acao_payload, format="json")
-        meta2 = WorkPlanMetaFactory(numero=3, titulo="Outra Meta")
-        payload2 = {**acao_payload, "meta": meta2.pk}
+        submeta2 = WorkPlanSubmetaFactory(meta=meta, numero="1.2")
+        payload2 = {**acao_payload, "submeta": submeta2.pk, "numero": "1.2.1"}
         response = auth_client.post("/api/v1/acoes/", payload2, format="json")
-        assert response.status_code == 201
+        assert response.status_code == 201, response.data
 
 
 class TestAcaoValorTotalCalculado:

@@ -1,11 +1,15 @@
 """Consultas e indicadores do painel de acompanhamento do Plano de Trabalho."""
 
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
+from typing import Iterable
 
-from django.db.models import Count, Q, QuerySet
+from django.db.models import QuerySet
 
 from apps.sgp.models import WorkPlanAcao
+from apps.sgp.services.apuracao import FiltroAtividades, expressao_quantidade_realizada
+from apps.sgp.services.budget import LimiaresSemaforo, faixa_semaforo, limiares_semaforo
 from apps.sgp.services.workplan_access import (
     activity_scope_for_user,
     filter_workplan_actions_for_user,
@@ -17,19 +21,19 @@ ONE_HUNDRED = Decimal("100")
 PERCENTAGE_QUANTUM = Decimal("0.01")
 
 
-def dashboard_actions(activity_scope: Q | None = None) -> QuerySet[WorkPlanAcao]:
-    """Retorna Ações com a quantidade concluída calculada em uma única consulta."""
-    completed_activity_filter = Q(
-        atividades__status="concluido", atividades__ativo=True
-    )
-    if activity_scope is not None:
-        completed_activity_filter &= activity_scope
-    return WorkPlanAcao.objects.select_related("meta").annotate(
-        _quantidade_realizada=Count(
-            "atividades",
-            filter=completed_activity_filter,
-            distinct=True,
-        )
+def filtro_de_escopo(user) -> FiltroAtividades | None:
+    """Filtro de Atividades do escopo territorial do usuário, no formato que a
+    apuração espera; None para quem tem visão global."""
+    if activity_scope_for_user(user) is None:
+        return None
+    return lambda prefixo: activity_scope_for_user(user, prefix=prefixo)
+
+
+def dashboard_actions(filtro: FiltroAtividades | None = None) -> QuerySet[WorkPlanAcao]:
+    """Ações com a quantidade realizada apurada só sobre as Atividades que passam
+    no filtro, numa única consulta. O valor executado é o da Ação inteira."""
+    return WorkPlanAcao.objects.select_related("meta", "submeta", "indicador").annotate(
+        _quantidade_realizada=expressao_quantidade_realizada(filtro),
     )
 
 
@@ -39,8 +43,7 @@ def dashboard_actions_for_user(user) -> QuerySet[WorkPlanAcao]:
     Ações sem atividades ficam restritas a UGP e Super Admin. Alterações futuras
     nessa política devem ser feitas nesta função.
     """
-    scope = activity_scope_for_user(user)
-    return filter_workplan_actions_for_user(dashboard_actions(scope), user)
+    return filter_workplan_actions_for_user(dashboard_actions(filtro_de_escopo(user)), user)
 
 
 def apply_dashboard_filters(
@@ -58,29 +61,138 @@ def apply_dashboard_filters(
     return queryset
 
 
-def enrich_dashboard_action(action: WorkPlanAcao, today: date | None = None) -> WorkPlanAcao:
-    """Anexa os indicadores calculados exigidos pelo painel à Ação informada."""
+def enrich_dashboard_action(
+    action: WorkPlanAcao,
+    today: date | None = None,
+    limiares: LimiaresSemaforo | None = None,
+) -> WorkPlanAcao:
+    """Anexa os indicadores calculados exigidos pelo painel à Ação informada.
+
+    Quem enriquece várias Ações deve ler `limiares_semaforo()` uma vez e
+    repassar."""
     today = today or date.today()
+    limiares = limiares or limiares_semaforo()
     quantidade_planejada = Decimal(action.quantidade_planejada or ZERO)
     quantidade_realizada = Decimal(getattr(action, "_quantidade_realizada", ZERO))
+    valor_total = Decimal(action.valor_total or ZERO)
+    valor_executado = Decimal(action.valor_executado or ZERO)
 
-    percentual_realizado = (
-        ZERO
-        if quantidade_planejada <= ZERO
-        else (quantidade_realizada / quantidade_planejada) * ONE_HUNDRED
-    )
-    data_inicio = action.data_inicio or action.meta.data_inicio
-    data_fim = action.data_fim or action.meta.data_fim
-    progresso_esperado = _expected_progress(data_inicio, data_fim, today)
+    percentual_realizado = _percentual(quantidade_realizada, quantidade_planejada)
+    progresso_esperado = _expected_progress(action.data_inicio, action.data_fim, today)
+    percentual_financeiro = _percentual(valor_executado, valor_total)
 
     action.dashboard_quantidade_realizada = quantidade_realizada
     action.dashboard_percentual_realizado = _round_percentage(percentual_realizado)
     action.dashboard_progresso_esperado = _round_percentage(progresso_esperado)
     action.dashboard_semaforo = _semaphore(percentual_realizado, progresso_esperado)
     action.dashboard_status_execucao = _execution_status(
-        quantidade_planejada, quantidade_realizada, data_fim, today
+        quantidade_planejada, quantidade_realizada, action.data_fim, today
     )
+    action.dashboard_valor_executado = valor_executado
+    action.dashboard_percentual_financeiro = _round_percentage(percentual_financeiro)
+    action.dashboard_semaforo_financeiro = faixa_semaforo(percentual_financeiro, limiares)
     return action
+
+
+@dataclass(frozen=True)
+class ConsolidadoNo:
+    """Consolidado de um nó da árvore do PT (Submeta ou Meta) a partir das
+    Ações já enriquecidas por `enrich_dashboard_action`."""
+
+    quantidade_planejada: Decimal
+    quantidade_realizada: Decimal
+    percentual_realizado: Decimal
+    progresso_esperado: Decimal
+    semaforo: str
+    status_execucao: str
+    valor_total: Decimal
+    valor_executado: Decimal
+    percentual_financeiro: Decimal
+    semaforo_financeiro: str
+
+
+def consolidar_no(
+    acoes: Iterable[WorkPlanAcao],
+    data_inicio: date,
+    data_fim: date,
+    today: date | None = None,
+    limiares: LimiaresSemaforo | None = None,
+) -> ConsolidadoNo:
+    today = today or date.today()
+    limiares = limiares or limiares_semaforo()
+    acoes = list(acoes)
+    planejado = sum((Decimal(a.quantidade_planejada) for a in acoes), ZERO)
+    realizado = sum((a.dashboard_quantidade_realizada for a in acoes), ZERO)
+    valor_total = sum((Decimal(a.valor_total) for a in acoes), ZERO)
+    valor_executado = sum((a.dashboard_valor_executado for a in acoes), ZERO)
+
+    percentual_realizado = _percentual(realizado, planejado)
+    progresso_esperado = _expected_progress(data_inicio, data_fim, today)
+    percentual_financeiro = _percentual(valor_executado, valor_total)
+    concluido = bool(acoes) and all(
+        a.dashboard_status_execucao == "concluida" for a in acoes
+    )
+    return ConsolidadoNo(
+        quantidade_planejada=planejado,
+        quantidade_realizada=realizado,
+        percentual_realizado=_round_percentage(percentual_realizado),
+        progresso_esperado=_round_percentage(progresso_esperado),
+        semaforo=_semaphore(percentual_realizado, progresso_esperado),
+        status_execucao=(
+            "concluida" if concluido else "em_atraso" if today > data_fim else "no_prazo"
+        ),
+        valor_total=valor_total,
+        valor_executado=valor_executado,
+        percentual_financeiro=_round_percentage(percentual_financeiro),
+        semaforo_financeiro=faixa_semaforo(percentual_financeiro, limiares),
+    )
+
+
+def arvore_do_painel(acoes: Iterable[WorkPlanAcao], today: date | None = None) -> list[dict]:
+    """Agrupa Ações já enriquecidas em Meta → Submeta, com o consolidado de cada
+    nó calculado sobre as Ações recebidas (o filtro de status do painel, se
+    aplicado, vale também para os consolidados)."""
+    today = today or date.today()
+    limiares = limiares_semaforo()
+    metas: dict[int, dict] = {}
+    for acao in acoes:
+        grupo = metas.setdefault(acao.meta_id, {
+            "meta": acao.meta,
+            "resumo": {"total_acoes": 0, "verde": 0, "amarelo": 0, "vermelho": 0},
+            "acoes": [],
+            "submetas": {},
+        })
+        grupo["resumo"]["total_acoes"] += 1
+        grupo["resumo"][acao.dashboard_semaforo] += 1
+        grupo["acoes"].append(acao)
+        grupo["submetas"].setdefault(acao.submeta_id, (acao.submeta, []))[1].append(acao)
+
+    arvore = []
+    for grupo in metas.values():
+        meta = grupo["meta"]
+        grupo["consolidado"] = consolidar_no(
+            grupo["acoes"], meta.data_inicio, meta.data_fim, today, limiares
+        )
+        grupo["submetas"] = [
+            {
+                "submeta": submeta,
+                "consolidado": consolidar_no(
+                    acoes_da_submeta, submeta.data_inicio, submeta.data_fim, today, limiares
+                ),
+                "acoes": [a.pk for a in acoes_da_submeta],
+            }
+            for submeta, acoes_da_submeta in sorted(
+                grupo["submetas"].values(), key=lambda item: item[0].numero
+            )
+        ]
+        arvore.append(grupo)
+    return arvore
+
+
+def _percentual(parte: Decimal, total: Decimal) -> Decimal:
+    if total <= ZERO:
+        return ZERO
+    return (parte / total) * ONE_HUNDRED
 
 
 def _expected_progress(data_inicio: date, data_fim: date, today: date) -> Decimal:

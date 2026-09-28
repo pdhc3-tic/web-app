@@ -10,12 +10,14 @@ from apps.sgp.models import (
     Cultura,
     EspecieAnimal,
     FormResponse,
+    Indicator,
     MembroFamilia,
     Production,
     Projeto,
     UPF,
     WorkPlanAcao,
     WorkPlanMeta,
+    WorkPlanSubmeta,
 )
 from apps.sgp.services.activity_status import ActivityStatusError, validar_transicao
 
@@ -116,11 +118,19 @@ class WorkPlanAcaoInline(admin.TabularInline):
     model = WorkPlanAcao
     extra = 0
     fields = [
-        "numero", "descricao", "tipo_unidade",
-        "quantidade_planejada", "valor_unitario", "valor_total",
-        "status_execucao",
+        "numero", "descricao", "indicador",
+        "quantidade_planejada", "valor_unitario", "data_inicio", "data_fim",
+        "valor_total", "status_execucao",
     ]
     readonly_fields = ["valor_total", "status_execucao"]
+    autocomplete_fields = ["indicador"]
+
+
+class WorkPlanSubmetaInline(admin.TabularInline):
+    model = WorkPlanSubmeta
+    extra = 0
+    fields = ["numero", "titulo", "data_inicio", "data_fim", "responsavel"]
+    show_change_link = True
 
 
 @admin.register(WorkPlanMeta)
@@ -135,18 +145,43 @@ class WorkPlanMetaAdmin(admin.ModelAdmin):
         "valor_total_planejado", "status_calculado",
         "criado_por", "criado_em", "atualizado_em",
     ]
+    inlines = [WorkPlanSubmetaInline]
+
+
+@admin.register(WorkPlanSubmeta)
+class WorkPlanSubmetaAdmin(admin.ModelAdmin):
+    list_display = [
+        "numero", "titulo", "meta", "data_inicio", "data_fim",
+        "quantidade_planejada", "quantidade_realizada", "status_execucao",
+    ]
+    list_filter = ["meta"]
+    search_fields = ["numero", "titulo"]
+    readonly_fields = [
+        "quantidade_planejada", "quantidade_realizada", "valor_total",
+        "valor_executado", "status_execucao",
+        "criado_por", "criado_em", "atualizado_em",
+    ]
     inlines = [WorkPlanAcaoInline]
+
+
+@admin.register(Indicator)
+class IndicatorAdmin(admin.ModelAdmin):
+    list_display = ["codigo", "nome", "unidade_medida", "forma_apuracao", "categoria", "ativo"]
+    list_filter = ["ativo", "forma_apuracao", "categoria", "unidade_medida"]
+    search_fields = ["codigo", "nome"]
+    readonly_fields = ["criado_por", "criado_em", "atualizado_em"]
 
 
 @admin.register(WorkPlanAcao)
 class WorkPlanAcaoAdmin(admin.ModelAdmin):
     list_display = [
-        "meta", "numero", "descricao", "tipo_unidade",
+        "numero", "descricao", "submeta", "indicador",
         "quantidade_planejada", "quantidade_realizada", "valor_total", "status_execucao",
     ]
-    list_filter = ["meta"]
-    search_fields = ["descricao"]
-    readonly_fields = ["quantidade_realizada", "valor_total", "status_execucao"]
+    list_filter = ["meta", "submeta", "indicador"]
+    search_fields = ["numero", "descricao"]
+    readonly_fields = ["meta", "quantidade_realizada", "valor_total", "status_execucao"]
+    autocomplete_fields = ["indicador"]
 
 
 @admin.register(BudgetRubrica)

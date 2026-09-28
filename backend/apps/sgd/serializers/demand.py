@@ -6,9 +6,10 @@ from apps.sgp.models.activity import TIPO_ATIVIDADE_CHOICES
 
 
 class DemandContextoSerializer(serializers.Serializer):
-    # Só expõe Ação/Meta — o SGP ainda não modela Submeta/Indicador (hierarquia
-    # do documento tem 4 níveis, o código tem 2), então esses dois campos não
-    # existem pra expor aqui.
+    """Contexto herdado da Atividade, só leitura (SGD-RF02): território,
+    município, comunidade, data, técnico e a cadeia Ação → Submeta → Meta →
+    Indicador."""
+
     territorio_id = serializers.IntegerField(allow_null=True)
     territorio_nome = serializers.CharField(allow_null=True)
     municipio_id = serializers.IntegerField()
@@ -20,8 +21,13 @@ class DemandContextoSerializer(serializers.Serializer):
     tecnico_nome = serializers.CharField(source="tecnico_responsavel.nome")
     acao_numero = serializers.CharField(source="acao.numero")
     acao_descricao = serializers.CharField(source="acao.descricao")
+    submeta_numero = serializers.CharField(source="acao.submeta.numero")
+    submeta_titulo = serializers.CharField(source="acao.submeta.titulo")
     meta_numero = serializers.IntegerField(source="acao.meta.numero")
     meta_titulo = serializers.CharField(source="acao.meta.titulo")
+    indicador_codigo = serializers.CharField(source="acao.indicador.codigo")
+    indicador_nome = serializers.CharField(source="acao.indicador.nome")
+    indicador_unidade_medida = serializers.CharField(source="acao.indicador.unidade_medida")
 
 
 def _contexto_da_activity(activity) -> dict:

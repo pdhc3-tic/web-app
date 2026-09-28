@@ -1,0 +1,298 @@
+"""Hierarquia Meta → Submeta → Ação → Indicador nos consumidores do PT:
+valor executado (SGP §5.5), painel em árvore (RF23), visão por Indicador
+(RF22), exportação e Power BI (RF25/RF26) e Atividades (RF07/RF15)."""
+import csv
+import io
+from datetime import date
+from decimal import Decimal
+
+import pytest
+from django.core.management import call_command
+from rest_framework import status
+
+from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
+from apps.sgp.models import WorkPlanAcao
+from apps.sgp.services.apuracao import recalcular_valor_executado
+from apps.sgp.services.workplan_export import EXPORT_COLUMNS, workplan_export_rows
+from apps.sgp.tests.factories import (
+    ActivityFactory,
+    IndicatorFactory,
+    UPFFactory,
+    WorkPlanAcaoFactory,
+    WorkPlanMetaFactory,
+    WorkPlanSubmetaFactory,
+)
+
+pytestmark = pytest.mark.django_db
+
+PAINEL_URL = "/api/v1/sgp/plano-trabalho/painel/"
+VISAO_URL = "/api/v1/sgp/plano-trabalho/indicadores/"
+EXPORT_URL = "/api/v1/sgp/plano-trabalho/exportar/"
+ATIVIDADES_URL = "/api/v1/sgp/atividades/"
+
+
+def _concluir_demanda(atividade, valor_pago, status_demanda="concluida"):
+    demanda = DemandFactory(activity=atividade, status=status_demanda)
+    DemandRequestFactory(demanda=demanda, valor_estimado=valor_pago, valor_pago=valor_pago)
+    # Na API isso acontece no `concluir` do SGD; aqui a demanda nasce concluída.
+    recalcular_valor_executado([atividade.acao_id])
+    return demanda
+
+
+@pytest.fixture
+def meta():
+    return WorkPlanMetaFactory(
+        numero=1, data_inicio=date(2026, 1, 1), data_fim=date(2026, 12, 31)
+    )
+
+
+@pytest.fixture
+def arvore(meta, municipio_rn):
+    """Submeta 1.1 com duas Ações e Submeta 1.2 com uma, todas no mesmo Indicador."""
+    indicador = IndicatorFactory(codigo="TST-OFI", nome="Oficinas")
+    s1 = WorkPlanSubmetaFactory(meta=meta, numero="1.1")
+    s2 = WorkPlanSubmetaFactory(meta=meta, numero="1.2")
+    a1 = WorkPlanAcaoFactory(
+        meta=meta, submeta=s1, numero="1.1.1", indicador=indicador,
+        quantidade_planejada=Decimal("10"), valor_unitario=Decimal("100"),
+    )
+    a2 = WorkPlanAcaoFactory(
+        meta=meta, submeta=s1, numero="1.1.2", indicador=indicador,
+        quantidade_planejada=Decimal("10"), valor_unitario=Decimal("100"),
+    )
+    b1 = WorkPlanAcaoFactory(
+        meta=meta, submeta=s2, numero="1.2.1", indicador=indicador,
+        quantidade_planejada=Decimal("5"), valor_unitario=Decimal("100"),
+    )
+    atividades = [
+        ActivityFactory(acao=a1, status="concluido", municipio=municipio_rn) for _ in range(4)
+    ]
+    ActivityFactory(acao=b1, status="concluido", municipio=municipio_rn)
+    return {"indicador": indicador, "s1": s1, "s2": s2, "a1": a1, "a2": a2, "b1": b1,
+            "atividades": atividades}
+
+
+class TestValorExecutado:
+    def test_soma_so_demandas_concluidas(self, arvore):
+        atividade = arvore["atividades"][0]
+        _concluir_demanda(atividade, Decimal("500.00"))
+        _concluir_demanda(atividade, Decimal("300.00"))
+        _concluir_demanda(atividade, Decimal("999.00"), status_demanda="em_atendimento")
+
+        a1 = WorkPlanAcao.objects.get(pk=arvore["a1"].pk)
+        assert a1.valor_executado == Decimal("800.00")
+        assert a1.custo_unitario_realizado == Decimal("200.00")
+
+    def test_atividade_que_muda_de_acao_leva_o_valor(self, arvore):
+        atividade = arvore["atividades"][0]
+        _concluir_demanda(atividade, Decimal("500.00"))
+
+        atividade.acao = arvore["a2"]
+        atividade.save()
+
+        assert WorkPlanAcao.objects.get(pk=arvore["a1"].pk).valor_executado == 0
+        assert WorkPlanAcao.objects.get(pk=arvore["a2"].pk).valor_executado == Decimal("500.00")
+
+    def test_atividade_desativada_sai_do_valor(self, arvore):
+        atividade = arvore["atividades"][0]
+        _concluir_demanda(atividade, Decimal("500.00"))
+
+        atividade.soft_delete()
+
+        assert WorkPlanAcao.objects.get(pk=arvore["a1"].pk).valor_executado == 0
+
+    def test_reconciliacao_corrige_valor(self, arvore):
+        atividade = arvore["atividades"][0]
+        _concluir_demanda(atividade, Decimal("500.00"))
+        WorkPlanAcao.objects.filter(pk=arvore["a1"].pk).update(valor_executado=Decimal("1"))
+
+        call_command("verificar_progresso_acoes")
+
+        assert WorkPlanAcao.objects.get(pk=arvore["a1"].pk).valor_executado == Decimal("500.00")
+
+    def test_consolidados_da_submeta_e_da_meta(self, arvore, meta):
+        _concluir_demanda(arvore["atividades"][0], Decimal("800.00"))
+
+        s1 = arvore["s1"]
+        assert s1.quantidade_planejada == Decimal("20")
+        assert s1.quantidade_realizada == 4
+        assert s1.valor_total == Decimal("2000")
+        assert s1.valor_executado == Decimal("800.00")
+        assert meta.quantidade_planejada == Decimal("25")
+        assert meta.valor_executado == Decimal("800.00")
+
+
+class TestPainelEmArvore:
+    def test_submetas_como_nos_com_consolidados_e_semaforos(self, auth_client, arvore):
+        _concluir_demanda(arvore["atividades"][0], Decimal("800.00"))
+
+        response = auth_client.get(PAINEL_URL)
+
+        assert response.status_code == status.HTTP_200_OK
+        grupo = response.data["metas"][0]
+        assert grupo["resumo"]["total_acoes"] == 3
+        assert [no["submeta"]["numero"] for no in grupo["submetas"]] == ["1.1", "1.2"]
+
+        s1 = grupo["submetas"][0]
+        assert s1["acoes"] == [arvore["a1"].pk, arvore["a2"].pk]
+        assert s1["consolidado"]["quantidade_planejada"] == "20.00"
+        assert s1["consolidado"]["quantidade_realizada"] == "4.00"
+        assert s1["consolidado"]["valor_executado"] == "800.00"
+        assert s1["consolidado"]["percentual_financeiro"] == "40.00"
+        assert s1["consolidado"]["semaforo_financeiro"] == "verde"
+
+        a1 = next(a for a in grupo["acoes"] if a["id"] == arvore["a1"].pk)
+        assert a1["submeta"]["numero"] == "1.1"
+        assert a1["indicador"]["codigo"] == "TST-OFI"
+        assert a1["percentual_financeiro"] == "80.00"
+        assert a1["semaforo_financeiro"] == "amarelo"
+        assert grupo["consolidado"]["valor_total"] == "2500.00"
+
+    def test_adt_ve_quantidade_do_proprio_territorio(self, auth_client_adt_rn, arvore, municipio_ce):
+        ActivityFactory(acao=arvore["a1"], status="concluido", municipio=municipio_ce)
+
+        response = auth_client_adt_rn.get(PAINEL_URL)
+
+        acoes = {a["id"]: a for a in response.data["metas"][0]["acoes"]}
+        assert acoes[arvore["a1"].pk]["quantidade_realizada"] == "4.00"
+
+
+class TestVisaoPorIndicador:
+    def test_consolida_acoes_de_metas_diferentes(self, auth_client, arvore, municipio_ce):
+        outra_meta = WorkPlanMetaFactory(numero=2)
+        c1 = WorkPlanAcaoFactory(
+            meta=outra_meta, indicador=arvore["indicador"], quantidade_planejada=Decimal("15"),
+        )
+        ActivityFactory(acao=c1, status="concluido", municipio=municipio_ce)
+
+        response = auth_client.get(VISAO_URL, {"indicador_id": arvore["indicador"].pk})
+
+        assert response.status_code == status.HTTP_200_OK
+        [item] = response.data["indicadores"]
+        assert item["indicador"]["codigo"] == "TST-OFI"
+        assert item["quantidade_planejada"] == "40.00"
+        assert item["quantidade_realizada"] == "6.00"
+        assert item["percentual_realizado"] == "15.00"
+        assert {m["numero"]: m["quantidade_realizada"] for m in item["por_meta"]} == {
+            "1": "5.00", "2": "1.00",
+        }
+        assert {s["numero"] for s in item["por_submeta"]} >= {"1.1", "1.2"}
+        assert {t["nome"]: t["quantidade_realizada"] for t in item["por_territorio"]} == {
+            "Território RN": 5, "Território CE": 1,
+        }
+
+    def test_filtro_de_territorio_e_periodo(self, auth_client, arvore, territory_rn):
+        fora_do_periodo = arvore["atividades"][0]
+        fora_do_periodo.data_inicio = fora_do_periodo.data_inicio.replace(year=2025)
+        fora_do_periodo.data_fim = fora_do_periodo.data_fim.replace(year=2025)
+        fora_do_periodo.save()
+
+        response = auth_client.get(VISAO_URL, {
+            "territorio_id": territory_rn.pk,
+            "periodo_inicio": "2026-01-01",
+            "periodo_fim": "2026-12-31",
+        })
+
+        [item] = response.data["indicadores"]
+        assert item["quantidade_realizada"] == "4.00"
+
+    def test_periodo_invertido_retorna_400(self, auth_client):
+        response = auth_client.get(
+            VISAO_URL, {"periodo_inicio": "2026-12-01", "periodo_fim": "2026-01-01"}
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_adt_so_ve_o_proprio_territorio(self, auth_client_adt_rn, arvore, municipio_ce):
+        oculta = WorkPlanAcaoFactory(indicador=arvore["indicador"])
+        ActivityFactory(acao=oculta, status="concluido", municipio=municipio_ce)
+
+        response = auth_client_adt_rn.get(VISAO_URL)
+
+        [item] = response.data["indicadores"]
+        assert item["quantidade_realizada"] == "5.00"
+        assert [t["nome"] for t in item["por_territorio"]] == ["Território RN"]
+
+    def test_ufpas_distintas_por_territorio(self, auth_client, meta, municipio_rn):
+        indicador = IndicatorFactory(forma_apuracao="soma_ufpas")
+        acao = WorkPlanAcaoFactory(meta=meta, indicador=indicador)
+        upf = UPFFactory(municipio=municipio_rn)
+        for _ in range(2):
+            ActivityFactory(acao=acao, status="concluido", municipio=municipio_rn).upfs_participantes.add(upf)
+
+        response = auth_client.get(VISAO_URL, {"indicador_id": indicador.pk})
+
+        [item] = response.data["indicadores"]
+        assert item["quantidade_realizada"] == "1.00"
+        assert item["por_territorio"][0]["quantidade_realizada"] == 1
+
+
+class TestExportacao:
+    def test_colunas_da_hierarquia_e_saldo(self, auth_client, arvore):
+        _concluir_demanda(arvore["atividades"][0], Decimal("800.00"))
+
+        response = auth_client.get(EXPORT_URL, {"formato": "csv"})
+
+        linhas = list(csv.reader(io.StringIO(response.content.decode("utf-8-sig"))))
+        assert linhas[0] == [label for _, label in EXPORT_COLUMNS]
+        assert "Tipo/Unidade" not in linhas[0]
+        registro = next(
+            dict(zip(linhas[0], linha)) for linha in linhas[1:] if linha[2].startswith("1.1.1")
+        )
+        assert registro["Submeta"].startswith("1.1 - ")
+        assert registro["Indicador"] == "TST-OFI - Oficinas"
+        assert registro["Unidade de medida"] == "Evento"
+        assert registro["Valor executado"] == "800.00"
+        assert registro["Custo unitário realizado"] == "200.00"
+        assert registro["Saldo"] == "200.00"
+
+    def test_total_por_meta_nao_muda(self, arvore):
+        linhas = workplan_export_rows()
+        total = sum(Decimal(linha["valor_total"]) for linha in linhas if linha["meta"].startswith("1 - "))
+
+        assert total == Decimal("2500.00")
+
+    def test_power_bi_mantem_alias_tipo_unidade(self, arvore):
+        linha = workplan_export_rows()[0]
+
+        assert linha["tipo_unidade"] == "Oficinas"
+
+
+class TestAtividades:
+    def test_cadeia_do_plano_de_trabalho_derivada_da_acao(self, auth_client, arvore):
+        atividade = arvore["atividades"][0]
+
+        lista = auth_client.get(ATIVIDADES_URL, {"page_size": 50})
+        detalhe = auth_client.get(f"{ATIVIDADES_URL}{atividade.pk}/")
+
+        item = next(a for a in lista.data["results"] if a["id"] == atividade.pk)
+        for plano in (item["plano_trabalho"], detalhe.data["plano_trabalho"]):
+            assert plano["meta"]["numero"] == 1
+            assert plano["submeta"]["numero"] == "1.1"
+            assert plano["acao"]["numero"] == "1.1.1"
+            assert plano["indicador"]["codigo"] == "TST-OFI"
+
+    def test_calendario_traz_a_cadeia(self, auth_client, arvore):
+        response = auth_client.get(
+            f"{ATIVIDADES_URL}calendario/", {"inicio": "2026-05-15", "fim": "2026-06-15"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 5
+        assert {item["plano_trabalho"]["submeta"]["numero"] for item in response.data} == {"1.1", "1.2"}
+
+    @pytest.mark.parametrize("filtro", ["meta", "submeta", "indicador"])
+    def test_filtros_da_hierarquia(self, auth_client, arvore, filtro):
+        valor = {
+            "meta": arvore["a1"].meta_id,
+            "submeta": arvore["s2"].pk,
+            "indicador": arvore["indicador"].pk,
+        }[filtro]
+        outra = ActivityFactory(acao=WorkPlanAcaoFactory(meta=WorkPlanMetaFactory(numero=3)))
+
+        response = auth_client.get(ATIVIDADES_URL, {filtro: valor, "page_size": 50})
+
+        ids = {item["id"] for item in response.data["results"]}
+        assert outra.pk not in ids
+        esperadas = 1 if filtro == "submeta" else 5
+        assert len(ids) == esperadas

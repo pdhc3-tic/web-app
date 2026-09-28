@@ -4,7 +4,11 @@ from apps.core.models import Municipality, Organization
 from apps.sgp.models import Activity, Comunidade, MembroFamilia, UPF, WorkPlanAcao
 from apps.sgp.serializers.activity_documentos import ActivityDocumentSerializer
 from apps.sgp.serializers.activity_foto import ActivityPhotoSerializer
-from apps.sgp.serializers.common import MunicipioNestedSerializer, NestedSerializer
+from apps.sgp.serializers.common import (
+    MunicipioNestedSerializer,
+    NestedSerializer,
+    plano_trabalho_da_acao,
+)
 from apps.sgp.serializers.membro import MembroListSerializer
 from apps.sgp.serializers.upf import UPFListSerializer
 from apps.sgp.services.access import upfs_acessiveis_ao_usuario
@@ -31,12 +35,14 @@ class ActivityListSerializer(serializers.ModelSerializer):
     )
     total_participantes = serializers.SerializerMethodField()
     atrasada = serializers.SerializerMethodField()
+    plano_trabalho = serializers.SerializerMethodField()
 
     class Meta:
         model = Activity
         fields = [
             "id", "titulo", "tipo_atividade", "tipo_atividade_display",
             "forma_atuacao", "ambito", "ambito_display",
+            "plano_trabalho",
             "municipio",
             "data_inicio", "data_fim",
             "status", "status_display",
@@ -48,6 +54,9 @@ class ActivityListSerializer(serializers.ModelSerializer):
 
     def get_total_participantes(self, obj):
         return len(obj.membros_participantes.all())
+
+    def get_plano_trabalho(self, obj):
+        return plano_trabalho_da_acao(obj.acao)
 
     def get_atrasada(self, obj):
         return obj.esta_atrasada()
@@ -304,6 +313,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
                 "numero": instance.acao.numero,
                 "descricao": instance.acao.descricao,
             }
+        data["plano_trabalho"] = plano_trabalho_da_acao(instance.acao)
         data["tecnico_responsavel"] = {
             "id": instance.tecnico_responsavel.pk,
             "nome": instance.tecnico_responsavel.nome,

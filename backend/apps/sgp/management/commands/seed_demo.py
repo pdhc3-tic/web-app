@@ -47,6 +47,7 @@ from apps.sgp.models import (
     Cultura,
     EspecieAnimal,
     FormResponse,
+    Indicator,
     MembroFamilia,
     Production,
     Projeto,
@@ -54,6 +55,7 @@ from apps.sgp.models import (
     UPFDocument,
     WorkPlanAcao,
     WorkPlanMeta,
+    WorkPlanSubmeta,
 )
 from apps.sgp.models.activity import filtro_atrasada
 from apps.sgp.services.workplan_dashboard import (
@@ -144,40 +146,82 @@ ORGANIZACOES = [
     ("Cooperativa dos Apicultores de Irecê", "COOPERATIVA"),
 ]
 
-# (numero, titulo, [ods], [(numero_acao, descricao, tipo_unidade, qtd, valor)])
+# (numero, titulo, [ods], [(numero_submeta, titulo_submeta,
+#     [(numero_acao, descricao, codigo_indicador, qtd, valor)])])
+# A ordem das Ações é a mesma de antes das Submetas: as Atividades sorteiam
+# a Ação por posição, e as specs E2E fixam ids que dependem disso.
 METAS = [
     (1, "Fortalecimento da organização produtiva das famílias", [1, 2, 8], [
-        ("1.1", "Realizar oficinas de organização produtiva", 2, 40, 3500),
-        ("1.2", "Realizar cursos de capacitação em gestão", 3, 24, 6800),
-        ("1.3", "Promover intercâmbios entre comunidades", 6, 12, 12000),
+        ("1.1", "Formação para a organização produtiva", [
+            ("1.1.1", "Realizar oficinas de organização produtiva", "IND-OFI", 40, 3500),
+            ("1.1.2", "Realizar cursos de capacitação em gestão", "IND-CUR", 24, 6800),
+        ]),
+        ("1.2", "Intercâmbio entre comunidades", [
+            ("1.2.1", "Promover intercâmbios entre comunidades", "IND-INT", 12, 12000),
+        ]),
     ]),
     (2, "Assistência técnica e extensão rural continuada", [2, 8], [
-        ("2.1", "Realizar visitas técnicas às UPFs", 8, 600, 320),
-        ("2.2", "Elaborar planos de desenvolvimento familiar", 4, 300, 450),
-        ("2.3", "Atender famílias com ATER continuada", 11, 300, 1200),
+        ("2.1", "Acompanhamento técnico das UPFs", [
+            ("2.1.1", "Realizar visitas técnicas às UPFs", "IND-VIS", 600, 320),
+            ("2.1.2", "Elaborar planos de desenvolvimento familiar", "IND-PLA", 300, 450),
+        ]),
+        ("2.2", "ATER continuada", [
+            ("2.2.1", "Atender famílias com ATER continuada", "IND-FAM", 300, 1200),
+        ]),
     ]),
     (3, "Acesso à água para consumo e produção", [6, 13], [
-        ("3.1", "Implantar cisternas de consumo", 10, 180, 5200),
-        ("3.2", "Implantar sistemas de irrigação de baixo custo", 10, 60, 9800),
+        ("3.1", "Infraestrutura hídrica", [
+            ("3.1.1", "Implantar cisternas de consumo", "IND-UNI", 180, 5200),
+            ("3.1.2", "Implantar sistemas de irrigação de baixo custo", "IND-UNI", 60, 9800),
+        ]),
     ]),
     (4, "Convivência com o semiárido e agroecologia", [2, 13, 15], [
-        ("4.1", "Realizar dias de campo em unidades demonstrativas", 9, 30, 2800),
-        ("4.2", "Implantar quintais produtivos agroecológicos", 10, 120, 3100),
-        ("4.3", "Realizar seminários de agroecologia", 1, 8, 18000),
+        ("4.1", "Unidades demonstrativas", [
+            ("4.1.1", "Realizar dias de campo em unidades demonstrativas", "IND-ENC", 30, 2800),
+            ("4.1.2", "Implantar quintais produtivos agroecológicos", "IND-UNI", 120, 3100),
+        ]),
+        ("4.2", "Difusão da agroecologia", [
+            ("4.2.1", "Realizar seminários de agroecologia", "IND-SEM", 8, 18000),
+        ]),
     ]),
     (5, "Inclusão produtiva de mulheres e juventude rural", [5, 8, 10], [
-        ("5.1", "Realizar oficinas com grupos de mulheres", 2, 36, 3400),
-        ("5.2", "Realizar encontros da juventude rural", 9, 14, 7600),
+        ("5.1", "Mulheres rurais", [
+            ("5.1.1", "Realizar oficinas com grupos de mulheres", "IND-OFI", 36, 3400),
+        ]),
+        ("5.2", "Juventude rural", [
+            ("5.2.1", "Realizar encontros da juventude rural", "IND-ENC", 14, 7600),
+        ]),
     ]),
     (6, "Acesso a mercados e comercialização", [1, 8, 12], [
-        ("6.1", "Apoiar acesso ao PNAE e PAA", 4, 90, 900),
-        ("6.2", "Realizar feiras da agricultura familiar", 9, 18, 5500),
+        ("6.1", "Mercados institucionais e feiras", [
+            ("6.1.1", "Apoiar acesso ao PNAE e PAA", "IND-PLA", 90, 900),
+            ("6.1.2", "Realizar feiras da agricultura familiar", "IND-ENC", 18, 5500),
+        ]),
     ]),
     (7, "Monitoramento, avaliação e gestão do conhecimento", [16, 17], [
-        ("7.1", "Produzir relatórios de pesquisa e sistematização", 5, 12, 8200),
-        ("7.2", "Produzir conteúdos audiovisuais", 7, 24, 2400),
+        ("7.1", "Gestão do conhecimento", [
+            ("7.1.1", "Produzir relatórios de pesquisa e sistematização", "IND-REL", 12, 8200),
+            ("7.1.2", "Produzir conteúdos audiovisuais", "IND-AUD", 24, 2400),
+        ]),
     ]),
 ]
+
+# Mesmo catálogo inicial da migration 0034, para o seed funcionar também num
+# banco em que alguém tenha apagado Indicadores.
+INDICADORES = {
+    "IND-SEM": ("Seminário", "evento", "contagem_atividades", "formacao"),
+    "IND-OFI": ("Oficina", "evento", "contagem_atividades", "formacao"),
+    "IND-CUR": ("Curso / Capacitação", "evento", "contagem_atividades", "formacao"),
+    "IND-PLA": ("Plano", "plano", "contagem_atividades", "gestao"),
+    "IND-REL": ("Relatório de pesquisas", "relatorio", "contagem_atividades", "gestao"),
+    "IND-INT": ("Intercâmbio", "evento", "contagem_atividades", "formacao"),
+    "IND-AUD": ("Conteúdo audiovisual", "unidade", "contagem_atividades", "outro"),
+    "IND-VIS": ("Visita técnica", "evento", "contagem_atividades", "assistencia_tecnica"),
+    "IND-ENC": ("Encontro / Reunião", "evento", "contagem_atividades", "gestao"),
+    "IND-UNI": ("Unidade implementada", "unidade", "manual", "estruturacao_produtiva"),
+    "IND-FAM": ("Família atendida", "familia", "soma_ufpas", "assistencia_tecnica"),
+    "IND-OUT": ("Outro", "outro", "contagem_atividades", "outro"),
+}
 
 TIPOS_ATIVIDADE = [
     "visita_tecnica", "reuniao_comunitaria", "oficina", "intercambio",
@@ -1010,7 +1054,18 @@ class Command(BaseCommand):
         acoes = []
         inicio = date(2025, 1, 1)
         fim = date(2027, 12, 31)
-        for numero, titulo, ods, lista_acoes in METAS:
+        indicadores = {}
+        for codigo, (nome, unidade, forma, categoria) in INDICADORES.items():
+            indicadores[codigo], _ = Indicator.objects.get_or_create(
+                codigo=codigo,
+                defaults={
+                    "nome": nome,
+                    "unidade_medida": unidade,
+                    "forma_apuracao": forma,
+                    "categoria": categoria,
+                },
+            )
+        for numero, titulo, ods, submetas in METAS:
             meta, _ = WorkPlanMeta.objects.get_or_create(
                 numero=numero,
                 defaults={
@@ -1022,22 +1077,40 @@ class Command(BaseCommand):
                     "criado_por": criador,
                 },
             )
-            for num_acao, descricao, unidade, qtd, valor in lista_acoes:
-                acao, _ = WorkPlanAcao.objects.get_or_create(
+            for num_submeta, titulo_submeta, lista_acoes in submetas:
+                submeta, _ = WorkPlanSubmeta.objects.get_or_create(
                     meta=meta,
-                    numero=num_acao,
+                    numero=num_submeta,
                     defaults={
-                        "descricao": descricao,
-                        "tipo_unidade": unidade,
-                        "quantidade_planejada": Decimal(qtd),
-                        "valor_unitario": Decimal(valor),
+                        "titulo": titulo_submeta,
                         "data_inicio": inicio,
                         "data_fim": fim,
+                        "criado_por": criador,
                     },
                 )
-                acoes.append(acao)
+                for num_acao, descricao, codigo_indicador, qtd, valor in lista_acoes:
+                    indicador = indicadores[codigo_indicador]
+                    acao, _ = WorkPlanAcao.objects.get_or_create(
+                        submeta=submeta,
+                        numero=num_acao,
+                        defaults={
+                            "descricao": descricao,
+                            "indicador": indicador,
+                            "quantidade_planejada": Decimal(qtd),
+                            "valor_unitario": Decimal(valor),
+                            "data_inicio": inicio,
+                            "data_fim": fim,
+                            # Na apuração manual quem lança é a UGP; a demo já
+                            # traz um lançamento para o painel não mostrar zero.
+                            "quantidade_realizada": (
+                                qtd // 3 if indicador.forma_apuracao == "manual" else 0
+                            ),
+                        },
+                    )
+                    acoes.append(acao)
         self.stdout.write(
-            f"Plano de Trabalho: {WorkPlanMeta.objects.count()} metas, {len(acoes)} ações"
+            f"Plano de Trabalho: {WorkPlanMeta.objects.count()} metas, "
+            f"{WorkPlanSubmeta.objects.count()} submetas, {len(acoes)} ações"
         )
         return acoes
 
@@ -1510,7 +1583,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Seed de demonstração concluído."))
         for modelo in (
             Municipality, Organization, Comunidade, UPF, MembroFamilia, Production,
-            UPFDocument, FormResponse, WorkPlanMeta, WorkPlanAcao, Activity,
+            UPFDocument, FormResponse, Indicator, WorkPlanMeta, WorkPlanSubmeta, WorkPlanAcao, Activity,
             ActivityPhoto, ActivityDocument,
         ):
             self.stdout.write(

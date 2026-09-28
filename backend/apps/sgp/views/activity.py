@@ -57,7 +57,7 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
 
     def get_queryset(self):
         qs = Activity.objects.select_related(
-            "acao", "acao__meta",
+            "acao", "acao__meta", "acao__submeta", "acao__indicador",
             "municipio", "municipio__territory", "municipio__state",
             "comunidade",
             "tecnico_responsavel",
@@ -311,6 +311,9 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
             "municipio__state",
             "comunidade",
             "tecnico_responsavel",
+            "acao__meta",
+            "acao__submeta",
+            "acao__indicador",
         )
 
         qs = scope_queryset(

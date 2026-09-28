@@ -143,21 +143,6 @@ STATUS_WORKPLAN = [
     ("concluida", "Concluída"),
 ]
 
-TIPO_UNIDADE_MEDIDA = [
-    (1, "Seminário"),
-    (2, "Oficina"),
-    (3, "Curso / Capacitação"),
-    (4, "Plano"),
-    (5, "Relatório de pesquisas"),
-    (6, "Intercâmbio"),
-    (7, "Conteúdo audiovisual"),
-    (8, "Visita técnica"),
-    (9, "Encontro / Reunião"),
-    (10, "Unidade implementada"),
-    (11, "Família atendida"),
-    (12, "Outro"),
-]
-
 ODS_CHOICES = [
     (1, "ODS 1 – Erradicação da Pobreza"),
     (2, "ODS 2 – Fome Zero e Agricultura Sustentável"),

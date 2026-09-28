@@ -3,7 +3,7 @@
 from django.db.models import Q, QuerySet
 from rest_framework.exceptions import PermissionDenied
 
-from apps.sgp.models import WorkPlanAcao, WorkPlanMeta
+from apps.sgp.models import WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
 from apps.sgp.services.access import resolver_escopo
 
 
@@ -52,6 +52,16 @@ def filter_workplan_metas_for_user(
     queryset: QuerySet[WorkPlanMeta], user
 ) -> QuerySet[WorkPlanMeta]:
     """Limita Metas às que possuem Ações visíveis para o usuário."""
+    scope = activity_scope_for_user(user, prefix="acoes__atividades__")
+    if scope is None:
+        return queryset
+    return queryset.filter(scope).distinct()
+
+
+def filter_workplan_submetas_for_user(
+    queryset: QuerySet[WorkPlanSubmeta], user
+) -> QuerySet[WorkPlanSubmeta]:
+    """Limita Submetas às que possuem Ações visíveis para o usuário."""
     scope = activity_scope_for_user(user, prefix="acoes__atividades__")
     if scope is None:
         return queryset

@@ -195,17 +195,31 @@ Foram implementadas a exportação do Plano de Trabalho em CSV/XLSX e uma API au
 O módulo `apps/sgp/services/workplan_export.py` é a fonte única do dataset exportável. Ele evita duplicação entre exportação manual e Power BI, retornando as colunas:
 
 1. Meta
-2. Ação
-3. Tipo/Unidade
-4. Quantidade planejada
-5. Valor unitário
-6. Valor total
-7. Quantidade realizada
-8. Percentual realizado
-9. Status de execução
-10. Semáforo
+2. Submeta
+3. Ação
+4. Indicador
+5. Unidade de medida
+6. Forma de apuração
+7. Quantidade planejada
+8. Valor unitário
+9. Valor total
+10. Quantidade realizada
+11. Percentual realizado
+12. Valor executado
+13. Custo unitário realizado
+14. Saldo (valor total − valor executado)
+15. Status de execução
+16. Semáforo
 
-A consulta usa `select_related`, agregação com `Count`, filtros SQL e `Exists` para evitar consultas N+1 e preservar desempenho.
+A quantidade realizada segue a forma de apuração do Indicador e é apurada só
+sobre as Atividades no escopo do usuário (ver `backend/docs/plano-trabalho.md`).
+O valor executado é o da Ação inteira. A consulta usa `select_related`,
+subqueries por Ação e `Exists` para evitar consultas N+1.
+
+A coluna "Tipo/Unidade" deixou de existir: o Indicador substituiu o campo
+`tipo_unidade` da Ação. No dataset do Power BI a chave `tipo_unidade` continua
+existindo, com o nome do Indicador, como alias de transição (ver "Débito
+técnico" em `backend/docs/plano-trabalho.md`).
 
 ### Regras de escopo territorial
 
@@ -343,13 +357,20 @@ Status: 200 OK
   "resultados": [
     {
       "meta": "1 - Meta de exemplo",
-      "acao": "1.1 - Ação de exemplo",
+      "submeta": "1.1 - Submeta de exemplo",
+      "acao": "1.1.1 - Ação de exemplo",
+      "indicador": "IND-SEM - Seminário",
+      "unidade_medida": "Evento",
+      "forma_apuracao": "Contagem de atividades concluídas",
       "tipo_unidade": "Seminário",
       "quantidade_planejada": "16.00",
       "valor_unitario": "8175.00",
       "valor_total": "130800.00",
       "quantidade_realizada": "4",
       "percentual_realizado": "25.00",
+      "valor_executado": "30000.00",
+      "custo_unitario_realizado": "7500.00",
+      "saldo": "100800.00",
       "status_execucao": "no_prazo",
       "semaforo": "amarelo"
     }
