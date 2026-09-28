@@ -223,7 +223,8 @@ def check_acao_progress_alert() -> int:
 @shared_task(name="sgp.tasks.check_budget_threshold_alert")
 def check_budget_threshold_alert() -> int:
     """Notifica UGP e Super Admin sobre alocações em vermelho no semáforo do
-    orçamento (§5.3.3: comprometido ≥ 80% do alocado), em qualquer nível.
+    orçamento (comprometido ≥ `budget_alert_red_pct` do alocado, 90% por padrão),
+    em qualquer nível.
 
     Mesmo padrão de `check_acao_progress_alert`: execução diária, uma notificação
     por destinatário e alocação vermelha.

@@ -1,6 +1,6 @@
 from django.conf import settings
 from django.core.cache import cache
-from django.db import models
+from django.db import models, transaction
 from django.db.models import signals
 from django.dispatch import receiver
 
@@ -103,4 +103,7 @@ def enqueue_email_notification(sender, instance, created, **kwargs):
     """
     if created and instance.tipo == TipoNotificacao.EMAIL and instance.status == StatusNotificacao.PENDENTE:
         from apps.core.tasks.notifications import send_email_notification
-        send_email_notification.delay(instance.pk)
+        # on_commit: o post_save roda dentro da transação de quem criou a
+        # Notification — sem isso, o worker pode pegar a task antes do
+        # commit (pk inexistente ainda) ou depois de um rollback.
+        transaction.on_commit(lambda: send_email_notification.delay(instance.pk))

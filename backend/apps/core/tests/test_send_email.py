@@ -13,12 +13,15 @@ from apps.core.tests.factories import UserFactory, NotificationFactory, Notifica
 # ######################################
 
 @pytest.mark.django_db
-def test_send_email_enqueues_task():
+def test_send_email_enqueues_task(django_capture_on_commit_callbacks):
     """
-    Notification.save() do tipo email enfileira a task via signal.
+    Notification.save() do tipo email enfileira a task via signal, só após
+    o commit da transação (transaction.on_commit) — captura os callbacks
+    pra executá-los aqui, já que o teste em si nunca commita de verdade.
     """
     with patch("apps.core.tasks.notifications.send_email_notification.delay") as mock_delay:
-        notif = NotificationFactory()
+        with django_capture_on_commit_callbacks(execute=True):
+            notif = NotificationFactory()
         mock_delay.assert_called_once_with(notif.pk)
 
 

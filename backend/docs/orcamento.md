@@ -10,22 +10,35 @@ O SGD (Sistema de Gestão de Demandas) ainda não existe. Este documento descrev
 
 ## O motor (`apps.sgp.services.budget`)
 
-Quatro funções públicas, chamadas em resposta ao ciclo de vida de uma demanda no SGD:
+Seis funções públicas, chamadas em resposta ao ciclo de vida de uma demanda no SGD:
 
 ```python
 def verificar_saldo(*, meta, rubrica, nivel, territorio=None, estado=None, valor) -> SaldoCheck
+def saldo_para_consulta(*, meta_id, rubrica_slug, nivel, estado_sigla, territorio, valor) -> SaldoCheck
 def reservar(*, allocation, valor, demanda_id, usuario, justificativa="") -> BudgetTransaction
-def executar(*, demanda_id, usuario) -> BudgetTransaction
+def ajustar_reserva(*, demanda_id, novo_valor, usuario, justificativa="") -> BudgetTransaction
+def executar(*, demanda_id, usuario, valor_executado=None) -> BudgetTransaction
 def liberar(*, demanda_id, usuario, motivo) -> BudgetTransaction
 ```
+
+`saldo_para_consulta` é a variante que resolve tudo a partir de ids/slugs crus
+(usada pelo `SaldoConsultaView` e pelo motor de duas travas do SGD,
+`apps.sgd.services.balance`) — `verificar_saldo` espera instâncias já
+resolvidas. `ajustar_reserva` e o parâmetro `valor_executado` de `executar`
+foram adicionados para o SGD (`Pré-autorizada → Autorizada com valor
+ajustado` e conclusão com valor efetivamente pago menor que o autorizado,
+§4.2 do documento do SGD) — aditivos: nenhum código que só chama
+`reservar`/`executar()`/`liberar` sem passar por `ajustar_reserva` muda de
+comportamento.
 
 ### Estado da demanda → chamada esperada
 
 | Estado da demanda no SGD | Chamada |
 |---|---|
-| Formulário sendo preenchido (antes de criar) | `GET /api/v1/sgp/orcamento/saldo/` (ou `verificar_saldo` direto, se a chamada for interna) |
+| Formulário sendo preenchido (antes de criar) | `GET /api/v1/sgp/orcamento/saldo/` (ou `saldo_para_consulta`/`verificar_saldo` direto, se a chamada for interna) |
 | Demanda criada, saldo reservado | `reservar(allocation=..., valor=..., demanda_id=<id da demanda>, usuario=...)` |
-| Demanda concluída pela FGD (consumo definitivo) | `executar(demanda_id=..., usuario=...)` |
+| Decisão final com valor diferente do estimado | `ajustar_reserva(demanda_id=..., novo_valor=..., usuario=...)` |
+| Demanda concluída pela FGD (consumo definitivo, valor efetivamente pago) | `executar(demanda_id=..., usuario=..., valor_executado=<valor pago>)` |
 | Demanda recusada ou cancelada | `liberar(demanda_id=..., usuario=..., motivo=...)` |
 
 ### Invariantes

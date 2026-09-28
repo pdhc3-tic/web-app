@@ -298,6 +298,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "sgp.tasks.export_to_power_bi",
         "schedule": crontab(minute=0),  # a cada hora
     },
+    "check_demand_inactivity_alert": {
+        "task": "sgd.tasks.check_demand_inactivity_alert",
+        "schedule": crontab(hour=13, minute=0),  # diariamente, 1h depois dos alertas do SGP
+    },
 }
 
 # E-MAIL
