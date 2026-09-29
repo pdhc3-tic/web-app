@@ -20,14 +20,11 @@ Endpoint de detalhe consolidado (Issue #227):
     14. Atividade inativa (soft-deleted) → 404
 """
 import datetime
-import importlib
 from unittest.mock import patch
 
 import pytest
-from django.apps import apps as real_apps
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
-from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -39,7 +36,6 @@ from apps.core.tests.factories import (
     UserFactory,
     MunicipalityFactory,
 )
-from apps.sgp.parceiros_matching import dividir_parceiros_texto
 from apps.sgp.models import Activity, ActivityDocument, ActivityPhoto
 from apps.sgp.models.activity import STATUS_TRANSITIONS
 from apps.sgp.tests.factories import ActivityFactory, WorkPlanAcaoFactory
@@ -503,18 +499,6 @@ def test_paginacao_segunda_pagina(auth_ugp, municipio_rn):
 # Issue #228 — Parceiros como M2M com `Organization`
 # ===========================================================================
 
-def _run_migracao_parceiros():
-    """
-    Executa a função de dados da migration 0025 diretamente contra o banco
-    de teste (já migrado), exercitando exatamente o mesmo código que roda
-    em produção.
-    """
-    modulo = importlib.import_module(
-        "apps.sgp.migrations.0025_migra_parceiros_para_organizacoes"
-    )
-    modulo.migrar_parceiros_para_organizacoes(real_apps, None)
-
-
 @pytest.mark.django_db
 def test_vincula_organizacao(auth_ugp, payload_minimo):
     """M2M `parceiros_organizacoes` deve ser gravado e retornado pela API."""
@@ -530,67 +514,6 @@ def test_vincula_organizacao(auth_ugp, payload_minimo):
     assert list(atividade.parceiros_organizacoes.values_list("pk", flat=True)) == [
         organizacao.pk
     ]
-
-
-@pytest.mark.django_db
-def test_migration_casa_por_nome(municipio_rn):
-    """'assoc. dos agricultores' deve casar com 'Associação dos Agricultores'."""
-    organizacao = OrganizationFactory(nome="Associação dos Agricultores")
-    atividade = ActivityFactory(
-        municipio=municipio_rn, parceiros_livres="assoc. dos agricultores"
-    )
-
-    _run_migracao_parceiros()
-    atividade.refresh_from_db()
-
-    assert list(atividade.parceiros_organizacoes.all()) == [organizacao]
-    assert atividade.parceiros_livres == ""
-
-
-@pytest.mark.django_db
-def test_migration_preserva_nao_casados(municipio_rn):
-    """Texto sem organização correspondente sobrevive em `parceiros_livres`."""
-    atividade = ActivityFactory(
-        municipio=municipio_rn, parceiros_livres="ONG Desconhecida XYZ"
-    )
-
-    _run_migracao_parceiros()
-    atividade.refresh_from_db()
-
-    assert atividade.parceiros_organizacoes.count() == 0
-    assert atividade.parceiros_livres == "ONG Desconhecida XYZ"
-
-
-@pytest.mark.django_db
-def test_nenhum_dado_perdido(municipio_rn):
-    """Nenhuma atividade fica sem parceiro (M2M ou texto livre) se tinha."""
-    organizacao = OrganizationFactory(nome="Cooperativa Local")
-
-    textos = [
-        "Cooperativa local; ONG Desconhecida",
-        "Prefeitura Municipal; EMATER",
-        "",
-        "cooperativa local",
-    ]
-    atividades = [
-        ActivityFactory(municipio=municipio_rn, parceiros_livres=texto)
-        for texto in textos
-    ]
-    total_original_por_atividade = {
-        a.pk: len(dividir_parceiros_texto(a.parceiros_livres)) for a in atividades
-    }
-
-    _run_migracao_parceiros()
-
-    for atividade in atividades:
-        atividade.refresh_from_db()
-        total_apos = atividade.parceiros_organizacoes.count() + len(
-            dividir_parceiros_texto(atividade.parceiros_livres)
-        )
-        assert total_apos == total_original_por_atividade[atividade.pk]
-
-    # A organização cadastrada deve ter casado nas duas atividades que a citam
-    assert organizacao.atividades.count() == 2
 
 
 @pytest.mark.django_db

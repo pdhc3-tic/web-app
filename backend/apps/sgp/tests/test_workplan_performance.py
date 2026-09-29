@@ -15,13 +15,11 @@ Cobertura (tabela da issue):
 Os testes de carga/queries imprimem o valor medido (rodar com `-s` para ver
 no output) — é o que alimenta os números de `backend/docs/performance.md`.
 """
-import importlib
 from datetime import date, timedelta
 from decimal import Decimal
 from time import monotonic
 
 import pytest
-from django.apps import apps as django_apps
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import connection
@@ -69,24 +67,6 @@ def test_campo_decrementa_ao_sair_de_concluido():
 
     acao.refresh_from_db(fields=["quantidade_realizada"])
     assert acao.quantidade_realizada == 0
-
-
-def test_migration_popula_existentes():
-    acao = WorkPlanAcaoFactory()
-    ActivityFactory(acao=acao, status="concluido")
-    ActivityFactory(acao=acao, status="concluido")
-    ActivityFactory(acao=acao, status="planejado")
-
-    # Corrompe o campo direto no banco, simulando o estado anterior à migration.
-    WorkPlanAcao.objects.filter(pk=acao.pk).update(quantidade_realizada=0)
-
-    migration_module = importlib.import_module(
-        "apps.sgp.migrations.0027_popula_quantidade_realizada"
-    )
-    migration_module.popula_quantidade_realizada(django_apps, None)
-
-    acao.refresh_from_db(fields=["quantidade_realizada"])
-    assert acao.quantidade_realizada == 2
 
 
 def test_comando_reconcilia():

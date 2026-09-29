@@ -14,9 +14,9 @@ Antes desta issue, `WorkPlanAcao.quantidade_realizada` era uma `@property` que e
 - `apps/sgp/models/workplan.py` — `WorkPlanAcao.quantidade_realizada` materializado; `status_execucao` deixou de rodar `COUNT`.
 - `apps/sgp/signals/workplan.py` — mantém o campo em sincronia com `Activity` (`post_save`/`pre_save`).
 - `apps/sgp/apps.py` — registra o novo módulo de signals.
-- `apps/sgp/migrations/0026_workplanacao_quantidade_realizada.py` e `0027_popula_quantidade_realizada.py` — schema e backfill.
+- `apps/sgp/migrations/0001_initial.py` — coluna `quantidade_realizada` materializada.
 - `apps/sgp/management/commands/verificar_progresso_acoes.py` — reconciliação sob demanda.
-- `apps/sgp/tests/test_workplan_performance.py` — os 7 testes desta issue, incluindo os dois testes de carga citados abaixo.
+- `apps/sgp/tests/test_workplan_performance.py` — os 6 testes desta issue, incluindo os dois testes de carga citados abaixo.
 
 ## Método de Medição
 

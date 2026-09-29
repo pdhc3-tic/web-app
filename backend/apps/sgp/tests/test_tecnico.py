@@ -11,16 +11,13 @@ Cobertura (tabela da issue):
     6. test_atividade_filtra_por_osc_do_tecnico — ActivityFilter funcional
     7. test_desativar_preserva_atividades — atividades históricas intactas
 """
-import importlib
 
 import pytest
-from django.apps import apps as django_apps
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.core.tests.factories import (
     OrganizationFactory,
-    RoleFactory,
     UserFactory,
 )
 from apps.sgp.exceptions import ErroComCodigo
@@ -105,26 +102,6 @@ def test_escopo_territorial_na_leitura(auth_client_adt_rn, territory_rn, territo
     ids = [item["id"] for item in response.data["results"]]
     assert tecnico_rn.pk in ids
     assert tecnico_ce.pk not in ids
-
-
-# ===========================================================================
-# Teste 4 — migração de dados cria Tecnico para perfis existentes
-# ===========================================================================
-
-@pytest.mark.django_db
-def test_migration_cria_tecnicos(territory_rn):
-    role = RoleFactory(slug="adt-acr", nome="ADT/ACR")
-    user = UserFactory(profiles=[(role, territory_rn)])
-
-    migration_module = importlib.import_module(
-        "apps.sgp.migrations.0019_cria_tecnicos_perfis_existentes"
-    )
-    migration_module.cria_tecnicos_para_perfis_existentes(django_apps, None)
-
-    tecnico = Tecnico.objects.get(user=user)
-    assert tecnico.territorio_id == territory_rn.pk
-    assert tecnico.papel == "adt-acr"
-    assert tecnico.ativo is True
 
 
 # ===========================================================================
