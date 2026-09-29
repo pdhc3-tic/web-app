@@ -38,7 +38,7 @@ from apps.sgp.serializers_workplan import (
     WorkPlanMetaListSerializer,
     WorkPlanSubmetaDetailSerializer,
     WorkPlanSubmetaSerializer,
-    VisaoIndicadorSerializer,
+    VisaoPorIndicadorRespostaSerializer,
     WorkPlanVisaoIndicadorQuerySerializer,
 )
 from apps.sgp.cache import get_power_bi_snapshot
@@ -86,7 +86,7 @@ class WorkPlanVisaoIndicadorView(APIView):
 
     @extend_schema(
         parameters=[WorkPlanVisaoIndicadorQuerySerializer],
-        responses=VisaoIndicadorSerializer(many=True),
+        responses=VisaoPorIndicadorRespostaSerializer,
     )
     def get(self, request):
         query_serializer = WorkPlanVisaoIndicadorQuerySerializer(data=request.query_params)
@@ -101,8 +101,11 @@ class WorkPlanVisaoIndicadorView(APIView):
             ),
             meta_id=dados.get("meta_id"),
             indicador_id=dados.get("indicador_id"),
+            granularidade=dados["granularidade"],
         )
-        return Response({"indicadores": VisaoIndicadorSerializer(grupos, many=True).data})
+        return Response(VisaoPorIndicadorRespostaSerializer(
+            {"granularidade": dados["granularidade"], "indicadores": grupos}
+        ).data)
 
 
 class WorkPlanPowerBIView(APIView):

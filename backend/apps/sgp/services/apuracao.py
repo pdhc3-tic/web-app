@@ -154,31 +154,38 @@ def expressao_quantidade_realizada(filtro: FiltroAtividades | None = None) -> Ca
     )
 
 
-def realizado_por_territorio(
-    acoes: Iterable[WorkPlanAcao], filtro: FiltroAtividades | None = None
-) -> dict[int, dict[int, int]]:
-    """Realizado de cada Ação (chave: pk) por território, nas formas calculadas.
-    A forma manual não tem recorte territorial e fica de fora."""
+# Recebe o prefixo do caminho até Activity e devolve as expressões que formam
+# a chave de cada grupo (ex.: território; ano e fatia do período).
+ChavesDeGrupo = Callable[[str], dict]
+
+
+def realizado_agrupado(
+    acoes: Iterable[WorkPlanAcao],
+    chaves: ChavesDeGrupo,
+    filtro: FiltroAtividades | None = None,
+) -> dict[int, dict[tuple, int]]:
+    """Realizado de cada Ação (chave: pk) por grupo de Atividades, nas formas
+    calculadas, com a mesma contagem distinta do total. A forma manual não tem
+    Atividade de origem e fica de fora, assim como grupos com chave nula."""
     ids_por_forma: dict[str, list[int]] = defaultdict(list)
     for acao in acoes:
         if acao.indicador.forma_apuracao in FORMAS_RECALCULADAS:
             ids_por_forma[acao.indicador.forma_apuracao].append(acao.pk)
 
-    por_acao: dict[int, dict[int, int]] = defaultdict(dict)
+    por_acao: dict[int, dict[tuple, int]] = defaultdict(dict)
     for forma, ids in ids_por_forma.items():
         linhas, prefixo, agregado = _linhas_apuradas(forma, filtro)
+        expressoes = chaves(prefixo)
         consulta = (
             linhas.filter(**{f"{prefixo}acao_id__in": ids})
-            .values(
-                id_acao=F(f"{prefixo}acao_id"),
-                id_territorio=F(f"{prefixo}municipio__territory_id"),
-            )
+            .values(id_acao=F(f"{prefixo}acao_id"), **expressoes)
             .annotate(total=agregado)
             .order_by()
         )
         for linha in consulta:
-            if linha["id_territorio"] is not None:
-                por_acao[linha["id_acao"]][linha["id_territorio"]] = linha["total"]
+            chave = tuple(linha[nome] for nome in expressoes)
+            if None not in chave:
+                por_acao[linha["id_acao"]][chave] = linha["total"]
     return por_acao
 
 

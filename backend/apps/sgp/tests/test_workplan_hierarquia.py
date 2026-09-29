@@ -3,16 +3,18 @@ valor executado (SGP §5.5), painel em árvore (RF23), visão por Indicador
 (RF22), exportação e Power BI (RF25/RF26) e Atividades (RF07/RF15)."""
 import csv
 import io
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
 from django.core.management import call_command
+from django.utils import timezone
 from rest_framework import status
 
 from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
 from apps.sgp.models import WorkPlanAcao
 from apps.sgp.services.apuracao import recalcular_valor_executado
+from apps.sgp.services.visao_indicador import Granularidade
 from apps.sgp.services.workplan_export import EXPORT_COLUMNS, workplan_export_rows
 from apps.sgp.tests.factories import (
     ActivityFactory,
@@ -142,7 +144,9 @@ class TestPainelEmArvore:
         assert s1["consolidado"]["semaforo_financeiro"] == "verde"
 
         a1 = next(a for a in grupo["acoes"] if a["id"] == arvore["a1"].pk)
-        assert a1["submeta"]["numero"] == "1.1"
+        assert (a1["submeta"], a1["submeta_numero"], a1["submeta_titulo"]) == (
+            arvore["s1"].pk, "1.1", arvore["s1"].titulo
+        )
         assert a1["indicador"]["codigo"] == "TST-OFI"
         assert a1["percentual_financeiro"] == "80.00"
         assert a1["semaforo_financeiro"] == "amarelo"
@@ -242,6 +246,64 @@ class TestVisaoPorIndicador:
         [item] = response.data["indicadores"]
         assert item["quantidade_realizada"] == "1.00"
         assert item["por_territorio"][0]["quantidade_realizada"] == 1
+
+
+def _no_mes(atividade, mes):
+    atividade.data_inicio = timezone.make_aware(datetime(2026, mes, 1, 8))
+    atividade.data_fim = timezone.make_aware(datetime(2026, mes, 1, 12))
+    atividade.save()
+    return atividade
+
+
+class TestVisaoPorPeriodo:
+    def test_quebra_mensal_por_padrao(self, auth_client, arvore):
+        _no_mes(arvore["atividades"][0], 2)
+
+        response = auth_client.get(VISAO_URL)
+
+        assert response.data["granularidade"] == "mes"
+        [item] = response.data["indicadores"]
+        assert item["por_periodo"] == [
+            {"inicio": "2026-02-01", "fim": "2026-02-28", "quantidade_realizada": 1},
+            {"inicio": "2026-06-01", "fim": "2026-06-30", "quantidade_realizada": 4},
+        ]
+
+    @pytest.mark.parametrize("granularidade,inicio,fim", [
+        ("trimestre", "2026-04-01", "2026-06-30"),
+        ("semestre", "2026-01-01", "2026-06-30"),
+        ("ano", "2026-01-01", "2026-12-31"),
+    ])
+    def test_outras_granularidades(self, auth_client, arvore, granularidade, inicio, fim):
+        response = auth_client.get(VISAO_URL, {"granularidade": granularidade})
+
+        assert response.data["granularidade"] == granularidade
+        [item] = response.data["indicadores"]
+        assert item["por_periodo"] == [{"inicio": inicio, "fim": fim, "quantidade_realizada": 5}]
+
+    def test_granularidade_desconhecida_retorna_400(self, auth_client):
+        response = auth_client.get(VISAO_URL, {"granularidade": "quinzena"})
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "granularidade" in response.data
+
+    def test_ufpa_distinta_dentro_de_cada_periodo(self, auth_client, meta, municipio_rn):
+        indicador = IndicatorFactory(forma_apuracao="soma_ufpas")
+        acao = WorkPlanAcaoFactory(meta=meta, indicador=indicador)
+        upf = UPFFactory(municipio=municipio_rn)
+        for mes in (3, 3, 5):
+            atividade = ActivityFactory(acao=acao, status="concluido", municipio=municipio_rn)
+            _no_mes(atividade, mes).upfs_participantes.add(upf)
+
+        response = auth_client.get(VISAO_URL, {"indicador_id": indicador.pk})
+
+        [item] = response.data["indicadores"]
+        assert [(p["inicio"], p["quantidade_realizada"]) for p in item["por_periodo"]] == [
+            ("2026-03-01", 1), ("2026-05-01", 1),
+        ]
+
+    def test_granularidade_precisa_dividir_o_ano(self):
+        with pytest.raises(ValueError):
+            Granularidade(meses=5)
 
 
 class TestExportacao:

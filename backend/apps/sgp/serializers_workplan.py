@@ -6,6 +6,7 @@ from rest_framework import serializers
 from apps.sgp.constants import ODS_CHOICES, STATUS_WORKPLAN
 from apps.sgp.models import Indicator, WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
 from apps.sgp.models.indicator import DESAGREGACAO_CHOICES, FORMA_MANUAL
+from apps.sgp.services.visao_indicador import GRANULARIDADE_PADRAO, GRANULARIDADES
 from apps.sgp.services.workplan_access import (
     filter_workplan_actions_for_user,
     filter_workplan_submetas_for_user,
@@ -424,6 +425,10 @@ class WorkPlanVisaoIndicadorQuerySerializer(serializers.Serializer):
     indicador_id = serializers.IntegerField(min_value=1, required=False)
     periodo_inicio = serializers.DateField(required=False)
     periodo_fim = serializers.DateField(required=False)
+    granularidade = serializers.ChoiceField(
+        choices=list(GRANULARIDADES), default=GRANULARIDADE_PADRAO,
+        help_text="Fatia da quebra por período (`por_periodo`).",
+    )
 
     def validate(self, attrs):
         if (
@@ -452,12 +457,18 @@ class _TerritorioVisaoIndicadorSerializer(serializers.Serializer):
     quantidade_realizada = serializers.IntegerField()
 
 
+class _PeriodoVisaoIndicadorSerializer(serializers.Serializer):
+    inicio = serializers.DateField()
+    fim = serializers.DateField()
+    quantidade_realizada = serializers.IntegerField()
+
+
 class VisaoIndicadorSerializer(serializers.Serializer):
     """Planejado e realizado de um Indicador somando todas as Ações que o usam.
-    `por_territorio` só traz realizado (o planejado não é territorial) e deixa
-    de fora as Ações de apuração manual, que não têm recorte territorial; pelo
-    mesmo motivo, o realizado de um Indicador manual vem nulo quando se pede
-    território ou período."""
+    `por_territorio` e `por_periodo` só trazem realizado (o planejado não é
+    territorial nem datado) e deixam de fora as Ações de apuração manual, que
+    não têm território nem data; pelo mesmo motivo, o realizado de um
+    Indicador manual vem nulo quando se pede território ou período."""
 
     indicador = IndicatorResumoSerializer()
     quantidade_planejada = serializers.DecimalField(max_digits=14, decimal_places=2)
@@ -466,6 +477,12 @@ class VisaoIndicadorSerializer(serializers.Serializer):
     por_meta = _NoVisaoIndicadorSerializer(many=True)
     por_submeta = _NoVisaoIndicadorSerializer(many=True)
     por_territorio = _TerritorioVisaoIndicadorSerializer(many=True)
+    por_periodo = _PeriodoVisaoIndicadorSerializer(many=True)
+
+
+class VisaoPorIndicadorRespostaSerializer(serializers.Serializer):
+    granularidade = serializers.ChoiceField(choices=list(GRANULARIDADES))
+    indicadores = VisaoIndicadorSerializer(many=True)
 
 
 class WorkPlanDashboardMetaSerializer(serializers.ModelSerializer):
@@ -500,7 +517,9 @@ class WorkPlanDashboardAcaoSerializer(serializers.Serializer):
 
     id = serializers.IntegerField(read_only=True)
     meta = WorkPlanDashboardMetaSerializer(read_only=True)
-    submeta = WorkPlanDashboardSubmetaSerializer(read_only=True)
+    submeta = serializers.IntegerField(source="submeta_id", read_only=True)
+    submeta_numero = serializers.CharField(source="submeta.numero", read_only=True)
+    submeta_titulo = serializers.CharField(source="submeta.titulo", read_only=True)
     indicador = IndicatorResumoSerializer(read_only=True)
     numero = serializers.CharField(read_only=True)
     descricao = serializers.CharField(read_only=True)

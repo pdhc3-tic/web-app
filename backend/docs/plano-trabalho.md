@@ -115,13 +115,15 @@ semáforo físico, status, valor total, valor executado, percentual financeiro
 e semáforo financeiro.
 - O semáforo físico é o de antes (realizado × progresso esperado).
 - O financeiro usa os limiares 70/90 do Core (`budget_alert_yellow_pct` e `budget_alert_red_pct`, SGP §6.8) sobre executado ÷ planejado.
-- Cada Ação ganha `submeta`, `indicador`, `valor_total`, `valor_executado`, `percentual_financeiro` e `semaforo_financeiro`.
+- Cada Ação ganha `submeta` (id), `submeta_numero`, `submeta_titulo`, `indicador`, `valor_total`, `valor_executado`, `percentual_financeiro` e `semaforo_financeiro`.
 
 **Visão por Indicador (RF22)**
-- `GET /sgp/plano-trabalho/indicadores/?territorio_id=&meta_id=&indicador_id=&periodo_inicio=&periodo_fim=`.
+- `GET /sgp/plano-trabalho/indicadores/?territorio_id=&meta_id=&indicador_id=&periodo_inicio=&periodo_fim=&granularidade=`.
 - Soma planejado e realizado de todas as Ações que usam cada Indicador.
-- Quebras: `por_meta`, `por_submeta` e `por_territorio`. A quebra territorial traz só o realizado, porque o planejado não é territorial, e não inclui Ações de apuração manual.
-- O período filtra pela data de término das Atividades.
+- Quebras: `por_meta`, `por_submeta`, `por_territorio` e `por_periodo`. As quebras por território e por período trazem só o realizado, porque o planejado não é territorial nem datado, e não incluem Ações de apuração manual.
+- O período (filtro e quebra) vale pela data de término das Atividades.
+- `por_periodo` traz `inicio`, `fim` e `quantidade_realizada` de cada fatia, na granularidade pedida: `mes` (padrão, a cadência dos relatórios do SGP), `trimestre`, `semestre` ou `ano`. A resposta devolve a granularidade usada.
+- As granularidades ficam em `GRANULARIDADES` (`apps/sgp/services/visao_indicador.py`), cada uma definida pelo tamanho da fatia em meses. Uma nova entra com uma linha, desde que divida o ano em partes iguais (ex.: `"bimestre": Granularidade(meses=2)`). O agrupamento é feito no banco, então UFPAs e participantes continuam distintos dentro de cada fatia.
 
 **Atividades (RF07)**
 Listagem, detalhe e calendário trazem `plano_trabalho` com Meta, Submeta,
