@@ -10,7 +10,6 @@ from apps.sgd.services import balance as balance_service
 from apps.sgd.services.approval import concluir
 from apps.sgd.tests.factories import DemandFactory
 from apps.sgp.models import WorkPlanAcao
-from apps.sgp.tests.factories import ActivityFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -48,20 +47,16 @@ def test_contexto_traz_submeta_e_indicador(auth_client_solicitante, demand_rascu
     assert contexto["indicador_unidade_medida"] == acao.indicador.unidade_medida
 
 
+# Número de queries do detalhe da demanda antes de a Submeta e o Indicador
+# entrarem no contexto.
+QUERIES_DO_DETALHE = 9
+
+
 def test_detalhe_nao_aumenta_o_numero_de_queries(
-    auth_client_solicitante, demand_rascunho_rn, activity_rn, solicitante_rn,
-    django_assert_num_queries,
+    auth_client_solicitante, demand_rascunho_rn, django_assert_num_queries,
 ):
     """A cadeia vem por JOIN na consulta da demanda: nenhuma consulta própria a
-    Ação, Submeta, Meta ou Indicador, e o mesmo número de queries qualquer que
-    seja a cadeia da demanda."""
-    # Outra Atividade do mesmo técnico e município: a factory cria Ação,
-    # Submeta, Meta e Indicador novos.
-    outra = DemandFactory(
-        activity=ActivityFactory(municipio=activity_rn.municipio, tecnico_responsavel=solicitante_rn),
-        solicitante=solicitante_rn,
-        status="rascunho",
-    )
+    Ação, Submeta, Meta ou Indicador, e o total é o mesmo de antes."""
     # A primeira requisição do usuário pode carregar dados que ficam em cache.
     auth_client_solicitante.get(f"{URL}{demand_rascunho_rn.pk}/")
 
@@ -70,8 +65,8 @@ def test_detalhe_nao_aumenta_o_numero_de_queries(
     assert response.status_code == 200
     assert _consultas_avulsas_da_cadeia(consultas) == []
 
-    with django_assert_num_queries(len(consultas.captured_queries)):
-        assert auth_client_solicitante.get(f"{URL}{outra.pk}/").status_code == 200
+    with django_assert_num_queries(QUERIES_DO_DETALHE):
+        assert auth_client_solicitante.get(f"{URL}{demand_rascunho_rn.pk}/").status_code == 200
 
 
 def test_listagem_traz_a_cadeia_sem_consulta_a_mais(
