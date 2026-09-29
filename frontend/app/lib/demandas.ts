@@ -45,6 +45,48 @@ export type ContextoDemanda = {
   meta_titulo: string;
 };
 
+/**
+ * `DemandRequestSerializer` — uma solicitação de recurso da demanda.
+ * `alerta_rubrica_fora_do_previsto`: a rubrica não está entre as previstas da
+ * Ação (alerta não bloqueante, RF22).
+ */
+export type SolicitacaoDemanda = {
+  id: number;
+  demanda: number;
+  tipo: string;
+  tipo_display: string;
+  rubrica: number;
+  rubrica_slug: string;
+  rubrica_nome: string;
+  campos_json: Record<string, unknown>;
+  valor_estimado: string;
+  valor_autorizado: string | null;
+  valor_pago: string | null;
+  ordem: number;
+  alerta_rubrica_fora_do_previsto: boolean;
+  criado_em: string;
+  atualizado_em: string;
+};
+
+/**
+ * Etapa de aprovação (`ApprovalStep`) — a linha do tempo da demanda.
+ *
+ * O backend grava as etapas, mas ainda NÃO as expõe
+ * (docs/pendencias-backend-sprint-10.md, item 11). O tipo descreve o que o
+ * painel espera receber em `Demanda.etapas`.
+ */
+export type EtapaDemanda = {
+  id: number;
+  etapa: "pre_autorizacao" | "autorizacao" | "atendimento";
+  etapa_display: string;
+  acao: "aprovado" | "recusado" | "devolvido" | "atendido";
+  acao_display: string;
+  responsavel_nome: string | null;
+  justificativa: string;
+  excedente_autorizado: boolean;
+  criado_em: string;
+};
+
 /** `DemandSerializer` — leitura. Valores monetários vêm como string decimal. */
 export type Demanda = {
   id: number;
@@ -60,6 +102,14 @@ export type Demanda = {
   valor_autorizado_total: string;
   valor_pago_total: string;
   contexto: ContextoDemanda;
+  solicitacoes: SolicitacaoDemanda[];
+  /**
+   * Nome de quem abriu a demanda — ainda NÃO vem (só o id em `solicitante`);
+   * docs/pendencias-backend-sprint-10.md, item 12. Opcional até lá.
+   */
+  solicitante_nome?: string;
+  /** Linha do tempo — ainda NÃO vem; ver `EtapaDemanda`. Opcional até lá. */
+  etapas?: EtapaDemanda[];
   criado_em: string;
   atualizado_em: string;
 };
@@ -198,3 +248,103 @@ export async function buscarAtividadesElegiveis(
   const data: { results: AtividadeElegivel[] } = await res.json();
   return data.results;
 }
+
+// ─── Painel de decisão (#296) ────────────────────────────────────────────────
+
+/** Perfis que decidem sobre demandas (RF18–RF23). */
+export type PerfilDecisor = "articulador-estadual" | "ugp" | "fgd";
+
+/**
+ * Status que aguardam a decisão de cada perfil — a fila "Aguardando minha
+ * ação". Espelha `apps/sgd/services/approval.py` (quem é notificado em cada
+ * status) e as permissões de `DemandApprovalMixin`.
+ */
+export const STATUS_AGUARDANDO: Record<PerfilDecisor, StatusDemanda[]> = {
+  "articulador-estadual": ["submetida"],
+  ugp: ["pre_autorizada"],
+  fgd: ["autorizada", "em_atendimento"],
+};
+
+/**
+ * GET /api/v1/sgd/demandas/?status=… — listagem, já no escopo do perfil
+ * (o Articulador só enxerga as Submetidas do próprio estado).
+ *
+ * Vários status vão como parâmetro repetido. O `DemandViewSet.list` hoje só lê
+ * o último — para a FGD, que aguarda dois status, a fila vem incompleta
+ * (docs/pendencias-backend-sprint-10.md, item 13).
+ */
+export async function listDemandas(
+  params: { status?: StatusDemanda[] } = {},
+  signal?: AbortSignal,
+): Promise<Demanda[]> {
+  const qs = new URLSearchParams();
+  for (const st of params.status ?? []) qs.append("status", st);
+  const query = qs.toString();
+  const res = await apiClient(`${DEMANDAS_PATH}${query ? `?${query}` : ""}`, { signal });
+  return res.json();
+}
+
+/** GET /api/v1/sgd/demandas/{id}/ */
+export async function getDemanda(id: number | string, signal?: AbortSignal): Promise<Demanda> {
+  const res = await apiClient(`${DEMANDAS_PATH}${id}/`, { signal });
+  return res.json();
+}
+
+export type FaixaSemaforo = "verde" | "amarelo" | "vermelho";
+
+type ImpactoTrava = {
+  semaforo_antes: FaixaSemaforo | null;
+  semaforo_apos: FaixaSemaforo | null;
+  saldo_apos: number | string | null;
+};
+
+/** Resposta de `preview-decisao` (BE-3): o saldo das duas travas depois da decisão. */
+export type PreviewDecisao = {
+  disponivel: boolean;
+  trava_bloqueada: "individual" | "territorial" | null;
+  individual: ImpactoTrava;
+  territorial: ImpactoTrava;
+};
+
+/**
+ * GET /api/v1/sgd/demandas/{id}/preview-decisao/?demand_request_id=&valor=
+ * `valor` é o valor que a decisão vai reservar para a solicitação.
+ */
+export async function previewDecisao(
+  demandaId: number,
+  solicitacaoId: number,
+  valor: string,
+  signal?: AbortSignal,
+): Promise<PreviewDecisao> {
+  const qs = new URLSearchParams({ demand_request_id: String(solicitacaoId), valor });
+  const res = await apiClient(`${DEMANDAS_PATH}${demandaId}/preview-decisao/?${qs}`, { signal });
+  return res.json();
+}
+
+async function decidir(
+  demandaId: number,
+  acao: string,
+  body: Record<string, unknown> = {},
+): Promise<Demanda> {
+  const res = await apiClient(`${DEMANDAS_PATH}${demandaId}/${acao}/`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
+/** Articulador Estadual. */
+export const preAutorizarDemanda = (id: number) => decidir(id, "pre-autorizar");
+export const devolverDemanda = (id: number, justificativa: string) =>
+  decidir(id, "devolver", { justificativa });
+
+/** UGP. `ajustes`: {id da solicitação: novo valor} — vazio autoriza como pedido. */
+export const autorizarDemanda = (id: number, ajustes: Record<number, string> = {}) =>
+  decidir(id, "autorizar", { ajustes });
+export const recusarDemanda = (id: number, justificativa: string) =>
+  decidir(id, "recusar", { justificativa });
+
+/** FGD. `valoresPagos`: {id da solicitação: valor pago}. */
+export const atenderDemanda = (id: number) => decidir(id, "atender");
+export const concluirDemanda = (id: number, valoresPagos: Record<number, string>) =>
+  decidir(id, "concluir", { valores_pagos: valoresPagos });

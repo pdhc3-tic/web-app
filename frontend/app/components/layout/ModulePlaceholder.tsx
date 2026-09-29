@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Sparkles } from "lucide-react";
 import { PageHeader } from "./PageHeader";
@@ -9,8 +8,6 @@ type ModulePlaceholderProps = {
   description: string;
   Icon: LucideIcon;
   features?: string[];
-  /** Ação já disponível num módulo ainda em construção (ex.: "Nova demanda"). */
-  action?: ReactNode;
 };
 
 export function ModulePlaceholder({
@@ -19,7 +16,6 @@ export function ModulePlaceholder({
   description,
   Icon,
   features,
-  action,
 }: ModulePlaceholderProps) {
   return (
     <>
@@ -69,8 +65,6 @@ export function ModulePlaceholder({
             <p className="mt-4 text-base text-text-muted leading-relaxed max-w-xl">
               {description}
             </p>
-
-            {action && <div className="mt-6">{action}</div>}
           </div>
         </div>
 

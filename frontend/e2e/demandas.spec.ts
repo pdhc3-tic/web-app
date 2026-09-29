@@ -75,7 +75,7 @@ test.describe("SGD — demandas pela ficha da atividade (ADT)", () => {
     page,
   }) => {
     await page.goto("/sgd");
-    await page.getByTestId("sgd-nova-demanda").click();
+    await page.getByTestId("sgd-nova").click();
     await page.waitForURL("**/sgd/demandas/nova");
 
     const busca = page.waitForRequest(

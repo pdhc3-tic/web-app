@@ -119,6 +119,22 @@ export function canCreateDemanda(
   return isAdtAcr(user) || isSuperAdmin(user);
 }
 
+/** Slug da Fundação Gestora (FGD) — atende e conclui demandas do SGD. */
+export const FGD_SLUG = "fgd";
+
+/**
+ * Perfis do usuário que decidem sobre demandas do SGD (#296): Articulador
+ * Estadual pré-autoriza/devolve, UGP autoriza/recusa, FGD atende/conclui.
+ * Espelha `DemandApprovalMixin._PERMISSAO_POR_ACTION`.
+ */
+export function perfisDecisoresSgd(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): ("articulador-estadual" | "ugp" | "fgd")[] {
+  return ([ARTICULADOR_ESTADUAL_SLUG, UGP_SLUG, FGD_SLUG] as const).filter((slug) =>
+    hasRole(user, slug),
+  );
+}
+
 export type SuperAdminState = {
   /** true enquanto a sessão ainda está carregando. */
   loading: boolean;

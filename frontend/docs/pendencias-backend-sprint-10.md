@@ -15,6 +15,11 @@ do SGD que entrou pelo PR #300. O frontend foi feito chamando a API no formato
 correto; o que o backend ainda não atende está abaixo, e nada foi contornado no
 cliente.*
 
+*Os itens 11 a 14 foram acrescentados em 29/09/2026, ao implementar a issue
+#296 (painel master-detail de Demandas e decisões por perfil). As decisões, o
+preview de impacto e o alerta de rubrica já existem no backend; os itens abaixo
+são o que faltou para fechar os critérios.*
+
 *O documento da sprint anterior (`pendencias-backend-sprint-9.md`) continua
 valendo para o que está lá — os itens dele **não foram reavaliados** nesta
 compilação.*
@@ -364,3 +369,82 @@ e os municípios dos territórios dele. Isso é afordância, não proteção.
 `ActivityViewSet` usa (e o município da criação inline pelos territórios do
 usuário), devolvendo 404/403 fora do escopo. Teste sugerido: ADT de um
 território cria demanda em atividade de outro → 404.
+
+---
+
+## 11. A linha do tempo da demanda não é exposta — `ApprovalStep` sem endpoint
+
+Toda decisão grava um `ApprovalStep` (`apps/sgd/models/approval_step.py`:
+etapa, ação, responsável, justificativa, excedente, data), mas nenhum
+serializer ou rota o devolve. A #296 pede a timeline de status no painel.
+
+*Estado atual no frontend:* a aba "Linha do tempo" mostra a criação e o status
+atual (que vêm da própria demanda) e, no lugar das decisões, "O histórico de
+decisões ainda não é enviado pela API". O tipo `EtapaDemanda` em
+`app/lib/demandas.ts` descreve o que a tela espera; o E2E correspondente está
+como `test.fixme`.
+
+**Pedido** — aninhar no `DemandSerializer`:
+
+```python
+etapas = ApprovalStepSerializer(many=True, read_only=True)
+# campos: id, etapa, etapa_display, acao, acao_display,
+#         responsavel_nome (source="responsavel.nome"), justificativa,
+#         excedente_autorizado, criado_em
+```
+
+---
+
+## 12. O `DemandSerializer` traz só o id do solicitante
+
+A coluna "Solicitante" do painel e o detalhe mostram `Usuário #13`: o
+serializer devolve `solicitante` como id, e `/api/v1/users/` é restrito ao
+Super Admin, então nenhum aprovador consegue resolver o nome.
+
+**Pedido:** `solicitante_nome = serializers.CharField(source="solicitante.nome")`.
+O tipo `Demanda.solicitante_nome` já está declarado no frontend.
+
+---
+
+## 13. Fila "Aguardando minha ação": `status` de um valor só e sem contagem
+
+A fila de cada perfil é a lista filtrada pelos status que cabem a ele decidir
+(Articulador: Submetida; UGP: Pré-autorizada; FGD: Autorizada **e** Em
+atendimento), e a mesma consulta alimenta o badge "N pendentes" da sidebar.
+
+- `DemandViewSet.list` lê `status` com `query_params.get`, que fica só com o
+  **último** valor. A FGD manda `?status=autorizada&status=em_atendimento` e
+  recebe só as Em atendimento: as Autorizadas, que esperam o "Iniciar
+  atendimento", ficam fora da fila e do badge.
+- A regra "o que cabe a cada perfil" fica espelhada no front
+  (`STATUS_AGUARDANDO`, em `app/lib/demandas.ts`), a partir do que
+  `apps/sgd/services/approval.py` já usa para escolher quem notificar.
+- O badge baixa a lista inteira (não paginada) só para contar.
+
+**Pedido:**
+
+- aceitar `status` repetido (`getlist`);
+- de preferência, um filtro próprio — `?aguardando_minha_acao=true` — com a
+  regra no backend, e uma rota de contagem
+  (`GET /api/v1/sgd/demandas/aguardando-minha-acao/contagem/` → `{"total": N}`)
+  para o badge;
+- paginar a listagem.
+
+---
+
+## 14. Cancelar demanda autorizada não é permitido — decisão de regra
+
+A #296 pede que "cancelar demanda autorizada" use o `ConfirmationDrawer`, com
+justificativa obrigatória. No backend, `pode_cancelar`
+(`apps/sgd/services/approval.py`) só deixa **o próprio solicitante** cancelar,
+e só até Pré-autorizada (`STATUS_CANCELAVEIS_PELO_SOLICITANTE`). Não existe
+caminho para cancelar uma demanda Autorizada, nem para um aprovador cancelar.
+
+*Estado atual no frontend:* o `ConfirmationDrawer` existe
+(`app/components/ui/ConfirmationDrawer`) e já é usado na ação de alto impacto
+disponível — **Recusar** (UGP). O E2E de cancelar autorizada está como
+`test.fixme`.
+
+**Pedido:** definir, com a coordenação, quem cancela uma demanda Autorizada (e
+com que efeito na reserva de saldo); quando existir, o botão entra no painel
+com o mesmo drawer.

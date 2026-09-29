@@ -15,6 +15,8 @@ import path from "node:path";
  *                    de atividades DENTRO do próprio território. É quem cria
  *                    demanda no SGD (#294). Os outros ADTs do seed são técnicos
  *                    de atividades fora do território deles e não as enxergam.
+ * - `fgd`          → perfil "fgd" (Fundação Gestora): atende e conclui as
+ *                    demandas autorizadas do SGD (#296).
  * - `superAdmin`   → perfil "super-admin" com território nulo (acesso global).
  *                    É o único que entra nas telas de /admin. Atenção: tanto o
  *                    `IsSuperAdmin` do backend quanto o `isSuperAdmin()` do
@@ -27,6 +29,7 @@ export type UserKey =
   | "articuladorPE"
   | "articuladorPB"
   | "adt"
+  | "fgd"
   | "superAdmin";
 
 export const USERS: Record<UserKey, { email: string; password: string }> = {
@@ -48,6 +51,10 @@ export const USERS: Record<UserKey, { email: string; password: string }> = {
   },
   adt: {
     email: process.env.E2E_ADT_EMAIL ?? "ewerton.bandeira@demo.pdhc.local",
+    password: process.env.E2E_PASSWORD ?? "Pdhc@2026demo",
+  },
+  fgd: {
+    email: process.env.E2E_FGD_EMAIL ?? "adriano.peixoto@demo.pdhc.local",
     password: process.env.E2E_PASSWORD ?? "Pdhc@2026demo",
   },
   superAdmin: {

@@ -4,6 +4,7 @@ import { KeyboardEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { useFilaDemandas } from "@/app/lib/hooks/useFilaDemandas";
 import {
   Calendar,
   ChevronLeft,
@@ -35,6 +36,8 @@ type ModuleItem = {
   label: string;
   Icon: LucideIcon;
   badge?: number;
+  /** Rótulo acessível do badge (ex.: "3 pendentes"). */
+  badgeLabel?: string;
 };
 
 const STORAGE_KEY = "sidebar.collapsed";
@@ -77,12 +80,13 @@ const CONFLITOS_ITEM: ModuleItem = {
   Icon: GitCompareArrows,
 };
 
-// Badges mock: substituir por /api/v1/notifications/me/unread-count/ em sprint futura
+// Badge do SGD: fila "Aguardando minha ação" (#296), calculada no Sidebar.
+// O do SGE continua mock: substituir por /api/v1/notifications/me/unread-count/.
 const MODULES: ModuleItem[] = [
   { href: "/core", label: "Core", Icon: Database },
   { href: "/sgp", label: "SGP", Icon: Users },
   { href: "/sgf", label: "SGF", Icon: Wallet },
-  { href: "/sgd", label: "SGD", Icon: FileText, badge: 1 },
+  { href: "/sgd", label: "SGD", Icon: FileText },
   { href: "/sgs", label: "SGS", Icon: Heart },
   { href: "/sge", label: "SGE", Icon: Calendar, badge: 2 },
   { href: "/sca", label: "SCA", Icon: Smartphone },
@@ -101,7 +105,7 @@ type SidebarItemProps = {
 };
 
 function SidebarItem({ item, active, collapsed }: SidebarItemProps) {
-  const { Icon, label, href, badge } = item;
+  const { Icon, label, href, badge, badgeLabel } = item;
   const base =
     "group relative flex items-center gap-3 h-10 rounded-md text-sm border-l-[3px] transition-colors duration-150";
   const layout = collapsed ? "px-2 justify-center" : "pl-3 pr-3";
@@ -124,7 +128,16 @@ function SidebarItem({ item, active, collapsed }: SidebarItemProps) {
         strokeWidth={active ? 2 : 1.75}
       />
       {!collapsed && <span className="flex-1 truncate">{label}</span>}
-      {badge && badge > 0 && <span className={badgeClass}>{badge}</span>}
+      {badge !== undefined && badge > 0 && (
+        <span
+          className={badgeClass}
+          aria-label={badgeLabel}
+          title={badgeLabel}
+          data-testid={`sidebar-badge-${href.replace(/^\//, "")}`}
+        >
+          {badge}
+        </span>
+      )}
     </Link>
   );
 }
@@ -233,6 +246,8 @@ export function Sidebar() {
   const { data: session } = useSession();
   const superAdmin = isSuperAdmin(session?.user);
   const revisaConflitos = canReviewSyncConflicts(session?.user);
+  const filaSgd = useFilaDemandas();
+  const pendentesSgd = filaSgd.decide ? (filaSgd.data?.length ?? 0) : 0;
   const [collapsed, setCollapsed] = useState(false);
   const listRef = useRef<HTMLUListElement | null>(null);
 
@@ -343,7 +358,15 @@ export function Sidebar() {
         {MODULES.map((m) => (
           <li key={m.href}>
             <SidebarItem
-              item={m}
+              item={
+                m.href === "/sgd"
+                  ? {
+                      ...m,
+                      badge: pendentesSgd,
+                      badgeLabel: `${pendentesSgd} pendente${pendentesSgd === 1 ? "" : "s"}`,
+                    }
+                  : m
+              }
               active={isActive(pathname, m.href)}
               collapsed={collapsed}
             />
