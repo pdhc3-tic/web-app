@@ -2,6 +2,8 @@ from datetime import date, timedelta
 
 import pytest
 from decimal import Decimal
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from apps.core.models.audit_log import AuditLog
 from apps.sgp.models import WorkPlanMeta, WorkPlanAcao
@@ -271,7 +273,13 @@ class TestMetaExclusao:
         WorkPlanAcaoFactory(meta=meta)
         response = auth_client.delete(f"/api/v1/metas/{meta.pk}/")
         assert response.status_code == 400
-        assert "Ações vinculadas" in response.data["detail"]
+        assert "Submetas vinculadas" in response.data["detail"]
+        assert WorkPlanMeta.objects.filter(pk=meta.pk).exists()
+
+    def test_delete_with_submetas_without_acoes_returns_400(self, auth_client, meta):
+        WorkPlanSubmetaFactory(meta=meta)
+        response = auth_client.delete(f"/api/v1/metas/{meta.pk}/")
+        assert response.status_code == 400
         assert WorkPlanMeta.objects.filter(pk=meta.pk).exists()
 
 
@@ -286,6 +294,19 @@ class TestMetaListagemDetalhe:
         assert response.status_code == 200
         assert response.data["numero"] == 1
         assert "acoes" in response.data
+
+    def test_list_queries_dont_grow_with_metas(self, auth_client, meta):
+        WorkPlanAcaoFactory.create_batch(2, meta=meta)
+        with CaptureQueriesContext(connection) as uma_meta:
+            auth_client.get("/api/v1/metas/")
+
+        for numero in (2, 3, 4):
+            WorkPlanAcaoFactory.create_batch(2, meta=WorkPlanMetaFactory(numero=numero))
+        with CaptureQueriesContext(connection) as quatro_metas:
+            response = auth_client.get("/api/v1/metas/")
+
+        assert len(response.data["results"]) == 4
+        assert len(quatro_metas.captured_queries) == len(uma_meta.captured_queries)
 
     def test_list_filter_by_numero(self, auth_client, meta):
         WorkPlanMetaFactory(numero=3, titulo="Outra")

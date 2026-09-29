@@ -8,7 +8,7 @@ from typing import Iterable
 from django.db.models import QuerySet
 
 from apps.sgp.constants import STATUS_CONCLUIDA
-from apps.sgp.models import WorkPlanAcao
+from apps.sgp.models import WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
 from apps.sgp.models.workplan import CEM, arredondar, percentual, status_execucao
 from apps.sgp.services.apuracao import (
     FiltroAtividades,
@@ -106,11 +106,11 @@ class NodeSummary:
 
 def summarize_node(
     acoes: Iterable[WorkPlanAcao],
-    node,
+    node: WorkPlanMeta | WorkPlanSubmeta,
     today: date,
     limiares: LimiaresSemaforo,
 ) -> NodeSummary:
-    """`node` é a Meta ou a Submeta: dá o período do progresso esperado."""
+    """O período do progresso esperado é o do `node`."""
     acoes = list(acoes)
     planejado = sum((Decimal(a.quantidade_planejada) for a in acoes), ZERO)
     realizado = sum((a.dashboard_quantidade_realizada for a in acoes), ZERO)

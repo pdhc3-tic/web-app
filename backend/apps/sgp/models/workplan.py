@@ -7,7 +7,6 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models, transaction
 from django.utils import timezone
 
-from apps.core.services.permissions import user_has_role
 from apps.sgp.constants import STATUS_CONCLUIDA, STATUS_EM_ATRASO, STATUS_NO_PRAZO
 
 CEM = Decimal("100")
@@ -50,6 +49,32 @@ def custo_unitario(valor_executado, quantidade_realizada) -> Decimal | None:
     if not quantidade_realizada:
         return None
     return arredondar(Decimal(valor_executado) / Decimal(quantidade_realizada))
+
+
+def valores_gravados(instancia, *campos) -> dict | None:
+    """Campos como estão no banco, para comparar com a instância em edição;
+    None para registro ainda não salvo."""
+    if not instancia.pk:
+        return None
+    return type(instancia).objects.filter(pk=instancia.pk).values(*campos).first()
+
+
+def _erros_no_pai(filho, pai, nome: str, nome_do_pai: str) -> dict:
+    """Número com o prefixo do pai e período contido no dele (Submeta na Meta,
+    Ação na Submeta). `pai` é None enquanto o vínculo não foi informado."""
+    erros = {}
+    if pai is not None and filho.numero and not filho.numero.startswith(f"{pai.numero}."):
+        erros["numero"] = f"O número da {nome} deve começar com {pai.numero}. (número da {nome_do_pai})."
+    if filho.data_inicio and filho.data_fim and filho.data_inicio > filho.data_fim:
+        erros["data_fim"] = "A data de término não pode ser anterior à de início."
+    elif pai is not None and filho.data_inicio and filho.data_fim and (
+        filho.data_inicio < pai.data_inicio or filho.data_fim > pai.data_fim
+    ):
+        erros["data_inicio"] = (
+            f"O período da {nome} deve estar contido no período da {nome_do_pai} "
+            f"({pai.data_inicio:%d/%m/%Y} a {pai.data_fim:%d/%m/%Y})."
+        )
+    return erros
 
 
 def _filhos_fora_do_periodo(filhos, data_inicio, data_fim) -> list[str]:
@@ -111,8 +136,8 @@ class WorkPlanMeta(models.Model):
         if not self.pk:
             return
         erros = {}
-        numero_salvo = WorkPlanMeta.objects.filter(pk=self.pk).values_list("numero", flat=True).first()
-        if numero_salvo is not None and numero_salvo != self.numero and self.submetas.exists():
+        gravado = valores_gravados(self, "numero")
+        if gravado and gravado["numero"] != self.numero and self.submetas.exists():
             erros["numero"] = (
                 "Não é possível mudar o número de uma Meta que já tem Submetas: "
                 "a numeração delas começa com o número da Meta."
@@ -125,10 +150,7 @@ class WorkPlanMeta(models.Model):
 
     @property
     def valor_total_planejado(self):
-        from django.db.models import F
-        return self.acoes.aggregate(
-            total=models.Sum(F("quantidade_planejada") * F("valor_unitario"))
-        )["total"] or 0
+        return sum((s.valor_total for s in self.submetas.all()), Decimal("0"))
 
     @property
     def quantidade_planejada(self):
@@ -207,36 +229,24 @@ class WorkPlanSubmeta(models.Model):
 
     def save(self, *args, **kwargs):
         # As Ações carregam o número da Submeta como prefixo e a Meta como campo
-        # derivado: as duas coisas acompanham a Submeta, venha a mudança da API
-        # ou do admin.
-        anterior = (
-            WorkPlanSubmeta.objects.filter(pk=self.pk).values("numero", "meta_id").first()
-            if self.pk
-            else None
-        )
+        # derivado: as duas coisas acompanham a Submeta.
         with transaction.atomic():
+            anterior = valores_gravados(self, "numero", "meta_id")
             super().save(*args, **kwargs)
             if anterior and (anterior["numero"], anterior["meta_id"]) != (self.numero, self.meta_id):
-                for acao in self.acoes.all():
+                acoes = list(self.acoes.all())
+                for acao in acoes:
                     acao.numero = f"{self.numero}.{acao.numero.rsplit('.', 1)[-1]}"
-                    acao.save(update_fields=["numero", "submeta"])
+                    acao.meta_id = self.meta_id
+                WorkPlanAcao.objects.bulk_update(acoes, ["numero", "meta"])
 
     def clean(self):
-        erros = {}
+        from apps.core.services.permissions import user_has_role
+
+        erros = _erros_no_pai(self, self.meta if self.meta_id else None, "Submeta", "Meta")
         if self.responsavel_id and not user_has_role(self.responsavel, "ugp"):
             erros["responsavel"] = "O responsável precisa ser um usuário da UGP."
-        if self.meta_id and self.numero and not self.numero.startswith(f"{self.meta.numero}."):
-            erros["numero"] = f"O número da Submeta deve começar com {self.meta.numero}. (número da Meta)."
-        if self.data_inicio and self.data_fim and self.data_inicio > self.data_fim:
-            erros["data_fim"] = "A data de término não pode ser anterior à de início."
-        elif self.meta_id and self.data_inicio and self.data_fim and (
-            self.data_inicio < self.meta.data_inicio or self.data_fim > self.meta.data_fim
-        ):
-            erros["data_inicio"] = (
-                "O período da Submeta deve estar contido no período da Meta "
-                f"({self.meta.data_inicio:%d/%m/%Y} a {self.meta.data_fim:%d/%m/%Y})."
-            )
-        elif self.pk:
+        if self.pk and not erros.keys() & {"data_inicio", "data_fim"}:
             fora = _filhos_fora_do_periodo(self.acoes.all(), self.data_inicio, self.data_fim)
             if fora:
                 erros["data_inicio"] = f"O novo período deixa Ações fora da Submeta: {', '.join(fora)}."
@@ -383,32 +393,13 @@ class WorkPlanAcao(models.Model):
         super().save(*args, **kwargs)
 
     def clean(self):
-        erros = {}
+        erros = _erros_no_pai(self, self.submeta if self.submeta_id else None, "Ação", "Submeta")
         if self.indicador_id and not self.indicador.ativo:
             # Ação que já usa um Indicador inativo continua válida; só não se
             # vincula (nem se troca para) um inativo.
-            indicador_salvo = (
-                WorkPlanAcao.objects.filter(pk=self.pk).values_list("indicador_id", flat=True).first()
-                if self.pk
-                else None
-            )
-            if indicador_salvo != self.indicador_id:
+            gravado = valores_gravados(self, "indicador_id")
+            if not gravado or gravado["indicador_id"] != self.indicador_id:
                 erros["indicador"] = "Indicador inativo não pode ser vinculado a uma Ação."
-        if self.submeta_id:
-            submeta = self.submeta
-            if self.numero and not self.numero.startswith(f"{submeta.numero}."):
-                erros["numero"] = (
-                    f"O número da Ação deve começar com {submeta.numero}. (número da Submeta)."
-                )
-            if self.data_inicio and self.data_fim and self.data_inicio > self.data_fim:
-                erros["data_fim"] = "A data de término não pode ser anterior à de início."
-            elif self.data_inicio and self.data_fim and (
-                self.data_inicio < submeta.data_inicio or self.data_fim > submeta.data_fim
-            ):
-                erros["data_inicio"] = (
-                    "O período da Ação deve estar contido no período da Submeta "
-                    f"({submeta.data_inicio:%d/%m/%Y} a {submeta.data_fim:%d/%m/%Y})."
-                )
         if erros:
             raise ValidationError(erros)
 

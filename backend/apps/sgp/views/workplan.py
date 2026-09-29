@@ -1,6 +1,6 @@
 import logging
 
-from django.db.models import Count, F, Sum
+from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema
@@ -201,11 +201,8 @@ class WorkPlanMetaViewSet(viewsets.ModelViewSet):
         return [IsAuthenticatedActiveAccess()]
 
     def get_queryset(self):
-        qs = WorkPlanMeta.objects.annotate(
-            _valor_total=Sum(F("acoes__quantidade_planejada") * F("acoes__valor_unitario"))
-        )
-        if self.action == "retrieve":
-            qs = qs.prefetch_related("submetas__acoes")
+        # Totais e status da Meta somam as Submetas e as Ações delas.
+        qs = WorkPlanMeta.objects.select_related("criado_por").prefetch_related("submetas__acoes")
 
         user = self.request.user
         if not user.is_authenticated:
@@ -276,12 +273,12 @@ class WorkPlanMetaViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-        if instance.acoes.exists():
+        if instance.submetas.exists():
             return Response(
                 {
                     "detail": (
                         "Não é possível excluir esta Meta: "
-                        "existem Ações vinculadas a ela."
+                        "existem Submetas vinculadas a ela."
                     )
                 },
                 status=status.HTTP_400_BAD_REQUEST,

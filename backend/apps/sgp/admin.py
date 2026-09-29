@@ -147,6 +147,10 @@ class WorkPlanMetaAdmin(admin.ModelAdmin):
     ]
     inlines = [WorkPlanSubmetaInline]
 
+    def get_queryset(self, request):
+        # Os totais e o status da listagem somam as Submetas e as Ações delas.
+        return super().get_queryset(request).prefetch_related("submetas__acoes")
+
 
 @admin.register(WorkPlanSubmeta)
 class WorkPlanSubmetaAdmin(admin.ModelAdmin):
@@ -166,6 +170,13 @@ class WorkPlanSubmetaAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         # Os consolidados da listagem somam as Ações de cada Submeta.
         return super().get_queryset(request).select_related("meta").prefetch_related("acoes")
+
+    def get_readonly_fields(self, request, obj=None):
+        # Com Ações, número e Meta não mudam nesta tela: as Ações do inline
+        # seriam validadas e gravadas com o número antigo.
+        if obj is not None and obj.acoes.exists():
+            return [*self.readonly_fields, "meta", "numero"]
+        return self.readonly_fields
 
 
 @admin.register(Indicator)

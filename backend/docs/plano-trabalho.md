@@ -7,7 +7,7 @@ matriz de permissões do Core §2.1.
 
 | Nível | Model | Numeração | Regras |
 | :--- | :--- | :--- | :--- |
-| Meta | `WorkPlanMeta` | `X` (1 a 7) | Não muda de número depois de ter Submetas (a numeração delas começa com `X`). O período precisa conter o de todas as Submetas. |
+| Meta | `WorkPlanMeta` | `X` (1 a 7) | Não muda de número depois de ter Submetas (a numeração delas começa com `X`). O período precisa conter o de todas as Submetas. Com Submetas, a API não a exclui (400). |
 | Submeta | `WorkPlanSubmeta` | `X.Y`, com `X` da Meta | Período obrigatório, contido no da Meta. Responsável opcional, só usuário UGP. Sem orçamento próprio: só consolida as Ações. |
 | Ação | `WorkPlanAcao` | `X.Y.Z`, com `X.Y` da Submeta | Submeta, Indicador e período obrigatórios; período contido no da Submeta. `meta` é derivada da Submeta no `save()` e só leitura na API. |
 | Indicador | `Indicator` | código curto (`IND-OFI`) | Catálogo institucional, compartilhado entre Ações de Metas diferentes. |
@@ -21,7 +21,9 @@ filhos que ficariam fora do novo período, responsável da UGP, Indicador
 inativo) e o `save()` da Submeta renumera as Ações. A API chama o `clean()`
 pelos serializers, então as regras valem igual na API e no admin do Django.
 No admin, a forma de apuração de um Indicador em uso é só leitura, porque a
-troca exige a confirmação e a auditoria da API.
+troca exige a confirmação e a auditoria da API; o número e a Meta de uma
+Submeta com Ações também, porque as Ações do inline seriam validadas e
+gravadas com o número antigo.
 
 ### Migração dos dados (0033–0035)
 

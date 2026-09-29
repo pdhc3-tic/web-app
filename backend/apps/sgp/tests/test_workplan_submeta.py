@@ -466,6 +466,14 @@ class TestRegrasValemForaDaApi:
 
         acao.clean()
 
+    def test_admin_nao_muda_numero_nem_meta_de_submeta_com_acoes(self, rf, submeta, meta):
+        admin_da_submeta = site._registry[WorkPlanSubmeta]
+        WorkPlanAcaoFactory(submeta=submeta, meta=meta)
+        vazia = WorkPlanSubmetaFactory(meta=meta, numero="1.2")
+
+        assert {"meta", "numero"} <= set(admin_da_submeta.get_readonly_fields(rf.get("/"), submeta))
+        assert not {"meta", "numero"} & set(admin_da_submeta.get_readonly_fields(rf.get("/"), vazia))
+
     def test_admin_nao_troca_forma_de_apuracao_de_indicador_em_uso(self, rf, submeta, meta):
         admin_do_indicador = site._registry[Indicator]
         em_uso = WorkPlanAcaoFactory(submeta=submeta, meta=meta).indicador
