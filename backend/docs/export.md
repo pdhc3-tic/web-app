@@ -112,9 +112,8 @@ GET /api/v1/upfs/exportar/?formato={csv|xlsx}&<filtros da listagem>
 Aceita **exatamente** os filtros de `GET /api/v1/upfs/` (os declarados em
 `UPFFilter`: `q`, `municipio`, `territorio`, `projeto`, `comunidade`, `ativo`,
 `cadastrado_de`, `cadastrado_ate`), com o mesmo padrão de só UPFs ativas quando
-`ativo` não é informado. `ativa` é aceito como sinônimo de `ativo` (ver
-"Débito técnico" abaixo); se os dois vierem, vale `ativo`. Qualquer outro
-parâmetro retorna `400` com `{"code": "parametro_desconhecido", "parametros": [...]}`
+`ativo` não é informado. Qualquer outro parâmetro, inclusive o nome antigo
+`ativa`, retorna `400` com `{"code": "parametro_desconhecido", "parametros": [...]}`
 — o django-filter ignoraria o parâmetro e o arquivo sairia com a base inteira.
 Pelo mesmo motivo, `ativo` com valor que não seja booleano (`true`/`false`/`1`/`0`
 ou vazio) retorna `400`, aqui e na listagem.
@@ -167,12 +166,6 @@ polling termina e o `repetir` fica disponível. O `repetir` também aceita um jo
 travado antes de essa task rodar. A geração tem `soft_time_limit` de 20 min e
 `time_limit` de 25 min, abaixo do prazo, então um worker ainda vivo nunca é
 tratado como travado.
-
-### Débito técnico
-
-| Item | Situação | Saída |
-| :--- | :--- | :--- |
-| Alias `ativa` → `ativo` em `GET /api/v1/upfs/exportar/` e no `filtros` de `tipo=upfs` | O campo da UPF foi renomeado de `ativa` para `ativo` (migration `0031_upf_ativa_para_ativo`), mas o front (`frontend/app/lib/upfs.ts`, `buildUpfsFilterParams`) ainda envia `ativa`, na exportação e na listagem. Na listagem o parâmetro é ignorado em silêncio e vale o padrão de só ativas, então as opções "inativas" e "todas" da tela não têm efeito. | O front passa a enviar `ativo`; depois disso, remover `ALIASES_DE_FILTRO` de `apps/sgp/services/upf_export.py` e os testes `test_ativa_e_aceito_como_sinonimo_de_ativo` e `test_ativo_prevalece_sobre_ativa`. |
 
 ## 1. Resumo
 

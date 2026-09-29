@@ -540,11 +540,10 @@ class TestExportacaoUPFs:
         assert esperados, "o cenário deveria produzir ao menos uma UPF para o filtro"
         assert self._titulares_exportados(cliente_ugp, params) == esperados
 
-    @pytest.mark.parametrize("params", [{"ativo": "xyz"}, {"ativa": "xyz"}])
-    def test_ativo_invalido_retorna_400_em_vez_de_exportar_tudo(self, cliente_ugp, municipio_rn, params):
+    def test_ativo_invalido_retorna_400_em_vez_de_exportar_tudo(self, cliente_ugp, municipio_rn):
         UPFFactory(municipio=municipio_rn, ativo=False)
 
-        response = cliente_ugp.get(UPFS_EXPORT_URL, params)
+        response = cliente_ugp.get(UPFS_EXPORT_URL, {"ativo": "xyz"})
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "ativo" in response.data
@@ -607,22 +606,12 @@ class TestExportacaoUPFs:
         assert response.data["code"] == "parametro_desconhecido"
         assert response.data["parametros"] == ["municipo", "situacao"]
 
-    @pytest.mark.parametrize("valor", ["true", "false", ""])
-    def test_ativa_e_aceito_como_sinonimo_de_ativo(self, cliente_ugp, municipio_rn, valor):
-        UPFFactory(municipio=municipio_rn, _titular_nome="Ativa")
-        UPFFactory(municipio=municipio_rn, _titular_nome="Inativa", ativo=False)
+    def test_nome_antigo_ativa_e_parametro_desconhecido(self, cliente_ugp):
+        response = cliente_ugp.get(UPFS_EXPORT_URL, {"ativa": "false"})
 
-        assert self._titulares_exportados(cliente_ugp, {"ativa": valor}) == (
-            self._titulares_exportados(cliente_ugp, {"ativo": valor})
-        )
-
-    def test_ativo_prevalece_sobre_ativa(self, cliente_ugp, municipio_rn):
-        UPFFactory(municipio=municipio_rn, _titular_nome="Ativa")
-        UPFFactory(municipio=municipio_rn, _titular_nome="Inativa", ativo=False)
-
-        exportados = self._titulares_exportados(cliente_ugp, {"ativo": "false", "ativa": "true"})
-
-        assert exportados == {"Inativa"}
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data["code"] == "parametro_desconhecido"
+        assert response.data["parametros"] == ["ativa"]
 
     def test_filtro_com_valor_invalido_retorna_400(self, cliente_ugp):
         response = cliente_ugp.get(UPFS_EXPORT_URL, {"municipio": "abc"})

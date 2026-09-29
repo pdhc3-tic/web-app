@@ -25,12 +25,7 @@ EXPORT_COLUMNS = (
     ("data_cadastro", "Data de cadastro"),
 )
 
-# Débito técnico: o front ainda envia `ativa` (nome anterior do campo `ativo`
-# da UPF). Aceito como sinônimo só na exportação, onde parâmetro desconhecido
-# é 400; sai quando o front passar a enviar `ativo`.
-ALIASES_DE_FILTRO = {"ativa": "ativo"}
-
-FILTROS_ACEITOS = frozenset(UPFFilter.base_filters) | frozenset(ALIASES_DE_FILTRO)
+FILTROS_ACEITOS = frozenset(UPFFilter.base_filters)
 
 
 def separar_parametros(params: dict) -> tuple[str, dict]:
@@ -46,12 +41,7 @@ def separar_parametros(params: dict) -> tuple[str, dict]:
             {"formato": f"Use um de: {', '.join(ExportJob.Formato.values)}."}
         )
 
-    for alias, nome in ALIASES_DE_FILTRO.items():
-        if alias in filtros:
-            valor = filtros.pop(alias)
-            filtros.setdefault(nome, valor)
-
-    recusar_parametros_desconhecidos(filtros, UPFFilter.base_filters)
+    recusar_parametros_desconhecidos(filtros, FILTROS_ACEITOS)
     # Valida os valores já aqui, sem consultar o banco, para que o pedido
     # assíncrono seja recusado na criação e não só dentro do job.
     _filterset(filtros, UPF.objects.none())
