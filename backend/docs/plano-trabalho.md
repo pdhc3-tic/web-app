@@ -9,7 +9,7 @@ matriz de permissões do Core §2.1.
 | :--- | :--- | :--- | :--- |
 | Meta | `WorkPlanMeta` | `X` (1 a 7) | Não muda de número depois de ter Submetas (a numeração delas começa com `X`). O período precisa conter o de todas as Submetas. |
 | Submeta | `WorkPlanSubmeta` | `X.Y`, com `X` da Meta | Não muda de número nem de Meta depois de ter Ações (a numeração delas começa com `X.Y`). Período obrigatório, contido no da Meta. Responsável opcional, só usuário UGP. Sem orçamento próprio: só consolida as Ações. |
-| Ação | `WorkPlanAcao` | `X.Y.Z`, com `X.Y` da Submeta | Submeta, Indicador e período obrigatórios; período contido no da Submeta. `meta` é derivada da Submeta no `save()` e só leitura na API. |
+| Ação | `WorkPlanAcao` | `X.Y.Z`, com `X.Y` da Submeta | Submeta, Indicador e período obrigatórios; período contido no da Submeta. `meta` é derivada da Submeta no `save()` e só leitura na API; enviar uma `meta` diferente da da Submeta dá 400. |
 | Indicador | `Indicator` | código curto (`IND-OFI`) | Catálogo institucional, compartilhado entre Ações de Metas diferentes. |
 
 A Ação continua gravando `meta` porque o orçamento (`BudgetAllocation.meta`),

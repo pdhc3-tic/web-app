@@ -184,6 +184,13 @@ class WorkPlanAcaoSerializer(serializers.ModelSerializer):
             })
 
         submeta = attrs.get("submeta", instance.submeta if instance else None)
+        # `meta` é só leitura (vem da Submeta), mas quem a envia não pode
+        # mandar uma Meta diferente da Submeta escolhida.
+        meta_enviada = self.initial_data.get("meta")
+        if meta_enviada not in (None, "") and submeta is not None and str(meta_enviada) != str(submeta.meta_id):
+            raise serializers.ValidationError(
+                {"meta": "A Submeta informada pertence a outra Meta."}
+            )
         numero = attrs.get("numero", instance.numero if instance else None)
         if _ja_existe(WorkPlanAcao.objects.filter(submeta=submeta, numero=numero), instance):
             raise serializers.ValidationError(

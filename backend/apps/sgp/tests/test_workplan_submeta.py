@@ -335,12 +335,34 @@ class TestAcaoNaSubmeta:
 
     def test_meta_e_derivada_da_submeta(self, auth_client, submeta, meta):
         response = auth_client.post(
-            "/api/v1/acoes/", self._payload(submeta, IndicatorFactory(), meta=999), format="json"
+            "/api/v1/acoes/", self._payload(submeta, IndicatorFactory()), format="json"
         )
 
         assert response.status_code == status.HTTP_201_CREATED, response.data
         assert response.data["meta"] == meta.pk
         assert response.data["submeta_numero"] == "1.1"
+
+    def test_criar_com_submeta_de_outra_meta_retorna_400(self, auth_client, submeta):
+        outra = WorkPlanMetaFactory(numero=2)
+
+        response = auth_client.post(
+            "/api/v1/acoes/", self._payload(submeta, IndicatorFactory(), meta=outra.pk),
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "meta" in response.data
+
+    def test_editar_com_submeta_de_outra_meta_retorna_400(self, auth_client, submeta, meta):
+        acao = WorkPlanAcaoFactory(submeta=submeta, meta=meta, numero="1.1.1")
+        outra = WorkPlanMetaFactory(numero=2)
+
+        response = auth_client.patch(f"/api/v1/acoes/{acao.pk}/", {"meta": outra.pk}, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "meta" in response.data
+        acao.refresh_from_db()
+        assert acao.meta_id == meta.pk
 
     def test_prefixo_de_outra_submeta_retorna_400(self, auth_client, submeta):
         response = auth_client.post(
