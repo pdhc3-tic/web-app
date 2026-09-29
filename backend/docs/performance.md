@@ -63,7 +63,9 @@ RNF do SGP (§12): relatório de execução do PT **em menos de 60 s** para um d
 
 | Cenário | RNF | Medido | Método |
 | --- | --- | --- | --- |
-| Exportação de Atividades, 12 meses (21.000 atividades), CSV | < 60s | _a preencher_ | `time.monotonic()` |
-| Exportação de Atividades, 12 meses (21.000 atividades), XLSX | < 60s | _a preencher_ | `time.monotonic()` |
-| Exportação do PT, 12 meses (210 ações, 21.000 atividades), CSV | < 60s | _a preencher_ | `time.monotonic()` |
-| Exportação do PT, 12 meses (210 ações, 21.000 atividades), XLSX | < 60s | _a preencher_ | `time.monotonic()` |
+| Exportação de Atividades, 12 meses (21.000 atividades), CSV | < 60s | **3.105s** | `time.monotonic()` |
+| Exportação de Atividades, 12 meses (21.000 atividades), XLSX | < 60s | **9.255s** | `time.monotonic()` |
+| Exportação do PT, 12 meses (210 ações, 21.000 atividades), CSV | < 60s | **0.038s** | `time.monotonic()` |
+| Exportação do PT, 12 meses (210 ações, 21.000 atividades), XLSX | < 60s | **0.094s** | `time.monotonic()` |
+
+> Medido em 28/09/2026 numa máquina de desenvolvimento (Intel Core i3-1115G4, 4 threads, 11 GiB de RAM, Docker 29.6.2), com o Postgres do `docker-compose.yml`. Os tempos variam com o ambiente e servem de referência de ordem de grandeza e de folga; o critério é o `assert elapsed < 60` do próprio teste. A exportação do PT agrega as atividades por Ação no banco e gera só 210 linhas, por isso fica bem abaixo da de Atividades, que gera uma linha por atividade.
