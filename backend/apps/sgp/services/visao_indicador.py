@@ -19,7 +19,7 @@ from django.db.models.functions import Cast, ExtractMonth, ExtractYear
 from apps.core.models import Territory
 from apps.sgp.models import WorkPlanAcao
 from apps.sgp.models.indicator import FORMA_MANUAL
-from apps.sgp.models.workplan import arredondar, percentual
+from apps.sgp.models.workplan import arredondar, chave_do_numero, percentual
 from apps.sgp.services.apuracao import (
     RecorteAtividades,
     expressao_quantidade_realizada,
@@ -53,14 +53,19 @@ class Granularidade:
             "grupo_fatia": (mes - Value(1)) / Value(self.meses) + Value(1),
         }
 
-    def periodo(self, ano: int, fatia: int, quantidade_realizada: int) -> dict:
+    def fatia_de(self, dia: date) -> tuple[int, int]:
+        return dia.year, (dia.month - 1) // self.meses + 1
+
+    def seguinte(self, ano: int, fatia: int) -> tuple[int, int]:
+        return (ano, fatia + 1) if fatia < 12 // self.meses else (ano + 1, 1)
+
+    def intervalo(self, ano: int, fatia: int) -> tuple[date, date]:
         primeiro_mes = (fatia - 1) * self.meses + 1
         ultimo_mes = primeiro_mes + self.meses - 1
-        return {
-            "inicio": date(ano, primeiro_mes, 1),
-            "fim": date(ano, ultimo_mes, calendar.monthrange(ano, ultimo_mes)[1]),
-            "quantidade_realizada": quantidade_realizada,
-        }
+        return (
+            date(ano, primeiro_mes, 1),
+            date(ano, ultimo_mes, calendar.monthrange(ano, ultimo_mes)[1]),
+        )
 
 
 # A cadência mensal é a dos relatórios do SGP (curva S e fechamento mensal,
@@ -114,6 +119,34 @@ def _quebra(somas: dict[int, _Soma], sem_realizado: bool) -> list[dict]:
     ]
 
 
+def _serie_por_periodo(
+    fatiamento: Granularidade, realizado: dict[tuple[int, int], int], recorte: RecorteAtividades
+) -> list[dict]:
+    """Fatias contínuas, com zero onde não houve realizado, do início ao fim do
+    período pedido (sem período, do primeiro ao último realizado). A primeira
+    e a última fatia são recortadas às datas pedidas."""
+    fatias = sorted(realizado)
+    primeira = (
+        fatiamento.fatia_de(recorte.periodo_inicio) if recorte.periodo_inicio
+        else fatias[0] if fatias else None
+    )
+    ultima = (
+        fatiamento.fatia_de(recorte.periodo_fim) if recorte.periodo_fim
+        else fatias[-1] if fatias else None
+    )
+    serie = []
+    atual = primeira
+    while primeira and ultima and atual <= ultima:
+        inicio, fim = fatiamento.intervalo(*atual)
+        serie.append({
+            "inicio": max(inicio, recorte.periodo_inicio or inicio),
+            "fim": min(fim, recorte.periodo_fim or fim),
+            "quantidade_realizada": realizado.get(atual, 0),
+        })
+        atual = fatiamento.seguinte(*atual)
+    return serie
+
+
 def visao_por_indicador(
     user,
     *,
@@ -122,7 +155,7 @@ def visao_por_indicador(
     indicador_id: int | None = None,
     granularidade: str = GRANULARIDADE_PADRAO,
 ) -> list[dict]:
-    fatia = GRANULARIDADES[granularidade]
+    fatiamento = GRANULARIDADES[granularidade]
     filtro = filtro_de_atividades(user, recorte)
     acoes = filter_workplan_actions_for_user(
         WorkPlanAcao.objects.select_related("meta", "submeta", "indicador"), user
@@ -131,11 +164,12 @@ def visao_por_indicador(
         acoes = acoes.filter(meta_id=meta_id)
     if indicador_id is not None:
         acoes = acoes.filter(indicador_id=indicador_id)
-    acoes = list(acoes.annotate(_realizado=expressao_quantidade_realizada(filtro)).order_by(
-        "indicador__codigo", "meta__numero", "numero"
-    ))
+    acoes = sorted(
+        acoes.annotate(_realizado=expressao_quantidade_realizada(filtro)),
+        key=lambda a: (a.indicador.codigo, a.meta.numero, chave_do_numero(a.numero)),
+    )
     realizado_territorial = realizado_agrupado(acoes, _chaves_territorio, filtro)
-    realizado_por_fatia = realizado_agrupado(acoes, fatia.chaves, filtro)
+    realizado_por_fatia = realizado_agrupado(acoes, fatiamento.chaves, filtro)
 
     grupos: dict[int, dict] = {}
     for acao in acoes:
@@ -165,7 +199,8 @@ def visao_por_indicador(
     for grupo in grupos.values():
         # Lançamento manual é um número único por Ação, sem território nem data:
         # sob recorte explícito não há como dizer quanto dele cabe no recorte.
-        sem_realizado = not recorte.vazio and grupo["indicador"].forma_apuracao == FORMA_MANUAL
+        manual = grupo["indicador"].forma_apuracao == FORMA_MANUAL
+        sem_realizado = manual and not recorte.vazio
         visao.append({
             "indicador": grupo["indicador"],
             **_quantidades(grupo["total"], sem_realizado),
@@ -177,9 +212,8 @@ def visao_por_indicador(
                     grupo["por_territorio"].items(), key=lambda item: nomes.get(item[0], "")
                 )
             ],
-            "por_periodo": [
-                fatia.periodo(ano, indice, total)
-                for (ano, indice), total in sorted(grupo["por_periodo"].items())
-            ],
+            "por_periodo": (
+                [] if manual else _serie_por_periodo(fatiamento, grupo["por_periodo"], recorte)
+            ),
         })
     return visao

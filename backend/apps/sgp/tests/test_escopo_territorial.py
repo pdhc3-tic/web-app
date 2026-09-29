@@ -146,16 +146,31 @@ def test_ugp_ve_tudo(endpoint, entidade_rn, entidade_ce, ugp_client):
 
 
 # ===========================================================================
-# 5 — usuário sem nenhum perfil com escopo é bloqueado (403) em todos —
-# inclui fgd, que tem acesso a demandas mas não a nada territorial do SGP.
+# 5 — usuário sem nenhum perfil com escopo é bloqueado (403) — o fgd só nos
+# endpoints territoriais: pela matriz do Core (§2.1) ele lê o Plano de
+# Trabalho inteiro (Metas e Ações), mas não UFPAs, Atividades nem técnicos.
 # ===========================================================================
 
-@pytest.mark.parametrize("client_fixture", ["auth_client_sem_acesso", "auth_client_fgd"])
+ENDPOINTS_DO_PLANO = ["acoes", "metas"]
+
+
 @pytest.mark.parametrize("endpoint", ENDPOINTS)
-def test_sem_perfil_bloqueado(endpoint, client_fixture, entidade_rn, request):
-    client = request.getfixturevalue(client_fixture)
-    response = client.get(LIST_URLS[endpoint])
+def test_sem_perfil_bloqueado(endpoint, entidade_rn, auth_client_sem_acesso):
+    response = auth_client_sem_acesso.get(LIST_URLS[endpoint])
     assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.parametrize("endpoint", sorted(set(ENDPOINTS) - set(ENDPOINTS_DO_PLANO)))
+def test_fgd_bloqueado_fora_do_plano(endpoint, entidade_rn, auth_client_fgd):
+    response = auth_client_fgd.get(LIST_URLS[endpoint])
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.parametrize("endpoint", ENDPOINTS_DO_PLANO)
+def test_fgd_le_o_plano_inteiro(endpoint, entidade_rn, entidade_ce, auth_client_fgd):
+    response = auth_client_fgd.get(LIST_URLS[endpoint])
+    assert response.status_code == status.HTTP_200_OK
+    assert _ids(response) == {entidade_rn[endpoint].pk, entidade_ce[endpoint].pk}
 
 
 # ===========================================================================

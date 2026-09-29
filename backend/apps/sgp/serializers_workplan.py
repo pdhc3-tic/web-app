@@ -6,10 +6,12 @@ from rest_framework import serializers
 from apps.sgp.constants import ODS_CHOICES, STATUS_WORKPLAN
 from apps.sgp.models import Indicator, WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
 from apps.sgp.models.indicator import DESAGREGACAO_CHOICES, FORMA_MANUAL
+from apps.sgp.models.workplan import chave_do_numero
 from apps.sgp.services.visao_indicador import GRANULARIDADE_PADRAO, GRANULARIDADES
 from apps.sgp.services.workplan_access import (
     filter_workplan_actions_for_user,
     filter_workplan_submetas_for_user,
+    is_global_workplan_user,
 )
 
 
@@ -73,19 +75,10 @@ class IndicatorSerializer(serializers.ModelSerializer):
             "criado_por", "criado_em", "atualizado_em",
         ]
         read_only_fields = ["id", "criado_por", "criado_em", "atualizado_em"]
-        # A unicidade é checada em `validate_codigo`, depois de normalizar para
-        # maiúsculas; o validador padrão compararia o valor ainda cru.
-        extra_kwargs = {"codigo": {"validators": []}}
 
     def get_total_acoes(self, obj) -> int:
         anotado = getattr(obj, "_total_acoes", None)
         return anotado if anotado is not None else obj.acoes.count()
-
-    def validate_codigo(self, value):
-        codigo = Indicator.normalizar_codigo(value)
-        if _ja_existe(Indicator.objects.filter(codigo=codigo), self.instance):
-            raise serializers.ValidationError("Já existe um Indicador com este código.")
-        return codigo
 
     def validate_ods_ids(self, value):
         return _validar_ods(value)
@@ -185,12 +178,19 @@ class WorkPlanAcaoSerializer(serializers.ModelSerializer):
 
         submeta = attrs.get("submeta", instance.submeta if instance else None)
         # `meta` é só leitura (vem da Submeta), mas quem a envia não pode
-        # mandar uma Meta diferente da Submeta escolhida.
+        # mandar uma Meta diferente da Meta da Submeta.
         meta_enviada = self.initial_data.get("meta")
-        if meta_enviada not in (None, "") and submeta is not None and str(meta_enviada) != str(submeta.meta_id):
-            raise serializers.ValidationError(
-                {"meta": "A Submeta informada pertence a outra Meta."}
-            )
+        if (
+            meta_enviada not in (None, "")
+            and submeta is not None
+            and str(meta_enviada) != str(submeta.meta_id)
+        ):
+            raise serializers.ValidationError({
+                "meta": (
+                    f"A Meta da Ação vem da Submeta {submeta.numero}, "
+                    f"que é da Meta {submeta.meta.numero}."
+                )
+            })
         numero = attrs.get("numero", instance.numero if instance else None)
         if _ja_existe(WorkPlanAcao.objects.filter(submeta=submeta, numero=numero), instance):
             raise serializers.ValidationError(
@@ -369,7 +369,10 @@ class WorkPlanMetaDetailSerializer(serializers.ModelSerializer):
         cache = self.__dict__.setdefault("_acoes_por_meta", {})
         if obj.pk not in cache:
             cache[obj.pk] = WorkPlanAcaoSerializer(
-                _acoes_visiveis(obj.acoes.all(), self.context),
+                sorted(
+                    _acoes_visiveis(obj.acoes.all(), self.context),
+                    key=lambda acao: chave_do_numero(acao.numero),
+                ),
                 many=True,
                 context=self.context,
             ).data
@@ -378,15 +381,22 @@ class WorkPlanMetaDetailSerializer(serializers.ModelSerializer):
     def get_submetas(self, obj):
         submetas = obj.submetas.all()
         request = self.context.get("request")
-        if request is not None and request.user.is_authenticated:
-            submetas = filter_workplan_submetas_for_user(submetas, request.user)
+        if request is not None and request.user.is_authenticated and not is_global_workplan_user(
+            request.user
+        ):
+            # O recorte territorial é uma consulta nova, sem o prefetch da view.
+            submetas = (
+                filter_workplan_submetas_for_user(submetas, request.user)
+                .select_related("criado_por")
+                .prefetch_related("acoes")
+            )
         acoes = self._acoes_serializadas(obj)
         return [
             {
                 **WorkPlanSubmetaSerializer(submeta, context=self.context).data,
                 "acoes": [acao for acao in acoes if acao["submeta"] == submeta.pk],
             }
-            for submeta in submetas
+            for submeta in sorted(submetas, key=lambda s: chave_do_numero(s.numero))
         ]
 
     def get_acoes(self, obj):
@@ -454,8 +464,12 @@ class _NoVisaoIndicadorSerializer(serializers.Serializer):
     numero = serializers.CharField()
     titulo = serializers.CharField()
     quantidade_planejada = serializers.DecimalField(max_digits=14, decimal_places=2)
-    quantidade_realizada = serializers.DecimalField(max_digits=14, decimal_places=2, allow_null=True)
-    percentual_realizado = serializers.DecimalField(max_digits=7, decimal_places=2, allow_null=True)
+    quantidade_realizada = serializers.DecimalField(
+        max_digits=14, decimal_places=2, allow_null=True
+    )
+    percentual_realizado = serializers.DecimalField(
+        max_digits=7, decimal_places=2, allow_null=True
+    )
 
 
 class _TerritorioVisaoIndicadorSerializer(serializers.Serializer):
@@ -479,8 +493,12 @@ class VisaoIndicadorSerializer(serializers.Serializer):
 
     indicador = IndicatorResumoSerializer()
     quantidade_planejada = serializers.DecimalField(max_digits=14, decimal_places=2)
-    quantidade_realizada = serializers.DecimalField(max_digits=14, decimal_places=2, allow_null=True)
-    percentual_realizado = serializers.DecimalField(max_digits=7, decimal_places=2, allow_null=True)
+    quantidade_realizada = serializers.DecimalField(
+        max_digits=14, decimal_places=2, allow_null=True
+    )
+    percentual_realizado = serializers.DecimalField(
+        max_digits=7, decimal_places=2, allow_null=True
+    )
     por_meta = _NoVisaoIndicadorSerializer(many=True)
     por_submeta = _NoVisaoIndicadorSerializer(many=True)
     por_territorio = _TerritorioVisaoIndicadorSerializer(many=True)

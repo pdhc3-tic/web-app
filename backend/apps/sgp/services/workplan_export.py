@@ -1,21 +1,33 @@
-"""Dataset consolidado do Plano de Trabalho para exportações e Power BI."""
+"""Dataset consolidado do Plano de Trabalho para exportações e Power BI.
+
+O CSV e o XLSX exportam a árvore completa (SGP §5.6, RF25): uma linha por
+Meta, Submeta e Ação, cada nó com o seu consolidado. O Power BI (RF26) recebe
+só as linhas de Ação, para que as somas do BI não contem cada valor três vezes.
+"""
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 
 from django.db.models import Exists, OuterRef, QuerySet
 
-from apps.sgp.models import Activity, WorkPlanAcao
-from apps.sgp.models.workplan import arredondar, custo_unitario
+from apps.sgp.models import Activity, WorkPlanAcao, WorkPlanMeta
+from apps.sgp.models.workplan import arredondar, chave_do_numero, custo_unitario
 from apps.sgp.services.apuracao import RecorteAtividades, filtro_de_atividades
-from apps.sgp.services.budget import limiares_semaforo
+from apps.sgp.services.budget import LimiaresSemaforo, limiares_semaforo
 from apps.sgp.services.workplan_access import is_global_workplan_user
-from apps.sgp.services.workplan_dashboard import dashboard_actions, enrich_dashboard_action
+from apps.sgp.services.workplan_dashboard import (
+    NodeSummary,
+    dashboard_actions,
+    enrich_dashboard_action,
+    summarize_node,
+)
 
 
 EXPORT_COLUMNS = (
+    ("nivel", "Nível"),
     ("meta", "Meta"),
     ("submeta_numero", "Número da Submeta"),
     ("submeta_titulo", "Título da Submeta"),
@@ -36,7 +48,13 @@ EXPORT_COLUMNS = (
 )
 
 
-def workplan_export_rows(
+def workplan_export_rows(**filtros) -> list[dict[str, str]]:
+    """Linhas de Ação (dataset do Power BI), com agregações no escopo permitido."""
+    acoes, _ = _acoes_exportadas(**filtros)
+    return [_serialize_action(acao) for acao in acoes]
+
+
+def workplan_export_tree_rows(
     *,
     user=None,
     meta_id: int | None = None,
@@ -44,7 +62,57 @@ def workplan_export_rows(
     periodo_inicio: date | None = None,
     periodo_fim: date | None = None,
 ) -> list[dict[str, str]]:
-    """Retorna o dataset plano, com agregações calculadas no escopo permitido."""
+    """Árvore completa para o CSV e o XLSX: cada Meta, cada Submeta dela e as
+    Ações, nessa ordem. Sem recorte (visão global, sem território nem período),
+    Metas e Submetas ainda sem Ações também aparecem."""
+    acoes, limiares = _acoes_exportadas(
+        user=user, meta_id=meta_id, territorio_id=territorio_id,
+        periodo_inicio=periodo_inicio, periodo_fim=periodo_fim,
+    )
+    por_submeta = defaultdict(list)
+    for acao in acoes:
+        por_submeta[acao.submeta_id].append(acao)
+    completa = (
+        (user is None or is_global_workplan_user(user))
+        and territorio_id is None and periodo_inicio is None and periodo_fim is None
+    )
+
+    metas = WorkPlanMeta.objects.prefetch_related("submetas").order_by("numero")
+    if meta_id is not None:
+        metas = metas.filter(pk=meta_id)
+    if not completa:
+        metas = metas.filter(pk__in={acao.meta_id for acao in acoes})
+
+    hoje = date.today()
+    linhas = []
+    for meta in metas:
+        submetas = [
+            submeta
+            for submeta in sorted(meta.submetas.all(), key=lambda s: chave_do_numero(s.numero))
+            if completa or submeta.pk in por_submeta
+        ]
+        acoes_da_meta = [acao for submeta in submetas for acao in por_submeta[submeta.pk]]
+        linhas.append(_serialize_node(
+            "Meta", meta, None, summarize_node(acoes_da_meta, meta, hoje, limiares)
+        ))
+        for submeta in submetas:
+            linhas.append(_serialize_node(
+                "Submeta", meta, submeta,
+                summarize_node(por_submeta[submeta.pk], submeta, hoje, limiares),
+            ))
+            linhas.extend(_serialize_action(acao) for acao in por_submeta[submeta.pk])
+    return linhas
+
+
+def _acoes_exportadas(
+    *,
+    user=None,
+    meta_id: int | None = None,
+    territorio_id: int | None = None,
+    periodo_inicio: date | None = None,
+    periodo_fim: date | None = None,
+) -> tuple[list[WorkPlanAcao], LimiaresSemaforo]:
+    """Ações do escopo, já com os indicadores do painel, em ordem de número."""
     actions = _export_actions_for_scope(user=user, territorio_id=territorio_id)
 
     if meta_id is not None:
@@ -55,10 +123,11 @@ def workplan_export_rows(
         actions = actions.filter(data_inicio__lte=periodo_fim)
 
     limiares = limiares_semaforo()
-    return [
-        _serialize_action(enrich_dashboard_action(action, limiares=limiares))
-        for action in actions
+    acoes = [
+        enrich_dashboard_action(action, limiares=limiares)
+        for action in sorted(actions, key=lambda a: (a.meta.numero, chave_do_numero(a.numero)))
     ]
+    return acoes, limiares
 
 
 def _export_actions_for_scope(*, user, territorio_id: int | None) -> QuerySet[WorkPlanAcao]:
@@ -73,7 +142,7 @@ def _export_actions_for_scope(*, user, territorio_id: int | None) -> QuerySet[Wo
             visible_activities = visible_activities.filter(filtro(""))
         actions = actions.filter(Exists(visible_activities))
 
-    return actions.order_by("meta__numero", "submeta__numero", "numero")
+    return actions
 
 
 def _serialize_action(action: WorkPlanAcao) -> dict[str, str]:
@@ -81,6 +150,7 @@ def _serialize_action(action: WorkPlanAcao) -> dict[str, str]:
     valor_executado = action.dashboard_valor_executado
     custo = custo_unitario(valor_executado, action.dashboard_quantidade_realizada)
     return {
+        "nivel": "Ação",
         "meta": f"{action.meta.numero} - {action.meta.titulo}",
         "submeta_numero": action.submeta.numero,
         "submeta_titulo": action.submeta.titulo,
@@ -102,6 +172,31 @@ def _serialize_action(action: WorkPlanAcao) -> dict[str, str]:
         "saldo": _decimal_string(arredondar(valor_total - valor_executado)),
         "status_execucao": action.dashboard_status_execucao,
         "semaforo": action.dashboard_semaforo,
+    }
+
+
+def _serialize_node(nivel: str, meta, submeta, consolidado: NodeSummary) -> dict[str, str]:
+    """Linha de Meta ou Submeta: o consolidado do nó; os campos que só existem
+    na Ação (Indicador, valor e custo unitários) ficam vazios."""
+    return {
+        "nivel": nivel,
+        "meta": f"{meta.numero} - {meta.titulo}",
+        "submeta_numero": submeta.numero if submeta else "",
+        "submeta_titulo": submeta.titulo if submeta else "",
+        "acao": "",
+        "indicador": "",
+        "unidade_medida": "",
+        "forma_apuracao": "",
+        "quantidade_planejada": _decimal_string(arredondar(consolidado.quantidade_planejada)),
+        "valor_unitario": "",
+        "valor_total": _decimal_string(arredondar(consolidado.valor_total)),
+        "quantidade_realizada": _decimal_string(consolidado.quantidade_realizada),
+        "percentual_realizado": _decimal_string(consolidado.percentual_realizado),
+        "valor_executado": _decimal_string(arredondar(consolidado.valor_executado)),
+        "custo_unitario_realizado": "",
+        "saldo": _decimal_string(arredondar(consolidado.valor_total - consolidado.valor_executado)),
+        "status_execucao": consolidado.status_execucao,
+        "semaforo": consolidado.semaforo,
     }
 
 

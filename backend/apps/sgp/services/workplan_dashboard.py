@@ -9,7 +9,7 @@ from django.db.models import QuerySet
 
 from apps.sgp.constants import STATUS_CONCLUIDA
 from apps.sgp.models import WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
-from apps.sgp.models.workplan import CEM, arredondar, percentual, status_execucao
+from apps.sgp.models.workplan import CEM, arredondar, chave_do_numero, percentual, status_execucao
 from apps.sgp.services.apuracao import (
     FiltroAtividades,
     expressao_quantidade_realizada,
@@ -161,15 +161,18 @@ def dashboard_tree(
 
     arvore = []
     for grupo in metas.values():
+        grupo["acoes"].sort(key=lambda acao: chave_do_numero(acao.numero))
         grupo["consolidado"] = summarize_node(grupo["acoes"], grupo["meta"], today, limiares)
         grupo["submetas"] = [
             {
                 "submeta": submeta,
                 "consolidado": summarize_node(acoes_da_submeta, submeta, today, limiares),
-                "acoes": [a.pk for a in acoes_da_submeta],
+                "acoes": [
+                    a.pk for a in sorted(acoes_da_submeta, key=lambda a: chave_do_numero(a.numero))
+                ],
             }
             for submeta, acoes_da_submeta in sorted(
-                grupo["submetas"].values(), key=lambda item: item[0].numero
+                grupo["submetas"].values(), key=lambda item: chave_do_numero(item[0].numero)
             )
         ]
         arvore.append(grupo)

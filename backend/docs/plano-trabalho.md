@@ -90,11 +90,16 @@ manual) e o valor executado; `--check-only` só detecta.
 
 ## Endpoints
 
+Leitura do Plano de Trabalho pela matriz de permissões do Core (§2.1): UGP e
+Super Admin leem tudo; Articulador e ADT, o seu escopo territorial; o FGD lê
+tudo, porque não tem papel com escopo territorial; o Agricultor não lê
+(`workplan_access.escopo_de_leitura_do_plano`).
+
 | Método | Rota | Permissão |
 | :--- | :--- | :--- |
-| CRUD | `/api/v1/sgp/indicadores/` | Escrita: Super Admin/UGP. Leitura: autenticado (catálogo, sem escopo territorial) |
-| CRUD | `/api/v1/sgp/submetas/` | Escrita: Super Admin/UGP. Leitura: escopo territorial, como as Metas |
-| CRUD | `/api/v1/acoes/` | Escrita: Super Admin/UGP. Excluir Ação com Atividades: `400 acao_com_atividades` |
+| CRUD | `/api/v1/sgp/indicadores/` | Escrita: Super Admin/UGP. Leitura: ADT, Articulador, UGP, FGD e Super Admin, sem escopo territorial (o Agricultor não lê) |
+| CRUD | `/api/v1/sgp/submetas/` | Escrita: Super Admin/UGP. Leitura: escopo territorial, como as Metas; o FGD lê tudo |
+| CRUD | `/api/v1/acoes/` | Escrita: Super Admin/UGP |
 | GET | `/api/v1/sgp/plano-trabalho/painel/` | Escopo territorial |
 | GET | `/api/v1/sgp/plano-trabalho/indicadores/` | Escopo territorial |
 | GET | `/api/v1/sgp/plano-trabalho/exportar/` | Escopo territorial |
@@ -123,6 +128,8 @@ e semáforo financeiro.
 - Quebras: `por_meta`, `por_submeta`, `por_territorio` e `por_periodo`. As quebras por território e por período trazem só o realizado, porque o planejado não é territorial nem datado, e não incluem Ações de apuração manual.
 - O período (filtro e quebra) vale pela data de término das Atividades.
 - `por_periodo` traz `inicio`, `fim` e `quantidade_realizada` de cada fatia, na granularidade pedida: `mes` (padrão, a cadência dos relatórios do SGP), `trimestre`, `semestre` ou `ano`. A resposta devolve a granularidade usada.
+- A série é contínua: vai do `periodo_inicio` ao `periodo_fim` pedidos (sem período, do primeiro ao último realizado), com zero nas fatias sem realizado. A primeira e a última fatia são recortadas às datas pedidas.
+- Nas formas por soma de UFPAs e de participantes, cada fatia conta UFPAs e membros distintos dentro dela. Quem participou em mais de uma fatia conta em cada uma, então a soma das fatias pode passar do total do Indicador.
 - As granularidades ficam em `GRANULARIDADES` (`apps/sgp/services/visao_indicador.py`), cada uma definida pelo tamanho da fatia em meses. Uma nova entra com uma linha, desde que divida o ano em partes iguais (ex.: `"bimestre": Granularidade(meses=2)`). O agrupamento é feito no banco, então UFPAs e participantes continuam distintos dentro de cada fatia.
 
 **Atividades (RF07)**
@@ -163,4 +170,3 @@ chaves `indicador`/`unidade_medida`.
 - Monitoramento do TED: índice de aderência (RF49), custo por território (RF53), curva S e fechamento mensal.
 - Árvore do PT offline no SCA.
 - Filtros do SGD por Submeta (SGD-RF26) e colunas do Arlo.
-- FGD não lê Metas nem Submetas: o escopo territorial nega a quem não tem papel com escopo. É um gap que já existia; a Submeta segue o padrão da Meta.

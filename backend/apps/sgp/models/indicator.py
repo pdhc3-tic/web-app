@@ -106,12 +106,3 @@ class Indicator(models.Model):
 
     def __str__(self):
         return f"{self.codigo} – {self.nome}"
-
-    @staticmethod
-    def normalizar_codigo(codigo: str) -> str:
-        return codigo.strip().upper()
-
-    def clean(self):
-        # Antes da checagem de unicidade do full_clean, que compara o valor gravado.
-        if self.codigo:
-            self.codigo = self.normalizar_codigo(self.codigo)

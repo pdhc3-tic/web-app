@@ -48,7 +48,8 @@ class TestWorkPlanExport:
         content = response.content.decode("utf-8-sig")
         rows = list(csv.reader(StringIO(content)))
         assert rows[0] == [label for _, label in EXPORT_COLUMNS]
-        linha = dict(zip(rows[0], rows[1]))
+        assert [row[0] for row in rows[1:]] == ["Meta", "Submeta", "Ação"]
+        linha = dict(zip(rows[0], rows[3]))
         assert linha["Meta"] == "1 - Meta de exportação"
         assert linha["Ação"] == f"{action.numero} - {action.descricao}"
         assert linha["Quantidade realizada"] == "1"
@@ -65,7 +66,7 @@ class TestWorkPlanExport:
         worksheet = workbook.active
         rows = list(worksheet.iter_rows(values_only=True))
         assert list(rows[0]) == [label for _, label in EXPORT_COLUMNS]
-        linha = dict(zip(rows[0], rows[1]))
+        linha = dict(zip(rows[0], rows[3]))
         assert linha["Ação"] == f"{action.numero} - {action.descricao}"
         assert linha["Número da Submeta"] == action.submeta.numero
         assert linha["Título da Submeta"] == action.submeta.titulo

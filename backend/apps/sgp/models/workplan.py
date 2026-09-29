@@ -23,6 +23,11 @@ def validate_numero_acao(value):
         raise ValidationError("Formato inválido. Use X.Y.Z (ex: 1.1.1, 2.3.4).")
 
 
+def chave_do_numero(numero: str) -> tuple[int, ...]:
+    """Ordena números X.Y e X.Y.Z como números ("1.2" antes de "1.10")."""
+    return tuple(int(parte) for parte in numero.split("."))
+
+
 # Cálculos de execução do Plano de Trabalho. Os properties dos models e o
 # painel/exportação (que apuram só o escopo do usuário) usam as mesmas funções.
 
@@ -64,7 +69,9 @@ def _erros_no_pai(filho, pai, nome: str, nome_do_pai: str) -> dict:
     Ação na Submeta). `pai` é None enquanto o vínculo não foi informado."""
     erros = {}
     if pai is not None and filho.numero and not filho.numero.startswith(f"{pai.numero}."):
-        erros["numero"] = f"O número da {nome} deve começar com {pai.numero}. (número da {nome_do_pai})."
+        erros["numero"] = (
+            f"O número da {nome} deve começar com {pai.numero}. (número da {nome_do_pai})."
+        )
     if filho.data_inicio and filho.data_fim and filho.data_inicio > filho.data_fim:
         erros["data_fim"] = "A data de término não pode ser anterior à de início."
     elif pai is not None and filho.data_inicio and filho.data_fim and (
@@ -246,7 +253,9 @@ class WorkPlanSubmeta(models.Model):
         if self.pk and not erros.keys() & {"data_inicio", "data_fim"}:
             fora = _filhos_fora_do_periodo(self.acoes.all(), self.data_inicio, self.data_fim)
             if fora:
-                erros["data_inicio"] = f"O novo período deixa Ações fora da Submeta: {', '.join(fora)}."
+                erros["data_inicio"] = (
+                    f"O novo período deixa Ações fora da Submeta: {', '.join(fora)}."
+                )
         if erros:
             raise ValidationError(erros)
 

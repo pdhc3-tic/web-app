@@ -10,7 +10,7 @@ from apps.sgd.services import balance as balance_service
 from apps.sgd.services.approval import concluir
 from apps.sgd.tests.factories import DemandFactory
 from apps.sgp.models import WorkPlanAcao
-from apps.sgp.tests.factories import ActivityFactory, WorkPlanAcaoFactory
+from apps.sgp.tests.factories import ActivityFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -55,11 +55,10 @@ def test_detalhe_nao_aumenta_o_numero_de_queries(
     """A cadeia vem por JOIN na consulta da demanda: nenhuma consulta própria a
     Ação, Submeta, Meta ou Indicador, e o mesmo número de queries qualquer que
     seja a cadeia da demanda."""
+    # Outra Atividade do mesmo técnico e município: a factory cria Ação,
+    # Submeta, Meta e Indicador novos.
     outra = DemandFactory(
-        activity=ActivityFactory(
-            municipio=activity_rn.municipio, tecnico_responsavel=solicitante_rn,
-            status="planejado", acao=WorkPlanAcaoFactory(),
-        ),
+        activity=ActivityFactory(municipio=activity_rn.municipio, tecnico_responsavel=solicitante_rn),
         solicitante=solicitante_rn,
         status="rascunho",
     )

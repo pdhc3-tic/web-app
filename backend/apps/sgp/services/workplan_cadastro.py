@@ -173,18 +173,3 @@ def atualizar_acao(serializer, *, request):
         request=request,
     )
     return acao
-
-
-@transaction.atomic
-def excluir_acao(acao, *, request):
-    if acao.atividades.exists():
-        raise ErroComCodigo(
-            "acao_com_atividades",
-            "Não é possível excluir esta Ação: existem Atividades de Campo vinculadas a ela.",
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
-    log_audit(
-        user=request.user, acao="WorkPlanAcao.delete", modulo="sgp", entidade="WorkPlanAcao",
-        entidade_id=acao.pk, valores_anteriores=_snapshot_acao(acao), request=request,
-    )
-    acao.delete()

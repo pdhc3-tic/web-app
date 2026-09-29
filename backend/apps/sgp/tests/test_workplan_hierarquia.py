@@ -265,8 +265,30 @@ class TestVisaoPorPeriodo:
         [item] = response.data["indicadores"]
         assert item["por_periodo"] == [
             {"inicio": "2026-02-01", "fim": "2026-02-28", "quantidade_realizada": 1},
+            {"inicio": "2026-03-01", "fim": "2026-03-31", "quantidade_realizada": 0},
+            {"inicio": "2026-04-01", "fim": "2026-04-30", "quantidade_realizada": 0},
+            {"inicio": "2026-05-01", "fim": "2026-05-31", "quantidade_realizada": 0},
             {"inicio": "2026-06-01", "fim": "2026-06-30", "quantidade_realizada": 4},
         ]
+
+    def test_periodo_pedido_recorta_as_pontas_e_completa_com_zero(self, auth_client, arvore):
+        response = auth_client.get(VISAO_URL, {
+            "granularidade": "trimestre", "periodo_inicio": "2026-05-10", "periodo_fim": "2026-08-20",
+        })
+
+        [item] = response.data["indicadores"]
+        assert item["por_periodo"] == [
+            {"inicio": "2026-05-10", "fim": "2026-06-30", "quantidade_realizada": 5},
+            {"inicio": "2026-07-01", "fim": "2026-08-20", "quantidade_realizada": 0},
+        ]
+
+    def test_indicador_manual_nao_tem_quebra_por_periodo(self, auth_client, meta):
+        manual = IndicatorFactory(forma_apuracao="manual")
+        WorkPlanAcaoFactory(meta=meta, indicador=manual, quantidade_realizada=7)
+
+        response = auth_client.get(VISAO_URL, {"indicador_id": manual.pk})
+
+        assert response.data["indicadores"][0]["por_periodo"] == []
 
     @pytest.mark.parametrize("granularidade,inicio,fim", [
         ("trimestre", "2026-04-01", "2026-06-30"),
@@ -297,8 +319,11 @@ class TestVisaoPorPeriodo:
         response = auth_client.get(VISAO_URL, {"indicador_id": indicador.pk})
 
         [item] = response.data["indicadores"]
+        # Distinta dentro de cada fatia: a mesma UFPA conta em março e em maio,
+        # mas uma vez só no total.
+        assert item["quantidade_realizada"] == "1.00"
         assert [(p["inicio"], p["quantidade_realizada"]) for p in item["por_periodo"]] == [
-            ("2026-03-01", 1), ("2026-05-01", 1),
+            ("2026-03-01", 1), ("2026-04-01", 0), ("2026-05-01", 1),
         ]
 
     def test_granularidade_precisa_dividir_o_ano(self):
@@ -325,6 +350,27 @@ class TestExportacao:
         assert registro["Valor executado"] == "800.00"
         assert registro["Custo unitário realizado"] == "200.00"
         assert registro["Saldo"] == "200.00"
+
+    def test_arvore_completa_com_consolidado_por_no(self, auth_client, arvore, meta):
+        _concluir_demanda(arvore["atividades"][0], Decimal("800.00"))
+        WorkPlanSubmetaFactory(meta=meta, numero="1.3")
+
+        response = auth_client.get(EXPORT_URL, {"formato": "csv"})
+
+        linhas = list(csv.reader(io.StringIO(response.content.decode("utf-8-sig"))))
+        registros = [dict(zip(linhas[0], linha)) for linha in linhas[1:]]
+        assert [(r["Nível"], r["Número da Submeta"], r["Ação"][:5]) for r in registros] == [
+            ("Meta", "", ""),
+            ("Submeta", "1.1", ""), ("Ação", "1.1", "1.1.1"), ("Ação", "1.1", "1.1.2"),
+            ("Submeta", "1.2", ""), ("Ação", "1.2", "1.2.1"),
+            ("Submeta", "1.3", ""),
+        ]
+        meta_linha, s1_linha, vazia = registros[0], registros[1], registros[-1]
+        assert (meta_linha["Valor total"], meta_linha["Valor executado"], meta_linha["Saldo"]) == (
+            "2500.00", "800.00", "1700.00"
+        )
+        assert (s1_linha["Quantidade planejada"], s1_linha["Quantidade realizada"]) == ("20.00", "4")
+        assert (vazia["Valor total"], vazia["Quantidade realizada"]) == ("0.00", "0")
 
     def test_total_por_meta_nao_muda(self, arvore):
         linhas = workplan_export_rows()

@@ -1,6 +1,6 @@
 import logging
 
-from django.db.models import Count
+from django.db.models import Count, Prefetch
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema
@@ -46,6 +46,7 @@ from apps.sgp.services import workplan_cadastro
 from apps.sgp.services.exportacao import exportar_sincrono
 from apps.sgp.views.exportacao import arquivo_response
 from apps.sgp.services.workplan_access import (
+    escopo_de_leitura_do_plano,
     filter_workplan_actions_for_user,
     filter_workplan_metas_for_user,
     filter_workplan_submetas_for_user,
@@ -207,7 +208,10 @@ class WorkPlanMetaViewSet(viewsets.ModelViewSet):
         qs = WorkPlanMeta.objects.all()
         if self.action in ("list", "retrieve"):
             # Totais e status da Meta somam as Submetas e as Ações delas.
-            qs = qs.select_related("criado_por").prefetch_related("submetas__acoes")
+            qs = qs.select_related("criado_por").prefetch_related(
+                Prefetch("submetas", queryset=WorkPlanSubmeta.objects.select_related("criado_por")),
+                "submetas__acoes",
+            )
 
         user = self.request.user
         if not user.is_authenticated:
@@ -343,8 +347,38 @@ class WorkPlanAcaoViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         workplan_cadastro.atualizar_acao(serializer, request=self.request)
 
-    def perform_destroy(self, instance):
-        workplan_cadastro.excluir_acao(instance, request=self.request)
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        try:
+            has_atividades = instance.atividades.exists()
+        except Exception:
+            has_atividades = False
+        if has_atividades:
+            return Response(
+                {
+                    "detail": (
+                        "Não é possível excluir esta Ação: "
+                        "existem Atividades de Campo vinculadas a ela."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        AuditLog.objects.create(
+            user=request.user,
+            acao="WorkPlanAcao.delete",
+            modulo="sgp",
+            entidade="WorkPlanAcao",
+            entidade_id=str(instance.pk),
+            valores_anteriores={
+                "numero": instance.numero,
+                "descricao": instance.descricao,
+            },
+            valores_novos={},
+            ip=request.META.get("REMOTE_ADDR"),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+        )
+        instance.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------------------
@@ -371,7 +405,12 @@ class WorkPlanSubmetaViewSet(viewsets.ModelViewSet):
         qs = WorkPlanSubmeta.objects.select_related("meta", "responsavel").prefetch_related(
             "acoes"
         )
-        return filter_workplan_submetas_for_user(qs, self.request.user)
+
+        user = self.request.user
+        if not user.is_authenticated:
+            return qs.none()
+
+        return filter_workplan_submetas_for_user(qs, user)
 
     def perform_create(self, serializer):
         workplan_cadastro.criar_submeta(serializer, request=self.request)
@@ -389,7 +428,8 @@ class WorkPlanSubmetaViewSet(viewsets.ModelViewSet):
 
 class IndicatorViewSet(viewsets.ModelViewSet):
     """Catálogo institucional de Indicadores (SGP §5.4). Não tem escopo
-    territorial: é lido por todo perfil com acesso ao Plano de Trabalho."""
+    territorial: é lido por todo perfil que lê o Plano de Trabalho (matriz de
+    permissões do Core §2.1); o Agricultor não lê."""
 
     serializer_class = IndicatorSerializer
     pagination_class = UPFPagination
@@ -403,7 +443,14 @@ class IndicatorViewSet(viewsets.ModelViewSet):
         return [IsAuthenticatedActiveAccess()]
 
     def get_queryset(self):
-        return Indicator.objects.annotate(_total_acoes=Count("acoes"))
+        qs = Indicator.objects.annotate(_total_acoes=Count("acoes"))
+
+        user = self.request.user
+        if not user.is_authenticated:
+            return qs.none()
+
+        escopo_de_leitura_do_plano(user)
+        return qs
 
     def perform_create(self, serializer):
         workplan_cadastro.criar_indicador(serializer, request=self.request)

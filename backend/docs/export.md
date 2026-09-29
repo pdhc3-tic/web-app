@@ -194,23 +194,33 @@ Foram implementadas a exportação do Plano de Trabalho em CSV/XLSX e uma API au
 
 O módulo `apps/sgp/services/workplan_export.py` é a fonte única do dataset exportável. Ele evita duplicação entre exportação manual e Power BI, retornando as colunas:
 
-1. Meta
-2. Número da Submeta
-3. Título da Submeta
-4. Ação
-5. Indicador
-6. Unidade de medida
-7. Forma de apuração
-8. Quantidade planejada
-9. Valor unitário
-10. Valor total
-11. Quantidade realizada
-12. Percentual realizado
-13. Valor executado
-14. Custo unitário realizado
-15. Saldo (valor total − valor executado)
-16. Status de execução
-17. Semáforo
+1. Nível (Meta, Submeta ou Ação)
+2. Meta
+3. Número da Submeta
+4. Título da Submeta
+5. Ação
+6. Indicador
+7. Unidade de medida
+8. Forma de apuração
+9. Quantidade planejada
+10. Valor unitário
+11. Valor total
+12. Quantidade realizada
+13. Percentual realizado
+14. Valor executado
+15. Custo unitário realizado
+16. Saldo (valor total − valor executado)
+17. Status de execução
+18. Semáforo
+
+O CSV e o XLSX exportam a árvore completa (SGP §5.6, RF25): uma linha por
+Meta, a seguir uma por Submeta e, sob cada Submeta, uma por Ação. As linhas de
+Meta e Submeta trazem o consolidado do nó (as mesmas somas do painel) e deixam
+vazias as colunas que só existem na Ação (Indicador, valor e custo unitários).
+Sem recorte (visão global, sem território nem período), Metas e Submetas ainda
+sem Ações também aparecem. O dataset do Power BI (RF26) tem só as linhas de
+Ação, com `nivel` = "Ação", para que as somas do BI não contem cada valor três
+vezes.
 
 A quantidade realizada segue a forma de apuração do Indicador e é apurada só
 sobre as Atividades no escopo do usuário (ver `backend/docs/plano-trabalho.md`).
@@ -357,6 +367,7 @@ Status: 200 OK
   "atualizado_em": "2026-08-21T14:00:00-03:00",
   "resultados": [
     {
+      "nivel": "Ação",
       "meta": "1 - Meta de exemplo",
       "submeta_numero": "1.1",
       "submeta_titulo": "Submeta de exemplo",

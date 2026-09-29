@@ -3,11 +3,14 @@ from datetime import date
 
 import pytest
 from django.contrib.admin.sites import site
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.core.exceptions import ValidationError
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.core.models.audit_log import AuditLog
+from apps.core.tests.factories import UserFactory
 from apps.sgp.models import Indicator, WorkPlanSubmeta
 from apps.sgp.tests.factories import (
     ActivityFactory,
@@ -296,6 +299,37 @@ class TestConsistenciaComMeta:
         meta.data_fim = date(2026, 1, 31)
         assert meta.status_calculado == "em_atraso"
 
+    def test_fgd_le_todas_as_submetas(self, usuario_fgd, meta, municipio_ce):
+        submeta = WorkPlanSubmetaFactory(meta=meta, numero="1.1")
+        ActivityFactory(acao=WorkPlanAcaoFactory(submeta=submeta, meta=meta), municipio=municipio_ce)
+
+        response = _cliente(usuario_fgd).get(URL)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["id"] for item in response.data["results"]] == [submeta.pk]
+
+    @pytest.mark.parametrize("cliente", ["auth_client", "auth_client_adt_rn"])
+    def test_detalhe_da_meta_nao_cresce_com_as_submetas(self, request, cliente, meta, municipio_rn):
+        cliente = request.getfixturevalue(cliente)
+        url = f"/api/v1/metas/{meta.pk}/"
+
+        def submeta_com_acao(numero):
+            submeta = WorkPlanSubmetaFactory(meta=meta, numero=numero, criado_por=UserFactory())
+            acao = WorkPlanAcaoFactory(submeta=submeta, meta=meta)
+            ActivityFactory(acao=acao, municipio=municipio_rn)
+
+        submeta_com_acao("1.1")
+        cliente.get(url)
+        with CaptureQueriesContext(connection) as uma:
+            cliente.get(url)
+        submeta_com_acao("1.2")
+        submeta_com_acao("1.10")
+        with CaptureQueriesContext(connection) as tres:
+            response = cliente.get(url)
+
+        assert [s["numero"] for s in response.data["submetas"]] == ["1.1", "1.2", "1.10"]
+        assert len(tres.captured_queries) == len(uma.captured_queries)
+
     def test_detalhe_da_meta_so_traz_submetas_do_escopo(
         self, auth_client_adt_rn, meta, municipio_rn, municipio_ce
     ):
@@ -342,7 +376,7 @@ class TestAcaoNaSubmeta:
         assert response.data["meta"] == meta.pk
         assert response.data["submeta_numero"] == "1.1"
 
-    def test_criar_com_submeta_de_outra_meta_retorna_400(self, auth_client, submeta):
+    def test_criar_com_meta_diferente_da_submeta_retorna_400(self, auth_client, submeta):
         outra = WorkPlanMetaFactory(numero=2)
 
         response = auth_client.post(
@@ -353,7 +387,7 @@ class TestAcaoNaSubmeta:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "meta" in response.data
 
-    def test_editar_com_submeta_de_outra_meta_retorna_400(self, auth_client, submeta, meta):
+    def test_editar_meta_diferente_da_submeta_retorna_400(self, auth_client, submeta, meta):
         acao = WorkPlanAcaoFactory(submeta=submeta, meta=meta, numero="1.1.1")
         outra = WorkPlanMetaFactory(numero=2)
 

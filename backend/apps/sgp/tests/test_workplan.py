@@ -518,7 +518,7 @@ class TestAcaoExclusao:
         response = auth_client.delete(f"/api/v1/acoes/{acao.pk}/")
 
         assert response.status_code == 400
-        assert response.data["code"] == "acao_com_atividades"
+        assert "Atividades de Campo vinculadas" in response.data["detail"]
         assert WorkPlanAcao.objects.filter(pk=acao.pk).exists()
 
     def test_delete_registers_audit(self, auth_client, acao):
