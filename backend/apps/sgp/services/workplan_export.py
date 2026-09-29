@@ -12,6 +12,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.db.models import Exists, OuterRef, QuerySet
+from django.utils import timezone
 
 from apps.sgp.models import Activity, WorkPlanAcao, WorkPlanMeta
 from apps.sgp.models.workplan import arredondar, custo_unitario
@@ -85,7 +86,7 @@ def workplan_export_tree_rows(
     if not completa:
         metas = metas.filter(pk__in={acao.meta_id for acao in acoes})
 
-    hoje = date.today()
+    hoje = timezone.localdate()
     vazias = submetas_sem_acoes_por_meta([meta.pk for meta in metas])
     linhas = []
     for meta in metas:

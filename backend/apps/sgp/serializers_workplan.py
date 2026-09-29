@@ -35,12 +35,27 @@ def _clean_do_model(instance, attrs):
     (auditoria de "antes", detecção de mudança de número) e não pode chegar lá
     com os valores novos."""
     candidato = copy.copy(instance)
+    campos_m2m = {campo.name for campo in candidato._meta.many_to_many}
     for campo, valor in attrs.items():
-        setattr(candidato, campo, valor)
+        # M2M não se atribui direto e o `clean()` não depende deles.
+        if campo not in campos_m2m:
+            setattr(candidato, campo, valor)
     try:
         candidato.clean()
     except DjangoValidationError as exc:
         raise serializers.ValidationError(exc.message_dict)
+
+
+def _validar_periodo(attrs):
+    if (
+        attrs.get("periodo_inicio")
+        and attrs.get("periodo_fim")
+        and attrs["periodo_inicio"] > attrs["periodo_fim"]
+    ):
+        raise serializers.ValidationError(
+            "periodo_inicio não pode ser posterior a periodo_fim."
+        )
+    return attrs
 
 
 def _ja_existe(queryset, instance) -> bool:
@@ -116,8 +131,8 @@ class WorkPlanAcaoSerializer(serializers.ModelSerializer):
     custo_unitario_realizado = serializers.DecimalField(
         max_digits=14, decimal_places=2, read_only=True, allow_null=True
     )
-    # Decimal na saída, como antes das formas de apuração; na entrada (só na
-    # forma manual) precisa ser inteiro, porque o campo guarda unidades.
+    # Decimal na saída (o front lê número com casas); na entrada (só na forma
+    # manual) precisa ser inteiro, porque o campo guarda unidades.
     quantidade_realizada = serializers.DecimalField(
         max_digits=12, decimal_places=2, min_value=0, required=False
     )
@@ -169,12 +184,18 @@ class WorkPlanAcaoSerializer(serializers.ModelSerializer):
         instance = self.instance
         indicador = attrs.get("indicador", instance.indicador if instance else None)
         if "quantidade_realizada" in attrs and indicador.forma_apuracao != FORMA_MANUAL:
-            raise serializers.ValidationError({
-                "quantidade_realizada": (
-                    "A quantidade realizada é apurada automaticamente para este "
-                    "Indicador; só é lançada à mão na forma de apuração manual."
-                )
-            })
+            # Quem devolve o objeto lido (PUT/PATCH) manda o valor apurado de
+            # volta; só um valor diferente é tentativa de lançar à mão.
+            atual = instance.quantidade_realizada if instance else 0
+            if attrs["quantidade_realizada"] != atual:
+                raise serializers.ValidationError({
+                    "quantidade_realizada": (
+                        "A quantidade realizada é apurada automaticamente para "
+                        "este Indicador; só é lançada à mão na forma de "
+                        "apuração manual."
+                    )
+                })
+            del attrs["quantidade_realizada"]
 
         submeta = attrs.get("submeta", instance.submeta if instance else None)
         # `meta` é só leitura (vem da Submeta), mas quem a envia não pode
@@ -375,7 +396,7 @@ class WorkPlanMetaDetailSerializer(serializers.ModelSerializer):
 
     def _acoes_serializadas(self, obj) -> list[dict]:
         """Ações visíveis da Meta, serializadas uma vez só: alimentam `acoes`
-        (lista plana, como antes das Submetas) e as `acoes` de cada Submeta."""
+        (lista plana, sem passar pelas Submetas) e as `acoes` de cada Submeta."""
         cache = self.__dict__.setdefault("_acoes_por_meta", {})
         if obj.pk not in cache:
             cache[obj.pk] = WorkPlanAcaoSerializer(
@@ -432,15 +453,7 @@ class WorkPlanExportQuerySerializer(serializers.Serializer):
     periodo_fim = serializers.DateField(required=False)
 
     def validate(self, attrs):
-        if (
-            attrs.get("periodo_inicio")
-            and attrs.get("periodo_fim")
-            and attrs["periodo_inicio"] > attrs["periodo_fim"]
-        ):
-            raise serializers.ValidationError(
-                "periodo_inicio não pode ser posterior a periodo_fim."
-            )
-        return attrs
+        return _validar_periodo(attrs)
 
 
 class WorkPlanVisaoIndicadorQuerySerializer(serializers.Serializer):
@@ -455,15 +468,7 @@ class WorkPlanVisaoIndicadorQuerySerializer(serializers.Serializer):
     )
 
     def validate(self, attrs):
-        if (
-            attrs.get("periodo_inicio")
-            and attrs.get("periodo_fim")
-            and attrs["periodo_inicio"] > attrs["periodo_fim"]
-        ):
-            raise serializers.ValidationError(
-                "periodo_inicio não pode ser posterior a periodo_fim."
-            )
-        return attrs
+        return _validar_periodo(attrs)
 
 
 class _NoVisaoIndicadorSerializer(serializers.Serializer):

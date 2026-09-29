@@ -174,6 +174,18 @@ class TestManual:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "quantidade_realizada" in response.data
 
+    def test_devolver_o_valor_apurado_nas_outras_formas_e_tolerado(self, auth_client):
+        acao = _acao("soma_ufpas")
+
+        response = auth_client.patch(
+            f"/api/v1/acoes/{acao.pk}/",
+            {"quantidade_realizada": acao.quantidade_realizada, "descricao": "Nova"},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_200_OK, response.data
+        assert _realizado(acao) == acao.quantidade_realizada
+
 
 class TestTrocaDeIndicadorDaAcao:
     def test_reapura_pela_forma_do_novo_indicador(self, auth_client, nova_upf):

@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Iterable
 
 from django.db.models import QuerySet
+from django.utils import timezone
 
 from apps.sgp.constants import STATUS_CONCLUIDA
 from apps.sgp.models import WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
@@ -65,7 +66,7 @@ def enrich_dashboard_action(
 
     Quem enriquece várias Ações deve ler `limiares_semaforo()` uma vez e
     repassar."""
-    today = today or date.today()
+    today = today or timezone.localdate()
     limiares = limiares or limiares_semaforo()
     quantidade_planejada = Decimal(action.quantidade_planejada or ZERO)
     quantidade_realizada = Decimal(getattr(action, "_quantidade_realizada", ZERO))
@@ -175,7 +176,7 @@ def dashboard_tree(
     Meta → Submeta, com o consolidado de cada nó calculado sobre as Ações
     recebidas (o filtro de status do painel, se aplicado, vale também para os
     consolidados)."""
-    today = today or date.today()
+    today = today or timezone.localdate()
     metas: dict[int, dict] = {}
     for acao in acoes:
         grupo = metas.setdefault(acao.meta_id, {

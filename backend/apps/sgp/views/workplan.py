@@ -407,9 +407,9 @@ class WorkPlanSubmetaViewSet(viewsets.ModelViewSet):
         return [IsAuthenticatedActiveAccess()]
 
     def get_queryset(self):
-        qs = WorkPlanSubmeta.objects.select_related("meta", "responsavel").prefetch_related(
-            "acoes"
-        )
+        qs = WorkPlanSubmeta.objects.select_related(
+            "meta", "responsavel", "criado_por"
+        ).prefetch_related("acoes")
 
         user = self.request.user
         if not user.is_authenticated:
