@@ -1,6 +1,6 @@
 import logging
 
-from django.db.models import Count, Prefetch
+from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema
@@ -46,7 +46,7 @@ from apps.sgp.services import workplan_cadastro
 from apps.sgp.services.exportacao import exportar_sincrono
 from apps.sgp.views.exportacao import arquivo_response
 from apps.sgp.services.workplan_access import (
-    escopo_de_leitura_do_plano,
+    exigir_leitura_do_plano,
     filter_workplan_actions_for_user,
     filter_workplan_metas_for_user,
     filter_workplan_submetas_for_user,
@@ -208,9 +208,12 @@ class WorkPlanMetaViewSet(viewsets.ModelViewSet):
         qs = WorkPlanMeta.objects.all()
         if self.action in ("list", "retrieve"):
             # Totais e status da Meta somam as Submetas e as Ações delas.
+            submetas = WorkPlanSubmeta.objects.all()
+            if self.action == "retrieve":
+                # O detalhe serializa cada Submeta, com quem a criou.
+                submetas = submetas.select_related("criado_por")
             qs = qs.select_related("criado_por").prefetch_related(
-                Prefetch("submetas", queryset=WorkPlanSubmeta.objects.select_related("criado_por")),
-                "submetas__acoes",
+                Prefetch("submetas", queryset=submetas), "submetas__acoes"
             )
 
         user = self.request.user
@@ -443,13 +446,13 @@ class IndicatorViewSet(viewsets.ModelViewSet):
         return [IsAuthenticatedActiveAccess()]
 
     def get_queryset(self):
-        qs = Indicator.objects.annotate(_total_acoes=Count("acoes"))
+        qs = Indicator.objects.all()
 
         user = self.request.user
         if not user.is_authenticated:
             return qs.none()
 
-        escopo_de_leitura_do_plano(user)
+        exigir_leitura_do_plano(user)
         return qs
 
     def perform_create(self, serializer):

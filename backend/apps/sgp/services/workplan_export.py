@@ -14,7 +14,7 @@ from decimal import Decimal
 from django.db.models import Exists, OuterRef, QuerySet
 
 from apps.sgp.models import Activity, WorkPlanAcao, WorkPlanMeta
-from apps.sgp.models.workplan import arredondar, chave_do_numero, custo_unitario
+from apps.sgp.models.workplan import arredondar, custo_unitario
 from apps.sgp.services.apuracao import RecorteAtividades, filtro_de_atividades
 from apps.sgp.services.budget import LimiaresSemaforo, limiares_semaforo
 from apps.sgp.services.workplan_access import is_global_workplan_user
@@ -22,6 +22,7 @@ from apps.sgp.services.workplan_dashboard import (
     NodeSummary,
     dashboard_actions,
     enrich_dashboard_action,
+    summarize_meta,
     summarize_node,
 )
 
@@ -48,9 +49,9 @@ EXPORT_COLUMNS = (
 )
 
 
-def workplan_export_rows(**filtros) -> list[dict[str, str]]:
+def workplan_export_rows(*, user=None) -> list[dict[str, str]]:
     """Linhas de Ação (dataset do Power BI), com agregações no escopo permitido."""
-    acoes, _ = _acoes_exportadas(**filtros)
+    acoes, _ = _acoes_exportadas(user=user)
     return [_serialize_action(acao) for acao in acoes]
 
 
@@ -77,7 +78,7 @@ def workplan_export_tree_rows(
         and territorio_id is None and periodo_inicio is None and periodo_fim is None
     )
 
-    metas = WorkPlanMeta.objects.prefetch_related("submetas").order_by("numero")
+    metas = WorkPlanMeta.objects.prefetch_related("submetas")
     if meta_id is not None:
         metas = metas.filter(pk=meta_id)
     if not completa:
@@ -86,20 +87,14 @@ def workplan_export_tree_rows(
     hoje = date.today()
     linhas = []
     for meta in metas:
-        submetas = [
-            submeta
-            for submeta in sorted(meta.submetas.all(), key=lambda s: chave_do_numero(s.numero))
-            if completa or submeta.pk in por_submeta
-        ]
+        submetas = [s for s in meta.submetas.all() if completa or s.pk in por_submeta]
+        consolidados = [summarize_node(por_submeta[s.pk], s, hoje, limiares) for s in submetas]
         acoes_da_meta = [acao for submeta in submetas for acao in por_submeta[submeta.pk]]
         linhas.append(_serialize_node(
-            "Meta", meta, None, summarize_node(acoes_da_meta, meta, hoje, limiares)
+            "Meta", meta, None, summarize_meta(acoes_da_meta, meta, consolidados, hoje, limiares)
         ))
-        for submeta in submetas:
-            linhas.append(_serialize_node(
-                "Submeta", meta, submeta,
-                summarize_node(por_submeta[submeta.pk], submeta, hoje, limiares),
-            ))
+        for submeta, consolidado in zip(submetas, consolidados):
+            linhas.append(_serialize_node("Submeta", meta, submeta, consolidado))
             linhas.extend(_serialize_action(acao) for acao in por_submeta[submeta.pk])
     return linhas
 
@@ -112,7 +107,8 @@ def _acoes_exportadas(
     periodo_inicio: date | None = None,
     periodo_fim: date | None = None,
 ) -> tuple[list[WorkPlanAcao], LimiaresSemaforo]:
-    """Ações do escopo, já com os indicadores do painel, em ordem de número."""
+    """Ações do escopo, já com os indicadores do painel, na ordem do model
+    (Meta e número)."""
     actions = _export_actions_for_scope(user=user, territorio_id=territorio_id)
 
     if meta_id is not None:
@@ -123,10 +119,7 @@ def _acoes_exportadas(
         actions = actions.filter(data_inicio__lte=periodo_fim)
 
     limiares = limiares_semaforo()
-    acoes = [
-        enrich_dashboard_action(action, limiares=limiares)
-        for action in sorted(actions, key=lambda a: (a.meta.numero, chave_do_numero(a.numero)))
-    ]
+    acoes = [enrich_dashboard_action(action, limiares=limiares) for action in actions]
     return acoes, limiares
 
 
@@ -196,7 +189,7 @@ def _serialize_node(nivel: str, meta, submeta, consolidado: NodeSummary) -> dict
         "custo_unitario_realizado": "",
         "saldo": _decimal_string(arredondar(consolidado.valor_total - consolidado.valor_executado)),
         "status_execucao": consolidado.status_execucao,
-        "semaforo": consolidado.semaforo,
+        "semaforo": consolidado.semaforo or "",
     }
 
 

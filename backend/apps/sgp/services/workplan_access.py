@@ -8,7 +8,7 @@ from apps.sgp.models import WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
 from apps.sgp.services.access import resolver_escopo
 
 
-def escopo_de_leitura_do_plano(user) -> tuple:
+def exigir_leitura_do_plano(user) -> tuple:
     """Escopo com que o usuário lê o Plano de Trabalho; 403 para quem não o lê.
 
     Pela matriz de permissões do Core (§2.1), o FGD lê o Plano de Trabalho,
@@ -23,13 +23,13 @@ def escopo_de_leitura_do_plano(user) -> tuple:
 
 
 def is_global_workplan_user(user) -> bool:
-    tipo, _ = escopo_de_leitura_do_plano(user)
+    tipo, _ = exigir_leitura_do_plano(user)
     return tipo == "global"
 
 
 def activity_scope_for_user(user, *, prefix: str = "atividades__") -> Q | None:
     """Retorna o filtro de atividade do usuário, ou ``None`` para visão global."""
-    tipo, valor = escopo_de_leitura_do_plano(user)
+    tipo, valor = exigir_leitura_do_plano(user)
 
     if tipo == "global":
         return None

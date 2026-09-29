@@ -3,9 +3,9 @@ from datetime import date
 
 import pytest
 from django.contrib.admin.sites import site
+from django.core.exceptions import ValidationError
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
-from django.core.exceptions import ValidationError
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -185,6 +185,67 @@ class TestLeitura:
         assert response.status_code == status.HTTP_200_OK
         assert [item["id"] for item in response.data["results"]] == [visivel.pk]
 
+    def test_articulador_so_lista_submetas_do_seu_estado(
+        self, auth_client_articulador_rn, meta, municipio_rn, municipio_ce
+    ):
+        visivel = WorkPlanSubmetaFactory(meta=meta, numero="1.1")
+        oculta = WorkPlanSubmetaFactory(meta=meta, numero="1.2")
+        ActivityFactory(acao=WorkPlanAcaoFactory(submeta=visivel, meta=meta), municipio=municipio_rn)
+        ActivityFactory(acao=WorkPlanAcaoFactory(submeta=oculta, meta=meta), municipio=municipio_ce)
+
+        response = auth_client_articulador_rn.get(URL)
+
+        assert [item["id"] for item in response.data["results"]] == [visivel.pk]
+
+    def test_fgd_le_as_submetas_de_todos_os_territorios(
+        self, usuario_fgd, meta, municipio_rn, municipio_ce
+    ):
+        rn = WorkPlanSubmetaFactory(meta=meta, numero="1.1")
+        ce = WorkPlanSubmetaFactory(meta=meta, numero="1.2")
+        ActivityFactory(acao=WorkPlanAcaoFactory(submeta=rn, meta=meta), municipio=municipio_rn)
+        ActivityFactory(acao=WorkPlanAcaoFactory(submeta=ce, meta=meta), municipio=municipio_ce)
+
+        response = _cliente(usuario_fgd).get(URL)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["id"] for item in response.data["results"]] == [rn.pk, ce.pk]
+
+    def test_agricultor_nao_le_submetas(self, usuario_sem_acesso, meta):
+        WorkPlanSubmetaFactory(meta=meta)
+
+        assert _cliente(usuario_sem_acesso).get(URL).status_code == status.HTTP_403_FORBIDDEN
+
+    @pytest.mark.parametrize("cliente", ["auth_client", "auth_client_adt_rn"])
+    def test_detalhe_da_meta_nao_cresce_com_as_submetas(
+        self, request, cliente, meta, municipio_rn, django_assert_num_queries
+    ):
+        cliente = request.getfixturevalue(cliente)
+        url = f"/api/v1/metas/{meta.pk}/"
+
+        def submeta_com_acao(numero):
+            submeta = WorkPlanSubmetaFactory(meta=meta, numero=numero, criado_por=UserFactory())
+            acao = WorkPlanAcaoFactory(submeta=submeta, meta=meta)
+            ActivityFactory(acao=acao, municipio=municipio_rn)
+
+        submeta_com_acao("1.1")
+        cliente.get(url)
+        with CaptureQueriesContext(connection) as uma:
+            cliente.get(url)
+        submeta_com_acao("1.2")
+        submeta_com_acao("1.10")
+        with django_assert_num_queries(len(uma.captured_queries)):
+            response = cliente.get(url)
+
+        assert [s["numero"] for s in response.data["submetas"]] == ["1.1", "1.2", "1.10"]
+
+    def test_listagem_em_ordem_numerica(self, auth_client, meta):
+        for numero in ("1.10", "1.2", "1.1"):
+            WorkPlanSubmetaFactory(meta=meta, numero=numero)
+
+        response = auth_client.get(URL)
+
+        assert [item["numero"] for item in response.data["results"]] == ["1.1", "1.2", "1.10"]
+
     def test_filtro_por_meta(self, auth_client, meta):
         da_meta = WorkPlanSubmetaFactory(meta=meta)
         WorkPlanSubmetaFactory(meta=WorkPlanMetaFactory(numero=2))
@@ -289,7 +350,8 @@ class TestConsistenciaComMeta:
 
     def test_status_da_meta_vem_das_submetas(self, meta):
         concluida = WorkPlanSubmetaFactory(meta=meta)
-        WorkPlanAcaoFactory(submeta=concluida, meta=meta, quantidade_planejada=0)
+        acao = WorkPlanAcaoFactory(submeta=concluida, meta=meta, quantidade_planejada=1)
+        ActivityFactory(acao=acao, status="concluido")
         assert meta.status_calculado == "concluida"
 
         pendente = WorkPlanSubmetaFactory(meta=meta)
@@ -298,37 +360,6 @@ class TestConsistenciaComMeta:
 
         meta.data_fim = date(2026, 1, 31)
         assert meta.status_calculado == "em_atraso"
-
-    def test_fgd_le_todas_as_submetas(self, usuario_fgd, meta, municipio_ce):
-        submeta = WorkPlanSubmetaFactory(meta=meta, numero="1.1")
-        ActivityFactory(acao=WorkPlanAcaoFactory(submeta=submeta, meta=meta), municipio=municipio_ce)
-
-        response = _cliente(usuario_fgd).get(URL)
-
-        assert response.status_code == status.HTTP_200_OK
-        assert [item["id"] for item in response.data["results"]] == [submeta.pk]
-
-    @pytest.mark.parametrize("cliente", ["auth_client", "auth_client_adt_rn"])
-    def test_detalhe_da_meta_nao_cresce_com_as_submetas(self, request, cliente, meta, municipio_rn):
-        cliente = request.getfixturevalue(cliente)
-        url = f"/api/v1/metas/{meta.pk}/"
-
-        def submeta_com_acao(numero):
-            submeta = WorkPlanSubmetaFactory(meta=meta, numero=numero, criado_por=UserFactory())
-            acao = WorkPlanAcaoFactory(submeta=submeta, meta=meta)
-            ActivityFactory(acao=acao, municipio=municipio_rn)
-
-        submeta_com_acao("1.1")
-        cliente.get(url)
-        with CaptureQueriesContext(connection) as uma:
-            cliente.get(url)
-        submeta_com_acao("1.2")
-        submeta_com_acao("1.10")
-        with CaptureQueriesContext(connection) as tres:
-            response = cliente.get(url)
-
-        assert [s["numero"] for s in response.data["submetas"]] == ["1.1", "1.2", "1.10"]
-        assert len(tres.captured_queries) == len(uma.captured_queries)
 
     def test_detalhe_da_meta_so_traz_submetas_do_escopo(
         self, auth_client_adt_rn, meta, municipio_rn, municipio_ce
@@ -432,6 +463,23 @@ class TestAcaoNaSubmeta:
         assert "numero" in response.data
         acao.refresh_from_db()
         assert acao.submeta_id == submeta.pk
+
+    @pytest.mark.parametrize("quantidade", ["0.00", "-1.00"])
+    def test_quantidade_planejada_precisa_ser_positiva(self, auth_client, submeta, quantidade):
+        payload = self._payload(submeta, IndicatorFactory(), quantidade_planejada=quantidade)
+
+        response = auth_client.post("/api/v1/acoes/", payload, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "quantidade_planejada" in response.data
+
+    def test_listagem_de_acoes_em_ordem_numerica(self, auth_client, submeta, meta):
+        for numero in ("1.1.10", "1.1.2", "1.1.1"):
+            WorkPlanAcaoFactory(submeta=submeta, meta=meta, numero=numero)
+
+        response = auth_client.get("/api/v1/acoes/", {"submeta": submeta.pk})
+
+        assert [item["numero"] for item in response.data["results"]] == ["1.1.1", "1.1.2", "1.1.10"]
 
     def test_campos_obrigatorios_da_acao(self, auth_client, submeta):
         obrigatorios = {

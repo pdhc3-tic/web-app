@@ -9,7 +9,7 @@ matriz de permissões do Core §2.1.
 | :--- | :--- | :--- | :--- |
 | Meta | `WorkPlanMeta` | `X` (1 a 7) | Não muda de número depois de ter Submetas (a numeração delas começa com `X`). O período precisa conter o de todas as Submetas. |
 | Submeta | `WorkPlanSubmeta` | `X.Y`, com `X` da Meta | Não muda de número nem de Meta depois de ter Ações (a numeração delas começa com `X.Y`). Período obrigatório, contido no da Meta. Responsável opcional, só usuário UGP. Sem orçamento próprio: só consolida as Ações. |
-| Ação | `WorkPlanAcao` | `X.Y.Z`, com `X.Y` da Submeta | Submeta, Indicador e período obrigatórios; período contido no da Submeta. `meta` é derivada da Submeta no `save()` e só leitura na API; enviar uma `meta` diferente da da Submeta dá 400. |
+| Ação | `WorkPlanAcao` | `X.Y.Z`, com `X.Y` da Submeta | Submeta, Indicador, quantidade planejada (maior que zero), valor unitário e período obrigatórios (SGP §5.5); período contido no da Submeta. `meta` é derivada da Submeta no `save()` e só leitura na API; enviar uma `meta` diferente da da Submeta dá 400. |
 | Indicador | `Indicator` | código curto (`IND-OFI`) | Catálogo institucional, compartilhado entre Ações de Metas diferentes. |
 
 A Ação continua gravando `meta` porque o orçamento (`BudgetAllocation.meta`),
@@ -86,7 +86,9 @@ manual) e o valor executado; `--check-only` só detecta.
 
 - **Ação:** valor total (quantidade × valor unitário), percentual realizado, custo unitário realizado (executado ÷ realizado) e status (`no_prazo`, `em_atraso`, `concluida`).
 - **Submeta:** soma das Ações (quantidades, valor total, valor executado). Fica `concluida` quando todas as Ações estão.
-- **Meta:** soma das Submetas. O status passa a derivar das Submetas.
+- **Meta:** soma das Submetas. O status é calculado com base nas Submetas (SGP §5.2): `concluida` quando todas estão; sem Submetas, `no_prazo`. O painel e a exportação usam a mesma regra.
+- A listagem e o detalhe da Meta trazem quantidade planejada, valor total planejado, valor executado e status (§10).
+- Submetas e Ações saem em ordem numérica ("1.2" antes de "1.10") em todo lugar: é a ordem padrão dos models.
 
 ## Endpoints
 
@@ -119,6 +121,7 @@ O `consolidado` traz quantidades, percentual realizado, progresso esperado,
 semáforo físico, status, valor total, valor executado, percentual financeiro
 e semáforo financeiro.
 - O semáforo físico é o de antes (realizado × progresso esperado).
+- Nó sem quantidade planejada (ou sem valor total, no financeiro) não tem percentual, então o semáforo vem nulo.
 - O financeiro usa os limiares 70/90 do Core (`budget_alert_yellow_pct` e `budget_alert_red_pct`, SGP §6.8) sobre executado ÷ planejado.
 - Cada Ação ganha `submeta` (id), `submeta_numero`, `submeta_titulo`, `indicador`, `valor_total`, `valor_executado`, `percentual_financeiro` e `semaforo_financeiro`.
 
@@ -128,7 +131,8 @@ e semáforo financeiro.
 - Quebras: `por_meta`, `por_submeta`, `por_territorio` e `por_periodo`. As quebras por território e por período trazem só o realizado, porque o planejado não é territorial nem datado, e não incluem Ações de apuração manual.
 - O período (filtro e quebra) vale pela data de término das Atividades.
 - `por_periodo` traz `inicio`, `fim` e `quantidade_realizada` de cada fatia, na granularidade pedida: `mes` (padrão, a cadência dos relatórios do SGP), `trimestre`, `semestre` ou `ano`. A resposta devolve a granularidade usada.
-- A série é contínua: vai do `periodo_inicio` ao `periodo_fim` pedidos (sem período, do primeiro ao último realizado), com zero nas fatias sem realizado. A primeira e a última fatia são recortadas às datas pedidas.
+- A série é contínua: vai do `periodo_inicio` ao `periodo_fim` pedidos, com zero nas fatias sem realizado. O extremo não informado vem do primeiro ou do último realizado e, sem realizado, do extremo informado. A primeira e a última fatia são recortadas às datas pedidas.
+- A série tem no máximo 120 fatias por Indicador (dez anos na granularidade mensal); acima disso a resposta é `400 periodo_longo_demais`.
 - Nas formas por soma de UFPAs e de participantes, cada fatia conta UFPAs e membros distintos dentro dela. Quem participou em mais de uma fatia conta em cada uma, então a soma das fatias pode passar do total do Indicador.
 - As granularidades ficam em `GRANULARIDADES` (`apps/sgp/services/visao_indicador.py`), cada uma definida pelo tamanho da fatia em meses. Uma nova entra com uma linha, desde que divida o ano em partes iguais (ex.: `"bimestre": Granularidade(meses=2)`). O agrupamento é feito no banco, então UFPAs e participantes continuam distintos dentro de cada fatia.
 
@@ -157,7 +161,7 @@ chaves `indicador`/`unidade_medida`.
 
 **O que já não funciona, mesmo com o alias:**
 - o valor numérico `tipo_unidade` (código de 1 a 12) não é mais devolvido;
-- o front não consegue criar nem editar Ação enviando `tipo_unidade`. A criação passou a exigir `submeta` e `indicador`, e o número passou a `X.Y.Z`.
+- o front não consegue criar nem editar Ação enviando `tipo_unidade`. A criação passou a exigir `submeta`, `indicador`, `quantidade_planejada` (maior que zero), `valor_unitario` e as datas, e o número passou a `X.Y.Z`.
 
 **Como remover** (quando o front e o Power BI tiverem migrado):
 1. apagar o campo `tipo_unidade_display` e o comentário que o acompanha em `WorkPlanAcaoSerializer`;

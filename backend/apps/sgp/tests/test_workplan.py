@@ -289,6 +289,15 @@ class TestMetaListagemDetalhe:
         assert response.data["numero"] == 1
         assert "acoes" in response.data
 
+    def test_list_traz_campos_automaticos(self, auth_client, meta):
+        WorkPlanAcaoFactory(meta=meta, quantidade_planejada=Decimal("2"), valor_unitario=Decimal("10"))
+
+        item = auth_client.get("/api/v1/metas/").data["results"][0]
+
+        assert (item["quantidade_planejada"], item["valor_total_planejado"], item["valor_executado"]) == (
+            "2.00", "20.00", "0.00"
+        )
+
     def test_list_queries_dont_grow_with_metas(self, auth_client, meta):
         WorkPlanAcaoFactory.create_batch(2, meta=meta)
         with CaptureQueriesContext(connection) as uma_meta:

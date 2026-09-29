@@ -17,9 +17,10 @@ from django.db.models import F, IntegerField, Value
 from django.db.models.functions import Cast, ExtractMonth, ExtractYear
 
 from apps.core.models import Territory
+from apps.sgp.exceptions import ErroComCodigo
 from apps.sgp.models import WorkPlanAcao
 from apps.sgp.models.indicator import FORMA_MANUAL
-from apps.sgp.models.workplan import arredondar, chave_do_numero, percentual
+from apps.sgp.models.workplan import NUMERO_EM_ORDEM, arredondar, percentual
 from apps.sgp.services.apuracao import (
     RecorteAtividades,
     expressao_quantidade_realizada,
@@ -59,6 +60,9 @@ class Granularidade:
     def seguinte(self, ano: int, fatia: int) -> tuple[int, int]:
         return (ano, fatia + 1) if fatia < 12 // self.meses else (ano + 1, 1)
 
+    def quantidade_entre(self, primeira: tuple[int, int], ultima: tuple[int, int]) -> int:
+        return (ultima[0] - primeira[0]) * (12 // self.meses) + ultima[1] - primeira[1] + 1
+
     def intervalo(self, ano: int, fatia: int) -> tuple[date, date]:
         primeiro_mes = (fatia - 1) * self.meses + 1
         ultimo_mes = primeiro_mes + self.meses - 1
@@ -77,6 +81,8 @@ GRANULARIDADES = {
     "ano": Granularidade(meses=12),
 }
 GRANULARIDADE_PADRAO = "mes"
+# Teto da série por Indicador: dez anos na granularidade mensal.
+LIMITE_DE_FATIAS = 120
 
 
 def _chaves_territorio(prefixo: str) -> dict:
@@ -123,20 +129,25 @@ def _serie_por_periodo(
     fatiamento: Granularidade, realizado: dict[tuple[int, int], int], recorte: RecorteAtividades
 ) -> list[dict]:
     """Fatias contínuas, com zero onde não houve realizado, do início ao fim do
-    período pedido (sem período, do primeiro ao último realizado). A primeira
-    e a última fatia são recortadas às datas pedidas."""
+    período pedido. O extremo não informado vem do primeiro ou do último
+    realizado e, sem realizado, do extremo informado. A primeira e a última
+    fatia são recortadas às datas pedidas."""
     fatias = sorted(realizado)
-    primeira = (
-        fatiamento.fatia_de(recorte.periodo_inicio) if recorte.periodo_inicio
-        else fatias[0] if fatias else None
-    )
-    ultima = (
-        fatiamento.fatia_de(recorte.periodo_fim) if recorte.periodo_fim
-        else fatias[-1] if fatias else None
-    )
+    inicio_pedido = fatiamento.fatia_de(recorte.periodo_inicio) if recorte.periodo_inicio else None
+    fim_pedido = fatiamento.fatia_de(recorte.periodo_fim) if recorte.periodo_fim else None
+    primeira = inicio_pedido or (fatias[0] if fatias else fim_pedido)
+    ultima = fim_pedido or (fatias[-1] if fatias else inicio_pedido)
+    if primeira is None:
+        return []
+    if fatiamento.quantidade_entre(primeira, ultima) > LIMITE_DE_FATIAS:
+        raise ErroComCodigo(
+            "periodo_longo_demais",
+            f"O período pedido passa de {LIMITE_DE_FATIAS} fatias na quebra por período. "
+            "Reduza o período ou use uma granularidade maior.",
+        )
     serie = []
     atual = primeira
-    while primeira and ultima and atual <= ultima:
+    while atual <= ultima:
         inicio, fim = fatiamento.intervalo(*atual)
         serie.append({
             "inicio": max(inicio, recorte.periodo_inicio or inicio),
@@ -164,10 +175,9 @@ def visao_por_indicador(
         acoes = acoes.filter(meta_id=meta_id)
     if indicador_id is not None:
         acoes = acoes.filter(indicador_id=indicador_id)
-    acoes = sorted(
-        acoes.annotate(_realizado=expressao_quantidade_realizada(filtro)),
-        key=lambda a: (a.indicador.codigo, a.meta.numero, chave_do_numero(a.numero)),
-    )
+    acoes = list(acoes.annotate(_realizado=expressao_quantidade_realizada(filtro)).order_by(
+        "indicador__codigo", "meta__numero", NUMERO_EM_ORDEM
+    ))
     realizado_territorial = realizado_agrupado(acoes, _chaves_territorio, filtro)
     realizado_por_fatia = realizado_agrupado(acoes, fatiamento.chaves, filtro)
 

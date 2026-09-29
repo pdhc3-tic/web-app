@@ -6,7 +6,6 @@ from rest_framework import serializers
 from apps.sgp.constants import ODS_CHOICES, STATUS_WORKPLAN
 from apps.sgp.models import Indicator, WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
 from apps.sgp.models.indicator import DESAGREGACAO_CHOICES, FORMA_MANUAL
-from apps.sgp.models.workplan import chave_do_numero
 from apps.sgp.services.visao_indicador import GRANULARIDADE_PADRAO, GRANULARIDADES
 from apps.sgp.services.workplan_access import (
     filter_workplan_actions_for_user,
@@ -65,20 +64,15 @@ class IndicatorSerializer(serializers.ModelSerializer):
             "confirma o recálculo das quantidades já apuradas."
         ),
     )
-    total_acoes = serializers.SerializerMethodField()
 
     class Meta:
         model = Indicator
         fields = [
             "id", "codigo", "nome", "unidade_medida", "forma_apuracao", "categoria",
-            "ods_ids", "desagregacoes", "ativo", "total_acoes", "confirmar_recalculo",
+            "ods_ids", "desagregacoes", "ativo", "confirmar_recalculo",
             "criado_por", "criado_em", "atualizado_em",
         ]
         read_only_fields = ["id", "criado_por", "criado_em", "atualizado_em"]
-
-    def get_total_acoes(self, obj) -> int:
-        anotado = getattr(obj, "_total_acoes", None)
-        return anotado if anotado is not None else obj.acoes.count()
 
     def validate_ods_ids(self, value):
         return _validar_ods(value)
@@ -282,7 +276,13 @@ def _acoes_visiveis(queryset, context):
 # ---------------------------------------------------------------------------
 
 class WorkPlanMetaListSerializer(serializers.ModelSerializer):
+    quantidade_planejada = serializers.DecimalField(
+        max_digits=14, decimal_places=2, read_only=True
+    )
     valor_total_planejado = serializers.DecimalField(
+        max_digits=14, decimal_places=2, read_only=True
+    )
+    valor_executado = serializers.DecimalField(
         max_digits=14, decimal_places=2, read_only=True
     )
     status_calculado = serializers.CharField(read_only=True)
@@ -296,7 +296,9 @@ class WorkPlanMetaListSerializer(serializers.ModelSerializer):
             "titulo",
             "data_inicio",
             "data_fim",
+            "quantidade_planejada",
             "valor_total_planejado",
+            "valor_executado",
             "status_calculado",
             "criado_por",
             "criado_em",
@@ -374,10 +376,7 @@ class WorkPlanMetaDetailSerializer(serializers.ModelSerializer):
         cache = self.__dict__.setdefault("_acoes_por_meta", {})
         if obj.pk not in cache:
             cache[obj.pk] = WorkPlanAcaoSerializer(
-                sorted(
-                    _acoes_visiveis(obj.acoes.all(), self.context),
-                    key=lambda acao: chave_do_numero(acao.numero),
-                ),
+                _acoes_visiveis(obj.acoes.all(), self.context),
                 many=True,
                 context=self.context,
             ).data
@@ -401,7 +400,7 @@ class WorkPlanMetaDetailSerializer(serializers.ModelSerializer):
                 **WorkPlanSubmetaSerializer(submeta, context=self.context).data,
                 "acoes": [acao for acao in acoes if acao["submeta"] == submeta.pk],
             }
-            for submeta in sorted(submetas, key=lambda s: chave_do_numero(s.numero))
+            for submeta in submetas
         ]
 
     def get_acoes(self, obj):
@@ -534,12 +533,12 @@ class WorkPlanDashboardNodeSerializer(serializers.Serializer):
     quantidade_realizada = serializers.DecimalField(max_digits=14, decimal_places=2)
     percentual_realizado = serializers.DecimalField(max_digits=7, decimal_places=2)
     progresso_esperado = serializers.DecimalField(max_digits=7, decimal_places=2)
-    semaforo = serializers.CharField()
+    semaforo = serializers.CharField(allow_null=True)
     status_execucao = serializers.CharField()
     valor_total = serializers.DecimalField(max_digits=14, decimal_places=2)
     valor_executado = serializers.DecimalField(max_digits=14, decimal_places=2)
     percentual_financeiro = serializers.DecimalField(max_digits=7, decimal_places=2)
-    semaforo_financeiro = serializers.CharField()
+    semaforo_financeiro = serializers.CharField(allow_null=True)
 
 
 class WorkPlanDashboardAcaoSerializer(serializers.Serializer):

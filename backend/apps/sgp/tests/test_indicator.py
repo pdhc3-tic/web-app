@@ -47,7 +47,6 @@ class TestCadastro:
 
         assert response.status_code == status.HTTP_201_CREATED, response.data
         assert response.data["codigo"] == "IND-TESTE"
-        assert response.data["total_acoes"] == 0
         indicador = Indicator.objects.get(pk=response.data["id"])
         assert indicador.criado_por == usuario
         assert AuditLog.objects.filter(acao="Indicator.create", entidade_id=str(indicador.pk)).exists()
@@ -138,7 +137,6 @@ class TestExclusaoEInativacao:
         response = auth_client.patch(_detalhe(acao.indicador_id), {"ativo": False}, format="json")
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["total_acoes"] == 1
         registro = AuditLog.objects.get(acao="Indicator.update", entidade_id=str(acao.indicador_id))
         assert (registro.valores_anteriores["ativo"], registro.valores_novos["ativo"]) == (True, False)
 

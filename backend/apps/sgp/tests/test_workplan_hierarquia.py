@@ -326,6 +326,36 @@ class TestVisaoPorPeriodo:
             ("2026-03-01", 1), ("2026-04-01", 0), ("2026-05-01", 1),
         ]
 
+    def test_so_o_inicio_vai_ate_o_ultimo_realizado(self, auth_client, arvore):
+        response = auth_client.get(VISAO_URL, {"periodo_inicio": "2026-04-15"})
+
+        [item] = response.data["indicadores"]
+        assert item["por_periodo"] == [
+            {"inicio": "2026-04-15", "fim": "2026-04-30", "quantidade_realizada": 0},
+            {"inicio": "2026-05-01", "fim": "2026-05-31", "quantidade_realizada": 0},
+            {"inicio": "2026-06-01", "fim": "2026-06-30", "quantidade_realizada": 5},
+        ]
+
+    def test_um_extremo_sem_realizado_traz_a_fatia_pedida(self, auth_client, meta):
+        indicador = IndicatorFactory()
+        WorkPlanAcaoFactory(meta=meta, indicador=indicador)
+
+        response = auth_client.get(
+            VISAO_URL, {"indicador_id": indicador.pk, "periodo_fim": "2026-03-20"}
+        )
+
+        assert response.data["indicadores"][0]["por_periodo"] == [
+            {"inicio": "2026-03-01", "fim": "2026-03-20", "quantidade_realizada": 0},
+        ]
+
+    def test_periodo_longo_demais_retorna_400(self, auth_client, arvore):
+        response = auth_client.get(
+            VISAO_URL, {"periodo_inicio": "2000-01-01", "periodo_fim": "2026-12-31"}
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.data["code"] == "periodo_longo_demais"
+
     def test_granularidade_precisa_dividir_o_ano(self):
         with pytest.raises(ValueError):
             Granularidade(meses=5)
@@ -371,6 +401,22 @@ class TestExportacao:
         )
         assert (s1_linha["Quantidade planejada"], s1_linha["Quantidade realizada"]) == ("20.00", "4")
         assert (vazia["Valor total"], vazia["Quantidade realizada"]) == ("0.00", "0")
+        # Sem planejado não há percentual para o semáforo.
+        assert vazia["Semáforo"] == ""
+
+    def test_status_da_meta_vem_das_submetas(self, auth_client, meta):
+        acao = WorkPlanAcaoFactory(meta=meta, quantidade_planejada=1)
+        ActivityFactory(acao=acao, status="concluido")
+        WorkPlanSubmetaFactory(meta=meta, numero="1.9")
+
+        response = auth_client.get(EXPORT_URL, {"formato": "csv"})
+
+        linhas = list(csv.reader(io.StringIO(response.content.decode("utf-8-sig"))))
+        registros = [dict(zip(linhas[0], linha)) for linha in linhas[1:]]
+        por_nivel = {r["Nível"]: r for r in registros if r["Número da Submeta"] != "1.9"}
+        assert por_nivel["Ação"]["Status de execução"] == "concluida"
+        # A Submeta 1.9 ainda não tem Ações, então a Meta não está concluída.
+        assert por_nivel["Meta"]["Status de execução"] != "concluida"
 
     def test_total_por_meta_nao_muda(self, arvore):
         linhas = workplan_export_rows()
@@ -378,10 +424,40 @@ class TestExportacao:
 
         assert total == Decimal("2500.00")
 
+    def test_power_bi_tem_uma_linha_por_acao_com_a_submeta(self, arvore):
+        linhas = workplan_export_rows()
+
+        assert {linha["nivel"] for linha in linhas} == {"Ação"}
+        a1 = next(linha for linha in linhas if linha["acao"].startswith("1.1.1 "))
+        assert (a1["submeta_numero"], a1["submeta_titulo"]) == ("1.1", arvore["s1"].titulo)
+
     def test_power_bi_mantem_alias_tipo_unidade(self, arvore):
         linha = workplan_export_rows()[0]
 
         assert linha["tipo_unidade"] == "Oficinas"
+
+
+class TestLeituraPorPerfil:
+    @pytest.mark.parametrize("url,params", [
+        (PAINEL_URL, {}), (VISAO_URL, {}), (EXPORT_URL, {"formato": "csv"}),
+    ])
+    def test_agricultor_nao_le(self, auth_client_sem_acesso, arvore, url, params):
+        assert auth_client_sem_acesso.get(url, params).status_code == status.HTTP_403_FORBIDDEN
+
+    def test_fgd_le_o_plano_inteiro(self, auth_client_fgd, arvore, municipio_ce):
+        outro_territorio = WorkPlanAcaoFactory(
+            meta=arvore["a1"].meta, submeta=arvore["s2"], numero="1.2.9", indicador=arvore["indicador"],
+        )
+        ActivityFactory(acao=outro_territorio, status="concluido", municipio=municipio_ce)
+
+        painel = auth_client_fgd.get(PAINEL_URL)
+        visao = auth_client_fgd.get(VISAO_URL)
+        exportacao = auth_client_fgd.get(EXPORT_URL, {"formato": "csv"})
+
+        ids = {acao["id"] for grupo in painel.data["metas"] for acao in grupo["acoes"]}
+        assert {arvore["a1"].pk, arvore["a2"].pk, outro_territorio.pk} <= ids
+        assert visao.data["indicadores"][0]["quantidade_realizada"] == "6.00"
+        assert outro_territorio.descricao in exportacao.content.decode("utf-8-sig")
 
 
 class TestAtividades:

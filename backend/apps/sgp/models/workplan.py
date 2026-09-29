@@ -2,9 +2,11 @@ import re
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.conf import settings
+from django.contrib.postgres.fields import ArrayField
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.db.models.functions import Cast
 from django.utils import timezone
 
 from apps.sgp.constants import STATUS_CONCLUIDA, STATUS_EM_ATRASO, STATUS_NO_PRAZO
@@ -23,9 +25,11 @@ def validate_numero_acao(value):
         raise ValidationError("Formato inválido. Use X.Y.Z (ex: 1.1.1, 2.3.4).")
 
 
-def chave_do_numero(numero: str) -> tuple[int, ...]:
-    """Ordena números X.Y e X.Y.Z como números ("1.2" antes de "1.10")."""
-    return tuple(int(parte) for parte in numero.split("."))
+# Ordena números X.Y e X.Y.Z como números ("1.2" antes de "1.10") no banco.
+NUMERO_EM_ORDEM = Cast(
+    models.Func(models.F("numero"), models.Value("."), function="string_to_array"),
+    output_field=ArrayField(models.IntegerField()),
+)
 
 
 # Cálculos de execução do Plano de Trabalho. Os properties dos models e o
@@ -37,6 +41,15 @@ def status_execucao(concluida: bool, data_fim, hoje=None) -> str:
     if data_fim and (hoje or timezone.localdate()) > data_fim:
         return STATUS_EM_ATRASO
     return STATUS_NO_PRAZO
+
+
+def status_da_meta(status_das_submetas: list[str], data_fim, hoje=None) -> str:
+    """Status da Meta calculado com base nas Submetas (SGP §5.2)."""
+    if not status_das_submetas:
+        return STATUS_NO_PRAZO
+    return status_execucao(
+        all(status == STATUS_CONCLUIDA for status in status_das_submetas), data_fim, hoje
+    )
 
 
 def percentual(parte, total) -> Decimal:
@@ -169,12 +182,7 @@ class WorkPlanMeta(models.Model):
 
     @property
     def status_calculado(self):
-        submetas = list(self.submetas.all())
-        if not submetas:
-            return STATUS_NO_PRAZO
-        return status_execucao(
-            all(s.status_execucao == STATUS_CONCLUIDA for s in submetas), self.data_fim
-        )
+        return status_da_meta([s.status_execucao for s in self.submetas.all()], self.data_fim)
 
 
 class WorkPlanSubmeta(models.Model):
@@ -221,7 +229,7 @@ class WorkPlanSubmeta(models.Model):
     class Meta:
         verbose_name = "Submeta do Plano de Trabalho"
         verbose_name_plural = "Submetas do Plano de Trabalho"
-        ordering = ["meta", "numero"]
+        ordering = ["meta", NUMERO_EM_ORDEM]
         constraints = [
             models.UniqueConstraint(
                 fields=["meta", "numero"], name="unique_numero_submeta_por_meta",
@@ -372,7 +380,7 @@ class WorkPlanAcao(models.Model):
     class Meta:
         verbose_name = "Ação do Plano de Trabalho"
         verbose_name_plural = "Ações do Plano de Trabalho"
-        ordering = ["meta", "numero"]
+        ordering = ["meta", NUMERO_EM_ORDEM]
         constraints = [
             models.UniqueConstraint(
                 fields=["submeta", "numero"],
@@ -400,6 +408,8 @@ class WorkPlanAcao(models.Model):
 
     def clean(self):
         erros = _erros_no_pai(self, self.submeta if self.submeta_id else None, "Ação", "Submeta")
+        if self.quantidade_planejada is not None and self.quantidade_planejada <= 0:
+            erros["quantidade_planejada"] = "A quantidade planejada precisa ser maior que zero."
         if self.indicador_id and not self.indicador.ativo:
             # Ação que já usa um Indicador inativo continua válida; só não se
             # vincula (nem se troca para) um inativo.
