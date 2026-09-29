@@ -433,15 +433,19 @@ class TestAcaoNaSubmeta:
         acao.refresh_from_db()
         assert acao.submeta_id == submeta.pk
 
-    def test_submeta_indicador_e_datas_obrigatorios(self, auth_client, submeta):
+    def test_campos_obrigatorios_da_acao(self, auth_client, submeta):
+        obrigatorios = {
+            "submeta", "indicador", "quantidade_planejada", "valor_unitario",
+            "data_inicio", "data_fim",
+        }
         payload = self._payload(submeta, IndicatorFactory())
-        for campo in ("submeta", "indicador", "data_inicio", "data_fim"):
+        for campo in obrigatorios:
             del payload[campo]
 
         response = auth_client.post("/api/v1/acoes/", payload, format="json")
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert {"submeta", "indicador", "data_inicio", "data_fim"} <= set(response.data)
+        assert obrigatorios <= set(response.data)
 
     def test_filtros_por_submeta_e_indicador(self, auth_client, submeta, meta):
         acao = WorkPlanAcaoFactory(submeta=submeta, meta=meta)

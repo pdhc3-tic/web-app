@@ -162,6 +162,11 @@ class WorkPlanAcaoSerializer(serializers.ModelSerializer):
             "criado_em",
             "atualizado_em",
         ]
+        # Obrigatórios pelo SGP §5.5; o default 0 do model só serve às migrations.
+        extra_kwargs = {
+            "quantidade_planejada": {"required": True},
+            "valor_unitario": {"required": True},
+        }
         # A unicidade (submeta, numero) é checada em `validate`, com mensagem própria.
         validators = []
 
