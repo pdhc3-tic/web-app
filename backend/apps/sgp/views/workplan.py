@@ -201,8 +201,10 @@ class WorkPlanMetaViewSet(viewsets.ModelViewSet):
         return [IsAuthenticatedActiveAccess()]
 
     def get_queryset(self):
-        # Totais e status da Meta somam as Submetas e as Ações delas.
-        qs = WorkPlanMeta.objects.select_related("criado_por").prefetch_related("submetas__acoes")
+        qs = WorkPlanMeta.objects.all()
+        if self.action in ("list", "retrieve"):
+            # Totais e status da Meta somam as Submetas e as Ações delas.
+            qs = qs.select_related("criado_por").prefetch_related("submetas__acoes")
 
         user = self.request.user
         if not user.is_authenticated:
@@ -273,12 +275,12 @@ class WorkPlanMetaViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-        if instance.submetas.exists():
+        if instance.acoes.exists():
             return Response(
                 {
                     "detail": (
                         "Não é possível excluir esta Meta: "
-                        "existem Submetas vinculadas a ela."
+                        "existem Ações vinculadas a ela."
                     )
                 },
                 status=status.HTTP_400_BAD_REQUEST,

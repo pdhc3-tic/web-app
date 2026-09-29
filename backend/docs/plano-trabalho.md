@@ -7,23 +7,20 @@ matriz de permissões do Core §2.1.
 
 | Nível | Model | Numeração | Regras |
 | :--- | :--- | :--- | :--- |
-| Meta | `WorkPlanMeta` | `X` (1 a 7) | Não muda de número depois de ter Submetas (a numeração delas começa com `X`). O período precisa conter o de todas as Submetas. Com Submetas, a API não a exclui (400). |
-| Submeta | `WorkPlanSubmeta` | `X.Y`, com `X` da Meta | Período obrigatório, contido no da Meta. Responsável opcional, só usuário UGP. Sem orçamento próprio: só consolida as Ações. |
+| Meta | `WorkPlanMeta` | `X` (1 a 7) | Não muda de número depois de ter Submetas (a numeração delas começa com `X`). O período precisa conter o de todas as Submetas. |
+| Submeta | `WorkPlanSubmeta` | `X.Y`, com `X` da Meta | Não muda de número nem de Meta depois de ter Ações (a numeração delas começa com `X.Y`). Período obrigatório, contido no da Meta. Responsável opcional, só usuário UGP. Sem orçamento próprio: só consolida as Ações. |
 | Ação | `WorkPlanAcao` | `X.Y.Z`, com `X.Y` da Submeta | Submeta, Indicador e período obrigatórios; período contido no da Submeta. `meta` é derivada da Submeta no `save()` e só leitura na API. |
 | Indicador | `Indicator` | código curto (`IND-OFI`) | Catálogo institucional, compartilhado entre Ações de Metas diferentes. |
 
 A Ação continua gravando `meta` porque o orçamento (`BudgetAllocation.meta`),
-o SGD e os filtros por Meta leem dela. Mudar o número ou a Meta de uma Submeta
-renumera as Ações dela e atualiza a Meta delas.
+o SGD e os filtros por Meta leem dela.
 
-As regras da tabela ficam nos models: `clean()` valida (prefixo, períodos,
-filhos que ficariam fora do novo período, responsável da UGP, Indicador
-inativo) e o `save()` da Submeta renumera as Ações. A API chama o `clean()`
-pelos serializers, então as regras valem igual na API e no admin do Django.
-No admin, a forma de apuração de um Indicador em uso é só leitura, porque a
-troca exige a confirmação e a auditoria da API; o número e a Meta de uma
-Submeta com Ações também, porque as Ações do inline seriam validadas e
-gravadas com o número antigo.
+As regras da tabela ficam no `clean()` dos models (prefixo, períodos, filhos
+que ficariam fora do novo período, número de Meta e Submeta com filhos,
+responsável da UGP, Indicador inativo). A API chama o `clean()` pelos
+serializers, então as regras valem igual na API e no admin do Django. No
+admin, a forma de apuração de um Indicador em uso é só leitura, porque a troca
+exige a confirmação e a auditoria da API.
 
 ### Migração dos dados (0033–0035)
 
@@ -103,7 +100,7 @@ manual) e o valor executado; `--check-only` só detecta.
 | GET | `/api/v1/sgp/plano-trabalho/exportar/` | Escopo territorial |
 
 **Filtros**
-- `/sgp/indicadores/`: `?ativo=`, `?categoria=`, `?forma_apuracao=`, `?unidade_medida=`, `?q=` (código ou nome).
+- `/sgp/indicadores/`: `?ativo=`, `?categoria=`, `?forma_apuracao=`, `?q=` (código ou nome).
 - `/sgp/submetas/`: `?meta=`.
 - `/acoes/`: `?meta=`, `?submeta=`, `?indicador=`.
 - `/sgp/atividades/`: `?meta=`, `?submeta=`, `?indicador=` (RF15).

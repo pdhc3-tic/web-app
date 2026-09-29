@@ -195,21 +195,22 @@ Foram implementadas a exportação do Plano de Trabalho em CSV/XLSX e uma API au
 O módulo `apps/sgp/services/workplan_export.py` é a fonte única do dataset exportável. Ele evita duplicação entre exportação manual e Power BI, retornando as colunas:
 
 1. Meta
-2. Submeta
-3. Ação
-4. Indicador
-5. Unidade de medida
-6. Forma de apuração
-7. Quantidade planejada
-8. Valor unitário
-9. Valor total
-10. Quantidade realizada
-11. Percentual realizado
-12. Valor executado
-13. Custo unitário realizado
-14. Saldo (valor total − valor executado)
-15. Status de execução
-16. Semáforo
+2. Número da Submeta
+3. Título da Submeta
+4. Ação
+5. Indicador
+6. Unidade de medida
+7. Forma de apuração
+8. Quantidade planejada
+9. Valor unitário
+10. Valor total
+11. Quantidade realizada
+12. Percentual realizado
+13. Valor executado
+14. Custo unitário realizado
+15. Saldo (valor total − valor executado)
+16. Status de execução
+17. Semáforo
 
 A quantidade realizada segue a forma de apuração do Indicador e é apurada só
 sobre as Atividades no escopo do usuário (ver `backend/docs/plano-trabalho.md`).
@@ -357,7 +358,8 @@ Status: 200 OK
   "resultados": [
     {
       "meta": "1 - Meta de exemplo",
-      "submeta": "1.1 - Submeta de exemplo",
+      "submeta_numero": "1.1",
+      "submeta_titulo": "Submeta de exemplo",
       "acao": "1.1.1 - Ação de exemplo",
       "indicador": "IND-SEM - Seminário",
       "unidade_medida": "Evento",

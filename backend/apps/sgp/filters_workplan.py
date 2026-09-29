@@ -73,7 +73,7 @@ class IndicatorFilter(django_filters.FilterSet):
 
     class Meta:
         model = Indicator
-        fields = ["ativo", "categoria", "forma_apuracao", "unidade_medida", "q"]
+        fields = ["ativo", "categoria", "forma_apuracao", "q"]
 
     def filter_q(self, queryset, name, value):
         return queryset.filter(Q(codigo__icontains=value) | Q(nome__icontains=value))

@@ -67,7 +67,8 @@ class TestWorkPlanExport:
         assert list(rows[0]) == [label for _, label in EXPORT_COLUMNS]
         linha = dict(zip(rows[0], rows[1]))
         assert linha["Ação"] == f"{action.numero} - {action.descricao}"
-        assert linha["Submeta"] == f"{action.submeta.numero} - {action.submeta.titulo}"
+        assert linha["Número da Submeta"] == action.submeta.numero
+        assert linha["Título da Submeta"] == action.submeta.titulo
 
     def test_rejects_unsupported_format(self, auth_client):
         response = auth_client.get(f"{EXPORT_URL}?formato=pdf")

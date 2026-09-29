@@ -273,13 +273,7 @@ class TestMetaExclusao:
         WorkPlanAcaoFactory(meta=meta)
         response = auth_client.delete(f"/api/v1/metas/{meta.pk}/")
         assert response.status_code == 400
-        assert "Submetas vinculadas" in response.data["detail"]
-        assert WorkPlanMeta.objects.filter(pk=meta.pk).exists()
-
-    def test_delete_with_submetas_without_acoes_returns_400(self, auth_client, meta):
-        WorkPlanSubmetaFactory(meta=meta)
-        response = auth_client.delete(f"/api/v1/metas/{meta.pk}/")
-        assert response.status_code == 400
+        assert "Ações vinculadas" in response.data["detail"]
         assert WorkPlanMeta.objects.filter(pk=meta.pk).exists()
 
 

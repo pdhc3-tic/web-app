@@ -254,9 +254,10 @@ class TestExportacao:
         assert linhas[0] == [label for _, label in EXPORT_COLUMNS]
         assert "Tipo/Unidade" not in linhas[0]
         registro = next(
-            dict(zip(linhas[0], linha)) for linha in linhas[1:] if linha[2].startswith("1.1.1")
+            r for r in (dict(zip(linhas[0], linha)) for linha in linhas[1:])
+            if r["Ação"].startswith("1.1.1")
         )
-        assert registro["Submeta"].startswith("1.1 - ")
+        assert registro["Número da Submeta"] == "1.1"
         assert registro["Indicador"] == "TST-OFI - Oficinas"
         assert registro["Unidade de medida"] == "Evento"
         assert registro["Valor executado"] == "800.00"

@@ -158,9 +158,13 @@ class TestPermissoes:
     def test_ugp_e_super_admin_escrevem(self, auth_client, payload, usuario_super_admin):
         assert auth_client.post(URL, payload, format="json").status_code == status.HTTP_201_CREATED
         segunda = {**payload, "numero": "1.2"}
+        super_admin = _cliente(usuario_super_admin)
+        response = super_admin.post(URL, segunda, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
+
         assert (
-            _cliente(usuario_super_admin).post(URL, segunda, format="json").status_code
-            == status.HTTP_201_CREATED
+            super_admin.patch(_detalhe(response.data["id"]), {"titulo": "Y"}, format="json").status_code
+            == status.HTTP_200_OK
         )
 
 
@@ -217,34 +221,31 @@ class TestEdicaoEExclusao:
         assert auth_client.delete(_detalhe(submeta.pk)).status_code == status.HTTP_204_NO_CONTENT
         assert AuditLog.objects.filter(acao="WorkPlanSubmeta.delete").exists()
 
-    def test_renumerar_submeta_renumera_as_acoes(self, auth_client, meta):
+    def test_renumerar_submeta_sem_acoes_audita_antes_e_depois(self, auth_client, meta):
         submeta = WorkPlanSubmetaFactory(meta=meta, numero="1.1")
-        acao = WorkPlanAcaoFactory(submeta=submeta, meta=meta, numero="1.1.3")
 
         response = auth_client.patch(_detalhe(submeta.pk), {"numero": "1.4"}, format="json")
 
         assert response.status_code == status.HTTP_200_OK, response.data
-        acao.refresh_from_db()
-        assert acao.numero == "1.4.3"
         registro = AuditLog.objects.get(acao="WorkPlanSubmeta.update")
         assert registro.valores_anteriores["numero"] == "1.1"
         assert registro.valores_novos["numero"] == "1.4"
 
-    def test_mover_submeta_de_meta_leva_as_acoes(self, auth_client, meta):
+    @pytest.mark.parametrize("mudanca", ["numero", "meta"])
+    def test_submeta_com_acoes_nao_muda_de_numero_nem_de_meta(self, auth_client, meta, mudanca):
         outra = WorkPlanMetaFactory(
             numero=2, data_inicio=meta.data_inicio, data_fim=meta.data_fim
         )
         submeta = WorkPlanSubmetaFactory(meta=meta, numero="1.1")
         acao = WorkPlanAcaoFactory(submeta=submeta, meta=meta, numero="1.1.1")
+        dados = {"numero": {"numero": "1.4"}, "meta": {"meta": outra.pk, "numero": "2.1"}}[mudanca]
 
-        response = auth_client.patch(
-            _detalhe(submeta.pk), {"meta": outra.pk, "numero": "2.1"}, format="json"
-        )
+        response = auth_client.patch(_detalhe(submeta.pk), dados, format="json")
 
-        assert response.status_code == status.HTTP_200_OK, response.data
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "numero" in response.data
         acao.refresh_from_db()
-        assert acao.meta_id == outra.pk
-        assert acao.numero == "2.1.1"
+        assert (acao.numero, acao.meta_id) == ("1.1.1", meta.pk)
 
     def test_novo_periodo_nao_pode_deixar_acoes_de_fora(self, auth_client, meta):
         submeta = WorkPlanSubmetaFactory(meta=meta)
@@ -376,14 +377,15 @@ class TestAcaoNaSubmeta:
         acao.refresh_from_db()
         assert acao.submeta_id == submeta.pk
 
-    def test_submeta_e_indicador_obrigatorios(self, auth_client, submeta):
+    def test_submeta_indicador_e_datas_obrigatorios(self, auth_client, submeta):
         payload = self._payload(submeta, IndicatorFactory())
-        del payload["submeta"], payload["indicador"]
+        for campo in ("submeta", "indicador", "data_inicio", "data_fim"):
+            del payload[campo]
 
         response = auth_client.post("/api/v1/acoes/", payload, format="json")
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert {"submeta", "indicador"} <= set(response.data)
+        assert {"submeta", "indicador", "data_inicio", "data_fim"} <= set(response.data)
 
     def test_filtros_por_submeta_e_indicador(self, auth_client, submeta, meta):
         acao = WorkPlanAcaoFactory(submeta=submeta, meta=meta)
@@ -408,16 +410,14 @@ class TestRegrasValemForaDaApi:
     """As regras moram nos models: o admin do Django (e qualquer outro caminho
     que salve pelo ORM) não consegue deixar a hierarquia inconsistente."""
 
-    def test_mudar_numero_e_meta_da_submeta_renumera_as_acoes(self, meta):
-        outra = WorkPlanMetaFactory(numero=2, data_inicio=meta.data_inicio, data_fim=meta.data_fim)
-        submeta = WorkPlanSubmetaFactory(meta=meta, numero="1.1")
-        acao = WorkPlanAcaoFactory(submeta=submeta, meta=meta, numero="1.1.4")
+    def test_submeta_com_acoes_nao_muda_de_numero_no_clean(self, submeta, meta):
+        WorkPlanAcaoFactory(submeta=submeta, meta=meta, numero="1.1.1")
+        submeta.numero = "1.4"
 
-        submeta.meta, submeta.numero = outra, "2.3"
-        submeta.save()
+        with pytest.raises(ValidationError) as erro:
+            submeta.clean()
 
-        acao.refresh_from_db()
-        assert (acao.numero, acao.meta_id) == ("2.3.4", outra.pk)
+        assert "numero" in erro.value.message_dict
 
     def test_responsavel_fora_da_ugp_nao_passa_no_clean(self, meta, usuario_adt_rn):
         submeta = WorkPlanSubmetaFactory(meta=meta, numero="1.1", responsavel=None)
@@ -465,14 +465,6 @@ class TestRegrasValemForaDaApi:
         acao.refresh_from_db()
 
         acao.clean()
-
-    def test_admin_nao_muda_numero_nem_meta_de_submeta_com_acoes(self, rf, submeta, meta):
-        admin_da_submeta = site._registry[WorkPlanSubmeta]
-        WorkPlanAcaoFactory(submeta=submeta, meta=meta)
-        vazia = WorkPlanSubmetaFactory(meta=meta, numero="1.2")
-
-        assert {"meta", "numero"} <= set(admin_da_submeta.get_readonly_fields(rf.get("/"), submeta))
-        assert not {"meta", "numero"} & set(admin_da_submeta.get_readonly_fields(rf.get("/"), vazia))
 
     def test_admin_nao_troca_forma_de_apuracao_de_indicador_em_uso(self, rf, submeta, meta):
         admin_do_indicador = site._registry[Indicator]

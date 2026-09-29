@@ -155,6 +155,8 @@ class TestExclusaoEInativacao:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.data["total_acoes"] == 1
+        registro = AuditLog.objects.get(acao="Indicator.update", entidade_id=str(acao.indicador_id))
+        assert (registro.valores_anteriores["ativo"], registro.valores_novos["ativo"]) == (True, False)
 
     def test_indicador_inativo_nao_entra_em_acao_nova(self, auth_client):
         submeta = WorkPlanSubmetaFactory()

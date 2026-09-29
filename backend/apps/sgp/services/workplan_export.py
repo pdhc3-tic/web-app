@@ -17,7 +17,8 @@ from apps.sgp.services.workplan_dashboard import dashboard_actions, enrich_dashb
 
 EXPORT_COLUMNS = (
     ("meta", "Meta"),
-    ("submeta", "Submeta"),
+    ("submeta_numero", "Número da Submeta"),
+    ("submeta_titulo", "Título da Submeta"),
     ("acao", "Ação"),
     ("indicador", "Indicador"),
     ("unidade_medida", "Unidade de medida"),
@@ -81,7 +82,8 @@ def _serialize_action(action: WorkPlanAcao) -> dict[str, str]:
     custo = custo_unitario(valor_executado, action.dashboard_quantidade_realizada)
     return {
         "meta": f"{action.meta.numero} - {action.meta.titulo}",
-        "submeta": f"{action.submeta.numero} - {action.submeta.titulo}",
+        "submeta_numero": action.submeta.numero,
+        "submeta_titulo": action.submeta.titulo,
         "acao": f"{action.numero} - {action.descricao}",
         "indicador": f"{action.indicador.codigo} - {action.indicador.nome}",
         "unidade_medida": action.indicador.get_unidade_medida_display(),

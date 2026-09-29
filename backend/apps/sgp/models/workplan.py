@@ -4,7 +4,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
-from django.db import models, transaction
+from django.db import models
 from django.utils import timezone
 
 from apps.sgp.constants import STATUS_CONCLUIDA, STATUS_EM_ATRASO, STATUS_NO_PRAZO
@@ -227,23 +227,20 @@ class WorkPlanSubmeta(models.Model):
     def __str__(self):
         return f"{self.numero} – {self.titulo}"
 
-    def save(self, *args, **kwargs):
-        # As Ações carregam o número da Submeta como prefixo e a Meta como campo
-        # derivado: as duas coisas acompanham a Submeta.
-        with transaction.atomic():
-            anterior = valores_gravados(self, "numero", "meta_id")
-            super().save(*args, **kwargs)
-            if anterior and (anterior["numero"], anterior["meta_id"]) != (self.numero, self.meta_id):
-                acoes = list(self.acoes.all())
-                for acao in acoes:
-                    acao.numero = f"{self.numero}.{acao.numero.rsplit('.', 1)[-1]}"
-                    acao.meta_id = self.meta_id
-                WorkPlanAcao.objects.bulk_update(acoes, ["numero", "meta"])
-
     def clean(self):
         from apps.core.services.permissions import user_has_role
 
         erros = _erros_no_pai(self, self.meta if self.meta_id else None, "Submeta", "Meta")
+        gravado = valores_gravados(self, "numero", "meta_id")
+        if (
+            gravado
+            and (gravado["numero"], gravado["meta_id"]) != (self.numero, self.meta_id)
+            and self.acoes.exists()
+        ):
+            erros["numero"] = (
+                "Não é possível mudar o número nem a Meta de uma Submeta que já tem Ações: "
+                "a numeração delas começa com o número da Submeta."
+            )
         if self.responsavel_id and not user_has_role(self.responsavel, "ugp"):
             erros["responsavel"] = "O responsável precisa ser um usuário da UGP."
         if self.pk and not erros.keys() & {"data_inicio", "data_fim"}:
