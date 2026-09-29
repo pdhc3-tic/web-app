@@ -86,7 +86,7 @@ manual) e o valor executado; `--check-only` só detecta.
 
 - **Ação:** valor total (quantidade × valor unitário), percentual realizado, custo unitário realizado (executado ÷ realizado) e status (`no_prazo`, `em_atraso`, `concluida`).
 - **Submeta:** soma das Ações (quantidades, valor total, valor executado). Fica `concluida` quando todas as Ações estão.
-- **Meta:** soma das Submetas. O status é calculado com base nas Submetas (SGP §5.2): `concluida` quando todas estão; sem Submetas, `no_prazo`. O painel e a exportação usam a mesma regra.
+- **Meta:** soma das Submetas. O status é calculado com base nas Submetas (SGP §5.2): `concluida` quando todas estão; sem Submetas, `no_prazo`. O painel e a exportação usam a mesma regra e contam também as Submetas ainda sem Ações.
 - A listagem e o detalhe da Meta trazem quantidade planejada, valor total planejado, valor executado e status (§10).
 - Submetas e Ações saem em ordem numérica ("1.2" antes de "1.10") em todo lugar: é a ordem padrão dos models.
 
@@ -109,7 +109,7 @@ tudo, porque não tem papel com escopo territorial; o Agricultor não lê
 **Filtros**
 - `/sgp/indicadores/`: `?ativo=`, `?categoria=`, `?forma_apuracao=`, `?q=` (código ou nome).
 - `/sgp/submetas/`: `?meta=`.
-- `/acoes/`: `?meta=`, `?submeta=`, `?indicador=`.
+- `/acoes/`: `?meta=`, `?submeta=`, `?indicador=`. A Ação expõe também `rubricas_previstas` (SGP §5.5), lista de ids de rubrica.
 - `/sgp/atividades/`: `?meta=`, `?submeta=`, `?indicador=` (RF15).
 
 **Painel (RF23)**
@@ -121,7 +121,7 @@ O `consolidado` traz quantidades, percentual realizado, progresso esperado,
 semáforo físico, status, valor total, valor executado, percentual financeiro
 e semáforo financeiro.
 - O semáforo físico é o de antes (realizado × progresso esperado).
-- Nó sem quantidade planejada (ou sem valor total, no financeiro) não tem percentual, então o semáforo vem nulo.
+- Sem quantidade planejada (ou sem valor total, no financeiro) não há percentual, então o semáforo vem nulo, no nó e na Ação.
 - O financeiro usa os limiares 70/90 do Core (`budget_alert_yellow_pct` e `budget_alert_red_pct`, SGP §6.8) sobre executado ÷ planejado.
 - Cada Ação ganha `submeta` (id), `submeta_numero`, `submeta_titulo`, `indicador`, `valor_total`, `valor_executado`, `percentual_financeiro` e `semaforo_financeiro`.
 
@@ -132,7 +132,7 @@ e semáforo financeiro.
 - O período (filtro e quebra) vale pela data de término das Atividades.
 - `por_periodo` traz `inicio`, `fim` e `quantidade_realizada` de cada fatia, na granularidade pedida: `mes` (padrão, a cadência dos relatórios do SGP), `trimestre`, `semestre` ou `ano`. A resposta devolve a granularidade usada.
 - A série é contínua: vai do `periodo_inicio` ao `periodo_fim` pedidos, com zero nas fatias sem realizado. O extremo não informado vem do primeiro ou do último realizado e, sem realizado, do extremo informado. A primeira e a última fatia são recortadas às datas pedidas.
-- A série tem no máximo 120 fatias por Indicador (dez anos na granularidade mensal); acima disso a resposta é `400 periodo_longo_demais`.
+- A série tem no máximo 120 fatias por Indicador (dez anos na granularidade mensal). Com período pedido acima disso, a resposta é `400 periodo_longo_demais`; sem período pedido, a série fica com as 120 fatias mais recentes, para que uma data fora da realidade numa Atividade não derrube a visão.
 - Nas formas por soma de UFPAs e de participantes, cada fatia conta UFPAs e membros distintos dentro dela. Quem participou em mais de uma fatia conta em cada uma, então a soma das fatias pode passar do total do Indicador.
 - As granularidades ficam em `GRANULARIDADES` (`apps/sgp/services/visao_indicador.py`), cada uma definida pelo tamanho da fatia em meses. Uma nova entra com uma linha, desde que divida o ano em partes iguais (ex.: `"bimestre": Granularidade(meses=2)`). O agrupamento é feito no banco, então UFPAs e participantes continuam distintos dentro de cada fatia.
 

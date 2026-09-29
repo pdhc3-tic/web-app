@@ -138,6 +138,7 @@ class WorkPlanAcaoSerializer(serializers.ModelSerializer):
             "quantidade_planejada",
             "valor_unitario",
             "valor_total",
+            "rubricas_previstas",
             "quantidade_realizada",
             "percentual_realizado",
             "valor_executado",
@@ -265,7 +266,9 @@ class WorkPlanSubmetaDetailSerializer(WorkPlanSubmetaSerializer):
 
 def _acoes_visiveis(queryset, context):
     request = context.get("request")
-    queryset = queryset.select_related("submeta", "indicador")
+    queryset = queryset.select_related("submeta", "indicador").prefetch_related(
+        "rubricas_previstas"
+    )
     if request is not None and request.user.is_authenticated:
         queryset = filter_workplan_actions_for_user(queryset, request.user)
     return queryset
@@ -591,7 +594,7 @@ class WorkPlanDashboardAcaoSerializer(serializers.Serializer):
         read_only=True,
     )
     semaforo_financeiro = serializers.CharField(
-        source="dashboard_semaforo_financeiro", read_only=True
+        source="dashboard_semaforo_financeiro", read_only=True, allow_null=True
     )
     data_inicio = serializers.DateField(read_only=True)
     data_fim = serializers.DateField(read_only=True)

@@ -43,13 +43,12 @@ def status_execucao(concluida: bool, data_fim, hoje=None) -> str:
     return STATUS_NO_PRAZO
 
 
-def status_da_meta(status_das_submetas: list[str], data_fim, hoje=None) -> str:
-    """Status da Meta calculado com base nas Submetas (SGP §5.2)."""
-    if not status_das_submetas:
+def status_da_meta(submetas_concluidas: list[bool], data_fim, hoje=None) -> str:
+    """Status da Meta calculado com base nas Submetas (SGP §5.2): um item por
+    Submeta, dizendo se ela está concluída."""
+    if not submetas_concluidas:
         return STATUS_NO_PRAZO
-    return status_execucao(
-        all(status == STATUS_CONCLUIDA for status in status_das_submetas), data_fim, hoje
-    )
+    return status_execucao(all(submetas_concluidas), data_fim, hoje)
 
 
 def percentual(parte, total) -> Decimal:
@@ -103,7 +102,7 @@ def _filhos_fora_do_periodo(filhos, data_inicio, data_fim) -> list[str]:
         return []
     return list(
         filhos.exclude(data_inicio__gte=data_inicio, data_fim__lte=data_fim)
-        .order_by("numero")
+        .order_by(NUMERO_EM_ORDEM)
         .values_list("numero", flat=True)
     )
 
@@ -182,7 +181,9 @@ class WorkPlanMeta(models.Model):
 
     @property
     def status_calculado(self):
-        return status_da_meta([s.status_execucao for s in self.submetas.all()], self.data_fim)
+        return status_da_meta(
+            [s.status_execucao == STATUS_CONCLUIDA for s in self.submetas.all()], self.data_fim
+        )
 
 
 class WorkPlanSubmeta(models.Model):
@@ -327,12 +328,16 @@ class WorkPlanAcao(models.Model):
         max_digits=12,
         decimal_places=2,
         default=0,
+        validators=[MinValueValidator(
+            Decimal("0.01"), message="A quantidade planejada precisa ser maior que zero."
+        )],
         verbose_name="Quantidade Planejada",
     )
     valor_unitario = models.DecimalField(
         max_digits=12,
         decimal_places=2,
         default=0,
+        validators=[MinValueValidator(0, message="O valor unitário não pode ser negativo.")],
         verbose_name="Valor Unitário (R$)",
     )
     data_inicio = models.DateField(verbose_name="Data de Início")
@@ -408,8 +413,6 @@ class WorkPlanAcao(models.Model):
 
     def clean(self):
         erros = _erros_no_pai(self, self.submeta if self.submeta_id else None, "Ação", "Submeta")
-        if self.quantidade_planejada is not None and self.quantidade_planejada <= 0:
-            erros["quantidade_planejada"] = "A quantidade planejada precisa ser maior que zero."
         if self.indicador_id and not self.indicador.ativo:
             # Ação que já usa um Indicador inativo continua válida; só não se
             # vincula (nem se troca para) um inativo.

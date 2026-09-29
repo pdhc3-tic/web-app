@@ -14,6 +14,7 @@ from apps.core.tests.factories import UserFactory
 from apps.sgp.models import Indicator, WorkPlanSubmeta
 from apps.sgp.tests.factories import (
     ActivityFactory,
+    BudgetRubricaFactory,
     IndicatorFactory,
     WorkPlanAcaoFactory,
     WorkPlanMetaFactory,
@@ -27,6 +28,11 @@ URL = "/api/v1/sgp/submetas/"
 
 def _detalhe(pk):
     return f"{URL}{pk}/"
+
+
+def _pendente(data_fim):
+    """Status de algo não concluído: `no_prazo` até a data de término."""
+    return "no_prazo" if date.today() <= data_fim else "em_atraso"
 
 
 @pytest.fixture
@@ -265,7 +271,7 @@ class TestLeitura:
         assert len(response.data["acoes"]) == 2
         assert response.data["quantidade_planejada"] == "15.00"
         assert response.data["valor_total"] == "1100.00"
-        assert response.data["status_execucao"] == "no_prazo"
+        assert response.data["status_execucao"] == _pendente(submeta.data_fim)
 
 
 class TestEdicaoEExclusao:
@@ -356,7 +362,7 @@ class TestConsistenciaComMeta:
 
         pendente = WorkPlanSubmetaFactory(meta=meta)
         WorkPlanAcaoFactory(submeta=pendente, meta=meta, quantidade_planejada=5)
-        assert meta.status_calculado == "no_prazo"
+        assert meta.status_calculado == _pendente(meta.data_fim)
 
         meta.data_fim = date(2026, 1, 31)
         assert meta.status_calculado == "em_atraso"
@@ -480,6 +486,25 @@ class TestAcaoNaSubmeta:
         response = auth_client.get("/api/v1/acoes/", {"submeta": submeta.pk})
 
         assert [item["numero"] for item in response.data["results"]] == ["1.1.1", "1.1.2", "1.1.10"]
+
+    def test_valor_unitario_negativo_retorna_400(self, auth_client, submeta):
+        payload = self._payload(submeta, IndicatorFactory(), valor_unitario="-1.00")
+
+        response = auth_client.post("/api/v1/acoes/", payload, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "valor_unitario" in response.data
+
+    def test_rubricas_previstas_na_api(self, auth_client, submeta):
+        rubricas = BudgetRubricaFactory.create_batch(2)
+        payload = self._payload(
+            submeta, IndicatorFactory(), rubricas_previstas=[r.pk for r in rubricas]
+        )
+
+        response = auth_client.post("/api/v1/acoes/", payload, format="json")
+
+        assert response.status_code == status.HTTP_201_CREATED, response.data
+        assert sorted(response.data["rubricas_previstas"]) == sorted(r.pk for r in rubricas)
 
     def test_campos_obrigatorios_da_acao(self, auth_client, submeta):
         obrigatorios = {

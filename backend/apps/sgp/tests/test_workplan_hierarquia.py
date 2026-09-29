@@ -125,6 +125,25 @@ class TestValorExecutado:
 
 
 class TestPainelEmArvore:
+    def test_status_da_meta_conta_submetas_sem_acoes(self, auth_client, meta):
+        acao = WorkPlanAcaoFactory(meta=meta, quantidade_planejada=1)
+        ActivityFactory(acao=acao, status="concluido")
+        WorkPlanSubmetaFactory(meta=meta, numero="1.9")
+
+        grupo = auth_client.get(PAINEL_URL).data["metas"][0]
+
+        assert grupo["submetas"][0]["consolidado"]["status_execucao"] == "concluida"
+        # A Submeta 1.9 ainda não tem Ações: a Meta não está concluída (SGP §5.2).
+        assert grupo["consolidado"]["status_execucao"] != "concluida"
+
+    def test_sem_valor_total_o_semaforo_financeiro_e_nulo(self, auth_client, meta):
+        WorkPlanAcaoFactory(meta=meta, valor_unitario=0)
+
+        grupo = auth_client.get(PAINEL_URL).data["metas"][0]
+
+        assert grupo["acoes"][0]["semaforo_financeiro"] is None
+        assert grupo["submetas"][0]["consolidado"]["semaforo_financeiro"] is None
+
     def test_submetas_como_nos_com_consolidados_e_semaforos(self, auth_client, arvore):
         _concluir_demanda(arvore["atividades"][0], Decimal("800.00"))
 
@@ -347,6 +366,21 @@ class TestVisaoPorPeriodo:
         assert response.data["indicadores"][0]["por_periodo"] == [
             {"inicio": "2026-03-01", "fim": "2026-03-20", "quantidade_realizada": 0},
         ]
+
+    def test_sem_periodo_pedido_fica_com_as_fatias_mais_recentes(self, auth_client, arvore):
+        atividade = arvore["atividades"][0]
+        atividade.data_inicio = timezone.make_aware(datetime(2000, 1, 1, 8))
+        atividade.data_fim = timezone.make_aware(datetime(2000, 1, 1, 12))
+        atividade.save()
+
+        response = auth_client.get(VISAO_URL)
+
+        assert response.status_code == status.HTTP_200_OK
+        [item] = response.data["indicadores"]
+        assert len(item["por_periodo"]) == 120
+        assert item["por_periodo"][-1] == {
+            "inicio": "2026-06-01", "fim": "2026-06-30", "quantidade_realizada": 4,
+        }
 
     def test_periodo_longo_demais_retorna_400(self, auth_client, arvore):
         response = auth_client.get(

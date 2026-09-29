@@ -1,6 +1,7 @@
 """Consultas e indicadores do painel de acompanhamento do Plano de Trabalho."""
 
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
 from typing import Iterable
@@ -84,7 +85,9 @@ def enrich_dashboard_action(
     )
     action.dashboard_valor_executado = valor_executado
     action.dashboard_percentual_financeiro = arredondar(percentual_financeiro)
-    action.dashboard_semaforo_financeiro = faixa_semaforo(percentual_financeiro, limiares)
+    action.dashboard_semaforo_financeiro = _semaforo_financeiro(
+        percentual_financeiro, valor_total, limiares
+    )
     return action
 
 
@@ -110,12 +113,9 @@ def summarize_node(
     node: WorkPlanMeta | WorkPlanSubmeta,
     today: date,
     limiares: LimiaresSemaforo,
-    status: str | None = None,
 ) -> NodeSummary:
-    """O período do progresso esperado é o do `node`. O status sai das Ações,
-    a não ser que venha pronto: o da Meta é calculado com base nas Submetas
-    (SGP §5.2). Sem planejado, não há percentual para o semáforo, que fica
-    nulo."""
+    """O período do progresso esperado é o do `node` e o status sai das Ações.
+    Sem planejado, não há percentual para o semáforo, que fica nulo."""
     acoes = list(acoes)
     planejado = sum((Decimal(a.quantidade_planejada) for a in acoes), ZERO)
     realizado = sum((a.dashboard_quantidade_realizada for a in acoes), ZERO)
@@ -125,37 +125,45 @@ def summarize_node(
     percentual_realizado = percentual(realizado, planejado)
     progresso_esperado = _expected_progress(node.data_inicio, node.data_fim, today)
     percentual_financeiro = percentual(valor_executado, valor_total)
-    if status is None:
-        concluido = bool(acoes) and all(
-            a.dashboard_status_execucao == STATUS_CONCLUIDA for a in acoes
-        )
-        status = status_execucao(concluido, node.data_fim, today)
+    concluido = bool(acoes) and all(
+        a.dashboard_status_execucao == STATUS_CONCLUIDA for a in acoes
+    )
     return NodeSummary(
         quantidade_planejada=planejado,
         quantidade_realizada=realizado,
         percentual_realizado=arredondar(percentual_realizado),
         progresso_esperado=arredondar(progresso_esperado),
         semaforo=_semaphore(percentual_realizado, progresso_esperado) if planejado > ZERO else None,
-        status_execucao=status,
+        status_execucao=status_execucao(concluido, node.data_fim, today),
         valor_total=valor_total,
         valor_executado=valor_executado,
         percentual_financeiro=arredondar(percentual_financeiro),
-        semaforo_financeiro=(
-            faixa_semaforo(percentual_financeiro, limiares) if valor_total > ZERO else None
-        ),
+        semaforo_financeiro=_semaforo_financeiro(percentual_financeiro, valor_total, limiares),
     )
 
 
 def summarize_meta(
     acoes: Iterable[WorkPlanAcao],
     meta: WorkPlanMeta,
-    submetas: list[NodeSummary],
+    consolidados_das_submetas: list[NodeSummary],
+    submetas_sem_acoes: int,
     today: date,
     limiares: LimiaresSemaforo,
 ) -> NodeSummary:
-    """Consolidado da Meta, com o status tirado das Submetas (SGP §5.2)."""
-    status = status_da_meta([submeta.status_execucao for submeta in submetas], meta.data_fim, today)
-    return summarize_node(acoes, meta, today, limiares, status=status)
+    """Consolidado da Meta, com o status calculado com base nas Submetas (SGP
+    §5.2), pela mesma regra do model: as Submetas ainda sem Ações também
+    contam, como não concluídas."""
+    concluidas = [c.status_execucao == STATUS_CONCLUIDA for c in consolidados_das_submetas]
+    status = status_da_meta(concluidas + [False] * submetas_sem_acoes, meta.data_fim, today)
+    return replace(summarize_node(acoes, meta, today, limiares), status_execucao=status)
+
+
+def submetas_sem_acoes_por_meta(meta_ids) -> Counter:
+    return Counter(
+        WorkPlanSubmeta.objects.filter(meta_id__in=meta_ids, acoes__isnull=True)
+        .order_by()
+        .values_list("meta_id", flat=True)
+    )
 
 
 def dashboard_tree(
@@ -181,6 +189,7 @@ def dashboard_tree(
         grupo["acoes"].append(acao)
         grupo["submetas"].setdefault(acao.submeta_id, (acao.submeta, []))[1].append(acao)
 
+    vazias = submetas_sem_acoes_por_meta(metas)
     arvore = []
     for grupo in metas.values():
         grupo["submetas"] = [
@@ -193,7 +202,7 @@ def dashboard_tree(
         ]
         grupo["consolidado"] = summarize_meta(
             grupo["acoes"], grupo["meta"], [no["consolidado"] for no in grupo["submetas"]],
-            today, limiares,
+            vazias[grupo["meta"].pk], today, limiares,
         )
         arvore.append(grupo)
     return arvore
@@ -210,6 +219,13 @@ def _expected_progress(data_inicio: date, data_fim: date, today: date) -> Decima
     if total_days <= 0:
         return CEM
     return Decimal((today - data_inicio).days) / Decimal(total_days) * CEM
+
+
+def _semaforo_financeiro(
+    percentual_financeiro: Decimal, valor_total: Decimal, limiares: LimiaresSemaforo
+) -> str | None:
+    """Sem valor total não há percentual financeiro, e o semáforo fica nulo."""
+    return faixa_semaforo(percentual_financeiro, limiares) if valor_total > ZERO else None
 
 
 def _semaphore(percentual_realizado: Decimal, progresso_esperado: Decimal) -> str:

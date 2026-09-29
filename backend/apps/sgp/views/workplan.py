@@ -46,7 +46,7 @@ from apps.sgp.services import workplan_cadastro
 from apps.sgp.services.exportacao import exportar_sincrono
 from apps.sgp.views.exportacao import arquivo_response
 from apps.sgp.services.workplan_access import (
-    exigir_leitura_do_plano,
+    escopo_de_leitura_do_plano,
     filter_workplan_actions_for_user,
     filter_workplan_metas_for_user,
     filter_workplan_submetas_for_user,
@@ -336,7 +336,9 @@ class WorkPlanAcaoViewSet(viewsets.ModelViewSet):
         return [IsAuthenticatedActiveAccess()]
 
     def get_queryset(self):
-        qs = WorkPlanAcao.objects.select_related("meta", "submeta", "indicador")
+        qs = WorkPlanAcao.objects.select_related("meta", "submeta", "indicador").prefetch_related(
+            "rubricas_previstas"
+        )
 
         user = self.request.user
         if not user.is_authenticated:
@@ -452,7 +454,8 @@ class IndicatorViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return qs.none()
 
-        exigir_leitura_do_plano(user)
+        # O catálogo não tem recorte territorial: só a checagem de quem lê o PT (403).
+        escopo_de_leitura_do_plano(user)
         return qs
 
     def perform_create(self, serializer):

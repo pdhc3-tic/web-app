@@ -57,11 +57,13 @@ class Granularidade:
     def fatia_de(self, dia: date) -> tuple[int, int]:
         return dia.year, (dia.month - 1) // self.meses + 1
 
-    def seguinte(self, ano: int, fatia: int) -> tuple[int, int]:
-        return (ano, fatia + 1) if fatia < 12 // self.meses else (ano + 1, 1)
+    def indice(self, ano: int, fatia: int) -> int:
+        """Posição contínua da fatia no tempo, para contar e percorrer fatias."""
+        return ano * (12 // self.meses) + fatia - 1
 
-    def quantidade_entre(self, primeira: tuple[int, int], ultima: tuple[int, int]) -> int:
-        return (ultima[0] - primeira[0]) * (12 // self.meses) + ultima[1] - primeira[1] + 1
+    def fatia_do_indice(self, indice: int) -> tuple[int, int]:
+        ano, resto = divmod(indice, 12 // self.meses)
+        return ano, resto + 1
 
     def intervalo(self, ano: int, fatia: int) -> tuple[date, date]:
         primeiro_mes = (fatia - 1) * self.meses + 1
@@ -131,7 +133,11 @@ def _serie_por_periodo(
     """Fatias contínuas, com zero onde não houve realizado, do início ao fim do
     período pedido. O extremo não informado vem do primeiro ou do último
     realizado e, sem realizado, do extremo informado. A primeira e a última
-    fatia são recortadas às datas pedidas."""
+    fatia são recortadas às datas pedidas.
+
+    Período pedido acima de LIMITE_DE_FATIAS dá 400. Sem período pedido, a
+    série fica com as LIMITE_DE_FATIAS fatias mais recentes: uma data fora da
+    realidade numa Atividade não derruba a visão."""
     fatias = sorted(realizado)
     inicio_pedido = fatiamento.fatia_de(recorte.periodo_inicio) if recorte.periodo_inicio else None
     fim_pedido = fatiamento.fatia_de(recorte.periodo_fim) if recorte.periodo_fim else None
@@ -139,22 +145,24 @@ def _serie_por_periodo(
     ultima = fim_pedido or (fatias[-1] if fatias else inicio_pedido)
     if primeira is None:
         return []
-    if fatiamento.quantidade_entre(primeira, ultima) > LIMITE_DE_FATIAS:
-        raise ErroComCodigo(
-            "periodo_longo_demais",
-            f"O período pedido passa de {LIMITE_DE_FATIAS} fatias na quebra por período. "
-            "Reduza o período ou use uma granularidade maior.",
-        )
+    de, ate = fatiamento.indice(*primeira), fatiamento.indice(*ultima)
+    if ate - de + 1 > LIMITE_DE_FATIAS:
+        if recorte.periodo_inicio or recorte.periodo_fim:
+            raise ErroComCodigo(
+                "periodo_longo_demais",
+                f"O período pedido passa de {LIMITE_DE_FATIAS} fatias na quebra por período. "
+                "Reduza o período ou use uma granularidade maior.",
+            )
+        de = ate - LIMITE_DE_FATIAS + 1
     serie = []
-    atual = primeira
-    while atual <= ultima:
-        inicio, fim = fatiamento.intervalo(*atual)
+    for indice in range(de, ate + 1):
+        fatia = fatiamento.fatia_do_indice(indice)
+        inicio, fim = fatiamento.intervalo(*fatia)
         serie.append({
             "inicio": max(inicio, recorte.periodo_inicio or inicio),
             "fim": min(fim, recorte.periodo_fim or fim),
-            "quantidade_realizada": realizado.get(atual, 0),
+            "quantidade_realizada": realizado.get(fatia, 0),
         })
-        atual = fatiamento.seguinte(*atual)
     return serie
 
 

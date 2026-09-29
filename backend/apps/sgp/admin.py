@@ -126,13 +126,6 @@ class WorkPlanAcaoInline(admin.TabularInline):
     autocomplete_fields = ["indicador"]
 
 
-class WorkPlanSubmetaInline(admin.TabularInline):
-    model = WorkPlanSubmeta
-    extra = 0
-    fields = ["numero", "titulo", "data_inicio", "data_fim", "responsavel"]
-    show_change_link = True
-
-
 @admin.register(WorkPlanMeta)
 class WorkPlanMetaAdmin(admin.ModelAdmin):
     list_display = [
@@ -145,8 +138,6 @@ class WorkPlanMetaAdmin(admin.ModelAdmin):
         "valor_total_planejado", "status_calculado",
         "criado_por", "criado_em", "atualizado_em",
     ]
-    inlines = [WorkPlanSubmetaInline]
-
     def get_queryset(self, request):
         # Os totais e o status da listagem somam as Submetas e as Ações delas.
         return super().get_queryset(request).prefetch_related("submetas__acoes")

@@ -22,6 +22,7 @@ from apps.sgp.services.workplan_dashboard import (
     NodeSummary,
     dashboard_actions,
     enrich_dashboard_action,
+    submetas_sem_acoes_por_meta,
     summarize_meta,
     summarize_node,
 )
@@ -85,13 +86,16 @@ def workplan_export_tree_rows(
         metas = metas.filter(pk__in={acao.meta_id for acao in acoes})
 
     hoje = date.today()
+    vazias = submetas_sem_acoes_por_meta([meta.pk for meta in metas])
     linhas = []
     for meta in metas:
         submetas = [s for s in meta.submetas.all() if completa or s.pk in por_submeta]
         consolidados = [summarize_node(por_submeta[s.pk], s, hoje, limiares) for s in submetas]
         acoes_da_meta = [acao for submeta in submetas for acao in por_submeta[submeta.pk]]
+        com_acoes = [c for s, c in zip(submetas, consolidados) if por_submeta[s.pk]]
         linhas.append(_serialize_node(
-            "Meta", meta, None, summarize_meta(acoes_da_meta, meta, consolidados, hoje, limiares)
+            "Meta", meta, None,
+            summarize_meta(acoes_da_meta, meta, com_acoes, vazias[meta.pk], hoje, limiares),
         ))
         for submeta, consolidado in zip(submetas, consolidados):
             linhas.append(_serialize_node("Submeta", meta, submeta, consolidado))
