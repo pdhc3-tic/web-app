@@ -21,13 +21,13 @@ from apps.sgp.serializers import (
     MembroExportQuerySerializer,
     MembroListSerializer,
 )
+from apps.sgp.services.access import upfs_acessiveis_ao_usuario
 from apps.sgp.services.membro_export import (
     MEMBROS_EXPORT_UPF_LIMIT,
     ExportLimitExceeded,
     membro_export_rows_for_scope,
     membro_export_rows_for_upf,
 )
-from apps.sgp.views.upf import upfs_acessiveis_ao_usuario
 
 
 def data_limite_aniversario(hoje, anos):

@@ -1,11 +1,7 @@
 import logging
-import csv
-from io import BytesIO, StringIO
 
-from django.db.models import F, Sum
-from django.http import HttpResponse
+from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
@@ -21,32 +17,51 @@ from apps.core.permissions import IsSuperAdmin, IsUGP
 from apps.core.authentication import PowerBIServiceTokenAuthentication
 from apps.core.throttling import PowerBIServiceTokenThrottle
 from apps.core.services.permissions import user_has_role
-from apps.sgp.filters_workplan import WorkPlanAcaoFilter, WorkPlanMetaFilter
-from apps.sgp.models import WorkPlanAcao, WorkPlanMeta
+from apps.sgp.filters_workplan import (
+    IndicatorFilter,
+    WorkPlanAcaoFilter,
+    WorkPlanMetaFilter,
+    WorkPlanSubmetaFilter,
+)
+from apps.sgp.models import ExportJob, Indicator, WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
 from apps.sgp.pagination import UPFPagination
 from apps.sgp.serializers_workplan import (
+    IndicatorSerializer,
     WorkPlanAcaoListSerializer,
     WorkPlanAcaoSerializer,
-    WorkPlanMetaDetailSerializer,
-    WorkPlanMetaListSerializer,
     WorkPlanDashboardAcaoSerializer,
     WorkPlanDashboardMetaSerializer,
+    WorkPlanDashboardNodeSerializer,
     WorkPlanDashboardQuerySerializer,
-    WorkPlanExportQuerySerializer,
+    WorkPlanDashboardSubmetaSerializer,
+    WorkPlanMetaDetailSerializer,
+    WorkPlanMetaListSerializer,
+    WorkPlanSubmetaDetailSerializer,
+    WorkPlanSubmetaSerializer,
+    VisaoPorIndicadorRespostaSerializer,
+    WorkPlanVisaoIndicadorQuerySerializer,
 )
 from apps.sgp.cache import get_power_bi_snapshot
-from apps.sgp.services.workplan_export import EXPORT_COLUMNS, workplan_export_rows
+from apps.sgp.services import workplan_cadastro
+from apps.sgp.services.exportacao import exportar_sincrono
+from apps.sgp.views.exportacao import arquivo_response
 from apps.sgp.services.workplan_access import (
+    escopo_de_leitura_do_plano,
     filter_workplan_actions_for_user,
     filter_workplan_metas_for_user,
+    filter_workplan_submetas_for_user,
 )
 from apps.sgp.tasks import refresh_power_bi_snapshot
 from apps.sgp.services.workplan_dashboard import (
     apply_dashboard_filters,
     dashboard_actions_for_user,
+    dashboard_tree,
     enrich_dashboard_action,
 )
 from apps.sgp.services import budget as budget_service
+from apps.sgp.services.budget import limiares_semaforo
+from apps.sgp.services.apuracao import RecorteAtividades
+from apps.sgp.services.visao_indicador import visao_por_indicador
 from apps.sgp.serializers_budget import BudgetRubricaOrcamentoSerializer
 
 logger = logging.getLogger("apps.sgp.views.workplan")
@@ -58,51 +73,40 @@ class WorkPlanExportView(APIView):
     permission_classes = [IsAuthenticatedActiveAccess]
 
     def get(self, request):
-        query_serializer = WorkPlanExportQuerySerializer(data=request.query_params)
+        arquivo = exportar_sincrono(
+            ExportJob.Tipo.PLANO_TRABALHO, user=request.user, params=request.query_params.dict()
+        )
+        return arquivo_response(arquivo)
+
+
+class WorkPlanVisaoIndicadorView(APIView):
+    """GET /api/v1/sgp/plano-trabalho/indicadores/ — consolidação por Indicador
+    entre Ações de Metas e Submetas diferentes, no escopo do usuário."""
+
+    permission_classes = [IsAuthenticatedActiveAccess]
+
+    @extend_schema(
+        parameters=[WorkPlanVisaoIndicadorQuerySerializer],
+        responses=VisaoPorIndicadorRespostaSerializer,
+    )
+    def get(self, request):
+        query_serializer = WorkPlanVisaoIndicadorQuerySerializer(data=request.query_params)
         query_serializer.is_valid(raise_exception=True)
-        options = query_serializer.validated_data
-        formato = options.pop("formato")
-        rows = workplan_export_rows(user=request.user, **options)
-        timestamp = timezone.localtime().strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f"plano_trabalho_{timestamp}.{formato}"
-
-        if formato == "csv":
-            return self._csv_response(rows, filename)
-        return self._xlsx_response(rows, filename)
-
-    @staticmethod
-    def _csv_response(rows, filename):
-        content = StringIO()
-        writer = csv.writer(content)
-        writer.writerow([label for _, label in EXPORT_COLUMNS])
-        for row in rows:
-            writer.writerow([row[key] for key, _ in EXPORT_COLUMNS])
-        response = HttpResponse(
-            "\ufeff" + content.getvalue(),
-            content_type="text/csv; charset=utf-8",
-        )
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return response
-
-    @staticmethod
-    def _xlsx_response(rows, filename):
-        from openpyxl import Workbook
-
-        workbook = Workbook(write_only=True)
-        worksheet = workbook.create_sheet("Plano de Trabalho")
-        worksheet.append([label for _, label in EXPORT_COLUMNS])
-        for row in rows:
-            worksheet.append([row[key] for key, _ in EXPORT_COLUMNS])
-        content = BytesIO()
-        workbook.save(content)
-        response = HttpResponse(
-            content.getvalue(),
-            content_type=(
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        dados = query_serializer.validated_data
+        grupos = visao_por_indicador(
+            request.user,
+            recorte=RecorteAtividades(
+                territorio_id=dados.get("territorio_id"),
+                periodo_inicio=dados.get("periodo_inicio"),
+                periodo_fim=dados.get("periodo_fim"),
             ),
+            meta_id=dados.get("meta_id"),
+            indicador_id=dados.get("indicador_id"),
+            granularidade=dados["granularidade"],
         )
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return response
+        return Response(VisaoPorIndicadorRespostaSerializer(
+            {"granularidade": dados["granularidade"], "indicadores": grupos}
+        ).data)
 
 
 class WorkPlanPowerBIView(APIView):
@@ -136,7 +140,8 @@ class WorkPlanDashboardView(APIView):
                 for key, value in query_serializer.validated_data.items()
                 if key in {"meta_id", "territorio_id"}
             })
-            actions = [enrich_dashboard_action(action) for action in actions]
+            limiares = limiares_semaforo()
+            actions = [enrich_dashboard_action(action, limiares=limiares) for action in actions]
 
             status_execucao = query_serializer.validated_data.get("status_execucao")
             if status_execucao:
@@ -145,32 +150,25 @@ class WorkPlanDashboardView(APIView):
                     if action.dashboard_status_execucao == status_execucao
                 ]
 
-            metas = {}
-            for action in actions:
-                grupo = metas.setdefault(action.meta_id, {
-                    "meta": action.meta,
-                    "resumo": {
-                        "total_acoes": 0,
-                        "verde": 0,
-                        "amarelo": 0,
-                        "vermelho": 0,
-                    },
-                    "acoes": [],
-                })
-                grupo["resumo"]["total_acoes"] += 1
-                grupo["resumo"][action.dashboard_semaforo] += 1
-                grupo["acoes"].append(action)
-
             return Response({
                 "metas": [
                     {
                         "meta": WorkPlanDashboardMetaSerializer(grupo["meta"]).data,
                         "resumo": grupo["resumo"],
+                        "consolidado": WorkPlanDashboardNodeSerializer(grupo["consolidado"]).data,
+                        "submetas": [
+                            {
+                                "submeta": WorkPlanDashboardSubmetaSerializer(no["submeta"]).data,
+                                "consolidado": WorkPlanDashboardNodeSerializer(no["consolidado"]).data,
+                                "acoes": no["acoes"],
+                            }
+                            for no in grupo["submetas"]
+                        ],
                         "acoes": WorkPlanDashboardAcaoSerializer(
                             grupo["acoes"], many=True
                         ).data,
                     }
-                    for grupo in metas.values()
+                    for grupo in dashboard_tree(actions, limiares)
                 ],
             })
         except PermissionDenied:
@@ -207,9 +205,16 @@ class WorkPlanMetaViewSet(viewsets.ModelViewSet):
         return [IsAuthenticatedActiveAccess()]
 
     def get_queryset(self):
-        qs = WorkPlanMeta.objects.annotate(
-            _valor_total=Sum(F("acoes__quantidade_planejada") * F("acoes__valor_unitario"))
-        ).all()
+        qs = WorkPlanMeta.objects.all()
+        if self.action in ("list", "retrieve"):
+            # Totais e status da Meta somam as Submetas e as Ações delas.
+            submetas = WorkPlanSubmeta.objects.all()
+            if self.action == "retrieve":
+                # O detalhe serializa cada Submeta, com quem a criou.
+                submetas = submetas.select_related("criado_por")
+            qs = qs.select_related("criado_por").prefetch_related(
+                Prefetch("submetas", queryset=submetas), "submetas__acoes"
+            )
 
         user = self.request.user
         if not user.is_authenticated:
@@ -331,7 +336,9 @@ class WorkPlanAcaoViewSet(viewsets.ModelViewSet):
         return [IsAuthenticatedActiveAccess()]
 
     def get_queryset(self):
-        qs = WorkPlanAcao.objects.select_related("meta").all()
+        qs = WorkPlanAcao.objects.select_related("meta", "submeta", "indicador").prefetch_related(
+            "rubricas_previstas"
+        )
 
         user = self.request.user
         if not user.is_authenticated:
@@ -340,53 +347,10 @@ class WorkPlanAcaoViewSet(viewsets.ModelViewSet):
         return filter_workplan_actions_for_user(qs, user)
 
     def perform_create(self, serializer):
-        instance = serializer.save()
-        AuditLog.objects.create(
-            user=self.request.user,
-            acao="WorkPlanAcao.create",
-            modulo="sgp",
-            entidade="WorkPlanAcao",
-            entidade_id=str(instance.pk),
-            valores_novos={
-                "meta_id": instance.meta_id,
-                "numero": instance.numero,
-                "descricao": instance.descricao,
-                "quantidade_planejada": str(instance.quantidade_planejada),
-                "valor_unitario": str(instance.valor_unitario),
-            },
-            ip=self.request.META.get("REMOTE_ADDR"),
-            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
-        )
+        workplan_cadastro.criar_acao(serializer, request=self.request)
 
     def perform_update(self, serializer):
-        old = self.get_object()
-        valores_anteriores = {
-            "meta_id": old.meta_id,
-            "numero": old.numero,
-            "descricao": old.descricao,
-            "tipo_unidade": old.tipo_unidade,
-            "quantidade_planejada": str(old.quantidade_planejada),
-            "valor_unitario": str(old.valor_unitario),
-        }
-        instance = serializer.save()
-        AuditLog.objects.create(
-            user=self.request.user,
-            acao="WorkPlanAcao.update",
-            modulo="sgp",
-            entidade="WorkPlanAcao",
-            entidade_id=str(instance.pk),
-            valores_anteriores=valores_anteriores,
-            valores_novos={
-                "meta_id": instance.meta_id,
-                "numero": instance.numero,
-                "descricao": instance.descricao,
-                "tipo_unidade": instance.tipo_unidade,
-                "quantidade_planejada": str(instance.quantidade_planejada),
-                "valor_unitario": str(instance.valor_unitario),
-            },
-            ip=self.request.META.get("REMOTE_ADDR"),
-            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
-        )
+        workplan_cadastro.atualizar_acao(serializer, request=self.request)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -420,3 +384,85 @@ class WorkPlanAcaoViewSet(viewsets.ModelViewSet):
         )
         instance.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# WorkPlanSubmeta ViewSet
+# ---------------------------------------------------------------------------
+
+class WorkPlanSubmetaViewSet(viewsets.ModelViewSet):
+    pagination_class = UPFPagination
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = WorkPlanSubmetaFilter
+    http_method_names = ["get", "post", "patch", "put", "delete", "head", "options"]
+
+    def get_serializer_class(self):
+        if self.action == "retrieve":
+            return WorkPlanSubmetaDetailSerializer
+        return WorkPlanSubmetaSerializer
+
+    def get_permissions(self):
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            return [(IsSuperAdmin | IsUGP)()]
+        return [IsAuthenticatedActiveAccess()]
+
+    def get_queryset(self):
+        qs = WorkPlanSubmeta.objects.select_related(
+            "meta", "responsavel", "criado_por"
+        ).prefetch_related("acoes")
+
+        user = self.request.user
+        if not user.is_authenticated:
+            return qs.none()
+
+        return filter_workplan_submetas_for_user(qs, user)
+
+    def perform_create(self, serializer):
+        workplan_cadastro.criar_submeta(serializer, request=self.request)
+
+    def perform_update(self, serializer):
+        workplan_cadastro.atualizar_submeta(serializer, request=self.request)
+
+    def perform_destroy(self, instance):
+        workplan_cadastro.excluir_submeta(instance, request=self.request)
+
+
+# ---------------------------------------------------------------------------
+# Indicator ViewSet
+# ---------------------------------------------------------------------------
+
+class IndicatorViewSet(viewsets.ModelViewSet):
+    """Catálogo institucional de Indicadores (SGP §5.4). Não tem escopo
+    territorial: é lido por todo perfil que lê o Plano de Trabalho (matriz de
+    permissões do Core §2.1); o Agricultor não lê."""
+
+    serializer_class = IndicatorSerializer
+    pagination_class = UPFPagination
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = IndicatorFilter
+    http_method_names = ["get", "post", "patch", "put", "delete", "head", "options"]
+
+    def get_permissions(self):
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            return [(IsSuperAdmin | IsUGP)()]
+        return [IsAuthenticatedActiveAccess()]
+
+    def get_queryset(self):
+        qs = Indicator.objects.all()
+
+        user = self.request.user
+        if not user.is_authenticated:
+            return qs.none()
+
+        # O catálogo não tem recorte territorial: só a checagem de quem lê o PT (403).
+        escopo_de_leitura_do_plano(user)
+        return qs
+
+    def perform_create(self, serializer):
+        workplan_cadastro.criar_indicador(serializer, request=self.request)
+
+    def perform_update(self, serializer):
+        workplan_cadastro.atualizar_indicador(serializer, request=self.request)
+
+    def perform_destroy(self, instance):
+        workplan_cadastro.excluir_indicador(instance, request=self.request)

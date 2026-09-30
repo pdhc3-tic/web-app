@@ -23,7 +23,8 @@ from apps.sgp.models import (
     UPF,
     UPFDocument,
 )
-from apps.sgp.models.workplan import WorkPlanAcao, WorkPlanMeta
+from apps.sgp.models.indicator import Indicator
+from apps.sgp.models.workplan import WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
 
 
 class ProjetoFactory(factory.django.DjangoModelFactory):
@@ -178,16 +179,46 @@ class WorkPlanMetaFactory(factory.django.DjangoModelFactory):
     criado_por = factory.SubFactory(UserFactory)
 
 
+class IndicatorFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Indicator
+
+    # Prefixo próprio: a migration 0034 já cria o catálogo IND-* no banco de teste.
+    codigo = factory.Sequence(lambda n: f"TST-{n:04d}")
+    nome = factory.Sequence(lambda n: f"Indicador {n}")
+    unidade_medida = "evento"
+    forma_apuracao = "contagem_atividades"
+    ativo = True
+
+
+class WorkPlanSubmetaFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = WorkPlanSubmeta
+
+    meta = factory.SubFactory(WorkPlanMetaFactory)
+    # Sequencial alto para não colidir com os números explícitos dos testes (1.1, 1.2…).
+    numero = factory.LazyAttributeSequence(lambda o, n: f"{o.meta.numero}.{n + 1000}")
+    titulo = factory.Sequence(lambda n: f"Submeta {n}")
+    data_inicio = factory.SelfAttribute("meta.data_inicio")
+    data_fim = factory.SelfAttribute("meta.data_fim")
+
+
 class WorkPlanAcaoFactory(factory.django.DjangoModelFactory):
+    """Com `meta=` e sem `submeta=`, cria uma Submeta nessa Meta. A Meta
+    gravada na Ação sempre vem da Submeta."""
+
     class Meta:
         model = WorkPlanAcao
 
     meta = factory.SubFactory(WorkPlanMetaFactory)
-    numero = factory.Sequence(lambda n: f"{(n % 7) + 1}.{(n % 5) + 1}")
+    submeta = factory.SubFactory(WorkPlanSubmetaFactory, meta=factory.SelfAttribute("..meta"))
+    indicador = factory.SubFactory(IndicatorFactory)
+    numero = factory.LazyAttributeSequence(lambda o, n: f"{o.submeta.numero}.{n + 1000}")
     descricao = factory.Sequence(lambda n: f"Ação {n}")
-    tipo_unidade = 1
     quantidade_planejada = 10
     valor_unitario = 100
+    data_inicio = factory.SelfAttribute("submeta.data_inicio")
+    data_fim = factory.SelfAttribute("submeta.data_fim")
 
 
 # ---------------------------------------------------------------------------

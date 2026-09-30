@@ -12,7 +12,7 @@ jobs:
   e2e:
     name: Testes E2E (Playwright)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -34,6 +34,9 @@ jobs:
           REDIS_HOST=redis
           REDIS_PORT=6379
           EOF
+          # Chave descartável: o banco do E2E nasce vazio a cada execução, então
+          # nada criptografado precisa ser lido com a chave de outra rodada.
+          echo "FIELD_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> backend/.env
 
       - name: Criar .env do frontend para CI
         run: |
@@ -43,6 +46,16 @@ jobs:
           NEXT_PUBLIC_API_URL=http://localhost:8000
           EOF
 
+      # Antes do compose: o volume anônimo em /app/node_modules faz o Docker
+      # criar frontend/node_modules como root no runner, e um npm ci depois
+      # disso falha com EACCES. Se a pasta já existe, o Docker só monta o
+      # volume por cima, sem mudar o dono.
+      - name: Instalar Playwright
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
       - name: Subir stack Docker
         run: docker compose up -d --build --wait
         timeout-minutes: 4
@@ -50,14 +63,11 @@ jobs:
       - name: Aplicar migrações
         run: docker compose exec -T backend python manage.py migrate --noinput
 
+      - name: Seed de referência (perfis, estados, territórios)
+        run: docker compose exec -T backend python manage.py seed_core
+
       - name: Seed de demonstração
         run: docker compose exec -T backend python manage.py seed_demo --reset
-
-      - name: Instalar Playwright
-        working-directory: frontend
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
 
       - name: Executar testes Playwright
         working-directory: frontend

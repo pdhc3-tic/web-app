@@ -6,8 +6,10 @@ from .views import (
     ComunidadeViewSet,
     CulturaListView,
     EspecieAnimalListView,
+    ExportacaoViewSet,
     MembroExportView,
     MembroViewSet,
+    ProducaoConsolidadaViewSet,
     ProductionViewSet,
     SGPChoicesView,
     TecnicoViewSet,
@@ -22,11 +24,14 @@ from .views.form_responses import (
     FormResponseViewSet,
 )
 from .views.workplan import (
+    IndicatorViewSet,
     WorkPlanAcaoViewSet,
     WorkPlanDashboardView,
     WorkPlanExportView,
     WorkPlanMetaViewSet,
     WorkPlanPowerBIView,
+    WorkPlanSubmetaViewSet,
+    WorkPlanVisaoIndicadorView,
 )
 from .views.budget import (
     BudgetAllocationViewSet,
@@ -45,6 +50,10 @@ router.register("acoes", WorkPlanAcaoViewSet, basename="workplanacao")
 sgp_router = DefaultRouter()
 sgp_router.register("atividades", ActivityViewSet, basename="atividade")
 sgp_router.register("tecnicos", TecnicoViewSet, basename="tecnico")
+sgp_router.register("producao", ProducaoConsolidadaViewSet, basename="producao-consolidada")
+sgp_router.register("exportacoes", ExportacaoViewSet, basename="exportacao")
+sgp_router.register("submetas", WorkPlanSubmetaViewSet, basename="workplansubmeta")
+sgp_router.register("indicadores", IndicatorViewSet, basename="indicator")
 
 comunidade_list = ComunidadeViewSet.as_view({
     'get': 'list',
@@ -87,6 +96,11 @@ urlpatterns = router.urls + [
         "sgp/plano-trabalho/exportar/",
         WorkPlanExportView.as_view(),
         name="workplan-export",
+    ),
+    path(
+        "sgp/plano-trabalho/indicadores/",
+        WorkPlanVisaoIndicadorView.as_view(),
+        name="workplan-visao-indicador",
     ),
     path(
         "sgp/plano-trabalho/powerbi/",

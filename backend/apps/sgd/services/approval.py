@@ -16,6 +16,7 @@ from apps.sgd.models.individual_limit import DemandIndividualLimit
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
 from apps.sgp.services import budget as budget_service
+from apps.sgp.services.apuracao import recalcular_valor_executado
 
 
 class TransicaoInvalidaError(DRFValidationError):
@@ -284,6 +285,7 @@ def concluir(demand, *, responsavel, valores_pagos: dict) -> object:
         solicitacao.save(update_fields=["valor_pago"])
 
     aplicar_transicao(demand, "concluida")
+    recalcular_valor_executado([demand.activity.acao_id])
     ApprovalStep.objects.create(
         demanda=demand, etapa="atendimento", responsavel=responsavel, acao="atendido",
     )

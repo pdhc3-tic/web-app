@@ -37,7 +37,8 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
         qs = Demand.objects.select_related(
             "activity__municipio__territory", "activity__municipio__state",
             "activity__comunidade", "activity__tecnico_responsavel",
-            "activity__acao__meta", "solicitante",
+            "activity__acao__meta", "activity__acao__submeta", "activity__acao__indicador",
+            "solicitante",
         ).prefetch_related("solicitacoes__rubrica")
         scope = demand_visibility_scope(self.request.user)
         if scope is not None:

@@ -10,12 +10,14 @@ from apps.sgp.models import (
     Cultura,
     EspecieAnimal,
     FormResponse,
+    Indicator,
     MembroFamilia,
     Production,
     Projeto,
     UPF,
     WorkPlanAcao,
     WorkPlanMeta,
+    WorkPlanSubmeta,
 )
 from apps.sgp.services.activity_status import ActivityStatusError, validar_transicao
 
@@ -116,11 +118,12 @@ class WorkPlanAcaoInline(admin.TabularInline):
     model = WorkPlanAcao
     extra = 0
     fields = [
-        "numero", "descricao", "tipo_unidade",
-        "quantidade_planejada", "valor_unitario", "valor_total",
-        "status_execucao",
+        "numero", "descricao", "indicador",
+        "quantidade_planejada", "valor_unitario", "data_inicio", "data_fim",
+        "valor_total", "status_execucao",
     ]
     readonly_fields = ["valor_total", "status_execucao"]
+    autocomplete_fields = ["indicador"]
 
 
 @admin.register(WorkPlanMeta)
@@ -135,18 +138,56 @@ class WorkPlanMetaAdmin(admin.ModelAdmin):
         "valor_total_planejado", "status_calculado",
         "criado_por", "criado_em", "atualizado_em",
     ]
+    def get_queryset(self, request):
+        # Os totais e o status da listagem somam as Submetas e as Ações delas.
+        return super().get_queryset(request).prefetch_related("submetas__acoes")
+
+
+@admin.register(WorkPlanSubmeta)
+class WorkPlanSubmetaAdmin(admin.ModelAdmin):
+    list_display = [
+        "numero", "titulo", "meta", "data_inicio", "data_fim",
+        "quantidade_planejada", "quantidade_realizada", "status_execucao",
+    ]
+    list_filter = ["meta"]
+    search_fields = ["numero", "titulo"]
+    readonly_fields = [
+        "quantidade_planejada", "quantidade_realizada", "valor_total",
+        "valor_executado", "status_execucao",
+        "criado_por", "criado_em", "atualizado_em",
+    ]
     inlines = [WorkPlanAcaoInline]
+
+    def get_queryset(self, request):
+        # Os consolidados da listagem somam as Ações de cada Submeta.
+        return super().get_queryset(request).select_related("meta").prefetch_related("acoes")
+
+
+@admin.register(Indicator)
+class IndicatorAdmin(admin.ModelAdmin):
+    list_display = ["codigo", "nome", "unidade_medida", "forma_apuracao", "categoria", "ativo"]
+    list_filter = ["ativo", "forma_apuracao", "categoria", "unidade_medida"]
+    search_fields = ["codigo", "nome"]
+    readonly_fields = ["criado_por", "criado_em", "atualizado_em"]
+
+    def get_readonly_fields(self, request, obj=None):
+        # Trocar a forma de apuração de um Indicador em uso recalcula as Ações e
+        # exige confirmação e auditoria: só pela API, com confirmar_recalculo.
+        if obj is not None and obj.acoes.exists():
+            return [*self.readonly_fields, "forma_apuracao"]
+        return self.readonly_fields
 
 
 @admin.register(WorkPlanAcao)
 class WorkPlanAcaoAdmin(admin.ModelAdmin):
     list_display = [
-        "meta", "numero", "descricao", "tipo_unidade",
+        "numero", "descricao", "submeta", "indicador",
         "quantidade_planejada", "quantidade_realizada", "valor_total", "status_execucao",
     ]
-    list_filter = ["meta"]
-    search_fields = ["descricao"]
-    readonly_fields = ["quantidade_realizada", "valor_total", "status_execucao"]
+    list_filter = ["meta", "submeta", "indicador"]
+    search_fields = ["numero", "descricao"]
+    readonly_fields = ["meta", "quantidade_realizada", "valor_total", "status_execucao"]
+    autocomplete_fields = ["indicador"]
 
 
 @admin.register(BudgetRubrica)
