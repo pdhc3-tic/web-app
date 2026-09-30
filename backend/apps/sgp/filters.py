@@ -4,8 +4,10 @@ import django_filters
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db.models import Q
+from django.utils import timezone
 
-from apps.sgp.models import Activity, FormResponse, Tecnico, UPF
+from apps.sgp.models import Activity, FormResponse, Production, Tecnico, UPF
+from apps.sgp.models.activity import filtro_atrasada
 
 
 class StrictBooleanWidget(forms.Select):
@@ -52,7 +54,10 @@ class UPFFilter(django_filters.FilterSet):
     territorio = django_filters.NumberFilter(field_name="territorio_id")
     projeto = django_filters.NumberFilter(field_name="projeto_id")
     comunidade = django_filters.NumberFilter(field_name="comunidade_id")
-    ativo = django_filters.BooleanFilter()
+    # Estrito: um valor não reconhecido seria tratado como "não informado",
+    # mas a presença da chave já desliga o padrão de só ativas — o resultado
+    # seria a base inteira, ativas e inativas.
+    ativo = StrictBooleanFilter(widget=StrictBooleanWidget)
     cadastrado_de = django_filters.DateFilter(
         field_name="criado_em", lookup_expr="date__gte"
     )
@@ -80,6 +85,14 @@ class UPFFilter(django_filters.FilterSet):
         if digits_only:
             q |= Q(titular__cpf__startswith=digits_only)
         return queryset.filter(q)
+
+
+def somente_ativas_sem_filtro_ativo(queryset, params):
+    """Sem `ativo` na query, a listagem de UPFs traz só as ativas; `?ativo=`
+    vazio desliga esse padrão."""
+    if "ativo" not in params:
+        return queryset.filter(ativo=True)
+    return queryset
 
 
 class ActivityFilter(django_filters.FilterSet):
@@ -135,14 +148,33 @@ class ActivityFilter(django_filters.FilterSet):
     data_inicio_before = django_filters.DateFilter(
         field_name="data_inicio", lookup_expr="lte", label="Data Início (antes)"
     )
+    atrasada = StrictBooleanFilter(
+        method="filter_atrasada", widget=StrictBooleanWidget, label="Atrasada"
+    )
 
     class Meta:
         model = Activity
         fields = [
             "projeto", "acao", "territorio_id", "tecnico_id", "osc", "parceiro",
             "tipo_atividade", "status",
-            "data_inicio_after", "data_inicio_before",
+            "data_inicio_after", "data_inicio_before", "atrasada",
         ]
+
+    def filter_atrasada(self, queryset, name, value):
+        atrasadas = filtro_atrasada(timezone.now())
+        return queryset.filter(atrasadas if value else ~atrasadas)
+
+
+class ProducaoConsolidadaFilter(django_filters.FilterSet):
+    tipo = django_filters.ChoiceFilter(choices=Production.TIPO_CHOICES)
+    cultura = django_filters.NumberFilter(field_name="cultura_id")
+    especie = django_filters.NumberFilter(field_name="especie_id")
+    municipio = django_filters.NumberFilter(field_name="upf__municipio_id")
+    territorio = django_filters.NumberFilter(field_name="upf__territorio_id")
+
+    class Meta:
+        model = Production
+        fields = ["tipo", "cultura", "especie", "municipio", "territorio"]
 
 
 class TecnicoFilter(django_filters.FilterSet):

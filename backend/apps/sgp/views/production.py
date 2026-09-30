@@ -1,11 +1,17 @@
 from django.shortcuts import get_object_or_404
-from rest_framework import serializers, viewsets
-from apps.core.permissions import IsAuthenticatedActiveAccess
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import mixins, serializers, viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
 from apps.core.models.audit_log import AuditLog
+from apps.core.permissions import IsAuthenticatedActiveAccess
+from apps.sgp.filters import ProducaoConsolidadaFilter
 from apps.sgp.models import Production, UPF
-from apps.sgp.serializers import ProductionSerializer
+from apps.sgp.pagination import ProducaoPagination
+from apps.sgp.serializers import ProducaoConsolidadaSerializer, ProductionSerializer
 from apps.sgp.services.access import scope_queryset
+from apps.sgp.services.producao import indicadores_producao
 
 
 class ProductionViewSet(viewsets.ModelViewSet):
@@ -122,3 +128,28 @@ class ProductionViewSet(viewsets.ModelViewSet):
         if value is None:
             return None
         return str(value)
+
+
+class ProducaoConsolidadaViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    """Produção de todas as UPFs ativas no escopo territorial do usuário."""
+
+    serializer_class = ProducaoConsolidadaSerializer
+    permission_classes = [IsAuthenticatedActiveAccess]
+    pagination_class = ProducaoPagination
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = ProducaoConsolidadaFilter
+
+    def get_queryset(self):
+        qs = Production.objects.filter(upf__ativo=True).select_related(
+            "cultura", "especie", "upf__titular", "upf__municipio", "upf__territorio"
+        )
+        return scope_queryset(
+            qs,
+            self.request.user,
+            state_lookup="upf__municipio__state__sigla__in",
+            territory_lookup="upf__territorio__in",
+        ).order_by("-criado_em", "-pk")
+
+    @action(detail=False, methods=["get"])
+    def indicadores(self, request):
+        return Response(indicadores_producao(self.filter_queryset(self.get_queryset())))

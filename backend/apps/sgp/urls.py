@@ -6,8 +6,10 @@ from .views import (
     ComunidadeViewSet,
     CulturaListView,
     EspecieAnimalListView,
+    ExportacaoViewSet,
     MembroExportView,
     MembroViewSet,
+    ProducaoConsolidadaViewSet,
     ProductionViewSet,
     SGPChoicesView,
     TecnicoViewSet,
@@ -45,6 +47,8 @@ router.register("acoes", WorkPlanAcaoViewSet, basename="workplanacao")
 sgp_router = DefaultRouter()
 sgp_router.register("atividades", ActivityViewSet, basename="atividade")
 sgp_router.register("tecnicos", TecnicoViewSet, basename="tecnico")
+sgp_router.register("producao", ProducaoConsolidadaViewSet, basename="producao-consolidada")
+sgp_router.register("exportacoes", ExportacaoViewSet, basename="exportacao")
 
 comunidade_list = ComunidadeViewSet.as_view({
     'get': 'list',

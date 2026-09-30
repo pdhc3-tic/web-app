@@ -1,14 +1,13 @@
-from django.utils import timezone
 from rest_framework import serializers
 
 from apps.core.models import Municipality, Organization
 from apps.sgp.models import Activity, Comunidade, MembroFamilia, UPF, WorkPlanAcao
-from apps.sgp.models.activity import STATUS_TERMINAIS
 from apps.sgp.serializers.activity_documentos import ActivityDocumentSerializer
 from apps.sgp.serializers.activity_foto import ActivityPhotoSerializer
 from apps.sgp.serializers.common import MunicipioNestedSerializer, NestedSerializer
 from apps.sgp.serializers.membro import MembroListSerializer
 from apps.sgp.serializers.upf import UPFListSerializer
+from apps.sgp.services.access import upfs_acessiveis_ao_usuario
 from apps.sgp.services.activity_status import ActivityStatusError, validar_transicao
 
 # ---------------------------------------------------------------------------
@@ -51,9 +50,7 @@ class ActivityListSerializer(serializers.ModelSerializer):
         return len(obj.membros_participantes.all())
 
     def get_atrasada(self, obj):
-        if obj.status in STATUS_TERMINAIS:
-            return False
-        return obj.data_fim < timezone.now()
+        return obj.esta_atrasada()
 
 
 class ActivityDetailSerializer(serializers.ModelSerializer):
@@ -108,9 +105,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
     )
 
     def _get_upfs_visiveis(self):
-        user = self.context["request"].user
-        from apps.sgp.views import upfs_acessiveis_ao_usuario
-        return upfs_acessiveis_ao_usuario(user)
+        return upfs_acessiveis_ao_usuario(self.context["request"].user)
 
     def validate_upfs_participantes(self, value):
         upfs_visiveis_pks = set(self._get_upfs_visiveis().values_list("pk", flat=True))
@@ -184,9 +179,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
     # ── SerializerMethodFields ───────────────────────────────────────────────
 
     def get_atrasada(self, obj):
-        if obj.status in STATUS_TERMINAIS:
-            return False
-        return obj.data_fim < timezone.now()
+        return obj.esta_atrasada()
 
     def get_total_participantes(self, obj):
         return len(obj.membros_participantes.all())

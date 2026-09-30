@@ -16,13 +16,16 @@ import importlib
 import pytest
 from django.apps import apps as django_apps
 from rest_framework import status
+from rest_framework.test import APIClient
 
 from apps.core.tests.factories import (
     OrganizationFactory,
     RoleFactory,
     UserFactory,
 )
+from apps.sgp.exceptions import ErroComCodigo
 from apps.sgp.models import Tecnico
+from apps.sgp.serializers import TecnicoSerializer
 from apps.sgp.tests.factories import ActivityFactory, TecnicoFactory
 
 LIST_URL = "/api/v1/sgp/tecnicos/"
@@ -176,3 +179,179 @@ def test_desativar_preserva_atividades(auth_client_super_admin):
     atividade.refresh_from_db()
     assert atividade.tecnico_responsavel_id == tecnico.user_id
     assert atividade.ativo is True
+
+
+# ===========================================================================
+# Nomes, paginação, usuários elegíveis e erros com `code`
+# ===========================================================================
+
+ELEGIVEIS_URL = "/api/v1/sgp/tecnicos/usuarios-elegiveis/"
+
+
+@pytest.mark.django_db
+def test_listagem_expoe_nomes(auth_client_super_admin, territory_rn):
+    osc = OrganizationFactory(nome="OSC Sertão")
+    tecnico = TecnicoFactory(
+        user=UserFactory(nome="Joana Lima"), territorio=territory_rn, osc=osc
+    )
+
+    response = auth_client_super_admin.get(LIST_URL)
+
+    item = next(i for i in response.data["results"] if i["id"] == tecnico.pk)
+    assert item["user_nome"] == "Joana Lima"
+    assert item["territorio_nome"] == territory_rn.nome
+    assert item["osc_nome"] == "OSC Sertão"
+
+
+@pytest.mark.django_db
+def test_nomes_nulos_quando_sem_territorio_e_sem_osc(auth_client_super_admin):
+    tecnico = TecnicoFactory(territorio=None, osc=None)
+
+    response = auth_client_super_admin.get(detail_url(tecnico.pk))
+
+    assert response.data["territorio_nome"] is None
+    assert response.data["osc_nome"] is None
+
+
+@pytest.mark.django_db
+def test_paginacao_limit_offset(auth_client_super_admin):
+    TecnicoFactory.create_batch(5)
+
+    primeira = auth_client_super_admin.get(LIST_URL, {"limit": 2, "offset": 0}).data
+    segunda = auth_client_super_admin.get(LIST_URL, {"limit": 2, "offset": 2}).data
+
+    assert primeira["count"] == 5
+    assert len(primeira["results"]) == 2
+    ids_primeira = {i["id"] for i in primeira["results"]}
+    ids_segunda = {i["id"] for i in segunda["results"]}
+    assert ids_primeira.isdisjoint(ids_segunda)
+
+
+@pytest.mark.django_db
+def test_usuarios_elegiveis_exclui_quem_ja_e_tecnico(ugp_client):
+    livre = UserFactory(nome="Ana Livre")
+    TecnicoFactory(user=UserFactory(nome="Ana Técnica"))
+    inativo = TecnicoFactory(user=UserFactory(nome="Ana Técnica Inativa"), ativo=False)
+    UserFactory(nome="Ana Desligada", ativo=False)
+
+    response = ugp_client.get(ELEGIVEIS_URL, {"q": "ana", "limit": 50})
+
+    assert response.status_code == status.HTTP_200_OK
+    nomes = [u["nome_completo"] for u in response.data["results"]]
+    assert nomes == ["Ana Livre"]
+    assert response.data["results"][0]["id"] == livre.pk
+    assert inativo.user.nome not in nomes
+
+
+@pytest.mark.django_db
+def test_usuarios_elegiveis_restrito_a_ugp_e_super_admin(auth_client_adt_rn, usuario_super_admin):
+    # As fixtures auth_client_* autenticam a mesma instância de APIClient; o
+    # Super Admin precisa de um cliente próprio para não sobrescrever o do ADT.
+    cliente_super_admin = APIClient()
+    cliente_super_admin.force_authenticate(user=usuario_super_admin)
+
+    assert auth_client_adt_rn.get(ELEGIVEIS_URL).status_code == status.HTTP_403_FORBIDDEN
+    assert cliente_super_admin.get(ELEGIVEIS_URL).status_code == status.HTTP_200_OK
+
+
+@pytest.mark.django_db
+def test_erro_tecnico_duplicado(auth_client_super_admin):
+    existente = TecnicoFactory()
+
+    response = auth_client_super_admin.post(
+        LIST_URL, data={"user": existente.user_id, "papel": "adt-acr"}, format="json"
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert response.data["code"] == "tecnico_duplicado"
+    assert response.data["message"]
+
+
+@pytest.mark.django_db
+def test_editar_o_proprio_tecnico_nao_e_duplicado(auth_client_super_admin):
+    tecnico = TecnicoFactory()
+
+    response = auth_client_super_admin.put(
+        detail_url(tecnico.pk),
+        data={"user": tecnico.user_id, "papel": "novo papel", "ativo": True},
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_200_OK, response.data
+
+
+@pytest.mark.django_db
+def test_erro_conflito_vinculo_osc_fora_do_territorio(auth_client_super_admin, territory_rn, territory_ce):
+    osc = OrganizationFactory()
+    osc.territorios.add(territory_ce)
+
+    response = auth_client_super_admin.post(
+        LIST_URL,
+        data={
+            "user": UserFactory().pk,
+            "territorio": territory_rn.pk,
+            "osc": osc.pk,
+            "papel": "adt-acr",
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert response.data["code"] == "conflito_vinculo"
+
+
+@pytest.mark.django_db
+def test_conflito_vinculo_tambem_no_patch(auth_client_super_admin, territory_rn, territory_ce):
+    osc = OrganizationFactory()
+    osc.territorios.add(territory_ce)
+    tecnico = TecnicoFactory(territorio=territory_rn, osc=None)
+
+    response = auth_client_super_admin.patch(
+        detail_url(tecnico.pk), data={"osc": osc.pk}, format="json"
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert response.data["code"] == "conflito_vinculo"
+
+
+@pytest.mark.django_db
+def test_osc_sem_territorio_cadastrado_nao_gera_conflito(auth_client_super_admin, territory_rn):
+    response = auth_client_super_admin.post(
+        LIST_URL,
+        data={
+            "user": UserFactory().pk,
+            "territorio": territory_rn.pk,
+            "osc": OrganizationFactory().pk,
+            "papel": "adt-acr",
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_201_CREATED, response.data
+
+
+@pytest.mark.django_db
+def test_erro_tecnico_ja_inativo(auth_client_super_admin):
+    tecnico = TecnicoFactory(ativo=False)
+
+    response = auth_client_super_admin.delete(detail_url(tecnico.pk))
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert response.data["code"] == "tecnico_ja_inativo"
+
+
+@pytest.mark.django_db
+def test_cadastro_simultaneo_do_mesmo_usuario_vira_tecnico_duplicado():
+    """Os dois pedidos passam pelo `validate` antes de qualquer um gravar; o que
+    perde a corrida bate na unicidade de `user` e deve receber o mesmo erro."""
+    user = UserFactory()
+    serializer = TecnicoSerializer(data={"user": user.pk, "papel": "adt-acr"})
+    assert serializer.is_valid(), serializer.errors
+    TecnicoFactory(user=user)
+
+    with pytest.raises(ErroComCodigo) as erro:
+        serializer.save()
+
+    assert erro.value.status_code == status.HTTP_400_BAD_REQUEST
+    assert erro.value.detail["code"] == "tecnico_duplicado"
+    assert Tecnico.objects.filter(user=user).count() == 1

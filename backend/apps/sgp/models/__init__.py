@@ -1,6 +1,7 @@
 from .comunidade import Comunidade
 from .catalogos import Cultura, EspecieAnimal
 from .budget import BudgetRubrica, BudgetAllocation, BudgetTransaction
+from .export_job import ExportJob
 from .form_response import FormResponse
 from .membro import MembroFamilia
 from .production import Production
@@ -24,6 +25,7 @@ __all__ = [
     "Comunidade",
     "Cultura",
     "EspecieAnimal",
+    "ExportJob",
     "FormResponse",
     "GoogleCalendarSyncEvent",
     "MembroFamilia",

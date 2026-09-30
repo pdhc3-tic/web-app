@@ -17,6 +17,7 @@ from datetime import date
 from apps.core.sensitive_fields import sensitive_fields_visible_to
 from apps.sgp.constants import COR_RACA_CHOICES, GENERO_CHOICES
 from apps.sgp.models import MembroFamilia
+from apps.sgp.services.access import upfs_acessiveis_ao_usuario
 
 # Limite de UPFs por exportação territorial agregada — protege contra
 # arquivos excessivamente grandes. Acima disso, o chamador deve restringir
@@ -135,9 +136,6 @@ def membro_export_rows_for_scope(
     filtrado exceder `MEMBROS_EXPORT_UPF_LIMIT`.
     """
     from django.db.models import Q
-
-    # Import local: evita ciclo entre apps.sgp.views <-> apps.sgp.services.
-    from apps.sgp.views import upfs_acessiveis_ao_usuario
 
     upfs = upfs_acessiveis_ao_usuario(user)
     if territorio_id is not None:

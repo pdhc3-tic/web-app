@@ -49,3 +49,23 @@ Antes desta issue, `WorkPlanAcao.quantidade_realizada` era uma `@property` que e
 - Nenhum índice novo foi adicionado a `UPF` (além dos já existentes em `municipio`, `territorio`, `projeto`, `comunidade`). Caso `test_listagem_5000_upfs_sob_3s` não atinja o RNF neste ambiente, avaliar um índice em `criado_em` (usado no `ordering` padrão) ou um índice composto alinhado ao filtro exercitado no teste.
 - `services/workplan_dashboard.py` (painel do PT) e `services/workplan_export.py` continuam calculando o progresso via `Count(...)` anotado por requisição, em vez de ler `quantidade_realizada` diretamente — esses endpoints filtram o progresso por escopo territorial do usuário, algo que o campo materializado (global, sem escopo) não captura. O campo `quantidade_realizada` resolve o N+1 dos consumidores "crus" da Ação (serializer padrão, admin, `WorkPlanMetaViewSet.list()` via `status_calculado`).
 - `manage.py verificar_progresso_acoes` reconcilia (corrige) as divergências por padrão; use `--check-only` para apenas detectá-las sem alterar o banco (útil em CI/monitoramento).
+
+## Exportação de 12 meses (Plano de Trabalho e Atividades)
+
+RNF do SGP (§12): relatório de execução do PT **em menos de 60 s** para um dataset de 12 meses. A mesma meta vale para a exportação consolidada de Atividades, que o front dispara com o mesmo período.
+
+- **Teste**: `apps/sgp/tests/test_exportacao_performance.py`, com 7 Metas × 30 Ações e 21.000 Atividades distribuídas ao longo de 2026, populadas via `bulk_create`. Mede `GET /api/v1/sgp/plano-trabalho/exportar/` e `GET /api/v1/sgp/atividades/exportar/` com `periodo_inicio=2026-01-01&periodo_fim=2026-12-31`, em CSV e XLSX.
+- **Método**: o mesmo das medições acima (`time.monotonic()` em volta da chamada do `APIClient`). O fluxo assíncrono (`POST /api/v1/sgp/exportacoes/`) executa no worker as mesmas funções de dataset e de geração de arquivo, então o tempo medido aqui é também o custo do job.
+- **Como reproduzir**:
+  ```bash
+  docker compose exec backend pytest apps/sgp/tests/test_exportacao_performance.py -v -s
+  ```
+
+| Cenário | RNF | Medido | Método |
+| --- | --- | --- | --- |
+| Exportação de Atividades, 12 meses (21.000 atividades), CSV | < 60s | **3.105s** | `time.monotonic()` |
+| Exportação de Atividades, 12 meses (21.000 atividades), XLSX | < 60s | **9.255s** | `time.monotonic()` |
+| Exportação do PT, 12 meses (210 ações, 21.000 atividades), CSV | < 60s | **0.038s** | `time.monotonic()` |
+| Exportação do PT, 12 meses (210 ações, 21.000 atividades), XLSX | < 60s | **0.094s** | `time.monotonic()` |
+
+> Medido em 28/09/2026 numa máquina de desenvolvimento (Intel Core i3-1115G4, 4 threads, 11 GiB de RAM, Docker 29.6.2), com o Postgres do `docker-compose.yml`. Os tempos variam com o ambiente e servem de referência de ordem de grandeza e de folga; o critério é o `assert elapsed < 60` do próprio teste. A exportação do PT agrega as atividades por Ação no banco e gera só 210 linhas, por isso fica bem abaixo da de Atividades, que gera uma linha por atividade.
