@@ -1,5 +1,9 @@
-from django.db import migrations
+"""Dados iniciais do SGP: catálogos de culturas e espécies, rubricas
+orçamentárias (SGP §6.1) e catálogo inicial de Indicadores (SGP §5.4).
 
+Todos os passos são idempotentes: rodar sobre um banco que já tem os dados
+não duplica nem sobrescreve o que a UGP ajustou."""
+from django.db import migrations
 
 CULTURAS = [
     {"nome": "Arroz", "categoria": "graos", "ciclo": "anual"},
@@ -101,9 +105,39 @@ ESPECIES_ANIMAIS = [
     {"nome": "Caprino (corte)", "categoria": "outros"},
 ]
 
+# §5.3.1 — catálogo fixo das 6 rubricas orçamentárias.
+RUBRICAS = [
+    {"slug": "diarias", "nome": "Diárias"},
+    {"slug": "passagens-aereas", "nome": "Passagens Aéreas"},
+    {"slug": "locacao-veiculo", "nome": "Locação de Veículo"},
+    {"slug": "alimentacao-refeicoes", "nome": "Alimentação/Refeições"},
+    {"slug": "material-grafico", "nome": "Material Gráfico"},
+    {"slug": "equipamentos-capital", "nome": "Equipamentos/Capital"},
+]
 
-def seed_culturas(apps, schema_editor):
+# (código, nome, unidade de medida, forma de apuração, categoria)
+INDICADORES = [
+    ("IND-SEM", "Seminário", "evento", "contagem_atividades", "formacao"),
+    ("IND-OFI", "Oficina", "evento", "contagem_atividades", "formacao"),
+    ("IND-CUR", "Curso / Capacitação", "evento", "contagem_atividades", "formacao"),
+    ("IND-PLA", "Plano", "plano", "contagem_atividades", "gestao"),
+    ("IND-REL", "Relatório de pesquisas", "relatorio", "contagem_atividades", "gestao"),
+    ("IND-INT", "Intercâmbio", "evento", "contagem_atividades", "formacao"),
+    ("IND-AUD", "Conteúdo audiovisual", "unidade", "contagem_atividades", "outro"),
+    ("IND-VIS", "Visita técnica", "evento", "contagem_atividades", "assistencia_tecnica"),
+    ("IND-ENC", "Encontro / Reunião", "evento", "contagem_atividades", "gestao"),
+    ("IND-UNI", "Unidade implementada", "unidade", "manual", "estruturacao_produtiva"),
+    ("IND-FAM", "Família atendida", "familia", "soma_ufpas", "assistencia_tecnica"),
+    ("IND-OUT", "Outro", "outro", "contagem_atividades", "outro"),
+]
+
+
+def forwards(apps, schema_editor):
     Cultura = apps.get_model("sgp", "Cultura")
+    EspecieAnimal = apps.get_model("sgp", "EspecieAnimal")
+    BudgetRubrica = apps.get_model("sgp", "BudgetRubrica")
+    Indicator = apps.get_model("sgp", "Indicator")
+
     for item in CULTURAS:
         Cultura.objects.update_or_create(
             nome=item["nome"],
@@ -114,33 +148,40 @@ def seed_culturas(apps, schema_editor):
                 "ativa": True,
             },
         )
-
-
-def seed_especies(apps, schema_editor):
-    EspecieAnimal = apps.get_model("sgp", "EspecieAnimal")
     for item in ESPECIES_ANIMAIS:
         EspecieAnimal.objects.update_or_create(
             nome=item["nome"],
+            defaults={"categoria": item["categoria"], "ativa": True},
+        )
+    for ordem, item in enumerate(RUBRICAS, start=1):
+        BudgetRubrica.objects.update_or_create(
+            slug=item["slug"],
+            defaults={"nome": item["nome"], "ativo": True, "ordem": ordem},
+        )
+    for codigo, nome, unidade, forma, categoria in INDICADORES:
+        Indicator.objects.get_or_create(
+            codigo=codigo,
             defaults={
-                "categoria": item["categoria"],
-                "ativa": True,
+                "nome": nome,
+                "unidade_medida": unidade,
+                "forma_apuracao": forma,
+                "categoria": categoria,
             },
         )
 
 
-def forwards(apps, schema_editor):
-    seed_culturas(apps, schema_editor)
-    seed_especies(apps, schema_editor)
-
-
 def backwards(apps, schema_editor):
-    Cultura = apps.get_model("sgp", "Cultura")
-    EspecieAnimal = apps.get_model("sgp", "EspecieAnimal")
-    Cultura.objects.filter(
-        nome__in=[c["nome"] for c in CULTURAS],
+    apps.get_model("sgp", "Cultura").objects.filter(
+        nome__in=[c["nome"] for c in CULTURAS]
     ).delete()
-    EspecieAnimal.objects.filter(
-        nome__in=[e["nome"] for e in ESPECIES_ANIMAIS],
+    apps.get_model("sgp", "EspecieAnimal").objects.filter(
+        nome__in=[e["nome"] for e in ESPECIES_ANIMAIS]
+    ).delete()
+    apps.get_model("sgp", "BudgetRubrica").objects.filter(
+        slug__in=[r["slug"] for r in RUBRICAS]
+    ).delete()
+    apps.get_model("sgp", "Indicator").objects.filter(
+        codigo__in=[i[0] for i in INDICADORES], acoes__isnull=True
     ).delete()
 
 
