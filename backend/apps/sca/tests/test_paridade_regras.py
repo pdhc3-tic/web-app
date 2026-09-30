@@ -14,15 +14,17 @@ tem acesso de leitura/escrita normal em ambos os caminhos desde que os
 registros usem o `municipio`/`projeto` das fixtures deste módulo.
 """
 
-from datetime import timedelta
+from datetime import date, timedelta
 from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
 
 from apps.sca.models import ConflictLog
+from apps.sca.tests.conftest import payload_upf
 from apps.sca.tests.test_sync_push import build_item, post_batch
 from apps.sgp.models import MembroFamilia
+from apps.sgp.services.membro_rules import normalizar_cpf
 from apps.sgp.tests.factories import ActivityFactory, MembroFactory, UPFFactory
 
 
@@ -371,6 +373,202 @@ def test_conflito_por_violacao_de_constraint_concorrente(auth_client, municipio,
     ).latest("id")
     assert conflito.status == ConflictLog.Status.PENDENTE
     assert conflito.campo == "grau_parentesco"
+
+
+# ---------------------------------------------------------------------------
+# Cenários da 2ª rodada de revisão do PR #304
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_paridade_cpf_formatado_no_create_member(auth_client, municipio, projeto):
+    """CPF mascarado num CREATE (não só update) precisa ser normalizado por
+    `get_by_natural` — senão a Estratégia 1 não acha o duplicata pelo texto
+    bruto e o item segue adiante até cair (ainda corretamente, mas pela
+    estratégia errada) na checagem de regra de negócio."""
+    cpf_ja_usado = "86288366757"
+    MembroFactory(
+        upf=UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725"),
+        nome_completo="Já Cadastrado",
+        grau_parentesco="filho",
+        cpf=cpf_ja_usado,
+    )
+    cpf_formatado = "862.883.667-57"
+
+    upf_sync = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
+    item = build_item(
+        "member",
+        operacao="create",
+        payload={
+            "upf": upf_sync.pk,
+            "nome_completo": "Novo Membro",
+            "grau_parentesco": "filho",
+            "cpf": cpf_formatado,
+        },
+    )
+    resultado = post_batch(auth_client, [item]).data["resultados"][0]
+    assert resultado["status"] == "erro"
+    assert "DUPLICATA" in resultado["erro"]
+    assert MembroFamilia.objects.filter(cpf=cpf_ja_usado).count() == 1
+
+    conflito = ConflictLog.objects.filter(
+        entidade="member", estrategia=ConflictLog.Estrategia.DUPLICATE_REJEITADO
+    ).latest("id")
+    assert conflito.status == ConflictLog.Status.RESOLVIDO_AUTO
+
+
+@pytest.mark.django_db
+def test_paridade_cpf_formatado_no_create_titular_upf(auth_client, municipio, projeto):
+    """Mesmo cenário do teste acima, mas pelo titular de uma UPF nova."""
+    cpf_ja_usado = "86288366757"
+    MembroFactory(
+        upf=UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725"),
+        nome_completo="Já Cadastrado",
+        grau_parentesco="filho",
+        cpf=cpf_ja_usado,
+    )
+    cpf_formatado = "862.883.667-57"
+
+    payload = payload_upf(
+        projeto, municipio, titular={"nome_completo": "Nova Titular", "cpf": cpf_formatado}
+    )
+    item = build_item("upf", operacao="create", payload=payload)
+    resultado = post_batch(auth_client, [item]).data["resultados"][0]
+    assert resultado["status"] == "erro"
+    assert "DUPLICATA" in resultado["erro"]
+    assert MembroFamilia.objects.filter(cpf=cpf_ja_usado).count() == 1
+
+    conflito = ConflictLog.objects.filter(
+        entidade="upf", estrategia=ConflictLog.Estrategia.DUPLICATE_REJEITADO
+    ).latest("id")
+    assert conflito.status == ConflictLog.Status.RESOLVIDO_AUTO
+
+
+@pytest.mark.django_db
+def test_paridade_data_nascimento_futura(auth_client, municipio, projeto):
+    data_futura = (date.today() + timedelta(days=30)).isoformat()
+
+    upf_web = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="33355588800")
+    membro_web = MembroFactory(upf=upf_web, nome_completo="Alvo Web", grau_parentesco="filho", cpf="")
+    response = auth_client.patch(
+        _membro_detail_url(upf_web.pk, membro_web.pk),
+        {"data_nascimento": data_futura},
+        format="json",
+    )
+    assert response.status_code == 400
+
+    upf_sync = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
+    item = build_item(
+        "member",
+        operacao="create",
+        payload={
+            "upf": upf_sync.pk,
+            "nome_completo": "Novo Membro Nascimento",
+            "grau_parentesco": "filho",
+            "data_nascimento": data_futura,
+        },
+    )
+    resultado = post_batch(auth_client, [item]).data["resultados"][0]
+    assert resultado["status"] == "erro"
+    assert "DATA_NASCIMENTO_INVALIDA" in resultado["erro"]
+    assert not MembroFamilia.objects.filter(nome_completo="Novo Membro Nascimento").exists()
+
+
+@pytest.mark.django_db
+def test_paridade_saude_invalida(auth_client, municipio, projeto):
+    saude_invalida = ["valor_inexistente"]
+
+    upf_web = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="33355588800")
+    membro_web = MembroFactory(upf=upf_web, nome_completo="Alvo Web", grau_parentesco="filho", cpf="")
+    response = auth_client.patch(
+        _membro_detail_url(upf_web.pk, membro_web.pk), {"saude": saude_invalida}, format="json"
+    )
+    assert response.status_code == 400
+
+    upf_sync = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
+    item = build_item(
+        "member",
+        operacao="create",
+        payload={
+            "upf": upf_sync.pk,
+            "nome_completo": "Novo Membro Saude",
+            "grau_parentesco": "filho",
+            "saude": saude_invalida,
+        },
+    )
+    resultado = post_batch(auth_client, [item]).data["resultados"][0]
+    assert resultado["status"] == "erro"
+    assert "SAUDE_INVALIDA" in resultado["erro"]
+    assert not MembroFamilia.objects.filter(nome_completo="Novo Membro Saude").exists()
+
+
+@pytest.mark.django_db
+def test_sync_update_atividade_participantes_validos_nao_quebra(auth_client, municipio, projeto):
+    """Regressão: update de atividade com upfs_participantes/
+    membros_participantes válidos não pode derrubar o item com TypeError
+    (setattr direto num campo M2M) — tem que gravar com `.set()` e responder
+    'ok', não estourar o lote inteiro em 500."""
+    upf = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
+    membro = MembroFactory(
+        upf=upf, nome_completo="Participante Valido", grau_parentesco="filho", cpf=""
+    )
+    atividade = ActivityFactory(municipio=municipio, status="planejado")
+
+    resultado = _sync_update_activity(
+        auth_client,
+        atividade,
+        {"upfs_participantes": [upf.pk], "membros_participantes": [membro.pk]},
+    )
+    assert resultado["status"] == "ok"
+    atividade.refresh_from_db()
+    assert list(atividade.upfs_participantes.values_list("pk", flat=True)) == [upf.pk]
+    assert list(atividade.membros_participantes.values_list("pk", flat=True)) == [membro.pk]
+
+
+@pytest.mark.django_db
+def test_conflito_por_violacao_de_constraint_concorrente_cpf(auth_client, municipio, projeto):
+    """Mesmo padrão do teste já existente para `unique_titular_por_upf`, mas
+    simulando a corrida em `unique_cpf_global`: tanto a busca por
+    identificador natural (Estratégia 1) quanto a checagem em memória são
+    mockadas pra "não ver" o duplicata (como aconteceria se duas requisições
+    concorrentes lessem o banco antes de qualquer uma commitar) — só a
+    constraint do banco barra, e precisa virar CPF_DUPLICADO com
+    conflict_log, não ERRO_INTERNO genérico."""
+    cpf_ja_usado = "86288366757"
+    MembroFactory(
+        upf=UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725"),
+        nome_completo="Já Cadastrado",
+        grau_parentesco="filho",
+        cpf=cpf_ja_usado,
+    )
+    upf_sync = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
+
+    def _passthrough_cpf(cpf, **kwargs):
+        return normalizar_cpf(cpf)
+
+    with patch(
+        "apps.sca.sync_entities.MemberSyncEntity.get_by_natural", return_value=None
+    ), patch("apps.sca.sync_entities.validar_cpf", side_effect=_passthrough_cpf):
+        item = build_item(
+            "member",
+            operacao="create",
+            payload={
+                "upf": upf_sync.pk,
+                "nome_completo": "Concorrente",
+                "grau_parentesco": "filho",
+                "cpf": cpf_ja_usado,
+            },
+        )
+        resultado = post_batch(auth_client, [item]).data["resultados"][0]
+
+    assert resultado["status"] == "erro"
+    assert "CPF_DUPLICADO" in resultado["erro"]
+    assert MembroFamilia.objects.filter(cpf=cpf_ja_usado).count() == 1
+
+    conflito = ConflictLog.objects.filter(
+        entidade="member", estrategia=ConflictLog.Estrategia.REGRA_NEGOCIO_REJEITADA
+    ).latest("id")
+    assert conflito.status == ConflictLog.Status.PENDENTE
+    assert conflito.campo == "cpf"
 
 
 # ---------------------------------------------------------------------------

@@ -475,7 +475,7 @@ class PushProcessor:
                 if membro_antes is not None
                 else None
             )
-            entity.apply_changes(instance, result.changes_to_apply)
+            entity.apply_changes(instance, result.changes_to_apply, uuid_map=self.uuid_map)
             self._audit_membro_change(entity, item, "MEMBRO.update", instance, anteriores_sensiveis)
 
         self._record_conflicts(entity, item, instance, result)

@@ -35,7 +35,8 @@ Códigos possíveis: `PAYLOAD_INVALIDO`, `ENTIDADE_NAO_SUPORTADA`, `DUPLICATA`,
 `CAMPO_SENSIVEL_NAO_AUTORIZADO`, e os códigos de regra de negócio (ver seção
 abaixo): `TRANSICAO_INVALIDA`, `EVIDENCIA_OBRIGATORIA`,
 `JUSTIFICATIVA_OBRIGATORIA`, `NOVA_DATA_OBRIGATORIA`, `DATA_FIM_INVALIDA`,
-`MEMBRO_FORA_UPF`, `CPF_INVALIDO`, `CPF_DUPLICADO`, `TITULAR_DUPLICADO`.
+`MEMBRO_FORA_UPF`, `CPF_INVALIDO`, `CPF_DUPLICADO`, `TITULAR_DUPLICADO`,
+`DATA_NASCIMENTO_INVALIDA`, `SAUDE_INVALIDA`, `SEGURIDADE_SOCIAL_INVALIDA`.
 
 ## Conflitos de regra de negócio (`estrategia=regra_negocio_rejeitada`)
 
@@ -53,7 +54,10 @@ negócio, consumindo os mesmos serviços de domínio do app `sgp`:
   outro campo escaparia da regra).
 - `apps.sgp.services.membro_rules` — CPF normalizado (só dígitos) e validado
   (dígito verificador, mesma checagem de `apps.sgp.validators.validate_cpf`)
-  antes de checar unicidade global; titular único por UPF (Membro/UPF).
+  antes de checar unicidade global; titular único por UPF; data de
+  nascimento não pode ser futura; saúde e seguridade social restritas ao
+  catálogo, sem duplicidade e sem combinar "nenhuma(m)" com outras opções
+  (Membro, e titular da UPF).
 
 Quando um item do push viola uma dessas regras, o sync **nunca grava
 silenciosamente em estado inválido**: o item é rejeitado normalmente (erro
@@ -81,10 +85,13 @@ junto.
 servidor é pego antes mesmo de chamar `entity.create()`, pela busca por
 identificador natural (Estratégia 1) — vira `DUPLICATA` com
 `estrategia=duplicate_rejeitado`, `status=resolvido_auto` (não chega a ser
-`regra_negocio_rejeitada`). Só no **update** — trocar o CPF de um registro
-já existente para um CPF usado por outro — é que a checagem nova desta
-issue entra em ação, com `estrategia=regra_negocio_rejeitada`,
-`status=pendente`.
+`regra_negocio_rejeitada`). Isso vale igual para CPF com ou sem máscara: a
+busca por identificador natural normaliza o CPF antes de comparar, senão um
+CPF formatado diferente do já cadastrado escaparia da Estratégia 1 e só
+seria pego mais adiante (mesmo resultado final, estratégia errada no log).
+Só no **update** — trocar o CPF de um registro já existente para um CPF
+usado por outro — é que a checagem nova desta issue entra em ação, com
+`estrategia=regra_negocio_rejeitada`, `status=pendente`.
 
 **Mudança de comportamento na API web:** a unicidade de CPF no cadastro de
 UPF (`POST/PATCH /api/v1/upfs/`) passou a ser **global**, no mesmo escopo da

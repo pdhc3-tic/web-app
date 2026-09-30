@@ -6,9 +6,13 @@ chama decide como reportar (serializer web converte em ValidationError,
 sync SCA converte em SyncEntityError).
 """
 
+import re
+from datetime import date
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework.serializers import ValidationError as DRFValidationError
 
+from apps.sgp.constants import SAUDE_CHOICES, SEGURIDADE_SOCIAL_CHOICES
 from apps.sgp.models import MembroFamilia, UPF
 from apps.sgp.validators import validate_cpf as _validar_formato_cpf
 
@@ -45,11 +49,38 @@ class TitularDuplicadoError(MembroRuleError):
     sync_code = "TITULAR_DUPLICADO"
 
 
+class DataNascimentoFuturaError(MembroRuleError):
+    field = "data_nascimento"
+    sync_code = "DATA_NASCIMENTO_INVALIDA"
+
+
+class SaudeInvalidaError(MembroRuleError):
+    field = "saude"
+    sync_code = "SAUDE_INVALIDA"
+
+
+class SeguridadeSocialInvalidaError(MembroRuleError):
+    field = "seguridade_social"
+    sync_code = "SEGURIDADE_SOCIAL_INVALIDA"
+
+
 REGRA_NEGOCIO_SYNC_CODES = {
     CPFInvalidoError.sync_code,
     CPFDuplicadoError.sync_code,
     TitularDuplicadoError.sync_code,
+    DataNascimentoFuturaError.sync_code,
+    SaudeInvalidaError.sync_code,
+    SeguridadeSocialInvalidaError.sync_code,
 }
+
+
+def normalizar_cpf(cpf) -> str:
+    """Só remove tudo que não é dígito — sem validar formato/dígito
+    verificador. Usado na busca por identificador natural (`get_by_natural`),
+    onde precisamos achar o registro mesmo que o CPF enviado esteja com
+    máscara; a validação de formato em si acontece em `validar_cpf`, chamado
+    antes de qualquer gravação."""
+    return re.sub(r"\D", "", cpf or "")
 
 
 def validar_cpf(cpf, *, membro_atual=None):
@@ -92,3 +123,63 @@ def validar_titular_unico(upf_id, *, membro_atual=None):
         return
     if membro_atual is None or upf.titular_id != membro_atual.pk:
         raise TitularDuplicadoError("Já existe um titular cadastrado para esta UPF.")
+
+
+def validar_data_nascimento(value):
+    """Levanta DataNascimentoFuturaError se `value` for uma data futura.
+    `value` ausente (None) não é validado."""
+    if value and value > date.today():
+        raise DataNascimentoFuturaError(
+            "Data de nascimento não pode ser uma data futura"
+        )
+    return value
+
+
+def validar_saude(value):
+    """Levanta SaudeInvalidaError para valores fora do catálogo, duplicados,
+    ou 'nenhuma' combinada com outras condições. `value` ausente (None) não
+    é validado — quem chama decide se o campo é obrigatório."""
+    if value is None:
+        return value
+    if not isinstance(value, list):
+        raise SaudeInvalidaError("Saúde deve ser uma lista de strings")
+    if len(value) != len(set(value)):
+        raise SaudeInvalidaError("Condições de saúde não podem conter duplicidades.")
+    for item in value:
+        if item not in SAUDE_CHOICES:
+            raise SaudeInvalidaError(
+                f"'{item}' não é um valor válido para saúde. "
+                f"Valores permitidos: {', '.join(SAUDE_CHOICES)}"
+            )
+    if "nenhuma" in value and len(value) > 1:
+        raise SaudeInvalidaError(
+            "A opção 'nenhuma' é mutuamente exclusiva com outras condições."
+        )
+    return value
+
+
+def validar_seguridade_social(value):
+    """Levanta SeguridadeSocialInvalidaError para valores fora do catálogo,
+    duplicados, ou 'nenhum' combinado com outros benefícios. `value` ausente
+    (None) não é validado."""
+    if value is None:
+        return value
+    if not isinstance(value, list):
+        raise SeguridadeSocialInvalidaError(
+            "Seguridade social deve ser uma lista de strings."
+        )
+    if len(value) != len(set(value)):
+        raise SeguridadeSocialInvalidaError(
+            "Seguridade social não pode conter duplicidades."
+        )
+    for item in value:
+        if item not in SEGURIDADE_SOCIAL_CHOICES:
+            raise SeguridadeSocialInvalidaError(
+                f"'{item}' não é um valor válido para seguridade social. "
+                f"Valores permitidos: {', '.join(SEGURIDADE_SOCIAL_CHOICES)}"
+            )
+    if "nenhum" in value and len(value) > 1:
+        raise SeguridadeSocialInvalidaError(
+            "A opção 'nenhum' é mutuamente exclusiva com outros benefícios."
+        )
+    return value

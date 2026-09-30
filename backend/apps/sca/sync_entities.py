@@ -26,7 +26,11 @@ from apps.sgp.services.activity_status import (
 )
 from apps.sgp.services.membro_rules import (
     MembroRuleError,
+    normalizar_cpf,
     validar_cpf,
+    validar_data_nascimento,
+    validar_saude,
+    validar_seguridade_social,
     validar_titular_unico,
 )
 
@@ -197,8 +201,13 @@ class SyncEntity:
     def create(self, data: dict, *, user, device_id: str, uuid_local, uuid_map):
         raise NotImplementedError
 
-    def apply_changes(self, instance, changes: dict):
-        """Aplica apenas as mudanças locais aprovadas (merge/Estratégia 2 e 3)."""
+    def apply_changes(self, instance, changes: dict, *, uuid_map=None):
+        """Aplica apenas as mudanças locais aprovadas (merge/Estratégia 2 e 3).
+
+        `uuid_map` resolve referências a entidades criadas no mesmo batch
+        (mesmo padrão de `create`) — só `ActivitySyncEntity` usa, para
+        `upfs_participantes`/`membros_participantes`.
+        """
         raise NotImplementedError
 
     # ------------------------------------------------------------------
@@ -244,7 +253,7 @@ class UPFSyncEntity(SyncEntity):
 
     def get_by_natural(self, data):
         titular = data.get("titular") or {}
-        cpf = (titular.get("cpf") or "").strip()
+        cpf = normalizar_cpf(titular.get("cpf"))
         if not cpf:
             return None
         membro = (
@@ -268,6 +277,12 @@ class UPFSyncEntity(SyncEntity):
 
         try:
             titular_data["cpf"] = validar_cpf(titular_data.get("cpf"))
+            if "data_nascimento" in titular_data:
+                validar_data_nascimento(titular_data["data_nascimento"])
+            if "saude" in titular_data:
+                validar_saude(titular_data["saude"])
+            if "seguridade_social" in titular_data:
+                validar_seguridade_social(titular_data["seguridade_social"])
         except MembroRuleError as exc:
             raise SyncEntityError(
                 f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
@@ -300,7 +315,7 @@ class UPFSyncEntity(SyncEntity):
         titular.save(update_fields=["upf", "ultima_origem", "ultimo_sync_em"])
         return upf
 
-    def apply_changes(self, instance, changes: dict):
+    def apply_changes(self, instance, changes: dict, *, uuid_map=None):
         titular_changes = {}
         upf_changes = {}
         for path, value in changes.items():
@@ -309,15 +324,21 @@ class UPFSyncEntity(SyncEntity):
             else:
                 upf_changes[path] = value
 
-        if titular_changes.get("cpf"):
-            try:
+        try:
+            if titular_changes.get("cpf"):
                 titular_changes["cpf"] = validar_cpf(
                     titular_changes["cpf"], membro_atual=instance.titular
                 )
-            except MembroRuleError as exc:
-                raise SyncEntityError(
-                    f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
-                ) from exc
+            if "data_nascimento" in titular_changes:
+                validar_data_nascimento(titular_changes["data_nascimento"])
+            if "saude" in titular_changes:
+                validar_saude(titular_changes["saude"])
+            if "seguridade_social" in titular_changes:
+                validar_seguridade_social(titular_changes["seguridade_social"])
+        except MembroRuleError as exc:
+            raise SyncEntityError(
+                f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
+            ) from exc
 
         upf_changes = _resolve_fk_ids(UPF, upf_changes)
         for field, value in upf_changes.items():
@@ -409,7 +430,7 @@ class MemberSyncEntity(SyncEntity):
         return instance.upf.territorio_id if instance.upf_id else None
 
     def get_by_natural(self, data):
-        cpf = (data.get("cpf") or "").strip()
+        cpf = normalizar_cpf(data.get("cpf"))
         if not cpf:
             return None
         return MembroFamilia.objects.filter(cpf=cpf).exclude(upf=None).first()
@@ -426,6 +447,12 @@ class MemberSyncEntity(SyncEntity):
             data["cpf"] = validar_cpf(data.get("cpf"))
             if data.get("grau_parentesco") == "titular":
                 validar_titular_unico(upf_id)
+            if "data_nascimento" in data:
+                validar_data_nascimento(data["data_nascimento"])
+            if "saude" in data:
+                validar_saude(data["saude"])
+            if "seguridade_social" in data:
+                validar_seguridade_social(data["seguridade_social"])
         except MembroRuleError as exc:
             raise SyncEntityError(
                 f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
@@ -439,7 +466,7 @@ class MemberSyncEntity(SyncEntity):
             **data,
         )
 
-    def apply_changes(self, instance, changes: dict):
+    def apply_changes(self, instance, changes: dict, *, uuid_map=None):
         novo_grau = changes.get("grau_parentesco", instance.grau_parentesco)
         novo_upf_id = changes.get("upf", instance.upf_id)
         try:
@@ -447,6 +474,12 @@ class MemberSyncEntity(SyncEntity):
                 changes["cpf"] = validar_cpf(changes["cpf"], membro_atual=instance)
             if novo_grau == "titular":
                 validar_titular_unico(novo_upf_id, membro_atual=instance)
+            if "data_nascimento" in changes:
+                validar_data_nascimento(changes["data_nascimento"])
+            if "saude" in changes:
+                validar_saude(changes["saude"])
+            if "seguridade_social" in changes:
+                validar_seguridade_social(changes["seguridade_social"])
         except MembroRuleError as exc:
             raise SyncEntityError(
                 f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
@@ -539,8 +572,31 @@ class ActivitySyncEntity(SyncEntity):
             return uuid_map.get(item)
         return item
 
-    def apply_changes(self, instance, changes: dict):
+    def apply_changes(self, instance, changes: dict, *, uuid_map=None):
         changes = _resolve_fk_ids(Activity, changes)
+
+        # Participantes M2M não podem ser atribuídos via setattr (Django
+        # recusa com TypeError: "Direct assignment to the forward side of a
+        # many-to-many set is prohibited") — tirados de `changes` aqui,
+        # resolvidos via uuid_map (igual ao `create`) e gravados com `.set()`
+        # depois do save, não pelo loop genérico abaixo.
+        upfs_payload = changes.pop("upfs_participantes", None)
+        membros_payload = changes.pop("membros_participantes", None)
+
+        upfs_resolvidos = None
+        if upfs_payload is not None:
+            upfs_resolvidos = [
+                self._resolve_participante(item, uuid_map, UPF) for item in upfs_payload
+            ]
+            upfs_ids = set(upfs_resolvidos)
+        else:
+            upfs_ids = set(instance.upfs_participantes.values_list("pk", flat=True))
+
+        membros_resolvidos = None
+        if membros_payload is not None:
+            membros_resolvidos = [
+                self._resolve_participante(item, uuid_map, MembroFamilia) for item in membros_payload
+            ]
 
         # Resolvidos com fallback pro valor atual da atividade — igual à API
         # web (`ActivityDetailSerializer.validate`): a regra roda em toda
@@ -551,19 +607,13 @@ class ActivitySyncEntity(SyncEntity):
         data_inicio = changes.get("data_inicio", instance.data_inicio)
         data_fim = changes.get("data_fim", instance.data_fim)
 
-        if "upfs_participantes" in changes:
-            upfs_ids = set(changes["upfs_participantes"])
-        else:
-            upfs_ids = set(instance.upfs_participantes.values_list("pk", flat=True))
-        membros_ids = changes.get("membros_participantes")
-
         try:
             validar_transicao(
                 instance, novo_status, justificativa=justificativa, nova_data=nova_data
             )
             validar_datas(data_inicio, data_fim)
-            if membros_ids is not None:
-                validar_membros_participantes(upfs_ids, membros_ids)
+            if membros_resolvidos is not None:
+                validar_membros_participantes(upfs_ids, membros_resolvidos)
         except ActivityRuleError as exc:
             raise SyncEntityError(
                 f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
@@ -574,6 +624,11 @@ class ActivitySyncEntity(SyncEntity):
         instance.ultima_origem = "sca"
         instance.ultimo_sync_em = timezone.now()
         instance.save()
+
+        if upfs_resolvidos is not None:
+            instance.upfs_participantes.set(upfs_resolvidos)
+        if membros_resolvidos is not None:
+            instance.membros_participantes.set(membros_resolvidos)
 
     def serialize(self, instance):
         data = {
