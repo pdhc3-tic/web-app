@@ -18,11 +18,10 @@ pytestmark = pytest.mark.django_db
 PANEL_URL = "/api/v1/sgp/plano-trabalho/painel/"
 
 
-def create_action_with_progress(meta, numero, municipio, completed, planned=10):
+def create_action_with_progress(meta, municipio, completed, planned=10):
     today = date.today()
     action = WorkPlanAcaoFactory(
         meta=meta,
-        numero=numero,
         quantidade_planejada=Decimal(str(planned)),
         data_inicio=today - timedelta(days=10),
         data_fim=today + timedelta(days=10),
@@ -35,9 +34,9 @@ def create_action_with_progress(meta, numero, municipio, completed, planned=10):
 class TestWorkPlanDashboard:
     def test_returns_indicators_and_summary_per_meta(self, auth_client, municipio):
         meta = WorkPlanMetaFactory(numero=1)
-        create_action_with_progress(meta, "1.1", municipio, completed=5)
-        create_action_with_progress(meta, "1.2", municipio, completed=3)
-        create_action_with_progress(meta, "1.3", municipio, completed=1)
+        create_action_with_progress(meta, municipio, completed=5)
+        create_action_with_progress(meta, municipio, completed=3)
+        create_action_with_progress(meta, municipio, completed=1)
 
         response = auth_client.get(PANEL_URL)
 
@@ -58,9 +57,9 @@ class TestWorkPlanDashboard:
     def test_keeps_summary_separate_for_each_meta(self, auth_client, municipio):
         first_meta = WorkPlanMetaFactory(numero=1)
         second_meta = WorkPlanMetaFactory(numero=2)
-        create_action_with_progress(first_meta, "1.1", municipio, completed=5)
-        create_action_with_progress(first_meta, "1.2", municipio, completed=1)
-        create_action_with_progress(second_meta, "2.1", municipio, completed=3)
+        create_action_with_progress(first_meta, municipio, completed=5)
+        create_action_with_progress(first_meta, municipio, completed=1)
+        create_action_with_progress(second_meta, municipio, completed=3)
 
         response = auth_client.get(PANEL_URL)
 
@@ -87,9 +86,9 @@ class TestWorkPlanDashboard:
     ):
         meta = WorkPlanMetaFactory(numero=1)
         other_meta = WorkPlanMetaFactory(numero=2)
-        visible = create_action_with_progress(meta, "1.1", municipio, completed=1)
-        create_action_with_progress(other_meta, "2.1", municipio_ce, completed=1)
-        completed = create_action_with_progress(meta, "1.2", municipio, completed=10)
+        visible = create_action_with_progress(meta, municipio, completed=1)
+        create_action_with_progress(other_meta, municipio_ce, completed=1)
+        completed = create_action_with_progress(meta, municipio, completed=10)
 
         response = auth_client.get(
             f"{PANEL_URL}?meta_id={meta.pk}&territorio_id={territory.pk}"
@@ -104,9 +103,9 @@ class TestWorkPlanDashboard:
         self, auth_client_adt_rn, municipio_rn, municipio_ce
     ):
         meta = WorkPlanMetaFactory(numero=1)
-        own_action = create_action_with_progress(meta, "1.1", municipio_rn, completed=1)
-        create_action_with_progress(meta, "1.2", municipio_ce, completed=1)
-        WorkPlanAcaoFactory(meta=meta, numero="1.3")
+        own_action = create_action_with_progress(meta, municipio_rn, completed=1)
+        create_action_with_progress(meta, municipio_ce, completed=1)
+        WorkPlanAcaoFactory(meta=meta)
 
         response = auth_client_adt_rn.get(PANEL_URL)
 
@@ -117,7 +116,7 @@ class TestWorkPlanDashboard:
         self, auth_client_adt_rn, municipio_rn, municipio_ce
     ):
         meta = WorkPlanMetaFactory(numero=1)
-        action = create_action_with_progress(meta, "1.1", municipio_rn, completed=1)
+        action = create_action_with_progress(meta, municipio_rn, completed=1)
         ActivityFactory(acao=action, municipio=municipio_ce, status="concluido")
 
         response = auth_client_adt_rn.get(PANEL_URL)
@@ -133,10 +132,8 @@ class TestWorkPlanDashboard:
 
     def test_returns_one_hundred_actions_under_one_second(self, auth_client, municipio):
         meta = WorkPlanMetaFactory(numero=1)
-        for index in range(1, 101):
-            create_action_with_progress(
-                meta, f"1.{index}", municipio, completed=1
-            )
+        for _ in range(100):
+            create_action_with_progress(meta, municipio, completed=1)
 
         started_at = monotonic()
         response = auth_client.get(PANEL_URL)
@@ -155,7 +152,7 @@ class TestWorkPlanProgressAlerts:
         self, mocked_delay, usuario, usuario_super_admin, municipio, django_capture_on_commit_callbacks,
     ):
         meta = WorkPlanMetaFactory(numero=1)
-        action = create_action_with_progress(meta, "1.1", municipio, completed=1)
+        action = create_action_with_progress(meta, municipio, completed=1)
 
         # Notification.save() só enfileira o e-mail via transaction.on_commit
         # — captura os callbacks pra executá-los aqui.
@@ -173,7 +170,7 @@ class TestWorkPlanProgressAlerts:
         self, mocked_delay, usuario, municipio
     ):
         meta = WorkPlanMetaFactory(numero=1)
-        create_action_with_progress(meta, "1.1", municipio, completed=5)
+        create_action_with_progress(meta, municipio, completed=5)
 
         assert check_acao_progress_alert() == 0
         assert mocked_delay.call_count == 0

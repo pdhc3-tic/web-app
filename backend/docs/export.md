@@ -194,18 +194,43 @@ Foram implementadas a exportação do Plano de Trabalho em CSV/XLSX e uma API au
 
 O módulo `apps/sgp/services/workplan_export.py` é a fonte única do dataset exportável. Ele evita duplicação entre exportação manual e Power BI, retornando as colunas:
 
-1. Meta
-2. Ação
-3. Tipo/Unidade
-4. Quantidade planejada
-5. Valor unitário
-6. Valor total
-7. Quantidade realizada
-8. Percentual realizado
-9. Status de execução
-10. Semáforo
+1. Nível (Meta, Submeta ou Ação)
+2. Meta
+3. Número da Submeta
+4. Título da Submeta
+5. Ação
+6. Indicador
+7. Unidade de medida
+8. Forma de apuração
+9. Quantidade planejada
+10. Valor unitário
+11. Valor total
+12. Quantidade realizada
+13. Percentual realizado
+14. Valor executado
+15. Custo unitário realizado
+16. Saldo (valor total − valor executado)
+17. Status de execução
+18. Semáforo
 
-A consulta usa `select_related`, agregação com `Count`, filtros SQL e `Exists` para evitar consultas N+1 e preservar desempenho.
+O CSV e o XLSX exportam a árvore completa (SGP §5.6, RF25): uma linha por
+Meta, a seguir uma por Submeta e, sob cada Submeta, uma por Ação. As linhas de
+Meta e Submeta trazem o consolidado do nó (as mesmas somas do painel) e deixam
+vazias as colunas que só existem na Ação (Indicador, valor e custo unitários).
+Sem recorte (visão global, sem território nem período), Metas e Submetas ainda
+sem Ações também aparecem. O dataset do Power BI (RF26) tem só as linhas de
+Ação, com `nivel` = "Ação", para que as somas do BI não contem cada valor três
+vezes.
+
+A quantidade realizada segue a forma de apuração do Indicador e é apurada só
+sobre as Atividades no escopo do usuário (ver `backend/docs/plano-trabalho.md`).
+O valor executado é o da Ação inteira. A consulta usa `select_related`,
+subqueries por Ação e `Exists` para evitar consultas N+1.
+
+A coluna "Tipo/Unidade" deixou de existir: o Indicador substituiu o campo
+`tipo_unidade` da Ação. No dataset do Power BI a chave `tipo_unidade` continua
+existindo, com o nome do Indicador, como alias de transição (ver "Débito
+técnico" em `backend/docs/plano-trabalho.md`).
 
 ### Regras de escopo territorial
 
@@ -342,14 +367,23 @@ Status: 200 OK
   "atualizado_em": "2026-08-21T14:00:00-03:00",
   "resultados": [
     {
+      "nivel": "Ação",
       "meta": "1 - Meta de exemplo",
-      "acao": "1.1 - Ação de exemplo",
+      "submeta_numero": "1.1",
+      "submeta_titulo": "Submeta de exemplo",
+      "acao": "1.1.1 - Ação de exemplo",
+      "indicador": "IND-SEM - Seminário",
+      "unidade_medida": "Evento",
+      "forma_apuracao": "Contagem de atividades concluídas",
       "tipo_unidade": "Seminário",
       "quantidade_planejada": "16.00",
       "valor_unitario": "8175.00",
       "valor_total": "130800.00",
       "quantidade_realizada": "4",
       "percentual_realizado": "25.00",
+      "valor_executado": "30000.00",
+      "custo_unitario_realizado": "7500.00",
+      "saldo": "100800.00",
       "status_execucao": "no_prazo",
       "semaforo": "amarelo"
     }

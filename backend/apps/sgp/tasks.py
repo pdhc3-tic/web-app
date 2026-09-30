@@ -17,7 +17,7 @@ from setup.tasks import send_email_notification
 from apps.core.models.notifications import Notification, TipoNotificacao
 from apps.core.models.user import User
 from apps.sgp.services.workplan_dashboard import dashboard_actions, enrich_dashboard_action
-from apps.sgp.services.budget import alocacoes_em_vermelho
+from apps.sgp.services.budget import alocacoes_em_vermelho, limiares_semaforo
 from apps.sgp.cache import set_power_bi_snapshot
 from apps.sgp.services.workplan_export import workplan_export_rows
 from apps.sgp.services import exportacao as exportacao_service
@@ -189,8 +189,9 @@ def check_acao_progress_alert() -> int:
             return 0
 
         red_actions = []
+        limiares = limiares_semaforo()
         for action in dashboard_actions():
-            action = enrich_dashboard_action(action)
+            action = enrich_dashboard_action(action, limiares=limiares)
             if action.dashboard_semaforo == "vermelho":
                 red_actions.append(action)
         notifications_sent = 0

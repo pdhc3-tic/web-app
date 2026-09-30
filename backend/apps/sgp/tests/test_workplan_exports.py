@@ -22,10 +22,9 @@ EXPORT_URL = "/api/v1/sgp/plano-trabalho/exportar/"
 POWER_BI_URL = "/api/v1/sgp/plano-trabalho/powerbi/"
 
 
-def create_action(meta, numero, municipio, *, descricao="Ação exportada"):
+def create_action(meta, municipio, *, descricao="Ação exportada"):
     action = WorkPlanAcaoFactory(
         meta=meta,
-        numero=numero,
         descricao=descricao,
         quantidade_planejada="2.00",
         valor_unitario="50.00",
@@ -39,7 +38,7 @@ def create_action(meta, numero, municipio, *, descricao="Ação exportada"):
 class TestWorkPlanExport:
     def test_csv_has_expected_headers_and_rows(self, auth_client, municipio):
         meta = WorkPlanMetaFactory(numero=1, titulo="Meta de exportação")
-        action = create_action(meta, "1.1", municipio)
+        action = create_action(meta, municipio)
 
         response = auth_client.get(f"{EXPORT_URL}?formato=csv")
 
@@ -49,13 +48,15 @@ class TestWorkPlanExport:
         content = response.content.decode("utf-8-sig")
         rows = list(csv.reader(StringIO(content)))
         assert rows[0] == [label for _, label in EXPORT_COLUMNS]
-        assert rows[1][0] == "1 - Meta de exportação"
-        assert rows[1][1] == f"{action.numero} - {action.descricao}"
-        assert rows[1][6] == "1"
+        assert [row[0] for row in rows[1:]] == ["Meta", "Submeta", "Ação"]
+        linha = dict(zip(rows[0], rows[3]))
+        assert linha["Meta"] == "1 - Meta de exportação"
+        assert linha["Ação"] == f"{action.numero} - {action.descricao}"
+        assert linha["Quantidade realizada"] == "1"
 
     def test_xlsx_opens_and_has_same_columns(self, auth_client, municipio):
         meta = WorkPlanMetaFactory(numero=1)
-        action = create_action(meta, "1.1", municipio)
+        action = create_action(meta, municipio)
 
         response = auth_client.get(f"{EXPORT_URL}?formato=xlsx")
 
@@ -65,7 +66,10 @@ class TestWorkPlanExport:
         worksheet = workbook.active
         rows = list(worksheet.iter_rows(values_only=True))
         assert list(rows[0]) == [label for _, label in EXPORT_COLUMNS]
-        assert rows[1][1] == f"{action.numero} - {action.descricao}"
+        linha = dict(zip(rows[0], rows[3]))
+        assert linha["Ação"] == f"{action.numero} - {action.descricao}"
+        assert linha["Número da Submeta"] == action.submeta.numero
+        assert linha["Título da Submeta"] == action.submeta.titulo
 
     def test_rejects_unsupported_format(self, auth_client):
         response = auth_client.get(f"{EXPORT_URL}?formato=pdf")
@@ -77,8 +81,8 @@ class TestWorkPlanExport:
         self, auth_client_adt_rn, municipio_rn, municipio_ce
     ):
         meta = WorkPlanMetaFactory(numero=1)
-        own_action = create_action(meta, "1.1", municipio_rn, descricao="Território RN")
-        create_action(meta, "1.2", municipio_ce, descricao="Território CE")
+        own_action = create_action(meta, municipio_rn, descricao="Território RN")
+        create_action(meta, municipio_ce, descricao="Território CE")
 
         response = auth_client_adt_rn.get(f"{EXPORT_URL}?formato=csv")
 
@@ -91,10 +95,9 @@ class TestWorkPlanExport:
         self, usuario, municipio
     ):
         meta = WorkPlanMetaFactory(numero=1)
-        for index in range(1, 121):
+        for _ in range(120):
             action = WorkPlanAcaoFactory(
                 meta=meta,
-                numero=f"1.{index}",
                 data_inicio=date.today() - timedelta(days=180),
                 data_fim=date.today() + timedelta(days=180),
             )
@@ -129,7 +132,7 @@ class TestPowerBIExport:
         settings.POWER_BI_SERVICE_TOKEN = "power-bi-test-token"
         cache.clear()
         meta = WorkPlanMetaFactory(numero=1)
-        action = create_action(meta, "1.1", municipio)
+        action = create_action(meta, municipio)
         snapshot = export_to_power_bi()
 
         response = api_client.get(
@@ -147,9 +150,9 @@ class TestPowerBIExport:
         settings.POWER_BI_SERVICE_TOKEN = "power-bi-test-token"
         cache.clear()
         meta = WorkPlanMetaFactory(numero=1)
-        create_action(meta, "1.1", municipio)
+        create_action(meta, municipio)
         first_snapshot = export_to_power_bi()
-        create_action(meta, "1.2", municipio)
+        create_action(meta, municipio)
         second_snapshot = export_to_power_bi()
 
         response = api_client.get(
@@ -167,8 +170,8 @@ class TestPowerBIExport:
         settings.POWER_BI_SERVICE_TOKEN = "power-bi-test-token"
         cache.clear()
         meta = WorkPlanMetaFactory(numero=1)
-        for index in range(1, 101):
-            create_action(meta, f"1.{index}", municipio)
+        for _ in range(100):
+            create_action(meta, municipio)
         export_to_power_bi()
 
         started_at = monotonic()

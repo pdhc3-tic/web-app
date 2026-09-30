@@ -47,7 +47,7 @@ Antes desta issue, `WorkPlanAcao.quantidade_realizada` era uma `@property` que e
 ## Decisões Derivadas da Medição
 
 - Nenhum índice novo foi adicionado a `UPF` (além dos já existentes em `municipio`, `territorio`, `projeto`, `comunidade`). Caso `test_listagem_5000_upfs_sob_3s` não atinja o RNF neste ambiente, avaliar um índice em `criado_em` (usado no `ordering` padrão) ou um índice composto alinhado ao filtro exercitado no teste.
-- `services/workplan_dashboard.py` (painel do PT) e `services/workplan_export.py` continuam calculando o progresso via `Count(...)` anotado por requisição, em vez de ler `quantidade_realizada` diretamente — esses endpoints filtram o progresso por escopo territorial do usuário, algo que o campo materializado (global, sem escopo) não captura. O campo `quantidade_realizada` resolve o N+1 dos consumidores "crus" da Ação (serializer padrão, admin, `WorkPlanMetaViewSet.list()` via `status_calculado`).
+- `services/workplan_dashboard.py` (painel do PT) e `services/workplan_export.py` continuam calculando o progresso por requisição (`expressao_quantidade_realizada`, em `services/apuracao.py`, conforme a forma de apuração do Indicador), em vez de ler `quantidade_realizada` diretamente — esses endpoints filtram o progresso por escopo territorial do usuário, algo que o campo materializado (global, sem escopo) não captura. O campo `quantidade_realizada` resolve o N+1 dos consumidores "crus" da Ação (serializer padrão, admin, `WorkPlanMetaViewSet.list()` via `status_calculado`).
 - `manage.py verificar_progresso_acoes` reconcilia (corrige) as divergências por padrão; use `--check-only` para apenas detectá-las sem alterar o banco (útil em CI/monitoramento).
 
 ## Exportação de 12 meses (Plano de Trabalho e Atividades)
