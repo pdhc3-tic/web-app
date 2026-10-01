@@ -81,14 +81,15 @@ limpar()
 articulador = U.objects.get(email="helio.fontenele@demo.pdhc.local")
 ugp = U.objects.get(email="beatriz.nogueira@demo.pdhc.local")
 
-META_ID = 19
+# A Meta vem da primeira Ação do PT, não de um id fixo: ids mudam a cada reseed.
+acao = WorkPlanAcao.objects.order_by("pk").first()
+META_ID = acao.meta_id
 BudgetAllocation.objects.create(
     meta_id=META_ID, rubrica=rubrica, nivel="territorial", territorio_id=territorio_id, valor_alocado=POOL,
 )
 DemandIndividualLimit.objects.create(solicitante=adt, rubrica=rubrica, valor_limite=Decimal("10000"))
 
 municipio = Municipality.objects.filter(territory_id=territorio_id).order_by("nome").first()
-acao = WorkPlanAcao.objects.filter(meta_id=META_ID).order_by("pk").first()
 quando = timezone.now() + timedelta(days=20)
 atividade = Activity.objects.create(
     titulo=f"{P} Intercâmbio regional", tipo_atividade="intercambio", acao=acao, municipio=municipio,

@@ -28,6 +28,12 @@ compilação.*
 
 ## 1. `GET /api/v1/upfs/exportar/` não existe — bloqueia a #240 inteira
 
+> **Resolvido em 30/09/2026 pelo PR #306.** O backend adotou outro formato
+> para a exportação assíncrona — `GET/download/repetir` em
+> `/api/v1/sgp/exportacoes/{id}/`, status `erro` em vez de `falhou`, campos
+> `total_registros`/`nome_arquivo`/`expira_em` —, e o frontend foi adaptado a
+> ele em 01/10/2026. O texto abaixo fica como registro do pedido.
+
 *Estado atual:* a rota cai no `retrieve` do `UPFViewSet` com `pk="exportar"`:
 
 ```
@@ -132,6 +138,10 @@ CORS_EXPOSE_HEADERS = ["Content-Disposition"]
 ---
 
 ## 3. `seed_demo` não permite testar o caso "acima de 1.000"
+
+> *Ainda aberto em 01/10/2026:* o PR #306 manteve o limite fixo
+> (`UPF_EXPORT_SYNC_LIMIT = 1000` em `apps/sgp/services/upf_export.py`). Por
+> isso os E2E do caminho assíncrono continuam com a resposta forjada.
 
 O banco de demonstração tem **41 UPFs** (38 ativas). O critério "exportação
 acima de 1.000 registros é assíncrona" não é reproduzível à mão em nenhum
@@ -273,6 +283,12 @@ do SGD no frontend (`app/lib/demandas.ts`) estão escritos à mão por isso — 
 
 ## 7. Submeta e Indicador não existem no modelo do SGP
 
+> **Resolvido no backend em 30/09/2026 pelo PR #307**: o Plano de Trabalho
+> ganhou Submeta e Indicador, e o `contexto` da demanda traz a cadeia
+> completa (`submeta_*`, `indicador_*`). O formulário de nova demanda ainda
+> não a mostra porque lê o detalhe da ATIVIDADE, que segue sem esses campos —
+> ver o item 8.
+
 A #294 pede que o formulário mostre a cadeia **Ação → Submeta → Meta →
 Indicador** do Plano de Trabalho. O próprio backend registra, em
 `DemandContextoSerializer` (`apps/sgd/serializers/demand.py`), que o SGP modela
@@ -310,6 +326,13 @@ data["acao"]["meta"] = {
     "titulo": instance.acao.meta.titulo,
 }
 ```
+
+*Atualização de 01/10/2026:* com o PR #307, o `contexto` da demanda já sai
+completo (Ação → Submeta → Meta → Indicador). Para o formulário de **nova**
+demanda mostrar a mesma cadeia antes de a demanda existir, o detalhe da
+atividade precisa aninhar, além do território e da Meta, `acao.submeta`
+(`numero`, `titulo`) e `acao.indicador` (`codigo`, `nome`, `unidade_medida`) —
+os mesmos campos que `DemandContextoSerializer` já lê.
 
 ---
 

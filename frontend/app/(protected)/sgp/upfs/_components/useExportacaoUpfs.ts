@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/app/components/ui/Toast/Toast";
 import { ApiError } from "@/app/lib/api";
 import { ExportTimeoutError } from "@/app/lib/exportarPlano";
@@ -10,6 +10,7 @@ import {
   baixarExportacaoUpfs,
   fetchExportacaoUpfs,
   iniciarExportacaoUpfs,
+  repetirExportacaoUpfs,
   type ExportacaoUpfs,
   type ExportUpfsParams,
   type StatusExportacaoUpfs,
@@ -26,6 +27,11 @@ const POLL_INTERVAL_MS = 2_000;
 export type TarefaExportacaoUpfs = {
   exportacao: ExportacaoUpfs;
   filtros: ExportUpfsParams;
+  /**
+   * O backend não tem mais o arquivo: o download respondeu 410 (vale 24 h) ou
+   * a exportação sumiu (404). Só resta gerar de novo com os mesmos filtros.
+   */
+  indisponivel?: boolean;
 };
 
 function lerTarefa(): TarefaExportacaoUpfs | null {
@@ -50,9 +56,14 @@ function emAndamento(e: ExportacaoUpfs): boolean {
   return e.status === "pendente" || e.status === "processando";
 }
 
-/** 404 no polling: o backend não conhece mais a tarefa (expirou ou foi removida). */
+/** 404 no polling: o backend não conhece mais a exportação (foi removida). */
 function expirou(e: unknown): boolean {
   return e instanceof ApiError && e.status === 404;
+}
+
+/** 410 no download: o arquivo da exportação concluída passou das 24 h. */
+function arquivoExpirado(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 410;
 }
 
 function mensagemDeErro(e: unknown, padrao: string): string {
@@ -71,6 +82,7 @@ function mensagemDeErro(e: unknown, padrao: string): string {
  */
 export function useExportacaoUpfs() {
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const [tarefa, setTarefa] = useState<TarefaExportacaoUpfs | null>(null);
   const [iniciando, setIniciando] = useState(false);
   const [baixando, setBaixando] = useState(false);
@@ -89,7 +101,7 @@ export function useExportacaoUpfs() {
   const id = tarefa?.exportacao.id ?? null;
 
   const polling = useQuery({
-    queryKey: qk.exportacaoUpfs(id ?? ""),
+    queryKey: qk.exportacaoUpfs(String(id ?? "")),
     queryFn: ({ signal }) => fetchExportacaoUpfs(id!, signal),
     enabled: id !== null && emAndamento(tarefa!.exportacao),
     staleTime: 0,
@@ -109,9 +121,10 @@ export function useExportacaoUpfs() {
     if (expirou(erroPolling)) {
       return {
         ...tarefa,
+        indisponivel: true,
         exportacao: {
           ...tarefa.exportacao,
-          status: "falhou",
+          status: "erro",
           erro: "Esta exportação não está mais disponível. Gere o arquivo novamente.",
         },
       };
@@ -137,8 +150,8 @@ export function useExportacaoUpfs() {
     if (antes !== "pendente" && antes !== "processando") return;
     if (status === "concluida") {
       showToast("Exportação concluída. O arquivo está pronto para download.", "success");
-    } else if (status === "falhou") {
-      showToast(erro ?? "A exportação falhou.", "error");
+    } else if (status === "erro") {
+      showToast(erro || "A exportação falhou.", "error");
     }
   }, [efetiva, showToast]);
 
@@ -153,7 +166,7 @@ export function useExportacaoUpfs() {
           return;
         }
         atualizarTarefa({ exportacao: resultado.exportacao, filtros });
-        const total = resultado.exportacao.total;
+        const total = resultado.exportacao.total_registros;
         showToast(
           total
             ? `O conjunto filtrado tem ${total.toLocaleString("pt-BR")} registros. A exportação será gerada em segundo plano.`
@@ -175,18 +188,35 @@ export function useExportacaoUpfs() {
       const nome = await baixarExportacaoUpfs(efetiva.exportacao);
       showToast(`Download de ${nome} iniciado.`, "success");
     } catch (e) {
+      if (arquivoExpirado(e)) atualizarTarefa({ ...efetiva, indisponivel: true });
       showToast(mensagemDeErro(e, "Não foi possível baixar o arquivo."), "error");
     } finally {
       setBaixando(false);
     }
-  }, [efetiva, baixando, showToast]);
+  }, [efetiva, baixando, atualizarTarefa, showToast]);
 
-  const repetir = useCallback(() => {
-    if (!tarefa) return;
-    const { filtros } = tarefa;
-    atualizarTarefa(null);
-    void exportar(filtros);
-  }, [tarefa, atualizarTarefa, exportar]);
+  /**
+   * "Tentar novamente": a exportação em `erro` é reenfileirada pelo backend
+   * (`repetir`), mantendo o mesmo id. Se ela não existe mais (ou o arquivo
+   * expirou), gera uma nova com os filtros guardados.
+   */
+  const repetir = useCallback(async () => {
+    if (!efetiva) return;
+    const { filtros } = efetiva;
+    if (efetiva.indisponivel) {
+      atualizarTarefa(null);
+      void exportar(filtros);
+      return;
+    }
+    try {
+      const reenfileirada = await repetirExportacaoUpfs(efetiva.exportacao.id);
+      // A leitura antiga (em `erro`) no cache prevaleceria sobre o novo estado.
+      queryClient.removeQueries({ queryKey: qk.exportacaoUpfs(String(reenfileirada.id)) });
+      atualizarTarefa({ exportacao: reenfileirada, filtros });
+    } catch (e) {
+      showToast(mensagemDeErro(e, "Não foi possível repetir a exportação."), "error");
+    }
+  }, [efetiva, atualizarTarefa, exportar, queryClient, showToast]);
 
   const descartar = useCallback(() => atualizarTarefa(null), [atualizarTarefa]);
 

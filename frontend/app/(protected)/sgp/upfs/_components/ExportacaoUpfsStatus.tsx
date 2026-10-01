@@ -38,7 +38,7 @@ export function ExportacaoUpfsStatus({
   onDescartar,
 }: ExportacaoUpfsStatusProps) {
   const { exportacao } = tarefa;
-  const total = descreverTotal(exportacao.total);
+  const total = descreverTotal(exportacao.total_registros);
 
   const botaoFechar = (
     <Button
@@ -51,6 +51,32 @@ export function ExportacaoUpfsStatus({
       <X className="h-4 w-4" />
     </Button>
   );
+
+  if (exportacao.status === "concluida" && tarefa.indisponivel) {
+    // O download respondeu 410: o arquivo passou das 24 h e foi descartado.
+    return (
+      <div
+        role="status"
+        data-testid="upfs-exportacao-status"
+        data-status="expirada"
+        className="flex flex-wrap items-center gap-3 rounded-lg border border-warning-text bg-warning-bg px-4 py-3"
+      >
+        <AlertTriangle className="h-5 w-5 shrink-0 text-warning-text" aria-hidden />
+        <p className="flex-1 text-sm text-text">
+          O arquivo da exportação de {total} expirou (ele fica disponível por 24 horas).
+        </p>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onRepetir}
+          leftIcon={<RotateCcw className="h-4 w-4" />}
+        >
+          Gerar novamente
+        </Button>
+        {botaoFechar}
+      </div>
+    );
+  }
 
   if (exportacao.status === "concluida") {
     return (
@@ -77,18 +103,18 @@ export function ExportacaoUpfsStatus({
     );
   }
 
-  if (exportacao.status === "falhou") {
+  if (exportacao.status === "erro") {
     return (
       <div
         role="status"
         data-testid="upfs-exportacao-status"
-        data-status="falhou"
+        data-status="erro"
         className="flex flex-wrap items-center gap-3 rounded-lg border border-error bg-error-bg px-4 py-3"
       >
         <AlertTriangle className="h-5 w-5 shrink-0 text-error-text" aria-hidden />
         <p className="flex-1 text-sm text-text">
           A exportação falhou.{" "}
-          {exportacao.erro ?? "Não foi possível gerar o arquivo."}
+          {exportacao.erro || "Não foi possível gerar o arquivo."}
         </p>
         <Button
           size="sm"
