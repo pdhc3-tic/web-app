@@ -11,6 +11,12 @@ import path from "node:path";
  *                    vinculado a um conjunto DISJUNTO de territórios (PE/AL/MA e
  *                    PB/RN/BA/MG). O par existe para provar o recorte por estado:
  *                    um não pode enxergar os conflitos do outro.
+ * - `adt`          → perfil "adt-acr" do Território RN, técnico responsável
+ *                    de atividades DENTRO do próprio território. É quem cria
+ *                    demanda no SGD (#294). Os outros ADTs do seed são técnicos
+ *                    de atividades fora do território deles e não as enxergam.
+ * - `fgd`          → perfil "fgd" (Fundação Gestora): atende e conclui as
+ *                    demandas autorizadas do SGD (#296).
  * - `superAdmin`   → perfil "super-admin" com território nulo (acesso global).
  *                    É o único que entra nas telas de /admin. Atenção: tanto o
  *                    `IsSuperAdmin` do backend quanto o `isSuperAdmin()` do
@@ -22,6 +28,8 @@ export type UserKey =
   | "semPermissao"
   | "articuladorPE"
   | "articuladorPB"
+  | "adt"
+  | "fgd"
   | "superAdmin";
 
 export const USERS: Record<UserKey, { email: string; password: string }> = {
@@ -39,6 +47,14 @@ export const USERS: Record<UserKey, { email: string; password: string }> = {
   },
   articuladorPB: {
     email: process.env.E2E_ARTICULADOR_PB_EMAIL ?? "helio.fontenele@demo.pdhc.local",
+    password: process.env.E2E_PASSWORD ?? "Pdhc@2026demo",
+  },
+  adt: {
+    email: process.env.E2E_ADT_EMAIL ?? "ewerton.bandeira@demo.pdhc.local",
+    password: process.env.E2E_PASSWORD ?? "Pdhc@2026demo",
+  },
+  fgd: {
+    email: process.env.E2E_FGD_EMAIL ?? "adriano.peixoto@demo.pdhc.local",
     password: process.env.E2E_PASSWORD ?? "Pdhc@2026demo",
   },
   superAdmin: {

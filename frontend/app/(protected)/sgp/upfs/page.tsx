@@ -20,14 +20,11 @@ import type { SelectOption } from "@/app/components/ui/Select/Select";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { Pagination } from "@/app/components/ui/Pagination/Pagination";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
-import { useToast } from "@/app/components/ui/Toast/Toast";
 import { ApiError } from "@/app/lib/api";
 import {
-  exportarUpfs,
   listUpfs,
   fetchMunicipalityOptions,
   fetchTerritoryOptions,
-  EXPORT_UPFS_ASYNC_THRESHOLD,
   type StatusUpfFilter,
   type UpfListItem,
 } from "@/app/lib/upfs";
@@ -36,6 +33,8 @@ import {
   type UpfsFiltersValue,
 } from "./_components/UpfsFilters";
 import { UpfsTable } from "./_components/UpfsTable";
+import { ExportacaoUpfsStatus } from "./_components/ExportacaoUpfsStatus";
+import { useExportacaoUpfs } from "./_components/useExportacaoUpfs";
 import { ViewToggle } from "./_components/ViewToggle";
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -99,8 +98,7 @@ function UpfsView() {
   const [municipioOptions, setMunicipioOptions] = useState<SelectOption[]>([]);
   const [territorioOptions, setTerritorioOptions] = useState<SelectOption[]>([]);
   const [optionsLoading, setOptionsLoading] = useState(true);
-  const [exporting, setExporting] = useState(false);
-  const { showToast } = useToast();
+  const exportacao = useExportacaoUpfs();
 
   const hasActiveFilters = useMemo(() => {
     return (
@@ -244,33 +242,20 @@ function UpfsView() {
     router.push("/sgp/upfs/nova/");
   }, [router]);
 
-  const handleExportar = useCallback(async () => {
-    if (exporting) return;
-    if (count > EXPORT_UPFS_ASYNC_THRESHOLD) {
-      showToast(
-        `O conjunto filtrado tem ${count.toLocaleString("pt-BR")} registros. A exportação pode levar alguns instantes.`,
-      );
-    }
-    setExporting(true);
-    try {
-      const nome = await exportarUpfs({
-        search: debouncedSearch,
-        municipio: filters.municipio || undefined,
-        territorio: filters.territorio || undefined,
-        projeto: filters.projeto || undefined,
-        status: filters.status,
-        cadastradoDe: filters.cadastradoDe || undefined,
-        cadastradoAte: filters.cadastradoAte || undefined,
-      });
-      showToast(`Download de ${nome} iniciado.`);
-    } catch (e) {
-      showToast(
-        e instanceof ApiError ? e.message : "Não foi possível exportar as UPFs.",
-      );
-    } finally {
-      setExporting(false);
-    }
-  }, [exporting, count, debouncedSearch, filters, showToast]);
+  // Exporta exatamente o conjunto que a listagem está mostrando: os mesmos
+  // valores que alimentam `listUpfs`, pelo mesmo gerador de parâmetros.
+  const { exportar } = exportacao;
+  const handleExportar = useCallback(() => {
+    void exportar({
+      search: debouncedSearch,
+      municipio: filters.municipio || undefined,
+      territorio: filters.territorio || undefined,
+      projeto: filters.projeto || undefined,
+      status: filters.status,
+      cadastradoDe: filters.cadastradoDe || undefined,
+      cadastradoAte: filters.cadastradoAte || undefined,
+    });
+  }, [exportar, debouncedSearch, filters]);
 
   const showEmpty = !dataLoading && !error && upfs.length === 0;
 
@@ -285,7 +270,13 @@ function UpfsView() {
               size="sm"
               variant="secondary"
               onClick={handleExportar}
-              loading={exporting}
+              loading={exportacao.iniciando}
+              disabled={exportacao.acompanhando}
+              title={
+                exportacao.acompanhando
+                  ? "Aguarde a exportação em andamento terminar."
+                  : undefined
+              }
               leftIcon={<Download className="h-4 w-4" />}
               data-testid="upfs-exportar-btn"
             >
@@ -310,6 +301,18 @@ function UpfsView() {
             { label: "UPFs" },
           ]}
         />
+
+        {exportacao.tarefa && (
+          <ExportacaoUpfsStatus
+            tarefa={exportacao.tarefa}
+            baixando={exportacao.baixando}
+            erroAcompanhamento={exportacao.erroAcompanhamento}
+            onBaixar={exportacao.baixar}
+            onRepetir={exportacao.repetir}
+            onReconsultar={exportacao.reconsultar}
+            onDescartar={exportacao.descartar}
+          />
+        )}
 
         <UpfsFilters
           value={filters}
