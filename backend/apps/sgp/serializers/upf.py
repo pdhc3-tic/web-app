@@ -8,7 +8,7 @@ from apps.core.sensitive_fields import SensitiveFieldsSerializerMixin, mascarar_
 from apps.sgp.models import Comunidade, MembroFamilia, Projeto, UPF
 from apps.sgp.serializers.common import MunicipioNestedSerializer, NestedSerializer
 from apps.sgp.serializers.membro import MembroListSerializer
-from apps.sgp.validators import validate_cpf
+from apps.sgp.services.membro_rules import CPFDuplicadoError, CPFInvalidoError, validar_cpf
 
 
 class TitularNestedSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSerializer):
@@ -151,27 +151,15 @@ class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeria
         return MembroListSerializer(membros, many=True, context=self.context).data
 
     def validate_cpf(self, value):
-        return validate_cpf(value)
-
-    def validate(self, attrs):
-        cpf = attrs.get("_titular_cpf") or (
-            self.instance.titular.cpf if self.instance else None
-        )
-        projeto = attrs.get("projeto")
-
-        if cpf and projeto:
-            projeto_pk = projeto.pk if hasattr(projeto, "pk") else projeto
-            titular_ids = MembroFamilia.objects.filter(
-                cpf=cpf, upf__projeto_id=projeto_pk, upf__ativo=True,
-            ).exclude(
-                upf=self.instance,
-            ).values_list("pk", flat=True)
-            if titular_ids:
-                raise serializers.ValidationError(
-                    {"cpf": "Já existe uma UPF ativa cadastrada com este CPF neste projeto"}
-                )
-
-        return attrs
+        membro_atual = self.instance.titular if self.instance else None
+        try:
+            return validar_cpf(value, membro_atual=membro_atual)
+        except CPFInvalidoError as exc:
+            raise serializers.ValidationError(exc.message)
+        except CPFDuplicadoError:
+            raise serializers.ValidationError(
+                "Já existe uma UPF ativa cadastrada com este CPF"
+            )
 
     def _extract_titular_data(self, attrs):
         field_map = {

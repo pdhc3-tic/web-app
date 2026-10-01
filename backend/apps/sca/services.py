@@ -27,6 +27,42 @@ from apps.core.services.permissions import user_territories
 from apps.sca.models import ConflictLog, SyncDevice, SyncEvent
 from apps.sca.serializers import ENTITY_SERIALIZERS
 from apps.sca.sync_entities import SyncEntityError, get_sync_entity
+from apps.sgp.services.activity_status import (
+    DataFimInvalidaError,
+    EvidenciaObrigatoriaError,
+    JustificativaObrigatoriaError,
+    MembroForaUPFError,
+    NovaDataObrigatoriaError,
+    TransicaoInvalidaError,
+)
+from apps.sgp.services.membro_rules import REGRA_NEGOCIO_SYNC_CODES as MEMBRO_REGRA_SYNC_CODES
+
+REGRA_NEGOCIO_SYNC_CODES = MEMBRO_REGRA_SYNC_CODES | {
+    TransicaoInvalidaError.sync_code,
+    EvidenciaObrigatoriaError.sync_code,
+    JustificativaObrigatoriaError.sync_code,
+    NovaDataObrigatoriaError.sync_code,
+    DataFimInvalidaError.sync_code,
+    MembroForaUPFError.sync_code,
+}
+
+# Nome da UniqueConstraint (Meta.constraints de MembroFamilia) → (sync_code,
+# campo) da regra de negócio equivalente. Usado para reclassificar uma
+# IntegrityError de corrida entre pushes concorrentes (ambos passam pela
+# pré-checagem em memória antes de qualquer um commitar) no mesmo código que
+# a checagem síncrona já usaria — ver `_process_item`.
+_CONSTRAINT_REGRA_NEGOCIO = {
+    "unique_cpf_global": ("CPF_DUPLICADO", "cpf"),
+    "unique_titular_por_upf": ("TITULAR_DUPLICADO", "grau_parentesco"),
+}
+
+
+def _regra_negocio_de_integrity_error(exc: IntegrityError) -> tuple[str, str] | None:
+    texto = str(exc)
+    for constraint, codigo_campo in _CONSTRAINT_REGRA_NEGOCIO.items():
+        if constraint in texto:
+            return codigo_campo
+    return None
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +258,23 @@ class PushProcessor:
                 return self._dispatch(entity, item)
         except SyncEntityError as exc:
             return self._result(item, "erro", erro=str(exc))
-        except (IntegrityError, ValueError) as exc:
+        except IntegrityError as exc:
+            logger.warning("sca.push.item_failed entity=%s uuid=%s error=%s", item["entidade"], item["uuid_local"], exc)
+            regra = _regra_negocio_de_integrity_error(exc)
+            if regra is None:
+                return self._result(item, "erro", erro="ERRO_INTERNO: falha ao persistir o registro.")
+            # Corrida entre pushes concorrentes: os dois passaram pela
+            # pré-checagem em memória antes de qualquer um commitar, e só a
+            # constraint do banco pegou o segundo. Fora do `atomic()` que
+            # acabou de sofrer rollback — senão o log também seria descartado.
+            codigo, campo = regra
+            self._log_conflito_regra_negocio_generico(entity, item, codigo, campo)
+            return self._result(
+                item,
+                "erro",
+                erro=f"{codigo}: conflito de unicidade detectado durante gravação concorrente.",
+            )
+        except ValueError as exc:
             logger.warning("sca.push.item_failed entity=%s uuid=%s error=%s", item["entidade"], item["uuid_local"], exc)
             return self._result(item, "erro", erro="ERRO_INTERNO: falha ao persistir o registro.")
 
@@ -238,9 +290,13 @@ class PushProcessor:
 
         self._reject_unauthorized_sensitive_write(entity, data)
 
-        if item["operacao"] == "create":
-            return self._handle_create(entity, item, data)
-        return self._handle_update(entity, item, data)
+        try:
+            if item["operacao"] == "create":
+                return self._handle_create(entity, item, data)
+            return self._handle_update(entity, item, data)
+        except SyncEntityError as exc:
+            self._maybe_log_regra_negocio(entity, item, data, exc)
+            return self._result(item, "erro", erro=str(exc))
 
     def _reject_unauthorized_sensitive_write(self, entity, data) -> None:
         negados = [
@@ -253,6 +309,49 @@ class PushProcessor:
                 "CAMPO_SENSIVEL_NAO_AUTORIZADO: seu perfil não tem permissão "
                 f"para gravar os campos: {', '.join(sorted(negados))}."
             )
+
+    def _maybe_log_regra_negocio(self, entity, item, data, exc: SyncEntityError) -> None:
+        """Regra de negócio (mesma fonte da API web) impediu a escrita no sync.
+
+        Além do erro de item já reportado ao app (`erros_detalhes`), registra
+        em `conflict_log` para não ficar visível só no dispositivo offline —
+        UGP/Articulador acompanham pela tela administrativa de conflitos.
+        """
+        if exc.sync_code not in REGRA_NEGOCIO_SYNC_CODES:
+            return
+        ConflictLog.objects.create(
+            user=self.user,
+            device=self.device,
+            entidade=entity.name,
+            uuid_local=item["uuid_local"],
+            campo=exc.campo or "__regra_negocio__",
+            valor_local=self._norm_payload(entity, data),
+            valor_servidor={},
+            estrategia=ConflictLog.Estrategia.REGRA_NEGOCIO_REJEITADA,
+            campo_sensivel=False,
+            status=ConflictLog.Status.PENDENTE,
+            territorio_id=entity.territorio_id_from_payload(data, self.uuid_map),
+        )
+
+    def _log_conflito_regra_negocio_generico(self, entity, item, codigo: str, campo: str) -> None:
+        """Mesmo registro de `_maybe_log_regra_negocio`, mas a partir do
+        payload bruto do item — usada quando o erro só aparece como
+        `IntegrityError` (corrida entre pushes concorrentes) e não há um
+        `data` validado disponível neste ponto."""
+        payload = item.get("payload_json") or {}
+        ConflictLog.objects.create(
+            user=self.user,
+            device=self.device,
+            entidade=entity.name,
+            uuid_local=item["uuid_local"],
+            campo=campo,
+            valor_local=self._norm_payload(entity, payload),
+            valor_servidor={},
+            estrategia=ConflictLog.Estrategia.REGRA_NEGOCIO_REJEITADA,
+            campo_sensivel=False,
+            status=ConflictLog.Status.PENDENTE,
+            territorio_id=entity.territorio_id_from_payload(payload, self.uuid_map),
+        )
 
     # -- helpers ------------------------------------------------------------
     def _result(self, item, status: str, id_servidor=None, erro=None) -> dict:
@@ -376,7 +475,7 @@ class PushProcessor:
                 if membro_antes is not None
                 else None
             )
-            entity.apply_changes(instance, result.changes_to_apply)
+            entity.apply_changes(instance, result.changes_to_apply, uuid_map=self.uuid_map)
             self._audit_membro_change(entity, item, "MEMBRO.update", instance, anteriores_sensiveis)
 
         self._record_conflicts(entity, item, instance, result)

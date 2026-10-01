@@ -1,4 +1,4 @@
-"""Única fonte da regra de transição de status de `Activity`.
+"""Única fonte das regras de negócio de `Activity` (status, datas, participantes).
 
 Consumido pela API web, pelo Django Admin e pelo sync do SCA, para que os
 três apliquem exatamente a mesma regra. As regras em si
@@ -8,20 +8,29 @@ três apliquem exatamente a mesma regra. As regras em si
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 
+from apps.sgp.models import MembroFamilia
 from apps.sgp.models.activity import STATUS_TRANSITIONS
 
 
-class ActivityStatusError(DjangoValidationError):
-    """Base dos erros de transição. `field` indica onde o chamador (serializer,
-    admin form) deve reportar a mensagem — "status", "justificativa" ou
-    "data_inicio". `sync_code` é o prefixo que o sync do SCA usa no
-    `SyncEntityError` que devolve pro app."""
+class ActivityRuleError(DjangoValidationError):
+    """Base de toda regra de negócio de Activity. `field` indica onde o
+    chamador (serializer, admin form) deve reportar a mensagem. `sync_code`
+    é o prefixo que o sync do SCA usa no `SyncEntityError` que devolve pro
+    app, e o código que classifica a rejeição como conflito de regra de
+    negócio em `conflict_log`."""
 
     field = "status"
-    sync_code = "TRANSICAO_INVALIDA"
+    sync_code = "ATIVIDADE_REGRA_INVALIDA"
 
     def __init__(self, message):
         super().__init__(message, code="VALIDATION_ERROR")
+
+
+class ActivityStatusError(ActivityRuleError):
+    """Base dos erros de transição de status — "status", "justificativa" ou
+    "data_inicio"."""
+
+    sync_code = "TRANSICAO_INVALIDA"
 
 
 class TransicaoInvalidaError(ActivityStatusError):
@@ -40,6 +49,16 @@ class JustificativaObrigatoriaError(ActivityStatusError):
 class NovaDataObrigatoriaError(ActivityStatusError):
     field = "data_inicio"
     sync_code = "NOVA_DATA_OBRIGATORIA"
+
+
+class DataFimInvalidaError(ActivityRuleError):
+    field = "data_fim"
+    sync_code = "DATA_FIM_INVALIDA"
+
+
+class MembroForaUPFError(ActivityRuleError):
+    field = "membros_participantes"
+    sync_code = "MEMBRO_FORA_UPF"
 
 
 _STATUS_EXIGE_JUSTIFICATIVA = {"nao_realizada", "cancelada"}
@@ -98,6 +117,49 @@ def validar_transicao(activity, novo_status, *, justificativa="", nova_data=None
                 "Reagendar uma atividade 'adiada' exige uma nova data de "
                 "início, diferente da atual."
             )
+
+
+def _como_data(valor):
+    """`datetime.datetime` tem `.date()`; `datetime.date` puro não. O payload
+    de sync trafega `data_inicio`/`data_fim` como data (sem hora), enquanto o
+    model/serializer web usa datetime — normaliza os dois para o mesmo tipo
+    antes de comparar, senão `<` entre date e datetime levanta TypeError."""
+    return valor.date() if hasattr(valor, "date") else valor
+
+
+def validar_datas(data_inicio, data_fim):
+    """Levanta DataFimInvalidaError se `data_fim` for anterior a `data_inicio`.
+
+    Qualquer um dos dois ausente pula a checagem — quem chama decide os
+    fallbacks (valor atual da atividade, se não vier no payload).
+    """
+    if not data_inicio or not data_fim:
+        return
+    if _como_data(data_fim) < _como_data(data_inicio):
+        raise DataFimInvalidaError("data_fim não pode ser anterior a data_inicio.")
+
+
+def validar_membros_participantes(upfs_ids, membros_ids):
+    """Levanta MembroForaUPFError se algum de `membros_ids` não pertencer a
+    nenhuma das UPFs em `upfs_ids`.
+
+    Aceita ids (não instâncias) dos dois lados, para servir tanto o
+    serializer web (que já tem os objetos, bastando `.pk`) quanto o sync do
+    SCA (que só tem ids resolvidos do payload/uuid_map).
+    """
+    upfs_ids = set(upfs_ids or ())
+    membros_ids = list(membros_ids or ())
+    if not upfs_ids or not membros_ids:
+        return
+    invalidos = list(
+        MembroFamilia.objects.filter(pk__in=membros_ids)
+        .exclude(upf_id__in=upfs_ids)
+        .values_list("pk", flat=True)
+    )
+    if invalidos:
+        raise MembroForaUPFError(
+            f"Membros {invalidos} não pertencem às UPFs participantes selecionadas."
+        )
 
 
 def transition(activity, novo_status, *, usuario, justificativa="", nova_data=None):
