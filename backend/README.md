@@ -96,6 +96,14 @@ sudo docker compose exec \
   backend python manage.py migrate
 ```
 
+### Política de migrations
+
+- Uma migration por issue, gerada com `makemigrations` sobre a `main` atualizada. Nada de migration de merge: quando duas branches criam migrations no mesmo app, a que entra depois faz rebase e renumera a sua.
+- Branch curta e rebase obrigatório antes do merge. Com PRs empilhados, o rebase é feito sobre a branch de baixo e a numeração acompanha a ordem de entrada.
+- `makemigrations --check --dry-run` roda no CI (`.github/workflows/deploy.yml`) e no `pytest` (`test_migrations_dados_iniciais.py`): model alterado sem migration derruba o build.
+- Dados iniciais (catálogos, rubricas, Indicadores) ficam em data migration idempotente (`get_or_create`/`update_or_create`), que não sobrescreve o que a UGP ajustou.
+- O histórico do `sgp` foi recriado em `0001_initial` (schema) e `0002_seed_dados_iniciais` (dados). Um banco de desenvolvimento criado antes disso, com o `sgp` em qualquer estado, precisa ser recriado (`docker compose down -v` e `migrate`); um banco que já estava com o schema completo aceita `migrate` direto.
+
 ## Testes
 
 ```bash
@@ -127,8 +135,9 @@ sudo docker compose exec \
   backend python manage.py seed_sgp
 ```
 
-Os catálogos de culturas e espécies animais do SGP são populados automaticamente
-por data migration ao executar `python manage.py migrate`.
+Os catálogos de culturas e espécies animais, as rubricas orçamentárias e o catálogo
+inicial de Indicadores do SGP são populados automaticamente por data migration ao
+executar `python manage.py migrate`.
 
 Em produção, os XLSX legados ficam em um diretório separado da aplicação na
 VPS, configurado pela variável `SEED_DATA_DIR`. O deploy não monta os XLSX no

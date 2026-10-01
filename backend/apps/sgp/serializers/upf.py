@@ -4,7 +4,7 @@ from django.db import transaction
 from rest_framework import serializers
 
 from apps.core.models import Municipality
-from apps.core.sensitive_fields import SensitiveFieldsSerializerMixin
+from apps.core.sensitive_fields import SensitiveFieldsSerializerMixin, mascarar_cpf
 from apps.sgp.models import Comunidade, MembroFamilia, Projeto, UPF
 from apps.sgp.serializers.common import MunicipioNestedSerializer, NestedSerializer
 from apps.sgp.serializers.membro import MembroListSerializer
@@ -64,10 +64,7 @@ class UPFListSerializer(serializers.ModelSerializer):
         ]
 
     def get_cpf(self, obj):
-        cpf = obj.titular.cpf
-        if cpf:
-            return f"{cpf[:3]}.***.***-{cpf[-2:]}"
-        return ""
+        return mascarar_cpf(obj.titular.cpf)
 
 
 class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSerializer):

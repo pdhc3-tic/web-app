@@ -31,8 +31,8 @@ class TestSeedRubricas:
         antes = set(BudgetRubrica.objects.values_list("slug", "ordem"))
 
         # nome de módulo começa com dígito — mesma técnica do MigrationLoader do Django.
-        migration = importlib.import_module("apps.sgp.migrations.0017_seed_rubricas")
-        migration.seed_rubricas(django_apps, None)
+        migration = importlib.import_module("apps.sgp.migrations.0002_seed_dados_iniciais")
+        migration.forwards(django_apps, None)
 
         assert BudgetRubrica.objects.count() == 6
         assert set(BudgetRubrica.objects.values_list("slug", "ordem")) == antes

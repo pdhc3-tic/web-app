@@ -2,9 +2,18 @@ from datetime import date, timedelta
 
 import pytest
 from decimal import Decimal
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
+from apps.core.models.audit_log import AuditLog
 from apps.sgp.models import WorkPlanMeta, WorkPlanAcao
-from apps.sgp.tests.factories import ActivityFactory, WorkPlanAcaoFactory, WorkPlanMetaFactory
+from apps.sgp.tests.factories import (
+    ActivityFactory,
+    IndicatorFactory,
+    WorkPlanAcaoFactory,
+    WorkPlanMetaFactory,
+    WorkPlanSubmetaFactory,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -37,12 +46,22 @@ def meta_payload(usuario):
 
 
 @pytest.fixture
-def acao_payload(meta):
+def submeta(meta):
+    return WorkPlanSubmetaFactory(meta=meta, numero="1.1", titulo="Submeta Teste")
+
+
+@pytest.fixture
+def indicador(db):
+    return IndicatorFactory()
+
+
+@pytest.fixture
+def acao_payload(submeta, indicador):
     return {
-        "meta": meta.pk,
-        "numero": "1.1",
+        "submeta": submeta.pk,
+        "indicador": indicador.pk,
+        "numero": "1.1.1",
         "descricao": "Ação de teste",
-        "tipo_unidade": 11,
         "quantidade_planejada": "100.00",
         "valor_unitario": "500.00",
         "data_inicio": "2025-11-01",
@@ -51,10 +70,11 @@ def acao_payload(meta):
 
 
 @pytest.fixture
-def acao(meta):
+def acao(meta, submeta):
     return WorkPlanAcaoFactory(
         meta=meta,
-        numero="1.1",
+        submeta=submeta,
+        numero="1.1.1",
         quantidade_planejada=Decimal("100.00"),
         valor_unitario=Decimal("500.00"),
     )
@@ -143,8 +163,8 @@ class TestMetaPermissoes:
     ):
         visible_meta = WorkPlanMetaFactory(numero=1)
         hidden_meta = WorkPlanMetaFactory(numero=2)
-        visible_action = WorkPlanAcaoFactory(meta=visible_meta, numero="1.1")
-        hidden_action = WorkPlanAcaoFactory(meta=hidden_meta, numero="2.1")
+        visible_action = WorkPlanAcaoFactory(meta=visible_meta)
+        hidden_action = WorkPlanAcaoFactory(meta=hidden_meta)
         ActivityFactory(acao=visible_action, municipio=municipio_rn, status="concluido")
         ActivityFactory(acao=hidden_action, municipio=municipio_ce, status="concluido")
 
@@ -157,8 +177,8 @@ class TestMetaPermissoes:
         self, auth_client_adt_rn, municipio_rn, municipio_ce
     ):
         meta = WorkPlanMetaFactory(numero=1)
-        visible_action = WorkPlanAcaoFactory(meta=meta, numero="1.1")
-        hidden_action = WorkPlanAcaoFactory(meta=meta, numero="1.2")
+        visible_action = WorkPlanAcaoFactory(meta=meta)
+        hidden_action = WorkPlanAcaoFactory(meta=meta)
         ActivityFactory(acao=visible_action, municipio=municipio_rn, status="concluido")
         ActivityFactory(acao=hidden_action, municipio=municipio_ce, status="concluido")
 
@@ -172,8 +192,8 @@ class TestMetaPermissoes:
     ):
         visible_meta = WorkPlanMetaFactory(numero=1)
         hidden_meta = WorkPlanMetaFactory(numero=2)
-        visible_action = WorkPlanAcaoFactory(meta=visible_meta, numero="1.1")
-        hidden_action = WorkPlanAcaoFactory(meta=hidden_meta, numero="2.1")
+        visible_action = WorkPlanAcaoFactory(meta=visible_meta)
+        hidden_action = WorkPlanAcaoFactory(meta=hidden_meta)
         ActivityFactory(acao=visible_action, municipio=municipio_rn, status="concluido")
         ActivityFactory(acao=hidden_action, municipio=municipio_ce, status="concluido")
 
@@ -202,27 +222,27 @@ class TestMetaStatusCalculado:
         assert meta.status_calculado == "no_prazo"
 
     def test_concluida_when_all_acoes_concluidas(self, meta):
-        acao1 = WorkPlanAcaoFactory(meta=meta, numero="1.1", quantidade_planejada=Decimal("2"))
+        acao1 = WorkPlanAcaoFactory(meta=meta, quantidade_planejada=Decimal("2"))
         ActivityFactory(acao=acao1, status="concluido")
         ActivityFactory(acao=acao1, status="concluido")
-        acao2 = WorkPlanAcaoFactory(meta=meta, numero="1.2", quantidade_planejada=Decimal("1"))
+        acao2 = WorkPlanAcaoFactory(meta=meta, quantidade_planejada=Decimal("1"))
         ActivityFactory(acao=acao2, status="concluido")
         assert meta.status_calculado == "concluida"
 
     def test_em_atraso_when_past_and_pending(self, meta):
         meta.data_fim = date.today() - timedelta(days=1)
         meta.save(update_fields=["data_fim"])
-        acao1 = WorkPlanAcaoFactory(meta=meta, numero="1.1", quantidade_planejada=Decimal("1"))
+        acao1 = WorkPlanAcaoFactory(meta=meta, quantidade_planejada=Decimal("1"))
         ActivityFactory(acao=acao1, status="concluido")
-        acao2 = WorkPlanAcaoFactory(meta=meta, numero="1.2", quantidade_planejada=Decimal("1"))
+        acao2 = WorkPlanAcaoFactory(meta=meta, quantidade_planejada=Decimal("1"))
         assert meta.status_calculado == "em_atraso"
 
     def test_no_prazo_when_future_and_pending(self, meta):
         meta.data_fim = date.today() + timedelta(days=365)
         meta.save(update_fields=["data_fim"])
-        acao1 = WorkPlanAcaoFactory(meta=meta, numero="1.1", quantidade_planejada=Decimal("1"))
+        acao1 = WorkPlanAcaoFactory(meta=meta, quantidade_planejada=Decimal("1"))
         ActivityFactory(acao=acao1, status="concluido")
-        acao2 = WorkPlanAcaoFactory(meta=meta, numero="1.2", quantidade_planejada=Decimal("1"))
+        acao2 = WorkPlanAcaoFactory(meta=meta, quantidade_planejada=Decimal("1"))
         assert meta.status_calculado == "no_prazo"
 
 
@@ -232,12 +252,12 @@ class TestMetaValorTotalPlanejado:
 
     def test_sums_acoes(self, meta):
         WorkPlanAcaoFactory(
-            meta=meta, numero="1.1",
+            meta=meta,
             quantidade_planejada=Decimal("100"),
             valor_unitario=Decimal("500"),
         )
         WorkPlanAcaoFactory(
-            meta=meta, numero="1.2",
+            meta=meta,
             quantidade_planejada=Decimal("60"),
             valor_unitario=Decimal("500"),
         )
@@ -250,7 +270,7 @@ class TestMetaExclusao:
         assert not WorkPlanMeta.objects.filter(pk=meta.pk).exists()
 
     def test_delete_with_acoes_returns_400(self, auth_client, meta):
-        WorkPlanAcaoFactory(meta=meta, numero="1.1")
+        WorkPlanAcaoFactory(meta=meta)
         response = auth_client.delete(f"/api/v1/metas/{meta.pk}/")
         assert response.status_code == 400
         assert "Ações vinculadas" in response.data["detail"]
@@ -269,6 +289,28 @@ class TestMetaListagemDetalhe:
         assert response.data["numero"] == 1
         assert "acoes" in response.data
 
+    def test_list_traz_campos_automaticos(self, auth_client, meta):
+        WorkPlanAcaoFactory(meta=meta, quantidade_planejada=Decimal("2"), valor_unitario=Decimal("10"))
+
+        item = auth_client.get("/api/v1/metas/").data["results"][0]
+
+        assert (item["quantidade_planejada"], item["valor_total_planejado"], item["valor_executado"]) == (
+            "2.00", "20.00", "0.00"
+        )
+
+    def test_list_queries_dont_grow_with_metas(self, auth_client, meta):
+        WorkPlanAcaoFactory.create_batch(2, meta=meta)
+        with CaptureQueriesContext(connection) as uma_meta:
+            auth_client.get("/api/v1/metas/")
+
+        for numero in (2, 3, 4):
+            WorkPlanAcaoFactory.create_batch(2, meta=WorkPlanMetaFactory(numero=numero))
+        with CaptureQueriesContext(connection) as quatro_metas:
+            response = auth_client.get("/api/v1/metas/")
+
+        assert len(response.data["results"]) == 4
+        assert len(quatro_metas.captured_queries) == len(uma_meta.captured_queries)
+
     def test_list_filter_by_numero(self, auth_client, meta):
         WorkPlanMetaFactory(numero=3, titulo="Outra")
         response = auth_client.get("/api/v1/metas/?numero=1")
@@ -284,7 +326,7 @@ class TestAcaoCriacao:
     def test_create_acao(self, auth_client, acao_payload):
         response = auth_client.post("/api/v1/acoes/", acao_payload, format="json")
         assert response.status_code == 201
-        assert response.data["numero"] == "1.1"
+        assert response.data["numero"] == "1.1.1"
         assert response.data["descricao"] == "Ação de teste"
 
     def test_create_acao_auto_valor_total(self, auth_client, acao_payload):
@@ -297,12 +339,12 @@ class TestAcaoCriacao:
         assert response.status_code == 201
         assert response.data["status_execucao"] == "no_prazo"
 
-    def test_quantidade_realizada_read_only(self, auth_client, acao_payload):
+    def test_quantidade_realizada_so_e_lancada_na_forma_manual(self, auth_client, acao_payload):
         response = auth_client.post(
-            "/api/v1/acoes/", {**acao_payload, "quantidade_realizada": "999"}, format="json"
+            "/api/v1/acoes/", {**acao_payload, "quantidade_realizada": 999}, format="json"
         )
-        assert response.status_code == 201
-        assert response.data["quantidade_realizada"] == "0.00"
+        assert response.status_code == 400
+        assert "quantidade_realizada" in response.data
 
 
 class TestAcaoNumeroFormato:
@@ -319,33 +361,33 @@ class TestAcaoNumeroFormato:
         )
         assert response.status_code == 400
 
-    def test_valid_formats_accepted(self, auth_client, meta):
-        for num in ["1.1", "2.10", "7.99"]:
-            payload = {
-                "meta": meta.pk,
-                "numero": num,
-                "descricao": f"Ação {num}",
-                "tipo_unidade": 11,
-                "quantidade_planejada": "10.00",
-                "valor_unitario": "100.00",
-            }
+    def test_formato_x_y_da_hierarquia_antiga_retorna_400(self, auth_client, acao_payload):
+        response = auth_client.post(
+            "/api/v1/acoes/", {**acao_payload, "numero": "1.1"}, format="json"
+        )
+        assert response.status_code == 400
+        assert "numero" in response.data
+
+    def test_valid_formats_accepted(self, auth_client, acao_payload):
+        for num in ["1.1.1", "1.1.10", "1.1.99"]:
+            payload = {**acao_payload, "numero": num, "descricao": f"Ação {num}"}
             response = auth_client.post("/api/v1/acoes/", payload, format="json")
             assert response.status_code == 201, f"numero={num} falhou: {response.data}"
 
 
 class TestAcaoUnicidadeNumero:
-    def test_duplicate_within_same_meta_returns_400(self, auth_client, acao_payload):
+    def test_duplicate_within_same_submeta_returns_400(self, auth_client, acao_payload):
         auth_client.post("/api/v1/acoes/", acao_payload, format="json")
         response = auth_client.post("/api/v1/acoes/", acao_payload, format="json")
         assert response.status_code == 400
         assert "numero" in response.data
 
-    def test_same_numero_different_meta_allowed(self, auth_client, acao_payload, meta):
+    def test_mesmo_sequencial_em_outra_submeta_e_permitido(self, auth_client, acao_payload, meta):
         auth_client.post("/api/v1/acoes/", acao_payload, format="json")
-        meta2 = WorkPlanMetaFactory(numero=3, titulo="Outra Meta")
-        payload2 = {**acao_payload, "meta": meta2.pk}
+        submeta2 = WorkPlanSubmetaFactory(meta=meta, numero="1.2")
+        payload2 = {**acao_payload, "submeta": submeta2.pk, "numero": "1.2.1"}
         response = auth_client.post("/api/v1/acoes/", payload2, format="json")
-        assert response.status_code == 201
+        assert response.status_code == 201, response.data
 
 
 class TestAcaoValorTotalCalculado:
@@ -432,8 +474,8 @@ class TestAcaoPermissoes:
     def test_adt_lists_only_actions_in_own_territory(
         self, auth_client_adt_rn, meta, municipio_rn, municipio_ce
     ):
-        visible_action = WorkPlanAcaoFactory(meta=meta, numero="1.1")
-        hidden_action = WorkPlanAcaoFactory(meta=meta, numero="1.2")
+        visible_action = WorkPlanAcaoFactory(meta=meta)
+        hidden_action = WorkPlanAcaoFactory(meta=meta)
         ActivityFactory(acao=visible_action, municipio=municipio_rn, status="concluido")
         ActivityFactory(acao=hidden_action, municipio=municipio_ce, status="concluido")
 
@@ -445,8 +487,8 @@ class TestAcaoPermissoes:
     def test_articulador_lists_only_actions_in_own_states(
         self, auth_client_articulador_rn, meta, municipio_rn, municipio_ce
     ):
-        visible_action = WorkPlanAcaoFactory(meta=meta, numero="1.1")
-        hidden_action = WorkPlanAcaoFactory(meta=meta, numero="1.2")
+        visible_action = WorkPlanAcaoFactory(meta=meta)
+        hidden_action = WorkPlanAcaoFactory(meta=meta)
         ActivityFactory(acao=visible_action, municipio=municipio_rn, status="concluido")
         ActivityFactory(acao=hidden_action, municipio=municipio_ce, status="concluido")
 
@@ -458,7 +500,7 @@ class TestAcaoPermissoes:
     def test_adt_cannot_retrieve_action_from_another_territory(
         self, auth_client_adt_rn, meta, municipio_ce
     ):
-        hidden_action = WorkPlanAcaoFactory(meta=meta, numero="1.1")
+        hidden_action = WorkPlanAcaoFactory(meta=meta)
         ActivityFactory(acao=hidden_action, municipio=municipio_ce, status="concluido")
 
         response = auth_client_adt_rn.get(f"/api/v1/acoes/{hidden_action.pk}/")
@@ -467,7 +509,7 @@ class TestAcaoPermissoes:
 
     def test_filter_by_meta(self, auth_client, acao, meta):
         meta2 = WorkPlanMetaFactory(numero=3, titulo="Outra")
-        WorkPlanAcaoFactory(meta=meta2, numero="3.1")
+        WorkPlanAcaoFactory(meta=meta2)
         response = auth_client.get(f"/api/v1/acoes/?meta={meta.pk}")
         assert response.status_code == 200
         assert len(response.data["results"]) == 1
@@ -479,12 +521,20 @@ class TestAcaoExclusao:
         assert auth_client.delete(f"/api/v1/acoes/{acao.pk}/").status_code == 204
         assert not WorkPlanAcao.objects.filter(pk=acao.pk).exists()
 
-    def test_delete_blocked_when_activities_exist(self, auth_client, meta):
-        """Quando o model Activity existir (Sprint 8), o DELETE será bloqueado.
-        Este teste valida que o endpoint funciona sem erros."""
-        acao = WorkPlanAcaoFactory(meta=meta, numero="1.1")
+    def test_delete_blocked_when_activities_exist(self, auth_client, acao):
+        ActivityFactory(acao=acao)
+
         response = auth_client.delete(f"/api/v1/acoes/{acao.pk}/")
-        assert response.status_code == 204
+
+        assert response.status_code == 400
+        assert "Atividades de Campo vinculadas" in response.data["detail"]
+        assert WorkPlanAcao.objects.filter(pk=acao.pk).exists()
+
+    def test_delete_registers_audit(self, auth_client, acao):
+        auth_client.delete(f"/api/v1/acoes/{acao.pk}/")
+
+        registro = AuditLog.objects.get(acao="WorkPlanAcao.delete", entidade_id=str(acao.pk))
+        assert registro.valores_anteriores["numero"] == "1.1.1"
 
 
 class TestAcaoListagemDetalhe:

@@ -1,14 +1,16 @@
 from .comunidade import Comunidade
 from .catalogos import Cultura, EspecieAnimal
 from .budget import BudgetRubrica, BudgetAllocation, BudgetTransaction
+from .export_job import ExportJob
 from .form_response import FormResponse
+from .indicator import Indicator
 from .membro import MembroFamilia
 from .production import Production
 from .projeto import Projeto
 from .tecnico import Tecnico
 from .upf import UPF
 from .upf_document import UPFDocument
-from .workplan import WorkPlanAcao, WorkPlanMeta
+from .workplan import WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
 from .activity import Activity
 from .activity_photo import ActivityPhoto
 from .activity_document import ActivityDocument
@@ -24,7 +26,9 @@ __all__ = [
     "Comunidade",
     "Cultura",
     "EspecieAnimal",
+    "ExportJob",
     "FormResponse",
+    "Indicator",
     "GoogleCalendarSyncEvent",
     "MembroFamilia",
     "Production",
@@ -34,4 +38,5 @@ __all__ = [
     "UPFDocument",
     "WorkPlanAcao",
     "WorkPlanMeta",
+    "WorkPlanSubmeta",
 ]

@@ -15,13 +15,11 @@ Cobertura (tabela da issue):
 Os testes de carga/queries imprimem o valor medido (rodar com `-s` para ver
 no output) — é o que alimenta os números de `backend/docs/performance.md`.
 """
-import importlib
 from datetime import date, timedelta
 from decimal import Decimal
 from time import monotonic
 
 import pytest
-from django.apps import apps as django_apps
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import connection
@@ -30,6 +28,7 @@ from django.utils import timezone
 
 from apps.core.tests.factories import UserFactory
 from apps.sgp.models import UPF, Activity, MembroFamilia, WorkPlanAcao
+from apps.sgp.services.budget import limiares_semaforo
 from apps.sgp.tests.factories import (
     ActivityFactory,
     WorkPlanAcaoFactory,
@@ -70,24 +69,6 @@ def test_campo_decrementa_ao_sair_de_concluido():
     assert acao.quantidade_realizada == 0
 
 
-def test_migration_popula_existentes():
-    acao = WorkPlanAcaoFactory()
-    ActivityFactory(acao=acao, status="concluido")
-    ActivityFactory(acao=acao, status="concluido")
-    ActivityFactory(acao=acao, status="planejado")
-
-    # Corrompe o campo direto no banco, simulando o estado anterior à migration.
-    WorkPlanAcao.objects.filter(pk=acao.pk).update(quantidade_realizada=0)
-
-    migration_module = importlib.import_module(
-        "apps.sgp.migrations.0027_popula_quantidade_realizada"
-    )
-    migration_module.popula_quantidade_realizada(django_apps, None)
-
-    acao.refresh_from_db(fields=["quantidade_realizada"])
-    assert acao.quantidade_realizada == 2
-
-
 def test_comando_reconcilia():
     acao = WorkPlanAcaoFactory()
     ActivityFactory(acao=acao, status="concluido")
@@ -117,15 +98,17 @@ def test_comando_check_only_detecta_sem_corrigir():
 
 def test_painel_queries_constantes(auth_client):
     meta = WorkPlanMetaFactory(numero=1)
-    for indice in range(5):
-        WorkPlanAcaoFactory(meta=meta, numero=f"1.{indice + 1}")
+    WorkPlanAcaoFactory.create_batch(5, meta=meta)
+    # Os limiares do semáforo financeiro vêm do SystemConfig com cache: sem
+    # aquecer, só a primeira medição pagaria a leitura e a comparação falharia
+    # por um motivo que não é consulta por Ação.
+    limiares_semaforo()
 
     with CaptureQueriesContext(connection) as ctx_5:
         response_5 = auth_client.get(PANEL_URL)
     queries_com_5 = len(ctx_5.captured_queries)
 
-    for indice in range(5, 30):
-        WorkPlanAcaoFactory(meta=meta, numero=f"1.{indice + 1}")
+    WorkPlanAcaoFactory.create_batch(25, meta=meta)
 
     with CaptureQueriesContext(connection) as ctx_30:
         response_30 = auth_client.get(PANEL_URL)
@@ -149,14 +132,9 @@ def test_painel_sob_500ms(auth_client, municipio):
     acoes = []
     for numero_meta in range(1, 8):
         meta = WorkPlanMetaFactory(numero=numero_meta)
-        for indice in range(30):
-            acoes.append(
-                WorkPlanAcaoFactory(
-                    meta=meta,
-                    numero=f"{numero_meta}.{indice + 1}",
-                    quantidade_planejada=Decimal("500"),
-                )
-            )
+        acoes.extend(
+            WorkPlanAcaoFactory.create_batch(30, meta=meta, quantidade_planejada=Decimal("500"))
+        )
 
     atividades = [
         Activity(

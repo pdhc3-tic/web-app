@@ -1,8 +1,7 @@
 from rest_framework import serializers
 
 from apps.sgp.models import Activity
-from apps.sgp.models.activity import STATUS_TERMINAIS
-from apps.sgp.serializers.common import MunicipioNestedSerializer
+from apps.sgp.serializers.common import MunicipioNestedSerializer, plano_trabalho_da_acao
 
 # ---------------------------------------------------------------------------
 # Calendar serializer — payload reduzido para grade de calendário
@@ -38,6 +37,7 @@ class ActivityCalendarioSerializer(serializers.ModelSerializer):
     tecnico_responsavel = serializers.SerializerMethodField()
     municipio = serializers.SerializerMethodField()
     comunidade = serializers.SerializerMethodField()
+    plano_trabalho = serializers.SerializerMethodField()
 
     class Meta:
         model = Activity
@@ -56,14 +56,15 @@ class ActivityCalendarioSerializer(serializers.ModelSerializer):
             "tecnico_responsavel",
             "municipio",
             "comunidade",
+            "plano_trabalho",
         ]
         read_only_fields = fields
 
+    def get_plano_trabalho(self, obj) -> dict | None:
+        return plano_trabalho_da_acao(obj.acao)
+
     def get_atrasada(self, obj) -> bool:
-        if obj.status in STATUS_TERMINAIS:
-            return False
-        from django.utils import timezone
-        return obj.data_fim < timezone.now()
+        return obj.esta_atrasada()
 
     def get_cor(self, obj) -> str:
         return STATUS_COR_MAP.get(obj.status, "#6B7280")

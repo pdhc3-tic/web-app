@@ -137,25 +137,14 @@ PARENTESCO_CHOICES = [
 # Plano de Trabalho — Metas & Ações
 # ---------------------------------------------------------------------------
 
-STATUS_WORKPLAN = [
-    ("no_prazo", "No Prazo"),
-    ("em_atraso", "Em Atraso"),
-    ("concluida", "Concluída"),
-]
+STATUS_NO_PRAZO = "no_prazo"
+STATUS_EM_ATRASO = "em_atraso"
+STATUS_CONCLUIDA = "concluida"
 
-TIPO_UNIDADE_MEDIDA = [
-    (1, "Seminário"),
-    (2, "Oficina"),
-    (3, "Curso / Capacitação"),
-    (4, "Plano"),
-    (5, "Relatório de pesquisas"),
-    (6, "Intercâmbio"),
-    (7, "Conteúdo audiovisual"),
-    (8, "Visita técnica"),
-    (9, "Encontro / Reunião"),
-    (10, "Unidade implementada"),
-    (11, "Família atendida"),
-    (12, "Outro"),
+STATUS_WORKPLAN = [
+    (STATUS_NO_PRAZO, "No Prazo"),
+    (STATUS_EM_ATRASO, "Em Atraso"),
+    (STATUS_CONCLUIDA, "Concluída"),
 ]
 
 ODS_CHOICES = [
