@@ -427,4 +427,179 @@ test.describe("SGP — Evidências (fotos e documentos)", () => {
     await uploadBtn.click();
     await uploadUrlRequest;
   });
+
+  test("upload de documento PDF é enviado ao endpoint correto", async ({
+    page,
+  }) => {
+    const STORAGE_URL = "https://storage.example.com/upload";
+
+    await page.route(`**/api/v1/sgp/atividades/9001/`, async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(atividadeFake(9001, "Atividade editável", "planejado")),
+      });
+    });
+
+    await page.route(
+      "**/api/v1/sgp/atividades/9001/documentos/upload-url/",
+      async (route) => {
+        if (route.request().method() !== "POST") return route.fallback();
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ url: STORAGE_URL, key: "doc-key-123", expires_in: 3600 }),
+        });
+      },
+    );
+
+    await page.route("https://storage.example.com/**", async (route) => {
+      await route.fulfill({ status: 200 });
+    });
+
+    await page.route(
+      "**/api/v1/sgp/atividades/9001/documentos/confirm/",
+      async (route) => {
+        if (route.request().method() !== "POST") return route.fallback();
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            id: 1,
+            tipo: "outro",
+            tipo_display: "Outro",
+            descricao: "",
+            data_documento: "2026-06-01",
+            arquivo_url: `${STORAGE_URL}/doc.pdf`,
+          }),
+        });
+      },
+    );
+
+    await page.route(FOTOS_API, async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });
+    });
+
+    await page.route(DOCUMENTOS_API, async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });
+    });
+
+    await page.goto("/sgp/atividades/9001/editar");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+
+    // Input de documento: aceita somente PDF (application/pdf).
+    const docInput = page.locator('input[type="file"][accept*="pdf"]');
+    await expect(docInput).toBeAttached({ timeout: 5_000 });
+
+    await docInput.setInputFiles({
+      name: "ata-reuniao.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.alloc(1024),
+    });
+
+    const uploadBtn = page.getByRole("button", { name: /Enviar .* documento/i });
+    await expect(uploadBtn).toBeVisible({ timeout: 5_000 });
+
+    const uploadUrlRequest = page.waitForRequest(
+      (req) =>
+        req.url().includes("/documentos/upload-url/") && req.method() === "POST",
+      { timeout: 10_000 },
+    );
+    await uploadBtn.click();
+    await uploadUrlRequest;
+  });
+});
+
+test.describe("SGP — Transição de status", () => {
+  test.use({ storageState: storageStatePath("ugp") });
+
+  function atividadeParaTransicao(comEvidencia: boolean): Record<string, unknown> {
+    return {
+      ...atividadeFake(9001, "Atividade teste", "planejado"),
+      transicoes_permitidas: ["concluido"],
+      fotos: comEvidencia
+        ? [{ id: 1, url: "https://storage.example.com/foto.jpg", legenda: "", ordem: 0 }]
+        : [],
+      documentos: [],
+    };
+  }
+
+  async function abrirFichaComMock(
+    page: import("@playwright/test").Page,
+    comEvidencia: boolean,
+  ) {
+    await page.route(`**/api/v1/sgp/atividades/9001/`, async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(atividadeParaTransicao(comEvidencia)),
+      });
+    });
+    await page.route(FOTOS_API, async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });
+    });
+    await page.route(DOCUMENTOS_API, async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });
+    });
+
+    await page.goto("/sgp/atividades/9001/");
+    await expect(page.getByTestId("atividade-ficha-page")).toBeVisible();
+  }
+
+  test("sem evidência: aviso aparece e Confirmar fica desabilitado", async ({
+    page,
+  }) => {
+    await abrirFichaComMock(page, false);
+
+    await page.getByTestId("atividade-status-btn").click();
+    await expect(page.getByTestId("transicao-dialog")).toBeVisible();
+
+    // Seleciona "Concluído" para acionar a exigência de evidência.
+    await page.getByLabel("Novo status").click();
+    await page.getByRole("option", { name: "Concluído" }).click();
+
+    await expect(page.getByTestId("transicao-aviso-evidencia")).toBeVisible();
+    await expect(page.getByTestId("transicao-confirmar")).toBeDisabled();
+  });
+
+  test("com evidência: confirma transição e diálogo fecha", async ({ page }) => {
+    await abrirFichaComMock(page, true);
+
+    // Mock do PATCH de transição: retorna atividade já concluída.
+    await page.route(`**/api/v1/sgp/atividades/9001/`, async (route) => {
+      if (route.request().method() !== "PATCH") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...atividadeParaTransicao(true),
+          status: "concluido",
+          transicoes_permitidas: [],
+        }),
+      });
+    });
+
+    await page.getByTestId("atividade-status-btn").click();
+    await expect(page.getByTestId("transicao-dialog")).toBeVisible();
+
+    await page.getByLabel("Novo status").click();
+    await page.getByRole("option", { name: "Concluído" }).click();
+
+    // Com evidência, o aviso não aparece e o botão está habilitado.
+    await expect(page.getByTestId("transicao-aviso-evidencia")).toHaveCount(0);
+    await expect(page.getByTestId("transicao-confirmar")).toBeEnabled();
+
+    await page.getByTestId("transicao-confirmar").click();
+
+    // Após o PATCH, o diálogo fecha.
+    await expect(page.getByTestId("transicao-dialog")).toHaveCount(0, {
+      timeout: 5_000,
+    });
+  });
 });

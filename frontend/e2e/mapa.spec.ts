@@ -223,4 +223,41 @@ test.describe("SGP — Mapa de UPFs", () => {
     await expect(miniFicha).toBeVisible({ timeout: 5_000 });
     await expect(miniFicha.getByText("João Silva")).toBeVisible();
   });
+
+  test("cluster aparece quando há UPFs com coordenadas próximas", async ({
+    page,
+  }) => {
+    // Cinco UPFs num raio de ~200 m — ao zoom padrão do Leaflet o
+    // MarkerCluster agrupa todas num único cluster.
+    const upfsProximas = Array.from({ length: 5 }, (_, i) =>
+      upfMapaFake(100 + i, `Titular ${i}`, "Ouricuri", -7.8800 + i * 0.0001, -40.0800 + i * 0.0001),
+    );
+
+    await page.route(MAPA_API, async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: mapaResponse(upfsProximas),
+      });
+    });
+
+    await page.goto("/sgp/upfs/mapa");
+
+    // O mapa precisa estar visível antes de checar os clusters.
+    await expect(
+      page.locator(".leaflet-container").or(page.locator('[data-testid="map-view"]')),
+    ).toBeVisible({ timeout: 10_000 });
+
+    // O Leaflet.markercluster usa a classe .marker-cluster nos marcadores
+    // agrupados — presença dela confirma que o plugin está ativo e agrupou.
+    const cluster = page.locator(".marker-cluster").first();
+    await expect(cluster).toBeVisible({ timeout: 10_000 });
+
+    // Clique no cluster expande; marcadores individuais aparecem.
+    await cluster.click();
+    await expect(page.locator(".leaflet-marker-icon").first()).toBeVisible({
+      timeout: 5_000,
+    });
+  });
 });
