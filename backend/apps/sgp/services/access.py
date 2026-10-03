@@ -6,9 +6,10 @@ seus territórios; qualquer outro papel não tem escopo.
 
 from rest_framework.exceptions import PermissionDenied
 
+from apps.core.models.municipality import Municipality
 from apps.core.models.user_profile import UserProfile
 from apps.core.services.permissions import user_has_role, user_role_slugs, user_states
-from apps.sgp.models import UPF, Tecnico
+from apps.sgp.models import UPF, Activity, Tecnico
 
 ROLES_COM_ESCOPO = ("super-admin", "ugp", "articulador-estadual", "adt-acr")
 
@@ -109,6 +110,35 @@ def scope_queryset(
     if raise_on_no_role:
         raise PermissionDenied(deny_message)
     return qs.none()
+
+
+def atividades_acessiveis_ao_usuario(
+    user, qs=None, *, raise_on_no_role=False, deny_message="Você não tem acesso ao módulo SGP.",
+):
+    """Atividades dentro do escopo territorial do usuário.
+
+    `qs` permite partir de um queryset já com select/prefetch (ver
+    `ActivityViewSet.get_queryset`).
+    """
+    return scope_queryset(
+        Activity.objects.all() if qs is None else qs,
+        user,
+        state_lookup="municipio__state__sigla__in",
+        territory_lookup="municipio__territory__in",
+        deny_message=deny_message,
+        raise_on_no_role=raise_on_no_role,
+    )
+
+
+def municipios_acessiveis_ao_usuario(user):
+    """Municípios dentro do escopo territorial do usuário."""
+    return scope_queryset(
+        Municipality.objects.all(),
+        user,
+        state_lookup="state__sigla__in",
+        territory_lookup="territory__in",
+        raise_on_no_role=False,
+    )
 
 
 def upfs_acessiveis_ao_usuario(user, role_slugs=None, *, raise_on_no_role=False):
