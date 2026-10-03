@@ -7,7 +7,10 @@ do frontend: municípios, comunidades, UPFs com famílias, produções, plano de
 trabalho, atividades e evidências (fotos/documentos). Inclui também o cenário
 do SCA (#193): técnicos com dispositivos nas faixas verde/laranja/vermelha,
 histórico de eventos de sincronização, conflitos (pendente sensível e resolvido)
-e registros com origem "sca" para os badges.
+e registros com origem "sca" para os badges. Cobre também o SGD (#310): demandas
+nos nove estados da máquina de estados, em duas UFs, com remanejamento emergencial
+(excedente autorizado), solicitação fora das rubricas previstas e despesa posterior;
+e as integrações: token do Power BI e eventos de sincronização do Google Calendar.
 
 NÃO usar em produção nem em testes automatizados (para testes, usar as factories
 em apps/sgp/tests/factories.py).
@@ -32,13 +35,17 @@ from uuid import uuid4
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import F
 from django.utils import timezone
 
-from apps.core.models import Municipality, Organization, Role, State, SystemConfig, Territory, UserProfile
+from apps.core.models import (
+    Municipality, Organization, PowerBIToken, Role, State, SystemConfig, Territory, UserProfile,
+)
 from apps.core.models.notifications import Notification
 from apps.sca.models import ConflictLog, SyncDevice, SyncEvent
+from apps.sgd.models import ApprovalStep, Demand, DemandIndividualLimit, DemandRequest
+from apps.sgd.seed_demo import popular_demandas
 from apps.sgp.models import (
     Activity,
     ActivityDocument,
@@ -57,7 +64,10 @@ from apps.sgp.models import (
     WorkPlanMeta,
     WorkPlanSubmeta,
 )
+from apps.sgp.tasks import refresh_power_bi_snapshot
 from apps.sgp.models.activity import filtro_atrasada
+from apps.sgp.models.budget import BudgetAllocation, BudgetTransaction
+from apps.sgp.models.google_calendar_sync_event import GoogleCalendarSyncEvent
 from apps.sgp.services.workplan_dashboard import (
     dashboard_actions,
     dashboard_actions_for_user,
@@ -280,6 +290,13 @@ ARTICULADOR_TERRITORIOS = {
 # deles derruba a suíte inteira já no setup de login.
 LOCAL_ACESSO_REVOGADO = "rodrigo.tavares"
 
+# Solicitantes do SGD: ADT/ACR de duas UFs, para exercitar o recorte do
+# Articulador Estadual. Ficam FORA de TECNICOS pelo mesmo motivo do Super Admin
+# abaixo (a lista alimenta o random semeado), e são criados depois de todo o
+# resto, então os ids que as specs E2E fixam não mudam.
+SGD_SOLICITANTES = [("Camila", "Siqueira", "PE"), ("Davi", "Barros", "RN")]
+SGD_MUNICIPIOS = {"PE": "2613909", "RN": "2408102"}
+
 # Super Admin da demonstração.
 #
 # Fica FORA de TECNICOS de propósito. A lista é consumida como dado posicional
@@ -468,8 +485,66 @@ class Command(BaseCommand):
             self._atividades(acoes, comunidades, upfs, tecnicos, options["atividades"])
             self._sca(tecnicos, upfs)
             self._cenarios_e2e(projeto, acoes, comunidades, tecnicos)
+            self._demandas_sgd(acoes)
+            self._integracoes()
 
         self._resumo()
+
+    def _demandas_sgd(self, acoes):
+        solicitantes = self._solicitantes_sgd()
+        municipios = {
+            uf: Municipality.objects.get(codigo_ibge=codigo)
+            for uf, codigo in SGD_MUNICIPIOS.items()
+        }
+        demandas = popular_demandas(
+            acao=acoes[0], municipios=municipios, solicitantes=solicitantes,
+            dominio_demo=DEMO_EMAIL_DOMAIN,
+        )
+        self.stdout.write(f"Demandas do SGD: {len(demandas)} (UFs: {', '.join(solicitantes)})")
+
+    def _solicitantes_sgd(self) -> dict:
+        role = Role.objects.get(slug="adt-acr")
+        usuarios = {}
+        for primeiro, ultimo, uf in SGD_SOLICITANTES:
+            email = email_de_demo(primeiro, ultimo)
+            user = User.objects.filter(email=email).first()
+            if user is None:
+                user = User.objects.create_user(
+                    email=email, nome=f"{primeiro} {ultimo}", password=DEMO_PASSWORD,
+                )
+            else:
+                user.set_password(DEMO_PASSWORD)
+                user.save(update_fields=["password"])
+            territorio = Territory.objects.filter(estados__contains=[uf]).first()
+            UserProfile.objects.get_or_create(user=user, perfil=role, territorio=territorio)
+            usuarios[uf] = user
+        return usuarios
+
+    def _integracoes(self):
+        """Token do Power BI e histórico de sincronização do Google Calendar.
+
+        O token só guarda o hash, então o texto puro não é exibido. O snapshot
+        mora no cache, não no banco: sem ele a tela diria "sem snapshot" mesmo
+        com token válido. `ocorrido_em` é automático, por isso as datas passadas
+        entram por UPDATE depois do `create()`.
+        """
+        agora = timezone.now()
+        admin = User.objects.get(email=email_de_demo(*SUPER_ADMIN))
+        PowerBIToken.gerar(criado_por=admin)
+        refresh_power_bi_snapshot()
+
+        # O sucesso é o evento mais recente (estado "ok"); as falhas são todas
+        # anteriores a ele, e só a mais antiga cai fora da janela de 24h.
+        eventos = [
+            (True, "", timedelta(minutes=10)),
+            (False, "Token do Google Calendar expirado.", timedelta(hours=3)),
+            (False, "Limite de requisições da API do Google excedido.", timedelta(hours=5)),
+            (False, "Calendário de destino não encontrado.", timedelta(hours=30)),
+        ]
+        for sucesso, mensagem, atras in eventos:
+            evento = GoogleCalendarSyncEvent.objects.create(sucesso=sucesso, mensagem_erro=mensagem)
+            GoogleCalendarSyncEvent.objects.filter(pk=evento.pk).update(ocorrido_em=agora - atras)
+        self.stdout.write("Integrações: token do Power BI e 4 eventos do Google Calendar.")
 
     def _cenarios_e2e(self, projeto, acoes, comunidades, tecnicos):
         """Garante os cenários de que as specs do Playwright dependem.
@@ -612,6 +687,20 @@ class Command(BaseCommand):
                     caminho.unlink()
 
         with transaction.atomic():
+            # O SGD sai primeiro: Demand.activity e BudgetAllocation.rubrica são
+            # PROTECT. ApprovalStep e BudgetTransaction não deixam apagar por
+            # instância, mas o delete em massa passa. O AuditLog fica (trigger).
+            with connection.cursor() as cursor:
+                cursor.execute("SET LOCAL app.user_role = %s;", ["super-admin"])
+            ApprovalStep.objects.all().delete()
+            DemandRequest.objects.all().delete()
+            Demand.objects.all().delete()
+            DemandIndividualLimit.objects.all().delete()
+            BudgetTransaction.objects.all().delete()
+            BudgetAllocation.objects.all().delete()
+            Notification.objects.filter(modulo_origem="sgd").delete()
+            PowerBIToken.objects.all().delete()
+            GoogleCalendarSyncEvent.objects.all().delete()
             ActivityPhoto.all_objects.all().delete()
             ActivityDocument.all_objects.all().delete()
             Activity.all_objects.all().delete()
@@ -1584,7 +1673,7 @@ class Command(BaseCommand):
         for modelo in (
             Municipality, Organization, Comunidade, UPF, MembroFamilia, Production,
             UPFDocument, FormResponse, Indicator, WorkPlanMeta, WorkPlanSubmeta, WorkPlanAcao, Activity,
-            ActivityPhoto, ActivityDocument,
+            ActivityPhoto, ActivityDocument, Demand,
         ):
             self.stdout.write(
                 f"  {modelo._meta.verbose_name_plural}: {modelo.objects.count()}"
