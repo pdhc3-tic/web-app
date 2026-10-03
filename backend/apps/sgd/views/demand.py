@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -6,8 +7,11 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from apps.core.models.municipality import Municipality
+from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsADTInTerritory, IsAuthenticatedActiveAccess, IsSuperAdmin
+from apps.core.views.audit import AuditLogPagination
 from apps.sgd.models.demand import Demand
+from apps.sgd.serializers.auditoria import DemandAuditEntrySerializer
 from apps.sgd.serializers.demand import DemandCreateSerializer, DemandSerializer, DemandUpdateSerializer
 from apps.sgd.serializers.demand_request import (
     DemandRequestCreateSerializer,
@@ -16,6 +20,7 @@ from apps.sgd.serializers.demand_request import (
 )
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services.approval import demand_visibility_scope
+from apps.sgd.services.auditoria import ENTIDADE_DEMANDA, ENTIDADE_MOVIMENTACAO_SALDO
 from apps.sgd.views.approval import DemandApprovalMixin
 from apps.sgd.views.demand_document import DemandDocumentMixin
 from apps.sgp.models import Activity
@@ -31,6 +36,10 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
         # jogo no create, IsADTInTerritory checa só o perfil.
         if self.action == "create":
             return [IsAuthenticatedActiveAccess(), (IsADTInTerritory | IsSuperAdmin)()]
+        # SGD §1: a auditoria completa é do Super Admin. A trilha traz o IP de
+        # quem agiu, dado pessoal que o aprovador não precisa ver.
+        if self.action == "auditoria":
+            return [IsAuthenticatedActiveAccess(), IsSuperAdmin()]
         return super().get_permissions()
 
     def get_queryset(self):
@@ -91,6 +100,19 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
         entrada.is_valid(raise_exception=True)
         demand = demand_service.atualizar_demanda(demand, **entrada.validated_data)
         return Response(DemandSerializer(demand).data)
+
+    @action(detail=True, methods=["get"], url_path="auditoria")
+    def auditoria(self, request, pk=None):
+        demand = get_object_or_404(self.get_queryset(), pk=pk)
+        entradas = AuditLog.objects.select_related("user").filter(
+            Q(entidade=ENTIDADE_DEMANDA, entidade_id=str(demand.pk))
+            # `demanda` fica em valores_novos porque a BudgetTransaction só
+            # conhece a solicitação, e a solicitação pode ser removida depois.
+            | Q(entidade=ENTIDADE_MOVIMENTACAO_SALDO, valores_novos__demanda=demand.pk)
+        ).order_by("timestamp", "id")
+        paginador = AuditLogPagination()
+        pagina = paginador.paginate_queryset(entradas, request)
+        return paginador.get_paginated_response(DemandAuditEntrySerializer(pagina, many=True).data)
 
     @action(detail=True, methods=["post"], url_path="submeter")
     def submeter(self, request, pk=None):
