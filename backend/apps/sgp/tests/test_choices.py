@@ -1,5 +1,6 @@
 import pytest
 
+from apps.sgp import constants
 from apps.sgp.constants import (
     AGUA_CHOICES,
     COR_RACA_CHOICES,
@@ -12,9 +13,11 @@ from apps.sgp.constants import (
     PCT_CHOICES,
     POSSE_TERRA_CHOICES,
     SAUDE_CHOICES,
+    SEGURIDADE_SOCIAL_CHOICES,
     SITUACAO_MORADIA_CHOICES,
     TIPO_MORADIA_CHOICES,
 )
+from apps.sgp.views.choices import CHOICES_PUBLICADOS
 
 pytestmark = pytest.mark.django_db
 
@@ -30,13 +33,7 @@ class TestSGPChoicesEndpoint:
         response = auth_client.get(self.CHOICES_URL)
         assert response.status_code == 200
 
-        expected_keys = {
-            "genero", "cor_raca", "escolaridade", "dispositivo",
-            "pct", "posse_terra", "situacao_moradia", "tipo_moradia",
-            "material_construcao", "energia", "agua",
-            "grau_parentesco", "saude",
-        }
-        assert set(response.data.keys()) == expected_keys
+        assert set(response.data.keys()) == set(CHOICES_PUBLICADOS)
 
     def test_genero_choices_structure(self, auth_client):
         response = auth_client.get(self.CHOICES_URL)
@@ -126,12 +123,31 @@ class TestSGPChoicesEndpoint:
         for item, (value, label) in zip(choices, PARENTESCO_CHOICES):
             assert item == {"value": value, "label": label}
 
-    def test_saude_choices_uses_value_as_label(self, auth_client):
+    def test_saude_choices_tem_rotulo_legivel(self, auth_client):
         response = auth_client.get(self.CHOICES_URL)
         choices = response.data["saude"]
         assert len(choices) == len(SAUDE_CHOICES)
-        for item, value in zip(choices, SAUDE_CHOICES):
-            assert item == {"value": value, "label": value}
+        for item, (value, label) in zip(choices, SAUDE_CHOICES):
+            assert item == {"value": value, "label": label}
+        assert {"value": "deficiencia_visual", "label": "Deficiência visual"} in choices
+
+    def test_seguridade_social_choices(self, auth_client):
+        response = auth_client.get(self.CHOICES_URL)
+        choices = response.data["seguridade_social"]
+        assert len(choices) == len(SEGURIDADE_SOCIAL_CHOICES)
+        for item, (value, label) in zip(choices, SEGURIDADE_SOCIAL_CHOICES):
+            assert item == {"value": value, "label": label}
+
+    @pytest.mark.parametrize("chave", [
+        "ods", "status_plano_trabalho", "tipo_atividade", "forma_atuacao", "ambito",
+        "status_atividade", "producao_tipo", "producao_sistema_criacao",
+        "producao_tipo_outra", "upf_documento_tipo", "atividade_documento_tipo",
+    ])
+    def test_listas_de_atividade_producao_ods_e_documentos(self, auth_client, chave):
+        response = auth_client.get(self.CHOICES_URL)
+        esperado = [{"value": v, "label": l} for v, l in CHOICES_PUBLICADOS[chave]]
+        assert response.data[chave] == esperado
+        assert esperado
 
     def test_all_choices_have_value_and_label_keys(self, auth_client):
         response = auth_client.get(self.CHOICES_URL)
@@ -139,3 +155,16 @@ class TestSGPChoicesEndpoint:
             for item in items:
                 assert "value" in item, f"Missing 'value' in {key}[{items.index(item)}]"
                 assert "label" in item, f"Missing 'label' in {key}[{items.index(item)}]"
+
+
+def test_choices_expoe_todas_as_constantes():
+    """Constante de choices nova em `constants.py` que não entre no endpoint
+    derruba este teste."""
+    publicadas = [id(opcoes) for opcoes in CHOICES_PUBLICADOS.values()]
+    constantes = {
+        nome: valor for nome, valor in vars(constants).items()
+        if nome.endswith("_CHOICES") or nome == "STATUS_WORKPLAN"
+    }
+    assert constantes
+    ausentes = [nome for nome, valor in constantes.items() if id(valor) not in publicadas]
+    assert not ausentes, f"Constantes fora do endpoint /choices/: {ausentes}"
