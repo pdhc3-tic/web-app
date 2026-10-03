@@ -309,13 +309,24 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         data["municipio"] = MunicipioNestedSerializer(instance.municipio).data
         if instance.comunidade_id:
             data["comunidade"] = NestedSerializer(instance.comunidade).data
-        if instance.acao_id:
+        territorio = instance.municipio.territory
+        data["territorio"] = {"id": territorio.pk, "nome": territorio.nome} if territorio else None
+        plano = plano_trabalho_da_acao(instance.acao)
+        if plano:
             data["acao"] = {
-                "id": instance.acao.pk,
-                "numero": instance.acao.numero,
-                "descricao": instance.acao.descricao,
+                **plano["acao"],
+                "meta": plano["meta"],
+                "submeta": plano["submeta"],
+                "indicador": plano["indicador"],
             }
-        data["plano_trabalho"] = plano_trabalho_da_acao(instance.acao)
+        data["plano_trabalho"] = plano
+        data["criado_por"] = (
+            {"id": instance.criado_por.pk, "nome": instance.criado_por.nome}
+            if instance.criado_por_id else None
+        )
+        data["parceiros_organizacoes"] = [
+            {"id": o.pk, "nome": o.nome} for o in instance.parceiros_organizacoes.all()
+        ]
         data["tecnico_responsavel"] = {
             "id": instance.tecnico_responsavel.pk,
             "nome": instance.tecnico_responsavel.nome,
