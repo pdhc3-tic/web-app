@@ -17,7 +17,7 @@ from apps.sgp.serializers import (
     ActivityDetailSerializer,
     ActivityListSerializer,
 )
-from apps.sgp.services.access import scope_queryset
+from apps.sgp.services.access import atividades_acessiveis_ao_usuario
 from apps.sgp.services.exportacao import exportar_sincrono
 from apps.sgp.tasks import sync_activity_to_google_calendar
 from apps.sgp.views.activity_documentos import ActivityDocumentMixin
@@ -82,11 +82,10 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
             ),
         )
 
-        return scope_queryset(
-            qs,
+        return atividades_acessiveis_ao_usuario(
             self.request.user,
-            state_lookup="municipio__state__sigla__in",
-            territory_lookup="municipio__territory__in",
+            qs,
+            raise_on_no_role=True,
             deny_message="Você não tem acesso ao módulo de Atividades do SGP.",
         )
 
@@ -316,11 +315,10 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
             "acao__indicador",
         )
 
-        qs = scope_queryset(
-            qs,
+        qs = atividades_acessiveis_ao_usuario(
             request.user,
-            state_lookup="municipio__state__sigla__in",
-            territory_lookup="municipio__territory__in",
+            qs,
+            raise_on_no_role=True,
             deny_message="Você não tem acesso ao módulo de Atividades do SGP.",
         )
 
