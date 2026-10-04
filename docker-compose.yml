@@ -62,7 +62,7 @@ services:
     restart: unless-stopped
     env_file:
       - ./backend/.env
-    command: celery -A setup worker --loglevel=info
+    command: celery -A setup worker --loglevel=info -Q celery,normal
     depends_on:
       - backend
       - redis
