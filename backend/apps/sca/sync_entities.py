@@ -17,7 +17,22 @@ from django.db import models
 from django.utils import timezone
 
 from apps.sgp.models import Activity, MembroFamilia, UPF
-from apps.sgp.services.activity_status import ActivityStatusError, transition
+from apps.sgp.services.activity_status import (
+    ActivityRuleError,
+    transition,
+    validar_datas,
+    validar_membros_participantes,
+    validar_transicao,
+)
+from apps.sgp.services.membro_rules import (
+    MembroRuleError,
+    normalizar_cpf,
+    validar_cpf,
+    validar_data_nascimento,
+    validar_saude,
+    validar_seguridade_social,
+    validar_titular_unico,
+)
 
 
 def _resolve_fk_ids(model, data: dict) -> dict:
@@ -41,6 +56,11 @@ def _resolve_fk_ids(model, data: dict) -> dict:
 
 class SyncEntityError(Exception):
     """Erro controlado por item no push — não interrompe o restante do batch."""
+
+    def __init__(self, message, *, sync_code: str = "", campo: str = ""):
+        super().__init__(message)
+        self.sync_code = sync_code
+        self.campo = campo
 
 
 class SyncEntity:
@@ -181,8 +201,13 @@ class SyncEntity:
     def create(self, data: dict, *, user, device_id: str, uuid_local, uuid_map):
         raise NotImplementedError
 
-    def apply_changes(self, instance, changes: dict):
-        """Aplica apenas as mudanças locais aprovadas (merge/Estratégia 2 e 3)."""
+    def apply_changes(self, instance, changes: dict, *, uuid_map=None):
+        """Aplica apenas as mudanças locais aprovadas (merge/Estratégia 2 e 3).
+
+        `uuid_map` resolve referências a entidades criadas no mesmo batch
+        (mesmo padrão de `create`) — só `ActivitySyncEntity` usa, para
+        `upfs_participantes`/`membros_participantes`.
+        """
         raise NotImplementedError
 
     # ------------------------------------------------------------------
@@ -228,7 +253,7 @@ class UPFSyncEntity(SyncEntity):
 
     def get_by_natural(self, data):
         titular = data.get("titular") or {}
-        cpf = (titular.get("cpf") or "").strip()
+        cpf = normalizar_cpf(titular.get("cpf"))
         if not cpf:
             return None
         membro = (
@@ -249,6 +274,19 @@ class UPFSyncEntity(SyncEntity):
         titular_data = dict(data.pop("titular", {}) or {})
         if not titular_data.get("nome_completo"):
             raise SyncEntityError("nome_completo do titular é obrigatório para criar UPF.")
+
+        try:
+            titular_data["cpf"] = validar_cpf(titular_data.get("cpf"))
+            if "data_nascimento" in titular_data:
+                validar_data_nascimento(titular_data["data_nascimento"])
+            if "saude" in titular_data:
+                validar_saude(titular_data["saude"])
+            if "seguridade_social" in titular_data:
+                validar_seguridade_social(titular_data["seguridade_social"])
+        except MembroRuleError as exc:
+            raise SyncEntityError(
+                f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
+            ) from exc
 
         titular = MembroFamilia.objects.create(
             upf=None,
@@ -277,7 +315,7 @@ class UPFSyncEntity(SyncEntity):
         titular.save(update_fields=["upf", "ultima_origem", "ultimo_sync_em"])
         return upf
 
-    def apply_changes(self, instance, changes: dict):
+    def apply_changes(self, instance, changes: dict, *, uuid_map=None):
         titular_changes = {}
         upf_changes = {}
         for path, value in changes.items():
@@ -285,6 +323,23 @@ class UPFSyncEntity(SyncEntity):
                 titular_changes[path.split(".", 1)[1]] = value
             else:
                 upf_changes[path] = value
+
+        try:
+            if titular_changes.get("cpf"):
+                titular_changes["cpf"] = validar_cpf(
+                    titular_changes["cpf"], membro_atual=instance.titular
+                )
+            if "data_nascimento" in titular_changes:
+                validar_data_nascimento(titular_changes["data_nascimento"])
+            if "saude" in titular_changes:
+                validar_saude(titular_changes["saude"])
+            if "seguridade_social" in titular_changes:
+                validar_seguridade_social(titular_changes["seguridade_social"])
+        except MembroRuleError as exc:
+            raise SyncEntityError(
+                f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
+            ) from exc
+
         upf_changes = _resolve_fk_ids(UPF, upf_changes)
         for field, value in upf_changes.items():
             setattr(instance, field, value)
@@ -375,7 +430,7 @@ class MemberSyncEntity(SyncEntity):
         return instance.upf.territorio_id if instance.upf_id else None
 
     def get_by_natural(self, data):
-        cpf = (data.get("cpf") or "").strip()
+        cpf = normalizar_cpf(data.get("cpf"))
         if not cpf:
             return None
         return MembroFamilia.objects.filter(cpf=cpf).exclude(upf=None).first()
@@ -388,6 +443,20 @@ class MemberSyncEntity(SyncEntity):
         if upf_id is None:
             raise SyncEntityError("Campo 'upf' (ou 'upf_uuid_local') é obrigatório para criar membro.")
         data["upf_id"] = upf_id
+        try:
+            data["cpf"] = validar_cpf(data.get("cpf"))
+            if data.get("grau_parentesco") == "titular":
+                validar_titular_unico(upf_id)
+            if "data_nascimento" in data:
+                validar_data_nascimento(data["data_nascimento"])
+            if "saude" in data:
+                validar_saude(data["saude"])
+            if "seguridade_social" in data:
+                validar_seguridade_social(data["seguridade_social"])
+        except MembroRuleError as exc:
+            raise SyncEntityError(
+                f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
+            ) from exc
         return MembroFamilia.objects.create(
             criado_por=user,
             device_id=device_id,
@@ -397,7 +466,24 @@ class MemberSyncEntity(SyncEntity):
             **data,
         )
 
-    def apply_changes(self, instance, changes: dict):
+    def apply_changes(self, instance, changes: dict, *, uuid_map=None):
+        novo_grau = changes.get("grau_parentesco", instance.grau_parentesco)
+        novo_upf_id = changes.get("upf", instance.upf_id)
+        try:
+            if changes.get("cpf"):
+                changes["cpf"] = validar_cpf(changes["cpf"], membro_atual=instance)
+            if novo_grau == "titular":
+                validar_titular_unico(novo_upf_id, membro_atual=instance)
+            if "data_nascimento" in changes:
+                validar_data_nascimento(changes["data_nascimento"])
+            if "saude" in changes:
+                validar_saude(changes["saude"])
+            if "seguridade_social" in changes:
+                validar_seguridade_social(changes["seguridade_social"])
+        except MembroRuleError as exc:
+            raise SyncEntityError(
+                f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
+            ) from exc
         for field, value in changes.items():
             setattr(instance, field, value)
         instance.ultima_origem = "sca"
@@ -450,6 +536,14 @@ class ActivitySyncEntity(SyncEntity):
         novo_status = data.pop("status", None)
         justificativa = data.pop("justificativa", "")
 
+        try:
+            validar_datas(data.get("data_inicio"), data.get("data_fim"))
+            validar_membros_participantes(upfs, membros)
+        except ActivityRuleError as exc:
+            raise SyncEntityError(
+                f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
+            ) from exc
+
         instance = Activity(
             criado_por=user,
             device_id=device_id,
@@ -461,8 +555,10 @@ class ActivitySyncEntity(SyncEntity):
         if novo_status is not None:
             try:
                 transition(instance, novo_status, usuario=user, justificativa=justificativa)
-            except ActivityStatusError as exc:
-                raise SyncEntityError(f"{exc.sync_code}: {exc.message}") from exc
+            except ActivityRuleError as exc:
+                raise SyncEntityError(
+                    f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
+                ) from exc
         instance.save()
         if upfs:
             instance.upfs_participantes.set(upfs)
@@ -476,25 +572,63 @@ class ActivitySyncEntity(SyncEntity):
             return uuid_map.get(item)
         return item
 
-    def apply_changes(self, instance, changes: dict):
+    def apply_changes(self, instance, changes: dict, *, uuid_map=None):
         changes = _resolve_fk_ids(Activity, changes)
-        novo_status = changes.pop("status", None)
-        if novo_status is not None:
-            try:
-                transition(
-                    instance,
-                    novo_status,
-                    usuario=None,
-                    justificativa=changes.get("justificativa", instance.justificativa),
-                    nova_data=changes.get("data_inicio"),
-                )
-            except ActivityStatusError as exc:
-                raise SyncEntityError(f"{exc.sync_code}: {exc.message}") from exc
+
+        # Participantes M2M não podem ser atribuídos via setattr (Django
+        # recusa com TypeError: "Direct assignment to the forward side of a
+        # many-to-many set is prohibited") — tirados de `changes` aqui,
+        # resolvidos via uuid_map (igual ao `create`) e gravados com `.set()`
+        # depois do save, não pelo loop genérico abaixo.
+        upfs_payload = changes.pop("upfs_participantes", None)
+        membros_payload = changes.pop("membros_participantes", None)
+
+        upfs_resolvidos = None
+        if upfs_payload is not None:
+            upfs_resolvidos = [
+                self._resolve_participante(item, uuid_map, UPF) for item in upfs_payload
+            ]
+            upfs_ids = set(upfs_resolvidos)
+        else:
+            upfs_ids = set(instance.upfs_participantes.values_list("pk", flat=True))
+
+        membros_resolvidos = None
+        if membros_payload is not None:
+            membros_resolvidos = [
+                self._resolve_participante(item, uuid_map, MembroFamilia) for item in membros_payload
+            ]
+
+        # Resolvidos com fallback pro valor atual da atividade — igual à API
+        # web (`ActivityDetailSerializer.validate`): a regra roda em toda
+        # atualização, não só quando o campo em questão está no payload.
+        novo_status = changes.get("status", instance.status)
+        justificativa = changes.get("justificativa", instance.justificativa)
+        nova_data = changes.get("data_inicio")
+        data_inicio = changes.get("data_inicio", instance.data_inicio)
+        data_fim = changes.get("data_fim", instance.data_fim)
+
+        try:
+            validar_transicao(
+                instance, novo_status, justificativa=justificativa, nova_data=nova_data
+            )
+            validar_datas(data_inicio, data_fim)
+            if membros_resolvidos is not None:
+                validar_membros_participantes(upfs_ids, membros_resolvidos)
+        except ActivityRuleError as exc:
+            raise SyncEntityError(
+                f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
+            ) from exc
+
         for field, value in changes.items():
             setattr(instance, field, value)
         instance.ultima_origem = "sca"
         instance.ultimo_sync_em = timezone.now()
         instance.save()
+
+        if upfs_resolvidos is not None:
+            instance.upfs_participantes.set(upfs_resolvidos)
+        if membros_resolvidos is not None:
+            instance.membros_participantes.set(membros_resolvidos)
 
     def serialize(self, instance):
         data = {

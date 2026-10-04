@@ -3,10 +3,21 @@ from datetime import date
 from rest_framework import serializers
 
 from apps.core.sensitive_fields import SensitiveFieldsSerializerMixin
-from apps.sgp.constants import SAUDE_CHOICES
-from apps.sgp.models import MembroFamilia, UPF
+from apps.sgp.models import MembroFamilia
 from apps.sgp.services.access import upfs_acessiveis_ao_usuario
-from apps.sgp.validators import validate_cpf
+from apps.sgp.services.membro_rules import (
+    CPFDuplicadoError,
+    CPFInvalidoError,
+    DataNascimentoFuturaError,
+    SaudeInvalidaError,
+    SeguridadeSocialInvalidaError,
+    TitularDuplicadoError,
+    validar_cpf,
+    validar_data_nascimento,
+    validar_saude,
+    validar_seguridade_social,
+    validar_titular_unico,
+)
 
 
 class MembroListSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSerializer):
@@ -95,13 +106,12 @@ class MembroDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSe
                 view_upf_id = self.context.get("view").kwargs.get("upf_pk") if self.context.get("view") else None
                 if view_upf_id:
                     upf_id = view_upf_id
-            if upf_id:
-                upf = UPF.objects.filter(pk=upf_id).first()
-                if upf and upf.titular_id:
-                    if not self.instance or upf.titular_id != self.instance.pk:
-                        raise serializers.ValidationError(
-                            "Já existe um titular cadastrado para esta UPF"
-                        )
+            try:
+                validar_titular_unico(upf_id, membro_atual=self.instance)
+            except TitularDuplicadoError:
+                raise serializers.ValidationError(
+                    "Já existe um titular cadastrado para esta UPF"
+                )
         return value
 
     def get_idade(self, obj):
@@ -116,12 +126,12 @@ class MembroDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSe
     def validate_cpf(self, value):
         if not value:
             return ""
-        value = validate_cpf(value)
-        qs = MembroFamilia.objects.filter(cpf=value)
-        if self.instance:
-            qs = qs.exclude(pk=self.instance.pk)
-        duplicado = qs.first()
-        if duplicado:
+        try:
+            return validar_cpf(value, membro_atual=self.instance)
+        except CPFInvalidoError as exc:
+            raise serializers.ValidationError(exc.message)
+        except CPFDuplicadoError as exc:
+            duplicado = exc.duplicado
             upfs_visiveis = upfs_acessiveis_ao_usuario(self.context["request"].user)
             if duplicado.upf_id in upfs_visiveis.values_list("pk", flat=True):
                 raise serializers.ValidationError(
@@ -131,51 +141,24 @@ class MembroDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSe
             raise serializers.ValidationError(
                 "Já existe um membro cadastrado com este CPF"
             )
-        return value
 
     def validate_data_nascimento(self, value):
-        if value and value > date.today():
-            raise serializers.ValidationError(
-                "Data de nascimento não pode ser uma data futura"
-            )
-        return value
+        try:
+            return validar_data_nascimento(value)
+        except DataNascimentoFuturaError as exc:
+            raise serializers.ValidationError(exc.message)
 
     def validate_saude(self, value):
-        if not isinstance(value, list):
-            raise serializers.ValidationError(
-                "Saúde deve ser uma lista de strings"
-            )
-        if len(value) != len(set(value)):
-            raise serializers.ValidationError("Condições de saúde não podem conter duplicidades.")
-        for item in value:
-            if item not in SAUDE_CHOICES:
-                raise serializers.ValidationError(
-                    f"'{item}' não é um valor válido para saúde. "
-                    f"Valores permitidos: {', '.join(SAUDE_CHOICES)}"
-                )
-        if "nenhuma" in value and len(value) > 1:
-            raise serializers.ValidationError(
-                "A opção 'nenhuma' é mutuamente exclusiva com outras condições."
-            )
-        return value
+        try:
+            return validar_saude(value)
+        except SaudeInvalidaError as exc:
+            raise serializers.ValidationError(exc.message)
 
     def validate_seguridade_social(self, value):
-        from apps.sgp.constants import SEGURIDADE_SOCIAL_CHOICES
-        if not isinstance(value, list):
-            raise serializers.ValidationError("Seguridade social deve ser uma lista de strings.")
-        if len(value) != len(set(value)):
-            raise serializers.ValidationError("Seguridade social não pode conter duplicidades.")
-        for item in value:
-            if item not in SEGURIDADE_SOCIAL_CHOICES:
-                raise serializers.ValidationError(
-                    f"'{item}' não é um valor válido para seguridade social. "
-                    f"Valores permitidos: {', '.join(SEGURIDADE_SOCIAL_CHOICES)}"
-                )
-        if "nenhum" in value and len(value) > 1:
-            raise serializers.ValidationError(
-                "A opção 'nenhum' é mutuamente exclusiva com outros benefícios."
-            )
-        return value
+        try:
+            return validar_seguridade_social(value)
+        except SeguridadeSocialInvalidaError as exc:
+            raise serializers.ValidationError(exc.message)
 
 
 class MembroExportQuerySerializer(serializers.Serializer):
