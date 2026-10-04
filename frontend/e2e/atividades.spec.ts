@@ -500,8 +500,12 @@ test.describe("SGP — Evidências (fotos e documentos)", () => {
       buffer: Buffer.alloc(1024),
     });
 
-    const uploadBtn = page.getByRole("button", { name: /Enviar .* documento/i });
-    await expect(uploadBtn).toBeVisible({ timeout: 5_000 });
+    // Preencher tipo e data são obrigatórios para habilitar "Enviar pendentes".
+    await page.getByLabel("Tipo").selectOption({ label: "Ata" });
+    await page.locator('input[type="date"]').last().fill("2026-06-01");
+
+    const uploadBtn = page.getByRole("button", { name: "Enviar pendentes" });
+    await expect(uploadBtn).toBeEnabled({ timeout: 5_000 });
 
     const uploadUrlRequest = page.waitForRequest(
       (req) =>
@@ -566,6 +570,40 @@ test.describe("SGP — Transição de status", () => {
 
     await expect(page.getByTestId("transicao-aviso-evidencia")).toBeVisible();
     await expect(page.getByTestId("transicao-confirmar")).toBeDisabled();
+  });
+
+  test("backend recusa 400 ao concluir sem evidência: mensagem aparece e status não muda", async ({
+    page,
+  }) => {
+    // GET retorna atividade COM foto — o front deixa prosseguir.
+    // PATCH responde 400 — simula o backend como segunda barreira.
+    await abrirFichaComMock(page, true);
+
+    await page.route(`**/api/v1/sgp/atividades/9001/`, async (route) => {
+      if (route.request().method() !== "PATCH") return route.fallback();
+      await route.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({
+          detail: "É necessário ao menos uma evidência para concluir a atividade.",
+        }),
+      });
+    });
+
+    await page.getByTestId("atividade-status-btn").click();
+    await expect(page.getByTestId("transicao-dialog")).toBeVisible();
+
+    await page.getByLabel("Novo status").click();
+    await page.getByRole("option", { name: "Concluído" }).click();
+
+    await page.getByTestId("transicao-confirmar").click();
+
+    // Mensagem de erro do backend aparece no diálogo.
+    await expect(page.getByTestId("transicao-erro")).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId("transicao-erro")).toContainText(/evidência/i);
+
+    // Diálogo ainda está aberto — status não mudou.
+    await expect(page.getByTestId("transicao-dialog")).toBeVisible();
   });
 
   test("com evidência: confirma transição e diálogo fecha", async ({ page }) => {

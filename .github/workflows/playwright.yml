@@ -33,6 +33,7 @@ jobs:
           POSTGRES_PASSWORD=postgres
           REDIS_HOST=redis
           REDIS_PORT=6379
+          FIELD_ENCRYPTION_KEY=Y2ktb25seS1maWVsZC1lbmNyeXB0aW9uLWtleS0wMDAwMDA=
           EOF
 
       - name: Criar .env do frontend para CI

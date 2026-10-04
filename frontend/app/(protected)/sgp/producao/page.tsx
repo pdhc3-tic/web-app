@@ -105,6 +105,38 @@ function ProducaoView() {
   }));
   const [culturaItem, setCulturaItem] = useState<CatalogoItem | null>(null);
   const [especieItem, setEspecieItem] = useState<CatalogoItem | null>(null);
+
+  // Restaura os itens do combobox quando a página abre com ?cultura= ou ?especie= na URL.
+  useEffect(() => {
+    const culturaId = searchParams.get("cultura");
+    if (culturaId && !culturaItem) {
+      const controller = new AbortController();
+      searchCulturas("", controller.signal)
+        .then((items) => {
+          const found = items.find((i) => String(i.id) === culturaId);
+          if (found && !controller.signal.aborted) setCulturaItem(found);
+        })
+        .catch(() => {});
+      return () => controller.abort();
+    }
+  // Intencionalmente sem culturaItem nas deps: só roda uma vez ao montar.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const especieId = searchParams.get("especie");
+    if (especieId && !especieItem) {
+      const controller = new AbortController();
+      searchEspecies("", controller.signal)
+        .then((items) => {
+          const found = items.find((i) => String(i.id) === especieId);
+          if (found && !controller.signal.aborted) setEspecieItem(found);
+        })
+        .catch(() => {});
+      return () => controller.abort();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [limit, setLimit] = useState<number>(() => {
     const l = Number(searchParams.get("limit"));
     return PAGE_SIZES.includes(l) ? l : DEFAULT_LIMIT;

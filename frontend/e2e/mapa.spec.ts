@@ -227,10 +227,10 @@ test.describe("SGP — Mapa de UPFs", () => {
   test("cluster aparece quando há UPFs com coordenadas próximas", async ({
     page,
   }) => {
-    // Cinco UPFs num raio de ~200 m — ao zoom padrão do Leaflet o
-    // MarkerCluster agrupa todas num único cluster.
-    const upfsProximas = Array.from({ length: 5 }, (_, i) =>
-      upfMapaFake(100 + i, `Titular ${i}`, "Ouricuri", -7.8800 + i * 0.0001, -40.0800 + i * 0.0001),
+    // Clustering ativa acima de 200 marcadores (clusteringThreshold = 200 em
+    // MapViewClient.tsx). Gerar 201 UPFs próximas garante a ativação.
+    const upfsProximas = Array.from({ length: 201 }, (_, i) =>
+      upfMapaFake(100 + i, `Titular ${i}`, "Ouricuri", -7.8800 + i * 0.00001, -40.0800 + i * 0.00001),
     );
 
     await page.route(MAPA_API, async (route) => {
@@ -244,20 +244,27 @@ test.describe("SGP — Mapa de UPFs", () => {
 
     await page.goto("/sgp/upfs/mapa");
 
-    // O mapa precisa estar visível antes de checar os clusters.
     await expect(
       page.locator(".leaflet-container").or(page.locator('[data-testid="map-view"]')),
     ).toBeVisible({ timeout: 10_000 });
 
-    // O Leaflet.markercluster usa a classe .marker-cluster nos marcadores
-    // agrupados — presença dela confirma que o plugin está ativo e agrupou.
-    const cluster = page.locator(".marker-cluster").first();
+    // O ícone de cluster usa <span class="mapview-cluster"> (markerIcons.ts:26).
+    const cluster = page.locator(".mapview-cluster").first();
     await expect(cluster).toBeVisible({ timeout: 10_000 });
 
-    // Clique no cluster expande; marcadores individuais aparecem.
+    // A contagem exibida no cluster deve ser numérica.
+    const texto = await cluster.textContent();
+    expect(Number(texto?.trim())).toBeGreaterThan(1);
+
+    // Clique no cluster: os marcadores expandem e o cluster some ou diminui.
+    const clusterCount = await page.locator(".mapview-cluster").count();
     await cluster.click();
+    // Após o zoom-in do Leaflet, ou há mais clusters menores ou marcadores individuais.
     await expect(page.locator(".leaflet-marker-icon").first()).toBeVisible({
       timeout: 5_000,
     });
+    // O cluster original (com contagem total) não existe mais na mesma posição.
+    const newCount = await page.locator(".mapview-cluster").count();
+    expect(newCount).not.toBe(clusterCount);
   });
 });
