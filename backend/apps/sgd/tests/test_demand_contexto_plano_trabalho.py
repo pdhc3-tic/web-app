@@ -77,7 +77,7 @@ def test_listagem_traz_a_cadeia_sem_consulta_a_mais(
     with CaptureQueriesContext(connection) as consultas:
         response = auth_client_solicitante.get(URL)
 
-    assert len(response.data) == 3
+    assert len(response.data["results"]) == 3
     assert _consultas_avulsas_da_cadeia(consultas) == []
 
 

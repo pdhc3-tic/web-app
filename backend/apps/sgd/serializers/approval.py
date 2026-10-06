@@ -1,5 +1,27 @@
 from rest_framework import serializers
 
+from apps.sgd.models.approval_step import ApprovalStep
+
+
+class ApprovalStepSerializer(serializers.ModelSerializer):
+    """Uma linha do histórico da demanda (SGD-RF27)."""
+
+    etapa_display = serializers.CharField(source="get_etapa_display", read_only=True)
+    acao_display = serializers.CharField(source="get_acao_display", read_only=True)
+    responsavel_id = serializers.IntegerField(allow_null=True, read_only=True)
+    responsavel_nome = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ApprovalStep
+        fields = [
+            "id", "etapa", "etapa_display", "acao", "acao_display", "responsavel_id",
+            "responsavel_nome", "justificativa", "excedente_autorizado", "criado_em",
+        ]
+        read_only_fields = fields
+
+    def get_responsavel_nome(self, obj):
+        return obj.responsavel.nome if obj.responsavel_id else None
+
 
 class DevolverSerializer(serializers.Serializer):
     justificativa = serializers.CharField()
