@@ -1,25 +1,35 @@
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 
 from apps.core.models.municipality import Municipality
 from apps.core.permissions import IsADTInTerritory, IsAuthenticatedActiveAccess, IsSuperAdmin
 from apps.sgd.models.demand import Demand
+from apps.sgd.serializers.approval import ApprovalStepSerializer
 from apps.sgd.serializers.demand import DemandCreateSerializer, DemandSerializer, DemandUpdateSerializer
 from apps.sgd.serializers.demand_request import (
     DemandRequestCreateSerializer,
     DemandRequestSerializer,
     DemandRequestUpdateSerializer,
 )
+from apps.sgd.services import consulta as consulta_service
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services.approval import demand_visibility_scope
 from apps.sgd.views.approval import DemandApprovalMixin
 from apps.sgd.views.demand_document import DemandDocumentMixin
 from apps.sgp.models import Activity
+from apps.sgp.services.exportacao import CONTENT_TYPES, Arquivo, gerar_arquivo
+from apps.sgp.views.exportacao import arquivo_response
 from apps.sgp.models.workplan import WorkPlanAcao
+
+
+class DemandPagination(LimitOffsetPagination):
+    max_limit = 200
 
 
 class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
@@ -46,11 +56,34 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
         return qs.distinct()
 
     def list(self, request):
-        qs = self.get_queryset()
-        status_param = request.query_params.get("status")
-        if status_param:
-            qs = qs.filter(status=status_param)
-        return Response(DemandSerializer(qs, many=True).data)
+        qs = consulta_service.filtrar_demandas(self.get_queryset(), request.query_params)
+        paginator = DemandPagination()
+        pagina = paginator.paginate_queryset(qs, request, view=self)
+        return paginator.get_paginated_response(DemandSerializer(pagina, many=True).data)
+
+    @action(detail=False, methods=["get"], url_path="exportar")
+    def exportar(self, request):
+        """Exporta as demandas com os filtros de `list` aplicados na chamada
+        (RF30) — distinta da exportação no formato Arlo."""
+        params = request.query_params.copy()
+        formato = params.pop("formato", ["csv"])[-1]
+        if formato not in CONTENT_TYPES:
+            raise ValidationError({"formato": "Use 'csv' ou 'xlsx'."})
+        qs = consulta_service.filtrar_demandas(self.get_queryset(), params)
+        conteudo = gerar_arquivo(
+            consulta_service.COLUNAS_EXPORTACAO, consulta_service.linhas_exportacao(qs),
+            formato, "Demandas",
+        )
+        timestamp = timezone.localtime().strftime("%Y-%m-%d_%H-%M-%S")
+        return arquivo_response(Arquivo(
+            conteudo=conteudo, nome=f"demandas_{timestamp}.{formato}", content_type=CONTENT_TYPES[formato],
+        ))
+
+    @action(detail=True, methods=["get"], url_path="historico")
+    def historico(self, request, pk=None):
+        demand = get_object_or_404(self.get_queryset(), pk=pk)
+        etapas = demand.etapas.select_related("responsavel").order_by("criado_em", "pk")
+        return Response(ApprovalStepSerializer(etapas, many=True).data)
 
     def retrieve(self, request, pk=None):
         demand = get_object_or_404(self.get_queryset(), pk=pk)
