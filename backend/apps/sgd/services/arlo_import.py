@@ -238,7 +238,10 @@ def _processar_importacao(importacao: ArloImport) -> ArloImport:
     try:
         conteudo = get_storage().read_bytes(importacao.arquivo_key)
         cabecalho, linhas = _ler_linhas(conteudo, importacao.nome_original or importacao.arquivo_key)
-        colunas = obter_mapeamento()["importacao"]
+        mapeamento = obter_mapeamento()
+        importacao.mapeamento_snapshot = mapeamento
+        importacao.save(update_fields=["mapeamento_snapshot"])
+        colunas = {campo: item["coluna"] for campo, item in mapeamento["importacao"].items()}
         ausentes = [coluna for campo, coluna in colunas.items()
                     if campo in CAMPOS_IMPORTACAO_OBRIGATORIOS and coluna not in cabecalho]
         if ausentes:
