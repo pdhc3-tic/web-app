@@ -10,12 +10,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
+from uuid import NAMESPACE_URL, uuid5
 
 from django.db import connection
 from django.utils import timezone
 
 from apps.core.models import Territory, UserProfile
-from apps.sgd.models import Demand, DemandIndividualLimit
+from apps.sgd.models import ArloImport, Demand, DemandIndividualLimit, DemandRequest
 from apps.sgd.services import approval as approval_service
 from apps.sgd.services import demand as demand_service
 from apps.sgp.models import Activity, BudgetAllocation, BudgetRubrica
@@ -241,3 +242,46 @@ def _datar(demanda, cenario, agora) -> None:
         status_alterado_em=status_alterado_em,
         criado_em=status_alterado_em - timedelta(days=2),
     )
+
+
+def popular_arlo(*, demandas, dominio_demo: str, media_base_url: str) -> list[ArloImport]:
+    """Histórico do Arlo: uma exportação, uma importação sem erros e uma com erros
+    por linha. Só o histórico: o arquivo não é gravado e a task de importação não
+    roda, porque ela mudaria o status e o saldo das demandas do seed."""
+    agora = timezone.now()
+    ugp = _aprovadores(dominio_demo)["ugp"]
+    recusada = next(d for d in demandas if d.status == "recusada")
+
+    def registrar(posicao, *, tipo, atras, extensao="csv", **campos):
+        pasta = "exportacoes" if tipo == ArloImport.Tipo.EXPORTACAO else "importacoes"
+        chave = f"arlo/{pasta}/{uuid5(NAMESPACE_URL, f'seed-arlo-{posicao}')}.{extensao}"
+        registro = ArloImport.objects.create(
+            tipo=tipo, status=ArloImport.Status.CONCLUIDO, arquivo_key=chave,
+            arquivo_url=f"{media_base_url}/{chave}", nome_original=chave.rsplit("/", 1)[-1],
+            operado_por=ugp, ip_origem="203.0.113.20", **campos,
+        )
+        # `operado_em` é automático: só um UPDATE recua o registro no tempo.
+        ArloImport.objects.filter(pk=registro.pk).update(operado_em=agora - atras)
+        return registro
+
+    autorizadas = DemandRequest.objects.filter(demanda__status="autorizada").count()
+    return [
+        registrar(
+            1, tipo=ArloImport.Tipo.EXPORTACAO, atras=timedelta(days=4),
+            total_registros=autorizadas, registros_ok=autorizadas,
+        ),
+        registrar(
+            2, tipo=ArloImport.Tipo.IMPORTACAO, atras=timedelta(days=3), total_registros=3, registros_ok=3,
+        ),
+        registrar(
+            3, tipo=ArloImport.Tipo.IMPORTACAO, atras=timedelta(days=1), total_registros=5, registros_ok=3,
+            erros_json=[
+                {"linha": 4, "erro": "Valor pago em formato inválido: 'R$ abc'.", "campo": "valor_pago"},
+                {
+                    "linha": 6,
+                    "erro": f"Demanda #{recusada.pk} está em status 'recusada' e não aceita pagamento.",
+                    "campo": "demanda_id",
+                },
+            ],
+        ),
+    ]

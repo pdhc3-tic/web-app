@@ -7,7 +7,7 @@ from django.core.management import call_command
 from rest_framework.test import APIClient
 
 from apps.core.models import PowerBIToken
-from apps.sgd.models import ApprovalStep, Demand, DemandRequest
+from apps.sgd.models import ApprovalStep, ArloImport, Demand, DemandRequest
 from apps.sgd.models.demand import STATUS_CHOICES
 from apps.sgd.services.approval import alerta_rubrica_fora_do_previsto, demand_visibility_scope
 from apps.sgd.tasks import DIAS_UTEIS_LIMITE, _dias_uteis_entre
@@ -102,6 +102,7 @@ def test_demanda_parada_continua_acima_do_limite_de_dias_uteis(hoje):
 
     assert parada.status == "submetida"
     assert parada.status_alterado_em < hoje
+    assert all(a.operado_em < hoje for a in ArloImport.objects.all())
     assert _dias_uteis_entre(parada.status_alterado_em.date(), hoje.date(), uf="PE") >= DIAS_UTEIS_LIMITE
 
 
@@ -139,4 +140,37 @@ def test_reset_recria_o_seed_do_sgd_sem_duplicar():
     assert Demand.objects.count() == total
     assert PowerBIToken.objects.count() == 1
     assert GoogleCalendarSyncEvent.objects.count() == 4
+    assert ArloImport.objects.count() == 3
     assert {s for s in Demand.objects.values_list("status", flat=True)} >= {s for s, _ in STATUS_CHOICES}
+
+
+def test_existe_importacao_do_arlo_com_erros_e_outra_sem(seed):
+    importacoes = ArloImport.objects.filter(tipo=ArloImport.Tipo.IMPORTACAO)
+
+    assert importacoes.exclude(erros_json=[]).exists()
+    assert importacoes.filter(erros_json=[]).exists()
+
+
+def test_historico_do_arlo_e_coerente(seed):
+    assert ArloImport.objects.filter(tipo=ArloImport.Tipo.EXPORTACAO).count() == 1
+    for registro in ArloImport.objects.filter(status=ArloImport.Status.CONCLUIDO):
+        assert registro.registros_ok + len(registro.erros_json) == registro.total_registros
+        assert registro.operado_por is not None
+        assert registro.arquivo_url.endswith(registro.arquivo_key)
+        for erro in registro.erros_json:
+            assert {"linha", "erro", "campo"} <= set(erro)
+
+
+def test_exportacao_do_arlo_conta_as_solicitacoes_das_demandas_autorizadas(seed):
+    exportacao = ArloImport.objects.get(tipo=ArloImport.Tipo.EXPORTACAO)
+
+    autorizadas = DemandRequest.objects.filter(demanda__status="autorizada").count()
+
+    assert exportacao.total_registros == exportacao.registros_ok == autorizadas > 0
+
+
+def test_erro_do_arlo_aponta_para_a_demanda_recusada_do_seed(seed):
+    recusada = Demand.objects.get(status="recusada")
+    com_erros = ArloImport.objects.exclude(erros_json=[]).get()
+
+    assert any(f"#{recusada.pk} " in erro["erro"] for erro in com_erros.erros_json)

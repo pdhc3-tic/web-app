@@ -10,7 +10,8 @@ histórico de eventos de sincronização, conflitos (pendente sensível e resolv
 e registros com origem "sca" para os badges. Cobre também o SGD (#310): demandas
 nos nove estados da máquina de estados, em duas UFs, com remanejamento emergencial
 (excedente autorizado), solicitação fora das rubricas previstas e despesa posterior;
-e as integrações: token do Power BI e eventos de sincronização do Google Calendar.
+o histórico do Arlo (exportação e importações, com e sem erros por linha); e as
+integrações: token do Power BI e eventos de sincronização do Google Calendar.
 
 NÃO usar em produção nem em testes automatizados (para testes, usar as factories
 em apps/sgp/tests/factories.py).
@@ -44,8 +45,8 @@ from apps.core.models import (
 )
 from apps.core.models.notifications import Notification
 from apps.sca.models import ConflictLog, SyncDevice, SyncEvent
-from apps.sgd.models import ApprovalStep, Demand, DemandIndividualLimit, DemandRequest
-from apps.sgd.seed_demo import popular_demandas
+from apps.sgd.models import ApprovalStep, ArloImport, Demand, DemandIndividualLimit, DemandRequest
+from apps.sgd.seed_demo import popular_arlo, popular_demandas
 from apps.sgp.models import (
     Activity,
     ActivityDocument,
@@ -500,7 +501,13 @@ class Command(BaseCommand):
             acao=acoes[0], municipios=municipios, solicitantes=solicitantes,
             dominio_demo=DEMO_EMAIL_DOMAIN,
         )
-        self.stdout.write(f"Demandas do SGD: {len(demandas)} (UFs: {', '.join(solicitantes)})")
+        historico = popular_arlo(
+            demandas=demandas, dominio_demo=DEMO_EMAIL_DOMAIN, media_base_url=MEDIA_BASE_URL,
+        )
+        self.stdout.write(
+            f"Demandas do SGD: {len(demandas)} (UFs: {', '.join(solicitantes)}); "
+            f"histórico do Arlo: {len(historico)} operações"
+        )
 
     def _solicitantes_sgd(self) -> dict:
         role = Role.objects.get(slug="adt-acr")
@@ -696,6 +703,7 @@ class Command(BaseCommand):
             DemandRequest.objects.all().delete()
             Demand.objects.all().delete()
             DemandIndividualLimit.objects.all().delete()
+            ArloImport.objects.all().delete()
             BudgetTransaction.objects.all().delete()
             BudgetAllocation.objects.all().delete()
             Notification.objects.filter(modulo_origem="sgd").delete()
