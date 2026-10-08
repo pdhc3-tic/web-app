@@ -6,6 +6,7 @@ from django.db import DatabaseError, transaction
 from rest_framework.test import APIClient
 
 from apps.core.models.audit_log import AuditLog
+from apps.core.signals.audit import clear_audit_context, set_audit_context
 from apps.sgd.models import Demand
 from apps.sgd.services import approval as approval_service
 from apps.sgd.services import balance as balance_service
@@ -86,6 +87,20 @@ def test_cancelamento_automatico_registra_o_sistema(demanda, demand_request_rn, 
     assert ultima.acao == "demanda.status_alterado"
     assert ultima.user is None
     assert ultima.ip is None
+
+
+def test_transicao_de_task_em_nome_de_um_usuario_usa_o_contexto(demanda, demand_request_rn, solicitante_rn, usuario_ugp):
+    demand_service.submeter_demanda(demanda, usuario=solicitante_rn)
+    set_audit_context(user=usuario_ugp, ip="203.0.113.20", user_agent="arlo-import")
+    try:
+        approval_service.marcar_cancelada(demanda)
+    finally:
+        clear_audit_context()
+
+    ultima = _status(demanda)[-1]
+    assert ultima.user == usuario_ugp
+    assert ultima.ip == "203.0.113.20"
+    assert ultima.user_agent == "arlo-import"
 
 
 def test_criacao_da_demanda_abre_a_trilha(activity_rn, solicitante_rn):

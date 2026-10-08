@@ -8,11 +8,12 @@ ENTIDADE_MOVIMENTACAO_SALDO = "BudgetTransaction"
 
 
 def registrar_status(demand, *, de, para, usuario=None) -> None:
-    """`usuario=None` é ação do sistema (cancelamento automático, tasks). IP e
-    User-Agent vêm do contexto da requisição, quando houver."""
+    """IP e User-Agent vêm do contexto da requisição, quando houver. Sem `usuario`,
+    vale o usuário do contexto (a importação do Arlo roda numa task, mas em nome
+    de quem enviou o arquivo); sem nenhum dos dois, é ação do sistema."""
     contexto = get_audit_context()
     log_audit(
-        user=usuario,
+        user=usuario or contexto["user"],
         acao="demanda.criada" if de is None else "demanda.status_alterado",
         modulo="sgd",
         entidade=ENTIDADE_DEMANDA,
