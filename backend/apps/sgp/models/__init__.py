@@ -1,6 +1,6 @@
 from .comunidade import Comunidade
 from .catalogos import Cultura, EspecieAnimal
-from .budget import BudgetRubrica, BudgetAllocation, BudgetTransaction
+from .budget import BudgetAllocation, BudgetIncreaseRequest, BudgetRubrica, BudgetTransaction, BudgetTransfer
 from .export_job import ExportJob
 from .form_response import FormResponse
 from .glosa_risk import GlosaRisk
@@ -22,8 +22,10 @@ __all__ = [
     "ActivityDocument",
     "ActivityPhoto",
     "BudgetAllocation",
+    "BudgetIncreaseRequest",
     "BudgetRubrica",
     "BudgetTransaction",
+    "BudgetTransfer",
     "Comunidade",
     "Cultura",
     "EspecieAnimal",
