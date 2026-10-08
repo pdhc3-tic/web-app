@@ -24,11 +24,12 @@ from apps.sgd.services.approval import demand_visibility_scope
 from apps.sgd.services.auditoria import ENTIDADE_DEMANDA, ENTIDADE_MOVIMENTACAO_SALDO
 from apps.sgd.views.approval import DemandApprovalMixin
 from apps.sgd.views.demand_document import DemandDocumentMixin
+from apps.sgd.views.remanejamento import RecursoExtraMixin
 from apps.sgp.models import Activity
 from apps.sgp.models.workplan import WorkPlanAcao
 
 
-class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
+class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin, viewsets.ViewSet):
     permission_classes = [IsAuthenticatedActiveAccess]
 
     def get_permissions(self):
