@@ -41,6 +41,14 @@ class DemandApprovalMixin:
     def _get_demand(self, pk):
         return get_object_or_404(self.get_queryset(), pk=pk)
 
+    @action(detail=False, methods=["get"], url_path="aguardando-minha-acao/contagem")
+    def aguardando_minha_acao_contagem(self, request):
+        demandas = approval_service.demandas_aguardando_acao(request.user, self.get_queryset())
+        return Response({
+            "total": demandas.count(),
+            "status": approval_service.status_aguardando_acao(request.user),
+        })
+
     @action(detail=True, methods=["post"], url_path="pre-autorizar")
     def pre_autorizar(self, request, pk=None):
         demand = self._get_demand(pk)

@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.sgd.models.demand import Demand
+from apps.sgd.serializers.approval_step import ApprovalStepSerializer
 from apps.sgd.serializers.demand_request import DemandRequestSerializer
 from apps.sgp.models.activity import TIPO_ATIVIDADE_CHOICES
 
@@ -54,14 +55,16 @@ class DemandSerializer(serializers.ModelSerializer):
     valor_pago_total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
     contexto = serializers.SerializerMethodField()
     solicitacoes = DemandRequestSerializer(many=True, read_only=True)
+    etapas = ApprovalStepSerializer(many=True, read_only=True)
+    solicitante_nome = serializers.CharField(source="solicitante.nome", read_only=True)
 
     class Meta:
         model = Demand
         fields = [
             "id", "titulo", "activity", "justificativa", "status", "status_display",
-            "transicoes_permitidas", "solicitante", "despesa_posterior",
+            "transicoes_permitidas", "solicitante", "solicitante_nome", "despesa_posterior",
             "valor_estimado_total", "valor_autorizado_total", "valor_pago_total",
-            "contexto", "solicitacoes", "criado_em", "atualizado_em",
+            "contexto", "solicitacoes", "etapas", "criado_em", "atualizado_em",
         ]
         read_only_fields = [
             "id", "activity", "status", "solicitante", "despesa_posterior",

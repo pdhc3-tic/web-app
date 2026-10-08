@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -7,6 +8,7 @@ from rest_framework.response import Response
 
 from apps.core.models.municipality import Municipality
 from apps.core.permissions import IsADTInTerritory, IsAuthenticatedActiveAccess, IsSuperAdmin
+from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.models.demand import Demand
 from apps.sgd.serializers.demand import DemandCreateSerializer, DemandSerializer, DemandUpdateSerializer
 from apps.sgd.serializers.demand_request import (
@@ -40,6 +42,12 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
             "activity__acao__meta", "activity__acao__submeta", "activity__acao__indicador",
             "solicitante",
         ).prefetch_related("solicitacoes__rubrica")
+        # Só na leitura: nas ações de decisão o prefetch deixaria `etapas` em
+        # cache, e a resposta sairia sem a etapa que a própria ação acabou de criar.
+        if self.action in ("list", "retrieve"):
+            qs = qs.prefetch_related(
+                Prefetch("etapas", queryset=ApprovalStep.objects.select_related("responsavel")),
+            )
         scope = demand_visibility_scope(self.request.user)
         if scope is not None:
             qs = qs.filter(scope)
