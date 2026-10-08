@@ -508,7 +508,9 @@ def test_vincula_organizacao(auth_ugp, payload_minimo):
     response = auth_ugp.post(LIST_URL, payload, format="json")
 
     assert response.status_code == status.HTTP_201_CREATED, response.data
-    assert response.data["parceiros_organizacoes"] == [organizacao.pk]
+    assert response.data["parceiros_organizacoes"] == [
+        {"id": organizacao.pk, "nome": "Associação dos Agricultores"}
+    ]
 
     atividade = Activity.objects.get(pk=response.data["id"])
     assert list(atividade.parceiros_organizacoes.values_list("pk", flat=True)) == [
@@ -678,3 +680,176 @@ def test_atividade_inativa_404(auth_ugp, municipio_rn):
 
     response = auth_ugp.get(detail_url(atividade.pk))
     assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+# ===========================================================================
+# Detalhe com território, cadeia da Ação, parceiros e criador nomeados
+# ===========================================================================
+
+@pytest.mark.django_db
+def test_detalhe_traz_territorio_e_cadeia_da_acao(auth_ugp, municipio_rn, territory_rn):
+    atividade = ActivityFactory(municipio=municipio_rn)
+    acao = atividade.acao
+
+    data = auth_ugp.get(detail_url(atividade.pk)).data
+
+    assert data["territorio_id"] == territory_rn.pk
+    assert data["territorio"] == {"id": territory_rn.pk, "nome": territory_rn.nome}
+    assert data["acao"]["id"] == acao.pk
+    assert data["acao"]["meta"] == {
+        "id": acao.meta_id, "numero": acao.meta.numero, "titulo": acao.meta.titulo,
+    }
+    assert data["acao"]["submeta"] == {
+        "id": acao.submeta_id, "numero": acao.submeta.numero, "titulo": acao.submeta.titulo,
+    }
+    assert data["acao"]["indicador"] == {
+        "id": acao.indicador_id, "codigo": acao.indicador.codigo,
+        "nome": acao.indicador.nome, "unidade_medida": acao.indicador.unidade_medida,
+    }
+
+
+@pytest.mark.django_db
+def test_detalhe_sem_territorio_devolve_territorio_nulo(auth_ugp, state_rn):
+    municipio = MunicipalityFactory(state=state_rn, territory=None)
+    atividade = ActivityFactory(municipio=municipio)
+
+    data = auth_ugp.get(detail_url(atividade.pk)).data
+
+    assert data["territorio"] is None
+
+
+@pytest.mark.django_db
+def test_detalhe_traz_parceiros_e_criador_com_nome(auth_ugp, municipio_rn, usuario_ugp):
+    org = OrganizationFactory(nome="Associação dos Agricultores")
+    atividade = ActivityFactory(
+        municipio=municipio_rn, parceiros_organizacoes=[org], criado_por=usuario_ugp,
+    )
+
+    data = auth_ugp.get(detail_url(atividade.pk)).data
+
+    assert data["parceiros_organizacoes"] == [{"id": org.pk, "nome": "Associação dos Agricultores"}]
+    assert data["criado_por"] == {"id": usuario_ugp.pk, "nome": usuario_ugp.nome}
+
+
+@pytest.mark.django_db
+def test_detalhe_sem_criador_devolve_criado_por_nulo(auth_ugp, municipio_rn):
+    atividade = ActivityFactory(municipio=municipio_rn, criado_por=None)
+
+    assert auth_ugp.get(detail_url(atividade.pk)).data["criado_por"] is None
+
+
+@pytest.mark.django_db
+def test_detalhe_traz_upf_nos_membros_participantes(auth_ugp, municipio_rn):
+    from apps.sgp.tests.factories import MembroFactory, UPFFactory
+
+    upf = UPFFactory(municipio=municipio_rn)
+    membro = MembroFactory(upf=upf)
+    atividade = ActivityFactory(municipio=municipio_rn)
+    atividade.upfs_participantes.set([upf])
+    atividade.membros_participantes.set([membro])
+
+    membros = auth_ugp.get(detail_url(atividade.pk)).data["membros_participantes"]
+
+    assert [m["upf"] for m in membros] == [upf.pk]
+
+
+# ===========================================================================
+# Filtros: status múltiplo, busca por título e sincronização com o Google Calendar
+# ===========================================================================
+
+def _ids(response):
+    return {item["id"] for item in response.data["results"]}
+
+
+@pytest.mark.django_db
+def test_filtro_status_aceita_parametro_repetido(auth_ugp, municipio_rn):
+    planejada = ActivityFactory(municipio=municipio_rn, status="planejado")
+    agendada = ActivityFactory(municipio=municipio_rn, status="agendado")
+    ActivityFactory(municipio=municipio_rn, status="cancelada", justificativa="Chuva")
+
+    response = auth_ugp.get(f"{LIST_URL}?status=planejado&status=agendado")
+
+    assert _ids(response) == {planejada.pk, agendada.pk}
+
+
+@pytest.mark.django_db
+def test_filtro_status_com_um_valor_continua_valendo(auth_ugp, municipio_rn):
+    planejada = ActivityFactory(municipio=municipio_rn, status="planejado")
+    ActivityFactory(municipio=municipio_rn, status="agendado")
+
+    assert _ids(auth_ugp.get(f"{LIST_URL}?status=planejado")) == {planejada.pk}
+
+
+@pytest.mark.django_db
+def test_filtro_status_invalido_retorna_400(auth_ugp):
+    assert auth_ugp.get(f"{LIST_URL}?status=inexistente").status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.django_db
+def test_filtro_q_busca_por_titulo_sem_diferenciar_maiusculas(auth_ugp, municipio_rn):
+    seminario = ActivityFactory(municipio=municipio_rn, titulo="Seminário Regional")
+    ActivityFactory(municipio=municipio_rn, titulo="Visita técnica")
+
+    assert _ids(auth_ugp.get(f"{LIST_URL}?q=REGIONAL")) == {seminario.pk}
+
+
+@pytest.mark.django_db
+def test_filtro_por_status_de_sincronizacao_do_google_calendar(auth_ugp, municipio_rn):
+    com_erro = ActivityFactory(municipio=municipio_rn, google_calendar_sync_status="erro")
+    ActivityFactory(municipio=municipio_rn, google_calendar_sync_status="ok")
+
+    assert _ids(auth_ugp.get(f"{LIST_URL}?google_calendar_sync_status=erro")) == {com_erro.pk}
+
+
+@pytest.mark.django_db
+def test_filtro_de_sincronizacao_invalido_retorna_400(auth_ugp):
+    response = auth_ugp.get(f"{LIST_URL}?google_calendar_sync_status=xyz")
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+# ===========================================================================
+# Reagendar uma atividade adiada exige data nova
+# ===========================================================================
+
+@pytest.mark.django_db
+def test_reagendar_atividade_adiada_sem_data_retorna_400(auth_ugp, municipio_rn):
+    atividade = ActivityFactory(municipio=municipio_rn, status="adiada")
+
+    response = auth_ugp.patch(detail_url(atividade.pk), {"status": "agendado"}, format="json")
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "data_inicio" in response.data
+
+
+@pytest.mark.django_db
+def test_reagendar_atividade_adiada_com_a_mesma_data_retorna_400(auth_ugp, municipio_rn):
+    atividade = ActivityFactory(municipio=municipio_rn, status="adiada")
+
+    response = auth_ugp.patch(
+        detail_url(atividade.pk),
+        {"status": "agendado", "data_inicio": atividade.data_inicio.isoformat()},
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "data_inicio" in response.data
+
+
+@pytest.mark.django_db
+def test_reagendar_atividade_adiada_com_data_nova_retorna_200(auth_ugp, municipio_rn):
+    atividade = ActivityFactory(municipio=municipio_rn, status="adiada")
+    nova_data = atividade.data_inicio + datetime.timedelta(days=30)
+
+    response = auth_ugp.patch(
+        detail_url(atividade.pk),
+        {
+            "status": "agendado",
+            "data_inicio": nova_data.isoformat(),
+            "data_fim": (nova_data + datetime.timedelta(hours=4)).isoformat(),
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_200_OK, response.data
+    assert response.data["status"] == "agendado"
