@@ -13,6 +13,7 @@ from django.db import transaction
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from apps.core.models.audit_log import AuditLog
+from apps.core.signals.audit import get_audit_context
 from apps.sgd.models import DemandIndividualLimit
 from apps.sgd.services import notifications as notifications_service
 from apps.sgp.services import budget as budget_service
@@ -235,9 +236,11 @@ def reserva_ativa(demand_request) -> bool:
 def _registrar_movimento_individual(
     *, acao: str, entidade_id: str, usuario, valores_anteriores: dict | None = None, valores_novos: dict | None = None,
 ) -> None:
+    contexto = get_audit_context()
     AuditLog.objects.create(
         user=usuario, acao=acao, modulo="sgd", entidade=_ENTIDADE_LIMITE, entidade_id=entidade_id,
         valores_anteriores=valores_anteriores or {}, valores_novos=valores_novos or {},
+        ip=contexto["ip"], user_agent=contexto["user_agent"],
     )
 
 
