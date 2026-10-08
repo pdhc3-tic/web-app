@@ -358,8 +358,10 @@ def test_login_attempt_ip_via_forwarded_for(client, usuario):
     client.post(
         "/api/v1/auth/login/",
         {"email": usuario.email, "senha": "senha123"},
-        HTTP_X_FORWARDED_FOR="203.0.113.5, 10.0.0.1",
+        HTTP_X_FORWARDED_FOR="6.6.6.6, 203.0.113.5",
     )
+    # O nginx acrescenta o IP que viu ao fim da cadeia; o que vem antes foi o
+    # cliente quem escreveu.
     tentativa = LoginAttempt.objects.get(email=usuario.email)
     assert tentativa.ip == "203.0.113.5"
 
