@@ -173,3 +173,29 @@ def _notificar_demandas_atividade_adiada(activity_id: int) -> int:
         )
         notificadas += 1
     return notificadas
+
+
+@shared_task(name="sgd.tasks.process_arlo_import", queue="normal")
+def process_arlo_import(importacao_id: int) -> int:
+    """Processa a planilha de retorno do Arlo (SGD-RF32). Fila Normal
+    (Arquitetura 1.1). Devolve quantas linhas foram aplicadas com sucesso."""
+    from apps.sgd.models.arlo_import import ArloImport
+    from apps.sgd.services.arlo_import import processar_importacao
+
+    try:
+        importacao = ArloImport.objects.select_related("operado_por").get(pk=importacao_id)
+    except ArloImport.DoesNotExist:
+        logger.warning("Importação Arlo #%s não encontrada.", importacao_id)
+        return 0
+    if importacao.tipo != ArloImport.Tipo.IMPORTACAO or importacao.status != ArloImport.Status.PENDENTE:
+        return 0
+    try:
+        return _sem_contexto_de_sessao_rls(lambda: processar_importacao(importacao)).registros_ok
+    except Exception as exc:
+        ArloImport.objects.filter(pk=importacao_id).update(
+            status=ArloImport.Status.FALHOU,
+            erros_json=[{"linha": 0, "erro": "Falha inesperada ao processar o arquivo."}],
+        )
+        sentry_sdk.capture_exception(exc)
+        logger.exception("Falha ao processar a importação Arlo #%s.", importacao_id)
+        raise

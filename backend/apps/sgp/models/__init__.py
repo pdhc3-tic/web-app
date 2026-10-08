@@ -3,6 +3,7 @@ from .catalogos import Cultura, EspecieAnimal
 from .budget import BudgetRubrica, BudgetAllocation, BudgetTransaction
 from .export_job import ExportJob
 from .form_response import FormResponse
+from .glosa_risk import GlosaRisk
 from .indicator import Indicator
 from .membro import MembroFamilia
 from .production import Production
@@ -28,6 +29,7 @@ __all__ = [
     "EspecieAnimal",
     "ExportJob",
     "FormResponse",
+    "GlosaRisk",
     "Indicator",
     "GoogleCalendarSyncEvent",
     "MembroFamilia",
