@@ -56,6 +56,10 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
+      - name: Testes de componente (Vitest)
+        working-directory: frontend
+        run: npm test
+
       - name: Subir stack Docker
         run: docker compose up -d --build --wait
         timeout-minutes: 4
@@ -79,7 +83,11 @@ jobs:
           npx playwright test --timeout=60000
           end=$(date +%s)
           echo "Duração da suíte: $((end - start))s"
-        timeout-minutes: 5
+        # 5 min não cabe mais: o setup loga 7 usuários e o backend aceita 5 logins
+        # a cada 5 min (auth_login), então ele espera uma janela inteira antes do
+        # 6º; e a suíte roda com workers: 1 (as specs dividem o banco do seed).
+        # O teto aqui é só uma proteção contra execução travada.
+        timeout-minutes: 60
 
       - name: Publicar artefatos de falha
         if: failure()

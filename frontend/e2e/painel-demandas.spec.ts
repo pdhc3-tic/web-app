@@ -10,10 +10,9 @@ import { storageStatePath } from "./helpers/users";
  * #296 — Painel master-detail de Demandas + decisões por perfil (SGD).
  *
  * Contra o backend real: a fixture leva cada demanda ao status pelos services
- * do SGD, com reservas de saldo de verdade. Dois critérios dependem de
- * backend que ainda não existe (docs/pendencias-backend-sprint-10.md): a
- * linha do tempo das decisões (item 11) e cancelar demanda autorizada
- * (item 14) — ficam em `test.fixme`.
+ * do SGD, com reservas de saldo de verdade. Cancelar demanda autorizada
+ * depende de uma decisão de regra no backend
+ * (docs/pendencias-backend-sprint-10.md, item 14) e fica em `test.fixme`.
  */
 
 let fx: PainelDemandasFixture;
@@ -110,11 +109,15 @@ test.describe("Articulador Estadual (atua em RN)", () => {
     await expect(painel(page)).toContainText("Devolvida");
   });
 
-  // Pendência de backend (item 11): o ApprovalStep não é exposto na API.
-  test.fixme("a linha do tempo mostra a pré-autorização com o responsável", async ({ page }) => {
+  test("a linha do tempo mostra a pré-autorização, com o responsável", async ({ page }) => {
     await page.goto(`/sgd/demandas?visao=todas&demanda=${fx.preAutorizar.id}`);
     await painel(page).getByRole("tab", { name: "Linha do tempo" }).click();
-    await expect(painel(page).getByTestId("painel-timeline")).toContainText("Pré-autorização");
+    const timeline = painel(page).getByTestId("painel-timeline");
+    await expect(timeline).toContainText("Demanda criada");
+    await expect(timeline).toContainText("Pré-autorização: Aprovado");
+    await expect(timeline).toContainText("Hélio");
+    // O solicitante aparece pelo nome, não mais pelo id.
+    await expect(painel(page)).toContainText("Ewerton Bandeira");
   });
 });
 
@@ -132,6 +135,66 @@ test.describe("Articulador Estadual de outro estado", () => {
 
 test.describe("UGP", () => {
   test.use({ storageState: storageStatePath("ugp") });
+
+  test("a confirmação só libera quando o impacto no saldo foi validado", async ({ page }) => {
+    const CORS = { "access-control-allow-origin": "*" };
+    let modo: "segurar" | "sem-saldo" | "erro" | "real" = "segurar";
+    let liberar: () => void = () => {};
+    const segurando = new Promise<void>((r) => (liberar = r));
+
+    await page.route(
+      (url) => url.pathname.endsWith("/preview-decisao/"),
+      async (route) => {
+        if (route.request().method() === "OPTIONS" || modo === "real") return route.fallback();
+        if (modo === "erro") {
+          return route.fulfill({ status: 500, headers: CORS, body: "erro" });
+        }
+        if (modo === "segurar") await segurando;
+        const trava = { semaforo_antes: "verde", semaforo_apos: "vermelho", saldo_apos: -100 };
+        await route.fulfill({
+          status: 200,
+          headers: { ...CORS, "content-type": "application/json" },
+          body: JSON.stringify({
+            disponivel: false,
+            trava_bloqueada: "individual",
+            individual: trava,
+            territorial: { ...trava, semaforo_apos: "verde", saldo_apos: 1000 },
+          }),
+        });
+      },
+    );
+
+    await page.goto(`/sgd/demandas?demanda=${fx.autorizar.id}`);
+    await painel(page).getByTestId("acao-ajustar").click();
+    const confirmar = painel(page).getByTestId("decisao-confirmar");
+    const bloqueio = painel(page).getByTestId("decisao-bloqueio");
+
+    // 1. Calculando: a resposta ainda não chegou.
+    await painel(page).getByLabel(/Valor autorizado/).fill("9000");
+    await expect(bloqueio).toContainText("Calculando o impacto");
+    await expect(confirmar).toBeDisabled();
+
+    // 2. O impacto chegou, mas sem saldo.
+    modo = "sem-saldo";
+    liberar();
+    await expect(bloqueio).toContainText("excede o saldo");
+    await expect(confirmar).toBeDisabled();
+
+    // 3. O cálculo falhou: bloqueado, com a opção de calcular de novo.
+    modo = "erro";
+    await painel(page).getByLabel(/Valor autorizado/).fill("9100");
+    await expect(bloqueio).toContainText("Não foi possível calcular");
+    await expect(painel(page).getByRole("button", { name: "Calcular de novo" })).toBeVisible();
+    await expect(confirmar).toBeDisabled();
+
+    // 4. Impacto real, com saldo: libera.
+    modo = "real";
+    await painel(page).getByLabel(/Valor autorizado/).fill("1300");
+    await expect(bloqueio).toHaveCount(0);
+    await expect(confirmar).toBeEnabled();
+
+    await painel(page).getByRole("button", { name: "Voltar" }).click();
+  });
 
   test("autoriza com valor ajustado vendo o preview mudar de faixa", async ({ page }) => {
     await page.goto("/sgd/demandas");

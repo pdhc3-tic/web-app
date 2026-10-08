@@ -19,14 +19,15 @@ function NaoDisponivel() {
 }
 
 /**
- * Contexto herdado da atividade — somente leitura (#294, SGD-RF02).
+ * Contexto herdado da atividade — somente leitura (#294, SGD-RF02): território,
+ * município, comunidade, data, técnico e a cadeia Ação → Submeta → Meta →
+ * Indicador do Plano de Trabalho.
  *
- * A cadeia do Plano de Trabalho para em Ação → Meta: o SGP não modela Submeta
- * nem Indicador, então as duas linhas não existem aqui
- * (docs/pendencias-backend-sprint-10.md, item 7).
+ * Território e cadeia ainda não vêm no detalhe da atividade (chegam com o PR
+ * #328; docs/pendencias-backend-sprint-10.md, item 8) — até lá, "Não disponível".
  */
 export function ContextoAtividade({ atividade }: { atividade: AtividadeDetail }) {
-  const meta = atividade.acao.meta;
+  const { meta, submeta, indicador } = atividade.acao;
 
   return (
     <section
@@ -64,8 +65,20 @@ export function ContextoAtividade({ atividade }: { atividade: AtividadeDetail })
             value: `${atividade.acao.numero} — ${atividade.acao.descricao}`,
           },
           {
+            label: "Submeta",
+            value: submeta ? `${submeta.numero} — ${submeta.titulo}` : <NaoDisponivel />,
+          },
+          {
             label: "Meta",
             value: meta ? `Meta ${meta.numero} — ${meta.titulo}` : <NaoDisponivel />,
+          },
+          {
+            label: "Indicador",
+            value: indicador ? (
+              `${indicador.codigo} — ${indicador.nome} (${indicador.unidade_medida})`
+            ) : (
+              <NaoDisponivel />
+            ),
           },
         ]}
       />

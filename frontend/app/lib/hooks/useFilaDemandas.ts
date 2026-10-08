@@ -3,27 +3,53 @@
 import { useSession } from "next-auth/react";
 import { useQuery } from "@tanstack/react-query";
 import { perfisDecisoresSgd } from "@/app/lib/auth/roles";
-import { listDemandas, STATUS_AGUARDANDO, type StatusDemanda } from "@/app/lib/demandas";
+import { fetchContagemFila, listDemandas } from "@/app/lib/demandas";
 import { qk } from "@/app/lib/queryKeys";
 
 /**
- * Fila "Aguardando minha ação" do SGD (#296): as demandas nos status que cabem
- * ao(s) perfil(is) do usuário decidir. A mesma consulta alimenta a aba do
- * painel e o badge "N pendentes" da sidebar — uma requisição, um cache.
+ * Contagem da fila "Aguardando minha ação" do SGD (#296) — a do badge da
+ * sidebar e do card do `/sgd`. Vem pronta do backend
+ * (`aguardando-minha-acao/contagem`), com a regra de cada perfil aplicada lá.
  *
- * Quem não decide (ADT, Super Admin sem outro perfil) não tem fila.
+ * Quem não decide (ADT, Super Admin sem outro perfil) não consulta: não há fila.
  */
-export function useFilaDemandas() {
+export function useContagemFila() {
   const { data: session } = useSession();
-  const perfis = perfisDecisoresSgd(session?.user);
-  const status: StatusDemanda[] = [...new Set(perfis.flatMap((p) => STATUS_AGUARDANDO[p]))];
+  const decide = perfisDecisoresSgd(session?.user).length > 0;
 
   const query = useQuery({
-    queryKey: qk.demandas.lista(status),
-    queryFn: ({ signal }) => listDemandas({ status }, signal),
-    enabled: status.length > 0,
+    queryKey: qk.demandas.contagemFila,
+    queryFn: ({ signal }) => fetchContagemFila(signal),
+    enabled: decide,
     staleTime: 30_000,
   });
 
-  return { ...query, decide: status.length > 0, status };
+  return { ...query, decide };
+}
+
+/**
+ * A fila "Aguardando minha ação" em si: a listagem filtrada pelos status que a
+ * contagem informa para o perfil logado.
+ */
+export function useFilaDemandas() {
+  const contagem = useContagemFila();
+  const status = contagem.data?.status ?? [];
+
+  const lista = useQuery({
+    queryKey: qk.demandas.lista(status),
+    queryFn: ({ signal }) => listDemandas({ status }, signal),
+    enabled: contagem.decide && status.length > 0,
+    staleTime: 30_000,
+  });
+
+  return {
+    ...lista,
+    // Sem status a aguardar (contagem carregada, fila vazia) não há o que listar.
+    data: contagem.data && status.length === 0 ? [] : lista.data,
+    isPending: contagem.isPending || (status.length > 0 && lista.isPending),
+    error: contagem.error ?? lista.error,
+    refetch: () => void Promise.all([contagem.refetch(), lista.refetch()]),
+    decide: contagem.decide,
+    total: contagem.data?.total,
+  };
 }

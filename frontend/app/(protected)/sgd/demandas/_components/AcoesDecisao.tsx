@@ -20,7 +20,7 @@ import {
 } from "@/app/lib/demandas";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import { qk } from "@/app/lib/queryKeys";
-import { PreviewImpacto } from "./PreviewImpacto";
+import { PreviewImpacto, usePreviewsDecisao } from "./PreviewImpacto";
 
 export type Desfecho = { tipo: "sucesso" | "info"; texto: string };
 
@@ -73,6 +73,16 @@ export function AcoesDecisao({
   const podeUgp = perfis.includes("ugp") && status === "pre_autorizada";
   const podeAtender = perfis.includes("fgd") && status === "autorizada";
   const podeConcluir = perfis.includes("fgd") && status === "em_atendimento";
+
+  // As decisões que reservam recurso mostram o impacto ANTES de confirmar: com o
+  // valor pedido (pré-autorizar, autorizar) ou com o valor ajustado.
+  const itensPreview =
+    modo === "pre-autorizar" || modo === "autorizar"
+      ? solicitacoes.map((s) => ({ solicitacao: s, valor: paraInput(s.valor_estimado) }))
+      : modo === "ajustar"
+        ? solicitacoes.map((s) => ({ solicitacao: s, valor: valores[s.id] ?? "" }))
+        : [];
+  const previews = usePreviewsDecisao(demanda.id, itensPreview);
 
   if (!podeArticulador && !podeUgp && !podeAtender && !podeConcluir) return null;
 
@@ -132,18 +142,31 @@ export function AcoesDecisao({
     </Button>
   );
 
-  /** Preview de cada solicitação com o valor que a decisão vai reservar. */
-  const previews = (valorDe: (id: number, estimado: string) => string) => (
+  /**
+   * O impacto de cada solicitação e, enquanto ele não puder ser validado
+   * (calculando, erro, valor inválido ou sem saldo), o porquê de a confirmação
+   * estar bloqueada.
+   */
+  const blocoPreview = (
     <div className="flex flex-col gap-2" data-testid="decisao-preview">
       <p className="text-xs font-medium text-text">Impacto no saldo da rubrica</p>
-      {solicitacoes.map((s) => (
-        <PreviewImpacto
-          key={s.id}
-          demandaId={demanda.id}
-          solicitacao={s}
-          valor={valorDe(s.id, paraInput(s.valor_estimado))}
-        />
+      {previews.estados.map((estado) => (
+        <PreviewImpacto key={estado.solicitacao.id} estado={estado} />
       ))}
+      {previews.motivo && (
+        <p
+          className="flex flex-wrap items-center gap-2 text-xs text-text-muted"
+          role="status"
+          data-testid="decisao-bloqueio"
+        >
+          {previews.motivo}
+          {previews.estados.some((e) => e.erro) && (
+            <Button size="sm" variant="ghost" onClick={previews.tentarDeNovo}>
+              Calcular de novo
+            </Button>
+          )}
+        </p>
+      )}
     </div>
   );
 
@@ -152,12 +175,13 @@ export function AcoesDecisao({
   if (modo === "pre-autorizar") {
     conteudo = (
       <>
-        {previews((_, estimado) => estimado)}
+        {blocoPreview}
         {erroBox}
         <div className="flex justify-end gap-2">
           {voltar}
           <Button
             loading={enviando}
+            disabled={!previews.liberado}
             onClick={() =>
               executar(() => preAutorizarDemanda(demanda.id), {
                 tipo: "sucesso",
@@ -213,12 +237,13 @@ export function AcoesDecisao({
   } else if (modo === "autorizar") {
     conteudo = (
       <>
-        {previews((_, estimado) => estimado)}
+        {blocoPreview}
         {erroBox}
         <div className="flex justify-end gap-2">
           {voltar}
           <Button
             loading={enviando}
+            disabled={!previews.liberado}
             onClick={() =>
               executar(() => autorizarDemanda(demanda.id), {
                 tipo: "sucesso",
@@ -249,12 +274,13 @@ export function AcoesDecisao({
             helperText={`Pedido: ${formatCurrencyBRL(s.valor_estimado)}`}
           />
         ))}
-        {previews((id) => valores[id] ?? "")}
+        {blocoPreview}
         {erroBox}
         <div className="flex justify-end gap-2">
           {voltar}
           <Button
             loading={enviando}
+            disabled={!previews.liberado}
             onClick={() => {
               // Só vai no `ajustes` o que mudou: o resto é autorizado como pedido.
               const ajustes: Record<number, string> = {};

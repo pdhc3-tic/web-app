@@ -119,11 +119,14 @@ export type AcaoNested = {
   numero: string;
   descricao: string;
   /**
-   * Meta da Ação — ainda NÃO vem no detalhe. O contexto somente leitura da
-   * nova demanda (#294) precisa dela; pedido em
-   * docs/pendencias-backend-sprint-10.md, item 8. Opcional até lá.
+   * Cadeia do Plano de Trabalho da Ação (Meta → Submeta → Ação → Indicador).
+   * Ainda NÃO vem no detalhe — chega com o PR #328 do backend, nestes nomes
+   * (docs/pendencias-backend-sprint-10.md, item 8). Opcional até lá; o
+   * contexto da nova demanda (#294) mostra "Não disponível".
    */
   meta?: { id: number; numero: number; titulo: string };
+  submeta?: { id: number; numero: string; titulo: string };
+  indicador?: { id: number; codigo: string; nome: string; unidade_medida: string };
 };
 
 /** Técnico aninhado no detalhe. */

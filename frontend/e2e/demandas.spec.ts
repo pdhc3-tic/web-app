@@ -71,6 +71,77 @@ test.describe("SGD — demandas pela ficha da atividade (ADT)", () => {
     await expect(linhaDaDemanda(page, titulo)).toContainText("Rascunho");
   });
 
+  test("o contexto herdado mostra território, comunidade, data e a cadeia completa do PT", async ({
+    page,
+  }) => {
+    // O detalhe da atividade ainda não traz território nem a cadeia do Plano de
+    // Trabalho (pendência 8, PR #328 do backend). A resposta é completada aqui,
+    // nos nomes do #328, para exercitar a apresentação de todos os campos.
+    await page.route(
+      (url) => url.pathname === `/api/v1/sgp/atividades/${fx.agendada.id}/`,
+      async (route) => {
+        if (route.request().method() !== "GET") return route.fallback();
+        const resposta = await route.fetch();
+        const atividade = await resposta.json();
+        await route.fulfill({
+          response: resposta,
+          json: {
+            ...atividade,
+            territorio: { id: 4, nome: "Território RN" },
+            comunidade: { id: 7, nome: "Sítio Lajedo" },
+            acao: {
+              ...atividade.acao,
+              meta: { id: 1, numero: 1, titulo: "Organização produtiva" },
+              submeta: { id: 3, numero: "1.1", titulo: "Oficinas nas comunidades" },
+              indicador: {
+                id: 9,
+                codigo: "IND-01",
+                nome: "Famílias capacitadas",
+                unidade_medida: "família",
+              },
+            },
+          },
+        });
+      },
+    );
+
+    await page.goto(`/sgd/demandas/nova?atividade=${fx.agendada.id}`);
+    const contexto = page.getByTestId("demanda-contexto");
+    await expect(contexto).toContainText(fx.agendada.titulo);
+
+    const esperado: [string, string | RegExp][] = [
+      ["Território", "Território RN"],
+      ["Município", fx.municipio],
+      ["Comunidade", "Sítio Lajedo"],
+      ["Data prevista", /\d{2}\/\d{2}\/\d{4}/],
+      ["Técnico", fx.tecnico],
+      ["Ação", `${fx.acao.numero} — ${fx.acao.descricao}`],
+      ["Submeta", "1.1 — Oficinas nas comunidades"],
+      ["Meta", "Meta 1 — Organização produtiva"],
+      ["Indicador", "IND-01 — Famílias capacitadas (família)"],
+    ];
+    for (const [rotulo, valor] of esperado) {
+      const termo = contexto.locator("dt", { hasText: new RegExp(`^${rotulo}$`) });
+      await expect(termo).toHaveCount(1);
+      await expect(termo.locator("xpath=following-sibling::dd[1]")).toContainText(valor);
+    }
+    await expect(contexto).not.toContainText("Não disponível");
+    // Somente leitura: nada editável no bloco herdado.
+    await expect(contexto.locator("input, select, textarea, [role=combobox]")).toHaveCount(0);
+  });
+
+  test("sem esses campos na resposta, o contexto diz “Não disponível” em vez de inventar", async ({
+    page,
+  }) => {
+    await page.goto(`/sgd/demandas/nova?atividade=${fx.agendada.id}`);
+    const contexto = page.getByTestId("demanda-contexto");
+    await expect(contexto).toContainText(fx.municipio);
+    for (const rotulo of ["Território", "Submeta", "Meta", "Indicador"]) {
+      const termo = contexto.locator("dt", { hasText: new RegExp(`^${rotulo}$`) });
+      await expect(termo.locator("xpath=following-sibling::dd[1]")).toContainText("Não disponível");
+    }
+  });
+
   test("no SGD, busca uma atividade agendada e cria a demanda vinculada a ela", async ({
     page,
   }) => {
@@ -90,7 +161,7 @@ test.describe("SGD — demandas pela ficha da atividade (ADT)", () => {
     expect(params.get("q")).toBe("Oficina agendada");
 
     await page.getByRole("option", { name: new RegExp(fx.agendada.titulo) }).click();
-    await expect(page.getByTestId("atividade-escolhida")).toContainText(fx.agendada.titulo);
+    await expect(page.getByTestId("atividade-busca-escolhida")).toContainText(fx.agendada.titulo);
     await expect(page.getByTestId("demanda-contexto")).toContainText(fx.municipio);
 
     const titulo = `${PREFIXO} Lanche dos participantes`;

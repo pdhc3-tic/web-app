@@ -68,13 +68,7 @@ export type SolicitacaoDemanda = {
   atualizado_em: string;
 };
 
-/**
- * Etapa de aprovação (`ApprovalStep`) — a linha do tempo da demanda.
- *
- * O backend grava as etapas, mas ainda NÃO as expõe
- * (docs/pendencias-backend-sprint-10.md, item 11). O tipo descreve o que o
- * painel espera receber em `Demanda.etapas`.
- */
+/** `ApprovalStepSerializer` — uma decisão na linha do tempo da demanda. */
 export type EtapaDemanda = {
   id: number;
   etapa: "pre_autorizacao" | "autorizacao" | "atendimento";
@@ -103,13 +97,9 @@ export type Demanda = {
   valor_pago_total: string;
   contexto: ContextoDemanda;
   solicitacoes: SolicitacaoDemanda[];
-  /**
-   * Nome de quem abriu a demanda — ainda NÃO vem (só o id em `solicitante`);
-   * docs/pendencias-backend-sprint-10.md, item 12. Opcional até lá.
-   */
-  solicitante_nome?: string;
-  /** Linha do tempo — ainda NÃO vem; ver `EtapaDemanda`. Opcional até lá. */
-  etapas?: EtapaDemanda[];
+  solicitante_nome: string;
+  /** Decisões em ordem cronológica (pré-autorização, autorização, atendimento). */
+  etapas: EtapaDemanda[];
   criado_em: string;
   atualizado_em: string;
 };
@@ -251,26 +241,26 @@ export async function buscarAtividadesElegiveis(
 
 // ─── Painel de decisão (#296) ────────────────────────────────────────────────
 
-/** Perfis que decidem sobre demandas (RF18–RF23). */
-export type PerfilDecisor = "articulador-estadual" | "ugp" | "fgd";
-
 /**
- * Status que aguardam a decisão de cada perfil — a fila "Aguardando minha
- * ação". Espelha `apps/sgd/services/approval.py` (quem é notificado em cada
- * status) e as permissões de `DemandApprovalMixin`.
+ * Fila "Aguardando minha ação" — `GET .../aguardando-minha-acao/contagem/`.
+ * A regra de quais status cabem a cada perfil mora no backend
+ * (`status_aguardando_acao`); a tela usa o `status` devolvido aqui para
+ * listar a fila, sem espelhar a regra.
  */
-export const STATUS_AGUARDANDO: Record<PerfilDecisor, StatusDemanda[]> = {
-  "articulador-estadual": ["submetida"],
-  ugp: ["pre_autorizada"],
-  fgd: ["autorizada", "em_atendimento"],
-};
+export type ContagemFila = { total: number; status: StatusDemanda[] };
+
+export async function fetchContagemFila(signal?: AbortSignal): Promise<ContagemFila> {
+  const res = await apiClient(`${DEMANDAS_PATH}aguardando-minha-acao/contagem/`, { signal });
+  return res.json();
+}
 
 /**
  * GET /api/v1/sgd/demandas/?status=… — listagem, já no escopo do perfil
  * (o Articulador só enxerga as Submetidas do próprio estado).
  *
  * Vários status vão como parâmetro repetido. O `DemandViewSet.list` hoje só lê
- * o último — para a FGD, que aguarda dois status, a fila vem incompleta
+ * o último — para a FGD, que aguarda dois status, a LISTA da fila vem
+ * incompleta, embora a contagem venha certa
  * (docs/pendencias-backend-sprint-10.md, item 13).
  */
 export async function listDemandas(

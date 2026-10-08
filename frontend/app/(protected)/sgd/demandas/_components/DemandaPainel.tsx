@@ -55,9 +55,8 @@ function Solicitacoes({ demanda }: { demanda: Demanda }) {
 }
 
 /**
- * Linha do tempo. A criação e o status atual vêm da própria demanda; as
- * decisões (quem, quando, com que justificativa) dependem de `etapas`, que o
- * backend ainda não envia (docs/pendencias-backend-sprint-10.md, item 11).
+ * Linha do tempo: a criação, cada decisão (quem, quando, com que
+ * justificativa) e o status atual.
  */
 function LinhaDoTempo({ demanda }: { demanda: Demanda }) {
   return (
@@ -67,26 +66,22 @@ function LinhaDoTempo({ demanda }: { demanda: Demanda }) {
         <p className="text-sm text-text">Demanda criada</p>
         <p className="text-xs text-text-muted">{absoluteDateTime(demanda.criado_em)}</p>
       </li>
-      {demanda.etapas === undefined ? (
-        <li className="relative text-sm italic text-text-muted" data-testid="timeline-indisponivel">
-          <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full bg-border" aria-hidden />
-          O histórico de decisões ainda não é enviado pela API.
-        </li>
-      ) : (
-        demanda.etapas.map((e) => (
-          <li key={e.id} className="relative">
-            <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full bg-primary" aria-hidden />
-            <p className="text-sm text-text">
-              {e.etapa_display}: {e.acao_display}
-              {e.responsavel_nome && <span className="text-text-muted"> · {e.responsavel_nome}</span>}
-            </p>
-            <p className="text-xs text-text-muted">{absoluteDateTime(e.criado_em)}</p>
-            {e.justificativa && (
-              <p className="mt-1 whitespace-pre-wrap text-xs text-text">{e.justificativa}</p>
+      {demanda.etapas.map((e) => (
+        <li key={e.id} className="relative" data-testid={`etapa-${e.id}`}>
+          <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full bg-primary" aria-hidden />
+          <p className="text-sm text-text">
+            {e.etapa_display}: {e.acao_display}
+            {e.responsavel_nome && <span className="text-text-muted"> · {e.responsavel_nome}</span>}
+            {e.excedente_autorizado && (
+              <span className="text-warning-text"> · excedente autorizado</span>
             )}
-          </li>
-        ))
-      )}
+          </p>
+          <p className="text-xs text-text-muted">{absoluteDateTime(e.criado_em)}</p>
+          {e.justificativa && (
+            <p className="mt-1 whitespace-pre-wrap text-xs text-text">{e.justificativa}</p>
+          )}
+        </li>
+      ))}
       <li className="relative">
         <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full bg-primary" aria-hidden />
         <p className="flex items-center gap-2 text-sm text-text">

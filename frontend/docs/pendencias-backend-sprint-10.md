@@ -255,6 +255,9 @@ resposta.
 
 ## 6. `GET /api/v1/sgd/demandas/` não filtra por atividade — a aba mostra demandas de outras atividades
 
+> *Ainda aberto em 08/10/2026:* nenhum PR adiciona o filtro `activity` à
+> listagem. O BE-5 (PR #332, aberto) traz filtros combináveis e pode cobri-lo.
+
 *Estado atual:* `DemandViewSet.list` (`backend/apps/sgd/views/demand.py`) só lê
 `?status=`. O frontend manda `?activity={id}` na aba "Demandas" da ficha da
 atividade; o backend ignora o parâmetro e devolve **todas** as demandas visíveis
@@ -305,6 +308,10 @@ serializer: o dado não existe.
 
 ## 8. O detalhe da atividade não traz o nome do território nem a Meta da Ação
 
+> *Em andamento em 08/10/2026:* o PR #328 (aberto) aninha `territorio` e
+> `acao.meta`/`submeta`/`indicador` no detalhe. O frontend já espera esses
+> nomes e mostra a cadeia completa assim que o PR entrar.
+
 O formulário de nova demanda mostra o contexto herdado **antes** de a demanda
 existir, então a fonte é `GET /api/v1/sgp/atividades/{id}/`. Esse detalhe traz
 só `territorio_id` (sem nome) e `acao: {id, numero, descricao}` (sem a Meta).
@@ -338,6 +345,9 @@ os mesmos campos que `DemandContextoSerializer` já lê.
 
 ## 9. `ActivityFilter` sem busca textual e com `status` de um valor só
 
+> *Em andamento em 08/10/2026:* o PR #328 (aberto) traz status múltiplo e
+> busca nas atividades.
+
 O campo "Atividade" do formulário (caminho alternativo, pelo SGD) busca no
 servidor as atividades do solicitante que aceitam demanda:
 
@@ -366,6 +376,9 @@ cliente para compensar.
 ---
 
 ## 10. Criar demanda não confere o escopo da atividade — falha de segurança
+
+> *Em andamento em 08/10/2026:* o PR #325 (aberto) faz a criação de demanda
+> respeitar o escopo territorial do solicitante.
 
 `DemandViewSet.create` resolve a atividade com
 `get_object_or_404(Activity, pk=activity_id)`, **sem** o recorte territorial. O
@@ -397,6 +410,9 @@ território cria demanda em atividade de outro → 404.
 
 ## 11. A linha do tempo da demanda não é exposta — `ApprovalStep` sem endpoint
 
+> **Resolvido em 07/10/2026 pelo PR #327:** `DemandSerializer.etapas`, no
+> formato que o frontend esperava. A linha do tempo mostra as decisões.
+
 Toda decisão grava um `ApprovalStep` (`apps/sgd/models/approval_step.py`:
 etapa, ação, responsável, justificativa, excedente, data), mas nenhum
 serializer ou rota o devolve. A #296 pede a timeline de status no painel.
@@ -420,6 +436,8 @@ etapas = ApprovalStepSerializer(many=True, read_only=True)
 
 ## 12. O `DemandSerializer` traz só o id do solicitante
 
+> **Resolvido em 07/10/2026 pelo PR #327** (`solicitante_nome`).
+
 A coluna "Solicitante" do painel e o detalhe mostram `Usuário #13`: o
 serializer devolve `solicitante` como id, e `/api/v1/users/` é restrito ao
 Super Admin, então nenhum aprovador consegue resolver o nome.
@@ -430,6 +448,13 @@ O tipo `Demanda.solicitante_nome` já está declarado no frontend.
 ---
 
 ## 13. Fila "Aguardando minha ação": `status` de um valor só e sem contagem
+
+> *Parcialmente resolvido em 07/10/2026 pelo PR #327:* a rota
+> `aguardando-minha-acao/contagem/` devolve `{total, status}` com a regra de
+> cada perfil no backend — o badge e a contagem usam ela, e o frontend deixou
+> de espelhar a regra. **Continua aberto:** a listagem ainda lê um só
+> `status`, então a LISTA da fila da FGD (Autorizada + Em atendimento) segue
+> só com as Em atendimento.
 
 A fila de cada perfil é a lista filtrada pelos status que cabem a ele decidir
 (Articulador: Submetida; UGP: Pré-autorizada; FGD: Autorizada **e** Em

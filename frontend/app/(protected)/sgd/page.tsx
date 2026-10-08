@@ -7,7 +7,7 @@ import { PageHeader } from "@/app/components/layout/PageHeader";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
 import { SubmoduleCard } from "@/app/components/ui/SubmoduleCard/SubmoduleCard";
 import { canCreateDemanda } from "@/app/lib/auth/roles";
-import { useFilaDemandas } from "@/app/lib/hooks/useFilaDemandas";
+import { useContagemFila } from "@/app/lib/hooks/useFilaDemandas";
 
 type Submodule = {
   key: string;
@@ -71,8 +71,8 @@ export default function SGDPage() {
 
   // Pendências de quem decide (Articulador, UGP, FGD) — a mesma fila do badge
   // da sidebar. Para os outros perfis o card não mostra contagem.
-  const fila = useFilaDemandas();
-  const pendentes = fila.decide ? (fila.isError ? null : (fila.data?.length ?? null)) : undefined;
+  const fila = useContagemFila();
+  const pendentes = fila.decide ? (fila.isError ? null : (fila.data?.total ?? null)) : undefined;
 
   return (
     <>

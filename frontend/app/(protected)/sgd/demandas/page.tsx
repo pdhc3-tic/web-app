@@ -93,7 +93,7 @@ function PainelDemandasView() {
           >
             {(
               [
-                ["minha", `Aguardando minha ação${fila.data ? ` (${fila.data.length})` : ""}`],
+                ["minha", `Aguardando minha ação${fila.total !== undefined ? ` (${fila.total})` : ""}`],
                 ["todas", "Todas"],
               ] as const
             ).map(([valor, rotulo]) => (
