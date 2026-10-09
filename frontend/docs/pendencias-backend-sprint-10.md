@@ -506,3 +506,45 @@ disponível — **Recusar** (UGP). O E2E de cancelar autorizada está como
 **Pedido:** definir, com a coordenação, quem cancela uma demanda Autorizada (e
 com que efeito na reserva de saldo); quando existir, o botão entra no painel
 com o mesmo drawer.
+
+---
+
+## 15. Risco de glosa da importação Arlo não é exposto (#298)
+
+A importação do retorno do Arlo grava um `GlosaRisk` para cada pagamento acima
+do valor autorizado (`apps/sgd/services/arlo_import.py`), mas **nenhum
+endpoint devolve esses registros**. Eles também não entram no
+`ArloImportSerializer` e não aparecem no BE-5 (PR #332). A #298 pede
+que, após a importação, as demandas com divergência entre autorizado e pago
+apareçam destacadas, em especial o risco de glosa.
+
+*Estado atual no frontend:* a tela `/sgd/arlo` mostra o resumo e os erros por
+linha da importação, mas não destaca nenhuma divergência. O front não calcula
+a divergência por conta própria. O E2E do destaque está como `test.fixme`.
+
+**Pedido:** devolver as divergências da operação. Pode ser um campo
+`divergencias` no `ArloImportSerializer` (lista de
+`{demanda_id, demanda_titulo, solicitacao_id, valor_autorizado, valor_pago, excedente}`),
+ou `GET /api/v1/sgd/arlo/{id}/divergencias/`. Se a regra também valer para
+pagamentos abaixo do autorizado, incluir esses casos com o sinal do valor.
+
+---
+
+## 16. Importação Arlo sempre falha no ambiente Docker local (#298)
+
+No `docker-compose.yml`, o `celery_worker` não monta `./backend:/app`, ao
+contrário do `backend`. Com `STORAGE_BACKEND=local`, o backend grava a
+planilha enviada no próprio disco (`media/arlo/importacoes/…`). A task
+`process_arlo_import` roda no worker, não acha o arquivo e marca a operação como
+**Falhou**. O worker também roda o código da imagem construída, e não o da branch.
+
+A mensagem gravada em `erros_json` é só o `str()` da `StorageObjectNotFound`,
+ou seja, o caminho do arquivo (`arlo/importacoes/<uuid>.csv`). Para quem opera,
+não explica o que aconteceu.
+
+**Pedido:**
+
+- montar o código e a pasta `media` no `celery_worker` e no `celery_beat`,
+  como no `backend`, ou um volume `media` compartilhado entre eles;
+- trocar a mensagem por algo legível, como "O arquivo enviado não foi
+  encontrado no armazenamento. Envie a planilha novamente.".

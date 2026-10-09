@@ -53,4 +53,10 @@ export const qk = {
     ["sgp", "atividades", "elegiveis", { tecnicoId, busca }] as const,
   /** Tarefa assíncrona de exportação da listagem de UPFs (#240). */
   exportacaoUpfs: (id: string) => ["upfs", "exportacao", id] as const,
+  /** Integração Arlo (#298): histórico de operações e o acompanhamento de uma. */
+  arlo: {
+    all: ["sgd", "arlo"] as const,
+    operacoes: ["sgd", "arlo", "operacoes"] as const,
+    operacao: (id: number) => ["sgd", "arlo", "operacao", id] as const,
+  },
 } as const;
