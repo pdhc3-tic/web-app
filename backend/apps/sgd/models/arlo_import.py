@@ -42,6 +42,11 @@ class ArloImport(models.Model):
         help_text="Lista de {linha, erro, campo?} — linhas com erro não interrompem as válidas.",
     )
 
+    mapeamento_snapshot = models.JSONField(
+        default=dict, blank=True, verbose_name="Mapeamento vigente na operação",
+        help_text="Cópia do mapeamento Arlo <-> SGD usado nesta operação — alterações posteriores não a afetam.",
+    )
+
     class Meta:
         verbose_name = "Operação Arlo"
         verbose_name_plural = "Operações Arlo"

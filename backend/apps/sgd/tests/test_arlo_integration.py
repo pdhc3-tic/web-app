@@ -1,23 +1,20 @@
 import csv
-import json
 from decimal import Decimal
 from io import StringIO
 from uuid import uuid4
 
 import pytest
-from django.core.cache import cache
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.models.notifications import Notification
 from apps.core.signals.audit import get_audit_context
-from apps.core.models.system_config import SystemConfig
 from apps.core.storage import get_storage
 from apps.sgd import tasks as sgd_tasks
-from apps.sgd.models import ArloImport, DemandDocument
+from apps.sgd.models import ArloFieldMapping, ArloImport, DemandDocument
 from apps.sgd.services import arlo_export
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services.arlo_import import processar_importacao
-from apps.sgd.services.arlo_mapping import CHAVE_MAPEAMENTO, MAPEAMENTO_PADRAO
+from apps.sgd.services.arlo_mapping import MAPEAMENTO_PADRAO
 from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
 from apps.sgp.models import BudgetTransaction, GlosaRisk
 
@@ -31,7 +28,6 @@ COMPROVANTE = "https://arlo.example.com/comprovantes/123.pdf"
 def storage_local(settings, tmp_path):
     settings.STORAGE_BACKEND = "local"
     settings.MEDIA_ROOT = tmp_path
-    cache.delete(f"system_config:{CHAVE_MAPEAMENTO}")
 
 
 @pytest.fixture
@@ -102,10 +98,7 @@ def test_exportacao_so_inclui_demandas_autorizadas(demanda_autorizada, activity_
 
 
 def test_mapeamento_configuravel_altera_colunas_exportadas(demanda_autorizada):
-    mapeamento = json.loads(json.dumps(MAPEAMENTO_PADRAO))
-    mapeamento["exportacao"][0]["coluna"] = "Codigo Arlo"
-    SystemConfig.objects.filter(chave=CHAVE_MAPEAMENTO).update(valor=json.dumps(mapeamento), tipo="json")
-    cache.delete(f"system_config:{CHAVE_MAPEAMENTO}")
+    ArloFieldMapping.objects.filter(direcao="exportacao", campo_sgd="demanda_id").update(coluna_arlo="Codigo Arlo")
 
     linhas = _ler_csv(arlo_export.gerar_csv()[0])
 
