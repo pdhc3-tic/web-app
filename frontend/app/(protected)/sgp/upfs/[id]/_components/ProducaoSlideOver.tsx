@@ -1,5 +1,6 @@
 "use client";
 
+import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import { ApiError } from "@/app/lib/api";
@@ -15,9 +16,6 @@ import {
   searchCulturas,
   searchEspecies,
   updateProducao,
-  SISTEMA_CRIACAO_OPTIONS,
-  TIPO_OPTIONS,
-  TIPO_OUTRA_OPTIONS,
   type CatalogoItem,
   type Producao,
   type ProducaoWritePayload,
@@ -185,6 +183,7 @@ function hasTipoValues(f: FormState): boolean {
 }
 
 export function ProducaoSlideOver({ open, onClose, mode, upfId, producao, onSaved }: Props) {
+  const choices = useSgpChoices();
   const [form, setForm] = useState<FormState>(EMPTY);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -308,7 +307,7 @@ export function ProducaoSlideOver({ open, onClose, mode, upfId, producao, onSave
                 label="Sistema de criação"
                 value={form.sistema_criacao}
                 onChange={(v) => update("sistema_criacao", v as SistemaCriacao | "")}
-                options={SISTEMA_CRIACAO_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+                options={choices.producao_sistema_criacao}
                 placeholder="Selecione..."
               />
             </div>
@@ -322,7 +321,7 @@ export function ProducaoSlideOver({ open, onClose, mode, upfId, producao, onSave
               required
               value={form.tipo_outra}
               onChange={(v) => update("tipo_outra", v as TipoOutra | "")}
-              options={TIPO_OUTRA_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+              options={choices.producao_tipo_outra}
               placeholder="Selecione..."
               error={errors.tipo_outra}
             />
@@ -356,13 +355,14 @@ function TipoPicker({
   error?: string;
   locked?: boolean;
 }) {
+  const choices = useSgpChoices();
   return (
     <div className="flex flex-col gap-2">
       <span className="text-label font-medium text-text">
         Tipo de atividade{locked ? " (não pode ser alterado)" : ""}
       </span>
       <div role="radiogroup" aria-label="Tipo de atividade" className="grid grid-cols-3 gap-2">
-        {TIPO_OPTIONS.map((opt) => {
+        {choices.producao_tipo.map((opt) => {
           const active = value === opt.value;
           const disabled = locked && !active;
           return (
@@ -372,7 +372,7 @@ function TipoPicker({
               role="radio"
               aria-checked={active}
               disabled={disabled}
-              onClick={() => onChange(opt.value)}
+              onClick={() => onChange(opt.value as TipoProducao)}
               className={[
                 "flex h-11 items-center justify-center rounded-md border px-3 text-sm font-medium transition",
                 active

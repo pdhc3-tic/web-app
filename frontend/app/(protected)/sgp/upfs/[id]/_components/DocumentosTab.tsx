@@ -1,5 +1,6 @@
 "use client";
 
+import { useRotuloChoice } from "@/app/providers/SgpChoicesProvider";
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -24,7 +25,6 @@ import {
   deleteDocumento,
   downloadDocumento,
   listDocumentos,
-  tipoDocumentoLabel,
   type Documento,
   type TipoDocumento,
 } from "@/app/lib/upfDocumentos";
@@ -301,6 +301,7 @@ function SortButton({
 }
 
 function TipoBadge({ tipo }: { tipo: TipoDocumento }) {
+  const tipoDocumentoLabel = useRotuloChoice("upf_documento_tipo");
   const map: Record<TipoDocumento, string> = {
     dap_caf: "border-success-text bg-success-bg text-success-text",
     contrato: "border-primary bg-primary/10 text-primary",

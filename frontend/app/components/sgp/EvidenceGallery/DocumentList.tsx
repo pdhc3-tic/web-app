@@ -1,5 +1,6 @@
 "use client";
 
+import { useRotuloChoice, useSgpChoices } from "@/app/providers/SgpChoicesProvider";
 import {
   useCallback,
   useEffect,
@@ -47,9 +48,7 @@ import { validateDocument } from "./validation";
 import {
   DOCUMENT_ACCEPTED_TYPES,
   MAX_DOCUMENTS_PER_ACTIVITY,
-  TIPO_DOC_ATIVIDADE_OPTIONS,
   formatBytes,
-  tipoDocumentoAtividadeLabel,
   type EvidenceDocument,
   type TipoDocumentoAtividade,
 } from "./types";
@@ -611,6 +610,7 @@ function DocumentRow({
   onDownload: () => void;
   onRemove: () => void;
 }) {
+  const tiposDocumento = useSgpChoices().atividade_documento_tipo;
   return (
     <div className="flex items-start gap-3 rounded-md px-2 py-2 hover:bg-surface-muted/40">
       <IconeDoTipo tipo={doc.tipo} label={doc.tipo_display} />
@@ -622,10 +622,7 @@ function DocumentRow({
               label="Tipo"
               value={editingTipo}
               onChange={onTipoChange}
-              options={TIPO_DOC_ATIVIDADE_OPTIONS.map((o) => ({
-                value: o.value,
-                label: o.label,
-              }))}
+              options={tiposDocumento}
               placeholder="Selecione..."
             />
             <label className="flex flex-col gap-1 text-xs">
@@ -744,6 +741,7 @@ const ICONE_POR_TIPO: Record<string, { Icon: LucideIcon; cor: string }> = {
 };
 
 function IconeDoTipo({ tipo, label }: { tipo: string; label?: string }) {
+  const tipoDocumentoAtividadeLabel = useRotuloChoice("atividade_documento_tipo");
   const { Icon, cor } = ICONE_POR_TIPO[tipo] ?? ICONE_POR_TIPO.outro;
   return (
     <Icon
@@ -771,6 +769,7 @@ function UploadRow({
   onRemove: () => void;
   onRetry: () => void;
 }) {
+  const tiposDocumento = useSgpChoices().atividade_documento_tipo;
   const busy = upload.phase === "uploading" || upload.phase === "confirming";
   return (
     <div className="flex items-start gap-3 rounded-md border border-dashed border-primary/40 bg-surface p-2">
@@ -794,10 +793,7 @@ function UploadRow({
             required
             value={upload.tipo}
             onChange={onTipoChange}
-            options={TIPO_DOC_ATIVIDADE_OPTIONS.map((o) => ({
-              value: o.value,
-              label: o.label,
-            }))}
+            options={tiposDocumento}
             placeholder="Selecione..."
             disabled={busy}
           />
@@ -890,6 +886,7 @@ function TipoBadge({
   tipo: TipoDocumentoAtividade | string;
   label?: string;
 }) {
+  const tipoDocumentoAtividadeLabel = useRotuloChoice("atividade_documento_tipo");
   const CLASS_BY_TIPO: Record<string, string> = {
     lista_presenca: "border-primary bg-primary/10 text-primary",
     ata: "border-success-text bg-success-bg text-success-text",

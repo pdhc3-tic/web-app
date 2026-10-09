@@ -1,5 +1,6 @@
 "use client";
 
+import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
 import { useEffect, useRef, useState } from "react";
 import { Upload, X } from "lucide-react";
 import { SlideOver } from "@/app/components/ui/SlideOver/SlideOver";
@@ -12,7 +13,6 @@ import {
   uploadDocumento,
   ACCEPTED_CONTENT_TYPES,
   MAX_DOC_SIZE_BYTES,
-  TIPO_DOC_OPTIONS,
   type Documento,
   type TipoDocumento,
   type UploadHandle,
@@ -52,6 +52,7 @@ function validateFile(file: File): string | null {
 }
 
 export function DocumentoSlideOver({ open, onClose, upfId, onSaved }: Props) {
+  const choices = useSgpChoices();
   const [form, setForm] = useState<FormState>(EMPTY);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [globalError, setGlobalError] = useState<string | null>(null);
@@ -182,7 +183,7 @@ export function DocumentoSlideOver({ open, onClose, upfId, onSaved }: Props) {
             required
             value={form.tipo}
             onChange={(v) => update("tipo", v as TipoDocumento | "")}
-            options={TIPO_DOC_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            options={choices.upf_documento_tipo}
             placeholder="Selecione..."
             error={errors.tipo}
           />
