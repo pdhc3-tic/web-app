@@ -32,8 +32,8 @@ export type ListTecnicosSGPParams = {
 
 function buildQuery(params: ListTecnicosSGPParams): string {
   const qs = new URLSearchParams();
-  qs.set("page", String(Math.floor(params.offset / params.limit) + 1));
-  qs.set("page_size", String(params.limit));
+  qs.set("limit", String(params.limit));
+  qs.set("offset", String(params.offset));
   if (params.territorio) qs.set("territorio", params.territorio);
   if (params.osc) qs.set("osc", params.osc);
   if (params.papel) qs.set("papel", params.papel);

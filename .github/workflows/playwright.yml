@@ -33,6 +33,7 @@ jobs:
           POSTGRES_PASSWORD=postgres
           REDIS_HOST=redis
           REDIS_PORT=6379
+          FIELD_ENCRYPTION_KEY=Y2ktb25seS1maWVsZC1lbmNyeXB0aW9uLWtleS0wMDAwMDA=
           EOF
           # Chave descartável: o banco do E2E nasce vazio a cada execução, então
           # nada criptografado precisa ser lido com a chave de outra rodada.
