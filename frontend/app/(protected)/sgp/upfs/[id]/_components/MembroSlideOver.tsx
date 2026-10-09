@@ -16,7 +16,9 @@ import {
   updateMembro,
   getMembro,
   calcIdade,
+  saudeLabel,
   temVinculoEscolar,
+  SAUDE_OPTIONS,
   type MembroDetail,
   type MembroListItem,
   type MembroWritePayload,
@@ -24,6 +26,7 @@ import {
 import { formatCpfInput, isValidCpf, maskCpf } from "@/app/lib/format";
 import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
 import {
+  SEGURIDADE_OPTIONS,
   labelForValue,
   withCurrentValue,
 } from "@/app/(protected)/sgp/upfs/_components/upfFormOptions";
@@ -412,14 +415,13 @@ export function MembroSlideOver({
 // ─── Corpo em modo view ──────────────────────────────────────────────────────
 
 function ViewBody({ membro }: { membro: MembroDetail }) {
-  const choices = useSgpChoices();
   const perms = permsFromDetail(membro);
 
   const saudeChips =
     perms.saude && membro.saude && membro.saude.length > 0 ? (
       <div className="flex flex-wrap gap-1.5">
         {membro.saude.map((s) => (
-          <Chip key={s}>{labelForValue(choices.saude, s)}</Chip>
+          <Chip key={s}>{saudeLabel(s)}</Chip>
         ))}
       </div>
     ) : undefined;
@@ -428,7 +430,7 @@ function ViewBody({ membro }: { membro: MembroDetail }) {
     membro.seguridade_social.length > 0 ? (
       <div className="flex flex-wrap gap-1.5">
         {membro.seguridade_social.map((s) => (
-          <Chip key={s}>{labelForValue(choices.seguridade_social, s)}</Chip>
+          <Chip key={s}>{labelForValue(SEGURIDADE_OPTIONS, s)}</Chip>
         ))}
       </div>
     ) : undefined;
@@ -629,7 +631,7 @@ function FormBody({
         <MultiSelect
           label="Saúde"
           selected={form.saude}
-          options={choices.saude}
+          options={SAUDE_OPTIONS}
           onToggle={(v) => toggleMulti("saude", v)}
           error={fieldErrors.saude}
         />
@@ -638,7 +640,7 @@ function FormBody({
       <MultiSelect
         label="Seguridade social"
         selected={form.seguridade_social}
-        options={choices.seguridade_social}
+        options={SEGURIDADE_OPTIONS}
         onToggle={(v) => toggleMulti("seguridade_social", v)}
         error={fieldErrors.seguridade_social}
       />

@@ -3,9 +3,61 @@ import type { Paginated } from "@/app/lib/users";
 import type { NestedRef } from "@/app/lib/upfs";
 import type { BadgeStatus } from "@/app/components/ui/Badge/Badge";
 
-// ─── Regras de status espelhadas do backend ──────────────────────────────────
-// As LISTAS de tipo, forma de atuação, âmbito e status vêm de `useSgpChoices()`
-// (#272); o rótulo de um status, de `useRotuloChoice("status_atividade")`.
+// ─── Constantes espelhadas do backend ────────────────────────────────────────
+// Fonte: apps/sgp/models/activity.py.
+//
+// Servem de FALLBACK em @/app/lib/choices.ts: o SGPChoicesView
+// (GET /api/v1/choices/) ainda não expõe os choices de atividade, então
+// enquanto isso a UI usa estas listas. Assim que o backend incluir as chaves
+// `tipo_atividade`, `forma_atuacao`, `ambito` e `status`, elas passam a valer
+// automaticamente e estas constantes viram só rede de segurança.
+//
+// Em componente, use `useSgpChoices()` em vez destas constantes.
+
+/** Espelha TIPO_ATIVIDADE_CHOICES. */
+export const TIPO_ATIVIDADE_OPTIONS = [
+  { value: "visita_tecnica", label: "Visita técnica" },
+  { value: "reuniao_comunitaria", label: "Reunião comunitária" },
+  { value: "oficina", label: "Oficina" },
+  { value: "intercambio", label: "Intercâmbio" },
+  { value: "curso_capacitacao", label: "Curso/Capacitação" },
+  { value: "dia_de_campo", label: "Dia de campo" },
+  { value: "seminario", label: "Seminário" },
+  { value: "encontro", label: "Encontro" },
+  { value: "dia_de_partilha", label: "Dia de partilha" },
+  { value: "atividade_interna", label: "Atividade interna" },
+  { value: "pesquisa_de_campo", label: "Pesquisa de campo" },
+  { value: "ater", label: "Assistência técnica/ATER" },
+  { value: "outro", label: "Outro" },
+];
+
+/** Espelha FORMA_ATUACAO_CHOICES. */
+export const FORMA_ATUACAO_OPTIONS = [
+  { value: "realizacao", label: "Realização" },
+  { value: "participacao", label: "Participação" },
+  { value: "apoio", label: "Apoio" },
+  { value: "articulacao", label: "Articulação" },
+];
+
+/** Espelha AMBITO_CHOICES. */
+export const AMBITO_OPTIONS = [
+  { value: "municipal", label: "Municipal" },
+  { value: "microrregional", label: "Microrregional" },
+  { value: "estadual", label: "Estadual" },
+  { value: "supraestadual", label: "Supraestadual" },
+];
+
+/** Espelha STATUS_CHOICES. */
+export const STATUS_OPTIONS = [
+  { value: "planejado", label: "Planejado" },
+  { value: "agendado", label: "Agendado" },
+  { value: "em_andamento", label: "Em andamento" },
+  { value: "concluido", label: "Concluído" },
+  { value: "concluido_sem_evidencia", label: "Concluído sem evidência" },
+  { value: "adiada", label: "Adiada" },
+  { value: "nao_realizada", label: "Não realizada" },
+  { value: "cancelada", label: "Cancelada" },
+];
 
 /**
  * Status que tornam a Justificativa obrigatória.
@@ -18,6 +70,10 @@ export const STATUS_EXIGE_JUSTIFICATIVA = ["nao_realizada", "cancelada"];
  * ActivityDetailSerializer._validate_status_transition() quando instance é None.
  */
 export const STATUS_INICIAIS = ["planejado", "agendado"];
+
+export function statusLabel(value: string): string {
+  return STATUS_OPTIONS.find((s) => s.value === value)?.label ?? value;
+}
 
 /**
  * Status da API (snake_case) → variante do <Badge> (kebab-case).

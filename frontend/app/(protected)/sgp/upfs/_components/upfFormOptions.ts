@@ -1,7 +1,11 @@
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 
-// As listas vêm de `useSgpChoices()` (#272); aqui ficam só os helpers de
-// apresentação.
+/**
+ * SEGURIDADE_OPTIONS não é publicado pelo endpoint /api/v1/choices/, por isso
+ * permanece como constante estática. Para todas as demais listas, use
+ * `useSgpChoices()` (SgpChoicesProvider), que devolve o que o backend serve.
+ */
+export { SEGURIDADE_OPTIONS } from "@/app/lib/choices";
 
 /**
  * Garante que o valor atual apareça no select mesmo que não esteja na lista

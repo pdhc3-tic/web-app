@@ -1,6 +1,5 @@
 "use client";
 
-import { useRotuloChoice } from "@/app/providers/SgpChoicesProvider";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AlertTriangle, ExternalLink, MapPin, User } from "lucide-react";
@@ -10,6 +9,7 @@ import Spinner from "@/app/components/icons/Spinner";
 import { ApiError } from "@/app/lib/api";
 import {
   getAtividade,
+  statusLabel,
   type AtividadeDetail,
 } from "@/app/lib/atividades";
 import { formatDate, formatTime, formatTimeRange } from "@/app/lib/datetime";
@@ -28,7 +28,6 @@ type Props = {
  * do calendário, então mostramos preview enquanto buscamos o detalhe completo.
  */
 export function EventoDetailsSlideOver({ event, open, onClose }: Props) {
-  const statusLabel = useRotuloChoice("status_atividade");
   const [detalhe, setDetalhe] = useState<AtividadeDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -41,7 +41,15 @@ export const NUMERO_ACAO_RE = /^\d+\.\d+$/;
 /** Valores de WorkPlanAcao.status_execucao. */
 export type AcaoStatus = "no_prazo" | "em_atraso" | "concluida";
 
-// O rótulo de cada situação vem de `useRotuloChoice("status_plano_trabalho")` (#272).
+const STATUS_LABEL: Record<AcaoStatus, string> = {
+  no_prazo: "No prazo",
+  em_atraso: "Em atraso",
+  concluida: "Concluída",
+};
+
+export function acaoStatusLabel(status: string): string {
+  return STATUS_LABEL[status as AcaoStatus] ?? status;
+}
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 

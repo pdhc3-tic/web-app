@@ -5,7 +5,7 @@ import { Select } from "@/app/components/ui/Select/Select";
 import { PhotoUploader } from "@/app/components/sgp/PhotoUploader/PhotoUploader";
 import { formatCpfInput } from "@/app/lib/format";
 import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
-import { withCurrentValue } from "../upfFormOptions";
+import { SEGURIDADE_OPTIONS, withCurrentValue } from "../upfFormOptions";
 import type { UpfFormData } from "../upfForm";
 
 type StepProps = {
@@ -155,7 +155,7 @@ export function DadosBasicosStep({
           Seguridade social
         </legend>
         <div className="flex flex-wrap gap-2">
-          {choices.seguridade_social.map((o) => {
+          {SEGURIDADE_OPTIONS.map((o) => {
             const active = form.seguridade_social.includes(o.value);
             return (
               <button

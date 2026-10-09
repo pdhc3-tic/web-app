@@ -11,8 +11,6 @@
  * aparece em runtime.
  */
 export const qk = {
-  /** Choices do SGP — uma carga por sessão (#272). */
-  choices: ["sgp", "choices"] as const,
   upf: (id: string | number) => {
     const upfId = String(id);
     return {

@@ -1,6 +1,5 @@
 "use client";
 
-import { useRotuloChoice } from "@/app/providers/SgpChoicesProvider";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   notFound,
@@ -44,6 +43,7 @@ import { ApiError } from "@/app/lib/api";
 import {
   badgeStatusFor,
   getAtividade,
+  statusLabel,
   type AtividadeDetail,
 } from "@/app/lib/atividades";
 import { listMembros } from "@/app/lib/membros";
@@ -104,7 +104,6 @@ export default function AtividadeFichaPage() {
    */
   const silenciosaRef = useRef(false);
   const { showToast } = useToast();
-  const statusLabel = useRotuloChoice("status_atividade");
 
   // Abas via `?tab=` (#275), no mesmo formato da ficha da UPF.
   const searchParams = useSearchParams();

@@ -156,16 +156,6 @@ baixá-lo e exercitar o fluxo assíncrono com o seed atual.
 
 ## 4. `/api/v1/choices/` não publica metade das listas — bloqueia a #272
 
-> **Resolvido em 07/10/2026 pelo PR #326:** o endpoint publica as 25 listas do
-> SGP com rótulo e tem teste de contrato. O frontend passou a consumir só ele
-> (#272, 08/10/2026). **Sobra uma lacuna:** as categorias do catálogo de
-> culturas e de espécies (`Cultura.CATEGORIA_CHOICES`,
-> `EspecieAnimal.CATEGORIA_CHOICES`) não estão no endpoint e o catálogo devolve
-> só o valor cru (`"graos"`), então o rótulo ainda é traduzido no frontend
-> (`app/lib/producao.ts`). **Pedido:** publicar `cultura_categoria` e
-> `especie_categoria` em `CHOICES_PUBLICADOS`, ou devolver `categoria_display`
-> no serializer do catálogo.
-
 *Estado atual:* `SGPChoicesView` (`backend/apps/sgp/views/choices.py`) não mudou
 desde o PR #288, em que o bloqueio já foi descrito. `constants.py` está igual
 desde 26/08/2026.

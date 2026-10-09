@@ -1,6 +1,5 @@
 "use client";
 
-import { useRotuloChoice } from "@/app/providers/SgpChoicesProvider";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { notFound, useParams, useSearchParams } from "next/navigation";
 import { AlertTriangle, ListChecks, Plus } from "lucide-react";
@@ -22,6 +21,7 @@ import { deleteAcao, type Acao } from "@/app/lib/acoes";
 import { formatDate } from "@/app/lib/datetime";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import {
+  ODS_OPTIONS,
   badgeStatusForMeta,
   getMeta,
   metaStatusLabel,
@@ -49,7 +49,6 @@ function CenteredSpinner() {
 }
 
 function MetaResumo({ meta }: { meta: MetaDetail }) {
-  const odsLabel = useRotuloChoice("ods");
   const ods = meta.ods_ids ?? [];
 
   return (
@@ -97,7 +96,7 @@ function MetaResumo({ meta }: { meta: MetaDetail }) {
                   {ods.map((id) => (
                     <Chip
                       key={id}
-                      title={odsLabel(id)}
+                      title={ODS_OPTIONS.find((o) => o.id === id)?.label}
                     >
                       {odsShortLabel(id)}
                     </Chip>

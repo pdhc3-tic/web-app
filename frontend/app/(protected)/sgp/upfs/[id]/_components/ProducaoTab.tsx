@@ -1,7 +1,5 @@
 "use client";
 
-import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
-import type { SgpChoices } from "@/app/lib/choices";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Sprout, Trash2 } from "lucide-react";
@@ -15,6 +13,8 @@ import { qk } from "@/app/lib/queryKeys";
 import {
   deleteProducao,
   listProducoes,
+  SISTEMA_CRIACAO_OPTIONS,
+  TIPO_OUTRA_OPTIONS,
   type Producao,
   type TipoProducao,
 } from "@/app/lib/producao";
@@ -152,7 +152,6 @@ function Tabela({
   onEdit: (p: Producao) => void;
   onRemove: (p: Producao) => void;
 }) {
-  const choices = useSgpChoices();
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface">
       <div className="overflow-x-auto">
@@ -175,7 +174,7 @@ function Tabela({
                 </td>
                 <td className="px-4 py-3 font-medium text-text">{atividadeNome(p)}</td>
                 <td className="px-4 py-3 text-text-muted">{quantitativo(p) || "—"}</td>
-                <td className="px-4 py-3 text-text-muted">{sistemaOuCategoria(p, choices) || "—"}</td>
+                <td className="px-4 py-3 text-text-muted">{sistemaOuCategoria(p) || "—"}</td>
                 <td className="px-4 py-3 font-mono tabular-nums text-text-muted">{formatMoney(p.custo_anual) || "—"}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-1">
@@ -231,14 +230,14 @@ function quantitativo(p: Producao): string {
   return p.quantidade_produzida ?? "";
 }
 
-function sistemaOuCategoria(p: Producao, choices: SgpChoices): string {
+function sistemaOuCategoria(p: Producao): string {
   if (p.tipo === "agricola") return p.cultura?.categoria ?? "";
   if (p.tipo === "pecuaria") {
-    const sistema = choices.producao_sistema_criacao.find((s) => s.value === p.sistema_criacao)?.label;
+    const sistema = SISTEMA_CRIACAO_OPTIONS.find((s) => s.value === p.sistema_criacao)?.label;
     const categoria = p.especie?.categoria;
     return [categoria, sistema].filter(Boolean).join(" · ");
   }
-  return choices.producao_tipo_outra.find((t) => t.value === p.tipo_outra)?.label ?? "";
+  return TIPO_OUTRA_OPTIONS.find((t) => t.value === p.tipo_outra)?.label ?? "";
 }
 
 function formatDecimal(v: string): string {

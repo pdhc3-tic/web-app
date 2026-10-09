@@ -6,7 +6,32 @@ import type { SelectOption } from "@/app/components/ui/Select/Select";
 
 // ─── Constantes ─────────────────────────────────────────────────────────────
 
-// A lista dos ODS vem de `useSgpChoices().ods` (#272).
+/**
+ * Objetivos de Desenvolvimento Sustentável — espelha
+ * apps/sgp/constants.py::ODS_CHOICES.
+ *
+ * Lista fechada de 1–17 definida pela ONU: não muda e não justifica um
+ * round-trip ao endpoint /choices/ (que hoje nem a expõe).
+ */
+export const ODS_OPTIONS: ReadonlyArray<{ id: number; label: string }> = [
+  { id: 1, label: "ODS 1 – Erradicação da Pobreza" },
+  { id: 2, label: "ODS 2 – Fome Zero e Agricultura Sustentável" },
+  { id: 3, label: "ODS 3 – Saúde e Bem-Estar" },
+  { id: 4, label: "ODS 4 – Educação de Qualidade" },
+  { id: 5, label: "ODS 5 – Igualdade de Gênero" },
+  { id: 6, label: "ODS 6 – Água Potável e Saneamento" },
+  { id: 7, label: "ODS 7 – Energia Acessível e Limpa" },
+  { id: 8, label: "ODS 8 – Trabalho Decente e Crescimento Econômico" },
+  { id: 9, label: "ODS 9 – Indústria, Inovação e Infraestrutura" },
+  { id: 10, label: "ODS 10 – Redução das Desigualdades" },
+  { id: 11, label: "ODS 11 – Cidades e Comunidades Sustentáveis" },
+  { id: 12, label: "ODS 12 – Consumo e Produção Responsáveis" },
+  { id: 13, label: "ODS 13 – Ação contra a Mudança Global do Clima" },
+  { id: 14, label: "ODS 14 – Vida na Água" },
+  { id: 15, label: "ODS 15 – Vida Terrestre" },
+  { id: 16, label: "ODS 16 – Paz, Justiça e Instituições Eficazes" },
+  { id: 17, label: "ODS 17 – Parcerias e Meios de Implementação" },
+];
 
 /** Rótulo curto ("ODS 7") para uso em chips e resumos. */
 export function odsShortLabel(id: number): string {

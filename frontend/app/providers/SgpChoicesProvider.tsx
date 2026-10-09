@@ -1,84 +1,51 @@
 "use client";
 
-import { createContext, useContext, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { ApiError } from "@/app/lib/api";
 import {
-  CHOICES_VAZIOS,
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  FALLBACK_CHOICES,
   fetchSgpChoices,
-  rotuloDe,
-  type ChaveChoice,
   type SgpChoices,
 } from "@/app/lib/choices";
-import { qk } from "@/app/lib/queryKeys";
 
-type EstadoChoices = {
-  choices: SgpChoices;
-  status: "carregando" | "ok" | "erro";
-  erro: string | null;
-  recarregar: () => void;
-};
-
-const SgpChoicesContext = createContext<EstadoChoices>({
-  choices: CHOICES_VAZIOS,
-  status: "carregando",
-  erro: null,
-  recarregar: () => {},
-});
+const SgpChoicesContext = createContext<SgpChoices>(FALLBACK_CHOICES);
 
 /**
- * Choices do SGP para toda a área logada (#272) — SGP, SGD e SCA leem as
- * mesmas listas.
+ * Choices do SGP para toda a árvore do módulo.
  *
- * Uma requisição por sessão: as listas mudam raramente, então ficam em cache
- * sem expirar (`staleTime: Infinity`) e montar um formulário não refaz a
- * busca. Enquanto carregam, os selects ficam vazios; se a carga falhar, a
- * `ChoicesIndisponiveis` explica o porquê e oferece tentar de novo.
+ * O valor inicial são os fallbacks locais, então o hook nunca devolve lista
+ * vazia e nenhuma tela precisa de estado de carregamento por causa de choice:
+ * a UI pinta na hora com as constantes e troca em silêncio se o backend
+ * divergir. Uma requisição por navegação ao SGP, compartilhada por todas as
+ * telas do módulo.
  */
 export function SgpChoicesProvider({ children }: { children: ReactNode }) {
-  const query = useQuery({
-    queryKey: qk.choices,
-    queryFn: ({ signal }) => fetchSgpChoices(signal),
-    staleTime: Infinity,
-    gcTime: Infinity,
-  });
+  const [choices, setChoices] = useState<SgpChoices>(FALLBACK_CHOICES);
 
-  const erro = query.error
-    ? query.error instanceof ApiError || query.error instanceof Error
-      ? query.error.message
-      : "Erro desconhecido."
-    : null;
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchSgpChoices(controller.signal).then((fetched) => {
+      if (!controller.signal.aborted) setChoices(fetched);
+    });
+    return () => controller.abort();
+  }, []);
 
   return (
-    <SgpChoicesContext.Provider
-      value={{
-        choices: query.data ?? CHOICES_VAZIOS,
-        status: query.isError ? "erro" : query.data ? "ok" : "carregando",
-        erro,
-        recarregar: () => void query.refetch(),
-      }}
-    >
+    <SgpChoicesContext.Provider value={choices}>
       {children}
     </SgpChoicesContext.Provider>
   );
 }
 
-/** As listas (vazias até carregar). */
-export function useSgpChoices(): SgpChoices {
-  return useContext(SgpChoicesContext).choices;
-}
-
-/** Estado da carga — para quem precisa explicar uma falha. */
-export function useSgpChoicesEstado(): EstadoChoices {
-  return useContext(SgpChoicesContext);
-}
-
 /**
- * Rótulo de um valor numa lista dos choices — ex.:
- * `const statusLabel = useRotuloChoice("status_atividade")`. Enquanto as listas
- * carregam, devolve o próprio valor.
+ * Choices do SGP. Fora do provider devolve os fallbacks locais em vez de
+ * lançar — um select com a lista espelhada é melhor que uma tela quebrada.
  */
-export function useRotuloChoice(chave: ChaveChoice): (valor: string | number | null | undefined) => string {
-  const opcoes = useSgpChoices()[chave];
-  return (valor) => rotuloDe(opcoes, valor);
+export function useSgpChoices(): SgpChoices {
+  return useContext(SgpChoicesContext);
 }

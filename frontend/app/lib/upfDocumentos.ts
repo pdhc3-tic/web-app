@@ -7,8 +7,16 @@ import {
 
 // ─── Constantes espelhadas do backend ────────────────────────────────────────
 
-// A lista e os rótulos dos tipos vêm de `useSgpChoices().upf_documento_tipo` (#272).
-export type TipoDocumento = "dap_caf" | "contrato" | "laudo" | "identidade" | "outro";
+/** Espelha apps/sgp/models/upf_document.py::UPFDocument.TIPO_CHOICES. */
+export const TIPO_DOC_OPTIONS = [
+  { value: "dap_caf", label: "DAP/CAF" },
+  { value: "contrato", label: "Contrato" },
+  { value: "laudo", label: "Laudo" },
+  { value: "identidade", label: "Identidade" },
+  { value: "outro", label: "Outro" },
+] as const;
+
+export type TipoDocumento = (typeof TIPO_DOC_OPTIONS)[number]["value"];
 
 /** Espelha apps/sgp/views/upf_documentos.py::ALLOWED_DOCUMENT_CONTENT_TYPES. */
 export const ACCEPTED_CONTENT_TYPES = [
@@ -26,6 +34,10 @@ export const MAX_DOC_SIZE_BYTES = 10 * 1024 * 1024;
 const LIMITE_DOCUMENTOS = 100;
 
 /** Rótulo humano de um tipo de documento (ou o próprio valor, se desconhecido). */
+export function tipoDocumentoLabel(tipo: string): string {
+  return TIPO_DOC_OPTIONS.find((o) => o.value === tipo)?.label ?? tipo;
+}
+
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
 /** Espelha apps/sgp/serializers.py::UPFDocumentSerializer (leitura). */

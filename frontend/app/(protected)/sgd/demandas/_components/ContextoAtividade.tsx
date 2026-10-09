@@ -1,11 +1,11 @@
 "use client";
 
-import { useRotuloChoice } from "@/app/providers/SgpChoicesProvider";
 import { Lock } from "lucide-react";
 import { Badge } from "@/app/components/ui/Badge/Badge";
 import { DefinitionList } from "@/app/components/ui/DefinitionList/DefinitionList";
 import {
   badgeStatusFor,
+  statusLabel,
   type AtividadeDetail,
 } from "@/app/lib/atividades";
 import { formatDate } from "@/app/lib/datetime";
@@ -27,7 +27,6 @@ function NaoDisponivel() {
  * #328; docs/pendencias-backend-sprint-10.md, item 8) — até lá, "Não disponível".
  */
 export function ContextoAtividade({ atividade }: { atividade: AtividadeDetail }) {
-  const statusLabel = useRotuloChoice("status_atividade");
   const { meta, submeta, indicador } = atividade.acao;
 
   return (
