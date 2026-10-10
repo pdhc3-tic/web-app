@@ -13,6 +13,7 @@ from apps.core.services.permissions import user_has_role, user_role_slugs, user_
 from apps.sgd.models.demand import STATUS_CANCELAVEIS_PELO_SOLICITANTE, STATUS_TRANSITIONS
 from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.models.individual_limit import DemandIndividualLimit
+from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
 from apps.sgp.services import budget as budget_service
@@ -53,16 +54,20 @@ def transition(demand, novo_status: str) -> None:
     _marcar_status(demand, novo_status)
 
 
-def aplicar_transicao(demand, novo_status: str) -> None:
+def aplicar_transicao(demand, novo_status: str, usuario=None) -> None:
+    status_anterior = demand.status
     transition(demand, novo_status)
     demand.save(update_fields=_CAMPOS_DE_STATUS)
+    auditoria_service.registrar_status(demand, de=status_anterior, para=novo_status, usuario=usuario)
 
 
-def marcar_cancelada(demand) -> None:
+def marcar_cancelada(demand, usuario=None) -> None:
     """Fora de `STATUS_TRANSITIONS` de propósito (ver `models.demand`) — quem
     chama já decidiu se a demanda pode ser cancelada."""
+    status_anterior = demand.status
     _marcar_status(demand, "cancelada")
     demand.save(update_fields=_CAMPOS_DE_STATUS)
+    auditoria_service.registrar_status(demand, de=status_anterior, para="cancelada", usuario=usuario)
 
 
 def pode_cancelar(demand, usuario) -> bool:
@@ -209,7 +214,7 @@ def _exigir_pode_decidir_articulador(demand, responsavel) -> None:
 @transaction.atomic
 def pre_autorizar(demand, *, responsavel) -> object:
     _exigir_pode_decidir_articulador(demand, responsavel)
-    aplicar_transicao(demand, "pre_autorizada")
+    aplicar_transicao(demand, "pre_autorizada", usuario=responsavel)
     ApprovalStep.objects.create(
         demanda=demand, etapa="pre_autorizacao", responsavel=responsavel, acao="aprovado",
     )
@@ -222,7 +227,7 @@ def devolver(demand, *, responsavel, justificativa: str) -> object:
     _exigir_pode_decidir_articulador(demand, responsavel)
     if not justificativa:
         raise JustificativaObrigatoriaError("Obrigatória para devolver a demanda.")
-    aplicar_transicao(demand, "devolvida")
+    aplicar_transicao(demand, "devolvida", usuario=responsavel)
     ApprovalStep.objects.create(
         demanda=demand, etapa="pre_autorizacao", responsavel=responsavel,
         acao="devolvido", justificativa=justificativa,
@@ -258,7 +263,7 @@ def autorizar(
         solicitacao.valor_autorizado = novo_valor
         solicitacao.save(update_fields=["valor_autorizado"])
 
-    aplicar_transicao(demand, "autorizada")
+    aplicar_transicao(demand, "autorizada", usuario=responsavel)
     ApprovalStep.objects.create(
         demanda=demand, etapa="autorizacao", responsavel=responsavel,
         acao="aprovado", excedente_autorizado=excedente_autorizado, justificativa=justificativa,
@@ -275,7 +280,7 @@ def recusar(demand, *, responsavel, justificativa: str) -> object:
         balance_service.liberar_duas_travas(
             demand_request=solicitacao, usuario=responsavel, motivo="Demanda recusada pela UGP.",
         )
-    aplicar_transicao(demand, "recusada")
+    aplicar_transicao(demand, "recusada", usuario=responsavel)
     ApprovalStep.objects.create(
         demanda=demand, etapa="autorizacao", responsavel=responsavel,
         acao="recusado", justificativa=justificativa,
@@ -286,7 +291,7 @@ def recusar(demand, *, responsavel, justificativa: str) -> object:
 
 @transaction.atomic
 def atender(demand, *, responsavel) -> object:
-    aplicar_transicao(demand, "em_atendimento")
+    aplicar_transicao(demand, "em_atendimento", usuario=responsavel)
     ApprovalStep.objects.create(
         demanda=demand, etapa="atendimento", responsavel=responsavel, acao="atendido",
     )
@@ -317,7 +322,7 @@ def concluir(demand, *, responsavel, valores_pagos: dict) -> object:
         solicitacao.valor_pago = valor_pago
         solicitacao.save(update_fields=["valor_pago"])
 
-    aplicar_transicao(demand, "concluida")
+    aplicar_transicao(demand, "concluida", usuario=responsavel)
     recalcular_valor_executado([demand.activity.acao_id])
     ApprovalStep.objects.create(
         demanda=demand, etapa="atendimento", responsavel=responsavel, acao="atendido",
