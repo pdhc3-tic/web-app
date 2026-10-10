@@ -168,3 +168,75 @@ def test_scope_queryset_papel_reconhecido_com_escopo_vazio_nunca_levanta(role_ad
     UPFFactory(municipio=municipio_rn, projeto=projeto)
     result = scope_queryset(UPF.objects.all(), user, **UPF_LOOKUPS)
     assert list(result) == []
+
+
+# ===========================================================================
+# atividades_acessiveis_ao_usuario() / municipios_acessiveis_ao_usuario()
+# ===========================================================================
+
+@pytest.fixture
+def municipios_rn_e_ce(territory_rn, territory_ce):
+    from apps.core.tests.factories import MunicipalityFactory, StateFactory
+
+    rn = MunicipalityFactory(
+        nome="Mossoró", state=StateFactory(sigla="RN", nome="Rio Grande do Norte"),
+        territory=territory_rn, codigo_ibge="2408003",
+    )
+    ce = MunicipalityFactory(
+        nome="Fortaleza", state=StateFactory(sigla="CE", nome="Ceará"),
+        territory=territory_ce, codigo_ibge="2304400",
+    )
+    return rn, ce
+
+
+def test_adt_so_acessa_atividades_e_municipios_do_proprio_territorio(role_adt, territory_rn, municipios_rn_e_ce):
+    from apps.sgp.services.access import atividades_acessiveis_ao_usuario, municipios_acessiveis_ao_usuario
+    from apps.sgp.tests.factories import ActivityFactory
+
+    rn, ce = municipios_rn_e_ce
+    atividade_rn = ActivityFactory(municipio=rn)
+    ActivityFactory(municipio=ce)
+    user = UserFactory(profiles=[(role_adt, territory_rn)])
+
+    assert list(atividades_acessiveis_ao_usuario(user)) == [atividade_rn]
+    assert list(municipios_acessiveis_ao_usuario(user)) == [rn]
+
+
+def test_articulador_so_acessa_atividades_e_municipios_do_proprio_estado(
+    role_articulador, territory_ce, municipios_rn_e_ce,
+):
+    from apps.sgp.services.access import atividades_acessiveis_ao_usuario, municipios_acessiveis_ao_usuario
+    from apps.sgp.tests.factories import ActivityFactory
+
+    rn, ce = municipios_rn_e_ce
+    ActivityFactory(municipio=rn)
+    atividade_ce = ActivityFactory(municipio=ce)
+    user = UserFactory(profiles=[(role_articulador, territory_ce)])
+
+    assert list(atividades_acessiveis_ao_usuario(user)) == [atividade_ce]
+    assert list(municipios_acessiveis_ao_usuario(user)) == [ce]
+
+
+def test_super_admin_acessa_todas_as_atividades_e_municipios(role_super_admin, municipios_rn_e_ce):
+    from apps.sgp.services.access import atividades_acessiveis_ao_usuario, municipios_acessiveis_ao_usuario
+    from apps.sgp.tests.factories import ActivityFactory
+
+    rn, ce = municipios_rn_e_ce
+    ActivityFactory(municipio=rn)
+    ActivityFactory(municipio=ce)
+    user = UserFactory(profiles=[(role_super_admin, None)])
+
+    assert atividades_acessiveis_ao_usuario(user).count() == 2
+    assert municipios_acessiveis_ao_usuario(user).count() == 2
+
+
+def test_sem_escopo_nao_acessa_atividade_nem_municipio(role_sem_escopo, municipios_rn_e_ce):
+    from apps.sgp.services.access import atividades_acessiveis_ao_usuario, municipios_acessiveis_ao_usuario
+    from apps.sgp.tests.factories import ActivityFactory
+
+    rn, _ = municipios_rn_e_ce
+    ActivityFactory(municipio=rn)
+    user = UserFactory(profiles=[(role_sem_escopo, None)])
+
+    assert not atividades_acessiveis_ao_usuario(user).exists()
+    assert not municipios_acessiveis_ao_usuario(user).exists()
