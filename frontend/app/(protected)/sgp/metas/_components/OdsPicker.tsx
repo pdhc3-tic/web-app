@@ -1,10 +1,9 @@
 "use client";
 
-import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
 import { useId } from "react";
 import { ErrorIcon } from "@/app/components/icons";
 import { Chip } from "@/app/components/ui/Chip/Chip";
-import { odsShortLabel } from "@/app/lib/metas";
+import { ODS_OPTIONS, odsShortLabel } from "@/app/lib/metas";
 
 export type OdsPickerProps = {
   /** IDs de ODS selecionados (1–17). */
@@ -33,7 +32,6 @@ export function OdsPicker({
   error,
   disabled = false,
 }: OdsPickerProps) {
-  const odsOpcoes = useSgpChoices().ods.map((o) => ({ id: Number(o.value), label: o.label }));
   const id = useId();
   const errorId = error ? `${id}-error` : undefined;
   const selected = new Set(value);
@@ -66,7 +64,7 @@ export function OdsPicker({
           error ? "border-error-text" : "border-border"
         }`}
       >
-        {odsOpcoes.map((ods) => {
+        {ODS_OPTIONS.map((ods) => {
           const inputId = `${id}-ods-${ods.id}`;
           return (
             <label key={ods.id} htmlFor={inputId} className={itemClass}>
@@ -89,7 +87,7 @@ export function OdsPicker({
           {value.map((odsId) => (
             <Chip
               key={odsId}
-              title={odsOpcoes.find((o) => o.id === odsId)?.label}
+              title={ODS_OPTIONS.find((o) => o.id === odsId)?.label}
             >
               {odsShortLabel(odsId)}
             </Chip>

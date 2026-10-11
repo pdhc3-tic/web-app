@@ -1,6 +1,5 @@
 "use client";
 
-import { useRotuloChoice, useSgpChoices } from "@/app/providers/SgpChoicesProvider";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -18,6 +17,7 @@ import { ApiError } from "@/app/lib/api";
 import {
   fetchIndicadoresProducao,
   listProducaoConsolidada,
+  TIPO_OPTIONS,
   type IndicadoresProducao,
   type ProducaoConsolidadaItem,
 } from "@/app/lib/producao";
@@ -40,6 +40,10 @@ function CenteredSpinner() {
       <Spinner className="h-6 w-6 animate-spin text-text-muted" />
     </div>
   );
+}
+
+function tipoLabel(tipo: string): string {
+  return TIPO_OPTIONS.find((o) => o.value === tipo)?.label ?? tipo;
 }
 
 function IndicadoresBar({ indicadores }: { indicadores: IndicadoresProducao }) {
@@ -82,8 +86,6 @@ function IndicadoresBar({ indicadores }: { indicadores: IndicadoresProducao }) {
 }
 
 function ProducaoView() {
-  const choices = useSgpChoices();
-  const tipoLabel = useRotuloChoice("producao_tipo");
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
@@ -228,7 +230,7 @@ function ProducaoView() {
       <div className="flex flex-wrap items-end gap-3">
         <Select
           label="Tipo"
-          options={choices.producao_tipo}
+          options={TIPO_OPTIONS as unknown as SelectOption[]}
           value={filters.tipo}
           onChange={(v) => handleFilterChange({ tipo: v })}
           placeholder="Todos"

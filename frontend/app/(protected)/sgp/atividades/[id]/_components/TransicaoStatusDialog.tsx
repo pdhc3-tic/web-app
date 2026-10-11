@@ -1,6 +1,5 @@
 "use client";
 
-import { useRotuloChoice } from "@/app/providers/SgpChoicesProvider";
 import { useState } from "react";
 import { AlertTriangle, ArrowRight, ImagePlus } from "lucide-react";
 import { Badge } from "@/app/components/ui/Badge/Badge";
@@ -13,6 +12,7 @@ import { ApiError } from "@/app/lib/api";
 import {
   badgeStatusFor,
   exigenciasDaTransicao,
+  statusLabel,
   transicionarStatus,
   type AtividadeDetail,
 } from "@/app/lib/atividades";
@@ -43,7 +43,6 @@ export function TransicaoStatusDialog({
   onTransicionado,
   onIrParaEvidencias,
 }: Props) {
-  const statusLabel = useRotuloChoice("status_atividade");
   const [destino, setDestino] = useState("");
   const [justificativa, setJustificativa] = useState("");
   const [dataInicio, setDataInicio] = useState("");
