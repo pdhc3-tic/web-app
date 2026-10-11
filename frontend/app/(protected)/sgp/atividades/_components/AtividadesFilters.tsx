@@ -143,7 +143,7 @@ export function AtividadesFilters({
         <div className="min-w-40 flex-1">
           <Select
             label="Status"
-            options={withTodos(choices.status, "Todos os status")}
+            options={withTodos(choices.status_atividade, "Todos os status")}
             value={value.status}
             onChange={(v) => onChange({ status: v })}
             placeholder="Todos os status"

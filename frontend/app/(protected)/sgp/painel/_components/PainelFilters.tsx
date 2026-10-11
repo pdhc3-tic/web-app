@@ -1,9 +1,9 @@
 "use client";
 
+import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
 import { X } from "lucide-react";
 import { Select } from "@/app/components/ui/Select/Select";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
-import { acaoStatusLabel } from "@/app/lib/acoes";
 
 export type PainelFiltersValue = {
   /** Id da Meta, como string (valor do <Select>). "" = todas. */
@@ -40,11 +40,6 @@ export const FILTROS_VAZIOS: PainelFiltersValue = {
  */
 export const SITUACOES_VALIDAS = ["no_prazo", "em_atraso", "concluida"];
 
-/** Rótulos vêm de `acaoStatusLabel` para não abrir um segundo mapa. */
-const SITUACAO_OPTIONS: SelectOption[] = SITUACOES_VALIDAS.map((value) => ({
-  value,
-  label: acaoStatusLabel(value),
-}));
 
 type Props = {
   value: PainelFiltersValue;
@@ -63,6 +58,8 @@ export function PainelFilters({
   territorioOptions,
   optionsLoading,
 }: Props) {
+  // Situações e rótulos vêm dos choices (`status_plano_trabalho`, #272).
+  const situacaoOptions = useSgpChoices().status_plano_trabalho;
   const temFiltro =
     value.meta !== "" ||
     value.territorio !== "" ||
@@ -104,7 +101,7 @@ export function PainelFilters({
             label="Situação"
             options={[
               { value: "", label: "Todas as situações" },
-              ...SITUACAO_OPTIONS,
+              ...situacaoOptions,
             ]}
             value={value.situacao}
             onChange={(v) => onChange({ situacao: v })}

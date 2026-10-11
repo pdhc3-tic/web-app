@@ -1,35 +1,14 @@
 import { apiClient } from "@/app/lib/api";
 import type { Paginated } from "@/app/lib/users";
 
-// ─── Constantes espelhadas do backend ────────────────────────────────────────
+// ─── Tipos ───────────────────────────────────────────────────────────────────
+// As LISTAS (tipo, sistema de criação, tipo de "outra") vêm de `useSgpChoices()`:
+// `producao_tipo`, `producao_sistema_criacao`, `producao_tipo_outra` (#272).
+// Aqui ficam só os valores que o código compara.
 
-/** Espelha apps/sgp/models/production.py::Production.TIPO_CHOICES. */
-export const TIPO_OPTIONS = [
-  { value: "agricola", label: "Agrícola" },
-  { value: "pecuaria", label: "Pecuária" },
-  { value: "outra", label: "Outra" },
-] as const;
-
-export type TipoProducao = (typeof TIPO_OPTIONS)[number]["value"];
-
-/** Espelha Production.SISTEMA_CRIACAO_CHOICES. */
-export const SISTEMA_CRIACAO_OPTIONS = [
-  { value: "extensivo", label: "Extensivo" },
-  { value: "semi_intensivo", label: "Semi-intensivo" },
-  { value: "intensivo", label: "Intensivo" },
-] as const;
-
-export type SistemaCriacao = (typeof SISTEMA_CRIACAO_OPTIONS)[number]["value"];
-
-/** Espelha Production.TIPO_OUTRA_CHOICES. */
-export const TIPO_OUTRA_OPTIONS = [
-  { value: "artesanato", label: "Artesanato" },
-  { value: "beneficiamento", label: "Beneficiamento" },
-  { value: "extrativismo", label: "Extrativismo" },
-  { value: "outro", label: "Outro" },
-] as const;
-
-export type TipoOutra = (typeof TIPO_OUTRA_OPTIONS)[number]["value"];
+export type TipoProducao = "agricola" | "pecuaria" | "outra";
+export type SistemaCriacao = "extensivo" | "semi_intensivo" | "intensivo";
+export type TipoOutra = "artesanato" | "beneficiamento" | "extrativismo" | "outro";
 
 // Categorias chegam como valor cru do choice ("graos", "ovino") e a UI exibe o
 // rótulo, então a tradução acontece na fronteira da API — ver toCatalogoItem().
