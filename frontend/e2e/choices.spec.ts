@@ -76,11 +76,12 @@ test.describe("Choices do SGP (#272)", () => {
 
     // Navegação pelo app (sem recarregar a página): o cache vale para todas.
     const menu = page.getByRole("navigation", { name: /./ }).first();
-    await menu.getByRole("link", { name: "SGD", exact: true }).click();
+    // Pelo href: o nome do link do SGD inclui a contagem de pendentes, que muda com os dados.
+    await menu.locator('a[href="/sgd"]').click();
     await expect(page).toHaveURL(/\/sgd\/?$/);
-    await menu.getByRole("link", { name: "SGP", exact: true }).click();
+    await menu.locator('a[href="/sgp"]').click();
     await expect(page).toHaveURL(/\/sgp\/?$/);
-    await menu.getByRole("link", { name: "SCA", exact: true }).click();
+    await menu.locator('a[href="/sca"]').click();
     await expect(page).toHaveURL(/\/sca\/?$/);
     await page.waitForLoadState("networkidle");
 
