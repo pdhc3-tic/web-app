@@ -5,6 +5,7 @@ from apps.core.models.user import User
 from apps.core.models.user_profile import UserProfile
 from apps.sgd.models.demand import STATUS_CHOICES, Demand
 from apps.sgd.models.demand_request import TIPO_CHOICES
+from apps.sgd.services.approval import demandas_aguardando_acao
 
 
 def _q_etapa_atual_do_usuario(user: User) -> Q:
@@ -42,10 +43,11 @@ class DemandFilter(django_filters.FilterSet):
     """Filtros combináveis da consulta de demandas (SGD-RF26). Todos se somam
     com AND; `tipo` e `rubrica` olham as solicitações da demanda."""
 
-    status = django_filters.ChoiceFilter(choices=STATUS_CHOICES)
+    status = django_filters.MultipleChoiceFilter(choices=STATUS_CHOICES)
     tipo = django_filters.ChoiceFilter(field_name="solicitacoes__tipo", choices=TIPO_CHOICES)
     rubrica = django_filters.CharFilter(field_name="solicitacoes__rubrica__slug")
     solicitante = django_filters.NumberFilter(field_name="solicitante_id")
+    activity = django_filters.NumberFilter(field_name="activity_id")
     atividade = django_filters.NumberFilter(field_name="activity_id")
     acao = django_filters.NumberFilter(field_name="activity__acao_id")
     submeta = django_filters.NumberFilter(field_name="activity__acao__submeta_id")
@@ -54,6 +56,11 @@ class DemandFilter(django_filters.FilterSet):
     periodo_inicio = django_filters.DateFilter(field_name="criado_em", lookup_expr="date__gte")
     periodo_fim = django_filters.DateFilter(field_name="criado_em", lookup_expr="date__lte")
     responsavel_etapa_atual = django_filters.NumberFilter(method="filtrar_responsavel_etapa_atual")
+    aguardando_minha_acao = django_filters.TypedChoiceFilter(
+        choices=[("true", "true"), ("false", "false")],
+        coerce=lambda valor: valor == "true",
+        method="filtrar_aguardando_minha_acao",
+    )
 
     class Meta:
         model = Demand
@@ -64,3 +71,9 @@ class DemandFilter(django_filters.FilterSet):
         if user is None:
             return queryset.none()
         return queryset.filter(_q_etapa_atual_do_usuario(user))
+
+    def filtrar_aguardando_minha_acao(self, queryset, name, value):
+        # Mesma função da rota de contagem, para lista e total nunca divergirem.
+        if not value:
+            return queryset
+        return demandas_aguardando_acao(self.request.user, queryset)
