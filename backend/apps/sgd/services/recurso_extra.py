@@ -112,15 +112,17 @@ def _deficit_individual(demanda: Demand, rubrica) -> Decimal:
     return _necessario(demanda, rubrica) - saldo
 
 
-def _exigir_valor_igual_ao_deficit(demanda: Demand, rubrica, valor: Decimal) -> None:
+def _exigir_valor_cobre_o_deficit(demanda: Demand, rubrica, valor: Decimal) -> None:
     deficit = _deficit_individual(demanda, rubrica)
     if deficit <= ZERO:
         raise DRFValidationError({
             "demanda": "A demanda não está bloqueada pelo limite individual nesta rubrica."
         })
-    if valor != deficit:
+    # SGP §6.6 deixa o valor livre para ajuste na devolução; o piso é o "valor faltante" do
+    # SGD §4.1/issue, e a UGP pode conceder menos (aprovação parcial).
+    if valor < deficit:
         raise DRFValidationError({
-            "valor_solicitado": f"Deve ser o valor que falta no limite individual: R$ {deficit}."
+            "valor_solicitado": f"Não pode ser menor que o valor que falta no limite individual: R$ {deficit}."
         })
 
 
@@ -146,7 +148,7 @@ def criar(*, demanda: Demand, rubrica, justificativa: str, usuario, valor_solici
     deficit = _deficit_individual(demanda, rubrica)
     if valor_solicitado is None:
         valor_solicitado = deficit
-    _exigir_valor_igual_ao_deficit(demanda, rubrica, valor_solicitado)
+    _exigir_valor_cobre_o_deficit(demanda, rubrica, valor_solicitado)
 
     pedido = BudgetIncreaseRequest.objects.create(
         user=demanda.solicitante, rubrica=rubrica, valor_solicitado=valor_solicitado,
@@ -179,7 +181,7 @@ def editar(pedido, *, usuario, valor_solicitado=None, justificativa=None, period
         _exigir_valor_positivo(valor_solicitado)
         demanda = _demanda_do_pedido(pedido)
         if demanda is not None:
-            _exigir_valor_igual_ao_deficit(demanda, pedido.rubrica, valor_solicitado)
+            _exigir_valor_cobre_o_deficit(demanda, pedido.rubrica, valor_solicitado)
         pedido.valor_solicitado = valor_solicitado
     if justificativa is not None:
         pedido.justificativa = _exigir_texto(justificativa, "justificativa", "Obrigatória.")

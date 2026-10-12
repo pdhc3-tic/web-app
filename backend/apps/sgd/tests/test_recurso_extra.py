@@ -117,13 +117,19 @@ def test_valor_omitido_assume_o_deficit_do_limite_individual(demanda, solicitant
     assert Decimal(resposta.data["valor_solicitado"]) == Decimal("700")
 
 
-@pytest.mark.parametrize("valor", ["699.99", "700.01", "5000"])
-def test_valor_diferente_do_deficit_retorna_400(demanda, solicitante_rn, valor):
-    resposta = _solicitar(solicitante_rn, demanda, valor_solicitado=valor)
+def test_valor_abaixo_do_deficit_retorna_400(demanda, solicitante_rn):
+    resposta = _solicitar(solicitante_rn, demanda, valor_solicitado="699.99")
 
     assert resposta.status_code == 400
     assert "valor_solicitado" in resposta.data
     assert not BudgetIncreaseRequest.objects.exists()
+
+
+def test_valor_acima_do_deficit_e_aceito_e_a_ugp_pode_conceder_menos(demanda, solicitante_rn):
+    resposta = _solicitar(solicitante_rn, demanda, valor_solicitado="900")
+
+    assert resposta.status_code == 201
+    assert Decimal(resposta.data["valor_solicitado"]) == Decimal("900")
 
 
 def test_demanda_sem_deficit_nao_pede_recurso_extra(demanda, solicitante_rn, limite_individual_rn):
@@ -176,7 +182,7 @@ def test_criacoes_simultaneas_geram_um_so_pedido(demanda, solicitante_rn, rubric
     assert BudgetIncreaseRequest.objects.count() == 1
 
 
-def test_edicao_do_valor_tambem_exige_o_deficit(pedido, solicitante_rn, usuario_articulador_rn):
+def test_edicao_do_valor_tambem_respeita_o_deficit(pedido, solicitante_rn, usuario_articulador_rn):
     _acao(usuario_articulador_rn, pedido.pk, "devolver", {"justificativa": "Ajuste."})
 
     resposta = _cliente(solicitante_rn).patch(f"{REMANEJAMENTOS}{pedido.pk}/", {"valor_solicitado": "650"}, format="json")
@@ -184,6 +190,8 @@ def test_edicao_do_valor_tambem_exige_o_deficit(pedido, solicitante_rn, usuario_
     assert resposta.status_code == 400
     pedido.refresh_from_db()
     assert pedido.valor_solicitado == Decimal("700")
+    ajustado = _cliente(solicitante_rn).patch(f"{REMANEJAMENTOS}{pedido.pk}/", {"valor_solicitado": "800"}, format="json")
+    assert ajustado.status_code == 200
 
 
 def test_outro_usuario_nao_pede_recurso_extra_para_a_demanda(demanda, usuario_articulador_rn, usuario_ugp):
@@ -261,10 +269,10 @@ def test_ciclo_completo_com_devolucao_e_reenvio(pedido, solicitante_rn, usuario_
     assert devolvido.data["parecer_articulador"] == "Detalhe o valor."
 
     editado = _cliente(solicitante_rn).patch(
-        f"{REMANEJAMENTOS}{pedido.pk}/", {"valor_solicitado": "700", "justificativa": "Valor corrigido."}, format="json",
+        f"{REMANEJAMENTOS}{pedido.pk}/", {"valor_solicitado": "800", "justificativa": "Valor corrigido."}, format="json",
     )
     assert editado.status_code == 200
-    assert Decimal(editado.data["valor_solicitado"]) == Decimal("700")
+    assert Decimal(editado.data["valor_solicitado"]) == Decimal("800")
 
     assert _acao(solicitante_rn, pedido.pk, "submeter").data["status"] == "submetida"
     assert _acao(usuario_articulador_rn, pedido.pk, "parecer", {"parecer": "Procede."}).data["status"] == "com_parecer"

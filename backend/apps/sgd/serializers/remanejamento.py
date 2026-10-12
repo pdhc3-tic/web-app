@@ -33,7 +33,7 @@ class SolicitarRecursoExtraSerializer(serializers.Serializer):
     rubrica = serializers.SlugRelatedField(slug_field="slug", queryset=BudgetRubrica.objects.filter(ativo=True))
     valor_solicitado = serializers.DecimalField(
         max_digits=14, decimal_places=2, min_value=0, required=False,
-        help_text="Deve ser o que falta no limite individual; omitido, assume esse valor.",
+        help_text="No mínimo o que falta no limite individual; omitido, assume esse valor.",
     )
     justificativa = serializers.CharField()
     periodo_aplicacao = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
