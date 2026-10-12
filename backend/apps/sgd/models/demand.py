@@ -76,6 +76,12 @@ class Demand(models.Model):
         ),
     )
 
+    numero_processo = models.CharField(
+        max_length=64, blank=True, default="", db_index=True,
+        verbose_name="Número do processo",
+        help_text="Número do processo de pagamento informado pelo Arlo na importação de retorno.",
+    )
+
     status_alterado_em = models.DateTimeField(
         default=timezone.now,
         verbose_name="Status alterado em",

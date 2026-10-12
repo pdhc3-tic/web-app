@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.sgd.models import ApprovalStep, Demand, DemandDocument, DemandIndividualLimit, DemandRequest
+from apps.sgd.models import ApprovalStep, ArloFieldMapping, ArloImport, Demand, DemandDocument, DemandIndividualLimit, DemandRequest
 
 
 @admin.register(Demand)
@@ -33,3 +33,15 @@ class DemandIndividualLimitAdmin(admin.ModelAdmin):
     list_display = ["solicitante", "rubrica", "valor_limite", "valor_comprometido", "valor_executado"]
     list_filter = ["rubrica"]
     search_fields = ["solicitante__nome"]
+
+
+@admin.register(ArloFieldMapping)
+class ArloFieldMappingAdmin(admin.ModelAdmin):
+    list_display = ["direcao", "ordem", "campo_sgd", "coluna_arlo", "formato", "ativo"]
+    list_filter = ["direcao", "ativo"]
+
+
+@admin.register(ArloImport)
+class ArloImportAdmin(admin.ModelAdmin):
+    list_display = ["tipo", "status", "operado_por", "operado_em", "total_registros", "registros_ok"]
+    list_filter = ["tipo", "status"]

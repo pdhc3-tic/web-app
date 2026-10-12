@@ -154,7 +154,8 @@ class DemandDocumentMixin:
         doc = get_object_or_404(DemandDocument, pk=doc_id, demanda=demand, ativo=True)
         expires_in = 300
         storage = get_storage()
-        url = storage.generate_presigned_get(doc.arquivo_key, expires_in)
+        # Comprovante vindo da importação do Arlo é link externo, sem objeto no storage.
+        url = storage.generate_presigned_get(doc.arquivo_key, expires_in) if doc.arquivo_key else doc.arquivo_url
         if url.startswith("/"):
             url = request.build_absolute_uri(url)
         self._log_doc_audit(

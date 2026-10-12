@@ -93,31 +93,31 @@ AGUA_CHOICES = [
 ]
 
 SAUDE_CHOICES = [
-    "nenhuma",
-    "diabetes",
-    "hipertensao",
-    "deficiencia_visual",
-    "deficiencia_auditiva",
-    "deficiencia_motora",
-    "deficiencia_intelectual",
-    "deficiencia_multipla",
-    "doenca_cardiaca",
-    "doenca_respiratoria",
-    "doenca_renal",
-    "saude_mental",
-    "gestante",
-    "lactante",
-    "desnutricao",
-    "alergia_alimentar",
-    "doenca_cronica",
-    "outros",
+    ("nenhuma", "Nenhuma"),
+    ("diabetes", "Diabetes"),
+    ("hipertensao", "Hipertensão"),
+    ("deficiencia_visual", "Deficiência visual"),
+    ("deficiencia_auditiva", "Deficiência auditiva"),
+    ("deficiencia_motora", "Deficiência motora"),
+    ("deficiencia_intelectual", "Deficiência intelectual"),
+    ("deficiencia_multipla", "Deficiência múltipla"),
+    ("doenca_cardiaca", "Doença cardíaca"),
+    ("doenca_respiratoria", "Doença respiratória"),
+    ("doenca_renal", "Doença renal"),
+    ("saude_mental", "Saúde mental"),
+    ("gestante", "Gestante"),
+    ("lactante", "Lactante"),
+    ("desnutricao", "Desnutrição"),
+    ("alergia_alimentar", "Alergia alimentar"),
+    ("doenca_cronica", "Doença crônica"),
+    ("outros", "Outros"),
 ]
 
 SEGURIDADE_SOCIAL_CHOICES = [
-    "bpc",
-    "bolsa_familia",
-    "aposentadoria",
-    "nenhum",
+    ("bpc", "BPC/LOAS"),
+    ("bolsa_familia", "Bolsa Família"),
+    ("aposentadoria", "Aposentadoria"),
+    ("nenhum", "Nenhum"),
 ]
 
 PARENTESCO_CHOICES = [

@@ -16,6 +16,9 @@ from apps.sgp.constants import SAUDE_CHOICES, SEGURIDADE_SOCIAL_CHOICES
 from apps.sgp.models import MembroFamilia, UPF
 from apps.sgp.validators import validate_cpf as _validar_formato_cpf
 
+VALORES_SAUDE = [valor for valor, _ in SAUDE_CHOICES]
+VALORES_SEGURIDADE_SOCIAL = [valor for valor, _ in SEGURIDADE_SOCIAL_CHOICES]
+
 
 class MembroRuleError(DjangoValidationError):
     """Base dos erros de unicidade de Membro/UPF. `field` indica onde o
@@ -146,10 +149,10 @@ def validar_saude(value):
     if len(value) != len(set(value)):
         raise SaudeInvalidaError("Condições de saúde não podem conter duplicidades.")
     for item in value:
-        if item not in SAUDE_CHOICES:
+        if item not in VALORES_SAUDE:
             raise SaudeInvalidaError(
                 f"'{item}' não é um valor válido para saúde. "
-                f"Valores permitidos: {', '.join(SAUDE_CHOICES)}"
+                f"Valores permitidos: {', '.join(VALORES_SAUDE)}"
             )
     if "nenhuma" in value and len(value) > 1:
         raise SaudeInvalidaError(
@@ -173,10 +176,10 @@ def validar_seguridade_social(value):
             "Seguridade social não pode conter duplicidades."
         )
     for item in value:
-        if item not in SEGURIDADE_SOCIAL_CHOICES:
+        if item not in VALORES_SEGURIDADE_SOCIAL:
             raise SeguridadeSocialInvalidaError(
                 f"'{item}' não é um valor válido para seguridade social. "
-                f"Valores permitidos: {', '.join(SEGURIDADE_SOCIAL_CHOICES)}"
+                f"Valores permitidos: {', '.join(VALORES_SEGURIDADE_SOCIAL)}"
             )
     if "nenhum" in value and len(value) > 1:
         raise SeguridadeSocialInvalidaError(
