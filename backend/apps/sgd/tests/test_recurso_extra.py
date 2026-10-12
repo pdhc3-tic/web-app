@@ -1,8 +1,9 @@
 """Solicitação de recurso extra (SGP §6.6): pedido, parecer, decisão da UGP e remanejamento."""
+import threading
 from decimal import Decimal
 
 import pytest
-from django.db import transaction
+from django.db import connection, transaction
 from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIClient
 
@@ -10,6 +11,7 @@ from apps.core.models.audit_log import AuditLog
 from apps.core.models.notifications import Notification
 from apps.sgd.models import DemandIndividualLimit
 from apps.sgd.services import demand as demand_service
+from apps.sgd.services import recurso_extra as recurso_extra_service
 from apps.sgd.tests.factories import BudgetIncreaseRequestFactory
 from apps.sgp.models import BudgetAllocation, BudgetIncreaseRequest, BudgetTransfer
 from apps.sgp.tests.factories import ActivityFactory, BudgetAllocationFactory, WorkPlanAcaoFactory
@@ -19,6 +21,7 @@ pytestmark = pytest.mark.django_db
 DEMANDAS = "/api/v1/sgd/demandas/"
 REMANEJAMENTOS = "/api/v1/sgd/remanejamentos/"
 JUSTIFICATIVA = "Limite individual esgotado antes do fim do período."
+APROVAR = {"decisao": "aprovar", "justificativa": "Procede."}
 
 
 def _cliente(user):
@@ -103,6 +106,86 @@ def test_valor_e_justificativa_sao_obrigatorios(demanda, solicitante_rn):
     assert _solicitar(solicitante_rn, demanda, justificativa="  ").status_code == 400
 
 
+def test_valor_omitido_assume_o_deficit_do_limite_individual(demanda, solicitante_rn):
+    corpo = {"rubrica": "diarias", "justificativa": JUSTIFICATIVA}
+
+    resposta = _cliente(solicitante_rn).post(
+        f"{DEMANDAS}{demanda.pk}/solicitar-recurso-extra/", corpo, format="json",
+    )
+
+    assert resposta.status_code == 201
+    assert Decimal(resposta.data["valor_solicitado"]) == Decimal("700")
+
+
+@pytest.mark.parametrize("valor", ["699.99", "700.01", "5000"])
+def test_valor_diferente_do_deficit_retorna_400(demanda, solicitante_rn, valor):
+    resposta = _solicitar(solicitante_rn, demanda, valor_solicitado=valor)
+
+    assert resposta.status_code == 400
+    assert "valor_solicitado" in resposta.data
+    assert not BudgetIncreaseRequest.objects.exists()
+
+
+def test_demanda_sem_deficit_nao_pede_recurso_extra(demanda, solicitante_rn, limite_individual_rn):
+    DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_limite=Decimal("1000"))
+
+    resposta = _solicitar(solicitante_rn, demanda)
+
+    assert resposta.status_code == 400
+    assert "demanda" in resposta.data
+    assert not BudgetIncreaseRequest.objects.exists()
+
+
+def test_so_um_pedido_em_andamento_por_demanda_e_rubrica(demanda, pedido, solicitante_rn):
+    resposta = _solicitar(solicitante_rn, demanda)
+
+    assert resposta.status_code == 400
+    assert BudgetIncreaseRequest.objects.count() == 1
+
+
+def test_pedido_terminal_libera_um_novo_pedido(demanda, pedido_com_parecer, solicitante_rn, usuario_ugp):
+    _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {"decisao": "recusar", "justificativa": "Sem saldo."})
+
+    assert _solicitar(solicitante_rn, demanda).status_code == 201
+
+
+@pytest.mark.django_db(transaction=True)
+def test_criacoes_simultaneas_geram_um_so_pedido(demanda, solicitante_rn, rubrica_diarias):
+    barreira = threading.Barrier(2)
+    resultados = []
+
+    def tentar():
+        try:
+            barreira.wait()
+            recurso_extra_service.criar(
+                demanda=demanda, rubrica=rubrica_diarias, justificativa=JUSTIFICATIVA, usuario=solicitante_rn,
+            )
+            resultados.append("criado")
+        except ValidationError:
+            resultados.append("recusado")
+        finally:
+            connection.close()
+
+    threads = [threading.Thread(target=tentar) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert sorted(resultados) == ["criado", "recusado"]
+    assert BudgetIncreaseRequest.objects.count() == 1
+
+
+def test_edicao_do_valor_tambem_exige_o_deficit(pedido, solicitante_rn, usuario_articulador_rn):
+    _acao(usuario_articulador_rn, pedido.pk, "devolver", {"justificativa": "Ajuste."})
+
+    resposta = _cliente(solicitante_rn).patch(f"{REMANEJAMENTOS}{pedido.pk}/", {"valor_solicitado": "650"}, format="json")
+
+    assert resposta.status_code == 400
+    pedido.refresh_from_db()
+    assert pedido.valor_solicitado == Decimal("700")
+
+
 def test_outro_usuario_nao_pede_recurso_extra_para_a_demanda(demanda, usuario_articulador_rn, usuario_ugp):
     assert _solicitar(usuario_articulador_rn, demanda).status_code == 403
     assert _solicitar(usuario_ugp, demanda).status_code == 403
@@ -155,7 +238,7 @@ def test_solicitante_so_ve_os_proprios_pedidos(pedido, pedido_do_ce, solicitante
 
 def test_fgd_le_mas_nao_decide(pedido_com_parecer, usuario_fgd):
     assert _cliente(usuario_fgd).get(f"{REMANEJAMENTOS}{pedido_com_parecer.pk}/").status_code == 200
-    assert _acao(usuario_fgd, pedido_com_parecer.pk, "decidir", {"decisao": "aprovar"}).status_code == 403
+    assert _acao(usuario_fgd, pedido_com_parecer.pk, "decidir", APROVAR).status_code == 403
 
 
 def test_listagem_exige_autenticacao():
@@ -168,7 +251,7 @@ def test_rascunho_so_vai_para_submetida(demanda, solicitante_rn, usuario_articul
     pedido_id = _solicitar(solicitante_rn, demanda, submeter=False).data["id"]
 
     assert _acao(usuario_articulador_rn, pedido_id, "parecer", {"parecer": "x"}).status_code == 400
-    assert _acao(usuario_ugp, pedido_id, "decidir", {"decisao": "aprovar"}).status_code == 400
+    assert _acao(usuario_ugp, pedido_id, "decidir", APROVAR).status_code == 400
     assert _acao(solicitante_rn, pedido_id, "submeter").data["status"] == "submetida"
 
 
@@ -178,14 +261,14 @@ def test_ciclo_completo_com_devolucao_e_reenvio(pedido, solicitante_rn, usuario_
     assert devolvido.data["parecer_articulador"] == "Detalhe o valor."
 
     editado = _cliente(solicitante_rn).patch(
-        f"{REMANEJAMENTOS}{pedido.pk}/", {"valor_solicitado": "650", "justificativa": "Valor corrigido."}, format="json",
+        f"{REMANEJAMENTOS}{pedido.pk}/", {"valor_solicitado": "700", "justificativa": "Valor corrigido."}, format="json",
     )
     assert editado.status_code == 200
-    assert Decimal(editado.data["valor_solicitado"]) == Decimal("650")
+    assert Decimal(editado.data["valor_solicitado"]) == Decimal("700")
 
     assert _acao(solicitante_rn, pedido.pk, "submeter").data["status"] == "submetida"
     assert _acao(usuario_articulador_rn, pedido.pk, "parecer", {"parecer": "Procede."}).data["status"] == "com_parecer"
-    decidido = _acao(usuario_ugp, pedido.pk, "decidir", {"decisao": "aprovar"})
+    decidido = _acao(usuario_ugp, pedido.pk, "decidir", APROVAR)
     assert decidido.data["status"] == "aprovada"
     assert decidido.data["decidido_por"] == usuario_ugp.pk
     assert decidido.data["decidido_em"] is not None
@@ -198,14 +281,14 @@ def test_edicao_so_em_rascunho_ou_devolvida(pedido, solicitante_rn):
 
 
 def test_pedido_decidido_nao_muda_mais(pedido_com_parecer, usuario_ugp, usuario_articulador_rn):
-    assert _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {"decisao": "aprovar"}).status_code == 200
+    assert _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", APROVAR).status_code == 200
 
     assert _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {"decisao": "recusar", "justificativa": "x"}).status_code == 400
     assert _acao(usuario_articulador_rn, pedido_com_parecer.pk, "devolver", {"justificativa": "x"}).status_code == 400
 
 
 def test_decisao_exige_parecer_antes(pedido, usuario_ugp):
-    assert _acao(usuario_ugp, pedido.pk, "decidir", {"decisao": "aprovar"}).status_code == 400
+    assert _acao(usuario_ugp, pedido.pk, "decidir", APROVAR).status_code == 400
 
 
 def test_parecer_e_devolucao_exigem_texto(pedido, usuario_articulador_rn):
@@ -220,8 +303,8 @@ def test_so_o_articulador_do_estado_emite_parecer(pedido, solicitante_rn, usuari
 
 
 def test_so_a_ugp_decide(pedido_com_parecer, solicitante_rn, usuario_articulador_rn):
-    assert _acao(solicitante_rn, pedido_com_parecer.pk, "decidir", {"decisao": "aprovar"}).status_code == 403
-    assert _acao(usuario_articulador_rn, pedido_com_parecer.pk, "decidir", {"decisao": "aprovar"}).status_code == 403
+    assert _acao(solicitante_rn, pedido_com_parecer.pk, "decidir", APROVAR).status_code == 403
+    assert _acao(usuario_articulador_rn, pedido_com_parecer.pk, "decidir", APROVAR).status_code == 403
 
 
 def test_so_o_solicitante_submete_e_edita(demanda, solicitante_rn, usuario_articulador_rn):
@@ -241,7 +324,7 @@ def test_aprovacao_eleva_o_limite_e_libera_a_submissao(
     with pytest.raises(ValidationError), transaction.atomic():
         demand_service.submeter_demanda(demanda, usuario=solicitante_rn)
 
-    resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {"decisao": "aprovar"})
+    resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", APROVAR)
 
     assert resposta.status_code == 200
     assert Decimal(resposta.data["valor_aprovado"]) == Decimal("700")
@@ -270,6 +353,19 @@ def test_recusa_sem_justificativa_retorna_400(pedido_com_parecer, usuario_ugp):
     assert "justificativa" in resposta.data
     pedido_com_parecer.refresh_from_db()
     assert pedido_com_parecer.status == "com_parecer"
+
+
+@pytest.mark.parametrize("corpo", [{"decisao": "aprovar"}, {"decisao": "aprovar", "justificativa": "  "}])
+def test_aprovacao_integral_sem_justificativa_retorna_400(
+    pedido_com_parecer, usuario_ugp, solicitante_rn, rubrica_diarias, corpo,
+):
+    resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", corpo)
+
+    assert resposta.status_code == 400
+    assert "justificativa" in resposta.data
+    pedido_com_parecer.refresh_from_db()
+    assert pedido_com_parecer.status == "com_parecer"
+    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")
 
 
 def test_aprovacao_parcial_eleva_o_limite_so_pelo_valor_aprovado(
@@ -302,7 +398,7 @@ def test_decisao_invalida_retorna_400(pedido_com_parecer, usuario_ugp, rubrica_d
 def test_aprovacao_cria_o_limite_quando_o_usuario_nao_tem(pedido_com_parecer, usuario_ugp, solicitante_rn, rubrica_diarias):
     DemandIndividualLimit.objects.filter(solicitante=solicitante_rn).delete()
 
-    _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {"decisao": "aprovar"})
+    _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", APROVAR)
 
     assert _limite(solicitante_rn, rubrica_diarias) == Decimal("700")
 
@@ -318,44 +414,98 @@ def alocacao_estadual(allocation_territorial_rn, activity_rn, rubrica_diarias):
 
 
 def test_pool_com_saldo_nao_gera_alerta_nem_remanejamento(pedido_com_parecer, usuario_ugp):
-    resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {"decisao": "aprovar"})
+    resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", APROVAR)
 
     assert resposta.data["alerta_pool_insuficiente"] is False
     assert resposta.data["transferencia_id"] is None
     assert not BudgetTransfer.objects.exists()
 
 
-def test_pool_sem_saldo_alerta_a_ugp(pedido_com_parecer, usuario_ugp, allocation_territorial_rn, solicitante_rn, rubrica_diarias):
+def test_pool_sem_cobrir_o_necessario_exige_origem_e_nada_e_gravado(
+    pedido_com_parecer, usuario_ugp, allocation_territorial_rn, solicitante_rn, rubrica_diarias,
+):
     BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
 
-    resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {"decisao": "aprovar"})
+    resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", APROVAR)
 
-    assert resposta.status_code == 200
-    assert resposta.data["alerta_pool_insuficiente"] is True
-    assert resposta.data["transferencia_id"] is None
-    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("1000")
+    assert resposta.status_code == 400
+    assert "origem_allocation" in resposta.data
+    pedido_com_parecer.refresh_from_db()
+    assert pedido_com_parecer.status == "com_parecer"
+    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")
+    assert not BudgetTransfer.objects.exists()
 
 
 def test_remanejamento_de_pool_estadual_cobre_o_que_falta(
-    pedido_com_parecer, usuario_ugp, allocation_territorial_rn, alocacao_estadual,
+    demanda, pedido_com_parecer, usuario_ugp, allocation_territorial_rn, alocacao_estadual, solicitante_rn,
 ):
     BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
 
     resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {
-        "decisao": "aprovar", "origem_allocation": alocacao_estadual.pk,
+        **APROVAR, "origem_allocation": alocacao_estadual.pk,
     })
 
     assert resposta.status_code == 200, resposta.data
     assert resposta.data["alerta_pool_insuficiente"] is False
     transferencia = BudgetTransfer.objects.get(pk=resposta.data["transferencia_id"])
     assert transferencia.tipo == "entre_niveis"
-    assert transferencia.valor == Decimal("500")  # 700 aprovados − 200 que o pool já tinha
-    assert (transferencia.saldo_origem_antes, transferencia.saldo_origem_depois) == (Decimal("50000"), Decimal("49500"))
-    assert (transferencia.saldo_destino_antes, transferencia.saldo_destino_depois) == (Decimal("200"), Decimal("700"))
+    assert transferencia.valor == Decimal("800")  # 1000 que a demanda reserva − 200 que o pool já tinha
+    assert (transferencia.saldo_origem_antes, transferencia.saldo_origem_depois) == (Decimal("50000"), Decimal("49200"))
+    assert (transferencia.saldo_destino_antes, transferencia.saldo_destino_depois) == (Decimal("200"), Decimal("1000"))
     assert transferencia.aprovado_por == usuario_ugp
     assert transferencia.increase_request == pedido_com_parecer
     allocation_territorial_rn.refresh_from_db()
-    assert allocation_territorial_rn.valor_alocado == Decimal("700")
+    assert allocation_territorial_rn.valor_alocado == Decimal("1000")
+    demand_service.submeter_demanda(demanda, usuario=solicitante_rn)
+    assert demanda.status == "submetida"
+
+
+def test_saldos_da_auditoria_sao_lidos_depois_do_lock(
+    pedido_com_parecer, usuario_ugp, allocation_territorial_rn, alocacao_estadual, monkeypatch,
+):
+    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
+    lock = BudgetAllocation.objects.select_for_update
+    deslocado = []
+
+    def travar_e_mexer_no_saldo(*args, **kwargs):
+        # Um comprometimento que chega entre a consulta e o lock da origem.
+        if not deslocado:
+            deslocado.append(True)
+            BudgetAllocation.objects.filter(pk=alocacao_estadual.pk).update(valor_comprometido=Decimal("1000"))
+        return lock(*args, **kwargs)
+
+    monkeypatch.setattr(BudgetAllocation.objects, "select_for_update", travar_e_mexer_no_saldo)
+
+    resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {
+        **APROVAR, "origem_allocation": alocacao_estadual.pk,
+    })
+
+    assert resposta.status_code == 200, resposta.data
+    transferencia = BudgetTransfer.objects.get()
+    assert transferencia.saldo_origem_antes == Decimal("49000")
+    assert transferencia.saldo_origem_depois == Decimal("48200")
+
+
+def test_decisao_trava_o_limite_individual_antes_das_alocacoes(
+    pedido_com_parecer, usuario_ugp, allocation_territorial_rn, alocacao_estadual,
+):
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
+
+    with CaptureQueriesContext(connection) as consultas:
+        resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {
+            **APROVAR, "origem_allocation": alocacao_estadual.pk,
+        })
+
+    assert resposta.status_code == 200
+    travas = [q["sql"] for q in consultas if "FOR UPDATE" in q["sql"]]
+    tabelas = [
+        "limite" if "sgd_demandindividuallimit" in sql else "alocacao"
+        for sql in travas if "sgd_demandindividuallimit" in sql or "sgp_budgetallocation" in sql
+    ]
+    assert tabelas.index("limite") < tabelas.index("alocacao")
 
 
 def test_remanejamento_so_pode_vir_de_saldo_estadual_ou_nacional(
@@ -367,7 +517,7 @@ def test_remanejamento_so_pode_vir_de_saldo_estadual_ou_nacional(
     )
 
     resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {
-        "decisao": "aprovar", "origem_allocation": outra_territorial.pk,
+        **APROVAR, "origem_allocation": outra_territorial.pk,
     })
 
     assert resposta.status_code == 400
@@ -383,7 +533,7 @@ def test_remanejamento_sem_saldo_na_origem_desfaz_a_decisao(
     BudgetAllocation.objects.filter(pk=alocacao_estadual.pk).update(valor_alocado=Decimal("100"))
 
     resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {
-        "decisao": "aprovar", "origem_allocation": alocacao_estadual.pk,
+        **APROVAR, "origem_allocation": alocacao_estadual.pk,
     })
 
     assert resposta.status_code == 400
@@ -397,7 +547,7 @@ def test_remanejamento_registrado_e_imutavel(
     pedido_com_parecer, usuario_ugp, allocation_territorial_rn, alocacao_estadual,
 ):
     BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
-    _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {"decisao": "aprovar", "origem_allocation": alocacao_estadual.pk})
+    _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {**APROVAR, "origem_allocation": alocacao_estadual.pk})
     transferencia = BudgetTransfer.objects.get()
 
     transferencia.motivo = "adulterado"
@@ -412,7 +562,7 @@ def test_remanejamento_registrado_e_imutavel(
 
 def test_toda_decisao_gera_auditoria(pedido_com_parecer, usuario_ugp, solicitante_rn):
     resposta = _cliente(usuario_ugp).post(
-        f"{REMANEJAMENTOS}{pedido_com_parecer.pk}/decidir/", {"decisao": "aprovar"}, format="json",
+        f"{REMANEJAMENTOS}{pedido_com_parecer.pk}/decidir/", APROVAR, format="json",
         REMOTE_ADDR="198.51.100.9",
     )
 
@@ -453,7 +603,7 @@ def test_notificacoes_a_cada_etapa(demanda, solicitante_rn, usuario_articulador_
     _acao(usuario_articulador_rn, pedido_id, "parecer", {"parecer": "Procede."})
     assert Notification.objects.filter(user=usuario_ugp, evento="recurso_extra_com_parecer").exists()
 
-    _acao(usuario_ugp, pedido_id, "decidir", {"decisao": "aprovar"})
+    _acao(usuario_ugp, pedido_id, "decidir", APROVAR)
     assert Notification.objects.filter(user=solicitante_rn, evento="recurso_extra_decidido").exists()
 
 

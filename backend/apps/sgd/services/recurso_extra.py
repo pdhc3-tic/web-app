@@ -1,10 +1,14 @@
 """Solicitação de Recurso Extra (SGP §6.6) e o remanejamento que a decisão da UGP pode disparar.
 
 O pedido percorre a máquina de estados de `BudgetIncreaseRequest`. Aprovar eleva o
-limite individual do solicitante na rubrica; se o pool territorial não cobrir o
-valor, a UGP é alertada e pode remanejar de uma alocação estadual ou nacional na
-própria decisão. A demanda bloqueada não é submetida sozinha: o limite maior só a
-deixa passar nas duas travas quando o solicitante submeter de novo.
+limite individual do solicitante na rubrica e só se conclui com o pool territorial
+cobrindo o que a demanda precisa reservar: se faltar saldo, a UGP informa uma
+alocação estadual ou nacional e o remanejamento acontece na própria decisão. A
+demanda bloqueada não é submetida sozinha: o limite maior só a deixa passar nas
+duas travas quando o solicitante submeter de novo.
+
+Ordem de lock: pedido → `DemandIndividualLimit` → `BudgetAllocation` (em ordem de pk),
+a mesma de `balance.py`.
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ from apps.core.signals.audit import get_audit_context
 from apps.sgd.models import Demand, DemandIndividualLimit
 from apps.sgd.models.demand import STATUS_EDITAVEIS
 from apps.sgd.services import auditoria as auditoria_service
+from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
 from apps.sgd.services.balance import _destinatarios_saldo_territorial
 from apps.sgp.models import BudgetAllocation, BudgetIncreaseRequest, BudgetTransfer
@@ -85,9 +90,45 @@ def _sigla_do_pedido(pedido) -> str | None:
     return pedido.activity.municipio.state.sigla
 
 
+def _demanda_do_pedido(pedido) -> Demand | None:
+    if pedido.demanda_id and pedido.demanda_id.isdigit():
+        return Demand.objects.select_related("activity__acao__meta").filter(pk=int(pedido.demanda_id)).first()
+    return None
+
+
+def _necessario(demanda: Demand, rubrica) -> Decimal:
+    """O que a próxima submissão vai reservar na rubrica: as solicitações que ainda
+    não têm reserva ativa."""
+    return sum(
+        (s.valor_estimado for s in demanda.solicitacoes.filter(rubrica=rubrica)
+         if not balance_service.reserva_ativa(s)),
+        ZERO,
+    )
+
+
+def _deficit_individual(demanda: Demand, rubrica) -> Decimal:
+    limite = DemandIndividualLimit.objects.filter(solicitante=demanda.solicitante, rubrica=rubrica).first()
+    saldo = max(limite.saldo_disponivel, ZERO) if limite else ZERO
+    return _necessario(demanda, rubrica) - saldo
+
+
+def _exigir_valor_igual_ao_deficit(demanda: Demand, rubrica, valor: Decimal) -> None:
+    deficit = _deficit_individual(demanda, rubrica)
+    if deficit <= ZERO:
+        raise DRFValidationError({
+            "demanda": "A demanda não está bloqueada pelo limite individual nesta rubrica."
+        })
+    if valor != deficit:
+        raise DRFValidationError({
+            "valor_solicitado": f"Deve ser o valor que falta no limite individual: R$ {deficit}."
+        })
+
+
 @transaction.atomic
-def criar(*, demanda: Demand, rubrica, valor_solicitado: Decimal, justificativa: str,
-          usuario, periodo_aplicacao: str = "", submeter: bool = True) -> BudgetIncreaseRequest:
+def criar(*, demanda: Demand, rubrica, justificativa: str, usuario, valor_solicitado: Decimal | None = None,
+          periodo_aplicacao: str = "", submeter: bool = True) -> BudgetIncreaseRequest:
+    # Serializa pedidos concorrentes da mesma demanda: o de baixo vê o do de cima.
+    demanda = Demand.objects.select_for_update().select_related("solicitante").get(pk=demanda.pk)
     if demanda.status not in STATUS_EDITAVEIS:
         raise DRFValidationError({
             "demanda": "Só uma demanda em Rascunho ou Devolvida, a que o bloqueio impede de submeter, "
@@ -95,8 +136,17 @@ def criar(*, demanda: Demand, rubrica, valor_solicitado: Decimal, justificativa:
         })
     if not demanda.solicitacoes.filter(rubrica=rubrica).exists():
         raise DRFValidationError({"rubrica": "A demanda não tem solicitação nesta rubrica."})
-    _exigir_valor_positivo(valor_solicitado)
     justificativa = _exigir_texto(justificativa, "justificativa", "Obrigatória.")
+    if valor_solicitado is not None:
+        _exigir_valor_positivo(valor_solicitado)
+    if BudgetIncreaseRequest.objects.filter(
+        demanda_id=str(demanda.pk), rubrica=rubrica,
+    ).exclude(status__in=BudgetIncreaseRequest.TERMINAIS).exists():
+        raise DRFValidationError({"demanda": "Já existe um pedido de recurso extra em andamento nesta rubrica."})
+    deficit = _deficit_individual(demanda, rubrica)
+    if valor_solicitado is None:
+        valor_solicitado = deficit
+    _exigir_valor_igual_ao_deficit(demanda, rubrica, valor_solicitado)
 
     pedido = BudgetIncreaseRequest.objects.create(
         user=demanda.solicitante, rubrica=rubrica, valor_solicitado=valor_solicitado,
@@ -127,6 +177,9 @@ def editar(pedido, *, usuario, valor_solicitado=None, justificativa=None, period
     }
     if valor_solicitado is not None:
         _exigir_valor_positivo(valor_solicitado)
+        demanda = _demanda_do_pedido(pedido)
+        if demanda is not None:
+            _exigir_valor_igual_ao_deficit(demanda, pedido.rubrica, valor_solicitado)
         pedido.valor_solicitado = valor_solicitado
     if justificativa is not None:
         pedido.justificativa = _exigir_texto(justificativa, "justificativa", "Obrigatória.")
@@ -180,10 +233,9 @@ def devolver_pedido(pedido, *, usuario, justificativa: str):
 
 
 def _meta_do_pedido(pedido):
-    if pedido.demanda_id and pedido.demanda_id.isdigit():
-        demanda = Demand.objects.select_related("activity__acao__meta").filter(pk=int(pedido.demanda_id)).first()
-        if demanda is not None:
-            return demanda.meta
+    demanda = _demanda_do_pedido(pedido)
+    if demanda is not None:
+        return demanda.meta
     if pedido.activity_id is not None:
         return pedido.activity.acao.meta
     return None
@@ -210,9 +262,10 @@ def _elevar_limite(pedido, valor: Decimal, usuario) -> None:
     )
 
 
-def _conferir_pool(pedido, valor: Decimal, origem: BudgetAllocation | None, usuario):
+def _conferir_pool(pedido, valor_aprovado: Decimal, origem: BudgetAllocation | None, usuario):
     """(alerta, transferência). `alerta` é None quando não há como conferir o pool
-    (pedido sem Meta, ou usuário sem território único)."""
+    (pedido sem Meta, ou usuário sem território único). Pool sem cobrir o que a
+    demanda precisa reservar só passa com `origem`, que remaneja o déficit."""
     meta = _meta_do_pedido(pedido)
     if meta is None:
         return None, None
@@ -220,25 +273,39 @@ def _conferir_pool(pedido, valor: Decimal, origem: BudgetAllocation | None, usua
         nivel, sigla, territorio = budget_service.resolver_nivel_do_usuario(pedido.user)
     except PermissionDenied:
         return None, None
+    demanda = _demanda_do_pedido(pedido)
+    necessario = _necessario(demanda, pedido.rubrica) if demanda is not None else valor_aprovado
     check = budget_service.saldo_para_consulta(
         meta_id=meta.pk, rubrica_slug=pedido.rubrica.slug, nivel=nivel,
-        estado_sigla=sigla, territorio=territorio, valor=valor,
+        estado_sigla=sigla, territorio=territorio, valor=necessario,
     )
     if check.disponivel:
         return False, None
+    if check.allocation is None:
+        raise DRFValidationError({"detail": "Nenhuma alocação territorial encontrada para receber o remanejamento."})
     if origem is None:
-        return True, None
-
+        raise DRFValidationError({
+            "origem_allocation": (
+                f"O pool territorial não cobre os R$ {necessario} que a demanda precisa reservar "
+                f"(R$ {max(check.saldo, ZERO)} disponível). Informe a alocação estadual ou nacional "
+                "que cobre a diferença."
+            )
+        })
     if origem.nivel not in (budget_service.Nivel.ESTADUAL, budget_service.Nivel.NACIONAL):
         raise DRFValidationError({
             "origem_allocation": "O remanejamento só pode vir de saldo estadual ou nacional."
         })
-    if check.allocation is None:
-        raise DRFValidationError({"detail": "Nenhuma alocação territorial encontrada para receber o remanejamento."})
 
-    destino = check.allocation
-    faltante = valor - max(check.saldo, ZERO)
-    origem = BudgetAllocation.objects.select_related("estado", "territorio").get(pk=origem.pk)
+    # Em ordem crescente de pk, como `remanejar`; os saldos que vão pra auditoria e o déficit
+    # são lidos só depois do lock.
+    travadas = {
+        pk: BudgetAllocation.objects.select_for_update(of=("self",)).select_related("estado", "territorio").get(pk=pk)
+        for pk in sorted({origem.pk, check.allocation.pk})
+    }
+    origem, destino = travadas[origem.pk], travadas[check.allocation.pk]
+    faltante = necessario - max(_saldo(destino), ZERO)
+    if faltante <= ZERO:
+        return False, None
     origem_antes, destino_antes = _saldo(origem), _saldo(destino)
     motivo = f"Recurso extra #{pedido.pk}: {pedido.justificativa}"
     budget_service.remanejar(origem=origem, destino=destino, valor=faltante, usuario=usuario, justificativa=motivo)
@@ -307,12 +374,13 @@ def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = N
             })
     else:
         valor_aprovado = pedido.valor_solicitado
-        justificativa = (justificativa or "").strip()
+        justificativa = _exigir_texto(justificativa, "justificativa", "Obrigatória para aprovar o pedido.")
 
     alerta, transferencia = None, None
     if valor_aprovado is not None:
-        alerta, transferencia = _conferir_pool(pedido, valor_aprovado, origem_allocation, usuario)
+        # O limite é travado antes das alocações (ordem de `balance.py`).
         _elevar_limite(pedido, valor_aprovado, usuario)
+        alerta, transferencia = _conferir_pool(pedido, valor_aprovado, origem_allocation, usuario)
 
     _mudar_status(
         pedido, destino_status, usuario, f"decidido_{decisao}",

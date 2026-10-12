@@ -225,6 +225,7 @@ class BudgetIncreaseRequest(models.Model):
         Status.RECUSADA: set(),
     }
     EDITAVEIS = {Status.RASCUNHO, Status.DEVOLVIDA}
+    TERMINAIS = {Status.APROVADA, Status.APROVADA_PARCIALMENTE, Status.RECUSADA}
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
@@ -276,6 +277,11 @@ class BudgetIncreaseRequest(models.Model):
         ]
         constraints = [
             models.CheckConstraint(condition=Q(valor_solicitado__gt=0), name="budgetincr_valor_positivo"),
+            models.UniqueConstraint(
+                fields=["demanda_id", "rubrica"],
+                condition=Q(demanda_id__isnull=False) & ~Q(status__in=["aprovada", "aprovada_parcialmente", "recusada"]),
+                name="budgetincr_um_pedido_aberto_por_demanda_rubrica",
+            ),
         ]
 
     def get_transicoes_permitidas(self) -> set:
