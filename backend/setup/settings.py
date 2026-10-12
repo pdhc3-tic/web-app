@@ -247,9 +247,9 @@ REST_FRAMEWORK = {
     },
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "EXCEPTION_HANDLER": "setup.exceptions.custom_exception_handler",
-    "NUM_PROXIES": 1,  # Railway usa 1 load balancer na frente
-    # Isso faz o SimpleRateThrottle usar X-Forwarded-For
-    # corretamente sem confiar em IPs intermediários injetáveis
+    # Os throttles padrão do DRF (anon/user) usam X-Forwarded-For; o número de
+    # proxies segue o mesmo TRUSTED_PROXY_COUNT usado por get_client_ip.
+    "NUM_PROXIES": TRUSTED_PROXY_COUNT,
 }
 
 SIMPLE_JWT = {
