@@ -1,7 +1,15 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from .views import ArloFieldMappingViewSet, ArloViewSet, DemandIndividualLimitViewSet, DemandViewSet, SaldoConsultaView
+from .views import (
+    ArloFieldMappingViewSet,
+    ArloViewSet,
+    CustoPorAtividadeView,
+    DemandIndividualLimitViewSet,
+    DemandViewSet,
+    PainelRubricasView,
+    SaldoConsultaView,
+)
 
 router = DefaultRouter()
 router.register("demandas", DemandViewSet, basename="demanda")
@@ -11,5 +19,7 @@ router.register("limites-individuais", DemandIndividualLimitViewSet, basename="d
 
 urlpatterns = [
     path("sgd/", include(router.urls)),
+    path("sgd/painel/rubricas/", PainelRubricasView.as_view(), name="sgd-painel-rubricas"),
+    path("sgd/relatorios/custo-por-atividade/", CustoPorAtividadeView.as_view(), name="sgd-custo-por-atividade"),
     path("sgd/saldo/", SaldoConsultaView.as_view(), name="sgd-saldo"),
 ]
