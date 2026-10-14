@@ -6,7 +6,7 @@ from django.db import transaction
 from apps.core.storage import get_storage
 from apps.sgd.models.arlo_import import ArloImport
 from apps.sgd.models.demand import Demand
-from apps.sgd.services.arlo_mapping import obter_mapeamento
+from apps.sgd.services.arlo_mapping import formatar_valor, obter_mapeamento
 from apps.sgp.models import ExportJob
 from apps.sgp.services.exportacao import gerar_arquivo
 
@@ -47,12 +47,13 @@ def demandas_autorizadas():
     )
 
 
-def gerar_csv(demandas=None) -> tuple[bytes, int]:
+def gerar_csv(demandas=None, mapeamento=None) -> tuple[bytes, int]:
     """Uma linha por solicitação (rubrica) — é a granularidade do pagamento."""
-    mapeamento = obter_mapeamento()["exportacao"]
-    columns = [(item["campo"], item["coluna"]) for item in mapeamento]
+    colunas = (mapeamento or obter_mapeamento())["exportacao"]
+    columns = [(item["campo"], item["coluna"]) for item in colunas]
+    formatos = {item["campo"]: item["formato"] for item in colunas}
     rows = [
-        _linha(demand, solicitacao)
+        {campo: formatar_valor(valor, formatos.get(campo)) for campo, valor in _linha(demand, solicitacao).items()}
         for demand in (demandas_autorizadas() if demandas is None else demandas)
         for solicitacao in sorted(demand.solicitacoes.all(), key=lambda s: (s.rubrica_id, s.pk))
     ]
@@ -61,7 +62,8 @@ def gerar_csv(demandas=None) -> tuple[bytes, int]:
 
 @transaction.atomic
 def exportar(*, usuario) -> tuple[ArloImport, bytes]:
-    conteudo, total = gerar_csv()
+    mapeamento = obter_mapeamento()
+    conteudo, total = gerar_csv(mapeamento=mapeamento)
     key = f"arlo/exportacoes/{uuid4()}.csv"
     storage = get_storage()
     storage.save_from_bytes(key, conteudo, content_type=CONTENT_TYPE_CSV)
@@ -74,5 +76,6 @@ def exportar(*, usuario) -> tuple[ArloImport, bytes]:
         operado_por=usuario,
         total_registros=total,
         registros_ok=total,
+        mapeamento_snapshot=mapeamento,
     )
     return importacao, conteudo

@@ -7,7 +7,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.sgp.models import Activity, FormResponse, Production, Tecnico, UPF
-from apps.sgp.models.activity import filtro_atrasada
+from apps.sgp.models.activity import GOOGLE_CALENDAR_SYNC_STATUS_CHOICES, STATUS_CHOICES, filtro_atrasada
 
 
 class StrictBooleanWidget(forms.Select):
@@ -132,19 +132,11 @@ class ActivityFilter(django_filters.FilterSet):
         ],
         label="Tipo de Atividade",
     )
-    status = django_filters.ChoiceFilter(
-        choices=[
-            ("planejado", "Planejado"),
-            ("agendado", "Agendado"),
-            ("em_andamento", "Em andamento"),
-            ("concluido", "Concluído"),
-            ("concluido_sem_evidencia", "Concluído sem evidência"),
-            ("adiada", "Adiada"),
-            ("nao_realizada", "Não realizada"),
-            ("cancelada", "Cancelada"),
-        ],
-        label="Status",
+    status = django_filters.MultipleChoiceFilter(choices=STATUS_CHOICES, label="Status")
+    google_calendar_sync_status = django_filters.ChoiceFilter(
+        choices=GOOGLE_CALENDAR_SYNC_STATUS_CHOICES, label="Sincronização com o Google Calendar"
     )
+    q = django_filters.CharFilter(method="filter_q", label="Busca por título")
     data_inicio_after = django_filters.DateFilter(
         field_name="data_inicio", lookup_expr="gte", label="Data Início (após)"
     )
@@ -159,9 +151,12 @@ class ActivityFilter(django_filters.FilterSet):
         model = Activity
         fields = [
             "projeto", "meta", "submeta", "acao", "indicador", "territorio_id", "tecnico_id", "osc", "parceiro",
-            "tipo_atividade", "status",
+            "tipo_atividade", "status", "google_calendar_sync_status", "q",
             "data_inicio_after", "data_inicio_before", "atrasada",
         ]
+
+    def filter_q(self, queryset, name, value):
+        return queryset.filter(titulo__icontains=value)
 
     def filter_atrasada(self, queryset, name, value):
         atrasadas = filtro_atrasada(timezone.now())

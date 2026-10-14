@@ -4,6 +4,7 @@ import { KeyboardEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { PendentesSgdBadge } from "./PendentesSgdBadge";
 import {
   Calendar,
   ChevronLeft,
@@ -77,12 +78,13 @@ const CONFLITOS_ITEM: ModuleItem = {
   Icon: GitCompareArrows,
 };
 
-// Badges mock: substituir por /api/v1/notifications/me/unread-count/ em sprint futura
+// Badge do SGD: fila "Aguardando minha ação" (#296), calculada no Sidebar.
+// O do SGE continua mock: substituir por /api/v1/notifications/me/unread-count/.
 const MODULES: ModuleItem[] = [
   { href: "/core", label: "Core", Icon: Database },
   { href: "/sgp", label: "SGP", Icon: Users },
   { href: "/sgf", label: "SGF", Icon: Wallet },
-  { href: "/sgd", label: "SGD", Icon: FileText, badge: 1 },
+  { href: "/sgd", label: "SGD", Icon: FileText },
   { href: "/sgs", label: "SGS", Icon: Heart },
   { href: "/sge", label: "SGE", Icon: Calendar, badge: 2 },
   { href: "/sca", label: "SCA", Icon: Smartphone },
@@ -124,7 +126,12 @@ function SidebarItem({ item, active, collapsed }: SidebarItemProps) {
         strokeWidth={active ? 2 : 1.75}
       />
       {!collapsed && <span className="flex-1 truncate">{label}</span>}
-      {badge && badge > 0 && <span className={badgeClass}>{badge}</span>}
+      {href === "/sgd" ? (
+        // Contagem real da fila "Aguardando minha ação" (#296).
+        <PendentesSgdBadge className={badgeClass} />
+      ) : (
+        badge !== undefined && badge > 0 && <span className={badgeClass}>{badge}</span>
+      )}
     </Link>
   );
 }
