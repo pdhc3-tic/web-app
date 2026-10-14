@@ -44,31 +44,6 @@ def _decimais(saldo):
     return {campo: Decimal(valor) for campo, valor in saldo.items()}
 
 
-def test_cada_transicao_gera_exatamente_uma_entrada_com_usuario(
-    demanda, demand_request_rn, solicitante_rn, usuario_articulador_rn, usuario_ugp, usuario_fgd,
-):
-    passos = [
-        (lambda: demand_service.submeter_demanda(demanda, usuario=solicitante_rn), solicitante_rn, "rascunho", "submetida"),
-        (lambda: approval_service.pre_autorizar(demanda, responsavel=usuario_articulador_rn), usuario_articulador_rn, "submetida", "pre_autorizada"),
-        (lambda: approval_service.autorizar(demanda, responsavel=usuario_ugp), usuario_ugp, "pre_autorizada", "autorizada"),
-        (lambda: approval_service.atender(demanda, responsavel=usuario_fgd), usuario_fgd, "autorizada", "em_atendimento"),
-        (
-            lambda: approval_service.concluir(
-                demanda, responsavel=usuario_fgd, valores_pagos={demand_request_rn.pk: Decimal("900")},
-            ),
-            usuario_fgd, "em_atendimento", "concluida",
-        ),
-    ]
-    for indice, (acao, usuario, de, para) in enumerate(passos, start=1):
-        acao()
-        entradas = [e for e in _status(demanda) if e.acao == "demanda.status_alterado"]
-        assert len(entradas) == indice
-        assert entradas[-1].user == usuario
-        assert entradas[-1].valores_anteriores == {"status": de}
-        assert entradas[-1].valores_novos == {"status": para}
-        assert entradas[-1].timestamp is not None
-
-
 def _post_pela_api(usuario, demanda, acao, corpo=None):
     resposta = _cliente(usuario).post(
         f"{URL}{demanda.pk}/{acao}/", corpo or {}, format="json",
@@ -76,6 +51,31 @@ def _post_pela_api(usuario, demanda, acao, corpo=None):
     )
     assert resposta.status_code == 200, resposta.data
     demanda.refresh_from_db()
+
+
+def test_fluxo_completo_gera_uma_entrada_por_transicao_com_usuario_e_ip(
+    demanda, demand_request_rn, solicitante_rn, usuario_articulador_rn, usuario_ugp, usuario_fgd,
+):
+    passos = [
+        (solicitante_rn, "submeter", None, "rascunho", "submetida"),
+        (usuario_articulador_rn, "pre-autorizar", None, "submetida", "pre_autorizada"),
+        (usuario_ugp, "autorizar", None, "pre_autorizada", "autorizada"),
+        (usuario_fgd, "atender", None, "autorizada", "em_atendimento"),
+        (
+            usuario_fgd, "concluir", {"valores_pagos": {str(demand_request_rn.pk): "900"}},
+            "em_atendimento", "concluida",
+        ),
+    ]
+    for indice, (usuario, acao, corpo, de, para) in enumerate(passos, start=1):
+        _post_pela_api(usuario, demanda, acao, corpo)
+
+        entradas = [e for e in _status(demanda) if e.acao == "demanda.status_alterado"]
+        assert len(entradas) == indice, acao
+        assert entradas[-1].user == usuario
+        assert entradas[-1].ip == IP_CLIENTE
+        assert entradas[-1].timestamp is not None
+        assert entradas[-1].valores_anteriores == {"status": de}
+        assert entradas[-1].valores_novos == {"status": para}
 
 
 def test_devolucao_resubmissao_e_recusa_geram_uma_entrada_com_usuario_e_ip(
