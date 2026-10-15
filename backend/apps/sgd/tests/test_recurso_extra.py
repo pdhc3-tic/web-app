@@ -1,5 +1,6 @@
 """Solicitação de recurso extra (SGP §6.6): pedido, parecer, decisão da UGP e remanejamento."""
 import threading
+import time
 from decimal import Decimal
 
 import pytest
@@ -9,11 +10,14 @@ from rest_framework.test import APIClient
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.models.notifications import Notification
-from apps.sgd.models import DemandIndividualLimit
+from apps.core.models.user_profile import UserProfile
+from apps.sgd.models import DemandIndividualLimit, DemandRequest
+from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import recurso_extra as recurso_extra_service
-from apps.sgd.tests.factories import BudgetIncreaseRequestFactory
+from apps.sgd.tests.factories import BudgetIncreaseRequestFactory, DemandFactory, DemandRequestFactory
 from apps.sgp.models import BudgetAllocation, BudgetIncreaseRequest, BudgetTransfer
+from apps.sgp.services import budget as budget_service
 from apps.sgp.tests.factories import ActivityFactory, BudgetAllocationFactory, WorkPlanAcaoFactory
 
 pytestmark = pytest.mark.django_db
@@ -403,12 +407,89 @@ def test_decisao_invalida_retorna_400(pedido_com_parecer, usuario_ugp, rubrica_d
     assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")
 
 
-def test_aprovacao_cria_o_limite_quando_o_usuario_nao_tem(pedido_com_parecer, usuario_ugp, solicitante_rn, rubrica_diarias):
+def test_aprovacao_cria_o_limite_quando_o_usuario_nao_tem(
+    demanda, solicitante_rn, usuario_articulador_rn, usuario_ugp, rubrica_diarias,
+):
     DemandIndividualLimit.objects.filter(solicitante=solicitante_rn).delete()
+    pedido = _pedido_com_parecer(demanda, solicitante_rn, usuario_articulador_rn, "1000")
 
-    _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", APROVAR)
+    assert _acao(usuario_ugp, pedido.pk, "decidir", APROVAR).status_code == 200
 
-    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("700")
+    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("1000")
+
+
+# ── Decisão: déficit revalidado ──────────────────────────────────────────────
+
+def _pedido_com_parecer(demanda, solicitante, articulador, valor):
+    resposta = _solicitar(solicitante, demanda, valor_solicitado=valor)
+    assert resposta.status_code == 201, resposta.data
+    assert _acao(articulador, resposta.data["id"], "parecer", {"parecer": "Procede."}).status_code == 200
+    return BudgetIncreaseRequest.objects.get(pk=resposta.data["id"])
+
+
+def _solicitacao_em_outra_demanda(demanda, rubrica, valor):
+    """Do mesmo solicitante e da mesma Atividade: consome o mesmo limite individual e o mesmo pool."""
+    outra = DemandFactory(activity=demanda.activity, solicitante=demanda.solicitante, status="rascunho")
+    return DemandRequestFactory(demanda=outra, tipo="diaria", rubrica=rubrica, valor_estimado=valor)
+
+
+def test_aprovacao_com_deficit_maior_que_o_solicitado_retorna_400(
+    pedido_com_parecer, demand_request_rn, usuario_ugp, solicitante_rn, rubrica_diarias,
+):
+    DemandRequest.objects.filter(pk=demand_request_rn.pk).update(valor_estimado=Decimal("1500"))
+
+    resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", APROVAR)
+
+    assert resposta.status_code == 400
+    assert "valor_aprovado" in resposta.data
+    pedido_com_parecer.refresh_from_db()
+    assert pedido_com_parecer.status == "com_parecer"
+    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")
+
+
+def test_aprovacao_revalida_o_limite_consumido_por_outra_demanda(
+    demanda, pedido_com_parecer, usuario_ugp, solicitante_rn, rubrica_diarias,
+):
+    concorrente = _solicitacao_em_outra_demanda(demanda, rubrica_diarias, Decimal("100"))
+    balance_service.reservar_duas_travas(demand_request=concorrente, usuario=solicitante_rn)
+
+    resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", APROVAR)
+
+    assert resposta.status_code == 400
+    assert "valor_aprovado" in resposta.data
+    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")
+
+
+def test_aprovacao_com_deficit_menor_que_o_solicitado_concede_o_solicitado(
+    pedido_com_parecer, demand_request_rn, usuario_ugp, solicitante_rn, rubrica_diarias,
+):
+    DemandRequest.objects.filter(pk=demand_request_rn.pk).update(valor_estimado=Decimal("800"))
+
+    resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", APROVAR)
+
+    assert resposta.status_code == 200
+    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("1000")
+
+
+def test_saldo_individual_negativo_entra_no_deficit(
+    demanda, solicitante_rn, usuario_articulador_rn, usuario_ugp, rubrica_diarias, limite_individual_rn,
+):
+    # Saldo de −R$ 200, como fica depois de um excedente autorizado.
+    DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_comprometido=Decimal("500"))
+
+    assert _solicitar(solicitante_rn, demanda, valor_solicitado="1000").status_code == 400
+    sem_valor = _cliente(solicitante_rn).post(
+        f"{DEMANDAS}{demanda.pk}/solicitar-recurso-extra/",
+        {"rubrica": "diarias", "justificativa": JUSTIFICATIVA}, format="json",
+    )
+    assert Decimal(sem_valor.data["valor_solicitado"]) == Decimal("1200")
+    _acao(usuario_articulador_rn, sem_valor.data["id"], "parecer", {"parecer": "Procede."})
+
+    assert _acao(usuario_ugp, sem_valor.data["id"], "decidir", APROVAR).status_code == 200
+
+    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("1500")
+    demand_service.submeter_demanda(demanda, usuario=solicitante_rn)
+    assert demanda.status == "submetida"
 
 
 # ── Pool territorial e remanejamento ─────────────────────────────────────────
@@ -468,6 +549,46 @@ def test_remanejamento_de_pool_estadual_cobre_o_que_falta(
     assert demanda.status == "submetida"
 
 
+def test_pool_com_saldo_negativo_remaneja_o_deficit_inteiro(
+    demanda, pedido_com_parecer, usuario_ugp, allocation_territorial_rn, alocacao_estadual, solicitante_rn,
+):
+    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(
+        valor_alocado=Decimal("200"), valor_comprometido=Decimal("400"),
+    )
+
+    resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {
+        **APROVAR, "origem_allocation": alocacao_estadual.pk,
+    })
+
+    assert resposta.status_code == 200, resposta.data
+    transferencia = BudgetTransfer.objects.get()
+    assert transferencia.valor == Decimal("1200")
+    assert (transferencia.saldo_destino_antes, transferencia.saldo_destino_depois) == (Decimal("-200"), Decimal("1000"))
+    demand_service.submeter_demanda(demanda, usuario=solicitante_rn)
+    assert demanda.status == "submetida"
+
+
+def test_pedido_sem_territorio_resolvivel_nao_e_aprovado(pedido_com_parecer, usuario_ugp, solicitante_rn, rubrica_diarias):
+    UserProfile.objects.filter(user=solicitante_rn).update(territorio=None)
+
+    resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", APROVAR)
+
+    assert resposta.status_code == 400
+    pedido_com_parecer.refresh_from_db()
+    assert pedido_com_parecer.status == "com_parecer"
+    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")
+
+
+def test_pedido_sem_meta_nao_e_aprovado(usuario_ugp, solicitante_rn, rubrica_diarias):
+    pedido = BudgetIncreaseRequestFactory(user=solicitante_rn, rubrica=rubrica_diarias, status="com_parecer")
+
+    resposta = _acao(usuario_ugp, pedido.pk, "decidir", APROVAR)
+
+    assert resposta.status_code == 400
+    pedido.refresh_from_db()
+    assert pedido.status == "com_parecer"
+
+
 def test_saldos_da_auditoria_sao_lidos_depois_do_lock(
     pedido_com_parecer, usuario_ugp, allocation_territorial_rn, alocacao_estadual, monkeypatch,
 ):
@@ -508,12 +629,142 @@ def test_decisao_trava_o_limite_individual_antes_das_alocacoes(
         })
 
     assert resposta.status_code == 200
+    nomes = {
+        "sgd_demandindividuallimit": "limite", "sgd_demandrequest": "solicitacao",
+        "sgp_budgetallocation": "alocacao", "sgd_demand": "demanda",
+    }
     travas = [q["sql"] for q in consultas if "FOR UPDATE" in q["sql"]]
-    tabelas = [
-        "limite" if "sgd_demandindividuallimit" in sql else "alocacao"
-        for sql in travas if "sgd_demandindividuallimit" in sql or "sgp_budgetallocation" in sql
-    ]
-    assert tabelas.index("limite") < tabelas.index("alocacao")
+    tabelas = [nome for sql in travas for tabela, nome in nomes.items() if f'"{tabela}"' in sql]
+    assert tabelas.index("limite") < tabelas.index("solicitacao") < tabelas.index("alocacao")
+    # A submissão atualiza a Demand depois de travar o limite: travá-la aqui inverteria a ordem.
+    assert "demanda" not in tabelas
+
+
+# ── Concorrência entre conexões ──────────────────────────────────────────────
+
+def _esperar_alguem_bloqueado(timeout=10):
+    """Espera outra conexão ficar parada num lock de linha. Roda na thread do teste, em
+    autocommit: cada consulta abre um snapshot novo de `pg_stat_activity`."""
+    prazo = time.monotonic() + timeout
+    while time.monotonic() < prazo:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT count(*) FROM pg_stat_activity "
+                "WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()"
+            )
+            if cursor.fetchone()[0]:
+                return
+        time.sleep(0.02)
+    raise AssertionError("Nenhuma conexão ficou esperando lock.")
+
+
+def _decidir_contra(pedido, *, travar, mexer, usuario, **corpo):
+    """A thread B executa `travar` e segura a transação; a decisão (thread A) começa e fica
+    bloqueada no que B travou; só então B executa `mexer` e commita. Devolve o resultado
+    da decisão e as exceções de cada thread."""
+    b_travou, b_pode_seguir = threading.Event(), threading.Event()
+    resultado, erros = {}, {}
+
+    def concorrente():
+        try:
+            with transaction.atomic():
+                travar()
+                b_travou.set()
+                b_pode_seguir.wait(timeout=10)
+                mexer()
+        except Exception as exc:
+            erros["concorrente"] = exc
+        finally:
+            b_travou.set()
+            connection.close()
+
+    def decisao():
+        try:
+            resultado["decisao"] = recurso_extra_service.decidir(pedido, usuario=usuario, **corpo)
+        except Exception as exc:
+            erros["decisao"] = exc
+        finally:
+            connection.close()
+
+    thread_b = threading.Thread(target=concorrente)
+    thread_b.start()
+    assert b_travou.wait(timeout=10)
+    thread_a = threading.Thread(target=decisao)
+    thread_a.start()
+    try:
+        _esperar_alguem_bloqueado()
+    finally:
+        b_pode_seguir.set()
+        thread_b.join(timeout=15)
+        thread_a.join(timeout=15)
+    assert not thread_a.is_alive() and not thread_b.is_alive()
+    return resultado.get("decisao"), erros
+
+
+@pytest.mark.django_db(transaction=True)
+def test_reserva_concorrente_do_solicitante_e_vista_pela_decisao_sem_deadlock(
+    demanda, solicitante_rn, usuario_articulador_rn, usuario_ugp, rubrica_diarias,
+    allocation_territorial_rn, alocacao_estadual,
+):
+    """A reserva trava limite → alocação; a decisão, também. Ela espera o limite sem
+    segurar alocação (senão a reserva entraria em deadlock) e lê limite e pool já com
+    a reserva concorrente."""
+    pedido = _pedido_com_parecer(demanda, solicitante_rn, usuario_articulador_rn, "900")
+    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
+    concorrente = _solicitacao_em_outra_demanda(demanda, rubrica_diarias, Decimal("100"))
+
+    resultado, erros = _decidir_contra(
+        pedido,
+        travar=lambda: DemandIndividualLimit.objects.select_for_update().get(
+            solicitante=solicitante_rn, rubrica=rubrica_diarias,
+        ),
+        mexer=lambda: balance_service.reservar_duas_travas(demand_request=concorrente, usuario=solicitante_rn),
+        usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.", origem_allocation=alocacao_estadual,
+    )
+
+    assert erros == {}
+    transferencia = resultado["transferencia"]
+    # Pool: 200 − 100 reservados pela concorrente = 100; a demanda precisa de 1.000.
+    assert transferencia.valor == Decimal("900")
+    assert (transferencia.saldo_destino_antes, transferencia.saldo_destino_depois) == (Decimal("100"), Decimal("1000"))
+    limite = DemandIndividualLimit.objects.get(solicitante=solicitante_rn, rubrica=rubrica_diarias)
+    assert (limite.valor_limite, limite.valor_comprometido) == (Decimal("1200"), Decimal("100"))
+    demand_service.submeter_demanda(demanda, usuario=solicitante_rn)
+    assert demanda.status == "submetida"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_pool_suficiente_na_consulta_e_consumido_antes_do_lock_exige_origem(
+    demanda, solicitante_rn, usuario_articulador_rn, usuario_ugp, rubrica_diarias, allocation_territorial_rn,
+):
+    """Outra reserva (de outro solicitante, sem disputar o limite) segura a alocação
+    territorial: a decisão consulta o pool ainda suficiente, espera o lock e precisa
+    reler o saldo, que a reserva deixou abaixo do necessário."""
+    pedido = _pedido_com_parecer(demanda, solicitante_rn, usuario_articulador_rn, "700")
+    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("1050"))
+
+    def reservar_no_pool():
+        budget_service.reservar(
+            allocation=allocation_territorial_rn, valor=Decimal("100"), demanda_id="concorrente",
+            usuario=usuario_ugp, justificativa="Reserva concorrente.",
+        )
+
+    resultado, erros = _decidir_contra(
+        pedido,
+        travar=lambda: BudgetAllocation.objects.select_for_update().get(pk=allocation_territorial_rn.pk),
+        mexer=reservar_no_pool,
+        usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.",
+    )
+
+    assert resultado is None
+    assert set(erros) == {"decisao"}
+    assert isinstance(erros["decisao"], ValidationError)
+    assert "origem_allocation" in erros["decisao"].detail
+    pedido.refresh_from_db()
+    assert pedido.status == "com_parecer"
+    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")
+    allocation_territorial_rn.refresh_from_db()
+    assert allocation_territorial_rn.valor_comprometido == Decimal("100")
 
 
 def test_remanejamento_so_pode_vir_de_saldo_estadual_ou_nacional(

@@ -7,8 +7,9 @@ alocação estadual ou nacional e o remanejamento acontece na própria decisão.
 demanda bloqueada não é submetida sozinha: o limite maior só a deixa passar nas
 duas travas quando o solicitante submeter de novo.
 
-Ordem de lock: pedido → `DemandIndividualLimit` → `BudgetAllocation` (em ordem de pk),
-a mesma de `balance.py`.
+Ordem de lock: pedido → `DemandIndividualLimit` → `DemandRequest` da rubrica →
+`BudgetAllocation` (em ordem de pk). Limite antes das alocações, como em `balance.py`;
+as solicitações entre os dois, como na edição de uma solicitação com reserva.
 """
 
 from __future__ import annotations
@@ -96,20 +97,18 @@ def _demanda_do_pedido(pedido) -> Demand | None:
     return None
 
 
-def _necessario(demanda: Demand, rubrica) -> Decimal:
+def _necessario(solicitacoes) -> Decimal:
     """O que a próxima submissão vai reservar na rubrica: as solicitações que ainda
     não têm reserva ativa."""
-    return sum(
-        (s.valor_estimado for s in demanda.solicitacoes.filter(rubrica=rubrica)
-         if not balance_service.reserva_ativa(s)),
-        ZERO,
-    )
+    return sum((s.valor_estimado for s in solicitacoes if not balance_service.reserva_ativa(s)), ZERO)
 
 
 def _deficit_individual(demanda: Demand, rubrica) -> Decimal:
     limite = DemandIndividualLimit.objects.filter(solicitante=demanda.solicitante, rubrica=rubrica).first()
-    saldo = max(limite.saldo_disponivel, ZERO) if limite else ZERO
-    return _necessario(demanda, rubrica) - saldo
+    # Sem truncar em zero: o saldo fica negativo depois de um excedente autorizado
+    # (`ignorar_limite_individual`), e o aumento precisa cobrir isso também.
+    saldo = limite.saldo_disponivel if limite else ZERO
+    return _necessario(demanda.solicitacoes.filter(rubrica=rubrica)) - saldo
 
 
 def _exigir_valor_cobre_o_deficit(demanda: Demand, rubrica, valor: Decimal) -> None:
@@ -243,7 +242,7 @@ def _meta_do_pedido(pedido):
     return None
 
 
-def _elevar_limite(pedido, valor: Decimal, usuario) -> None:
+def _travar_limite(pedido, usuario) -> DemandIndividualLimit:
     limite = DemandIndividualLimit.objects.select_for_update().filter(
         solicitante=pedido.user, rubrica=pedido.rubrica,
     ).first()
@@ -251,6 +250,10 @@ def _elevar_limite(pedido, valor: Decimal, usuario) -> None:
         limite = DemandIndividualLimit.objects.create(
             solicitante=pedido.user, rubrica=pedido.rubrica, valor_limite=ZERO, criado_por=usuario,
         )
+    return limite
+
+
+def _elevar_limite(pedido, limite: DemandIndividualLimit, valor: Decimal, usuario) -> None:
     antes = limite.valor_limite
     limite.valor_limite = antes + valor
     limite.save(update_fields=["valor_limite"])
@@ -264,50 +267,50 @@ def _elevar_limite(pedido, valor: Decimal, usuario) -> None:
     )
 
 
-def _conferir_pool(pedido, valor_aprovado: Decimal, origem: BudgetAllocation | None, usuario):
-    """(alerta, transferência). `alerta` é None quando não há como conferir o pool
-    (pedido sem Meta, ou usuário sem território único). Pool sem cobrir o que a
-    demanda precisa reservar só passa com `origem`, que remaneja o déficit."""
+def _conferir_pool(pedido, necessario: Decimal, origem: BudgetAllocation | None, usuario) -> BudgetTransfer | None:
+    """Garante, com o saldo lido sob lock, que o pool territorial cobre o que a demanda
+    precisa reservar. Sem cobrir, só passa com `origem`, que remaneja a diferença."""
     meta = _meta_do_pedido(pedido)
     if meta is None:
-        return None, None
+        raise DRFValidationError({"detail": "Pedido sem Meta: não há como conferir o pool territorial."})
     try:
         nivel, sigla, territorio = budget_service.resolver_nivel_do_usuario(pedido.user)
-    except PermissionDenied:
-        return None, None
-    demanda = _demanda_do_pedido(pedido)
-    necessario = _necessario(demanda, pedido.rubrica) if demanda is not None else valor_aprovado
+    except PermissionDenied as exc:
+        raise DRFValidationError({
+            "detail": f"Não há como conferir o pool territorial do solicitante. {exc.detail}"
+        }) from exc
     check = budget_service.saldo_para_consulta(
         meta_id=meta.pk, rubrica_slug=pedido.rubrica.slug, nivel=nivel,
         estado_sigla=sigla, territorio=territorio, valor=necessario,
     )
-    if check.disponivel:
-        return False, None
     if check.allocation is None:
-        raise DRFValidationError({"detail": "Nenhuma alocação territorial encontrada para receber o remanejamento."})
-    if origem is None:
-        raise DRFValidationError({
-            "origem_allocation": (
-                f"O pool territorial não cobre os R$ {necessario} que a demanda precisa reservar "
-                f"(R$ {max(check.saldo, ZERO)} disponível). Informe a alocação estadual ou nacional "
-                "que cobre a diferença."
-            )
-        })
-    if origem.nivel not in (budget_service.Nivel.ESTADUAL, budget_service.Nivel.NACIONAL):
+        raise DRFValidationError({"detail": "Nenhuma alocação territorial encontrada para o solicitante nesta rubrica."})
+    if origem is not None and origem.nivel not in (budget_service.Nivel.ESTADUAL, budget_service.Nivel.NACIONAL):
         raise DRFValidationError({
             "origem_allocation": "O remanejamento só pode vir de saldo estadual ou nacional."
         })
 
-    # Em ordem crescente de pk, como `remanejar`; os saldos que vão pra auditoria e o déficit
-    # são lidos só depois do lock.
+    # A consulta acima só localiza a alocação: uma reserva concorrente pode ter mudado o
+    # saldo, então ele é relido depois do lock, mesmo quando parecia bastar. Em ordem
+    # crescente de pk, como `remanejar`.
+    pks = {check.allocation.pk} | ({origem.pk} if origem is not None else set())
     travadas = {
         pk: BudgetAllocation.objects.select_for_update(of=("self",)).select_related("estado", "territorio").get(pk=pk)
-        for pk in sorted({origem.pk, check.allocation.pk})
+        for pk in sorted(pks)
     }
-    origem, destino = travadas[origem.pk], travadas[check.allocation.pk]
-    faltante = necessario - max(_saldo(destino), ZERO)
+    destino = travadas[check.allocation.pk]
+    faltante = necessario - _saldo(destino)
     if faltante <= ZERO:
-        return False, None
+        return None
+    if origem is None:
+        raise DRFValidationError({
+            "origem_allocation": (
+                f"O pool territorial não cobre os R$ {necessario} que a demanda precisa reservar "
+                f"(R$ {_saldo(destino)} disponível). Informe a alocação estadual ou nacional "
+                "que cobre a diferença."
+            )
+        })
+    origem = travadas[origem.pk]
     origem_antes, destino_antes = _saldo(origem), _saldo(destino)
     motivo = f"Recurso extra #{pedido.pk}: {pedido.justificativa}"
     budget_service.remanejar(origem=origem, destino=destino, valor=faltante, usuario=usuario, justificativa=motivo)
@@ -345,8 +348,7 @@ def _conferir_pool(pedido, valor_aprovado: Decimal, origem: BudgetAllocation | N
         )
     }
     notifications_service.notificar_remanejamento_efetivado(transferencia, list(destinatarios.values()))
-    # O alerta some: o remanejamento já cobriu o que faltava no pool.
-    return False, transferencia
+    return transferencia
 
 
 @transaction.atomic
@@ -378,11 +380,31 @@ def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = N
         valor_aprovado = pedido.valor_solicitado
         justificativa = _exigir_texto(justificativa, "justificativa", "Obrigatória para aprovar o pedido.")
 
-    alerta, transferencia = None, None
+    transferencia = None
     if valor_aprovado is not None:
-        # O limite é travado antes das alocações (ordem de `balance.py`).
-        _elevar_limite(pedido, valor_aprovado, usuario)
-        alerta, transferencia = _conferir_pool(pedido, valor_aprovado, origem_allocation, usuario)
+        limite = _travar_limite(pedido, usuario)
+        demanda = _demanda_do_pedido(pedido)
+        if demanda is None:
+            necessario = valor_aprovado
+        else:
+            # A demanda segue editável enquanto o pedido tramita, e outras demandas do
+            # solicitante consomem o mesmo limite: o déficit é recalculado agora, com o
+            # limite e as solicitações travados, e não o da criação do pedido. `order_by("pk")`
+            # tira o join com Demand da ordenação padrão, que o FOR UPDATE travaria junto
+            # (a submissão só atualiza a Demand depois do limite).
+            solicitacoes = demanda.solicitacoes.select_for_update().filter(rubrica=pedido.rubrica).order_by("pk")
+            necessario = _necessario(solicitacoes)
+            deficit = necessario - limite.saldo_disponivel
+            if decisao == "aprovar" and valor_aprovado < deficit:
+                raise DRFValidationError({
+                    "valor_aprovado": (
+                        f"A demanda precisa agora de R$ {deficit} a mais no limite individual, acima dos "
+                        f"R$ {valor_aprovado} solicitados: a demanda ou o limite mudou desde o pedido. "
+                        "Recuse para que o solicitante abra um novo pedido com o valor atual."
+                    )
+                })
+        _elevar_limite(pedido, limite, valor_aprovado, usuario)
+        transferencia = _conferir_pool(pedido, necessario, origem_allocation, usuario)
 
     _mudar_status(
         pedido, destino_status, usuario, f"decidido_{decisao}",
@@ -392,6 +414,7 @@ def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = N
     notifications_service.notificar_recurso_extra_decidido(pedido)
     return {
         "pedido": pedido,
-        "alerta_pool_insuficiente": alerta,
+        # A aprovação só se conclui com o pool coberto; o campo fica por compatibilidade.
+        "alerta_pool_insuficiente": False,
         "transferencia": transferencia,
     }
