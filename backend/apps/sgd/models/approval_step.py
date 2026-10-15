@@ -7,6 +7,7 @@ ETAPA_CHOICES = [
     ("pre_autorizacao", "Pré-autorização"),
     ("autorizacao", "Autorização"),
     ("atendimento", "Atendimento"),
+    ("cancelamento", "Cancelamento"),
 ]
 
 ACAO_CHOICES = [
@@ -14,6 +15,7 @@ ACAO_CHOICES = [
     ("recusado", "Recusado"),
     ("devolvido", "Devolvido"),
     ("atendido", "Atendido"),
+    ("cancelado", "Cancelado"),
 ]
 
 
