@@ -1,5 +1,6 @@
 """Listagem de demandas: filtro por atividade, status repetido, fila e paginação."""
 import pytest
+from drf_spectacular.generators import SchemaGenerator
 
 from apps.core.tests.factories import RoleFactory, UserFactory
 from apps.sgd.tests.factories import DemandFactory
@@ -87,3 +88,49 @@ def test_fila_de_usuario_com_dois_perfis_e_a_uniao(api_client, demandas):
 
     assert {d["status"] for d in lista.data["results"]} == {"pre_autorizada", "autorizada", "em_atendimento"}
     assert lista.data["count"] == api_client.get(CONTAGEM).data["total"]
+
+
+@pytest.fixture
+def submetida_ce(municipio_ce):
+    return DemandFactory(activity=ActivityFactory(municipio=municipio_ce), status="submetida")
+
+
+def test_fila_do_articulador_nao_inclui_submetida_de_outro_estado(auth_client_articulador_ce, demandas, submetida_ce):
+    lista = auth_client_articulador_ce.get(LISTA, {"aguardando_minha_acao": "true"})
+
+    assert _ids(lista) == [submetida_ce.pk]
+    assert demandas["sub"].pk not in _ids(lista)
+    assert lista.data["count"] == auth_client_articulador_ce.get(CONTAGEM).data["total"]
+
+
+def test_fila_de_articulador_com_outro_perfil_respeita_o_estado(api_client, demandas, submetida_ce, territory_rn):
+    user = UserFactory(
+        email="articulador.fgd@test.com",
+        profiles=[
+            (RoleFactory(slug="articulador-estadual", nome="Articulador Estadual"), territory_rn),
+            (RoleFactory(slug="fgd", nome="FGD"), None),
+        ],
+    )
+    api_client.force_authenticate(user)
+
+    lista = api_client.get(LISTA, {"aguardando_minha_acao": "true"})
+
+    assert set(_ids(lista)) == {demandas["sub"].pk, demandas["aut"].pk, demandas["atend"].pk, demandas["outra"].pk}
+    assert submetida_ce.pk not in _ids(lista)
+    assert lista.data["count"] == api_client.get(CONTAGEM).data["total"]
+
+
+def test_schema_da_listagem_e_paginado_e_documenta_os_filtros():
+    schema = SchemaGenerator().get_schema(request=None, public=True)
+    operacao = schema["paths"][LISTA]["get"]
+
+    resposta = operacao["responses"]["200"]["content"]["application/json"]["schema"]
+    envelope = schema["components"]["schemas"][resposta["$ref"].rsplit("/", 1)[-1]]
+    assert {"count", "next", "previous", "results"} <= set(envelope["properties"])
+    parametros = {p["name"]: p for p in operacao["parameters"]}
+    assert {
+        "limit", "offset", "activity", "atividade", "status", "aguardando_minha_acao", "tipo", "rubrica",
+        "solicitante", "acao", "submeta", "meta", "territorio", "periodo_inicio", "periodo_fim",
+        "responsavel_etapa_atual",
+    } <= set(parametros)
+    assert parametros["status"]["schema"]["type"] == "array"

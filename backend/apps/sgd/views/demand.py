@@ -2,6 +2,7 @@ from django.db import transaction
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django_filters import rest_framework as django_filters
 from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -11,6 +12,7 @@ from rest_framework.response import Response
 
 from apps.core.models.municipality import Municipality
 from apps.core.permissions import IsADTInTerritory, IsAuthenticatedActiveAccess, IsSuperAdmin
+from apps.sgd.filters import DemandFilter
 from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.models.demand import Demand
 from apps.sgd.serializers.approval import ApprovalStepSerializer, CancelarSerializer
@@ -37,6 +39,13 @@ class DemandPagination(LimitOffsetPagination):
 
 class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
     permission_classes = [IsAuthenticatedActiveAccess]
+    # Num ViewSet não genérico, `list` filtra e pagina por conta própria; estes
+    # atributos existem para o drf-spectacular documentar o envelope paginado,
+    # `limit`/`offset` e todos os filtros do `DemandFilter`.
+    queryset = Demand.objects.none()
+    pagination_class = DemandPagination
+    filter_backends = [django_filters.DjangoFilterBackend]
+    filterset_class = DemandFilter
 
     def get_permissions(self):
         # Criar demanda é do ADT/ACR (e Super Admin): Articulador, UGP e FGD
@@ -82,7 +91,7 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
         qs = consulta_service.filtrar_demandas(
             self.get_queryset(), request.query_params, request.user,
         ).order_by("-criado_em", "-pk")
-        paginator = DemandPagination()
+        paginator = self.pagination_class()
         pagina = paginator.paginate_queryset(qs, request, view=self)
         return paginator.get_paginated_response(DemandSerializer(pagina, many=True).data)
 

@@ -225,6 +225,15 @@ def cancelar_demanda(demand, *, usuario, motivo: str = "") -> Demand:
             motivo=motivo or "Cancelada pelo solicitante.",
         )
 
+    # Dois cancelamentos simultâneos passam pela checagem acima com o mesmo status;
+    # só o primeiro o encontra ao travar a linha. O lock vem depois das reservas,
+    # na ordem da submissão (limite → alocação → Demand).
+    status_atual = Demand.objects.select_for_update().values_list("status", flat=True).get(pk=demand.pk)
+    if status_atual != demand.status:
+        raise DRFValidationError({
+            "status": "A demanda mudou de status durante o cancelamento. Recarregue e tente de novo."
+        })
+
     marcar_cancelada(demand)
     if estava_autorizada:
         ApprovalStep.objects.create(
