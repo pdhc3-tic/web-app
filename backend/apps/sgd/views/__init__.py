@@ -3,6 +3,7 @@ from .arlo import ArloViewSet
 from .arlo_mapping import ArloFieldMappingViewSet
 from .demand import DemandViewSet
 from .individual_limit import DemandIndividualLimitViewSet
+from .remanejamento import RemanejamentoViewSet
 from .saldo import SaldoConsultaView
 
 __all__ = [
@@ -12,5 +13,6 @@ __all__ = [
     "DemandIndividualLimitViewSet",
     "DemandViewSet",
     "PainelRubricasView",
+    "RemanejamentoViewSet",
     "SaldoConsultaView",
 ]
