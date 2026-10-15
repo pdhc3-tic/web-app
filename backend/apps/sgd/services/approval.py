@@ -9,7 +9,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from apps.core.models.user import User
-from apps.core.services.permissions import user_has_role, user_states
+from apps.core.services.permissions import user_has_role, user_role_slugs, user_states
 from apps.sgd.models.demand import STATUS_CANCELAVEIS_PELO_SOLICITANTE, STATUS_TRANSITIONS
 from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.models.individual_limit import DemandIndividualLimit
@@ -88,6 +88,39 @@ def demand_visibility_scope(user) -> Q | None:
         )
 
     return Q(solicitante=user)
+
+
+STATUS_AGUARDANDO_POR_PERFIL = {
+    "articulador-estadual": ("submetida",),
+    "ugp": ("pre_autorizada",),
+    "fgd": ("autorizada", "em_atendimento"),
+}
+
+
+def status_aguardando_acao(user) -> list[str]:
+    """Status em que a demanda espera uma decisão de algum perfil do usuário."""
+    perfis = user_role_slugs(user, tuple(STATUS_AGUARDANDO_POR_PERFIL))
+    return sorted({s for perfil in perfis for s in STATUS_AGUARDANDO_POR_PERFIL[perfil]})
+
+
+def demandas_aguardando_acao(user, queryset):
+    """Recorta `queryset` pelas demandas que aguardam a ação do usuário. O
+    Articulador só decide as do seu estado; UGP e FGD decidem de qualquer
+    território."""
+    perfis = user_role_slugs(user, tuple(STATUS_AGUARDANDO_POR_PERFIL))
+    if not perfis:
+        return queryset.none()
+
+    filtro = Q()
+    if "articulador-estadual" in perfis:
+        filtro |= Q(status="submetida", activity__municipio__state__sigla__in=user_states(user))
+    status_globais = [
+        s for perfil in perfis if perfil != "articulador-estadual"
+        for s in STATUS_AGUARDANDO_POR_PERFIL[perfil]
+    ]
+    if status_globais:
+        filtro |= Q(status__in=status_globais)
+    return queryset.filter(filtro)
 
 
 def responsaveis_pela_etapa_atual(demand):

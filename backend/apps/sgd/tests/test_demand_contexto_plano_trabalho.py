@@ -47,9 +47,9 @@ def test_contexto_traz_submeta_e_indicador(auth_client_solicitante, demand_rascu
     assert contexto["indicador_unidade_medida"] == acao.indicador.unidade_medida
 
 
-# Número de queries do detalhe da demanda antes de a Submeta e o Indicador
-# entrarem no contexto.
-QUERIES_DO_DETALHE = 9
+# Número de queries do detalhe da demanda: as 9 de antes de a Submeta e o
+# Indicador entrarem no contexto, mais a das etapas de aprovação.
+QUERIES_DO_DETALHE = 10
 
 
 def test_detalhe_nao_aumenta_o_numero_de_queries(
@@ -77,7 +77,7 @@ def test_listagem_traz_a_cadeia_sem_consulta_a_mais(
     with CaptureQueriesContext(connection) as consultas:
         response = auth_client_solicitante.get(URL)
 
-    assert len(response.data) == 3
+    assert len(response.data["results"]) == 3
     assert _consultas_avulsas_da_cadeia(consultas) == []
 
 

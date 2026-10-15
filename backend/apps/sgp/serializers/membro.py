@@ -40,7 +40,7 @@ class MembroListSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeri
     class Meta:
         model = MembroFamilia
         fields = [
-            "id", "nome_completo", "data_nascimento", "idade",
+            "id", "upf", "nome_completo", "data_nascimento", "idade",
             "grau_parentesco", "grau_parentesco_display", "cpf",
             "genero", "genero_display",
             "cor_raca", "cor_raca_display", "saude",

@@ -24,4 +24,31 @@ export const qk = {
         ["upf", upfId, "historico", { page, pageSize }] as const,
     };
   },
+  /** Detalhe de uma atividade — contexto herdado pela nova demanda (#294). */
+  atividade: (id: string | number) => ["sgp", "atividade", String(id)] as const,
+  /** Ações do Plano de Trabalho para selects (#294). */
+  acoesPT: ["sgp", "acoes"] as const,
+  /** Municípios de um território (#294). */
+  municipiosDoTerritorio: (territorioId: string) =>
+    ["core", "municipios", { territorio: territorioId }] as const,
+  /** Territórios ativos para selects (#294). */
+  territorios: ["core", "territorios"] as const,
+  /** Painel de demandas do SGD (#296) — tudo sob "sgd/demandas" invalida junto. */
+  demandas: {
+    all: ["sgd", "demandas"] as const,
+    lista: (status: readonly string[]) =>
+      ["sgd", "demandas", "lista", { status: [...status] }] as const,
+    detalhe: (id: string | number) => ["sgd", "demandas", "detalhe", String(id)] as const,
+    contagemFila: ["sgd", "demandas", "fila", "contagem"] as const,
+    preview: (id: number, solicitacaoId: number, valor: string) =>
+      ["sgd", "demandas", "preview", { id, solicitacaoId, valor }] as const,
+  },
+  /** Demandas do SGD vinculadas a uma atividade (#294). */
+  demandasDaAtividade: (atividadeId: string | number) =>
+    ["sgd", "demandas", { atividade: String(atividadeId) }] as const,
+  /** Busca de atividades elegíveis no formulário de nova demanda (#294). */
+  atividadesElegiveis: (tecnicoId: string, busca: string) =>
+    ["sgp", "atividades", "elegiveis", { tecnicoId, busca }] as const,
+  /** Tarefa assíncrona de exportação da listagem de UPFs (#240). */
+  exportacaoUpfs: (id: string) => ["upfs", "exportacao", id] as const,
 } as const;

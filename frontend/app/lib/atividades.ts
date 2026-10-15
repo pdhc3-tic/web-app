@@ -118,6 +118,15 @@ export type AcaoNested = {
   id: number;
   numero: string;
   descricao: string;
+  /**
+   * Cadeia do Plano de Trabalho da Ação (Meta → Submeta → Ação → Indicador).
+   * Ainda NÃO vem no detalhe — chega com o PR #328 do backend, nestes nomes
+   * (docs/pendencias-backend-sprint-10.md, item 8). Opcional até lá; o
+   * contexto da nova demanda (#294) mostra "Não disponível".
+   */
+  meta?: { id: number; numero: number; titulo: string };
+  submeta?: { id: number; numero: string; titulo: string };
+  indicador?: { id: number; codigo: string; nome: string; unidade_medida: string };
 };
 
 /** Técnico aninhado no detalhe. */
@@ -208,6 +217,12 @@ export type AtividadeDetail = {
   equipe_adicional: TecnicoNested[];
   municipio: NestedRef;
   territorio_id: number | null;
+  /**
+   * Território com nome — ainda NÃO vem no detalhe (só `territorio_id`). O
+   * contexto da nova demanda (#294) precisa exibi-lo; pedido em
+   * docs/pendencias-backend-sprint-10.md, item 8. Opcional até lá.
+   */
+  territorio?: NestedRef | null;
   comunidade: NestedRef | null;
   ambito: string;
   ambito_display: string;

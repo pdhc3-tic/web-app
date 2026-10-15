@@ -69,6 +69,19 @@ class R2Storage:
     def delete_object(self, key):
         return self.client.delete_object(Bucket=self.bucket_name, Key=key)
 
+    def save_from_bytes(self, key, content, content_type=None):
+        extra = {"ContentType": content_type} if content_type else {}
+        return self.client.put_object(Bucket=self.bucket_name, Key=key, Body=content, **extra)
+
+    def read_bytes(self, key):
+        try:
+            return self.client.get_object(Bucket=self.bucket_name, Key=key)["Body"].read()
+        except Exception as exc:
+            error = getattr(exc, "response", {}).get("Error", {})
+            if str(error.get("Code")) in {"404", "NoSuchKey", "NotFound"}:
+                raise StorageObjectNotFound(key) from exc
+            raise
+
     def get_public_url(self, key):
         return f"{self.public_url}/{quote(key)}"
 
@@ -148,11 +161,17 @@ class LocalStorage:
         expected = cls._sign(key, content_type, int(size), int(expires))
         return hmac.compare_digest(expected, signature)
 
-    def save_from_bytes(self, key, content):
+    def save_from_bytes(self, key, content, content_type=None):
         path = self._path_for_key(key)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
         return path
+
+    def read_bytes(self, key):
+        path = self._path_for_key(key)
+        if not path.exists():
+            raise StorageObjectNotFound(key)
+        return path.read_bytes()
 
     def _path_for_key(self, key):
         clean_key = os.path.normpath(key).replace("\\", "/")

@@ -14,6 +14,10 @@ corrigir os apontamentos de revisão das issues #232 e #233. Nenhum deles bloque
 a entrega — o frontend contorna os quatro —, mas os quatro deixam um critério de
 aceitação sendo cumprido pela metade ou por dedução.*
 
+> Pendências abertas a partir da sprint 10 estão em
+> [`pendencias-backend-sprint-10.md`](./pendencias-backend-sprint-10.md). Os
+> itens abaixo continuam valendo e não foram reavaliados lá.
+
 Os itens 1 a 5, 7 e 10 **não bloqueiam entrega**: as telas de #133, #143 e #191
 estão completas e verificadas contra os endpoints reais. Eles ou (a) completam
 um critério hoje atendido pela metade, ou (b) transformam em E2E de verdade um
