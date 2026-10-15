@@ -13,5 +13,6 @@ class ArloImportSerializer(serializers.ModelSerializer):
         fields = [
             "id", "tipo", "tipo_display", "status", "status_display", "arquivo_url", "nome_original",
             "operado_por", "operado_por_nome", "operado_em", "total_registros", "registros_ok", "erros_json",
+            "mapeamento_snapshot",
         ]
         read_only_fields = fields

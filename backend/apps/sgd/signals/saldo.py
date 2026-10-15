@@ -54,7 +54,7 @@ def auditar_movimentacao_de_saldo(sender, instance, created, **kwargs):
 
     contexto = get_audit_context()
     log_audit(
-        user=instance.criado_por,
+        user=instance.criado_por or contexto["user"],
         acao=f"saldo.{instance.tipo}",
         modulo="sgd",
         entidade=ENTIDADE_MOVIMENTACAO_SALDO,

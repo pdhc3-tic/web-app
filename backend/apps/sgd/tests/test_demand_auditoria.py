@@ -1,5 +1,6 @@
 """Auditoria da demanda: status, saldo, IP atrás do proxy e rota de consulta."""
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 from django.db import DatabaseError, transaction
@@ -43,29 +44,106 @@ def _decimais(saldo):
     return {campo: Decimal(valor) for campo, valor in saldo.items()}
 
 
-def test_cada_transicao_gera_exatamente_uma_entrada_com_usuario(
+def _post_pela_api(usuario, demanda, acao, corpo=None):
+    resposta = _cliente(usuario).post(
+        f"{URL}{demanda.pk}/{acao}/", corpo or {}, format="json",
+        REMOTE_ADDR="10.0.0.2", HTTP_X_FORWARDED_FOR=f"{IP_FORJADO}, {IP_CLIENTE}",
+    )
+    assert resposta.status_code == 200, resposta.data
+    demanda.refresh_from_db()
+
+
+def test_fluxo_completo_gera_uma_entrada_por_transicao_com_usuario_e_ip(
     demanda, demand_request_rn, solicitante_rn, usuario_articulador_rn, usuario_ugp, usuario_fgd,
 ):
     passos = [
-        (lambda: demand_service.submeter_demanda(demanda, usuario=solicitante_rn), solicitante_rn, "rascunho", "submetida"),
-        (lambda: approval_service.pre_autorizar(demanda, responsavel=usuario_articulador_rn), usuario_articulador_rn, "submetida", "pre_autorizada"),
-        (lambda: approval_service.autorizar(demanda, responsavel=usuario_ugp), usuario_ugp, "pre_autorizada", "autorizada"),
-        (lambda: approval_service.atender(demanda, responsavel=usuario_fgd), usuario_fgd, "autorizada", "em_atendimento"),
+        (solicitante_rn, "submeter", None, "rascunho", "submetida"),
+        (usuario_articulador_rn, "pre-autorizar", None, "submetida", "pre_autorizada"),
+        (usuario_ugp, "autorizar", None, "pre_autorizada", "autorizada"),
+        (usuario_fgd, "atender", None, "autorizada", "em_atendimento"),
         (
-            lambda: approval_service.concluir(
-                demanda, responsavel=usuario_fgd, valores_pagos={demand_request_rn.pk: Decimal("900")},
-            ),
-            usuario_fgd, "em_atendimento", "concluida",
+            usuario_fgd, "concluir", {"valores_pagos": {str(demand_request_rn.pk): "900"}},
+            "em_atendimento", "concluida",
         ),
     ]
-    for indice, (acao, usuario, de, para) in enumerate(passos, start=1):
-        acao()
+    for indice, (usuario, acao, corpo, de, para) in enumerate(passos, start=1):
+        _post_pela_api(usuario, demanda, acao, corpo)
+
         entradas = [e for e in _status(demanda) if e.acao == "demanda.status_alterado"]
-        assert len(entradas) == indice
+        assert len(entradas) == indice, acao
         assert entradas[-1].user == usuario
+        assert entradas[-1].ip == IP_CLIENTE
+        assert entradas[-1].timestamp is not None
         assert entradas[-1].valores_anteriores == {"status": de}
         assert entradas[-1].valores_novos == {"status": para}
+
+
+def test_devolucao_resubmissao_e_recusa_geram_uma_entrada_com_usuario_e_ip(
+    demanda, demand_request_rn, solicitante_rn, usuario_articulador_rn, usuario_ugp,
+):
+    passos = [
+        (solicitante_rn, "submeter", None, "rascunho", "submetida"),
+        (usuario_articulador_rn, "devolver", {"justificativa": "Ajustar"}, "submetida", "devolvida"),
+        (solicitante_rn, "submeter", None, "devolvida", "submetida"),
+        (usuario_articulador_rn, "pre-autorizar", None, "submetida", "pre_autorizada"),
+        (usuario_ugp, "recusar", {"justificativa": "Sem verba"}, "pre_autorizada", "recusada"),
+    ]
+    for indice, (usuario, acao, corpo, de, para) in enumerate(passos, start=1):
+        _post_pela_api(usuario, demanda, acao, corpo)
+
+        entradas = [e for e in _status(demanda) if e.acao == "demanda.status_alterado"]
+        assert len(entradas) == indice, acao
+        assert entradas[-1].user == usuario
+        assert entradas[-1].ip == IP_CLIENTE
         assert entradas[-1].timestamp is not None
+        assert entradas[-1].valores_anteriores == {"status": de}
+        assert entradas[-1].valores_novos == {"status": para}
+
+
+def test_falha_na_auditoria_desfaz_a_transicao(demanda, demand_request_rn, solicitante_rn):
+    demand_service.submeter_demanda(demanda, usuario=solicitante_rn)
+    total = AuditLog.objects.count()
+
+    with patch("apps.sgd.services.auditoria.log_audit", side_effect=DatabaseError("falhou")):
+        with pytest.raises(DatabaseError):
+            approval_service.aplicar_transicao(demanda, "pre_autorizada")
+
+    demanda.refresh_from_db()
+    assert demanda.status == "submetida"
+    assert AuditLog.objects.count() == total
+
+
+def test_falha_na_auditoria_desfaz_o_cancelamento_automatico(demanda, demand_request_rn, solicitante_rn):
+    demand_service.submeter_demanda(demanda, usuario=solicitante_rn)
+    total = AuditLog.objects.count()
+
+    with patch("apps.sgd.services.auditoria.log_audit", side_effect=DatabaseError("falhou")):
+        with pytest.raises(DatabaseError):
+            approval_service.marcar_cancelada(demanda)
+
+    demanda.refresh_from_db()
+    assert demanda.status == "submetida"
+    assert AuditLog.objects.count() == total
+
+
+def test_saldo_sem_criado_por_herda_o_usuario_do_contexto(demanda, demand_request_rn, allocation_territorial_rn, usuario_ugp):
+    def _movimentar():
+        BudgetTransaction.objects.create(
+            allocation=allocation_territorial_rn, tipo=BudgetTransaction.Tipo.RESERVA, valor=Decimal("100"),
+            demanda_id=str(demand_request_rn.pk), criado_por=None,
+        )
+
+    set_audit_context(user=usuario_ugp, ip=IP_CLIENTE, user_agent="arlo-import")
+    try:
+        _movimentar()
+    finally:
+        clear_audit_context()
+    _movimentar()
+
+    com_contexto, sem_contexto = _saldo("reserva")
+    assert com_contexto.user == usuario_ugp
+    assert com_contexto.ip == IP_CLIENTE
+    assert sem_contexto.user is None
 
 
 def test_cancelamento_pelo_solicitante_gera_entrada(demanda, demand_request_rn, solicitante_rn):

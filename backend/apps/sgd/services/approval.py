@@ -57,8 +57,9 @@ def transition(demand, novo_status: str) -> None:
 def aplicar_transicao(demand, novo_status: str, usuario=None) -> None:
     status_anterior = demand.status
     transition(demand, novo_status)
-    demand.save(update_fields=_CAMPOS_DE_STATUS)
-    auditoria_service.registrar_status(demand, de=status_anterior, para=novo_status, usuario=usuario)
+    with transaction.atomic():
+        demand.save(update_fields=_CAMPOS_DE_STATUS)
+        auditoria_service.registrar_status(demand, de=status_anterior, para=novo_status, usuario=usuario)
 
 
 def marcar_cancelada(demand, usuario=None) -> None:
@@ -66,8 +67,9 @@ def marcar_cancelada(demand, usuario=None) -> None:
     chama já decidiu se a demanda pode ser cancelada."""
     status_anterior = demand.status
     _marcar_status(demand, "cancelada")
-    demand.save(update_fields=_CAMPOS_DE_STATUS)
-    auditoria_service.registrar_status(demand, de=status_anterior, para="cancelada", usuario=usuario)
+    with transaction.atomic():
+        demand.save(update_fields=_CAMPOS_DE_STATUS)
+        auditoria_service.registrar_status(demand, de=status_anterior, para="cancelada", usuario=usuario)
 
 
 def pode_cancelar(demand, usuario) -> bool:
