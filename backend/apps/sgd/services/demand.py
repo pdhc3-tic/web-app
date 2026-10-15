@@ -6,6 +6,7 @@ from rest_framework.exceptions import ValidationError as DRFValidationError
 from apps.sgd.models.demand import STATUS_EDITAVEIS, Demand
 from apps.sgd.models.demand_document import DemandDocument
 from apps.sgd.models.demand_request import DemandRequest
+from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
 from apps.sgd.services.approval import aplicar_transicao, marcar_cancelada, pode_cancelar
@@ -45,10 +46,12 @@ def criar_demanda(*, titulo, activity, justificativa, solicitante) -> Demand:
         raise DRFValidationError({
             "justificativa": "Obrigatória para demandas de atividades já em andamento/concluídas (§2.3)."
         })
-    return Demand.objects.create(
+    demand = Demand.objects.create(
         titulo=titulo, activity=activity, justificativa=justificativa,
         solicitante=solicitante, despesa_posterior=despesa_posterior,
     )
+    auditoria_service.registrar_status(demand, de=None, para=demand.status, usuario=solicitante)
+    return demand
 
 
 def _exigir_editavel(demand) -> None:
@@ -199,7 +202,7 @@ def submeter_demanda(demand, *, usuario) -> Demand:
     for solicitacao in solicitacoes:
         balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=usuario)
 
-    aplicar_transicao(demand, "submetida")
+    aplicar_transicao(demand, "submetida", usuario=usuario)
 
     sigla = demand.activity.municipio.state.sigla
     notifications_service.notificar_submissao(demand, notifications_service.usuarios_articuladores_do_estado(sigla))
@@ -217,5 +220,5 @@ def cancelar_demanda(demand, *, usuario, motivo: str = "") -> Demand:
             motivo=motivo or "Cancelada pelo solicitante.",
         )
 
-    marcar_cancelada(demand)
+    marcar_cancelada(demand, usuario=usuario)
     return demand
