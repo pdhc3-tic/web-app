@@ -14,7 +14,7 @@ from apps.core.models.municipality import Municipality
 from apps.core.permissions import IsADTInTerritory, IsAuthenticatedActiveAccess, IsSuperAdmin
 from apps.sgd.filters import DemandFilter
 from apps.sgd.models.approval_step import ApprovalStep
-from apps.sgd.models.demand import Demand
+from apps.sgd.models.demand import STATUS_CHOICES, Demand
 from apps.sgd.serializers.approval import ApprovalStepSerializer, CancelarSerializer
 from apps.sgd.serializers.demand import DemandCreateSerializer, DemandSerializer, DemandUpdateSerializer
 from apps.sgd.serializers.demand_request import (
@@ -77,7 +77,7 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
         parameters=[
             OpenApiParameter("activity", OpenApiTypes.INT, description="Id da atividade."),
             OpenApiParameter(
-                "status", OpenApiTypes.STR, many=True, explode=True,
+                "status", OpenApiTypes.STR, many=True, explode=True, enum=[valor for valor, _ in STATUS_CHOICES],
                 description="Repetível (`?status=a&status=b`): devolve a união dos status.",
             ),
             OpenApiParameter(

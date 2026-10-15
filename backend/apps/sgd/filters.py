@@ -1,5 +1,7 @@
 import django_filters
 from django.db.models import Q
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema_field
 
 from apps.core.models.user import User
 from apps.core.models.user_profile import UserProfile
@@ -72,6 +74,7 @@ class DemandFilter(django_filters.FilterSet):
             return queryset.none()
         return queryset.filter(_q_etapa_atual_do_usuario(user))
 
+    @extend_schema_field(OpenApiTypes.BOOL)
     def filtrar_aguardando_minha_acao(self, queryset, name, value):
         # Mesma função da rota de contagem, para lista e total nunca divergirem.
         if not value:
