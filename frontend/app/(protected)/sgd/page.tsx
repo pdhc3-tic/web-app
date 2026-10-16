@@ -6,7 +6,7 @@ import type { LucideIcon } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
 import { SubmoduleCard } from "@/app/components/ui/SubmoduleCard/SubmoduleCard";
-import { canCreateDemanda } from "@/app/lib/auth/roles";
+import { canCreateDemanda, canViewSgdGestao } from "@/app/lib/auth/roles";
 import { useContagemFila } from "@/app/lib/hooks/useFilaDemandas";
 
 type Submodule = {
@@ -56,6 +56,8 @@ const SUBMODULES: Submodule[] = [
     title: "Execução por Rubrica",
     description: "Autorizado, pago e saldo por rubrica, e o custo de cada atividade.",
     Icon: PieChart,
+    href: "/sgd/execucao/",
+    visivel: canViewSgdGestao,
   },
   {
     key: "arlo",
