@@ -34,6 +34,34 @@ ACAO_SUGERIDA = {
 ORIENTACAO_INDIVIDUAL = "Use a opção 'Solicitar recurso extra'."
 
 
+def bloqueio(trava: str, motivo: str | None) -> dict:
+    return {"trava": trava, "motivo": motivo, "acao_sugerida": ACAO_SUGERIDA[trava]}
+
+
+class SubmissaoBloqueada(DRFValidationError):
+    """400 da submissão barrada por uma das travas, levantado tanto pela
+    pré-checagem quanto pela reserva sob lock (o saldo pode mudar entre as
+    duas). `detail`/`code`/`solicitacao_id` descrevem a primeira solicitação
+    barrada; `solicitacoes_bloqueadas` traz todas.
+
+    O corpo é atribuído depois do `__init__` porque a normalização do DRF
+    converteria `solicitacao_id` em string."""
+
+    def __init__(self, bloqueios: dict[int, dict]):
+        super().__init__()
+        solicitacao_id, primeiro = next(iter(bloqueios.items()))
+        self.detail = {
+            "detail": primeiro["motivo"],
+            "code": f"trava_{primeiro['trava']}",
+            "solicitacao_id": solicitacao_id,
+            "solicitacoes_bloqueadas": {str(pk): b for pk, b in bloqueios.items()},
+        }
+
+
+def _erro_bloqueio(demand_request, trava: str, motivo: str | None) -> SubmissaoBloqueada:
+    return SubmissaoBloqueada({demand_request.pk: bloqueio(trava, motivo)})
+
+
 def orientacao_territorial(*, allocation, saldo: Decimal | None) -> str:
     """Sem alocação nenhuma, afirmar que o território esgotou seria falso — só
     orienta. Com alocação, "esgotado" puro quando o saldo zerou; com saldo
@@ -263,13 +291,11 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
         # verificar_duas_travas (antes do lock) comprometeriam o limite além
         # do valor_limite.
         if valor > limite.saldo_disponivel:
-            raise DRFValidationError({
-                "detail": com_orientacao(
-                    f"Limite individual insuficiente: R$ {limite.saldo_disponivel} disponível, "
-                    f"R$ {valor} solicitado.",
-                    ORIENTACAO_INDIVIDUAL,
-                )
-            })
+            raise _erro_bloqueio(demand_request, TRAVA_INDIVIDUAL, com_orientacao(
+                f"Limite individual insuficiente: R$ {limite.saldo_disponivel} disponível, "
+                f"R$ {valor} solicitado.",
+                ORIENTACAO_INDIVIDUAL,
+            ))
         limite.valor_comprometido += valor
         limite.save(update_fields=["valor_comprometido"])
         _registrar_movimento_individual(
@@ -288,12 +314,10 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
         estado_sigla=estado_sigla, territorio=territorio, valor=valor,
     )
     if check.allocation is None:
-        raise DRFValidationError({
-            "detail": com_orientacao(
-                "Nenhuma alocação orçamentária territorial encontrada.",
-                orientacao_territorial(allocation=None, saldo=None),
-            )
-        })
+        raise _erro_bloqueio(demand_request, TRAVA_TERRITORIAL, com_orientacao(
+            "Nenhuma alocação orçamentária territorial encontrada.",
+            orientacao_territorial(allocation=None, saldo=None),
+        ))
     comprometido_territorial_antes = check.allocation.valor_comprometido
     try:
         budget_service.reservar(
@@ -301,9 +325,9 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
             justificativa=f"Reserva SGD — solicitação #{demand_request.pk}.",
         )
     except budget_service.SaldoInsuficienteError as exc:
-        raise DRFValidationError({
-            "detail": com_orientacao(str(exc), orientacao_territorial(allocation=check.allocation, saldo=None))
-        }) from exc
+        raise _erro_bloqueio(demand_request, TRAVA_TERRITORIAL, com_orientacao(
+            str(exc), orientacao_territorial(allocation=check.allocation, saldo=None),
+        )) from exc
     except ValueError as exc:
         raise DRFValidationError({"detail": str(exc)}) from exc
     check.allocation.refresh_from_db(fields=["valor_comprometido"])

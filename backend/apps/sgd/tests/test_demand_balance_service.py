@@ -218,6 +218,8 @@ def test_submeter_demanda_bloqueio_de_uma_solicitacao_identifica_so_a_bloqueada(
     bloqueios = excinfo.value.detail["solicitacoes_bloqueadas"]
     assert str(solicitacao_bloqueada.pk) in bloqueios
     assert str(demand_request_rn.pk) not in bloqueios
+    assert excinfo.value.detail["solicitacao_id"] == solicitacao_bloqueada.pk
+    assert excinfo.value.detail["code"] == "trava_individual"
 
     demand.refresh_from_db()
     assert demand.status == "rascunho"
@@ -261,6 +263,96 @@ def test_submeter_demanda_bloqueio_individual_orienta_recurso_extra(
     assert bloqueio["trava"] == "individual"
     assert bloqueio["acao_sugerida"] == "solicitar_recurso_extra"
     assert "Solicitar recurso extra" in str(bloqueio["motivo"])
+
+
+def _pre_checagem_aprova_tudo(monkeypatch):
+    """Simula o saldo mudando entre a pré-checagem e a reserva sob lock: a
+    pré-checagem enxerga saldo, a reserva não."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        balance_service, "verificar_duas_travas", lambda **kwargs: SimpleNamespace(disponivel=True),
+    )
+
+
+def test_submeter_demanda_bloqueio_individual_na_reserva_identifica_trava_e_solicitacao(
+    monkeypatch, demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    limite_individual_rn.valor_limite = Decimal("500")
+    limite_individual_rn.save(update_fields=["valor_limite"])
+    _pre_checagem_aprova_tudo(monkeypatch)
+
+    with pytest.raises(DRFValidationError) as excinfo:
+        demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
+
+    corpo = excinfo.value.detail
+    assert corpo["code"] == "trava_individual"
+    assert corpo["solicitacao_id"] == demand_request_rn.pk
+    assert "Solicitar recurso extra" in corpo["detail"]
+    bloqueio = corpo["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
+    assert bloqueio["trava"] == "individual"
+    assert bloqueio["acao_sugerida"] == "solicitar_recurso_extra"
+
+    demand_request_rn.demanda.refresh_from_db()
+    assert demand_request_rn.demanda.status == "rascunho"
+    allocation_territorial_rn.refresh_from_db()
+    assert allocation_territorial_rn.valor_comprometido == Decimal("0")
+
+
+def test_submeter_demanda_bloqueio_territorial_na_reserva_identifica_trava_e_solicitacao(
+    monkeypatch, demand_request_rn, solicitante_rn, activity_rn, rubrica_diarias, limite_individual_rn,
+):
+    from apps.sgp.tests.factories import BudgetAllocationFactory
+
+    BudgetAllocationFactory(
+        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
+        valor_alocado=Decimal("500"), valor_comprometido=Decimal("0"),
+    )
+    _pre_checagem_aprova_tudo(monkeypatch)
+
+    with pytest.raises(DRFValidationError) as excinfo:
+        demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
+
+    corpo = excinfo.value.detail
+    assert corpo["code"] == "trava_territorial"
+    assert corpo["solicitacao_id"] == demand_request_rn.pk
+    assert "Acione o Articulador Estadual" in corpo["detail"]
+    bloqueio = corpo["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
+    assert bloqueio["trava"] == "territorial"
+    assert bloqueio["acao_sugerida"] == "acionar_articulador"
+
+    # A reserva individual já tinha sido feita quando a territorial falhou —
+    # a transação da submissão desfaz as duas.
+    demand_request_rn.demanda.refresh_from_db()
+    assert demand_request_rn.demanda.status == "rascunho"
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == Decimal("0")
+
+
+def test_reservar_duas_travas_sem_alocacao_territorial_identifica_trava_e_solicitacao(
+    demand_request_rn, solicitante_rn, limite_individual_rn,
+):
+    with pytest.raises(DRFValidationError) as excinfo:
+        balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+
+    assert excinfo.value.detail["code"] == "trava_territorial"
+    assert excinfo.value.detail["solicitacao_id"] == demand_request_rn.pk
+
+
+def test_submeter_bloqueado_responde_400_com_code_e_solicitacao_id(
+    auth_client_solicitante, demand_request_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    limite_individual_rn.valor_limite = Decimal("500")
+    limite_individual_rn.save(update_fields=["valor_limite"])
+
+    response = auth_client_solicitante.post(f"/api/v1/sgd/demandas/{demand_request_rn.demanda_id}/submeter/")
+
+    assert response.status_code == 400
+    corpo = response.json()
+    assert corpo["code"] == "trava_individual"
+    assert corpo["solicitacao_id"] == demand_request_rn.pk
+    assert "Solicitar recurso extra" in corpo["detail"]
+    assert corpo["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]["trava"] == "individual"
 
 
 def _campos_diaria_com_dias(*, municipio, dias_a_mais: int) -> dict:

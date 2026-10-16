@@ -4,10 +4,20 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
+from django.db import models
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from apps.core.models.municipality import Municipality
 from apps.core.utils import get_config
+from apps.sgd.constants import (
+    Classe,
+    MeioTransporte,
+    TipoMaterial,
+    TipoRefeicao,
+    TipoVeiculo,
+    Urgencia,
+    Vinculo,
+)
 from apps.sgp.validators import validate_cpf
 
 # Usado só se SystemConfig("sgd_mapeamento_tipo_rubrica") ainda não existir.
@@ -18,18 +28,6 @@ DEFAULT_TIPO_RUBRICA_MAP = {
     "grafico": "material-grafico",
     "alimentacao": "alimentacao-refeicoes",
     "equipamento": "equipamentos-capital",
-}
-
-_VINCULO_CHOICES = {"servidor_ufersa", "bolsista", "colaborador_externo"}
-_MEIO_TRANSPORTE_CHOICES = {"aereo", "rodoviario", "proprio", "outro"}
-_CLASSE_CHOICES = {"economica", "executiva"}
-_URGENCIA_CHOICES = {"normal", "urgente", "emergencial"}
-_TIPO_VEICULO_CHOICES = {"hatch", "sedan", "suv", "van", "micro_onibus", "onibus"}
-_TIPO_MATERIAL_CHOICES = {
-    "banner", "folder", "camiseta", "bloco", "caneta", "chapeu", "kit_evento", "outro",
-}
-_TIPO_REFEICAO_CHOICES = {
-    "cafe_manha", "almoco", "jantar", "coffee_break", "kit_lanche", "marmitex",
 }
 
 
@@ -58,9 +56,9 @@ def _obrigatorios(campos: dict, nomes: list[str]) -> None:
         )
 
 
-def _choice(campos: dict, campo: str, valores: set[str]) -> None:
-    if campos.get(campo) not in valores:
-        raise DRFValidationError({campo: f"Valor inválido. Esperado um de: {sorted(valores)}."})
+def _choice(campos: dict, campo: str, choices: type[models.TextChoices]) -> None:
+    if campos.get(campo) not in choices.values:
+        raise DRFValidationError({campo: f"Valor inválido. Esperado um de: {sorted(choices.values)}."})
 
 
 def _positivo(campos: dict, campo: str) -> None:
@@ -94,8 +92,8 @@ def _validar_diaria(campos: dict, activity) -> CamposValidados:
         "beneficiario_vinculo", "municipio_destino_id", "data_inicio",
         "data_fim", "meio_transporte", "justificativa",
     ])
-    _choice(campos, "beneficiario_vinculo", _VINCULO_CHOICES)
-    _choice(campos, "meio_transporte", _MEIO_TRANSPORTE_CHOICES)
+    _choice(campos, "beneficiario_vinculo", Vinculo)
+    _choice(campos, "meio_transporte", MeioTransporte)
     if not Municipality.objects.filter(pk=campos["municipio_destino_id"]).exists():
         raise DRFValidationError({"municipio_destino_id": "Município não encontrado."})
 
@@ -129,8 +127,8 @@ def _validar_passagem(campos: dict, activity) -> CamposValidados:
         "aeroporto_origem", "aeroporto_destino", "data_hora_ida", "ida_e_volta",
         "bagagem_despachada", "classe", "urgencia",
     ])
-    _choice(campos, "classe", _CLASSE_CHOICES)
-    _choice(campos, "urgencia", _URGENCIA_CHOICES)
+    _choice(campos, "classe", Classe)
+    _choice(campos, "urgencia", Urgencia)
     if not isinstance(campos["ida_e_volta"], bool):
         # `1 in (True, False)` é True em Python (1 == True) — checar o tipo
         # direto, não só o valor, senão 1/0 passariam pela checagem "estrita".
@@ -155,7 +153,7 @@ def _validar_veiculo(campos: dict, activity) -> CamposValidados:
         "tipo_veiculo", "data_hora_retirada", "data_hora_devolucao", "destino_rota",
         "estimativa_km", "motorista_incluso", "combustivel_incluso", "numero_passageiros",
     ])
-    _choice(campos, "tipo_veiculo", _TIPO_VEICULO_CHOICES)
+    _choice(campos, "tipo_veiculo", TipoVeiculo)
     _positivo(campos, "estimativa_km")
     _positivo(campos, "numero_passageiros")
 
@@ -166,7 +164,7 @@ def _validar_veiculo(campos: dict, activity) -> CamposValidados:
 
 def _validar_grafico(campos: dict, activity) -> CamposValidados:
     _obrigatorios(campos, ["tipo_material", "quantidade", "especificacoes_tecnicas", "prazo_entrega"])
-    _choice(campos, "tipo_material", _TIPO_MATERIAL_CHOICES)
+    _choice(campos, "tipo_material", TipoMaterial)
     _positivo(campos, "quantidade")
     _parse_date(campos["prazo_entrega"])
 
@@ -177,7 +175,7 @@ def _validar_grafico(campos: dict, activity) -> CamposValidados:
 
 def _validar_alimentacao(campos: dict, activity) -> CamposValidados:
     _obrigatorios(campos, ["tipo_refeicao", "data_horario_servico", "numero_pessoas"])
-    _choice(campos, "tipo_refeicao", _TIPO_REFEICAO_CHOICES)
+    _choice(campos, "tipo_refeicao", TipoRefeicao)
     _positivo(campos, "numero_pessoas")
 
     campos_limpos = dict(campos)
@@ -192,7 +190,7 @@ def _validar_equipamento(campos: dict, activity) -> CamposValidados:
         "descricao_equipamento", "especificacao_tecnica_detalhada", "quantidade",
         "finalidade_justificativa", "urgencia",
     ])
-    _choice(campos, "urgencia", _URGENCIA_CHOICES)
+    _choice(campos, "urgencia", Urgencia)
     _positivo(campos, "quantidade")
 
     return CamposValidados(campos_json=dict(campos), beneficiario_cpf=None, valor_estimado_auto=None)

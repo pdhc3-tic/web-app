@@ -190,11 +190,9 @@ def submeter_demanda(demand, *, usuario) -> Demand:
         if not check.disponivel:
             trava = check.trava_bloqueada
             motivo = (check.individual if trava == balance_service.TRAVA_INDIVIDUAL else check.territorial).motivo_bloqueio
-            bloqueios[str(solicitacao.pk)] = {
-                "trava": trava, "motivo": motivo, "acao_sugerida": balance_service.ACAO_SUGERIDA[trava],
-            }
+            bloqueios[solicitacao.pk] = balance_service.bloqueio(trava, motivo)
     if bloqueios:
-        raise DRFValidationError({"solicitacoes_bloqueadas": bloqueios})
+        raise balance_service.SubmissaoBloqueada(bloqueios)
 
     for solicitacao in solicitacoes:
         balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=usuario)

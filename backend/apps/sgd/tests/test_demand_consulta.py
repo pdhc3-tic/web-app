@@ -178,6 +178,58 @@ def test_painel_por_rubrica_bate_com_valores_agregados(
     assert Decimal(linha["disponivel"]) == Decimal("8500")
 
 
+@pytest.mark.parametrize("comprometido, percentual, faixa", [
+    (6_900, "69.00", "verde"),
+    (7_500, "75.00", "amarelo"),
+    (9_500, "95.00", "vermelho"),
+])
+def test_painel_por_rubrica_traz_faixa_sobre_o_comprometido(
+    auth_client_ugp, activity_rn, rubrica_diarias, comprometido, percentual, faixa,
+):
+    BudgetAllocationFactory(
+        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, nivel="nacional", territorio=None,
+        valor_alocado=10_000, valor_comprometido=comprometido, valor_executado=0,
+    )
+
+    response = auth_client_ugp.get(PAINEL)
+
+    assert response.status_code == 200
+    linha = next(r for r in response.json() if r["rubrica_slug"] == "diarias")
+    assert linha["percentual_execucao"] == percentual
+    assert linha["faixa"] == faixa
+
+
+def test_painel_por_rubrica_faixa_segue_limiares_do_core(auth_client_ugp, activity_rn, rubrica_diarias):
+    from django.core.cache import cache
+
+    from apps.core.models.system_config import SystemConfig, TipoConfiguracao
+
+    BudgetAllocationFactory(
+        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, nivel="nacional", territorio=None,
+        valor_alocado=10_000, valor_comprometido=4_000, valor_executado=0,
+    )
+    SystemConfig.objects.update_or_create(
+        chave="budget_alert_yellow_pct", defaults={"valor": "30", "tipo": TipoConfiguracao.INTEGER},
+    )
+    try:
+        response = auth_client_ugp.get(PAINEL)
+        linha = next(r for r in response.json() if r["rubrica_slug"] == "diarias")
+        assert linha["faixa"] == "amarelo"
+    finally:
+        # Cache de SystemConfig não é transacional — limpa pra não vazar o
+        # limiar de 30% pros testes seguintes.
+        cache.delete("system_config:budget_alert_yellow_pct")
+
+
+def test_painel_por_rubrica_sem_orcamento_fica_verde_como_no_sgp(auth_client_ugp, rubrica_diarias):
+    response = auth_client_ugp.get(PAINEL)
+
+    assert response.status_code == 200
+    linha = next(r for r in response.json() if r["rubrica_slug"] == "diarias")
+    assert Decimal(linha["percentual_execucao"]) == Decimal("0")
+    assert linha["faixa"] == "verde"
+
+
 def test_painel_e_relatorio_so_para_perfis_de_gestao(auth_client_solicitante):
     assert auth_client_solicitante.get(PAINEL).status_code == 403
     assert auth_client_solicitante.get(CUSTO).status_code == 403
