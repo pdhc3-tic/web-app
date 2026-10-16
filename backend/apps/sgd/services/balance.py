@@ -38,11 +38,28 @@ def bloqueio(trava: str, motivo: str | None) -> dict:
     return {"trava": trava, "motivo": motivo, "acao_sugerida": ACAO_SUGERIDA[trava]}
 
 
-def _erro_bloqueio(demand_request, trava: str, motivo: str | None) -> DRFValidationError:
-    """Mesmo formato da pré-checagem de `submeter_demanda` — o saldo pode mudar
-    entre ela e a reserva sob lock, e o front precisa saber qual trava e qual
-    solicitação barraram nos dois casos."""
-    return DRFValidationError({"solicitacoes_bloqueadas": {str(demand_request.pk): bloqueio(trava, motivo)}})
+class SubmissaoBloqueada(DRFValidationError):
+    """400 da submissão barrada por uma das travas, levantado tanto pela
+    pré-checagem quanto pela reserva sob lock (o saldo pode mudar entre as
+    duas). `detail`/`code`/`solicitacao_id` descrevem a primeira solicitação
+    barrada; `solicitacoes_bloqueadas` traz todas.
+
+    O corpo é atribuído depois do `__init__` porque a normalização do DRF
+    converteria `solicitacao_id` em string."""
+
+    def __init__(self, bloqueios: dict[int, dict]):
+        super().__init__()
+        solicitacao_id, primeiro = next(iter(bloqueios.items()))
+        self.detail = {
+            "detail": primeiro["motivo"],
+            "code": f"trava_{primeiro['trava']}",
+            "solicitacao_id": solicitacao_id,
+            "solicitacoes_bloqueadas": {str(pk): b for pk, b in bloqueios.items()},
+        }
+
+
+def _erro_bloqueio(demand_request, trava: str, motivo: str | None) -> SubmissaoBloqueada:
+    return SubmissaoBloqueada({demand_request.pk: bloqueio(trava, motivo)})
 
 
 def orientacao_territorial(*, allocation, saldo: Decimal | None) -> str:

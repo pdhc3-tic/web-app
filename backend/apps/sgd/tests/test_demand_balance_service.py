@@ -218,6 +218,8 @@ def test_submeter_demanda_bloqueio_de_uma_solicitacao_identifica_so_a_bloqueada(
     bloqueios = excinfo.value.detail["solicitacoes_bloqueadas"]
     assert str(solicitacao_bloqueada.pk) in bloqueios
     assert str(demand_request_rn.pk) not in bloqueios
+    assert excinfo.value.detail["solicitacao_id"] == solicitacao_bloqueada.pk
+    assert excinfo.value.detail["code"] == "trava_individual"
 
     demand.refresh_from_db()
     assert demand.status == "rascunho"
@@ -283,10 +285,13 @@ def test_submeter_demanda_bloqueio_individual_na_reserva_identifica_trava_e_soli
     with pytest.raises(DRFValidationError) as excinfo:
         demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
 
-    bloqueio = excinfo.value.detail["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
+    corpo = excinfo.value.detail
+    assert corpo["code"] == "trava_individual"
+    assert corpo["solicitacao_id"] == demand_request_rn.pk
+    assert "Solicitar recurso extra" in corpo["detail"]
+    bloqueio = corpo["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
     assert bloqueio["trava"] == "individual"
     assert bloqueio["acao_sugerida"] == "solicitar_recurso_extra"
-    assert "Solicitar recurso extra" in str(bloqueio["motivo"])
 
     demand_request_rn.demanda.refresh_from_db()
     assert demand_request_rn.demanda.status == "rascunho"
@@ -308,10 +313,13 @@ def test_submeter_demanda_bloqueio_territorial_na_reserva_identifica_trava_e_sol
     with pytest.raises(DRFValidationError) as excinfo:
         demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
 
-    bloqueio = excinfo.value.detail["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
+    corpo = excinfo.value.detail
+    assert corpo["code"] == "trava_territorial"
+    assert corpo["solicitacao_id"] == demand_request_rn.pk
+    assert "Acione o Articulador Estadual" in corpo["detail"]
+    bloqueio = corpo["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
     assert bloqueio["trava"] == "territorial"
     assert bloqueio["acao_sugerida"] == "acionar_articulador"
-    assert "Acione o Articulador Estadual" in str(bloqueio["motivo"])
 
     # A reserva individual já tinha sido feita quando a territorial falhou —
     # a transação da submissão desfaz as duas.
@@ -327,9 +335,24 @@ def test_reservar_duas_travas_sem_alocacao_territorial_identifica_trava_e_solici
     with pytest.raises(DRFValidationError) as excinfo:
         balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
 
-    bloqueio = excinfo.value.detail["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
-    assert bloqueio["trava"] == "territorial"
-    assert bloqueio["acao_sugerida"] == "acionar_articulador"
+    assert excinfo.value.detail["code"] == "trava_territorial"
+    assert excinfo.value.detail["solicitacao_id"] == demand_request_rn.pk
+
+
+def test_submeter_bloqueado_responde_400_com_code_e_solicitacao_id(
+    auth_client_solicitante, demand_request_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    limite_individual_rn.valor_limite = Decimal("500")
+    limite_individual_rn.save(update_fields=["valor_limite"])
+
+    response = auth_client_solicitante.post(f"/api/v1/sgd/demandas/{demand_request_rn.demanda_id}/submeter/")
+
+    assert response.status_code == 400
+    corpo = response.json()
+    assert corpo["code"] == "trava_individual"
+    assert corpo["solicitacao_id"] == demand_request_rn.pk
+    assert "Solicitar recurso extra" in corpo["detail"]
+    assert corpo["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]["trava"] == "individual"
 
 
 def _campos_diaria_com_dias(*, municipio, dias_a_mais: int) -> dict:

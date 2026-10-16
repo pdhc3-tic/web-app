@@ -75,7 +75,7 @@ def painel_por_rubrica(user, demandas, params) -> list[dict]:
     """Solicitado / autorizado / executado / disponível por rubrica (RF28).
 
     `solicitado` e `autorizado` saem das solicitações das demandas visíveis e
-    filtradas; `executado`, `disponivel` e o semáforo são os do controle
+    filtradas; `executado`, `disponivel` e a faixa do semáforo são os do controle
     financeiro do SGP (`painel_orcamento`), somados por rubrica, para o painel
     nunca divergir do orçamento.
     """
@@ -111,8 +111,9 @@ def painel_por_rubrica(user, demandas, params) -> list[dict]:
     for rubrica in BudgetRubrica.objects.filter(ativo=True).order_by("ordem"):
         demanda_linha = por_rubrica.get(rubrica.pk, {})
         fin = orcamento.get(rubrica.pk, {})
-        aprovado = fin.get("aprovado", ZERO)
-        percentual = budget_service.percentual_comprometido(fin.get("comprometido", ZERO), aprovado)
+        percentual = budget_service.percentual_comprometido(
+            fin.get("comprometido", ZERO), fin.get("aprovado", ZERO),
+        )
         resultado.append({
             "rubrica_id": rubrica.pk,
             "rubrica_slug": rubrica.slug,
@@ -121,10 +122,10 @@ def painel_por_rubrica(user, demandas, params) -> list[dict]:
             "autorizado": demanda_linha.get("autorizado") or ZERO,
             "executado": fin.get("executado", ZERO),
             "disponivel": fin.get("disponivel", ZERO),
-            "percentual_comprometido": percentual,
-            # Sem orçamento aprovado não há o que sinalizar — "verde" sugeriria
-            # folga numa rubrica que não tem saldo nenhum.
-            "semaforo": budget_service.faixa_semaforo(percentual, limiares) if aprovado > ZERO else None,
+            # SGP §6.8: a faixa sai do percentual comprometido sobre o aprovado,
+            # a mesma base do painel de orçamento do SGP.
+            "percentual_execucao": percentual,
+            "faixa": budget_service.faixa_semaforo(percentual, limiares),
         })
     return resultado
 

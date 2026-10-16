@@ -178,13 +178,13 @@ def test_painel_por_rubrica_bate_com_valores_agregados(
     assert Decimal(linha["disponivel"]) == Decimal("8500")
 
 
-@pytest.mark.parametrize("comprometido, percentual, semaforo", [
+@pytest.mark.parametrize("comprometido, percentual, faixa", [
     (6_900, "69.00", "verde"),
     (7_500, "75.00", "amarelo"),
     (9_500, "95.00", "vermelho"),
 ])
-def test_painel_por_rubrica_traz_semaforo_sobre_o_comprometido(
-    auth_client_ugp, activity_rn, rubrica_diarias, comprometido, percentual, semaforo,
+def test_painel_por_rubrica_traz_faixa_sobre_o_comprometido(
+    auth_client_ugp, activity_rn, rubrica_diarias, comprometido, percentual, faixa,
 ):
     BudgetAllocationFactory(
         meta=activity_rn.acao.meta, rubrica=rubrica_diarias, nivel="nacional", territorio=None,
@@ -195,11 +195,11 @@ def test_painel_por_rubrica_traz_semaforo_sobre_o_comprometido(
 
     assert response.status_code == 200
     linha = next(r for r in response.json() if r["rubrica_slug"] == "diarias")
-    assert linha["percentual_comprometido"] == percentual
-    assert linha["semaforo"] == semaforo
+    assert linha["percentual_execucao"] == percentual
+    assert linha["faixa"] == faixa
 
 
-def test_painel_por_rubrica_semaforo_segue_limiares_do_core(auth_client_ugp, activity_rn, rubrica_diarias):
+def test_painel_por_rubrica_faixa_segue_limiares_do_core(auth_client_ugp, activity_rn, rubrica_diarias):
     from django.core.cache import cache
 
     from apps.core.models.system_config import SystemConfig, TipoConfiguracao
@@ -214,20 +214,20 @@ def test_painel_por_rubrica_semaforo_segue_limiares_do_core(auth_client_ugp, act
     try:
         response = auth_client_ugp.get(PAINEL)
         linha = next(r for r in response.json() if r["rubrica_slug"] == "diarias")
-        assert linha["semaforo"] == "amarelo"
+        assert linha["faixa"] == "amarelo"
     finally:
         # Cache de SystemConfig não é transacional — limpa pra não vazar o
         # limiar de 30% pros testes seguintes.
         cache.delete("system_config:budget_alert_yellow_pct")
 
 
-def test_painel_por_rubrica_sem_orcamento_nao_tem_semaforo(auth_client_ugp, rubrica_diarias):
+def test_painel_por_rubrica_sem_orcamento_fica_verde_como_no_sgp(auth_client_ugp, rubrica_diarias):
     response = auth_client_ugp.get(PAINEL)
 
     assert response.status_code == 200
     linha = next(r for r in response.json() if r["rubrica_slug"] == "diarias")
-    assert Decimal(linha["percentual_comprometido"]) == Decimal("0")
-    assert linha["semaforo"] is None
+    assert Decimal(linha["percentual_execucao"]) == Decimal("0")
+    assert linha["faixa"] == "verde"
 
 
 def test_painel_e_relatorio_so_para_perfis_de_gestao(auth_client_solicitante):

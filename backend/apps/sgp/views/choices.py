@@ -3,13 +3,13 @@ from rest_framework.views import APIView
 
 from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.sgd.constants import (
-    CLASSE_CHOICES,
-    MEIO_TRANSPORTE_CHOICES,
-    TIPO_MATERIAL_CHOICES,
-    TIPO_REFEICAO_CHOICES,
-    TIPO_VEICULO_CHOICES,
-    URGENCIA_CHOICES,
-    VINCULO_CHOICES,
+    Classe,
+    MeioTransporte,
+    TipoMaterial,
+    TipoRefeicao,
+    TipoVeiculo,
+    Urgencia,
+    Vinculo,
 )
 from apps.sgd.models.demand import STATUS_CHOICES as DEMANDA_STATUS_CHOICES
 from apps.sgd.models.demand_document import TIPO_CHOICES as DEMANDA_DOCUMENTO_TIPO_CHOICES
@@ -71,13 +71,13 @@ CHOICES_PUBLICADOS = {
     "solicitacao_tipo": SOLICITACAO_TIPO_CHOICES,
     "demanda_status": DEMANDA_STATUS_CHOICES,
     "demanda_documento_tipo": DEMANDA_DOCUMENTO_TIPO_CHOICES,
-    "beneficiario_vinculo": VINCULO_CHOICES,
-    "meio_transporte": MEIO_TRANSPORTE_CHOICES,
-    "classe": CLASSE_CHOICES,
-    "urgencia": URGENCIA_CHOICES,
-    "tipo_veiculo": TIPO_VEICULO_CHOICES,
-    "tipo_material": TIPO_MATERIAL_CHOICES,
-    "tipo_refeicao": TIPO_REFEICAO_CHOICES,
+    "beneficiario_vinculo": Vinculo.choices,
+    "meio_transporte": MeioTransporte.choices,
+    "classe": Classe.choices,
+    "urgencia": Urgencia.choices,
+    "tipo_veiculo": TipoVeiculo.choices,
+    "tipo_material": TipoMaterial.choices,
+    "tipo_refeicao": TipoRefeicao.choices,
 }
 
 

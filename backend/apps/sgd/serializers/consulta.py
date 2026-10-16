@@ -11,8 +11,8 @@ class PainelRubricaSerializer(serializers.Serializer):
     autorizado = serializers.DecimalField(**_DEC)
     executado = serializers.DecimalField(**_DEC)
     disponivel = serializers.DecimalField(**_DEC)
-    percentual_comprometido = serializers.DecimalField(max_digits=7, decimal_places=2)
-    semaforo = serializers.CharField(allow_null=True)
+    percentual_execucao = serializers.DecimalField(max_digits=7, decimal_places=2)
+    faixa = serializers.ChoiceField(choices=["verde", "amarelo", "vermelho"])
 
 
 class CustoPorAtividadeSerializer(serializers.Serializer):
