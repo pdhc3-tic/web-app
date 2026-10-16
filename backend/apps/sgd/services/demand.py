@@ -190,9 +190,7 @@ def submeter_demanda(demand, *, usuario) -> Demand:
         if not check.disponivel:
             trava = check.trava_bloqueada
             motivo = (check.individual if trava == balance_service.TRAVA_INDIVIDUAL else check.territorial).motivo_bloqueio
-            bloqueios[str(solicitacao.pk)] = {
-                "trava": trava, "motivo": motivo, "acao_sugerida": balance_service.ACAO_SUGERIDA[trava],
-            }
+            bloqueios[str(solicitacao.pk)] = balance_service.bloqueio(trava, motivo)
     if bloqueios:
         raise DRFValidationError({"solicitacoes_bloqueadas": bloqueios})
 

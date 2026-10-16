@@ -75,9 +75,9 @@ def painel_por_rubrica(user, demandas, params) -> list[dict]:
     """Solicitado / autorizado / executado / disponível por rubrica (RF28).
 
     `solicitado` e `autorizado` saem das solicitações das demandas visíveis e
-    filtradas; `executado` e `disponivel` são os do controle financeiro do SGP
-    (`painel_orcamento`), somados por rubrica, para o painel nunca divergir
-    do orçamento.
+    filtradas; `executado`, `disponivel` e o semáforo são os do controle
+    financeiro do SGP (`painel_orcamento`), somados por rubrica, para o painel
+    nunca divergir do orçamento.
     """
     slugs = exigir_perfil_de_gestao(user)
     territorio_id = _inteiro_ou_none(params.get("territorio"))
@@ -98,14 +98,21 @@ def painel_por_rubrica(user, demandas, params) -> list[dict]:
     for linha in _painel_sgp(
         user, slugs, estado_sigla=estado_sigla, territorio_id=territorio_id, meta_id=meta_id,
     ):
-        acc = orcamento.setdefault(linha["rubrica"].pk, {"executado": ZERO, "disponivel": ZERO})
+        acc = orcamento.setdefault(linha["rubrica"].pk, {
+            "aprovado": ZERO, "comprometido": ZERO, "executado": ZERO, "disponivel": ZERO,
+        })
+        acc["aprovado"] += linha["valor_aprovado"]
+        acc["comprometido"] += linha["valor_comprometido"]
         acc["executado"] += linha["valor_executado"]
         acc["disponivel"] += linha["saldo_disponivel"]
 
+    limiares = budget_service.limiares_semaforo()
     resultado = []
     for rubrica in BudgetRubrica.objects.filter(ativo=True).order_by("ordem"):
         demanda_linha = por_rubrica.get(rubrica.pk, {})
         fin = orcamento.get(rubrica.pk, {})
+        aprovado = fin.get("aprovado", ZERO)
+        percentual = budget_service.percentual_comprometido(fin.get("comprometido", ZERO), aprovado)
         resultado.append({
             "rubrica_id": rubrica.pk,
             "rubrica_slug": rubrica.slug,
@@ -114,6 +121,10 @@ def painel_por_rubrica(user, demandas, params) -> list[dict]:
             "autorizado": demanda_linha.get("autorizado") or ZERO,
             "executado": fin.get("executado", ZERO),
             "disponivel": fin.get("disponivel", ZERO),
+            "percentual_comprometido": percentual,
+            # Sem orçamento aprovado não há o que sinalizar — "verde" sugeriria
+            # folga numa rubrica que não tem saldo nenhum.
+            "semaforo": budget_service.faixa_semaforo(percentual, limiares) if aprovado > ZERO else None,
         })
     return resultado
 

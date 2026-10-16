@@ -263,6 +263,75 @@ def test_submeter_demanda_bloqueio_individual_orienta_recurso_extra(
     assert "Solicitar recurso extra" in str(bloqueio["motivo"])
 
 
+def _pre_checagem_aprova_tudo(monkeypatch):
+    """Simula o saldo mudando entre a pré-checagem e a reserva sob lock: a
+    pré-checagem enxerga saldo, a reserva não."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        balance_service, "verificar_duas_travas", lambda **kwargs: SimpleNamespace(disponivel=True),
+    )
+
+
+def test_submeter_demanda_bloqueio_individual_na_reserva_identifica_trava_e_solicitacao(
+    monkeypatch, demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    limite_individual_rn.valor_limite = Decimal("500")
+    limite_individual_rn.save(update_fields=["valor_limite"])
+    _pre_checagem_aprova_tudo(monkeypatch)
+
+    with pytest.raises(DRFValidationError) as excinfo:
+        demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
+
+    bloqueio = excinfo.value.detail["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
+    assert bloqueio["trava"] == "individual"
+    assert bloqueio["acao_sugerida"] == "solicitar_recurso_extra"
+    assert "Solicitar recurso extra" in str(bloqueio["motivo"])
+
+    demand_request_rn.demanda.refresh_from_db()
+    assert demand_request_rn.demanda.status == "rascunho"
+    allocation_territorial_rn.refresh_from_db()
+    assert allocation_territorial_rn.valor_comprometido == Decimal("0")
+
+
+def test_submeter_demanda_bloqueio_territorial_na_reserva_identifica_trava_e_solicitacao(
+    monkeypatch, demand_request_rn, solicitante_rn, activity_rn, rubrica_diarias, limite_individual_rn,
+):
+    from apps.sgp.tests.factories import BudgetAllocationFactory
+
+    BudgetAllocationFactory(
+        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
+        valor_alocado=Decimal("500"), valor_comprometido=Decimal("0"),
+    )
+    _pre_checagem_aprova_tudo(monkeypatch)
+
+    with pytest.raises(DRFValidationError) as excinfo:
+        demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
+
+    bloqueio = excinfo.value.detail["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
+    assert bloqueio["trava"] == "territorial"
+    assert bloqueio["acao_sugerida"] == "acionar_articulador"
+    assert "Acione o Articulador Estadual" in str(bloqueio["motivo"])
+
+    # A reserva individual já tinha sido feita quando a territorial falhou —
+    # a transação da submissão desfaz as duas.
+    demand_request_rn.demanda.refresh_from_db()
+    assert demand_request_rn.demanda.status == "rascunho"
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == Decimal("0")
+
+
+def test_reservar_duas_travas_sem_alocacao_territorial_identifica_trava_e_solicitacao(
+    demand_request_rn, solicitante_rn, limite_individual_rn,
+):
+    with pytest.raises(DRFValidationError) as excinfo:
+        balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+
+    bloqueio = excinfo.value.detail["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
+    assert bloqueio["trava"] == "territorial"
+    assert bloqueio["acao_sugerida"] == "acionar_articulador"
+
+
 def _campos_diaria_com_dias(*, municipio, dias_a_mais: int) -> dict:
     """`demand_request_rn` é tipo "diaria" — esse tipo sempre recalcula
     valor_estimado a partir das datas (validado.valor_estimado_auto nunca é

@@ -125,3 +125,56 @@ def test_saldo_limite_individual_insuficiente_orienta_recurso_extra(
     assert individual["disponivel"] is False
     assert "R$ 5000" in individual["motivo_bloqueio"]
     assert "Solicitar recurso extra" in individual["motivo_bloqueio"]
+
+
+def test_saldo_por_tipo_resolve_a_rubrica_do_mapeamento(
+    auth_client_solicitante, activity_rn, rubrica_diarias, allocation_territorial_rn, limite_individual_rn,
+):
+    por_tipo = auth_client_solicitante.get(
+        "/api/v1/sgd/saldo/", {"activity_id": activity_rn.pk, "tipo": "diaria", "valor": "10"},
+    )
+    por_rubrica = auth_client_solicitante.get(
+        "/api/v1/sgd/saldo/", {"activity_id": activity_rn.pk, "rubrica": rubrica_diarias.slug, "valor": "10"},
+    )
+    assert por_tipo.status_code == 200
+    assert por_tipo.json() == por_rubrica.json()
+    assert por_tipo.json()["rubrica_slug"] == "diarias"
+    assert por_tipo.json()["rubrica_nome"] == "Diárias"
+
+
+@pytest.mark.parametrize("params", [
+    {"valor": "10"},
+    {"valor": "10", "tipo": "diaria", "rubrica": "diarias"},
+])
+def test_saldo_exige_exatamente_um_entre_rubrica_e_tipo(auth_client_solicitante, activity_rn, rubrica_diarias, params):
+    response = auth_client_solicitante.get("/api/v1/sgd/saldo/", {"activity_id": activity_rn.pk, **params})
+    assert response.status_code == 400
+
+
+def test_saldo_tipo_invalido_retorna_400(auth_client_solicitante, activity_rn):
+    response = auth_client_solicitante.get(
+        "/api/v1/sgd/saldo/", {"activity_id": activity_rn.pk, "tipo": "hospedagem", "valor": "10"},
+    )
+    assert response.status_code == 400
+    assert "tipo" in response.json()
+
+
+def test_saldo_tipo_sem_rubrica_mapeada_retorna_400_em_tipo(auth_client_solicitante, activity_rn, rubrica_diarias):
+    from django.core.cache import cache
+
+    from apps.core.models.system_config import SystemConfig, TipoConfiguracao
+
+    SystemConfig.objects.update_or_create(
+        chave="sgd_mapeamento_tipo_rubrica",
+        defaults={"valor": '{"diaria": "diarias"}', "tipo": TipoConfiguracao.JSON},
+    )
+    try:
+        response = auth_client_solicitante.get(
+            "/api/v1/sgd/saldo/", {"activity_id": activity_rn.pk, "tipo": "veiculo", "valor": "10"},
+        )
+        assert response.status_code == 400
+        assert "tipo" in response.json()
+    finally:
+        # Cache de SystemConfig não é transacional — limpa pra não vazar o
+        # mapeamento reduzido pros testes seguintes.
+        cache.delete("system_config:sgd_mapeamento_tipo_rubrica")
