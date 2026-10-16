@@ -177,7 +177,7 @@ test.describe("SGP — Produção da UPF consolidada", () => {
           next: null,
           previous: null,
           results: [
-            { id: 36, nome: "Caprino", categoria: "caprinos", ativa: true },
+            { id: 36, nome: "Caprino", categoria: "caprino", ativa: true },
           ],
         }),
       });
