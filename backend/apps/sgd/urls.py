@@ -7,6 +7,8 @@ from .views import (
     DemandIndividualLimitViewSet,
     DemandTypeRubricaMappingViewSet,
     DemandViewSet,
+    CustoPorAtividadeView,
+    PainelRubricasView,
     SaldoConsultaView,
 )
 
@@ -19,5 +21,7 @@ router.register("limites-individuais", DemandIndividualLimitViewSet, basename="d
 
 urlpatterns = [
     path("sgd/", include(router.urls)),
+    path("sgd/painel/rubricas/", PainelRubricasView.as_view(), name="sgd-painel-rubricas"),
+    path("sgd/relatorios/custo-por-atividade/", CustoPorAtividadeView.as_view(), name="sgd-custo-por-atividade"),
     path("sgd/saldo/", SaldoConsultaView.as_view(), name="sgd-saldo"),
 ]
