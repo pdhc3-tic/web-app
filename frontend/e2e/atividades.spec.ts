@@ -467,11 +467,15 @@ test.describe("SGP — Evidências (fotos e documentos)", () => {
           contentType: "application/json",
           body: JSON.stringify({
             id: 1,
-            tipo: "outro",
-            tipo_display: "Outro",
+            tipo: "ata",
+            tipo_display: "Ata",
             descricao: "",
+            nome_original: "ata-reuniao.pdf",
             data_documento: "2026-06-01",
+            tamanho_bytes: 1024,
+            criado_em: "2026-06-01T10:00:00Z",
             arquivo_url: `${STORAGE_URL}/doc.pdf`,
+            pendente_sincronizacao: false,
           }),
         });
       },
@@ -500,9 +504,15 @@ test.describe("SGP — Evidências (fotos e documentos)", () => {
       buffer: Buffer.alloc(1024),
     });
 
-    // Preencher tipo e data são obrigatórios para habilitar "Enviar pendentes".
-    await page.getByLabel("Tipo").selectOption({ label: "Ata" });
-    await page.locator('input[type="date"]').last().fill("2026-06-01");
+    // "Tipo" é um combobox customizado (button role=combobox), não um <select>
+    // HTML, então usamos clique + opção. Escopamos pela seção de Documentos
+    // para não colidir com o "Tipo de atividade" do formulário principal.
+    const docSection = page.getByRole("region", {
+      name: "Documentos da atividade",
+    });
+    await docSection.getByRole("combobox", { name: "Tipo" }).click();
+    await page.getByRole("option", { name: "Ata" }).click();
+    await docSection.locator('input[type="date"]').last().fill("2026-06-01");
 
     const uploadBtn = page.getByRole("button", { name: "Enviar pendentes" });
     await expect(uploadBtn).toBeEnabled({ timeout: 5_000 });
@@ -512,8 +522,20 @@ test.describe("SGP — Evidências (fotos e documentos)", () => {
         req.url().includes("/documentos/upload-url/") && req.method() === "POST",
       { timeout: 10_000 },
     );
+    const confirmRequest = page.waitForRequest(
+      (req) =>
+        req.url().includes("/documentos/confirm/") && req.method() === "POST",
+      { timeout: 10_000 },
+    );
     await uploadBtn.click();
     await uploadUrlRequest;
+    await confirmRequest;
+
+    // Após o confirm, o front move o item de pendente para a lista oficial
+    // (setDocs). O arquivo deve aparecer na seção de documentos.
+    await expect(
+      docSection.getByText("ata-reuniao.pdf", { exact: false }),
+    ).toBeVisible({ timeout: 5_000 });
   });
 });
 

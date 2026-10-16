@@ -256,15 +256,14 @@ test.describe("SGP — Mapa de UPFs", () => {
     const texto = await cluster.textContent();
     expect(Number(texto?.trim())).toBeGreaterThan(1);
 
-    // Clique no cluster: os marcadores expandem e o cluster some ou diminui.
-    const clusterCount = await page.locator(".mapview-cluster").count();
+    // Clique no cluster: o Leaflet dá zoom-in e parte dos marcadores saem do
+    // cluster como ícones individuais. A quantidade total de .mapview-cluster
+    // pode continuar igual (os demais clusters permanecem no mapa), então o
+    // sinal real da expansão é o aparecimento de .mapview-marker, nunca
+    // .leaflet-marker-icon (que também inclui os próprios clusters).
     await cluster.click();
-    // Após o zoom-in do Leaflet, ou há mais clusters menores ou marcadores individuais.
-    await expect(page.locator(".leaflet-marker-icon").first()).toBeVisible({
+    await expect(page.locator(".mapview-marker").first()).toBeVisible({
       timeout: 5_000,
     });
-    // O cluster original (com contagem total) não existe mais na mesma posição.
-    const newCount = await page.locator(".mapview-cluster").count();
-    expect(newCount).not.toBe(clusterCount);
   });
 });

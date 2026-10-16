@@ -15,6 +15,8 @@ import Spinner from "@/app/components/icons/Spinner";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 import { ApiError } from "@/app/lib/api";
 import {
+  fetchCulturaById,
+  fetchEspecieById,
   fetchIndicadoresProducao,
   listProducaoConsolidada,
   searchCulturas,
@@ -106,15 +108,16 @@ function ProducaoView() {
   const [culturaItem, setCulturaItem] = useState<CatalogoItem | null>(null);
   const [especieItem, setEspecieItem] = useState<CatalogoItem | null>(null);
 
-  // Restaura os itens do combobox quando a página abre com ?cultura= ou ?especie= na URL.
+  // Restaura os itens do combobox quando a página abre com ?cultura= ou
+  // ?especie= na URL. Usa fetchCulturaById/fetchEspecieById para achar o item
+  // mesmo quando o id está fora da primeira página do catálogo.
   useEffect(() => {
     const culturaId = searchParams.get("cultura");
     if (culturaId && !culturaItem) {
       const controller = new AbortController();
-      searchCulturas("", controller.signal)
-        .then((items) => {
-          const found = items.find((i) => String(i.id) === culturaId);
-          if (found && !controller.signal.aborted) setCulturaItem(found);
+      fetchCulturaById(culturaId, controller.signal)
+        .then((item) => {
+          if (item && !controller.signal.aborted) setCulturaItem(item);
         })
         .catch(() => {});
       return () => controller.abort();
@@ -127,10 +130,9 @@ function ProducaoView() {
     const especieId = searchParams.get("especie");
     if (especieId && !especieItem) {
       const controller = new AbortController();
-      searchEspecies("", controller.signal)
-        .then((items) => {
-          const found = items.find((i) => String(i.id) === especieId);
-          if (found && !controller.signal.aborted) setEspecieItem(found);
+      fetchEspecieById(especieId, controller.signal)
+        .then((item) => {
+          if (item && !controller.signal.aborted) setEspecieItem(item);
         })
         .catch(() => {});
       return () => controller.abort();
