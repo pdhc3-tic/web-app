@@ -7,6 +7,7 @@ import Spinner from "@/app/components/icons/Spinner";
 import { Button } from "@/app/components/ui/Button/Button";
 import { useToast } from "@/app/components/ui/Toast/Toast";
 import { ApiError } from "@/app/lib/api";
+import { AvisoListaParcial } from "@/app/(protected)/sgd/demandas/_components/AvisoListaParcial";
 import { exportarParaArlo } from "@/app/lib/arlo";
 import { listDemandas } from "@/app/lib/demandas";
 import { formatCurrencyBRL } from "@/app/lib/format";
@@ -30,7 +31,7 @@ export function ExportarArlo() {
     queryKey: qk.demandas.lista([...AUTORIZADAS]),
     queryFn: ({ signal }) => listDemandas({ status: [...AUTORIZADAS] }, signal),
   });
-  const demandas = query.data ?? [];
+  const demandas = query.data?.demandas ?? [];
   const totalSolicitacoes = demandas.reduce((n, d) => n + d.solicitacoes.length, 0);
 
   async function exportar() {
@@ -124,6 +125,7 @@ export function ExportarArlo() {
             {demandas.length} {demandas.length === 1 ? "demanda" : "demandas"} · {totalSolicitacoes}{" "}
             {totalSolicitacoes === 1 ? "linha" : "linhas"} no arquivo.
           </p>
+          <AvisoListaParcial lista={query.data} />
         </>
       )}
     </section>

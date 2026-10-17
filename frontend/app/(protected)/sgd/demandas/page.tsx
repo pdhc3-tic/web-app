@@ -13,6 +13,7 @@ import { ApiError } from "@/app/lib/api";
 import { listDemandas } from "@/app/lib/demandas";
 import { useFilaDemandas } from "@/app/lib/hooks/useFilaDemandas";
 import { qk } from "@/app/lib/queryKeys";
+import { AvisoListaParcial } from "./_components/AvisoListaParcial";
 import { DemandaPainel } from "./_components/DemandaPainel";
 import { DemandasTabela } from "./_components/DemandasTabela";
 
@@ -48,7 +49,7 @@ function PainelDemandasView() {
     staleTime: 30_000,
   });
   const atual = visao === "minha" ? fila : todas;
-  const demandas = atual.data ?? [];
+  const demandas = atual.data?.demandas ?? [];
 
   function navegar(patch: Record<string, string | null>) {
     const next = new URLSearchParams(searchParams.toString());
@@ -142,12 +143,15 @@ function PainelDemandasView() {
               />
             </div>
           ) : (
-            <DemandasTabela
-              demandas={demandas}
-              selecionada={selecionada}
-              compacta={selecionada !== null}
-              onSelecionar={(id) => navegar({ demanda: String(id) })}
-            />
+            <div className="flex flex-col gap-2">
+              <DemandasTabela
+                demandas={demandas}
+                selecionada={selecionada}
+                compacta={selecionada !== null}
+                onSelecionar={(id) => navegar({ demanda: String(id) })}
+              />
+              <AvisoListaParcial lista={atual.data} />
+            </div>
           )}
         </div>
 
