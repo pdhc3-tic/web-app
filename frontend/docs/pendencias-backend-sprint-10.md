@@ -156,6 +156,16 @@ baixá-lo e exercitar o fluxo assíncrono com o seed atual.
 
 ## 4. `/api/v1/choices/` não publica metade das listas — bloqueia a #272
 
+> **Resolvido em 07/10/2026 pelo PR #326:** o endpoint publica as 25 listas do
+> SGP com rótulo e tem teste de contrato. O frontend passou a consumir só ele
+> (#272, 08/10/2026). **Sobra uma lacuna:** as categorias do catálogo de
+> culturas e de espécies (`Cultura.CATEGORIA_CHOICES`,
+> `EspecieAnimal.CATEGORIA_CHOICES`) não estão no endpoint e o catálogo devolve
+> só o valor cru (`"graos"`), então o rótulo ainda é traduzido no frontend
+> (`app/lib/producao.ts`). **Pedido:** publicar `cultura_categoria` e
+> `especie_categoria` em `CHOICES_PUBLICADOS`, ou devolver `categoria_display`
+> no serializer do catálogo.
+
 *Estado atual:* `SGPChoicesView` (`backend/apps/sgp/views/choices.py`) não mudou
 desde o PR #288, em que o bloqueio já foi descrito. `constants.py` está igual
 desde 26/08/2026.
@@ -496,3 +506,91 @@ disponível — **Recusar** (UGP). O E2E de cancelar autorizada está como
 **Pedido:** definir, com a coordenação, quem cancela uma demanda Autorizada (e
 com que efeito na reserva de saldo); quando existir, o botão entra no painel
 com o mesmo drawer.
+
+---
+
+## 15. Risco de glosa da importação Arlo não é exposto (#298)
+
+A importação do retorno do Arlo grava um `GlosaRisk` para cada pagamento acima
+do valor autorizado (`apps/sgd/services/arlo_import.py`), mas **nenhum
+endpoint devolve esses registros**. Eles também não entram no
+`ArloImportSerializer` e não aparecem no BE-5 (PR #332). A #298 pede
+que, após a importação, as demandas com divergência entre autorizado e pago
+apareçam destacadas, em especial o risco de glosa.
+
+*Estado atual no frontend:* a tela `/sgd/arlo` mostra o resumo e os erros por
+linha da importação, mas não destaca nenhuma divergência. O front não calcula
+a divergência por conta própria. O E2E do destaque está como `test.fixme`.
+
+**Pedido:** devolver as divergências da operação. Pode ser um campo
+`divergencias` no `ArloImportSerializer` (lista de
+`{demanda_id, demanda_titulo, solicitacao_id, valor_autorizado, valor_pago, excedente}`),
+ou `GET /api/v1/sgd/arlo/{id}/divergencias/`. Se a regra também valer para
+pagamentos abaixo do autorizado, incluir esses casos com o sinal do valor.
+
+---
+
+## 16. Importação Arlo sempre falha no ambiente Docker local (#298)
+
+No `docker-compose.yml`, o `celery_worker` não monta `./backend:/app`, ao
+contrário do `backend`. Com `STORAGE_BACKEND=local`, o backend grava a
+planilha enviada no próprio disco (`media/arlo/importacoes/…`). A task
+`process_arlo_import` roda no worker, não acha o arquivo e marca a operação como
+**Falhou**. O worker também roda o código da imagem construída, e não o da branch.
+
+A mensagem gravada em `erros_json` é só o `str()` da `StorageObjectNotFound`,
+ou seja, o caminho do arquivo (`arlo/importacoes/<uuid>.csv`). Para quem opera,
+não explica o que aconteceu.
+
+**Pedido:**
+
+- montar o código e a pasta `media` no `celery_worker` e no `celery_beat`,
+  como no `backend`, ou um volume `media` compartilhado entre eles;
+- trocar a mensagem por algo legível, como "O arquivo enviado não foi
+  encontrado no armazenamento. Envie a planilha novamente.".
+
+---
+
+## 17. Opções dos campos das solicitações do SGD fora do `/api/v1/choices/` — bloqueia a #295
+
+A #295 exige que todos os selects do formulário de solicitação usem a fonte
+única de choices da #272, sem nenhum `enum` duplicado no frontend. No backend,
+as opções dos 6 tipos de solicitação existem só como conjuntos internos de
+validação, **sem rótulo**, em `apps/sgd/services/demand_request.py`:
+`_VINCULO_CHOICES`, `_MEIO_TRANSPORTE_CHOICES`, `_CLASSE_CHOICES`,
+`_URGENCIA_CHOICES`, `_TIPO_VEICULO_CHOICES`, `_TIPO_MATERIAL_CHOICES` e
+`_TIPO_REFEICAO_CHOICES`. Nenhum deles é publicado em `CHOICES_PUBLICADOS`.
+
+**Pedido:** transformar esses conjuntos em `TextChoices` com rótulo e
+publicá-los no `/api/v1/choices/`, junto com o próprio tipo de solicitação
+(`diarias`, `passagem`, `veiculo`, `material_grafico`, `alimentacao`,
+`equipamento`).
+
+---
+
+## 18. Mapeamento Arlo ↔ SGD: sem catálogo de campos e sem preview — bloqueia parte da #320
+
+O CRUD do BE-9 (`/api/v1/sgd/config/arlo-mapping/`) permite listar, editar,
+apagar e reordenar, mas a #320 pede mais duas coisas que a API não oferece:
+
+1. **Catálogo dos campos.** `campo_sgd` é texto livre na API. A lista de campos
+   válidos por direção, os obrigatórios e os formatos permitidos de cada um
+   (`CAMPOS`, `CAMPOS_*_OBRIGATORIOS`, `formatos_permitidos` em
+   `apps/sgd/services/arlo_mapping.py`) não é exposta e não tem rótulo. Sem
+   ela, o front não monta o "criar coluna" e mostraria nomes internos como
+   `valor_autorizado`.
+2. **Preview da exportação.** A issue pede uma linha do CSV de exemplo com o
+   mapeamento corrente. Montá-la no front exigiria copiar a formatação de data
+   e moeda (`formatar_valor`) e reconstruir campos que a API de demandas não
+   devolve (submeta, indicador).
+
+**Pedido:**
+
+- `GET /api/v1/sgd/config/arlo-mapping/campos/` →
+  `{exportacao: [{campo, label, obrigatorio, formatos: [{value, label}]}], importacao: […]}`;
+- `GET /api/v1/sgd/config/arlo-mapping/preview/?direcao=exportacao` →
+  `{colunas: [...], linha: [...]}` com uma demanda autorizada real, ou um
+  registro fictício quando não houver nenhuma.
+
+*Estado atual no frontend:* a #320 aguarda essas duas rotas para ser feita
+inteira, por decisão do time de não entregar a tela pela metade.

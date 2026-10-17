@@ -3,6 +3,7 @@
 import { useSession } from "next-auth/react";
 import { useQuery } from "@tanstack/react-query";
 import { FileText, Plus } from "lucide-react";
+import { AvisoListaParcial } from "@/app/(protected)/sgd/demandas/_components/AvisoListaParcial";
 import { CrudTab } from "@/app/components/sgp/CrudTab/CrudTab";
 import { Badge } from "@/app/components/ui/Badge/Badge";
 import { Button } from "@/app/components/ui/Button/Button";
@@ -50,7 +51,7 @@ export function DemandasTab({ atividade }: { atividade: AtividadeDetail }) {
     queryFn: ({ signal }) => listDemandasDaAtividade(atividade.id, signal),
   });
 
-  const demandas: Demanda[] = data ?? [];
+  const demandas: Demanda[] = data?.demandas ?? [];
   const mensagemErro =
     error instanceof ApiError
       ? error.message
@@ -133,6 +134,7 @@ export function DemandasTab({ atividade }: { atividade: AtividadeDetail }) {
             ))}
           </ul>
         )}
+        <AvisoListaParcial lista={data} />
       </CrudTab>
 
       {podeCriar && bloqueada && (
