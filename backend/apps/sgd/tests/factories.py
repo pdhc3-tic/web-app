@@ -1,7 +1,14 @@
 import factory
 
 from apps.core.tests.factories import UserFactory
-from apps.sgd.models import ApprovalStep, Demand, DemandDocument, DemandIndividualLimit, DemandRequest
+from apps.sgd.models import (
+    ApprovalStep,
+    Demand,
+    DemandDocument,
+    DemandIndividualLimit,
+    DemandRequest,
+    DemandTypeRubricaMapping,
+)
 from apps.sgp.tests.factories import ActivityFactory, BudgetRubricaFactory
 
 
@@ -87,3 +94,12 @@ class DemandIndividualLimitFactory(factory.django.DjangoModelFactory):
     valor_comprometido = 0
     valor_executado = 0
     criado_por = factory.SubFactory(UserFactory)
+
+
+class DemandTypeRubricaMappingFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = DemandTypeRubricaMapping
+
+    tipo = "diaria"
+    rubrica = factory.SubFactory(BudgetRubricaFactory)
+    ativo = True

@@ -301,3 +301,45 @@ export function searchEspecies(
     signal,
   );
 }
+
+// O endpoint de catálogo não tem rota de detalhe (só list). Para restaurar o
+// combobox a partir de ?cultura=<id> na URL, precisamos achar o item sem
+// depender da posição dele na página padrão (page_size=50). Pedimos o maior
+// page_size aceito pelo CatalogoPagination (max_page_size=200) e procuramos
+// pelo id. O seed tem ~60 culturas, então uma única requisição cobre o caso.
+async function buscarCatalogoPorId(
+  endpoint: string,
+  labels: Record<string, string>,
+  id: string,
+  signal?: AbortSignal,
+): Promise<CatalogoItem | null> {
+  const qs = new URLSearchParams({ page_size: "200" });
+  const res = await apiClient(`${endpoint}?${qs}`, { signal });
+  const data: Paginated<CatalogoApiItem> = await res.json();
+  const raw = data.results.find((item) => String(item.id) === id);
+  return raw ? toCatalogoItem(raw, labels) : null;
+}
+
+export function fetchCulturaById(
+  id: string,
+  signal?: AbortSignal,
+): Promise<CatalogoItem | null> {
+  return buscarCatalogoPorId(
+    "/api/v1/catalogos/culturas/",
+    CULTURA_CATEGORIA_LABELS,
+    id,
+    signal,
+  );
+}
+
+export function fetchEspecieById(
+  id: string,
+  signal?: AbortSignal,
+): Promise<CatalogoItem | null> {
+  return buscarCatalogoPorId(
+    "/api/v1/catalogos/especies-animais/",
+    ESPECIE_CATEGORIA_LABELS,
+    id,
+    signal,
+  );
+}
