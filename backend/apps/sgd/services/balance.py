@@ -58,6 +58,8 @@ class TravaCheck:
     saldo: Decimal
     motivo_bloqueio: str | None = None
     acao_sugerida: str | None = None
+    # Limite lido na checagem, reaproveitado no payload (evita 2ª query).
+    limite: DemandIndividualLimit | None = None
 
 
 @dataclass
@@ -95,8 +97,7 @@ def _semaforos(*, comprometido: Decimal, total: Decimal, valor: Decimal, limiare
     return {"semaforo_atual": atual, "semaforo_apos": apos}
 
 
-def _semaforos_individual(*, solicitante, rubrica, valor: Decimal, limiares) -> dict:
-    limite = DemandIndividualLimit.objects.filter(solicitante=solicitante, rubrica=rubrica).first()
+def _semaforos_individual(*, limite, valor: Decimal, limiares) -> dict:
     if limite is None:
         return dict(_SEM_SEMAFORO)
     return _semaforos(
@@ -120,7 +121,7 @@ def payload_saldo_consulta(check: "DuasTravasCheck", *, solicitante, rubrica, va
             "saldo": check.individual.saldo,
             "motivo_bloqueio": check.individual.motivo_bloqueio,
             "acao_sugerida": check.individual.acao_sugerida,
-            **_semaforos_individual(solicitante=solicitante, rubrica=rubrica, valor=valor, limiares=limiares),
+            **_semaforos_individual(limite=check.individual.limite, valor=valor, limiares=limiares),
         },
         "territorial": {
             "disponivel": check.territorial.disponivel,
@@ -179,7 +180,7 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal) -> TravaCheck:
     saldo = limite.saldo_disponivel
     if saldo <= ZERO:
         return TravaCheck(
-            disponivel=False, saldo=saldo,
+            disponivel=False, saldo=saldo, limite=limite,
             motivo_bloqueio=com_orientacao(
                 f"Limite individual esgotado para esta rubrica: R$ {saldo} disponível, "
                 f"R$ {valor} solicitado.",
@@ -189,14 +190,14 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal) -> TravaCheck:
         )
     if valor > saldo:
         return TravaCheck(
-            disponivel=False, saldo=saldo,
+            disponivel=False, saldo=saldo, limite=limite,
             motivo_bloqueio=com_orientacao(
                 f"Limite individual insuficiente: R$ {saldo} disponível, R$ {valor} solicitado.",
                 ORIENTACAO_INDIVIDUAL,
             ),
             acao_sugerida=ACAO_SUGERIDA[TRAVA_INDIVIDUAL],
         )
-    return TravaCheck(disponivel=True, saldo=saldo, motivo_bloqueio=None)
+    return TravaCheck(disponivel=True, saldo=saldo, motivo_bloqueio=None, limite=limite)
 
 
 def verificar_duas_travas(*, solicitante, rubrica, meta, valor: Decimal) -> DuasTravasCheck:

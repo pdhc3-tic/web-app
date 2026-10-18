@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.conf import settings
 from django.db import models
 from django.db.models import Sum
@@ -112,6 +114,10 @@ class Demand(models.Model):
         return self.activity.acao.meta
 
     def _total_solicitacoes(self, campo: str):
+        # Com `solicitacoes` já prefetchada (listagem), soma em memória: o
+        # `aggregate()` ignora o prefetch e custaria 1 query por demanda e total.
+        if "solicitacoes" in getattr(self, "_prefetched_objects_cache", {}):
+            return sum((getattr(s, campo) or 0 for s in self.solicitacoes.all()), Decimal("0"))
         return self.solicitacoes.aggregate(total=Sum(campo))["total"] or 0
 
     @property

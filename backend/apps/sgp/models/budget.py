@@ -183,6 +183,9 @@ class BudgetTransaction(models.Model):
         verbose_name = "Transação Orçamentária"
         verbose_name_plural = "Transações Orçamentárias"
         ordering = ["-criado_em"]
+        indexes = [
+            models.Index(fields=["demanda_id", "tipo"], name="idx_budgettx_demanda_tipo"),
+        ]
 
     def save(self, *args, **kwargs):
         if self.pk:

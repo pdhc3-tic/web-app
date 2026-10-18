@@ -18,7 +18,7 @@ class SaldoConsultaView(APIView):
         query.is_valid(raise_exception=True)
         dados = query.validated_data
 
-        activity = get_object_or_404(Activity, pk=dados["activity_id"])
+        activity = get_object_or_404(Activity.objects.select_related("acao__meta"), pk=dados["activity_id"])
         rubrica = BudgetRubrica.objects.filter(slug=dados["rubrica"], ativo=True).first()
         if rubrica is None:
             raise DRFValidationError({"rubrica": f"Rubrica '{dados['rubrica']}' não existe ou está inativa."})
