@@ -123,7 +123,7 @@ def _exigir_valor_cobre_o_deficit(demanda: Demand, rubrica, valor: Decimal) -> N
             "demanda": "A demanda não está bloqueada pelo limite individual nesta rubrica."
         })
     # SGP §6.6 deixa o valor livre para ajuste na devolução; o piso é o "valor faltante" do
-    # SGD §4.1/issue, e a UGP pode conceder menos (aprovação parcial).
+    # SGD §4.1, e a UGP pode conceder menos (aprovação parcial).
     if valor < deficit:
         raise DRFValidationError({
             "valor_solicitado": f"Não pode ser menor que o valor que falta no limite individual: R$ {deficit}."
@@ -356,6 +356,16 @@ def _conferir_pool(pedido, necessario: Decimal, origem: BudgetAllocation | None,
     return transferencia
 
 
+def _exigir_demanda_editavel(demanda: Demand) -> None:
+    if demanda.status not in STATUS_EDITAVEIS:
+        raise DRFValidationError({
+            "demanda": (
+                f"A demanda está '{demanda.get_status_display()}': só em Rascunho ou Devolvida o "
+                "pedido ainda tem bloqueio a liberar. Recuse o pedido."
+            )
+        })
+
+
 @transaction.atomic
 def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = None,
             justificativa: str = "", origem_allocation: BudgetAllocation | None = None) -> dict:
@@ -388,13 +398,21 @@ def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = N
     transferencia = None
     if valor_aprovado is not None:
         limite = _travar_limite(pedido, usuario)
-        # A demanda segue editável enquanto o pedido tramita: o déficit é recalculado
-        # agora, e não o da criação do pedido. Travar a Demand segura solicitações novas,
-        # que `adicionar_solicitacao` só inclui depois de travá-la também.
-        demanda = _demanda_do_pedido(pedido, travar=True)
+        demanda = _demanda_do_pedido(pedido)
         if demanda is None:
             necessario = valor_aprovado
         else:
+            # Fora de Rascunho/Devolvida, a importação do Arlo e a autorização travam a
+            # Demand ou a solicitação antes do limite: travá-la aqui, com o limite na mão,
+            # arriscaria deadlock. Com o limite travado, a demanda editável não é submetida
+            # no meio da decisão; a releitura sob lock cobre a que deixou de ter solicitação
+            # nesta rubrica e foi submetida.
+            _exigir_demanda_editavel(demanda)
+            # A demanda segue editável enquanto o pedido tramita: o déficit é recalculado
+            # agora, e não o da criação do pedido. Travar a Demand segura solicitações
+            # novas, que `adicionar_solicitacao` só inclui depois de travá-la também.
+            demanda = _demanda_do_pedido(pedido, travar=True)
+            _exigir_demanda_editavel(demanda)
             # Todas as da demanda, não só as da rubrica: uma solicitação de outra rubrica
             # pode ser editada para esta. `order_by("pk")` tira o join com Demand da
             # ordenação padrão.
@@ -421,9 +439,4 @@ def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = N
         decidido_por=usuario, decidido_em=timezone.now(),
     )
     notifications_service.notificar_recurso_extra_decidido(pedido)
-    return {
-        "pedido": pedido,
-        # A aprovação só se conclui com o pool coberto; o campo fica por compatibilidade.
-        "alerta_pool_insuficiente": False,
-        "transferencia": transferencia,
-    }
+    return {"pedido": pedido, "transferencia": transferencia}

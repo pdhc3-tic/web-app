@@ -502,6 +502,25 @@ def test_saldo_individual_negativo_entra_no_deficit(
     assert demanda.status == "submetida"
 
 
+@pytest.mark.parametrize("status", ["submetida", "autorizada"])
+def test_demanda_que_saiu_da_edicao_nao_tem_pedido_aprovado(
+    demanda, pedido_com_parecer, usuario_ugp, solicitante_rn, rubrica_diarias, status,
+):
+    demanda.status = status
+    demanda.save(update_fields=["status"])
+
+    resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", APROVAR)
+
+    assert resposta.status_code == 400
+    assert "demanda" in resposta.data
+    pedido_com_parecer.refresh_from_db()
+    assert pedido_com_parecer.status == "com_parecer"
+    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")
+    assert _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {
+        "decisao": "recusar", "justificativa": "A demanda já seguiu.",
+    }).status_code == 200
+
+
 # ── Pool territorial e remanejamento ─────────────────────────────────────────
 
 @pytest.fixture
@@ -512,10 +531,10 @@ def alocacao_estadual(allocation_territorial_rn, activity_rn, rubrica_diarias):
     )
 
 
-def test_pool_com_saldo_nao_gera_alerta_nem_remanejamento(pedido_com_parecer, usuario_ugp):
+def test_pool_com_saldo_nao_gera_remanejamento(pedido_com_parecer, usuario_ugp):
     resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", APROVAR)
 
-    assert resposta.data["alerta_pool_insuficiente"] is False
+    assert resposta.status_code == 200, resposta.data
     assert resposta.data["transferencia_id"] is None
     assert not BudgetTransfer.objects.exists()
 
@@ -545,7 +564,6 @@ def test_remanejamento_de_pool_estadual_cobre_o_que_falta(
     })
 
     assert resposta.status_code == 200, resposta.data
-    assert resposta.data["alerta_pool_insuficiente"] is False
     transferencia = BudgetTransfer.objects.get(pk=resposta.data["transferencia_id"])
     assert transferencia.tipo == "entre_niveis"
     assert transferencia.valor == Decimal("800")  # 1000 que a demanda reserva − 200 que o pool já tinha
@@ -820,6 +838,60 @@ def test_solicitacao_incluida_durante_a_decisao_entra_no_deficit(
     )
 
     _conferir_barrada_pelo_deficit(resultado, erros, pedido, solicitante_rn, rubrica_diarias)
+    assert DemandRequest.objects.filter(demanda=demanda, rubrica=rubrica_diarias).count() == 2
+
+
+@pytest.mark.django_db(transaction=True)
+def test_inclusao_de_solicitacao_espera_a_decisao_que_travou_a_demanda(
+    demanda, solicitante_rn, usuario_articulador_rn, usuario_ugp, rubrica_diarias, grafico_em_diarias,
+):
+    """Ordem inversa à do teste anterior: a decisão já travou a Demand e segura a
+    transação; a inclusão espera o commit dela em vez de entrar no meio da conta."""
+    pedido = _pedido_com_parecer(demanda, solicitante_rn, usuario_articulador_rn, "700")
+    decidiu, pode_commitar = threading.Event(), threading.Event()
+    erros = {}
+
+    def decisao():
+        try:
+            with transaction.atomic():
+                recurso_extra_service.decidir(
+                    pedido, usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.",
+                )
+                decidiu.set()
+                pode_commitar.wait(timeout=10)
+        except Exception as exc:
+            erros["decisao"] = exc
+        finally:
+            decidiu.set()
+            connection.close()
+
+    def inclusao():
+        try:
+            demand_service.adicionar_solicitacao(
+                demanda, tipo="grafico", campos_json=CAMPOS_GRAFICO, valor_estimado=Decimal("500"),
+            )
+        except Exception as exc:
+            erros["inclusao"] = exc
+        finally:
+            connection.close()
+
+    thread_decisao = threading.Thread(target=decisao)
+    thread_decisao.start()
+    assert decidiu.wait(timeout=10)
+    thread_inclusao = threading.Thread(target=inclusao)
+    thread_inclusao.start()
+    try:
+        _esperar_alguem_bloqueado()
+    finally:
+        pode_commitar.set()
+        thread_decisao.join(timeout=15)
+        thread_inclusao.join(timeout=15)
+    assert not thread_decisao.is_alive() and not thread_inclusao.is_alive()
+
+    assert erros == {}
+    pedido.refresh_from_db()
+    assert pedido.status == "aprovada"
+    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("1000")
     assert DemandRequest.objects.filter(demanda=demanda, rubrica=rubrica_diarias).count() == 2
 
 

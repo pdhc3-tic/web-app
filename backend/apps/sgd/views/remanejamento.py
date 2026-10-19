@@ -145,6 +145,5 @@ class RemanejamentoViewSet(viewsets.ViewSet):
         transferencia = resultado["transferencia"]
         return Response({
             **BudgetIncreaseRequestSerializer(resultado["pedido"]).data,
-            "alerta_pool_insuficiente": resultado["alerta_pool_insuficiente"],
             "transferencia_id": transferencia.pk if transferencia else None,
         })
