@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.sgd.serializers.saldo import SaldoConsultaQuerySerializer, SaldoConsultaSerializer
 from apps.sgd.services import balance as balance_service
-from apps.sgd.services.demand_request import rubrica_slug_para_tipo
+from apps.sgd.services.demand_request import rubrica_para_tipo
 from apps.sgp.models import Activity
 from apps.sgp.models.budget import BudgetRubrica
 
@@ -20,7 +20,7 @@ class SaldoConsultaView(APIView):
         dados = query.validated_data
 
         activity = get_object_or_404(Activity, pk=dados["activity_id"])
-        slug = dados["rubrica"] if "rubrica" in dados else rubrica_slug_para_tipo(dados["tipo"])
+        slug = dados["rubrica"] if "rubrica" in dados else rubrica_para_tipo(dados["tipo"]).slug
         rubrica = BudgetRubrica.objects.filter(slug=slug, ativo=True).first()
         if rubrica is None:
             raise DRFValidationError({"rubrica": f"Rubrica '{slug}' não existe ou está inativa."})

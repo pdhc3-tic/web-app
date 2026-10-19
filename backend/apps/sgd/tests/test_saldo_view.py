@@ -160,21 +160,12 @@ def test_saldo_tipo_invalido_retorna_400(auth_client_solicitante, activity_rn):
 
 
 def test_saldo_tipo_sem_rubrica_mapeada_retorna_400_em_tipo(auth_client_solicitante, activity_rn, rubrica_diarias):
-    from django.core.cache import cache
+    from apps.sgd.models import DemandTypeRubricaMapping
 
-    from apps.core.models.system_config import SystemConfig, TipoConfiguracao
+    DemandTypeRubricaMapping.objects.filter(tipo="veiculo").delete()
 
-    SystemConfig.objects.update_or_create(
-        chave="sgd_mapeamento_tipo_rubrica",
-        defaults={"valor": '{"diaria": "diarias"}', "tipo": TipoConfiguracao.JSON},
+    response = auth_client_solicitante.get(
+        "/api/v1/sgd/saldo/", {"activity_id": activity_rn.pk, "tipo": "veiculo", "valor": "10"},
     )
-    try:
-        response = auth_client_solicitante.get(
-            "/api/v1/sgd/saldo/", {"activity_id": activity_rn.pk, "tipo": "veiculo", "valor": "10"},
-        )
-        assert response.status_code == 400
-        assert "tipo" in response.json()
-    finally:
-        # Cache de SystemConfig não é transacional — limpa pra não vazar o
-        # mapeamento reduzido pros testes seguintes.
-        cache.delete("system_config:sgd_mapeamento_tipo_rubrica")
+    assert response.status_code == 400
+    assert "tipo" in response.json()
