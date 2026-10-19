@@ -124,6 +124,7 @@ def test_painel_queries_constantes(auth_client):
     assert queries_com_30 == queries_com_5
 
 
+@pytest.mark.performance
 def test_painel_sob_500ms(auth_client, municipio):
     tecnico = UserFactory()
     inicio = timezone.now()
@@ -172,6 +173,7 @@ def test_painel_sob_500ms(auth_client, municipio):
     assert elapsed < 0.5
 
 
+@pytest.mark.performance
 def test_listagem_5000_upfs_sob_3s(auth_client, projeto, municipio, territory):
     titulares = [
         MembroFamilia(

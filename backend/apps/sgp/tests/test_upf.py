@@ -662,6 +662,7 @@ class TestPerformanceIndexes:
             auth_client.get(f"/api/v1/upfs/?municipio={municipio_rn.pk}")
         assert len(ctx.captured_queries) <= 8
 
+    @pytest.mark.performance
     def test_list_performance_5000_upfs(
         self, auth_client, projeto, municipio_rn, territory_rn
     ):
