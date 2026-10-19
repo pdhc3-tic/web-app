@@ -130,7 +130,62 @@ test.describe("SGP — Produção da UPF consolidada", () => {
     const link = page.getByRole("link", { name: "João Silva" });
     await expect(link).toBeVisible();
     const href = await link.getAttribute("href");
-    expect(href).toBe("/sgp/upfs/42#producao");
+    expect(href).toBe("/sgp/upfs/42?tab=producao");
+  });
+
+  test("restaura combobox de cultura e espécie a partir da URL mesmo com id fora da primeira página", async ({
+    page,
+  }) => {
+    await page.route(INDICADORES_API, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ total_upfs_produtoras: 1, area_total_ha: null, principais_culturas: [] }),
+      });
+    });
+
+    await page.route(PRODUCAO_API, async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: paginated([producaoFake(1, 42, "João Silva", "agricola", "Milho")]),
+      });
+    });
+
+    await page.route("**/api/v1/catalogos/culturas/**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          count: 59,
+          next: null,
+          previous: null,
+          results: [
+            { id: 55, nome: "Sorgo Granífero", categoria: "graos", ativa: true },
+          ],
+        }),
+      });
+    });
+
+    await page.route("**/api/v1/catalogos/especies-animais/**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          count: 36,
+          next: null,
+          previous: null,
+          results: [
+            { id: 36, nome: "Caprino", categoria: "caprino", ativa: true },
+          ],
+        }),
+      });
+    });
+
+    await page.goto("/sgp/producao?cultura=55&especie=36");
+    await expect(page.getByText("Sorgo Granífero")).toBeVisible();
+    await expect(page.getByText("Caprino")).toBeVisible();
   });
 
   test("estado vazio sem filtros exibe mensagem", async ({ page }) => {

@@ -11,8 +11,8 @@ from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
 from apps.sgd.services.approval import aplicar_transicao, marcar_cancelada, pode_cancelar, pode_cancelar_autorizada
-from apps.sgd.services.demand_request import rubrica_slug_para_tipo, validar_campos_json
-from apps.sgp.models import Activity, BudgetRubrica
+from apps.sgd.services.demand_request import rubrica_para_tipo, validar_campos_json
+from apps.sgp.models import Activity
 
 ACTIVITY_STATUS_BLOQUEIAM_NOVA_DEMANDA = {"cancelada", "nao_realizada"}
 ACTIVITY_STATUS_EXIGEM_JUSTIFICATIVA = {"em_andamento", "concluido", "concluido_sem_evidencia"}
@@ -79,7 +79,7 @@ def adicionar_solicitacao(demand, *, tipo, campos_json, valor_estimado=None, ord
     _exigir_editavel(demand)
 
     validado = validar_campos_json(tipo, campos_json, demand.activity)
-    rubrica = BudgetRubrica.objects.get(slug=rubrica_slug_para_tipo(tipo))
+    rubrica = rubrica_para_tipo(tipo)
 
     valor_final = validado.valor_estimado_auto if validado.valor_estimado_auto is not None else valor_estimado
     if valor_final is None:
@@ -107,7 +107,8 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
     tipo_final = tipo or solicitacao.tipo
     campos_final = campos_json if campos_json is not None else solicitacao.campos_json
     validado = validar_campos_json(tipo_final, campos_final, demand.activity)
-    rubrica = BudgetRubrica.objects.get(slug=rubrica_slug_para_tipo(tipo_final))
+    # Não retroativo: só consulta o mapeamento vigente se o tipo mudou.
+    rubrica = rubrica_para_tipo(tipo_final) if tipo_final != solicitacao.tipo else solicitacao.rubrica
 
     valor_final = validado.valor_estimado_auto
     if valor_final is None:
