@@ -18,17 +18,9 @@ from apps.sgd.constants import (
     Urgencia,
     Vinculo,
 )
+from apps.sgd.models.demand_type_rubrica_mapping import DemandTypeRubricaMapping
+from apps.sgp.models import BudgetRubrica
 from apps.sgp.validators import validate_cpf
-
-# Usado só se SystemConfig("sgd_mapeamento_tipo_rubrica") ainda não existir.
-DEFAULT_TIPO_RUBRICA_MAP = {
-    "diaria": "diarias",
-    "passagem": "passagens-aereas",
-    "veiculo": "locacao-veiculo",
-    "grafico": "material-grafico",
-    "alimentacao": "alimentacao-refeicoes",
-    "equipamento": "equipamentos-capital",
-}
 
 
 @dataclass
@@ -38,14 +30,14 @@ class CamposValidados:
     valor_estimado_auto: Decimal | None
 
 
-def rubrica_slug_para_tipo(tipo: str) -> str:
-    mapeamento = get_config("sgd_mapeamento_tipo_rubrica", DEFAULT_TIPO_RUBRICA_MAP) or {}
-    slug = mapeamento.get(tipo)
-    if not slug:
+def rubrica_para_tipo(tipo: str) -> BudgetRubrica:
+    """Rubrica do mapeamento ativo do tipo (config do Super Admin, SGD-RF05)."""
+    mapeamento = DemandTypeRubricaMapping.objects.select_related("rubrica").filter(tipo=tipo, ativo=True).first()
+    if mapeamento is None:
         raise DRFValidationError(
             {"tipo": f"Nenhuma rubrica mapeada para o tipo '{tipo}'. Configure em Super Admin."}
         )
-    return slug
+    return mapeamento.rubrica
 
 
 def _obrigatorios(campos: dict, nomes: list[str]) -> None:

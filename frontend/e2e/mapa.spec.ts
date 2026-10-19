@@ -223,4 +223,47 @@ test.describe("SGP — Mapa de UPFs", () => {
     await expect(miniFicha).toBeVisible({ timeout: 5_000 });
     await expect(miniFicha.getByText("João Silva")).toBeVisible();
   });
+
+  test("cluster aparece quando há UPFs com coordenadas próximas", async ({
+    page,
+  }) => {
+    // Clustering ativa acima de 200 marcadores (clusteringThreshold = 200 em
+    // MapViewClient.tsx). Gerar 201 UPFs próximas garante a ativação.
+    const upfsProximas = Array.from({ length: 201 }, (_, i) =>
+      upfMapaFake(100 + i, `Titular ${i}`, "Ouricuri", -7.8800 + i * 0.00001, -40.0800 + i * 0.00001),
+    );
+
+    await page.route(MAPA_API, async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: mapaResponse(upfsProximas),
+      });
+    });
+
+    await page.goto("/sgp/upfs/mapa");
+
+    await expect(
+      page.locator(".leaflet-container").or(page.locator('[data-testid="map-view"]')),
+    ).toBeVisible({ timeout: 10_000 });
+
+    // O ícone de cluster usa <span class="mapview-cluster"> (markerIcons.ts:26).
+    const cluster = page.locator(".mapview-cluster").first();
+    await expect(cluster).toBeVisible({ timeout: 10_000 });
+
+    // A contagem exibida no cluster deve ser numérica.
+    const texto = await cluster.textContent();
+    expect(Number(texto?.trim())).toBeGreaterThan(1);
+
+    // Clique no cluster: o Leaflet dá zoom-in e parte dos marcadores saem do
+    // cluster como ícones individuais. A quantidade total de .mapview-cluster
+    // pode continuar igual (os demais clusters permanecem no mapa), então o
+    // sinal real da expansão é o aparecimento de .mapview-marker, nunca
+    // .leaflet-marker-icon (que também inclui os próprios clusters).
+    await cluster.click();
+    await expect(page.locator(".mapview-marker").first()).toBeVisible({
+      timeout: 5_000,
+    });
+  });
 });

@@ -1,12 +1,33 @@
+import ipaddress
 import json
+
+from django.conf import settings
 
 
 def get_client_ip(request) -> str | None:
-    """Retorna o IP real do cliente, respeitando proxies reversos."""
-    ip = request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", ""))
-    if ip and "," in ip:
-        ip = ip.split(",")[0].strip()
-    return ip or None
+    """IP do cliente atrás de `settings.TRUSTED_PROXY_COUNT` proxies confiáveis.
+
+    Cada proxy acrescenta ao fim do `X-Forwarded-For` o IP que ele viu, então o
+    cliente real é o N-ésimo da direita. O que vem antes disso é escrito pelo
+    próprio cliente e pode ser forjado, por isso nunca é usado. Valor inválido
+    ou cadeia curta demais caem no `REMOTE_ADDR`.
+    """
+    remote_addr = _ip_valido(request.META.get("REMOTE_ADDR"))
+    proxies = getattr(settings, "TRUSTED_PROXY_COUNT", 1)
+    cadeia = [
+        ip.strip() for ip in request.META.get("HTTP_X_FORWARDED_FOR", "").split(",") if ip.strip()
+    ]
+    if proxies < 1 or len(cadeia) < proxies:
+        return remote_addr
+    return _ip_valido(cadeia[-proxies]) or remote_addr
+
+
+def _ip_valido(valor) -> str | None:
+    try:
+        return str(ipaddress.ip_address(valor))
+    except ValueError:
+        return None
+
 
 from django.core.cache import cache
 

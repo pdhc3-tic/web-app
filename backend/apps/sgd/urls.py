@@ -4,9 +4,10 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     ArloFieldMappingViewSet,
     ArloViewSet,
-    CustoPorAtividadeView,
     DemandIndividualLimitViewSet,
+    DemandTypeRubricaMappingViewSet,
     DemandViewSet,
+    CustoPorAtividadeView,
     PainelRubricasView,
     SaldoConsultaView,
 )
@@ -15,6 +16,7 @@ router = DefaultRouter()
 router.register("demandas", DemandViewSet, basename="demanda")
 router.register("arlo", ArloViewSet, basename="arlo")
 router.register("config/arlo-mapping", ArloFieldMappingViewSet, basename="arlo-mapping")
+router.register("config/tipo-rubrica", DemandTypeRubricaMappingViewSet, basename="tipo-rubrica")
 router.register("limites-individuais", DemandIndividualLimitViewSet, basename="demanda-limite-individual")
 
 urlpatterns = [

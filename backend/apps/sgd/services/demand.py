@@ -6,11 +6,12 @@ from rest_framework.exceptions import ValidationError as DRFValidationError
 from apps.sgd.models.demand import STATUS_EDITAVEIS, Demand
 from apps.sgd.models.demand_document import DemandDocument
 from apps.sgd.models.demand_request import DemandRequest
+from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
 from apps.sgd.services.approval import aplicar_transicao, marcar_cancelada, pode_cancelar
-from apps.sgd.services.demand_request import rubrica_slug_para_tipo, validar_campos_json
-from apps.sgp.models import Activity, BudgetRubrica
+from apps.sgd.services.demand_request import rubrica_para_tipo, validar_campos_json
+from apps.sgp.models import Activity
 
 ACTIVITY_STATUS_BLOQUEIAM_NOVA_DEMANDA = {"cancelada", "nao_realizada"}
 ACTIVITY_STATUS_EXIGEM_JUSTIFICATIVA = {"em_andamento", "concluido", "concluido_sem_evidencia"}
@@ -45,10 +46,12 @@ def criar_demanda(*, titulo, activity, justificativa, solicitante) -> Demand:
         raise DRFValidationError({
             "justificativa": "Obrigatória para demandas de atividades já em andamento/concluídas (§2.3)."
         })
-    return Demand.objects.create(
+    demand = Demand.objects.create(
         titulo=titulo, activity=activity, justificativa=justificativa,
         solicitante=solicitante, despesa_posterior=despesa_posterior,
     )
+    auditoria_service.registrar_status(demand, de=None, para=demand.status, usuario=solicitante)
+    return demand
 
 
 def _exigir_editavel(demand) -> None:
@@ -77,7 +80,7 @@ def adicionar_solicitacao(demand, *, tipo, campos_json, valor_estimado=None, ord
     _exigir_editavel(demand)
 
     validado = validar_campos_json(tipo, campos_json, demand.activity)
-    rubrica = BudgetRubrica.objects.get(slug=rubrica_slug_para_tipo(tipo))
+    rubrica = rubrica_para_tipo(tipo)
 
     valor_final = validado.valor_estimado_auto if validado.valor_estimado_auto is not None else valor_estimado
     if valor_final is None:
@@ -105,7 +108,8 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
     tipo_final = tipo or solicitacao.tipo
     campos_final = campos_json if campos_json is not None else solicitacao.campos_json
     validado = validar_campos_json(tipo_final, campos_final, demand.activity)
-    rubrica = BudgetRubrica.objects.get(slug=rubrica_slug_para_tipo(tipo_final))
+    # Não retroativo: só consulta o mapeamento vigente se o tipo mudou.
+    rubrica = rubrica_para_tipo(tipo_final) if tipo_final != solicitacao.tipo else solicitacao.rubrica
 
     valor_final = validado.valor_estimado_auto
     if valor_final is None:
@@ -197,7 +201,7 @@ def submeter_demanda(demand, *, usuario) -> Demand:
     for solicitacao in solicitacoes:
         balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=usuario)
 
-    aplicar_transicao(demand, "submetida")
+    aplicar_transicao(demand, "submetida", usuario=usuario)
 
     sigla = demand.activity.municipio.state.sigla
     notifications_service.notificar_submissao(demand, notifications_service.usuarios_articuladores_do_estado(sigla))
@@ -215,5 +219,5 @@ def cancelar_demanda(demand, *, usuario, motivo: str = "") -> Demand:
             motivo=motivo or "Cancelada pelo solicitante.",
         )
 
-    marcar_cancelada(demand)
+    marcar_cancelada(demand, usuario=usuario)
     return demand

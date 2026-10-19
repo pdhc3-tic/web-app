@@ -1,6 +1,15 @@
 from django.contrib import admin
 
-from apps.sgd.models import ApprovalStep, ArloFieldMapping, ArloImport, Demand, DemandDocument, DemandIndividualLimit, DemandRequest
+from apps.sgd.models import (
+    ApprovalStep,
+    ArloFieldMapping,
+    ArloImport,
+    Demand,
+    DemandDocument,
+    DemandIndividualLimit,
+    DemandRequest,
+    DemandTypeRubricaMapping,
+)
 
 
 @admin.register(Demand)
@@ -45,3 +54,9 @@ class ArloFieldMappingAdmin(admin.ModelAdmin):
 class ArloImportAdmin(admin.ModelAdmin):
     list_display = ["tipo", "status", "operado_por", "operado_em", "total_registros", "registros_ok"]
     list_filter = ["tipo", "status"]
+
+
+@admin.register(DemandTypeRubricaMapping)
+class DemandTypeRubricaMappingAdmin(admin.ModelAdmin):
+    list_display = ["tipo", "rubrica", "ativo", "atualizado_em"]
+    list_filter = ["tipo", "ativo"]
