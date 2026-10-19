@@ -7,9 +7,10 @@ alocação estadual ou nacional e o remanejamento acontece na própria decisão.
 demanda bloqueada não é submetida sozinha: o limite maior só a deixa passar nas
 duas travas quando o solicitante submeter de novo.
 
-Ordem de lock: pedido → `DemandIndividualLimit` → `DemandRequest` da rubrica →
-`BudgetAllocation` (em ordem de pk). Limite antes das alocações, como em `balance.py`;
-as solicitações entre os dois, como na edição de uma solicitação com reserva.
+Ordem de lock: pedido → `DemandIndividualLimit` → `Demand` → `DemandRequest` da
+demanda → `BudgetAllocation` (em ordem de pk). Limite antes das alocações, como em
+`balance.py`; a `Demand` depois do limite, como na submissão e no cancelamento, que só
+a atualizam depois de reservar ou liberar.
 """
 
 from __future__ import annotations
@@ -91,10 +92,14 @@ def _sigla_do_pedido(pedido) -> str | None:
     return pedido.activity.municipio.state.sigla
 
 
-def _demanda_do_pedido(pedido) -> Demand | None:
-    if pedido.demanda_id and pedido.demanda_id.isdigit():
-        return Demand.objects.select_related("activity__acao__meta").filter(pk=int(pedido.demanda_id)).first()
-    return None
+def _demanda_do_pedido(pedido, *, travar: bool = False) -> Demand | None:
+    if not (pedido.demanda_id and pedido.demanda_id.isdigit()):
+        return None
+    demandas = Demand.objects.select_related("activity__acao__meta")
+    if travar:
+        # Só a Demand: Atividade, Ação e Meta vêm no join, mas ninguém as disputa aqui.
+        demandas = demandas.select_for_update(of=("self",))
+    return demandas.filter(pk=int(pedido.demanda_id)).first()
 
 
 def _necessario(solicitacoes) -> Decimal:
@@ -243,13 +248,13 @@ def _meta_do_pedido(pedido):
 
 
 def _travar_limite(pedido, usuario) -> DemandIndividualLimit:
-    limite = DemandIndividualLimit.objects.select_for_update().filter(
+    # Sem limite, o FOR UPDATE não trava nada e duas decisões do mesmo solicitante e
+    # rubrica tentam criá-lo. O `get_or_create` cria num savepoint: a segunda espera a
+    # primeira no índice único e, no IntegrityError, relê a linha travada e já elevada.
+    limite, _ = DemandIndividualLimit.objects.select_for_update().get_or_create(
         solicitante=pedido.user, rubrica=pedido.rubrica,
-    ).first()
-    if limite is None:
-        limite = DemandIndividualLimit.objects.create(
-            solicitante=pedido.user, rubrica=pedido.rubrica, valor_limite=ZERO, criado_por=usuario,
-        )
+        defaults={"valor_limite": ZERO, "criado_por": usuario},
+    )
     return limite
 
 
@@ -383,16 +388,20 @@ def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = N
     transferencia = None
     if valor_aprovado is not None:
         limite = _travar_limite(pedido, usuario)
-        demanda = _demanda_do_pedido(pedido)
+        # A demanda segue editável enquanto o pedido tramita: o déficit é recalculado
+        # agora, e não o da criação do pedido. Travar a Demand segura solicitações novas,
+        # que `adicionar_solicitacao` só inclui depois de travá-la também.
+        demanda = _demanda_do_pedido(pedido, travar=True)
         if demanda is None:
             necessario = valor_aprovado
         else:
-            # A demanda segue editável enquanto o pedido tramita, e outras demandas do
-            # solicitante consomem o mesmo limite: o déficit é recalculado agora, com o
-            # limite e as solicitações travados, e não o da criação do pedido. `order_by("pk")`
-            # tira o join com Demand da ordenação padrão, que o FOR UPDATE travaria junto
-            # (a submissão só atualiza a Demand depois do limite).
-            solicitacoes = demanda.solicitacoes.select_for_update().filter(rubrica=pedido.rubrica).order_by("pk")
+            # Todas as da demanda, não só as da rubrica: uma solicitação de outra rubrica
+            # pode ser editada para esta. `order_by("pk")` tira o join com Demand da
+            # ordenação padrão.
+            solicitacoes = [
+                s for s in demanda.solicitacoes.select_for_update().order_by("pk")
+                if s.rubrica_id == pedido.rubrica_id
+            ]
             necessario = _necessario(solicitacoes)
             deficit = necessario - limite.saldo_disponivel
             if decisao == "aprovar" and valor_aprovado < deficit:

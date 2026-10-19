@@ -11,14 +11,24 @@ from rest_framework.test import APIClient
 from apps.core.models.audit_log import AuditLog
 from apps.core.models.notifications import Notification
 from apps.core.models.user_profile import UserProfile
-from apps.sgd.models import DemandIndividualLimit, DemandRequest
+from apps.sgd.models import DemandIndividualLimit, DemandRequest, DemandTypeRubricaMapping
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import recurso_extra as recurso_extra_service
-from apps.sgd.tests.factories import BudgetIncreaseRequestFactory, DemandFactory, DemandRequestFactory
+from apps.sgd.tests.factories import (
+    BudgetIncreaseRequestFactory,
+    DemandFactory,
+    DemandRequestFactory,
+    DemandTypeRubricaMappingFactory,
+)
 from apps.sgp.models import BudgetAllocation, BudgetIncreaseRequest, BudgetTransfer
 from apps.sgp.services import budget as budget_service
-from apps.sgp.tests.factories import ActivityFactory, BudgetAllocationFactory, WorkPlanAcaoFactory
+from apps.sgp.tests.factories import (
+    ActivityFactory,
+    BudgetAllocationFactory,
+    BudgetRubricaFactory,
+    WorkPlanAcaoFactory,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -635,9 +645,12 @@ def test_decisao_trava_o_limite_individual_antes_das_alocacoes(
     }
     travas = [q["sql"] for q in consultas if "FOR UPDATE" in q["sql"]]
     tabelas = [nome for sql in travas for tabela, nome in nomes.items() if f'"{tabela}"' in sql]
-    assert tabelas.index("limite") < tabelas.index("solicitacao") < tabelas.index("alocacao")
-    # A submissão atualiza a Demand depois de travar o limite: travá-la aqui inverteria a ordem.
-    assert "demanda" not in tabelas
+    # A submissão e o cancelamento só atualizam a Demand depois do limite: travá-la antes
+    # dele inverteria a ordem.
+    assert (
+        tabelas.index("limite") < tabelas.index("demanda")
+        < tabelas.index("solicitacao") < tabelas.index("alocacao")
+    )
 
 
 # ── Concorrência entre conexões ──────────────────────────────────────────────
@@ -765,6 +778,104 @@ def test_pool_suficiente_na_consulta_e_consumido_antes_do_lock_exige_origem(
     assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")
     allocation_territorial_rn.refresh_from_db()
     assert allocation_territorial_rn.valor_comprometido == Decimal("100")
+
+
+CAMPOS_GRAFICO = {
+    "tipo_material": "banner", "quantidade": 1,
+    "especificacoes_tecnicas": "1x1m", "prazo_entrega": "2026-12-01",
+}
+
+
+@pytest.fixture
+def grafico_em_diarias(rubrica_diarias):
+    DemandTypeRubricaMapping.objects.filter(tipo="grafico").delete()
+    return DemandTypeRubricaMappingFactory(tipo="grafico", rubrica=rubrica_diarias)
+
+
+def _conferir_barrada_pelo_deficit(resultado, erros, pedido, solicitante, rubrica):
+    assert resultado is None
+    assert set(erros) == {"decisao"}
+    assert isinstance(erros["decisao"], ValidationError)
+    assert "valor_aprovado" in erros["decisao"].detail
+    pedido.refresh_from_db()
+    assert pedido.status == "com_parecer"
+    assert _limite(solicitante, rubrica) == Decimal("300")
+
+
+@pytest.mark.django_db(transaction=True)
+def test_solicitacao_incluida_durante_a_decisao_entra_no_deficit(
+    demanda, solicitante_rn, usuario_articulador_rn, usuario_ugp, rubrica_diarias, grafico_em_diarias,
+):
+    """A inclusão trava a Demand e segura a transação: a decisão espera por ela e recalcula
+    o déficit com a solicitação nova (1.000 + 500 − 300 = 1.200, acima dos 700 pedidos)."""
+    pedido = _pedido_com_parecer(demanda, solicitante_rn, usuario_articulador_rn, "700")
+
+    resultado, erros = _decidir_contra(
+        pedido,
+        travar=lambda: demand_service.adicionar_solicitacao(
+            demanda, tipo="grafico", campos_json=CAMPOS_GRAFICO, valor_estimado=Decimal("500"),
+        ),
+        mexer=lambda: None,
+        usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.",
+    )
+
+    _conferir_barrada_pelo_deficit(resultado, erros, pedido, solicitante_rn, rubrica_diarias)
+    assert DemandRequest.objects.filter(demanda=demanda, rubrica=rubrica_diarias).count() == 2
+
+
+@pytest.mark.django_db(transaction=True)
+def test_solicitacao_movida_para_a_rubrica_durante_a_decisao_entra_no_deficit(
+    demanda, solicitante_rn, usuario_articulador_rn, usuario_ugp, rubrica_diarias, grafico_em_diarias,
+):
+    """Trocar o tipo de uma solicitação de outra rubrica a traz para esta sem incluir linha
+    nova: a decisão a alcança porque trava todas as solicitações da demanda."""
+    pedido = _pedido_com_parecer(demanda, solicitante_rn, usuario_articulador_rn, "700")
+    movida = DemandRequestFactory(
+        demanda=demanda, tipo="passagem", rubrica=BudgetRubricaFactory(slug="rubrica-de-origem"),
+        valor_estimado=Decimal("500"),
+    )
+
+    resultado, erros = _decidir_contra(
+        pedido,
+        travar=lambda: demand_service.atualizar_solicitacao(
+            movida, usuario=solicitante_rn, tipo="grafico", campos_json=CAMPOS_GRAFICO,
+            valor_estimado=Decimal("500"),
+        ),
+        mexer=lambda: None,
+        usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.",
+    )
+
+    _conferir_barrada_pelo_deficit(resultado, erros, pedido, solicitante_rn, rubrica_diarias)
+    movida.refresh_from_db()
+    assert movida.rubrica_id == rubrica_diarias.pk
+
+
+@pytest.mark.django_db(transaction=True)
+def test_decisoes_simultaneas_sem_limite_criam_um_so_limite(
+    demanda, solicitante_rn, usuario_articulador_rn, usuario_ugp, rubrica_diarias,
+):
+    """Sem limite, o FOR UPDATE não trava nada e as duas decisões tentam criá-lo. A segunda
+    espera a primeira no índice único, relê o limite que ela criou e soma o seu aumento."""
+    DemandIndividualLimit.objects.filter(solicitante=solicitante_rn).delete()
+    primeiro = _pedido_com_parecer(demanda, solicitante_rn, usuario_articulador_rn, "1000")
+    outra = _solicitacao_em_outra_demanda(demanda, rubrica_diarias, Decimal("400")).demanda
+    segundo = _pedido_com_parecer(outra, solicitante_rn, usuario_articulador_rn, "400")
+
+    resultado, erros = _decidir_contra(
+        segundo,
+        travar=lambda: recurso_extra_service.decidir(
+            primeiro, usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.",
+        ),
+        mexer=lambda: None,
+        usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.",
+    )
+
+    assert erros == {}
+    assert resultado["pedido"].status == "aprovada"
+    primeiro.refresh_from_db()
+    assert primeiro.status == "aprovada"
+    assert DemandIndividualLimit.objects.filter(solicitante=solicitante_rn, rubrica=rubrica_diarias).count() == 1
+    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("1400")
 
 
 def test_remanejamento_so_pode_vir_de_saldo_estadual_ou_nacional(
