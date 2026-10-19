@@ -8,7 +8,6 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 
-from apps.core.models.municipality import Municipality
 from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsADTInTerritory, IsAuthenticatedActiveAccess, IsSuperAdmin
 from apps.core.views.audit import AuditLogPagination
@@ -28,10 +27,10 @@ from apps.sgd.services.approval import demand_visibility_scope
 from apps.sgd.services.auditoria import ENTIDADE_DEMANDA, ENTIDADE_MOVIMENTACAO_SALDO
 from apps.sgd.views.approval import DemandApprovalMixin
 from apps.sgd.views.demand_document import DemandDocumentMixin
-from apps.sgp.models import Activity
 from apps.sgp.services.exportacao import CONTENT_TYPES, Arquivo, gerar_arquivo
 from apps.sgp.views.exportacao import arquivo_response
 from apps.sgp.models.workplan import WorkPlanAcao
+from apps.sgp.services.access import atividades_acessiveis_ao_usuario, municipios_acessiveis_ao_usuario
 
 
 class DemandPagination(LimitOffsetPagination):
@@ -110,18 +109,24 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
         entrada.is_valid(raise_exception=True)
         dados = entrada.validated_data
 
+        # Sem get_object neste create, o has_object_permission nunca roda: o
+        # recorte territorial da atividade e do município é feito aqui.
         # Activity inline + Demand numa única transação — se criar_demanda
         # falhar (ex.: bloqueio de status), a Activity recém-criada não fica
         # órfã no banco.
         with transaction.atomic():
             if dados.get("activity_id"):
-                activity = get_object_or_404(Activity, pk=dados["activity_id"])
+                activity = get_object_or_404(
+                    atividades_acessiveis_ao_usuario(request.user), pk=dados["activity_id"],
+                )
             else:
                 activity = demand_service.criar_activity_inline(
                     titulo=dados["activity_titulo"],
                     tipo_atividade=dados["activity_tipo_atividade"],
                     acao=get_object_or_404(WorkPlanAcao, pk=dados["activity_acao_id"]),
-                    municipio=get_object_or_404(Municipality, pk=dados["activity_municipio_id"]),
+                    municipio=get_object_or_404(
+                        municipios_acessiveis_ao_usuario(request.user), pk=dados["activity_municipio_id"],
+                    ),
                     data_prevista=dados["activity_data_prevista"],
                     usuario=request.user,
                 )

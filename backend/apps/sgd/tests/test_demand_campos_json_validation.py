@@ -154,23 +154,15 @@ def test_equipamento_3_cotacoes_do_mesmo_fornecedor_bloqueia(demand_rascunho_rn)
         _exigir_minimo_cotacoes_equipamento(demand_rascunho_rn)
 
 
-def test_rubrica_slug_para_tipo_corresponde_ao_mapeamento_configurado():
-    from django.core.cache import cache
+def test_rubrica_para_tipo_corresponde_ao_mapeamento_configurado():
+    from apps.sgd.models import DemandTypeRubricaMapping
+    from apps.sgd.services.demand_request import rubrica_para_tipo
+    from apps.sgp.tests.factories import BudgetRubricaFactory
 
-    from apps.core.models.system_config import SystemConfig, TipoConfiguracao
-    from apps.sgd.services.demand_request import rubrica_slug_para_tipo
+    rubrica = BudgetRubricaFactory(slug="diarias-teste")
+    DemandTypeRubricaMapping.objects.filter(tipo="diaria", ativo=True).update(rubrica=rubrica)
 
-    SystemConfig.objects.update_or_create(
-        chave="sgd_mapeamento_tipo_rubrica",
-        defaults={"valor": '{"diaria": "diarias-teste"}', "tipo": TipoConfiguracao.JSON},
-    )
-    try:
-        assert rubrica_slug_para_tipo("diaria") == "diarias-teste"
-    finally:
-        # O cache de SystemConfig não é transacional (não é desfeito com o
-        # rollback do teste) — sem isso, o mapeamento estreito vaza pros
-        # testes seguintes que dependem do default completo.
-        cache.delete("system_config:sgd_mapeamento_tipo_rubrica")
+    assert rubrica_para_tipo("diaria") == rubrica
 
 
 def test_atualizar_solicitacao_em_rascunho_permitido(demand_rascunho_rn, municipio_rn):
@@ -207,16 +199,11 @@ def test_atualizar_solicitacao_bloqueada_fora_de_rascunho_devolvida(demand_rascu
         atualizar_solicitacao(solicitacao, usuario=demand_rascunho_rn.solicitante, campos_json={"quantidade": 2})
 
 
-def test_rubrica_slug_para_tipo_sem_mapeamento_configurado_usa_default():
-    from django.core.cache import cache
+def test_rubrica_para_tipo_sem_mapeamento_ativo_levanta_validacao():
+    from apps.sgd.models import DemandTypeRubricaMapping
+    from apps.sgd.services.demand_request import rubrica_para_tipo
 
-    from apps.core.models.system_config import SystemConfig
-    from apps.sgd.services.demand_request import DEFAULT_TIPO_RUBRICA_MAP, rubrica_slug_para_tipo
+    DemandTypeRubricaMapping.objects.filter(tipo="diaria").delete()
 
-    # delete() não invalida o cache de SystemConfig (só post_save o faz) —
-    # limpa manualmente pra não ler o valor seedado pela migration 0002.
-    SystemConfig.objects.filter(chave="sgd_mapeamento_tipo_rubrica").delete()
-    cache.delete("system_config:sgd_mapeamento_tipo_rubrica")
-
-    for tipo, slug_esperado in DEFAULT_TIPO_RUBRICA_MAP.items():
-        assert rubrica_slug_para_tipo(tipo) == slug_esperado
+    with pytest.raises(DRFValidationError):
+        rubrica_para_tipo("diaria")

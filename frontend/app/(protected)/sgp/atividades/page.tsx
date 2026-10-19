@@ -79,8 +79,8 @@ function AtividadesView() {
   const [optionsLoading, setOptionsLoading] = useState(true);
 
   const hasActiveFilters = useMemo(
-    () => Object.values(filters).some((v) => v !== ""),
-    [filters],
+    () => Object.values(filters).some((v) => v !== "") || apenasAtrasadas,
+    [filters, apenasAtrasadas],
   );
 
   // ── Sincroniza os filtros com a query string ─────────────────────────────
@@ -190,6 +190,7 @@ function AtividadesView() {
 
   const handleClearFilters = useCallback(() => {
     setFilters(EMPTY_FILTERS);
+    setApenasAtrasadas(false);
     setOffset(0);
   }, []);
 
@@ -242,6 +243,8 @@ function AtividadesView() {
           territorioOptions={territorioOptions}
           tecnicoOptions={tecnicoOptions}
           optionsLoading={optionsLoading}
+          apenasAtrasadas={apenasAtrasadas}
+          onApenasAtrasadasChange={setApenasAtrasadas}
         />
 
         {/* Os skeletons da tabela seguram o layout para quem vê; este status é
