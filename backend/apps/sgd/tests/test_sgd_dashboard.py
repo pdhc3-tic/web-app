@@ -180,6 +180,8 @@ def test_alertas_refletem_faixa_amarela_e_vermelha_e_omitem_verde(
     alertas = auth_client_ugp.get(URL).json()["alertas_saldo"]
 
     assert [(a["rubrica_slug"], a["faixa"]) for a in alertas] == [("diarias", "vermelho"), ("passagens", "amarelo")]
+    assert all(a["nivel"] == "nacional" for a in alertas)
+    assert all(a["estado_sigla"] is None and a["territorio_id"] is None for a in alertas)
 
 
 def test_alertas_do_articulador_ficam_no_escopo_do_estado(
@@ -199,6 +201,57 @@ def test_alertas_do_articulador_ficam_no_escopo_do_estado(
     assert len(alertas) == 1
     assert alertas[0]["nivel"] == "estadual"
     assert alertas[0]["faixa"] == "vermelho"
+    assert alertas[0]["estado_sigla"] == "RN"
+    assert alertas[0]["territorio_id"] is None
+
+
+def test_alertas_do_articulador_de_varios_estados_trazem_a_uf_de_cada_um(
+    api_client, activity_rn, rubrica_diarias, municipio_rn, municipio_ce, territory_rn, territory_ce,
+):
+    from apps.core.tests.factories import RoleFactory, UserFactory
+
+    role = RoleFactory(slug="articulador-estadual", nome="Articulador Estadual")
+    articulador = UserFactory(
+        email="articulador.rn.ce@test.com", nome="Articulador RN/CE",
+        profiles=[(role, territory_rn), (role, territory_ce)],
+    )
+    for estado in (municipio_rn.state, municipio_ce.state):
+        BudgetAllocationFactory(
+            meta=activity_rn.acao.meta, rubrica=rubrica_diarias, nivel=BudgetAllocation.Nivel.ESTADUAL,
+            estado=estado, territorio=None, valor_alocado=1_000, valor_comprometido=950,
+        )
+    api_client.force_authenticate(user=articulador)
+
+    alertas = api_client.get(URL).json()["alertas_saldo"]
+
+    # mesma meta e rubrica nos dois estados: só a UF distingue os alertas
+    assert [(a["rubrica_slug"], a["estado_sigla"], a["territorio_id"]) for a in alertas] == [
+        ("diarias", "CE", None), ("diarias", "RN", None),
+    ]
+
+
+def test_alertas_do_adt_cobrem_todos_os_territorios_do_perfil(
+    api_client, activity_rn, rubrica_diarias, territory_rn, territory_ce,
+):
+    from apps.core.tests.factories import RoleFactory, TerritoryFactory, UserFactory
+
+    role = RoleFactory(slug="adt-acr", nome="ADT / ACR")
+    adt = UserFactory(
+        email="adt.rn.ce@test.com", nome="ADT RN/CE", profiles=[(role, territory_rn), (role, territory_ce)],
+    )
+    nao_vinculado = TerritoryFactory(nome="Território PE", estados=["PE"])
+    for territorio in (territory_rn, territory_ce, nao_vinculado):
+        BudgetAllocationFactory(
+            meta=activity_rn.acao.meta, rubrica=rubrica_diarias, nivel=BudgetAllocation.Nivel.TERRITORIAL,
+            territorio=territorio, valor_alocado=1_000, valor_comprometido=950,
+        )
+    api_client.force_authenticate(user=adt)
+
+    alertas = api_client.get(URL).json()["alertas_saldo"]
+
+    assert {a["territorio_id"] for a in alertas} == {territory_rn.pk, territory_ce.pk}
+    assert all(a["nivel"] == "territorial" and a["estado_sigla"] is None for a in alertas)
+    assert len(alertas) == 2
 
 
 # --- sem movimentação --------------------------------------------------------

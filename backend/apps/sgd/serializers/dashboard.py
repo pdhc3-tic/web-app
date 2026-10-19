@@ -34,6 +34,8 @@ class DashboardAlertaSaldoSerializer(serializers.Serializer):
     rubrica_slug = serializers.CharField()
     rubrica_nome = serializers.CharField()
     nivel = serializers.CharField()
+    estado_sigla = serializers.CharField(allow_null=True)
+    territorio_id = serializers.IntegerField(allow_null=True)
     faixa = serializers.ChoiceField(choices=["amarelo", "vermelho"])
     percentual_comprometido = serializers.DecimalField(max_digits=7, decimal_places=2)
     valor_aprovado = serializers.DecimalField(**_DEC)

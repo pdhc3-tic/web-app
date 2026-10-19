@@ -11,8 +11,8 @@ from decimal import Decimal
 from django.db.models import Count, DecimalField, OuterRef, Subquery, Sum
 from django.db.models.functions import Coalesce, TruncDate
 from django.utils import timezone
-from rest_framework.exceptions import PermissionDenied
 
+from apps.core.models.user_profile import UserProfile
 from apps.core.services.permissions import user_role_slugs, user_states
 from apps.sgd.models.demand import STATUS_CHOICES, STATUS_TERMINAIS, Demand
 from apps.sgd.models.demand_request import DemandRequest
@@ -105,31 +105,57 @@ def contagem_por_status(user, base_qs) -> list[dict]:
     ]
 
 
-def _linhas_orcamento_do_escopo(user) -> list[dict]:
-    """Matriz meta × rubrica no nível do usuário: nacional (UGP/FGD/super-admin),
-    estadual (Articulador, um bloco por estado) ou territorial (ADT/ACR)."""
-    slugs = user_role_slugs(user, PERFIS_NACIONAIS | {"articulador-estadual"})
+def _territorios_do_adt(user) -> list[int]:
+    """Todos os territórios dos perfis `adt-acr` do usuário. Perfil sem
+    território é ignorado — nunca vira acesso global (mesma regra de
+    `budget._territorios_do_adt`)."""
+    return sorted(set(
+        UserProfile.objects.filter(
+            user=user, perfil__slug="adt-acr", territorio__isnull=False,
+        ).values_list("territorio_id", flat=True)
+    ))
+
+
+def _linhas_orcamento_do_escopo(user) -> list[tuple[dict, str | None, int | None]]:
+    """Matriz meta × rubrica no nível do usuário, como `(linha, estado_sigla,
+    territorio_id)` — o local acompanha cada linha, senão linhas iguais de
+    estados/territórios diferentes ficam indistinguíveis: nacional
+    (UGP/FGD/super-admin), estadual (Articulador, um bloco por estado) ou
+    territorial (ADT/ACR, um bloco por território)."""
+    slugs = user_role_slugs(user, PERFIS_NACIONAIS | {"articulador-estadual", "adt-acr"})
     if slugs & PERFIS_NACIONAIS:
-        return budget_service.painel_orcamento(
-            nivel=BudgetAllocation.Nivel.NACIONAL, estado_sigla=None, territorio_id=None, meta_id=None,
-        )
+        return [
+            (linha, None, None)
+            for linha in budget_service.painel_orcamento(
+                nivel=BudgetAllocation.Nivel.NACIONAL, estado_sigla=None, territorio_id=None, meta_id=None,
+            )
+        ]
     if "articulador-estadual" in slugs:
-        linhas = []
-        for sigla in sorted(user_states(user)):
-            linhas.extend(budget_service.painel_orcamento(
+        return [
+            (linha, sigla, None)
+            for sigla in sorted(user_states(user))
+            for linha in budget_service.painel_orcamento(
                 nivel=BudgetAllocation.Nivel.ESTADUAL, estado_sigla=sigla, territorio_id=None, meta_id=None,
-            ))
-        return linhas
-    try:
-        return budget_service.painel_orcamento_para_usuario(user)
-    except PermissionDenied:
-        return []
+            )
+        ]
+    if "adt-acr" in slugs:
+        # `painel_orcamento_para_usuario` resolveria um único território (o
+        # primeiro do perfil) e esconderia os alertas dos demais.
+        return [
+            (linha, None, territorio_id)
+            for territorio_id in _territorios_do_adt(user)
+            for linha in budget_service.painel_orcamento(
+                nivel=BudgetAllocation.Nivel.TERRITORIAL, estado_sigla=None,
+                territorio_id=territorio_id, meta_id=None,
+            )
+        ]
+    return []
 
 
 def alertas_de_saldo(user) -> list[dict]:
     """Células meta × rubrica em faixa amarela/vermelha; vermelho primeiro."""
     alertas = []
-    for linha in _linhas_orcamento_do_escopo(user):
+    for linha, estado_sigla, territorio_id in _linhas_orcamento_do_escopo(user):
         if linha["semaforo"] not in {"amarelo", "vermelho"}:
             continue
         alertas.append({
@@ -139,6 +165,8 @@ def alertas_de_saldo(user) -> list[dict]:
             "rubrica_slug": linha["rubrica"].slug,
             "rubrica_nome": linha["rubrica"].nome,
             "nivel": linha["nivel"],
+            "estado_sigla": estado_sigla,
+            "territorio_id": territorio_id,
             "faixa": linha["semaforo"],
             "percentual_comprometido": budget_service.percentual_comprometido(
                 linha["valor_comprometido"], linha["valor_aprovado"],
@@ -148,7 +176,10 @@ def alertas_de_saldo(user) -> list[dict]:
             "saldo_disponivel": linha["saldo_disponivel"],
         })
     ordem_faixa = {"vermelho": 0, "amarelo": 1}
-    alertas.sort(key=lambda a: (ordem_faixa[a["faixa"]], -a["percentual_comprometido"], a["rubrica_nome"]))
+    alertas.sort(key=lambda a: (
+        ordem_faixa[a["faixa"]], -a["percentual_comprometido"], a["rubrica_nome"],
+        a["estado_sigla"] or "", a["territorio_id"] or 0,
+    ))
     return alertas
 
 
