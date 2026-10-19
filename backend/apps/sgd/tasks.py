@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from apps.core.models.notifications import Notification
 from apps.sgd.models.demand import STATUS_TERMINAIS, Demand
+from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.services.approval import marcar_cancelada, responsaveis_pela_etapa_atual
 from apps.sgd.services.notifications import EVENTO_INATIVIDADE, link_inatividade, notificar_inatividade
 
@@ -125,14 +126,13 @@ def _cancelar_demandas_da_atividade(activity_id: int) -> int:
     # uma "demanda não atendida" (RF10).
     demandas = list(Demand.objects.filter(activity=activity).exclude(
         status__in=STATUS_TERMINAIS | {"em_atendimento"}
-    ))
-    # Libera o saldo de todas antes de cancelar qualquer uma. A transação é uma só:
-    # atualizar a Demand de uma e depois travar o limite da seguinte inverteria a
-    # ordem limite → Demand da decisão de recurso extra.
-    motivo = f"Atividade vinculada em status '{activity.get_status_display()}'."
-    for demand in demandas:
-        for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
-            balance_service.liberar_duas_travas(demand_request=solicitacao, usuario=None, motivo=motivo)
+    ).order_by("pk"))
+    # A transação é uma só: o saldo de todas as demandas sai antes de qualquer Demand
+    # ser cancelada, na ordem de lock de backend/docs/orcamento.md.
+    balance_service.liberar_duas_travas_em_lote(
+        DemandRequest.objects.filter(demanda__in=demandas).select_related("rubrica", "demanda__solicitante"),
+        usuario=None, motivo=f"Atividade vinculada em status '{activity.get_status_display()}'.",
+    )
 
     articuladores = notifications_service.usuarios_articuladores_do_estado(activity.municipio.state.sigla)
     for demand in demandas:

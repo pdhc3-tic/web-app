@@ -1,6 +1,6 @@
 # Orçamento — contrato de integração para o SGD
 
-O SGD (Sistema de Gestão de Demandas) ainda não existe. Este documento descreve o contrato que o SGP já expõe — o motor de saldo e os endpoints HTTP — para quando o SGD passar a chamá-lo.
+Este documento descreve o contrato que o SGP expõe ao SGD (Sistema de Gestão de Demandas) — o motor de saldo e os endpoints HTTP — e a ordem de lock que os dois seguem.
 
 ## Modelos
 
@@ -52,22 +52,24 @@ comportamento.
 
 ### Ordem de lock no SGD
 
-Quem trava mais de uma destas linhas na mesma transação segue esta ordem, para que duas transações nunca esperem uma pela outra:
+Toda transação que trava mais de uma destas linhas segue esta ordem, para que duas transações nunca esperem uma pela outra:
 
-1. Saldo, rubrica por rubrica em ordem de `rubrica_id`: o `DemandIndividualLimit` e depois a `BudgetAllocation` da rubrica (várias alocações, em ordem crescente de pk).
-2. `Demand`.
-3. `DemandRequest`.
+1. `BudgetIncreaseRequest` (pedido de recurso extra).
+2. Saldo, rubrica por rubrica em ordem de `rubrica_id`: os `DemandIndividualLimit` da rubrica e depois as `BudgetAllocation` da rubrica, cada grupo em ordem crescente de pk.
+3. `Demand`.
+4. `DemandRequest`.
 
 | Caminho | O que trava |
 |---|---|
-| Submissão, ajuste e liberação de reserva, cancelamento pelo solicitante | limite → alocação → `Demand` |
-| Cancelamento automático por atividade (`tasks.py`) | libera o saldo de todas as demandas, depois cancela cada uma |
-| Decisão de recurso extra (`services/recurso_extra.py`) | pedido → limite → alocações → `Demand` → solicitações da demanda |
-| `adicionar_solicitacao` | só a `Demand` |
+| Submissão; recusa; cancelamento pelo solicitante; edição e remoção de solicitação com reserva | limite → alocação → `Demand` ou `DemandRequest` |
+| Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todos os limites e depois todas as alocações; só então as `Demand` |
+| Decisão de recurso extra | pedido → limite → alocações (territorial e origem) → `Demand` → todas as `DemandRequest` da demanda |
+| Parecer, devolução, submissão e edição do pedido | só o pedido |
+| Criação do pedido | a `Demand`, e depois o pedido novo, que nenhuma outra transação enxerga antes do commit |
+| Inclusão de solicitação | só a `Demand` |
+| `remanejar`, `atualizar_valor_alocado` | alocações em ordem crescente de pk |
 
-Exceções, que só tocam demanda fora de Rascunho/Devolvida: a importação do Arlo trava a `Demand` antes do limite, e `autorizar`/`concluir` gravam a solicitação de uma rubrica antes de travar o limite da seguinte. Por isso a decisão de recurso extra confere que a demanda está editável antes de travá-la.
-
-O cancelamento automático percorre demanda por demanda, então pode travar a alocação de uma rubrica antes do limite de outra demanda na rubrica seguinte, invertendo a ordem do item 1 em relação a uma submissão concorrente.
+Exceções, só em demandas fora de Rascunho/Devolvida: a importação do Arlo trava a `Demand` antes do limite, e `autorizar`/`concluir` gravam a solicitação de uma rubrica antes de travar o limite da seguinte. A decisão de recurso extra confere que a demanda está editável antes de travá-la, então nunca disputa essas linhas com elas. Entre si, e com o cancelamento automático de uma demanda autorizada, essas exceções ainda podem formar ciclo: o Postgres derruba uma das transações, que precisa ser repetida.
 
 ### Reconciliação
 

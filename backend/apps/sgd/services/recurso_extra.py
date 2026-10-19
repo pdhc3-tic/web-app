@@ -71,6 +71,16 @@ def _exigir_valor_positivo(valor: Decimal, campo: str = "valor_solicitado") -> N
         raise DRFValidationError({campo: "Deve ser maior que zero."})
 
 
+def _travar_pedido(pedido) -> BudgetIncreaseRequest:
+    """Relê o pedido travado: duas ações simultâneas sobre ele (parecer e devolução, duas
+    decisões) não podem partir do mesmo status nem gravar uma por cima da outra.
+    `of=("self",)`: a Atividade é opcional (join externo), e o Postgres não aceita FOR
+    UPDATE no lado anulável de um join."""
+    return BudgetIncreaseRequest.objects.select_for_update(of=("self",)).select_related(
+        "rubrica", "user", "activity__municipio__state", "activity__acao__meta",
+    ).get(pk=pedido.pk)
+
+
 def _mudar_status(pedido, para, usuario, acao: str, **campos) -> None:
     de = pedido.status
     _exigir_transicao(pedido, para)
@@ -165,12 +175,13 @@ def criar(*, demanda: Demand, rubrica, justificativa: str, usuario, valor_solici
         },
     )
     if submeter:
-        submeter_pedido(pedido, usuario=usuario)
+        pedido = submeter_pedido(pedido, usuario=usuario)
     return pedido
 
 
 @transaction.atomic
 def editar(pedido, *, usuario, valor_solicitado=None, justificativa=None, periodo_aplicacao=None):
+    pedido = _travar_pedido(pedido)
     if pedido.status not in BudgetIncreaseRequest.EDITAVEIS:
         raise DRFValidationError({
             "status": f"Pedido em status '{pedido.get_status_display()}' não pode ser editado."
@@ -203,6 +214,7 @@ def editar(pedido, *, usuario, valor_solicitado=None, justificativa=None, period
 
 @transaction.atomic
 def submeter_pedido(pedido, *, usuario):
+    pedido = _travar_pedido(pedido)
     _mudar_status(pedido, Status.SUBMETIDA, usuario, "submetido")
     sigla = _sigla_do_pedido(pedido)
     if sigla:
@@ -215,6 +227,7 @@ def submeter_pedido(pedido, *, usuario):
 @transaction.atomic
 def emitir_parecer(pedido, *, usuario, parecer: str):
     parecer = _exigir_texto(parecer, "parecer", "Obrigatório.")
+    pedido = _travar_pedido(pedido)
     _mudar_status(
         pedido, Status.COM_PARECER, usuario, "parecer_emitido",
         parecer_articulador=parecer, parecer_por=usuario,
@@ -228,6 +241,7 @@ def emitir_parecer(pedido, *, usuario, parecer: str):
 @transaction.atomic
 def devolver_pedido(pedido, *, usuario, justificativa: str):
     justificativa = _exigir_texto(justificativa, "justificativa", "Obrigatória para devolver o pedido.")
+    pedido = _travar_pedido(pedido)
     _mudar_status(
         pedido, Status.DEVOLVIDA, usuario, "devolvido",
         parecer_articulador=justificativa, parecer_por=usuario,
@@ -370,12 +384,7 @@ def _exigir_demanda_editavel(demanda: Demand) -> None:
 @transaction.atomic
 def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = None,
             justificativa: str = "", origem_allocation: BudgetAllocation | None = None) -> dict:
-    # Trava o pedido: duas decisões simultâneas não podem aprovar o mesmo pedido duas vezes.
-    # `of=("self",)`: a Atividade é opcional (join externo), e o Postgres não aceita
-    # FOR UPDATE no lado anulável de um join — só o pedido precisa ser travado.
-    pedido = BudgetIncreaseRequest.objects.select_for_update(of=("self",)).select_related(
-        "rubrica", "user", "activity__municipio__state", "activity__acao__meta",
-    ).get(pk=pedido.pk)
+    pedido = _travar_pedido(pedido)
     if decisao not in DECISOES:
         raise DRFValidationError({"decisao": f"Valor inválido. Esperado um de: {sorted(DECISOES)}."})
     destino_status = DECISOES[decisao]
