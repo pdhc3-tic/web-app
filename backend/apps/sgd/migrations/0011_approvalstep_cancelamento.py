@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('sgd', '0009_arlo_field_mapping'),
+        ('sgd', '0010_demand_type_rubrica_mapping'),
     ]
 
     operations = [
