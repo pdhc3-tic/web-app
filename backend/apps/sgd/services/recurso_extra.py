@@ -7,10 +7,8 @@ alocação estadual ou nacional e o remanejamento acontece na própria decisão.
 demanda bloqueada não é submetida sozinha: o limite maior só a deixa passar nas
 duas travas quando o solicitante submeter de novo.
 
-Ordem de lock: pedido → `DemandIndividualLimit` → `Demand` → `DemandRequest` da
-demanda → `BudgetAllocation` (em ordem de pk). Limite antes das alocações, como em
-`balance.py`; a `Demand` depois do limite, como na submissão e no cancelamento, que só
-a atualizam depois de reservar ou liberar.
+Ordem de lock: pedido → `DemandIndividualLimit` → `BudgetAllocation` (em ordem de pk)
+→ `Demand` → `DemandRequest` da demanda, a ordem de `backend/docs/orcamento.md`.
 """
 
 from __future__ import annotations
@@ -272,9 +270,9 @@ def _elevar_limite(pedido, limite: DemandIndividualLimit, valor: Decimal, usuari
     )
 
 
-def _conferir_pool(pedido, necessario: Decimal, origem: BudgetAllocation | None, usuario) -> BudgetTransfer | None:
-    """Garante, com o saldo lido sob lock, que o pool territorial cobre o que a demanda
-    precisa reservar. Sem cobrir, só passa com `origem`, que remaneja a diferença."""
+def _travar_alocacoes(pedido, origem: BudgetAllocation | None):
+    """Trava a alocação territorial do solicitante e, se houver, a de origem do
+    remanejamento, em ordem crescente de pk, como `remanejar`. Devolve (destino, origem)."""
     meta = _meta_do_pedido(pedido)
     if meta is None:
         raise DRFValidationError({"detail": "Pedido sem Meta: não há como conferir o pool territorial."})
@@ -284,9 +282,10 @@ def _conferir_pool(pedido, necessario: Decimal, origem: BudgetAllocation | None,
         raise DRFValidationError({
             "detail": f"Não há como conferir o pool territorial do solicitante. {exc.detail}"
         }) from exc
+    # Só localiza a alocação: o saldo é lido depois, com ela travada.
     check = budget_service.saldo_para_consulta(
         meta_id=meta.pk, rubrica_slug=pedido.rubrica.slug, nivel=nivel,
-        estado_sigla=sigla, territorio=territorio, valor=necessario,
+        estado_sigla=sigla, territorio=territorio, valor=ZERO,
     )
     if check.allocation is None:
         raise DRFValidationError({"detail": "Nenhuma alocação territorial encontrada para o solicitante nesta rubrica."})
@@ -295,15 +294,18 @@ def _conferir_pool(pedido, necessario: Decimal, origem: BudgetAllocation | None,
             "origem_allocation": "O remanejamento só pode vir de saldo estadual ou nacional."
         })
 
-    # A consulta acima só localiza a alocação: uma reserva concorrente pode ter mudado o
-    # saldo, então ele é relido depois do lock, mesmo quando parecia bastar. Em ordem
-    # crescente de pk, como `remanejar`.
     pks = {check.allocation.pk} | ({origem.pk} if origem is not None else set())
     travadas = {
         pk: BudgetAllocation.objects.select_for_update(of=("self",)).select_related("estado", "territorio").get(pk=pk)
         for pk in sorted(pks)
     }
-    destino = travadas[check.allocation.pk]
+    return travadas[check.allocation.pk], (travadas[origem.pk] if origem is not None else None)
+
+
+def _cobrir_pool(pedido, necessario: Decimal, destino: BudgetAllocation, origem: BudgetAllocation | None,
+                 usuario) -> BudgetTransfer | None:
+    """Garante que o pool territorial, já travado, cobre o que a demanda precisa reservar.
+    Sem cobrir, só passa com `origem`, que remaneja a diferença."""
     faltante = necessario - _saldo(destino)
     if faltante <= ZERO:
         return None
@@ -315,7 +317,6 @@ def _conferir_pool(pedido, necessario: Decimal, origem: BudgetAllocation | None,
                 "que cobre a diferença."
             )
         })
-    origem = travadas[origem.pk]
     origem_antes, destino_antes = _saldo(origem), _saldo(destino)
     motivo = f"Recurso extra #{pedido.pk}: {pedido.justificativa}"
     budget_service.remanejar(origem=origem, destino=destino, valor=faltante, usuario=usuario, justificativa=motivo)
@@ -399,13 +400,17 @@ def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = N
     if valor_aprovado is not None:
         limite = _travar_limite(pedido, usuario)
         demanda = _demanda_do_pedido(pedido)
+        if demanda is not None:
+            # Fora de Rascunho/Devolvida, o Arlo e a autorização travam a Demand ou a
+            # solicitação antes do limite: checar antes de travar evita o deadlock.
+            _exigir_demanda_editavel(demanda)
+        destino, origem = _travar_alocacoes(pedido, origem_allocation)
         if demanda is None:
             necessario = valor_aprovado
         else:
-            # Fora de Rascunho/Devolvida, o Arlo e a autorização travam a Demand ou a
-            # solicitação antes do limite: checar antes de travar evita o deadlock. A
-            # segunda checagem pega a demanda submetida enquanto a decisão esperava o lock.
-            _exigir_demanda_editavel(demanda)
+            # A Demand depois das alocações, como a submissão e os cancelamentos, que só a
+            # atualizam depois de mexer no saldo. A segunda checagem pega a demanda
+            # submetida enquanto a decisão esperava o lock.
             demanda = _demanda_do_pedido(pedido, travar=True)
             _exigir_demanda_editavel(demanda)
             # Todas as solicitações da demanda, não só as da rubrica: uma de outra rubrica
@@ -425,7 +430,7 @@ def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = N
                     )
                 })
         _elevar_limite(pedido, limite, valor_aprovado, usuario)
-        transferencia = _conferir_pool(pedido, necessario, origem_allocation, usuario)
+        transferencia = _cobrir_pool(pedido, necessario, destino, origem, usuario)
 
     _mudar_status(
         pedido, destino_status, usuario, f"decidido_{decisao}",

@@ -12,6 +12,7 @@ from rest_framework.test import APIClient
 from apps.core.models.audit_log import AuditLog
 from apps.core.models.notifications import Notification
 from apps.core.models.user_profile import UserProfile
+from apps.core.tests.factories import RoleFactory, UserFactory
 from apps.sgd.models import Demand, DemandIndividualLimit, DemandRequest, DemandTypeRubricaMapping
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
@@ -20,6 +21,7 @@ from apps.sgd.tasks import cancelar_demandas_da_atividade
 from apps.sgd.tests.factories import (
     BudgetIncreaseRequestFactory,
     DemandFactory,
+    DemandIndividualLimitFactory,
     DemandRequestFactory,
     DemandTypeRubricaMappingFactory,
 )
@@ -645,7 +647,7 @@ def test_saldos_da_auditoria_sao_lidos_depois_do_lock(
     assert transferencia.saldo_origem_depois == Decimal("48200")
 
 
-def test_decisao_trava_o_limite_individual_antes_das_alocacoes(
+def test_decisao_trava_limite_alocacoes_demanda_e_solicitacoes_nessa_ordem(
     pedido_com_parecer, usuario_ugp, allocation_territorial_rn, alocacao_estadual,
 ):
     from django.db import connection
@@ -665,11 +667,11 @@ def test_decisao_trava_o_limite_individual_antes_das_alocacoes(
     }
     travas = [q["sql"] for q in consultas if "FOR UPDATE" in q["sql"]]
     tabelas = [nome for sql in travas for tabela, nome in nomes.items() if f'"{tabela}"' in sql]
-    # A submissão e o cancelamento só atualizam a Demand depois do limite: travá-la antes
-    # dele inverteria a ordem.
+    # A ordem de `backend/docs/orcamento.md`: a submissão e os cancelamentos só atualizam
+    # a Demand depois de mexer no limite e na alocação.
     assert (
-        tabelas.index("limite") < tabelas.index("demanda")
-        < tabelas.index("solicitacao") < tabelas.index("alocacao")
+        tabelas.index("limite") < tabelas.index("alocacao")
+        < tabelas.index("demanda") < tabelas.index("solicitacao")
     )
 
 
@@ -692,8 +694,8 @@ def _esperar_alguem_bloqueado(timeout=10):
 
 
 def _intercalar(segura, espera):
-    """`segura(pausa)` roda numa transação e, ao chamar `pausa()`, para com ela aberta;
-    `espera()` começa em outra conexão e só depois que ela fica bloqueada num lock
+    """`segura(pausa)` roda numa transação e, ao chamar `pausa()`, para com ela aberta.
+    Então `espera()` começa em outra conexão; quando `espera()` fica bloqueada num lock,
     `segura` segue e commita. Devolve resultados e exceções nas chaves "segura" e "espera"."""
     pausou, pode_seguir = threading.Event(), threading.Event()
     resultados, erros = {}, {}
@@ -894,35 +896,46 @@ def test_inclusao_confere_o_status_da_demanda_travada(demanda, grafico_em_diaria
 
 
 @pytest.mark.django_db(transaction=True)
+def _decisao_pausada_antes_da_demanda(monkeypatch, pedido, usuario):
+    """Devolve o `segura` de `_intercalar` para uma aprovação que para logo antes de travar
+    a Demand do pedido, já com o limite e as alocações travados."""
+    original = recurso_extra_service._demanda_do_pedido
+    pausas = []
+
+    def pausando(pedido, *, travar=False):
+        if travar:
+            pausas[0]()
+        return original(pedido, travar=travar)
+
+    monkeypatch.setattr(recurso_extra_service, "_demanda_do_pedido", pausando)
+
+    def decidir(pausa):
+        pausas.append(pausa)
+        return recurso_extra_service.decidir(pedido, usuario=usuario, decisao="aprovar", justificativa="Procede.")
+
+    return decidir
+
+
 def test_cancelamento_da_atividade_durante_a_decisao_nao_entra_em_deadlock(
     demanda, demand_request_rn, solicitante_rn, usuario_articulador_rn, usuario_ugp, rubrica_diarias,
     monkeypatch,
 ):
-    """A decisão segura o limite e para antes de travar a Demand do pedido; o cancelamento
-    automático da atividade começa e bloqueia no limite. A demanda do pedido, sem
-    solicitação na rubrica, é a primeira que a task percorre: se ela fosse cancelada antes
-    de a task liberar a outra, a task seguraria essa Demand esperando o limite, e a
-    decisão seguraria o limite esperando a Demand."""
+    """A decisão segura o limite e as alocações e para antes de travar a Demand do pedido;
+    o cancelamento automático da atividade começa e bloqueia no limite. A demanda do
+    pedido, sem solicitação na rubrica, é a primeira que a task percorre: se ela fosse
+    cancelada antes de a task liberar a outra, a task seguraria essa Demand esperando o
+    limite, e a decisão seguraria o limite esperando a Demand."""
     pedido = _pedido_com_parecer(demanda, solicitante_rn, usuario_articulador_rn, "700")
     demand_service.remover_solicitacao(demand_request_rn, usuario=solicitante_rn)
     outra = _solicitacao_em_outra_demanda(demanda, rubrica_diarias, Decimal("100")).demanda
     # A task percorre da mais nova para a mais antiga (`-criado_em`).
     Demand.objects.filter(pk=outra.pk).update(criado_em=demanda.criado_em - timedelta(days=1))
     Activity.objects.filter(pk=demanda.activity_id).update(status="cancelada")
-    original = recurso_extra_service._demanda_do_pedido
 
-    def decidir(pausa):
-        def pausando(pedido, *, travar=False):
-            if travar:
-                pausa()
-            return original(pedido, travar=travar)
-
-        monkeypatch.setattr(recurso_extra_service, "_demanda_do_pedido", pausando)
-        return recurso_extra_service.decidir(
-            pedido, usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.",
-        )
-
-    resultados, erros = _intercalar(decidir, lambda: cancelar_demandas_da_atividade(demanda.activity_id))
+    resultados, erros = _intercalar(
+        _decisao_pausada_antes_da_demanda(monkeypatch, pedido, usuario_ugp),
+        lambda: cancelar_demandas_da_atividade(demanda.activity_id),
+    )
 
     assert erros == {}
     assert resultados["segura"]["pedido"].status == "aprovada"
@@ -930,6 +943,63 @@ def test_cancelamento_da_atividade_durante_a_decisao_nao_entra_em_deadlock(
     assert set(Demand.objects.filter(activity_id=demanda.activity_id).values_list("status", flat=True)) == {
         "cancelada",
     }
+
+
+@pytest.mark.django_db(transaction=True)
+def test_cancelamento_com_reserva_de_outro_solicitante_na_alocacao_nao_entra_em_deadlock(
+    demanda, solicitante_rn, usuario_articulador_rn, usuario_ugp, rubrica_diarias, territory_rn,
+    allocation_territorial_rn, monkeypatch,
+):
+    """A task não disputa o limite que a decisão segura, mas libera a reserva de outro
+    solicitante na mesma alocação territorial. A decisão já tem a alocação quando para,
+    então a task bloqueia nela; se a decisão travasse a Demand antes da alocação, a task
+    seguraria a alocação esperando a Demand para cancelá-la, e a decisão o contrário."""
+    pedido = _pedido_com_parecer(demanda, solicitante_rn, usuario_articulador_rn, "700")
+    vizinho = UserFactory(profiles=[(RoleFactory(slug="adt-acr"), territory_rn)])
+    DemandIndividualLimitFactory(solicitante=vizinho, rubrica=rubrica_diarias, valor_limite=5_000)
+    da_vizinha = DemandRequestFactory(
+        demanda=DemandFactory(activity=demanda.activity, solicitante=vizinho, status="rascunho"),
+        tipo="diaria", rubrica=rubrica_diarias, valor_estimado=Decimal("100"),
+    )
+    balance_service.reservar_duas_travas(demand_request=da_vizinha, usuario=vizinho)
+    Activity.objects.filter(pk=demanda.activity_id).update(status="cancelada")
+
+    resultados, erros = _intercalar(
+        _decisao_pausada_antes_da_demanda(monkeypatch, pedido, usuario_ugp),
+        lambda: cancelar_demandas_da_atividade(demanda.activity_id),
+    )
+
+    assert erros == {}
+    assert resultados["segura"]["pedido"].status == "aprovada"
+    assert resultados["espera"] == 2
+    assert set(Demand.objects.filter(activity_id=demanda.activity_id).values_list("status", flat=True)) == {
+        "cancelada",
+    }
+    allocation_territorial_rn.refresh_from_db()
+    assert allocation_territorial_rn.valor_comprometido == Decimal("0")
+
+
+@pytest.mark.django_db(transaction=True)
+def test_demanda_submetida_enquanto_a_decisao_espera_o_lock_nao_tem_pedido_aprovado(
+    demanda, solicitante_rn, usuario_articulador_rn, usuario_ugp, rubrica_diarias,
+):
+    """A primeira checagem vê Rascunho; a demanda muda de status enquanto a decisão espera
+    a Demand, e a releitura sob lock barra a aprovação."""
+    pedido = _pedido_com_parecer(demanda, solicitante_rn, usuario_articulador_rn, "700")
+
+    resultado, erros = _decidir_contra(
+        pedido,
+        travar=lambda: Demand.objects.select_for_update().get(pk=demanda.pk),
+        mexer=lambda: Demand.objects.filter(pk=demanda.pk).update(status="submetida"),
+        usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.",
+    )
+
+    assert resultado is None
+    assert set(erros) == {"decisao"}
+    assert "demanda" in erros["decisao"].detail
+    pedido.refresh_from_db()
+    assert pedido.status == "com_parecer"
+    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")
 
 
 @pytest.mark.django_db(transaction=True)

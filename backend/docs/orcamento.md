@@ -50,6 +50,25 @@ comportamento.
 - `reservar` levanta `SaldoInsuficienteError` (exceção Python simples, não amarrada a DRF) se o valor pedido exceder o saldo disponível.
 - Nenhuma função do motor importa `apps.sgd` — o motor não conhece quem o chama.
 
+### Ordem de lock no SGD
+
+Quem trava mais de uma destas linhas na mesma transação segue esta ordem, para que duas transações nunca esperem uma pela outra:
+
+1. Saldo, rubrica por rubrica em ordem de `rubrica_id`: o `DemandIndividualLimit` e depois a `BudgetAllocation` da rubrica (várias alocações, em ordem crescente de pk).
+2. `Demand`.
+3. `DemandRequest`.
+
+| Caminho | O que trava |
+|---|---|
+| Submissão, ajuste e liberação de reserva, cancelamento pelo solicitante | limite → alocação → `Demand` |
+| Cancelamento automático por atividade (`tasks.py`) | libera o saldo de todas as demandas, depois cancela cada uma |
+| Decisão de recurso extra (`services/recurso_extra.py`) | pedido → limite → alocações → `Demand` → solicitações da demanda |
+| `adicionar_solicitacao` | só a `Demand` |
+
+Exceções, que só tocam demanda fora de Rascunho/Devolvida: a importação do Arlo trava a `Demand` antes do limite, e `autorizar`/`concluir` gravam a solicitação de uma rubrica antes de travar o limite da seguinte. Por isso a decisão de recurso extra confere que a demanda está editável antes de travá-la.
+
+O cancelamento automático percorre demanda por demanda, então pode travar a alocação de uma rubrica antes do limite de outra demanda na rubrica seguinte, invertendo a ordem do item 1 em relação a uma submissão concorrente.
+
 ### Reconciliação
 
 ```
