@@ -6,3 +6,4 @@ class SgdConfig(AppConfig):
 
     def ready(self):
         import apps.sgd.signals.activity  # noqa
+        import apps.sgd.signals.saldo  # noqa
