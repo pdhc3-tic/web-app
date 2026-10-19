@@ -402,20 +402,14 @@ def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = N
         if demanda is None:
             necessario = valor_aprovado
         else:
-            # Fora de Rascunho/Devolvida, a importação do Arlo e a autorização travam a
-            # Demand ou a solicitação antes do limite: travá-la aqui, com o limite na mão,
-            # arriscaria deadlock. Com o limite travado, a demanda editável não é submetida
-            # no meio da decisão; a releitura sob lock cobre a que deixou de ter solicitação
-            # nesta rubrica e foi submetida.
+            # Fora de Rascunho/Devolvida, o Arlo e a autorização travam a Demand ou a
+            # solicitação antes do limite: checar antes de travar evita o deadlock. A
+            # segunda checagem pega a demanda submetida enquanto a decisão esperava o lock.
             _exigir_demanda_editavel(demanda)
-            # A demanda segue editável enquanto o pedido tramita: o déficit é recalculado
-            # agora, e não o da criação do pedido. Travar a Demand segura solicitações
-            # novas, que `adicionar_solicitacao` só inclui depois de travá-la também.
             demanda = _demanda_do_pedido(pedido, travar=True)
             _exigir_demanda_editavel(demanda)
-            # Todas as da demanda, não só as da rubrica: uma solicitação de outra rubrica
-            # pode ser editada para esta. `order_by("pk")` tira o join com Demand da
-            # ordenação padrão.
+            # Todas as solicitações da demanda, não só as da rubrica: uma de outra rubrica
+            # pode ser editada para esta. `order_by("pk")` tira o join com Demand.
             solicitacoes = [
                 s for s in demanda.solicitacoes.select_for_update().order_by("pk")
                 if s.rubrica_id == pedido.rubrica_id

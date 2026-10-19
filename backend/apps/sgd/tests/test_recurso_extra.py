@@ -1,6 +1,7 @@
 """Solicitação de recurso extra (SGP §6.6): pedido, parecer, decisão da UGP e remanejamento."""
 import threading
 import time
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
@@ -11,17 +12,18 @@ from rest_framework.test import APIClient
 from apps.core.models.audit_log import AuditLog
 from apps.core.models.notifications import Notification
 from apps.core.models.user_profile import UserProfile
-from apps.sgd.models import DemandIndividualLimit, DemandRequest, DemandTypeRubricaMapping
+from apps.sgd.models import Demand, DemandIndividualLimit, DemandRequest, DemandTypeRubricaMapping
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import recurso_extra as recurso_extra_service
+from apps.sgd.tasks import cancelar_demandas_da_atividade
 from apps.sgd.tests.factories import (
     BudgetIncreaseRequestFactory,
     DemandFactory,
     DemandRequestFactory,
     DemandTypeRubricaMappingFactory,
 )
-from apps.sgp.models import BudgetAllocation, BudgetIncreaseRequest, BudgetTransfer
+from apps.sgp.models import Activity, BudgetAllocation, BudgetIncreaseRequest, BudgetTransfer
 from apps.sgp.services import budget as budget_service
 from apps.sgp.tests.factories import (
     ActivityFactory,
@@ -689,47 +691,60 @@ def _esperar_alguem_bloqueado(timeout=10):
     raise AssertionError("Nenhuma conexão ficou esperando lock.")
 
 
-def _decidir_contra(pedido, *, travar, mexer, usuario, **corpo):
-    """A thread B executa `travar` e segura a transação; a decisão (thread A) começa e fica
-    bloqueada no que B travou; só então B executa `mexer` e commita. Devolve o resultado
-    da decisão e as exceções de cada thread."""
-    b_travou, b_pode_seguir = threading.Event(), threading.Event()
-    resultado, erros = {}, {}
+def _intercalar(segura, espera):
+    """`segura(pausa)` roda numa transação e, ao chamar `pausa()`, para com ela aberta;
+    `espera()` começa em outra conexão e só depois que ela fica bloqueada num lock
+    `segura` segue e commita. Devolve resultados e exceções nas chaves "segura" e "espera"."""
+    pausou, pode_seguir = threading.Event(), threading.Event()
+    resultados, erros = {}, {}
 
-    def concorrente():
+    def pausa():
+        pausou.set()
+        pode_seguir.wait(timeout=10)
+
+    def segurar():
+        with transaction.atomic():
+            return segura(pausa)
+
+    def rodar(lado, funcao):
         try:
-            with transaction.atomic():
-                travar()
-                b_travou.set()
-                b_pode_seguir.wait(timeout=10)
-                mexer()
+            resultados[lado] = funcao()
         except Exception as exc:
-            erros["concorrente"] = exc
+            erros[lado] = exc
         finally:
-            b_travou.set()
+            pausou.set()
             connection.close()
 
-    def decisao():
-        try:
-            resultado["decisao"] = recurso_extra_service.decidir(pedido, usuario=usuario, **corpo)
-        except Exception as exc:
-            erros["decisao"] = exc
-        finally:
-            connection.close()
-
-    thread_b = threading.Thread(target=concorrente)
-    thread_b.start()
-    assert b_travou.wait(timeout=10)
-    thread_a = threading.Thread(target=decisao)
-    thread_a.start()
+    thread_segura = threading.Thread(target=rodar, args=("segura", segurar))
+    thread_segura.start()
+    assert pausou.wait(timeout=10)
+    thread_espera = threading.Thread(target=rodar, args=("espera", espera))
+    thread_espera.start()
     try:
         _esperar_alguem_bloqueado()
     finally:
-        b_pode_seguir.set()
-        thread_b.join(timeout=15)
-        thread_a.join(timeout=15)
-    assert not thread_a.is_alive() and not thread_b.is_alive()
-    return resultado.get("decisao"), erros
+        pode_seguir.set()
+        thread_segura.join(timeout=15)
+        thread_espera.join(timeout=15)
+    assert not thread_segura.is_alive() and not thread_espera.is_alive()
+    return resultados, erros
+
+
+def _decidir_contra(pedido, *, travar, usuario, mexer=None, **corpo):
+    """A thread B executa `travar` e segura a transação; a decisão começa e fica bloqueada
+    no que B travou; só então B executa `mexer` e commita. Devolve o resultado da decisão
+    e as exceções de cada thread."""
+    def concorrente(pausa):
+        travar()
+        pausa()
+        if mexer is not None:
+            mexer()
+
+    resultados, erros = _intercalar(
+        concorrente, lambda: recurso_extra_service.decidir(pedido, usuario=usuario, **corpo),
+    )
+    nomes = {"segura": "concorrente", "espera": "decisao"}
+    return resultados.get("espera"), {nomes[lado]: exc for lado, exc in erros.items()}
 
 
 @pytest.mark.django_db(transaction=True)
@@ -833,7 +848,6 @@ def test_solicitacao_incluida_durante_a_decisao_entra_no_deficit(
         travar=lambda: demand_service.adicionar_solicitacao(
             demanda, tipo="grafico", campos_json=CAMPOS_GRAFICO, valor_estimado=Decimal("500"),
         ),
-        mexer=lambda: None,
         usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.",
     )
 
@@ -848,51 +862,74 @@ def test_inclusao_de_solicitacao_espera_a_decisao_que_travou_a_demanda(
     """Ordem inversa à do teste anterior: a decisão já travou a Demand e segura a
     transação; a inclusão espera o commit dela em vez de entrar no meio da conta."""
     pedido = _pedido_com_parecer(demanda, solicitante_rn, usuario_articulador_rn, "700")
-    decidiu, pode_commitar = threading.Event(), threading.Event()
-    erros = {}
 
-    def decisao():
-        try:
-            with transaction.atomic():
-                recurso_extra_service.decidir(
-                    pedido, usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.",
-                )
-                decidiu.set()
-                pode_commitar.wait(timeout=10)
-        except Exception as exc:
-            erros["decisao"] = exc
-        finally:
-            decidiu.set()
-            connection.close()
+    def decidir(pausa):
+        recurso_extra_service.decidir(pedido, usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.")
+        pausa()
 
-    def inclusao():
-        try:
-            demand_service.adicionar_solicitacao(
-                demanda, tipo="grafico", campos_json=CAMPOS_GRAFICO, valor_estimado=Decimal("500"),
-            )
-        except Exception as exc:
-            erros["inclusao"] = exc
-        finally:
-            connection.close()
-
-    thread_decisao = threading.Thread(target=decisao)
-    thread_decisao.start()
-    assert decidiu.wait(timeout=10)
-    thread_inclusao = threading.Thread(target=inclusao)
-    thread_inclusao.start()
-    try:
-        _esperar_alguem_bloqueado()
-    finally:
-        pode_commitar.set()
-        thread_decisao.join(timeout=15)
-        thread_inclusao.join(timeout=15)
-    assert not thread_decisao.is_alive() and not thread_inclusao.is_alive()
+    _, erros = _intercalar(
+        decidir,
+        lambda: demand_service.adicionar_solicitacao(
+            demanda, tipo="grafico", campos_json=CAMPOS_GRAFICO, valor_estimado=Decimal("500"),
+        ),
+    )
 
     assert erros == {}
     pedido.refresh_from_db()
     assert pedido.status == "aprovada"
     assert _limite(solicitante_rn, rubrica_diarias) == Decimal("1000")
     assert DemandRequest.objects.filter(demanda=demanda, rubrica=rubrica_diarias).count() == 2
+
+
+def test_inclusao_confere_o_status_da_demanda_travada(demanda, grafico_em_diarias):
+    """O objeto em memória ainda diz Rascunho; a linha travada já foi submetida."""
+    Demand.objects.filter(pk=demanda.pk).update(status="submetida")
+
+    with pytest.raises(ValidationError):
+        demand_service.adicionar_solicitacao(
+            demanda, tipo="grafico", campos_json=CAMPOS_GRAFICO, valor_estimado=Decimal("500"),
+        )
+
+    assert demanda.solicitacoes.count() == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_cancelamento_da_atividade_durante_a_decisao_nao_entra_em_deadlock(
+    demanda, demand_request_rn, solicitante_rn, usuario_articulador_rn, usuario_ugp, rubrica_diarias,
+    monkeypatch,
+):
+    """A decisão segura o limite e para antes de travar a Demand do pedido; o cancelamento
+    automático da atividade começa e bloqueia no limite. A demanda do pedido, sem
+    solicitação na rubrica, é a primeira que a task percorre: se ela fosse cancelada antes
+    de a task liberar a outra, a task seguraria essa Demand esperando o limite, e a
+    decisão seguraria o limite esperando a Demand."""
+    pedido = _pedido_com_parecer(demanda, solicitante_rn, usuario_articulador_rn, "700")
+    demand_service.remover_solicitacao(demand_request_rn, usuario=solicitante_rn)
+    outra = _solicitacao_em_outra_demanda(demanda, rubrica_diarias, Decimal("100")).demanda
+    # A task percorre da mais nova para a mais antiga (`-criado_em`).
+    Demand.objects.filter(pk=outra.pk).update(criado_em=demanda.criado_em - timedelta(days=1))
+    Activity.objects.filter(pk=demanda.activity_id).update(status="cancelada")
+    original = recurso_extra_service._demanda_do_pedido
+
+    def decidir(pausa):
+        def pausando(pedido, *, travar=False):
+            if travar:
+                pausa()
+            return original(pedido, travar=travar)
+
+        monkeypatch.setattr(recurso_extra_service, "_demanda_do_pedido", pausando)
+        return recurso_extra_service.decidir(
+            pedido, usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.",
+        )
+
+    resultados, erros = _intercalar(decidir, lambda: cancelar_demandas_da_atividade(demanda.activity_id))
+
+    assert erros == {}
+    assert resultados["segura"]["pedido"].status == "aprovada"
+    assert resultados["espera"] == 2
+    assert set(Demand.objects.filter(activity_id=demanda.activity_id).values_list("status", flat=True)) == {
+        "cancelada",
+    }
 
 
 @pytest.mark.django_db(transaction=True)
@@ -913,7 +950,6 @@ def test_solicitacao_movida_para_a_rubrica_durante_a_decisao_entra_no_deficit(
             movida, usuario=solicitante_rn, tipo="grafico", campos_json=CAMPOS_GRAFICO,
             valor_estimado=Decimal("500"),
         ),
-        mexer=lambda: None,
         usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.",
     )
 
@@ -938,7 +974,6 @@ def test_decisoes_simultaneas_sem_limite_criam_um_so_limite(
         travar=lambda: recurso_extra_service.decidir(
             primeiro, usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.",
         ),
-        mexer=lambda: None,
         usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.",
     )
 

@@ -123,23 +123,22 @@ def _cancelar_demandas_da_atividade(activity_id: int) -> int:
 
     # "Em atendimento" fica de fora — já está sendo atendida pela FGD, não é
     # uma "demanda não atendida" (RF10).
-    demandas = Demand.objects.filter(activity=activity).exclude(
+    demandas = list(Demand.objects.filter(activity=activity).exclude(
         status__in=STATUS_TERMINAIS | {"em_atendimento"}
-    )
-    canceladas = 0
+    ))
+    # Libera o saldo de todas antes de cancelar qualquer uma. A transação é uma só:
+    # atualizar a Demand de uma e depois travar o limite da seguinte inverteria a
+    # ordem limite → Demand da decisão de recurso extra.
+    motivo = f"Atividade vinculada em status '{activity.get_status_display()}'."
     for demand in demandas:
         for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
-            balance_service.liberar_duas_travas(
-                demand_request=solicitacao, usuario=None,
-                motivo=f"Atividade vinculada em status '{activity.get_status_display()}'.",
-            )
+            balance_service.liberar_duas_travas(demand_request=solicitacao, usuario=None, motivo=motivo)
+
+    articuladores = notifications_service.usuarios_articuladores_do_estado(activity.municipio.state.sigla)
+    for demand in demandas:
         marcar_cancelada(demand)
-        sigla = activity.municipio.state.sigla
-        notifications_service.notificar_cancelamento_automatico(
-            demand, notifications_service.usuarios_articuladores_do_estado(sigla),
-        )
-        canceladas += 1
-    return canceladas
+        notifications_service.notificar_cancelamento_automatico(demand, articuladores)
+    return len(demandas)
 
 
 @shared_task(name="sgd.tasks.notificar_demandas_atividade_adiada")
