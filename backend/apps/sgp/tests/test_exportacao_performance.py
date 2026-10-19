@@ -16,7 +16,7 @@ from apps.core.tests.factories import UserFactory
 from apps.sgp.models import Activity, WorkPlanAcao
 from apps.sgp.tests.factories import WorkPlanAcaoFactory, WorkPlanMetaFactory
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.performance]
 
 LIMITE_SEGUNDOS = 60
 ATIVIDADES_POR_ACAO = 100
