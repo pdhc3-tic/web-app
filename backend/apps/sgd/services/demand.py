@@ -77,6 +77,11 @@ def atualizar_demanda(demand, *, titulo=None, justificativa=None) -> Demand:
 
 @transaction.atomic
 def adicionar_solicitacao(demand, *, tipo, campos_json, valor_estimado=None, ordem=0):
+    # A decisão do recurso extra trava a Demand para recalcular o déficit sobre as
+    # solicitações; a inclusão disputa o mesmo lock. A FK não basta: no Postgres ela é
+    # DEFERRABLE INITIALLY DEFERRED e só é conferida no commit. O status vem da linha
+    # travada: quem segurava o lock pode ter submetido ou cancelado a demanda.
+    demand.status = Demand.objects.select_for_update().values_list("status", flat=True).get(pk=demand.pk)
     _exigir_editavel(demand)
 
     validado = validar_campos_json(tipo, campos_json, demand.activity)
