@@ -156,6 +156,7 @@ def test_pull_registra_device_e_evento(auth_client, usuario, municipio, projeto)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
+@pytest.mark.performance
 def test_pull_performance_500_registros(auth_client, usuario, municipio, projeto):
     for i in range(500):
         UPFFactory(
