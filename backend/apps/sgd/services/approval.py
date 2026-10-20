@@ -72,7 +72,17 @@ def marcar_cancelada(demand, usuario=None) -> None:
         auditoria_service.registrar_status(demand, de=status_anterior, para="cancelada", usuario=usuario)
 
 
+# Perfis que desfazem uma autorização já dada; o solicitante cancela só até a pré-autorização.
+PERFIS_QUE_CANCELAM_AUTORIZADA = ("super-admin", "ugp")
+
+
+def pode_cancelar_autorizada(usuario) -> bool:
+    return bool(user_role_slugs(usuario, PERFIS_QUE_CANCELAM_AUTORIZADA))
+
+
 def pode_cancelar(demand, usuario) -> bool:
+    if demand.status == "autorizada":
+        return pode_cancelar_autorizada(usuario)
     return demand.solicitante_id == usuario.pk and demand.status in STATUS_CANCELAVEIS_PELO_SOLICITANTE
 
 

@@ -61,7 +61,7 @@ Toda transação que trava mais de uma destas linhas segue esta ordem, para que 
 
 | Caminho | O que trava |
 |---|---|
-| Submissão; recusa; cancelamento pelo solicitante; edição e remoção de solicitação com reserva | limite → alocação → `Demand` ou `DemandRequest` |
+| Submissão; recusa; cancelamento pelo solicitante ou, de demanda autorizada, pela UGP/Super Admin; edição e remoção de solicitação com reserva | limite → alocação → `Demand` ou `DemandRequest` |
 | Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todos os limites e depois todas as alocações; só então as `Demand` |
 | Decisão de recurso extra | pedido → limite → alocações (territorial e origem) → `Demand` → todas as `DemandRequest` da demanda |
 | Parecer, devolução, submissão e edição do pedido | só o pedido |
@@ -69,7 +69,7 @@ Toda transação que trava mais de uma destas linhas segue esta ordem, para que 
 | Inclusão de solicitação | só a `Demand` |
 | `remanejar`, `atualizar_valor_alocado` | alocações em ordem crescente de pk |
 
-Exceções, só em demandas fora de Rascunho/Devolvida: a importação do Arlo trava a `Demand` antes do limite, e `autorizar`/`concluir` gravam a solicitação de uma rubrica antes de travar o limite da seguinte. A decisão de recurso extra confere que a demanda está editável antes de travá-la, então nunca disputa essas linhas com elas. Entre si, e com o cancelamento automático de uma demanda autorizada, essas exceções ainda podem formar ciclo: o Postgres derruba uma das transações, que precisa ser repetida.
+Exceções, só em demandas fora de Rascunho/Devolvida: a importação do Arlo trava a `Demand` antes do limite, e `autorizar`/`concluir` gravam a solicitação de uma rubrica antes de travar o limite da seguinte. A decisão de recurso extra confere que a demanda está editável antes de travá-la, então nunca disputa essas linhas com elas. Entre si, e com o cancelamento (automático ou pela UGP/Super Admin) de uma demanda autorizada, essas exceções ainda podem formar ciclo: o Postgres derruba uma das transações, que precisa ser repetida.
 
 ### Reconciliação
 
