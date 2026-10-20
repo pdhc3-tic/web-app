@@ -10,6 +10,7 @@ TOTAL = 10_000
 LIMITE_SEGUNDOS = 2
 
 
+@pytest.mark.performance
 def test_listagem_com_10_mil_demandas_e_filtros_combinados_em_menos_de_2s(
     auth_client_ugp, activity_rn, solicitante_rn, territory_rn,
 ):

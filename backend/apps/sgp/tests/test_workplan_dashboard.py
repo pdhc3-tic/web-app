@@ -130,6 +130,7 @@ class TestWorkPlanDashboard:
         assert response.status_code == 400
         assert "meta_id" in response.data
 
+    @pytest.mark.performance
     def test_returns_one_hundred_actions_under_one_second(self, auth_client, municipio):
         meta = WorkPlanMetaFactory(numero=1)
         for _ in range(100):
