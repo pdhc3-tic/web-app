@@ -154,3 +154,57 @@ def notificar_inatividade(demand, responsaveis, *, referencia) -> None:
         link=link_inatividade(demand, referencia=referencia), evento=EVENTO_INATIVIDADE,
         canais=_EMAIL_E_IN_APP,
     )
+
+
+def _link_pedido(pedido) -> str:
+    return f"{settings.FRONTEND_BASE_URL.rstrip('/')}/sgd/remanejamentos/{pedido.pk}"
+
+
+def _descricao_pedido(pedido) -> str:
+    return f"R$ {pedido.valor_solicitado} em {pedido.rubrica.nome}"
+
+
+def notificar_recurso_extra_submetido(pedido, articuladores) -> None:
+    _notificar(
+        usuarios=articuladores,
+        titulo=f"Recurso extra aguardando parecer: {_descricao_pedido(pedido)}",
+        mensagem=f"{pedido.user.nome} pediu {_descricao_pedido(pedido)} e aguarda o seu parecer.",
+        link=_link_pedido(pedido), evento="recurso_extra_submetido", canais=_EMAIL_E_IN_APP,
+    )
+
+
+def notificar_recurso_extra_devolvido(pedido) -> None:
+    _notificar(
+        usuarios=[pedido.user],
+        titulo=f"Recurso extra devolvido: {_descricao_pedido(pedido)}",
+        mensagem="Seu pedido de recurso extra foi devolvido para ajuste da justificativa ou do valor.",
+        link=_link_pedido(pedido), evento="recurso_extra_devolvido", canais=_EMAIL_E_IN_APP,
+    )
+
+
+def notificar_recurso_extra_com_parecer(pedido, usuarios_ugp) -> None:
+    _notificar(
+        usuarios=usuarios_ugp,
+        titulo=f"Recurso extra aguardando decisão: {_descricao_pedido(pedido)}",
+        mensagem=f"O pedido de {pedido.user.nome} recebeu parecer do Articulador e aguarda a decisão da UGP.",
+        link=_link_pedido(pedido), evento="recurso_extra_com_parecer", canais=_EMAIL_E_IN_APP,
+    )
+
+
+def notificar_recurso_extra_decidido(pedido) -> None:
+    _notificar(
+        usuarios=[pedido.user],
+        titulo=f"Recurso extra {pedido.get_status_display().lower()}: {_descricao_pedido(pedido)}",
+        mensagem=f"Seu pedido de recurso extra foi {pedido.get_status_display().lower()}.",
+        link=_link_pedido(pedido), evento="recurso_extra_decidido", canais=_EMAIL_E_IN_APP,
+    )
+
+
+def notificar_remanejamento_efetivado(transferencia, usuarios) -> None:
+    _notificar(
+        usuarios=usuarios,
+        titulo=f"Remanejamento efetivado: R$ {transferencia.valor}",
+        mensagem=f"R$ {transferencia.valor} foram remanejados entre alocações. Motivo: {transferencia.motivo}",
+        link=f"{settings.FRONTEND_BASE_URL.rstrip('/')}/sgd/remanejamentos",
+        evento="remanejamento_efetivado", canais=_EMAIL_E_IN_APP,
+    )
