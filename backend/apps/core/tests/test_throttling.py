@@ -1,4 +1,6 @@
 import pytest
+from django.conf import settings
+from django.test import RequestFactory, override_settings
 from rest_framework.test import APIClient
 from unittest.mock import patch
 from apps.core.tests.factories import UserFactory
@@ -56,6 +58,29 @@ def test_views_usam_throttles_independentes():
         PasswordResetByEmailThrottle,
     ]
     assert password_reset_confirm.cls.throttle_classes == [PasswordResetConfirmThrottle]
+
+
+def _chave_login(forwarded, remote="10.0.0.2"):
+    request = RequestFactory().get("/", REMOTE_ADDR=remote, HTTP_X_FORWARDED_FOR=forwarded)
+    return LoginRateThrottle().get_cache_key(request, None)
+
+
+@override_settings(TRUSTED_PROXY_COUNT=2)
+def test_throttle_com_dois_proxies_usa_o_mesmo_ip_da_auditoria():
+    assert _chave_login("6.6.6.6, 203.0.113.9, 192.0.2.50") == "throttle_auth_login_203.0.113.9"
+
+
+@override_settings(TRUSTED_PROXY_COUNT=2)
+def test_throttle_ignora_cabecalho_forjado_a_esquerda():
+    assert _chave_login("6.6.6.6, 203.0.113.9, 192.0.2.50") == _chave_login("7.7.7.7, 203.0.113.9, 192.0.2.50")
+
+
+def test_throttle_com_um_proxy_usa_o_ip_que_o_nginx_acrescentou():
+    assert _chave_login("6.6.6.6, 203.0.113.9") == "throttle_auth_login_203.0.113.9"
+
+
+def test_num_proxies_do_drf_segue_trusted_proxy_count():
+    assert settings.REST_FRAMEWORK["NUM_PROXIES"] == settings.TRUSTED_PROXY_COUNT
 
 
 ##########################################################
@@ -358,8 +383,10 @@ def test_login_attempt_ip_via_forwarded_for(client, usuario):
     client.post(
         "/api/v1/auth/login/",
         {"email": usuario.email, "senha": "senha123"},
-        HTTP_X_FORWARDED_FOR="203.0.113.5, 10.0.0.1",
+        HTTP_X_FORWARDED_FOR="6.6.6.6, 203.0.113.5",
     )
+    # O nginx acrescenta o IP que viu ao fim da cadeia; o que vem antes foi o
+    # cliente quem escreveu.
     tentativa = LoginAttempt.objects.get(email=usuario.email)
     assert tentativa.ip == "203.0.113.5"
 

@@ -115,7 +115,15 @@ sudo docker compose exec backend pytest apps/core/tests/test_organizations.py -v
 
 # Com cobertura (se instalado)
 sudo docker compose exec backend pytest --cov=apps -v
+
+# Sem os testes de performance, só nesta execução
+sudo docker compose exec -e SKIP_PERFORMANCE_TESTS=1 backend pytest -v
+
+# Só os testes de performance
+sudo docker compose exec backend pytest -m performance -v
 ```
+
+Testes que medem tempo de resposta (e o de contagem de queries do painel de orçamento, que é intermitente) levam `@pytest.mark.performance`. Com `SKIP_PERFORMANCE_TESTS=1` eles são pulados e aparecem como `SKIPPED` no `-v`. O workflow de deploy roda assim, porque esses limites oscilam no runner compartilhado do GitHub. Para pular sempre no ambiente local, coloque `SKIP_PERFORMANCE_TESTS=1` no `backend/.env` e recrie o container (`sudo docker compose up -d backend`).
 
 ## Seed de Dados
 

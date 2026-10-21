@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 import pytest
-from rest_framework.exceptions import ValidationError as DRFValidationError
+from rest_framework.exceptions import PermissionDenied
 
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
@@ -59,12 +59,12 @@ def test_cancelar_pre_autorizada_libera_reserva(
     assert allocation_territorial_rn.valor_comprometido == Decimal("0")
 
 
-def test_cancelar_apos_autorizada_bloqueado(demand_request_rn, solicitante_rn):
+def test_solicitante_nao_cancela_autorizada(demand_request_rn, solicitante_rn):
     demand = demand_request_rn.demanda
     demand.status = "autorizada"
     demand.save(update_fields=["status"])
 
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(PermissionDenied):
         demand_service.cancelar_demanda(demand, usuario=solicitante_rn)
 
 

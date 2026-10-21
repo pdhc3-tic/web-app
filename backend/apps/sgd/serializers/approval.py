@@ -71,3 +71,13 @@ class AutorizarExcedenteSerializer(serializers.Serializer):
     origem_allocation_id = serializers.IntegerField()
     valor_excedente = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
     justificativa = serializers.CharField()
+
+
+class CancelarSerializer(serializers.Serializer):
+    justificativa = serializers.CharField(required=False, allow_blank=True, default="")
+    motivo = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate(self, data):
+        # `motivo` é o nome que o frontend atual envia.
+        data["motivo"] = data["justificativa"] or data["motivo"]
+        return data

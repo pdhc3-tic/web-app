@@ -313,7 +313,15 @@ def criar_alocacao(*, meta, rubrica, nivel: str, valor_alocado: Decimal, usuario
 @transaction.atomic
 def atualizar_valor_alocado(allocation: BudgetAllocation, *, novo_valor: Decimal, usuario) -> BudgetAllocation:
     """Reduzir abaixo do já comprometido+executado é rejeitado."""
-    allocation = BudgetAllocation.objects.select_for_update().get(pk=allocation.pk)
+    pai = _linha_pai(
+        meta=allocation.meta, rubrica=allocation.rubrica, nivel=allocation.nivel,
+        territorio=allocation.territorio, estado=allocation.estado,
+    )
+    # A alocação e o pai em ordem crescente de pk, como `remanejar`, que trava os dois
+    # quando move saldo entre níveis: travar a filha antes do pai inverteria essa ordem.
+    pks = sorted({allocation.pk} | ({pai.pk} if pai is not None else set()))
+    travadas = {pk: BudgetAllocation.objects.select_for_update().get(pk=pk) for pk in pks}
+    allocation = travadas[allocation.pk]
 
     minimo = allocation.valor_comprometido + allocation.valor_executado
     if novo_valor < minimo:

@@ -70,6 +70,7 @@ def test_status_nao_duplica_device(auth_client, usuario):
 
 
 @pytest.mark.django_db
+@pytest.mark.performance
 def test_status_performance_abaixo_200ms(auth_client, usuario, municipio, projeto):
     for i in range(500):
         UPFFactory(

@@ -79,6 +79,7 @@ jobs:
           -e POSTGRES_PASSWORD=postgres
           -e REDIS_HOST=127.0.0.1
           -e REDIS_PORT=6379
+          -e SKIP_PERFORMANCE_TESTS=1
           pdhc-backend-test
           pytest -v
 
