@@ -28,25 +28,21 @@ export function useContagemFila() {
 }
 
 /**
- * A fila "Aguardando minha ação" em si: a listagem filtrada pelos status que a
- * contagem informa para o perfil logado.
+ * A fila "Aguardando minha ação" em si: a listagem com
+ * `?aguardando_minha_acao=true`, pela mesma regra da contagem.
  */
 export function useFilaDemandas() {
   const contagem = useContagemFila();
-  const status = contagem.data?.status ?? [];
 
   const lista = useQuery({
-    queryKey: qk.demandas.lista(status),
-    queryFn: ({ signal }) => listDemandas({ status }, signal),
-    enabled: contagem.decide && status.length > 0,
+    queryKey: qk.demandas.fila,
+    queryFn: ({ signal }) => listDemandas({ aguardandoMinhaAcao: true }, signal),
+    enabled: contagem.decide,
     staleTime: 30_000,
   });
 
   return {
     ...lista,
-    // Sem status a aguardar (contagem carregada, fila vazia) não há o que listar.
-    data: contagem.data && status.length === 0 ? { demandas: [], total: 0 } : lista.data,
-    isPending: contagem.isPending || (status.length > 0 && lista.isPending),
     error: contagem.error ?? lista.error,
     refetch: () => void Promise.all([contagem.refetch(), lista.refetch()]),
     decide: contagem.decide,

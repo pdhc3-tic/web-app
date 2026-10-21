@@ -265,8 +265,10 @@ resposta.
 
 ## 6. `GET /api/v1/sgd/demandas/` não filtra por atividade — a aba mostra demandas de outras atividades
 
-> *Ainda aberto em 08/10/2026:* nenhum PR adiciona o filtro `activity` à
-> listagem. O BE-5 (PR #332, aberto) traz filtros combináveis e pode cobri-lo.
+> **Resolvido no backend pelo PR #332 (BE-5)**, com o filtro `?atividade=`;
+> o PR #339 acrescentou `?activity=` como alias. A aba usa `?atividade=`
+> desde 17/10/2026, e o E2E "não lista a demanda de outra atividade" deixou
+> de ser `test.fixme`.
 
 *Estado atual:* `DemandViewSet.list` (`backend/apps/sgd/views/demand.py`) só lê
 `?status=`. O frontend manda `?activity={id}` na aba "Demandas" da ficha da
@@ -459,6 +461,10 @@ O tipo `Demanda.solicitante_nome` já está declarado no frontend.
 
 ## 13. Fila "Aguardando minha ação": `status` de um valor só e sem contagem
 
+> **Resolvido no backend em 20/10/2026 pelo PR #339**: `status` repetido
+> devolve a união, e `?aguardando_minha_acao=true` lista a fila do perfil pela
+> mesma regra da contagem. A fila do painel passou a usar esse filtro.
+
 > *Parcialmente resolvido em 07/10/2026 pelo PR #327:* a rota
 > `aguardando-minha-acao/contagem/` devolve `{total, status}` com a regra de
 > cada perfil no backend — o badge e a contagem usam ela, e o frontend deixou
@@ -491,6 +497,13 @@ atendimento), e a mesma consulta alimenta o badge "N pendentes" da sidebar.
 ---
 
 ## 14. Cancelar demanda autorizada não é permitido — decisão de regra
+
+> **Resolvido no backend em 20/10/2026 pelo PR #339**: UGP e Super Admin
+> cancelam uma demanda Autorizada pelo `POST .../cancelar/`, com
+> `justificativa` obrigatória; as reservas são liberadas e a etapa
+> "Cancelamento" entra na linha do tempo. O botão "Cancelar demanda" está no
+> painel, com o `ConfirmationDrawer`. O PR registra que a regra ainda aguarda
+> confirmação da coordenação.
 
 A #296 pede que "cancelar demanda autorizada" use o `ConfirmationDrawer`, com
 justificativa obrigatória. No backend, `pode_cancelar`

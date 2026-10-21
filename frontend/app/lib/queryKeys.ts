@@ -41,6 +41,7 @@ export const qk = {
     lista: (status: readonly string[]) =>
       ["sgd", "demandas", "lista", { status: [...status] }] as const,
     detalhe: (id: string | number) => ["sgd", "demandas", "detalhe", String(id)] as const,
+    fila: ["sgd", "demandas", "fila", "lista"] as const,
     contagemFila: ["sgd", "demandas", "fila", "contagem"] as const,
     preview: (id: number, solicitacaoId: number, valor: string) =>
       ["sgd", "demandas", "preview", { id, solicitacaoId, valor }] as const,

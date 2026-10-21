@@ -71,9 +71,9 @@ export type SolicitacaoDemanda = {
 /** `ApprovalStepSerializer` — uma decisão na linha do tempo da demanda. */
 export type EtapaDemanda = {
   id: number;
-  etapa: "pre_autorizacao" | "autorizacao" | "atendimento";
+  etapa: "pre_autorizacao" | "autorizacao" | "atendimento" | "cancelamento";
   etapa_display: string;
-  acao: "aprovado" | "recusado" | "devolvido" | "atendido";
+  acao: "aprovado" | "recusado" | "devolvido" | "atendido" | "cancelado";
   acao_display: string;
   responsavel_nome: string | null;
   justificativa: string;
@@ -266,20 +266,21 @@ export async function fetchContagemFila(signal?: AbortSignal): Promise<ContagemF
 }
 
 /**
- * GET /api/v1/sgd/demandas/?status=… — listagem, já no escopo do perfil
- * (o Articulador só enxerga as Submetidas do próprio estado).
+ * GET /api/v1/sgd/demandas/ — listagem, já no escopo do perfil (o Articulador
+ * só enxerga as Submetidas do próprio estado).
  *
- * Vários status vão como parâmetro repetido. O `DemandViewSet.list` hoje só lê
- * o último — para a FGD, que aguarda dois status, a LISTA da fila vem
- * incompleta, embora a contagem venha certa
- * (docs/pendencias-backend-sprint-10.md, item 13).
+ * - `status`: vários vão como parâmetro repetido, e o backend devolve a união.
+ * - `aguardandoMinhaAcao`: a fila do perfil logado, pela mesma regra da
+ *   contagem (`aguardando-minha-acao/contagem/`) — o `count` da lista bate com
+ *   o `total` do badge.
  */
 export async function listDemandas(
-  params: { status?: StatusDemanda[] } = {},
+  params: { status?: StatusDemanda[]; aguardandoMinhaAcao?: boolean } = {},
   signal?: AbortSignal,
 ): Promise<ListaDemandas> {
   const qs = new URLSearchParams();
   for (const st of params.status ?? []) qs.append("status", st);
+  if (params.aguardandoMinhaAcao) qs.set("aguardando_minha_acao", "true");
   return lerListaDemandas(qs, signal);
 }
 
@@ -347,3 +348,10 @@ export const recusarDemanda = (id: number, justificativa: string) =>
 export const atenderDemanda = (id: number) => decidir(id, "atender");
 export const concluirDemanda = (id: number, valoresPagos: Record<number, string>) =>
   decidir(id, "concluir", { valores_pagos: valoresPagos });
+
+/**
+ * UGP e Super Admin, em Autorizada. O backend libera as reservas de saldo e
+ * grava a etapa de cancelamento, que já volta em `etapas`.
+ */
+export const cancelarDemanda = (id: number, justificativa: string) =>
+  decidir(id, "cancelar", { justificativa });

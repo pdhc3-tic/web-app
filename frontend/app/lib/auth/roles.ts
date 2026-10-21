@@ -145,6 +145,16 @@ export function perfisDecisoresSgd(
   );
 }
 
+/**
+ * Cancelar demanda Autorizada (#296): UGP e Super Admin, com justificativa.
+ * Espelha `PERFIS_QUE_CANCELAM_AUTORIZADA` (`apps/sgd/services/approval.py`).
+ */
+export function canCancelarDemandaAutorizada(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return hasRole(user, UGP_SLUG) || isSuperAdmin(user);
+}
+
 export type SuperAdminState = {
   /** true enquanto a sessão ainda está carregando. */
   loading: boolean;

@@ -10,9 +10,7 @@ import { storageStatePath } from "./helpers/users";
  * #296 — Painel master-detail de Demandas + decisões por perfil (SGD).
  *
  * Contra o backend real: a fixture leva cada demanda ao status pelos services
- * do SGD, com reservas de saldo de verdade. Cancelar demanda autorizada
- * depende de uma decisão de regra no backend
- * (docs/pendencias-backend-sprint-10.md, item 14) e fica em `test.fixme`.
+ * do SGD, com reservas de saldo de verdade.
  */
 
 let fx: PainelDemandasFixture;
@@ -233,13 +231,56 @@ test.describe("UGP", () => {
     await expect(painel(page)).toContainText("Recusada");
   });
 
-  // Pendência de backend (item 14): só o solicitante cancela, e só até
-  // Pré-autorizada — não há como cancelar uma demanda autorizada.
-  test.fixme("cancelar uma demanda autorizada pede justificativa no ConfirmationDrawer", async () => {});
+  test("cancelar uma demanda autorizada pede justificativa no ConfirmationDrawer", async ({
+    page,
+  }) => {
+    await page.goto(`/sgd/demandas?visao=todas&demanda=${fx.cancelar.id}`);
+    await painel(page).getByTestId("acao-cancelar").click();
+
+    const drawer = page.getByTestId("cancelar-drawer");
+    await expect(drawer).toBeVisible();
+    await expect(drawer).toContainText("já foi autorizada");
+
+    await page.getByTestId("cancelar-drawer-confirmar").click();
+    await expect(drawer).toContainText("A justificativa é obrigatória.");
+
+    await drawer
+      .getByLabel("Justificativa do cancelamento")
+      .fill("A visita foi adiada para o próximo semestre.");
+    await page.getByTestId("cancelar-drawer-confirmar").click();
+
+    await expect(painel(page).getByTestId("painel-mensagem-info")).toContainText("cancelada");
+    await expect(painel(page)).toContainText("Cancelada");
+    await expect(painel(page).getByTestId("acao-cancelar")).toHaveCount(0);
+
+    await painel(page).getByRole("tab", { name: "Linha do tempo" }).click();
+    const timeline = painel(page).getByTestId("painel-timeline");
+    await expect(timeline).toContainText("Cancelamento: Cancelado");
+    await expect(timeline).toContainText("A visita foi adiada para o próximo semestre.");
+  });
 });
 
 test.describe("FGD", () => {
   test.use({ storageState: storageStatePath("fgd") });
+
+  test("a fila traz as Autorizadas, com o mesmo total do badge", async ({ page }) => {
+    const listagem = page.waitForRequest(
+      (req) => req.url().includes("/api/v1/sgd/demandas/?") && req.url().includes("aguardando"),
+    );
+    await page.goto("/sgd/demandas");
+    const params = new URL((await listagem).url()).searchParams;
+    expect(params.get("aguardando_minha_acao")).toBe("true");
+
+    await expect(linha(page, fx.atender.id)).toBeVisible();
+    const n = await page.getByTestId("demandas-tabela").locator("tbody tr").count();
+    await expect(page.getByTestId("sidebar-badge-sgd")).toHaveText(String(n));
+  });
+
+  test("a FGD não cancela uma demanda autorizada", async ({ page }) => {
+    await page.goto(`/sgd/demandas?demanda=${fx.atender.id}`);
+    await expect(painel(page).getByTestId("acao-atender")).toBeVisible();
+    await expect(painel(page).getByTestId("acao-cancelar")).toHaveCount(0);
+  });
 
   test("inicia o atendimento e conclui em seguida, sem recarregar", async ({ page }) => {
     await page.goto(`/sgd/demandas?demanda=${fx.atender.id}`);
