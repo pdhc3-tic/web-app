@@ -581,6 +581,39 @@ publicá-los no `/api/v1/choices/`, junto com o próprio tipo de solicitação
 
 ---
 
+## 19. Auditoria da demanda só é visível ao Super Admin — divergente da #322
+
+*Compilado em 21/10/2026, ao implementar a issue #322 (aba de auditoria no
+painel master-detail de demandas).*
+
+A #322 pede, em critério de aceitação, "acesso restrito conforme a mesma
+política de quem pode visualizar a demanda (RLS já aplicada)". O endpoint
+`GET /api/v1/sgd/demandas/{id}/auditoria/` (BE-7, PR do `DemandViewSet.auditoria`)
+já aplica o escopo de leitura pelo `get_queryset` para resolver a demanda, mas
+em cima disso adiciona a permissão `IsSuperAdmin` — a trilha devolve o IP de
+quem agiu, e o backend decidiu que esse dado pessoal não cabe ao aprovador.
+
+```python
+if self.action == "auditoria":
+    return [IsAuthenticatedActiveAccess(), IsSuperAdmin()]
+```
+
+*Estado atual no frontend:* a aba "Auditoria" só aparece para Super Admin
+(`useIsSuperAdmin`). Articulador, UGP e FGD veem o painel sem a aba — a
+política atual do backend seria 403 para eles. A diferenciação visual, o
+"carregar mais" e os quatro E2E da issue cobrem o caminho do Super Admin.
+
+**Pedido** — alinhar com a coordenação qual regra vale:
+
+- se a trilha completa (com IP) é mesmo só do Super Admin, atualizar o
+  critério da #322 para refletir isso;
+- se o aprovador deve ver a trilha, decidir se o IP sai da resposta para esses
+  perfis (`DemandAuditEntrySerializer` com `fields` dinâmico), ou se o campo
+  fica para o Super Admin apenas. Nesse cenário o frontend libera a aba para
+  os decisores (`perfisDecisoresSgd`).
+
+---
+
 ## 18. Mapeamento Arlo ↔ SGD: sem catálogo de campos e sem preview — bloqueia parte da #320
 
 O CRUD do BE-9 (`/api/v1/sgd/config/arlo-mapping/`) permite listar, editar,

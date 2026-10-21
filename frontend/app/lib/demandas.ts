@@ -290,6 +290,67 @@ export async function getDemanda(id: number | string, signal?: AbortSignal): Pro
   return res.json();
 }
 
+// ─── Auditoria (#322, BE-7) ──────────────────────────────────────────────────
+
+/**
+ * Uma entrada da trilha de auditoria de uma demanda — mudança de status ou
+ * movimentação de saldo. Espelha `DemandAuditEntrySerializer`
+ * (`apps/sgd/serializers/auditoria.py`).
+ */
+export type EventoAuditoria = {
+  id: number;
+  /** "status" para transições da demanda, "saldo" para movimentações do SGP. */
+  tipo: "status" | "saldo";
+  /** Ex.: `demanda.criada`, `demanda.status_alterado`, `saldo.reserva`. */
+  acao: string;
+  /** Nulo quando a transição é do sistema (cancelamento automático). */
+  usuario: { id: number; nome: string } | null;
+  ip: string | null;
+  timestamp: string;
+  valores_anteriores: Record<string, unknown>;
+  valores_novos: Record<string, unknown>;
+};
+
+export type PaginaAuditoria = {
+  resultados: EventoAuditoria[];
+  /** Total no backend; a lista entregue é parcial enquanto `proxima_offset` existir. */
+  total: number;
+  /** Próximo `offset` a pedir, ou null quando acabou. */
+  proxima_offset: number | null;
+};
+
+/** Tamanho de página da trilha; o backend aceita `limit`/`offset` (BE-10). */
+export const AUDITORIA_PAGINA = 20;
+
+/**
+ * GET /api/v1/sgd/demandas/{id}/auditoria/?limit=&offset=
+ *
+ * Backend: `AuditLogPagination` (default 20, max 100) em `DemandViewSet.auditoria`.
+ * Hoje a rota é restrita ao Super Admin — ver `pendencias-backend-sprint-10.md`,
+ * item 19 (a issue #322 pede o mesmo escopo da visualização da demanda).
+ */
+export async function listAuditoriaDemanda(
+  demandaId: number | string,
+  params: { offset?: number; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<PaginaAuditoria> {
+  const qs = new URLSearchParams();
+  qs.set("limit", String(params.limit ?? AUDITORIA_PAGINA));
+  if (params.offset) qs.set("offset", String(params.offset));
+  const res = await apiClient(`${DEMANDAS_PATH}${demandaId}/auditoria/?${qs}`, { signal });
+  const pagina = (await res.json()) as {
+    count: number;
+    next: string | null;
+    results: EventoAuditoria[];
+  };
+  const consumidos = (params.offset ?? 0) + pagina.results.length;
+  return {
+    resultados: pagina.results,
+    total: pagina.count,
+    proxima_offset: pagina.next ? consumidos : null,
+  };
+}
+
 export type FaixaSemaforo = "verde" | "amarelo" | "vermelho";
 
 type ImpactoTrava = {

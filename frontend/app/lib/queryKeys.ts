@@ -45,6 +45,8 @@ export const qk = {
     contagemFila: ["sgd", "demandas", "fila", "contagem"] as const,
     preview: (id: number, solicitacaoId: number, valor: string) =>
       ["sgd", "demandas", "preview", { id, solicitacaoId, valor }] as const,
+    auditoria: (id: string | number) =>
+      ["sgd", "demandas", "auditoria", String(id)] as const,
   },
   /** Demandas do SGD vinculadas a uma atividade (#294). */
   demandasDaAtividade: (atividadeId: string | number) =>

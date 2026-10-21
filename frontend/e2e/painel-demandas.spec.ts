@@ -129,6 +129,17 @@ test.describe("Articulador Estadual de outro estado", () => {
       await expect(page.getByText(d.titulo)).toHaveCount(0);
     }
   });
+
+  test("abrir a URL direta de uma demanda de outro estado não revela a auditoria (#322)", async ({
+    page,
+  }) => {
+    // Sem acesso à demanda, a listagem fica vazia e o painel não resolve o detalhe:
+    // a aba "Auditoria" nunca aparece para quem não enxerga a demanda.
+    await page.goto(`/sgd/demandas?demanda=${fx.cancelar.id}`);
+    await expect(page.getByRole("heading", { name: "Demandas" })).toBeVisible();
+    await expect(painel(page).getByRole("tab", { name: "Auditoria" })).toHaveCount(0);
+    await expect(painel(page).getByTestId("painel-auditoria")).toHaveCount(0);
+  });
 });
 
 test.describe("UGP", () => {
@@ -302,5 +313,118 @@ test.describe("FGD", () => {
     );
     await expect(painel(page)).toContainText("Concluída");
     await expect(painel(page)).toContainText("pago R$ 1.100,00");
+  });
+
+  test("a FGD não vê a aba Auditoria — ela é restrita ao Super Admin (#322)", async ({ page }) => {
+    await page.goto(`/sgd/demandas?demanda=${fx.atender.id}`);
+    await expect(painel(page).getByRole("tab", { name: "Linha do tempo" })).toBeVisible();
+    await expect(painel(page).getByRole("tab", { name: "Auditoria" })).toHaveCount(0);
+  });
+});
+
+/**
+ * #322 — Aba de auditoria no painel master-detail, consumindo o endpoint
+ * `GET /api/v1/sgd/demandas/{id}/auditoria/` (BE-7). O backend restringe a
+ * trilha ao Super Admin porque devolve IP de origem (ver
+ * `pendencias-backend-sprint-10.md`, item 19).
+ */
+test.describe("Super Admin — Auditoria da demanda (#322)", () => {
+  test.use({ storageState: storageStatePath("superAdmin") });
+
+  async function abrirAuditoria(page: Page, id: number) {
+    await page.goto(`/sgd/demandas?visao=todas&demanda=${id}`);
+    const aba = painel(page).getByRole("tab", { name: "Auditoria" });
+    await expect(aba).toBeVisible();
+    await aba.click();
+    await expect(painel(page).getByTestId("painel-auditoria")).toBeVisible();
+  }
+
+  test("eventos em ordem cronológica, com usuário, timestamp e ação", async ({ page }) => {
+    // `cancelar` nasceu, foi submetida (reserva), pré-autorizada, autorizada e
+    // cancelada (liberação). O backend ordena por timestamp e id.
+    await abrirAuditoria(page, fx.cancelar.id);
+    const eventos = painel(page).locator("[data-testid^='auditoria-evento-']");
+    const total = await eventos.count();
+    expect(total).toBeGreaterThanOrEqual(5);
+
+    // Primeiro: Demanda criada; último: cancelamento.
+    await expect(eventos.first()).toContainText("Demanda criada");
+    await expect(eventos.last()).toContainText("Cancelada");
+
+    // Ação em texto, autor (ADT da fixture) e timestamp absoluto no formato
+    // DD/MM/AAAA HH:mm devem aparecer em pelo menos um evento.
+    await expect(painel(page).getByTestId("painel-auditoria")).toContainText("Ewerton Bandeira");
+    await expect(
+      painel(page).getByTestId("painel-auditoria").getByText(/\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}/),
+    ).toBeVisible();
+  });
+
+  test("diferenciação visual: ícone de status e ícone de saldo", async ({ page }) => {
+    await abrirAuditoria(page, fx.cancelar.id);
+    // A reserva de saldo entra na submissão; o cancelamento emite liberação.
+    await expect(painel(page).locator("[data-tipo='status']").first()).toBeVisible();
+    await expect(painel(page).locator("[data-tipo='saldo']").first()).toBeVisible();
+  });
+
+  test("'carregar mais' pede a próxima página do backend", async ({ page }) => {
+    const CORS = { "access-control-allow-origin": "*" };
+    const totalFake = 25;
+
+    function evento(id: number, offset: number) {
+      const tipo = id % 2 === 0 ? "status" : "saldo";
+      const acao = tipo === "status" ? "demanda.status_alterado" : "saldo.reserva";
+      return {
+        id,
+        tipo,
+        acao,
+        usuario: { id: 1, nome: "Vera Lucena" },
+        ip: "203.0.113.9",
+        timestamp: new Date(Date.UTC(2026, 9, 1, 12, offset)).toISOString(),
+        valores_anteriores: tipo === "status" ? { status: "submetida" } : {},
+        valores_novos: tipo === "status" ? { status: "pre_autorizada" } : { valor: "100.00" },
+      };
+    }
+
+    await page.route(
+      (url) => /\/api\/v1\/sgd\/demandas\/\d+\/auditoria\/?/.test(url.pathname),
+      async (route) => {
+        if (route.request().method() === "OPTIONS") return route.fallback();
+        const params = new URL(route.request().url()).searchParams;
+        const limit = Number(params.get("limit") ?? 20);
+        const offset = Number(params.get("offset") ?? 0);
+        const paginaIds = Array.from({ length: Math.min(limit, totalFake - offset) }, (_, i) =>
+          evento(offset + i + 1, offset + i),
+        );
+        const temProxima = offset + paginaIds.length < totalFake;
+        await route.fulfill({
+          status: 200,
+          headers: { ...CORS, "content-type": "application/json" },
+          body: JSON.stringify({
+            count: totalFake,
+            next: temProxima ? `?limit=${limit}&offset=${offset + limit}` : null,
+            previous: null,
+            results: paginaIds,
+          }),
+        });
+      },
+    );
+
+    await abrirAuditoria(page, fx.cancelar.id);
+    const eventos = painel(page).locator("[data-testid^='auditoria-evento-']");
+    await expect(eventos).toHaveCount(20);
+
+    const botao = painel(page).getByTestId("auditoria-carregar-mais");
+    await expect(botao).toContainText("20 de 25");
+    await botao.click();
+
+    await expect(eventos).toHaveCount(25);
+    await expect(painel(page).getByTestId("auditoria-carregar-mais")).toHaveCount(0);
+  });
+
+  test("sem acesso à demanda, a aba Auditoria não aparece", async ({ page }) => {
+    // Com uma demanda que não existe, o painel entra em estado de erro e as
+    // abas não são renderizadas — portanto a trilha não vaza.
+    await page.goto("/sgd/demandas?demanda=999999");
+    await expect(painel(page).getByRole("tab", { name: "Auditoria" })).toHaveCount(0);
   });
 });
