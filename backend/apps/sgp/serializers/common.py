@@ -20,6 +20,39 @@ class MunicipioNestedSerializer(serializers.Serializer):
     estado = EstadoNestedSerializer(source="state", read_only=True)
 
 
+class PlanoTrabalhoMetaRefSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    numero = serializers.IntegerField()
+    titulo = serializers.CharField()
+
+
+class PlanoTrabalhoSubmetaRefSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    numero = serializers.CharField()
+    titulo = serializers.CharField()
+
+
+class PlanoTrabalhoAcaoRefSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    numero = serializers.CharField()
+    descricao = serializers.CharField()
+
+
+class PlanoTrabalhoIndicadorRefSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    codigo = serializers.CharField()
+    nome = serializers.CharField()
+    unidade_medida = serializers.CharField()
+
+
+class PlanoTrabalhoSerializer(serializers.Serializer):
+    """Forma do dict de `plano_trabalho_da_acao`."""
+    meta = PlanoTrabalhoMetaRefSerializer()
+    submeta = PlanoTrabalhoSubmetaRefSerializer()
+    acao = PlanoTrabalhoAcaoRefSerializer()
+    indicador = PlanoTrabalhoIndicadorRefSerializer()
+
+
 def plano_trabalho_da_acao(acao) -> dict | None:
     """Cadeia Meta → Submeta → Ação → Indicador de uma Atividade, derivada da
     Ação e só para leitura (SGP-RF07). Espera `acao__meta`, `acao__submeta` e

@@ -47,7 +47,7 @@ class MembroListSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeri
             "criado_em",
         ]
 
-    def get_idade(self, obj):
+    def get_idade(self, obj) -> int | None:
         if obj.data_nascimento:
             today = date.today()
             return (
@@ -114,7 +114,7 @@ class MembroDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSe
                 )
         return value
 
-    def get_idade(self, obj):
+    def get_idade(self, obj) -> int | None:
         if obj.data_nascimento:
             today = date.today()
             return (

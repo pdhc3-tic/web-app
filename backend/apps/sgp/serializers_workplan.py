@@ -1,6 +1,7 @@
 import copy
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.sgp.constants import ODS_CHOICES, STATUS_WORKPLAN
@@ -279,6 +280,7 @@ class WorkPlanSubmetaDetailSerializer(WorkPlanSubmetaSerializer):
     class Meta(WorkPlanSubmetaSerializer.Meta):
         fields = WorkPlanSubmetaSerializer.Meta.fields + ["acoes"]
 
+    @extend_schema_field(WorkPlanAcaoSerializer(many=True))
     def get_acoes(self, obj):
         return WorkPlanAcaoSerializer(
             _acoes_visiveis(obj.acoes.all(), self.context), many=True, context=self.context
@@ -406,6 +408,7 @@ class WorkPlanMetaDetailSerializer(serializers.ModelSerializer):
             ).data
         return cache[obj.pk]
 
+    @extend_schema_field(WorkPlanSubmetaDetailSerializer(many=True))
     def get_submetas(self, obj):
         submetas = obj.submetas.all()
         request = self.context.get("request")
@@ -427,6 +430,7 @@ class WorkPlanMetaDetailSerializer(serializers.ModelSerializer):
             for submeta in submetas
         ]
 
+    @extend_schema_field(WorkPlanAcaoSerializer(many=True))
     def get_acoes(self, obj):
         return self._acoes_serializadas(obj)
 
