@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('sgp', '0003_arlo_glosa_risk'),
+        ('sgp', '0005_budgetincreaserequest_um_pedido_aberto'),
     ]
 
     operations = [

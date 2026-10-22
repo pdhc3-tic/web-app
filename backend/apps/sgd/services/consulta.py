@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from decimal import Decimal
+from types import SimpleNamespace
 
 from django.db.models import Count, Q, Sum
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -29,10 +30,10 @@ STATUS_COM_CUSTO = STATUS_SOLICITADO
 PERFIS_DE_GESTAO = {"super-admin", "ugp", "fgd", "articulador-estadual"}
 
 
-def filtrar_demandas(queryset, params):
+def filtrar_demandas(queryset, params, user):
     """Aplica `DemandFilter`; valor inválido vira 400 em vez de filtro ignorado
     (uma exportação "filtrada" que devolve tudo seria pior que um erro)."""
-    filterset = DemandFilter(data=params, queryset=queryset)
+    filterset = DemandFilter(data=params, queryset=queryset, request=SimpleNamespace(user=user))
     if not filterset.is_valid():
         raise ValidationError(filterset.errors.get_json_data())
     return filterset.qs

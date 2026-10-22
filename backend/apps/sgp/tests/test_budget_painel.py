@@ -345,6 +345,7 @@ class TestPainelPerformance:
 
         limiares_semaforo()
 
+    @pytest.mark.performance
     def test_numero_de_queries(
         self, auth_client_super_admin, django_assert_num_queries, state_rn, territory_rn,
     ):

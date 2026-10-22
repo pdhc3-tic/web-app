@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from decimal import Decimal
+from itertools import groupby
 
 from django.db import transaction
 from rest_framework.exceptions import ValidationError as DRFValidationError
@@ -432,6 +433,31 @@ def liberar_duas_travas(*, demand_request, usuario, motivo: str) -> None:
     except budget_service.DemandaInvalidaError:
         # Nunca chegou a reservar (ex.: bloqueada antes da submissão) — nada a liberar.
         pass
+
+
+@transaction.atomic
+def liberar_duas_travas_em_lote(solicitacoes, *, usuario, motivo: str) -> None:
+    """Libera as reservas de solicitações de várias demandas, de vários solicitantes.
+    Liberar uma por uma travaria a alocação de um solicitante antes do limite do
+    seguinte; por isso, rubrica a rubrica, trava antes todos os limites e depois todas
+    as alocações envolvidas (ordem de `backend/docs/orcamento.md`)."""
+    solicitacoes = sorted(solicitacoes, key=lambda s: (s.rubrica_id, s.pk))
+    for rubrica_id, grupo in groupby(solicitacoes, key=lambda s: s.rubrica_id):
+        grupo = list(grupo)
+        _travar_em_ordem_de_pk(DemandIndividualLimit.objects.filter(
+            rubrica_id=rubrica_id, solicitante_id__in={s.demanda.solicitante_id for s in grupo},
+        ))
+        _travar_em_ordem_de_pk(budget_service.BudgetAllocation.objects.filter(
+            pk__in=budget_service.BudgetTransaction.objects.filter(
+                tipo=budget_service.BudgetTransaction.Tipo.RESERVA, demanda_id__in=[str(s.pk) for s in grupo],
+            ).values("allocation_id"),
+        ))
+        for solicitacao in grupo:
+            liberar_duas_travas(demand_request=solicitacao, usuario=usuario, motivo=motivo)
+
+
+def _travar_em_ordem_de_pk(queryset) -> None:
+    list(queryset.select_for_update().order_by("pk").values_list("pk", flat=True))
 
 
 @transaction.atomic
