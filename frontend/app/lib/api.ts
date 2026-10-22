@@ -132,7 +132,10 @@ export async function apiClient(
   path: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  const session = await getSession();
+  // Só lê o token: sem `broadcast`, que mandaria as outras abas recarregarem a
+  // sessão a cada requisição — e, se uma delas buscar algo ao recarregar, as
+  // abas ficam se acordando sem fim. O aviso entre abas fica para o refresh.
+  const session = await getSession({ broadcast: false });
 
   if (!session?.accessToken) {
     signIn();
