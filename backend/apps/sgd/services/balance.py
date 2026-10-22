@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from decimal import Decimal
+from itertools import groupby
 
 from django.db import transaction
 from rest_framework.exceptions import ValidationError as DRFValidationError
@@ -97,6 +98,8 @@ class TravaCheck:
     saldo: Decimal
     motivo_bloqueio: str | None = None
     acao_sugerida: str | None = None
+    # Limite lido na checagem, reaproveitado no payload (evita 2ª query).
+    limite: DemandIndividualLimit | None = None
 
 
 @dataclass
@@ -134,8 +137,7 @@ def _semaforos(*, comprometido: Decimal, total: Decimal, valor: Decimal, limiare
     return {"semaforo_atual": atual, "semaforo_apos": apos}
 
 
-def _semaforos_individual(*, solicitante, rubrica, valor: Decimal, limiares) -> dict:
-    limite = DemandIndividualLimit.objects.filter(solicitante=solicitante, rubrica=rubrica).first()
+def _semaforos_individual(*, limite, valor: Decimal, limiares) -> dict:
     if limite is None:
         return dict(_SEM_SEMAFORO)
     return _semaforos(
@@ -159,7 +161,7 @@ def payload_saldo_consulta(check: "DuasTravasCheck", *, solicitante, rubrica, va
             "saldo": check.individual.saldo,
             "motivo_bloqueio": check.individual.motivo_bloqueio,
             "acao_sugerida": check.individual.acao_sugerida,
-            **_semaforos_individual(solicitante=solicitante, rubrica=rubrica, valor=valor, limiares=limiares),
+            **_semaforos_individual(limite=check.individual.limite, valor=valor, limiares=limiares),
         },
         "territorial": {
             "disponivel": check.territorial.disponivel,
@@ -220,7 +222,7 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal, consumo_previo: 
     # esgotado: cai no "insuficiente", que mostra disponível e solicitado.
     if saldo <= ZERO and consumo_previo <= ZERO:
         return TravaCheck(
-            disponivel=False, saldo=saldo,
+            disponivel=False, saldo=saldo, limite=limite,
             motivo_bloqueio=com_orientacao(
                 f"Limite individual esgotado para esta rubrica: R$ {saldo} disponível, "
                 f"R$ {valor} solicitado.",
@@ -230,7 +232,7 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal, consumo_previo: 
         )
     if valor > saldo:
         return TravaCheck(
-            disponivel=False, saldo=saldo,
+            disponivel=False, saldo=saldo, limite=limite,
             motivo_bloqueio=com_orientacao(
                 _com_consumo_previo(
                     f"Limite individual insuficiente: R$ {saldo} disponível, R$ {valor} solicitado.",
@@ -240,7 +242,7 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal, consumo_previo: 
             ),
             acao_sugerida=ACAO_SUGERIDA[TRAVA_INDIVIDUAL],
         )
-    return TravaCheck(disponivel=True, saldo=saldo, motivo_bloqueio=None)
+    return TravaCheck(disponivel=True, saldo=saldo, motivo_bloqueio=None, limite=limite)
 
 
 def verificar_duas_travas(
@@ -483,6 +485,31 @@ def liberar_duas_travas(*, demand_request, usuario, motivo: str) -> None:
     except budget_service.DemandaInvalidaError:
         # Nunca chegou a reservar (ex.: bloqueada antes da submissão) — nada a liberar.
         pass
+
+
+@transaction.atomic
+def liberar_duas_travas_em_lote(solicitacoes, *, usuario, motivo: str) -> None:
+    """Libera as reservas de solicitações de várias demandas, de vários solicitantes.
+    Liberar uma por uma travaria a alocação de um solicitante antes do limite do
+    seguinte; por isso, rubrica a rubrica, trava antes todos os limites e depois todas
+    as alocações envolvidas (ordem de `backend/docs/orcamento.md`)."""
+    solicitacoes = sorted(solicitacoes, key=lambda s: (s.rubrica_id, s.pk))
+    for rubrica_id, grupo in groupby(solicitacoes, key=lambda s: s.rubrica_id):
+        grupo = list(grupo)
+        _travar_em_ordem_de_pk(DemandIndividualLimit.objects.filter(
+            rubrica_id=rubrica_id, solicitante_id__in={s.demanda.solicitante_id for s in grupo},
+        ))
+        _travar_em_ordem_de_pk(budget_service.BudgetAllocation.objects.filter(
+            pk__in=budget_service.BudgetTransaction.objects.filter(
+                tipo=budget_service.BudgetTransaction.Tipo.RESERVA, demanda_id__in=[str(s.pk) for s in grupo],
+            ).values("allocation_id"),
+        ))
+        for solicitacao in grupo:
+            liberar_duas_travas(demand_request=solicitacao, usuario=usuario, motivo=motivo)
+
+
+def _travar_em_ordem_de_pk(queryset) -> None:
+    list(queryset.select_for_update().order_by("pk").values_list("pk", flat=True))
 
 
 @transaction.atomic

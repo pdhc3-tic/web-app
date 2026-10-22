@@ -1,13 +1,13 @@
 import logging
-from datetime import date, timedelta
 
-import holidays
 from celery import shared_task
 from django.db import connection, transaction
 from django.utils import timezone
 
 from apps.core.models.notifications import Notification
 from apps.sgd.models.demand import STATUS_TERMINAIS, Demand
+from apps.sgd.models.demand_request import DemandRequest
+from apps.sgd.services import business_days
 from apps.sgd.services.approval import marcar_cancelada, responsaveis_pela_etapa_atual
 from apps.sgd.services.notifications import EVENTO_INATIVIDADE, link_inatividade, notificar_inatividade
 
@@ -23,27 +23,11 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-DIAS_UTEIS_LIMITE = 5
-
-
-def _feriados(uf: str | None, inicio: date, fim: date) -> holidays.HolidayBase:
-    """Feriados nacionais + estaduais da UF. Feriado municipal fica de fora —
-    a lib não cobre municípios."""
-    subdiv = uf if uf in holidays.BR.subdivisions else None
-    return holidays.country_holidays("BR", subdiv=subdiv, years=range(inicio.year, fim.year + 1))
-
-
-def _dias_uteis_entre(inicio: date, fim: date, *, uf: str | None = None) -> int:
-    """Dias úteis (segunda–sexta, fora feriados) entre `inicio` (exclusive) e
-    `fim` (inclusive)."""
-    feriados = _feriados(uf, inicio, fim)
-    dias = 0
-    atual = inicio
-    while atual < fim:
-        atual += timedelta(days=1)
-        if atual.weekday() < 5 and atual not in feriados:
-            dias += 1
-    return dias
+# Extraídos para `services/business_days.py` (reuso pelo dashboard); os nomes
+# privados continuam aqui porque testes e código existente importam deles.
+_feriados = business_days.feriados
+_dias_uteis_entre = business_days.dias_uteis_entre
+DIAS_UTEIS_LIMITE = business_days.DIAS_UTEIS_LIMITE
 
 
 def _sem_contexto_de_sessao_rls(fn):
@@ -123,23 +107,21 @@ def _cancelar_demandas_da_atividade(activity_id: int) -> int:
 
     # "Em atendimento" fica de fora — já está sendo atendida pela FGD, não é
     # uma "demanda não atendida" (RF10).
-    demandas = Demand.objects.filter(activity=activity).exclude(
+    demandas = list(Demand.objects.filter(activity=activity).exclude(
         status__in=STATUS_TERMINAIS | {"em_atendimento"}
+    ).order_by("pk"))
+    # A transação é uma só: o saldo de todas as demandas sai antes de qualquer Demand
+    # ser cancelada, na ordem de lock de backend/docs/orcamento.md.
+    balance_service.liberar_duas_travas_em_lote(
+        DemandRequest.objects.filter(demanda__in=demandas).select_related("rubrica", "demanda__solicitante"),
+        usuario=None, motivo=f"Atividade vinculada em status '{activity.get_status_display()}'.",
     )
-    canceladas = 0
+
+    articuladores = notifications_service.usuarios_articuladores_do_estado(activity.municipio.state.sigla)
     for demand in demandas:
-        for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
-            balance_service.liberar_duas_travas(
-                demand_request=solicitacao, usuario=None,
-                motivo=f"Atividade vinculada em status '{activity.get_status_display()}'.",
-            )
         marcar_cancelada(demand)
-        sigla = activity.municipio.state.sigla
-        notifications_service.notificar_cancelamento_automatico(
-            demand, notifications_service.usuarios_articuladores_do_estado(sigla),
-        )
-        canceladas += 1
-    return canceladas
+        notifications_service.notificar_cancelamento_automatico(demand, articuladores)
+    return len(demandas)
 
 
 @shared_task(name="sgd.tasks.notificar_demandas_atividade_adiada")

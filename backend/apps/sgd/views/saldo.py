@@ -19,7 +19,7 @@ class SaldoConsultaView(APIView):
         query.is_valid(raise_exception=True)
         dados = query.validated_data
 
-        activity = get_object_or_404(Activity, pk=dados["activity_id"])
+        activity = get_object_or_404(Activity.objects.select_related("acao__meta"), pk=dados["activity_id"])
         slug = dados["rubrica"] if "rubrica" in dados else rubrica_para_tipo(dados["tipo"]).slug
         rubrica = BudgetRubrica.objects.filter(slug=slug, ativo=True).first()
         if rubrica is None:

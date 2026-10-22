@@ -23,3 +23,20 @@ def registrar_status(demand, *, de, para, usuario=None) -> None:
         _ip=contexto["ip"],
         _user_agent=contexto["user_agent"],
     )
+
+
+def registrar_evento(*, acao, entidade, entidade_id, usuario=None, anteriores=None, novos=None) -> None:
+    """Evento de auditoria fora da demanda (recurso extra, limite individual...), com
+    IP e User-Agent do contexto da requisição."""
+    contexto = get_audit_context()
+    log_audit(
+        user=usuario or contexto["user"],
+        acao=acao,
+        modulo="sgd",
+        entidade=entidade,
+        entidade_id=entidade_id,
+        valores_anteriores=anteriores or {},
+        valores_novos=novos or {},
+        _ip=contexto["ip"],
+        _user_agent=contexto["user_agent"],
+    )

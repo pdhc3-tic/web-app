@@ -2,6 +2,8 @@ from django.db import transaction
 from django.db.models import Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django_filters import rest_framework as django_filters
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -11,9 +13,10 @@ from rest_framework.response import Response
 from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsADTInTerritory, IsAuthenticatedActiveAccess, IsSuperAdmin
 from apps.core.views.audit import AuditLogPagination
+from apps.sgd.filters import DemandFilter
 from apps.sgd.models.approval_step import ApprovalStep
-from apps.sgd.models.demand import Demand
-from apps.sgd.serializers.approval import ApprovalStepSerializer
+from apps.sgd.models.demand import STATUS_CHOICES, Demand
+from apps.sgd.serializers.approval import ApprovalStepSerializer, CancelarSerializer
 from apps.sgd.serializers.auditoria import DemandAuditEntrySerializer
 from apps.sgd.serializers.demand import DemandCreateSerializer, DemandSerializer, DemandUpdateSerializer
 from apps.sgd.serializers.demand_request import (
@@ -27,6 +30,7 @@ from apps.sgd.services.approval import demand_visibility_scope
 from apps.sgd.services.auditoria import ENTIDADE_DEMANDA, ENTIDADE_MOVIMENTACAO_SALDO
 from apps.sgd.views.approval import DemandApprovalMixin
 from apps.sgd.views.demand_document import DemandDocumentMixin
+from apps.sgd.views.remanejamento import RecursoExtraMixin
 from apps.sgp.services.exportacao import CONTENT_TYPES, Arquivo, gerar_arquivo
 from apps.sgp.views.exportacao import arquivo_response
 from apps.sgp.models.workplan import WorkPlanAcao
@@ -37,8 +41,15 @@ class DemandPagination(LimitOffsetPagination):
     max_limit = 200
 
 
-class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
+class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin, viewsets.ViewSet):
     permission_classes = [IsAuthenticatedActiveAccess]
+    # Num ViewSet não genérico, `list` filtra e pagina por conta própria; estes
+    # atributos existem para o drf-spectacular documentar o envelope paginado,
+    # `limit`/`offset` e todos os filtros do `DemandFilter`.
+    queryset = Demand.objects.none()
+    pagination_class = DemandPagination
+    filter_backends = [django_filters.DjangoFilterBackend]
+    filterset_class = DemandFilter
 
     def get_permissions(self):
         # Criar demanda é do ADT/ACR (e Super Admin): Articulador, UGP e FGD
@@ -58,7 +69,7 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
             "activity__comunidade", "activity__tecnico_responsavel",
             "activity__acao__meta", "activity__acao__submeta", "activity__acao__indicador",
             "solicitante",
-        ).prefetch_related("solicitacoes__rubrica")
+        ).prefetch_related("solicitacoes__rubrica", "activity__acao__rubricas_previstas")
         # Só na leitura: nas ações de decisão o prefetch deixaria `etapas` em
         # cache, e a resposta sairia sem a etapa que a própria ação acabou de criar.
         if self.action in ("list", "retrieve"):
@@ -68,11 +79,27 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
         scope = demand_visibility_scope(self.request.user)
         if scope is not None:
             qs = qs.filter(scope)
-        return qs.distinct()
+        return qs
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("activity", OpenApiTypes.INT, description="Id da atividade."),
+            OpenApiParameter(
+                "status", OpenApiTypes.STR, many=True, explode=True, enum=[valor for valor, _ in STATUS_CHOICES],
+                description="Repetível (`?status=a&status=b`): devolve a união dos status.",
+            ),
+            OpenApiParameter(
+                "aguardando_minha_acao", OpenApiTypes.BOOL,
+                description="`true` aplica a fila do perfil autenticado (a mesma da rota de contagem).",
+            ),
+        ],
+        responses={200: DemandSerializer(many=True), 400: OpenApiTypes.OBJECT},
+    )
     def list(self, request):
-        qs = consulta_service.filtrar_demandas(self.get_queryset(), request.query_params)
-        paginator = DemandPagination()
+        qs = consulta_service.filtrar_demandas(
+            self.get_queryset(), request.query_params, request.user,
+        ).order_by("-criado_em", "-pk")
+        paginator = self.pagination_class()
         pagina = paginator.paginate_queryset(qs, request, view=self)
         return paginator.get_paginated_response(DemandSerializer(pagina, many=True).data)
 
@@ -84,7 +111,7 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
         formato = params.pop("formato", ["csv"])[-1]
         if formato not in CONTENT_TYPES:
             raise ValidationError({"formato": "Use 'csv' ou 'xlsx'."})
-        qs = consulta_service.filtrar_demandas(self.get_queryset(), params)
+        qs = consulta_service.filtrar_demandas(self.get_queryset(), params, request.user)
         conteudo = gerar_arquivo(
             consulta_service.COLUNAS_EXPORTACAO, consulta_service.linhas_exportacao(qs),
             formato, "Demandas",
@@ -96,8 +123,18 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
 
     @action(detail=True, methods=["get"], url_path="historico")
     def historico(self, request, pk=None):
-        demand = get_object_or_404(self.get_queryset(), pk=pk)
+        # Só valida o escopo: o queryset da listagem (joins + prefetches) é
+        # pesado demais para um endpoint que lê apenas as etapas.
+        scope = demand_visibility_scope(request.user)
+        visiveis = Demand.objects.all() if scope is None else Demand.objects.filter(scope)
+        demand = get_object_or_404(visiveis, pk=pk)
         etapas = demand.etapas.select_related("responsavel").order_by("criado_em", "pk")
+        # Paginação sob demanda: sem `limit`/`offset` mantém a lista simples
+        # (contrato atual do frontend).
+        if "limit" in request.query_params or "offset" in request.query_params:
+            paginator = DemandPagination()
+            pagina = paginator.paginate_queryset(etapas, request, view=self)
+            return paginator.get_paginated_response(ApprovalStepSerializer(pagina, many=True).data)
         return Response(ApprovalStepSerializer(etapas, many=True).data)
 
     def retrieve(self, request, pk=None):
@@ -167,11 +204,22 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, viewsets.ViewSet):
         demand = demand_service.submeter_demanda(demand, usuario=request.user)
         return Response(DemandSerializer(demand).data)
 
+    @extend_schema(
+        request=CancelarSerializer,
+        responses={200: DemandSerializer, 400: OpenApiTypes.OBJECT, 403: OpenApiTypes.OBJECT},
+        description=(
+            "Solicitante cancela em rascunho, submetida, devolvida ou pré-autorizada. "
+            "Demanda autorizada: só UGP e Super Admin, com `justificativa` obrigatória; "
+            "libera as reservas e registra o evento na timeline."
+        ),
+    )
     @action(detail=True, methods=["post"], url_path="cancelar")
     def cancelar(self, request, pk=None):
         demand = get_object_or_404(self.get_queryset(), pk=pk)
+        entrada = CancelarSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
         demand = demand_service.cancelar_demanda(
-            demand, usuario=request.user, motivo=request.data.get("motivo", ""),
+            demand, usuario=request.user, motivo=entrada.validated_data["motivo"],
         )
         return Response(DemandSerializer(demand).data)
 

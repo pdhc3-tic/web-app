@@ -3,15 +3,17 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.db import transaction
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
+from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.models.demand import STATUS_EDITAVEIS, Demand
 from apps.sgd.models.demand_document import DemandDocument
 from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
-from apps.sgd.services.approval import aplicar_transicao, marcar_cancelada, pode_cancelar
+from apps.sgd.services.approval import aplicar_transicao, marcar_cancelada, pode_cancelar, pode_cancelar_autorizada
 from apps.sgd.services.demand_request import rubrica_para_tipo, validar_campos_json
 from apps.sgp.models import Activity
 
@@ -79,6 +81,11 @@ def atualizar_demanda(demand, *, titulo=None, justificativa=None) -> Demand:
 
 @transaction.atomic
 def adicionar_solicitacao(demand, *, tipo, campos_json, valor_estimado=None, ordem=0):
+    # A decisão do recurso extra trava a Demand para recalcular o déficit sobre as
+    # solicitações; a inclusão disputa o mesmo lock. A FK não basta: no Postgres ela é
+    # DEFERRABLE INITIALLY DEFERRED e só é conferida no commit. O status vem da linha
+    # travada: quem segurava o lock pode ter submetido ou cancelado a demanda.
+    demand.status = Demand.objects.select_for_update().values_list("status", flat=True).get(pk=demand.pk)
     _exigir_editavel(demand)
 
     validado = validar_campos_json(tipo, campos_json, demand.activity)
@@ -220,7 +227,13 @@ def submeter_demanda(demand, *, usuario) -> Demand:
 
 @transaction.atomic
 def cancelar_demanda(demand, *, usuario, motivo: str = "") -> Demand:
-    if not pode_cancelar(demand, usuario):
+    estava_autorizada = demand.status == "autorizada"
+    if estava_autorizada:
+        if not pode_cancelar_autorizada(usuario):
+            raise PermissionDenied("Seu perfil não pode cancelar uma demanda autorizada.")
+        if not motivo.strip():
+            raise DRFValidationError({"justificativa": "Obrigatória para cancelar uma demanda autorizada."})
+    elif not pode_cancelar(demand, usuario):
         raise DRFValidationError({"status": "Você não pode cancelar esta demanda neste status (RF09)."})
 
     for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
@@ -229,5 +242,19 @@ def cancelar_demanda(demand, *, usuario, motivo: str = "") -> Demand:
             motivo=motivo or "Cancelada pelo solicitante.",
         )
 
+    # Dois cancelamentos simultâneos passam pela checagem acima com o mesmo status;
+    # só o primeiro o encontra ao travar a linha. O lock vem depois das reservas,
+    # na ordem da submissão (limite → alocação → Demand).
+    status_atual = Demand.objects.select_for_update().values_list("status", flat=True).get(pk=demand.pk)
+    if status_atual != demand.status:
+        raise DRFValidationError({
+            "status": "A demanda mudou de status durante o cancelamento. Recarregue e tente de novo."
+        })
+
     marcar_cancelada(demand, usuario=usuario)
+    if estava_autorizada:
+        ApprovalStep.objects.create(
+            demanda=demand, etapa="cancelamento", responsavel=usuario,
+            acao="cancelado", justificativa=motivo,
+        )
     return demand
