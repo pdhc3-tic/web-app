@@ -1,12 +1,16 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { ArrowLeftRight, FilePlus2, Inbox, ListChecks, PieChart } from "lucide-react";
+import { ArrowLeftRight, FilePlus2, Inbox, ListChecks, PieChart, Scale } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
 import { SubmoduleCard } from "@/app/components/ui/SubmoduleCard/SubmoduleCard";
-import { canCreateDemanda, canOperarArlo } from "@/app/lib/auth/roles";
+import {
+  canAcessarFilaRemanejamentos,
+  canCreateDemanda,
+  canOperarArlo,
+} from "@/app/lib/auth/roles";
 import { useContagemFila } from "@/app/lib/hooks/useFilaDemandas";
 
 type Submodule = {
@@ -56,6 +60,15 @@ const SUBMODULES: Submodule[] = [
     title: "Execução por Rubrica",
     description: "Autorizado, pago e saldo por rubrica, e o custo de cada atividade.",
     Icon: PieChart,
+  },
+  {
+    key: "remanejamentos",
+    title: "Fila de Remanejamentos",
+    description:
+      "Pedidos de recurso extra das demandas bloqueadas: parecer do Articulador e decisão da UGP.",
+    Icon: Scale,
+    href: "/sgd/remanejamentos/",
+    visivel: canAcessarFilaRemanejamentos,
   },
   {
     key: "arlo",

@@ -18,13 +18,20 @@ export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly fieldErrors?: ApiFieldError[];
+  /**
+   * O corpo JSON como veio, antes da normalização. Para os erros com estrutura
+   * própria que a normalização achata — ex.: `solicitacoes_bloqueadas` no 400
+   * da submissão de demanda (SGD).
+   */
+  readonly raw?: unknown;
 
-  constructor(status: number, body: ApiErrorBody) {
+  constructor(status: number, body: ApiErrorBody, raw?: unknown) {
     super(body.message);
     this.name = "ApiError";
     this.status = status;
     this.code = body.code;
     this.fieldErrors = body.field_errors;
+    this.raw = raw;
   }
 }
 
@@ -86,7 +93,7 @@ async function parseApiError(res: Response): Promise<never> {
   } catch {
     /* corpo vazio ou não-JSON */
   }
-  throw new ApiError(res.status, normalizeErrorBody(res.status, raw));
+  throw new ApiError(res.status, normalizeErrorBody(res.status, raw), raw);
 }
 
 // --- Utilitários internos ---

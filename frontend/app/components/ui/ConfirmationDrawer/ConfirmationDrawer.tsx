@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState, type ReactNode } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Button } from "@/app/components/ui/Button/Button";
 import { SlideOver } from "@/app/components/ui/SlideOver/SlideOver";
 import { Textarea } from "@/app/components/ui/Textarea/Textarea";
@@ -16,6 +16,14 @@ export type ConfirmationDrawerProps = {
   /** Rótulo do botão que desiste: o que se mantém ("Manter demanda"). */
   keepLabel: string;
   justificativaLabel?: string;
+  /**
+   * `perigo` (padrão): recusar, cancelar — botão vermelho. `confirmacao`:
+   * aprovar — o mesmo rito (justificativa, botões que dizem o que fazem), com
+   * o botão primário.
+   */
+  tom?: "perigo" | "confirmacao";
+  /** Campos da decisão além da justificativa (ex.: valor aprovado), acima dela. */
+  children?: ReactNode;
   /** Recebe a justificativa já sem espaços nas pontas. */
   onConfirm: (justificativa: string) => Promise<void>;
   onClose: () => void;
@@ -36,6 +44,8 @@ export function ConfirmationDrawer({
   confirmLabel,
   keepLabel,
   justificativaLabel = "Justificativa",
+  tom = "perigo",
+  children,
   onConfirm,
   onClose,
   "data-testid": testId,
@@ -83,7 +93,7 @@ export function ConfirmationDrawer({
             {keepLabel}
           </Button>
           <Button
-            variant="danger"
+            variant={tom === "perigo" ? "danger" : "primary"}
             onClick={confirmar}
             loading={enviando}
             data-testid={testId ? `${testId}-confirmar` : undefined}
@@ -95,11 +105,19 @@ export function ConfirmationDrawer({
     >
       <div className="flex flex-col gap-5 px-4 py-6" data-testid={testId}>
         <div className="flex items-start gap-3">
-          <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-error-bg text-error-text">
-            <AlertTriangle className="h-5 w-5" aria-hidden />
-          </span>
+          {tom === "perigo" ? (
+            <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-error-bg text-error-text">
+              <AlertTriangle className="h-5 w-5" aria-hidden />
+            </span>
+          ) : (
+            <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-success-bg text-success-text">
+              <CheckCircle2 className="h-5 w-5" aria-hidden />
+            </span>
+          )}
           <div className="min-w-0 text-sm leading-relaxed text-text-muted">{description}</div>
         </div>
+
+        {children}
 
         <Textarea
           id={campoId}

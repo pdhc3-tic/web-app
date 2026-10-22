@@ -28,6 +28,8 @@ export const qk = {
   },
   /** Detalhe de uma atividade — contexto herdado pela nova demanda (#294). */
   atividade: (id: string | number) => ["sgp", "atividade", String(id)] as const,
+  /** Orçamento de uma Meta por rubrica, com o detalhamento por nível (#321). */
+  orcamentoDaMeta: (metaId: number) => ["sgp", "orcamento", "meta", metaId] as const,
   /** Ações do Plano de Trabalho para selects (#294). */
   acoesPT: ["sgp", "acoes"] as const,
   /** Municípios de um território (#294). */
@@ -47,6 +49,15 @@ export const qk = {
       ["sgd", "demandas", "preview", { id, solicitacaoId, valor }] as const,
     auditoria: (id: string | number) =>
       ["sgd", "demandas", "auditoria", String(id)] as const,
+  },
+  /** Recurso extra e Fila de Remanejamentos do SGD (#321). */
+  remanejamentos: {
+    all: ["sgd", "remanejamentos"] as const,
+    lista: (status: readonly string[]) =>
+      ["sgd", "remanejamentos", "lista", { status: [...status] }] as const,
+    detalhe: (id: string | number) => ["sgd", "remanejamentos", "detalhe", String(id)] as const,
+    daDemanda: (demandaId: number) =>
+      ["sgd", "remanejamentos", "demanda", String(demandaId)] as const,
   },
   /** Demandas do SGD vinculadas a uma atividade (#294). */
   demandasDaAtividade: (atividadeId: string | number) =>

@@ -640,3 +640,81 @@ apagar e reordenar, mas a #320 pede mais duas coisas que a API não oferece:
 
 *Estado atual no frontend:* a #320 aguarda essas duas rotas para ser feita
 inteira, por decisão do time de não entregar a tela pela metade.
+
+---
+
+## 22. Pedidos de recurso extra sem filtro por demanda (#321)
+
+*Compilado em 22/10/2026, ao implementar a issue #321 (fluxo "Solicitar recurso
+extra" e Fila de Remanejamentos). Numerado a partir do 22 porque os itens 20 e
+21 do relatório de pendências das issues #294 a #302 (o do PR #343) já usam esses
+números.*
+
+A #321 pede que a aprovação do recurso extra apareça na demanda bloqueada, com
+"indicação clara de que a demanda pode ser resubmetida". O pedido guarda a
+demanda em `BudgetIncreaseRequest.demanda_id`, mas
+`GET /api/v1/sgd/remanejamentos/` só filtra por `status`: não há como pedir os
+pedidos de UMA demanda.
+
+*Estado atual no frontend:* o painel da demanda (só para o solicitante, em
+Rascunho ou Devolvida) chama `GET /sgd/remanejamentos/?status=todos&demanda={id}`
+e mostra o pedido mais recente. Até o filtro existir, o parâmetro é ignorado e a
+lista traz **todos** os pedidos do solicitante: com pedidos em mais de uma
+demanda, o aviso pode ser o de outra demanda dele. Nada é filtrado no cliente.
+
+**Pedido:** aceitar `?demanda={id}` na listagem (`demanda_id` é texto no
+modelo; comparar com o id como string).
+
+---
+
+## 23. O bloqueio na submissão não informa o valor faltante (#321)
+
+*Compilado em 22/10/2026, ao implementar a issue #321.*
+
+A #321 pede que o fluxo guiado confirme "o valor faltante antes de enviar". O
+backend calcula esse valor (`_deficit_individual` em
+`apps/sgd/services/recurso_extra.py`) e o usa quando `valor_solicitado` não é
+enviado, mas não o expõe antes do envio: o 400 da submissão
+(`solicitacoes_bloqueadas`, e no PR #343 também `code` e `solicitacao_id`) traz
+só a trava, o motivo em texto e a ação sugerida.
+
+Calcular no front exigiria repetir a regra (solicitações sem reserva ativa
+menos o saldo do limite, que pode estar negativo depois de um excedente
+autorizado).
+
+*Estado atual no frontend:* o fluxo mostra o motivo do bloqueio, envia sem
+`valor_solicitado` e exibe o valor que o pedido registrou no passo final.
+
+**Pedido:** incluir `valor_faltante` em cada item de `solicitacoes_bloqueadas`
+quando a trava for a individual, ou numa rota de consulta
+(`GET /sgd/demandas/{id}/recurso-extra/preview/?rubrica=`).
+
+---
+
+## 24. Notificações do SGD somem do sino e apontam para produção (#321)
+
+O caminho natural do solicitante até um pedido devolvido ou decidido é a
+notificação (`notificar_recurso_extra_devolvido` e `_decidido`, com link para
+`/sgd/remanejamentos/{id}`). No teste da #321 ela não aparece no sino, por dois
+motivos:
+
+1. **Ordem da lista.** `GET /api/v1/notifications/me/` ordena por
+   `-enviado_em`, mas `_notificar` (`apps/sgd/services/notifications.py`) só cria
+   o registro, e quem preenche `enviado_em` é a task de e-mail
+   (`apps/core/tasks/notifications.py`). As in-app ficam com `status=pendente` e
+   `enviado_em` nulo. O ADT do seed tem 75 assim, e sem data a ordem é
+   indefinida: a notificação nova não cai na primeira página do sino.
+   `Notification` também não tem data de criação para servir de critério.
+   Pelo mesmo motivo, o sino não mostra **quando** a notificação chegou: o
+   horário ("há 5 minutos") vem de `enviado_em`, que chega `null`.
+2. **Link de produção.** O link é montado com `FRONTEND_BASE_URL`, que fora de
+   produção cai no padrão `https://pdhc.ufersa.edu.br`. No ambiente local, o
+   clique sai do sistema.
+
+*Estado atual no frontend:* o sino mostra o que a API devolve, na ordem dela.
+Para chegar ao pedido, o teste usa o link direto.
+
+**Pedido:** marcar as in-app como entregues (`enviado_em` e `status`) ao
+criá-las, ou ordenar por `-pk` / uma data de criação nova; e definir
+`FRONTEND_BASE_URL` no `.env.example` e no `docker-compose.yml` para o
+ambiente local.

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
 import Spinner from "@/app/components/icons/Spinner";
@@ -20,6 +21,7 @@ import {
 import { formatCurrencyBRL } from "@/app/lib/format";
 import { qk } from "@/app/lib/queryKeys";
 import { AcoesDecisao, type Desfecho } from "./AcoesDecisao";
+import { AvisoRecursoExtra } from "./AvisoRecursoExtra";
 import { DemandaAuditoria } from "./DemandaAuditoria";
 import { NomeDoSolicitante } from "./NomeDoSolicitante";
 
@@ -113,6 +115,7 @@ export function DemandaPainel({
   // backend decidiu guardá-la pelo IP; divergência registrada em
   // pendencias-backend-sprint-10.md, item 19.
   const { isSuperAdmin } = useIsSuperAdmin();
+  const { data: session } = useSession();
 
   const { data: demanda, isPending, error, refetch } = useQuery({
     queryKey: qk.demandas.detalhe(demandaId),
@@ -180,6 +183,11 @@ export function DemandaPainel({
         />
       ) : demanda ? (
         <>
+          {/* O desfecho do recurso extra é recado para quem pediu (#321). */}
+          {String(session?.user?.id) === String(demanda.solicitante) && (
+            <AvisoRecursoExtra demanda={demanda} />
+          )}
+
           <DefinitionList
             items={[
               {
