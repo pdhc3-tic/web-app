@@ -8630,6 +8630,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OpcaoTexto'
+        cultura_categoria:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
+        especie_categoria:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
         upf_documento_tipo:
           type: array
           items:
@@ -8685,11 +8693,13 @@ components:
       - beneficiario_vinculo
       - classe
       - cor_raca
+      - cultura_categoria
       - demanda_documento_tipo
       - demanda_status
       - dispositivo
       - energia
       - escolaridade
+      - especie_categoria
       - forma_atuacao
       - genero
       - grau_parentesco

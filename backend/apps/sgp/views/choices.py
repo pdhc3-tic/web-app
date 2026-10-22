@@ -34,7 +34,7 @@ from apps.sgp.constants import (
     STATUS_WORKPLAN,
     TIPO_MORADIA_CHOICES,
 )
-from apps.sgp.models import ActivityDocument, Production, UPFDocument
+from apps.sgp.models import ActivityDocument, Cultura, EspecieAnimal, Production, UPFDocument
 from apps.sgp.models.activity import (
     AMBITO_CHOICES,
     FORMA_ATUACAO_CHOICES,
@@ -68,6 +68,8 @@ CHOICES_PUBLICADOS = {
     "producao_tipo": Production.TIPO_CHOICES,
     "producao_sistema_criacao": Production.SISTEMA_CRIACAO_CHOICES,
     "producao_tipo_outra": Production.TIPO_OUTRA_CHOICES,
+    "cultura_categoria": Cultura.CATEGORIA_CHOICES,
+    "especie_categoria": EspecieAnimal.CATEGORIA_CHOICES,
     "upf_documento_tipo": UPFDocument.TIPO_CHOICES,
     "atividade_documento_tipo": ActivityDocument.TIPO_CHOICES,
     "solicitacao_tipo": SOLICITACAO_TIPO_CHOICES,
