@@ -268,6 +268,21 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "API do Programa de Desenvolvimento Humano de Crianças e Adolescentes (PDHC)",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    # Componentes separados para leitura e escrita (`XRequest`), para os tipos
+    # gerados no frontend não exigirem campos read-only no payload.
+    "COMPONENT_SPLIT_REQUEST": True,
+    # Campos homônimos (`status`, `tipo`) com choices diferentes ganhariam um
+    # sufixo de hash (`Status8eaEnum`), que muda sempre que outro choice é
+    # alterado e quebra os tipos gerados no frontend.
+    "ENUM_NAME_OVERRIDES": {
+        "StatusAtividadeEnum": "apps.sgp.models.activity.STATUS_CHOICES",
+        "StatusFormResponseEnum": "apps.sgp.models.form_response.FormResponse.Status",
+        "StatusConflitoEnum": "apps.sca.models.ConflictLog.Status",
+        "TipoSyncEventEnum": "apps.sca.models.SyncEvent.Tipo",
+        "TipoSolicitacaoEnum": "apps.sgd.models.demand_request.TIPO_CHOICES",
+        "TipoProducaoEnum": "apps.sgp.models.production.Production.TIPO_CHOICES",
+        "SimNaoInformadoEnum": "apps.sgp.constants.ENERGIA_CHOICES",
+    },
     "SWAGGER_UI_SETTINGS": {
         "deepLinking": True,
         "persistAuthorization": True,
