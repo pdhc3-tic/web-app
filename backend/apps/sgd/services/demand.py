@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from django.db import transaction
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
@@ -181,20 +183,28 @@ def submeter_demanda(demand, *, usuario) -> Demand:
 
     meta = demand.meta
     bloqueios = {}
+    # Solicitações da mesma rubrica disputam o mesmo limite e a mesma
+    # alocação: cada uma é conferida contra o saldo que sobra depois das
+    # anteriores que passaram. As barradas não consomem — senão uma menor,
+    # que ainda cabe, seria barrada por causa de uma maior que não coube.
+    consumo_por_rubrica: dict[int, Decimal] = {}
     for solicitacao in solicitacoes:
         # Com reserva já ativa (ex.: ressubmissão de Devolvida sem edição
         # nessa solicitação específica), o saldo já desconta essa reserva —
         # checar o valor cheio de novo bloquearia à toa.
         if balance_service.reserva_ativa(solicitacao):
             continue
+        consumo_previo = consumo_por_rubrica.get(solicitacao.rubrica_id, balance_service.ZERO)
         check = balance_service.verificar_duas_travas(
             solicitante=demand.solicitante, rubrica=solicitacao.rubrica, meta=meta,
-            valor=solicitacao.valor_estimado,
+            valor=solicitacao.valor_estimado, consumo_previo=consumo_previo,
         )
         if not check.disponivel:
             trava = check.trava_bloqueada
             motivo = (check.individual if trava == balance_service.TRAVA_INDIVIDUAL else check.territorial).motivo_bloqueio
             bloqueios[solicitacao.pk] = balance_service.bloqueio(trava, motivo)
+        else:
+            consumo_por_rubrica[solicitacao.rubrica_id] = consumo_previo + solicitacao.valor_estimado
     if bloqueios:
         raise balance_service.SubmissaoBloqueada(bloqueios)
 

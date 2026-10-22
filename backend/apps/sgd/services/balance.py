@@ -42,7 +42,10 @@ class SubmissaoBloqueada(DRFValidationError):
     """400 da submissão barrada por uma das travas, levantado tanto pela
     pré-checagem quanto pela reserva sob lock (o saldo pode mudar entre as
     duas). `detail`/`code`/`solicitacao_id` descrevem a primeira solicitação
-    barrada; `solicitacoes_bloqueadas` traz todas.
+    barrada; `solicitacoes_bloqueadas` traz todas as que a pré-checagem
+    barrou. Na reserva, só aparece a que bateu: a primeira falha desfaz a
+    transação, e as seguintes não chegam a ser conferidas contra o saldo que
+    mudou.
 
     O corpo é atribuído depois do `__init__` porque a normalização do DRF
     converteria `solicitacao_id` em string."""
@@ -192,7 +195,7 @@ def _notificar_se_piorou(*, usuarios, demand, rubrica_nome, trava, comprometido_
         )
 
 
-def _checar_individual(*, solicitante, rubrica, valor: Decimal) -> TravaCheck:
+def _checar_individual(*, solicitante, rubrica, valor: Decimal, consumo_previo: Decimal = ZERO) -> TravaCheck:
     limite = DemandIndividualLimit.objects.filter(solicitante=solicitante, rubrica=rubrica).first()
     if limite is None:
         return TravaCheck(
@@ -204,7 +207,7 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal) -> TravaCheck:
             ),
             acao_sugerida=ACAO_SUGERIDA[TRAVA_INDIVIDUAL],
         )
-    saldo = limite.saldo_disponivel
+    saldo = limite.saldo_disponivel - consumo_previo
     if saldo <= ZERO:
         return TravaCheck(
             disponivel=False, saldo=saldo,
@@ -227,14 +230,22 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal) -> TravaCheck:
     return TravaCheck(disponivel=True, saldo=saldo, motivo_bloqueio=None)
 
 
-def verificar_duas_travas(*, solicitante, rubrica, meta, valor: Decimal) -> DuasTravasCheck:
-    """Somente leitura — não reserva nada. `meta`/`rubrica` já resolvidas."""
-    individual = _checar_individual(solicitante=solicitante, rubrica=rubrica, valor=valor)
+def verificar_duas_travas(
+    *, solicitante, rubrica, meta, valor: Decimal, consumo_previo: Decimal = ZERO,
+) -> DuasTravasCheck:
+    """Somente leitura — não reserva nada. `meta`/`rubrica` já resolvidas.
+
+    `consumo_previo`: quanto outras solicitações da mesma operação, na mesma
+    rubrica, já vão reservar antes desta. Sai do saldo das duas travas — o
+    limite individual e a alocação territorial são os mesmos para todas."""
+    individual = _checar_individual(
+        solicitante=solicitante, rubrica=rubrica, valor=valor, consumo_previo=consumo_previo,
+    )
 
     nivel, estado_sigla, territorio = budget_service.resolver_nivel_do_usuario(solicitante)
     territorial = budget_service.saldo_para_consulta(
         meta_id=meta.pk, rubrica_slug=rubrica.slug, nivel=nivel,
-        estado_sigla=estado_sigla, territorio=territorio, valor=valor,
+        estado_sigla=estado_sigla, territorio=territorio, valor=valor, consumo_previo=consumo_previo,
     )
     if not territorial.disponivel:
         territorial = replace(

@@ -390,8 +390,10 @@ def _allocation_para(*, meta, rubrica, nivel: str, estado=None, territorio=None)
     return BudgetAllocation.objects.filter(**filtros).first()
 
 
-def _saldo_check_de_allocation(allocation: BudgetAllocation, valor: Decimal) -> SaldoCheck:
-    saldo = _saldo_disponivel(allocation)
+def _saldo_check_de_allocation(
+    allocation: BudgetAllocation, valor: Decimal, consumo_previo: Decimal = ZERO,
+) -> SaldoCheck:
+    saldo = _saldo_disponivel(allocation) - consumo_previo
     if saldo <= ZERO:
         return SaldoCheck(disponivel=False, saldo=saldo, allocation=allocation, motivo_bloqueio=BLOQUEIO_SALDO_ZERO)
     if valor > saldo:
@@ -657,11 +659,14 @@ def resolver_nivel_do_usuario(user) -> tuple[str, str | None, Territory | None]:
 
 def saldo_para_consulta(*, meta_id: int, rubrica_slug: str, nivel: str,
                          estado_sigla: str | None, territorio: Territory | None,
-                         valor: Decimal) -> SaldoCheck:
+                         valor: Decimal, consumo_previo: Decimal = ZERO) -> SaldoCheck:
     """Mesma resposta de `verificar_saldo`, mas resolvendo tudo numa query só
     via join — rubrica inválida/inativa e a alocação em si vêm do mesmo
     `.filter()`. Só o caminho de erro (nada encontrado) paga uma 2ª query,
-    pra distinguir "rubrica não existe" de "rubrica ok, sem alocação"."""
+    pra distinguir "rubrica não existe" de "rubrica ok, sem alocação".
+
+    `consumo_previo` é o que a mesma operação ainda vai reservar nesta
+    alocação antes de `valor` — sai do saldo antes da comparação."""
     filtros = {
         "meta_id": meta_id, "rubrica__slug": rubrica_slug, "rubrica__ativo": True,
         "nivel": nivel,
@@ -686,7 +691,7 @@ def saldo_para_consulta(*, meta_id: int, rubrica_slug: str, nivel: str,
             disponivel=False, saldo=ZERO, allocation=None,
             motivo_bloqueio="Nenhuma alocação encontrada para este nível.",
         )
-    return _saldo_check_de_allocation(allocation, valor)
+    return _saldo_check_de_allocation(allocation, valor, consumo_previo)
 
 
 # ---------------------------------------------------------------------------
