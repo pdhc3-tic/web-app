@@ -3,6 +3,7 @@ from uuid import uuid4
 from django.db import transaction
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, OpenApiTypes, extend_schema, inline_serializer
 from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -21,6 +22,8 @@ ALLOWED_IMPORT_CONTENT_TYPES = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
 }
 MAX_IMPORT_SIZE_BYTES = 10_485_760
+
+_ERRO_DETALHE = inline_serializer("ArloErroDetalhe", fields={"detail": serializers.CharField()})
 
 
 class ArloUploadURLSerializer(serializers.Serializer):
@@ -43,6 +46,10 @@ class ArloViewSet(viewsets.ViewSet):
             return [IsAuthenticatedActiveAccess(), (IsFGD | IsSuperAdmin | IsUGP)()]
         return [IsAuthenticatedActiveAccess(), (IsFGD | IsSuperAdmin)()]
 
+    @extend_schema(
+        parameters=[OpenApiParameter("tipo", OpenApiTypes.STR, enum=ArloImport.Tipo.values)],
+        responses=ArloImportSerializer(many=True),
+    )
     def list(self, request):
         qs = ArloImport.objects.select_related("operado_por")
         tipo = request.query_params.get("tipo")
@@ -50,9 +57,14 @@ class ArloViewSet(viewsets.ViewSet):
             qs = qs.filter(tipo=tipo)
         return Response(ArloImportSerializer(qs, many=True).data)
 
+    @extend_schema(
+        parameters=[OpenApiParameter("id", OpenApiTypes.INT, OpenApiParameter.PATH)],
+        responses=ArloImportSerializer,
+    )
     def retrieve(self, request, pk=None):
         return Response(ArloImportSerializer(get_object_or_404(ArloImport, pk=pk)).data)
 
+    @extend_schema(request=None, responses={(200, "text/csv"): OpenApiTypes.BINARY})
     @action(detail=False, methods=["post"], url_path="exportar")
     def exportar(self, request):
         importacao, conteudo = arlo_export.exportar(usuario=request.user)
@@ -61,6 +73,12 @@ class ArloViewSet(viewsets.ViewSet):
         resposta["X-Arlo-Operacao-Id"] = str(importacao.pk)
         return resposta
 
+    @extend_schema(
+        request=ArloUploadURLSerializer,
+        responses=inline_serializer("ArloUploadURL", fields={
+            "url": serializers.CharField(), "key": serializers.CharField(), "expires_in": serializers.IntegerField(),
+        }),
+    )
     @action(detail=False, methods=["post"], url_path="importar/upload-url")
     def importar_upload_url(self, request):
         serializer = ArloUploadURLSerializer(data=request.data)
@@ -75,6 +93,13 @@ class ArloViewSet(viewsets.ViewSet):
             url = request.build_absolute_uri(url)
         return Response({"url": url, "key": key, "expires_in": expires_in})
 
+    @extend_schema(
+        request=ArloImportConfirmSerializer,
+        responses={
+            202: ArloImportSerializer,
+            400: OpenApiResponse(_ERRO_DETALHE, description="Arquivo não encontrado no storage ou grande demais."),
+        },
+    )
     @action(detail=False, methods=["post"], url_path="importar")
     def importar(self, request):
         serializer = ArloImportConfirmSerializer(data=request.data)
