@@ -47,6 +47,10 @@ DEBUG = os.getenv("DEBUG", "False") == "True"
 # comandos que não tocam em campos criptografados.
 FIELD_ENCRYPTION_KEY = os.getenv("FIELD_ENCRYPTION_KEY", "")
 
+# Quantos proxies reversos confiáveis ficam entre o cliente e o Django (hoje só
+# o nginx). Define qual posição do X-Forwarded-For é o IP do cliente.
+TRUSTED_PROXY_COUNT = int(os.getenv("TRUSTED_PROXY_COUNT", "1"))
+
 # POWER BI
 POWER_BI_SERVICE_TOKEN = os.getenv("POWER_BI_SERVICE_TOKEN", "")
 POWER_BI_RATE_LIMIT = os.getenv("POWER_BI_RATE_LIMIT", "100/hour")
@@ -243,9 +247,9 @@ REST_FRAMEWORK = {
     },
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "EXCEPTION_HANDLER": "setup.exceptions.custom_exception_handler",
-    "NUM_PROXIES": 1,  # Railway usa 1 load balancer na frente
-    # Isso faz o SimpleRateThrottle usar X-Forwarded-For
-    # corretamente sem confiar em IPs intermediários injetáveis
+    # Os throttles padrão do DRF (anon/user) usam X-Forwarded-For; o número de
+    # proxies segue o mesmo TRUSTED_PROXY_COUNT usado por get_client_ip.
+    "NUM_PROXIES": TRUSTED_PROXY_COUNT,
 }
 
 SIMPLE_JWT = {

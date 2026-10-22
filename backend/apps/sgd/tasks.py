@@ -6,6 +6,7 @@ from django.utils import timezone
 
 from apps.core.models.notifications import Notification
 from apps.sgd.models.demand import STATUS_TERMINAIS, Demand
+from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.services import business_days
 from apps.sgd.services.approval import marcar_cancelada, responsaveis_pela_etapa_atual
 from apps.sgd.services.notifications import EVENTO_INATIVIDADE, link_inatividade, notificar_inatividade
@@ -106,23 +107,21 @@ def _cancelar_demandas_da_atividade(activity_id: int) -> int:
 
     # "Em atendimento" fica de fora — já está sendo atendida pela FGD, não é
     # uma "demanda não atendida" (RF10).
-    demandas = Demand.objects.filter(activity=activity).exclude(
+    demandas = list(Demand.objects.filter(activity=activity).exclude(
         status__in=STATUS_TERMINAIS | {"em_atendimento"}
+    ).order_by("pk"))
+    # A transação é uma só: o saldo de todas as demandas sai antes de qualquer Demand
+    # ser cancelada, na ordem de lock de backend/docs/orcamento.md.
+    balance_service.liberar_duas_travas_em_lote(
+        DemandRequest.objects.filter(demanda__in=demandas).select_related("rubrica", "demanda__solicitante"),
+        usuario=None, motivo=f"Atividade vinculada em status '{activity.get_status_display()}'.",
     )
-    canceladas = 0
+
+    articuladores = notifications_service.usuarios_articuladores_do_estado(activity.municipio.state.sigla)
     for demand in demandas:
-        for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
-            balance_service.liberar_duas_travas(
-                demand_request=solicitacao, usuario=None,
-                motivo=f"Atividade vinculada em status '{activity.get_status_display()}'.",
-            )
         marcar_cancelada(demand)
-        sigla = activity.municipio.state.sigla
-        notifications_service.notificar_cancelamento_automatico(
-            demand, notifications_service.usuarios_articuladores_do_estado(sigla),
-        )
-        canceladas += 1
-    return canceladas
+        notifications_service.notificar_cancelamento_automatico(demand, articuladores)
+    return len(demandas)
 
 
 @shared_task(name="sgd.tasks.notificar_demandas_atividade_adiada")

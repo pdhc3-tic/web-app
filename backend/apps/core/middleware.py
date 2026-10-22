@@ -6,6 +6,7 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from apps.core.signals.audit import set_audit_context, clear_audit_context
+from apps.core.utils import get_client_ip
 
 
 logger = logging.getLogger(__name__)
@@ -168,10 +169,7 @@ class AuditContextMiddleware:
         if user and not user.is_authenticated:
             user = None
 
-        ip = (
-            request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip()
-            or request.META.get("REMOTE_ADDR")
-        )
+        ip = get_client_ip(request)
         user_agent = request.META.get("HTTP_USER_AGENT", "")
 
         set_audit_context(user=user, ip=ip, user_agent=user_agent)

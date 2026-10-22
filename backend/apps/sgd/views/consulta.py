@@ -17,7 +17,7 @@ class _ConsultaGestaoView(APIView):
         scope = demand_visibility_scope(request.user)
         if scope is not None:
             qs = qs.filter(scope)
-        return consulta_service.filtrar_demandas(qs.distinct(), request.query_params)
+        return consulta_service.filtrar_demandas(qs.distinct(), request.query_params, request.user)
 
 
 class PainelRubricasView(_ConsultaGestaoView):
