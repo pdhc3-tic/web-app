@@ -1,6 +1,7 @@
 from .consulta import CustoPorAtividadeView, PainelRubricasView
 from .arlo import ArloViewSet
 from .arlo_mapping import ArloFieldMappingViewSet
+from .dashboard import SgdDashboardView
 from .demand import DemandViewSet
 from .demand_type_rubrica_mapping import DemandTypeRubricaMappingViewSet
 from .individual_limit import DemandIndividualLimitViewSet
@@ -17,4 +18,5 @@ __all__ = [
     "PainelRubricasView",
     "RemanejamentoViewSet",
     "SaldoConsultaView",
+    "SgdDashboardView",
 ]
