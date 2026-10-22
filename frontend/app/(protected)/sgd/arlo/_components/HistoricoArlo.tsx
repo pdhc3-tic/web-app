@@ -10,7 +10,7 @@ import { ApiError } from "@/app/lib/api";
 import { listOperacoesArlo, operacaoEmAndamento, type OperacaoArlo } from "@/app/lib/arlo";
 import { absoluteDateTime } from "@/app/lib/datetime";
 import { qk } from "@/app/lib/queryKeys";
-import { ErrosDaImportacao, StatusOperacao } from "./ErrosDaImportacao";
+import { ErrosDaImportacao, FalhaDaImportacao, StatusOperacao } from "./ErrosDaImportacao";
 
 const TH = "px-4 py-2.5 text-left text-2xs font-medium uppercase tracking-[0.06em] text-text-muted";
 const TD = "px-4 py-3 align-middle";
@@ -161,11 +161,7 @@ export function HistoricoArlo() {
             {detalhe.tipo === "importacao" && detalhe.status === "concluido" && (
               <ErrosDaImportacao operacao={detalhe} />
             )}
-            {detalhe.status === "falhou" && (
-              <p role="alert" className="text-sm text-error-text">
-                {detalhe.erros_json[0]?.erro ?? "O arquivo não pôde ser processado."}
-              </p>
-            )}
+            {detalhe.status === "falhou" && <FalhaDaImportacao operacao={detalhe} />}
           </div>
         )}
       </SlideOver>
