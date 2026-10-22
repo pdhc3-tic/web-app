@@ -1,12 +1,15 @@
+import re
 import threading
 from decimal import Decimal
 
 import pytest
 from django.db import connection
 from django.test import TransactionTestCase
+from django.test.utils import CaptureQueriesContext
 
-from apps.core.tests.factories import StateFactory, TerritoryFactory
+from apps.core.tests.factories import StateFactory, TerritoryFactory, UserFactory
 from apps.sgp.models import BudgetAllocation, BudgetTransaction
+from apps.sgp.services import budget as budget_service
 from apps.sgp.tests.factories import (
     BudgetAllocationFactory,
     BudgetRubricaFactory,
@@ -179,6 +182,32 @@ class TestReducaoDeAlocacao:
         )
 
         assert response.status_code == 400
+
+
+class TestOrdemDeLock:
+    def test_ajuste_trava_a_alocacao_e_o_pai_em_ordem_de_pk(self, state_rn, territory_rn):
+        """Como `remanejar`: a estadual, criada antes, é travada antes da territorial
+        ajustada, e não depois dela."""
+        meta = WorkPlanMetaFactory()
+        rubrica = BudgetRubricaFactory()
+        estadual = BudgetAllocationFactory(
+            meta=meta, rubrica=rubrica, nivel=Nivel.ESTADUAL, estado=state_rn, territorio=None,
+            valor_alocado=Decimal("1000"),
+        )
+        territorial = BudgetAllocationFactory(
+            meta=meta, rubrica=rubrica, nivel=Nivel.TERRITORIAL, estado=None, territorio=territory_rn,
+            valor_alocado=Decimal("100"),
+        )
+
+        with CaptureQueriesContext(connection) as consultas:
+            budget_service.atualizar_valor_alocado(territorial, novo_valor=Decimal("200"), usuario=UserFactory())
+
+        travadas = [
+            int(achado.group(1))
+            for consulta in consultas if "FOR UPDATE" in consulta["sql"]
+            for achado in [re.search(r'"sgp_budgetallocation"\."id" = (\d+)', consulta["sql"])] if achado
+        ]
+        assert travadas[:2] == [estadual.pk, territorial.pk]
 
 
 class TestPermissoes:

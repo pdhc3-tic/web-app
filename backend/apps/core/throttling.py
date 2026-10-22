@@ -1,5 +1,7 @@
 from rest_framework.throttling import SimpleRateThrottle, UserRateThrottle
 
+from apps.core.utils import get_client_ip
+
 
 class CustomWindowRateThrottle(SimpleRateThrottle):
     def parse_rate(self, rate):
@@ -37,6 +39,10 @@ class CustomWindowRateThrottle(SimpleRateThrottle):
 
         return int(amount or 1) * multipliers[unit]
     
+    def get_ident(self, request):
+        # Mesma regra de IP da auditoria, para a chave do throttle nunca divergir do IP registrado.
+        return get_client_ip(request) or super().get_ident(request)
+
     def get_cache_key(self, request, view):
         return f"throttle_{self.scope}_{self.get_ident(request)}"
 

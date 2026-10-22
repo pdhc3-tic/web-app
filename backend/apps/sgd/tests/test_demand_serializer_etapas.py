@@ -60,7 +60,7 @@ def test_solicitante_nome_na_listagem_e_no_detalhe(
     lista = auth_client_articulador_rn.get(URL)
     detalhe = auth_client_articulador_rn.get(f"{URL}{demand.pk}/")
 
-    assert lista.data[0]["solicitante_nome"] == solicitante_rn.nome
+    assert lista.data["results"][0]["solicitante_nome"] == solicitante_rn.nome
     assert detalhe.data["solicitante_nome"] == solicitante_rn.nome
 
 
@@ -74,7 +74,7 @@ def test_listagem_nao_faz_consulta_de_etapas_por_demanda(
         response = auth_client_solicitante.get(URL)
 
     assert response.status_code == 200
-    assert [len(d["etapas"]) for d in response.data] == [2, 2, 2]
+    assert [len(d["etapas"]) for d in response.data["results"]] == [2, 2, 2]
     etapas = [q for q in consultas.captured_queries if 'FROM "sgd_approvalstep"' in q["sql"]]
     assert len(etapas) == 1
 

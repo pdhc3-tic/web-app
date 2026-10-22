@@ -9,12 +9,14 @@ from .views import (
     DemandViewSet,
     CustoPorAtividadeView,
     PainelRubricasView,
+    RemanejamentoViewSet,
     SaldoConsultaView,
 )
 
 router = DefaultRouter()
 router.register("demandas", DemandViewSet, basename="demanda")
 router.register("arlo", ArloViewSet, basename="arlo")
+router.register("remanejamentos", RemanejamentoViewSet, basename="remanejamento")
 router.register("config/arlo-mapping", ArloFieldMappingViewSet, basename="arlo-mapping")
 router.register("config/tipo-rubrica", DemandTypeRubricaMappingViewSet, basename="tipo-rubrica")
 router.register("limites-individuais", DemandIndividualLimitViewSet, basename="demanda-limite-individual")
