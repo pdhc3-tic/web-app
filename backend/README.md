@@ -75,18 +75,31 @@ O schema só é útil para gerar tipos se descrever o que a view devolve de fato
 
 ### Schema versionado (`schema.yml`)
 
-O frontend gera os tipos da API a partir de `backend/schema.yml`. Todo PR que muda request ou resposta de alguma rota precisa regenerá-lo e commitá-lo junto:
+O frontend gera os tipos da API a partir de `backend/schema.yml`. Por isso o arquivo é versionado e precisa estar sempre igual ao que o código gera.
+
+> **Regra:** todo PR que muda request ou resposta de alguma rota (serializer, view, `@extend_schema`, filtro, paginação, choices) regenera o `schema.yml` e commita o arquivo junto, no mesmo PR.
 
 ```bash
 sudo docker compose exec backend python manage.py spectacular --file schema.yml
 ```
 
-O teste `apps/core/tests/test_openapi_schema.py`, que roda no workflow `.github/workflows/openapi-schema.yml` em todo PR que toca `backend/`, falha quando:
+Em conflito de merge no `schema.yml`, não resolva à mão: termine o merge do código e rode o comando acima de novo.
 
-- o `schema.yml` commitado difere do gerado pelo código;
-- a geração emite warning ou erro fora do débito conhecido de SGD e SCA (lista em `FONTES_COM_DEBITO`).
+### Workflow `Schema OpenAPI` (gate no PR)
 
-Em conflito de merge no `schema.yml`, não resolva à mão: termine o merge do código e regenere o arquivo.
+O workflow `.github/workflows/openapi-schema.yml` roda em todo PR para a `main` que toca `backend/`. Ele aparece no PR como **"Schema OpenAPI atualizado"** e executa só `apps/core/tests/test_openapi_schema.py`, sem banco nem Redis.
+
+O check falha quando:
+
+| Situação | Mensagem do teste | Como resolver |
+|---|---|---|
+| `schema.yml` commitado difere do gerado pelo código | `schema.yml desatualizado` | Regenerar com o comando acima e commitar |
+| A geração emite warning ou erro em código fora do débito conhecido de SGD e SCA | Lista dos warnings novos | Corrigir a view ou o serializer (ver [Como manter](#como-manter)) |
+| Um tipo que o frontend depende saiu errado (ex.: município sem `estado`) | `assert` do teste específico | Corrigir o schema da rota, não o teste |
+
+O workflow é separado do `deploy.yml` de propósito. O pytest do deploy só roda no push para a `main`, ou seja, depois do merge, e um schema desatualizado travaria o deploy de produção. Aqui ele barra o PR antes do merge, com um nome próprio que deixa claro o que falhou.
+
+O débito de SGD e SCA está listado em `FONTES_COM_DEBITO`, no teste. Ao zerar os warnings de um desses apps, tire-o da lista para que ele passe a ser cobrado também.
 
 ## Banco de Dados
 
