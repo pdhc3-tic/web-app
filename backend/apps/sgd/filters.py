@@ -1,12 +1,15 @@
+from datetime import datetime, time, timedelta
+
 import django_filters
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
+from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 
 from apps.core.models.user import User
 from apps.core.models.user_profile import UserProfile
 from apps.sgd.models.demand import STATUS_CHOICES, Demand
-from apps.sgd.models.demand_request import TIPO_CHOICES
+from apps.sgd.models.demand_request import TIPO_CHOICES, DemandRequest
 from apps.sgd.services.approval import demandas_aguardando_acao
 
 
@@ -46,8 +49,9 @@ class DemandFilter(django_filters.FilterSet):
     com AND; `tipo` e `rubrica` olham as solicitações da demanda."""
 
     status = django_filters.MultipleChoiceFilter(choices=STATUS_CHOICES)
-    tipo = django_filters.ChoiceFilter(field_name="solicitacoes__tipo", choices=TIPO_CHOICES)
-    rubrica = django_filters.CharFilter(field_name="solicitacoes__rubrica__slug")
+    # `Exists` em vez de join: não duplica linhas, então não precisa de `.distinct()`.
+    tipo = django_filters.ChoiceFilter(choices=TIPO_CHOICES, method="filtrar_tipo")
+    rubrica = django_filters.CharFilter(method="filtrar_rubrica")
     solicitante = django_filters.NumberFilter(field_name="solicitante_id")
     activity = django_filters.NumberFilter(field_name="activity_id")
     atividade = django_filters.NumberFilter(field_name="activity_id")
@@ -55,8 +59,8 @@ class DemandFilter(django_filters.FilterSet):
     submeta = django_filters.NumberFilter(field_name="activity__acao__submeta_id")
     meta = django_filters.NumberFilter(field_name="activity__acao__meta_id")
     territorio = django_filters.NumberFilter(field_name="activity__municipio__territory_id")
-    periodo_inicio = django_filters.DateFilter(field_name="criado_em", lookup_expr="date__gte")
-    periodo_fim = django_filters.DateFilter(field_name="criado_em", lookup_expr="date__lte")
+    periodo_inicio = django_filters.DateFilter(method="filtrar_periodo_inicio")
+    periodo_fim = django_filters.DateFilter(method="filtrar_periodo_fim")
     responsavel_etapa_atual = django_filters.NumberFilter(method="filtrar_responsavel_etapa_atual")
     aguardando_minha_acao = django_filters.TypedChoiceFilter(
         choices=[("true", "true"), ("false", "false")],
@@ -67,6 +71,25 @@ class DemandFilter(django_filters.FilterSet):
     class Meta:
         model = Demand
         fields: list[str] = []
+
+    @staticmethod
+    def _solicitacoes_com(queryset, **filtros):
+        return queryset.filter(Exists(DemandRequest.objects.filter(demanda=OuterRef("pk"), **filtros)))
+
+    def filtrar_tipo(self, queryset, name, value):
+        return self._solicitacoes_com(queryset, tipo=value)
+
+    def filtrar_rubrica(self, queryset, name, value):
+        return self._solicitacoes_com(queryset, rubrica__slug=value)
+
+    # Intervalo de datetimes no fuso corrente (o mesmo do `__date`), para o
+    # índice (status, -criado_em) continuar utilizável — `criado_em__date`
+    # envolve a coluna numa função.
+    def filtrar_periodo_inicio(self, queryset, name, value):
+        return queryset.filter(criado_em__gte=timezone.make_aware(datetime.combine(value, time.min)))
+
+    def filtrar_periodo_fim(self, queryset, name, value):
+        return queryset.filter(criado_em__lt=timezone.make_aware(datetime.combine(value + timedelta(days=1), time.min)))
 
     def filtrar_responsavel_etapa_atual(self, queryset, name, value):
         user = User.objects.filter(pk=int(value)).first()
