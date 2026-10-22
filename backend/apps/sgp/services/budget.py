@@ -394,7 +394,9 @@ def _saldo_check_de_allocation(
     allocation: BudgetAllocation, valor: Decimal, consumo_previo: Decimal = ZERO,
 ) -> SaldoCheck:
     saldo = _saldo_disponivel(allocation) - consumo_previo
-    if saldo <= ZERO:
+    # Zerado só pelo consumo da própria operação, a rubrica ainda tem saldo:
+    # cai no "insuficiente", que mostra disponível e solicitado.
+    if saldo <= ZERO and consumo_previo <= ZERO:
         return SaldoCheck(disponivel=False, saldo=saldo, allocation=allocation, motivo_bloqueio=BLOQUEIO_SALDO_ZERO)
     if valor > saldo:
         return SaldoCheck(

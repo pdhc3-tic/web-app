@@ -290,6 +290,7 @@ def test_submeter_demanda_pre_checagem_soma_solicitacoes_da_mesma_rubrica_no_lim
     assert corpo["solicitacao_id"] == segunda.pk
     assert corpo["code"] == "trava_individual"
     assert "R$ 40.00 disponível, R$ 60.00 solicitado" in corpo["detail"]
+    assert "Já descontados R$ 60.00 de outras solicitações desta demanda" in corpo["detail"]
 
     demand_rascunho_rn.refresh_from_db()
     assert demand_rascunho_rn.status == "rascunho"
@@ -314,6 +315,8 @@ def test_submeter_demanda_pre_checagem_soma_solicitacoes_da_mesma_rubrica_no_poo
     corpo = excinfo.value.detail
     assert set(corpo["solicitacoes_bloqueadas"]) == {str(segunda.pk), str(terceira.pk)}
     assert corpo["code"] == "trava_territorial"
+    assert "R$ 40.00 disponível, R$ 60.00 solicitado" in corpo["detail"]
+    assert "Já descontados R$ 60.00 de outras solicitações desta demanda" in corpo["detail"]
     allocation.refresh_from_db()
     assert allocation.valor_comprometido == Decimal("0")
 
@@ -330,6 +333,60 @@ def test_submeter_demanda_pre_checagem_barrada_nao_consome_saldo_das_seguintes(
         demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
 
     assert set(excinfo.value.detail["solicitacoes_bloqueadas"]) == {str(barrada.pk)}
+
+
+def test_submeter_demanda_limite_zerado_pela_propria_demanda_mostra_valores_e_nao_diz_esgotado(
+    demand_rascunho_rn, solicitante_rn, rubrica_diarias, allocation_territorial_rn, limite_individual_rn,
+):
+    limite_individual_rn.valor_limite = Decimal("100")
+    limite_individual_rn.save(update_fields=["valor_limite"])
+    *_, terceira = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "50", "50", "10")
+
+    with pytest.raises(DRFValidationError) as excinfo:
+        demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
+
+    corpo = excinfo.value.detail
+    assert corpo["solicitacao_id"] == terceira.pk
+    assert "Limite individual insuficiente: R$ 0.00 disponível, R$ 10.00 solicitado" in corpo["detail"]
+    assert "Já descontados R$ 100.00" in corpo["detail"]
+    assert "esgotado" not in corpo["detail"]
+
+
+def test_submeter_demanda_pool_zerado_pela_propria_demanda_mostra_valores_e_nao_diz_que_zerou(
+    demand_rascunho_rn, solicitante_rn, activity_rn, rubrica_diarias, limite_individual_rn,
+):
+    from apps.sgp.services.budget import BLOQUEIO_SALDO_ZERO
+    from apps.sgp.tests.factories import BudgetAllocationFactory
+
+    BudgetAllocationFactory(
+        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
+        valor_alocado=Decimal("100"), valor_comprometido=Decimal("0"),
+    )
+    *_, terceira = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "50", "50", "10")
+
+    with pytest.raises(DRFValidationError) as excinfo:
+        demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
+
+    corpo = excinfo.value.detail
+    assert corpo["solicitacao_id"] == terceira.pk
+    assert corpo["code"] == "trava_territorial"
+    assert "R$ 0.00 disponível, R$ 10.00 solicitado" in corpo["detail"]
+    assert BLOQUEIO_SALDO_ZERO not in corpo["detail"]
+    # O pool tem R$ 100 livres no banco: só não cobre esta demanda inteira.
+    assert "Território esgotado nesta rubrica para este valor" in corpo["detail"]
+    assert "Território esgotado nesta rubrica. Acione" not in corpo["detail"]
+
+
+def test_submeter_demanda_sem_outras_solicitacoes_nao_menciona_desconto(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    limite_individual_rn.valor_limite = Decimal("500")
+    limite_individual_rn.save(update_fields=["valor_limite"])
+
+    with pytest.raises(DRFValidationError) as excinfo:
+        demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
+
+    assert "Já descontados" not in excinfo.value.detail["detail"]
 
 
 def test_submeter_demanda_rubricas_diferentes_nao_somam_consumo(

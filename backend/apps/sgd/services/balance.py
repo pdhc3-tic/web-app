@@ -83,6 +83,14 @@ def com_orientacao(motivo: str | None, orientacao: str) -> str | None:
     return f"{motivo} {orientacao}"
 
 
+def _com_consumo_previo(motivo: str | None, consumo_previo: Decimal) -> str | None:
+    """Sem isso o solicitante vê um disponível menor que o do painel de saldo
+    e não sabe por quê."""
+    if not motivo or consumo_previo <= ZERO:
+        return motivo
+    return f"{motivo} Já descontados R$ {consumo_previo} de outras solicitações desta demanda na mesma rubrica."
+
+
 @dataclass
 class TravaCheck:
     disponivel: bool
@@ -208,7 +216,9 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal, consumo_previo: 
             acao_sugerida=ACAO_SUGERIDA[TRAVA_INDIVIDUAL],
         )
     saldo = limite.saldo_disponivel - consumo_previo
-    if saldo <= ZERO:
+    # Zerado pelas outras solicitações da própria demanda não é limite
+    # esgotado: cai no "insuficiente", que mostra disponível e solicitado.
+    if saldo <= ZERO and consumo_previo <= ZERO:
         return TravaCheck(
             disponivel=False, saldo=saldo,
             motivo_bloqueio=com_orientacao(
@@ -222,7 +232,10 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal, consumo_previo: 
         return TravaCheck(
             disponivel=False, saldo=saldo,
             motivo_bloqueio=com_orientacao(
-                f"Limite individual insuficiente: R$ {saldo} disponível, R$ {valor} solicitado.",
+                _com_consumo_previo(
+                    f"Limite individual insuficiente: R$ {saldo} disponível, R$ {valor} solicitado.",
+                    consumo_previo,
+                ),
                 ORIENTACAO_INDIVIDUAL,
             ),
             acao_sugerida=ACAO_SUGERIDA[TRAVA_INDIVIDUAL],
@@ -248,10 +261,14 @@ def verificar_duas_travas(
         estado_sigla=estado_sigla, territorio=territorio, valor=valor, consumo_previo=consumo_previo,
     )
     if not territorial.disponivel:
+        # A orientação olha o saldo real do pool: se ele só zerou por causa
+        # desta demanda, o território não está esgotado.
         territorial = replace(
             territorial, motivo_bloqueio=com_orientacao(
-                territorial.motivo_bloqueio,
-                orientacao_territorial(allocation=territorial.allocation, saldo=territorial.saldo),
+                _com_consumo_previo(territorial.motivo_bloqueio, consumo_previo),
+                orientacao_territorial(
+                    allocation=territorial.allocation, saldo=territorial.saldo + consumo_previo,
+                ),
             ),
         )
     return DuasTravasCheck(individual=individual, territorial=territorial)
