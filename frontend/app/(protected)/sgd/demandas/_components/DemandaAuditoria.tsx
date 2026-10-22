@@ -54,16 +54,13 @@ function textoDaAcao(evento: EventoAuditoria): string {
     ajuste: "Ajuste do saldo reservado",
     execucao: "Execução do pagamento",
     liberacao: "Liberação de saldo",
+    remanejamento: "Remanejamento de saldo",
   };
   const base = operacoes[operacao] ?? `Movimentação de saldo (${operacao})`;
 
   const valor = evento.valores_novos.valor;
   if (typeof valor === "string" || typeof valor === "number") {
-    try {
-      return `${base} — ${formatCurrencyBRL(String(valor))}`;
-    } catch {
-      return base;
-    }
+    return `${base} — ${formatCurrencyBRL(valor)}`;
   }
   return base;
 }

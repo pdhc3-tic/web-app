@@ -14,6 +14,8 @@ import path from "node:path";
  * - `autorizar` e `recusar`: Pré-autorizadas (fila da UGP);
  * - `atender`: Autorizada (fila da FGD);
  * - `cancelar`: Autorizada, que a UGP cancela.
+ * - `auditada`: já cancelada pela UGP depois de autorizada — a trilha de
+ *   auditoria (#322) completa, sem depender da ordem dos testes.
  *
  * Solicitante: o ADT do Território RN. Articulador de RN: o `articuladorPB`
  * (PB/RN/BA/MG); o `articuladorPE` não atua em RN e não deve vê-las.
@@ -40,6 +42,7 @@ export type PainelDemandasFixture = {
   recusar: Ref;
   atender: Ref;
   cancelar: Ref;
+  auditada: Ref;
 };
 
 const COMUM = `
@@ -124,12 +127,16 @@ ap.autorizar(atd, responsavel=ugp)
 can, _ = submetida("Van da visita adiada")
 ap.pre_autorizar(can, responsavel=articulador)
 ap.autorizar(can, responsavel=ugp)
+aud, _ = submetida("Van do seminário cancelado")
+ap.pre_autorizar(aud, responsavel=articulador)
+ap.autorizar(aud, responsavel=ugp)
+ds.cancelar_demanda(aud, usuario=ugp, motivo="Seminário cancelado pela coordenação.")
 
 ref = lambda d: {"id": d.pk, "titulo": d.titulo}
 print("${MARCADOR}_SETUP " + json.dumps({
     "preAutorizar": ref(pre), "devolver": ref(dev),
     "autorizar": {**ref(aut), "solicitacaoId": aut_s.pk},
-    "recusar": ref(rec), "atender": ref(atd), "cancelar": ref(can),
+    "recusar": ref(rec), "atender": ref(atd), "cancelar": ref(can), "auditada": ref(aud),
 }))
 `;
 

@@ -133,11 +133,15 @@ test.describe("Articulador Estadual de outro estado", () => {
   test("abrir a URL direta de uma demanda de outro estado não revela a auditoria (#322)", async ({
     page,
   }) => {
-    // Sem acesso à demanda, a listagem fica vazia e o painel não resolve o detalhe:
+    // Sem acesso à demanda, o detalhe responde 404 e o painel não abre as abas:
     // a aba "Auditoria" nunca aparece para quem não enxerga a demanda.
-    await page.goto(`/sgd/demandas?demanda=${fx.cancelar.id}`);
+    const detalhe = page.waitForResponse(
+      (r) => r.url().includes(`/api/v1/sgd/demandas/${fx.auditada.id}/`) && r.request().method() === "GET",
+    );
+    await page.goto(`/sgd/demandas?demanda=${fx.auditada.id}`);
+    expect((await detalhe).status()).toBe(404);
     await expect(page.getByRole("heading", { name: "Demandas" })).toBeVisible();
-    await expect(painel(page).getByRole("tab", { name: "Auditoria" })).toHaveCount(0);
+    await expect(painel(page).getByRole("tab")).toHaveCount(0);
     await expect(painel(page).getByTestId("painel-auditoria")).toHaveCount(0);
   });
 });
@@ -340,27 +344,29 @@ test.describe("Super Admin — Auditoria da demanda (#322)", () => {
   }
 
   test("eventos em ordem cronológica, com usuário, timestamp e ação", async ({ page }) => {
-    // `cancelar` nasceu, foi submetida (reserva), pré-autorizada, autorizada e
-    // cancelada (liberação). O backend ordena por timestamp e id.
-    await abrirAuditoria(page, fx.cancelar.id);
-    const eventos = painel(page).locator("[data-testid^='auditoria-evento-']");
-    const total = await eventos.count();
-    expect(total).toBeGreaterThanOrEqual(5);
+    // `auditada` sai da fixture já percorrida: criada, submetida (reserva),
+    // pré-autorizada, autorizada e cancelada pela UGP (liberação). O backend
+    // ordena por timestamp e id.
+    await abrirAuditoria(page, fx.auditada.id);
+    const status = painel(page).locator("[data-tipo='status']");
 
-    // Primeiro: Demanda criada; último: cancelamento.
-    await expect(eventos.first()).toContainText("Demanda criada");
-    await expect(eventos.last()).toContainText("Cancelada");
+    // Todas as transições, nesta ordem e sem outras no meio.
+    await expect(status).toHaveText([
+      /Demanda criada/,
+      /Rascunho → Submetida/,
+      /Submetida → Pré-autorizada/,
+      /Pré-autorizada → Autorizada/,
+      /Autorizada → Cancelada/,
+    ]);
 
-    // Ação em texto, autor (ADT da fixture) e timestamp absoluto no formato
-    // DD/MM/AAAA HH:mm devem aparecer em pelo menos um evento.
-    await expect(painel(page).getByTestId("painel-auditoria")).toContainText("Ewerton Bandeira");
-    await expect(
-      painel(page).getByTestId("painel-auditoria").getByText(/\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}/),
-    ).toBeVisible();
+    // Quem agiu e quando: o ADT cria, a UGP cancela; timestamp DD/MM/AAAA HH:mm.
+    await expect(status.first()).toContainText("Ewerton Bandeira");
+    await expect(status.first()).toContainText(/\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}/);
+    await expect(status.last()).toContainText("Beatriz Nogueira");
   });
 
   test("diferenciação visual: ícone de status e ícone de saldo", async ({ page }) => {
-    await abrirAuditoria(page, fx.cancelar.id);
+    await abrirAuditoria(page, fx.auditada.id);
     // A reserva de saldo entra na submissão; o cancelamento emite liberação.
     await expect(painel(page).locator("[data-tipo='status']").first()).toBeVisible();
     await expect(painel(page).locator("[data-tipo='saldo']").first()).toBeVisible();
@@ -421,10 +427,33 @@ test.describe("Super Admin — Auditoria da demanda (#322)", () => {
     await expect(painel(page).getByTestId("auditoria-carregar-mais")).toHaveCount(0);
   });
 
-  test("sem acesso à demanda, a aba Auditoria não aparece", async ({ page }) => {
-    // Com uma demanda que não existe, o painel entra em estado de erro e as
-    // abas não são renderizadas — portanto a trilha não vaza.
-    await page.goto("/sgd/demandas?demanda=999999");
+});
+
+test.describe("UGP — sem acesso à auditoria (#322)", () => {
+  test.use({ storageState: storageStatePath("ugp") });
+
+  test("vê a demanda, mas não a aba Auditoria, e o backend recusa a trilha", async ({ page }) => {
+    // A UGP enxerga a demanda, mas a trilha é só do Super Admin (pendência 19):
+    // além de a aba não aparecer, a rota responde 403 mesmo chamada direto.
+    const doDetalhe = page.waitForRequest((r) =>
+      r.url().includes(`/api/v1/sgd/demandas/${fx.auditada.id}/`),
+    );
+    await page.goto(`/sgd/demandas?visao=todas&demanda=${fx.auditada.id}`);
+    const api = new URL((await doDetalhe).url()).origin;
+
+    await expect(painel(page).getByRole("tab", { name: "Linha do tempo" })).toBeVisible();
     await expect(painel(page).getByRole("tab", { name: "Auditoria" })).toHaveCount(0);
+
+    const status = await page.evaluate(
+      async ({ api, id }) => {
+        const sessao = await (await fetch("/api/auth/session")).json();
+        const res = await fetch(`${api}/api/v1/sgd/demandas/${id}/auditoria/`, {
+          headers: { Authorization: `Bearer ${sessao.accessToken}` },
+        });
+        return res.status;
+      },
+      { api, id: fx.auditada.id },
+    );
+    expect(status).toBe(403);
   });
 });
