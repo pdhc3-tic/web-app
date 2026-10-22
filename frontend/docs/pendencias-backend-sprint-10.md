@@ -165,6 +165,11 @@ baixá-lo e exercitar o fluxo assíncrono com o seed atual.
 > (`app/lib/producao.ts`). **Pedido:** publicar `cultura_categoria` e
 > `especie_categoria` em `CHOICES_PUBLICADOS`, ou devolver `categoria_display`
 > no serializer do catálogo.
+>
+> **Revisão do PR #341 (Pedro, 20/10/2026):** a #272 foi considerada atendida
+> para os formulários migrados ao `SgpChoicesProvider`. A lacuna das categorias
+> fica registrada aqui como a exceção da fonte única: até o backend publicá-las,
+> `app/lib/producao.ts` continua espelhando esses rótulos.
 
 *Estado atual:* `SGPChoicesView` (`backend/apps/sgp/views/choices.py`) não mudou
 desde o PR #288, em que o bloqueio já foi descrito. `constants.py` está igual
@@ -511,6 +516,12 @@ com o mesmo drawer.
 
 ## 15. Risco de glosa da importação Arlo não é exposto (#298)
 
+> **Reforçado na revisão do PR #341 (Pedro, 20/10/2026):** a #298 não pode
+> ser considerada concluída sem este item. As divergências precisam aparecer
+> logo após a importação **e** no detalhe da operação no histórico. Se a parte
+> do requisito sobre pagamentos abaixo do autorizado for mantida, a resposta
+> deve permitir identificar também esses casos.
+
 A importação do retorno do Arlo grava um `GlosaRisk` para cada pagamento acima
 do valor autorizado (`apps/sgd/services/arlo_import.py`), mas **nenhum
 endpoint devolve esses registros**. Eles também não entram no
@@ -531,6 +542,20 @@ pagamentos abaixo do autorizado, incluir esses casos com o sinal do valor.
 ---
 
 ## 16. Importação Arlo sempre falha no ambiente Docker local (#298)
+
+> **Bloqueio apontado na revisão do PR #341 (Pedro, 20/10/2026):** sem o
+> armazenamento compartilhado, o upload é confirmado e a task depois marca a
+> importação como **Falhou**. Isso bloqueia o fluxo operacional da #298 mesmo
+> depois do item 15. Os E2E de importação (`frontend/e2e/arlo.spec.ts`) passam
+> aqui só com um ajuste local de volumes no `docker-compose.yml`, que não vai
+> para o repositório. Precisam ser rodados de novo com a correção do backend.
+>
+> *O que o frontend já fez:* quando a importação falha, a tela diz que a
+> planilha não pôde ser processada e que nenhuma demanda foi alterada, e pede
+> para enviar de novo. O texto gravado pelo backend aparece como "Detalhe
+> técnico" (E2E da planilha sem as colunas obrigatórias). A troca da mensagem
+> no backend continua pedida, porque hoje esse detalhe é só um caminho de
+> arquivo.
 
 No `docker-compose.yml`, o `celery_worker` não monta `./backend:/app`, ao
 contrário do `backend`. Com `STORAGE_BACKEND=local`, o backend grava a

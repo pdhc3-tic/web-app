@@ -16,7 +16,7 @@ import {
   tipoDoArquivoArlo,
 } from "@/app/lib/arlo";
 import { qk } from "@/app/lib/queryKeys";
-import { ErrosDaImportacao, StatusOperacao } from "./ErrosDaImportacao";
+import { ErrosDaImportacao, FalhaDaImportacao, StatusOperacao } from "./ErrosDaImportacao";
 
 /** Intervalo de consulta enquanto a task processa a planilha. */
 const INTERVALO_ACOMPANHAMENTO_MS = 2_000;
@@ -210,11 +210,7 @@ export function ImportarRetorno() {
               </p>
             )}
 
-            {operacao?.status === "falhou" && (
-              <p role="alert" className="text-sm text-error-text">
-                {operacao.erros_json[0]?.erro ?? "O arquivo não pôde ser processado."}
-              </p>
-            )}
+            {operacao?.status === "falhou" && <FalhaDaImportacao operacao={operacao} />}
 
             {operacao?.status === "concluido" && <ErrosDaImportacao operacao={operacao} />}
           </div>

@@ -119,6 +119,23 @@ test.describe("Integração Arlo — FGD", () => {
     await expect(detalhe.getByTestId("arlo-erros")).toContainText("Valor pago em formato inválido");
   });
 
+  test("planilha que não pode ser lida falha com mensagem compreensível, no acompanhamento e no histórico", async ({
+    page,
+  }) => {
+    await page.goto("/sgd/arlo");
+    const nome = `${PREFIXO_298}-retorno-sem-colunas.csv`;
+    const acompanhamento = await importar(page, nome, Buffer.from("Coluna A;Coluna B\n1;2\n", "utf8"));
+
+    await expect(acompanhamento).toContainText("Falhou");
+    const falha = acompanhamento.getByTestId("arlo-falha");
+    await expect(falha).toContainText("Não foi possível processar a planilha, e nenhuma demanda foi alterada.");
+    await expect(falha.getByTestId("arlo-falha-detalhe")).toContainText("Colunas obrigatórias ausentes");
+
+    await page.getByTestId("arlo-historico").locator("tbody tr").filter({ hasText: nome }).click();
+    const detalhe = page.getByTestId("arlo-operacao-detalhe");
+    await expect(detalhe.getByTestId("arlo-falha")).toContainText("Envie a planilha de novo.");
+  });
+
   // Pendência de backend (docs/pendencias-backend-sprint-10.md): o risco de
   // glosa é gravado na importação (`GlosaRisk`), mas nenhum endpoint o devolve.
   test.fixme("demanda paga acima do autorizado aparece destacada como risco de glosa", async () => {});

@@ -87,3 +87,28 @@ export function ErrosDaImportacao({ operacao }: { operacao: OperacaoArlo }) {
     </div>
   );
 }
+
+/**
+ * Importação que falhou antes de ler as linhas (arquivo não encontrado ou
+ * ilegível): nenhuma demanda foi alterada. O motivo gravado pelo backend vai
+ * como detalhe técnico, porque hoje pode ser só o caminho do arquivo
+ * (pendência 16 do backend).
+ */
+export function FalhaDaImportacao({ operacao }: { operacao: OperacaoArlo }) {
+  const detalhe = operacao.erros_json[0]?.erro;
+  return (
+    <div role="alert" className="space-y-1 text-sm" data-testid="arlo-falha">
+      <p className="font-medium text-error-text">
+        Não foi possível processar a planilha, e nenhuma demanda foi alterada.
+      </p>
+      <p className="text-text">
+        Envie a planilha de novo. Se a falha continuar, avise o suporte informando o detalhe abaixo.
+      </p>
+      {detalhe && (
+        <p className="text-xs text-text-muted" data-testid="arlo-falha-detalhe">
+          Detalhe técnico: {detalhe}
+        </p>
+      )}
+    </div>
+  );
+}
