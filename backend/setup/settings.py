@@ -282,6 +282,10 @@ SPECTACULAR_SETTINGS = {
         "TipoSolicitacaoEnum": "apps.sgd.models.demand_request.TIPO_CHOICES",
         "TipoProducaoEnum": "apps.sgp.models.production.Production.TIPO_CHOICES",
         "SimNaoInformadoEnum": "apps.sgp.constants.ENERGIA_CHOICES",
+        "FormatoExportacaoEnum": "apps.sgp.models.export_job.ExportJob.Formato",
+        "TipoExportacaoEnum": "apps.sgp.models.export_job.ExportJob.Tipo",
+        "TipoDocumentoUPFEnum": "apps.sgp.models.upf_document.UPFDocument.TIPO_CHOICES",
+        "TipoDocumentoAtividadeEnum": "apps.sgp.models.activity_document.ActivityDocument.TIPO_CHOICES",
     },
     "SWAGGER_UI_SETTINGS": {
         "deepLinking": True,

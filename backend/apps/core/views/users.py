@@ -3,7 +3,8 @@ import logging
 from django.db.models import Count, Max
 from django.utils import timezone
 from django_filters import rest_framework as django_filters
-from rest_framework import filters, status, viewsets
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import filters, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
@@ -17,6 +18,15 @@ from apps.core.services.audit import log_audit
 
 logger = logging.getLogger(__name__)
 audit_event_logger = logging.getLogger("audit_events")
+
+_ACESSO_RESPOSTA = inline_serializer(
+    "UserAcessoResposta",
+    fields={
+        "message": serializers.CharField(),
+        "acesso_revogado": serializers.BooleanField(),
+        "sessoes_invalidadas": serializers.IntegerField(),
+    },
+)
 
 
 def _user_access_snapshot(user):
@@ -164,6 +174,7 @@ class UserViewSet(viewsets.ModelViewSet):
             revoked += int(created)
         return revoked
 
+    @extend_schema(request=None, responses=_ACESSO_RESPOSTA)
     @action(detail=True, methods=["patch"], url_path="revogar-acesso")
     def revogar_acesso(self, request, pk=None):
         instance = self.get_object()
@@ -203,6 +214,7 @@ class UserViewSet(viewsets.ModelViewSet):
             }
         )
 
+    @extend_schema(request=None, responses=_ACESSO_RESPOSTA)
     @action(detail=True, methods=["patch"], url_path="reativar-acesso")
     def reativar_acesso(self, request, pk=None):
         instance = self.get_object()

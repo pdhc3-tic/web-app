@@ -1,4 +1,5 @@
 from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
@@ -7,6 +8,7 @@ from rest_framework.response import Response
 from apps.core.permissions import IsAuthenticatedActiveAccess, IsSuperAdmin, IsUGP
 from apps.core.services.permissions import user_role_slugs
 from apps.sgp.filters import TecnicoFilter
+from apps.sgp.models import Tecnico
 from apps.sgp.pagination import TecnicoPagination
 from apps.sgp.serializers import TecnicoSerializer
 from apps.sgp.serializers.tecnico import UsuarioElegivelSerializer
@@ -27,6 +29,9 @@ class TecnicoViewSet(viewsets.ModelViewSet):
         return [IsAuthenticatedActiveAccess()]
 
     def get_queryset(self):
+        # Na geração do schema não há usuário real para o recorte por perfil.
+        if getattr(self, "swagger_fake_view", False):
+            return Tecnico.objects.none()
         user = self.request.user
         role_slugs = user_role_slugs(user, ROLES_COM_ESCOPO)
         if not role_slugs:
@@ -39,6 +44,11 @@ class TecnicoViewSet(viewsets.ModelViewSet):
         desativar_tecnico(self.get_object())
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @extend_schema(
+        filters=False,
+        parameters=[OpenApiParameter("q", OpenApiTypes.STR, description="Busca por nome.")],
+        responses=UsuarioElegivelSerializer(many=True),
+    )
     @action(detail=False, methods=["get"], url_path="usuarios-elegiveis")
     def usuarios_elegiveis(self, request):
         queryset = usuarios_elegiveis_a_tecnico(request.query_params.get("q", ""))

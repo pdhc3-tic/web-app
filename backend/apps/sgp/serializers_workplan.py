@@ -607,3 +607,31 @@ class WorkPlanDashboardAcaoSerializer(serializers.Serializer):
     )
     data_inicio = serializers.DateField(read_only=True)
     data_fim = serializers.DateField(read_only=True)
+
+
+class WorkPlanDashboardResumoSerializer(serializers.Serializer):
+    total_acoes = serializers.IntegerField()
+    verde = serializers.IntegerField()
+    amarelo = serializers.IntegerField()
+    vermelho = serializers.IntegerField()
+
+
+class WorkPlanDashboardSubmetaNoSerializer(serializers.Serializer):
+    submeta = WorkPlanDashboardSubmetaSerializer()
+    consolidado = WorkPlanDashboardNodeSerializer()
+    # Só os ids: as Ações vêm detalhadas uma vez, na lista `acoes` da Meta.
+    acoes = serializers.ListField(child=serializers.IntegerField())
+
+
+class WorkPlanDashboardMetaNoSerializer(serializers.Serializer):
+    meta = WorkPlanDashboardMetaSerializer()
+    resumo = WorkPlanDashboardResumoSerializer()
+    consolidado = WorkPlanDashboardNodeSerializer()
+    submetas = WorkPlanDashboardSubmetaNoSerializer(many=True)
+    acoes = WorkPlanDashboardAcaoSerializer(many=True)
+
+
+class WorkPlanDashboardRespostaSerializer(serializers.Serializer):
+    """Resposta de `GET /sgp/plano-trabalho/painel/`."""
+
+    metas = WorkPlanDashboardMetaNoSerializer(many=True)

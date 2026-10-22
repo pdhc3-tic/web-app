@@ -2,7 +2,8 @@ import logging
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from rest_framework import status
+from drf_spectacular.utils import OpenApiResponse, extend_schema, inline_serializer
+from rest_framework import serializers, status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -26,6 +27,7 @@ from setup.serializers import (
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
     RefreshSerializer,
+    TokensRespostaSerializer,
     UserMeSerializer,
 )
 
@@ -50,6 +52,11 @@ logger = logging.getLogger(__name__)
 security_logger = logging.getLogger("security")
 
 
+def _mensagem(nome):
+    return inline_serializer(nome, fields={"message": serializers.CharField()})
+
+
+@extend_schema(responses=TokensRespostaSerializer)
 class LoginView(TokenObtainPairView):
     serializer_class = LoginSerializer
     throttle_classes = [LoginRateThrottle]
@@ -111,6 +118,7 @@ class LoginView(TokenObtainPairView):
             raise exc
 
 
+@extend_schema(responses=TokensRespostaSerializer)
 class RefreshView(TokenRefreshView):
     serializer_class = RefreshSerializer
     throttle_classes = [RefreshRateThrottle]
@@ -136,6 +144,7 @@ class RefreshView(TokenRefreshView):
         return response
 
 
+@extend_schema(responses={200: OpenApiResponse(description="Refresh token invalidado.")})
 class LogoutView(TokenBlacklistView):
     serializer_class = LogoutSerializer
 
@@ -174,6 +183,7 @@ class LogoutView(TokenBlacklistView):
         return response
 
 
+@extend_schema(responses=UserMeSerializer)
 @api_view(["GET"])
 @permission_classes([IsAuthenticatedActiveAccess])
 def me(request):
@@ -181,6 +191,10 @@ def me(request):
     return Response(serializer.data)
 
 
+@extend_schema(
+    request=None,
+    responses={200: OpenApiResponse(description="Todos os refresh tokens do usuário invalidados.")},
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticatedActiveAccess])
 def logout_all(request):
@@ -208,6 +222,10 @@ def logout_all(request):
     return Response(status=status.HTTP_200_OK)
 
 
+@extend_schema(
+    request=PasswordResetRequestSerializer,
+    responses={202: _mensagem("PasswordResetRequestResposta")},
+)
 @api_view(["POST"])
 @permission_classes([AllowAny])
 @throttle_classes([PasswordResetByIPThrottle, PasswordResetByEmailThrottle])
@@ -252,6 +270,10 @@ def password_reset_request(request):
     )
 
 
+@extend_schema(
+    request=PasswordResetConfirmSerializer,
+    responses={200: _mensagem("PasswordResetConfirmResposta")},
+)
 @api_view(["POST"])
 @permission_classes([AllowAny])
 @throttle_classes([PasswordResetConfirmThrottle])

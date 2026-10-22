@@ -3,8 +3,8 @@ import logging
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import extend_schema
-from rest_framework import status, viewsets
+from drf_spectacular.utils import OpenApiResponse, extend_schema, inline_serializer
+from rest_framework import serializers, status, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.views import APIView
 from apps.core.permissions import IsAuthenticatedActiveAccess
@@ -33,7 +33,9 @@ from apps.sgp.serializers_workplan import (
     WorkPlanDashboardMetaSerializer,
     WorkPlanDashboardNodeSerializer,
     WorkPlanDashboardQuerySerializer,
+    WorkPlanDashboardRespostaSerializer,
     WorkPlanDashboardSubmetaSerializer,
+    WorkPlanExportQuerySerializer,
     WorkPlanMetaDetailSerializer,
     WorkPlanMetaListSerializer,
     WorkPlanSubmetaDetailSerializer,
@@ -44,7 +46,7 @@ from apps.sgp.serializers_workplan import (
 from apps.sgp.cache import get_power_bi_snapshot
 from apps.sgp.services import workplan_cadastro
 from apps.sgp.services.exportacao import exportar_sincrono
-from apps.sgp.views.exportacao import arquivo_response
+from apps.sgp.views.exportacao import RESPOSTA_ARQUIVO, arquivo_response
 from apps.sgp.services.workplan_access import (
     escopo_de_leitura_do_plano,
     filter_workplan_actions_for_user,
@@ -72,6 +74,7 @@ class WorkPlanExportView(APIView):
 
     permission_classes = [IsAuthenticatedActiveAccess]
 
+    @extend_schema(parameters=[WorkPlanExportQuerySerializer], responses=RESPOSTA_ARQUIVO)
     def get(self, request):
         arquivo = exportar_sincrono(
             ExportJob.Tipo.PLANO_TRABALHO, user=request.user, params=request.query_params.dict()
@@ -116,6 +119,17 @@ class WorkPlanPowerBIView(APIView):
     permission_classes = [IsAuthenticated]
     throttle_classes = [PowerBIServiceTokenThrottle]
 
+    @extend_schema(
+        responses=inline_serializer(
+            "WorkPlanPowerBISnapshot",
+            fields={
+                "atualizado_em": serializers.DateTimeField(),
+                "resultados": serializers.ListField(
+                    child=serializers.DictField(child=serializers.CharField()),
+                ),
+            },
+        ),
+    )
     def get(self, request):
         snapshot = get_power_bi_snapshot()
         if snapshot is None:
@@ -129,6 +143,13 @@ class WorkPlanDashboardView(APIView):
 
     permission_classes = [IsAuthenticatedActiveAccess]
 
+    @extend_schema(
+        parameters=[WorkPlanDashboardQuerySerializer],
+        responses={
+            200: WorkPlanDashboardRespostaSerializer,
+            500: OpenApiResponse(description="Falha ao montar o painel."),
+        },
+    )
     def get(self, request):
         query_serializer = WorkPlanDashboardQuerySerializer(data=request.query_params)
         query_serializer.is_valid(raise_exception=True)
@@ -222,7 +243,7 @@ class WorkPlanMetaViewSet(viewsets.ModelViewSet):
 
         return filter_workplan_metas_for_user(qs, user)
 
-    @extend_schema(responses=BudgetRubricaOrcamentoSerializer(many=True))
+    @extend_schema(filters=False, responses=BudgetRubricaOrcamentoSerializer(many=True))
     def orcamento(self, request, pk=None):
         """Sem `@action`: exposta só via `path()` manual em urls.py, pra não
         duplicar rota pelo router (metas já é registrado nele).

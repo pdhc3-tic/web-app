@@ -74,3 +74,15 @@ def plano_trabalho_da_acao(acao) -> dict | None:
             "unidade_medida": acao.indicador.unidade_medida,
         },
     }
+
+
+class UploadURLRespostaSerializer(serializers.Serializer):
+    """URL pré-assinada para o cliente enviar o arquivo direto ao storage."""
+    url = serializers.CharField()
+    key = serializers.CharField()
+    expires_in = serializers.IntegerField()
+
+
+class DownloadURLRespostaSerializer(serializers.Serializer):
+    url = serializers.CharField()
+    expires_in = serializers.IntegerField()
