@@ -66,7 +66,27 @@ class MeuSerializer(serializers.Serializer):
     campo = serializers.CharField(help_text="Descrição que aparece no Swagger")
 ```
 
-> Comece adicionando `@extend_schema` nas function-based views de `apps/core/views.py` (login, logout, me, password-reset).
+O schema só é útil para gerar tipos se descrever o que a view devolve de fato. O drf-spectacular não avisa nestes casos, e o tipo sai errado:
+
+- **`SerializerMethodField`** sem type hint de retorno (`-> int | None`) ou `@extend_schema_field` sai como `string`.
+- **`to_representation` sobrescrito** troca a forma da resposta sem o schema saber. Declare um serializer de resposta e use-o no `@extend_schema` (ex.: `UPFDetailRespostaSerializer`).
+- **`@action`** herda o `serializer_class`, os filtros e a paginação do viewset. Declare `request`/`responses`, `filters=False` quando os filtros da listagem não se aplicam e `pagination_class=None` (ou o paginador real) no `@action` quando a lista não usa o do viewset.
+- **`get_queryset`** que depende do usuário quebra na geração, que não tem usuário: devolva `Model.objects.none()` quando `getattr(self, "swagger_fake_view", False)`.
+
+### Schema versionado (`schema.yml`)
+
+O frontend gera os tipos da API a partir de `backend/schema.yml`. Todo PR que muda request ou resposta de alguma rota precisa regenerá-lo e commitá-lo junto:
+
+```bash
+sudo docker compose exec backend python manage.py spectacular --file schema.yml
+```
+
+O teste `apps/core/tests/test_openapi_schema.py`, que roda no workflow `.github/workflows/openapi-schema.yml` em todo PR que toca `backend/`, falha quando:
+
+- o `schema.yml` commitado difere do gerado pelo código;
+- a geração emite warning ou erro fora do débito conhecido de SGD e SCA (lista em `FONTES_COM_DEBITO`).
+
+Em conflito de merge no `schema.yml`, não resolva à mão: termine o merge do código e regenere o arquivo.
 
 ## Banco de Dados
 
