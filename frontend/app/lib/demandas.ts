@@ -175,9 +175,10 @@ export async function listDemandasDaAtividade(
   atividadeId: number | string,
   signal?: AbortSignal,
 ): Promise<Demanda[]> {
-  const qs = new URLSearchParams({ activity: String(atividadeId) });
+  const qs = new URLSearchParams({ atividade: String(atividadeId) });
   const res = await apiClient(`${DEMANDAS_PATH}?${qs}`, { signal });
-  return res.json();
+  const data = await res.json();
+  return Array.isArray(data) ? data : (data as { results?: Demanda[] })?.results ?? [];
 }
 
 /** POST /api/v1/sgd/demandas/ — cria a demanda (e a atividade, se for o caso). */
@@ -262,16 +263,23 @@ export async function fetchContagemFila(signal?: AbortSignal): Promise<ContagemF
  * o último — para a FGD, que aguarda dois status, a LISTA da fila vem
  * incompleta, embora a contagem venha certa
  * (docs/pendencias-backend-sprint-10.md, item 13).
+ *
+ * `atividade` casa com o `DemandFilter.atividade` do BE-5 (filtra pelo
+ * `activity_id`) — usado pelo drill-down do painel de custo por atividade
+ * (#297, "Ver demandas"), para a lista mostrar só as demandas daquela
+ * atividade em vez da fila/visão geral.
  */
 export async function listDemandas(
-  params: { status?: StatusDemanda[] } = {},
+  params: { status?: StatusDemanda[]; atividade?: string | number } = {},
   signal?: AbortSignal,
 ): Promise<Demanda[]> {
   const qs = new URLSearchParams();
   for (const st of params.status ?? []) qs.append("status", st);
+  if (params.atividade) qs.set("atividade", String(params.atividade));
   const query = qs.toString();
   const res = await apiClient(`${DEMANDAS_PATH}${query ? `?${query}` : ""}`, { signal });
-  return res.json();
+  const data = await res.json();
+  return Array.isArray(data) ? data : (data as { results?: Demanda[] })?.results ?? [];
 }
 
 /** GET /api/v1/sgd/demandas/{id}/ */

@@ -74,19 +74,28 @@ export function calcularSemaforoRubrica(linha: LinhaPainelRubrica): {
   return { nivel: "verde", percentual };
 }
 
+function queryDeFiltros(filtros?: ExecucaoFiltros): string {
+  const qs = new URLSearchParams();
+  if (!filtros) return "";
+  for (const [k, v] of Object.entries(filtros)) {
+    if (v) qs.set(k, v);
+  }
+  return qs.toString();
+}
+
 /**
  * Consulta o painel de execução por rubrica (GET /api/v1/sgd/painel/rubricas/).
+ *
+ * O backend (`PainelRubricasView`) aplica o `DemandFilter` completo antes de
+ * agregar — logo, todos os filtros da tela afunilam o painel por rubrica, não
+ * apenas `territorio`, `meta` e `estado` (que também vão para o lado do SGP
+ * em `painel_orcamento`).
  */
 export async function fetchPainelRubricas(
-  params?: Pick<ExecucaoFiltros, "territorio" | "meta" | "estado">,
+  filtros?: ExecucaoFiltros,
   signal?: AbortSignal,
 ): Promise<LinhaPainelRubrica[]> {
-  const qs = new URLSearchParams();
-  if (params?.territorio) qs.set("territorio", params.territorio);
-  if (params?.meta) qs.set("meta", params.meta);
-  if (params?.estado) qs.set("estado", params.estado);
-
-  const queryStr = qs.toString();
+  const queryStr = queryDeFiltros(filtros);
   const url = `/api/v1/sgd/painel/rubricas/${queryStr ? `?${queryStr}` : ""}`;
   const res = await apiClient(url, { signal });
   return res.json();
@@ -99,14 +108,7 @@ export async function fetchCustoPorAtividade(
   filtros?: ExecucaoFiltros,
   signal?: AbortSignal,
 ): Promise<EntregaCusto[]> {
-  const qs = new URLSearchParams();
-  if (filtros) {
-    for (const [k, v] of Object.entries(filtros)) {
-      if (v) qs.set(k, v);
-    }
-  }
-
-  const queryStr = qs.toString();
+  const queryStr = queryDeFiltros(filtros);
   const url = `/api/v1/sgd/relatorios/custo-por-atividade/${queryStr ? `?${queryStr}` : ""}`;
   const res = await apiClient(url, { signal });
   return res.json();

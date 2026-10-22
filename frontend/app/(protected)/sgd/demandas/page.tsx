@@ -3,7 +3,7 @@
 import { Suspense } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Inbox } from "lucide-react";
+import { Inbox, X } from "lucide-react";
 import Spinner from "@/app/components/icons/Spinner";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { TabErroSection } from "@/app/components/sgp/CrudTab/CrudTab";
@@ -36,18 +36,38 @@ function PainelDemandasView() {
   const pathname = usePathname();
 
   const fila = useFilaDemandas();
-  const visao: Visao =
-    searchParams.get("visao") === "todas" || !fila.decide ? "todas" : "minha";
+  const atividadeBruta = searchParams.get("atividade") ?? "";
+  const atividadeFiltro = /^\d+$/.test(atividadeBruta) ? atividadeBruta : null;
+  // Com `?atividade=X` (drill-down do painel de custos, #297) a tela deixa de
+  // mostrar a fila/visão geral e pede ao backend só as demandas daquela
+  // atividade — era o critério que o PR #342 não atendia.
+  const visao: Visao = atividadeFiltro
+    ? "todas"
+    : searchParams.get("visao") === "todas" || !fila.decide
+      ? "todas"
+      : "minha";
   const bruto = searchParams.get("demanda") ?? "";
   const selecionada = /^\d+$/.test(bruto) ? Number(bruto) : null;
 
+  const porAtividade = useQuery({
+    queryKey: atividadeFiltro
+      ? qk.demandasDaAtividade(atividadeFiltro)
+      : ["sgd", "demandas", "atividade", "none"],
+    queryFn: ({ signal }) => listDemandas({ atividade: atividadeFiltro! }, signal),
+    enabled: atividadeFiltro !== null,
+    staleTime: 30_000,
+  });
   const todas = useQuery({
     queryKey: qk.demandas.lista([]),
     queryFn: ({ signal }) => listDemandas({}, signal),
-    enabled: visao === "todas",
+    enabled: visao === "todas" && atividadeFiltro === null,
     staleTime: 30_000,
   });
-  const atual = visao === "minha" ? fila : todas;
+  const atual = atividadeFiltro !== null
+    ? porAtividade
+    : visao === "minha"
+      ? fila
+      : todas;
   const demandas = atual.data ?? [];
 
   function navegar(patch: Record<string, string | null>) {
@@ -85,7 +105,7 @@ function PainelDemandasView() {
           </p>
         </div>
 
-        {fila.decide && (
+        {atividadeFiltro === null && fila.decide && (
           <div
             role="tablist"
             aria-label="Visão das demandas"
@@ -115,6 +135,27 @@ function PainelDemandasView() {
         )}
       </div>
 
+      {atividadeFiltro !== null && (
+        <div
+          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-text"
+          data-testid="filtro-atividade-ativo"
+        >
+          <span>
+            Mostrando apenas demandas da atividade{" "}
+            <strong className="font-semibold">#{atividadeFiltro}</strong>.
+          </span>
+          <button
+            type="button"
+            onClick={() => navegar({ atividade: null, demanda: null })}
+            className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            data-testid="filtro-atividade-limpar"
+          >
+            <X className="h-3 w-3" />
+            Limpar filtro
+          </button>
+        </div>
+      )}
+
       <div
         className={`grid items-start gap-5 ${
           selecionada !== null ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)]" : ""
@@ -130,14 +171,18 @@ function PainelDemandasView() {
               <EmptyState
                 icon={<Inbox className="h-7 w-7" />}
                 title={
-                  visao === "minha"
-                    ? "Nenhuma demanda aguardando a sua ação"
-                    : "Nenhuma demanda por aqui"
+                  atividadeFiltro !== null
+                    ? "Esta atividade não tem demandas"
+                    : visao === "minha"
+                      ? "Nenhuma demanda aguardando a sua ação"
+                      : "Nenhuma demanda por aqui"
                 }
                 description={
-                  visao === "minha"
-                    ? "Quando uma demanda chegar à sua etapa de decisão, ela aparece aqui."
-                    : "As demandas visíveis para o seu perfil aparecem aqui."
+                  atividadeFiltro !== null
+                    ? "Nenhuma demanda vinculada à atividade selecionada no painel de custos."
+                    : visao === "minha"
+                      ? "Quando uma demanda chegar à sua etapa de decisão, ela aparece aqui."
+                      : "As demandas visíveis para o seu perfil aparecem aqui."
                 }
               />
             </div>

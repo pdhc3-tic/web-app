@@ -33,20 +33,18 @@ export default function ExecucaoSgdPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    setCarregando(true);
-    setErro(null);
 
+    // Reset do estado só na primeira "etapa" do fetch (dentro da função async),
+    // para não disparar renders em cascata no corpo do effect (regra
+    // `react-hooks/set-state-in-effect`).
     const carregarDados = async () => {
+      setCarregando(true);
+      setErro(null);
       try {
         if (aba === "rubricas") {
-          const dados = await fetchPainelRubricas(
-            {
-              territorio: filtros.territorio,
-              meta: filtros.meta,
-              estado: filtros.estado,
-            },
-            controller.signal,
-          );
+          // O `PainelRubricasView` filtra as demandas pelo `DemandFilter` antes
+          // de agregar — todos os filtros do formulário entram no recorte.
+          const dados = await fetchPainelRubricas(filtros, controller.signal);
           if (!controller.signal.aborted) {
             setLinhasRubricas(dados);
           }
