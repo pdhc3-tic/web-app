@@ -218,6 +218,8 @@ def test_submeter_demanda_bloqueio_de_uma_solicitacao_identifica_so_a_bloqueada(
     bloqueios = excinfo.value.detail["solicitacoes_bloqueadas"]
     assert str(solicitacao_bloqueada.pk) in bloqueios
     assert str(demand_request_rn.pk) not in bloqueios
+    assert excinfo.value.detail["solicitacao_id"] == solicitacao_bloqueada.pk
+    assert excinfo.value.detail["code"] == "trava_individual"
 
     demand.refresh_from_db()
     assert demand.status == "rascunho"
@@ -261,6 +263,242 @@ def test_submeter_demanda_bloqueio_individual_orienta_recurso_extra(
     assert bloqueio["trava"] == "individual"
     assert bloqueio["acao_sugerida"] == "solicitar_recurso_extra"
     assert "Solicitar recurso extra" in str(bloqueio["motivo"])
+
+
+def _solicitacoes_diaria(demand, rubrica, *valores):
+    return [
+        DemandRequestFactory(demanda=demand, tipo="diaria", rubrica=rubrica, valor_estimado=Decimal(v))
+        for v in valores
+    ]
+
+
+def test_submeter_demanda_pre_checagem_soma_solicitacoes_da_mesma_rubrica_no_limite_individual(
+    demand_rascunho_rn, solicitante_rn, rubrica_diarias, allocation_territorial_rn, limite_individual_rn,
+):
+    """Três de R$ 60 com R$ 100 de limite: cada uma sozinha cabe, juntas não.
+    A pré-checagem tem que barrar a segunda e a terceira, não deixar a
+    reserva descobrir só a segunda."""
+    limite_individual_rn.valor_limite = Decimal("100")
+    limite_individual_rn.save(update_fields=["valor_limite"])
+    _, segunda, terceira = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "60", "60", "60")
+
+    with pytest.raises(DRFValidationError) as excinfo:
+        demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
+
+    corpo = excinfo.value.detail
+    assert set(corpo["solicitacoes_bloqueadas"]) == {str(segunda.pk), str(terceira.pk)}
+    assert corpo["solicitacao_id"] == segunda.pk
+    assert corpo["code"] == "trava_individual"
+    assert "R$ 40.00 disponível, R$ 60.00 solicitado" in corpo["detail"]
+    assert "Já descontados R$ 60.00 de outras solicitações desta demanda" in corpo["detail"]
+
+    demand_rascunho_rn.refresh_from_db()
+    assert demand_rascunho_rn.status == "rascunho"
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == Decimal("0")
+
+
+def test_submeter_demanda_pre_checagem_soma_solicitacoes_da_mesma_rubrica_no_pool_territorial(
+    demand_rascunho_rn, solicitante_rn, activity_rn, rubrica_diarias, limite_individual_rn,
+):
+    from apps.sgp.tests.factories import BudgetAllocationFactory
+
+    allocation = BudgetAllocationFactory(
+        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
+        valor_alocado=Decimal("100"), valor_comprometido=Decimal("0"),
+    )
+    _, segunda, terceira = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "60", "60", "60")
+
+    with pytest.raises(DRFValidationError) as excinfo:
+        demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
+
+    corpo = excinfo.value.detail
+    assert set(corpo["solicitacoes_bloqueadas"]) == {str(segunda.pk), str(terceira.pk)}
+    assert corpo["code"] == "trava_territorial"
+    assert "R$ 40.00 disponível, R$ 60.00 solicitado" in corpo["detail"]
+    assert "Já descontados R$ 60.00 de outras solicitações desta demanda" in corpo["detail"]
+    allocation.refresh_from_db()
+    assert allocation.valor_comprometido == Decimal("0")
+
+
+def test_submeter_demanda_pre_checagem_barrada_nao_consome_saldo_das_seguintes(
+    demand_rascunho_rn, solicitante_rn, rubrica_diarias, allocation_territorial_rn, limite_individual_rn,
+):
+    """60 passa (sobram 40), 60 é barrada, 30 ainda cabe nos 40."""
+    limite_individual_rn.valor_limite = Decimal("100")
+    limite_individual_rn.save(update_fields=["valor_limite"])
+    _, barrada, _ = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "60", "60", "30")
+
+    with pytest.raises(DRFValidationError) as excinfo:
+        demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
+
+    assert set(excinfo.value.detail["solicitacoes_bloqueadas"]) == {str(barrada.pk)}
+
+
+def test_submeter_demanda_limite_zerado_pela_propria_demanda_mostra_valores_e_nao_diz_esgotado(
+    demand_rascunho_rn, solicitante_rn, rubrica_diarias, allocation_territorial_rn, limite_individual_rn,
+):
+    limite_individual_rn.valor_limite = Decimal("100")
+    limite_individual_rn.save(update_fields=["valor_limite"])
+    *_, terceira = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "50", "50", "10")
+
+    with pytest.raises(DRFValidationError) as excinfo:
+        demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
+
+    corpo = excinfo.value.detail
+    assert corpo["solicitacao_id"] == terceira.pk
+    assert "Limite individual insuficiente: R$ 0.00 disponível, R$ 10.00 solicitado" in corpo["detail"]
+    assert "Já descontados R$ 100.00" in corpo["detail"]
+    assert "esgotado" not in corpo["detail"]
+
+
+def test_submeter_demanda_pool_zerado_pela_propria_demanda_mostra_valores_e_nao_diz_que_zerou(
+    demand_rascunho_rn, solicitante_rn, activity_rn, rubrica_diarias, limite_individual_rn,
+):
+    from apps.sgp.services.budget import BLOQUEIO_SALDO_ZERO
+    from apps.sgp.tests.factories import BudgetAllocationFactory
+
+    BudgetAllocationFactory(
+        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
+        valor_alocado=Decimal("100"), valor_comprometido=Decimal("0"),
+    )
+    *_, terceira = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "50", "50", "10")
+
+    with pytest.raises(DRFValidationError) as excinfo:
+        demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
+
+    corpo = excinfo.value.detail
+    assert corpo["solicitacao_id"] == terceira.pk
+    assert corpo["code"] == "trava_territorial"
+    assert "R$ 0.00 disponível, R$ 10.00 solicitado" in corpo["detail"]
+    assert BLOQUEIO_SALDO_ZERO not in corpo["detail"]
+    # O pool tem R$ 100 livres no banco: só não cobre esta demanda inteira.
+    assert "Território esgotado nesta rubrica para este valor" in corpo["detail"]
+    assert "Território esgotado nesta rubrica. Acione" not in corpo["detail"]
+
+
+def test_submeter_demanda_sem_outras_solicitacoes_nao_menciona_desconto(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    limite_individual_rn.valor_limite = Decimal("500")
+    limite_individual_rn.save(update_fields=["valor_limite"])
+
+    with pytest.raises(DRFValidationError) as excinfo:
+        demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
+
+    assert "Já descontados" not in excinfo.value.detail["detail"]
+
+
+def test_submeter_demanda_rubricas_diferentes_nao_somam_consumo(
+    demand_rascunho_rn, solicitante_rn, activity_rn, rubrica_diarias, allocation_territorial_rn, limite_individual_rn,
+):
+    from apps.sgp.tests.factories import BudgetAllocationFactory, BudgetRubricaFactory
+
+    outra = BudgetRubricaFactory(slug="outra-rubrica-sgd")
+    DemandIndividualLimitFactory(solicitante=solicitante_rn, rubrica=outra, valor_limite=100)
+    BudgetAllocationFactory(
+        meta=activity_rn.acao.meta, rubrica=outra, territorio=activity_rn.municipio.territory,
+        valor_alocado=Decimal("100"), valor_comprometido=Decimal("0"),
+    )
+    limite_individual_rn.valor_limite = Decimal("100")
+    limite_individual_rn.save(update_fields=["valor_limite"])
+    _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "60")
+    _solicitacoes_diaria(demand_rascunho_rn, outra, "60")
+
+    demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
+
+    demand_rascunho_rn.refresh_from_db()
+    assert demand_rascunho_rn.status == "submetida"
+
+
+def _pre_checagem_aprova_tudo(monkeypatch):
+    """Simula o saldo mudando entre a pré-checagem e a reserva sob lock: a
+    pré-checagem enxerga saldo, a reserva não."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        balance_service, "verificar_duas_travas", lambda **kwargs: SimpleNamespace(disponivel=True),
+    )
+
+
+def test_submeter_demanda_bloqueio_individual_na_reserva_identifica_trava_e_solicitacao(
+    monkeypatch, demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    limite_individual_rn.valor_limite = Decimal("500")
+    limite_individual_rn.save(update_fields=["valor_limite"])
+    _pre_checagem_aprova_tudo(monkeypatch)
+
+    with pytest.raises(DRFValidationError) as excinfo:
+        demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
+
+    corpo = excinfo.value.detail
+    assert corpo["code"] == "trava_individual"
+    assert corpo["solicitacao_id"] == demand_request_rn.pk
+    assert "Solicitar recurso extra" in corpo["detail"]
+    bloqueio = corpo["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
+    assert bloqueio["trava"] == "individual"
+    assert bloqueio["acao_sugerida"] == "solicitar_recurso_extra"
+
+    demand_request_rn.demanda.refresh_from_db()
+    assert demand_request_rn.demanda.status == "rascunho"
+    allocation_territorial_rn.refresh_from_db()
+    assert allocation_territorial_rn.valor_comprometido == Decimal("0")
+
+
+def test_submeter_demanda_bloqueio_territorial_na_reserva_identifica_trava_e_solicitacao(
+    monkeypatch, demand_request_rn, solicitante_rn, activity_rn, rubrica_diarias, limite_individual_rn,
+):
+    from apps.sgp.tests.factories import BudgetAllocationFactory
+
+    BudgetAllocationFactory(
+        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
+        valor_alocado=Decimal("500"), valor_comprometido=Decimal("0"),
+    )
+    _pre_checagem_aprova_tudo(monkeypatch)
+
+    with pytest.raises(DRFValidationError) as excinfo:
+        demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
+
+    corpo = excinfo.value.detail
+    assert corpo["code"] == "trava_territorial"
+    assert corpo["solicitacao_id"] == demand_request_rn.pk
+    assert "Acione o Articulador Estadual" in corpo["detail"]
+    bloqueio = corpo["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
+    assert bloqueio["trava"] == "territorial"
+    assert bloqueio["acao_sugerida"] == "acionar_articulador"
+
+    # A reserva individual já tinha sido feita quando a territorial falhou —
+    # a transação da submissão desfaz as duas.
+    demand_request_rn.demanda.refresh_from_db()
+    assert demand_request_rn.demanda.status == "rascunho"
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == Decimal("0")
+
+
+def test_reservar_duas_travas_sem_alocacao_territorial_identifica_trava_e_solicitacao(
+    demand_request_rn, solicitante_rn, limite_individual_rn,
+):
+    with pytest.raises(DRFValidationError) as excinfo:
+        balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+
+    assert excinfo.value.detail["code"] == "trava_territorial"
+    assert excinfo.value.detail["solicitacao_id"] == demand_request_rn.pk
+
+
+def test_submeter_bloqueado_responde_400_com_code_e_solicitacao_id(
+    auth_client_solicitante, demand_request_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    limite_individual_rn.valor_limite = Decimal("500")
+    limite_individual_rn.save(update_fields=["valor_limite"])
+
+    response = auth_client_solicitante.post(f"/api/v1/sgd/demandas/{demand_request_rn.demanda_id}/submeter/")
+
+    assert response.status_code == 400
+    corpo = response.json()
+    assert corpo["code"] == "trava_individual"
+    assert corpo["solicitacao_id"] == demand_request_rn.pk
+    assert "Solicitar recurso extra" in corpo["detail"]
+    assert corpo["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]["trava"] == "individual"
 
 
 def _campos_diaria_com_dias(*, municipio, dias_a_mais: int) -> dict:

@@ -44,6 +44,15 @@ def test_passagem_classe_executiva_sem_justificativa_bloqueia(activity_rn):
         validar_campos_json("passagem", campos, activity_rn)
 
 
+def test_passagem_urgencia_aceita_o_valor_e_nao_o_rotulo(activity_rn):
+    with pytest.raises(DRFValidationError) as excinfo:
+        validar_campos_json("passagem", _campos_passagem(urgencia="Urgente"), activity_rn)
+    assert "urgencia" in excinfo.value.detail
+
+    validado = validar_campos_json("passagem", _campos_passagem(urgencia="urgente"), activity_rn)
+    assert validado.campos_json["urgencia"] == "urgente"
+
+
 def test_passagem_classe_executiva_com_justificativa_ok(activity_rn):
     campos = _campos_passagem(classe="executiva", justificativa_executiva="Único voo disponível.")
     validado = validar_campos_json("passagem", campos, activity_rn)
