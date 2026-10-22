@@ -202,6 +202,65 @@ def test_valor_pago_menor_libera_diferenca_ao_limite_individual_e_ao_pool(
     ).exists()
 
 
+# ---------- divergências entre autorizado e pago ----------
+
+def test_pago_acima_do_autorizado_vira_divergencia_com_risco_de_glosa(demanda_autorizada, usuario_fgd):
+    importacao = processar_importacao(_importar([_linha(demanda_autorizada, valor="1200,00")], usuario_fgd))
+
+    importacao.refresh_from_db()
+    assert importacao.divergencias_json == [{
+        "demanda_id": demanda_autorizada.demanda_id,
+        "demanda_titulo": demanda_autorizada.demanda.titulo,
+        "solicitacao_id": demanda_autorizada.pk,
+        "valor_autorizado": "1000.00",
+        "valor_pago": "1200.00",
+        "diferenca": "200.00",
+        "risco_glosa": True,
+    }]
+    assert GlosaRisk.objects.filter(arlo_import_id=str(importacao.pk)).exists()
+
+
+def test_pago_abaixo_do_autorizado_vira_divergencia_com_diferenca_negativa(demanda_autorizada, usuario_fgd):
+    importacao = processar_importacao(_importar([_linha(demanda_autorizada, valor="800,00")], usuario_fgd))
+
+    importacao.refresh_from_db()
+    [divergencia] = importacao.divergencias_json
+    assert (divergencia["valor_autorizado"], divergencia["valor_pago"], divergencia["diferenca"]) == (
+        "1000.00", "800.00", "-200.00",
+    )
+    assert divergencia["risco_glosa"] is False
+    assert not GlosaRisk.objects.exists()
+
+
+def test_pago_igual_ao_autorizado_nao_gera_divergencia(demanda_autorizada, usuario_fgd):
+    importacao = processar_importacao(_importar([_linha(demanda_autorizada)], usuario_fgd))
+
+    importacao.refresh_from_db()
+    assert importacao.registros_ok == 1 and importacao.divergencias_json == []
+
+
+def test_linha_com_erro_nao_gera_divergencia(
+    demanda_autorizada, activity_rn, solicitante_rn, rubrica_diarias, usuario_fgd,
+):
+    outra = _nova_demanda_autorizada(activity_rn, solicitante_rn, rubrica_diarias)
+    malformada = f"{demanda_autorizada.demanda_id};{demanda_autorizada.pk};PROC-1;2026-09-10;;{COMPROVANTE}"
+
+    importacao = processar_importacao(
+        _importar([malformada, _linha(outra, valor="450,00", processo="PROC-2")], usuario_fgd),
+    )
+
+    assert importacao.registros_ok == 1
+    assert [d["solicitacao_id"] for d in importacao.divergencias_json] == [outra.pk]
+
+
+def test_linha_revertida_apos_validacao_nao_deixa_divergencia(demanda_autorizada, usuario_fgd):
+    processar_importacao(_importar([_linha(demanda_autorizada)], usuario_fgd))
+
+    segunda = processar_importacao(_importar([_linha(demanda_autorizada, valor="1500,00")], usuario_fgd))
+
+    assert segunda.registros_ok == 0 and segunda.divergencias_json == []
+
+
 def test_reimportar_mesma_solicitacao_e_recusado(demanda_autorizada, usuario_fgd):
     processar_importacao(_importar([_linha(demanda_autorizada)], usuario_fgd))
 
@@ -221,6 +280,23 @@ def test_planilha_sem_coluna_obrigatoria_falha_o_arquivo(demanda_autorizada, usu
 
     importacao.refresh_from_db()
     assert importacao.status == "falhou" and "ausentes" in importacao.erros_json[0]["erro"]
+
+
+def test_arquivo_ausente_no_storage_falha_com_mensagem_legivel(usuario_fgd):
+    key = f"arlo/importacoes/{uuid4()}.csv"
+    importacao = ArloImport.objects.create(
+        tipo="importacao", arquivo_key=key, arquivo_url="http://x/y", nome_original="r.csv", operado_por=usuario_fgd,
+    )
+
+    processar_importacao(importacao)
+
+    importacao.refresh_from_db()
+    assert importacao.status == "falhou"
+    assert importacao.erros_json == [{
+        "linha": 1,
+        "erro": "O arquivo enviado não foi encontrado no armazenamento. Envie a planilha novamente.",
+    }]
+    assert importacao.divergencias_json == []
 
 
 def test_movimentacoes_da_importacao_herdam_usuario_e_ip_do_envio(demanda_autorizada, usuario_fgd):
@@ -269,6 +345,42 @@ def test_historico_reflete_exportacao_e_importacao(
     assert por_tipo["importacao"]["status"] == "concluido"
     assert por_tipo["importacao"]["nome_original"] == "retorno.csv"
     assert por_tipo["exportacao"]["arquivo_url"]
+
+
+def test_detalhe_e_historico_devolvem_as_divergencias_da_importacao(auth_client_fgd, demanda_autorizada, usuario_fgd):
+    importacao = processar_importacao(_importar([_linha(demanda_autorizada, valor="1200,00")], usuario_fgd))
+    esperado = [{
+        "demanda_id": demanda_autorizada.demanda_id,
+        "demanda_titulo": demanda_autorizada.demanda.titulo,
+        "solicitacao_id": demanda_autorizada.pk,
+        "valor_autorizado": "1000.00",
+        "valor_pago": "1200.00",
+        "diferenca": "200.00",
+        "risco_glosa": True,
+    }]
+
+    detalhe = auth_client_fgd.get(f"/api/v1/sgd/arlo/{importacao.pk}/")
+    assert detalhe.status_code == 200
+    assert detalhe.json()["divergencias"] == esperado
+
+    historico = auth_client_fgd.get("/api/v1/sgd/arlo/", {"tipo": "importacao"})
+    assert historico.status_code == 200
+    assert [item["divergencias"] for item in historico.json()] == [esperado]
+
+
+def test_importacao_recem_enfileirada_devolve_divergencias_vazias(
+    auth_client_fgd, demanda_autorizada, monkeypatch,
+):
+    monkeypatch.setattr(sgd_tasks.process_arlo_import, "delay", lambda pk: None)
+    key = f"arlo/importacoes/{uuid4()}.csv"
+    get_storage().save_from_bytes(key, "\n".join([CABECALHO, _linha(demanda_autorizada)]).encode("utf-8"))
+
+    resposta = auth_client_fgd.post(
+        "/api/v1/sgd/arlo/importar/", {"key": key, "nome_original": "retorno.csv"}, format="json",
+    )
+
+    assert resposta.status_code == 202
+    assert resposta.json()["divergencias"] == []
 
 
 def test_exportar_e_importar_exigem_perfil_fgd(auth_client_ugp, auth_client_solicitante):

@@ -41,6 +41,11 @@ class ArloImport(models.Model):
         default=list, blank=True, verbose_name="Erros por linha",
         help_text="Lista de {linha, erro, campo?} — linhas com erro não interrompem as válidas.",
     )
+    divergencias_json = models.JSONField(
+        default=list, blank=True, verbose_name="Divergências entre autorizado e pago",
+        help_text="Lista de {demanda_id, demanda_titulo, solicitacao_id, valor_autorizado, valor_pago, diferenca, "
+                  "risco_glosa} das linhas aplicadas com valor pago diferente do autorizado.",
+    )
 
     mapeamento_snapshot = models.JSONField(
         default=dict, blank=True, verbose_name="Mapeamento vigente na operação",
