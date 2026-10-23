@@ -111,6 +111,7 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
     só trocar o campo; a resubmissão não pede saldo adicional pra ela."""
     demand = solicitacao.demanda
     _exigir_editavel(demand)
+    balance_service.reler_reserva(solicitacao)
 
     tipo_final = tipo or solicitacao.tipo
     campos_final = campos_json if campos_json is not None else solicitacao.campos_json
@@ -148,6 +149,7 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
 @transaction.atomic
 def remover_solicitacao(solicitacao, *, usuario) -> None:
     _exigir_editavel(solicitacao.demanda)
+    balance_service.reler_reserva(solicitacao)
     if solicitacao.reserva_ativa:
         balance_service.liberar_duas_travas(
             demand_request=solicitacao, usuario=usuario,

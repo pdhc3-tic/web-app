@@ -239,9 +239,10 @@ def verificar_duas_travas(
     return DuasTravasCheck(individual=individual, territorial=territorial, rubrica=rubrica, valor=valor)
 
 
-def _reler_reserva(demand_request) -> None:
-    """Chamada já com o limite travado: todo movimento da reserva trava o
-    limite antes, então o estado relido aqui não muda até o commit."""
+def reler_reserva(demand_request) -> None:
+    """Relê do banco o estado da reserva. Com o limite travado, o valor não muda
+    até o commit: todo movimento da reserva trava o limite antes. Sem o lock,
+    serve para escolher o caminho, e a operação de saldo confere de novo."""
     demand_request.refresh_from_db(fields=["valor_reservado", "valor_executado"])
 
 
@@ -294,7 +295,7 @@ def reservar_duas_travas(*, demand_request, usuario, adiar_gravacao: bool = Fals
             rubrica=rubrica, limite=None, saldo=ZERO, valor=valor, solicitacao_id=demand_request.pk,
         )
     comprometido_individual_antes = limite.valor_comprometido
-    _reler_reserva(demand_request)
+    reler_reserva(demand_request)
     # Executada, a reserva já foi convertida: submeter de novo não a refaz.
     reservou = demand_request.valor_executado is None and not demand_request.reserva_ativa
     if reservou:
@@ -345,7 +346,7 @@ def ajustar_duas_travas(
     limite = DemandIndividualLimit.objects.select_for_update().get(
         solicitante=solicitante, rubrica=rubrica,
     )
-    _reler_reserva(demand_request)
+    reler_reserva(demand_request)
     if not demand_request.reserva_ativa:
         raise RegraDeNegocio(f"A solicitação #{demand_request.pk} não tem reserva ativa para ajustar.")
     valor_anterior = demand_request.valor_reservado
@@ -396,7 +397,7 @@ def liberar_duas_travas(*, demand_request, usuario, motivo: str, adiar_gravacao:
     # reservado) ou liberar duas vezes seguidas não pode decrementar o
     # comprometido de novo. E libera o `valor_reservado`, não `valor_estimado`,
     # que fica no valor original depois de um ajuste.
-    _reler_reserva(demand_request)
+    reler_reserva(demand_request)
     liberou = demand_request.reserva_ativa
     if liberou and limite is not None:
         valor = demand_request.valor_reservado
@@ -446,7 +447,7 @@ def executar_duas_travas(*, demand_request, valor_pago: Decimal, usuario) -> Non
     limite = DemandIndividualLimit.objects.select_for_update().get(
         solicitante=solicitante, rubrica=rubrica,
     )
-    _reler_reserva(demand_request)
+    reler_reserva(demand_request)
     executou = demand_request.valor_executado is None
     if executou:
         valor_reservado = demand_request.valor_reservado
