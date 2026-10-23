@@ -24,7 +24,6 @@ from apps.sgd.exceptions import JustificativaObrigatoria, RegraDeNegocio, Transi
 from apps.sgd.models import Demand, DemandIndividualLimit
 from apps.sgd.models.demand import STATUS_EDITAVEIS
 from apps.sgd.services import auditoria as auditoria_service
-from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
 from apps.sgd.services import orcamento as orcamento_service
 from apps.sgd.services.balance import _destinatarios_saldo_territorial
@@ -108,7 +107,7 @@ def _demanda_do_pedido(pedido, *, travar: bool = False) -> Demand | None:
 def _necessario(solicitacoes) -> Decimal:
     """O que a próxima submissão vai reservar na rubrica: as solicitações que ainda
     não têm reserva ativa."""
-    return sum((s.valor_estimado for s in solicitacoes if not balance_service.reserva_ativa(s)), ZERO)
+    return sum((s.valor_estimado for s in solicitacoes if not s.reserva_ativa), ZERO)
 
 
 def _deficit_individual(demanda: Demand, rubrica) -> Decimal:

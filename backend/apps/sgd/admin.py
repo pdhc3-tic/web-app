@@ -23,6 +23,7 @@ class DemandAdmin(admin.ModelAdmin):
 class DemandRequestAdmin(admin.ModelAdmin):
     list_display = ["demanda", "tipo", "rubrica", "valor_estimado", "valor_autorizado", "valor_pago"]
     list_filter = ["tipo", "rubrica"]
+    readonly_fields = ["valor_reservado", "valor_executado"]
 
 
 @admin.register(DemandDocument)
@@ -42,6 +43,7 @@ class DemandIndividualLimitAdmin(admin.ModelAdmin):
     list_display = ["solicitante", "rubrica", "valor_limite", "valor_comprometido", "valor_executado"]
     list_filter = ["rubrica"]
     search_fields = ["solicitante__nome"]
+    readonly_fields = ["valor_comprometido", "valor_executado"]
 
 
 @admin.register(ArloFieldMapping)

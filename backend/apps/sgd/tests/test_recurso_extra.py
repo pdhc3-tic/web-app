@@ -1,6 +1,5 @@
 """Solicitação de recurso extra (SGP §6.6): pedido, parecer, decisão da UGP e remanejamento."""
 import threading
-import time
 from decimal import Decimal
 
 import pytest
@@ -17,6 +16,7 @@ from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import recurso_extra as recurso_extra_service
 from apps.sgd.tasks import cancelar_demandas_da_atividade
+from apps.sgd.tests.concorrencia import intercalar
 from apps.sgd.tests.factories import (
     BudgetIncreaseRequestFactory,
     DemandFactory,
@@ -679,61 +679,6 @@ def test_decisao_trava_limite_alocacoes_demanda_e_solicitacoes_nessa_ordem(
 
 # ── Concorrência entre conexões ──────────────────────────────────────────────
 
-def _esperar_alguem_bloqueado(timeout=10):
-    """Espera outra conexão ficar parada num lock de linha. Roda na thread do teste, em
-    autocommit: cada consulta abre um snapshot novo de `pg_stat_activity`."""
-    prazo = time.monotonic() + timeout
-    while time.monotonic() < prazo:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT count(*) FROM pg_stat_activity "
-                "WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()"
-            )
-            if cursor.fetchone()[0]:
-                return
-        time.sleep(0.02)
-    raise AssertionError("Nenhuma conexão ficou esperando lock.")
-
-
-def _intercalar(segura, espera):
-    """`segura(pausa)` roda numa transação e, ao chamar `pausa()`, para com ela aberta.
-    Então `espera()` começa em outra conexão; quando `espera()` fica bloqueada num lock,
-    `segura` segue e commita. Devolve resultados e exceções nas chaves "segura" e "espera"."""
-    pausou, pode_seguir = threading.Event(), threading.Event()
-    resultados, erros = {}, {}
-
-    def pausa():
-        pausou.set()
-        pode_seguir.wait(timeout=10)
-
-    def segurar():
-        with transaction.atomic():
-            return segura(pausa)
-
-    def rodar(lado, funcao):
-        try:
-            resultados[lado] = funcao()
-        except Exception as exc:
-            erros[lado] = exc
-        finally:
-            pausou.set()
-            connection.close()
-
-    thread_segura = threading.Thread(target=rodar, args=("segura", segurar))
-    thread_segura.start()
-    assert pausou.wait(timeout=10)
-    thread_espera = threading.Thread(target=rodar, args=("espera", espera))
-    thread_espera.start()
-    try:
-        _esperar_alguem_bloqueado()
-    finally:
-        pode_seguir.set()
-        thread_segura.join(timeout=15)
-        thread_espera.join(timeout=15)
-    assert not thread_segura.is_alive() and not thread_espera.is_alive()
-    return resultados, erros
-
-
 def _decidir_contra(pedido, *, travar, usuario, mexer=None, **corpo):
     """A thread B executa `travar` e segura a transação; a decisão começa e fica bloqueada
     no que B travou; só então B executa `mexer` e commita. Devolve o resultado da decisão
@@ -744,7 +689,7 @@ def _decidir_contra(pedido, *, travar, usuario, mexer=None, **corpo):
         if mexer is not None:
             mexer()
 
-    resultados, erros = _intercalar(
+    resultados, erros = intercalar(
         concorrente, lambda: recurso_extra_service.decidir(pedido, usuario=usuario, **corpo),
     )
     nomes = {"segura": "concorrente", "espera": "decisao"}
@@ -783,7 +728,7 @@ def test_parecer_e_devolucao_simultaneos_nao_gravam_um_por_cima_do_outro(pedido,
         recurso_extra_service.emitir_parecer(pedido, usuario=usuario_articulador_rn, parecer="Procede.")
         pausa()
 
-    _, erros = _intercalar(
+    _, erros = intercalar(
         emitir_parecer,
         lambda: recurso_extra_service.devolver_pedido(
             pedido, usuario=usuario_articulador_rn, justificativa="Ajustar o valor.",
@@ -916,7 +861,7 @@ def test_inclusao_de_solicitacao_espera_a_decisao_que_travou_a_demanda(
         recurso_extra_service.decidir(pedido, usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.")
         pausa()
 
-    _, erros = _intercalar(
+    _, erros = intercalar(
         decidir,
         lambda: demand_service.adicionar_solicitacao(
             demanda, tipo="grafico", campos_json=CAMPOS_GRAFICO, valor_estimado=Decimal("500"),
@@ -970,7 +915,7 @@ def test_cancelamento_da_atividade_durante_a_decisao_nao_entra_em_deadlock(
     pedido = _pedido_com_parecer(demanda, solicitante_rn, usuario_articulador_rn, "700")
     Activity.objects.filter(pk=demanda.activity_id).update(status="cancelada")
 
-    resultados, erros = _intercalar(
+    resultados, erros = intercalar(
         _decisao_pausada(monkeypatch, pedido, usuario_ugp, antes_de=antes_de),
         lambda: cancelar_demandas_da_atividade(demanda.activity_id),
     )

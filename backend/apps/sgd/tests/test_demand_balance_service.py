@@ -1,13 +1,18 @@
 from decimal import Decimal
 
 import pytest
+from django.db import IntegrityError, connection, transaction
+from django.db.models import Sum
+from django.test.utils import CaptureQueriesContext
 
-from apps.sgd.exceptions import ErroDeDominio, SaldoInsuficiente
+from apps.sgd.exceptions import ErroDeDominio, RegraDeNegocio, SaldoInsuficiente
+from apps.sgd.models import DemandIndividualLimit, DemandRequest
+from apps.sgd.models.demand_request import RESERVA_ATIVA
 from apps.sgd.services import approval as approval_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import orcamento as orcamento_service
-from apps.sgd.tests.factories import DemandIndividualLimitFactory, DemandRequestFactory
+from apps.sgd.tests.factories import DemandFactory, DemandIndividualLimitFactory, DemandRequestFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -751,3 +756,221 @@ def test_autorizar_excedente_rejeita_origem_territorial(
 )
 def test_orientacao_territorial_por_situacao_do_pool(allocation, saldo, esperado):
     assert orcamento_service.orientacao_territorial(allocation=allocation, saldo=saldo) == esperado
+
+
+# ── Estado da reserva materializado na solicitação ───────────────────────────
+
+def _confere_comprometido(limite) -> None:
+    """O invariante do limite individual: o comprometido é a soma das reservas ativas."""
+    limite.refresh_from_db()
+    reservado = DemandRequest.objects.filter(
+        RESERVA_ATIVA, demanda__solicitante=limite.solicitante, rubrica=limite.rubrica,
+    ).aggregate(total=Sum("valor_reservado"))["total"] or Decimal("0")
+    assert limite.valor_comprometido == reservado
+
+
+@pytest.fixture
+def diaria_a_200(db):
+    from django.core.cache import cache
+
+    from apps.core.models.system_config import SystemConfig, TipoConfiguracao
+
+    SystemConfig.objects.update_or_create(
+        chave="sgd_valor_diaria_padrao", defaults={"valor": "200", "tipo": TipoConfiguracao.STRING},
+    )
+    yield
+    cache.delete("system_config:sgd_valor_diaria_padrao")
+
+
+@pytest.mark.parametrize(("dias", "valor_editado"), [(2, Decimal("400")), (7, Decimal("1400"))])
+def test_ciclo_da_reserva_mantem_o_comprometido_igual_as_reservas_ativas(
+    dias, valor_editado, diaria_a_200, demand_request_rn, solicitante_rn, usuario_articulador_rn,
+    limite_individual_rn, allocation_territorial_rn, activity_rn, rubrica_diarias, municipio_rn,
+):
+    outra = DemandRequestFactory(
+        demanda=DemandFactory(activity=activity_rn, solicitante=solicitante_rn), tipo="diaria",
+        rubrica=rubrica_diarias, valor_estimado=Decimal("300"),
+    )
+    balance_service.reservar_duas_travas(demand_request=outra, usuario=solicitante_rn)
+    demand = demand_request_rn.demanda
+
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    demand_request_rn.refresh_from_db()
+    assert (demand_request_rn.valor_reservado, demand_request_rn.reserva_ativa) == (Decimal("1000"), True)
+    _confere_comprometido(limite_individual_rn)
+
+    approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Ajustar valor.")
+    _confere_comprometido(limite_individual_rn)
+
+    campos = _campos_diaria_com_dias(municipio=municipio_rn, dias_a_mais=dias)
+    demand_service.atualizar_solicitacao(demand_request_rn, usuario=solicitante_rn, campos_json=campos)
+    demand_request_rn.refresh_from_db()
+    assert demand_request_rn.valor_reservado == valor_editado
+    _confere_comprometido(limite_individual_rn)
+
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    demand_request_rn.refresh_from_db()
+    assert demand_request_rn.valor_reservado == valor_editado
+    _confere_comprometido(limite_individual_rn)
+
+    balance_service.liberar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn, motivo="Teste.")
+    demand_request_rn.refresh_from_db()
+    assert (demand_request_rn.valor_reservado, demand_request_rn.reserva_ativa) == (Decimal("0"), False)
+    _confere_comprometido(limite_individual_rn)
+
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    demand_request_rn.refresh_from_db()
+    assert demand_request_rn.valor_reservado == demand_request_rn.valor_estimado == valor_editado
+    _confere_comprometido(limite_individual_rn)
+
+
+def test_reservar_duas_vezes_nao_reserva_de_novo_mesmo_com_instancia_desatualizada(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    desatualizada = DemandRequest.objects.get(pk=demand_request_rn.pk)
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+
+    balance_service.reservar_duas_travas(demand_request=desatualizada, usuario=solicitante_rn)
+
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == Decimal("1000")
+    _confere_comprometido(limite_individual_rn)
+
+
+def test_executar_tira_do_comprometido_o_valor_reservado_e_e_idempotente(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    """Sem `valor_autorizado`, o código antigo tirava o `valor_estimado` (1.000)
+    de um comprometido de 800 e deixava o limite negativo."""
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    balance_service.ajustar_duas_travas(
+        demand_request=demand_request_rn, novo_valor=Decimal("800"), usuario=solicitante_rn,
+    )
+
+    for _ in range(2):
+        balance_service.executar_duas_travas(
+            demand_request=demand_request_rn, valor_pago=Decimal("750"), usuario=solicitante_rn,
+        )
+
+    demand_request_rn.refresh_from_db()
+    assert (demand_request_rn.valor_reservado, demand_request_rn.valor_executado) == (Decimal("800"), Decimal("750"))
+    assert demand_request_rn.reserva_ativa is False
+    limite_individual_rn.refresh_from_db()
+    assert (limite_individual_rn.valor_comprometido, limite_individual_rn.valor_executado) == (
+        Decimal("0"), Decimal("750"),
+    )
+    _confere_comprometido(limite_individual_rn)
+
+
+def test_liberar_depois_de_executar_nao_devolve_nada(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    balance_service.executar_duas_travas(
+        demand_request=demand_request_rn, valor_pago=Decimal("1000"), usuario=solicitante_rn,
+    )
+
+    balance_service.liberar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn, motivo="Teste.")
+
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == Decimal("0")
+    demand_request_rn.refresh_from_db()
+    assert demand_request_rn.valor_executado == Decimal("1000")
+
+
+def test_ajustar_sem_reserva_ativa_e_regra_de_negocio(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    with pytest.raises(RegraDeNegocio):
+        balance_service.ajustar_duas_travas(
+            demand_request=demand_request_rn, novo_valor=Decimal("800"), usuario=solicitante_rn,
+        )
+
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == Decimal("0")
+
+
+@pytest.mark.parametrize(
+    ("campo", "valor"),
+    [("valor_reservado", Decimal("-1")), ("valor_executado", Decimal("-1"))],
+)
+def test_estado_da_reserva_nao_aceita_valor_negativo(demand_request_rn, campo, valor):
+    with pytest.raises(IntegrityError), transaction.atomic():
+        DemandRequest.objects.filter(pk=demand_request_rn.pk).update(**{campo: valor})
+
+
+@pytest.mark.parametrize("campo", ["valor_comprometido", "valor_executado"])
+def test_limite_individual_nao_aceita_saldo_negativo(limite_individual_rn, campo):
+    with pytest.raises(IntegrityError), transaction.atomic():
+        DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(**{campo: Decimal("-1")})
+
+
+@pytest.fixture
+def demanda_com_duas_rubricas(demand_request_rn, solicitante_rn, activity_rn, allocation_territorial_rn, limite_individual_rn):
+    from apps.sgp.tests.factories import BudgetAllocationFactory, BudgetRubricaFactory
+
+    outra = BudgetRubricaFactory(slug="rubrica-ordem-de-lock")
+    BudgetAllocationFactory(
+        meta=activity_rn.acao.meta, rubrica=outra, territorio=activity_rn.municipio.territory,
+        valor_alocado=Decimal("10000"),
+    )
+    DemandIndividualLimitFactory(solicitante=solicitante_rn, rubrica=outra, valor_limite=Decimal("5000"))
+    DemandRequestFactory(demanda=demand_request_rn.demanda, rubrica=outra, valor_estimado=Decimal("200"))
+    return demand_request_rn.demanda
+
+
+def _ordem(consultas):
+    sqls = [q["sql"] for q in consultas]
+    travas_de_saldo = [
+        i for i, sql in enumerate(sqls)
+        if "FOR UPDATE" in sql and ('"sgd_demandindividuallimit"' in sql or '"sgp_budgetallocation"' in sql)
+    ]
+    demanda = [
+        i for i, sql in enumerate(sqls)
+        if sql.startswith('UPDATE "sgd_demand" ') or ("FOR UPDATE" in sql and 'FROM "sgd_demand" ' in sql)
+    ]
+    gravacoes_da_reserva = [i for i, sql in enumerate(sqls) if sql.startswith('UPDATE "sgd_demandrequest"')]
+    return travas_de_saldo, demanda, gravacoes_da_reserva
+
+
+def test_submissao_grava_o_estado_da_reserva_depois_do_saldo_e_da_demand(demanda_com_duas_rubricas, solicitante_rn):
+    """Gravar a solicitação logo depois do seu pool a deixaria travada antes do limite
+    da rubrica seguinte e da Demand; a decisão de recurso extra trava Demand e depois
+    as solicitações, e as duas fechariam um ciclo."""
+    with CaptureQueriesContext(connection) as consultas:
+        demand_service.submeter_demanda(demanda_com_duas_rubricas, usuario=solicitante_rn)
+
+    travas_de_saldo, demanda, gravacoes_da_reserva = _ordem(consultas)
+    assert len(gravacoes_da_reserva) == 2
+    assert max(travas_de_saldo) < min(demanda) < min(gravacoes_da_reserva)
+    assert all(s.reserva_ativa for s in demanda_com_duas_rubricas.solicitacoes.all())
+    _confere_comprometido(DemandIndividualLimit.objects.get(solicitante=solicitante_rn, rubrica__slug="diarias"))
+
+
+def test_cancelamento_grava_o_estado_da_reserva_depois_do_saldo_e_da_demand(demanda_com_duas_rubricas, solicitante_rn):
+    demand_service.submeter_demanda(demanda_com_duas_rubricas, usuario=solicitante_rn)
+
+    with CaptureQueriesContext(connection) as consultas:
+        demand_service.cancelar_demanda(demanda_com_duas_rubricas, usuario=solicitante_rn)
+
+    travas_de_saldo, demanda, gravacoes_da_reserva = _ordem(consultas)
+    assert len(gravacoes_da_reserva) == 2
+    assert max(travas_de_saldo) < min(demanda) < min(gravacoes_da_reserva)
+    assert not any(s.reserva_ativa for s in demanda_com_duas_rubricas.solicitacoes.all())
+    for limite in DemandIndividualLimit.objects.filter(solicitante=solicitante_rn):
+        assert limite.valor_comprometido == Decimal("0")
+
+
+def test_recusa_libera_e_grava_o_estado_da_reserva(
+    demand_request_rn, solicitante_rn, usuario_ugp, allocation_territorial_rn, limite_individual_rn,
+):
+    demand = demand_request_rn.demanda
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    demand.status = "pre_autorizada"
+    demand.save(update_fields=["status"])
+
+    approval_service.recusar(demand, responsavel=usuario_ugp, justificativa="Sem prioridade.")
+
+    demand_request_rn.refresh_from_db()
+    assert demand_request_rn.valor_reservado == Decimal("0")
+    _confere_comprometido(limite_individual_rn)
