@@ -69,6 +69,7 @@ Toda transação que trava mais de uma destas linhas segue esta ordem, para que 
 | Parecer, devolução, submissão e edição do pedido | só o pedido |
 | Criação do pedido | a `Demand`, e depois o pedido novo, que nenhuma outra transação enxerga antes do commit |
 | Inclusão de solicitação | só a `Demand` |
+| Edição do limite individual (`PATCH /sgd/limites-individuais/{id}/`) | só o limite |
 | `remanejar`, `atualizar_valor_alocado` | alocações em ordem crescente de pk |
 
 Exceções, só em demandas fora de Rascunho/Devolvida: a importação do Arlo trava a `Demand` antes do limite, e `autorizar`/`concluir` gravam a solicitação de uma rubrica antes de travar o limite da seguinte. A decisão de recurso extra confere que a demanda está editável antes de travá-la, então nunca disputa essas linhas com elas. Entre si, e com o cancelamento (automático ou pela UGP/Super Admin) de uma demanda autorizada, essas exceções ainda podem formar ciclo: o Postgres derruba uma das transações, que precisa ser repetida.
