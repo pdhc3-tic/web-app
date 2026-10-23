@@ -63,8 +63,9 @@ Toda transação que trava mais de uma destas linhas segue esta ordem, para que 
 
 | Caminho | O que trava |
 |---|---|
-| Submissão; recusa; cancelamento pelo solicitante ou, de demanda autorizada, pela UGP/Super Admin; edição e remoção de solicitação com reserva | limite → alocação → `Demand` ou `DemandRequest` |
-| Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todos os limites e depois todas as alocações; só então as `Demand` |
+| Submissão; recusa; cancelamento pelo solicitante ou, de demanda autorizada, pela UGP/Super Admin | limite → alocação, rubrica a rubrica → `Demand` → estado da reserva nas `DemandRequest` (`gravar_estado_da_reserva`, em ordem de pk) |
+| Edição e remoção de solicitação com reserva | limite → alocação → `DemandRequest` |
+| Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todos os limites e depois todas as alocações; só então as `Demand` e, por fim, o estado da reserva nas `DemandRequest` |
 | Decisão de recurso extra | pedido → limite → alocações (territorial e origem) → `Demand` → todas as `DemandRequest` da demanda |
 | Parecer, devolução, submissão e edição do pedido | só o pedido |
 | Criação do pedido | a `Demand`, e depois o pedido novo, que nenhuma outra transação enxerga antes do commit |

@@ -21,19 +21,23 @@ def reconstruir_estado(AuditLog) -> dict[int, tuple[Decimal, Decimal | None]]:
     eventos = (
         AuditLog.objects.filter(entidade=ENTIDADE_LIMITE, acao__in=EVENTOS_DA_RESERVA)
         .order_by("timestamp", "id")
-        .values_list("entidade_id", "acao", "valores_novos")
+        .values_list("id", "entidade_id", "acao", "valores_novos")
     )
-    for entidade_id, acao, novos in eventos.iterator():
+    for evento_id, entidade_id, acao, novos in eventos.iterator():
         if not entidade_id.isdigit():
             continue
         pk = int(entidade_id)
         reservado, executado = estado.get(pk, (ZERO, None))
-        if acao in ("reserva", "ajuste"):
-            reservado = Decimal(novos["valor"])
-        elif acao == "liberacao":
+        if acao == "liberacao":
             reservado = ZERO
         else:
-            executado = Decimal(novos["valor_pago"])
+            chave = "valor_pago" if acao == "execucao" else "valor"
+            if (novos or {}).get(chave) is None:
+                raise RuntimeError(f"Evento #{evento_id} ({acao}) do AuditLog sem `{chave}` em valores_novos.")
+            if acao == "execucao":
+                executado = Decimal(novos[chave])
+            else:
+                reservado = Decimal(novos[chave])
         estado[pk] = (reservado, executado)
     return estado
 
@@ -67,17 +71,14 @@ def preencher(apps, schema_editor):
     DemandIndividualLimit = apps.get_model("sgd", "DemandIndividualLimit")
 
     estado = reconstruir_estado(AuditLog)
+    DemandRequest.objects.update(valor_reservado=ZERO, valor_executado=None)
     # Solicitação removida na edição tem eventos, mas não existe mais.
-    existentes = set(DemandRequest.objects.filter(pk__in=list(estado)).values_list("pk", flat=True))
+    existentes = DemandRequest.objects.filter(pk__in=list(estado)).order_by("pk").values_list("pk", flat=True)
     DemandRequest.objects.bulk_update(
-        [
-            DemandRequest(pk=pk, valor_reservado=estado[pk][0], valor_executado=estado[pk][1])
-            for pk in sorted(existentes)
-        ],
+        [DemandRequest(pk=pk, valor_reservado=estado[pk][0], valor_executado=estado[pk][1]) for pk in existentes],
         ["valor_reservado", "valor_executado"],
         batch_size=500,
     )
-    DemandRequest.objects.exclude(pk__in=existentes).update(valor_reservado=ZERO, valor_executado=None)
 
     encontradas = divergencias(DemandRequest, DemandIndividualLimit)
     if encontradas:
