@@ -35,18 +35,9 @@ function SemaforoRubricaBadge({
       <span
         data-testid="semaforo-rubrica"
         data-nivel="amarelo"
-        style={{
-          backgroundColor: "color-mix(in srgb, #b05a2f 12%, transparent)",
-          color: "#b05a2f",
-          borderColor: "#b05a2f",
-        }}
-        className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-2xs font-semibold"
+        className="inline-flex items-center gap-1.5 rounded-full border border-warning-text bg-warning-bg px-2.5 py-0.5 text-2xs font-semibold text-warning-text"
       >
-        <span
-          className="h-2 w-2 rounded-full"
-          style={{ backgroundColor: "#b05a2f" }}
-          aria-hidden="true"
-        />
+        <span className="h-2 w-2 rounded-full bg-warning-text" aria-hidden="true" />
         <span>Amarelo ({pctTexto})</span>
       </span>
     );

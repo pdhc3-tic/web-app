@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Download, FileSpreadsheet, FileText } from "lucide-react";
+import { FileSpreadsheet, FileText } from "lucide-react";
 import Spinner from "@/app/components/icons/Spinner";
 import { Button } from "@/app/components/ui/Button/Button";
 import {
