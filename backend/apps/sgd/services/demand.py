@@ -124,14 +124,14 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
     if valor_final <= 0:
         raise RegraDeNegocio("Deve ser maior que zero.", campo="valor_estimado")
 
-    tem_reserva = balance_service.reserva_ativa(solicitacao)
+    tem_reserva = solicitacao.reserva_ativa
     if tem_reserva and rubrica.pk != solicitacao.rubrica_id:
         raise RegraDeNegocio(
             "Não é possível trocar o tipo de uma solicitação com reserva de saldo ativa "
             "(mudaria a rubrica). Remova e crie uma nova solicitação.",
             campo="tipo",
         )
-    if tem_reserva and valor_final != solicitacao.valor_estimado:
+    if tem_reserva and valor_final != solicitacao.valor_reservado:
         balance_service.ajustar_duas_travas(demand_request=solicitacao, novo_valor=valor_final, usuario=usuario)
 
     solicitacao.tipo = tipo_final
@@ -148,7 +148,7 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
 @transaction.atomic
 def remover_solicitacao(solicitacao, *, usuario) -> None:
     _exigir_editavel(solicitacao.demanda)
-    if balance_service.reserva_ativa(solicitacao):
+    if solicitacao.reserva_ativa:
         balance_service.liberar_duas_travas(
             demand_request=solicitacao, usuario=usuario,
             motivo="Solicitação removida durante edição da demanda.",
@@ -193,7 +193,7 @@ def submeter_demanda(demand, *, usuario) -> Demand:
         # Com reserva já ativa (ex.: ressubmissão de Devolvida sem edição
         # nessa solicitação específica), o saldo já desconta essa reserva —
         # checar o valor cheio de novo bloquearia à toa.
-        if balance_service.reserva_ativa(solicitacao):
+        if solicitacao.reserva_ativa:
             continue
         consumo_previo = consumo_por_rubrica.get(solicitacao.rubrica_id, balance_service.ZERO)
         check = balance_service.verificar_duas_travas(

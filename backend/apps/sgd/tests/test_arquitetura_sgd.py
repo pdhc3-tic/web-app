@@ -51,3 +51,16 @@ def _e_do_drf(modulo: str) -> bool:
 
 def test_servicos_do_sgd_nao_importam_o_drf():
     assert _infratores(_arquivos_do_sgd("services"), _e_do_drf) == {}
+
+
+def test_saldo_individual_nao_e_lido_do_audit_log():
+    """O AuditLog é só auditoria: `balance.py` grava eventos, mas o estado da
+    reserva vem de `DemandRequest`."""
+    arvore = ast.parse((RAIZ_SGD / "services" / "balance.py").read_text(encoding="utf-8"))
+    usos = {
+        node.attr for node in ast.walk(arvore)
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Attribute) and node.value.attr == "objects"
+        and isinstance(node.value.value, ast.Name) and node.value.value.id == "AuditLog"
+    }
+    assert usos == {"create"}

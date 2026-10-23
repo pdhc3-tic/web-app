@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.db.models import Q
 
 
 class DemandIndividualLimit(models.Model):
@@ -42,6 +43,12 @@ class DemandIndividualLimit(models.Model):
             models.UniqueConstraint(
                 fields=["solicitante", "rubrica"],
                 name="unique_demandindividuallimit_solicitante_rubrica",
+            ),
+            models.CheckConstraint(
+                condition=Q(valor_comprometido__gte=0), name="ck_demandindividuallimit_comprometido_nao_negativo",
+            ),
+            models.CheckConstraint(
+                condition=Q(valor_executado__gte=0), name="ck_demandindividuallimit_executado_nao_negativo",
             ),
         ]
 
