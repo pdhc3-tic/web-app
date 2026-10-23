@@ -1,7 +1,15 @@
 import factory
 
 from apps.core.tests.factories import UserFactory
-from apps.sgd.models import ApprovalStep, Demand, DemandDocument, DemandIndividualLimit, DemandRequest
+from apps.sgd.models import (
+    ApprovalStep,
+    Demand,
+    DemandDocument,
+    DemandIndividualLimit,
+    DemandRequest,
+    DemandTypeRubricaMapping,
+)
+from apps.sgp.models import BudgetIncreaseRequest
 from apps.sgp.tests.factories import ActivityFactory, BudgetRubricaFactory
 
 
@@ -87,3 +95,23 @@ class DemandIndividualLimitFactory(factory.django.DjangoModelFactory):
     valor_comprometido = 0
     valor_executado = 0
     criado_por = factory.SubFactory(UserFactory)
+
+
+class BudgetIncreaseRequestFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = BudgetIncreaseRequest
+
+    user = factory.SubFactory(UserFactory)
+    rubrica = factory.SubFactory(BudgetRubricaFactory)
+    valor_solicitado = 500
+    justificativa = "Limite individual esgotado antes do fim do período."
+    status = "submetida"
+
+
+class DemandTypeRubricaMappingFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = DemandTypeRubricaMapping
+
+    tipo = "diaria"
+    rubrica = factory.SubFactory(BudgetRubricaFactory)
+    ativo = True

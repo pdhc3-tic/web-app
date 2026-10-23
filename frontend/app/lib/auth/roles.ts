@@ -123,6 +123,16 @@ export function canCreateDemanda(
 export const FGD_SLUG = "fgd";
 
 /**
+ * Operação da integração com o Arlo (#298): exportar e importar. Espelha o
+ * `IsFGD | IsSuperAdmin` das actions de escrita do `ArloViewSet`.
+ */
+export function canOperarArlo(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return hasRole(user, FGD_SLUG) || isSuperAdmin(user);
+}
+
+/**
  * Perfis do usuário que decidem sobre demandas do SGD (#296): Articulador
  * Estadual pré-autoriza/devolve, UGP autoriza/recusa, FGD atende/conclui.
  * Espelha `DemandApprovalMixin._PERMISSAO_POR_ACTION`.

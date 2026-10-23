@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from decimal import Decimal
+from types import SimpleNamespace
 
 from django.db.models import Count, Q, Sum
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -29,10 +30,10 @@ STATUS_COM_CUSTO = STATUS_SOLICITADO
 PERFIS_DE_GESTAO = {"super-admin", "ugp", "fgd", "articulador-estadual"}
 
 
-def filtrar_demandas(queryset, params):
+def filtrar_demandas(queryset, params, user):
     """Aplica `DemandFilter`; valor inválido vira 400 em vez de filtro ignorado
     (uma exportação "filtrada" que devolve tudo seria pior que um erro)."""
-    filterset = DemandFilter(data=params, queryset=queryset)
+    filterset = DemandFilter(data=params, queryset=queryset, request=SimpleNamespace(user=user))
     if not filterset.is_valid():
         raise ValidationError(filterset.errors.get_json_data())
     return filterset.qs
@@ -75,9 +76,9 @@ def painel_por_rubrica(user, demandas, params) -> list[dict]:
     """Solicitado / autorizado / executado / disponível por rubrica (RF28).
 
     `solicitado` e `autorizado` saem das solicitações das demandas visíveis e
-    filtradas; `executado` e `disponivel` são os do controle financeiro do SGP
-    (`painel_orcamento`), somados por rubrica, para o painel nunca divergir
-    do orçamento.
+    filtradas; `executado`, `disponivel` e a faixa do semáforo são os do controle
+    financeiro do SGP (`painel_orcamento`), somados por rubrica, para o painel
+    nunca divergir do orçamento.
     """
     slugs = exigir_perfil_de_gestao(user)
     territorio_id = _inteiro_ou_none(params.get("territorio"))
@@ -98,14 +99,22 @@ def painel_por_rubrica(user, demandas, params) -> list[dict]:
     for linha in _painel_sgp(
         user, slugs, estado_sigla=estado_sigla, territorio_id=territorio_id, meta_id=meta_id,
     ):
-        acc = orcamento.setdefault(linha["rubrica"].pk, {"executado": ZERO, "disponivel": ZERO})
+        acc = orcamento.setdefault(linha["rubrica"].pk, {
+            "aprovado": ZERO, "comprometido": ZERO, "executado": ZERO, "disponivel": ZERO,
+        })
+        acc["aprovado"] += linha["valor_aprovado"]
+        acc["comprometido"] += linha["valor_comprometido"]
         acc["executado"] += linha["valor_executado"]
         acc["disponivel"] += linha["saldo_disponivel"]
 
+    limiares = budget_service.limiares_semaforo()
     resultado = []
     for rubrica in BudgetRubrica.objects.filter(ativo=True).order_by("ordem"):
         demanda_linha = por_rubrica.get(rubrica.pk, {})
         fin = orcamento.get(rubrica.pk, {})
+        percentual = budget_service.percentual_comprometido(
+            fin.get("comprometido", ZERO), fin.get("aprovado", ZERO),
+        )
         resultado.append({
             "rubrica_id": rubrica.pk,
             "rubrica_slug": rubrica.slug,
@@ -114,6 +123,10 @@ def painel_por_rubrica(user, demandas, params) -> list[dict]:
             "autorizado": demanda_linha.get("autorizado") or ZERO,
             "executado": fin.get("executado", ZERO),
             "disponivel": fin.get("disponivel", ZERO),
+            # SGP §6.8: a faixa sai do percentual comprometido sobre o aprovado,
+            # a mesma base do painel de orçamento do SGP.
+            "percentual_execucao": percentual,
+            "faixa": budget_service.faixa_semaforo(percentual, limiares),
         })
     return resultado
 

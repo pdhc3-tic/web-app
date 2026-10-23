@@ -1,9 +1,8 @@
-import { SgpChoicesProvider } from "@/app/providers/SgpChoicesProvider";
-
+/** Os choices do SGP vêm do layout da área logada (#272). */
 export default function SGPLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <SgpChoicesProvider>{children}</SgpChoicesProvider>;
+  return <>{children}</>;
 }

@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.exceptions import ValidationError as DRFValidationError
@@ -13,6 +13,7 @@ from apps.core.services.permissions import user_has_role, user_role_slugs, user_
 from apps.sgd.models.demand import STATUS_CANCELAVEIS_PELO_SOLICITANTE, STATUS_TRANSITIONS
 from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.models.individual_limit import DemandIndividualLimit
+from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
 from apps.sgp.services import budget as budget_service
@@ -53,19 +54,35 @@ def transition(demand, novo_status: str) -> None:
     _marcar_status(demand, novo_status)
 
 
-def aplicar_transicao(demand, novo_status: str) -> None:
+def aplicar_transicao(demand, novo_status: str, usuario=None) -> None:
+    status_anterior = demand.status
     transition(demand, novo_status)
-    demand.save(update_fields=_CAMPOS_DE_STATUS)
+    with transaction.atomic():
+        demand.save(update_fields=_CAMPOS_DE_STATUS)
+        auditoria_service.registrar_status(demand, de=status_anterior, para=novo_status, usuario=usuario)
 
 
-def marcar_cancelada(demand) -> None:
+def marcar_cancelada(demand, usuario=None) -> None:
     """Fora de `STATUS_TRANSITIONS` de propósito (ver `models.demand`) — quem
     chama já decidiu se a demanda pode ser cancelada."""
+    status_anterior = demand.status
     _marcar_status(demand, "cancelada")
-    demand.save(update_fields=_CAMPOS_DE_STATUS)
+    with transaction.atomic():
+        demand.save(update_fields=_CAMPOS_DE_STATUS)
+        auditoria_service.registrar_status(demand, de=status_anterior, para="cancelada", usuario=usuario)
+
+
+# Perfis que desfazem uma autorização já dada; o solicitante cancela só até a pré-autorização.
+PERFIS_QUE_CANCELAM_AUTORIZADA = ("super-admin", "ugp")
+
+
+def pode_cancelar_autorizada(usuario) -> bool:
+    return bool(user_role_slugs(usuario, PERFIS_QUE_CANCELAM_AUTORIZADA))
 
 
 def pode_cancelar(demand, usuario) -> bool:
+    if demand.status == "autorizada":
+        return pode_cancelar_autorizada(usuario)
     return demand.solicitante_id == usuario.pk and demand.status in STATUS_CANCELAVEIS_PELO_SOLICITANTE
 
 
@@ -81,9 +98,12 @@ def demand_visibility_scope(user) -> Q | None:
         # com states vazio (nenhum território cadastrado) o `sigla__in` some
         # sozinho, mesmo resultado do notifications_service para esse perfil.
         states = user_states(user)
+        # `Exists` em vez de join em `etapas`: não multiplica linhas, então a
+        # listagem dispensa `.distinct()` (sort/hash sobre todas as colunas).
+        decidiu = Exists(ApprovalStep.objects.filter(demanda=OuterRef("pk"), responsavel=user))
         return (
             Q(solicitante=user)
-            | Q(etapas__responsavel=user)
+            | Q(decidiu)
             | Q(status="submetida", activity__municipio__state__sigla__in=states)
         )
 
@@ -188,6 +208,10 @@ def preview_impacto(demand_request, valor: Decimal) -> dict:
 
 def alerta_rubrica_fora_do_previsto(demand_request) -> bool:
     previstas = demand_request.demanda.activity.acao.rubricas_previstas
+    if "rubricas_previstas" in getattr(demand_request.demanda.activity.acao, "_prefetched_objects_cache", {}):
+        # Listagem: M2M prefetchado, decide em memória em vez de 2 `exists()` por solicitação.
+        ids_previstos = {r.pk for r in previstas.all()}
+        return bool(ids_previstos) and demand_request.rubrica_id not in ids_previstos
     if not previstas.exists():
         # Sem previsão cadastrada na Ação — não é falso positivo, é "sem opinião".
         return False
@@ -209,7 +233,7 @@ def _exigir_pode_decidir_articulador(demand, responsavel) -> None:
 @transaction.atomic
 def pre_autorizar(demand, *, responsavel) -> object:
     _exigir_pode_decidir_articulador(demand, responsavel)
-    aplicar_transicao(demand, "pre_autorizada")
+    aplicar_transicao(demand, "pre_autorizada", usuario=responsavel)
     ApprovalStep.objects.create(
         demanda=demand, etapa="pre_autorizacao", responsavel=responsavel, acao="aprovado",
     )
@@ -222,7 +246,7 @@ def devolver(demand, *, responsavel, justificativa: str) -> object:
     _exigir_pode_decidir_articulador(demand, responsavel)
     if not justificativa:
         raise JustificativaObrigatoriaError("Obrigatória para devolver a demanda.")
-    aplicar_transicao(demand, "devolvida")
+    aplicar_transicao(demand, "devolvida", usuario=responsavel)
     ApprovalStep.objects.create(
         demanda=demand, etapa="pre_autorizacao", responsavel=responsavel,
         acao="devolvido", justificativa=justificativa,
@@ -258,7 +282,7 @@ def autorizar(
         solicitacao.valor_autorizado = novo_valor
         solicitacao.save(update_fields=["valor_autorizado"])
 
-    aplicar_transicao(demand, "autorizada")
+    aplicar_transicao(demand, "autorizada", usuario=responsavel)
     ApprovalStep.objects.create(
         demanda=demand, etapa="autorizacao", responsavel=responsavel,
         acao="aprovado", excedente_autorizado=excedente_autorizado, justificativa=justificativa,
@@ -275,7 +299,7 @@ def recusar(demand, *, responsavel, justificativa: str) -> object:
         balance_service.liberar_duas_travas(
             demand_request=solicitacao, usuario=responsavel, motivo="Demanda recusada pela UGP.",
         )
-    aplicar_transicao(demand, "recusada")
+    aplicar_transicao(demand, "recusada", usuario=responsavel)
     ApprovalStep.objects.create(
         demanda=demand, etapa="autorizacao", responsavel=responsavel,
         acao="recusado", justificativa=justificativa,
@@ -286,7 +310,7 @@ def recusar(demand, *, responsavel, justificativa: str) -> object:
 
 @transaction.atomic
 def atender(demand, *, responsavel) -> object:
-    aplicar_transicao(demand, "em_atendimento")
+    aplicar_transicao(demand, "em_atendimento", usuario=responsavel)
     ApprovalStep.objects.create(
         demanda=demand, etapa="atendimento", responsavel=responsavel, acao="atendido",
     )
@@ -317,7 +341,7 @@ def concluir(demand, *, responsavel, valores_pagos: dict) -> object:
         solicitacao.valor_pago = valor_pago
         solicitacao.save(update_fields=["valor_pago"])
 
-    aplicar_transicao(demand, "concluida")
+    aplicar_transicao(demand, "concluida", usuario=responsavel)
     recalcular_valor_executado([demand.activity.acao_id])
     ApprovalStep.objects.create(
         demanda=demand, etapa="atendimento", responsavel=responsavel, acao="atendido",

@@ -1,5 +1,6 @@
 "use client";
 
+import { useRotuloChoice, useSgpChoices } from "@/app/providers/SgpChoicesProvider";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -15,13 +16,18 @@ import Spinner from "@/app/components/icons/Spinner";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 import { ApiError } from "@/app/lib/api";
 import {
+  fetchCulturaById,
+  fetchEspecieById,
   fetchIndicadoresProducao,
   listProducaoConsolidada,
-  TIPO_OPTIONS,
+  searchCulturas,
+  searchEspecies,
+  type CatalogoItem,
   type IndicadoresProducao,
   type ProducaoConsolidadaItem,
 } from "@/app/lib/producao";
 import { fetchTerritoryOptions, fetchMunicipalityOptions } from "@/app/lib/upfs";
+import { CatalogoCombobox } from "@/app/(protected)/sgp/upfs/[id]/_components/CatalogoCombobox";
 
 const DEFAULT_LIMIT = 20;
 const PAGE_SIZES = [20, 50, 100];
@@ -30,9 +36,11 @@ type Filters = {
   tipo: string;
   municipio: string;
   territorio: string;
+  cultura: string;
+  especie: string;
 };
 
-const EMPTY_FILTERS: Filters = { tipo: "", municipio: "", territorio: "" };
+const EMPTY_FILTERS: Filters = { tipo: "", municipio: "", territorio: "", cultura: "", especie: "" };
 
 function CenteredSpinner() {
   return (
@@ -40,10 +48,6 @@ function CenteredSpinner() {
       <Spinner className="h-6 w-6 animate-spin text-text-muted" />
     </div>
   );
-}
-
-function tipoLabel(tipo: string): string {
-  return TIPO_OPTIONS.find((o) => o.value === tipo)?.label ?? tipo;
 }
 
 function IndicadoresBar({ indicadores }: { indicadores: IndicadoresProducao }) {
@@ -86,6 +90,8 @@ function IndicadoresBar({ indicadores }: { indicadores: IndicadoresProducao }) {
 }
 
 function ProducaoView() {
+  const choices = useSgpChoices();
+  const tipoLabel = useRotuloChoice("producao_tipo");
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
@@ -94,7 +100,43 @@ function ProducaoView() {
     tipo: searchParams.get("tipo") ?? "",
     municipio: searchParams.get("municipio") ?? "",
     territorio: searchParams.get("territorio") ?? "",
+    cultura: searchParams.get("cultura") ?? "",
+    especie: searchParams.get("especie") ?? "",
   }));
+  const [culturaItem, setCulturaItem] = useState<CatalogoItem | null>(null);
+  const [especieItem, setEspecieItem] = useState<CatalogoItem | null>(null);
+
+  // Restaura os itens do combobox quando a página abre com ?cultura= ou
+  // ?especie= na URL. Usa fetchCulturaById/fetchEspecieById para achar o item
+  // mesmo quando o id está fora da primeira página do catálogo.
+  useEffect(() => {
+    const culturaId = searchParams.get("cultura");
+    if (culturaId && !culturaItem) {
+      const controller = new AbortController();
+      fetchCulturaById(culturaId, controller.signal)
+        .then((item) => {
+          if (item && !controller.signal.aborted) setCulturaItem(item);
+        })
+        .catch(() => {});
+      return () => controller.abort();
+    }
+  // Intencionalmente sem culturaItem nas deps: só roda uma vez ao montar.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const especieId = searchParams.get("especie");
+    if (especieId && !especieItem) {
+      const controller = new AbortController();
+      fetchEspecieById(especieId, controller.signal)
+        .then((item) => {
+          if (item && !controller.signal.aborted) setEspecieItem(item);
+        })
+        .catch(() => {});
+      return () => controller.abort();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [limit, setLimit] = useState<number>(() => {
     const l = Number(searchParams.get("limit"));
     return PAGE_SIZES.includes(l) ? l : DEFAULT_LIMIT;
@@ -124,6 +166,8 @@ function ProducaoView() {
     if (filters.tipo) qs.set("tipo", filters.tipo);
     if (filters.municipio) qs.set("municipio", filters.municipio);
     if (filters.territorio) qs.set("territorio", filters.territorio);
+    if (filters.cultura) qs.set("cultura", filters.cultura);
+    if (filters.especie) qs.set("especie", filters.especie);
     if (limit !== DEFAULT_LIMIT) qs.set("limit", String(limit));
     if (offset > 0) qs.set("offset", String(offset));
     const query = qs.toString();
@@ -166,6 +210,8 @@ function ProducaoView() {
         tipo: filters.tipo || undefined,
         municipio: filters.municipio || undefined,
         territorio: filters.territorio || undefined,
+        cultura: filters.cultura || undefined,
+        especie: filters.especie || undefined,
       },
       controller.signal,
     )
@@ -230,7 +276,7 @@ function ProducaoView() {
       <div className="flex flex-wrap items-end gap-3">
         <Select
           label="Tipo"
-          options={TIPO_OPTIONS as unknown as SelectOption[]}
+          options={choices.producao_tipo}
           value={filters.tipo}
           onChange={(v) => handleFilterChange({ tipo: v })}
           placeholder="Todos"
@@ -249,10 +295,39 @@ function ProducaoView() {
           onChange={(v) => handleFilterChange({ territorio: v })}
           placeholder="Todos"
         />
+        <div className="min-w-44 flex-1">
+          <CatalogoCombobox
+            label="Cultura"
+            value={culturaItem}
+            onChange={(item) => {
+              setCulturaItem(item);
+              handleFilterChange({ cultura: item ? String(item.id) : "" });
+            }}
+            search={searchCulturas}
+            placeholder="Buscar cultura…"
+          />
+        </div>
+        <div className="min-w-44 flex-1">
+          <CatalogoCombobox
+            label="Espécie animal"
+            value={especieItem}
+            onChange={(item) => {
+              setEspecieItem(item);
+              handleFilterChange({ especie: item ? String(item.id) : "" });
+            }}
+            search={searchEspecies}
+            placeholder="Buscar espécie…"
+          />
+        </div>
         {hasActiveFilters && (
           <button
             type="button"
-            onClick={() => { setFilters(EMPTY_FILTERS); setOffset(0); }}
+            onClick={() => {
+              setFilters(EMPTY_FILTERS);
+              setCulturaItem(null);
+              setEspecieItem(null);
+              setOffset(0);
+            }}
             className="text-sm text-text-muted hover:text-text"
           >
             Limpar
@@ -320,7 +395,7 @@ function ProducaoView() {
                   <tr key={item.id} className="hover:bg-surface-muted">
                     <td className="px-4 py-3 font-medium text-text">
                       <Link
-                        href={`/sgp/upfs/${item.upf_id}#producao`}
+                        href={`/sgp/upfs/${item.upf_id}?tab=producao`}
                         className="hover:underline"
                       >
                         {item.upf_nome_titular || "—"}

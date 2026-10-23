@@ -45,7 +45,7 @@ export function useFilaDemandas() {
   return {
     ...lista,
     // Sem status a aguardar (contagem carregada, fila vazia) não há o que listar.
-    data: contagem.data && status.length === 0 ? [] : lista.data,
+    data: contagem.data && status.length === 0 ? { demandas: [], total: 0 } : lista.data,
     isPending: contagem.isPending || (status.length > 0 && lista.isPending),
     error: contagem.error ?? lista.error,
     refetch: () => void Promise.all([contagem.refetch(), lista.refetch()]),

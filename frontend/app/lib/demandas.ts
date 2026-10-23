@@ -164,21 +164,31 @@ export const STATUS_ATIVIDADE_ELEGIVEIS = ["planejado", "agendado"];
 const DEMANDAS_PATH = "/api/v1/sgd/demandas/";
 
 /**
- * GET /api/v1/sgd/demandas/?activity={id} — as demandas de uma atividade.
- *
- * O filtro `activity` ainda não existe no `DemandViewSet.list` (só `status`):
- * enquanto isso o backend devolve TODAS as demandas visíveis ao usuário, e a
- * aba mostra o que vier. A lista não é filtrada aqui de propósito — ver
- * docs/pendencias-backend-sprint-10.md, item 6.
+ * A listagem de demandas é paginada (`DemandPagination`, BE-5): sem `limit`,
+ * viriam só as 10 primeiras. As telas pedem o teto do backend (`max_limit`
+ * = 200) e recebem o total, para avisar quando há mais do que a página trouxe.
  */
+const LIMITE_LISTA_DEMANDAS = 200;
+
+export type ListaDemandas = {
+  demandas: Demanda[];
+  /** Total no backend com os mesmos filtros; maior que `demandas.length` = lista parcial. */
+  total: number;
+};
+
+async function lerListaDemandas(qs: URLSearchParams, signal?: AbortSignal): Promise<ListaDemandas> {
+  qs.set("limit", String(LIMITE_LISTA_DEMANDAS));
+  const res = await apiClient(`${DEMANDAS_PATH}?${qs}`, { signal });
+  const pagina = (await res.json()) as { count: number; results: Demanda[] };
+  return { demandas: pagina.results, total: pagina.count };
+}
+
+/** GET /api/v1/sgd/demandas/?atividade={id} — as demandas de uma atividade. */
 export async function listDemandasDaAtividade(
   atividadeId: number | string,
   signal?: AbortSignal,
-): Promise<Demanda[]> {
-  const qs = new URLSearchParams({ atividade: String(atividadeId) });
-  const res = await apiClient(`${DEMANDAS_PATH}?${qs}`, { signal });
-  const data = await res.json();
-  return Array.isArray(data) ? data : (data as { results?: Demanda[] })?.results ?? [];
+): Promise<ListaDemandas> {
+  return lerListaDemandas(new URLSearchParams({ atividade: String(atividadeId) }), signal);
 }
 
 /** POST /api/v1/sgd/demandas/ — cria a demanda (e a atividade, se for o caso). */
@@ -272,14 +282,11 @@ export async function fetchContagemFila(signal?: AbortSignal): Promise<ContagemF
 export async function listDemandas(
   params: { status?: StatusDemanda[]; atividade?: string | number } = {},
   signal?: AbortSignal,
-): Promise<Demanda[]> {
+): Promise<ListaDemandas> {
   const qs = new URLSearchParams();
   for (const st of params.status ?? []) qs.append("status", st);
   if (params.atividade) qs.set("atividade", String(params.atividade));
-  const query = qs.toString();
-  const res = await apiClient(`${DEMANDAS_PATH}${query ? `?${query}` : ""}`, { signal });
-  const data = await res.json();
-  return Array.isArray(data) ? data : (data as { results?: Demanda[] })?.results ?? [];
+  return lerListaDemandas(qs, signal);
 }
 
 /** GET /api/v1/sgd/demandas/{id}/ */

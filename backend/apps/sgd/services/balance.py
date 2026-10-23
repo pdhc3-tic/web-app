@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from decimal import Decimal
+from itertools import groupby
 
 from django.db import transaction
 from rest_framework.exceptions import ValidationError as DRFValidationError
@@ -34,6 +35,37 @@ ACAO_SUGERIDA = {
 ORIENTACAO_INDIVIDUAL = "Use a opção 'Solicitar recurso extra'."
 
 
+def bloqueio(trava: str, motivo: str | None) -> dict:
+    return {"trava": trava, "motivo": motivo, "acao_sugerida": ACAO_SUGERIDA[trava]}
+
+
+class SubmissaoBloqueada(DRFValidationError):
+    """400 da submissão barrada por uma das travas, levantado tanto pela
+    pré-checagem quanto pela reserva sob lock (o saldo pode mudar entre as
+    duas). `detail`/`code`/`solicitacao_id` descrevem a primeira solicitação
+    barrada; `solicitacoes_bloqueadas` traz todas as que a pré-checagem
+    barrou. Na reserva, só aparece a que bateu: a primeira falha desfaz a
+    transação, e as seguintes não chegam a ser conferidas contra o saldo que
+    mudou.
+
+    O corpo é atribuído depois do `__init__` porque a normalização do DRF
+    converteria `solicitacao_id` em string."""
+
+    def __init__(self, bloqueios: dict[int, dict]):
+        super().__init__()
+        solicitacao_id, primeiro = next(iter(bloqueios.items()))
+        self.detail = {
+            "detail": primeiro["motivo"],
+            "code": f"trava_{primeiro['trava']}",
+            "solicitacao_id": solicitacao_id,
+            "solicitacoes_bloqueadas": {str(pk): b for pk, b in bloqueios.items()},
+        }
+
+
+def _erro_bloqueio(demand_request, trava: str, motivo: str | None) -> SubmissaoBloqueada:
+    return SubmissaoBloqueada({demand_request.pk: bloqueio(trava, motivo)})
+
+
 def orientacao_territorial(*, allocation, saldo: Decimal | None) -> str:
     """Sem alocação nenhuma, afirmar que o território esgotou seria falso — só
     orienta. Com alocação, "esgotado" puro quando o saldo zerou; com saldo
@@ -52,12 +84,22 @@ def com_orientacao(motivo: str | None, orientacao: str) -> str | None:
     return f"{motivo} {orientacao}"
 
 
+def _com_consumo_previo(motivo: str | None, consumo_previo: Decimal) -> str | None:
+    """Sem isso o solicitante vê um disponível menor que o do painel de saldo
+    e não sabe por quê."""
+    if not motivo or consumo_previo <= ZERO:
+        return motivo
+    return f"{motivo} Já descontados R$ {consumo_previo} de outras solicitações desta demanda na mesma rubrica."
+
+
 @dataclass
 class TravaCheck:
     disponivel: bool
     saldo: Decimal
     motivo_bloqueio: str | None = None
     acao_sugerida: str | None = None
+    # Limite lido na checagem, reaproveitado no payload (evita 2ª query).
+    limite: DemandIndividualLimit | None = None
 
 
 @dataclass
@@ -95,8 +137,7 @@ def _semaforos(*, comprometido: Decimal, total: Decimal, valor: Decimal, limiare
     return {"semaforo_atual": atual, "semaforo_apos": apos}
 
 
-def _semaforos_individual(*, solicitante, rubrica, valor: Decimal, limiares) -> dict:
-    limite = DemandIndividualLimit.objects.filter(solicitante=solicitante, rubrica=rubrica).first()
+def _semaforos_individual(*, limite, valor: Decimal, limiares) -> dict:
     if limite is None:
         return dict(_SEM_SEMAFORO)
     return _semaforos(
@@ -120,7 +161,7 @@ def payload_saldo_consulta(check: "DuasTravasCheck", *, solicitante, rubrica, va
             "saldo": check.individual.saldo,
             "motivo_bloqueio": check.individual.motivo_bloqueio,
             "acao_sugerida": check.individual.acao_sugerida,
-            **_semaforos_individual(solicitante=solicitante, rubrica=rubrica, valor=valor, limiares=limiares),
+            **_semaforos_individual(limite=check.individual.limite, valor=valor, limiares=limiares),
         },
         "territorial": {
             "disponivel": check.territorial.disponivel,
@@ -164,7 +205,7 @@ def _notificar_se_piorou(*, usuarios, demand, rubrica_nome, trava, comprometido_
         )
 
 
-def _checar_individual(*, solicitante, rubrica, valor: Decimal) -> TravaCheck:
+def _checar_individual(*, solicitante, rubrica, valor: Decimal, consumo_previo: Decimal = ZERO) -> TravaCheck:
     limite = DemandIndividualLimit.objects.filter(solicitante=solicitante, rubrica=rubrica).first()
     if limite is None:
         return TravaCheck(
@@ -176,10 +217,12 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal) -> TravaCheck:
             ),
             acao_sugerida=ACAO_SUGERIDA[TRAVA_INDIVIDUAL],
         )
-    saldo = limite.saldo_disponivel
-    if saldo <= ZERO:
+    saldo = limite.saldo_disponivel - consumo_previo
+    # Zerado pelas outras solicitações da própria demanda não é limite
+    # esgotado: cai no "insuficiente", que mostra disponível e solicitado.
+    if saldo <= ZERO and consumo_previo <= ZERO:
         return TravaCheck(
-            disponivel=False, saldo=saldo,
+            disponivel=False, saldo=saldo, limite=limite,
             motivo_bloqueio=com_orientacao(
                 f"Limite individual esgotado para esta rubrica: R$ {saldo} disponível, "
                 f"R$ {valor} solicitado.",
@@ -189,30 +232,45 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal) -> TravaCheck:
         )
     if valor > saldo:
         return TravaCheck(
-            disponivel=False, saldo=saldo,
+            disponivel=False, saldo=saldo, limite=limite,
             motivo_bloqueio=com_orientacao(
-                f"Limite individual insuficiente: R$ {saldo} disponível, R$ {valor} solicitado.",
+                _com_consumo_previo(
+                    f"Limite individual insuficiente: R$ {saldo} disponível, R$ {valor} solicitado.",
+                    consumo_previo,
+                ),
                 ORIENTACAO_INDIVIDUAL,
             ),
             acao_sugerida=ACAO_SUGERIDA[TRAVA_INDIVIDUAL],
         )
-    return TravaCheck(disponivel=True, saldo=saldo, motivo_bloqueio=None)
+    return TravaCheck(disponivel=True, saldo=saldo, motivo_bloqueio=None, limite=limite)
 
 
-def verificar_duas_travas(*, solicitante, rubrica, meta, valor: Decimal) -> DuasTravasCheck:
-    """Somente leitura — não reserva nada. `meta`/`rubrica` já resolvidas."""
-    individual = _checar_individual(solicitante=solicitante, rubrica=rubrica, valor=valor)
+def verificar_duas_travas(
+    *, solicitante, rubrica, meta, valor: Decimal, consumo_previo: Decimal = ZERO,
+) -> DuasTravasCheck:
+    """Somente leitura — não reserva nada. `meta`/`rubrica` já resolvidas.
+
+    `consumo_previo`: quanto outras solicitações da mesma operação, na mesma
+    rubrica, já vão reservar antes desta. Sai do saldo das duas travas — o
+    limite individual e a alocação territorial são os mesmos para todas."""
+    individual = _checar_individual(
+        solicitante=solicitante, rubrica=rubrica, valor=valor, consumo_previo=consumo_previo,
+    )
 
     nivel, estado_sigla, territorio = budget_service.resolver_nivel_do_usuario(solicitante)
     territorial = budget_service.saldo_para_consulta(
         meta_id=meta.pk, rubrica_slug=rubrica.slug, nivel=nivel,
-        estado_sigla=estado_sigla, territorio=territorio, valor=valor,
+        estado_sigla=estado_sigla, territorio=territorio, valor=valor, consumo_previo=consumo_previo,
     )
     if not territorial.disponivel:
+        # A orientação olha o saldo real do pool: se ele só zerou por causa
+        # desta demanda, o território não está esgotado.
         territorial = replace(
             territorial, motivo_bloqueio=com_orientacao(
-                territorial.motivo_bloqueio,
-                orientacao_territorial(allocation=territorial.allocation, saldo=territorial.saldo),
+                _com_consumo_previo(territorial.motivo_bloqueio, consumo_previo),
+                orientacao_territorial(
+                    allocation=territorial.allocation, saldo=territorial.saldo + consumo_previo,
+                ),
             ),
         )
     return DuasTravasCheck(individual=individual, territorial=territorial)
@@ -263,13 +321,11 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
         # verificar_duas_travas (antes do lock) comprometeriam o limite além
         # do valor_limite.
         if valor > limite.saldo_disponivel:
-            raise DRFValidationError({
-                "detail": com_orientacao(
-                    f"Limite individual insuficiente: R$ {limite.saldo_disponivel} disponível, "
-                    f"R$ {valor} solicitado.",
-                    ORIENTACAO_INDIVIDUAL,
-                )
-            })
+            raise _erro_bloqueio(demand_request, TRAVA_INDIVIDUAL, com_orientacao(
+                f"Limite individual insuficiente: R$ {limite.saldo_disponivel} disponível, "
+                f"R$ {valor} solicitado.",
+                ORIENTACAO_INDIVIDUAL,
+            ))
         limite.valor_comprometido += valor
         limite.save(update_fields=["valor_comprometido"])
         _registrar_movimento_individual(
@@ -288,12 +344,10 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
         estado_sigla=estado_sigla, territorio=territorio, valor=valor,
     )
     if check.allocation is None:
-        raise DRFValidationError({
-            "detail": com_orientacao(
-                "Nenhuma alocação orçamentária territorial encontrada.",
-                orientacao_territorial(allocation=None, saldo=None),
-            )
-        })
+        raise _erro_bloqueio(demand_request, TRAVA_TERRITORIAL, com_orientacao(
+            "Nenhuma alocação orçamentária territorial encontrada.",
+            orientacao_territorial(allocation=None, saldo=None),
+        ))
     comprometido_territorial_antes = check.allocation.valor_comprometido
     try:
         budget_service.reservar(
@@ -301,9 +355,9 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
             justificativa=f"Reserva SGD — solicitação #{demand_request.pk}.",
         )
     except budget_service.SaldoInsuficienteError as exc:
-        raise DRFValidationError({
-            "detail": com_orientacao(str(exc), orientacao_territorial(allocation=check.allocation, saldo=None))
-        }) from exc
+        raise _erro_bloqueio(demand_request, TRAVA_TERRITORIAL, com_orientacao(
+            str(exc), orientacao_territorial(allocation=check.allocation, saldo=None),
+        )) from exc
     except ValueError as exc:
         raise DRFValidationError({"detail": str(exc)}) from exc
     check.allocation.refresh_from_db(fields=["valor_comprometido"])
@@ -431,6 +485,31 @@ def liberar_duas_travas(*, demand_request, usuario, motivo: str) -> None:
     except budget_service.DemandaInvalidaError:
         # Nunca chegou a reservar (ex.: bloqueada antes da submissão) — nada a liberar.
         pass
+
+
+@transaction.atomic
+def liberar_duas_travas_em_lote(solicitacoes, *, usuario, motivo: str) -> None:
+    """Libera as reservas de solicitações de várias demandas, de vários solicitantes.
+    Liberar uma por uma travaria a alocação de um solicitante antes do limite do
+    seguinte; por isso, rubrica a rubrica, trava antes todos os limites e depois todas
+    as alocações envolvidas (ordem de `backend/docs/orcamento.md`)."""
+    solicitacoes = sorted(solicitacoes, key=lambda s: (s.rubrica_id, s.pk))
+    for rubrica_id, grupo in groupby(solicitacoes, key=lambda s: s.rubrica_id):
+        grupo = list(grupo)
+        _travar_em_ordem_de_pk(DemandIndividualLimit.objects.filter(
+            rubrica_id=rubrica_id, solicitante_id__in={s.demanda.solicitante_id for s in grupo},
+        ))
+        _travar_em_ordem_de_pk(budget_service.BudgetAllocation.objects.filter(
+            pk__in=budget_service.BudgetTransaction.objects.filter(
+                tipo=budget_service.BudgetTransaction.Tipo.RESERVA, demanda_id__in=[str(s.pk) for s in grupo],
+            ).values("allocation_id"),
+        ))
+        for solicitacao in grupo:
+            liberar_duas_travas(demand_request=solicitacao, usuario=usuario, motivo=motivo)
+
+
+def _travar_em_ordem_de_pk(queryset) -> None:
+    list(queryset.select_for_update().order_by("pk").values_list("pk", flat=True))
 
 
 @transaction.atomic

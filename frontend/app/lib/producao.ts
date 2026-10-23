@@ -1,35 +1,14 @@
 import { apiClient } from "@/app/lib/api";
 import type { Paginated } from "@/app/lib/users";
 
-// ─── Constantes espelhadas do backend ────────────────────────────────────────
+// ─── Tipos ───────────────────────────────────────────────────────────────────
+// As LISTAS (tipo, sistema de criação, tipo de "outra") vêm de `useSgpChoices()`:
+// `producao_tipo`, `producao_sistema_criacao`, `producao_tipo_outra` (#272).
+// Aqui ficam só os valores que o código compara.
 
-/** Espelha apps/sgp/models/production.py::Production.TIPO_CHOICES. */
-export const TIPO_OPTIONS = [
-  { value: "agricola", label: "Agrícola" },
-  { value: "pecuaria", label: "Pecuária" },
-  { value: "outra", label: "Outra" },
-] as const;
-
-export type TipoProducao = (typeof TIPO_OPTIONS)[number]["value"];
-
-/** Espelha Production.SISTEMA_CRIACAO_CHOICES. */
-export const SISTEMA_CRIACAO_OPTIONS = [
-  { value: "extensivo", label: "Extensivo" },
-  { value: "semi_intensivo", label: "Semi-intensivo" },
-  { value: "intensivo", label: "Intensivo" },
-] as const;
-
-export type SistemaCriacao = (typeof SISTEMA_CRIACAO_OPTIONS)[number]["value"];
-
-/** Espelha Production.TIPO_OUTRA_CHOICES. */
-export const TIPO_OUTRA_OPTIONS = [
-  { value: "artesanato", label: "Artesanato" },
-  { value: "beneficiamento", label: "Beneficiamento" },
-  { value: "extrativismo", label: "Extrativismo" },
-  { value: "outro", label: "Outro" },
-] as const;
-
-export type TipoOutra = (typeof TIPO_OUTRA_OPTIONS)[number]["value"];
+export type TipoProducao = "agricola" | "pecuaria" | "outra";
+export type SistemaCriacao = "extensivo" | "semi_intensivo" | "intensivo";
+export type TipoOutra = "artesanato" | "beneficiamento" | "extrativismo" | "outro";
 
 // Categorias chegam como valor cru do choice ("graos", "ovino") e a UI exibe o
 // rótulo, então a tradução acontece na fronteira da API — ver toCatalogoItem().
@@ -319,6 +298,48 @@ export function searchEspecies(
     "/api/v1/catalogos/especies-animais/",
     ESPECIE_CATEGORIA_LABELS,
     q,
+    signal,
+  );
+}
+
+// O endpoint de catálogo não tem rota de detalhe (só list). Para restaurar o
+// combobox a partir de ?cultura=<id> na URL, precisamos achar o item sem
+// depender da posição dele na página padrão (page_size=50). Pedimos o maior
+// page_size aceito pelo CatalogoPagination (max_page_size=200) e procuramos
+// pelo id. O seed tem ~60 culturas, então uma única requisição cobre o caso.
+async function buscarCatalogoPorId(
+  endpoint: string,
+  labels: Record<string, string>,
+  id: string,
+  signal?: AbortSignal,
+): Promise<CatalogoItem | null> {
+  const qs = new URLSearchParams({ page_size: "200" });
+  const res = await apiClient(`${endpoint}?${qs}`, { signal });
+  const data: Paginated<CatalogoApiItem> = await res.json();
+  const raw = data.results.find((item) => String(item.id) === id);
+  return raw ? toCatalogoItem(raw, labels) : null;
+}
+
+export function fetchCulturaById(
+  id: string,
+  signal?: AbortSignal,
+): Promise<CatalogoItem | null> {
+  return buscarCatalogoPorId(
+    "/api/v1/catalogos/culturas/",
+    CULTURA_CATEGORIA_LABELS,
+    id,
+    signal,
+  );
+}
+
+export function fetchEspecieById(
+  id: string,
+  signal?: AbortSignal,
+): Promise<CatalogoItem | null> {
+  return buscarCatalogoPorId(
+    "/api/v1/catalogos/especies-animais/",
+    ESPECIE_CATEGORIA_LABELS,
+    id,
     signal,
   );
 }
