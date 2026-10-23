@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.exceptions import ValidationError as DRFValidationError
@@ -98,9 +98,12 @@ def demand_visibility_scope(user) -> Q | None:
         # com states vazio (nenhum território cadastrado) o `sigla__in` some
         # sozinho, mesmo resultado do notifications_service para esse perfil.
         states = user_states(user)
+        # `Exists` em vez de join em `etapas`: não multiplica linhas, então a
+        # listagem dispensa `.distinct()` (sort/hash sobre todas as colunas).
+        decidiu = Exists(ApprovalStep.objects.filter(demanda=OuterRef("pk"), responsavel=user))
         return (
             Q(solicitante=user)
-            | Q(etapas__responsavel=user)
+            | Q(decidiu)
             | Q(status="submetida", activity__municipio__state__sigla__in=states)
         )
 
@@ -205,6 +208,10 @@ def preview_impacto(demand_request, valor: Decimal) -> dict:
 
 def alerta_rubrica_fora_do_previsto(demand_request) -> bool:
     previstas = demand_request.demanda.activity.acao.rubricas_previstas
+    if "rubricas_previstas" in getattr(demand_request.demanda.activity.acao, "_prefetched_objects_cache", {}):
+        # Listagem: M2M prefetchado, decide em memória em vez de 2 `exists()` por solicitação.
+        ids_previstos = {r.pk for r in previstas.all()}
+        return bool(ids_previstos) and demand_request.rubrica_id not in ids_previstos
     if not previstas.exists():
         # Sem previsão cadastrada na Ação — não é falso positivo, é "sem opinião".
         return False

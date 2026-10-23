@@ -69,7 +69,7 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
             "activity__comunidade", "activity__tecnico_responsavel",
             "activity__acao__meta", "activity__acao__submeta", "activity__acao__indicador",
             "solicitante",
-        ).prefetch_related("solicitacoes__rubrica")
+        ).prefetch_related("solicitacoes__rubrica", "activity__acao__rubricas_previstas")
         # Só na leitura: nas ações de decisão o prefetch deixaria `etapas` em
         # cache, e a resposta sairia sem a etapa que a própria ação acabou de criar.
         if self.action in ("list", "retrieve"):
@@ -79,7 +79,7 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
         scope = demand_visibility_scope(self.request.user)
         if scope is not None:
             qs = qs.filter(scope)
-        return qs.distinct()
+        return qs
 
     @extend_schema(
         parameters=[
@@ -123,8 +123,18 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
 
     @action(detail=True, methods=["get"], url_path="historico")
     def historico(self, request, pk=None):
-        demand = get_object_or_404(self.get_queryset(), pk=pk)
+        # Só valida o escopo: o queryset da listagem (joins + prefetches) é
+        # pesado demais para um endpoint que lê apenas as etapas.
+        scope = demand_visibility_scope(request.user)
+        visiveis = Demand.objects.all() if scope is None else Demand.objects.filter(scope)
+        demand = get_object_or_404(visiveis, pk=pk)
         etapas = demand.etapas.select_related("responsavel").order_by("criado_em", "pk")
+        # Paginação sob demanda: sem `limit`/`offset` mantém a lista simples
+        # (contrato atual do frontend).
+        if "limit" in request.query_params or "offset" in request.query_params:
+            paginator = DemandPagination()
+            pagina = paginator.paginate_queryset(etapas, request, view=self)
+            return paginator.get_paginated_response(ApprovalStepSerializer(pagina, many=True).data)
         return Response(ApprovalStepSerializer(etapas, many=True).data)
 
     def retrieve(self, request, pk=None):

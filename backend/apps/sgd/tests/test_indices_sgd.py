@@ -19,3 +19,9 @@ def _indices_no_banco(model):
 ])
 def test_indices_exigidos_pela_arquitetura_existem_no_banco(model, nomes):
     assert nomes <= _indices_no_banco(model)
+
+
+def test_indice_de_transacao_orcamentaria_por_demanda_existe_no_banco():
+    from apps.sgp.models.budget import BudgetTransaction
+
+    assert "idx_budgettx_demanda_tipo" in _indices_no_banco(BudgetTransaction)

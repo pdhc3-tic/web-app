@@ -2,6 +2,18 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.permissions import IsAuthenticatedActiveAccess
+from apps.sgd.constants import (
+    Classe,
+    MeioTransporte,
+    TipoMaterial,
+    TipoRefeicao,
+    TipoVeiculo,
+    Urgencia,
+    Vinculo,
+)
+from apps.sgd.models.demand import STATUS_CHOICES as DEMANDA_STATUS_CHOICES
+from apps.sgd.models.demand_document import TIPO_CHOICES as DEMANDA_DOCUMENTO_TIPO_CHOICES
+from apps.sgd.models.demand_request import TIPO_CHOICES as SOLICITACAO_TIPO_CHOICES
 from apps.sgp.constants import (
     AGUA_CHOICES,
     COR_RACA_CHOICES,
@@ -28,8 +40,8 @@ from apps.sgp.models.activity import (
     TIPO_ATIVIDADE_CHOICES,
 )
 
-# Única lista do que o endpoint publica. O teste de contrato confere que toda
-# constante de choices do SGP está aqui.
+# Única lista do que o endpoint publica. Os testes de contrato conferem que
+# toda constante de choices do SGP e do SGD está aqui.
 CHOICES_PUBLICADOS = {
     "genero": GENERO_CHOICES,
     "cor_raca": COR_RACA_CHOICES,
@@ -56,6 +68,16 @@ CHOICES_PUBLICADOS = {
     "producao_tipo_outra": Production.TIPO_OUTRA_CHOICES,
     "upf_documento_tipo": UPFDocument.TIPO_CHOICES,
     "atividade_documento_tipo": ActivityDocument.TIPO_CHOICES,
+    "solicitacao_tipo": SOLICITACAO_TIPO_CHOICES,
+    "demanda_status": DEMANDA_STATUS_CHOICES,
+    "demanda_documento_tipo": DEMANDA_DOCUMENTO_TIPO_CHOICES,
+    "beneficiario_vinculo": Vinculo.choices,
+    "meio_transporte": MeioTransporte.choices,
+    "classe": Classe.choices,
+    "urgencia": Urgencia.choices,
+    "tipo_veiculo": TipoVeiculo.choices,
+    "tipo_material": TipoMaterial.choices,
+    "tipo_refeicao": TipoRefeicao.choices,
 }
 
 
