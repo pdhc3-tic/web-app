@@ -132,3 +132,27 @@ def test_localizar_pool_sem_alocacao_e_regra_de_negocio(demand_request_rn, solic
         orcamento_service.localizar_pool(
             solicitante=solicitante_rn, rubrica=rubrica_diarias, demand_request=demand_request_rn,
         )
+
+
+def test_remanejar_sem_saldo_na_origem_recusa_em_reais_sem_mover_nada(
+    activity_rn, rubrica_diarias, allocation_territorial_rn, solicitante_rn,
+):
+    from apps.sgp.models import BudgetAllocation, BudgetTransaction
+
+    origem = BudgetAllocationFactory(
+        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, nivel=BudgetAllocation.Nivel.ESTADUAL,
+        territorio=None, estado=activity_rn.municipio.state,
+        valor_alocado=Decimal("1500"), valor_comprometido=Decimal("200"),
+    )
+
+    with pytest.raises(RegraDeNegocio) as excinfo:
+        orcamento_service.remanejar(
+            origem=origem, destino=allocation_territorial_rn, valor=Decimal("2000"),
+            usuario=solicitante_rn, justificativa="Excedente.",
+        )
+
+    assert excinfo.value.campo == "valor"
+    assert excinfo.value.mensagem == "Saldo insuficiente na origem: R$ 1.300,00 disponível, R$ 2.000,00 solicitado."
+    assert not BudgetTransaction.objects.filter(tipo=BudgetTransaction.Tipo.REMANEJAMENTO).exists()
+    origem.refresh_from_db()
+    assert origem.valor_alocado == Decimal("1500")

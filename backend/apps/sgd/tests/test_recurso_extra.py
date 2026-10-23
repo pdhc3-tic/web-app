@@ -1088,6 +1088,7 @@ def test_remanejamento_sem_saldo_na_origem_desfaz_a_decisao(
     })
 
     assert resposta.status_code == 400
+    assert resposta.data["valor"] == ["Saldo insuficiente na origem: R$ 100,00 disponível, R$ 800,00 solicitado."]
     pedido_com_parecer.refresh_from_db()
     assert pedido_com_parecer.status == "com_parecer"
     assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")

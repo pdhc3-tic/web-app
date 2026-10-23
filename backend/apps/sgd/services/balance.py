@@ -273,9 +273,14 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
     valor = demand_request.valor_estimado
 
     entidade_id = str(demand_request.pk)
-    limite = DemandIndividualLimit.objects.select_for_update().get(
+    limite = DemandIndividualLimit.objects.select_for_update().filter(
         solicitante=solicitante, rubrica=rubrica,
-    )
+    ).first()
+    if limite is None:
+        # Removido depois da pré-checagem: mesma resposta que ela daria.
+        raise _bloqueio_individual(
+            rubrica=rubrica, limite=None, saldo=ZERO, valor=valor, solicitacao_id=demand_request.pk,
+        )
     comprometido_individual_antes = limite.valor_comprometido
     if not reserva_ativa(demand_request):
         # Reconfere o saldo com a linha já travada (select_for_update acima)

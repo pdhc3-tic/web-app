@@ -522,6 +522,22 @@ def test_bloqueio_territorial_na_pre_checagem_e_na_reserva_tem_o_mesmo_contrato(
     assert (pela_reserva["disponivel"], pela_reserva["solicitado"]) == ("500.00", "1000.00")
 
 
+def test_reservar_duas_travas_sem_limite_individual_responde_no_contrato_da_pre_checagem(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn,
+):
+    """O limite removido entre a pré-checagem e o lock não pode virar erro 500."""
+    with pytest.raises(SaldoInsuficiente) as excinfo:
+        balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+
+    corpo = excinfo.value.como_dict()
+    assert corpo["trava"] == "individual"
+    assert corpo["disponivel"] == "0.00"
+    assert corpo["solicitacao_id"] == demand_request_rn.pk
+    assert corpo["detail"].startswith("Nenhum limite individual configurado para você nesta rubrica")
+    allocation_territorial_rn.refresh_from_db()
+    assert allocation_territorial_rn.valor_comprometido == Decimal("0")
+
+
 def test_reservar_duas_travas_sem_alocacao_territorial_identifica_trava_e_solicitacao(
     demand_request_rn, solicitante_rn, limite_individual_rn,
 ):

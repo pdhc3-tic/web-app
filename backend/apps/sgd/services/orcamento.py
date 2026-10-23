@@ -4,6 +4,9 @@
 `apps.sgp.models.budget`. O motor ainda localiza a alocação pela Meta; aqui ela
 é resolvida a partir da atividade da demanda, e nenhuma assinatura do SGD a
 recebe. Erros do motor saem daqui como exceções de domínio do SGD.
+
+As operações recebem solicitante e rubrica mesmo quando o motor de hoje só usa
+a solicitação: sem a Meta, é por eles que o pool vai ser localizado.
 """
 from __future__ import annotations
 
@@ -35,7 +38,7 @@ class MovimentoPool:
     mudança de faixa do semáforo."""
     allocation: BudgetAllocation | None
     comprometido_antes: Decimal
-    nivel: str
+    nivel: str | None
     estado_sigla: str | None
     territorio: object | None
 
@@ -266,4 +269,16 @@ def travar_pools(pks) -> dict[int, BudgetAllocation]:
 
 def remanejar(*, origem: BudgetAllocation, destino: BudgetAllocation, valor: Decimal, usuario,
               justificativa: str) -> None:
+    """Confere o saldo da origem já travada para a recusa sair em reais. O motor
+    trava de novo, na mesma transação e na mesma ordem, e repete a conferência."""
+    # Origem e destino incompatíveis ficam com a recusa do próprio motor.
+    compativeis = origem.meta_id == destino.meta_id and origem.rubrica_id == destino.rubrica_id
+    if origem.pk != destino.pk and compativeis:
+        disponivel = saldo_do_pool(travar_pools({origem.pk, destino.pk})[origem.pk])
+        if valor > disponivel:
+            raise RegraDeNegocio(
+                f"Saldo insuficiente na origem: {formatar_brl(disponivel)} disponível, "
+                f"{formatar_brl(valor)} solicitado.",
+                campo="valor",
+            )
     budget_service.remanejar(origem=origem, destino=destino, valor=valor, usuario=usuario, justificativa=justificativa)
