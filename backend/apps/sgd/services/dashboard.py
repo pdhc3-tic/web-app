@@ -5,7 +5,7 @@ Tudo parte de `demand_visibility_scope` (mesmo recorte do RBAC/RLS de
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from decimal import Decimal
 
 from django.db.models import Count, DecimalField, OuterRef, Subquery, Sum
@@ -189,10 +189,14 @@ def sem_movimentacao(user, base_qs, *, limite: int = LIMITE_SEM_MOVIMENTACAO) ->
     `responsaveis_pela_etapa_atual`.
 
     O corte em dias corridos no SQL é seguro: dias úteis nunca passam dos dias
-    corridos, então nada que atenda ao critério fica de fora."""
+    corridos, então nada que atenda ao critério fica de fora. O corte é no
+    início do dia, como a contagem de dias úteis: cortar na hora atual deixava
+    de fora, até essa hora, a demanda movida num fim de semana."""
     hoje = timezone.localdate()
-    corte = timezone.now() - timedelta(days=business_days.DIAS_UTEIS_LIMITE)
-    qs = base_qs.exclude(status__in=STATUS_TERMINAIS | {"rascunho"}).filter(status_alterado_em__lte=corte)
+    corte = timezone.make_aware(
+        datetime.combine(hoje - timedelta(days=business_days.DIAS_UTEIS_LIMITE - 1), time.min),
+    )
+    qs = base_qs.exclude(status__in=STATUS_TERMINAIS | {"rascunho"}).filter(status_alterado_em__lt=corte)
     sob_responsabilidade = demandas_aguardando_acao(user, qs) | qs.filter(solicitante=user, status="devolvida")
     candidatas = list(
         sob_responsabilidade.select_related("activity__municipio__state").order_by("status_alterado_em", "pk")

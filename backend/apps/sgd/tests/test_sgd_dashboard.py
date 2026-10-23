@@ -266,6 +266,22 @@ def test_sem_movimentacao_considera_5_dias_uteis(auth_client_ugp, activity_rn, s
     assert bloco["itens"][0]["dias_uteis_parada"] >= 5
 
 
+def test_sem_movimentacao_corta_pela_data_e_nao_pela_hora_atual(
+    monkeypatch, auth_client_ugp, activity_rn, solicitante_rn,
+):
+    # Sexta de manhã: 5 dias úteis atrás é o domingo, só 5 dias corridos. A
+    # demanda movida ao meio-dia de domingo já está parada há 5 dias úteis.
+    sexta_de_manha = timezone.make_aware(datetime(2026, 10, 23, 9, 0))
+    monkeypatch.setattr(timezone, "now", lambda: sexta_de_manha)
+    parada = _demanda(activity_rn, solicitante_rn, "pre_autorizada", dias_atras=5, hora=12)
+    _demanda(activity_rn, solicitante_rn, "pre_autorizada", dias_atras=4, hora=0)
+
+    bloco = auth_client_ugp.get(URL).json()["sem_movimentacao"]
+
+    assert _ids(bloco) == [parada.pk]
+    assert bloco["itens"][0]["dias_uteis_parada"] == 5
+
+
 def test_sem_movimentacao_ignora_terminais_e_o_que_nao_e_do_usuario(
     auth_client_ugp, activity_rn, solicitante_rn,
 ):
