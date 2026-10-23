@@ -4,27 +4,33 @@ import { useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import { formatCurrencyBRL } from "@/app/lib/format";
-import type { EntregaCusto } from "@/app/lib/execucaoSgd";
+import {
+  queryDeFiltros,
+  type EntregaCusto,
+  type ExecucaoFiltros,
+} from "@/app/lib/execucaoSgd";
+
+/**
+ * Link do drill-down para a lista de demandas, levando os filtros ativos do
+ * painel — a lista mostra as mesmas demandas que compõem o custo exibido.
+ */
+function hrefDemandas(filtros: ExecucaoFiltros, recorte: ExecucaoFiltros): string {
+  const qs = queryDeFiltros({ ...filtros, ...recorte });
+  return `/sgd/demandas?${qs}`;
+}
 
 export function CustoPorAtividadeTable({
   entregas,
+  filtros,
 }: {
   entregas: EntregaCusto[];
+  filtros: ExecucaoFiltros;
 }) {
-  const [expandidas, setExpandidas] = useState<Record<number, boolean>>(() => {
-    const init: Record<number, boolean> = {};
-    for (const e of entregas) {
-      init[e.acao_id] = true;
-    }
-    return init;
-  });
+  // Entregas começam abertas; guarda só as que o usuário recolheu.
+  const [recolhidas, setRecolhidas] = useState<Record<number, boolean>>({});
 
-  const toggleEntrega = (acaoId: number) => {
-    setExpandidas((prev) => ({
-      ...prev,
-      [acaoId]: !prev[acaoId],
-    }));
-  };
+  const alternar = (acaoId: number) =>
+    setRecolhidas((prev) => ({ ...prev, [acaoId]: !prev[acaoId] }));
 
   if (entregas.length === 0) {
     return (
@@ -37,7 +43,8 @@ export function CustoPorAtividadeTable({
   return (
     <div className="space-y-4" data-testid="relatorio-custo-por-atividade">
       {entregas.map((entrega) => {
-        const aberta = expandidas[entrega.acao_id] ?? true;
+        const aberta = !recolhidas[entrega.acao_id];
+        const idCorpo = `entrega-${entrega.acao_id}-atividades`;
 
         return (
           <div
@@ -45,32 +52,29 @@ export function CustoPorAtividadeTable({
             className="overflow-hidden rounded-lg border border-border bg-surface shadow-xs"
             data-testid={`entrega-${entrega.acao_id}`}
           >
-            {/* Header da Entrega (Ação do Plano de Trabalho) */}
-            <div
-              onClick={() => toggleEntrega(entrega.acao_id)}
-              className="flex cursor-pointer flex-wrap items-center justify-between gap-3 border-b border-border bg-surface-muted/60 px-4 py-3 transition-colors hover:bg-surface-muted"
-            >
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  aria-label={aberta ? "Recolher entrega" : "Expandir entrega"}
-                  className="text-text-muted hover:text-text"
-                >
-                  {aberta ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                </button>
-                <div>
-                  <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">
+            {/* Cabeçalho da entrega (Ação do Plano de Trabalho) */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface-muted/60 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => alternar(entrega.acao_id)}
+                aria-expanded={aberta}
+                aria-controls={idCorpo}
+                className="flex items-center gap-2 rounded text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
+                {aberta ? (
+                  <ChevronDown className="h-4 w-4 shrink-0 text-text-muted" aria-hidden />
+                ) : (
+                  <ChevronRight className="h-4 w-4 shrink-0 text-text-muted" aria-hidden />
+                )}
+                <span>
+                  <span className="block text-xs font-semibold uppercase tracking-wider text-text-muted">
                     Ação {entrega.acao_numero}
                   </span>
-                  <h3 className="text-sm font-semibold text-text">
+                  <span className="block text-sm font-semibold text-text">
                     {entrega.acao_descricao}
-                  </h3>
-                </div>
-              </div>
+                  </span>
+                </span>
+              </button>
 
               <div className="flex flex-wrap items-center gap-4 text-xs font-medium tabular-nums text-text">
                 <span>
@@ -87,16 +91,24 @@ export function CustoPorAtividadeTable({
                 </span>
                 <span>
                   <strong className="font-semibold text-text-muted">Pago:</strong>{" "}
-                  <span className="text-primary font-semibold">
+                  <span className="font-semibold text-primary">
                     {formatCurrencyBRL(entrega.pago)}
                   </span>
                 </span>
+                <Link
+                  href={hrefDemandas(filtros, { acao: String(entrega.acao_id), atividade: undefined })}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium text-primary hover:bg-primary/10 hover:underline"
+                  data-testid={`link-demandas-entrega-${entrega.acao_id}`}
+                >
+                  <span>Ver demandas da entrega</span>
+                  <ExternalLink className="h-3 w-3" aria-hidden />
+                </Link>
               </div>
             </div>
 
-            {/* Lista das atividades vinculadas à entrega */}
+            {/* Atividades vinculadas à entrega */}
             {aberta && (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto" id={idCorpo}>
                 <table className="w-full text-left text-sm">
                   <thead className="border-b border-border bg-surface-muted/20 text-xs font-medium text-text-muted">
                     <tr>
@@ -132,12 +144,12 @@ export function CustoPorAtividadeTable({
                         </td>
                         <td className="px-4 py-3 text-center">
                           <Link
-                            href={`/sgd/demandas?atividade=${atv.atividade_id}`}
+                            href={hrefDemandas(filtros, { atividade: String(atv.atividade_id) })}
                             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10 hover:underline"
                             data-testid={`link-demandas-${atv.atividade_id}`}
                           >
                             <span>Ver demandas</span>
-                            <ExternalLink className="h-3 w-3" />
+                            <ExternalLink className="h-3 w-3" aria-hidden />
                           </Link>
                         </td>
                       </tr>

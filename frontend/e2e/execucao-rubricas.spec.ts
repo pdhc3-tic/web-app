@@ -1,218 +1,154 @@
-import { expect, test } from "@playwright/test";
+import fs from "node:fs";
+import { expect, test, type Page } from "@playwright/test";
+import {
+  criarExecucaoFixture,
+  removerExecucaoFixture,
+  type ExecucaoFixture,
+} from "./helpers/execucaoFixture";
 import { storageStatePath } from "./helpers/users";
 
-const PAINEL_API = "**/api/v1/sgd/painel/rubricas/**";
-const CUSTO_API = "**/api/v1/sgd/relatorios/custo-por-atividade/**";
-const EXPORTAR_API = "**/api/v1/sgd/demandas/exportar/**";
-const TERRITORIOS_API = "**/api/v1/territorios/**";
+/**
+ * Painel de execução por rubrica e custo por atividade (#297), contra o
+ * backend de verdade: a fixture cria verbas e reservas com valores conhecidos
+ * no Território RN e uma demanda autorizada (e2e/helpers/execucaoFixture.ts).
+ */
 
-const FAKE_TERRITORIOS = [
-  { id: 12, nome: "Sertão do São Francisco" },
-  { id: 15, nome: "Agreste Central" },
-];
+let fx: ExecucaoFixture;
 
-test.describe("SGD — Painel de Execução por Rubrica e Custos (Issue #297)", () => {
+test.describe.configure({ mode: "serial" });
+
+test.beforeAll(() => {
+  fx = criarExecucaoFixture();
+});
+
+test.afterAll(() => {
+  if (fx) removerExecucaoFixture(fx);
+});
+
+function linhaDaRubrica(page: Page, slug: string) {
+  return page.getByTestId(`rubrica-linha-${slug}`);
+}
+
+test.describe("UGP — Painel de Execução por Rubrica e Custos (#297)", () => {
   test.use({ storageState: storageStatePath("ugp") });
-
-  test.beforeEach(async ({ page }) => {
-    await page.route(TERRITORIOS_API, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(FAKE_TERRITORIOS),
-      });
-    });
-  });
 
   test("painel por rubrica exibe os valores corretos para uma rubrica com movimentação conhecida", async ({
     page,
   }) => {
-    await page.route(PAINEL_API, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify([
-          {
-            rubrica_id: 1,
-            rubrica_slug: "diarias",
-            rubrica_nome: "Diárias",
-            solicitado: "1400.00",
-            autorizado: "800.00",
-            executado: "500.00",
-            disponivel: "8500.00",
-          },
-        ]),
-      });
-    });
+    await page.goto(`/sgd/execucao?territorio=${fx.territorioId}&atividade=${fx.atividade.id}`);
 
-    await page.goto("/sgd/execucao");
-
-    const tabela = page.getByTestId("tabela-painel-rubricas");
-    await expect(tabela).toBeVisible();
-
-    const linhaDiarias = page.getByTestId("rubrica-linha-diarias");
-    await expect(linhaDiarias).toBeVisible();
-    await expect(linhaDiarias.getByText("Diárias")).toBeVisible();
-    await expect(linhaDiarias.getByText("R$ 1.400,00")).toBeVisible();
-    await expect(linhaDiarias.getByText("R$ 800,00")).toBeVisible();
-    await expect(linhaDiarias.getByText("R$ 500,00")).toBeVisible();
-    await expect(linhaDiarias.getByText("R$ 8.500,00")).toBeVisible();
+    const locacao = linhaDaRubrica(page, "locacao-veiculo");
+    const celulas = locacao.getByRole("cell");
+    // Rubrica · Solicitado · Autorizado · Executado · Disponível · Semáforo
+    await expect(celulas.nth(0)).toHaveText("Locação de Veículo");
+    await expect(celulas.nth(1)).toHaveText("R$ 800,00");
+    await expect(celulas.nth(2)).toHaveText("R$ 800,00");
+    await expect(celulas.nth(3)).toHaveText("R$ 2.000,00");
+    await expect(celulas.nth(4)).toHaveText("R$ 7.497,00");
+    await expect(locacao.getByTestId("semaforo-rubrica")).toHaveAttribute("data-nivel", "verde");
+    await expect(locacao.getByTestId("semaforo-rubrica")).toContainText("7,8%");
   });
 
   test("rubrica com execução acima de 90% exibe o semáforo vermelho; entre 70% e 90%, o amarelo", async ({
     page,
   }) => {
-    await page.route(PAINEL_API, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify([
-          {
-            rubrica_id: 1,
-            rubrica_slug: "passagens",
-            rubrica_nome: "Passagens",
-            solicitado: "1000.00",
-            autorizado: "1000.00",
-            executado: "950.00",
-            disponivel: "50.00", // 95% -> Vermelho
-          },
-          {
-            rubrica_id: 2,
-            rubrica_slug: "diarias",
-            rubrica_nome: "Diárias",
-            solicitado: "1000.00",
-            autorizado: "800.00",
-            executado: "750.00",
-            disponivel: "250.00", // 75% -> Amarelo (Terracota)
-          },
-          {
-            rubrica_id: 3,
-            rubrica_slug: "combustivel",
-            rubrica_nome: "Combustível",
-            solicitado: "500.00",
-            autorizado: "300.00",
-            executado: "200.00",
-            disponivel: "800.00", // 20% -> Verde
-          },
-        ]),
-      });
-    });
+    await page.goto(`/sgd/execucao?territorio=${fx.territorioId}`);
 
-    await page.goto("/sgd/execucao");
+    // Semáforo vindo do backend (comprometido sobre o aprovado): nada foi
+    // pago nas Diárias, e mesmo assim a verba está quase toda reservada.
+    const vermelho = linhaDaRubrica(page, "diarias").getByTestId("semaforo-rubrica");
+    await expect(vermelho).toHaveAttribute("data-nivel", "vermelho");
+    await expect(vermelho).toContainText("Vermelho (95,0%)");
 
-    const linhaPassagens = page.getByTestId("rubrica-linha-passagens");
-    const badgeVermelho = linhaPassagens.getByTestId("semaforo-rubrica");
-    await expect(badgeVermelho).toBeVisible();
-    await expect(badgeVermelho).toHaveAttribute("data-nivel", "vermelho");
-    await expect(badgeVermelho).toContainText("Vermelho");
-    await expect(badgeVermelho).toContainText("95.0%");
-
-    const linhaDiarias = page.getByTestId("rubrica-linha-diarias");
-    const badgeAmarelo = linhaDiarias.getByTestId("semaforo-rubrica");
-    await expect(badgeAmarelo).toBeVisible();
-    await expect(badgeAmarelo).toHaveAttribute("data-nivel", "amarelo");
-    await expect(badgeAmarelo).toContainText("Amarelo");
-    await expect(badgeAmarelo).toContainText("75.0%");
-
-    const linhaCombustivel = page.getByTestId("rubrica-linha-combustivel");
-    const badgeVerde = linhaCombustivel.getByTestId("semaforo-rubrica");
-    await expect(badgeVerde).toBeVisible();
-    await expect(badgeVerde).toHaveAttribute("data-nivel", "verde");
-    await expect(badgeVerde).toContainText("Verde");
-    await expect(badgeVerde).toContainText("20.0%");
+    const amarelo = linhaDaRubrica(page, "passagens-aereas").getByTestId("semaforo-rubrica");
+    await expect(amarelo).toHaveAttribute("data-nivel", "amarelo");
+    await expect(amarelo).toContainText("Amarelo (75,0%)");
+    // A #297 pede a cor de acento do SGD (Terracota PDHC, #B05A2F) na atenção.
+    await expect(amarelo).toHaveCSS("color", "rgb(176, 90, 47)");
   });
 
   test("relatório de custo por atividade permite navegar até a lista de demandas daquela atividade", async ({
     page,
   }) => {
-    await page.route(PAINEL_API, async (route) => {
-      await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
-    });
+    await page.goto(`/sgd/execucao?aba=atividades&territorio=${fx.territorioId}`);
 
-    await page.route(CUSTO_API, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify([
-          {
-            acao_id: 10,
-            acao_numero: "2.1",
-            acao_descricao: "Assistência Técnica em UPFs Agroecológicas",
-            demandas: 3,
-            estimado: "4500.00",
-            autorizado: "4000.00",
-            pago: "3800.00",
-            atividades: [
-              {
-                atividade_id: 42,
-                atividade_titulo: "Oficina de Manejo Sustentável",
-                demandas: 3,
-                estimado: "4500.00",
-                autorizado: "4000.00",
-                pago: "3800.00",
-              },
-            ],
-          },
-        ]),
-      });
-    });
+    const linha = page.getByTestId(`atividade-linha-${fx.atividade.id}`);
+    await expect(linha).toContainText(fx.atividade.titulo);
+    await expect(linha.getByRole("cell").nth(1)).toHaveText("1");
+    await expect(linha.getByRole("cell").nth(3)).toHaveText("R$ 800,00");
 
-    await page.goto("/sgd/execucao");
+    await linha.getByRole("link", { name: "Ver demandas" }).click();
 
-    // Alterna para a aba de Custo por Atividade
-    const tabCusto = page.getByTestId("tab-custo-atividades");
-    await tabCusto.click();
+    await expect(page).toHaveURL(new RegExp(`/sgd/demandas\\?.*atividade=${fx.atividade.id}`));
+    await expect(page).toHaveURL(new RegExp(`territorio=${fx.territorioId}`));
+    const faixa = page.getByTestId("filtro-atividade-ativo");
+    await expect(faixa).toContainText(fx.atividade.titulo);
+    await expect(faixa).toContainText("com mais 1 filtro do painel");
 
-    await expect(page.getByText("Assistência Técnica em UPFs Agroecológicas")).toBeVisible();
-    await expect(page.getByText("Oficina de Manejo Sustentável")).toBeVisible();
+    const tabela = page.getByTestId("demandas-tabela");
+    await expect(tabela.getByText(fx.demanda.titulo)).toBeVisible();
+    await expect(tabela.locator("tbody tr")).toHaveCount(1);
 
-    const linkDemandas = page.getByTestId("link-demandas-42");
-    await expect(linkDemandas).toBeVisible();
-    const href = await linkDemandas.getAttribute("href");
-    expect(href).toBe("/sgd/demandas?atividade=42");
+    // Voltar ao painel preserva a aba e o recorte.
+    await faixa.getByRole("link", { name: "Voltar ao painel" }).click();
+    await expect(page).toHaveURL(/\/sgd\/execucao\?/);
+    await expect(page).toHaveURL(/aba=atividades/);
+    await expect(page.getByTestId(`atividade-linha-${fx.atividade.id}`)).toBeVisible();
+  });
+
+  test("a entrega também leva à lista das demandas que compõem o seu custo", async ({ page }) => {
+    await page.goto(`/sgd/execucao?aba=atividades&atividade=${fx.atividade.id}`);
+
+    await page.getByTestId(`link-demandas-entrega-${fx.acaoId}`).click();
+
+    await expect(page).toHaveURL(new RegExp(`acao=${fx.acaoId}`));
+    await expect(page.getByTestId("filtro-atividade-ativo")).toContainText("da entrega");
+    await expect(page.getByTestId("demandas-tabela").getByText(fx.demanda.titulo)).toBeVisible();
   });
 
   test("exportar CSV com filtro de território e período ativo gera arquivo com o conteúdo esperado", async ({
     page,
   }) => {
-    await page.route(PAINEL_API, async (route) => {
-      await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
-    });
+    await page.goto("/sgd/execucao");
 
-    let urlChamadaExport: string | null = null;
-    await page.route(EXPORTAR_API, async (route) => {
-      urlChamadaExport = route.request().url();
-      await route.fulfill({
-        status: 200,
-        headers: {
-          "Content-Type": "text/csv; charset=utf-8-sig",
-          "Content-Disposition": 'attachment; filename="demandas_exportadas.csv"',
-        },
-        body: "ID,Título,Status,Território\n101,Demanda Campo,Autorizada,Sertão do São Francisco\n",
-      });
+    await page.getByRole("combobox", { name: "Território" }).click();
+    await page.getByRole("option", { name: fx.territorioNome, exact: true }).click();
+    const hoje = new Date().toLocaleDateString("en-CA");
+    await page.getByLabel("Data inicial").fill(hoje);
+
+    // Os filtros ficam na URL — sobrevivem ao recarregar e ao "voltar".
+    await expect(page).toHaveURL(new RegExp(`territorio=${fx.territorioId}`));
+    await expect(page).toHaveURL(new RegExp(`periodo_inicio=${hoje}`));
+
+    const pedido = page.waitForRequest(/\/api\/v1\/sgd\/demandas\/exportar\//);
+    const download = page.waitForEvent("download");
+    await page.getByTestId("exportar-csv-btn").click();
+
+    const url = new URL((await pedido).url());
+    expect(url.searchParams.get("formato")).toBe("csv");
+    expect(url.searchParams.get("territorio")).toBe(String(fx.territorioId));
+    expect(url.searchParams.get("periodo_inicio")).toBe(hoje);
+
+    const arquivo = await download;
+    expect(arquivo.suggestedFilename()).toMatch(/^demandas_.*\.csv$/);
+    const conteudo = fs.readFileSync((await arquivo.path())!, "utf8");
+    expect(conteudo).toContain(fx.demanda.titulo);
+  });
+});
+
+test.describe("ADT — sem acesso ao painel de execução (#297)", () => {
+  test.use({ storageState: storageStatePath("adt") });
+
+  test("vê o aviso de acesso restrito, sem chamar o painel", async ({ page }) => {
+    let chamouPainel = false;
+    page.on("request", (r) => {
+      if (r.url().includes("/api/v1/sgd/painel/rubricas/")) chamouPainel = true;
     });
 
     await page.goto("/sgd/execucao");
 
-    // Preenche filtros: Território e Período Inicial
-    const filtroTerritorio = page.getByRole("combobox", { name: "Território" });
-    await filtroTerritorio.click();
-    await page.getByRole("option", { name: "Sertão do São Francisco" }).click();
-
-    await page.getByLabel("Data inicial").fill("2026-03-01");
-
-    // Dispara exportação CSV e aguarda download
-    const downloadPromise = page.waitForEvent("download");
-    await page.getByTestId("exportar-csv-btn").click();
-
-    const download = await downloadPromise;
-    expect(download.suggestedFilename()).toBe("demandas_exportadas.csv");
-
-    // Valida que os filtros foram aplicados na requisição
-    expect(urlChamadaExport).not.toBeNull();
-    const parsedUrl = new URL(urlChamadaExport!);
-    expect(parsedUrl.searchParams.get("formato")).toBe("csv");
-    expect(parsedUrl.searchParams.get("territorio")).toBe("12");
-    expect(parsedUrl.searchParams.get("periodo_inicio")).toBe("2026-03-01");
+    await expect(page.getByRole("alert").filter({ hasText: "Conteúdo restrito" })).toBeVisible();
+    await expect(page.getByTestId("tabela-painel-rubricas")).toHaveCount(0);
+    expect(chamouPainel).toBe(false);
   });
 });

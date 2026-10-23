@@ -3,66 +3,66 @@
 import { useMemo } from "react";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import {
-  calcularSemaforoRubrica,
+  formatPercentual,
+  type FaixaSemaforo,
   type LinhaPainelRubrica,
-  type SemaforoRubricaNivel,
 } from "@/app/lib/execucaoSgd";
 
-function SemaforoRubricaBadge({
-  nivel,
-  percentual,
-}: {
-  nivel: SemaforoRubricaNivel;
-  percentual: number | null;
-}) {
-  const pctTexto = percentual !== null ? `${percentual.toFixed(1)}%` : "—";
+/**
+ * Cores do semáforo 70/90. A #297 pede a cor de acento do SGD (Terracota PDHC)
+ * para o estado de atenção; vermelho e verde seguem a paleta semântica.
+ */
+const ESTILO_FAIXA: Record<FaixaSemaforo, { rotulo: string; badge: string; ponto: string }> = {
+  vermelho: {
+    rotulo: "Vermelho",
+    badge: "border-error-text bg-error-bg text-error-text",
+    ponto: "bg-error-text",
+  },
+  amarelo: {
+    rotulo: "Amarelo",
+    badge: "border-accent-terracota bg-accent-terracota/10 text-accent-terracota",
+    ponto: "bg-accent-terracota",
+  },
+  verde: {
+    rotulo: "Verde",
+    badge: "border-success-text bg-success-bg text-success-text",
+    ponto: "bg-success-text",
+  },
+};
 
-  if (nivel === "vermelho") {
+/**
+ * A faixa e o percentual são os do backend (comprometido sobre o aprovado, com
+ * os limiares configurados). Rubrica sem verba alocada no recorte não tem
+ * semáforo: o backend devolve "verde" com 0%, o que esconderia a falta de teto.
+ */
+function SemaforoRubricaBadge({ linha }: { linha: LinhaPainelRubrica }) {
+  const semVerba =
+    Number(linha.executado || 0) + Number(linha.disponivel || 0) === 0 &&
+    Number(linha.percentual_execucao || 0) === 0;
+
+  if (semVerba) {
     return (
       <span
         data-testid="semaforo-rubrica"
-        data-nivel="vermelho"
-        className="inline-flex items-center gap-1.5 rounded-full border border-error-text bg-error-bg px-2.5 py-0.5 text-2xs font-semibold text-error-text"
+        data-nivel="sem-teto"
+        className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-neutral-text bg-neutral-bg px-2.5 py-0.5 text-2xs font-medium text-neutral-text"
       >
-        <span className="h-2 w-2 rounded-full bg-error-text" aria-hidden="true" />
-        <span>Vermelho ({pctTexto})</span>
+        Sem teto
       </span>
     );
   }
 
-  if (nivel === "amarelo") {
-    return (
-      <span
-        data-testid="semaforo-rubrica"
-        data-nivel="amarelo"
-        className="inline-flex items-center gap-1.5 rounded-full border border-accent-terracota bg-accent-terracota/10 px-2.5 py-0.5 text-2xs font-semibold text-accent-terracota"
-      >
-        <span className="h-2 w-2 rounded-full bg-accent-terracota" aria-hidden="true" />
-        <span>Amarelo ({pctTexto})</span>
-      </span>
-    );
-  }
-
-  if (nivel === "verde") {
-    return (
-      <span
-        data-testid="semaforo-rubrica"
-        data-nivel="verde"
-        className="inline-flex items-center gap-1.5 rounded-full border border-success-text bg-success-bg px-2.5 py-0.5 text-2xs font-semibold text-success-text"
-      >
-        <span className="h-2 w-2 rounded-full bg-success-text" aria-hidden="true" />
-        <span>Verde ({pctTexto})</span>
-      </span>
-    );
-  }
-
+  const estilo = ESTILO_FAIXA[linha.faixa];
   return (
     <span
       data-testid="semaforo-rubrica"
-      data-nivel="sem-dado"
-      className="inline-flex items-center gap-1.5 rounded-full border border-neutral-text border-dashed bg-neutral-bg px-2.5 py-0.5 text-2xs font-medium text-neutral-text"
+      data-nivel={linha.faixa}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-2xs font-semibold ${estilo.badge}`}
     >
-      <span>Sem teto</span>
+      <span className={`h-2 w-2 rounded-full ${estilo.ponto}`} aria-hidden="true" />
+      <span>
+        {estilo.rotulo} ({formatPercentual(linha.percentual_execucao)})
+      </span>
     </span>
   );
 }
@@ -107,38 +107,32 @@ export function PainelRubricasTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {linhas.map((linha) => {
-              const semaforo = calcularSemaforoRubrica(linha);
-              return (
-                <tr
-                  key={linha.rubrica_id}
-                  className="transition-colors hover:bg-surface-warm/40"
-                  data-testid={`rubrica-linha-${linha.rubrica_slug}`}
-                >
-                  <td className="px-4 py-3 font-medium text-text">
-                    {linha.rubrica_nome}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-text">
-                    {formatCurrencyBRL(linha.solicitado)}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-text">
-                    {formatCurrencyBRL(linha.autorizado)}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-text">
-                    {formatCurrencyBRL(linha.executado)}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums font-medium text-text">
-                    {formatCurrencyBRL(linha.disponivel)}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <SemaforoRubricaBadge
-                      nivel={semaforo.nivel}
-                      percentual={semaforo.percentual}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
+            {linhas.map((linha) => (
+              <tr
+                key={linha.rubrica_id}
+                className="transition-colors hover:bg-surface-warm/40"
+                data-testid={`rubrica-linha-${linha.rubrica_slug}`}
+              >
+                <td className="px-4 py-3 font-medium text-text">
+                  {linha.rubrica_nome}
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums text-text">
+                  {formatCurrencyBRL(linha.solicitado)}
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums text-text">
+                  {formatCurrencyBRL(linha.autorizado)}
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums text-text">
+                  {formatCurrencyBRL(linha.executado)}
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums font-medium text-text">
+                  {formatCurrencyBRL(linha.disponivel)}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <SemaforoRubricaBadge linha={linha} />
+                </td>
+              </tr>
+            ))}
           </tbody>
           <tfoot className="border-t-2 border-border bg-surface-muted/60 font-semibold text-text">
             <tr>

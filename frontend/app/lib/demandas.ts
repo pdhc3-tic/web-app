@@ -274,18 +274,19 @@ export async function fetchContagemFila(signal?: AbortSignal): Promise<ContagemF
  * incompleta, embora a contagem venha certa
  * (docs/pendencias-backend-sprint-10.md, item 13).
  *
- * `atividade` casa com o `DemandFilter.atividade` do BE-5 (filtra pelo
- * `activity_id`) — usado pelo drill-down do painel de custo por atividade
- * (#297, "Ver demandas"), para a lista mostrar só as demandas daquela
- * atividade em vez da fila/visão geral.
+ * `filtros` são os do `DemandFilter` do BE-5 (atividade, ação, território,
+ * período…) — o drill-down do painel de execução (#297) leva o recorte do
+ * painel para a lista mostrar as demandas que compõem o custo exibido.
  */
 export async function listDemandas(
-  params: { status?: StatusDemanda[]; atividade?: string | number } = {},
+  params: { status?: StatusDemanda[]; filtros?: Record<string, string | undefined> } = {},
   signal?: AbortSignal,
 ): Promise<ListaDemandas> {
   const qs = new URLSearchParams();
   for (const st of params.status ?? []) qs.append("status", st);
-  if (params.atividade) qs.set("atividade", String(params.atividade));
+  for (const [chave, valor] of Object.entries(params.filtros ?? {})) {
+    if (valor) qs.set(chave, valor);
+  }
   return lerListaDemandas(qs, signal);
 }
 

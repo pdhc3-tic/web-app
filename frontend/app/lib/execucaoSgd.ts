@@ -1,5 +1,11 @@
+import type { SelectOption } from "@/app/components/ui/Select/Select";
 import { apiClient } from "@/app/lib/api";
 
+/**
+ * `PainelRubricaSerializer`. `percentual_execucao` e `faixa` são os do controle
+ * financeiro do SGP (comprometido sobre o aprovado, com os limiares do
+ * `SystemConfig`) — o front só exibe, não recalcula.
+ */
 export interface LinhaPainelRubrica {
   rubrica_id: number;
   rubrica_slug: string;
@@ -8,7 +14,11 @@ export interface LinhaPainelRubrica {
   autorizado: string;
   executado: string;
   disponivel: string;
+  percentual_execucao: string;
+  faixa: FaixaSemaforo;
 }
+
+export type FaixaSemaforo = "verde" | "amarelo" | "vermelho";
 
 export interface AtividadeCusto {
   atividade_id: number;
@@ -30,87 +40,68 @@ export interface EntregaCusto {
   atividades: AtividadeCusto[];
 }
 
-export interface ExecucaoFiltros {
-  status?: string;
-  tipo?: string;
-  rubrica?: string;
-  solicitante?: string;
-  atividade?: string;
-  acao?: string;
-  submeta?: string;
-  meta?: string;
-  territorio?: string;
-  estado?: string;
-  periodo_inicio?: string;
-  periodo_fim?: string;
-  responsavel_etapa_atual?: string;
-}
+/** Filtros do `DemandFilter` (BE-5) que a tela de execução oferece. */
+export const CHAVES_FILTRO = [
+  "status",
+  "tipo",
+  "rubrica",
+  "solicitante",
+  "atividade",
+  "acao",
+  "submeta",
+  "meta",
+  "territorio",
+  "periodo_inicio",
+  "periodo_fim",
+  "responsavel_etapa_atual",
+] as const;
 
-export type SemaforoRubricaNivel = "verde" | "amarelo" | "vermelho" | "sem-dado";
+export type ChaveFiltro = (typeof CHAVES_FILTRO)[number];
+export type ExecucaoFiltros = Partial<Record<ChaveFiltro, string>>;
 
-/**
- * Calcula o semáforo 70/90 para a execução da rubrica (RF28 / Issue #297).
- * - Acima de 90%: "vermelho"
- * - Entre 70% e 90%: "amarelo" (destaque terracota do SGD #B05A2F)
- * - Abaixo de 70%: "verde"
- * - Sem orçamento disponível/executado: "sem-dado"
- */
-export function calcularSemaforoRubrica(linha: LinhaPainelRubrica): {
-  nivel: SemaforoRubricaNivel;
-  percentual: number | null;
-} {
-  const executado = Number(linha.executado || 0);
-  const disponivel = Number(linha.disponivel || 0);
-  const total = executado + disponivel;
-
-  if (total <= 0) {
-    return { nivel: "sem-dado", percentual: null };
+/** Lê os filtros da URL — a tela guarda o recorte lá para sobreviver ao "voltar". */
+export function filtrosDaUrl(params: URLSearchParams): ExecucaoFiltros {
+  const filtros: ExecucaoFiltros = {};
+  for (const chave of CHAVES_FILTRO) {
+    const valor = params.get(chave);
+    if (valor) filtros[chave] = valor;
   }
-
-  const percentual = (executado / total) * 100;
-
-  if (percentual >= 90) return { nivel: "vermelho", percentual };
-  if (percentual >= 70) return { nivel: "amarelo", percentual };
-  return { nivel: "verde", percentual };
+  return filtros;
 }
 
-function queryDeFiltros(filtros?: ExecucaoFiltros): string {
+/** Query string só com os filtros preenchidos. */
+export function queryDeFiltros(filtros: ExecucaoFiltros): URLSearchParams {
   const qs = new URLSearchParams();
-  if (!filtros) return "";
-  for (const [k, v] of Object.entries(filtros)) {
-    if (v) qs.set(k, v);
+  for (const chave of CHAVES_FILTRO) {
+    const valor = filtros[chave];
+    if (valor) qs.set(chave, valor);
   }
-  return qs.toString();
+  return qs;
 }
 
-/**
- * Consulta o painel de execução por rubrica (GET /api/v1/sgd/painel/rubricas/).
- *
- * O backend (`PainelRubricasView`) aplica o `DemandFilter` completo antes de
- * agregar — logo, todos os filtros da tela afunilam o painel por rubrica, não
- * apenas `territorio`, `meta` e `estado` (que também vão para o lado do SGP
- * em `painel_orcamento`).
- */
+function comQuery(path: string, filtros: ExecucaoFiltros): string {
+  const qs = queryDeFiltros(filtros).toString();
+  return qs ? `${path}?${qs}` : path;
+}
+
+/** GET /api/v1/sgd/painel/rubricas/ — o `DemandFilter` inteiro recorta o painel. */
 export async function fetchPainelRubricas(
-  filtros?: ExecucaoFiltros,
+  filtros: ExecucaoFiltros,
   signal?: AbortSignal,
 ): Promise<LinhaPainelRubrica[]> {
-  const queryStr = queryDeFiltros(filtros);
-  const url = `/api/v1/sgd/painel/rubricas/${queryStr ? `?${queryStr}` : ""}`;
-  const res = await apiClient(url, { signal });
+  const res = await apiClient(comQuery("/api/v1/sgd/painel/rubricas/", filtros), { signal });
   return res.json();
 }
 
-/**
- * Consulta o relatório de custo por atividade e entrega (GET /api/v1/sgd/relatorios/custo-por-atividade/).
- */
+/** GET /api/v1/sgd/relatorios/custo-por-atividade/ — agrupado pela entrega (Ação). */
 export async function fetchCustoPorAtividade(
-  filtros?: ExecucaoFiltros,
+  filtros: ExecucaoFiltros,
   signal?: AbortSignal,
 ): Promise<EntregaCusto[]> {
-  const queryStr = queryDeFiltros(filtros);
-  const url = `/api/v1/sgd/relatorios/custo-por-atividade/${queryStr ? `?${queryStr}` : ""}`;
-  const res = await apiClient(url, { signal });
+  const res = await apiClient(
+    comQuery("/api/v1/sgd/relatorios/custo-por-atividade/", filtros),
+    { signal },
+  );
   return res.json();
 }
 
@@ -132,24 +123,73 @@ function extrairNomeArquivo(header: string | null, fallback: string): string {
 }
 
 /**
- * Exporta as demandas filtradas em CSV ou XLSX (GET /api/v1/sgd/demandas/exportar/).
+ * GET /api/v1/sgd/demandas/exportar/ — as demandas com os filtros ativos.
+ *
+ * O nome vem do `Content-Disposition`; enquanto o backend não o expõe no CORS
+ * (docs/pendencias-backend-sprint-10.md, item 25), o navegador o esconde e
+ * vale o nome padrão.
  */
 export async function baixarExportacaoDemandas(
-  filtros: ExecucaoFiltros & { formato: "csv" | "xlsx" },
+  filtros: ExecucaoFiltros,
+  formato: "csv" | "xlsx",
 ): Promise<string> {
-  const { formato, ...resto } = filtros;
-  const qs = new URLSearchParams({ formato });
-
-  for (const [k, v] of Object.entries(resto)) {
-    if (v) qs.set(k, v);
-  }
-
+  const qs = queryDeFiltros(filtros);
+  qs.set("formato", formato);
   const res = await apiClient(`/api/v1/sgd/demandas/exportar/?${qs}`);
   const blob = await res.blob();
-  const disposition = res.headers.get("Content-Disposition");
   const fallbackNome = `demandas_${new Date().toISOString().slice(0, 10)}.${formato}`;
-  const nomeFinal = extrairNomeArquivo(disposition, fallbackNome);
+  const nomeFinal = extrairNomeArquivo(res.headers.get("Content-Disposition"), fallbackNome);
 
   dispararDownload(blob, nomeFinal);
   return nomeFinal;
+}
+
+/** Percentual no formato brasileiro ("95,0%"). */
+export function formatPercentual(valor: string | number): string {
+  const n = Number(valor);
+  if (!Number.isFinite(n)) return "—";
+  return `${n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+}
+
+// ─── Opções dos filtros ─────────────────────────────────────────────────────
+
+type Paginated<T> = { results: T[] };
+
+/** GET /api/v1/sgp/submetas/ — leitura aberta a qualquer perfil autenticado. */
+export async function fetchSubmetaOptions(signal?: AbortSignal): Promise<SelectOption[]> {
+  const res = await apiClient("/api/v1/sgp/submetas/?page_size=200", { signal });
+  const data: Paginated<{ id: number; numero: string; titulo: string }> = await res.json();
+  return data.results
+    .map((s) => ({ value: String(s.id), label: `${s.numero} — ${s.titulo}` }))
+    .sort((a, b) => a.label.localeCompare(b.label, "pt-BR", { numeric: true }));
+}
+
+export type PapelUsuario = "solicitante" | "responsavel";
+
+/**
+ * GET /api/v1/sgd/opcoes/usuarios/?papel= — solicitantes ou responsáveis de
+ * etapa no escopo do perfil, `[{id, nome}]`. Contrato pedido ao backend na
+ * pendência 26 — a tela já consome a rota e passa a listar quando ela existir.
+ */
+export async function fetchOpcoesUsuarios(
+  papel: PapelUsuario,
+  signal?: AbortSignal,
+): Promise<SelectOption[]> {
+  const res = await apiClient(`/api/v1/sgd/opcoes/usuarios/?papel=${papel}`, { signal });
+  const data: { id: number; nome: string }[] = await res.json();
+  return data.map((u) => ({ value: String(u.id), label: u.nome }));
+}
+
+export type AtividadeOpcao = { id: number; titulo: string };
+
+/** GET /api/v1/sgp/atividades/?q= — busca da atividade para o filtro. */
+export async function buscarAtividadesParaFiltro(
+  texto: string,
+  signal?: AbortSignal,
+): Promise<AtividadeOpcao[]> {
+  const qs = new URLSearchParams({ page_size: "20", ordering: "-data_inicio" });
+  if (texto.trim()) qs.set("q", texto.trim());
+  const res = await apiClient(`/api/v1/sgp/atividades/?${qs}`, { signal });
+  const data: Paginated<AtividadeOpcao> = await res.json();
+  return data.results;
 }

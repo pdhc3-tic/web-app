@@ -4,6 +4,7 @@ import { useState } from "react";
 import { FileSpreadsheet, FileText } from "lucide-react";
 import Spinner from "@/app/components/icons/Spinner";
 import { Button } from "@/app/components/ui/Button/Button";
+import { ApiError } from "@/app/lib/api";
 import {
   baixarExportacaoDemandas,
   type ExecucaoFiltros,
@@ -21,9 +22,13 @@ export function ExportarButton({
     try {
       setExportando(formato);
       setErro(null);
-      await baixarExportacaoDemandas({ ...filtros, formato });
-    } catch {
-      setErro("Falha ao exportar arquivo. Tente novamente.");
+      await baixarExportacaoDemandas(filtros, formato);
+    } catch (e) {
+      setErro(
+        e instanceof ApiError && e.message
+          ? e.message
+          : "Falha ao exportar arquivo. Tente novamente.",
+      );
     } finally {
       setExportando(null);
     }
