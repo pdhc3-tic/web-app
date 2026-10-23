@@ -86,22 +86,20 @@ def orientacao_territorial(*, allocation, saldo: Decimal | None) -> str:
 
 def mensagem_territorial(*, allocation, disponivel: Decimal, solicitado: Decimal,
                          consumo_previo: Decimal = ZERO, ajuste: bool = False) -> str:
+    valores = (
+        f"{formatar_brl(disponivel)} disponível, {formatar_brl(solicitado)} "
+        f"{'a mais solicitado' if ajuste else 'solicitado'}."
+    )
     if allocation is None:
-        motivo = "Nenhuma alocação orçamentária territorial encontrada."
+        motivo = f"Nenhuma alocação orçamentária territorial encontrada: {valores}"
     elif disponivel <= ZERO and consumo_previo <= ZERO:
         # Zerado só pelo consumo da própria demanda não é rubrica esgotada:
-        # cai no "insuficiente", que mostra disponível e solicitado.
-        motivo = budget_service.BLOQUEIO_SALDO_ZERO
+        # cai no "insuficiente".
+        motivo = f"Saldo territorial zerado nesta rubrica: {valores}"
     elif ajuste:
-        motivo = (
-            f"Saldo territorial insuficiente para o ajuste: {formatar_brl(disponivel)} disponível, "
-            f"{formatar_brl(solicitado)} a mais solicitado."
-        )
+        motivo = f"Saldo territorial insuficiente para o ajuste: {valores}"
     else:
-        motivo = (
-            f"Saldo territorial insuficiente: {formatar_brl(disponivel)} disponível, "
-            f"{formatar_brl(solicitado)} solicitado."
-        )
+        motivo = f"Saldo territorial insuficiente: {valores}"
     # A orientação olha o saldo real do pool: se ele só zerou por causa desta
     # demanda, o território não está esgotado.
     return com_orientacao(
@@ -229,6 +227,8 @@ def ajustar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuari
 
 
 def liberar_pool(*, solicitante, rubrica, demand_request, usuario, motivo: str) -> None:
+    """Sem `valor`: o motor devolve o que a própria reserva registrou (reserva
+    mais ajustes), que é o que tem de voltar ao pool."""
     try:
         budget_service.liberar(demanda_id=str(demand_request.pk), usuario=usuario, motivo=motivo)
     except budget_service.DemandaInvalidaError:

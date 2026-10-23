@@ -574,6 +574,9 @@ def test_remanejamento_de_pool_estadual_cobre_o_que_falta(
     assert (transferencia.saldo_destino_antes, transferencia.saldo_destino_depois) == (Decimal("200"), Decimal("1000"))
     assert transferencia.aprovado_por == usuario_ugp
     assert transferencia.increase_request == pedido_com_parecer
+    assert Notification.objects.filter(
+        evento="remanejamento_efetivado", titulo="Remanejamento efetivado: R$ 800,00",
+    ).exists()
     allocation_territorial_rn.refresh_from_db()
     assert allocation_territorial_rn.valor_alocado == Decimal("1000")
     demand_service.submeter_demanda(demanda, usuario=solicitante_rn)

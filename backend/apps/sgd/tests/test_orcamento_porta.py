@@ -88,7 +88,9 @@ def test_reservar_pool_sem_alocacao_vira_saldo_insuficiente_territorial(
 
     assert excinfo.value.trava == "territorial"
     assert excinfo.value.disponivel == Decimal("0")
-    assert excinfo.value.mensagem.startswith("Nenhuma alocação orçamentária territorial encontrada.")
+    assert excinfo.value.mensagem.startswith(
+        "Nenhuma alocação orçamentária territorial encontrada: R$ 0,00 disponível, R$ 100,00 solicitado."
+    )
 
 
 def test_reservar_pool_reserva_na_alocacao_da_meta_da_atividade(
