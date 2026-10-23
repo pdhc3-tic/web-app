@@ -1,50 +1,6 @@
 import { apiClient } from "@/app/lib/api";
 
-// ─── Constantes espelhadas do backend ────────────────────────────────────────
-
-/** Espelha apps/sgp/constants.py::PARENTESCO_CHOICES. Chave → rótulo. */
-export const PARENTESCO_OPTIONS: { value: string; label: string }[] = [
-  { value: "titular", label: "Titular" },
-  { value: "conjuge", label: "Cônjuge" },
-  { value: "filho", label: "Filho(a)" },
-  { value: "enteado", label: "Enteado(a)" },
-  { value: "pai", label: "Pai" },
-  { value: "mae", label: "Mãe" },
-  { value: "irmao", label: "Irmão(ã)" },
-  { value: "avo", label: "Avô(ó)" },
-  { value: "neto", label: "Neto(a)" },
-  { value: "outro", label: "Outro" },
-];
-
-/**
- * Espelha apps/sgp/constants.py::SAUDE_CHOICES. Valor cru + rótulo humano.
- * `nenhuma` é mutuamente exclusiva com as demais (validate_saude no backend).
- */
-export const SAUDE_OPTIONS: { value: string; label: string }[] = [
-  { value: "nenhuma", label: "Nenhuma" },
-  { value: "diabetes", label: "Diabetes" },
-  { value: "hipertensao", label: "Hipertensão" },
-  { value: "deficiencia_visual", label: "Deficiência visual" },
-  { value: "deficiencia_auditiva", label: "Deficiência auditiva" },
-  { value: "deficiencia_motora", label: "Deficiência motora" },
-  { value: "deficiencia_intelectual", label: "Deficiência intelectual" },
-  { value: "deficiencia_multipla", label: "Deficiência múltipla" },
-  { value: "doenca_cardiaca", label: "Doença cardíaca" },
-  { value: "doenca_respiratoria", label: "Doença respiratória" },
-  { value: "doenca_renal", label: "Doença renal" },
-  { value: "saude_mental", label: "Saúde mental" },
-  { value: "gestante", label: "Gestante" },
-  { value: "lactante", label: "Lactante" },
-  { value: "desnutricao", label: "Desnutrição" },
-  { value: "alergia_alimentar", label: "Alergia alimentar" },
-  { value: "doenca_cronica", label: "Doença crônica" },
-  { value: "outros", label: "Outros" },
-];
-
-/** Retorna o rótulo humano de um valor de saúde (ou o próprio valor se desconhecido). */
-export function saudeLabel(value: string): string {
-  return SAUDE_OPTIONS.find((s) => s.value === value)?.label ?? value;
-}
+// Parentesco e saúde vêm de `useSgpChoices()` (#272): `grau_parentesco`, `saude`.
 
 /**
  * Escolaridades que indicam vínculo escolar ativo, sobre

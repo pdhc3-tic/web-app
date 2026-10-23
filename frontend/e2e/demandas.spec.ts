@@ -10,10 +10,9 @@ import { storageStatePath } from "./helpers/users";
 /**
  * #294 — Aba "Demandas" na ficha da Atividade + criação de demanda (SGD).
  *
- * Contra o backend real. Duas asserções dependem de filtros que o backend
- * ainda não tem (docs/pendencias-backend-sprint-10.md, itens 6 e 9): os testes
- * provam que o front MANDA o filtro certo, e o comportamento do servidor fica
- * num `test.fixme` que passa a valer quando o filtro existir.
+ * Contra o backend real. Os filtros por atividade (BE-5, PR #332) e de busca
+ * de atividades (PR #328), antes pendências 6 e 9, já existem: os testes
+ * conferem o parâmetro enviado e o recorte devolvido pelo servidor.
  */
 
 let fx: DemandaFixture;
@@ -133,6 +132,19 @@ test.describe("SGD — demandas pela ficha da atividade (ADT)", () => {
   test("sem esses campos na resposta, o contexto diz “Não disponível” em vez de inventar", async ({
     page,
   }) => {
+    // O backend já manda esses campos (PR #328); aqui eles são tirados da
+    // resposta para provar que a tela não inventa um valor quando faltam.
+    await page.route(
+      (url) => url.pathname === `/api/v1/sgp/atividades/${fx.agendada.id}/`,
+      async (route) => {
+        if (route.request().method() !== "GET") return route.fallback();
+        const resposta = await route.fetch();
+        const atividade = await resposta.json();
+        delete atividade.territorio;
+        for (const campo of ["meta", "submeta", "indicador"]) delete atividade.acao?.[campo];
+        await route.fulfill({ response: resposta, json: atividade });
+      },
+    );
     await page.goto(`/sgd/demandas/nova?atividade=${fx.agendada.id}`);
     const contexto = page.getByTestId("demanda-contexto");
     await expect(contexto).toContainText(fx.municipio);
@@ -206,17 +218,15 @@ test.describe("SGD — demandas pela ficha da atividade (ADT)", () => {
     );
     await page.goto(`/sgp/atividades/${fx.comDemandas.id}?tab=demandas`);
     const params = new URL((await listagem).url()).searchParams;
-    expect(params.get("activity")).toBe(String(fx.comDemandas.id));
+    expect(params.get("atividade")).toBe(String(fx.comDemandas.id));
 
     for (const d of fx.comDemandas.demandas) {
       await expect(linhaDaDemanda(page, d.titulo)).toContainText(d.status_display);
     }
   });
 
-  // Depende do filtro `?activity=` no DemandViewSet.list — pendência de backend
-  // (docs/pendencias-backend-sprint-10.md, item 6). Hoje o backend ignora o
-  // parâmetro e a aba mostra todas as demandas visíveis ao usuário.
-  test.fixme("a aba não lista a demanda de outra atividade", async ({ page }) => {
+  // Item 6 das pendências, resolvido pelo filtro `atividade` do BE-5 (PR #332).
+  test("a aba não lista a demanda de outra atividade", async ({ page }) => {
     await page.goto(`/sgp/atividades/${fx.comDemandas.id}?tab=demandas`);
     await expect(linhaDaDemanda(page, fx.comDemandas.demandas[0].titulo)).toBeVisible();
     await expect(page.getByText(fx.outra.demanda)).toHaveCount(0);

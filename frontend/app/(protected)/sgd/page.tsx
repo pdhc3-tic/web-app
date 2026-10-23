@@ -6,7 +6,7 @@ import type { LucideIcon } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
 import { SubmoduleCard } from "@/app/components/ui/SubmoduleCard/SubmoduleCard";
-import { canCreateDemanda } from "@/app/lib/auth/roles";
+import { canCreateDemanda, canOperarArlo } from "@/app/lib/auth/roles";
 import { useContagemFila } from "@/app/lib/hooks/useFilaDemandas";
 
 type Submodule = {
@@ -24,7 +24,7 @@ type Submodule = {
  * submódulo, os entregues navegáveis e os planejados como "Em breve".
  *
  * Os "Em breve" são as issues abertas do SGD no frontend: #295 (formulário de
- * solicitação de recurso), #297 (execução por rubrica) e #298 (Arlo).
+ * solicitação de recurso) e #297 (execução por rubrica).
  */
 const SUBMODULES: Submodule[] = [
   {
@@ -62,6 +62,8 @@ const SUBMODULES: Submodule[] = [
     title: "Integração Arlo",
     description: "Exportação das demandas autorizadas e importação dos pagamentos.",
     Icon: ArrowLeftRight,
+    href: "/sgd/arlo/",
+    visivel: canOperarArlo,
   },
 ];
 

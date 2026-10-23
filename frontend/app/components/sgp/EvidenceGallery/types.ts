@@ -40,23 +40,14 @@ export const MAX_DOCUMENTS_PER_ACTIVITY = 5;
 
 export type DocumentContentType = (typeof DOCUMENT_ACCEPTED_TYPES)[number];
 
-export const TIPO_DOC_ATIVIDADE_OPTIONS = [
-  { value: "lista_presenca", label: "Lista de presença" },
-  { value: "ata", label: "Ata" },
-  { value: "relatorio_parcial", label: "Relatório parcial" },
-  { value: "declaracao", label: "Declaração" },
-  { value: "contrato", label: "Contrato" },
-  { value: "outro", label: "Outro" },
-] as const;
-
+// A lista e os rótulos dos tipos vêm de `useSgpChoices().atividade_documento_tipo` (#272).
 export type TipoDocumentoAtividade =
-  (typeof TIPO_DOC_ATIVIDADE_OPTIONS)[number]["value"];
-
-export function tipoDocumentoAtividadeLabel(tipo: string): string {
-  return (
-    TIPO_DOC_ATIVIDADE_OPTIONS.find((o) => o.value === tipo)?.label ?? tipo
-  );
-}
+  | "lista_presenca"
+  | "ata"
+  | "relatorio_parcial"
+  | "declaracao"
+  | "contrato"
+  | "outro";
 
 export type EvidenceDocument = {
   id: number;
