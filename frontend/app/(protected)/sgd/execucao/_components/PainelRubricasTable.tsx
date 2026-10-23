@@ -35,9 +35,9 @@ function SemaforoRubricaBadge({
       <span
         data-testid="semaforo-rubrica"
         data-nivel="amarelo"
-        className="inline-flex items-center gap-1.5 rounded-full border border-warning-text bg-warning-bg px-2.5 py-0.5 text-2xs font-semibold text-warning-text"
+        className="inline-flex items-center gap-1.5 rounded-full border border-accent-terracota bg-accent-terracota/10 px-2.5 py-0.5 text-2xs font-semibold text-accent-terracota"
       >
-        <span className="h-2 w-2 rounded-full bg-warning-text" aria-hidden="true" />
+        <span className="h-2 w-2 rounded-full bg-accent-terracota" aria-hidden="true" />
         <span>Amarelo ({pctTexto})</span>
       </span>
     );
