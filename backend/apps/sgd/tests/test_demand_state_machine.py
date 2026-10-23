@@ -1,6 +1,6 @@
 import pytest
-from rest_framework.exceptions import ValidationError as DRFValidationError
 
+from apps.sgd.exceptions import TransicaoInvalida
 from apps.sgd.services.approval import transition, validar_transicao
 from apps.sgd.tests.factories import DemandFactory
 
@@ -27,13 +27,13 @@ def test_transicao_valida_aceita(de, para):
 
 def test_transicao_fora_da_tabela_rejeitada():
     demand = DemandFactory(status="rascunho")
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(TransicaoInvalida):
         validar_transicao(demand, "autorizada")
 
 
 def test_transicao_a_partir_de_estado_terminal_rejeitada():
     demand = DemandFactory(status="concluida")
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(TransicaoInvalida):
         validar_transicao(demand, "submetida")
 
 

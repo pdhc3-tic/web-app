@@ -1,9 +1,9 @@
 from decimal import Decimal
 
 import pytest
-from rest_framework.exceptions import PermissionDenied
-from rest_framework.exceptions import ValidationError as DRFValidationError
+from django.core.exceptions import PermissionDenied
 
+from apps.sgd.exceptions import ErroDeDominio
 from apps.sgd.models.demand import Demand
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services.approval import (
@@ -56,7 +56,7 @@ def test_autorizar_excedente_sem_justificativa_bloqueia(
     demand.status = "pre_autorizada"
     demand.save(update_fields=["status"])
 
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         autorizar(
             demand, responsavel=solicitante_rn,
             ajustes={demand_request_rn.pk: limite_individual_rn.valor_limite + Decimal("1")},
@@ -102,13 +102,13 @@ def test_remanejamento_territorial_seguido_de_autorizar_completa_a_decisao(
 
     territorio = demand_request_rn.demanda.activity.municipio.territory
     allocation_territorial = BudgetAllocationFactory(
-        meta=demand_request_rn.meta, rubrica=demand_request_rn.rubrica,
+        meta=demand_request_rn.demanda.activity.acao.meta, rubrica=demand_request_rn.rubrica,
         nivel=BudgetAllocation.Nivel.TERRITORIAL, territorio=territorio, valor_alocado=Decimal("1000"),
     )
     balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
 
     origem = BudgetAllocationFactory(
-        meta=demand_request_rn.meta, rubrica=demand_request_rn.rubrica,
+        meta=demand_request_rn.demanda.activity.acao.meta, rubrica=demand_request_rn.rubrica,
         nivel=BudgetAllocation.Nivel.ESTADUAL, territorio=None,
         estado=StateFactory(sigla="RN", nome="Rio Grande do Norte"), valor_alocado=Decimal("5000"),
     )
@@ -193,7 +193,7 @@ def test_autorizar_com_ajuste_de_id_de_outra_demanda_rejeitado(
     demand.save(update_fields=["status"])
     id_inexistente = demand_request_rn.pk + 10_000
 
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         autorizar(demand, responsavel=solicitante_rn, ajustes={id_inexistente: Decimal("100")})
 
 
@@ -209,7 +209,7 @@ def test_concluir_valor_pago_acima_do_autorizado_rejeitado(
     demand.status = "em_atendimento"
     demand.save(update_fields=["status"])
 
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         concluir(
             demand, responsavel=solicitante_rn,
             valores_pagos={demand_request_rn.pk: demand_request_rn.valor_autorizado + Decimal("1")},

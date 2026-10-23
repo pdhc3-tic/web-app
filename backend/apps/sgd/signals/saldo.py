@@ -6,9 +6,9 @@ from django.dispatch import receiver
 from apps.core.services.audit import log_audit
 from apps.core.signals.audit import get_audit_context
 from apps.sgd.models import DemandRequest
+from apps.sgd.services import orcamento as orcamento_service
 from apps.sgd.services.auditoria import ENTIDADE_MOVIMENTACAO_SALDO
 from apps.sgp.models import BudgetTransaction
-from apps.sgp.services.budget import _valor_total_reservado
 
 Tipo = BudgetTransaction.Tipo
 ZERO = Decimal("0")
@@ -22,7 +22,8 @@ def _efeito_na_alocacao(transacao) -> dict:
     if transacao.tipo in (Tipo.RESERVA, Tipo.AJUSTE):
         return {"comprometido": valor, "executado": ZERO, "alocado": ZERO}
     if transacao.tipo == Tipo.EXECUCAO:
-        return {"comprometido": -_valor_total_reservado(transacao.demanda_id), "executado": valor, "alocado": ZERO}
+        reservado = orcamento_service.total_reservado(transacao.demanda_id)
+        return {"comprometido": -reservado, "executado": valor, "alocado": ZERO}
     if transacao.tipo == Tipo.LIBERACAO:
         # A liberação que acompanha uma execução só registra a diferença: o
         # comprometido já saiu por inteiro na execução.

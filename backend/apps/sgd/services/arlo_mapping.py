@@ -6,8 +6,7 @@ MAPEAMENTO_PADRAO só vale enquanto não houver nenhuma linha ativa na direção
 from datetime import date, datetime
 from decimal import Decimal
 
-from rest_framework.exceptions import ValidationError
-
+from apps.sgd.exceptions import RegraDeNegocio
 from apps.sgd.models.arlo_field_mapping import ArloFieldMapping
 
 EXPORTACAO = ArloFieldMapping.Direcao.EXPORTACAO
@@ -95,17 +94,17 @@ def validar_mapeamento(mapeamento: dict) -> None:
     quebraria a exportação/importação só em produção."""
     faltando = CAMPOS_EXPORTACAO_OBRIGATORIOS - {item["campo"] for item in mapeamento["exportacao"]}
     if faltando:
-        raise ValidationError(f"Campos obrigatórios ausentes na exportação: {sorted(faltando)}.")
+        raise RegraDeNegocio(f"Campos obrigatórios ausentes na exportação: {sorted(faltando)}.")
     faltando = CAMPOS_IMPORTACAO_OBRIGATORIOS - set(mapeamento["importacao"])
     if faltando:
-        raise ValidationError(f"Campos obrigatórios ausentes na importação: {sorted(faltando)}.")
+        raise RegraDeNegocio(f"Campos obrigatórios ausentes na importação: {sorted(faltando)}.")
 
 
 def validar_ativos_obrigatorios(direcao: str, ativos: set[str]) -> None:
     """`ativos`: campos que ficariam ativos na direção após a alteração."""
     faltando = CAMPOS_OBRIGATORIOS[direcao] - ativos
     if faltando:
-        raise ValidationError(
+        raise RegraDeNegocio(
             f"Campos obrigatórios não podem ser removidos ou desativados: {sorted(faltando)}."
         )
 

@@ -1,5 +1,5 @@
 import pytest
-from rest_framework.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied
 
 from apps.sgd.services.demand_document import exigir_pode_gerenciar_documento
 from apps.sgd.tests.factories import DemandFactory

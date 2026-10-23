@@ -11,18 +11,18 @@ from io import BytesIO, StringIO
 from urllib.parse import urlparse
 
 from django.db import transaction
-from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.signals.audit import clear_audit_context, get_audit_context, set_audit_context
 from apps.core.storage import StorageObjectNotFound, get_storage
+from apps.sgd.exceptions import ErroDeDominio, TransicaoInvalida
 from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.models.arlo_import import ArloImport
 from apps.sgd.models.demand import Demand
 from apps.sgd.models.demand_document import DemandDocument
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
-from apps.sgd.services.approval import TransicaoInvalidaError, aplicar_transicao
+from apps.sgd.services.approval import aplicar_transicao
 from apps.sgd.services.arlo_mapping import CAMPOS_IMPORTACAO_OBRIGATORIOS, obter_mapeamento
 from apps.sgp.models import GlosaRisk
 from apps.sgp.services.apuracao import recalcular_valor_executado
@@ -171,8 +171,8 @@ def _processar_linha(importacao, linha: dict, colunas: dict) -> None:
         balance_service.executar_duas_travas(
             demand_request=solicitacao, valor_pago=min(valor_pago, reservado), usuario=usuario,
         )
-    except DRFValidationError as exc:
-        raise LinhaInvalida(f"Falha ao executar no orçamento: {exc.detail}")
+    except ErroDeDominio as exc:
+        raise LinhaInvalida(f"Falha ao executar no orçamento: {exc.mensagem}")
 
     if valor_pago > reservado:
         GlosaRisk.objects.create(
@@ -263,8 +263,8 @@ def _processar_importacao(importacao: ArloImport) -> ArloImport:
             ok += 1
         except LinhaInvalida as exc:
             erros.append({"linha": numero, "campo": exc.campo, "erro": exc.erro})
-        except TransicaoInvalidaError as exc:
-            erros.append({"linha": numero, "campo": None, "erro": str(exc)})
+        except TransicaoInvalida as exc:
+            erros.append({"linha": numero, "campo": None, "erro": exc.mensagem})
         except Exception:
             logger.exception("Erro inesperado na linha %s da importação Arlo #%s.", numero, importacao.pk)
             erros.append({"linha": numero, "campo": None, "erro": "Erro inesperado ao processar a linha."})

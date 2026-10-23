@@ -157,10 +157,10 @@ class TestVerificarDuasTravasPerformance(TransactionTestCase):
         activity = ActivityFactory(
             municipio=municipio, tecnico_responsavel=self.solicitante, acao=WorkPlanAcaoFactory(),
         )
-        self.meta = activity.acao.meta
+        self.activity = activity
         self.rubrica = BudgetRubricaFactory(slug="rubrica-performance-sgd")
         allocation = BudgetAllocationFactory(
-            meta=self.meta, rubrica=self.rubrica, territorio=territory, valor_alocado=Decimal("1_000_000"),
+            meta=activity.acao.meta, rubrica=self.rubrica, territorio=territory, valor_alocado=Decimal("1_000_000"),
         )
         DemandIndividualLimitFactory(
             solicitante=self.solicitante, rubrica=self.rubrica, valor_limite=Decimal("1_000_000"),
@@ -179,7 +179,7 @@ class TestVerificarDuasTravasPerformance(TransactionTestCase):
     def test_verificacao_das_duas_travas_responde_em_menos_de_300ms(self):
         inicio = monotonic()
         check = balance_service.verificar_duas_travas(
-            solicitante=self.solicitante, rubrica=self.rubrica, meta=self.meta, valor=Decimal("100"),
+            solicitante=self.solicitante, rubrica=self.rubrica, valor=Decimal("100"), activity=self.activity,
         )
         duracao = monotonic() - inicio
 
