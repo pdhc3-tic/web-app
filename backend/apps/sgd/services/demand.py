@@ -208,9 +208,10 @@ def submeter_demanda(demand, *, usuario) -> Demand:
         raise SaldoInsuficiente.para_submissao(bloqueios)
 
     for solicitacao in solicitacoes:
-        balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=usuario)
+        balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=usuario, adiar_gravacao=True)
 
     aplicar_transicao(demand, "submetida", usuario=usuario)
+    balance_service.gravar_estado_da_reserva(solicitacoes)
 
     sigla = demand.activity.municipio.state.sigla
     notifications_service.notificar_submissao(demand, notifications_service.usuarios_articuladores_do_estado(sigla))
@@ -228,10 +229,11 @@ def cancelar_demanda(demand, *, usuario, motivo: str = "") -> Demand:
     elif not pode_cancelar(demand, usuario):
         raise TransicaoInvalida("Você não pode cancelar esta demanda neste status.")
 
-    for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
+    solicitacoes = list(demand.solicitacoes.order_by("rubrica_id", "pk"))
+    for solicitacao in solicitacoes:
         balance_service.liberar_duas_travas(
             demand_request=solicitacao, usuario=usuario,
-            motivo=motivo or "Cancelada pelo solicitante.",
+            motivo=motivo or "Cancelada pelo solicitante.", adiar_gravacao=True,
         )
 
     # Dois cancelamentos simultâneos passam pela checagem acima com o mesmo status;
@@ -242,6 +244,7 @@ def cancelar_demanda(demand, *, usuario, motivo: str = "") -> Demand:
         raise TransicaoInvalida("A demanda mudou de status durante o cancelamento. Recarregue e tente de novo.")
 
     marcar_cancelada(demand, usuario=usuario)
+    balance_service.gravar_estado_da_reserva(solicitacoes)
     if estava_autorizada:
         ApprovalStep.objects.create(
             demanda=demand, etapa="cancelamento", responsavel=usuario,

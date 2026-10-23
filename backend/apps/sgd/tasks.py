@@ -112,15 +112,19 @@ def _cancelar_demandas_da_atividade(activity_id: int) -> int:
     ).order_by("pk"))
     # A transação é uma só: o saldo de todas as demandas sai antes de qualquer Demand
     # ser cancelada, na ordem de lock de backend/docs/orcamento.md.
+    solicitacoes = list(
+        DemandRequest.objects.filter(demanda__in=demandas).select_related("rubrica", "demanda__solicitante")
+    )
     balance_service.liberar_duas_travas_em_lote(
-        DemandRequest.objects.filter(demanda__in=demandas).select_related("rubrica", "demanda__solicitante"),
-        usuario=None, motivo=f"Atividade vinculada em status '{activity.get_status_display()}'.",
+        solicitacoes, usuario=None, adiar_gravacao=True,
+        motivo=f"Atividade vinculada em status '{activity.get_status_display()}'.",
     )
 
     articuladores = notifications_service.usuarios_articuladores_do_estado(activity.municipio.state.sigla)
     for demand in demandas:
         marcar_cancelada(demand)
         notifications_service.notificar_cancelamento_automatico(demand, articuladores)
+    balance_service.gravar_estado_da_reserva(solicitacoes)
     return len(demandas)
 
 

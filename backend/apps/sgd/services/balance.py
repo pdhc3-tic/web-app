@@ -245,12 +245,24 @@ def _reler_reserva(demand_request) -> None:
     demand_request.refresh_from_db(fields=["valor_reservado", "valor_executado"])
 
 
-def _gravar_reserva(demand_request, **campos) -> None:
-    """Grava só o estado da reserva, depois do pool: a solicitação é a última da
-    ordem de lock (`backend/docs/orcamento.md`)."""
-    DemandRequest.objects.filter(pk=demand_request.pk).update(**campos)
+def _mover_reserva(demand_request, *, adiar: bool, **campos) -> None:
     for campo, valor in campos.items():
         setattr(demand_request, campo, valor)
+    if not adiar:
+        gravar_estado_da_reserva([demand_request])
+
+
+def gravar_estado_da_reserva(solicitacoes) -> None:
+    """Grava o estado da reserva já aplicado em memória. A solicitação é a última
+    da ordem de lock (`backend/docs/orcamento.md`): quem move o saldo de várias
+    solicitações e depois trava a `Demand` passa `adiar_gravacao=True` e chama
+    isto no fim. Gravar cada uma logo depois do seu pool deixaria a linha travada
+    antes do limite da rubrica seguinte e da `Demand`, e a decisão de recurso
+    extra, que trava `Demand` e depois as solicitações, fecharia um ciclo."""
+    for solicitacao in sorted(solicitacoes, key=lambda s: s.pk):
+        DemandRequest.objects.filter(pk=solicitacao.pk).update(
+            valor_reservado=solicitacao.valor_reservado, valor_executado=solicitacao.valor_executado,
+        )
 
 
 def _registrar_movimento_individual(
@@ -265,8 +277,9 @@ def _registrar_movimento_individual(
 
 
 @transaction.atomic
-def reservar_duas_travas(*, demand_request, usuario) -> None:
-    """Idempotente por `demand_request.pk`."""
+def reservar_duas_travas(*, demand_request, usuario, adiar_gravacao: bool = False) -> None:
+    """Idempotente por `demand_request.pk`. Com `adiar_gravacao`, ver
+    `gravar_estado_da_reserva`."""
     rubrica = demand_request.rubrica
     solicitante = demand_request.demanda.solicitante
     valor = demand_request.valor_estimado
@@ -311,7 +324,7 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
     )
     _notificar_pool_se_piorou(movimento, demand=demand_request.demanda, rubrica_nome=rubrica.nome)
     if reservou:
-        _gravar_reserva(demand_request, valor_reservado=valor)
+        _mover_reserva(demand_request, adiar=adiar_gravacao, valor_reservado=valor)
 
 
 @transaction.atomic
@@ -367,11 +380,11 @@ def ajustar_duas_travas(
     )
     _notificar_pool_se_piorou(movimento, demand=demand_request.demanda, rubrica_nome=rubrica.nome)
     if diferenca != ZERO:
-        _gravar_reserva(demand_request, valor_reservado=novo_valor)
+        _mover_reserva(demand_request, adiar=False, valor_reservado=novo_valor)
 
 
 @transaction.atomic
-def liberar_duas_travas(*, demand_request, usuario, motivo: str) -> None:
+def liberar_duas_travas(*, demand_request, usuario, motivo: str, adiar_gravacao: bool = False) -> None:
     rubrica = demand_request.rubrica
     solicitante = demand_request.demanda.solicitante
     entidade_id = str(demand_request.pk)
@@ -398,11 +411,11 @@ def liberar_duas_travas(*, demand_request, usuario, motivo: str) -> None:
         solicitante=solicitante, rubrica=rubrica, demand_request=demand_request, usuario=usuario, motivo=motivo,
     )
     if liberou:
-        _gravar_reserva(demand_request, valor_reservado=ZERO)
+        _mover_reserva(demand_request, adiar=adiar_gravacao, valor_reservado=ZERO)
 
 
 @transaction.atomic
-def liberar_duas_travas_em_lote(solicitacoes, *, usuario, motivo: str) -> None:
+def liberar_duas_travas_em_lote(solicitacoes, *, usuario, motivo: str, adiar_gravacao: bool = False) -> None:
     """Libera as reservas de solicitações de várias demandas, de vários solicitantes.
     Liberar uma por uma travaria a alocação de um solicitante antes do limite do
     seguinte; por isso, rubrica a rubrica, trava antes todos os limites e depois todas
@@ -415,7 +428,9 @@ def liberar_duas_travas_em_lote(solicitacoes, *, usuario, motivo: str) -> None:
         ))
         orcamento_service.travar_pools_das_reservas(grupo)
         for solicitacao in grupo:
-            liberar_duas_travas(demand_request=solicitacao, usuario=usuario, motivo=motivo)
+            liberar_duas_travas(
+                demand_request=solicitacao, usuario=usuario, motivo=motivo, adiar_gravacao=adiar_gravacao,
+            )
 
 
 def _travar_em_ordem_de_pk(queryset) -> None:
@@ -447,7 +462,7 @@ def executar_duas_travas(*, demand_request, valor_pago: Decimal, usuario) -> Non
         solicitante=solicitante, rubrica=rubrica, valor=valor_pago, demand_request=demand_request, usuario=usuario,
     )
     if executou:
-        _gravar_reserva(demand_request, valor_executado=valor_pago)
+        _mover_reserva(demand_request, adiar=False, valor_executado=valor_pago)
 
 
 @transaction.atomic

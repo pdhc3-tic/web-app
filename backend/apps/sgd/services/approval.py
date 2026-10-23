@@ -260,7 +260,7 @@ def autorizar(
 
     for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
         novo_valor = ajustes.get(solicitacao.pk, solicitacao.valor_estimado)
-        if novo_valor != solicitacao.valor_estimado:
+        if novo_valor != solicitacao.valor_reservado:
             balance_service.ajustar_duas_travas(
                 demand_request=solicitacao, novo_valor=novo_valor, usuario=responsavel,
                 ignorar_limite_individual=excedente_autorizado,
@@ -281,11 +281,14 @@ def autorizar(
 def recusar(demand, *, responsavel, justificativa: str) -> object:
     if not justificativa:
         raise JustificativaObrigatoria("Obrigatória para recusar a demanda.")
-    for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
+    solicitacoes = list(demand.solicitacoes.order_by("rubrica_id", "pk"))
+    for solicitacao in solicitacoes:
         balance_service.liberar_duas_travas(
             demand_request=solicitacao, usuario=responsavel, motivo="Demanda recusada pela UGP.",
+            adiar_gravacao=True,
         )
     aplicar_transicao(demand, "recusada", usuario=responsavel)
+    balance_service.gravar_estado_da_reserva(solicitacoes)
     ApprovalStep.objects.create(
         demanda=demand, etapa="autorizacao", responsavel=responsavel,
         acao="recusado", justificativa=justificativa,

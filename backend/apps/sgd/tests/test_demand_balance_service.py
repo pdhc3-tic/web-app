@@ -1,8 +1,9 @@
 from decimal import Decimal
 
 import pytest
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from django.db.models import Sum
+from django.test.utils import CaptureQueriesContext
 
 from apps.sgd.exceptions import ErroDeDominio, RegraDeNegocio, SaldoInsuficiente
 from apps.sgd.models import DemandIndividualLimit, DemandRequest
@@ -902,3 +903,74 @@ def test_estado_da_reserva_nao_aceita_valor_negativo(demand_request_rn, campo, v
 def test_limite_individual_nao_aceita_saldo_negativo(limite_individual_rn, campo):
     with pytest.raises(IntegrityError), transaction.atomic():
         DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(**{campo: Decimal("-1")})
+
+
+@pytest.fixture
+def demanda_com_duas_rubricas(demand_request_rn, solicitante_rn, activity_rn, allocation_territorial_rn, limite_individual_rn):
+    from apps.sgp.tests.factories import BudgetAllocationFactory, BudgetRubricaFactory
+
+    outra = BudgetRubricaFactory(slug="rubrica-ordem-de-lock")
+    BudgetAllocationFactory(
+        meta=activity_rn.acao.meta, rubrica=outra, territorio=activity_rn.municipio.territory,
+        valor_alocado=Decimal("10000"),
+    )
+    DemandIndividualLimitFactory(solicitante=solicitante_rn, rubrica=outra, valor_limite=Decimal("5000"))
+    DemandRequestFactory(demanda=demand_request_rn.demanda, rubrica=outra, valor_estimado=Decimal("200"))
+    return demand_request_rn.demanda
+
+
+def _ordem(consultas):
+    sqls = [q["sql"] for q in consultas]
+    travas_de_saldo = [
+        i for i, sql in enumerate(sqls)
+        if "FOR UPDATE" in sql and ('"sgd_demandindividuallimit"' in sql or '"sgp_budgetallocation"' in sql)
+    ]
+    demanda = [
+        i for i, sql in enumerate(sqls)
+        if sql.startswith('UPDATE "sgd_demand" ') or ("FOR UPDATE" in sql and 'FROM "sgd_demand" ' in sql)
+    ]
+    gravacoes_da_reserva = [i for i, sql in enumerate(sqls) if sql.startswith('UPDATE "sgd_demandrequest"')]
+    return travas_de_saldo, demanda, gravacoes_da_reserva
+
+
+def test_submissao_grava_o_estado_da_reserva_depois_do_saldo_e_da_demand(demanda_com_duas_rubricas, solicitante_rn):
+    """Gravar a solicitação logo depois do seu pool a deixaria travada antes do limite
+    da rubrica seguinte e da Demand; a decisão de recurso extra trava Demand e depois
+    as solicitações, e as duas fechariam um ciclo."""
+    with CaptureQueriesContext(connection) as consultas:
+        demand_service.submeter_demanda(demanda_com_duas_rubricas, usuario=solicitante_rn)
+
+    travas_de_saldo, demanda, gravacoes_da_reserva = _ordem(consultas)
+    assert len(gravacoes_da_reserva) == 2
+    assert max(travas_de_saldo) < min(demanda) < min(gravacoes_da_reserva)
+    assert all(s.reserva_ativa for s in demanda_com_duas_rubricas.solicitacoes.all())
+    _confere_comprometido(DemandIndividualLimit.objects.get(solicitante=solicitante_rn, rubrica__slug="diarias"))
+
+
+def test_cancelamento_grava_o_estado_da_reserva_depois_do_saldo_e_da_demand(demanda_com_duas_rubricas, solicitante_rn):
+    demand_service.submeter_demanda(demanda_com_duas_rubricas, usuario=solicitante_rn)
+
+    with CaptureQueriesContext(connection) as consultas:
+        demand_service.cancelar_demanda(demanda_com_duas_rubricas, usuario=solicitante_rn)
+
+    travas_de_saldo, demanda, gravacoes_da_reserva = _ordem(consultas)
+    assert len(gravacoes_da_reserva) == 2
+    assert max(travas_de_saldo) < min(demanda) < min(gravacoes_da_reserva)
+    assert not any(s.reserva_ativa for s in demanda_com_duas_rubricas.solicitacoes.all())
+    for limite in DemandIndividualLimit.objects.filter(solicitante=solicitante_rn):
+        assert limite.valor_comprometido == Decimal("0")
+
+
+def test_recusa_libera_e_grava_o_estado_da_reserva(
+    demand_request_rn, solicitante_rn, usuario_ugp, allocation_territorial_rn, limite_individual_rn,
+):
+    demand = demand_request_rn.demanda
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    demand.status = "pre_autorizada"
+    demand.save(update_fields=["status"])
+
+    approval_service.recusar(demand, responsavel=usuario_ugp, justificativa="Sem prioridade.")
+
+    demand_request_rn.refresh_from_db()
+    assert demand_request_rn.valor_reservado == Decimal("0")
+    _confere_comprometido(limite_individual_rn)

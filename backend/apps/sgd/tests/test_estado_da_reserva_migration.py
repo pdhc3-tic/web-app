@@ -119,3 +119,14 @@ def test_aborta_com_reserva_ativa_sem_limite(solicitacoes, solicitante_rn, rubri
 
     with pytest.raises(RuntimeError, match=f"Solicitante #{solicitante_rn.pk}, rubrica #{rubrica_diarias.pk}"):
         _preencher()
+
+
+def test_evento_sem_valor_aborta_apontando_o_evento(solicitacoes):
+    solicitacao = solicitacoes()
+    AuditLog.objects.create(
+        acao="reserva", modulo="sgd", entidade="DemandIndividualLimit", entidade_id=str(solicitacao.pk),
+        valores_novos={},
+    )
+
+    with pytest.raises(RuntimeError, match=r"\(reserva\) do AuditLog sem `valor`"):
+        _preencher()
