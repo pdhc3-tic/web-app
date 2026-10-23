@@ -18,3 +18,12 @@ class DemandIndividualLimitSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id", "valor_comprometido", "valor_executado", "criado_por", "criado_em", "atualizado_em",
         ]
+
+    def validate(self, attrs):
+        # O comprometido é a soma das reservas desse solicitante nessa rubrica:
+        # mover o limite para outro par deixaria as reservas sem limite.
+        if self.instance is not None:
+            for campo in ("solicitante", "rubrica"):
+                if campo in attrs and attrs[campo] != getattr(self.instance, campo):
+                    raise serializers.ValidationError({campo: "Não pode ser alterado; crie um novo limite."})
+        return attrs
