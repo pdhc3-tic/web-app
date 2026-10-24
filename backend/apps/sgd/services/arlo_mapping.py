@@ -44,6 +44,48 @@ def formatos_permitidos(direcao: str, campo: str) -> set[str]:
     return {TEXTO}
 
 
+ROTULOS = {
+    "demanda_id": "ID da demanda",
+    "solicitacao_id": "ID da solicitação",
+    "titulo": "Título da demanda",
+    "meta": "Meta",
+    "submeta": "Submeta",
+    "acao": "Ação",
+    "indicador": "Indicador",
+    "atividade": "Atividade",
+    "rubrica": "Rubrica",
+    "solicitante": "Solicitante",
+    "valor_estimado": "Valor estimado",
+    "valor_autorizado": "Valor autorizado",
+    "numero_processo": "Número do processo",
+    "data_pagamento": "Data do pagamento",
+    "valor_pago": "Valor pago",
+    "comprovante": "Comprovante",
+}
+
+
+def catalogo_de_campos() -> dict[str, list[dict]]:
+    """Campos que cada direção aceita, na ordem de `ROTULOS`, com os formatos
+    permitidos para cada um."""
+    rotulos_formato = dict(ArloFieldMapping.Formato.choices)
+    return {
+        direcao: [
+            {
+                "campo": campo,
+                "label": ROTULOS[campo],
+                "obrigatorio": campo in CAMPOS_OBRIGATORIOS[direcao],
+                "formatos": [
+                    {"value": formato, "label": rotulos_formato[formato]}
+                    for formato in ArloFieldMapping.Formato.values
+                    if formato in formatos_permitidos(direcao, campo)
+                ],
+            }
+            for campo in ROTULOS if campo in CAMPOS[direcao]
+        ]
+        for direcao in (EXPORTACAO, IMPORTACAO)
+    }
+
+
 def formato_padrao(campo: str) -> str:
     if campo in CAMPOS_MOEDA:
         return MOEDA

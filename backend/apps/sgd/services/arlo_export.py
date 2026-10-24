@@ -1,4 +1,5 @@
 """Exportação das demandas autorizadas para o Arlo (SGD-RF31)."""
+from decimal import Decimal
 from uuid import uuid4
 
 from django.db import transaction
@@ -6,11 +7,28 @@ from django.db import transaction
 from apps.core.storage import get_storage
 from apps.sgd.models.arlo_import import ArloImport
 from apps.sgd.models.demand import Demand
+from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.services.arlo_mapping import formatar_valor, obter_mapeamento
 from apps.sgp.models import ExportJob
 from apps.sgp.services.exportacao import gerar_arquivo
 
 CONTENT_TYPE_CSV = "text/csv"
+
+# Linha do preview quando ainda não há demanda autorizada para exportar.
+LINHA_DE_EXEMPLO = {
+    "demanda_id": 123,
+    "solicitacao_id": 456,
+    "titulo": "Diárias para a oficina de manejo da caatinga",
+    "meta": "1 - Assistência técnica às famílias",
+    "submeta": "1.1 - Visitas e oficinas",
+    "acao": "1.1.1 - Oficina de manejo",
+    "indicador": "IND-01 - Famílias atendidas",
+    "atividade": "Oficina de manejo da caatinga",
+    "rubrica": "Diárias",
+    "solicitante": "Fulano de Tal",
+    "valor_estimado": Decimal("1500.00"),
+    "valor_autorizado": Decimal("1200.00"),
+}
 
 
 def _rotulo(numero, titulo) -> str:
@@ -58,6 +76,28 @@ def gerar_csv(demandas=None, mapeamento=None) -> tuple[bytes, int]:
         for solicitacao in sorted(demand.solicitacoes.all(), key=lambda s: (s.rubrica_id, s.pk))
     ]
     return gerar_arquivo(columns, rows, ExportJob.Formato.CSV, "Arlo"), len(rows)
+
+
+def preview() -> dict:
+    """Cabeçalho e uma linha da exportação com o mapeamento vigente, formatados
+    como no CSV. Usa a primeira solicitação de demanda autorizada ou, sem
+    nenhuma, `LINHA_DE_EXEMPLO`."""
+    colunas = obter_mapeamento()["exportacao"]
+    solicitacao = (
+        DemandRequest.objects.filter(demanda__status="autorizada")
+        .select_related(
+            "rubrica", "demanda__solicitante", "demanda__activity__acao__meta",
+            "demanda__activity__acao__submeta", "demanda__activity__acao__indicador",
+        )
+        .order_by("demanda_id", "rubrica_id", "pk")
+        .first()
+    )
+    valores = _linha(solicitacao.demanda, solicitacao) if solicitacao else LINHA_DE_EXEMPLO
+    return {
+        "colunas": [item["coluna"] for item in colunas],
+        "linha": [str(formatar_valor(valores.get(item["campo"]), item["formato"])) for item in colunas],
+        "exemplo": solicitacao is None,
+    }
 
 
 @transaction.atomic

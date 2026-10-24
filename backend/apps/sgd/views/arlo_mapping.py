@@ -1,4 +1,5 @@
 from django.db import transaction
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -8,8 +9,13 @@ from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsAuthenticatedActiveAccess, IsSuperAdmin
 from apps.core.utils import get_client_ip
 from apps.sgd.models.arlo_field_mapping import ArloFieldMapping
-from apps.sgd.serializers.arlo_field_mapping import ArloFieldMappingSerializer
-from apps.sgd.services.arlo_mapping import validar_ativos_obrigatorios
+from apps.sgd.serializers.arlo_field_mapping import (
+    ArloFieldMappingSerializer,
+    CatalogoCamposArloSerializer,
+    PreviewExportacaoArloSerializer,
+)
+from apps.sgd.services import arlo_export
+from apps.sgd.services.arlo_mapping import catalogo_de_campos, validar_ativos_obrigatorios
 
 
 class ReordenarSerializer(serializers.Serializer):
@@ -75,6 +81,24 @@ class ArloFieldMappingViewSet(viewsets.ModelViewSet):
             entidade_id=str(pk), valores_anteriores=anteriores,
             ip=get_client_ip(self.request), user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )
+
+    @extend_schema(responses={200: CatalogoCamposArloSerializer})
+    @action(detail=False, methods=["get"], url_path="campos", pagination_class=None)
+    def campos(self, request):
+        """Campos do SGD que cada direção aceita, com rótulo, obrigatoriedade e formatos."""
+        return Response(CatalogoCamposArloSerializer(catalogo_de_campos()).data)
+
+    @extend_schema(
+        parameters=[OpenApiParameter("direcao", OpenApiTypes.STR, enum=[ArloFieldMapping.Direcao.EXPORTACAO])],
+        responses={200: PreviewExportacaoArloSerializer, 400: OpenApiTypes.OBJECT},
+    )
+    @action(detail=False, methods=["get"], url_path="preview", pagination_class=None)
+    def preview(self, request):
+        """Cabeçalho e uma linha do CSV de exportação com o mapeamento vigente."""
+        direcao = request.query_params.get("direcao", ArloFieldMapping.Direcao.EXPORTACAO)
+        if direcao != ArloFieldMapping.Direcao.EXPORTACAO:
+            raise ValidationError({"direcao": "O preview existe só para a exportação."})
+        return Response(PreviewExportacaoArloSerializer(arlo_export.preview()).data)
 
     @action(detail=False, methods=["post"], url_path="reordenar")
     @transaction.atomic
