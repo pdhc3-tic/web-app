@@ -298,6 +298,13 @@ CORS_ALLOWED_ORIGINS = [
     for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
     if origin.strip()
 ]
+# Sem isso o navegador esconde do `fetch` o nome do arquivo das exportações
+# quando o frontend está em outra origem.
+CORS_EXPOSE_HEADERS = ["Content-Disposition"]
+
+# Exportação de UPFs: até este total o arquivo sai na própria requisição; acima,
+# vira ExportJob processado pelo worker.
+UPF_EXPORT_ASYNC_THRESHOLD = int(os.getenv("UPF_EXPORT_ASYNC_THRESHOLD", "1000"))
 
 # CONFIGURAÇÕES DO CELERY
 CELERY_BROKER_URL = f"redis://{os.getenv('REDIS_HOST', 'redis')}:{os.getenv('REDIS_PORT', '6379')}/0"

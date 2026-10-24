@@ -638,6 +638,9 @@ class TestExportacaoUPFs:
         download = cliente_ugp.get(f"{_detalhe(response.data['id'])}download/")
         assert len(_linhas_csv(download.content)) == 4
 
+    def test_limite_vem_da_configuracao(self, settings):
+        assert upf_export.UPF_EXPORT_SYNC_LIMIT == settings.UPF_EXPORT_ASYNC_THRESHOLD
+
     def test_no_limite_ainda_e_download_direto(self, cliente_ugp, municipio_rn, monkeypatch):
         monkeypatch.setattr(upf_export, "UPF_EXPORT_SYNC_LIMIT", 2)
         UPFFactory.create_batch(2, municipio=municipio_rn)
