@@ -100,10 +100,12 @@ class RemanejamentoViewSet(viewsets.ViewSet):
             qs = qs.filter(status__in=filtros)
         demanda = request.query_params.get("demanda")
         if demanda:
-            if not demanda.isdigit():
+            try:
+                demanda_id = int(demanda)
+            except ValueError:
                 raise ValidationError({"demanda": "Informe o id numérico da demanda."})
-            # `demanda_id` é texto no pedido: compara com o id como string.
-            qs = qs.filter(demanda_id=demanda)
+            # `demanda_id` é texto no pedido: compara com o id normalizado ("041" → "41").
+            qs = qs.filter(demanda_id=str(demanda_id))
         paginador = RemanejamentoPagination()
         pagina = paginador.paginate_queryset(qs.order_by("-criado_em", "-id"), request)
         return paginador.get_paginated_response(BudgetIncreaseRequestSerializer(pagina, many=True).data)

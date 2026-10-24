@@ -88,7 +88,11 @@ class Diarias:
 def calcular_diarias(*, municipio_destino_id, data_inicio, data_fim) -> Diarias:
     """Usada ao gravar a solicitação de diárias e na simulação do formulário, para
     as duas darem sempre o mesmo valor."""
-    if not Municipality.objects.filter(pk=municipio_destino_id).exists():
+    try:
+        existe = Municipality.objects.filter(pk=municipio_destino_id).exists()
+    except (TypeError, ValueError):
+        existe = False
+    if not existe:
         raise DRFValidationError({"municipio_destino_id": "Município não encontrado."})
     inicio = _parse_date(data_inicio)
     fim = _parse_date(data_fim)

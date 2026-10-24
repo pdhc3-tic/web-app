@@ -92,6 +92,23 @@ def test_municipio_inexistente_responde_400(auth_client_solicitante, diaria_a):
     assert "municipio_destino_id" in resposta.data
 
 
+def test_municipio_nao_numerico_na_solicitacao_e_erro_do_campo(activity_rn, diaria_a):
+    from rest_framework.exceptions import ValidationError
+
+    diaria_a("300")
+    campos = {
+        "beneficiario_nome": "Fulano", "beneficiario_cpf": "52998224725", "beneficiario_cargo": "Técnico",
+        "beneficiario_vinculo": "servidor_ufersa", "municipio_destino_id": "abc",
+        "data_inicio": "2026-11-02", "data_fim": "2026-11-05", "meio_transporte": "rodoviario",
+        "justificativa": "Visita técnica.",
+    }
+
+    with pytest.raises(ValidationError) as excinfo:
+        validar_campos_json("diaria", campos, activity_rn)
+
+    assert "municipio_destino_id" in excinfo.value.detail
+
+
 def test_parametros_obrigatorios(auth_client_solicitante):
     resposta = auth_client_solicitante.get(URL)
 

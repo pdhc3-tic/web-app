@@ -271,10 +271,11 @@ def test_listagem_filtra_por_demanda(solicitante_rn, rubrica_diarias):
     BudgetIncreaseRequestFactory(user=solicitante_rn, rubrica=rubrica_diarias, demanda_id="42")
     BudgetIncreaseRequestFactory(user=solicitante_rn, rubrica=rubrica_diarias, demanda_id="410")
 
-    resposta = _cliente(solicitante_rn).get(REMANEJAMENTOS, {"status": "todos", "demanda": 41})
+    for valor in ("41", "041"):
+        resposta = _cliente(solicitante_rn).get(REMANEJAMENTOS, {"status": "todos", "demanda": valor})
 
-    assert resposta.status_code == 200
-    assert [p["id"] for p in resposta.data["results"]] == [desta.pk]
+        assert resposta.status_code == 200
+        assert [p["id"] for p in resposta.data["results"]] == [desta.pk]
 
 
 def test_filtro_por_demanda_exige_id_numerico(solicitante_rn):

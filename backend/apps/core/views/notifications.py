@@ -23,7 +23,6 @@ class NotificationListView(generics.ListAPIView):
     serializer_class = NotificationSerializer
     permission_classes = [IsAuthenticatedActiveAccess]
     pagination_class = NotificationPagination
-    ordering = ["-enviado_em"]
 
     def get_queryset(self):
         # No Postgres os nulos viriam primeiro no DESC: as antigas sem data de
