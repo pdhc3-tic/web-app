@@ -2,40 +2,29 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
-from rest_framework.exceptions import PermissionDenied
-from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from apps.core.models.user import User
 from apps.core.services.permissions import user_has_role, user_role_slugs, user_states
+from apps.core.utils import formatar_brl
+from apps.sgd.exceptions import JustificativaObrigatoria, RegraDeNegocio, TransicaoInvalida
 from apps.sgd.models.demand import STATUS_CANCELAVEIS_PELO_SOLICITANTE, STATUS_TRANSITIONS
 from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.models.individual_limit import DemandIndividualLimit
 from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
-from apps.sgp.services import budget as budget_service
+from apps.sgd.services import orcamento as orcamento_service
 from apps.sgp.services.apuracao import recalcular_valor_executado
-
-
-class TransicaoInvalidaError(DRFValidationError):
-    # DRF ValidationError, não Django — levantar direto da view já vira 400
-    # sem precisar de try/except de tradução.
-    def __init__(self, message):
-        super().__init__({"status": message})
-
-
-class JustificativaObrigatoriaError(DRFValidationError):
-    def __init__(self, message):
-        super().__init__({"justificativa": message})
 
 
 def validar_transicao(demand, novo_status: str) -> None:
     permitidos = STATUS_TRANSITIONS.get(demand.status, set())
     if novo_status not in permitidos:
-        raise TransicaoInvalidaError(
+        raise TransicaoInvalida(
             f"Transição inválida: '{demand.status}' → '{novo_status}'. "
             f"Transições permitidas: {sorted(permitidos) if permitidos else ['nenhuma (estado terminal)']}"
         )
@@ -163,25 +152,22 @@ def preview_impacto(demand_request, valor: Decimal) -> dict:
     reserva já feita."""
     solicitante = demand_request.demanda.solicitante
     rubrica = demand_request.rubrica
-    meta = demand_request.meta
     valor_reservado = demand_request.valor_autorizado or demand_request.valor_estimado
     delta = valor - valor_reservado
 
     if delta > Decimal("0"):
         check = balance_service.verificar_duas_travas(
-            solicitante=solicitante, rubrica=rubrica, meta=meta, valor=delta,
+            solicitante=solicitante, rubrica=rubrica, valor=delta, demand_request=demand_request,
         )
         disponivel, trava_bloqueada, allocation = check.disponivel, check.trava_bloqueada, check.territorial.allocation
     else:
         # Reduzir o valor autorizado nunca bloqueia — está liberando saldo.
-        nivel, estado_sigla, territorio = budget_service.resolver_nivel_do_usuario(solicitante)
-        allocation = budget_service.saldo_para_consulta(
-            meta_id=meta.pk, rubrica_slug=rubrica.slug, nivel=nivel,
-            estado_sigla=estado_sigla, territorio=territorio, valor=Decimal("0"),
+        allocation = orcamento_service.consultar_pool(
+            solicitante=solicitante, rubrica=rubrica, valor=Decimal("0"), demand_request=demand_request,
         ).allocation
         disponivel, trava_bloqueada = True, None
 
-    limiares = budget_service.limiares_semaforo()
+    limiares = orcamento_service.limiares_semaforo()
     limite = DemandIndividualLimit.objects.filter(solicitante=solicitante, rubrica=rubrica).first()
     individual = {"semaforo_antes": None, "semaforo_apos": None, "saldo_apos": None}
     if limite is not None:
@@ -245,7 +231,7 @@ def pre_autorizar(demand, *, responsavel) -> object:
 def devolver(demand, *, responsavel, justificativa: str) -> object:
     _exigir_pode_decidir_articulador(demand, responsavel)
     if not justificativa:
-        raise JustificativaObrigatoriaError("Obrigatória para devolver a demanda.")
+        raise JustificativaObrigatoria("Obrigatória para devolver a demanda.")
     aplicar_transicao(demand, "devolvida", usuario=responsavel)
     ApprovalStep.objects.create(
         demanda=demand, etapa="pre_autorizacao", responsavel=responsavel,
@@ -262,15 +248,15 @@ def autorizar(
 ) -> object:
     """`ajustes`: {demand_request_id: novo_valor}."""
     if excedente_autorizado and not justificativa:
-        raise JustificativaObrigatoriaError("Obrigatória para autorizar excedendo o limite individual (RF16).")
+        raise JustificativaObrigatoria("Obrigatória para autorizar excedendo o limite individual.")
 
     ajustes = ajustes or {}
     solicitacoes_pks = set(demand.solicitacoes.values_list("pk", flat=True))
     ids_desconhecidos = set(ajustes) - solicitacoes_pks
     if ids_desconhecidos:
-        raise DRFValidationError({
-            "ajustes": f"Solicitação(ões) {sorted(ids_desconhecidos)} não pertence(m) a esta demanda."
-        })
+        raise RegraDeNegocio(
+            f"Solicitação(ões) {sorted(ids_desconhecidos)} não pertence(m) a esta demanda.", campo="ajustes",
+        )
 
     for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
         novo_valor = ajustes.get(solicitacao.pk, solicitacao.valor_estimado)
@@ -294,7 +280,7 @@ def autorizar(
 @transaction.atomic
 def recusar(demand, *, responsavel, justificativa: str) -> object:
     if not justificativa:
-        raise JustificativaObrigatoriaError("Obrigatória para recusar a demanda.")
+        raise JustificativaObrigatoria("Obrigatória para recusar a demanda.")
     for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
         balance_service.liberar_duas_travas(
             demand_request=solicitacao, usuario=responsavel, motivo="Demanda recusada pela UGP.",
@@ -323,18 +309,17 @@ def concluir(demand, *, responsavel, valores_pagos: dict) -> object:
     """`valores_pagos`: {demand_request_id: valor_pago}."""
     for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
         if solicitacao.pk not in valores_pagos:
-            raise DRFValidationError({
-                "valores_pagos": f"Valor pago obrigatório para a solicitação #{solicitacao.pk}."
-            })
+            raise RegraDeNegocio(
+                f"Valor pago obrigatório para a solicitação #{solicitacao.pk}.", campo="valores_pagos",
+            )
         valor_pago = valores_pagos[solicitacao.pk]
         valor_autorizado = solicitacao.valor_autorizado or solicitacao.valor_estimado
         if valor_pago > valor_autorizado:
-            raise DRFValidationError({
-                "valores_pagos": (
-                    f"Valor pago (R$ {valor_pago}) não pode exceder o valor autorizado "
-                    f"(R$ {valor_autorizado}) para a solicitação #{solicitacao.pk}."
-                )
-            })
+            raise RegraDeNegocio(
+                f"Valor pago ({formatar_brl(valor_pago)}) não pode exceder o valor autorizado "
+                f"({formatar_brl(valor_autorizado)}) para a solicitação #{solicitacao.pk}.",
+                campo="valores_pagos",
+            )
         balance_service.executar_duas_travas(
             demand_request=solicitacao, valor_pago=valor_pago, usuario=responsavel,
         )

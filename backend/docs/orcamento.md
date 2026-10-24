@@ -22,9 +22,11 @@ def liberar(*, demanda_id, usuario, motivo) -> BudgetTransaction
 ```
 
 `saldo_para_consulta` é a variante que resolve tudo a partir de ids/slugs crus
-(usada pelo `SaldoConsultaView` e pelo motor de duas travas do SGD,
-`apps.sgd.services.balance`) — `verificar_saldo` espera instâncias já
-resolvidas. `ajustar_reserva` e o parâmetro `valor_executado` de `executar`
+(usada pelo `SaldoConsultaView` e pela porta de orçamento do SGD,
+`apps.sgd.services.orcamento`) — `verificar_saldo` espera instâncias já
+resolvidas. No SGD, só a porta importa o motor; ela resolve a Meta pela
+atividade da demanda e devolve os erros do motor como exceções de domínio
+(`apps.sgd.exceptions`). `ajustar_reserva` e o parâmetro `valor_executado` de `executar`
 foram adicionados para o SGD (`Pré-autorizada → Autorizada com valor
 ajustado` e conclusão com valor efetivamente pago menor que o autorizado,
 §4.2 do documento do SGD) — aditivos: nenhum código que só chama

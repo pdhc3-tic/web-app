@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 import pytest
-from rest_framework.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied
 
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service

@@ -5,7 +5,7 @@ Tudo parte de `demand_visibility_scope` (mesmo recorte do RBAC/RLS de
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from decimal import Decimal
 
 from django.db.models import Count, DecimalField, OuterRef, Subquery, Sum
@@ -18,8 +18,7 @@ from apps.sgd.models.demand import STATUS_CHOICES, STATUS_TERMINAIS, Demand
 from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.services import business_days
 from apps.sgd.services.approval import demand_visibility_scope, demandas_aguardando_acao
-from apps.sgp.models.budget import BudgetAllocation
-from apps.sgp.services import budget as budget_service
+from apps.sgd.services import orcamento as orcamento_service
 
 ZERO = Decimal("0")
 LIMITE_FILA = 50
@@ -126,16 +125,16 @@ def _linhas_orcamento_do_escopo(user) -> list[tuple[dict, str | None, int | None
     if slugs & PERFIS_NACIONAIS:
         return [
             (linha, None, None)
-            for linha in budget_service.painel_orcamento(
-                nivel=BudgetAllocation.Nivel.NACIONAL, estado_sigla=None, territorio_id=None, meta_id=None,
+            for linha in orcamento_service.painel_orcamento(
+                nivel=orcamento_service.Nivel.NACIONAL, estado_sigla=None, territorio_id=None, meta_id=None,
             )
         ]
     if "articulador-estadual" in slugs:
         return [
             (linha, sigla, None)
             for sigla in sorted(user_states(user))
-            for linha in budget_service.painel_orcamento(
-                nivel=BudgetAllocation.Nivel.ESTADUAL, estado_sigla=sigla, territorio_id=None, meta_id=None,
+            for linha in orcamento_service.painel_orcamento(
+                nivel=orcamento_service.Nivel.ESTADUAL, estado_sigla=sigla, territorio_id=None, meta_id=None,
             )
         ]
     if "adt-acr" in slugs:
@@ -144,8 +143,8 @@ def _linhas_orcamento_do_escopo(user) -> list[tuple[dict, str | None, int | None
         return [
             (linha, None, territorio_id)
             for territorio_id in _territorios_do_adt(user)
-            for linha in budget_service.painel_orcamento(
-                nivel=BudgetAllocation.Nivel.TERRITORIAL, estado_sigla=None,
+            for linha in orcamento_service.painel_orcamento(
+                nivel=orcamento_service.Nivel.TERRITORIAL, estado_sigla=None,
                 territorio_id=territorio_id, meta_id=None,
             )
         ]
@@ -168,7 +167,7 @@ def alertas_de_saldo(user) -> list[dict]:
             "estado_sigla": estado_sigla,
             "territorio_id": territorio_id,
             "faixa": linha["semaforo"],
-            "percentual_comprometido": budget_service.percentual_comprometido(
+            "percentual_comprometido": orcamento_service.percentual_comprometido(
                 linha["valor_comprometido"], linha["valor_aprovado"],
             ),
             "valor_aprovado": linha["valor_aprovado"],
@@ -190,10 +189,14 @@ def sem_movimentacao(user, base_qs, *, limite: int = LIMITE_SEM_MOVIMENTACAO) ->
     `responsaveis_pela_etapa_atual`.
 
     O corte em dias corridos no SQL é seguro: dias úteis nunca passam dos dias
-    corridos, então nada que atenda ao critério fica de fora."""
+    corridos, então nada que atenda ao critério fica de fora. O corte é no
+    início do dia, como a contagem de dias úteis: cortar na hora atual deixava
+    de fora, até essa hora, a demanda movida num fim de semana."""
     hoje = timezone.localdate()
-    corte = timezone.now() - timedelta(days=business_days.DIAS_UTEIS_LIMITE)
-    qs = base_qs.exclude(status__in=STATUS_TERMINAIS | {"rascunho"}).filter(status_alterado_em__lte=corte)
+    corte = timezone.make_aware(
+        datetime.combine(hoje - timedelta(days=business_days.DIAS_UTEIS_LIMITE - 1), time.min),
+    )
+    qs = base_qs.exclude(status__in=STATUS_TERMINAIS | {"rascunho"}).filter(status_alterado_em__lt=corte)
     sob_responsabilidade = demandas_aguardando_acao(user, qs) | qs.filter(solicitante=user, status="devolvida")
     candidatas = list(
         sob_responsabilidade.select_related("activity__municipio__state").order_by("status_alterado_em", "pk")

@@ -38,6 +38,7 @@ def test_saldo_bloqueio_territorial_traz_acao_sugerida(
     assert data["territorial"]["acao_sugerida"] == "acionar_articulador"
     assert "Acione o Articulador Estadual" in data["territorial"]["motivo_bloqueio"]
     assert "Território esgotado" in data["territorial"]["motivo_bloqueio"]
+    assert "R$ 0,00 disponível, R$ 50,00 solicitado" in data["territorial"]["motivo_bloqueio"]
     # Saldo zerado: esgotado de vez, não só "para este valor".
     assert "para este valor" not in data["territorial"]["motivo_bloqueio"]
 
@@ -51,7 +52,9 @@ def test_saldo_sem_alocacao_territorial_orienta_sem_dizer_que_esgotou(
     assert response.status_code == 200
     territorial = response.json()["territorial"]
     assert territorial["disponivel"] is False
-    assert territorial["motivo_bloqueio"].startswith("Nenhuma alocação encontrada")
+    assert territorial["motivo_bloqueio"].startswith(
+        "Nenhuma alocação orçamentária territorial encontrada: R$ 0,00 disponível, R$ 50,00 solicitado."
+    )
     assert "Acione o Articulador Estadual" in territorial["motivo_bloqueio"]
     assert "esgotad" not in territorial["motivo_bloqueio"]
     assert territorial["semaforo_atual"] is None
@@ -123,7 +126,7 @@ def test_saldo_limite_individual_insuficiente_orienta_recurso_extra(
     assert response.status_code == 200
     individual = response.json()["individual"]
     assert individual["disponivel"] is False
-    assert "R$ 5000" in individual["motivo_bloqueio"]
+    assert "R$ 5.000,00 disponível, R$ 6.000,00 solicitado" in individual["motivo_bloqueio"]
     assert "Solicitar recurso extra" in individual["motivo_bloqueio"]
 
 

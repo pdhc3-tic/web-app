@@ -2,8 +2,8 @@ from datetime import datetime
 
 import pytest
 from django.utils import timezone
-from rest_framework.exceptions import ValidationError as DRFValidationError
 
+from apps.sgd.exceptions import ErroDeDominio
 from apps.sgd.services import demand as demand_service
 from apps.sgp.tests.factories import ActivityFactory
 
@@ -35,7 +35,7 @@ def test_criar_activity_inline(solicitante_rn, municipio_rn):
 
 def test_criar_demanda_bloqueada_para_activity_cancelada(solicitante_rn, municipio_rn):
     activity = ActivityFactory(municipio=municipio_rn, status="cancelada")
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         demand_service.criar_demanda(
             titulo="Diárias", activity=activity, justificativa="", solicitante=solicitante_rn,
         )
@@ -52,7 +52,7 @@ def test_criar_demanda_activity_em_andamento_marca_despesa_posterior(solicitante
 
 def test_criar_demanda_activity_em_andamento_sem_justificativa_bloqueia(solicitante_rn, municipio_rn):
     activity = ActivityFactory(municipio=municipio_rn, status="em_andamento")
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         demand_service.criar_demanda(
             titulo="Diárias", activity=activity, justificativa="", solicitante=solicitante_rn,
         )
@@ -66,7 +66,7 @@ def test_editar_demanda_em_rascunho_permitido(demand_rascunho_rn):
 def test_editar_demanda_autorizada_bloqueado(demand_rascunho_rn):
     demand_rascunho_rn.status = "autorizada"
     demand_rascunho_rn.save(update_fields=["status"])
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         demand_service.atualizar_demanda(demand_rascunho_rn, titulo="Outro título")
 
 

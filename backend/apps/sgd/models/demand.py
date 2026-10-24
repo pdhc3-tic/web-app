@@ -109,10 +109,6 @@ class Demand(models.Model):
     def __str__(self):
         return f"{self.titulo} [{self.get_status_display()}]"
 
-    @property
-    def meta(self):
-        return self.activity.acao.meta
-
     def _total_solicitacoes(self, campo: str):
         # Com `solicitacoes` já prefetchada (listagem), soma em memória: o
         # `aggregate()` ignora o prefetch e custaria 1 query por demanda e total.

@@ -10,14 +10,15 @@ from collections import OrderedDict
 from decimal import Decimal
 from types import SimpleNamespace
 
+from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Q, Sum
-from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.core.services.permissions import user_role_slugs
+from apps.sgd.exceptions import RegraDeNegocio
 from apps.sgd.filters import DemandFilter
 from apps.sgd.models.demand_request import DemandRequest
-from apps.sgp.models.budget import BudgetAllocation, BudgetRubrica
-from apps.sgp.services import budget as budget_service
+from apps.sgd.services import orcamento as orcamento_service
+from apps.sgp.models import BudgetRubrica
 
 ZERO = Decimal("0")
 
@@ -35,7 +36,7 @@ def filtrar_demandas(queryset, params, user):
     (uma exportação "filtrada" que devolve tudo seria pior que um erro)."""
     filterset = DemandFilter(data=params, queryset=queryset, request=SimpleNamespace(user=user))
     if not filterset.is_valid():
-        raise ValidationError(filterset.errors.get_json_data())
+        raise RegraDeNegocio(erros=filterset.errors.get_json_data())
     return filterset.qs
 
 
@@ -52,22 +53,22 @@ def _inteiro_ou_none(valor):
     try:
         return int(valor)
     except (TypeError, ValueError):
-        raise ValidationError({"detail": f"Valor numérico inválido: {valor!r}."})
+        raise RegraDeNegocio(f"Valor numérico inválido: {valor!r}.")
 
 
 def _painel_sgp(user, slugs: set[str], *, estado_sigla, territorio_id, meta_id):
     # FGD não tem nível próprio no `resolver_nivel_painel` do SGP; para o
     # painel do SGD enxerga o nacional, como a UGP.
     if "fgd" in slugs and not slugs & {"super-admin", "ugp", "articulador-estadual"}:
-        nivel = BudgetAllocation.Nivel.NACIONAL
+        nivel = orcamento_service.Nivel.NACIONAL
         if territorio_id is not None:
-            nivel = BudgetAllocation.Nivel.TERRITORIAL
+            nivel = orcamento_service.Nivel.TERRITORIAL
         elif estado_sigla is not None:
-            nivel = BudgetAllocation.Nivel.ESTADUAL
-        return budget_service.painel_orcamento(
+            nivel = orcamento_service.Nivel.ESTADUAL
+        return orcamento_service.painel_orcamento(
             nivel=nivel, estado_sigla=estado_sigla, territorio_id=territorio_id, meta_id=meta_id,
         )
-    return budget_service.painel_orcamento_para_usuario(
+    return orcamento_service.painel_orcamento_para_usuario(
         user, estado_sigla=estado_sigla, territorio_id=territorio_id, meta_id=meta_id,
     )
 
@@ -107,12 +108,12 @@ def painel_por_rubrica(user, demandas, params) -> list[dict]:
         acc["executado"] += linha["valor_executado"]
         acc["disponivel"] += linha["saldo_disponivel"]
 
-    limiares = budget_service.limiares_semaforo()
+    limiares = orcamento_service.limiares_semaforo()
     resultado = []
     for rubrica in BudgetRubrica.objects.filter(ativo=True).order_by("ordem"):
         demanda_linha = por_rubrica.get(rubrica.pk, {})
         fin = orcamento.get(rubrica.pk, {})
-        percentual = budget_service.percentual_comprometido(
+        percentual = orcamento_service.percentual_comprometido(
             fin.get("comprometido", ZERO), fin.get("aprovado", ZERO),
         )
         resultado.append({
@@ -126,7 +127,7 @@ def painel_por_rubrica(user, demandas, params) -> list[dict]:
             # SGP §6.8: a faixa sai do percentual comprometido sobre o aprovado,
             # a mesma base do painel de orçamento do SGP.
             "percentual_execucao": percentual,
-            "faixa": budget_service.faixa_semaforo(percentual, limiares),
+            "faixa": orcamento_service.faixa_semaforo(percentual, limiares),
         })
     return resultado
 
