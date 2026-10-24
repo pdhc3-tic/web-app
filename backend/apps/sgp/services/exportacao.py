@@ -14,6 +14,7 @@ from datetime import date, timedelta
 from io import BytesIO, StringIO
 from typing import Callable
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -179,13 +180,13 @@ def exportar_sincrono(tipo: str, *, user, params: dict) -> Arquivo:
 
 
 def exportar_upfs(*, user, params: dict) -> Arquivo | ExportJob:
-    """Até `UPF_EXPORT_SYNC_LIMIT` registros devolve o arquivo; acima disso cria
-    um ExportJob para o worker."""
+    """Até `settings.UPF_EXPORT_ASYNC_THRESHOLD` registros devolve o arquivo; acima
+    disso cria um ExportJob para o worker."""
     formato, filtros = upf_export.separar_parametros(params)
     queryset = upf_export.upf_export_queryset(user=user, filtros=filtros)
 
     total = queryset.count()
-    if total > upf_export.UPF_EXPORT_SYNC_LIMIT:
+    if total > settings.UPF_EXPORT_ASYNC_THRESHOLD:
         return criar_exportacao(
             user=user,
             tipo=ExportJob.Tipo.UPFS,

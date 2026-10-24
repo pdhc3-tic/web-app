@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from django.conf import settings
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -11,11 +10,6 @@ from apps.sgp.exceptions import recusar_parametros_desconhecidos
 from apps.sgp.filters import UPFFilter, somente_ativas_sem_filtro_ativo
 from apps.sgp.models import UPF, ExportJob
 from apps.sgp.services.access import upfs_acessiveis_ao_usuario
-
-# Até este total o arquivo é devolvido na própria requisição; acima, vira
-# ExportJob processado pelo worker. Configurável para testar o fluxo assíncrono
-# em homologação sem precisar de milhares de UPFs.
-UPF_EXPORT_SYNC_LIMIT = settings.UPF_EXPORT_ASYNC_THRESHOLD
 
 EXPORT_COLUMNS = (
     ("estado", "Estado"),
