@@ -745,6 +745,13 @@ def faixa_semaforo(percentual: Decimal, limiares: LimiaresSemaforo) -> str:
     return "verde"
 
 
+def _sem_territorio(mensagem: str) -> PermissionDenied:
+    """403 de quem tem o perfil, mas ainda sem estado ou território vinculado.
+    O `code` distingue do "sem acesso": o frontend mostra o estado vazio em vez
+    de "Conteúdo restrito"."""
+    return PermissionDenied({"detail": mensagem, "code": "SEM_TERRITORIO"})
+
+
 def resolver_nivel_painel(
     user, *, estado_sigla: str | None = None, territorio_id: int | None = None,
 ) -> tuple[str, str | None, int | None]:
@@ -773,7 +780,7 @@ def resolver_nivel_painel(
     if "articulador-estadual" in slugs:
         states = _estados_do_articulador(perfis, user)
         if not states:
-            raise PermissionDenied("Você não tem acesso ao orçamento do SGP.")
+            raise _sem_territorio("Seu perfil de Articulador Estadual ainda não tem estado vinculado.")
 
         if territorio_id is not None:
             territorio = Territory.objects.filter(pk=territorio_id).only("estados").first()
@@ -790,7 +797,7 @@ def resolver_nivel_painel(
     if "adt-acr" in slugs:
         territorio_ids = _territorios_do_adt(perfis)
         if not territorio_ids:
-            raise PermissionDenied("Você não tem acesso ao orçamento do SGP.")
+            raise _sem_territorio("Seu perfil de ADT/ACR ainda não tem território vinculado.")
         if estado_sigla is not None:
             raise PermissionDenied("Você não tem acesso a dados no nível estadual.")
         if territorio_id is not None and territorio_id not in territorio_ids:
