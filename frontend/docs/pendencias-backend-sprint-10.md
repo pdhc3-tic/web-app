@@ -743,3 +743,54 @@ Para chegar ao pedido, o teste usa o link direto.
 criá-las, ou ordenar por `-pk` / uma data de criação nova; e definir
 `FRONTEND_BASE_URL` no `.env.example` e no `docker-compose.yml` para o
 ambiente local.
+
+---
+
+## 25. O nome do arquivo exportado não chega ao front (#297)
+
+`GET /api/v1/sgd/demandas/exportar/` manda o nome no `Content-Disposition`
+(`demandas_<data_hora>.<formato>`), mas o `setup/settings.py` não define
+`CORS_EXPOSE_HEADERS`. Com front e API em origens diferentes, como no ambiente
+local (3000 → 8080), o navegador esconde esse cabeçalho do `fetch`. O arquivo
+baixa com o nome padrão do front (`demandas_AAAA-MM-DD.<formato>`). O mesmo
+vale para as outras exportações que dependem do nome vindo do backend.
+
+**Pedido:** `CORS_EXPOSE_HEADERS = ["Content-Disposition"]`.
+
+*Estado atual no frontend:* `baixarExportacaoDemandas` já lê o cabeçalho e cai
+para o nome padrão quando ele não chega; nada muda no front quando o backend
+expuser o cabeçalho.
+
+---
+
+## 26. Filtros de solicitante e responsável sem lista para os perfis de gestão (#297)
+
+O painel de execução filtra por `solicitante` e `responsavel_etapa_atual` (ids
+de usuário do `DemandFilter`), mas não há rota que liste esses usuários para
+todos os perfis de gestão:
+
+- `GET /api/v1/users/` é só do Super Admin;
+- `GET /api/v1/sgp/tecnicos/` não serve: solicitante é usuário com perfil
+  ADT/ACR, sem precisar de cadastro de técnico (no seed, a tabela de técnicos
+  está vazia), e a FGD recebe 403 (fora do `ROLES_COM_ESCOPO`).
+
+**Pedido:** `GET /api/v1/sgd/opcoes/usuarios/?papel=<papel>`, aberta aos
+perfis de gestão do SGD (Super Admin, UGP, FGD, Articulador Estadual), com
+resposta sem paginação:
+
+```json
+[{ "id": 4, "nome": "Ewerton Bandeira" }]
+```
+
+- `papel=solicitante`: usuários que podem solicitar demandas (perfil ADT/ACR)
+  e que o perfil logado enxerga — o `id` é o que o filtro `solicitante` do
+  `DemandFilter` recebe;
+- `papel=responsavel`: usuários que podem estar na etapa atual de uma
+  demanda (Articulador Estadual, UGP, FGD) — o `id` é o que o filtro
+  `responsavel_etapa_atual` recebe;
+- ordenada por `nome`.
+
+*Estado atual no frontend:* os dois filtros já chamam essa rota
+(`fetchOpcoesUsuarios` em `app/lib/execucaoSgd.ts`). Enquanto ela não existe,
+o select mostra "Não foi possível carregar a lista."; quando o backend a
+publicar com esse contrato, a lista aparece sem mudança no front.

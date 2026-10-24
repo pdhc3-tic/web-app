@@ -45,6 +45,9 @@ export const qk = {
     detalhe: (id: string | number) => ["sgd", "demandas", "detalhe", String(id)] as const,
     fila: ["sgd", "demandas", "fila", "lista"] as const,
     contagemFila: ["sgd", "demandas", "fila", "contagem"] as const,
+    /** Lista com o recorte vindo do drill-down do painel de execução (#297). */
+    recorte: (filtros: Record<string, string | undefined>) =>
+      ["sgd", "demandas", "recorte", filtros] as const,
     preview: (id: number, solicitacaoId: number, valor: string) =>
       ["sgd", "demandas", "preview", { id, solicitacaoId, valor }] as const,
     auditoria: (id: string | number) =>
@@ -67,6 +70,17 @@ export const qk = {
     ["sgp", "atividades", "elegiveis", { tecnicoId, busca }] as const,
   /** Tarefa assíncrona de exportação da listagem de UPFs (#240). */
   exportacaoUpfs: (id: string) => ["upfs", "exportacao", id] as const,
+  /** Execução por rubrica e custo por atividade (#297) e as opções dos filtros. */
+  execucao: {
+    painel: (filtros: Record<string, string | undefined>) =>
+      ["sgd", "execucao", "painel", filtros] as const,
+    custo: (filtros: Record<string, string | undefined>) =>
+      ["sgd", "execucao", "custo", filtros] as const,
+    metas: ["sgp", "metas", "opcoes"] as const,
+    submetas: ["sgp", "submetas", "opcoes"] as const,
+    opcoesUsuarios: (papel: string) => ["sgd", "opcoes", "usuarios", papel] as const,
+    buscaAtividade: (texto: string) => ["sgp", "atividades", "filtro", { texto }] as const,
+  },
   /** Integração Arlo (#298): histórico de operações e o acompanhamento de uma. */
   arlo: {
     all: ["sgd", "arlo"] as const,

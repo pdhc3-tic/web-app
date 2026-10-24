@@ -229,7 +229,7 @@ urlpatterns = router.urls + [
     ),
     path(
         "sgp/metas/<int:pk>/orcamento/",
-        WorkPlanMetaViewSet.as_view({"get": "orcamento"}),
+        WorkPlanMetaViewSet.as_view({"get": "orcamento"}, pagination_class=None),
         name="workplanmeta-orcamento",
     ),
     path(

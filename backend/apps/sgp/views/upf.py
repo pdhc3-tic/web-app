@@ -6,6 +6,7 @@ from drf_spectacular.utils import (
     OpenApiParameter,
     OpenApiTypes,
     extend_schema,
+    extend_schema_view,
     inline_serializer,
 )
 from rest_framework import filters, serializers, status, viewsets
@@ -23,9 +24,10 @@ from apps.sgp.models import ExportJob, UPF
 from apps.sgp.pagination import UPFPagination
 from apps.sgp.serializers import HistoricoEntrySerializer, MunicipioNestedSerializer, UPFDetailSerializer, UPFListSerializer
 from apps.sgp.serializers.exportacao import ExportJobSerializer
+from apps.sgp.serializers.upf import UPFDetailRespostaSerializer
 from apps.sgp.services.access import ROLES_COM_ESCOPO, upfs_acessiveis_ao_usuario
 from apps.sgp.services.exportacao import exportar_upfs
-from apps.sgp.views.exportacao import arquivo_response
+from apps.sgp.views.exportacao import RESPOSTA_ARQUIVO, arquivo_response
 from apps.sgp.views.upf_foto import UPFPhotoMixin
 from apps.sgp.views.upf_historico import UPFHistoricoMixin
 
@@ -54,6 +56,11 @@ class _UPFMapFeatureSerializer(serializers.Serializer):
     properties = _UPFMapPropertiesSerializer()
 
 
+@extend_schema_view(
+    retrieve=extend_schema(responses=UPFDetailRespostaSerializer),
+    create=extend_schema(request=UPFDetailSerializer, responses={201: UPFDetailRespostaSerializer}),
+    partial_update=extend_schema(request=UPFDetailSerializer, responses=UPFDetailRespostaSerializer),
+)
 class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
     MAPA_FEATURE_LIMIT = 10000
     queryset = UPF.objects.select_related(
@@ -95,6 +102,20 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
         pks = upfs_acessiveis_ao_usuario(user, role_slugs=role_slugs).values_list("pk", flat=True)
         return qs.filter(pk__in=pks)
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("formato", OpenApiTypes.STR, enum=list(ExportJob.Formato.values)),
+            OpenApiParameter("municipio", OpenApiTypes.INT),
+            OpenApiParameter("territorio", OpenApiTypes.INT),
+            OpenApiParameter("projeto", OpenApiTypes.INT),
+            OpenApiParameter("comunidade", OpenApiTypes.INT),
+            OpenApiParameter("ativo", OpenApiTypes.BOOL),
+            OpenApiParameter("cadastrado_de", OpenApiTypes.DATE),
+            OpenApiParameter("cadastrado_ate", OpenApiTypes.DATE),
+            OpenApiParameter("q", OpenApiTypes.STR, description="Nome do titular ou início do CPF."),
+        ],
+        responses={**RESPOSTA_ARQUIVO, 202: ExportJobSerializer},
+    )
     @action(detail=False, methods=["get"], url_path="exportar")
     def exportar(self, request):
         """GET /api/v1/upfs/exportar/?formato=csv|xlsx&<filtros da listagem>

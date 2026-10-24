@@ -1,7 +1,14 @@
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
+from apps.core.serializers import UsuarioRefSerializer
 from apps.sgp.models import Activity
-from apps.sgp.serializers.common import MunicipioNestedSerializer, plano_trabalho_da_acao
+from apps.sgp.serializers.common import (
+    MunicipioNestedSerializer,
+    NestedSerializer,
+    PlanoTrabalhoSerializer,
+    plano_trabalho_da_acao,
+)
 
 # ---------------------------------------------------------------------------
 # Calendar serializer — payload reduzido para grade de calendário
@@ -60,6 +67,7 @@ class ActivityCalendarioSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
+    @extend_schema_field(PlanoTrabalhoSerializer)
     def get_plano_trabalho(self, obj) -> dict | None:
         return plano_trabalho_da_acao(obj.acao)
 
@@ -69,13 +77,16 @@ class ActivityCalendarioSerializer(serializers.ModelSerializer):
     def get_cor(self, obj) -> str:
         return STATUS_COR_MAP.get(obj.status, "#6B7280")
 
+    @extend_schema_field(UsuarioRefSerializer)
     def get_tecnico_responsavel(self, obj) -> dict:
         u = obj.tecnico_responsavel
         return {"id": u.pk, "nome": u.nome}
 
+    @extend_schema_field(MunicipioNestedSerializer)
     def get_municipio(self, obj) -> dict:
         return MunicipioNestedSerializer(obj.municipio).data
 
+    @extend_schema_field(NestedSerializer(allow_null=True))
     def get_comunidade(self, obj) -> dict | None:
         if obj.comunidade_id:
             return {"id": obj.comunidade.pk, "nome": obj.comunidade.nome}

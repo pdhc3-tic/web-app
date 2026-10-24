@@ -187,6 +187,21 @@ export function canAcessarFilaRemanejamentos(
   return canDecidirRemanejamento(user) || canEmitirParecerRemanejamento(user);
 }
 
+/**
+ * Gestão do SGD (painel por rubrica e relatórios — BE-5 / #293 / #297).
+ * Restrito aos perfis de gestão: Super Admin, UGP, FGD e Articulador Estadual.
+ */
+export function canViewSgdGestao(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return (
+    isSuperAdmin(user) ||
+    hasRole(user, UGP_SLUG) ||
+    hasRole(user, FGD_SLUG) ||
+    hasRole(user, ARTICULADOR_ESTADUAL_SLUG)
+  );
+}
+
 export type SuperAdminState = {
   /** true enquanto a sessão ainda está carregando. */
   loading: boolean;

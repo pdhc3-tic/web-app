@@ -1,0 +1,33 @@
+name: Schema OpenAPI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/**"
+
+concurrency:
+  group: openapi-schema-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  schema:
+    name: Schema OpenAPI atualizado
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Construir imagem de testes
+        run: docker build -t pdhc-backend-test -f backend/Dockerfile.prod backend
+
+      # A geração do schema não consulta o banco: o job dispensa Postgres e Redis.
+      - name: Conferir backend/schema.yml e os warnings do schema
+        run: >-
+          docker run --rm
+          -e DJANGO_SECRET_KEY=ci-only-secret
+          -e FIELD_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+          -e DEBUG=False
+          pdhc-backend-test
+          pytest apps/core/tests/test_openapi_schema.py -v

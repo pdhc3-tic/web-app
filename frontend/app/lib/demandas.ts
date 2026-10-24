@@ -273,14 +273,24 @@ export async function fetchContagemFila(signal?: AbortSignal): Promise<ContagemF
  * - `aguardandoMinhaAcao`: a fila do perfil logado, pela mesma regra da
  *   contagem (`aguardando-minha-acao/contagem/`) — o `count` da lista bate com
  *   o `total` do badge.
+ * - `filtros`: os do `DemandFilter` do BE-5 (atividade, ação, território,
+ *   período…) — o drill-down do painel de execução (#297) leva o recorte do
+ *   painel para a lista mostrar as demandas que compõem o custo exibido.
  */
 export async function listDemandas(
-  params: { status?: StatusDemanda[]; aguardandoMinhaAcao?: boolean } = {},
+  params: {
+    status?: StatusDemanda[];
+    aguardandoMinhaAcao?: boolean;
+    filtros?: Record<string, string | undefined>;
+  } = {},
   signal?: AbortSignal,
 ): Promise<ListaDemandas> {
   const qs = new URLSearchParams();
   for (const st of params.status ?? []) qs.append("status", st);
   if (params.aguardandoMinhaAcao) qs.set("aguardando_minha_acao", "true");
+  for (const [chave, valor] of Object.entries(params.filtros ?? {})) {
+    if (valor) qs.set(chave, valor);
+  }
   return lerListaDemandas(qs, signal);
 }
 

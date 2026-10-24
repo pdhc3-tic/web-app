@@ -1,9 +1,15 @@
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer, TokenBlacklistSerializer
 from rest_framework_simplejwt.exceptions import InvalidToken
 
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 from apps.core.models.user import User
-from apps.core.serializers import RoleSummarySerializer, TerritorySummarySerializer
+from apps.core.serializers import (
+    RoleSerializer,
+    RoleSummarySerializer,
+    TerritorySerializer,
+    TerritorySummarySerializer,
+)
 
 import hashlib
 import secrets
@@ -30,6 +36,12 @@ class LoginSerializer(TokenObtainPairSerializer):
             raise InvalidToken("Acesso revogado. Faça novo login.")
         return data
     
+class TokensRespostaSerializer(serializers.Serializer):
+    """Resposta do login e do refresh: as views renomeiam `access`/`refresh`."""
+    access_token = serializers.CharField()
+    refresh_token = serializers.CharField()
+
+
 class RefreshSerializer(TokenRefreshSerializer):
     refresh_token = serializers.CharField()
 
@@ -74,13 +86,13 @@ class UserMeSerializer(serializers.ModelSerializer):
             "permissoes_resumo",
         ]
 
+    @extend_schema_field(RoleSerializer(many=True))
     def get_perfis(self, obj):
-        from apps.core.serializers import RoleSerializer
         profiles = obj.profiles.select_related("perfil").all()
         return [RoleSerializer(p.perfil).data for p in profiles]
 
+    @extend_schema_field(TerritorySerializer(many=True))
     def get_territorios(self, obj):
-        from apps.core.serializers import TerritorySerializer
         from apps.core.models.territory import Territory
         profile_territory_ids = list(
             obj.profiles.filter(territorio__isnull=False)
@@ -95,7 +107,7 @@ class UserMeSerializer(serializers.ModelSerializer):
             return TerritorySerializer(Territory.objects.all(), many=True).data
         return []
 
-    def get_permissoes_resumo(self, obj):
+    def get_permissoes_resumo(self, obj) -> list[str]:
         return sorted(obj.get_all_permissions())
     
 class PasswordResetRequestSerializer(serializers.Serializer):

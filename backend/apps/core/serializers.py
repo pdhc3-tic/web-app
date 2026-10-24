@@ -3,6 +3,7 @@ import json
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 from django.contrib.auth import get_user_model
+from drf_spectacular.utils import extend_schema_field
 from .models import Role, State, Territory, Municipality, Organization
 from .models.notifications import Notification
 from .models.user_profile import UserProfile
@@ -158,6 +159,22 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ['ultimo_login']
 
 
+class UsuarioRefSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    nome = serializers.CharField()
+
+
+class UsuarioRefComEmailSerializer(UsuarioRefSerializer):
+    email = serializers.EmailField()
+
+
+class PerfilDoUsuarioSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    slug = serializers.CharField()
+    nome = serializers.CharField()
+    territorio_id = serializers.IntegerField(allow_null=True)
+
+
 class UserListSerializer(serializers.ModelSerializer):
     nome_completo = serializers.CharField(source="nome")
     perfis = serializers.SerializerMethodField()
@@ -178,15 +195,17 @@ class UserListSerializer(serializers.ModelSerializer):
             "qtd_dispositivos", "ultimo_sync_dispositivos",
         ]
 
+    @extend_schema_field(UsuarioRefSerializer(allow_null=True))
     def get_acesso_revogado_por(self, obj):
         if obj.acesso_revogado_por:
             return {"id": obj.acesso_revogado_por_id, "nome": obj.acesso_revogado_por.nome}
         return None
 
-    def get_qtd_dispositivos(self, obj):
+    def get_qtd_dispositivos(self, obj) -> int | None:
         # Preenchido apenas com ?com_dispositivo=true (evita N+1 nas demais listagens).
         return getattr(obj, "qtd_dispositivos", None)
 
+    @extend_schema_field(serializers.DateTimeField(allow_null=True))
     def get_ultimo_sync_dispositivos(self, obj):
         push = getattr(obj, "ultimo_push_maximo", None)
         pull = getattr(obj, "ultimo_pull_maximo", None)
@@ -194,6 +213,7 @@ class UserListSerializer(serializers.ModelSerializer):
         value = max(candidates) if candidates else None
         return value.isoformat() if value else None
 
+    @extend_schema_field(RoleSerializer(many=True))
     def get_perfis(self, obj):
         # consome o prefetch_related("profiles__perfil") sem reconsultar
         profiles = obj.profiles.all()
@@ -221,6 +241,7 @@ class UserListSerializer(serializers.ModelSerializer):
             territorios = []
         return sorted(territorios, key=lambda t: t.nome)
 
+    @extend_schema_field(TerritorySerializer(many=True))
     def get_territorios(self, obj):
         return TerritorySerializer(self._territorios_do_usuario(obj), many=True).data
 
@@ -261,6 +282,7 @@ class UserDetailSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["ultimo_login"]
 
+    @extend_schema_field(UsuarioRefComEmailSerializer(allow_null=True))
     def get_acesso_revogado_por(self, obj):
         if obj.acesso_revogado_por:
             return {
@@ -270,9 +292,10 @@ class UserDetailSerializer(serializers.ModelSerializer):
             }
         return None
 
-    def get_qtd_dispositivos(self, obj):
+    def get_qtd_dispositivos(self, obj) -> int | None:
         return getattr(obj, "qtd_dispositivos", None)
 
+    @extend_schema_field(serializers.DateTimeField(allow_null=True))
     def get_ultimo_sync_dispositivos(self, obj):
         push = getattr(obj, "ultimo_push_maximo", None)
         pull = getattr(obj, "ultimo_pull_maximo", None)
@@ -280,6 +303,7 @@ class UserDetailSerializer(serializers.ModelSerializer):
         value = max(candidates) if candidates else None
         return value.isoformat() if value else None
 
+    @extend_schema_field(PerfilDoUsuarioSerializer(many=True))
     def get_perfis(self, obj):
         # consome o prefetch_related("profiles__perfil") sem reconsultar
         profiles = obj.profiles.all()
@@ -315,6 +339,7 @@ class UserDetailSerializer(serializers.ModelSerializer):
             territorios = []
         return sorted(territorios, key=lambda t: t.nome)
 
+    @extend_schema_field(TerritorySerializer(many=True))
     def get_territorios(self, obj):
         return TerritorySerializer(self._territorios_do_usuario(obj), many=True).data
 

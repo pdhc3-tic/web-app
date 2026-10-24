@@ -3,6 +3,7 @@ from datetime import datetime
 from django.apps import apps
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 
@@ -29,7 +30,18 @@ class UPFHistoricoMixin:
         pks = upfs_acessiveis_ao_usuario(user, role_slugs=role_slugs).values_list("pk", flat=True)
         return get_object_or_404(UPF.all_objects.filter(pk__in=pks), pk=pk)
 
-    @action(detail=True, methods=["get"], url_path="historico")
+    @extend_schema(
+        filters=False,
+        parameters=[
+            OpenApiParameter("incluir_membros", OpenApiTypes.BOOL, description="Inclui o histórico dos membros."),
+            OpenApiParameter("usuario", OpenApiTypes.INT),
+            OpenApiParameter("desde", OpenApiTypes.DATETIME),
+            OpenApiParameter("ate", OpenApiTypes.DATETIME),
+            OpenApiParameter("campo", OpenApiTypes.STR),
+        ],
+        responses=HistoricoEntrySerializer(many=True),
+    )
+    @action(detail=True, methods=["get"], url_path="historico", pagination_class=HistoricoPagination)
     def historico(self, request, pk=None):
         upf = self._get_upf_including_inativas(pk)
         q = Q(entidade="UPF", entidade_id=str(upf.pk))

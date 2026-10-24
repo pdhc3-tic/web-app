@@ -10,6 +10,7 @@ import {
   canAcessarFilaRemanejamentos,
   canCreateDemanda,
   canOperarArlo,
+  canViewSgdGestao,
 } from "@/app/lib/auth/roles";
 import { useContagemFila } from "@/app/lib/hooks/useFilaDemandas";
 
@@ -60,6 +61,8 @@ const SUBMODULES: Submodule[] = [
     title: "Execução por Rubrica",
     description: "Autorizado, pago e saldo por rubrica, e o custo de cada atividade.",
     Icon: PieChart,
+    href: "/sgd/execucao/",
+    visivel: canViewSgdGestao,
   },
   {
     key: "remanejamentos",

@@ -1,9 +1,11 @@
 from datetime import date
 
 from django.db import transaction
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.core.models import Municipality
+from apps.core.serializers import UsuarioRefSerializer
 from apps.core.sensitive_fields import SensitiveFieldsSerializerMixin, mascarar_cpf
 from apps.sgp.models import Comunidade, MembroFamilia, Projeto, UPF
 from apps.sgp.serializers.common import MunicipioNestedSerializer, NestedSerializer
@@ -39,7 +41,7 @@ class TitularNestedSerializer(SensitiveFieldsSerializerMixin, serializers.ModelS
         ]
         read_only_fields = ["id"]
 
-    def get_idade(self, obj):
+    def get_idade(self, obj) -> int | None:
         if obj.data_nascimento:
             today = date.today()
             return (
@@ -63,7 +65,7 @@ class UPFListSerializer(serializers.ModelSerializer):
             "foto_url",
         ]
 
-    def get_cpf(self, obj):
+    def get_cpf(self, obj) -> str:
         return mascarar_cpf(obj.titular.cpf)
 
 
@@ -146,6 +148,7 @@ class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeria
             "device_id", "uuid_local", "ultima_origem", "ultimo_sync_em",
         ]
 
+    @extend_schema_field(MembroListSerializer(many=True))
     def get_membros(self, obj):
         membros = obj.membros.all()
         return MembroListSerializer(membros, many=True, context=self.context).data
@@ -245,6 +248,16 @@ class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeria
         return data
 
 
+class UPFDetailRespostaSerializer(UPFDetailSerializer):
+    """Resposta de `UPFDetailSerializer` no schema: o `to_representation`
+    troca os PKs de escrita pelos objetos aninhados."""
+
+    projeto = NestedSerializer(read_only=True)
+    municipio = MunicipioNestedSerializer(read_only=True)
+    territorio = NestedSerializer(read_only=True, allow_null=True)
+    comunidade = NestedSerializer(read_only=True, allow_null=True)
+
+
 class HistoricoEntrySerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
     campo = serializers.CharField(allow_null=True, read_only=True)
@@ -253,6 +266,7 @@ class HistoricoEntrySerializer(serializers.Serializer):
     usuario = serializers.SerializerMethodField()
     timestamp = serializers.DateTimeField(read_only=True)
 
+    @extend_schema_field(UsuarioRefSerializer(allow_null=True))
     def get_usuario(self, obj):
         uid = obj.get("usuario_id")
         if uid is not None:

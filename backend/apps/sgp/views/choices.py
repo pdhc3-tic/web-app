@@ -1,3 +1,5 @@
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -81,10 +83,31 @@ CHOICES_PUBLICADOS = {
 }
 
 
+class OpcaoTextoSerializer(serializers.Serializer):
+    value = serializers.CharField()
+    label = serializers.CharField()
+
+
+class OpcaoNumeroSerializer(serializers.Serializer):
+    value = serializers.IntegerField()
+    label = serializers.CharField()
+
+
+def _opcoes_serializer(opcoes):
+    serializer = OpcaoNumeroSerializer if isinstance(opcoes[0][0], int) else OpcaoTextoSerializer
+    return serializer(many=True)
+
+
 class SGPChoicesView(APIView):
     permission_classes = [IsAuthenticatedActiveAccess]
     http_method_names = ["get", "head", "options"]
 
+    @extend_schema(
+        responses=inline_serializer(
+            "ChoicesResposta",
+            fields={chave: _opcoes_serializer(opcoes) for chave, opcoes in CHOICES_PUBLICADOS.items()},
+        ),
+    )
     def get(self, request):
         return Response({
             chave: [{"value": valor, "label": rotulo} for valor, rotulo in opcoes]

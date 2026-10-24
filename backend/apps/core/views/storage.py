@@ -1,4 +1,5 @@
 from django.core.exceptions import RequestDataTooBig
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, OpenApiTypes, extend_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -11,6 +12,21 @@ class LocalStorageUploadView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("key", OpenApiTypes.STR, required=True),
+            OpenApiParameter("content_type", OpenApiTypes.STR, required=True),
+            OpenApiParameter("size", OpenApiTypes.INT, required=True),
+            OpenApiParameter("expires", OpenApiTypes.INT, required=True),
+            OpenApiParameter("signature", OpenApiTypes.STR, required=True),
+        ],
+        request={"application/octet-stream": OpenApiTypes.BINARY},
+        responses={
+            200: OpenApiResponse(description="Arquivo gravado."),
+            400: OpenApiResponse(description="URL, tamanho ou key inválidos."),
+            403: OpenApiResponse(description="Assinatura expirada ou inválida."),
+        },
+    )
     def put(self, request):
         key = request.query_params.get("key", "")
         content_type = request.query_params.get("content_type", "")

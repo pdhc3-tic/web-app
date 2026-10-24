@@ -1,5 +1,6 @@
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -140,6 +141,9 @@ class ProducaoConsolidadaViewSet(mixins.ListModelMixin, viewsets.GenericViewSet)
     filterset_class = ProducaoConsolidadaFilter
 
     def get_queryset(self):
+        # Na geração do schema não há usuário real para o recorte por perfil.
+        if getattr(self, "swagger_fake_view", False):
+            return Production.objects.none()
         qs = Production.objects.filter(upf__ativo=True).select_related(
             "cultura", "especie", "upf__titular", "upf__municipio", "upf__territorio"
         )
@@ -150,6 +154,21 @@ class ProducaoConsolidadaViewSet(mixins.ListModelMixin, viewsets.GenericViewSet)
             territory_lookup="upf__territorio__in",
         ).order_by("-criado_em", "-pk")
 
+    @extend_schema(
+        filters=True,
+        responses=inline_serializer(
+            "ProducaoIndicadores",
+            fields={
+                "total_upfs_produtoras": serializers.IntegerField(),
+                "area_total_ha": serializers.DecimalField(max_digits=14, decimal_places=2),
+                "principais_culturas": inline_serializer(
+                    "ProducaoCulturaContagem",
+                    fields={"nome": serializers.CharField(), "count": serializers.IntegerField()},
+                    many=True,
+                ),
+            },
+        ),
+    )
     @action(detail=False, methods=["get"])
     def indicadores(self, request):
         return Response(indicadores_producao(self.filter_queryset(self.get_queryset())))

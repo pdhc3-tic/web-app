@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, OpenApiTypes, extend_schema
 from rest_framework import serializers, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -27,6 +28,7 @@ from apps.core.storage import StorageObjectNotFound, get_storage
 from apps.sgp.models import Activity
 from apps.sgp.models.activity_photo import ActivityPhoto
 from apps.sgp.serializers import ActivityPhotoSerializer
+from apps.sgp.serializers.common import UploadURLRespostaSerializer
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +120,8 @@ class ActivityPhotoMixin:
 
     # -- GET /atividades/{id}/fotos/ ----------------------------------------
 
-    @action(detail=True, methods=["get"], url_path="fotos")
+    @extend_schema(filters=False, responses=ActivityPhotoSerializer(many=True))
+    @action(detail=True, methods=["get"], url_path="fotos", pagination_class=None)
     def fotos_list(self, request, pk=None):
         activity = self._get_activity_for_upload(pk)
         fotos = ActivityPhoto.objects.filter(activity=activity).order_by(
@@ -129,6 +132,7 @@ class ActivityPhotoMixin:
 
     # -- POST /atividades/{id}/fotos/upload-url/ ----------------------------
 
+    @extend_schema(request=ActivityPhotoUploadURLSerializer, responses=UploadURLRespostaSerializer)
     @action(detail=True, methods=["post"], url_path="fotos/upload-url")
     def fotos_upload_url(self, request, pk=None):
         activity = self._get_activity_for_upload(pk)
@@ -177,6 +181,7 @@ class ActivityPhotoMixin:
 
     # -- POST /atividades/{id}/fotos/confirm/ --------------------------------
 
+    @extend_schema(request=ActivityPhotoConfirmSerializer, responses={201: ActivityPhotoSerializer})
     @action(detail=True, methods=["post"], url_path="fotos/confirm")
     def fotos_confirm(self, request, pk=None):
         activity = self._get_activity_for_upload(pk)
@@ -276,6 +281,10 @@ class ActivityPhotoMixin:
 
     # -- DELETE /atividades/{id}/fotos/{foto_id}/ ----------------------------
 
+    @extend_schema(
+        parameters=[OpenApiParameter("foto_id", OpenApiTypes.INT, OpenApiParameter.PATH)],
+        responses={204: OpenApiResponse(description="Foto removida.")},
+    )
     @action(
         detail=True,
         methods=["delete"],
@@ -304,7 +313,10 @@ class ActivityPhotoMixin:
 
     # -- PATCH /atividades/{id}/fotos/reordenar/ ----------------------------
 
-    @action(detail=True, methods=["patch"], url_path="fotos/reordenar")
+    @extend_schema(
+        filters=False, request=ActivityPhotoReorderSerializer, responses=ActivityPhotoSerializer(many=True),
+    )
+    @action(detail=True, methods=["patch"], url_path="fotos/reordenar", pagination_class=None)
     def fotos_reordenar(self, request, pk=None):
         """
         Recebe {"ids": [3, 1, 2]} — a posição na lista define a nova ordem.

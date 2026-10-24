@@ -10,6 +10,7 @@ Referência: Issue #187 — Proteção de campos sensíveis (Saúde, Cor/Raça).
 
 from __future__ import annotations
 
+from drf_spectacular.extensions import OpenApiSerializerExtension
 from rest_framework import serializers
 
 from apps.core.services.permissions import user_has_role
@@ -51,6 +52,11 @@ def sensitive_fields_visible_to(user) -> set[str]:
         if any(user_has_role(user, role) for role in roles):
             visible.add(field)
     return visible
+
+
+# Chave de contexto que só a extensão do schema abaixo põe: com ela o mixin
+# expõe todos os campos sensíveis, para descrevê-los no OpenAPI.
+_CONTEXTO_SCHEMA_COMPLETO = "_schema_com_campos_sensiveis"
 
 
 class SensitiveFieldsSerializerMixin:
@@ -108,6 +114,30 @@ class SensitiveFieldsSerializerMixin:
         return super().to_internal_value(data)
 
     def _sensitive_fields_visible(self):
+        if self.context.get(_CONTEXTO_SCHEMA_COMPLETO):
+            return set(self.sensitive_fields)
         request = self.context.get("request")
         user = getattr(request, "user", None) if request else None
         return sensitive_fields_visible_to(user)
+
+
+class SensitiveFieldsSchemaExtension(OpenApiSerializerExtension):
+    """A geração do schema não tem usuário, então o `get_fields()` do mixin
+    tiraria os campos sensíveis do schema de todos os perfis. Aqui eles entram
+    sempre, mas fora do `required`, já que a resposta pode omiti-los."""
+
+    target_class = SensitiveFieldsSerializerMixin
+    match_subclasses = True
+
+    def map_serializer(self, auto_schema, direction):
+        completo = type(self.target)(
+            context={**self.target.context, _CONTEXTO_SCHEMA_COMPLETO: True}
+        )
+        schema = auto_schema._map_basic_serializer(completo, direction)
+        omitiveis = {nome for nomes in self.target.sensitive_fields.values() for nome in nomes}
+        obrigatorios = [nome for nome in schema.get("required", []) if nome not in omitiveis]
+        if obrigatorios:
+            schema["required"] = obrigatorios
+        else:
+            schema.pop("required", None)
+        return schema

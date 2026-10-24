@@ -13,6 +13,7 @@ LIMITE_SEGUNDOS = 2
 URL = "/api/v1/sgd/painel/rubricas/"
 
 
+@pytest.mark.performance
 def test_painel_por_rubrica_com_muitas_solicitacoes_em_menos_de_2s_e_queries_fixas(
     auth_client_ugp, activity_rn, solicitante_rn, rubrica_diarias,
 ):

@@ -3,7 +3,8 @@ from datetime import timedelta
 
 from django.db import transaction
 from django.utils import timezone
-from rest_framework import generics
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import generics, serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -88,16 +89,28 @@ class SystemConfigDetailView(generics.RetrieveUpdateAPIView):
         serializer.save(atualizado_por=self.request.user)
 
 
+_GOOGLE_CALENDAR_CONFIG_RESPOSTA = inline_serializer(
+    "GoogleCalendarConfigResposta",
+    fields={
+        "calendario_destino_id": serializers.CharField(),
+        "lembretes": serializers.ListField(child=serializers.IntegerField()),
+        "integracao_ativa": serializers.BooleanField(),
+    },
+)
+
+
 class GoogleCalendarConfigView(APIView):
     """GET|PATCH /api/v1/core/config/google-calendar/ — configuração singleton."""
 
     permission_classes = [IsAuthenticatedActiveAccess, IsSuperAdmin]
     http_method_names = ["get", "patch", "head", "options"]
 
+    @extend_schema(responses=_GOOGLE_CALENDAR_CONFIG_RESPOSTA)
     def get(self, request):
         configs = _ensure_google_calendar_configs()
         return Response(self._payload(configs))
 
+    @extend_schema(request=GoogleCalendarConfigSerializer, responses=_GOOGLE_CALENDAR_CONFIG_RESPOSTA)
     @transaction.atomic
     def patch(self, request):
         configs = _ensure_google_calendar_configs()
@@ -151,6 +164,17 @@ class GoogleCalendarStatusView(APIView):
 
     JANELA_FALHAS_RECENTES = timedelta(hours=24)
 
+    @extend_schema(
+        responses=inline_serializer(
+            "GoogleCalendarStatusResposta",
+            fields={
+                "estado": serializers.ChoiceField(choices=["pendente", "nunca_executada", "ok", "erro"]),
+                "ultima_sincronizacao": serializers.DateTimeField(allow_null=True),
+                "ultimo_erro": serializers.CharField(allow_null=True),
+                "falhas_recentes": serializers.IntegerField(),
+            },
+        ),
+    )
     def get(self, request):
         if Activity.objects.filter(google_calendar_sync_status="pendente").exists():
             estado = "pendente"
