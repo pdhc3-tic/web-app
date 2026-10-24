@@ -2224,6 +2224,51 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/sgd/config/arlo-mapping/campos/:
+    get:
+      operationId: v1_sgd_config_arlo_mapping_campos_retrieve
+      description: Campos do SGD que cada direção aceita, com rótulo, obrigatoriedade
+        e formatos.
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogoCamposArlo'
+          description: ''
+  /api/v1/sgd/config/arlo-mapping/preview/:
+    get:
+      operationId: v1_sgd_config_arlo_mapping_preview_retrieve
+      description: Cabeçalho e uma linha do CSV de exportação com o mapeamento vigente.
+      parameters:
+      - in: query
+        name: direcao
+        schema:
+          type: string
+          enum:
+          - exportacao
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewExportacaoArlo'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/v1/sgd/config/arlo-mapping/reordenar/:
     post:
       operationId: v1_sgd_config_arlo_mapping_reordenar_create
@@ -2250,6 +2295,47 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ArloFieldMapping'
+          description: ''
+  /api/v1/sgd/config/diarias/simular/:
+    get:
+      operationId: v1_sgd_config_diarias_simular_retrieve
+      description: Valor das diárias para o formulário, com a mesma regra usada ao
+        gravar a solicitação.
+      parameters:
+      - in: query
+        name: data_fim
+        schema:
+          type: string
+          format: date
+        required: true
+      - in: query
+        name: data_inicio
+        schema:
+          type: string
+          format: date
+        required: true
+      - in: query
+        name: municipio_destino_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulacaoDiarias'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
           description: ''
   /api/v1/sgd/config/tipo-rubrica/:
     get:
@@ -2598,8 +2684,8 @@ paths:
     get:
       operationId: v1_sgd_demandas_auditoria_retrieve
       description: |-
-        Pressupõe que `self.get_queryset()` devolve o queryset com o escopo de
-        visibilidade já aplicado (`demand_visibility_scope`).
+        Trilha de quem pode ver a demanda. O IP de quem agiu é dado pessoal:
+        só o Super Admin, que tem a auditoria completa, o recebe.
       parameters:
       - in: path
         name: id
@@ -3126,6 +3212,33 @@ paths:
       responses:
         '200':
           description: No response body
+  /api/v1/sgd/opcoes/usuarios/:
+    get:
+      operationId: v1_sgd_opcoes_usuarios_list
+      description: Listas dos filtros de solicitante e de responsável pela etapa atual
+        do painel.
+      parameters:
+      - in: query
+        name: papel
+        schema:
+          type: string
+          enum:
+          - responsavel
+          - solicitante
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OpcaoUsuario'
+          description: ''
   /api/v1/sgd/painel/rubricas/:
     get:
       operationId: v1_sgd_painel_rubricas_retrieve
@@ -8510,6 +8623,24 @@ components:
         * `execucao` - Execução
         * `remanejamento` - Remanejamento
         * `ajuste` - Ajuste
+    CampoArlo:
+      type: object
+      properties:
+        campo:
+          type: string
+        label:
+          type: string
+        obrigatorio:
+          type: boolean
+        formatos:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormatoArlo'
+      required:
+      - campo
+      - formatos
+      - label
+      - obrigatorio
     CancelarRequest:
       type: object
       properties:
@@ -8519,6 +8650,20 @@ components:
         motivo:
           type: string
           default: ''
+    CatalogoCamposArlo:
+      type: object
+      properties:
+        exportacao:
+          type: array
+          items:
+            $ref: '#/components/schemas/CampoArlo'
+        importacao:
+          type: array
+          items:
+            $ref: '#/components/schemas/CampoArlo'
+      required:
+      - exportacao
+      - importacao
     CatalogoProductionNested:
       type: object
       properties:
@@ -9692,6 +9837,17 @@ components:
         * `processando` - Processando
         * `concluida` - Concluída
         * `erro` - Erro
+    FaixaDestino:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: true
+        nome:
+          type: string
+      required:
+      - id
+      - nome
     FaixaEnum:
       enum:
       - amarelo
@@ -9919,6 +10075,16 @@ components:
         * `participacao` - Participação
         * `apoio` - Apoio
         * `articulacao` - Articulação
+    FormatoArlo:
+      type: object
+      properties:
+        value:
+          type: string
+        label:
+          type: string
+      required:
+      - label
+      - value
     FormatoExportacaoEnum:
       enum:
       - csv
@@ -10907,6 +11073,16 @@ components:
       required:
       - label
       - value
+    OpcaoUsuario:
+      type: object
+      properties:
+        id:
+          type: integer
+        nome:
+          type: string
+      required:
+      - id
+      - nome
     Organization:
       type: object
       properties:
@@ -12790,6 +12966,24 @@ components:
       - status_snapshot
       - token_mascarado
       - url_endpoint
+    PreviewExportacaoArlo:
+      type: object
+      properties:
+        colunas:
+          type: array
+          items:
+            type: string
+        linha:
+          type: array
+          items:
+            type: string
+        exemplo:
+          type: boolean
+          description: 'A linha é fictícia: ainda não há demanda autorizada.'
+      required:
+      - colunas
+      - exemplo
+      - linha
     ProducaoConsolidada:
       type: object
       properties:
@@ -13321,6 +13515,28 @@ components:
         * `1` - Sim
         * `2` - Não
         * `3` - Não Informado
+    SimulacaoDiarias:
+      type: object
+      properties:
+        faixa_destino:
+          $ref: '#/components/schemas/FaixaDestino'
+        valor_por_diaria:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        numero_diarias:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,5}(?:\.\d{0,1})?$
+        valor_total:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+      required:
+      - faixa_destino
+      - numero_diarias
+      - valor_por_diaria
+      - valor_total
     SistemaCriacaoEnum:
       enum:
       - extensivo
