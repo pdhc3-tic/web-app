@@ -14,6 +14,7 @@ from django.utils import timezone
 
 from apps.core.models.user_profile import UserProfile
 from apps.core.services.permissions import user_role_slugs, user_states
+from apps.sgd.constants import PERFIS_NACIONAIS
 from apps.sgd.models.demand import STATUS_CHOICES, STATUS_TERMINAIS, Demand
 from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.services import business_days
@@ -35,7 +36,6 @@ STATUS_RELEVANTES_POR_PERFIL = {
 TODOS_OS_STATUS = tuple(valor for valor, _ in STATUS_CHOICES)
 ROTULOS_STATUS = dict(STATUS_CHOICES)
 
-PERFIS_NACIONAIS = {"super-admin", "ugp", "fgd"}
 
 
 def _demandas_do_escopo(user):

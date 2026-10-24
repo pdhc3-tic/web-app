@@ -15,6 +15,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.core.models.user import User
 from apps.core.services.permissions import user_role_slugs, user_states
+from apps.sgd.constants import PERFIS_NACIONAIS
 from apps.sgd.filters import DemandFilter
 from apps.sgd.models.demand_request import DemandRequest
 from apps.sgp.models.budget import BudgetAllocation, BudgetRubrica
@@ -48,12 +49,13 @@ def exigir_perfil_de_gestao(user) -> set[str]:
 
 
 PAPEIS_DE_USUARIO = ("solicitante", "responsavel")
-PERFIS_NACIONAIS = {"super-admin", "ugp", "fgd"}
 
 
-def _do_escopo_do_articulador(slug: str, estados: set[str]) -> Q:
-    """Perfil `slug` com território nos estados do Articulador, ou sem
-    território (alcance global)."""
+def _com_o_perfil(slug: str, *, estados: set[str] | None) -> Q:
+    """Usuários com o perfil `slug`. Com `estados` (o recorte do Articulador), só
+    os de território nesses estados ou sem território (alcance global)."""
+    if estados is None:
+        return Q(profiles__perfil__slug=slug)
     return Q(profiles__perfil__slug=slug, profiles__territorio__estados__overlap=sorted(estados)) | Q(
         profiles__perfil__slug=slug, profiles__territorio__isnull=True,
     )
@@ -65,17 +67,12 @@ def opcoes_de_usuarios(user, papel: str) -> list[dict]:
     slugs = exigir_perfil_de_gestao(user)
     if papel not in PAPEIS_DE_USUARIO:
         raise ValidationError({"papel": f"Valor inválido. Esperado um de: {list(PAPEIS_DE_USUARIO)}."})
-    nacional = bool(slugs & PERFIS_NACIONAIS)
-    estados = set() if nacional else user_states(user)
+    estados = None if slugs & PERFIS_NACIONAIS else user_states(user)
 
     if papel == "solicitante":
-        filtro = Q(profiles__perfil__slug="adt-acr") if nacional else _do_escopo_do_articulador("adt-acr", estados)
+        filtro = _com_o_perfil("adt-acr", estados=estados)
     else:
-        articuladores = (
-            Q(profiles__perfil__slug="articulador-estadual") if nacional
-            else _do_escopo_do_articulador("articulador-estadual", estados)
-        )
-        filtro = articuladores | Q(profiles__perfil__slug__in=["ugp", "fgd"])
+        filtro = _com_o_perfil("articulador-estadual", estados=estados) | Q(profiles__perfil__slug__in=["ugp", "fgd"])
     return list(
         User.objects.filter(filtro, ativo=True).distinct().order_by("nome", "pk").values("id", "nome")
     )

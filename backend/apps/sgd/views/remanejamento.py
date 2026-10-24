@@ -13,6 +13,7 @@ from apps.core.permissions import (
     IsUGP,
 )
 from apps.core.services.permissions import user_has_role, user_role_slugs, user_states
+from apps.sgd.constants import PERFIS_NACIONAIS
 from apps.sgd.serializers.remanejamento import (
     AtualizarRemanejamentoSerializer,
     BudgetIncreaseRequestSerializer,
@@ -24,7 +25,6 @@ from apps.sgd.serializers.remanejamento import (
 from apps.sgd.services import recurso_extra as recurso_extra_service
 from apps.sgp.models import BudgetIncreaseRequest
 
-PERFIS_COM_VISAO_GLOBAL = {"super-admin", "ugp", "fgd"}
 PERFIS_DA_DECISAO = {"super-admin", "ugp"}
 
 
@@ -40,7 +40,7 @@ def pedidos_visiveis(user):
         "user", "rubrica", "parecer_por", "decidido_por", "activity__municipio__state",
     )
     perfis = user_role_slugs(user, ("super-admin", "ugp", "fgd", "articulador-estadual"))
-    if perfis & PERFIS_COM_VISAO_GLOBAL:
+    if perfis & PERFIS_NACIONAIS:
         return qs
     if "articulador-estadual" in perfis:
         return qs.filter(activity__municipio__state__sigla__in=user_states(user))
