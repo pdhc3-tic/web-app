@@ -1,4 +1,5 @@
 from django.core.cache import cache
+from django.db.models import F
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import generics, serializers, status
@@ -25,7 +26,11 @@ class NotificationListView(generics.ListAPIView):
     ordering = ["-enviado_em"]
 
     def get_queryset(self):
-        return Notification.objects.filter(user=self.request.user).order_by("-enviado_em")
+        # No Postgres os nulos viriam primeiro no DESC: as antigas sem data de
+        # envio ficariam no topo do sino, acima das novas.
+        return Notification.objects.filter(user=self.request.user).order_by(
+            F("enviado_em").desc(nulls_last=True), "-id",
+        )
 
 
 class NotificationMarkReadView(generics.UpdateAPIView):
