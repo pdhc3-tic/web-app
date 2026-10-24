@@ -12,6 +12,7 @@ from .views import (
     RemanejamentoViewSet,
     SaldoConsultaView,
     SgdDashboardView,
+    SimularDiariasView,
 )
 
 router = DefaultRouter()
@@ -28,4 +29,5 @@ urlpatterns = [
     path("sgd/relatorios/custo-por-atividade/", CustoPorAtividadeView.as_view(), name="sgd-custo-por-atividade"),
     path("sgd/saldo/", SaldoConsultaView.as_view(), name="sgd-saldo"),
     path("sgd/dashboard/", SgdDashboardView.as_view(), name="sgd-dashboard"),
+    path("sgd/config/diarias/simular/", SimularDiariasView.as_view(), name="sgd-diarias-simular"),
 ]
