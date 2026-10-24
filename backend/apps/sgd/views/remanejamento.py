@@ -1,7 +1,7 @@
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 
@@ -98,6 +98,12 @@ class RemanejamentoViewSet(viewsets.ViewSet):
             filtros = [BudgetIncreaseRequest.Status.COM_PARECER]
         if filtros and "todos" not in filtros:
             qs = qs.filter(status__in=filtros)
+        demanda = request.query_params.get("demanda")
+        if demanda:
+            if not demanda.isdigit():
+                raise ValidationError({"demanda": "Informe o id numérico da demanda."})
+            # `demanda_id` é texto no pedido: compara com o id como string.
+            qs = qs.filter(demanda_id=demanda)
         paginador = RemanejamentoPagination()
         pagina = paginador.paginate_queryset(qs.order_by("-criado_em", "-id"), request)
         return paginador.get_paginated_response(BudgetIncreaseRequestSerializer(pagina, many=True).data)
