@@ -270,8 +270,10 @@ resposta.
 
 ## 6. `GET /api/v1/sgd/demandas/` não filtra por atividade — a aba mostra demandas de outras atividades
 
-> *Ainda aberto em 08/10/2026:* nenhum PR adiciona o filtro `activity` à
-> listagem. O BE-5 (PR #332, aberto) traz filtros combináveis e pode cobri-lo.
+> **Resolvido no backend pelo PR #332 (BE-5)**, com o filtro `?atividade=`;
+> o PR #339 acrescentou `?activity=` como alias. A aba usa `?atividade=`
+> desde 17/10/2026, e o E2E "não lista a demanda de outra atividade" deixou
+> de ser `test.fixme`.
 
 *Estado atual:* `DemandViewSet.list` (`backend/apps/sgd/views/demand.py`) só lê
 `?status=`. O frontend manda `?activity={id}` na aba "Demandas" da ficha da
@@ -464,6 +466,10 @@ O tipo `Demanda.solicitante_nome` já está declarado no frontend.
 
 ## 13. Fila "Aguardando minha ação": `status` de um valor só e sem contagem
 
+> **Resolvido no backend em 20/10/2026 pelo PR #339**: `status` repetido
+> devolve a união, e `?aguardando_minha_acao=true` lista a fila do perfil pela
+> mesma regra da contagem. A fila do painel passou a usar esse filtro.
+
 > *Parcialmente resolvido em 07/10/2026 pelo PR #327:* a rota
 > `aguardando-minha-acao/contagem/` devolve `{total, status}` com a regra de
 > cada perfil no backend — o badge e a contagem usam ela, e o frontend deixou
@@ -496,6 +502,13 @@ atendimento), e a mesma consulta alimenta o badge "N pendentes" da sidebar.
 ---
 
 ## 14. Cancelar demanda autorizada não é permitido — decisão de regra
+
+> **Resolvido no backend em 20/10/2026 pelo PR #339**: UGP e Super Admin
+> cancelam uma demanda Autorizada pelo `POST .../cancelar/`, com
+> `justificativa` obrigatória; as reservas são liberadas e a etapa
+> "Cancelamento" entra na linha do tempo. O botão "Cancelar demanda" está no
+> painel, com o `ConfirmationDrawer`. O PR registra que a regra ainda aguarda
+> confirmação da coordenação.
 
 A #296 pede que "cancelar demanda autorizada" use o `ConfirmationDrawer`, com
 justificativa obrigatória. No backend, `pode_cancelar`
@@ -593,6 +606,39 @@ publicá-los no `/api/v1/choices/`, junto com o próprio tipo de solicitação
 
 ---
 
+## 19. Auditoria da demanda só é visível ao Super Admin — divergente da #322
+
+*Compilado em 21/10/2026, ao implementar a issue #322 (aba de auditoria no
+painel master-detail de demandas).*
+
+A #322 pede, em critério de aceitação, "acesso restrito conforme a mesma
+política de quem pode visualizar a demanda (RLS já aplicada)". O endpoint
+`GET /api/v1/sgd/demandas/{id}/auditoria/` (BE-7, PR do `DemandViewSet.auditoria`)
+já aplica o escopo de leitura pelo `get_queryset` para resolver a demanda, mas
+em cima disso adiciona a permissão `IsSuperAdmin` — a trilha devolve o IP de
+quem agiu, e o backend decidiu que esse dado pessoal não cabe ao aprovador.
+
+```python
+if self.action == "auditoria":
+    return [IsAuthenticatedActiveAccess(), IsSuperAdmin()]
+```
+
+*Estado atual no frontend:* a aba "Auditoria" só aparece para Super Admin
+(`useIsSuperAdmin`). Articulador, UGP e FGD veem o painel sem a aba — a
+política atual do backend seria 403 para eles. A diferenciação visual, o
+"carregar mais" e os quatro E2E da issue cobrem o caminho do Super Admin.
+
+**Pedido** — alinhar com a coordenação qual regra vale:
+
+- se a trilha completa (com IP) é mesmo só do Super Admin, atualizar o
+  critério da #322 para refletir isso;
+- se o aprovador deve ver a trilha, decidir se o IP sai da resposta para esses
+  perfis (`DemandAuditEntrySerializer` com `fields` dinâmico), ou se o campo
+  fica para o Super Admin apenas. Nesse cenário o frontend libera a aba para
+  os decisores (`perfisDecisoresSgd`).
+
+---
+
 ## 18. Mapeamento Arlo ↔ SGD: sem catálogo de campos e sem preview — bloqueia parte da #320
 
 O CRUD do BE-9 (`/api/v1/sgd/config/arlo-mapping/`) permite listar, editar,
@@ -620,6 +666,86 @@ apagar e reordenar, mas a #320 pede mais duas coisas que a API não oferece:
 *Estado atual no frontend:* a #320 aguarda essas duas rotas para ser feita
 inteira, por decisão do time de não entregar a tela pela metade.
 
+---
+
+## 22. Pedidos de recurso extra sem filtro por demanda (#321)
+
+*Compilado em 22/10/2026, ao implementar a issue #321 (fluxo "Solicitar recurso
+extra" e Fila de Remanejamentos). Numerado a partir do 22 porque os itens 20 e
+21 do relatório de pendências das issues #294 a #302 (o do PR #343) já usam esses
+números.*
+
+A #321 pede que a aprovação do recurso extra apareça na demanda bloqueada, com
+"indicação clara de que a demanda pode ser resubmetida". O pedido guarda a
+demanda em `BudgetIncreaseRequest.demanda_id`, mas
+`GET /api/v1/sgd/remanejamentos/` só filtra por `status`: não há como pedir os
+pedidos de UMA demanda.
+
+*Estado atual no frontend:* o painel da demanda (só para o solicitante, em
+Rascunho ou Devolvida) chama `GET /sgd/remanejamentos/?status=todos&demanda={id}`
+e mostra o pedido mais recente. Até o filtro existir, o parâmetro é ignorado e a
+lista traz **todos** os pedidos do solicitante: com pedidos em mais de uma
+demanda, o aviso pode ser o de outra demanda dele. Nada é filtrado no cliente.
+
+**Pedido:** aceitar `?demanda={id}` na listagem (`demanda_id` é texto no
+modelo; comparar com o id como string).
+
+---
+
+## 23. O bloqueio na submissão não informa o valor faltante (#321)
+
+*Compilado em 22/10/2026, ao implementar a issue #321.*
+
+A #321 pede que o fluxo guiado confirme "o valor faltante antes de enviar". O
+backend calcula esse valor (`_deficit_individual` em
+`apps/sgd/services/recurso_extra.py`) e o usa quando `valor_solicitado` não é
+enviado, mas não o expõe antes do envio: o 400 da submissão
+(`solicitacoes_bloqueadas`, e no PR #343 também `code` e `solicitacao_id`) traz
+só a trava, o motivo em texto e a ação sugerida.
+
+Calcular no front exigiria repetir a regra (solicitações sem reserva ativa
+menos o saldo do limite, que pode estar negativo depois de um excedente
+autorizado).
+
+*Estado atual no frontend:* o fluxo mostra o motivo do bloqueio, envia sem
+`valor_solicitado` e exibe o valor que o pedido registrou no passo final.
+
+**Pedido:** incluir `valor_faltante` em cada item de `solicitacoes_bloqueadas`
+quando a trava for a individual, ou numa rota de consulta
+(`GET /sgd/demandas/{id}/recurso-extra/preview/?rubrica=`).
+
+---
+
+## 24. Notificações do SGD somem do sino e apontam para produção (#321)
+
+O caminho natural do solicitante até um pedido devolvido ou decidido é a
+notificação (`notificar_recurso_extra_devolvido` e `_decidido`, com link para
+`/sgd/remanejamentos/{id}`). No teste da #321 ela não aparece no sino, por dois
+motivos:
+
+1. **Ordem da lista.** `GET /api/v1/notifications/me/` ordena por
+   `-enviado_em`, mas `_notificar` (`apps/sgd/services/notifications.py`) só cria
+   o registro, e quem preenche `enviado_em` é a task de e-mail
+   (`apps/core/tasks/notifications.py`). As in-app ficam com `status=pendente` e
+   `enviado_em` nulo. O ADT do seed tem 75 assim, e sem data a ordem é
+   indefinida: a notificação nova não cai na primeira página do sino.
+   `Notification` também não tem data de criação para servir de critério.
+   Pelo mesmo motivo, o sino não mostra **quando** a notificação chegou: o
+   horário ("há 5 minutos") vem de `enviado_em`, que chega `null`.
+2. **Link de produção.** O link é montado com `FRONTEND_BASE_URL`, que fora de
+   produção cai no padrão `https://pdhc.ufersa.edu.br`. No ambiente local, o
+   clique sai do sistema.
+
+*Estado atual no frontend:* o sino mostra o que a API devolve, na ordem dela.
+Para chegar ao pedido, o teste usa o link direto.
+
+**Pedido:** marcar as in-app como entregues (`enviado_em` e `status`) ao
+criá-las, ou ordenar por `-pk` / uma data de criação nova; e definir
+`FRONTEND_BASE_URL` no `.env.example` e no `docker-compose.yml` para o
+ambiente local.
+
+---
+
 ## 25. O nome do arquivo exportado não chega ao front (#297)
 
 `GET /api/v1/sgd/demandas/exportar/` manda o nome no `Content-Disposition`
@@ -634,6 +760,8 @@ vale para as outras exportações que dependem do nome vindo do backend.
 *Estado atual no frontend:* `baixarExportacaoDemandas` já lê o cabeçalho e cai
 para o nome padrão quando ele não chega; nada muda no front quando o backend
 expuser o cabeçalho.
+
+---
 
 ## 26. Filtros de solicitante e responsável sem lista para os perfis de gestão (#297)
 
@@ -666,3 +794,76 @@ resposta sem paginação:
 (`fetchOpcoesUsuarios` em `app/lib/execucaoSgd.ts`). Enquanto ela não existe,
 o select mostra "Não foi possível carregar a lista."; quando o backend a
 publicar com esse contrato, a lista aparece sem mudança no front.
+
+---
+
+## 27. O solicitante não vê o valor das diárias antes de salvar (#295)
+
+*Compilado em 24/10/2026, ao implementar a issue #295 (formulário de
+solicitação de recurso).*
+
+A #295 pede o "cálculo de valor total exibido em tempo real" na solicitação de
+diárias (nº de diárias × valor por diária, recalculado ao mudar as datas). O
+backend calcula esse valor em `_validar_diaria`, mas só ao gravar a
+solicitação. O valor da diária fica em `SystemConfig("sgd_valor_diaria_padrao")`,
+que só o Super Admin e a UGP leem (`IsSuperAdminOrUGPReadOnly`). O ADT, que
+preenche o formulário, recebe 403.
+
+Calcular no front exigiria repetir a contagem de diárias, que a SGD-REF-BE-12
+(#358) vai trocar pela regra federal, com meia diária e faixa de destino.
+
+O mesmo vale para o ambiente local: `sgd_valor_diaria_padrao` nasce `"0"` na
+migration `sgd.0002`, e com ele o backend recusa TODA solicitação de diária
+("Valor de diária não configurado"). O `seed_demo` passou a definir um valor de
+teste (R$ 300,00).
+
+**Pedido:** publicar a rota de simulação que a #358 já prevê, aberta a quem
+cria demanda, com este contrato:
+
+```
+GET /api/v1/sgd/config/diarias/simular/?municipio_destino_id=&data_inicio=&data_fim=
+```
+
+```json
+{
+  "faixa_destino": { "id": 4, "nome": "Demais localidades" },
+  "valor_por_diaria": "300.00",
+  "numero_diarias": "2.5",
+  "valor_total": "750.00"
+}
+```
+
+- `data_inicio` e `data_fim` em `AAAA-MM-DD`, como no `campos_json`;
+- os nomes dos campos são os que a #358 manda gravar em `campos_json`;
+- `numero_diarias` é decimal, por causa da meia diária;
+- sem valor vigente, 400 com a mensagem para o usuário (a tela a mostra).
+
+Antes da #358, a mesma rota pode responder com a regra de hoje (`max(dias, 1)`
+× `sgd_valor_diaria_padrao`) e uma faixa única.
+
+*Estado atual no frontend:* o formulário de diárias já chama essa rota
+(`simularDiarias` em `app/lib/solicitacoes.ts`) assim que destino e datas
+estão preenchidos. Enquanto ela não existe, o quadro "Valor das diárias" mostra
+o erro e avisa que o total é calculado ao salvar; o cartão da solicitação salva
+mostra o valor que o backend calculou. O E2E do total em tempo real está como
+`fixme` em `e2e/montar-demanda.spec.ts`.
+
+---
+
+## 28. Eventos do recurso extra fora da trilha de auditoria da demanda (#322)
+
+*Compilado em 24/10/2026, na revisão da #322.*
+
+A trilha de `GET /api/v1/sgd/demandas/{id}/auditoria/` junta os eventos da
+demanda (`ENTIDADE_DEMANDA`) e as movimentações de saldo
+(`ENTIDADE_MOVIMENTACAO_SALDO`). Os eventos do recurso extra da demanda
+(pedido, parecer, devolução, decisão e o aumento do limite individual) são
+registrados em outras entidades e não aparecem nela. Quem audita a demanda não
+vê que o limite subiu por um pedido aprovado, nem quem aprovou.
+
+**Pedido:** incluir na trilha os eventos `recurso_extra.*` e o
+`aumento_limite` dos pedidos daquela demanda, como já se faz com as
+movimentações de saldo (`valores_novos__demanda`).
+
+*Estado atual no frontend:* a aba Auditoria mostra o que a rota devolve; nada
+muda no front quando os eventos entrarem, além de um ícone para o tipo novo.

@@ -18,13 +18,20 @@ export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly fieldErrors?: ApiFieldError[];
+  /**
+   * O corpo JSON como veio, antes da normalização. Para os erros com estrutura
+   * própria que a normalização achata — ex.: `solicitacoes_bloqueadas` no 400
+   * da submissão de demanda (SGD).
+   */
+  readonly raw?: unknown;
 
-  constructor(status: number, body: ApiErrorBody) {
+  constructor(status: number, body: ApiErrorBody, raw?: unknown) {
     super(body.message);
     this.name = "ApiError";
     this.status = status;
     this.code = body.code;
     this.fieldErrors = body.field_errors;
+    this.raw = raw;
   }
 }
 
@@ -86,7 +93,7 @@ async function parseApiError(res: Response): Promise<never> {
   } catch {
     /* corpo vazio ou não-JSON */
   }
-  throw new ApiError(res.status, normalizeErrorBody(res.status, raw));
+  throw new ApiError(res.status, normalizeErrorBody(res.status, raw), raw);
 }
 
 // --- Utilitários internos ---
@@ -125,7 +132,10 @@ export async function apiClient(
   path: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  const session = await getSession();
+  // Só lê o token: sem `broadcast`, que mandaria as outras abas recarregarem a
+  // sessão a cada requisição — e, se uma delas buscar algo ao recarregar, as
+  // abas ficam se acordando sem fim. O aviso entre abas fica para o refresh.
+  const session = await getSession({ broadcast: false });
 
   if (!session?.accessToken) {
     signIn();

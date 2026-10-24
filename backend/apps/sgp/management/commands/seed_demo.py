@@ -46,6 +46,7 @@ from apps.core.models import (
 from apps.core.models.notifications import Notification
 from apps.sca.models import ConflictLog, SyncDevice, SyncEvent
 from apps.sgd.models import ApprovalStep, ArloImport, Demand, DemandIndividualLimit, DemandRequest
+from apps.sgd.models.demand_type_rubrica_mapping import DemandTypeRubricaMapping
 from apps.sgd.seed_demo import popular_arlo, popular_demandas
 from apps.sgp.models import (
     Activity,
@@ -298,6 +299,13 @@ LOCAL_ACESSO_REVOGADO = "rodrigo.tavares"
 SGD_SOLICITANTES = [("Camila", "Siqueira", "PE"), ("Davi", "Barros", "RN")]
 SGD_MUNICIPIOS = {"PE": "2613909", "RN": "2408102"}
 
+# Montagem de demanda (#295). O valor da diária é só de teste: a
+# SGD-REF-BE-12 (#358) troca o valor único pela tabela federal.
+SGD_VALOR_DIARIA_DEMO = "300.00"
+SGD_ADT_MONTAGEM = ("Ewerton", "Bandeira")
+# Locação fica em R$ 1.000: é o limite que as fixtures E2E do SGD esperam.
+SGD_LIMITES_ADT_MONTAGEM = {"locacao-veiculo": Decimal("1000")}
+
 # Super Admin da demonstração.
 #
 # Fica FORA de TECNICOS de propósito. A lista é consumida como dado posicional
@@ -487,6 +495,7 @@ class Command(BaseCommand):
             self._sca(tecnicos, upfs)
             self._cenarios_e2e(projeto, acoes, comunidades, tecnicos)
             self._demandas_sgd(acoes)
+            self._montagem_de_demanda_sgd()
             self._integracoes()
 
         self._resumo()
@@ -507,6 +516,26 @@ class Command(BaseCommand):
         self.stdout.write(
             f"Demandas do SGD: {len(demandas)} (UFs: {', '.join(solicitantes)}); "
             f"histórico do Arlo: {len(historico)} operações"
+        )
+
+    def _montagem_de_demanda_sgd(self):
+        """Montagem de demanda pelo ADT de teste (#295): o valor da diária, sem o
+        qual o backend recusa toda solicitação de diária, e o limite individual
+        dele nas rubricas dos seis tipos. As verbas territoriais ficam com as
+        fixtures e os roteiros: a combinação meta × rubrica × território é única,
+        e uma verba semeada colidiria com a que a fixture E2E cria."""
+        SystemConfig.objects.update_or_create(
+            chave="sgd_valor_diaria_padrao",
+            defaults={"valor": SGD_VALOR_DIARIA_DEMO, "tipo": "string"},
+        )
+        adt = User.objects.get(email=email_de_demo(*SGD_ADT_MONTAGEM))
+        for mapeamento in DemandTypeRubricaMapping.objects.filter(ativo=True).select_related("rubrica"):
+            DemandIndividualLimit.objects.update_or_create(
+                solicitante=adt, rubrica=mapeamento.rubrica,
+                defaults={"valor_limite": SGD_LIMITES_ADT_MONTAGEM.get(mapeamento.rubrica.slug, Decimal("5000"))},
+            )
+        self.stdout.write(
+            f"Montagem de demanda: diária a R$ {SGD_VALOR_DIARIA_DEMO}; limites de {adt.email} nas rubricas do SGD"
         )
 
     def _solicitantes_sgd(self) -> dict:
