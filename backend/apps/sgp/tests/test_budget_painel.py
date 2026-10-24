@@ -360,9 +360,17 @@ class TestPainelPerformance:
     def _limiares_em_cache(self):
         # Os limiares do semáforo vêm do SystemConfig via cache, que persiste
         # entre testes — sem aquecer aqui, a contagem mudaria (+2) conforme
-        # a ordem em que os testes rodam.
+        # a ordem em que os testes rodam. As linhas da migration somem quando um
+        # teste transacional esvazia a base, e sem linha o `get_config` não guarda
+        # o padrão no cache: por isso são recriadas antes de aquecer.
+        from django.core.cache import cache
+
+        from apps.core.models.system_config import SystemConfig, TipoConfiguracao
         from apps.sgp.services.budget import limiares_semaforo
 
+        for chave, valor in (("budget_alert_yellow_pct", "70"), ("budget_alert_red_pct", "90")):
+            SystemConfig.objects.get_or_create(chave=chave, defaults={"valor": valor, "tipo": TipoConfiguracao.INTEGER})
+            cache.delete(f"system_config:{chave}")
         limiares_semaforo()
 
     @pytest.mark.performance
