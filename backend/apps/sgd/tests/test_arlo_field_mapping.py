@@ -261,10 +261,14 @@ def test_linha_de_exemplo_cobre_todos_os_campos_da_exportacao():
 
 
 def test_preview_usa_a_primeira_demanda_autorizada(auth_client_super_admin, demanda_autorizada):
+    # A fixture devolve a solicitação autorizada, não a demanda.
+    solicitacao = demanda_autorizada
+
     dados = auth_client_super_admin.get(f"{URL}preview/").json()
 
     assert set(dados) == {"colunas", "linha"}
-    assert dados["linha"][dados["colunas"].index("ID Demanda")] == str(demanda_autorizada.pk)
+    assert dados["linha"][dados["colunas"].index("ID Demanda")] == str(solicitacao.demanda_id)
+    assert dados["linha"][dados["colunas"].index("ID Solicitação")] == str(solicitacao.pk)
     assert dados["linha"][dados["colunas"].index("Valor Autorizado")] == "1000,00"
 
 
