@@ -847,3 +847,23 @@ estão preenchidos. Enquanto ela não existe, o quadro "Valor das diárias" most
 o erro e avisa que o total é calculado ao salvar; o cartão da solicitação salva
 mostra o valor que o backend calculou. O E2E do total em tempo real está como
 `fixme` em `e2e/montar-demanda.spec.ts`.
+
+---
+
+## 28. Eventos do recurso extra fora da trilha de auditoria da demanda (#322)
+
+*Compilado em 24/10/2026, na revisão da #322.*
+
+A trilha de `GET /api/v1/sgd/demandas/{id}/auditoria/` junta os eventos da
+demanda (`ENTIDADE_DEMANDA`) e as movimentações de saldo
+(`ENTIDADE_MOVIMENTACAO_SALDO`). Os eventos do recurso extra da demanda
+(pedido, parecer, devolução, decisão e o aumento do limite individual) são
+registrados em outras entidades e não aparecem nela. Quem audita a demanda não
+vê que o limite subiu por um pedido aprovado, nem quem aprovou.
+
+**Pedido:** incluir na trilha os eventos `recurso_extra.*` e o
+`aumento_limite` dos pedidos daquela demanda, como já se faz com as
+movimentações de saldo (`valores_novos__demanda`).
+
+*Estado atual no frontend:* a aba Auditoria mostra o que a rota devolve; nada
+muda no front quando os eventos entrarem, além de um ícone para o tipo novo.
