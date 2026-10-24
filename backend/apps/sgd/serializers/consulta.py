@@ -33,3 +33,8 @@ class CustoPorEntregaSerializer(serializers.Serializer):
     autorizado = serializers.DecimalField(**_DEC)
     pago = serializers.DecimalField(**_DEC)
     atividades = CustoPorAtividadeSerializer(many=True)
+
+
+class OpcaoUsuarioSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    nome = serializers.CharField()

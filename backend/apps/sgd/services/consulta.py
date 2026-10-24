@@ -13,7 +13,8 @@ from types import SimpleNamespace
 from django.db.models import Count, Q, Sum
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
-from apps.core.services.permissions import user_role_slugs
+from apps.core.models.user import User
+from apps.core.services.permissions import user_role_slugs, user_states
 from apps.sgd.filters import DemandFilter
 from apps.sgd.models.demand_request import DemandRequest
 from apps.sgp.models.budget import BudgetAllocation, BudgetRubrica
@@ -44,6 +45,40 @@ def exigir_perfil_de_gestao(user) -> set[str]:
     if not slugs:
         raise PermissionDenied("Disponível apenas para perfis de gestão do SGD.")
     return slugs
+
+
+PAPEIS_DE_USUARIO = ("solicitante", "responsavel")
+PERFIS_NACIONAIS = {"super-admin", "ugp", "fgd"}
+
+
+def _do_escopo_do_articulador(slug: str, estados: set[str]) -> Q:
+    """Perfil `slug` com território nos estados do Articulador, ou sem
+    território (alcance global)."""
+    return Q(profiles__perfil__slug=slug, profiles__territorio__estados__overlap=sorted(estados)) | Q(
+        profiles__perfil__slug=slug, profiles__territorio__isnull=True,
+    )
+
+
+def opcoes_de_usuarios(user, papel: str) -> list[dict]:
+    """Usuários para os filtros `solicitante` e `responsavel_etapa_atual` do
+    painel. O Articulador só vê os do seu estado; os perfis nacionais, todos."""
+    slugs = exigir_perfil_de_gestao(user)
+    if papel not in PAPEIS_DE_USUARIO:
+        raise ValidationError({"papel": f"Valor inválido. Esperado um de: {list(PAPEIS_DE_USUARIO)}."})
+    nacional = bool(slugs & PERFIS_NACIONAIS)
+    estados = set() if nacional else user_states(user)
+
+    if papel == "solicitante":
+        filtro = Q(profiles__perfil__slug="adt-acr") if nacional else _do_escopo_do_articulador("adt-acr", estados)
+    else:
+        articuladores = (
+            Q(profiles__perfil__slug="articulador-estadual") if nacional
+            else _do_escopo_do_articulador("articulador-estadual", estados)
+        )
+        filtro = articuladores | Q(profiles__perfil__slug__in=["ugp", "fgd"])
+    return list(
+        User.objects.filter(filtro, ativo=True).distinct().order_by("nome", "pk").values("id", "nome")
+    )
 
 
 def _inteiro_ou_none(valor):
