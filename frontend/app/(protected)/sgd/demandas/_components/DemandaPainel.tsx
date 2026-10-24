@@ -4,10 +4,11 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info, Pencil, X } from "lucide-react";
 import Spinner from "@/app/components/icons/Spinner";
 import { TabErroSection } from "@/app/components/sgp/CrudTab/CrudTab";
 import { Badge } from "@/app/components/ui/Badge/Badge";
+import { Button } from "@/app/components/ui/Button/Button";
 import { DefinitionList } from "@/app/components/ui/DefinitionList/DefinitionList";
 import { Tabs } from "@/app/components/ui/Tabs/Tabs";
 import { ApiError } from "@/app/lib/api";
@@ -20,6 +21,7 @@ import {
 } from "@/app/lib/demandas";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import { qk } from "@/app/lib/queryKeys";
+import { podeMontarDemanda } from "@/app/lib/solicitacoes";
 import { AcoesDecisao, type Desfecho } from "./AcoesDecisao";
 import { AvisoRecursoExtra } from "./AvisoRecursoExtra";
 import { DemandaAuditoria } from "./DemandaAuditoria";
@@ -186,6 +188,18 @@ export function DemandaPainel({
           {/* O desfecho do recurso extra é recado para quem pediu (#321). */}
           {String(session?.user?.id) === String(demanda.solicitante) && (
             <AvisoRecursoExtra demanda={demanda} />
+          )}
+
+          {podeMontarDemanda(demanda, session?.user?.id) && (
+            <Button
+              as="a"
+              href={`/sgd/demandas/${demanda.id}/editar`}
+              size="sm"
+              leftIcon={<Pencil className="h-4 w-4" />}
+              data-testid="painel-montar-demanda"
+            >
+              {demanda.status === "devolvida" ? "Corrigir e submeter de novo" : "Editar e submeter"}
+            </Button>
           )}
 
           <DefinitionList

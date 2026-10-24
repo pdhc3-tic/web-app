@@ -794,3 +794,56 @@ resposta sem paginação:
 (`fetchOpcoesUsuarios` em `app/lib/execucaoSgd.ts`). Enquanto ela não existe,
 o select mostra "Não foi possível carregar a lista."; quando o backend a
 publicar com esse contrato, a lista aparece sem mudança no front.
+
+---
+
+## 27. O solicitante não vê o valor das diárias antes de salvar (#295)
+
+*Compilado em 24/10/2026, ao implementar a issue #295 (formulário de
+solicitação de recurso).*
+
+A #295 pede o "cálculo de valor total exibido em tempo real" na solicitação de
+diárias (nº de diárias × valor por diária, recalculado ao mudar as datas). O
+backend calcula esse valor em `_validar_diaria`, mas só ao gravar a
+solicitação. O valor da diária fica em `SystemConfig("sgd_valor_diaria_padrao")`,
+que só o Super Admin e a UGP leem (`IsSuperAdminOrUGPReadOnly`). O ADT, que
+preenche o formulário, recebe 403.
+
+Calcular no front exigiria repetir a contagem de diárias, que a SGD-REF-BE-12
+(#358) vai trocar pela regra federal, com meia diária e faixa de destino.
+
+O mesmo vale para o ambiente local: `sgd_valor_diaria_padrao` nasce `"0"` na
+migration `sgd.0002`, e com ele o backend recusa TODA solicitação de diária
+("Valor de diária não configurado"). O `seed_demo` passou a definir um valor de
+teste (R$ 300,00).
+
+**Pedido:** publicar a rota de simulação que a #358 já prevê, aberta a quem
+cria demanda, com este contrato:
+
+```
+GET /api/v1/sgd/config/diarias/simular/?municipio_destino_id=&data_inicio=&data_fim=
+```
+
+```json
+{
+  "faixa_destino": { "id": 4, "nome": "Demais localidades" },
+  "valor_por_diaria": "300.00",
+  "numero_diarias": "2.5",
+  "valor_total": "750.00"
+}
+```
+
+- `data_inicio` e `data_fim` em `AAAA-MM-DD`, como no `campos_json`;
+- os nomes dos campos são os que a #358 manda gravar em `campos_json`;
+- `numero_diarias` é decimal, por causa da meia diária;
+- sem valor vigente, 400 com a mensagem para o usuário (a tela a mostra).
+
+Antes da #358, a mesma rota pode responder com a regra de hoje (`max(dias, 1)`
+× `sgd_valor_diaria_padrao`) e uma faixa única.
+
+*Estado atual no frontend:* o formulário de diárias já chama essa rota
+(`simularDiarias` em `app/lib/solicitacoes.ts`) assim que destino e datas
+estão preenchidos. Enquanto ela não existe, o quadro "Valor das diárias" mostra
+o erro e avisa que o total é calculado ao salvar; o cartão da solicitação salva
+mostra o valor que o backend calculou. O E2E do total em tempo real está como
+`fixme` em `e2e/montar-demanda.spec.ts`.

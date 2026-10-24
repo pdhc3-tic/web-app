@@ -52,6 +52,17 @@ export const qk = {
       ["sgd", "demandas", "preview", { id, solicitacaoId, valor }] as const,
     auditoria: (id: string | number) =>
       ["sgd", "demandas", "auditoria", String(id)] as const,
+    /** Documentos da demanda (#295). */
+    documentos: (id: number) => ["sgd", "demandas", "documentos", String(id)] as const,
+  },
+  /** Montagem da demanda (#295): saldo, simulação de diárias e destinos. */
+  solicitacao: {
+    saldo: (atividadeId: number, tipo: string, valor: string) =>
+      ["sgd", "saldo", { atividadeId, tipo, valor }] as const,
+    simulacaoDiarias: (municipioId: string, inicio: string, fim: string) =>
+      ["sgd", "diarias", "simulacao", { municipioId, inicio, fim }] as const,
+    municipios: (texto: string) => ["core", "municipios", "busca", texto] as const,
+    municipio: (id: string) => ["core", "municipios", "detalhe", id] as const,
   },
   /** Recurso extra e Fila de Remanejamentos do SGD (#321). */
   remanejamentos: {

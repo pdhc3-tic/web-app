@@ -1,6 +1,7 @@
 import { ApiError, apiClient } from "@/app/lib/api";
 import type { BadgeStatus } from "@/app/components/ui/Badge/Badge";
-import type { Demanda } from "@/app/lib/demandas";
+import type { Demanda, SolicitacaoDemanda } from "@/app/lib/demandas";
+import { bloqueiosDaSubmissao, type BloqueioSolicitacao } from "@/app/lib/solicitacoes";
 
 /**
  * SGD — Recurso extra e Fila de Remanejamentos (#321, BE-12).
@@ -201,13 +202,6 @@ export function erroDoCampo(e: unknown, campo: string): string | null {
 
 // ─── Bloqueio na submissão (#295) ────────────────────────────────────────────
 
-/** Uma solicitação barrada no 400 da submissão. */
-type BloqueioSolicitacao = {
-  trava: "individual" | "territorial";
-  motivo: string | null;
-  acao_sugerida: "solicitar_recurso_extra" | "acionar_articulador";
-};
-
 /** O que o fluxo "Solicitar recurso extra" precisa saber do bloqueio. */
 export type BloqueioRecursoExtra = {
   solicitacaoId: number;
@@ -217,31 +211,32 @@ export type BloqueioRecursoExtra = {
 };
 
 /**
- * Lê o 400 de `POST /sgd/demandas/{id}/submeter/` e diz se cabe o atalho
- * "Solicitar recurso extra" — para a tela de submissão da #295 chamar.
- *
- * Contrato do PR #343: `code` ("trava_individual" ou
- * "trava_territorial"), `solicitacao_id` da primeira barrada e
- * `solicitacoes_bloqueadas` com todas, cada uma com a `acao_sugerida`. Lê só
- * `solicitacoes_bloqueadas`, que já vem no contrato atual da main, e escolhe a
- * primeira com `acao_sugerida: "solicitar_recurso_extra"` — a trava
- * territorial pede o Articulador, não recurso extra.
+ * O atalho "Solicitar recurso extra" para uma solicitação barrada na
+ * submissão, ou null quando a trava não pede recurso extra — a territorial
+ * pede o Articulador.
+ */
+export function recursoExtraDoBloqueio(
+  solicitacao: SolicitacaoDemanda,
+  bloqueio: BloqueioSolicitacao | undefined,
+): BloqueioRecursoExtra | null {
+  if (bloqueio?.acao_sugerida !== "solicitar_recurso_extra") return null;
+  return {
+    solicitacaoId: solicitacao.id,
+    rubrica: { slug: solicitacao.rubrica_slug, nome: solicitacao.rubrica_nome },
+    motivo: bloqueio.motivo,
+  };
+}
+
+/**
+ * Lê o 400 de `POST /sgd/demandas/{id}/submeter/` e devolve o primeiro
+ * bloqueio que cabe no atalho "Solicitar recurso extra".
  */
 export function bloqueioDeRecursoExtra(erro: unknown, demanda: Demanda): BloqueioRecursoExtra | null {
-  if (!(erro instanceof ApiError) || erro.status !== 400) return null;
-  const raw = erro.raw as { solicitacoes_bloqueadas?: Record<string, BloqueioSolicitacao> } | undefined;
-  const bloqueadas = raw?.solicitacoes_bloqueadas;
-  if (!bloqueadas || typeof bloqueadas !== "object") return null;
-
-  for (const [id, bloqueio] of Object.entries(bloqueadas)) {
-    if (bloqueio?.acao_sugerida !== "solicitar_recurso_extra") continue;
-    const solicitacao = demanda.solicitacoes.find((s) => s.id === Number(id));
-    if (!solicitacao) continue;
-    return {
-      solicitacaoId: solicitacao.id,
-      rubrica: { slug: solicitacao.rubrica_slug, nome: solicitacao.rubrica_nome },
-      motivo: bloqueio.motivo,
-    };
+  const bloqueadas = bloqueiosDaSubmissao(erro);
+  if (!bloqueadas) return null;
+  for (const solicitacao of demanda.solicitacoes) {
+    const atalho = recursoExtraDoBloqueio(solicitacao, bloqueadas[solicitacao.id]);
+    if (atalho) return atalho;
   }
   return null;
 }

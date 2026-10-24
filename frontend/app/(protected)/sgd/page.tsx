@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { ArrowLeftRight, FilePlus2, Inbox, ListChecks, PieChart, Scale } from "lucide-react";
+import { ArrowLeftRight, FilePlus2, Inbox, PieChart, Scale } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
@@ -43,18 +43,12 @@ const SUBMODULES: Submodule[] = [
   {
     key: "nova",
     title: "Nova Demanda",
+    // As solicitações de recurso (#295) são montadas dentro da demanda, depois de criá-la.
     description:
-      "Pedido de recurso para uma atividade — existente ou criada junto com a demanda.",
+      "Pedido de recurso para uma atividade: diárias, passagens, veículos, material gráfico, alimentação e equipamentos, com o saldo antes de submeter.",
     Icon: FilePlus2,
     href: "/sgd/demandas/nova/",
     visivel: canCreateDemanda,
-  },
-  {
-    key: "solicitacoes",
-    title: "Solicitações de Recurso",
-    description:
-      "Diárias, passagens, veículos, material gráfico, alimentação e equipamentos, com o saldo antes de submeter.",
-    Icon: ListChecks,
   },
   {
     key: "execucao",

@@ -12,10 +12,9 @@ import { storageStatePath } from "./helpers/users";
  * Contra o backend real (BE-12): a fixture cria os pedidos pelos services do
  * SGD, e o parecer do Articulador leva os da UGP a Com parecer.
  *
- * O atalho a partir do bloqueio na submissão e a ressubmissão da demanda
- * dependem da tela de submissão, que é da #295 — ficam como `fixme` até ela
- * chegar. O fluxo guiado em si é coberto no Vitest
- * (`SolicitarRecursoExtra.test.tsx`).
+ * O atalho a partir do bloqueio na submissão e a ressubmissão depois da
+ * decisão estão em `montar-demanda.spec.ts`, com a tela de submissão da #295.
+ * O fluxo guiado em si é coberto no Vitest (`SolicitarRecursoExtra.test.tsx`).
  */
 
 let fx: RemanejamentosFixture;
@@ -180,22 +179,6 @@ test.describe("Solicitante (ADT de RN)", () => {
     await expect(page.getByText("Conteúdo restrito")).toBeVisible();
     await expect(page.getByTestId("remanejamentos-tabela")).toHaveCount(0);
   });
-
-  test.fixme(
-    "solicita recurso extra a partir do bloqueio de saldo na submissão",
-    async () => {
-      // Depende da tela de submissão da #295: ela recebe o 400 com
-      // `acao_sugerida: "solicitar_recurso_extra"`, lê com
-      // `bloqueioDeRecursoExtra` e abre `SolicitarRecursoExtra`.
-    },
-  );
-
-  test.fixme(
-    "depois da aprovação a demanda é submetida; depois da recusa, a submissão volta com a mensagem original",
-    async () => {
-      // Depende da tela de submissão da #295.
-    },
-  );
 });
 
 test.describe("FGD", () => {

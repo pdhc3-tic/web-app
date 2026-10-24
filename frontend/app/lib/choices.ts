@@ -45,6 +45,15 @@ export const CHAVES_CHOICES = [
   // SGD — filtros do painel de execução (#297)
   "solicitacao_tipo",
   "demanda_status",
+  // SGD — campos das solicitações e documentos da demanda (#295)
+  "beneficiario_vinculo",
+  "meio_transporte",
+  "classe",
+  "urgencia",
+  "tipo_veiculo",
+  "tipo_material",
+  "tipo_refeicao",
+  "demanda_documento_tipo",
 ] as const;
 
 export type ChaveChoice = (typeof CHAVES_CHOICES)[number];
