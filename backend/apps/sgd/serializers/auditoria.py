@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from apps.core.models.audit_log import AuditLog
-from apps.sgd.services.auditoria import ENTIDADE_DEMANDA
+from apps.sgd.services.auditoria import ENTIDADE_DEMANDA, ENTIDADE_MOVIMENTACAO_SALDO
 
 
 class DemandAuditEntrySerializer(serializers.ModelSerializer):
@@ -17,7 +17,17 @@ class DemandAuditEntrySerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_tipo(self, obj) -> str:
-        return "status" if obj.entidade == ENTIDADE_DEMANDA else "saldo"
+        if obj.entidade == ENTIDADE_DEMANDA:
+            return "status"
+        if obj.entidade == ENTIDADE_MOVIMENTACAO_SALDO:
+            return "saldo"
+        return "recurso_extra"
+
+    def to_representation(self, obj):
+        dados = super().to_representation(obj)
+        if not self.context.get("incluir_ip"):
+            dados["ip"] = None
+        return dados
 
     def get_usuario(self, obj) -> dict | None:
         if obj.user is None:
