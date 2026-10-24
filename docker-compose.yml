@@ -49,9 +49,6 @@ services:
       - "8000:8000"
     env_file:
       - ./backend/.env
-    environment:
-      # Links das notificações para o frontend local, não para produção.
-      - FRONTEND_BASE_URL=${FRONTEND_BASE_URL:-http://localhost:3000}
     depends_on:
       db:
         condition: service_healthy
@@ -65,8 +62,6 @@ services:
     restart: unless-stopped
     env_file:
       - ./backend/.env
-    environment:
-      - FRONTEND_BASE_URL=${FRONTEND_BASE_URL:-http://localhost:3000}
     command: celery -A setup worker --loglevel=info -Q celery,normal
     depends_on:
       - backend

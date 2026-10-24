@@ -351,7 +351,11 @@ EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@pdhc.ufersa.edu.br")
 
-FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "https://pdhc.ufersa.edu.br")
+# Sem a variável, o ambiente de desenvolvimento aponta para o frontend local, e
+# não para produção.
+FRONTEND_BASE_URL = os.getenv(
+    "FRONTEND_BASE_URL", "http://localhost:3000" if DEBUG else "https://pdhc.ufersa.edu.br",
+)
 
 # GOOGLE CALENDAR
 GOOGLE_CALENDAR_SERVICE_ACCOUNT_INFO = os.getenv("GOOGLE_CALENDAR_SERVICE_ACCOUNT_INFO", "")
