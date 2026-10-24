@@ -90,14 +90,11 @@ class ArloFieldMappingViewSet(viewsets.ModelViewSet):
 
     @extend_schema(
         parameters=[OpenApiParameter("direcao", OpenApiTypes.STR, enum=[ArloFieldMapping.Direcao.EXPORTACAO])],
-        responses={200: PreviewExportacaoArloSerializer, 400: OpenApiTypes.OBJECT},
+        responses={200: PreviewExportacaoArloSerializer},
     )
     @action(detail=False, methods=["get"], url_path="preview", pagination_class=None)
     def preview(self, request):
         """Cabeçalho e uma linha do CSV de exportação com o mapeamento vigente."""
-        direcao = request.query_params.get("direcao", ArloFieldMapping.Direcao.EXPORTACAO)
-        if direcao != ArloFieldMapping.Direcao.EXPORTACAO:
-            raise ValidationError({"direcao": "O preview existe só para a exportação."})
         return Response(PreviewExportacaoArloSerializer(arlo_export.preview()).data)
 
     @action(detail=False, methods=["post"], url_path="reordenar")

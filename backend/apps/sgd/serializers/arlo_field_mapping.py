@@ -25,7 +25,6 @@ class CatalogoCamposArloSerializer(serializers.Serializer):
 class PreviewExportacaoArloSerializer(serializers.Serializer):
     colunas = serializers.ListField(child=serializers.CharField())
     linha = serializers.ListField(child=serializers.CharField(allow_blank=True))
-    exemplo = serializers.BooleanField(help_text="A linha é fictícia: ainda não há demanda autorizada.")
 
 
 class ArloFieldMappingSerializer(serializers.ModelSerializer):

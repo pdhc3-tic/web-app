@@ -2262,13 +2262,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/PreviewExportacaoArlo'
           description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: ''
   /api/v1/sgd/config/arlo-mapping/reordenar/:
     post:
       operationId: v1_sgd_config_arlo_mapping_reordenar_create
@@ -12977,12 +12970,8 @@ components:
           type: array
           items:
             type: string
-        exemplo:
-          type: boolean
-          description: 'A linha é fictícia: ainda não há demanda autorizada.'
       required:
       - colunas
-      - exemplo
       - linha
     ProducaoConsolidada:
       type: object

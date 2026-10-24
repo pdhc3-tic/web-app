@@ -249,7 +249,6 @@ def test_preview_sem_demanda_autorizada_usa_a_linha_de_exemplo(auth_client_super
 
     assert resposta.status_code == 200
     dados = resposta.json()
-    assert dados["exemplo"] is True
     assert dados["colunas"] == [item["coluna"] for item in obter_mapeamento()["exportacao"]]
     assert len(dados["linha"]) == len(dados["colunas"])
     assert dados["linha"][dados["colunas"].index("Valor Autorizado")] == "1200,00"
@@ -264,16 +263,9 @@ def test_linha_de_exemplo_cobre_todos_os_campos_da_exportacao():
 def test_preview_usa_a_primeira_demanda_autorizada(auth_client_super_admin, demanda_autorizada):
     dados = auth_client_super_admin.get(f"{URL}preview/").json()
 
-    assert dados["exemplo"] is False
+    assert set(dados) == {"colunas", "linha"}
     assert dados["linha"][dados["colunas"].index("ID Demanda")] == str(demanda_autorizada.pk)
     assert dados["linha"][dados["colunas"].index("Valor Autorizado")] == "1000,00"
-
-
-def test_preview_so_existe_para_a_exportacao(auth_client_super_admin):
-    resposta = auth_client_super_admin.get(f"{URL}preview/", {"direcao": "importacao"})
-
-    assert resposta.status_code == 400
-    assert "direcao" in resposta.data
 
 
 @pytest.mark.parametrize("rota", ["campos/", "preview/"])

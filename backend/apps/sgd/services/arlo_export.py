@@ -96,7 +96,6 @@ def preview() -> dict:
     return {
         "colunas": [item["coluna"] for item in colunas],
         "linha": [str(formatar_valor(valores.get(item["campo"]), item["formato"])) for item in colunas],
-        "exemplo": solicitacao is None,
     }
 
 
