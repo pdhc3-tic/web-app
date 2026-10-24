@@ -66,7 +66,40 @@ class MeuSerializer(serializers.Serializer):
     campo = serializers.CharField(help_text="Descrição que aparece no Swagger")
 ```
 
-> Comece adicionando `@extend_schema` nas function-based views de `apps/core/views.py` (login, logout, me, password-reset).
+O schema só é útil para gerar tipos se descrever o que a view devolve de fato. O drf-spectacular não avisa nestes casos, e o tipo sai errado:
+
+- **`SerializerMethodField`** sem type hint de retorno (`-> int | None`) ou `@extend_schema_field` sai como `string`.
+- **`to_representation` sobrescrito** troca a forma da resposta sem o schema saber. Declare um serializer de resposta e use-o no `@extend_schema` (ex.: `UPFDetailRespostaSerializer`).
+- **`@action`** herda o `serializer_class`, os filtros e a paginação do viewset. Declare `request`/`responses`, `filters=False` quando os filtros da listagem não se aplicam e `pagination_class=None` (ou o paginador real) no `@action` quando a lista não usa o do viewset.
+- **`get_queryset`** que depende do usuário quebra na geração, que não tem usuário: devolva `Model.objects.none()` quando `getattr(self, "swagger_fake_view", False)`.
+
+### Schema versionado (`schema.yml`)
+
+O frontend gera os tipos da API a partir de `backend/schema.yml`. Por isso o arquivo é versionado e precisa estar sempre igual ao que o código gera.
+
+> **Regra:** todo PR que muda request ou resposta de alguma rota (serializer, view, `@extend_schema`, filtro, paginação, choices) regenera o `schema.yml` e commita o arquivo junto, no mesmo PR.
+
+```bash
+sudo docker compose exec backend python manage.py spectacular --file schema.yml
+```
+
+Em conflito de merge no `schema.yml`, não resolva à mão: termine o merge do código e rode o comando acima de novo.
+
+### Workflow `Schema OpenAPI` (gate no PR)
+
+O workflow `.github/workflows/openapi-schema.yml` roda em todo PR para a `main` que toca `backend/`. Ele aparece no PR como **"Schema OpenAPI atualizado"** e executa só `apps/core/tests/test_openapi_schema.py`, sem banco nem Redis.
+
+O check falha quando:
+
+| Situação | Mensagem do teste | Como resolver |
+|---|---|---|
+| `schema.yml` commitado difere do gerado pelo código | `schema.yml desatualizado` | Regenerar com o comando acima e commitar |
+| A geração emite warning ou erro em código fora do débito conhecido de SGD e SCA | Lista dos warnings novos | Corrigir a view ou o serializer (ver [Como manter](#como-manter)) |
+| Um tipo que o frontend depende saiu errado (ex.: município sem `estado`) | `assert` do teste específico | Corrigir o schema da rota, não o teste |
+
+O workflow é separado do `deploy.yml` de propósito. O pytest do deploy só roda no push para a `main`, ou seja, depois do merge, e um schema desatualizado travaria o deploy de produção. Aqui ele barra o PR antes do merge, com um nome próprio que deixa claro o que falhou.
+
+O débito de SGD e SCA está listado em `FONTES_COM_DEBITO`, no teste. Ao zerar os warnings de um desses apps, tire-o da lista para que ele passe a ser cobrado também.
 
 ## Banco de Dados
 

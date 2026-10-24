@@ -2,7 +2,14 @@ import logging
 
 from django.db.models import Prefetch
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters, status, viewsets
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiTypes,
+    extend_schema,
+    extend_schema_view,
+    inline_serializer,
+)
+from rest_framework import filters, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -11,22 +18,31 @@ from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.core.utils import get_config
 from apps.sgp.filters import ActivityFilter
 from apps.sgp.models import Activity, ActivityDocument, ActivityPhoto, ExportJob, UPF
+from apps.sgp.models.activity import STATUS_CHOICES, TIPO_ATIVIDADE_CHOICES
 from apps.sgp.pagination import ActivityPagination
 from apps.sgp.serializers import (
     ActivityCalendarioSerializer,
     ActivityDetailSerializer,
     ActivityListSerializer,
 )
+from apps.sgp.serializers.activity import ActivityDetailRespostaSerializer
+from apps.sgp.serializers.exportacao import AtividadesExportQuerySerializer
 from apps.sgp.services.access import atividades_acessiveis_ao_usuario
 from apps.sgp.services.exportacao import exportar_sincrono
 from apps.sgp.tasks import sync_activity_to_google_calendar
 from apps.sgp.views.activity_documentos import ActivityDocumentMixin
 from apps.sgp.views.activity_foto import ActivityPhotoMixin
-from apps.sgp.views.exportacao import arquivo_response
+from apps.sgp.views.exportacao import RESPOSTA_ARQUIVO, arquivo_response
 
 logger = logging.getLogger("apps.sgp.views")
 
 
+@extend_schema_view(
+    retrieve=extend_schema(responses=ActivityDetailRespostaSerializer),
+    create=extend_schema(request=ActivityDetailSerializer, responses={201: ActivityDetailRespostaSerializer}),
+    update=extend_schema(request=ActivityDetailSerializer, responses=ActivityDetailRespostaSerializer),
+    partial_update=extend_schema(request=ActivityDetailSerializer, responses=ActivityDetailRespostaSerializer),
+)
 class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelViewSet):
     """
     ViewSet de Atividades do SGP.
@@ -56,6 +72,9 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
         return ActivityDetailSerializer
 
     def get_queryset(self):
+        # Na geração do schema não há usuário real para o recorte por perfil.
+        if getattr(self, "swagger_fake_view", False):
+            return Activity.objects.none()
         qs = Activity.objects.select_related(
             "acao", "acao__meta", "acao__submeta", "acao__indicador",
             "municipio", "municipio__territory", "municipio__state",
@@ -226,6 +245,7 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
 
     # ── Exportação ────────────────────────────────────────────────────────
 
+    @extend_schema(filters=False, parameters=[AtividadesExportQuerySerializer], responses=RESPOSTA_ARQUIVO)
     @action(detail=False, methods=["get"], url_path="exportar")
     def exportar(self, request):
         """GET /api/v1/sgp/atividades/exportar/?formato=csv|xlsx&periodo_inicio=&periodo_fim=&territorio_id=&acao_id=
@@ -239,6 +259,27 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
 
     # ── Endpoint de Calendário ────────────────────────────────────────────
 
+    @extend_schema(
+        filters=False,
+        parameters=[
+            OpenApiParameter("inicio", OpenApiTypes.DATE, required=True),
+            OpenApiParameter("fim", OpenApiTypes.DATE, required=True, description="Até 90 dias após `inicio`."),
+            OpenApiParameter("tecnico_id", OpenApiTypes.INT),
+            OpenApiParameter("projeto", OpenApiTypes.INT),
+            OpenApiParameter("acao", OpenApiTypes.INT),
+            OpenApiParameter("tipo_atividade", OpenApiTypes.STR, enum=[valor for valor, _ in TIPO_ATIVIDADE_CHOICES]),
+            OpenApiParameter("status", OpenApiTypes.STR, enum=[valor for valor, _ in STATUS_CHOICES]),
+        ],
+        responses=inline_serializer(
+            "ActivityCalendarioResposta",
+            fields={
+                "count": serializers.IntegerField(),
+                "inicio": serializers.DateField(),
+                "fim": serializers.DateField(),
+                "results": ActivityCalendarioSerializer(many=True),
+            },
+        ),
+    )
     @action(detail=False, methods=["get"], url_path="calendario")
     def calendario(self, request):
         """

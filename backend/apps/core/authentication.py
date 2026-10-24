@@ -3,6 +3,7 @@ from __future__ import annotations
 import secrets
 
 from django.conf import settings
+from drf_spectacular.extensions import OpenApiAuthenticationExtension
 from rest_framework.authentication import BaseAuthentication, get_authorization_header
 from rest_framework.exceptions import AuthenticationFailed
 
@@ -57,3 +58,16 @@ class PowerBIServiceTokenAuthentication(BaseAuthentication):
 
     def authenticate_header(self, request):
         return "Token"
+
+
+class PowerBIServiceTokenScheme(OpenApiAuthenticationExtension):
+    target_class = PowerBIServiceTokenAuthentication
+    name = "powerBIServiceToken"
+
+    def get_security_definition(self, auto_schema):
+        return {
+            "type": "apiKey",
+            "in": "header",
+            "name": "Authorization",
+            "description": "Token de serviço do conector Power BI: `Token <token>`.",
+        }

@@ -1,13 +1,10 @@
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.core.models import State, Territory
 from apps.sgp.models import BudgetAllocation, BudgetRubrica, BudgetTransaction, WorkPlanMeta
-
-
-class EstadoNestedSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = State
-        fields = ["id", "sigla", "nome"]
+from apps.sgp.serializers.common import EstadoNestedSerializer
 
 
 class TerritorioNestedSerializer(serializers.ModelSerializer):
@@ -27,8 +24,8 @@ class BudgetAllocationSerializer(serializers.ModelSerializer):
     no `detalhamento` do orçamento por Meta."""
 
     rubrica = BudgetRubricaNestedSerializer(read_only=True)
-    estado = EstadoNestedSerializer(read_only=True)
-    territorio = TerritorioNestedSerializer(read_only=True)
+    estado = EstadoNestedSerializer(read_only=True, allow_null=True)
+    territorio = TerritorioNestedSerializer(read_only=True, allow_null=True)
     saldo_disponivel = serializers.SerializerMethodField()
 
     class Meta:
@@ -40,6 +37,9 @@ class BudgetAllocationSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
+    # Decimal devolvido por método sai como número no JSON (o encoder do DRF
+    # converte para float), e não como string, como os DecimalField.
+    @extend_schema_field(OpenApiTypes.DOUBLE)
     def get_saldo_disponivel(self, obj):
         return obj.valor_alocado - obj.valor_comprometido - obj.valor_executado
 

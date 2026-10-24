@@ -1,4 +1,5 @@
 from django.http import HttpResponse
+from drf_spectacular.utils import OpenApiTypes, extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -7,11 +8,17 @@ from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.sgp.models import ExportJob
 from apps.sgp.serializers.exportacao import ExportJobCreateSerializer, ExportJobSerializer
 from apps.sgp.services.exportacao import (
+    CONTENT_TYPES,
     Arquivo,
     arquivo_do_job,
     repetir_exportacao,
     solicitar_exportacao,
 )
+
+
+RESPOSTA_ARQUIVO = {
+    (200, content_type.split(";")[0]): OpenApiTypes.BINARY for content_type in CONTENT_TYPES.values()
+}
 
 
 def arquivo_response(arquivo: Arquivo) -> HttpResponse:
@@ -28,21 +35,27 @@ class ExportacaoViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     permission_classes = [IsAuthenticatedActiveAccess]
 
     def get_queryset(self):
+        # Na geração do schema não há usuário real para o recorte por perfil.
+        if getattr(self, "swagger_fake_view", False):
+            return ExportJob.objects.none()
         qs = ExportJob.objects.filter(solicitante=self.request.user)
         if self.action != "download":
             qs = qs.defer("conteudo")
         return qs
 
+    @extend_schema(request=ExportJobCreateSerializer, responses={202: ExportJobSerializer})
     def create(self, request):
         serializer = ExportJobCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         job = solicitar_exportacao(user=request.user, **serializer.validated_data)
         return Response(ExportJobSerializer(job).data, status=status.HTTP_202_ACCEPTED)
 
+    @extend_schema(responses=RESPOSTA_ARQUIVO)
     @action(detail=True, methods=["get"])
     def download(self, request, pk=None):
         return arquivo_response(arquivo_do_job(self.get_object()))
 
+    @extend_schema(request=None, responses={202: ExportJobSerializer})
     @action(detail=True, methods=["post"])
     def repetir(self, request, pk=None):
         job = repetir_exportacao(self.get_object())

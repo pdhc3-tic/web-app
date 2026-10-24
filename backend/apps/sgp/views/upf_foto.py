@@ -1,12 +1,14 @@
 import re
 from uuid import uuid4
 
+from drf_spectacular.utils import OpenApiResponse, extend_schema, inline_serializer
 from rest_framework import serializers, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.storage import StorageObjectNotFound, get_storage
+from apps.sgp.serializers.common import UploadURLRespostaSerializer
 
 
 ALLOWED_CONTENT_TYPES = {
@@ -49,6 +51,7 @@ class ConfirmUploadSerializer(serializers.Serializer):
 
 
 class UPFPhotoMixin:
+    @extend_schema(request=UploadURLSerializer, responses=UploadURLRespostaSerializer)
     @action(detail=True, methods=["post"], url_path="foto/upload-url")
     def foto_upload_url(self, request, pk=None):
         upf = self.get_object()
@@ -81,6 +84,10 @@ class UPFPhotoMixin:
             status=status.HTTP_200_OK,
         )
 
+    @extend_schema(
+        request=ConfirmUploadSerializer,
+        responses=inline_serializer("UPFFotoConfirmResposta", fields={"foto_url": serializers.CharField()}),
+    )
     @action(detail=True, methods=["post"], url_path="foto/confirm")
     def foto_confirm(self, request, pk=None):
         upf = self.get_object()
@@ -117,6 +124,7 @@ class UPFPhotoMixin:
         )
         return Response({"foto_url": new_url}, status=status.HTTP_200_OK)
 
+    @extend_schema(responses={204: OpenApiResponse(description="Foto removida.")})
     @action(detail=True, methods=["delete"], url_path="foto")
     def foto_delete(self, request, pk=None):
         upf = self.get_object()
