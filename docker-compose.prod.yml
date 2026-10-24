@@ -63,6 +63,8 @@ services:
       - DEBUG=False
     env_file:
       - ./backend/.env
+    volumes:
+      - media_volume:/app/media
     command: celery -A setup worker --loglevel=info -Q celery,normal
     depends_on:
       - backend
@@ -78,6 +80,8 @@ services:
       - DEBUG=False
     env_file:
       - ./backend/.env
+    volumes:
+      - media_volume:/app/media
     command: celery -A setup beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     depends_on:
       - backend
