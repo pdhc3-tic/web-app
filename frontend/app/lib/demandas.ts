@@ -273,13 +273,20 @@ export async function fetchContagemFila(signal?: AbortSignal): Promise<ContagemF
  * o último — para a FGD, que aguarda dois status, a LISTA da fila vem
  * incompleta, embora a contagem venha certa
  * (docs/pendencias-backend-sprint-10.md, item 13).
+ *
+ * `filtros` são os do `DemandFilter` do BE-5 (atividade, ação, território,
+ * período…) — o drill-down do painel de execução (#297) leva o recorte do
+ * painel para a lista mostrar as demandas que compõem o custo exibido.
  */
 export async function listDemandas(
-  params: { status?: StatusDemanda[] } = {},
+  params: { status?: StatusDemanda[]; filtros?: Record<string, string | undefined> } = {},
   signal?: AbortSignal,
 ): Promise<ListaDemandas> {
   const qs = new URLSearchParams();
   for (const st of params.status ?? []) qs.append("status", st);
+  for (const [chave, valor] of Object.entries(params.filtros ?? {})) {
+    if (valor) qs.set(chave, valor);
+  }
   return lerListaDemandas(qs, signal);
 }
 

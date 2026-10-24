@@ -42,6 +42,9 @@ export const CHAVES_CHOICES = [
   // Documentos
   "upf_documento_tipo",
   "atividade_documento_tipo",
+  // SGD — filtros do painel de execução (#297)
+  "solicitacao_tipo",
+  "demanda_status",
 ] as const;
 
 export type ChaveChoice = (typeof CHAVES_CHOICES)[number];
