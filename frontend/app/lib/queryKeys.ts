@@ -54,6 +54,8 @@ export const qk = {
       ["sgd", "demandas", "auditoria", String(id)] as const,
     /** Documentos da demanda (#295). */
     documentos: (id: number) => ["sgd", "demandas", "documentos", String(id)] as const,
+    /** Painel consolidado da home do SGD (#318): as decisões o invalidam junto. */
+    dashboard: ["sgd", "demandas", "dashboard"] as const,
   },
   /** Montagem da demanda (#295): saldo, simulação de diárias e destinos. */
   solicitacao: {
