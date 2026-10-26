@@ -204,6 +204,49 @@ def test_api_autorizar_excedente_com_solicitante_sem_nivel_devolve_400(
     assert response.data["detail"].startswith("Não há como conferir o pool territorial do solicitante.")
 
 
+def test_autorizar_com_ajuste_nao_depende_do_nivel_atual_do_solicitante(
+    demand_request_rn, solicitante_rn, usuario_ugp, allocation_territorial_rn, limite_individual_rn,
+):
+    """O perfil do solicitante muda depois da reserva: o ajuste continua na
+    alocação reservada, sem negar acesso a quem decide."""
+    demand = demand_request_rn.demanda
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    demand.status = "pre_autorizada"
+    demand.save(update_fields=["status"])
+    solicitante_rn.profiles.update(territorio=None)
+
+    autorizar(demand, responsavel=usuario_ugp, ajustes={demand_request_rn.pk: Decimal("1200")})
+
+    allocation_territorial_rn.refresh_from_db()
+    assert allocation_territorial_rn.valor_comprometido == Decimal("1200")
+
+
+def test_api_autorizar_excedente_com_valor_zero_devolve_400_sem_remanejar(
+    auth_client_ugp, demand_request_rn, allocation_territorial_rn,
+):
+    from apps.sgp.models import BudgetTransaction
+
+    origem = BudgetAllocationFactory(
+        meta=allocation_territorial_rn.meta, rubrica=allocation_territorial_rn.rubrica,
+        nivel="nacional", territorio=None, valor_alocado=Decimal("1000"),
+    )
+
+    response = auth_client_ugp.post(
+        f"/api/v1/sgd/demandas/{demand_request_rn.demanda_id}/autorizar-excedente/",
+        {
+            "demand_request_id": demand_request_rn.pk,
+            "origem_allocation_id": origem.pk,
+            "valor_excedente": "0.00",
+            "justificativa": "Excedente.",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert response.data == {"valor_excedente": ["Deve ser maior que zero."], "code": "BUSINESS_RULE"}
+    assert not BudgetTransaction.objects.filter(tipo=BudgetTransaction.Tipo.REMANEJAMENTO).exists()
+
+
 def test_articulador_nao_pode_pre_autorizar_a_propria_demanda(activity_rn, usuario_articulador_rn):
     demand = DemandFactory(activity=activity_rn, solicitante=usuario_articulador_rn, status="submetida")
 

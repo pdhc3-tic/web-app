@@ -172,3 +172,19 @@ def test_saldo_tipo_sem_rubrica_mapeada_retorna_400_em_tipo(auth_client_solicita
     )
     assert response.status_code == 400
     assert "tipo" in response.json()
+
+
+def test_saldo_com_perfil_sem_territorio_responde_403_com_a_mensagem_do_motor(
+    auth_client_solicitante, solicitante_rn, activity_rn, rubrica_diarias, allocation_territorial_rn,
+):
+    solicitante_rn.profiles.update(territorio=None)
+
+    response = auth_client_solicitante.get(
+        "/api/v1/sgd/saldo/", {"activity_id": activity_rn.pk, "rubrica": rubrica_diarias.slug, "valor": "100"},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": "Perfil sem estado/território específico — não é possível resolver um único nível "
+                  "para a consulta de saldo.",
+    }

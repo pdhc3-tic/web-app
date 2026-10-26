@@ -53,14 +53,12 @@ def _meta_id(*, demand_request=None, activity=None) -> int:
 
 
 def _regra_do_motor(exc) -> RegraDeNegocio:
-    """Recusa de validação do motor com o mesmo campo e a mesma mensagem."""
-    detail = exc.detail
-    if isinstance(detail, dict) and detail:
-        campo, mensagens = next(iter(detail.items()))
-        mensagem = mensagens[0] if isinstance(mensagens, list) else mensagens
-        return RegraDeNegocio(str(mensagem), campo=campo)
-    mensagem = detail[0] if isinstance(detail, list) and detail else detail
-    return RegraDeNegocio(str(mensagem))
+    """Recusa de validação do motor, que sempre vem como {campo: mensagem},
+    com o mesmo campo e a mesma mensagem."""
+    campo, mensagem = next(iter(exc.detail.items()))
+    if isinstance(mensagem, list):
+        mensagem = mensagem[0]
+    return RegraDeNegocio(str(mensagem), campo=campo)
 
 
 def resolver_nivel_do_usuario(user) -> tuple[str, str | None, object | None]:
@@ -233,7 +231,9 @@ def pool_da_reserva(demand_request) -> BudgetAllocation | None:
     allocation_id = BudgetTransaction.objects.filter(
         demanda_id=str(demand_request.pk), tipo=BudgetTransaction.Tipo.RESERVA,
     ).values_list("allocation_id", flat=True).first()
-    return BudgetAllocation.objects.get(pk=allocation_id) if allocation_id else None
+    if not allocation_id:
+        return None
+    return BudgetAllocation.objects.select_related("estado", "territorio").get(pk=allocation_id)
 
 
 def total_reservado(demanda_id: str) -> Decimal:
@@ -259,10 +259,16 @@ def ajustar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuari
         ) from exc
     except (budget_service.DemandaInvalidaError, ValueError) as exc:
         raise RegraDeNegocio(str(exc)) from exc
-    nivel, estado_sigla, territorio = resolver_nivel_do_usuario(solicitante) if allocation else (None, None, None)
-    if allocation is not None:
-        allocation.refresh_from_db(fields=["valor_comprometido", "valor_alocado"])
-    return MovimentoPool(allocation, comprometido_antes, nivel, estado_sigla, territorio)
+    if allocation is None:
+        return MovimentoPool(None, comprometido_antes, None, None, None)
+    allocation.refresh_from_db(fields=["valor_comprometido", "valor_alocado"])
+    # Localização tirada da alocação reservada, não do perfil do solicitante:
+    # quem ajusta costuma ser quem decide, e o perfil pode ter mudado depois
+    # da reserva.
+    return MovimentoPool(
+        allocation, comprometido_antes, allocation.nivel,
+        allocation.estado.sigla if allocation.estado else None, allocation.territorio,
+    )
 
 
 def liberar_pool(*, solicitante, rubrica, demand_request, usuario, motivo: str) -> None:

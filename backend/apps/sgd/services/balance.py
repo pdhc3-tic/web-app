@@ -454,6 +454,8 @@ def autorizar_excedente(*, demand_request, origem_allocation, valor_excedente: D
                          justificativa: str, usuario) -> None:
     if not justificativa:
         raise JustificativaObrigatoria("Obrigatória para autorizar excedente.")
+    if valor_excedente <= ZERO:
+        raise RegraDeNegocio("Deve ser maior que zero.", campo="valor_excedente")
     if origem_allocation.nivel not in (orcamento_service.Nivel.ESTADUAL, orcamento_service.Nivel.NACIONAL):
         raise RegraDeNegocio(
             "Remanejamento emergencial só pode vir de saldo estadual ou nacional.",
