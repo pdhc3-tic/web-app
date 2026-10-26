@@ -9,8 +9,6 @@ from apps.sgd.models.individual_limit import DemandIndividualLimit
 from apps.sgd.serializers.individual_limit import DemandIndividualLimitSerializer
 from apps.sgd.services import auditoria as auditoria_service
 
-ENTIDADE_LIMITE = "DemandIndividualLimit"
-
 
 class DemandIndividualLimitViewSet(viewsets.ViewSet):
     permission_classes = [IsSuperAdmin]
@@ -28,14 +26,7 @@ class DemandIndividualLimitViewSet(viewsets.ViewSet):
         try:
             with transaction.atomic():
                 limite = serializer.save(criado_por=request.user)
-                auditoria_service.registrar_evento(
-                    acao="limite_individual.criado", entidade=ENTIDADE_LIMITE, entidade_id=limite.pk,
-                    usuario=request.user,
-                    novos={
-                        "solicitante": limite.solicitante_id, "rubrica": limite.rubrica.slug,
-                        "valor_limite": str(limite.valor_limite),
-                    },
-                )
+                auditoria_service.registrar_limite_criado(limite, usuario=request.user)
         except IntegrityError as exc:
             # O recurso extra cria o limite com `get_or_create`: a validação de
             # unicidade passa e o insert concorrente bate na constraint.
@@ -54,14 +45,7 @@ class DemandIndividualLimitViewSet(viewsets.ViewSet):
             serializer.is_valid(raise_exception=True)
             limite = serializer.save()
             if limite.valor_limite != valor_anterior:
-                auditoria_service.registrar_evento(
-                    acao="limite_individual.alterado", entidade=ENTIDADE_LIMITE, entidade_id=limite.pk,
-                    usuario=request.user,
-                    anteriores={"valor_limite": str(valor_anterior)},
-                    novos={
-                        "valor_limite": str(limite.valor_limite),
-                        "valor_comprometido": str(limite.valor_comprometido),
-                        "valor_executado": str(limite.valor_executado),
-                    },
+                auditoria_service.registrar_limite_alterado(
+                    limite, valor_anterior=valor_anterior, usuario=request.user,
                 )
         return Response(serializer.data)

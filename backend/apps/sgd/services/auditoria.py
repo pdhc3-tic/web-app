@@ -5,6 +5,7 @@ from apps.core.signals.audit import get_audit_context
 
 ENTIDADE_DEMANDA = "Demand"
 ENTIDADE_MOVIMENTACAO_SALDO = "BudgetTransaction"
+ENTIDADE_LIMITE = "DemandIndividualLimit"
 
 
 def registrar_status(demand, *, de, para, usuario=None) -> None:
@@ -39,4 +40,26 @@ def registrar_evento(*, acao, entidade, entidade_id, usuario=None, anteriores=No
         valores_novos=novos or {},
         _ip=contexto["ip"],
         _user_agent=contexto["user_agent"],
+    )
+
+
+def registrar_limite_criado(limite, *, usuario) -> None:
+    registrar_evento(
+        acao="limite_individual.criado", entidade=ENTIDADE_LIMITE, entidade_id=limite.pk, usuario=usuario,
+        novos={
+            "solicitante": limite.solicitante_id, "rubrica": limite.rubrica.slug,
+            "valor_limite": str(limite.valor_limite),
+        },
+    )
+
+
+def registrar_limite_alterado(limite, *, valor_anterior, usuario) -> None:
+    registrar_evento(
+        acao="limite_individual.alterado", entidade=ENTIDADE_LIMITE, entidade_id=limite.pk, usuario=usuario,
+        anteriores={"valor_limite": str(valor_anterior)},
+        novos={
+            "valor_limite": str(limite.valor_limite),
+            "valor_comprometido": str(limite.valor_comprometido),
+            "valor_executado": str(limite.valor_executado),
+        },
     )

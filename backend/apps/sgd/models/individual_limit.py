@@ -2,6 +2,8 @@ from django.conf import settings
 from django.db import models
 from django.db.models import Q
 
+from apps.core.utils import formatar_brl
+
 
 class DemandIndividualLimit(models.Model):
     solicitante = models.ForeignKey(
@@ -58,3 +60,11 @@ class DemandIndividualLimit(models.Model):
     @property
     def saldo_disponivel(self):
         return self.valor_limite - self.valor_comprometido - self.valor_executado
+
+    def erro_de_reducao(self, novo_valor) -> str | None:
+        """Depois de um excedente o limite já pode estar abaixo do comprometido:
+        só a redução é barrada, o aumento ajuda. Confiável só com a linha travada."""
+        minimo = self.valor_comprometido + self.valor_executado
+        if novo_valor < minimo and novo_valor < self.valor_limite:
+            return f"Não pode ser reduzido abaixo do já comprometido e executado: {formatar_brl(minimo)}."
+        return None

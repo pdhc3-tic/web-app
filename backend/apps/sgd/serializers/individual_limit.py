@@ -1,6 +1,5 @@
 from rest_framework import serializers
 
-from apps.core.utils import formatar_brl
 from apps.sgd.models.individual_limit import DemandIndividualLimit
 
 
@@ -29,12 +28,8 @@ class DemandIndividualLimitSerializer(serializers.ModelSerializer):
         for campo in ("solicitante", "rubrica"):
             if campo in attrs and attrs[campo] != getattr(self.instance, campo):
                 raise serializers.ValidationError({campo: "Não pode ser alterado; crie um novo limite."})
-        # O limite não fica negativo. Depois de um excedente ele já pode estar
-        # abaixo do comprometido: só a redução é barrada, o aumento ajuda.
         novo = attrs.get("valor_limite")
-        minimo = self.instance.valor_comprometido + self.instance.valor_executado
-        if novo is not None and novo < minimo and novo < self.instance.valor_limite:
-            raise serializers.ValidationError({
-                "valor_limite": f"Não pode ser reduzido abaixo do já comprometido e executado: {formatar_brl(minimo)}.",
-            })
+        erro = novo is not None and self.instance.erro_de_reducao(novo)
+        if erro:
+            raise serializers.ValidationError({"valor_limite": erro})
         return attrs
