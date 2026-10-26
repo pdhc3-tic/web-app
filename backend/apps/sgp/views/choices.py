@@ -1,3 +1,5 @@
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -32,7 +34,7 @@ from apps.sgp.constants import (
     STATUS_WORKPLAN,
     TIPO_MORADIA_CHOICES,
 )
-from apps.sgp.models import ActivityDocument, Production, UPFDocument
+from apps.sgp.models import ActivityDocument, Cultura, EspecieAnimal, Production, UPFDocument
 from apps.sgp.models.activity import (
     AMBITO_CHOICES,
     FORMA_ATUACAO_CHOICES,
@@ -66,6 +68,8 @@ CHOICES_PUBLICADOS = {
     "producao_tipo": Production.TIPO_CHOICES,
     "producao_sistema_criacao": Production.SISTEMA_CRIACAO_CHOICES,
     "producao_tipo_outra": Production.TIPO_OUTRA_CHOICES,
+    "cultura_categoria": Cultura.CATEGORIA_CHOICES,
+    "especie_categoria": EspecieAnimal.CATEGORIA_CHOICES,
     "upf_documento_tipo": UPFDocument.TIPO_CHOICES,
     "atividade_documento_tipo": ActivityDocument.TIPO_CHOICES,
     "solicitacao_tipo": SOLICITACAO_TIPO_CHOICES,
@@ -81,10 +85,31 @@ CHOICES_PUBLICADOS = {
 }
 
 
+class OpcaoTextoSerializer(serializers.Serializer):
+    value = serializers.CharField()
+    label = serializers.CharField()
+
+
+class OpcaoNumeroSerializer(serializers.Serializer):
+    value = serializers.IntegerField()
+    label = serializers.CharField()
+
+
+def _opcoes_serializer(opcoes):
+    serializer = OpcaoNumeroSerializer if isinstance(opcoes[0][0], int) else OpcaoTextoSerializer
+    return serializer(many=True)
+
+
 class SGPChoicesView(APIView):
     permission_classes = [IsAuthenticatedActiveAccess]
     http_method_names = ["get", "head", "options"]
 
+    @extend_schema(
+        responses=inline_serializer(
+            "ChoicesResposta",
+            fields={chave: _opcoes_serializer(opcoes) for chave, opcoes in CHOICES_PUBLICADOS.items()},
+        ),
+    )
     def get(self, request):
         return Response({
             chave: [{"value": valor, "label": rotulo} for valor, rotulo in opcoes]

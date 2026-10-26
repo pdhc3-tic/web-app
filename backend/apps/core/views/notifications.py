@@ -1,6 +1,8 @@
 from django.core.cache import cache
+from django.db.models import F
 from django.utils import timezone
-from rest_framework import generics, status
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import generics, serializers, status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
@@ -21,10 +23,13 @@ class NotificationListView(generics.ListAPIView):
     serializer_class = NotificationSerializer
     permission_classes = [IsAuthenticatedActiveAccess]
     pagination_class = NotificationPagination
-    ordering = ["-enviado_em"]
 
     def get_queryset(self):
-        return Notification.objects.filter(user=self.request.user).order_by("-enviado_em")
+        # No Postgres os nulos viriam primeiro no DESC: as antigas sem data de
+        # envio ficariam no topo do sino, acima das novas.
+        return Notification.objects.filter(user=self.request.user).order_by(
+            F("enviado_em").desc(nulls_last=True), "-id",
+        )
 
 
 class NotificationMarkReadView(generics.UpdateAPIView):
@@ -49,6 +54,12 @@ class NotificationMarkReadView(generics.UpdateAPIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+@extend_schema(
+    request=None,
+    responses=inline_serializer(
+        "NotificationMarkAllReadResposta", fields={"updated_count": serializers.IntegerField()},
+    ),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticatedActiveAccess])
 def mark_all_read(request):
@@ -64,6 +75,11 @@ def mark_all_read(request):
     return Response({"updated_count": updated_count}, status=status.HTTP_200_OK)
 
 
+@extend_schema(
+    responses=inline_serializer(
+        "NotificationUnreadCountResposta", fields={"count": serializers.IntegerField()},
+    ),
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticatedActiveAccess])
 @throttle_classes([NotificationUnreadCountThrottle])

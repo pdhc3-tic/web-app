@@ -1,18 +1,27 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useMemo } from "react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Inbox } from "lucide-react";
+import { ArrowLeft, Inbox, X } from "lucide-react";
 import Spinner from "@/app/components/icons/Spinner";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { TabErroSection } from "@/app/components/sgp/CrudTab/CrudTab";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { ApiError } from "@/app/lib/api";
+import { getAtividade, listAcoes } from "@/app/lib/atividades";
 import { listDemandas } from "@/app/lib/demandas";
+import {
+  CHAVES_FILTRO,
+  filtrosDaUrl,
+  queryDeFiltros,
+  type ExecucaoFiltros,
+} from "@/app/lib/execucaoSgd";
 import { useFilaDemandas } from "@/app/lib/hooks/useFilaDemandas";
 import { qk } from "@/app/lib/queryKeys";
+import { AvisoListaParcial } from "./_components/AvisoListaParcial";
 import { DemandaPainel } from "./_components/DemandaPainel";
 import { DemandasTabela } from "./_components/DemandasTabela";
 
@@ -30,25 +39,115 @@ function Carregando() {
   );
 }
 
+/**
+ * Faixa do drill-down do painel de execução (#297): diz de onde vem o recorte,
+ * pelo nome da atividade ou da entrega, e volta ao painel com os mesmos filtros.
+ */
+function RecorteDoPainel({
+  recorte,
+  onLimpar,
+}: {
+  recorte: ExecucaoFiltros;
+  onLimpar: () => void;
+}) {
+  const atividade = useQuery({
+    queryKey: qk.atividade(recorte.atividade ?? ""),
+    queryFn: ({ signal }) => getAtividade(recorte.atividade!, signal),
+    enabled: !!recorte.atividade,
+    staleTime: Infinity,
+  });
+  const acoes = useQuery({
+    queryKey: qk.acoesPT,
+    queryFn: ({ signal }) => listAcoes(signal),
+    enabled: !recorte.atividade && !!recorte.acao,
+    staleTime: Infinity,
+  });
+
+  let alvo: string;
+  if (recorte.atividade) {
+    alvo = `da atividade “${atividade.data?.titulo ?? `#${recorte.atividade}`}”`;
+  } else if (recorte.acao) {
+    const acao = acoes.data?.find((a) => String(a.id) === recorte.acao);
+    alvo = `da entrega “${acao ? `${acao.numero} — ${acao.descricao}` : `#${recorte.acao}`}”`;
+  } else {
+    alvo = "do recorte do painel de execução";
+  }
+  const outros = Object.keys(recorte).filter((k) => k !== "atividade" && k !== "acao").length;
+
+  const voltar = queryDeFiltros(recorte);
+  voltar.set("aba", "atividades");
+
+  return (
+    <div
+      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-text"
+      data-testid="filtro-atividade-ativo"
+    >
+      <span>
+        Mostrando apenas demandas <strong className="font-semibold">{alvo}</strong>
+        {outros > 0 && ` (com mais ${outros} ${outros === 1 ? "filtro" : "filtros"} do painel)`}.
+      </span>
+      <span className="flex items-center gap-1">
+        <Link
+          href={`/sgd/execucao?${voltar}`}
+          className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          data-testid="filtro-atividade-voltar"
+        >
+          <ArrowLeft className="h-3 w-3" aria-hidden />
+          Voltar ao painel
+        </Link>
+        <button
+          type="button"
+          onClick={onLimpar}
+          className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          data-testid="filtro-atividade-limpar"
+        >
+          <X className="h-3 w-3" aria-hidden />
+          Limpar filtro
+        </button>
+      </span>
+    </div>
+  );
+}
+
 function PainelDemandasView() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
 
   const fila = useFilaDemandas();
-  const visao: Visao =
-    searchParams.get("visao") === "todas" || !fila.decide ? "todas" : "minha";
+  // Filtros do `DemandFilter` na URL vêm do drill-down do painel de execução
+  // (#297): a tela deixa a fila/visão geral e pede ao backend só esse recorte.
+  const recorte = useMemo(
+    () => filtrosDaUrl(new URLSearchParams(searchParams.toString())),
+    [searchParams],
+  );
+  const temRecorte = Object.keys(recorte).length > 0;
+  const visao: Visao = temRecorte
+    ? "todas"
+    : searchParams.get("visao") === "todas" || !fila.decide
+      ? "todas"
+      : "minha";
   const bruto = searchParams.get("demanda") ?? "";
   const selecionada = /^\d+$/.test(bruto) ? Number(bruto) : null;
 
+  const porRecorte = useQuery({
+    queryKey: qk.demandas.recorte(recorte),
+    queryFn: ({ signal }) => listDemandas({ filtros: recorte }, signal),
+    enabled: temRecorte,
+    staleTime: 30_000,
+  });
   const todas = useQuery({
     queryKey: qk.demandas.lista([]),
     queryFn: ({ signal }) => listDemandas({}, signal),
-    enabled: visao === "todas",
+    enabled: visao === "todas" && !temRecorte,
     staleTime: 30_000,
   });
-  const atual = visao === "minha" ? fila : todas;
-  const demandas = atual.data ?? [];
+  const atual = temRecorte
+    ? porRecorte
+    : visao === "minha"
+      ? fila
+      : todas;
+  const demandas = atual.data?.demandas ?? [];
 
   function navegar(patch: Record<string, string | null>) {
     const next = new URLSearchParams(searchParams.toString());
@@ -85,7 +184,7 @@ function PainelDemandasView() {
           </p>
         </div>
 
-        {fila.decide && (
+        {!temRecorte && fila.decide && (
           <div
             role="tablist"
             aria-label="Visão das demandas"
@@ -115,6 +214,18 @@ function PainelDemandasView() {
         )}
       </div>
 
+      {temRecorte && (
+        <RecorteDoPainel
+          recorte={recorte}
+          onLimpar={() =>
+            navegar({
+              ...Object.fromEntries(CHAVES_FILTRO.map((k) => [k, null])),
+              demanda: null,
+            })
+          }
+        />
+      )}
+
       <div
         className={`grid items-start gap-5 ${
           selecionada !== null ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)]" : ""
@@ -130,24 +241,31 @@ function PainelDemandasView() {
               <EmptyState
                 icon={<Inbox className="h-7 w-7" />}
                 title={
-                  visao === "minha"
-                    ? "Nenhuma demanda aguardando a sua ação"
-                    : "Nenhuma demanda por aqui"
+                  temRecorte
+                    ? "Nenhuma demanda neste recorte"
+                    : visao === "minha"
+                      ? "Nenhuma demanda aguardando a sua ação"
+                      : "Nenhuma demanda por aqui"
                 }
                 description={
-                  visao === "minha"
-                    ? "Quando uma demanda chegar à sua etapa de decisão, ela aparece aqui."
-                    : "As demandas visíveis para o seu perfil aparecem aqui."
+                  temRecorte
+                    ? "Nenhuma demanda corresponde ao recorte escolhido no painel de execução."
+                    : visao === "minha"
+                      ? "Quando uma demanda chegar à sua etapa de decisão, ela aparece aqui."
+                      : "As demandas visíveis para o seu perfil aparecem aqui."
                 }
               />
             </div>
           ) : (
-            <DemandasTabela
-              demandas={demandas}
-              selecionada={selecionada}
-              compacta={selecionada !== null}
-              onSelecionar={(id) => navegar({ demanda: String(id) })}
-            />
+            <div className="flex flex-col gap-2">
+              <DemandasTabela
+                demandas={demandas}
+                selecionada={selecionada}
+                compacta={selecionada !== null}
+                onSelecionar={(id) => navegar({ demanda: String(id) })}
+              />
+              <AvisoListaParcial lista={atual.data} />
+            </div>
           )}
         </div>
 

@@ -5,6 +5,28 @@ from apps.sgd.models.arlo_field_mapping import ArloFieldMapping
 from apps.sgd.services.arlo_mapping import CAMPOS, formatos_permitidos
 
 
+class FormatoArloSerializer(serializers.Serializer):
+    value = serializers.CharField()
+    label = serializers.CharField()
+
+
+class CampoArloSerializer(serializers.Serializer):
+    campo = serializers.CharField()
+    label = serializers.CharField()
+    obrigatorio = serializers.BooleanField()
+    formatos = FormatoArloSerializer(many=True)
+
+
+class CatalogoCamposArloSerializer(serializers.Serializer):
+    exportacao = CampoArloSerializer(many=True)
+    importacao = CampoArloSerializer(many=True)
+
+
+class PreviewExportacaoArloSerializer(serializers.Serializer):
+    colunas = serializers.ListField(child=serializers.CharField())
+    linha = serializers.ListField(child=serializers.CharField(allow_blank=True))
+
+
 class ArloFieldMappingSerializer(serializers.ModelSerializer):
     class Meta:
         model = ArloFieldMapping

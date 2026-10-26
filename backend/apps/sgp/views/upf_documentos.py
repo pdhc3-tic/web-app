@@ -2,6 +2,7 @@ import re
 from uuid import uuid4
 
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import extend_schema
 from rest_framework import serializers, status, viewsets
 from apps.core.permissions import IsAuthenticatedActiveAccess
 from rest_framework.response import Response
@@ -10,6 +11,7 @@ from apps.core.models.audit_log import AuditLog
 from apps.core.storage import StorageObjectNotFound, get_storage
 from apps.sgp.models import UPF, UPFDocument
 from apps.sgp.serializers import UPFDocumentCreateSerializer, UPFDocumentSerializer
+from apps.sgp.serializers.common import DownloadURLRespostaSerializer, UploadURLRespostaSerializer
 from apps.sgp.services.access import scope_queryset
 
 
@@ -86,6 +88,7 @@ class UPFDocumentViewSet(viewsets.GenericViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
+    @extend_schema(request=UPFDocumentUploadURLSerializer, responses=UploadURLRespostaSerializer)
     def upload_url(self, request, *args, **kwargs):
         upf = self.get_upf()
         serializer = UPFDocumentUploadURLSerializer(data=request.data)
@@ -117,6 +120,7 @@ class UPFDocumentViewSet(viewsets.GenericViewSet):
             status=status.HTTP_200_OK,
         )
 
+    @extend_schema(request=UPFDocumentCreateSerializer, responses={201: UPFDocumentSerializer})
     def create(self, request, *args, **kwargs):
         upf = self.get_upf()
         serializer = UPFDocumentCreateSerializer(data=request.data)
@@ -160,6 +164,7 @@ class UPFDocumentViewSet(viewsets.GenericViewSet):
             status=status.HTTP_201_CREATED,
         )
 
+    @extend_schema(responses=DownloadURLRespostaSerializer)
     def download(self, request, *args, **kwargs):
         upf = self.get_upf()
         document = self.get_object()

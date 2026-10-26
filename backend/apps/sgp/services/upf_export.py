@@ -11,10 +11,6 @@ from apps.sgp.filters import UPFFilter, somente_ativas_sem_filtro_ativo
 from apps.sgp.models import UPF, ExportJob
 from apps.sgp.services.access import upfs_acessiveis_ao_usuario
 
-# Até este total o arquivo é devolvido na própria requisição; acima, vira
-# ExportJob processado pelo worker.
-UPF_EXPORT_SYNC_LIMIT = 1000
-
 EXPORT_COLUMNS = (
     ("estado", "Estado"),
     ("municipio", "Município"),

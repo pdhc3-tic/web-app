@@ -123,6 +123,16 @@ export function canCreateDemanda(
 export const FGD_SLUG = "fgd";
 
 /**
+ * Operação da integração com o Arlo (#298): exportar e importar. Espelha o
+ * `IsFGD | IsSuperAdmin` das actions de escrita do `ArloViewSet`.
+ */
+export function canOperarArlo(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return hasRole(user, FGD_SLUG) || isSuperAdmin(user);
+}
+
+/**
  * Perfis do usuário que decidem sobre demandas do SGD (#296): Articulador
  * Estadual pré-autoriza/devolve, UGP autoriza/recusa, FGD atende/conclui.
  * Espelha `DemandApprovalMixin._PERMISSAO_POR_ACTION`.
@@ -132,6 +142,21 @@ export function perfisDecisoresSgd(
 ): ("articulador-estadual" | "ugp" | "fgd")[] {
   return ([ARTICULADOR_ESTADUAL_SLUG, UGP_SLUG, FGD_SLUG] as const).filter((slug) =>
     hasRole(user, slug),
+  );
+}
+
+/**
+ * Gestão do SGD (painel por rubrica e relatórios — BE-5 / #293 / #297).
+ * Restrito aos perfis de gestão: Super Admin, UGP, FGD e Articulador Estadual.
+ */
+export function canViewSgdGestao(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return (
+    isSuperAdmin(user) ||
+    hasRole(user, UGP_SLUG) ||
+    hasRole(user, FGD_SLUG) ||
+    hasRole(user, ARTICULADOR_ESTADUAL_SLUG)
   );
 }
 

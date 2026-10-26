@@ -82,6 +82,37 @@ def _parse_decimal(valor) -> Decimal:
         raise RegraDeNegocio(f"Valor decimal inválido: {valor!r}.", campo="valor")
 
 
+@dataclass
+class Diarias:
+    numero: int
+    valor_por_diaria: Decimal
+    valor_total: Decimal
+
+
+def calcular_diarias(*, municipio_destino_id, data_inicio, data_fim) -> Diarias:
+    """Usada ao gravar a solicitação de diárias e na simulação do formulário, para
+    as duas darem sempre o mesmo valor."""
+    try:
+        existe = Municipality.objects.filter(pk=municipio_destino_id).exists()
+    except (TypeError, ValueError):
+        existe = False
+    if not existe:
+        raise RegraDeNegocio("Município não encontrado.", campo="municipio_destino_id")
+    inicio = _parse_date(data_inicio)
+    fim = _parse_date(data_fim)
+    if fim < inicio:
+        raise RegraDeNegocio("Não pode ser anterior à data de início.", campo="data_fim")
+
+    numero = max((fim - inicio).days, 1)
+    valor_por_diaria = _parse_decimal(get_config("sgd_valor_diaria_padrao", "0"))
+    if valor_por_diaria <= 0:
+        raise RegraDeNegocio(
+            "Valor de diária não configurado — contate o Super Admin (sgd_valor_diaria_padrao).",
+            campo="valor_por_diaria",
+        )
+    return Diarias(numero=numero, valor_por_diaria=valor_por_diaria, valor_total=numero * valor_por_diaria)
+
+
 def _validar_diaria(campos: dict, activity) -> CamposValidados:
     _obrigatorios(campos, [
         "beneficiario_nome", "beneficiario_cpf", "beneficiario_cargo",
@@ -90,32 +121,19 @@ def _validar_diaria(campos: dict, activity) -> CamposValidados:
     ])
     _choice(campos, "beneficiario_vinculo", Vinculo)
     _choice(campos, "meio_transporte", MeioTransporte)
-    if not Municipality.objects.filter(pk=campos["municipio_destino_id"]).exists():
-        raise RegraDeNegocio("Município não encontrado.", campo="municipio_destino_id")
-
+    diarias = calcular_diarias(
+        municipio_destino_id=campos["municipio_destino_id"],
+        data_inicio=campos["data_inicio"], data_fim=campos["data_fim"],
+    )
     cpf = _cpf(campos, "beneficiario_cpf")
-
-    data_inicio = _parse_date(campos["data_inicio"])
-    data_fim = _parse_date(campos["data_fim"])
-    if data_fim < data_inicio:
-        raise RegraDeNegocio("Não pode ser anterior à data de início.", campo="data_fim")
-
-    numero_diarias = max((data_fim - data_inicio).days, 1)
-    valor_por_diaria = _parse_decimal(get_config("sgd_valor_diaria_padrao", "0"))
-    if valor_por_diaria <= 0:
-        raise RegraDeNegocio(
-            "Valor de diária não configurado — contate o Super Admin (sgd_valor_diaria_padrao).",
-            campo="valor_por_diaria",
-        )
-    valor_total = numero_diarias * valor_por_diaria
 
     campos_limpos = {k: v for k, v in campos.items() if k != "beneficiario_cpf"}
     campos_limpos.update({
-        "numero_diarias": numero_diarias,
-        "valor_por_diaria": str(valor_por_diaria),
-        "valor_total": str(valor_total),
+        "numero_diarias": diarias.numero,
+        "valor_por_diaria": str(diarias.valor_por_diaria),
+        "valor_total": str(diarias.valor_total),
     })
-    return CamposValidados(campos_json=campos_limpos, beneficiario_cpf=cpf, valor_estimado_auto=valor_total)
+    return CamposValidados(campos_json=campos_limpos, beneficiario_cpf=cpf, valor_estimado_auto=diarias.valor_total)
 
 
 def _validar_passagem(campos: dict, activity) -> CamposValidados:

@@ -1,12 +1,20 @@
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.core.models import Municipality, Organization
+from apps.core.serializers import UsuarioRefComEmailSerializer, UsuarioRefSerializer
 from apps.sgp.models import Activity, Comunidade, MembroFamilia, UPF, WorkPlanAcao
+from apps.sgp.models.activity import STATUS_CHOICES
 from apps.sgp.serializers.activity_documentos import ActivityDocumentSerializer
 from apps.sgp.serializers.activity_foto import ActivityPhotoSerializer
 from apps.sgp.serializers.common import (
     MunicipioNestedSerializer,
     NestedSerializer,
+    PlanoTrabalhoAcaoRefSerializer,
+    PlanoTrabalhoIndicadorRefSerializer,
+    PlanoTrabalhoMetaRefSerializer,
+    PlanoTrabalhoSerializer,
+    PlanoTrabalhoSubmetaRefSerializer,
     plano_trabalho_da_acao,
 )
 from apps.sgp.serializers.membro import MembroListSerializer
@@ -59,13 +67,14 @@ class ActivityListSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def get_total_participantes(self, obj):
+    def get_total_participantes(self, obj) -> int:
         return len(obj.membros_participantes.all())
 
+    @extend_schema_field(PlanoTrabalhoSerializer)
     def get_plano_trabalho(self, obj):
         return plano_trabalho_da_acao(obj.acao)
 
-    def get_atrasada(self, obj):
+    def get_atrasada(self, obj) -> bool:
         return obj.esta_atrasada()
 
 
@@ -194,16 +203,17 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
 
     # ── SerializerMethodFields ───────────────────────────────────────────────
 
-    def get_atrasada(self, obj):
+    def get_atrasada(self, obj) -> bool:
         return obj.esta_atrasada()
 
-    def get_total_participantes(self, obj):
+    def get_total_participantes(self, obj) -> int:
         return len(obj.membros_participantes.all())
 
+    @extend_schema_field(serializers.ListField(child=serializers.ChoiceField(choices=STATUS_CHOICES)))
     def get_transicoes_permitidas(self, obj):
         return sorted(obj.get_transicoes_permitidas())
 
-    def get_territorio_id(self, obj):
+    def get_territorio_id(self, obj) -> int | None:
         return obj.territorio_id
 
     # ── Validação cruzada (validate) ──────────────────────────────────────────
@@ -349,3 +359,33 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             instance.documentos.all(), many=True
         ).data
         return data
+
+
+class AcaoDaAtividadeSerializer(PlanoTrabalhoAcaoRefSerializer):
+    meta = PlanoTrabalhoMetaRefSerializer()
+    submeta = PlanoTrabalhoSubmetaRefSerializer()
+    indicador = PlanoTrabalhoIndicadorRefSerializer()
+
+
+class ActivityDetailRespostaSerializer(ActivityDetailSerializer):
+    """Resposta de `ActivityDetailSerializer` no schema: o `to_representation`
+    troca os PKs de escrita pelos objetos aninhados."""
+
+    acao = AcaoDaAtividadeSerializer(read_only=True)
+    municipio = MunicipioNestedSerializer(read_only=True)
+    comunidade = NestedSerializer(read_only=True, allow_null=True)
+    territorio = NestedSerializer(read_only=True, allow_null=True)
+    plano_trabalho = PlanoTrabalhoSerializer(read_only=True)
+    criado_por = UsuarioRefSerializer(read_only=True, allow_null=True)
+    tecnico_responsavel = UsuarioRefComEmailSerializer(read_only=True)
+    equipe_adicional = UsuarioRefComEmailSerializer(many=True, read_only=True)
+    parceiros_organizacoes = NestedSerializer(many=True, read_only=True)
+    upfs_participantes = UPFListSerializer(many=True, read_only=True)
+    membros_participantes = MembroListSerializer(many=True, read_only=True)
+    fotos = ActivityPhotoSerializer(many=True, read_only=True)
+    documentos = ActivityDocumentSerializer(many=True, read_only=True)
+
+    class Meta(ActivityDetailSerializer.Meta):
+        fields = ActivityDetailSerializer.Meta.fields + [
+            "territorio", "plano_trabalho", "fotos", "documentos",
+        ]

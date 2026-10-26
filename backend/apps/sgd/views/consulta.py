@@ -1,9 +1,10 @@
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.sgd.models.demand import Demand
-from apps.sgd.serializers.consulta import CustoPorEntregaSerializer, PainelRubricaSerializer
+from apps.sgd.serializers.consulta import CustoPorEntregaSerializer, OpcaoUsuarioSerializer, PainelRubricaSerializer
 from apps.sgd.services import consulta as consulta_service
 from apps.sgd.services.approval import demand_visibility_scope
 
@@ -36,3 +37,21 @@ class CustoPorAtividadeView(_ConsultaGestaoView):
         demandas = self.demandas_filtradas(request)
         linhas = consulta_service.custo_por_atividade(request.user, demandas)
         return Response(CustoPorEntregaSerializer(linhas, many=True).data)
+
+
+class OpcoesUsuariosView(APIView):
+    """Listas dos filtros de solicitante e de responsável pela etapa atual do painel."""
+
+    permission_classes = [IsAuthenticatedActiveAccess]
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "papel", OpenApiTypes.STR, enum=list(consulta_service.PAPEIS_DE_USUARIO), required=True,
+            ),
+        ],
+        responses={200: OpcaoUsuarioSerializer(many=True)},
+    )
+    def get(self, request):
+        opcoes = consulta_service.opcoes_de_usuarios(request.user, request.query_params.get("papel", ""))
+        return Response(OpcaoUsuarioSerializer(opcoes, many=True).data)

@@ -201,3 +201,43 @@ def test_notification_preference_uniqueness(usuario):
             tipo_evento="nova_visita",
             canal="email",
         )
+
+
+# ──────────────────────────────────────────────────────────────
+# In-app nasce entregue; a listagem põe as sem data por último
+# ──────────────────────────────────────────────────────────────
+@pytest.mark.django_db
+def test_in_app_nasce_entregue_com_data_de_envio(usuario):
+    antes = timezone.now()
+
+    notificacao = Notification.objects.create(user=usuario, tipo="in_app", titulo="T", mensagem="M")
+
+    assert notificacao.status == "entregue"
+    assert notificacao.enviado_em is not None and notificacao.enviado_em >= antes
+
+
+@pytest.mark.django_db
+def test_email_continua_pendente_ate_o_envio(usuario, django_capture_on_commit_callbacks, monkeypatch):
+    from apps.core.tasks import notifications as tasks
+
+    enfileiradas = []
+    monkeypatch.setattr(tasks.send_email_notification, "delay", lambda pk: enfileiradas.append(pk))
+
+    with django_capture_on_commit_callbacks(execute=True):
+        notificacao = Notification.objects.create(user=usuario, tipo="email", titulo="T", mensagem="M")
+
+    notificacao.refresh_from_db()
+    assert (notificacao.status, notificacao.enviado_em) == ("pendente", None)
+    assert enfileiradas == [notificacao.pk]
+
+
+@pytest.mark.django_db
+def test_listagem_poe_as_sem_data_de_envio_por_ultimo(client, usuario):
+    sem_data = _create_notification(usuario, tipo="email", titulo="E-mail ainda não enviado")
+    antiga = _create_notification(usuario, titulo="Antiga", enviado_em=timezone.now() - timedelta(days=1))
+    nova = Notification.objects.create(user=usuario, tipo="in_app", titulo="Nova", mensagem="M")
+
+    _auth(client, usuario)
+    response = client.get("/api/v1/notifications/me/")
+
+    assert [n["id"] for n in response.data["results"]] == [nova.pk, antiga.pk, sem_data.pk]

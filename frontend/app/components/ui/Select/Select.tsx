@@ -214,93 +214,97 @@ export function Select({
         {label}
       </Label>
 
-      <button
-        ref={triggerRef}
-        id={id}
-        type="button"
-        role="combobox"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={listboxId}
-        aria-invalid={!!error || undefined}
-        aria-describedby={helperId}
-        aria-errormessage={errorId}
-        disabled={disabled}
-        onClick={() => (open ? closeDropdown() : openDropdown())}
-        className={buildTriggerClass(open, !!error, !!success)}
-      >
-        <span className={`truncate ${selected ? "" : "text-text-muted"}`}>
-          {selected?.label ?? placeholder}
-        </span>
-        <ChevronDownIcon
-          className={`w-3.5 h-3.5 shrink-0 text-text-muted transition-transform duration-150 ${open ? "rotate-180" : ""}`}
-        />
-      </button>
+      {/* A lista se ancora no botão, não no bloco inteiro: em grade, o bloco
+          estica até a altura do vizinho, e helper/erro ficam abaixo do botão. */}
+      <div className="relative">
+        <button
+          ref={triggerRef}
+          id={id}
+          type="button"
+          role="combobox"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-controls={listboxId}
+          aria-invalid={!!error || undefined}
+          aria-describedby={helperId}
+          aria-errormessage={errorId}
+          disabled={disabled}
+          onClick={() => (open ? closeDropdown() : openDropdown())}
+          className={buildTriggerClass(open, !!error, !!success)}
+        >
+          <span className={`truncate ${selected ? "" : "text-text-muted"}`}>
+            {selected?.label ?? placeholder}
+          </span>
+          <ChevronDownIcon
+            className={`w-3.5 h-3.5 shrink-0 text-text-muted transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+          />
+        </button>
 
-      {name && <input type="hidden" name={name} value={value ?? ""} />}
+        {name && <input type="hidden" name={name} value={value ?? ""} />}
 
-      {open && (
-        <div className="absolute top-[calc(100%+var(--space-1))] left-0 right-0 z-30 flex flex-col max-h-70 bg-surface border border-border rounded-md shadow-md overflow-hidden">
-          {showSearch && (
-            <div className="p-2 border-b border-border bg-surface">
-              <input
-                ref={searchRef}
-                type="text"
-                className="w-full h-7.5 px-2 text-label text-text bg-surface-muted border border-border rounded-sm outline-none focus:border-primary focus:bg-surface"
-                placeholder="Buscar..."
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setHighlighted(0);
-                }}
-                aria-label="Buscar opções"
-              />
-            </div>
-          )}
-          <ul
-            id={listboxId}
-            role="listbox"
-            aria-label={label}
-            className="list-none m-0 py-1 px-0 overflow-y-auto flex-1"
-          >
-            {filtered.length === 0 ? (
-              <li className="p-3 text-label text-text-muted text-center">
-                Nenhuma opção encontrada
-              </li>
-            ) : (
-              filtered.map((opt, idx) => {
-                const isSelected = opt.value === value;
-                const isHighlighted = idx === highlighted;
-                const optionClass = [
-                  "py-2 px-3 text-sm text-text cursor-pointer flex items-center gap-2",
-                  isHighlighted && "bg-surface-muted",
-                  isSelected && "text-primary font-medium",
-                ]
-                  .filter(Boolean)
-                  .join(" ");
-                return (
-                  <li
-                    key={opt.value}
-                    role="option"
-                    aria-selected={isSelected}
-                    className={optionClass}
-                    onMouseEnter={() => setHighlighted(idx)}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      pick(opt);
-                    }}
-                  >
-                    <span>{opt.label}</span>
-                    {isSelected && (
-                      <CheckIcon className="w-3.5 h-3.5 ml-auto shrink-0" />
-                    )}
-                  </li>
-                );
-              })
+        {open && (
+          <div className="absolute top-[calc(100%+var(--space-1))] left-0 right-0 z-30 flex flex-col max-h-70 bg-surface border border-border rounded-md shadow-md overflow-hidden">
+            {showSearch && (
+              <div className="p-2 border-b border-border bg-surface">
+                <input
+                  ref={searchRef}
+                  type="text"
+                  className="w-full h-7.5 px-2 text-label text-text bg-surface-muted border border-border rounded-sm outline-none focus:border-primary focus:bg-surface"
+                  placeholder="Buscar..."
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    setHighlighted(0);
+                  }}
+                  aria-label="Buscar opções"
+                />
+              </div>
             )}
-          </ul>
-        </div>
-      )}
+            <ul
+              id={listboxId}
+              role="listbox"
+              aria-label={label}
+              className="list-none m-0 py-1 px-0 overflow-y-auto flex-1"
+            >
+              {filtered.length === 0 ? (
+                <li className="p-3 text-label text-text-muted text-center">
+                  Nenhuma opção encontrada
+                </li>
+              ) : (
+                filtered.map((opt, idx) => {
+                  const isSelected = opt.value === value;
+                  const isHighlighted = idx === highlighted;
+                  const optionClass = [
+                    "py-2 px-3 text-sm text-text cursor-pointer flex items-center gap-2",
+                    isHighlighted && "bg-surface-muted",
+                    isSelected && "text-primary font-medium",
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
+                  return (
+                    <li
+                      key={opt.value}
+                      role="option"
+                      aria-selected={isSelected}
+                      className={optionClass}
+                      onMouseEnter={() => setHighlighted(idx)}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        pick(opt);
+                      }}
+                    >
+                      <span>{opt.label}</span>
+                      {isSelected && (
+                        <CheckIcon className="w-3.5 h-3.5 ml-auto shrink-0" />
+                      )}
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          </div>
+        )}
+      </div>
 
       {helperText && !error && (
         <span id={helperId} className="text-xs text-text-muted leading-[1.4]">

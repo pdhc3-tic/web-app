@@ -13,7 +13,9 @@ from types import SimpleNamespace
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Q, Sum
 
-from apps.core.services.permissions import user_role_slugs
+from apps.core.models.user import User
+from apps.core.services.permissions import user_role_slugs, user_states
+from apps.sgd.constants import PERFIS_NACIONAIS
 from apps.sgd.exceptions import RegraDeNegocio
 from apps.sgd.filters import DemandFilter
 from apps.sgd.models.demand_request import DemandRequest
@@ -45,6 +47,36 @@ def exigir_perfil_de_gestao(user) -> set[str]:
     if not slugs:
         raise PermissionDenied("Disponível apenas para perfis de gestão do SGD.")
     return slugs
+
+
+PAPEIS_DE_USUARIO = ("solicitante", "responsavel")
+
+
+def _com_o_perfil(slug: str, *, estados: set[str] | None) -> Q:
+    """Usuários com o perfil `slug`. Com `estados` (o recorte do Articulador), só
+    os de território nesses estados ou sem território (alcance global)."""
+    if estados is None:
+        return Q(profiles__perfil__slug=slug)
+    return Q(profiles__perfil__slug=slug, profiles__territorio__estados__overlap=sorted(estados)) | Q(
+        profiles__perfil__slug=slug, profiles__territorio__isnull=True,
+    )
+
+
+def opcoes_de_usuarios(user, papel: str) -> list[dict]:
+    """Usuários para os filtros `solicitante` e `responsavel_etapa_atual` do
+    painel. O Articulador só vê os do seu estado; os perfis nacionais, todos."""
+    slugs = exigir_perfil_de_gestao(user)
+    if papel not in PAPEIS_DE_USUARIO:
+        raise RegraDeNegocio(f"Valor inválido. Esperado um de: {list(PAPEIS_DE_USUARIO)}.", campo="papel")
+    estados = None if slugs & PERFIS_NACIONAIS else user_states(user)
+
+    if papel == "solicitante":
+        filtro = _com_o_perfil("adt-acr", estados=estados)
+    else:
+        filtro = _com_o_perfil("articulador-estadual", estados=estados) | Q(profiles__perfil__slug__in=["ugp", "fgd"])
+    return list(
+        User.objects.filter(filtro, ativo=True).distinct().order_by("nome", "pk").values("id", "nome")
+    )
 
 
 def _inteiro_ou_none(valor):

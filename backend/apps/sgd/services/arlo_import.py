@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 
 STATUS_PAGAVEIS = {"autorizada", "em_atendimento"}
 FORMATOS_DATA = ("%Y-%m-%d", "%d/%m/%Y")
+MENSAGEM_ARQUIVO_NAO_ENCONTRADO = (
+    "O arquivo enviado não foi encontrado no armazenamento. Envie a planilha novamente."
+)
 
 
 class LinhaInvalida(Exception):
@@ -137,7 +140,9 @@ def _localizar_solicitacao(demand, bruto_solicitacao):
     return solicitacoes[0], solicitacoes
 
 
-def _processar_linha(importacao, linha: dict, colunas: dict) -> None:
+def _processar_linha(importacao, linha: dict, colunas: dict) -> dict | None:
+    """Aplica o pagamento da linha e devolve a divergência entre pago e
+    autorizado, ou None quando os valores batem."""
     for campo in CAMPOS_IMPORTACAO_OBRIGATORIOS:
         if _valor(linha, colunas, campo) == "":
             raise LinhaInvalida(f"Campo obrigatório ausente: {colunas[campo]}.", campo)
@@ -217,6 +222,15 @@ def _processar_linha(importacao, linha: dict, colunas: dict) -> None:
         )
         notifications_service.notificar_conclusao(demand)
 
+    if valor_pago == reservado:
+        return None
+    diferenca = valor_pago - reservado
+    return {
+        "demanda_id": demand.pk, "demanda_titulo": demand.titulo, "solicitacao_id": solicitacao.pk,
+        "valor_autorizado": str(reservado), "valor_pago": str(valor_pago), "diferenca": str(diferenca),
+        "risco_glosa": diferenca > 0,
+    }
+
 
 def processar_importacao(importacao: ArloImport) -> ArloImport:
     """Lê o arquivo de retorno de `importacao` e aplica linha a linha.
@@ -246,21 +260,23 @@ def _processar_importacao(importacao: ArloImport) -> ArloImport:
                     if campo in CAMPOS_IMPORTACAO_OBRIGATORIOS and coluna not in cabecalho]
         if ausentes:
             raise ArquivoInvalido(f"Colunas obrigatórias ausentes na planilha: {ausentes}.")
-    except (StorageObjectNotFound, ArquivoInvalido, UnicodeDecodeError, ValueError, KeyError) as exc:
-        importacao.status = ArloImport.Status.FALHOU
-        importacao.erros_json = [{"linha": 1, "erro": str(exc) or "Arquivo ilegível."}]
-        importacao.save(update_fields=["status", "erros_json"])
-        return importacao
+    except StorageObjectNotFound:
+        logger.warning("Arquivo da importação Arlo #%s não encontrado: %s.", importacao.pk, importacao.arquivo_key)
+        return _falhar(importacao, MENSAGEM_ARQUIVO_NAO_ENCONTRADO)
+    except (ArquivoInvalido, UnicodeDecodeError, ValueError, KeyError) as exc:
+        return _falhar(importacao, str(exc) or "Arquivo ilegível.")
 
-    erros, ok, total = [], 0, 0
+    erros, divergencias, ok, total = [], [], 0, 0
     for numero, linha in enumerate(linhas, start=2):  # linha 1 é o cabeçalho
         if not any(str(v).strip() for v in linha.values() if v is not None):
             continue
         total += 1
         try:
             with transaction.atomic():
-                _processar_linha(importacao, linha, colunas)
+                divergencia = _processar_linha(importacao, linha, colunas)
             ok += 1
+            if divergencia:
+                divergencias.append(divergencia)
         except LinhaInvalida as exc:
             erros.append({"linha": numero, "campo": exc.campo, "erro": exc.erro})
         except TransicaoInvalida as exc:
@@ -272,6 +288,14 @@ def _processar_importacao(importacao: ArloImport) -> ArloImport:
     importacao.total_registros = total
     importacao.registros_ok = ok
     importacao.erros_json = erros
+    importacao.divergencias_json = divergencias
     importacao.status = ArloImport.Status.CONCLUIDO
-    importacao.save(update_fields=["total_registros", "registros_ok", "erros_json", "status"])
+    importacao.save(update_fields=["total_registros", "registros_ok", "erros_json", "divergencias_json", "status"])
+    return importacao
+
+
+def _falhar(importacao: ArloImport, erro: str) -> ArloImport:
+    importacao.status = ArloImport.Status.FALHOU
+    importacao.erros_json = [{"linha": 1, "erro": erro}]
+    importacao.save(update_fields=["status", "erros_json"])
     return importacao

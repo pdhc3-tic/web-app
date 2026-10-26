@@ -338,11 +338,61 @@ def test_rota_exige_autenticacao(demanda):
     assert APIClient().get(f"{URL}{demanda.pk}/auditoria/").status_code == 401
 
 
-@pytest.mark.parametrize("perfil", ["solicitante_rn", "usuario_articulador_rn", "usuario_ugp", "usuario_fgd"])
-def test_rota_e_so_do_super_admin(demanda, perfil, request):
-    usuario = request.getfixturevalue(perfil)
+def _trilha(usuario, demanda):
+    resposta = _cliente(usuario).get(f"{URL}{demanda.pk}/auditoria/")
+    assert resposta.status_code == 200, resposta.data
+    return resposta.data["results"]
 
-    assert _cliente(usuario).get(f"{URL}{demanda.pk}/auditoria/").status_code == 403
+
+@pytest.mark.parametrize("perfil", ["solicitante_rn", "usuario_articulador_rn", "usuario_ugp", "usuario_fgd"])
+def test_quem_ve_a_demanda_ve_a_trilha_sem_o_ip(demanda, demand_request_rn, solicitante_rn, perfil, request):
+    _cliente(solicitante_rn).post(f"{URL}{demanda.pk}/submeter/", {}, format="json", REMOTE_ADDR="198.51.100.7")
+
+    itens = _trilha(request.getfixturevalue(perfil), demanda)
+
+    assert itens
+    assert {i["ip"] for i in itens} == {None}
+
+
+def test_super_admin_ve_a_trilha_com_o_ip(demanda, demand_request_rn, solicitante_rn, usuario_super_admin):
+    _cliente(solicitante_rn).post(f"{URL}{demanda.pk}/submeter/", {}, format="json", REMOTE_ADDR="198.51.100.7")
+
+    itens = _trilha(usuario_super_admin, demanda)
+
+    assert "198.51.100.7" in {i["ip"] for i in itens}
+
+
+def test_quem_nao_ve_a_demanda_nao_ve_a_trilha(demanda, usuario_articulador_ce):
+    assert _cliente(usuario_articulador_ce).get(f"{URL}{demanda.pk}/auditoria/").status_code == 404
+
+
+def test_trilha_inclui_o_recurso_extra_da_demanda(
+    demanda, demand_request_rn, solicitante_rn, usuario_articulador_rn, usuario_ugp, usuario_super_admin,
+    limite_individual_rn, rubrica_diarias, activity_rn,
+):
+    from apps.sgd.services import recurso_extra as recurso_extra_service
+    from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
+
+    limite_individual_rn.valor_limite = Decimal("300")
+    limite_individual_rn.save(update_fields=["valor_limite"])
+    pedido = recurso_extra_service.criar(
+        demanda=demanda, rubrica=rubrica_diarias, justificativa="Limite esgotado.", usuario=solicitante_rn,
+    )
+    recurso_extra_service.emitir_parecer(pedido, usuario=usuario_articulador_rn, parecer="Procede.")
+    recurso_extra_service.decidir(pedido, usuario=usuario_ugp, decisao="aprovar", justificativa="Aprovado.")
+
+    outra = DemandFactory(activity=activity_rn, solicitante=solicitante_rn)
+    DemandRequestFactory(demanda=outra, tipo="diaria", rubrica=rubrica_diarias, valor_estimado=Decimal("2000"))
+    recurso_extra_service.criar(
+        demanda=outra, rubrica=rubrica_diarias, justificativa="Outro pedido.", usuario=solicitante_rn,
+    )
+
+    itens = [i for i in _trilha(usuario_super_admin, demanda) if i["tipo"] == "recurso_extra"]
+
+    assert [i["acao"] for i in itens] == [
+        "recurso_extra.criado", "recurso_extra.submetido", "recurso_extra.parecer_emitido",
+        "aumento_limite", "recurso_extra.decidido_aprovar",
+    ]
 
 
 def test_rota_de_demanda_inexistente_retorna_404(usuario_super_admin):

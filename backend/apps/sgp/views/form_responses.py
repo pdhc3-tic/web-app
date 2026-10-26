@@ -90,6 +90,9 @@ class FormResponseViewSet(
         return self._upf
 
     def get_queryset(self):
+        # Na geração do schema não há usuário real para o recorte por perfil.
+        if getattr(self, "swagger_fake_view", False):
+            return FormResponse.objects.none()
         return FormResponse.objects.filter(upf=self.get_upf()).order_by(
             "-data_preenchimento", "-pk"
         )

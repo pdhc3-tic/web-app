@@ -164,20 +164,31 @@ export const STATUS_ATIVIDADE_ELEGIVEIS = ["planejado", "agendado"];
 const DEMANDAS_PATH = "/api/v1/sgd/demandas/";
 
 /**
- * GET /api/v1/sgd/demandas/?activity={id} — as demandas de uma atividade.
- *
- * O filtro `activity` ainda não existe no `DemandViewSet.list` (só `status`):
- * enquanto isso o backend devolve TODAS as demandas visíveis ao usuário, e a
- * aba mostra o que vier. A lista não é filtrada aqui de propósito — ver
- * docs/pendencias-backend-sprint-10.md, item 6.
+ * A listagem de demandas é paginada (`DemandPagination`, BE-5): sem `limit`,
+ * viriam só as 10 primeiras. As telas pedem o teto do backend (`max_limit`
+ * = 200) e recebem o total, para avisar quando há mais do que a página trouxe.
  */
+const LIMITE_LISTA_DEMANDAS = 200;
+
+export type ListaDemandas = {
+  demandas: Demanda[];
+  /** Total no backend com os mesmos filtros; maior que `demandas.length` = lista parcial. */
+  total: number;
+};
+
+async function lerListaDemandas(qs: URLSearchParams, signal?: AbortSignal): Promise<ListaDemandas> {
+  qs.set("limit", String(LIMITE_LISTA_DEMANDAS));
+  const res = await apiClient(`${DEMANDAS_PATH}?${qs}`, { signal });
+  const pagina = (await res.json()) as { count: number; results: Demanda[] };
+  return { demandas: pagina.results, total: pagina.count };
+}
+
+/** GET /api/v1/sgd/demandas/?atividade={id} — as demandas de uma atividade. */
 export async function listDemandasDaAtividade(
   atividadeId: number | string,
   signal?: AbortSignal,
-): Promise<Demanda[]> {
-  const qs = new URLSearchParams({ activity: String(atividadeId) });
-  const res = await apiClient(`${DEMANDAS_PATH}?${qs}`, { signal });
-  return res.json();
+): Promise<ListaDemandas> {
+  return lerListaDemandas(new URLSearchParams({ atividade: String(atividadeId) }), signal);
 }
 
 /** POST /api/v1/sgd/demandas/ — cria a demanda (e a atividade, se for o caso). */
@@ -262,16 +273,21 @@ export async function fetchContagemFila(signal?: AbortSignal): Promise<ContagemF
  * o último — para a FGD, que aguarda dois status, a LISTA da fila vem
  * incompleta, embora a contagem venha certa
  * (docs/pendencias-backend-sprint-10.md, item 13).
+ *
+ * `filtros` são os do `DemandFilter` do BE-5 (atividade, ação, território,
+ * período…) — o drill-down do painel de execução (#297) leva o recorte do
+ * painel para a lista mostrar as demandas que compõem o custo exibido.
  */
 export async function listDemandas(
-  params: { status?: StatusDemanda[] } = {},
+  params: { status?: StatusDemanda[]; filtros?: Record<string, string | undefined> } = {},
   signal?: AbortSignal,
-): Promise<Demanda[]> {
+): Promise<ListaDemandas> {
   const qs = new URLSearchParams();
   for (const st of params.status ?? []) qs.append("status", st);
-  const query = qs.toString();
-  const res = await apiClient(`${DEMANDAS_PATH}${query ? `?${query}` : ""}`, { signal });
-  return res.json();
+  for (const [chave, valor] of Object.entries(params.filtros ?? {})) {
+    if (valor) qs.set(chave, valor);
+  }
+  return lerListaDemandas(qs, signal);
 }
 
 /** GET /api/v1/sgd/demandas/{id}/ */

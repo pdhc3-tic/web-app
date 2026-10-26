@@ -18,13 +18,12 @@ import {
   getAtividade,
   listAcoes,
   listTecnicos,
-  statusLabel,
   updateAtividade,
   type AcaoPT,
   type AtividadeDetail,
   type TecnicoOption,
 } from "@/app/lib/atividades";
-import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
+import { useSgpChoices, useRotuloChoice } from "@/app/providers/SgpChoicesProvider";
 import {
   fetchComunidadeOptions,
   fetchMunicipalitiesByState,
@@ -72,6 +71,7 @@ export function AtividadeForm({
   const { showToast } = useToast();
   const { data: session } = useSession();
   const choices = useSgpChoices();
+  const statusLabel = useRotuloChoice("status_atividade");
 
   const [form, setForm] = useState<AtividadeFormData>(() => {
     if (initialData) return detailToForm(initialData);
@@ -205,14 +205,14 @@ export function AtividadeForm({
   // Edição: o status atual + as transições que o backend declara permitidas.
   const statusOptions = useMemo<SelectOption[]>(() => {
     if (mode === "create") {
-      return choices.status.filter((s) => STATUS_INICIAIS.includes(s.value));
+      return choices.status_atividade.filter((s) => STATUS_INICIAIS.includes(s.value));
     }
     const permitidos = new Set([
       form.status,
       ...(initialData?.transicoes_permitidas ?? []),
     ]);
-    return choices.status.filter((s) => permitidos.has(s.value));
-  }, [mode, choices.status, form.status, initialData?.transicoes_permitidas]);
+    return choices.status_atividade.filter((s) => permitidos.has(s.value));
+  }, [mode, choices.status_atividade, form.status, initialData?.transicoes_permitidas]);
 
   const tecnicoOptions = useMemo<SelectOption[]>(() => {
     const base = tecnicos.map((t) => ({

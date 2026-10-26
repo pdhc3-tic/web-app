@@ -21,6 +21,7 @@ import re
 from uuid import uuid4
 
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, OpenApiTypes, extend_schema
 from rest_framework import serializers, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -29,6 +30,7 @@ from apps.core.models.audit_log import AuditLog
 from apps.core.storage import StorageObjectNotFound, get_storage
 from apps.sgp.models.activity_document import ActivityDocument
 from apps.sgp.serializers import ActivityDocumentSerializer
+from apps.sgp.serializers.common import DownloadURLRespostaSerializer, UploadURLRespostaSerializer
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +99,8 @@ class ActivityDocumentMixin:
 
     # -- GET /atividades/{id}/documentos/ -----------------------------------
 
-    @action(detail=True, methods=["get"], url_path="documentos")
+    @extend_schema(filters=False, responses=ActivityDocumentSerializer(many=True))
+    @action(detail=True, methods=["get"], url_path="documentos", pagination_class=None)
     def documentos_list(self, request, pk=None):
         activity = self._get_activity_for_doc(pk)
         docs = ActivityDocument.objects.filter(activity=activity).order_by("-criado_em")
@@ -106,6 +109,7 @@ class ActivityDocumentMixin:
 
     # -- POST /atividades/{id}/documentos/upload-url/ -----------------------
 
+    @extend_schema(request=ActivityDocumentUploadURLSerializer, responses=UploadURLRespostaSerializer)
     @action(detail=True, methods=["post"], url_path="documentos/upload-url")
     def documentos_upload_url(self, request, pk=None):
         activity = self._get_activity_for_doc(pk)
@@ -153,6 +157,7 @@ class ActivityDocumentMixin:
 
     # -- POST /atividades/{id}/documentos/confirm/ --------------------------
 
+    @extend_schema(request=ActivityDocumentConfirmSerializer, responses={201: ActivityDocumentSerializer})
     @action(detail=True, methods=["post"], url_path="documentos/confirm")
     def documentos_confirm(self, request, pk=None):
         activity = self._get_activity_for_doc(pk)
@@ -232,6 +237,7 @@ class ActivityDocumentMixin:
 
     # -- GET /atividades/{id}/documentos/{doc_id}/download/ -----------------
 
+    @extend_schema(parameters=[OpenApiParameter("doc_id", OpenApiTypes.INT, OpenApiParameter.PATH)], responses=DownloadURLRespostaSerializer)
     @action(
         detail=True,
         methods=["get"],
@@ -255,6 +261,10 @@ class ActivityDocumentMixin:
 
     # -- DELETE /atividades/{id}/documentos/{doc_id}/ -----------------------
 
+    @extend_schema(
+        parameters=[OpenApiParameter("doc_id", OpenApiTypes.INT, OpenApiParameter.PATH)],
+        responses={204: OpenApiResponse(description="Documento removido.")},
+    )
     @action(
         detail=True,
         methods=["delete"],

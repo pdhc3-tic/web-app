@@ -3,6 +3,7 @@ from django.core.cache import cache
 from django.db import models, transaction
 from django.db.models import signals
 from django.dispatch import receiver
+from django.utils import timezone
 
 
 class TipoNotificacao(models.TextChoices):
@@ -58,6 +59,15 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"[{self.tipo}] {self.titulo} → {self.user}"
+
+    def save(self, *args, **kwargs):
+        # A in-app não passa por envio nenhum: chega ao sino quando é criada. Sem
+        # `enviado_em`, ela não entra na ordenação da listagem nem mostra a hora.
+        if self._state.adding and self.tipo == TipoNotificacao.IN_APP and self.enviado_em is None:
+            self.enviado_em = timezone.now()
+            if self.status == StatusNotificacao.PENDENTE:
+                self.status = StatusNotificacao.ENTREGUE
+        super().save(*args, **kwargs)
 
 
 class NotificationPreference(models.Model):

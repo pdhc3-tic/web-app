@@ -13,6 +13,7 @@ LIMITE_SEGUNDOS = 0.3
 HISTORICO = 5_000
 
 
+@pytest.mark.performance
 def test_verificacao_de_saldo_com_historico_representativo_em_menos_de_300ms(
     auth_client_solicitante, activity_rn, rubrica_diarias, allocation_territorial_rn, limite_individual_rn,
 ):

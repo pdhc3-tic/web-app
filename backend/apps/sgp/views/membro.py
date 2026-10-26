@@ -6,7 +6,13 @@ from django.db import IntegrityError, transaction
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    OpenApiTypes,
+    extend_schema,
+    inline_serializer,
+)
 from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -28,6 +34,14 @@ from apps.sgp.services.membro_export import (
     membro_export_rows_for_scope,
     membro_export_rows_for_upf,
 )
+
+
+RESPOSTA_CSV = {(200, "text/csv"): OpenApiTypes.BINARY}
+
+
+class MembroTitularRefSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    nome_completo = serializers.CharField()
 
 
 def data_limite_aniversario(hoje, anos):
@@ -166,6 +180,7 @@ class MembroViewSet(viewsets.ModelViewSet):
         )
         instance.delete()
 
+    @extend_schema(responses=RESPOSTA_CSV)
     @action(detail=False, methods=["get"], url_path="exportar")
     def exportar(self, request, upf_pk=None):
         """Exporta em CSV os membros de uma UPF específica (Issue #186)."""
@@ -175,6 +190,34 @@ class MembroViewSet(viewsets.ModelViewSet):
         filename = f"membros_upf_{upf.pk}_{timestamp}.csv"
         return _membros_csv_response(columns, rows, filename)
 
+    @extend_schema(
+        responses=inline_serializer(
+            "MembroResumo",
+            fields={
+                "total_membros": serializers.IntegerField(),
+                "faixa_etaria": inline_serializer(
+                    "MembroResumoFaixaEtaria",
+                    fields={
+                        "0-11": serializers.IntegerField(),
+                        "12-17": serializers.IntegerField(),
+                        "18-59": serializers.IntegerField(),
+                        "60+": serializers.IntegerField(),
+                        "sem_data_nascimento": serializers.IntegerField(),
+                    },
+                ),
+                "genero": inline_serializer(
+                    "MembroResumoGenero",
+                    fields={
+                        "masculino": serializers.IntegerField(),
+                        "feminino": serializers.IntegerField(),
+                        "nao_binario": serializers.IntegerField(),
+                        "nao_informado": serializers.IntegerField(),
+                    },
+                ),
+                "tem_titular": serializers.BooleanField(),
+            },
+        ),
+    )
     @action(detail=False, methods=["get"], url_path="resumo")
     def resumo(self, request, upf_pk=None):
         from django.db.models import Count, Case, When, IntegerField, Value, Q
@@ -241,6 +284,19 @@ class MembroViewSet(viewsets.ModelViewSet):
             "tem_titular": tem_titular,
         })
 
+    @extend_schema(
+        request=inline_serializer(
+            "TransferirTitularidadeRequest", fields={"novo_titular_id": serializers.IntegerField()},
+        ),
+        responses=inline_serializer(
+            "TransferirTitularidadeResposta",
+            fields={
+                "detail": serializers.CharField(),
+                "novo_titular": MembroTitularRefSerializer(),
+                "antigo_titular": MembroTitularRefSerializer(allow_null=True),
+            },
+        ),
+    )
     @action(detail=False, methods=["post"], url_path="transferir-titularidade")
     def transferir_titularidade(self, request, upf_pk=None):
         novo_titular_id = request.data.get("novo_titular_id")
@@ -339,6 +395,10 @@ class MembroExportView(APIView):
             f"{MEMBROS_EXPORT_UPF_LIMIT} UPFs por exportação — acima disso, "
             "restrinja por territorio_id, municipio ou projeto."
         ),
+        responses={
+            **RESPOSTA_CSV,
+            400: OpenApiResponse(description="Filtro inválido ou acima do limite de UPFs."),
+        },
     )
     def get(self, request):
         query_serializer = MembroExportQuerySerializer(data=request.query_params)

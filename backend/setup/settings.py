@@ -268,6 +268,25 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "API do Programa de Desenvolvimento Humano de Crianças e Adolescentes (PDHC)",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    # Componentes separados para leitura e escrita (`XRequest`), para os tipos
+    # gerados no frontend não exigirem campos read-only no payload.
+    "COMPONENT_SPLIT_REQUEST": True,
+    # Campos homônimos (`status`, `tipo`) com choices diferentes ganhariam um
+    # sufixo de hash (`Status8eaEnum`), que muda sempre que outro choice é
+    # alterado e quebra os tipos gerados no frontend.
+    "ENUM_NAME_OVERRIDES": {
+        "StatusAtividadeEnum": "apps.sgp.models.activity.STATUS_CHOICES",
+        "StatusFormResponseEnum": "apps.sgp.models.form_response.FormResponse.Status",
+        "StatusConflitoEnum": "apps.sca.models.ConflictLog.Status",
+        "TipoSyncEventEnum": "apps.sca.models.SyncEvent.Tipo",
+        "TipoSolicitacaoEnum": "apps.sgd.models.demand_request.TIPO_CHOICES",
+        "TipoProducaoEnum": "apps.sgp.models.production.Production.TIPO_CHOICES",
+        "SimNaoInformadoEnum": "apps.sgp.constants.ENERGIA_CHOICES",
+        "FormatoExportacaoEnum": "apps.sgp.models.export_job.ExportJob.Formato",
+        "TipoExportacaoEnum": "apps.sgp.models.export_job.ExportJob.Tipo",
+        "TipoDocumentoUPFEnum": "apps.sgp.models.upf_document.UPFDocument.TIPO_CHOICES",
+        "TipoDocumentoAtividadeEnum": "apps.sgp.models.activity_document.ActivityDocument.TIPO_CHOICES",
+    },
     "SWAGGER_UI_SETTINGS": {
         "deepLinking": True,
         "persistAuthorization": True,
@@ -279,6 +298,13 @@ CORS_ALLOWED_ORIGINS = [
     for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
     if origin.strip()
 ]
+# Sem isso o navegador esconde do `fetch` o nome do arquivo das exportações
+# quando o frontend está em outra origem.
+CORS_EXPOSE_HEADERS = ["Content-Disposition"]
+
+# Exportação de UPFs: até este total o arquivo sai na própria requisição; acima,
+# vira ExportJob processado pelo worker.
+UPF_EXPORT_ASYNC_THRESHOLD = int(os.getenv("UPF_EXPORT_ASYNC_THRESHOLD", "1000"))
 
 # CONFIGURAÇÕES DO CELERY
 CELERY_BROKER_URL = f"redis://{os.getenv('REDIS_HOST', 'redis')}:{os.getenv('REDIS_PORT', '6379')}/0"
@@ -325,7 +351,11 @@ EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@pdhc.ufersa.edu.br")
 
-FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "https://pdhc.ufersa.edu.br")
+# Sem a variável, o ambiente de desenvolvimento aponta para o frontend local, e
+# não para produção.
+FRONTEND_BASE_URL = os.getenv(
+    "FRONTEND_BASE_URL", "http://localhost:3000" if DEBUG else "https://pdhc.ufersa.edu.br",
+)
 
 # GOOGLE CALENDAR
 GOOGLE_CALENDAR_SERVICE_ACCOUNT_INFO = os.getenv("GOOGLE_CALENDAR_SERVICE_ACCOUNT_INFO", "")
