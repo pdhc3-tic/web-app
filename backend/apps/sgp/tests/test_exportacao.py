@@ -13,7 +13,6 @@ from rest_framework.test import APIClient
 from apps.core.tests.factories import RoleFactory, UserFactory
 from apps.sgp.models import UPF, ExportJob
 from apps.sgp.services import exportacao as exportacao_service
-from apps.sgp.services import upf_export
 from apps.sgp.tests.factories import (
     ActivityFactory,
     ComunidadeFactory,
@@ -619,9 +618,9 @@ class TestExportacaoUPFs:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_acima_do_limite_vira_exportacao_assincrona(
-        self, cliente_ugp, municipio_rn, django_capture_on_commit_callbacks, monkeypatch
+        self, cliente_ugp, municipio_rn, django_capture_on_commit_callbacks, settings
     ):
-        monkeypatch.setattr(upf_export, "UPF_EXPORT_SYNC_LIMIT", 2)
+        settings.UPF_EXPORT_ASYNC_THRESHOLD = 2
         UPFFactory.create_batch(3, municipio=municipio_rn)
 
         with patch(DELAY) as delay:
@@ -638,8 +637,8 @@ class TestExportacaoUPFs:
         download = cliente_ugp.get(f"{_detalhe(response.data['id'])}download/")
         assert len(_linhas_csv(download.content)) == 4
 
-    def test_no_limite_ainda_e_download_direto(self, cliente_ugp, municipio_rn, monkeypatch):
-        monkeypatch.setattr(upf_export, "UPF_EXPORT_SYNC_LIMIT", 2)
+    def test_no_limite_ainda_e_download_direto(self, cliente_ugp, municipio_rn, settings):
+        settings.UPF_EXPORT_ASYNC_THRESHOLD = 2
         UPFFactory.create_batch(2, municipio=municipio_rn)
 
         response = cliente_ugp.get(UPFS_EXPORT_URL)

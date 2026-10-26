@@ -203,6 +203,26 @@ class TestPainelEscopoTerritorial:
 
         assert response.status_code == 403
 
+    def test_sem_perfil_no_sgp_nao_traz_o_code_de_sem_territorio(self, auth_client_sem_acesso):
+        response = auth_client_sem_acesso.get(PAINEL_URL)
+
+        assert "code" not in response.data
+
+    @pytest.mark.parametrize("slug", ["adt-acr", "articulador-estadual"])
+    def test_perfil_sem_territorio_vinculado_recebe_code_proprio(self, api_client, slug):
+        from apps.core.tests.factories import RoleFactory, TerritoryFactory, UserFactory
+
+        territorio_vazio = TerritoryFactory(nome=f"Território sem estado {slug}", estados=[])
+        territorio = None if slug == "adt-acr" else territorio_vazio
+        usuario = UserFactory(profiles=[(RoleFactory(slug=slug), territorio)])
+        api_client.force_authenticate(user=usuario)
+
+        response = api_client.get(PAINEL_URL)
+
+        assert response.status_code == 403
+        assert response.data["code"] == "SEM_TERRITORIO"
+        assert response.data["detail"]
+
     def test_escopo_territorial(
         self, auth_client_adt_rn, state_rn, territory_ce, territory_rn,
     ):
@@ -340,9 +360,17 @@ class TestPainelPerformance:
     def _limiares_em_cache(self):
         # Os limiares do semáforo vêm do SystemConfig via cache, que persiste
         # entre testes — sem aquecer aqui, a contagem mudaria (+2) conforme
-        # a ordem em que os testes rodam.
+        # a ordem em que os testes rodam. As linhas da migration somem quando um
+        # teste transacional esvazia a base, e sem linha o `get_config` não guarda
+        # o padrão no cache: por isso são recriadas antes de aquecer.
+        from django.core.cache import cache
+
+        from apps.core.models.system_config import SystemConfig, TipoConfiguracao
         from apps.sgp.services.budget import limiares_semaforo
 
+        for chave, valor in (("budget_alert_yellow_pct", "70"), ("budget_alert_red_pct", "90")):
+            SystemConfig.objects.get_or_create(chave=chave, defaults={"valor": valor, "tipo": TipoConfiguracao.INTEGER})
+            cache.delete(f"system_config:{chave}")
         limiares_semaforo()
 
     @pytest.mark.performance

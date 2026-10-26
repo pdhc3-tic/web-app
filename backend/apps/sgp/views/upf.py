@@ -120,7 +120,7 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
     def exportar(self, request):
         """GET /api/v1/upfs/exportar/?formato=csv|xlsx&<filtros da listagem>
 
-        Até `upf_export.UPF_EXPORT_SYNC_LIMIT` registros devolve o arquivo; acima
+        Até `settings.UPF_EXPORT_ASYNC_THRESHOLD` registros devolve o arquivo; acima
         disso responde 202 com a exportação criada, acompanhada em
         `/api/v1/sgp/exportacoes/{id}/`."""
         arquivo_ou_job = exportar_upfs(user=request.user, params=request.query_params.dict())

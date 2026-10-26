@@ -266,6 +266,25 @@ def test_fgd_le_mas_nao_decide(pedido_com_parecer, usuario_fgd):
     assert _acao(usuario_fgd, pedido_com_parecer.pk, "decidir", APROVAR).status_code == 403
 
 
+def test_listagem_filtra_por_demanda(solicitante_rn, rubrica_diarias):
+    desta = BudgetIncreaseRequestFactory(user=solicitante_rn, rubrica=rubrica_diarias, demanda_id="41")
+    BudgetIncreaseRequestFactory(user=solicitante_rn, rubrica=rubrica_diarias, demanda_id="42")
+    BudgetIncreaseRequestFactory(user=solicitante_rn, rubrica=rubrica_diarias, demanda_id="410")
+
+    for valor in ("41", "041"):
+        resposta = _cliente(solicitante_rn).get(REMANEJAMENTOS, {"status": "todos", "demanda": valor})
+
+        assert resposta.status_code == 200
+        assert [p["id"] for p in resposta.data["results"]] == [desta.pk]
+
+
+def test_filtro_por_demanda_exige_id_numerico(solicitante_rn):
+    resposta = _cliente(solicitante_rn).get(REMANEJAMENTOS, {"demanda": "abc"})
+
+    assert resposta.status_code == 400
+    assert "demanda" in resposta.data
+
+
 def test_listagem_exige_autenticacao():
     assert APIClient().get(REMANEJAMENTOS).status_code == 401
 

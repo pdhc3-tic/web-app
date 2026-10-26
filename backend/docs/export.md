@@ -123,9 +123,10 @@ cadastro. O CPF sai completo para Super Admin e UGP e mascarado
 (`123.***.***-45`) para os demais perfis (`CPF_COMPLETO_ROLES` em
 `apps/core/sensitive_fields.py`). Saúde e Cor/Raça não fazem parte do arquivo.
 
-Até `UPF_EXPORT_SYNC_LIMIT` (1.000) registros a resposta é o arquivo. Acima
-disso a API cria uma exportação assíncrona e responde `202` com o mesmo corpo de
-`GET /api/v1/sgp/exportacoes/{id}/`.
+Até `UPF_EXPORT_ASYNC_THRESHOLD` registros (variável de ambiente, padrão 1.000)
+a resposta é o arquivo. Acima disso a API cria uma exportação assíncrona e
+responde `202` com o mesmo corpo de `GET /api/v1/sgp/exportacoes/{id}/`. Em
+homologação, um valor baixo permite testar o fluxo assíncrono com poucas UPFs.
 
 ## Exportação assíncrona
 
