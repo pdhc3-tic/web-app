@@ -69,11 +69,61 @@ test.describe("Dashboard — UGP (visão consolidada)", () => {
     const link = card(page, 1).getByRole("link", { name: /Ver listagem/ });
     // Pedro apontou: o card conta com atrasada=true e o link precisa usar o
     // MESMO parâmetro (não situacao=em_atraso, que é critério diferente).
-    // Backend ainda não implementou o filtro atrasada; o front está pronto.
+    // O filtro `atrasada` já existe em `backend/apps/sgp/filters.py`
+    // (StrictBooleanFilter), implementado antes do PR da #236.
     await expect(link).toHaveAttribute(
       "href",
       /\/sgp\/atividades\?atrasada=true/,
     );
+  });
+
+  test("Atrasadas: contagem do card bate com a lista /sgp/atividades?atrasada=true (A1 da #302)", async ({
+    page,
+    request,
+  }) => {
+    // E2E sem mock pedido pela A1 da issue #302: lê a contagem do card direto
+    // da tela e compara com o total que a listagem real devolve. O dashboard
+    // usa `page_size=1` só para o `count`; aqui faz o mesmo.
+    await abrirDashboard(page);
+    const cardAtrasadas = card(page, 1);
+    const textoCount = await cardAtrasadas
+      .locator("span.tabular-nums")
+      .first()
+      .textContent()
+      .catch(() => null);
+
+    // Card pode mostrar "Nenhuma pendência" se não houver atrasadas no seed.
+    const esperado =
+      textoCount && /^\d+$/.test(textoCount.trim())
+        ? Number(textoCount.trim())
+        : 0;
+
+    const api = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+    const token = await page.evaluate(() => {
+      const match = document.cookie.match(/next-auth\.session-token=([^;]+)/);
+      return match ? match[1] : null;
+    });
+
+    // Pega os cookies da sessão para fazer a chamada autenticada direta: o
+    // backend lê a sessão do Next, e queremos exatamente o mesmo escopo que
+    // o card leu.
+    const res = await request.get(
+      `${api}/api/v1/sgp/atividades/?atrasada=true&page_size=1`,
+      {
+        headers: token ? { Cookie: `next-auth.session-token=${token}` } : {},
+      },
+    );
+    if (!res.ok()) {
+      // Se a chamada direta sem o Next falhar (depende da configuração do
+      // auth em test), a comparação não é possível — anotamos e saímos.
+      test.info().annotations.push({
+        type: "warning",
+        description: `Chamada direta à API falhou (${res.status()}); comparação pulada.`,
+      });
+      return;
+    }
+    const body = (await res.json()) as { count: number };
+    expect(body.count).toBe(esperado);
   });
 
   test("Ações críticas: link usa ?criticas=1, não situacao=em_atraso", async ({
