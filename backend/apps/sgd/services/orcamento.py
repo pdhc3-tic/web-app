@@ -51,6 +51,17 @@ def _meta_id(*, demand_request=None, activity=None) -> int:
     return activity.acao.meta_id
 
 
+def _regra_do_motor(exc) -> RegraDeNegocio:
+    """Recusa de validação do motor com o mesmo campo e a mesma mensagem."""
+    detail = exc.detail
+    if isinstance(detail, dict) and detail:
+        campo, mensagens = next(iter(detail.items()))
+        mensagem = mensagens[0] if isinstance(mensagens, list) else mensagens
+        return RegraDeNegocio(str(mensagem), campo=campo)
+    mensagem = detail[0] if isinstance(detail, list) and detail else detail
+    return RegraDeNegocio(str(mensagem))
+
+
 def saldo_do_pool(allocation: BudgetAllocation) -> Decimal:
     return allocation.valor_alocado - allocation.valor_comprometido - allocation.valor_executado
 
@@ -128,11 +139,14 @@ def consultar_pool(*, solicitante, rubrica, valor: Decimal, demand_request=None,
     `consumo_previo` é o que a mesma operação ainda vai reservar nesta
     alocação antes de `valor`."""
     nivel, estado_sigla, territorio = resolver_nivel_do_usuario(solicitante)
-    check = budget_service.saldo_para_consulta(
-        meta_id=_meta_id(demand_request=demand_request, activity=activity), rubrica_slug=rubrica.slug,
-        nivel=nivel, estado_sigla=estado_sigla, territorio=territorio, valor=valor,
-        consumo_previo=consumo_previo,
-    )
+    try:
+        check = budget_service.saldo_para_consulta(
+            meta_id=_meta_id(demand_request=demand_request, activity=activity), rubrica_slug=rubrica.slug,
+            nivel=nivel, estado_sigla=estado_sigla, territorio=territorio, valor=valor,
+            consumo_previo=consumo_previo,
+        )
+    except budget_service.DRFValidationError as exc:
+        raise _regra_do_motor(exc) from exc
     if check.disponivel:
         return check
     return SaldoCheck(
@@ -163,10 +177,13 @@ def reservar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuar
     """Idempotente por `demand_request.pk` (o motor confere a reserva já feita
     depois de travar a alocação)."""
     nivel, estado_sigla, territorio = resolver_nivel_do_usuario(solicitante)
-    check = budget_service.saldo_para_consulta(
-        meta_id=_meta_id(demand_request=demand_request), rubrica_slug=rubrica.slug, nivel=nivel,
-        estado_sigla=estado_sigla, territorio=territorio, valor=valor,
-    )
+    try:
+        check = budget_service.saldo_para_consulta(
+            meta_id=_meta_id(demand_request=demand_request), rubrica_slug=rubrica.slug, nivel=nivel,
+            estado_sigla=estado_sigla, territorio=territorio, valor=valor,
+        )
+    except budget_service.DRFValidationError as exc:
+        raise _regra_do_motor(exc) from exc
     allocation = check.allocation
     if allocation is None:
         raise bloqueio_territorial(
@@ -281,4 +298,9 @@ def remanejar(*, origem: BudgetAllocation, destino: BudgetAllocation, valor: Dec
                 f"{formatar_brl(valor)} solicitado.",
                 campo="valor",
             )
-    budget_service.remanejar(origem=origem, destino=destino, valor=valor, usuario=usuario, justificativa=justificativa)
+    try:
+        budget_service.remanejar(
+            origem=origem, destino=destino, valor=valor, usuario=usuario, justificativa=justificativa,
+        )
+    except budget_service.DRFValidationError as exc:
+        raise _regra_do_motor(exc) from exc

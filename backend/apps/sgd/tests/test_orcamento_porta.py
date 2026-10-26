@@ -158,3 +158,78 @@ def test_remanejar_sem_saldo_na_origem_recusa_em_reais_sem_mover_nada(
     assert not BudgetTransaction.objects.filter(tipo=BudgetTransaction.Tipo.REMANEJAMENTO).exists()
     origem.refresh_from_db()
     assert origem.valor_alocado == Decimal("1500")
+
+
+def test_consultar_pool_com_rubrica_desativada_usa_excecao_de_dominio(
+    demand_request_rn, solicitante_rn, rubrica_diarias, allocation_territorial_rn,
+):
+    rubrica_diarias.ativo = False
+    rubrica_diarias.save(update_fields=["ativo"])
+
+    with pytest.raises(RegraDeNegocio) as excinfo:
+        orcamento_service.consultar_pool(
+            solicitante=solicitante_rn, rubrica=rubrica_diarias, valor=Decimal("100"),
+            demand_request=demand_request_rn,
+        )
+
+    assert excinfo.value.campo == "rubrica"
+    assert excinfo.value.mensagem == "Rubrica 'diarias' não existe ou está inativa."
+
+
+def test_reservar_pool_com_rubrica_desativada_usa_excecao_de_dominio(
+    demand_request_rn, solicitante_rn, rubrica_diarias, allocation_territorial_rn,
+):
+    rubrica_diarias.ativo = False
+    rubrica_diarias.save(update_fields=["ativo"])
+
+    with pytest.raises(RegraDeNegocio) as excinfo:
+        orcamento_service.reservar_pool(
+            solicitante=solicitante_rn, rubrica=rubrica_diarias, valor=Decimal("100"),
+            demand_request=demand_request_rn, usuario=solicitante_rn,
+        )
+
+    assert excinfo.value.campo == "rubrica"
+    allocation_territorial_rn.refresh_from_db()
+    assert allocation_territorial_rn.valor_comprometido == Decimal("0")
+
+
+def test_remanejar_para_a_mesma_alocacao_e_regra_de_negocio(allocation_territorial_rn, solicitante_rn):
+    from apps.sgp.models import BudgetTransaction
+
+    with pytest.raises(RegraDeNegocio) as excinfo:
+        orcamento_service.remanejar(
+            origem=allocation_territorial_rn, destino=allocation_territorial_rn, valor=Decimal("100"),
+            usuario=solicitante_rn, justificativa="Excedente.",
+        )
+
+    assert excinfo.value.campo == "destino_allocation"
+    assert excinfo.value.mensagem == "Origem e destino não podem ser a mesma alocação."
+    assert not BudgetTransaction.objects.filter(tipo=BudgetTransaction.Tipo.REMANEJAMENTO).exists()
+
+
+def test_remanejamento_com_meta_incompativel_devolve_business_rule(
+    auth_client_ugp, demand_request_rn, allocation_territorial_rn, rubrica_diarias,
+):
+    """Origem com saldo e a mesma rubrica, só a Meta difere: a recusa é a
+    incompatibilidade, não falta de saldo nem de permissão."""
+    origem = BudgetAllocationFactory(
+        meta=WorkPlanMetaFactory(), rubrica=rubrica_diarias,
+        nivel="nacional", territorio=None, valor_alocado=Decimal("1000"),
+    )
+
+    response = auth_client_ugp.post(
+        f"/api/v1/sgd/demandas/{demand_request_rn.demanda_id}/autorizar-excedente/",
+        {
+            "demand_request_id": demand_request_rn.pk,
+            "origem_allocation_id": origem.pk,
+            "valor_excedente": "100.00",
+            "justificativa": "Teste do contrato da porta",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert response.data == {
+        "destino_allocation": ["Origem e destino devem ser da mesma Meta e Rubrica."],
+        "code": "BUSINESS_RULE",
+    }
