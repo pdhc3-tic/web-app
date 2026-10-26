@@ -11,7 +11,7 @@ from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
 
 pytestmark = pytest.mark.django_db
 
-migration = importlib.import_module("apps.sgd.migrations.0013_preencher_estado_da_reserva")
+migration = importlib.import_module("apps.sgd.migrations.0014_preencher_estado_da_reserva")
 
 
 def _evento(solicitacao_ou_id, acao, **novos):

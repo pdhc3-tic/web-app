@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('sgd', '0011_approvalstep_cancelamento'),
+        ('sgd', '0012_arloimport_divergencias_json'),
     ]
 
     operations = [

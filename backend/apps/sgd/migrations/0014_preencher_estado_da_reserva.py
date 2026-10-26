@@ -92,7 +92,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("core", "0021_seed_budget_alert_limiares"),
-        ("sgd", "0012_demandrequest_estado_da_reserva"),
+        ("sgd", "0013_demandrequest_estado_da_reserva"),
     ]
 
     operations = [

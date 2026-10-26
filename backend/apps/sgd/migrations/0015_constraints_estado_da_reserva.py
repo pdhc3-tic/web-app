@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('sgd', '0013_preencher_estado_da_reserva'),
+        ('sgd', '0014_preencher_estado_da_reserva'),
     ]
 
     operations = [
