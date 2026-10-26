@@ -16,6 +16,7 @@ import {
   LogOut,
   Plug,
   GitCompareArrows,
+  Settings,
   ShieldOff,
   SlidersHorizontal,
   Smartphone,
@@ -73,6 +74,13 @@ const ADMIN_ITEMS: ModuleItem[] = [
     href: "/admin/configuracoes/sgd/integracao-arlo",
     label: "Integração Arlo",
     Icon: SlidersHorizontal,
+  },
+  {
+    // Hub das configurações dos módulos — no SGD, Tipos e Rubricas (#319) e
+    // Integração Arlo (#320).
+    href: "/admin/configuracoes",
+    label: "Configurações",
+    Icon: Settings,
   },
 ];
 

@@ -57,6 +57,13 @@ export const qk = {
     /** Painel consolidado da home do SGD (#318): as decisões o invalidam junto. */
     dashboard: ["sgd", "demandas", "dashboard"] as const,
   },
+  /** Configuração do SGD (#319): mapeamento tipo → rubrica e o catálogo de rubricas. */
+  configSgd: {
+    tipoRubrica: ["sgd", "config", "tipo-rubrica"] as const,
+    tipoRubricaLista: (incluirInativos: boolean) =>
+      ["sgd", "config", "tipo-rubrica", { incluirInativos }] as const,
+    rubricas: ["sgp", "rubricas"] as const,
+  },
   /** Montagem da demanda (#295): saldo, simulação de diárias e destinos. */
   solicitacao: {
     saldo: (atividadeId: number, tipo: string, valor: string) =>
