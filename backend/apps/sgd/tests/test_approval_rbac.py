@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 from django.core.exceptions import PermissionDenied
 
-from apps.sgd.exceptions import ErroDeDominio
+from apps.sgd.exceptions import ErroDeDominio, RegraDeNegocio
 from apps.sgd.models.demand import Demand
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services.approval import (
@@ -15,6 +15,7 @@ from apps.sgd.services.approval import (
     preview_impacto,
 )
 from apps.sgd.tests.factories import DemandFactory
+from apps.sgp.tests.factories import BudgetAllocationFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -159,6 +160,48 @@ def test_preview_decisao_nao_conta_reserva_ja_feita_em_dobro(
     assert preview["disponivel"] is True
     assert preview["trava_bloqueada"] is None
     assert preview["individual"]["semaforo_apos"] == preview["individual"]["semaforo_antes"]
+
+
+@pytest.fixture
+def solicitante_rn_sem_nivel(solicitante_rn):
+    """ADT com perfil global: o motor não resolve um único nível para ele."""
+    solicitante_rn.profiles.update(territorio=None)
+    return solicitante_rn
+
+
+@pytest.mark.parametrize("valor", [Decimal("1500"), Decimal("500")], ids=["aumento", "reducao"])
+def test_preview_decisao_com_solicitante_sem_nivel_e_regra_de_negocio(
+    demand_request_rn, solicitante_rn_sem_nivel, allocation_territorial_rn, valor,
+):
+    """Quem decide tem acesso; o que falta é o nível do solicitante."""
+    with pytest.raises(RegraDeNegocio) as excinfo:
+        preview_impacto(demand_request_rn, valor)
+
+    assert excinfo.value.mensagem.startswith("Não há como conferir o pool territorial do solicitante.")
+
+
+def test_api_autorizar_excedente_com_solicitante_sem_nivel_devolve_400(
+    auth_client_ugp, demand_request_rn, solicitante_rn_sem_nivel, allocation_territorial_rn,
+):
+    origem = BudgetAllocationFactory(
+        meta=allocation_territorial_rn.meta, rubrica=allocation_territorial_rn.rubrica,
+        nivel="nacional", territorio=None, valor_alocado=Decimal("1000"),
+    )
+
+    response = auth_client_ugp.post(
+        f"/api/v1/sgd/demandas/{demand_request_rn.demanda_id}/autorizar-excedente/",
+        {
+            "demand_request_id": demand_request_rn.pk,
+            "origem_allocation_id": origem.pk,
+            "valor_excedente": "100.00",
+            "justificativa": "Excedente.",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert response.data["code"] == "BUSINESS_RULE"
+    assert response.data["detail"].startswith("Não há como conferir o pool territorial do solicitante.")
 
 
 def test_articulador_nao_pode_pre_autorizar_a_propria_demanda(activity_rn, usuario_articulador_rn):

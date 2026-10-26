@@ -155,17 +155,19 @@ def preview_impacto(demand_request, valor: Decimal) -> dict:
     valor_reservado = demand_request.valor_autorizado or demand_request.valor_estimado
     delta = valor - valor_reservado
 
-    if delta > Decimal("0"):
-        check = balance_service.verificar_duas_travas(
-            solicitante=solicitante, rubrica=rubrica, valor=delta, demand_request=demand_request,
-        )
-        disponivel, trava_bloqueada, allocation = check.disponivel, check.trava_bloqueada, check.territorial.allocation
-    else:
-        # Reduzir o valor autorizado nunca bloqueia — está liberando saldo.
-        allocation = orcamento_service.consultar_pool(
-            solicitante=solicitante, rubrica=rubrica, valor=Decimal("0"), demand_request=demand_request,
-        ).allocation
-        disponivel, trava_bloqueada = True, None
+    with orcamento_service.pelo_solicitante():
+        if delta > Decimal("0"):
+            check = balance_service.verificar_duas_travas(
+                solicitante=solicitante, rubrica=rubrica, valor=delta, demand_request=demand_request,
+            )
+            disponivel, trava_bloqueada = check.disponivel, check.trava_bloqueada
+            allocation = check.territorial.allocation
+        else:
+            # Reduzir o valor autorizado nunca bloqueia — está liberando saldo.
+            allocation = orcamento_service.consultar_pool(
+                solicitante=solicitante, rubrica=rubrica, valor=Decimal("0"), demand_request=demand_request,
+            ).allocation
+            disponivel, trava_bloqueada = True, None
 
     limiares = orcamento_service.limiares_semaforo()
     limite = DemandIndividualLimit.objects.filter(solicitante=solicitante, rubrica=rubrica).first()

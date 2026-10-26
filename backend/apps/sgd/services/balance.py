@@ -460,10 +460,11 @@ def autorizar_excedente(*, demand_request, origem_allocation, valor_excedente: D
             campo="origem_allocation",
         )
 
-    destino = orcamento_service.consultar_pool(
-        solicitante=demand_request.demanda.solicitante, rubrica=demand_request.rubrica, valor=ZERO,
-        demand_request=demand_request,
-    ).allocation
+    with orcamento_service.pelo_solicitante():
+        destino = orcamento_service.consultar_pool(
+            solicitante=demand_request.demanda.solicitante, rubrica=demand_request.rubrica, valor=ZERO,
+            demand_request=demand_request,
+        ).allocation
     if destino is None:
         raise RegraDeNegocio("Nenhuma alocação territorial encontrada para remanejar.")
 

@@ -10,8 +10,11 @@ a solicitação: sem a Meta, é por eles que o pool vai ser localizado.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from decimal import Decimal
+
+from django.core.exceptions import PermissionDenied
 
 from apps.core.utils import formatar_brl
 from apps.sgd.exceptions import TRAVA_TERRITORIAL, RegraDeNegocio, SaldoInsuficiente
@@ -24,12 +27,10 @@ Nivel = budget_service.Nivel
 SaldoCheck = budget_service.SaldoCheck
 LimiaresSemaforo = budget_service.LimiaresSemaforo
 
-resolver_nivel_do_usuario = budget_service.resolver_nivel_do_usuario
 limiares_semaforo = budget_service.limiares_semaforo
 faixa_semaforo = budget_service.faixa_semaforo
 percentual_comprometido = budget_service.percentual_comprometido
 painel_orcamento = budget_service.painel_orcamento
-painel_orcamento_para_usuario = budget_service.painel_orcamento_para_usuario
 
 
 @dataclass
@@ -60,6 +61,30 @@ def _regra_do_motor(exc) -> RegraDeNegocio:
         return RegraDeNegocio(str(mensagem), campo=campo)
     mensagem = detail[0] if isinstance(detail, list) and detail else detail
     return RegraDeNegocio(str(mensagem))
+
+
+def resolver_nivel_do_usuario(user) -> tuple[str, str | None, object | None]:
+    try:
+        return budget_service.resolver_nivel_do_usuario(user)
+    except budget_service.PermissionDenied as exc:
+        raise PermissionDenied(str(exc.detail)) from exc
+
+
+def painel_orcamento_para_usuario(user, **filtros) -> list[dict]:
+    try:
+        return budget_service.painel_orcamento_para_usuario(user, **filtros)
+    except budget_service.PermissionDenied as exc:
+        raise PermissionDenied(str(exc.detail)) from exc
+
+
+@contextmanager
+def pelo_solicitante():
+    """Para quem decide pelo solicitante (UGP, aprovador): a falta de nível do
+    solicitante não é falta de acesso de quem decide, vira 400, não 403."""
+    try:
+        yield
+    except PermissionDenied as exc:
+        raise RegraDeNegocio(f"Não há como conferir o pool territorial do solicitante. {exc}") from exc
 
 
 def saldo_do_pool(allocation: BudgetAllocation) -> Decimal:
@@ -159,15 +184,12 @@ def consultar_pool(*, solicitante, rubrica, valor: Decimal, demand_request=None,
 
 def localizar_pool(*, solicitante, rubrica, demand_request=None, activity=None) -> BudgetAllocation:
     """Alocação territorial do solicitante, para quem decide por ele (a UGP no
-    recurso extra). A falta de nível do solicitante não é falta de acesso de
-    quem decide: vira 400, não 403."""
-    try:
+    recurso extra)."""
+    with pelo_solicitante():
         check = consultar_pool(
             solicitante=solicitante, rubrica=rubrica, valor=ZERO,
             demand_request=demand_request, activity=activity,
         )
-    except budget_service.PermissionDenied as exc:
-        raise RegraDeNegocio(f"Não há como conferir o pool territorial do solicitante. {exc.detail}") from exc
     if check.allocation is None:
         raise RegraDeNegocio("Nenhuma alocação territorial encontrada para o solicitante nesta rubrica.")
     return check.allocation

@@ -1,7 +1,9 @@
 from decimal import Decimal
 
 import pytest
+from django.core.exceptions import PermissionDenied
 
+from apps.core.tests.factories import UserFactory
 from apps.sgd.exceptions import RegraDeNegocio, SaldoInsuficiente
 from apps.sgd.services import orcamento as orcamento_service
 from apps.sgp.tests.factories import BudgetAllocationFactory, WorkPlanMetaFactory
@@ -233,3 +235,37 @@ def test_remanejamento_com_meta_incompativel_devolve_business_rule(
         "destino_allocation": ["Origem e destino devem ser da mesma Meta e Rubrica."],
         "code": "BUSINESS_RULE",
     }
+
+
+def test_consultar_pool_com_solicitante_sem_nivel_nega_com_a_excecao_do_django(
+    demand_request_rn, solicitante_rn, rubrica_diarias, allocation_territorial_rn,
+):
+    solicitante_rn.profiles.update(territorio=None)
+
+    with pytest.raises(PermissionDenied) as excinfo:
+        orcamento_service.consultar_pool(
+            solicitante=solicitante_rn, rubrica=rubrica_diarias, valor=Decimal("100"),
+            demand_request=demand_request_rn,
+        )
+
+    assert str(excinfo.value).startswith("Perfil sem estado/território específico")
+
+
+def test_localizar_pool_com_solicitante_sem_nivel_e_regra_de_negocio(
+    demand_request_rn, solicitante_rn, rubrica_diarias, allocation_territorial_rn,
+):
+    solicitante_rn.profiles.update(territorio=None)
+
+    with pytest.raises(RegraDeNegocio) as excinfo:
+        orcamento_service.localizar_pool(
+            solicitante=solicitante_rn, rubrica=rubrica_diarias, demand_request=demand_request_rn,
+        )
+
+    assert excinfo.value.mensagem.startswith("Não há como conferir o pool territorial do solicitante.")
+
+
+def test_painel_para_usuario_sem_acesso_nega_com_a_excecao_do_django():
+    with pytest.raises(PermissionDenied) as excinfo:
+        orcamento_service.painel_orcamento_para_usuario(UserFactory())
+
+    assert str(excinfo.value) == "Você não tem acesso ao orçamento do SGP."
