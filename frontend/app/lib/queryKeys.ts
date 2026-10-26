@@ -100,4 +100,7 @@ export const qk = {
     operacoes: ["sgd", "arlo", "operacoes"] as const,
     operacao: (id: number) => ["sgd", "arlo", "operacao", id] as const,
   },
+  /** Busca de usuários elegíveis a técnico (A2 da #302, SGP). */
+  usuariosElegiveisTecnico: (busca: string) =>
+    ["sgp", "tecnicos", "usuarios-elegiveis", busca] as const,
 } as const;
