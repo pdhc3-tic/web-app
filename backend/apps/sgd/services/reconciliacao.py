@@ -1,8 +1,10 @@
 """Conferência do saldo individual do SGD para `manage.py verificar_saldos`."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 from decimal import Decimal
 
+from django.db import connection, transaction
 from django.db.models import DecimalField, Exists, OuterRef, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 
@@ -12,10 +14,30 @@ from apps.sgd.models.demand_request import RESERVA_ATIVA
 ZERO = Decimal("0")
 
 
+@contextmanager
+def _leitura_total_do_sgd():
+    """O comando não passa pelo middleware que define o papel da sessão, e o RLS
+    de `sgd_demand` esconderia do usuário de runtime as solicitações cruzadas com
+    a demanda: reservas válidas somariam zero e uma reserva sem limite sumiria.
+    O papel anterior volta no fim porque `set_config(..., true)` vale até o fim
+    da transação externa, não só do savepoint."""
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SELECT current_setting('app.user_role', true)")
+        anterior = cursor.fetchone()[0] or ""
+        cursor.execute("SELECT set_config('app.user_role', 'super-admin', true)")
+        yield
+        cursor.execute("SELECT set_config('app.user_role', %s, true)", [anterior])
+
+
 def divergencias_dos_limites() -> list[str]:
     """`valor_comprometido` de cada limite contra a soma do `valor_reservado` das
     solicitações com reserva ativa do mesmo solicitante e rubrica, e reservas
     ativas sem limite nenhum."""
+    with _leitura_total_do_sgd():
+        return _divergencias_dos_limites()
+
+
+def _divergencias_dos_limites() -> list[str]:
     reservado = (
         DemandRequest.objects.filter(
             RESERVA_ATIVA, demanda__solicitante=OuterRef("solicitante"), rubrica=OuterRef("rubrica"),

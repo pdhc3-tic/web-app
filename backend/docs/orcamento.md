@@ -81,7 +81,7 @@ Exceções, só em demandas fora de Rascunho/Devolvida: a importação do Arlo t
 python manage.py verificar_saldos
 ```
 
-Confere, para cada `BudgetAllocation`, se `valor_comprometido`/`valor_executado` batem com a soma das suas `BudgetTransaction` por tipo (`reserva`/`execucao`/`liberacao`). No SGD, confere também se o `valor_comprometido` de cada limite individual bate com a soma do `valor_reservado` das solicitações com reserva ativa (`valor_reservado > 0` e `valor_executado` nulo) do mesmo solicitante e rubrica. Sai com código de saída ≠ 0 (via `CommandError`) e lista as divergências encontradas, se houver.
+Confere, para cada `BudgetAllocation`, se `valor_comprometido`/`valor_executado` batem com a soma das suas `BudgetTransaction` por tipo (`reserva`/`execucao`/`liberacao`). No SGD, confere também se o `valor_comprometido` de cada limite individual bate com a soma do `valor_reservado` das solicitações com reserva ativa (`valor_reservado > 0` e `valor_executado` nulo) do mesmo solicitante e rubrica; essa parte lê `sgd_demand` com visão total, já que o comando não passa pelo middleware que define o papel da sessão para o RLS. Sai com código de saída ≠ 0 (via `CommandError`) e lista as divergências encontradas, se houver.
 
 ## Endpoints HTTP
 
