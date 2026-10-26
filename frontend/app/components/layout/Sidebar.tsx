@@ -66,6 +66,14 @@ const ADMIN_ITEMS: ModuleItem[] = [
     label: "Integrações",
     Icon: Plug,
   },
+  {
+    // Configuração do mapeamento Arlo ↔ SGD (#320). Em /admin/configuracoes/sgd
+    // porque o grupo prevê outras telas de configuração do SGD (tipos-rubricas
+    // etc. — pendencias-backend-sprint-11.md).
+    href: "/admin/configuracoes/sgd/integracao-arlo",
+    label: "Integração Arlo",
+    Icon: SlidersHorizontal,
+  },
 ];
 
 // Revisão de conflitos de sincronização: Super Admin, UGP e Articulador Estadual.

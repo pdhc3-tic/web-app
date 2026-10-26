@@ -103,4 +103,13 @@ export const qk = {
   /** Busca de usuários elegíveis a técnico (A2 da #302, SGP). */
   usuariosElegiveisTecnico: (busca: string) =>
     ["sgp", "tecnicos", "usuarios-elegiveis", busca] as const,
+  /** Mapeamento Arlo ↔ SGD, por direção (#320, SGD-FE-9). */
+  arloMapping: {
+    all: ["sgd", "arlo-mapping"] as const,
+    lista: (direcao: "exportacao" | "importacao") =>
+      ["sgd", "arlo-mapping", "lista", direcao] as const,
+    campos: ["sgd", "arlo-mapping", "campos"] as const,
+    preview: (direcao: "exportacao" | "importacao") =>
+      ["sgd", "arlo-mapping", "preview", direcao] as const,
+  },
 } as const;
