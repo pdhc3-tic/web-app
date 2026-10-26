@@ -23,7 +23,7 @@ import { useFilaDemandas } from "@/app/lib/hooks/useFilaDemandas";
 import { qk } from "@/app/lib/queryKeys";
 import { AvisoListaParcial } from "./_components/AvisoListaParcial";
 import { DemandaPainel } from "./_components/DemandaPainel";
-import { DemandasTabela } from "./_components/DemandasTabela";
+import { DemandasTabela, DemandasTabelaSkeleton } from "./_components/DemandasTabela";
 
 type Visao = "minha" | "todas";
 
@@ -233,7 +233,9 @@ function PainelDemandasView() {
       >
         <div className="min-w-0">
           {atual.isPending ? (
-            <Carregando />
+            // Skeleton na mesma grade da tabela (#323): a tabela cresce com o
+            // conteúdo, mas as colunas e as alturas são as mesmas — sem "pulo".
+            <DemandasTabelaSkeleton compacta={selecionada !== null} />
           ) : erro ? (
             <TabErroSection message={erro} onRetry={() => void atual.refetch()} />
           ) : demandas.length === 0 ? (

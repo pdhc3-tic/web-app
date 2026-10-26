@@ -67,6 +67,60 @@ function SemaforoRubricaBadge({ linha }: { linha: LinhaPainelRubrica }) {
   );
 }
 
+/**
+ * Esqueleto na mesma grade da tabela (seis colunas na mesma largura), para
+ * manter a altura e evitar o "pulo" de layout da #323 quando a tabela de
+ * verdade substitui o estado de carregamento.
+ */
+export function PainelRubricasTableSkeleton({ linhas = 6 }: { linhas?: number }) {
+  return (
+    <div
+      className="overflow-hidden rounded-lg border border-border bg-surface shadow-xs"
+      aria-hidden
+      data-testid="painel-rubricas-skeleton"
+    >
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-border bg-surface-muted/50 text-xs font-semibold uppercase tracking-wider text-text-muted">
+            <tr>
+              <th scope="col" className="px-4 py-3">Rubrica</th>
+              <th scope="col" className="px-4 py-3 text-right">Solicitado</th>
+              <th scope="col" className="px-4 py-3 text-right">Autorizado</th>
+              <th scope="col" className="px-4 py-3 text-right">Executado</th>
+              <th scope="col" className="px-4 py-3 text-right">Disponível</th>
+              <th scope="col" className="px-4 py-3 text-center">Semáforo (70/90)</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {Array.from({ length: linhas }).map((_, i) => (
+              <tr key={i}>
+                <td className="px-4 py-3">
+                  <div className="h-4 w-40 animate-pulse rounded bg-surface-muted" />
+                </td>
+                <td className="px-4 py-3">
+                  <div className="ml-auto h-4 w-24 animate-pulse rounded bg-surface-muted" />
+                </td>
+                <td className="px-4 py-3">
+                  <div className="ml-auto h-4 w-24 animate-pulse rounded bg-surface-muted" />
+                </td>
+                <td className="px-4 py-3">
+                  <div className="ml-auto h-4 w-24 animate-pulse rounded bg-surface-muted" />
+                </td>
+                <td className="px-4 py-3">
+                  <div className="ml-auto h-4 w-24 animate-pulse rounded bg-surface-muted" />
+                </td>
+                <td className="px-4 py-3">
+                  <div className="mx-auto h-5 w-24 animate-pulse rounded-full bg-surface-muted" />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function PainelRubricasTable({
   linhas,
 }: {

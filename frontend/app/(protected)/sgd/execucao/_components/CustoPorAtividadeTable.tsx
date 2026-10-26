@@ -19,6 +19,54 @@ function hrefDemandas(filtros: ExecucaoFiltros, recorte: ExecucaoFiltros): strin
   return `/sgd/demandas?${qs}`;
 }
 
+/**
+ * Esqueleto do relatório, com cards do mesmo tamanho dos reais. Evita o salto
+ * de layout da #323 enquanto o backend responde.
+ */
+export function CustoPorAtividadeTableSkeleton({ cards = 3 }: { cards?: number }) {
+  return (
+    <div
+      className="space-y-4"
+      aria-hidden
+      data-testid="custo-por-atividade-skeleton"
+    >
+      {Array.from({ length: cards }).map((_, i) => (
+        <div
+          key={i}
+          className="overflow-hidden rounded-lg border border-border bg-surface shadow-xs"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface-muted/60 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <div className="h-4 w-4 animate-pulse rounded bg-surface-muted" />
+              <div className="flex flex-col gap-1.5">
+                <div className="h-3 w-28 animate-pulse rounded bg-surface-muted" />
+                <div className="h-4 w-56 animate-pulse rounded bg-surface-muted" />
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-4">
+              {Array.from({ length: 4 }).map((__, j) => (
+                <div key={j} className="h-4 w-24 animate-pulse rounded bg-surface-muted" />
+              ))}
+            </div>
+          </div>
+          <div className="divide-y divide-border">
+            {Array.from({ length: 3 }).map((__, j) => (
+              <div key={j} className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="h-4 w-64 animate-pulse rounded bg-surface-muted" />
+                <div className="flex items-center gap-6">
+                  <div className="h-4 w-20 animate-pulse rounded bg-surface-muted" />
+                  <div className="h-4 w-20 animate-pulse rounded bg-surface-muted" />
+                  <div className="h-4 w-20 animate-pulse rounded bg-surface-muted" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function CustoPorAtividadeTable({
   entregas,
   filtros,
