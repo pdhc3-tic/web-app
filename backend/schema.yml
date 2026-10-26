@@ -2033,20 +2033,34 @@ paths:
           description: ''
   /api/v1/sgd/arlo/:
     get:
-      operationId: v1_sgd_arlo_retrieve
+      operationId: v1_sgd_arlo_list
       description: |-
         Integração com o Arlo (SGD-RF24/RF31/RF32). Operada pela equipe da FGD;
         o histórico também é consultável por UGP e Super Admin.
+      parameters:
+      - in: query
+        name: tipo
+        schema:
+          type: string
+          enum:
+          - exportacao
+          - importacao
       tags:
       - v1
       security:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ArloImport'
+          description: ''
   /api/v1/sgd/arlo/{id}/:
     get:
-      operationId: v1_sgd_arlo_retrieve_2
+      operationId: v1_sgd_arlo_retrieve
       description: |-
         Integração com o Arlo (SGD-RF24/RF31/RF32). Operada pela equipe da FGD;
         o histórico também é consultável por UGP e Super Admin.
@@ -2054,7 +2068,7 @@ paths:
       - in: path
         name: id
         schema:
-          type: string
+          type: integer
         required: true
       tags:
       - v1
@@ -2062,7 +2076,11 @@ paths:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArloImport'
+          description: ''
   /api/v1/sgd/arlo/exportar/:
     post:
       operationId: v1_sgd_arlo_exportar_create
@@ -2075,7 +2093,12 @@ paths:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+          description: ''
   /api/v1/sgd/arlo/importar/:
     post:
       operationId: v1_sgd_arlo_importar_create
@@ -2084,11 +2107,33 @@ paths:
         o histórico também é consultável por UGP e Super Admin.
       tags:
       - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArloImportConfirmRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ArloImportConfirmRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ArloImportConfirmRequest'
+        required: true
       security:
       - jwtAuth: []
       responses:
-        '200':
-          description: No response body
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArloImport'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArloErroDetalhe'
+          description: Arquivo não encontrado no storage ou grande demais.
   /api/v1/sgd/arlo/importar/upload-url/:
     post:
       operationId: v1_sgd_arlo_importar_upload_url_create
@@ -2097,11 +2142,27 @@ paths:
         o histórico também é consultável por UGP e Super Admin.
       tags:
       - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArloUploadURLRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ArloUploadURLRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ArloUploadURLRequest'
+        required: true
       security:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArloUploadURL'
+          description: ''
   /api/v1/sgd/config/arlo-mapping/:
     get:
       operationId: v1_sgd_config_arlo_mapping_list
@@ -8083,6 +8144,47 @@ components:
       - id
       - justificativa
       - responsavel_nome
+    ArloDivergencia:
+      type: object
+      properties:
+        demanda_id:
+          type: integer
+        demanda_titulo:
+          type: string
+        solicitacao_id:
+          type: integer
+        valor_autorizado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        valor_pago:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        diferenca:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          description: 'Valor pago menos o autorizado: positivo acima do autorizado,
+            negativo abaixo.'
+        risco_glosa:
+          type: boolean
+          description: Pago acima do autorizado, registrado no risco de glosa.
+      required:
+      - demanda_id
+      - demanda_titulo
+      - diferenca
+      - risco_glosa
+      - solicitacao_id
+      - valor_autorizado
+      - valor_pago
+    ArloErroDetalhe:
+      type: object
+      properties:
+        detail:
+          type: string
+      required:
+      - detail
     ArloFieldMapping:
       type: object
       properties:
@@ -8153,6 +8255,148 @@ components:
       - campo_sgd
       - coluna_arlo
       - direcao
+    ArloImport:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        tipo:
+          allOf:
+          - $ref: '#/components/schemas/ArloImportTipoEnum'
+          readOnly: true
+        tipo_display:
+          type: string
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/ArloImportStatusEnum'
+          readOnly: true
+        status_display:
+          type: string
+          readOnly: true
+        arquivo_url:
+          type: string
+          format: uri
+          readOnly: true
+          title: URL do arquivo
+        nome_original:
+          type: string
+          readOnly: true
+          title: Nome original do arquivo
+        operado_por:
+          type: integer
+          readOnly: true
+          nullable: true
+        operado_por_nome:
+          type: string
+          readOnly: true
+        operado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        total_registros:
+          type: integer
+          readOnly: true
+          title: Total de registros
+        registros_ok:
+          type: integer
+          readOnly: true
+          title: Registros processados com sucesso
+        erros_json:
+          readOnly: true
+          title: Erros por linha
+          description: Lista de {linha, erro, campo?} — linhas com erro não interrompem
+            as válidas.
+        divergencias:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArloDivergencia'
+          readOnly: true
+        mapeamento_snapshot:
+          readOnly: true
+          title: Mapeamento vigente na operação
+          description: Cópia do mapeamento Arlo <-> SGD usado nesta operação — alterações
+            posteriores não a afetam.
+      required:
+      - arquivo_url
+      - divergencias
+      - erros_json
+      - id
+      - mapeamento_snapshot
+      - nome_original
+      - operado_em
+      - operado_por
+      - operado_por_nome
+      - registros_ok
+      - status
+      - status_display
+      - tipo
+      - tipo_display
+      - total_registros
+    ArloImportConfirmRequest:
+      type: object
+      properties:
+        key:
+          type: string
+          minLength: 1
+          pattern: ^arlo/importacoes/[0-9a-f-]{36}\.(csv|xlsx)$
+        nome_original:
+          type: string
+          minLength: 1
+          maxLength: 255
+      required:
+      - key
+      - nome_original
+    ArloImportStatusEnum:
+      enum:
+      - pendente
+      - processando
+      - concluido
+      - falhou
+      type: string
+      description: |-
+        * `pendente` - Pendente
+        * `processando` - Processando
+        * `concluido` - Concluído
+        * `falhou` - Falhou
+    ArloImportTipoEnum:
+      enum:
+      - exportacao
+      - importacao
+      type: string
+      description: |-
+        * `exportacao` - Exportação
+        * `importacao` - Importação
+    ArloUploadURL:
+      type: object
+      properties:
+        url:
+          type: string
+        key:
+          type: string
+        expires_in:
+          type: integer
+      required:
+      - expires_in
+      - key
+      - url
+    ArloUploadURLRequest:
+      type: object
+      properties:
+        filename:
+          type: string
+          minLength: 1
+        content_type:
+          $ref: '#/components/schemas/ContentTypeEnum'
+        size:
+          type: integer
+          maximum: 10485760
+          minimum: 1
+      required:
+      - content_type
+      - filename
+      - size
     AuditLog:
       type: object
       properties:
@@ -8630,6 +8874,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OpcaoTexto'
+        cultura_categoria:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
+        especie_categoria:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
         upf_documento_tipo:
           type: array
           items:
@@ -8685,11 +8937,13 @@ components:
       - beneficiario_vinculo
       - classe
       - cor_raca
+      - cultura_categoria
       - demanda_documento_tipo
       - demanda_status
       - dispositivo
       - energia
       - escolaridade
+      - especie_categoria
       - forma_atuacao
       - genero
       - grau_parentesco
@@ -8983,6 +9237,14 @@ components:
       - tecnico
       - territorio
       - uuid_local
+    ContentTypeEnum:
+      enum:
+      - text/csv
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      type: string
+      description: |-
+        * `text/csv` - text/csv
+        * `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
     CorRacaEnum:
       enum:
       - 1
