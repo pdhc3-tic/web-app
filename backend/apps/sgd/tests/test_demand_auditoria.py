@@ -9,9 +9,9 @@ from rest_framework.test import APIClient
 from apps.core.models.audit_log import AuditLog
 from apps.core.signals.audit import clear_audit_context, set_audit_context
 from apps.sgd.models import Demand
-from apps.sgd.services import workflow as workflow_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
+from apps.sgd.services import workflow as workflow_service
 from apps.sgp.models import BudgetTransaction
 
 pytestmark = pytest.mark.django_db

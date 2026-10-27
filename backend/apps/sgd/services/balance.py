@@ -22,6 +22,7 @@ from apps.sgd.exceptions import (
     JustificativaObrigatoria,
     RegraDeNegocio,
     SaldoInsuficiente,
+    TransicaoInvalida,
 )
 from apps.sgd.models import DemandIndividualLimit, DemandRequest
 from apps.sgd.services import notifications as notifications_service
@@ -243,7 +244,22 @@ def reler_reserva(demand_request) -> None:
     """Relê do banco o estado da reserva. Com o limite travado, o valor não muda
     até o commit: todo movimento da reserva trava o limite antes. Sem o lock,
     serve para escolher o caminho, e a operação de saldo confere de novo."""
-    demand_request.refresh_from_db(fields=["valor_reservado", "valor_executado"])
+    try:
+        demand_request.refresh_from_db(fields=["valor_reservado", "valor_executado"])
+    except DemandRequest.DoesNotExist:
+        # Removida por quem segurava o lock que esta operação esperava.
+        raise TransicaoInvalida(
+            f"A solicitação #{demand_request.pk} foi removida durante a operação. Recarregue e tente de novo."
+        ) from None
+
+
+def reler_reserva_travada(demand_request) -> None:
+    """Trava o limite da solicitação e relê o estado da reserva, que daí até o
+    commit não muda."""
+    DemandIndividualLimit.objects.select_for_update().filter(
+        solicitante_id=demand_request.demanda.solicitante_id, rubrica_id=demand_request.rubrica_id,
+    ).first()
+    reler_reserva(demand_request)
 
 
 def _mover_reserva(demand_request, *, adiar: bool, **campos) -> None:

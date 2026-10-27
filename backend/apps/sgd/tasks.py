@@ -86,9 +86,13 @@ def cancelar_demandas_da_atividade(self, activity_id: int) -> int:
     try:
         return _sem_contexto_de_sessao_rls(lambda: _cancelar_demandas_da_atividade(activity_id))
     except TransicaoInvalida as exc:
-        # Uma demanda mudou de status depois que o saldo de todas foi liberado: a
-        # transação inteira volta e a task recomeça, relendo as demandas.
-        raise self.retry(exc=exc, countdown=5)
+        # Uma demanda mudou depois que o saldo de todas foi liberado: a transação
+        # inteira volta e a task recomeça, relendo as demandas.
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc, countdown=5)
+        sentry_sdk.capture_exception(exc)
+        logger.exception("Demandas da atividade %s não canceladas: mudaram em todas as tentativas.", activity_id)
+        raise
     except Exception as exc:
         sentry_sdk.capture_exception(exc)
         logger.exception("Falha ao cancelar demandas da atividade %s.", activity_id)

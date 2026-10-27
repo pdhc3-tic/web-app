@@ -66,7 +66,7 @@ class Transicao:
 _PRE_AUTORIZACAO = {"perfis": ("articulador-estadual",), "regra": exigir_pode_decidir_articulador}
 _ATENDIMENTO = {"etapa": "atendimento", "acao": "atendido"}
 # Em atendimento fica de fora: a FGD já está atendendo, não é demanda não atendida.
-CANCELAVEIS_PELO_SISTEMA = frozenset({"rascunho", "submetida", "devolvida", "pre_autorizada", "autorizada"})
+CANCELAVEIS_PELO_SISTEMA = frozenset(STATUS_CANCELAVEIS_PELO_SOLICITANTE | {"autorizada"})
 
 TRANSICOES: tuple[Transicao, ...] = (
     Transicao(
@@ -116,11 +116,15 @@ TRANSICOES: tuple[Transicao, ...] = (
         perfis=PERFIS_QUE_CANCELAM_AUTORIZADA, justificativa_obrigatoria=True,
         etapa="cancelamento", acao="cancelado",
     ),
+    # Aplicada só por `cancelar_pelo_sistema`, que libera o saldo de todas as demandas em lote.
     Transicao(
         de=CANCELAVEIS_PELO_SISTEMA, para="cancelada", origem=ORIGEM_SISTEMA, efeito_saldo=LIBERAR,
         notificacao="cancelamento_automatico",
     ),
 )
+
+# Status em que a importação do Arlo aceita pagamento: os de partida das linhas dela.
+STATUS_PAGAVEIS_PELO_ARLO = frozenset(de for t in TRANSICOES if t.origem == ORIGEM_ARLO for de in t.de)
 
 _ROTULOS = dict(STATUS_CHOICES)
 
@@ -129,6 +133,8 @@ _JUSTIFICATIVA_PARA = {
     "recusada": "recusar a demanda",
     "cancelada": "cancelar uma demanda autorizada",
 }
+
+_DADOS_DAS_ACOES = {"justificativa", "ajustes", "excedente_autorizado", "valores_pagos"}
 
 # Além do estado da reserva, que todo efeito no saldo grava.
 _OUTROS_CAMPOS = {AJUSTAR: ("valor_autorizado",), EXECUTAR: ("valor_pago",)}
@@ -149,6 +155,8 @@ def buscar_transicao(status: str, destino: str, origem: str = ORIGEM_USUARIO) ->
     for transicao in TRANSICOES:
         if transicao.para == destino and transicao.origem == origem and status in transicao.de:
             return transicao
+    if destino == "cancelada":
+        raise TransicaoInvalida(f"Demanda em status '{_ROTULOS[status]}' não pode ser cancelada.")
     permitidos = _destinos(status, origem)
     raise TransicaoInvalida(
         f"Transição inválida: '{status}' → '{destino}'. "
@@ -178,13 +186,18 @@ def _retrato(solicitacoes) -> dict:
     return {s.pk: (s.rubrica_id, s.valor_estimado, s.valor_pago) for s in solicitacoes}
 
 
+def travar_e_ler_status(demand) -> str:
+    """Trava a `Demand` e devolve o status da linha travada: quem segurava o lock
+    pode tê-la mudado. Vem depois do saldo, na ordem de lock."""
+    return Demand.objects.select_for_update().values_list("status", flat=True).get(pk=demand.pk)
+
+
 def _travar_demanda(demand, retrato: dict | None = None) -> None:
-    """Trava a `Demand`, depois do saldo, e confere que o status é o que estava em
-    `demand` e, com `retrato`, que as solicitações são as mesmas de quando o saldo
-    foi movido. Quem edita a demanda ou as solicitações trava a `Demand` antes de
-    gravar, então nada muda até o commit."""
-    status = Demand.objects.select_for_update().values_list("status", flat=True).get(pk=demand.pk)
-    if status != demand.status:
+    """Trava a `Demand` e confere que o status é o que estava em `demand` e, com
+    `retrato`, que as solicitações são as mesmas de quando o saldo foi movido.
+    Quem edita a demanda ou as solicitações trava a `Demand` antes de gravar,
+    então nada muda até o commit."""
+    if travar_e_ler_status(demand) != demand.status:
         raise TransicaoInvalida(MENSAGEM_DEMANDA_MUDOU)
     if retrato is None:
         return
@@ -193,6 +206,14 @@ def _travar_demanda(demand, retrato: dict | None = None) -> None:
     )
     if {pk: tuple(campos) for pk, *campos in atual} != retrato:
         raise TransicaoInvalida(MENSAGEM_DEMANDA_MUDOU)
+
+
+def _exigir_da_demanda(ids, solicitacoes, campo: str) -> None:
+    desconhecidos = set(ids) - {s.pk for s in solicitacoes}
+    if desconhecidos:
+        raise RegraDeNegocio(
+            f"Solicitação(ões) {sorted(desconhecidos)} não pertence(m) a esta demanda.", campo=campo,
+        )
 
 
 def _manter(demand, transicao, **_) -> tuple[list, dict | None]:
@@ -236,14 +257,14 @@ def _reservar(demand, transicao, *, ator, **_) -> tuple[list, dict | None]:
 def _ajustar(demand, transicao, *, ator, ajustes: dict | None = None, excedente_autorizado: bool = False,
              justificativa: str = "", **_) -> tuple[list, dict | None]:
     """`ajustes`: {demand_request_id: novo_valor}; sem ajuste, autoriza o estimado."""
-    if excedente_autorizado and not justificativa.strip():
+    if excedente_autorizado and not justificativa:
         raise JustificativaObrigatoria("Obrigatória para autorizar excedendo o limite individual.")
     ajustes = ajustes or {}
     solicitacoes = _solicitacoes(demand)
-    desconhecidos = set(ajustes) - {s.pk for s in solicitacoes}
-    if desconhecidos:
+    _exigir_da_demanda(ajustes, solicitacoes, "ajustes")
+    if any(valor <= 0 for valor in ajustes.values()):
         raise RegraDeNegocio(
-            f"Solicitação(ões) {sorted(desconhecidos)} não pertence(m) a esta demanda.", campo="ajustes",
+            "O valor autorizado deve ser maior que zero. Para não autorizar, recuse a demanda.", campo="ajustes",
         )
     retrato = _retrato(solicitacoes)
 
@@ -278,11 +299,7 @@ def _executar(demand, transicao, *, ator, valores_pagos: dict | None = None, **_
     pagamento. As já pagas (pelo Arlo, linha a linha) ficam como estão."""
     valores_pagos = valores_pagos or {}
     solicitacoes = _solicitacoes(demand)
-    desconhecidos = set(valores_pagos) - {s.pk for s in solicitacoes}
-    if desconhecidos:
-        raise RegraDeNegocio(
-            f"Solicitação(ões) {sorted(desconhecidos)} não pertence(m) a esta demanda.", campo="valores_pagos",
-        )
+    _exigir_da_demanda(valores_pagos, solicitacoes, "valores_pagos")
     for solicitacao in solicitacoes:
         if solicitacao.valor_pago is not None and solicitacao.pk in valores_pagos:
             raise RegraDeNegocio(
@@ -311,29 +328,34 @@ _EFEITOS = {
 }
 
 
-def _articuladores(demand):
-    return notifications_service.usuarios_articuladores_do_estado(demand.activity.municipio.state.sigla)
+def _articuladores(demand, destinatarios: dict):
+    """`destinatarios` guarda a consulta por estado: o cancelamento em lote notifica
+    várias demandas da mesma atividade."""
+    sigla = demand.activity.municipio.state.sigla
+    if sigla not in destinatarios:
+        destinatarios[sigla] = list(notifications_service.usuarios_articuladores_do_estado(sigla))
+    return destinatarios[sigla]
 
 
 _NOTIFICACOES = {
-    "submissao": lambda d: notifications_service.notificar_submissao(d, _articuladores(d)),
-    "pre_autorizacao": lambda d: notifications_service.notificar_pre_autorizacao(
+    "submissao": lambda d, cache: notifications_service.notificar_submissao(d, _articuladores(d, cache)),
+    "pre_autorizacao": lambda d, cache: notifications_service.notificar_pre_autorizacao(
         d, notifications_service.usuarios_por_perfil("ugp"),
     ),
-    "devolucao": lambda d: notifications_service.notificar_devolucao(d),
-    "autorizacao": lambda d: notifications_service.notificar_autorizacao(
+    "devolucao": lambda d, cache: notifications_service.notificar_devolucao(d),
+    "autorizacao": lambda d, cache: notifications_service.notificar_autorizacao(
         d, notifications_service.usuarios_por_perfil("fgd"),
     ),
-    "recusa": lambda d: notifications_service.notificar_recusa(d),
-    "em_atendimento": lambda d: notifications_service.notificar_em_atendimento(d),
-    "conclusao": lambda d: notifications_service.notificar_conclusao(d),
-    "cancelamento_automatico": lambda d: notifications_service.notificar_cancelamento_automatico(
-        d, _articuladores(d),
+    "recusa": lambda d, cache: notifications_service.notificar_recusa(d),
+    "em_atendimento": lambda d, cache: notifications_service.notificar_em_atendimento(d),
+    "conclusao": lambda d, cache: notifications_service.notificar_conclusao(d),
+    "cancelamento_automatico": lambda d, cache: notifications_service.notificar_cancelamento_automatico(
+        d, _articuladores(d, cache),
     ),
 }
 
 
-def _aplicar(demand, transicao: Transicao, solicitacoes, *, ator, justificativa: str = "",
+def _aplicar(demand, transicao: Transicao, solicitacoes, *, ator, destinatarios: dict, justificativa: str = "",
              excedente_autorizado: bool = False, **_) -> None:
     status_anterior = demand.status
     demand.status = transicao.para
@@ -351,46 +373,66 @@ def _aplicar(demand, transicao: Transicao, solicitacoes, *, ator, justificativa:
             justificativa=justificativa, excedente_autorizado=excedente_autorizado,
         )
     if transicao.notificacao is not None:
-        _NOTIFICACOES[transicao.notificacao](demand)
+        _NOTIFICACOES[transicao.notificacao](demand, destinatarios)
 
 
 @transaction.atomic
 def executar_transicao(demand, destino: str, *, ator=None, origem: str = ORIGEM_USUARIO, **dados):
     """Leva `demand` a `destino`. `dados` são os da ação: `justificativa`;
     `ajustes`, `excedente_autorizado` (autorizar); `valores_pagos` (concluir)."""
+    desconhecidos = set(dados) - _DADOS_DAS_ACOES
+    if desconhecidos:
+        raise TypeError(f"Dados desconhecidos para a transição: {sorted(desconhecidos)}.")
+    dados["justificativa"] = (dados.get("justificativa") or "").strip()
     transicao = buscar_transicao(demand.status, destino, origem)
     _exigir_perfil(transicao, demand, ator)
-    if transicao.justificativa_obrigatoria and not dados.get("justificativa", "").strip():
-        raise JustificativaObrigatoria(f"Obrigatória para {_JUSTIFICATIVA_PARA[destino]}.")
+    if transicao.justificativa_obrigatoria and not dados["justificativa"]:
+        raise JustificativaObrigatoria(f"Obrigatória para {_JUSTIFICATIVA_PARA.get(destino, 'esta transição')}.")
 
     solicitacoes, retrato = _EFEITOS[transicao.efeito_saldo](demand, transicao, ator=ator, **dados)
     _travar_demanda(demand, retrato)
-    _aplicar(demand, transicao, solicitacoes, ator=ator, **dados)
+    _aplicar(demand, transicao, solicitacoes, ator=ator, destinatarios={}, **dados)
     return demand
 
 
 @transaction.atomic
 def cancelar_pelo_sistema(demandas, *, motivo: str) -> None:
-    """Cancela várias demandas de uma vez, quando a atividade é cancelada.
-    Cancelar uma a uma travaria a alocação, que os solicitantes compartilham, antes
-    do limite do solicitante seguinte: libera o saldo de todas antes
-    (`liberar_duas_travas_em_lote`) e só então trava cada `Demand`, em ordem de pk."""
+    """Variante em lote de `executar_transicao` para a linha de origem `sistema`,
+    usada quando a atividade é cancelada. Cancelar uma a uma travaria a alocação,
+    que os solicitantes compartilham, antes do limite do solicitante seguinte: o
+    saldo de todas sai antes (`liberar_duas_travas_em_lote`), e só então cada
+    `Demand` é travada, em ordem de pk.
+
+    A liberação relê cada reserva sob o lock do limite, então basta conferir, na
+    linha travada, que a demanda continua cancelável e que nenhuma solicitação
+    entrou ou saiu. Se não, a transação inteira volta com `TransicaoInvalida`."""
     demandas = sorted(demandas, key=lambda d: d.pk)
-    transicoes = {d.pk: buscar_transicao(d.status, "cancelada", ORIGEM_SISTEMA) for d in demandas}
     solicitacoes = list(
         DemandRequest.objects.filter(demanda__in=demandas).select_related("rubrica", "demanda__solicitante")
     )
-    por_demanda = defaultdict(list)
+    por_demanda = defaultdict(set)
     for solicitacao in solicitacoes:
-        por_demanda[solicitacao.demanda_id].append(solicitacao)
-    retratos = {d.pk: _retrato(por_demanda[d.pk]) for d in demandas}
+        por_demanda[solicitacao.demanda_id].add(solicitacao.pk)
 
     balance_service.liberar_duas_travas_em_lote(solicitacoes, usuario=None, motivo=motivo, adiar_gravacao=True)
+    transicoes = {}
     for demand in demandas:
-        _travar_demanda(demand, retratos[demand.pk])
+        demand.status = travar_e_ler_status(demand)
+        atuais = set(DemandRequest.objects.filter(demanda_id=demand.pk).values_list("pk", flat=True))
+        if atuais != por_demanda[demand.pk]:
+            raise TransicaoInvalida(MENSAGEM_DEMANDA_MUDOU)
+        transicoes[demand.pk] = buscar_transicao(demand.status, "cancelada", ORIGEM_SISTEMA)
+    destinatarios = {}
     for demand in demandas:
-        _aplicar(demand, transicoes[demand.pk], [], ator=None)
+        _aplicar(demand, transicoes[demand.pk], [], ator=None, destinatarios=destinatarios)
     balance_service.gravar_estado_da_reserva(solicitacoes)
+
+
+def valor_autorizado(solicitacao) -> Decimal:
+    """O autorizado pela UGP; antes da decisão, o estimado."""
+    if solicitacao.valor_autorizado is not None:
+        return solicitacao.valor_autorizado
+    return solicitacao.valor_estimado
 
 
 def registrar_pagamento(solicitacao, *, valor_pago: Decimal, origem: str, usuario, importacao=None,
@@ -402,7 +444,7 @@ def registrar_pagamento(solicitacao, *, valor_pago: Decimal, origem: str, usuari
 
     Trava limite e alocação, mas a solicitação muda só em memória (`valor_pago` e
     o estado da reserva): quem chama a grava depois de travar a `Demand`."""
-    autorizado = solicitacao.valor_autorizado or solicitacao.valor_estimado
+    autorizado = valor_autorizado(solicitacao)
     executou = balance_service.executar_duas_travas(
         demand_request=solicitacao, valor_pago=min(valor_pago, autorizado), usuario=usuario, adiar_gravacao=True,
     )

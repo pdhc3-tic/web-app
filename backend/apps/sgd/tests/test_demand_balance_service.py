@@ -5,13 +5,13 @@ from django.db import IntegrityError, connection, transaction
 from django.db.models import Sum
 from django.test.utils import CaptureQueriesContext
 
-from apps.sgd.exceptions import ErroDeDominio, RegraDeNegocio, SaldoInsuficiente
+from apps.sgd.exceptions import ErroDeDominio, RegraDeNegocio, SaldoInsuficiente, TransicaoInvalida
 from apps.sgd.models import DemandIndividualLimit, DemandRequest
 from apps.sgd.models.demand_request import RESERVA_ATIVA
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
-from apps.sgd.services import workflow as workflow_service
 from apps.sgd.services import orcamento as orcamento_service
+from apps.sgd.services import workflow as workflow_service
 from apps.sgd.tests.factories import DemandFactory, DemandIndividualLimitFactory, DemandRequestFactory
 
 pytestmark = pytest.mark.django_db
@@ -1022,3 +1022,12 @@ def test_recusa_libera_e_grava_o_estado_da_reserva(
     demand_request_rn.refresh_from_db()
     assert demand_request_rn.valor_reservado == Decimal("0")
     _confere_comprometido(limite_individual_rn)
+
+
+def test_reler_reserva_de_solicitacao_removida_e_transicao_invalida(demand_request_rn):
+    """Quem esperava o lock de uma remoção encontra a solicitação apagada: a operação
+    é recusada como mudança concorrente, não estoura `DoesNotExist`."""
+    DemandRequest.objects.filter(pk=demand_request_rn.pk).delete()
+
+    with pytest.raises(TransicaoInvalida):
+        balance_service.reler_reserva(demand_request_rn)

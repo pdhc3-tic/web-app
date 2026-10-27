@@ -72,7 +72,7 @@ class DemandSerializer(serializers.ModelSerializer):
             "criado_em", "atualizado_em",
         ]
 
-    def get_transicoes_permitidas(self, obj):
+    def get_transicoes_permitidas(self, obj) -> list[str]:
         return destinos_permitidos(obj.status)
 
     def get_contexto(self, obj):

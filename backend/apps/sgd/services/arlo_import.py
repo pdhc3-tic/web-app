@@ -24,7 +24,6 @@ from apps.sgd.services.arlo_mapping import CAMPOS_IMPORTACAO_OBRIGATORIOS, obter
 
 logger = logging.getLogger(__name__)
 
-STATUS_PAGAVEIS = {"autorizada", "em_atendimento"}
 FORMATOS_DATA = ("%Y-%m-%d", "%d/%m/%Y")
 MENSAGEM_ARQUIVO_NAO_ENCONTRADO = (
     "O arquivo enviado não foi encontrado no armazenamento. Envie a planilha novamente."
@@ -120,7 +119,7 @@ def _validar_comprovante(bruto) -> str:
 
 
 def _exigir_pagavel(demand) -> None:
-    if demand.status not in STATUS_PAGAVEIS:
+    if demand.status not in workflow_service.STATUS_PAGAVEIS_PELO_ARLO:
         raise LinhaInvalida(
             f"Demanda #{demand.pk} está '{demand.status}' — só autorizadas/em atendimento recebem pagamento.",
             "demanda_id",
@@ -166,7 +165,7 @@ def _processar_linha(importacao, linha: dict, colunas: dict) -> dict | None:
         raise LinhaInvalida(f"Solicitação #{solicitacao.pk} já tem pagamento registrado.", "solicitacao_id")
 
     usuario = importacao.operado_por
-    reservado = solicitacao.valor_autorizado or solicitacao.valor_estimado
+    reservado = workflow_service.valor_autorizado(solicitacao)
     # O saldo antes da Demand, na ordem de lock de backend/docs/orcamento.md.
     try:
         workflow_service.registrar_pagamento(
@@ -177,7 +176,7 @@ def _processar_linha(importacao, linha: dict, colunas: dict) -> dict | None:
         raise LinhaInvalida(f"Falha ao executar no orçamento: {exc.mensagem}")
     # Relido sob o lock: outra importação pode ter iniciado o atendimento, ou a
     # demanda pode ter sido cancelada ou concluída, enquanto o saldo era executado.
-    demand.status = Demand.objects.select_for_update().values_list("status", flat=True).get(pk=demand.pk)
+    demand.status = workflow_service.travar_e_ler_status(demand)
     _exigir_pagavel(demand)
     if demand.status == "autorizada":
         workflow_service.executar_transicao(

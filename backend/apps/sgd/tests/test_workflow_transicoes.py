@@ -1,13 +1,18 @@
 """A tabela `TRANSICOES` contra as tabelas de estados, de efeito no saldo e de
 notificações do documento de requisitos do SGD, transcritas aqui."""
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 
-from apps.sgd.exceptions import JustificativaObrigatoria, TransicaoInvalida
+from apps.core.models.audit_log import AuditLog
+from apps.core.models.notifications import Notification, TipoNotificacao
+from apps.sgd.exceptions import JustificativaObrigatoria, RegraDeNegocio, TransicaoInvalida
 from apps.sgd.models.demand import Demand
 from apps.sgd.services import balance as balance_service
+from apps.sgd.services import demand as demand_service
 from apps.sgd.services import workflow as workflow_service
+from apps.sgd.services.arlo_import import processar_importacao
 from apps.sgd.services.workflow import (
     AJUSTAR,
     EXECUTAR,
@@ -22,6 +27,9 @@ from apps.sgd.services.workflow import (
     buscar_transicao,
 )
 from apps.sgd.tests.factories import DemandFactory
+
+# Fixtures e helpers compartilhados com a suíte de integração Arlo.
+from apps.sgd.tests.test_arlo_integration import _importar, _linha, storage_local  # noqa: F401
 
 pytestmark = pytest.mark.django_db
 
@@ -65,6 +73,19 @@ NOTIFICACOES = {
 }
 
 JUSTIFICATIVA_OBRIGATORIA = {("submetida", "devolvida"), ("pre_autorizada", "recusada")}
+
+EMAIL_E_IN_APP = {TipoNotificacao.EMAIL, TipoNotificacao.IN_APP}
+
+# Notificações por etapa: (de, para) → (notificados, canais).
+NOTIFICADOS = {
+    ("rascunho", "submetida"): ({"articulador"}, EMAIL_E_IN_APP),
+    ("submetida", "devolvida"): ({"solicitante"}, EMAIL_E_IN_APP),
+    ("submetida", "pre_autorizada"): ({"ugp"}, EMAIL_E_IN_APP),
+    ("pre_autorizada", "autorizada"): ({"solicitante", "fgd"}, EMAIL_E_IN_APP),
+    ("pre_autorizada", "recusada"): ({"solicitante"}, EMAIL_E_IN_APP),
+    ("autorizada", "em_atendimento"): ({"solicitante"}, {TipoNotificacao.IN_APP}),
+    ("em_atendimento", "concluida"): ({"solicitante"}, EMAIL_E_IN_APP),
+}
 
 
 def _linhas(origem, para=None):
@@ -224,3 +245,178 @@ def test_api_concluir_demanda_autorizada_devolve_transicao_invalida(auth_client_
 
     assert resposta.status_code == 400
     assert resposta.data["code"] == "INVALID_TRANSITION"
+
+
+# ── Notificados e canais, executando cada transição ─────────────────────────
+
+_ANTES = {
+    "rascunho": [],
+    "submetida": ["submetida"],
+    "pre_autorizada": ["submetida", "pre_autorizada"],
+    "autorizada": ["submetida", "pre_autorizada", "autorizada"],
+    "em_atendimento": ["submetida", "pre_autorizada", "autorizada", "em_atendimento"],
+}
+_QUEM_FAZ = {
+    "submetida": "solicitante", "devolvida": "articulador", "pre_autorizada": "articulador",
+    "autorizada": "ugp", "recusada": "ugp", "em_atendimento": "fgd", "concluida": "fgd",
+}
+_EXIGEM_JUSTIFICATIVA = {para for _, para in JUSTIFICATIVA_OBRIGATORIA}
+
+
+@pytest.fixture
+def atores(solicitante_rn, usuario_articulador_rn, usuario_ugp, usuario_fgd):
+    return {"solicitante": solicitante_rn, "articulador": usuario_articulador_rn, "ugp": usuario_ugp, "fgd": usuario_fgd}
+
+
+@pytest.fixture(autouse=True)
+def sem_envio_de_email():
+    with patch("apps.core.tasks.notifications.send_email_notification.delay"):
+        yield
+
+
+def _levar(demand, destino, atores):
+    dados = {}
+    if destino in _EXIGEM_JUSTIFICATIVA:
+        dados["justificativa"] = "Motivo."
+    if destino == "concluida":
+        dados["valores_pagos"] = {s.pk: s.valor_estimado for s in demand.solicitacoes.all()}
+    workflow_service.executar_transicao(demand, destino, ator=atores[_QUEM_FAZ[destino]], **dados)
+
+
+def _notificados(demand):
+    return set(
+        Notification.objects.filter(link__endswith=f"/sgd/demandas/{demand.pk}")
+        .exclude(evento="demand_semaforo_mudou").values_list("user_id", "tipo")
+    )
+
+
+@pytest.mark.parametrize("de,para", list(NOTIFICADOS))
+def test_cada_transicao_notifica_quem_a_tabela_manda_pelos_canais_dela(
+    de, para, demand_request_rn, atores, allocation_territorial_rn, limite_individual_rn,
+):
+    demand = demand_request_rn.demanda
+    for passo in _ANTES[de]:
+        _levar(demand, passo, atores)
+    Notification.objects.all().delete()
+
+    _levar(demand, para, atores)
+
+    papeis, canais = NOTIFICADOS[(de, para)]
+    assert _notificados(demand) == {(atores[papel].pk, canal) for papel in papeis for canal in canais}
+
+
+def test_cancelamento_automatico_notifica_solicitante_e_articulador_por_email_e_in_app(
+    demand_request_rn, atores, allocation_territorial_rn, limite_individual_rn,
+):
+    demand = demand_request_rn.demanda
+    _levar(demand, "submetida", atores)
+    Notification.objects.all().delete()
+
+    workflow_service.cancelar_pelo_sistema([demand], motivo="Atividade cancelada.")
+
+    assert _notificados(demand) == {
+        (atores[papel].pk, canal) for papel in ("solicitante", "articulador") for canal in EMAIL_E_IN_APP
+    }
+
+
+# ── Importação do Arlo ──────────────────────────────────────────────────────
+
+def test_status_que_a_importacao_aceita_vem_da_tabela():
+    assert workflow_service.STATUS_PAGAVEIS_PELO_ARLO == {"autorizada", "em_atendimento"}
+
+
+@pytest.mark.parametrize(
+    "status", ["rascunho", "submetida", "devolvida", "pre_autorizada", "concluida", "recusada", "cancelada"],
+)
+def test_importacao_recusa_a_linha_de_demanda_fora_da_tabela_sem_mexer_no_saldo(
+    status, demand_request_rn, solicitante_rn, usuario_fgd, allocation_territorial_rn, limite_individual_rn,
+):
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    Demand.objects.filter(pk=demand_request_rn.demanda_id).update(status=status)
+
+    importacao = processar_importacao(_importar([_linha(demand_request_rn)], usuario_fgd))
+
+    assert importacao.registros_ok == 0
+    assert [erro["campo"] for erro in importacao.erros_json] == ["demanda_id"]
+    demand = Demand.objects.get(pk=demand_request_rn.demanda_id)
+    assert demand.status == status
+    assert not demand.etapas.exists()
+    limite_individual_rn.refresh_from_db()
+    allocation_territorial_rn.refresh_from_db()
+    assert (limite_individual_rn.valor_comprometido, limite_individual_rn.valor_executado) == (Decimal("1000"), 0)
+    assert (allocation_territorial_rn.valor_comprometido, allocation_territorial_rn.valor_executado) == (
+        Decimal("1000"), 0,
+    )
+
+
+# ── Task de cancelamento ────────────────────────────────────────────────────
+
+def test_cancelamento_pela_task_aceita_status_que_mudou_dentro_dos_cancelaveis(activity_rn):
+    """Entre a leitura e o lock a demanda foi pré-autorizada: continua cancelável, e
+    a auditoria registra o status de onde ela saiu de fato."""
+    demand = DemandFactory(activity=activity_rn, status="submetida")
+    lida_pela_task = Demand.objects.get(pk=demand.pk)
+    Demand.objects.filter(pk=demand.pk).update(status="pre_autorizada")
+
+    workflow_service.cancelar_pelo_sistema([lida_pela_task], motivo="Atividade cancelada.")
+
+    demand.refresh_from_db()
+    assert demand.status == "cancelada"
+    ultima = AuditLog.objects.filter(entidade="Demand", entidade_id=str(demand.pk)).latest("id")
+    assert ultima.valores_anteriores == {"status": "pre_autorizada"}
+
+
+def test_task_registra_a_falha_quando_as_tentativas_acabam(monkeypatch, activity_rn):
+    from apps.sgd import tasks as sgd_tasks
+
+    def _mudou(activity_id):
+        raise TransicaoInvalida(workflow_service.MENSAGEM_DEMANDA_MUDOU)
+
+    monkeypatch.setattr(sgd_tasks, "_cancelar_demandas_da_atividade", _mudou)
+
+    with patch.object(sgd_tasks.cancelar_demandas_da_atividade, "max_retries", 0), \
+            patch.object(sgd_tasks, "sentry_sdk") as sentry:
+        with pytest.raises(TransicaoInvalida):
+            sgd_tasks.cancelar_demandas_da_atividade(activity_rn.pk)
+
+    sentry.capture_exception.assert_called_once()
+
+
+# ── Dados da ação ───────────────────────────────────────────────────────────
+
+def test_autorizar_com_valor_zero_e_recusado(
+    demand_request_rn, solicitante_rn, usuario_ugp, allocation_territorial_rn, limite_individual_rn,
+):
+    demand = demand_request_rn.demanda
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    Demand.objects.filter(pk=demand.pk).update(status="pre_autorizada")
+    demand.refresh_from_db()
+
+    with pytest.raises(RegraDeNegocio):
+        workflow_service.executar_transicao(
+            demand, "autorizada", ator=usuario_ugp, ajustes={demand_request_rn.pk: Decimal("0")},
+        )
+
+
+def test_dado_desconhecido_nao_e_ignorado_em_silencio(activity_rn, usuario_ugp):
+    demand = DemandFactory(activity=activity_rn, status="pre_autorizada")
+
+    with pytest.raises(TypeError):
+        workflow_service.executar_transicao(demand, "autorizada", ator=usuario_ugp, ajuste={})
+
+
+def test_justificativa_nula_conta_como_vazia(activity_rn, usuario_fgd, usuario_ugp):
+    atendida = DemandFactory(activity=activity_rn, status="autorizada")
+    workflow_service.executar_transicao(atendida, "em_atendimento", ator=usuario_fgd, justificativa=None)
+    assert atendida.etapas.get().justificativa == ""
+
+    recusada = DemandFactory(activity=activity_rn, status="pre_autorizada")
+    with pytest.raises(JustificativaObrigatoria):
+        workflow_service.executar_transicao(recusada, "recusada", ator=usuario_ugp, justificativa=None)
+
+
+def test_cancelar_demanda_em_atendimento_explica_que_nao_pode_ser_cancelada(activity_rn, solicitante_rn):
+    demand = DemandFactory(activity=activity_rn, solicitante=solicitante_rn, status="em_atendimento")
+
+    with pytest.raises(TransicaoInvalida, match="não pode ser cancelada"):
+        demand_service.cancelar_demanda(demand, usuario=solicitante_rn)

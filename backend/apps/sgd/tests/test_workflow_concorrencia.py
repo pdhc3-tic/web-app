@@ -142,7 +142,7 @@ def test_submissao_recusada_quando_a_solicitacao_e_removida_enquanto_reserva(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_edicao_recusada_quando_a_demanda_e_submetida_enquanto_espera(
+def test_remocao_recusada_quando_a_demanda_e_submetida_enquanto_espera(
     demand_request_rn, solicitante_rn, limite_individual_rn, allocation_territorial_rn,
 ):
     demand = demand_request_rn.demanda
@@ -185,4 +185,44 @@ def test_cancelamento_pela_task_desfeito_quando_a_fgd_inicia_o_atendimento(
     assert isinstance(erros["espera"], TransicaoInvalida)
     autorizada.refresh_from_db()
     assert autorizada.status == "em_atendimento"
+    assert _saldo(limite_individual_rn, allocation_territorial_rn) == (Decimal("1000"), 0, Decimal("1000"), 0)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_edicoes_simultaneas_em_devolvida_deixam_reserva_e_saldo_iguais(
+    solicitante_rn, usuario_articulador_rn, activity_rn, rubrica_diarias,
+    limite_individual_rn, allocation_territorial_rn,
+):
+    """A segunda edição leu a reserva antes da primeira ajustá-la. Ela relê a reserva
+    com o limite travado e ajusta a partir do valor real, sem gravar o antigo."""
+    from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
+
+    demand = DemandFactory(activity=activity_rn, solicitante=solicitante_rn, status="rascunho")
+    solicitacao = DemandRequestFactory(
+        demanda=demand, rubrica=rubrica_diarias, tipo="grafico", valor_estimado=Decimal("1000"),
+        campos_json={
+            "tipo_material": "banner", "quantidade": 1,
+            "especificacoes_tecnicas": "x", "prazo_entrega": "2026-12-01",
+        },
+    )
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    workflow_service.executar_transicao(demand, "devolvida", ator=usuario_articulador_rn, justificativa="Ajustar.")
+    lida_pela_segunda = DemandRequest.objects.get(pk=solicitacao.pk)
+
+    def primeira(pausa):
+        demand_service.atualizar_solicitacao(
+            DemandRequest.objects.get(pk=solicitacao.pk), usuario=solicitante_rn, valor_estimado=Decimal("1200"),
+        )
+        pausa()
+
+    _, erros = intercalar(
+        primeira,
+        lambda: demand_service.atualizar_solicitacao(
+            lida_pela_segunda, usuario=solicitante_rn, valor_estimado=Decimal("1000"),
+        ),
+    )
+
+    assert erros == {}
+    solicitacao.refresh_from_db()
+    assert solicitacao.valor_estimado == solicitacao.valor_reservado == Decimal("1000")
     assert _saldo(limite_individual_rn, allocation_territorial_rn) == (Decimal("1000"), 0, Decimal("1000"), 0)

@@ -64,7 +64,7 @@ def _travar_editavel(demand) -> None:
     a solicitação, na ordem de lock de `backend/docs/orcamento.md`; a submissão,
     que reservou o saldo antes, confere sob o mesmo lock que as solicitações não
     mudaram."""
-    demand.status = Demand.objects.select_for_update().values_list("status", flat=True).get(pk=demand.pk)
+    demand.status = workflow_service.travar_e_ler_status(demand)
     _exigir_editavel(demand)
 
 
@@ -114,7 +114,8 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
     só trocar o campo; a resubmissão não pede saldo adicional pra ela."""
     demand = solicitacao.demanda
     _exigir_editavel(demand)
-    balance_service.reler_reserva(solicitacao)
+    # Com o limite travado: a reserva lida decide se há ajuste e é gravada abaixo.
+    balance_service.reler_reserva_travada(solicitacao)
 
     tipo_final = tipo or solicitacao.tipo
     campos_final = campos_json if campos_json is not None else solicitacao.campos_json
