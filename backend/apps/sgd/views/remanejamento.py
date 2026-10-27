@@ -1,7 +1,7 @@
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 
@@ -13,6 +13,7 @@ from apps.core.permissions import (
     IsUGP,
 )
 from apps.core.services.permissions import user_has_role, user_role_slugs, user_states
+from apps.sgd.constants import PERFIS_NACIONAIS
 from apps.sgd.serializers.remanejamento import (
     AtualizarRemanejamentoSerializer,
     BudgetIncreaseRequestSerializer,
@@ -24,7 +25,6 @@ from apps.sgd.serializers.remanejamento import (
 from apps.sgd.services import recurso_extra as recurso_extra_service
 from apps.sgp.models import BudgetIncreaseRequest
 
-PERFIS_COM_VISAO_GLOBAL = {"super-admin", "ugp", "fgd"}
 PERFIS_DA_DECISAO = {"super-admin", "ugp"}
 
 
@@ -40,7 +40,7 @@ def pedidos_visiveis(user):
         "user", "rubrica", "parecer_por", "decidido_por", "activity__municipio__state",
     )
     perfis = user_role_slugs(user, ("super-admin", "ugp", "fgd", "articulador-estadual"))
-    if perfis & PERFIS_COM_VISAO_GLOBAL:
+    if perfis & PERFIS_NACIONAIS:
         return qs
     if "articulador-estadual" in perfis:
         return qs.filter(activity__municipio__state__sigla__in=user_states(user))
@@ -98,6 +98,14 @@ class RemanejamentoViewSet(viewsets.ViewSet):
             filtros = [BudgetIncreaseRequest.Status.COM_PARECER]
         if filtros and "todos" not in filtros:
             qs = qs.filter(status__in=filtros)
+        demanda = request.query_params.get("demanda")
+        if demanda:
+            try:
+                demanda_id = int(demanda)
+            except ValueError:
+                raise ValidationError({"demanda": "Informe o id numérico da demanda."})
+            # `demanda_id` é texto no pedido: compara com o id normalizado ("041" → "41").
+            qs = qs.filter(demanda_id=str(demanda_id))
         paginador = RemanejamentoPagination()
         pagina = paginador.paginate_queryset(qs.order_by("-criado_em", "-id"), request)
         return paginador.get_paginated_response(BudgetIncreaseRequestSerializer(pagina, many=True).data)

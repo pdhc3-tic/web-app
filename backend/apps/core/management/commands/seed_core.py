@@ -26,6 +26,26 @@ ROLES = [
 
 STATES = ["PE", "PB", "AL", "RN", "MA", "BA", "MG"]
 
+NOMES_DOS_ESTADOS = {
+    "AC": "Acre", "AL": "Alagoas", "AP": "Amapá", "AM": "Amazonas", "BA": "Bahia", "CE": "Ceará",
+    "DF": "Distrito Federal", "ES": "Espírito Santo", "GO": "Goiás", "MA": "Maranhão", "MT": "Mato Grosso",
+    "MS": "Mato Grosso do Sul", "MG": "Minas Gerais", "PA": "Pará", "PB": "Paraíba", "PR": "Paraná",
+    "PE": "Pernambuco", "PI": "Piauí", "RJ": "Rio de Janeiro", "RN": "Rio Grande do Norte",
+    "RS": "Rio Grande do Sul", "RO": "Rondônia", "RR": "Roraima", "SC": "Santa Catarina", "SP": "São Paulo",
+    "SE": "Sergipe", "TO": "Tocantins",
+}
+
+
+def ensure_state(sigla):
+    """Cria o estado com o nome por extenso; um já gravado com a sigla no lugar
+    do nome é corrigido, um nome editado é mantido."""
+    nome = NOMES_DOS_ESTADOS.get(sigla, sigla)
+    state, created = State.objects.get_or_create(sigla=sigla, defaults={"nome": nome})
+    if not created and state.nome == sigla and nome != sigla:
+        state.nome = nome
+        state.save(update_fields=["nome"])
+    return state, created
+
 
 def ensure_roles(stdout):
     for slug, nome in ROLES:
@@ -39,7 +59,7 @@ def ensure_roles(stdout):
 
 def ensure_states(stdout):
     for sigla in STATES:
-        state, created = State.objects.get_or_create(sigla=sigla, defaults={"nome": sigla})
+        state, created = ensure_state(sigla)
         stdout.write(f"State: {sigla} -> {'created' if created else 'exists'}")
 
 
@@ -106,7 +126,7 @@ class Command(BaseCommand):
                     sigla = row.get('sigla') or row.get('uf')
                     if not sigla:
                         continue
-                    state, _ = State.objects.get_or_create(sigla=sigla, defaults={"nome": sigla})
+                    state, _ = ensure_state(sigla)
                     territory_name = row.get('territory') or f"Território {sigla}"
                     territory, _ = Territory.objects.get_or_create(nome=territory_name, defaults={"estados": [sigla], "ativo": True})
                     codigo = row.get('codigo_ibge') or row.get('cod_ibge')

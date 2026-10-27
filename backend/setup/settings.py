@@ -298,6 +298,13 @@ CORS_ALLOWED_ORIGINS = [
     for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
     if origin.strip()
 ]
+# Sem isso o navegador esconde do `fetch` o nome do arquivo das exportações
+# quando o frontend está em outra origem.
+CORS_EXPOSE_HEADERS = ["Content-Disposition"]
+
+# Exportação de UPFs: até este total o arquivo sai na própria requisição; acima,
+# vira ExportJob processado pelo worker.
+UPF_EXPORT_ASYNC_THRESHOLD = int(os.getenv("UPF_EXPORT_ASYNC_THRESHOLD", "1000"))
 
 # CONFIGURAÇÕES DO CELERY
 CELERY_BROKER_URL = f"redis://{os.getenv('REDIS_HOST', 'redis')}:{os.getenv('REDIS_PORT', '6379')}/0"
@@ -344,7 +351,11 @@ EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@pdhc.ufersa.edu.br")
 
-FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "https://pdhc.ufersa.edu.br")
+# Sem a variável, o ambiente de desenvolvimento aponta para o frontend local, e
+# não para produção.
+FRONTEND_BASE_URL = os.getenv(
+    "FRONTEND_BASE_URL", "http://localhost:3000" if DEBUG else "https://pdhc.ufersa.edu.br",
+)
 
 # GOOGLE CALENDAR
 GOOGLE_CALENDAR_SERVICE_ACCOUNT_INFO = os.getenv("GOOGLE_CALENDAR_SERVICE_ACCOUNT_INFO", "")

@@ -12,6 +12,7 @@ from rest_framework.response import Response
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsADTInTerritory, IsAuthenticatedActiveAccess, IsSuperAdmin
+from apps.core.services.permissions import user_has_role
 from apps.core.views.audit import AuditLogPagination
 from apps.sgd.filters import DemandFilter
 from apps.sgd.models.approval_step import ApprovalStep
@@ -28,9 +29,11 @@ from apps.sgd.services import consulta as consulta_service
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services.approval import demand_visibility_scope
 from apps.sgd.services.auditoria import ENTIDADE_DEMANDA, ENTIDADE_MOVIMENTACAO_SALDO
+from apps.sgd.services.recurso_extra import ENTIDADE_LIMITE, ENTIDADE_PEDIDO, ENTIDADE_REMANEJAMENTO
 from apps.sgd.views.approval import DemandApprovalMixin
 from apps.sgd.views.demand_document import DemandDocumentMixin
 from apps.sgd.views.remanejamento import RecursoExtraMixin
+from apps.sgp.models import BudgetIncreaseRequest
 from apps.sgp.services.exportacao import CONTENT_TYPES, Arquivo, gerar_arquivo
 from apps.sgp.views.exportacao import arquivo_response
 from apps.sgp.models.workplan import WorkPlanAcao
@@ -57,10 +60,6 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
         # jogo no create, IsADTInTerritory checa só o perfil.
         if self.action == "create":
             return [IsAuthenticatedActiveAccess(), (IsADTInTerritory | IsSuperAdmin)()]
-        # SGD §1: a auditoria completa é do Super Admin. A trilha traz o IP de
-        # quem agiu, dado pessoal que o aprovador não precisa ver.
-        if self.action == "auditoria":
-            return [IsAuthenticatedActiveAccess(), IsSuperAdmin()]
         return super().get_permissions()
 
     def get_queryset(self):
@@ -185,16 +184,31 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
 
     @action(detail=True, methods=["get"], url_path="auditoria")
     def auditoria(self, request, pk=None):
+        """Trilha de quem pode ver a demanda. O IP de quem agiu é dado pessoal:
+        só o Super Admin, que tem a auditoria completa, o recebe."""
         demand = get_object_or_404(self.get_queryset(), pk=pk)
-        entradas = AuditLog.objects.select_related("user").filter(
+        filtro = (
             Q(entidade=ENTIDADE_DEMANDA, entidade_id=str(demand.pk))
             # `demanda` fica em valores_novos porque a BudgetTransaction só
             # conhece a solicitação, e a solicitação pode ser removida depois.
             | Q(entidade=ENTIDADE_MOVIMENTACAO_SALDO, valores_novos__demanda=demand.pk)
-        ).order_by("timestamp", "id")
+        )
+        pedidos = list(BudgetIncreaseRequest.objects.filter(demanda_id=str(demand.pk)).values_list("pk", flat=True))
+        if pedidos:
+            # Pelo pedido, não por `demanda`: a edição do pedido não grava a demanda,
+            # e o aumento de limite e o remanejamento ficam em outras entidades.
+            filtro |= Q(entidade=ENTIDADE_PEDIDO, entidade_id__in=[str(pk) for pk in pedidos]) | Q(
+                entidade__in=[ENTIDADE_LIMITE, ENTIDADE_REMANEJAMENTO],
+                acao__in=["aumento_limite", "remanejamento.efetivado"],
+                valores_novos__pedido__in=pedidos,
+            )
+        entradas = AuditLog.objects.select_related("user").filter(filtro).order_by("timestamp", "id")
         paginador = AuditLogPagination()
         pagina = paginador.paginate_queryset(entradas, request)
-        return paginador.get_paginated_response(DemandAuditEntrySerializer(pagina, many=True).data)
+        serializer = DemandAuditEntrySerializer(
+            pagina, many=True, context={"incluir_ip": user_has_role(request.user, "super-admin")},
+        )
+        return paginador.get_paginated_response(serializer.data)
 
     @action(detail=True, methods=["post"], url_path="submeter")
     def submeter(self, request, pk=None):

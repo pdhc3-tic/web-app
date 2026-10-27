@@ -1,5 +1,8 @@
 from django.db import models
 
+# Perfis que enxergam o SGD de todos os territórios, sem recorte por estado.
+PERFIS_NACIONAIS = frozenset({"super-admin", "ugp", "fgd"})
+
 
 class Vinculo(models.TextChoices):
     SERVIDOR_UFERSA = "servidor_ufersa", "Servidor UFERSA"

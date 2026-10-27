@@ -214,3 +214,64 @@ def test_historico_preserva_o_mapeamento_vigente_na_operacao(
     assert historico[importacao.pk]["status"] == "concluido"
     detalhe = auth_client_fgd.get(f"/api/v1/sgd/arlo/{exportacao.pk}/")
     assert detalhe.status_code == 200 and detalhe.json()["mapeamento_snapshot"] == antes_exp
+
+
+# ── Catálogo de campos e preview ────────────────────────────────────────────
+
+def test_catalogo_traz_todos_os_campos_de_cada_direcao(auth_client_super_admin):
+    from apps.sgd.services.arlo_mapping import CAMPOS, CAMPOS_OBRIGATORIOS
+
+    resposta = auth_client_super_admin.get(f"{URL}campos/")
+
+    assert resposta.status_code == 200
+    for direcao in ("exportacao", "importacao"):
+        campos = {c["campo"]: c for c in resposta.json()[direcao]}
+        assert set(campos) == CAMPOS[direcao]
+        assert {c for c, dados in campos.items() if dados["obrigatorio"]} == CAMPOS_OBRIGATORIOS[direcao]
+        assert all(dados["label"] for dados in campos.values())
+
+
+def test_catalogo_traz_os_formatos_permitidos_de_cada_campo(auth_client_super_admin):
+    catalogo = auth_client_super_admin.get(f"{URL}campos/").json()
+    exportacao = {c["campo"]: c for c in catalogo["exportacao"]}
+    importacao = {c["campo"]: c for c in catalogo["importacao"]}
+
+    assert exportacao["valor_autorizado"]["formatos"] == [
+        {"value": "texto", "label": "Texto"}, {"value": "moeda", "label": "Moeda"},
+    ]
+    assert exportacao["meta"]["formatos"] == [{"value": "texto", "label": "Texto"}]
+    assert importacao["valor_pago"]["formatos"] == [{"value": "moeda", "label": "Moeda"}]
+    assert importacao["data_pagamento"]["formatos"] == [{"value": "data", "label": "Data"}]
+
+
+def test_preview_sem_demanda_autorizada_usa_a_linha_de_exemplo(auth_client_super_admin):
+    resposta = auth_client_super_admin.get(f"{URL}preview/", {"direcao": "exportacao"})
+
+    assert resposta.status_code == 200
+    dados = resposta.json()
+    assert dados["colunas"] == [item["coluna"] for item in obter_mapeamento()["exportacao"]]
+    assert len(dados["linha"]) == len(dados["colunas"])
+    assert dados["linha"][dados["colunas"].index("Valor Autorizado")] == "1200,00"
+
+
+def test_linha_de_exemplo_cobre_todos_os_campos_da_exportacao():
+    from apps.sgd.services.arlo_mapping import CAMPOS_EXPORTACAO
+
+    assert set(arlo_export.LINHA_DE_EXEMPLO) == CAMPOS_EXPORTACAO
+
+
+def test_preview_usa_a_primeira_demanda_autorizada(auth_client_super_admin, demanda_autorizada):
+    # A fixture devolve a solicitação autorizada, não a demanda.
+    solicitacao = demanda_autorizada
+
+    dados = auth_client_super_admin.get(f"{URL}preview/").json()
+
+    assert set(dados) == {"colunas", "linha"}
+    assert dados["linha"][dados["colunas"].index("ID Demanda")] == str(solicitacao.demanda_id)
+    assert dados["linha"][dados["colunas"].index("ID Solicitação")] == str(solicitacao.pk)
+    assert dados["linha"][dados["colunas"].index("Valor Autorizado")] == "1000,00"
+
+
+@pytest.mark.parametrize("rota", ["campos/", "preview/"])
+def test_catalogo_e_preview_sao_do_super_admin(auth_client_fgd, rota):
+    assert auth_client_fgd.get(f"{URL}{rota}").status_code == 403
