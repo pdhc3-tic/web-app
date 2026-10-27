@@ -274,16 +274,27 @@ export async function abrirDocumentoDemanda(demandaId: number, documentoId: numb
 
 export const COTACOES_MINIMAS = 3;
 
+export const COTACOES_CONFERINDO = "Conferindo as cotações dos documentos da demanda…";
+
+export const COTACOES_SEM_DOCUMENTOS =
+  "Não foi possível conferir as cotações: a submissão fica bloqueada até a lista de documentos carregar.";
+
 /**
  * A regra de `_exigir_minimo_cotacoes_equipamento`, conferida antes de chamar a
  * API: com solicitação de equipamento, ao menos 3 cotações, de fornecedores
  * distintos. Devolve o aviso, ou null quando está tudo certo.
+ *
+ * `documentos` indefinido é a lista ainda não carregada (ou que falhou, com
+ * `falhou`): com equipamento, a regra não tem como ser conferida e a
+ * submissão fica bloqueada.
  */
 export function pendenciaDeCotacoes(
   demanda: Pick<Demanda, "solicitacoes">,
-  documentos: Pick<DocumentoDemanda, "tipo" | "fornecedor">[],
+  documentos: Pick<DocumentoDemanda, "tipo" | "fornecedor">[] | undefined,
+  falhou = false,
 ): string | null {
   if (!demanda.solicitacoes.some((s) => s.tipo === "equipamento")) return null;
+  if (!documentos) return falhou ? COTACOES_SEM_DOCUMENTOS : COTACOES_CONFERINDO;
   const fornecedores = documentos.filter((d) => d.tipo === "cotacao").map((d) => d.fornecedor.trim());
   if (fornecedores.length < COTACOES_MINIMAS) {
     return `Aquisição de equipamentos exige ao menos ${COTACOES_MINIMAS} cotações em PDF — há ${fornecedores.length}.`;

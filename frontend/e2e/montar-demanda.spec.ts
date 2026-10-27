@@ -168,6 +168,35 @@ test.describe("SGD — montar e submeter a demanda (ADT)", () => {
     await expect(page.getByTestId(`recurso-extra-atalho-${fx.territorial.diariaId}`)).toHaveCount(0);
   });
 
+  test("equipamentos: sem a lista de documentos carregada, a submissão fica barrada", async ({ page }) => {
+    const chamadas: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/submeter/")) chamadas.push(r.url());
+    });
+    // A lista de documentos falha: enquanto o React Query tenta de novo, a
+    // regra está "conferindo"; esgotadas as tentativas, fica a falha.
+    const listaDocumentos = (url: URL) => url.pathname === `/api/v1/sgd/demandas/${fx.equipamento.id}/documentos/`;
+    await page.route(listaDocumentos, (route) =>
+      route.request().method() === "GET" ? route.abort() : route.fallback(),
+    );
+
+    await abrirMontagem(page, fx.equipamento.id);
+    await expect(page.getByTestId("submissao-erro")).toContainText("Conferindo as cotações");
+    await expect(page.getByTestId("demanda-submeter")).toBeDisabled();
+    await expect(page.getByTestId("submissao-erro")).toContainText("Não foi possível conferir as cotações", {
+      timeout: 20_000,
+    });
+    await expect(page.getByTestId("demanda-submeter")).toBeDisabled();
+    expect(chamadas).toHaveLength(0);
+
+    // A lista volta: "Tentar de novo" carrega e a regra das cotações assume.
+    await page.unroute(listaDocumentos);
+    await page.getByTestId("submissao-recarregar-documentos").click();
+    await expect(page.getByTestId("submissao-erro")).toContainText("ao menos 3 cotações");
+    await expect(page.getByTestId("demanda-submeter")).toBeDisabled();
+    expect(chamadas).toHaveLength(0);
+  });
+
   test("equipamentos com menos de 3 cotações: barrado no cliente, sem chamar a API", async ({ page }) => {
     const chamadas: string[] = [];
     page.on("request", (r) => {
