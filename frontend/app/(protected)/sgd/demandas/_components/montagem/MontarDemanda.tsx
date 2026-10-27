@@ -54,7 +54,10 @@ export function MontarDemanda({ demanda }: { demanda: Demanda }) {
   const [submetendo, setSubmetendo] = useState(false);
 
   const semSolicitacoes = demanda.solicitacoes.length === 0;
-  const pendenciaCotacoes = documentos.data ? pendenciaDeCotacoes(demanda, documentos.data) : null;
+  // Com equipamento, sem a lista de documentos não há como conferir as
+  // cotações: o botão e o handler ficam barrados até ela carregar.
+  const pendenciaCotacoes = pendenciaDeCotacoes(demanda, documentos.data, documentos.isError);
+  const documentosFalharam = pendenciaCotacoes !== null && documentos.isError && !documentos.data;
   const totalBloqueadas = Object.keys(bloqueios).length;
 
   /** O bloqueio de uma solicitação que mudou já não vale: a próxima submissão confere de novo. */
@@ -203,7 +206,17 @@ export function MontarDemanda({ demanda }: { demanda: Demanda }) {
             data-testid="submissao-erro"
           >
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            {erroSubmissao ?? pendenciaCotacoes}
+            <span className="flex-1">{erroSubmissao ?? pendenciaCotacoes}</span>
+            {documentosFalharam && (
+              <button
+                type="button"
+                onClick={() => void documentos.refetch()}
+                className="shrink-0 font-medium underline hover:no-underline"
+                data-testid="submissao-recarregar-documentos"
+              >
+                Tentar de novo
+              </button>
+            )}
           </p>
         )}
         <div className="flex flex-wrap items-center justify-between gap-3">

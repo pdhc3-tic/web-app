@@ -7,7 +7,12 @@ import {
   valoresDoCamposJson,
 } from "@/app/lib/camposSolicitacao";
 import { ApiError } from "@/app/lib/api";
-import { bloqueiosDaSubmissao, pendenciaDeCotacoes } from "@/app/lib/solicitacoes";
+import {
+  COTACOES_CONFERINDO,
+  COTACOES_SEM_DOCUMENTOS,
+  bloqueiosDaSubmissao,
+  pendenciaDeCotacoes,
+} from "@/app/lib/solicitacoes";
 
 const chaves = (tipo: Parameters<typeof camposVisiveis>[0], valores = {}) =>
   camposVisiveis(tipo, valores).map((c) => c.chave);
@@ -99,6 +104,15 @@ describe("pendenciaDeCotacoes", () => {
     expect(pendenciaDeCotacoes(comEquipamento, [cotacao("A"), cotacao("B")])).toMatch(/há 2/);
     expect(pendenciaDeCotacoes(comEquipamento, [cotacao("A"), cotacao("A"), cotacao("B")])).toMatch(/distintos/);
     expect(pendenciaDeCotacoes(comEquipamento, [cotacao("A"), cotacao("B"), cotacao("C")])).toBeNull();
+  });
+
+  it("com equipamento, bloqueia enquanto os documentos não carregaram e se a consulta falhou", () => {
+    expect(pendenciaDeCotacoes(comEquipamento, undefined)).toBe(COTACOES_CONFERINDO);
+    expect(pendenciaDeCotacoes(comEquipamento, undefined, true)).toBe(COTACOES_SEM_DOCUMENTOS);
+  });
+
+  it("sem equipamento, não espera os documentos", () => {
+    expect(pendenciaDeCotacoes({ solicitacoes: [] }, undefined, true)).toBeNull();
   });
 });
 
