@@ -1,4 +1,5 @@
 import logging
+from contextlib import contextmanager
 
 from celery import shared_task
 from django.db import connection, transaction
@@ -30,8 +31,9 @@ _dias_uteis_entre = business_days.dias_uteis_entre
 DIAS_UTEIS_LIMITE = business_days.DIAS_UTEIS_LIMITE
 
 
-def _sem_contexto_de_sessao_rls(fn):
-    """Roda `fn()` com a SESSION VARIABLE `app.user_role` setada como
+@contextmanager
+def _transacao_sem_contexto_de_sessao_rls():
+    """Abre uma transação com a SESSION VARIABLE `app.user_role` setada como
     'super-admin' — uma task do Celery não passa pelo `SessionContextMiddleware`
     (apps/core/middleware.py), que é quem normalmente faz o `SET LOCAL` das
     variáveis que a política RLS de `sgd_demand` exige; sem isso, rodando como
@@ -40,6 +42,11 @@ def _sem_contexto_de_sessao_rls(fn):
     with transaction.atomic():
         with connection.cursor() as cursor:
             cursor.execute("SET LOCAL app.user_role = %s;", ["super-admin"])
+        yield
+
+
+def _sem_contexto_de_sessao_rls(fn):
+    with _transacao_sem_contexto_de_sessao_rls():
         return fn()
 
 
@@ -169,7 +176,10 @@ def process_arlo_import(importacao_id: int) -> int:
     if importacao.tipo != ArloImport.Tipo.IMPORTACAO or importacao.status != ArloImport.Status.PENDENTE:
         return 0
     try:
-        return _sem_contexto_de_sessao_rls(lambda: processar_importacao(importacao)).registros_ok
+        # Uma transação por linha, não uma para o arquivo (ver `processar_importacao`).
+        return processar_importacao(
+            importacao, transacao_da_linha=_transacao_sem_contexto_de_sessao_rls,
+        ).registros_ok
     except Exception as exc:
         ArloImport.objects.filter(pk=importacao_id).update(
             status=ArloImport.Status.FALHOU,

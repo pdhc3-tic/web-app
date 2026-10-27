@@ -21,6 +21,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.core.services.permissions import user_role_slugs
+from apps.core.utils import formatar_brl
 from apps.sgd.exceptions import JustificativaObrigatoria, RegraDeNegocio, SaldoInsuficiente, TransicaoInvalida
 from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.models.demand import STATUS_CANCELAVEIS_PELO_SOLICITANTE, STATUS_CHOICES, Demand
@@ -295,15 +296,18 @@ def _liberar(demand, transicao, *, ator, justificativa: str = "", **_) -> tuple[
 
 
 def _executar(demand, transicao, *, ator, valores_pagos: dict | None = None, **_) -> tuple[list, dict | None]:
-    """`valores_pagos`: {demand_request_id: valor_pago} das solicitações ainda sem
-    pagamento. As já pagas (pelo Arlo, linha a linha) ficam como estão."""
+    """`valores_pagos`: {demand_request_id: valor_pago}. As solicitações já pagas
+    (pelo Arlo, linha a linha) ficam como estão: podem vir com o mesmo valor
+    registrado, nunca com outro."""
     valores_pagos = valores_pagos or {}
     solicitacoes = _solicitacoes(demand)
     _exigir_da_demanda(valores_pagos, solicitacoes, "valores_pagos")
     for solicitacao in solicitacoes:
-        if solicitacao.valor_pago is not None and solicitacao.pk in valores_pagos:
+        informado = valores_pagos.get(solicitacao.pk)
+        if solicitacao.valor_pago is not None and informado not in (None, solicitacao.valor_pago):
             raise RegraDeNegocio(
-                f"Solicitação #{solicitacao.pk} já tem pagamento registrado.", campo="valores_pagos",
+                f"Solicitação #{solicitacao.pk} já tem pagamento registrado de "
+                f"{formatar_brl(solicitacao.valor_pago)}.", campo="valores_pagos",
             )
         if solicitacao.valor_pago is None and solicitacao.pk not in valores_pagos:
             raise RegraDeNegocio(
@@ -312,7 +316,7 @@ def _executar(demand, transicao, *, ator, valores_pagos: dict | None = None, **_
     retrato = _retrato(solicitacoes)
 
     for solicitacao in solicitacoes:
-        if solicitacao.pk in valores_pagos:
+        if solicitacao.valor_pago is None:
             registrar_pagamento(
                 solicitacao, valor_pago=valores_pagos[solicitacao.pk], origem=transicao.origem, usuario=ator,
             )
@@ -374,6 +378,8 @@ def _aplicar(demand, transicao: Transicao, solicitacoes, *, ator, destinatarios:
         )
     if transicao.notificacao is not None:
         _NOTIFICACOES[transicao.notificacao](demand, destinatarios)
+    # A view lê a demanda com as solicitações pré-carregadas, e elas foram gravadas por `update()`.
+    getattr(demand, "_prefetched_objects_cache", {}).pop("solicitacoes", None)
 
 
 @transaction.atomic
@@ -403,23 +409,24 @@ def cancelar_pelo_sistema(demandas, *, motivo: str) -> None:
     saldo de todas sai antes (`liberar_duas_travas_em_lote`), e só então cada
     `Demand` é travada, em ordem de pk.
 
-    A liberação relê cada reserva sob o lock do limite, então basta conferir, na
-    linha travada, que a demanda continua cancelável e que nenhuma solicitação
-    entrou ou saiu. Se não, a transação inteira volta com `TransicaoInvalida`."""
+    A liberação relê cada reserva sob o lock do limite, mas trava o limite pela
+    rubrica lida antes: na linha travada, confere que a demanda continua
+    cancelável e que nenhuma solicitação entrou, saiu ou mudou de rubrica. Se não,
+    a transação inteira volta com `TransicaoInvalida`."""
     demandas = sorted(demandas, key=lambda d: d.pk)
     solicitacoes = list(
         DemandRequest.objects.filter(demanda__in=demandas).select_related("rubrica", "demanda__solicitante")
     )
-    por_demanda = defaultdict(set)
+    rubricas = defaultdict(dict)
     for solicitacao in solicitacoes:
-        por_demanda[solicitacao.demanda_id].add(solicitacao.pk)
+        rubricas[solicitacao.demanda_id][solicitacao.pk] = solicitacao.rubrica_id
 
     balance_service.liberar_duas_travas_em_lote(solicitacoes, usuario=None, motivo=motivo, adiar_gravacao=True)
     transicoes = {}
     for demand in demandas:
         demand.status = travar_e_ler_status(demand)
-        atuais = set(DemandRequest.objects.filter(demanda_id=demand.pk).values_list("pk", flat=True))
-        if atuais != por_demanda[demand.pk]:
+        atuais = dict(DemandRequest.objects.filter(demanda_id=demand.pk).values_list("pk", "rubrica_id"))
+        if atuais != rubricas[demand.pk]:
             raise TransicaoInvalida(MENSAGEM_DEMANDA_MUDOU)
         transicoes[demand.pk] = buscar_transicao(demand.status, "cancelada", ORIGEM_SISTEMA)
     destinatarios = {}

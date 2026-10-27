@@ -67,8 +67,8 @@ As transições de status passam por `apps.sgd.services.workflow.executar_transi
 |---|---|
 | Submissão; autorização; recusa; conclusão pela FGD; cancelamento pelo solicitante ou, de demanda autorizada, pela UGP/Super Admin | limite → alocação, rubrica a rubrica → `Demand` → `DemandRequest` (estado da reserva, `valor_autorizado` e `valor_pago`, em ordem de pk) |
 | Pré-autorização, devolução, início do atendimento | só a `Demand` |
-| Importação do Arlo, por linha | limite → alocação da solicitação paga → `Demand` (status relido) → `DemandRequest` |
-| Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todos os limites e depois todas as alocações; só então as `Demand`, em ordem de pk, e por fim as `DemandRequest`. Se uma demanda deixou de ser cancelável ou ganhou/perdeu solicitação, a transação volta e a task é repetida (até 3 vezes) |
+| Importação do Arlo, por linha | limite → alocação da solicitação paga → `Demand` (status relido) → `DemandRequest`. Cada linha numa transação própria: com o arquivo numa só, os locks de uma linha ficariam presos enquanto a seguinte trava o limite de outro solicitante |
+| Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todos os limites e depois todas as alocações; só então as `Demand`, em ordem de pk, e por fim as `DemandRequest`. Se uma demanda deixou de ser cancelável ou ganhou, perdeu ou trocou a rubrica de uma solicitação, a transação volta e a task é repetida (até 3 vezes) |
 | Edição da demanda; inclusão de solicitação | só a `Demand` |
 | Edição e remoção de solicitação | limite → alocação (se há reserva) → `Demand` → `DemandRequest`; a edição relê a reserva já com o limite travado |
 | Decisão de recurso extra | pedido → limite → alocações (territorial e origem) → `Demand` → todas as `DemandRequest` da demanda |

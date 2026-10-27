@@ -213,20 +213,24 @@ def _processar_linha(importacao, linha: dict, colunas: dict) -> dict | None:
     }
 
 
-def processar_importacao(importacao: ArloImport) -> ArloImport:
-    """Lê o arquivo de retorno de `importacao` e aplica linha a linha.
+def processar_importacao(importacao: ArloImport, *, transacao_da_linha=transaction.atomic) -> ArloImport:
+    """Lê o arquivo de retorno de `importacao` e aplica linha a linha, cada linha
+    numa transação aberta por `transacao_da_linha` (a task passa uma que define o
+    papel da sessão para o RLS). Quem chama não abre transação em volta: com o
+    arquivo inteiro numa só, uma linha seguraria alocação e `Demand` enquanto a
+    seguinte trava o limite de outro solicitante, fora da ordem de lock.
 
     Roda fora de um request, então abre o contexto de auditoria com o usuário e
     o IP de quem enviou o arquivo — é dele que as movimentações de saldo e as
     transições de status herdam usuário/IP (SGD RNF de rastreabilidade)."""
     set_audit_context(user=importacao.operado_por, ip=importacao.ip_origem, user_agent="arlo-import")
     try:
-        return _processar_importacao(importacao)
+        return _processar_importacao(importacao, transacao_da_linha)
     finally:
         clear_audit_context()
 
 
-def _processar_importacao(importacao: ArloImport) -> ArloImport:
+def _processar_importacao(importacao: ArloImport, transacao_da_linha) -> ArloImport:
     importacao.status = ArloImport.Status.PROCESSANDO
     importacao.save(update_fields=["status"])
 
@@ -253,7 +257,7 @@ def _processar_importacao(importacao: ArloImport) -> ArloImport:
             continue
         total += 1
         try:
-            with transaction.atomic():
+            with transacao_da_linha():
                 divergencia = _processar_linha(importacao, linha, colunas)
             ok += 1
             if divergencia:

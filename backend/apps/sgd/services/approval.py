@@ -150,7 +150,7 @@ def alerta_rubrica_fora_do_previsto(demand_request) -> bool:
 
 
 def exigir_pode_decidir_articulador(demand, responsavel) -> None:
-    """Segrega quem submete de quem decide (RF18/RF19): o Articulador não
+    """Segrega quem submete de quem decide: o Articulador não
     pode pré-autorizar/devolver a própria demanda nem uma de fora do estado
     em que atua — mesmo estando no queryset de visibilidade dele (que
     inclui as próprias demandas, para ele continuar vendo o que já decidiu)."""

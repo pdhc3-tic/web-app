@@ -164,13 +164,15 @@ def test_conclusao_pela_tela_depois_de_pagamento_parcial_pelo_arlo(com_duas_soli
     with pytest.raises(RegraDeNegocio):
         workflow_service.executar_transicao(
             com_duas_solicitacoes, "concluida", ator=usuario_fgd,
-            valores_pagos={paga_pelo_arlo.pk: Decimal("1000"), restante.pk: Decimal("500")},
+            valores_pagos={paga_pelo_arlo.pk: Decimal("900"), restante.pk: Decimal("500")},
         )
     with pytest.raises(RegraDeNegocio):
         workflow_service.executar_transicao(com_duas_solicitacoes, "concluida", ator=usuario_fgd, valores_pagos={})
 
+    # A tela manda o valor de todas as solicitações; o da já paga, igual ao registrado, é aceito.
     workflow_service.executar_transicao(
-        com_duas_solicitacoes, "concluida", ator=usuario_fgd, valores_pagos={restante.pk: Decimal("450")},
+        com_duas_solicitacoes, "concluida", ator=usuario_fgd,
+        valores_pagos={paga_pelo_arlo.pk: Decimal("1000.00"), restante.pk: Decimal("450")},
     )
 
     com_duas_solicitacoes.refresh_from_db()
@@ -192,3 +194,35 @@ def test_api_concluir_aceita_pago_acima_do_autorizado(auth_client_fgd, autorizad
     assert resposta.status_code == 200, resposta.data
     assert resposta.data["status"] == "concluida"
     assert GlosaRisk.objects.get().excedente == Decimal("200.00")
+
+
+def test_api_de_decisao_devolve_as_solicitacoes_ja_gravadas(auth_client_ugp, autorizada, usuario_ugp):
+    """A view lê a demanda com as solicitações pré-carregadas; a resposta mostra o
+    valor que a transição acabou de gravar."""
+    Demand.objects.filter(pk=autorizada.pk).update(status="pre_autorizada")
+    solicitacao = autorizada.solicitacoes.get()
+
+    resposta = auth_client_ugp.post(
+        f"/api/v1/sgd/demandas/{autorizada.pk}/autorizar/",
+        {"ajustes": {str(solicitacao.pk): "800.00"}}, format="json",
+    )
+
+    assert resposta.status_code == 200, resposta.data
+    assert resposta.data["valor_autorizado_total"] == "800.00"
+    assert resposta.data["solicitacoes"][0]["valor_autorizado"] == "800.00"
+
+
+@pytest.mark.parametrize("acao,campo,cliente", [
+    ("concluir", "valores_pagos", "auth_client_fgd"),
+    ("autorizar", "ajustes", "auth_client_ugp"),
+])
+def test_api_recusa_chave_que_nao_e_id_de_solicitacao(request, acao, campo, cliente, activity_rn):
+    status = {"concluir": "em_atendimento", "autorizar": "pre_autorizada"}[acao]
+    demand = DemandFactory(activity=activity_rn, status=status)
+
+    resposta = request.getfixturevalue(cliente).post(
+        f"/api/v1/sgd/demandas/{demand.pk}/{acao}/", {campo: {"abc": "10.00"}}, format="json",
+    )
+
+    assert resposta.status_code == 400
+    assert campo in resposta.data

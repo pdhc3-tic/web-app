@@ -23,6 +23,13 @@ class ApprovalStepSerializer(serializers.ModelSerializer):
         return obj.responsavel.nome if obj.responsavel_id else None
 
 
+def _por_id_de_solicitacao(valores: dict) -> dict:
+    try:
+        return {int(chave): valor for chave, valor in valores.items()}
+    except ValueError:
+        raise serializers.ValidationError("As chaves devem ser IDs de solicitação.")
+
+
 class DevolverSerializer(serializers.Serializer):
     justificativa = serializers.CharField()
 
@@ -37,7 +44,7 @@ class AutorizarSerializer(serializers.Serializer):
     justificativa = serializers.CharField(required=False, allow_blank=True, default="")
 
     def validate_ajustes(self, value):
-        return {int(k): v for k, v in value.items()}
+        return _por_id_de_solicitacao(value)
 
     def validate(self, data):
         if data.get("excedente_autorizado") and not data.get("justificativa"):
@@ -61,7 +68,7 @@ class ConcluirSerializer(serializers.Serializer):
     )
 
     def validate_valores_pagos(self, value):
-        return {int(k): v for k, v in value.items()}
+        return _por_id_de_solicitacao(value)
 
 
 class PreviewDecisaoSerializer(serializers.Serializer):

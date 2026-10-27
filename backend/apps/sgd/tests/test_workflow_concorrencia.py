@@ -4,6 +4,7 @@ status e as solicitações sob o lock."""
 from decimal import Decimal
 
 import pytest
+from django.db import connection
 
 from apps.sgd.exceptions import ErroDeDominio, TransicaoInvalida
 from apps.sgd.models import Demand, DemandIndividualLimit, DemandRequest
@@ -13,7 +14,9 @@ from apps.sgd.services.arlo_import import processar_importacao
 from apps.sgd.tests.concorrencia import intercalar
 
 # Fixtures e helpers compartilhados com a suíte de integração Arlo.
-from apps.sgd.tests.test_arlo_integration import _importar, _linha, storage_local  # noqa: F401
+from apps.sgd.tests.test_arlo_integration import (  # noqa: F401
+    _importar, _linha, _nova_demanda_autorizada, storage_local,
+)
 from apps.sgp.models import GlosaRisk
 
 
@@ -226,3 +229,81 @@ def test_edicoes_simultaneas_em_devolvida_deixam_reserva_e_saldo_iguais(
     solicitacao.refresh_from_db()
     assert solicitacao.valor_estimado == solicitacao.valor_reservado == Decimal("1000")
     assert _saldo(limite_individual_rn, allocation_territorial_rn) == (Decimal("1000"), 0, Decimal("1000"), 0)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_cancelamento_pela_task_recusado_quando_a_solicitacao_muda_de_rubrica(
+    demand_request_rn, solicitante_rn, activity_rn, rubrica_diarias, allocation_territorial_rn, limite_individual_rn,
+):
+    """A task leu a solicitação na rubrica r1 e espera o limite de r1. Nesse meio, ela
+    passa para r2 e a demanda é submetida, reservando em r2. A liberação, que trava o
+    limite pela rubrica lida, tiraria a reserva de r1; a conferência sob o lock da
+    Demand desfaz tudo."""
+    from apps.sgd.services import balance as balance_service
+    from apps.sgd.tests.factories import DemandFactory, DemandIndividualLimitFactory, DemandRequestFactory
+    from apps.sgp.tests.factories import BudgetAllocationFactory, BudgetRubricaFactory
+
+    outra_rubrica = BudgetRubricaFactory(slug="rubrica-troca-durante-o-cancelamento")
+    limite_r2 = DemandIndividualLimitFactory(solicitante=solicitante_rn, rubrica=outra_rubrica, valor_limite=5_000)
+    BudgetAllocationFactory(
+        meta=activity_rn.acao.meta, rubrica=outra_rubrica, territorio=activity_rn.municipio.territory,
+        valor_alocado=10_000,
+    )
+    # Outra reserva em r1, para a liberação indevida não esbarrar no comprometido negativo.
+    vizinha = DemandRequestFactory(
+        demanda=DemandFactory(activity=activity_rn, solicitante=solicitante_rn, status="submetida"),
+        rubrica=rubrica_diarias, valor_estimado=Decimal("1000"),
+    )
+    balance_service.reservar_duas_travas(demand_request=vizinha, usuario=solicitante_rn)
+    demand = demand_request_rn.demanda
+
+    def trocar_e_submeter(pausa):
+        DemandIndividualLimit.objects.select_for_update().get(pk=limite_individual_rn.pk)
+        pausa()
+        DemandRequest.objects.filter(pk=demand_request_rn.pk).update(rubrica=outra_rubrica)
+        demand_service.submeter_demanda(Demand.objects.get(pk=demand.pk), usuario=solicitante_rn)
+
+    _, erros = intercalar(
+        trocar_e_submeter,
+        lambda: workflow_service.cancelar_pelo_sistema(
+            [Demand.objects.get(pk=demand.pk)], motivo="Atividade cancelada.",
+        ),
+    )
+
+    assert set(erros) == {"espera"}
+    assert isinstance(erros["espera"], TransicaoInvalida)
+    demand.refresh_from_db()
+    assert demand.status == "submetida"
+    limite_individual_rn.refresh_from_db()
+    limite_r2.refresh_from_db()
+    assert (limite_individual_rn.valor_comprometido, limite_r2.valor_comprometido) == (Decimal("1000"), Decimal("1000"))
+
+
+@pytest.mark.django_db(transaction=True)
+def test_task_da_importacao_abre_uma_transacao_por_linha_com_o_papel_da_sessao(
+    monkeypatch, demand_request_rn, solicitante_rn, activity_rn, rubrica_diarias, usuario_fgd,
+    allocation_territorial_rn, limite_individual_rn,
+):
+    """Com o arquivo numa transação só, a linha anterior seguraria alocação e Demand
+    enquanto a seguinte trava o limite de outro solicitante, fora da ordem de lock."""
+    from apps.sgd import tasks as sgd_tasks
+    from apps.sgd.services import arlo_import
+    from apps.sgd.tests.test_arlo_integration import _autorizar
+
+    primeira = _autorizar(demand_request_rn, solicitante_rn)
+    segunda = _nova_demanda_autorizada(activity_rn, solicitante_rn, rubrica_diarias)
+    original = arlo_import._processar_linha
+    vistas = []
+
+    def espiar(*args, **kwargs):
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT current_setting('app.user_role', true)")
+            papel = cursor.fetchone()[0]
+        vistas.append((list(connection.savepoint_ids), papel))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(arlo_import, "_processar_linha", espiar)
+    importacao = _importar([_linha(primeira), _linha(segunda, valor="500,00", processo="PROC-2")], usuario_fgd)
+
+    assert sgd_tasks.process_arlo_import(importacao.pk) == 2
+    assert vistas == [([], "super-admin"), ([], "super-admin")]
