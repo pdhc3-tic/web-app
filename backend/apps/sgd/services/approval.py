@@ -3,76 +3,19 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied
-from django.db import transaction
 from django.db.models import Exists, OuterRef, Q
-from django.utils import timezone
 
 from apps.core.models.user import User
 from apps.core.services.permissions import user_has_role, user_role_slugs, user_states
-from apps.core.utils import formatar_brl
-from apps.sgd.exceptions import JustificativaObrigatoria, RegraDeNegocio, TransicaoInvalida
-from apps.sgd.models.demand import STATUS_CANCELAVEIS_PELO_SOLICITANTE, STATUS_TRANSITIONS
 from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.models.individual_limit import DemandIndividualLimit
-from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
 from apps.sgd.services import orcamento as orcamento_service
-from apps.sgp.services.apuracao import recalcular_valor_executado
-
-
-def validar_transicao(demand, novo_status: str) -> None:
-    permitidos = STATUS_TRANSITIONS.get(demand.status, set())
-    if novo_status not in permitidos:
-        raise TransicaoInvalida(
-            f"Transição inválida: '{demand.status}' → '{novo_status}'. "
-            f"Transições permitidas: {sorted(permitidos) if permitidos else ['nenhuma (estado terminal)']}"
-        )
-
-
-_CAMPOS_DE_STATUS = ["status", "status_alterado_em", "atualizado_em"]
-
-
-def _marcar_status(demand, novo_status: str) -> None:
-    demand.status = novo_status
-    demand.status_alterado_em = timezone.now()
-
-
-def transition(demand, novo_status: str) -> None:
-    validar_transicao(demand, novo_status)
-    _marcar_status(demand, novo_status)
-
-
-def aplicar_transicao(demand, novo_status: str, usuario=None) -> None:
-    status_anterior = demand.status
-    transition(demand, novo_status)
-    with transaction.atomic():
-        demand.save(update_fields=_CAMPOS_DE_STATUS)
-        auditoria_service.registrar_status(demand, de=status_anterior, para=novo_status, usuario=usuario)
-
-
-def marcar_cancelada(demand, usuario=None) -> None:
-    """Fora de `STATUS_TRANSITIONS` de propósito (ver `models.demand`) — quem
-    chama já decidiu se a demanda pode ser cancelada."""
-    status_anterior = demand.status
-    _marcar_status(demand, "cancelada")
-    with transaction.atomic():
-        demand.save(update_fields=_CAMPOS_DE_STATUS)
-        auditoria_service.registrar_status(demand, de=status_anterior, para="cancelada", usuario=usuario)
 
 
 # Perfis que desfazem uma autorização já dada; o solicitante cancela só até a pré-autorização.
 PERFIS_QUE_CANCELAM_AUTORIZADA = ("super-admin", "ugp")
-
-
-def pode_cancelar_autorizada(usuario) -> bool:
-    return bool(user_role_slugs(usuario, PERFIS_QUE_CANCELAM_AUTORIZADA))
-
-
-def pode_cancelar(demand, usuario) -> bool:
-    if demand.status == "autorizada":
-        return pode_cancelar_autorizada(usuario)
-    return demand.solicitante_id == usuario.pk and demand.status in STATUS_CANCELAVEIS_PELO_SOLICITANTE
 
 
 def demand_visibility_scope(user) -> Q | None:
@@ -206,7 +149,7 @@ def alerta_rubrica_fora_do_previsto(demand_request) -> bool:
     return not previstas.filter(pk=demand_request.rubrica_id).exists()
 
 
-def _exigir_pode_decidir_articulador(demand, responsavel) -> None:
+def exigir_pode_decidir_articulador(demand, responsavel) -> None:
     """Segrega quem submete de quem decide (RF18/RF19): o Articulador não
     pode pré-autorizar/devolver a própria demanda nem uma de fora do estado
     em que atua — mesmo estando no queryset de visibilidade dele (que
@@ -216,125 +159,3 @@ def _exigir_pode_decidir_articulador(demand, responsavel) -> None:
     estado_sigla = demand.activity.municipio.state.sigla
     if estado_sigla not in user_states(responsavel):
         raise PermissionDenied("Demanda fora do seu estado de atuação.")
-
-
-@transaction.atomic
-def pre_autorizar(demand, *, responsavel) -> object:
-    _exigir_pode_decidir_articulador(demand, responsavel)
-    aplicar_transicao(demand, "pre_autorizada", usuario=responsavel)
-    ApprovalStep.objects.create(
-        demanda=demand, etapa="pre_autorizacao", responsavel=responsavel, acao="aprovado",
-    )
-    notifications_service.notificar_pre_autorizacao(demand, notifications_service.usuarios_por_perfil("ugp"))
-    return demand
-
-
-@transaction.atomic
-def devolver(demand, *, responsavel, justificativa: str) -> object:
-    _exigir_pode_decidir_articulador(demand, responsavel)
-    if not justificativa:
-        raise JustificativaObrigatoria("Obrigatória para devolver a demanda.")
-    aplicar_transicao(demand, "devolvida", usuario=responsavel)
-    ApprovalStep.objects.create(
-        demanda=demand, etapa="pre_autorizacao", responsavel=responsavel,
-        acao="devolvido", justificativa=justificativa,
-    )
-    notifications_service.notificar_devolucao(demand)
-    return demand
-
-
-@transaction.atomic
-def autorizar(
-    demand, *, responsavel, ajustes: dict | None = None,
-    excedente_autorizado: bool = False, justificativa: str = "",
-) -> object:
-    """`ajustes`: {demand_request_id: novo_valor}."""
-    if excedente_autorizado and not justificativa:
-        raise JustificativaObrigatoria("Obrigatória para autorizar excedendo o limite individual.")
-
-    ajustes = ajustes or {}
-    solicitacoes_pks = set(demand.solicitacoes.values_list("pk", flat=True))
-    ids_desconhecidos = set(ajustes) - solicitacoes_pks
-    if ids_desconhecidos:
-        raise RegraDeNegocio(
-            f"Solicitação(ões) {sorted(ids_desconhecidos)} não pertence(m) a esta demanda.", campo="ajustes",
-        )
-
-    for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
-        novo_valor = ajustes.get(solicitacao.pk, solicitacao.valor_estimado)
-        if novo_valor != solicitacao.valor_reservado:
-            balance_service.ajustar_duas_travas(
-                demand_request=solicitacao, novo_valor=novo_valor, usuario=responsavel,
-                ignorar_limite_individual=excedente_autorizado,
-            )
-        solicitacao.valor_autorizado = novo_valor
-        solicitacao.save(update_fields=["valor_autorizado"])
-
-    aplicar_transicao(demand, "autorizada", usuario=responsavel)
-    ApprovalStep.objects.create(
-        demanda=demand, etapa="autorizacao", responsavel=responsavel,
-        acao="aprovado", excedente_autorizado=excedente_autorizado, justificativa=justificativa,
-    )
-    notifications_service.notificar_autorizacao(demand, notifications_service.usuarios_por_perfil("fgd"))
-    return demand
-
-
-@transaction.atomic
-def recusar(demand, *, responsavel, justificativa: str) -> object:
-    if not justificativa:
-        raise JustificativaObrigatoria("Obrigatória para recusar a demanda.")
-    solicitacoes = list(demand.solicitacoes.order_by("rubrica_id", "pk"))
-    for solicitacao in solicitacoes:
-        balance_service.liberar_duas_travas(
-            demand_request=solicitacao, usuario=responsavel, motivo="Demanda recusada pela UGP.",
-            adiar_gravacao=True,
-        )
-    aplicar_transicao(demand, "recusada", usuario=responsavel)
-    balance_service.gravar_estado_da_reserva(solicitacoes)
-    ApprovalStep.objects.create(
-        demanda=demand, etapa="autorizacao", responsavel=responsavel,
-        acao="recusado", justificativa=justificativa,
-    )
-    notifications_service.notificar_recusa(demand)
-    return demand
-
-
-@transaction.atomic
-def atender(demand, *, responsavel) -> object:
-    aplicar_transicao(demand, "em_atendimento", usuario=responsavel)
-    ApprovalStep.objects.create(
-        demanda=demand, etapa="atendimento", responsavel=responsavel, acao="atendido",
-    )
-    notifications_service.notificar_em_atendimento(demand)
-    return demand
-
-
-@transaction.atomic
-def concluir(demand, *, responsavel, valores_pagos: dict) -> object:
-    """`valores_pagos`: {demand_request_id: valor_pago}."""
-    for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
-        if solicitacao.pk not in valores_pagos:
-            raise RegraDeNegocio(
-                f"Valor pago obrigatório para a solicitação #{solicitacao.pk}.", campo="valores_pagos",
-            )
-        valor_pago = valores_pagos[solicitacao.pk]
-        valor_autorizado = solicitacao.valor_autorizado or solicitacao.valor_estimado
-        if valor_pago > valor_autorizado:
-            raise RegraDeNegocio(
-                f"Valor pago ({formatar_brl(valor_pago)}) não pode exceder o valor autorizado "
-                f"({formatar_brl(valor_autorizado)}) para a solicitação #{solicitacao.pk}.",
-                campo="valores_pagos",
-            )
-        balance_service.executar_duas_travas(
-            demand_request=solicitacao, valor_pago=valor_pago, usuario=responsavel,
-        )
-        solicitacao.valor_pago = valor_pago
-        solicitacao.save(update_fields=["valor_pago"])
-
-    aplicar_transicao(demand, "concluida", usuario=responsavel)
-    recalcular_valor_executado([demand.activity.acao_id])
-    ApprovalStep.objects.create(
-        demanda=demand, etapa="atendimento", responsavel=responsavel, acao="atendido",
-    )
-    notifications_service.notificar_conclusao(demand)
-    return demand

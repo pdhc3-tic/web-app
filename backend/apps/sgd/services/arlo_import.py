@@ -12,20 +12,15 @@ from urllib.parse import urlparse
 
 from django.db import transaction
 
-from apps.core.models.audit_log import AuditLog
-from apps.core.signals.audit import clear_audit_context, get_audit_context, set_audit_context
+from apps.core.signals.audit import clear_audit_context, set_audit_context
 from apps.core.storage import StorageObjectNotFound, get_storage
 from apps.sgd.exceptions import ErroDeDominio, TransicaoInvalida
-from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.models.arlo_import import ArloImport
 from apps.sgd.models.demand import Demand
 from apps.sgd.models.demand_document import DemandDocument
 from apps.sgd.services import balance as balance_service
-from apps.sgd.services import notifications as notifications_service
-from apps.sgd.services.approval import aplicar_transicao
+from apps.sgd.services import workflow as workflow_service
 from apps.sgd.services.arlo_mapping import CAMPOS_IMPORTACAO_OBRIGATORIOS, obter_mapeamento
-from apps.sgp.models import GlosaRisk
-from apps.sgp.services.apuracao import recalcular_valor_executado
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +119,14 @@ def _validar_comprovante(bruto) -> str:
     return str(bruto)
 
 
+def _exigir_pagavel(demand) -> None:
+    if demand.status not in STATUS_PAGAVEIS:
+        raise LinhaInvalida(
+            f"Demanda #{demand.pk} está '{demand.status}' — só autorizadas/em atendimento recebem pagamento.",
+            "demanda_id",
+        )
+
+
 def _localizar_solicitacao(demand, bruto_solicitacao):
     solicitacoes = list(demand.solicitacoes.select_related("rubrica").order_by("rubrica_id", "pk"))
     if bruto_solicitacao != "":
@@ -153,41 +156,35 @@ def _processar_linha(importacao, linha: dict, colunas: dict) -> dict | None:
     comprovante = _validar_comprovante(_valor(linha, colunas, "comprovante"))
     numero_processo = str(_valor(linha, colunas, "numero_processo"))[:64]
 
-    try:
-        demand = Demand.objects.select_for_update().select_related("activity").get(pk=demanda_id)
-    except Demand.DoesNotExist:
+    demand = Demand.objects.select_related("activity").filter(pk=demanda_id).first()
+    if demand is None:
         raise LinhaInvalida(f"Demanda #{demanda_id} inexistente.", "demanda_id")
-    if demand.status not in STATUS_PAGAVEIS:
-        raise LinhaInvalida(
-            f"Demanda #{demanda_id} está '{demand.status}' — só autorizadas/em atendimento recebem pagamento.",
-            "demanda_id",
-        )
+    _exigir_pagavel(demand)
 
-    solicitacao, solicitacoes = _localizar_solicitacao(demand, _valor(linha, colunas, "solicitacao_id"))
+    solicitacao, _ = _localizar_solicitacao(demand, _valor(linha, colunas, "solicitacao_id"))
     if solicitacao.valor_pago is not None:
         raise LinhaInvalida(f"Solicitação #{solicitacao.pk} já tem pagamento registrado.", "solicitacao_id")
 
     usuario = importacao.operado_por
     reservado = solicitacao.valor_autorizado or solicitacao.valor_estimado
-    # O excedente pago acima do autorizado não é executado nos limites: fica só
-    # no relatório de risco de glosa. Abaixo do autorizado, executar_duas_travas
-    # devolve a diferença ao limite individual e ao pool territorial.
+    # O saldo antes da Demand, na ordem de lock de backend/docs/orcamento.md.
     try:
-        balance_service.executar_duas_travas(
-            demand_request=solicitacao, valor_pago=min(valor_pago, reservado), usuario=usuario,
+        workflow_service.registrar_pagamento(
+            solicitacao, valor_pago=valor_pago, origem=workflow_service.ORIGEM_ARLO, usuario=usuario,
+            importacao=importacao, numero_processo=numero_processo, data_pagamento=data_pagamento.isoformat(),
         )
     except ErroDeDominio as exc:
         raise LinhaInvalida(f"Falha ao executar no orçamento: {exc.mensagem}")
-
-    if valor_pago > reservado:
-        GlosaRisk.objects.create(
-            demanda_id=str(demand.pk), demand_request_id=str(solicitacao.pk),
-            arlo_import_id=str(importacao.pk), valor_autorizado=reservado, valor_pago=valor_pago,
-            excedente=valor_pago - reservado, criado_por=usuario,
+    # Relido sob o lock: outra importação pode ter iniciado o atendimento, ou a
+    # demanda pode ter sido cancelada ou concluída, enquanto o saldo era executado.
+    demand.status = Demand.objects.select_for_update().values_list("status", flat=True).get(pk=demand.pk)
+    _exigir_pagavel(demand)
+    if demand.status == "autorizada":
+        workflow_service.executar_transicao(
+            demand, "em_atendimento", ator=usuario, origem=workflow_service.ORIGEM_ARLO,
         )
 
-    solicitacao.valor_pago = valor_pago
-    solicitacao.save(update_fields=["valor_pago"])
+    balance_service.gravar_estado_da_reserva([solicitacao], outros_campos=("valor_pago",))
     demand.numero_processo = numero_processo
     demand.save(update_fields=["numero_processo"])
 
@@ -198,29 +195,14 @@ def _processar_linha(importacao, linha: dict, colunas: dict) -> dict | None:
             enviado_por=usuario,
         )
 
-    AuditLog.objects.create(
-        user=usuario, acao="arlo_pagamento", modulo="sgd", entidade="DemandRequest",
-        entidade_id=str(solicitacao.pk), ip=get_audit_context()["ip"],
-        valores_novos={
-            "arlo_import_id": importacao.pk, "numero_processo": numero_processo,
-            "data_pagamento": data_pagamento.isoformat(), "valor_pago": str(valor_pago),
-            "valor_autorizado": str(reservado),
-        },
-    )
-
-    if demand.status == "autorizada":
-        # Mesmo efeito de `approval.atender` (SGD §5.2: solicitante notificado in-app).
-        aplicar_transicao(demand, "em_atendimento")
-        ApprovalStep.objects.create(demanda=demand, etapa="atendimento", responsavel=usuario, acao="atendido")
-        notifications_service.notificar_em_atendimento(demand)
-    if all(s.valor_pago is not None for s in solicitacoes if s.pk != solicitacao.pk):
-        aplicar_transicao(demand, "concluida")
-        recalcular_valor_executado([demand.activity.acao_id])
-        ApprovalStep.objects.create(
-            demanda=demand, etapa="atendimento", responsavel=usuario, acao="atendido",
-            justificativa=f"Pagamento em {data_pagamento:%d/%m/%Y} — processo {numero_processo} (importação Arlo #{importacao.pk}).",
+    if not demand.solicitacoes.filter(valor_pago__isnull=True).exists():
+        workflow_service.executar_transicao(
+            demand, "concluida", ator=usuario, origem=workflow_service.ORIGEM_ARLO,
+            justificativa=(
+                f"Pagamento em {data_pagamento:%d/%m/%Y} — processo {numero_processo} "
+                f"(importação Arlo #{importacao.pk})."
+            ),
         )
-        notifications_service.notificar_conclusao(demand)
 
     if valor_pago == reservado:
         return None

@@ -1,19 +1,14 @@
 from __future__ import annotations
 
-from decimal import Decimal
-
-from django.core.exceptions import PermissionDenied
 from django.db import transaction
 
-from apps.sgd.exceptions import JustificativaObrigatoria, RegraDeNegocio, SaldoInsuficiente, TransicaoInvalida
-from apps.sgd.models.approval_step import ApprovalStep
+from apps.sgd.exceptions import JustificativaObrigatoria, RegraDeNegocio
 from apps.sgd.models.demand import STATUS_EDITAVEIS, Demand
 from apps.sgd.models.demand_document import DemandDocument
 from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import balance as balance_service
-from apps.sgd.services import notifications as notifications_service
-from apps.sgd.services.approval import aplicar_transicao, marcar_cancelada, pode_cancelar, pode_cancelar_autorizada
+from apps.sgd.services import workflow as workflow_service
 from apps.sgd.services.demand_request import rubrica_para_tipo, validar_campos_json
 from apps.sgp.models import Activity
 
@@ -63,9 +58,19 @@ def _exigir_editavel(demand) -> None:
         )
 
 
+def _travar_editavel(demand) -> None:
+    """Trava a `Demand` e confere o status na linha travada: quem segurava o lock
+    pode ter submetido ou cancelado a demanda. Vem depois do saldo e antes de gravar
+    a solicitação, na ordem de lock de `backend/docs/orcamento.md`; a submissão,
+    que reservou o saldo antes, confere sob o mesmo lock que as solicitações não
+    mudaram."""
+    demand.status = Demand.objects.select_for_update().values_list("status", flat=True).get(pk=demand.pk)
+    _exigir_editavel(demand)
+
+
 @transaction.atomic
 def atualizar_demanda(demand, *, titulo=None, justificativa=None) -> Demand:
-    _exigir_editavel(demand)
+    _travar_editavel(demand)
     campos_alterados = ["atualizado_em"]
     if titulo is not None:
         demand.titulo = titulo
@@ -81,10 +86,8 @@ def atualizar_demanda(demand, *, titulo=None, justificativa=None) -> Demand:
 def adicionar_solicitacao(demand, *, tipo, campos_json, valor_estimado=None, ordem=0):
     # A decisão do recurso extra trava a Demand para recalcular o déficit sobre as
     # solicitações; a inclusão disputa o mesmo lock. A FK não basta: no Postgres ela é
-    # DEFERRABLE INITIALLY DEFERRED e só é conferida no commit. O status vem da linha
-    # travada: quem segurava o lock pode ter submetido ou cancelado a demanda.
-    demand.status = Demand.objects.select_for_update().values_list("status", flat=True).get(pk=demand.pk)
-    _exigir_editavel(demand)
+    # DEFERRABLE INITIALLY DEFERRED e só é conferida no commit.
+    _travar_editavel(demand)
 
     validado = validar_campos_json(tipo, campos_json, demand.activity)
     rubrica = rubrica_para_tipo(tipo)
@@ -133,7 +136,10 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
             campo="tipo",
         )
     if tem_reserva and valor_final != solicitacao.valor_reservado:
-        balance_service.ajustar_duas_travas(demand_request=solicitacao, novo_valor=valor_final, usuario=usuario)
+        balance_service.ajustar_duas_travas(
+            demand_request=solicitacao, novo_valor=valor_final, usuario=usuario, adiar_gravacao=True,
+        )
+    _travar_editavel(demand)
 
     solicitacao.tipo = tipo_final
     solicitacao.rubrica = rubrica
@@ -141,7 +147,7 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
     solicitacao.beneficiario_cpf = validado.beneficiario_cpf
     solicitacao.valor_estimado = valor_final
     solicitacao.save(update_fields=[
-        "tipo", "rubrica", "campos_json", "beneficiario_cpf", "valor_estimado", "atualizado_em",
+        "tipo", "rubrica", "campos_json", "beneficiario_cpf", "valor_estimado", "valor_reservado", "atualizado_em",
     ])
     return solicitacao
 
@@ -153,8 +159,9 @@ def remover_solicitacao(solicitacao, *, usuario) -> None:
     if solicitacao.reserva_ativa:
         balance_service.liberar_duas_travas(
             demand_request=solicitacao, usuario=usuario,
-            motivo="Solicitação removida durante edição da demanda.",
+            motivo="Solicitação removida durante edição da demanda.", adiar_gravacao=True,
         )
+    _travar_editavel(solicitacao.demanda)
     solicitacao.delete()
 
 
@@ -173,83 +180,10 @@ def _exigir_minimo_cotacoes_equipamento(demand) -> None:
         raise RegraDeNegocio("As cotações precisam ser de fornecedores distintos.", campo="documentos")
 
 
-@transaction.atomic
 def submeter_demanda(demand, *, usuario) -> Demand:
-    # Tudo-ou-nada: verifica as duas travas de todas as solicitações antes
-    # de reservar qualquer uma.
     _exigir_minimo_cotacoes_equipamento(demand)
-
-    # Ordenadas por rubrica: solicitações de demandas concorrentes sempre
-    # travam BudgetAllocation na mesma ordem, evitando deadlock.
-    solicitacoes = list(demand.solicitacoes.select_related("rubrica").order_by("rubrica_id", "pk").all())
-    if not solicitacoes:
-        raise RegraDeNegocio("A demanda precisa ter ao menos uma solicitação de recurso.", campo="solicitacoes")
-
-    bloqueios = {}
-    # Solicitações da mesma rubrica disputam o mesmo limite e a mesma
-    # alocação: cada uma é conferida contra o saldo que sobra depois das
-    # anteriores que passaram. As barradas não consomem — senão uma menor,
-    # que ainda cabe, seria barrada por causa de uma maior que não coube.
-    consumo_por_rubrica: dict[int, Decimal] = {}
-    for solicitacao in solicitacoes:
-        # Com reserva já ativa (ex.: ressubmissão de Devolvida sem edição
-        # nessa solicitação específica), o saldo já desconta essa reserva —
-        # checar o valor cheio de novo bloquearia à toa.
-        if solicitacao.reserva_ativa:
-            continue
-        consumo_previo = consumo_por_rubrica.get(solicitacao.rubrica_id, balance_service.ZERO)
-        check = balance_service.verificar_duas_travas(
-            solicitante=demand.solicitante, rubrica=solicitacao.rubrica, valor=solicitacao.valor_estimado,
-            demand_request=solicitacao, consumo_previo=consumo_previo,
-        )
-        if not check.disponivel:
-            bloqueios[solicitacao.pk] = check.bloqueio(solicitacao_id=solicitacao.pk)
-        else:
-            consumo_por_rubrica[solicitacao.rubrica_id] = consumo_previo + solicitacao.valor_estimado
-    if bloqueios:
-        raise SaldoInsuficiente.para_submissao(bloqueios)
-
-    for solicitacao in solicitacoes:
-        balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=usuario, adiar_gravacao=True)
-
-    aplicar_transicao(demand, "submetida", usuario=usuario)
-    balance_service.gravar_estado_da_reserva(solicitacoes)
-
-    sigla = demand.activity.municipio.state.sigla
-    notifications_service.notificar_submissao(demand, notifications_service.usuarios_articuladores_do_estado(sigla))
-    return demand
+    return workflow_service.executar_transicao(demand, "submetida", ator=usuario)
 
 
-@transaction.atomic
 def cancelar_demanda(demand, *, usuario, motivo: str = "") -> Demand:
-    estava_autorizada = demand.status == "autorizada"
-    if estava_autorizada:
-        if not pode_cancelar_autorizada(usuario):
-            raise PermissionDenied("Seu perfil não pode cancelar uma demanda autorizada.")
-        if not motivo.strip():
-            raise JustificativaObrigatoria("Obrigatória para cancelar uma demanda autorizada.")
-    elif not pode_cancelar(demand, usuario):
-        raise TransicaoInvalida("Você não pode cancelar esta demanda neste status.")
-
-    solicitacoes = list(demand.solicitacoes.order_by("rubrica_id", "pk"))
-    for solicitacao in solicitacoes:
-        balance_service.liberar_duas_travas(
-            demand_request=solicitacao, usuario=usuario,
-            motivo=motivo or "Cancelada pelo solicitante.", adiar_gravacao=True,
-        )
-
-    # Dois cancelamentos simultâneos passam pela checagem acima com o mesmo status;
-    # só o primeiro o encontra ao travar a linha. O lock vem depois das reservas,
-    # na ordem da submissão (limite → alocação → Demand).
-    status_atual = Demand.objects.select_for_update().values_list("status", flat=True).get(pk=demand.pk)
-    if status_atual != demand.status:
-        raise TransicaoInvalida("A demanda mudou de status durante o cancelamento. Recarregue e tente de novo.")
-
-    marcar_cancelada(demand, usuario=usuario)
-    balance_service.gravar_estado_da_reserva(solicitacoes)
-    if estava_autorizada:
-        ApprovalStep.objects.create(
-            demanda=demand, etapa="cancelamento", responsavel=usuario,
-            acao="cancelado", justificativa=motivo,
-        )
-    return demand
+    return workflow_service.executar_transicao(demand, "cancelada", ator=usuario, justificativa=motivo)

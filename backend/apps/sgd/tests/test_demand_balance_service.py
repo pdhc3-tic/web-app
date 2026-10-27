@@ -8,9 +8,9 @@ from django.test.utils import CaptureQueriesContext
 from apps.sgd.exceptions import ErroDeDominio, RegraDeNegocio, SaldoInsuficiente
 from apps.sgd.models import DemandIndividualLimit, DemandRequest
 from apps.sgd.models.demand_request import RESERVA_ATIVA
-from apps.sgd.services import approval as approval_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
+from apps.sgd.services import workflow as workflow_service
 from apps.sgd.services import orcamento as orcamento_service
 from apps.sgd.tests.factories import DemandFactory, DemandIndividualLimitFactory, DemandRequestFactory
 
@@ -604,7 +604,9 @@ def test_editar_valor_em_devolvida_ajusta_reserva_ativa(
     try:
         demand = demand_request_rn.demanda
         demand_service.submeter_demanda(demand, usuario=solicitante_rn)
-        approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Ajustar valor.")
+        workflow_service.executar_transicao(
+            demand, "devolvida", ator=usuario_articulador_rn, justificativa="Ajustar valor.",
+        )
 
         campos = _campos_diaria_com_dias(municipio=municipio_rn, dias_a_mais=4)
         demand_service.atualizar_solicitacao(demand_request_rn, usuario=solicitante_rn, campos_json=campos)
@@ -635,7 +637,9 @@ def test_resubmissao_apos_edicao_nao_bloqueia_a_toa(
     try:
         demand = demand_request_rn.demanda
         demand_service.submeter_demanda(demand, usuario=solicitante_rn)
-        approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Ajustar valor.")
+        workflow_service.executar_transicao(
+            demand, "devolvida", ator=usuario_articulador_rn, justificativa="Ajustar valor.",
+        )
 
         # Edita pro valor EXATO do limite — sem folga nenhuma pra "pedir de
         # novo". Se a ressubmissão checasse o valor cheio de novo (em vez de
@@ -662,7 +666,7 @@ def test_remover_solicitacao_com_reserva_ativa_libera_saldo(
 ):
     demand = demand_request_rn.demanda
     demand_service.submeter_demanda(demand, usuario=solicitante_rn)
-    approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Remover item.")
+    workflow_service.executar_transicao(demand, "devolvida", ator=usuario_articulador_rn, justificativa="Remover item.")
 
     demand_service.remover_solicitacao(demand_request_rn, usuario=solicitante_rn)
 
@@ -684,7 +688,7 @@ def test_trocar_tipo_com_reserva_ativa_bloqueado(
 
     demand = demand_request_rn.demanda
     demand_service.submeter_demanda(demand, usuario=solicitante_rn)
-    approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Tipo errado.")
+    workflow_service.executar_transicao(demand, "devolvida", ator=usuario_articulador_rn, justificativa="Tipo errado.")
 
     with pytest.raises(ErroDeDominio):
         demand_service.atualizar_solicitacao(
@@ -799,7 +803,9 @@ def test_ciclo_da_reserva_mantem_o_comprometido_igual_as_reservas_ativas(
     assert (demand_request_rn.valor_reservado, demand_request_rn.reserva_ativa) == (Decimal("1000"), True)
     _confere_comprometido(limite_individual_rn)
 
-    approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Ajustar valor.")
+    workflow_service.executar_transicao(
+        demand, "devolvida", ator=usuario_articulador_rn, justificativa="Ajustar valor.",
+    )
     _confere_comprometido(limite_individual_rn)
 
     campos = _campos_diaria_com_dias(municipio=municipio_rn, dias_a_mais=dias)
@@ -961,6 +967,48 @@ def test_cancelamento_grava_o_estado_da_reserva_depois_do_saldo_e_da_demand(dema
         assert limite.valor_comprometido == Decimal("0")
 
 
+def test_autorizacao_grava_as_solicitacoes_depois_do_saldo_e_da_demand(
+    demanda_com_duas_rubricas, solicitante_rn, usuario_ugp,
+):
+    """Ajustar e gravar uma rubrica antes de travar o limite da seguinte deixaria a
+    solicitação travada fora da ordem de lock."""
+    demand_service.submeter_demanda(demanda_com_duas_rubricas, usuario=solicitante_rn)
+    demanda_com_duas_rubricas.status = "pre_autorizada"
+    demanda_com_duas_rubricas.save(update_fields=["status"])
+    ajustes = {s.pk: s.valor_estimado - Decimal("50") for s in demanda_com_duas_rubricas.solicitacoes.all()}
+
+    with CaptureQueriesContext(connection) as consultas:
+        workflow_service.executar_transicao(
+            demanda_com_duas_rubricas, "autorizada", ator=usuario_ugp, ajustes=ajustes,
+        )
+
+    travas_de_saldo, demanda, gravacoes_da_reserva = _ordem(consultas)
+    assert len(gravacoes_da_reserva) == 2
+    assert max(travas_de_saldo) < min(demanda) < min(gravacoes_da_reserva)
+    assert dict(demanda_com_duas_rubricas.solicitacoes.values_list("pk", "valor_autorizado")) == ajustes
+    assert dict(demanda_com_duas_rubricas.solicitacoes.values_list("pk", "valor_reservado")) == ajustes
+
+
+def test_conclusao_grava_as_solicitacoes_depois_do_saldo_e_da_demand(
+    demanda_com_duas_rubricas, solicitante_rn, usuario_fgd,
+):
+    demand_service.submeter_demanda(demanda_com_duas_rubricas, usuario=solicitante_rn)
+    demanda_com_duas_rubricas.status = "em_atendimento"
+    demanda_com_duas_rubricas.save(update_fields=["status"])
+    pagos = {s.pk: s.valor_estimado for s in demanda_com_duas_rubricas.solicitacoes.all()}
+
+    with CaptureQueriesContext(connection) as consultas:
+        workflow_service.executar_transicao(
+            demanda_com_duas_rubricas, "concluida", ator=usuario_fgd, valores_pagos=pagos,
+        )
+
+    travas_de_saldo, demanda, gravacoes_da_reserva = _ordem(consultas)
+    assert len(gravacoes_da_reserva) == 2
+    assert max(travas_de_saldo) < min(demanda) < min(gravacoes_da_reserva)
+    assert dict(demanda_com_duas_rubricas.solicitacoes.values_list("pk", "valor_pago")) == pagos
+    assert dict(demanda_com_duas_rubricas.solicitacoes.values_list("pk", "valor_executado")) == pagos
+
+
 def test_recusa_libera_e_grava_o_estado_da_reserva(
     demand_request_rn, solicitante_rn, usuario_ugp, allocation_territorial_rn, limite_individual_rn,
 ):
@@ -969,7 +1017,7 @@ def test_recusa_libera_e_grava_o_estado_da_reserva(
     demand.status = "pre_autorizada"
     demand.save(update_fields=["status"])
 
-    approval_service.recusar(demand, responsavel=usuario_ugp, justificativa="Sem prioridade.")
+    workflow_service.executar_transicao(demand, "recusada", ator=usuario_ugp, justificativa="Sem prioridade.")
 
     demand_request_rn.refresh_from_db()
     assert demand_request_rn.valor_reservado == Decimal("0")

@@ -380,8 +380,7 @@ def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = N
         limite = _travar_limite(pedido, usuario)
         demanda = _demanda_do_pedido(pedido)
         if demanda is not None:
-            # Fora de Rascunho/Devolvida, o Arlo e a autorização travam a Demand ou a
-            # solicitação antes do limite: checar antes de travar evita o deadlock.
+            # Falha antes de travar as alocações; a checagem que vale é a de baixo, sob o lock.
             _exigir_demanda_editavel(demanda)
         destino, origem = _travar_alocacoes(pedido, origem_allocation)
         if demanda is None:

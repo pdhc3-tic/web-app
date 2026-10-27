@@ -302,8 +302,8 @@ def test_arquivo_ausente_no_storage_falha_com_mensagem_legivel(usuario_fgd):
 def test_movimentacoes_da_importacao_herdam_usuario_e_ip_do_envio(demanda_autorizada, usuario_fgd):
     processar_importacao(_importar([_linha(demanda_autorizada, valor="800,00")], usuario_fgd, ip="203.0.113.7"))
 
-    logs = AuditLog.objects.filter(acao__in=["execucao", "arlo_pagamento"], entidade_id=str(demanda_autorizada.pk))
-    assert {log.acao for log in logs} == {"execucao", "arlo_pagamento"}
+    logs = AuditLog.objects.filter(acao__in=["execucao", "pagamento"], entidade_id=str(demanda_autorizada.pk))
+    assert {log.acao for log in logs} == {"execucao", "pagamento"}
     assert all(log.ip == "203.0.113.7" and log.user == usuario_fgd for log in logs)
     assert get_audit_context()["ip"] is None  # contexto não vaza para a thread
 

@@ -253,16 +253,18 @@ def _mover_reserva(demand_request, *, adiar: bool, **campos) -> None:
         gravar_estado_da_reserva([demand_request])
 
 
-def gravar_estado_da_reserva(solicitacoes) -> None:
-    """Grava o estado da reserva já aplicado em memória. A solicitação é a última
-    da ordem de lock (`backend/docs/orcamento.md`): quem move o saldo de várias
-    solicitações e depois trava a `Demand` passa `adiar_gravacao=True` e chama
-    isto no fim. Gravar cada uma logo depois do seu pool deixaria a linha travada
-    antes do limite da rubrica seguinte e da `Demand`, e a decisão de recurso
-    extra, que trava `Demand` e depois as solicitações, fecharia um ciclo."""
+def gravar_estado_da_reserva(solicitacoes, *, outros_campos=()) -> None:
+    """Grava o estado da reserva já aplicado em memória, mais `outros_campos`. A
+    solicitação é a última da ordem de lock (`backend/docs/orcamento.md`): quem
+    move o saldo de várias solicitações e depois trava a `Demand` passa
+    `adiar_gravacao=True` e chama isto no fim. Gravar cada uma logo depois do seu
+    pool deixaria a linha travada antes do limite da rubrica seguinte e da
+    `Demand`, e a decisão de recurso extra, que trava `Demand` e depois as
+    solicitações, fecharia um ciclo."""
+    campos = ("valor_reservado", "valor_executado", *outros_campos)
     for solicitacao in sorted(solicitacoes, key=lambda s: s.pk):
         DemandRequest.objects.filter(pk=solicitacao.pk).update(
-            valor_reservado=solicitacao.valor_reservado, valor_executado=solicitacao.valor_executado,
+            **{campo: getattr(solicitacao, campo) for campo in campos},
         )
 
 
@@ -331,6 +333,7 @@ def reservar_duas_travas(*, demand_request, usuario, adiar_gravacao: bool = Fals
 @transaction.atomic
 def ajustar_duas_travas(
     *, demand_request, novo_valor: Decimal, usuario, ignorar_limite_individual: bool = False,
+    adiar_gravacao: bool = False,
 ) -> None:
     """`ignorar_limite_individual=True` autoriza um excedente pontual (RF16) sem
     alterar `valor_limite` — usada só pelo fluxo de remanejamento emergencial da UGP.
@@ -381,7 +384,7 @@ def ajustar_duas_travas(
     )
     _notificar_pool_se_piorou(movimento, demand=demand_request.demanda, rubrica_nome=rubrica.nome)
     if diferenca != ZERO:
-        _mover_reserva(demand_request, adiar=False, valor_reservado=novo_valor)
+        _mover_reserva(demand_request, adiar=adiar_gravacao, valor_reservado=novo_valor)
 
 
 @transaction.atomic
@@ -439,7 +442,8 @@ def _travar_em_ordem_de_pk(queryset) -> None:
 
 
 @transaction.atomic
-def executar_duas_travas(*, demand_request, valor_pago: Decimal, usuario) -> None:
+def executar_duas_travas(*, demand_request, valor_pago: Decimal, usuario, adiar_gravacao: bool = False) -> bool:
+    """Devolve False quando a reserva já tinha sido executada: o saldo não muda."""
     rubrica = demand_request.rubrica
     solicitante = demand_request.demanda.solicitante
     entidade_id = str(demand_request.pk)
@@ -463,7 +467,8 @@ def executar_duas_travas(*, demand_request, valor_pago: Decimal, usuario) -> Non
         solicitante=solicitante, rubrica=rubrica, valor=valor_pago, demand_request=demand_request, usuario=usuario,
     )
     if executou:
-        _mover_reserva(demand_request, adiar=False, valor_executado=valor_pago)
+        _mover_reserva(demand_request, adiar=adiar_gravacao, valor_executado=valor_pago)
+    return executou
 
 
 @transaction.atomic

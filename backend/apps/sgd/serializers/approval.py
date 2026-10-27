@@ -54,7 +54,10 @@ class RecusarSerializer(serializers.Serializer):
 class ConcluirSerializer(serializers.Serializer):
     valores_pagos = serializers.DictField(
         child=serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0),
-        help_text="{demand_request_id: valor_pago}",
+        help_text=(
+            "{demand_request_id: valor_pago} das solicitações ainda sem pagamento. Acima do "
+            "autorizado, executa o autorizado e registra o excedente como risco de glosa."
+        ),
     )
 
     def validate_valores_pagos(self, value):

@@ -61,19 +61,21 @@ Toda transação que trava mais de uma destas linhas segue esta ordem, para que 
 3. `Demand`.
 4. `DemandRequest`.
 
+Todas as transições de status passam por `apps.sgd.services.workflow.executar_transicao`: primeiro o efeito no saldo, depois a `Demand` travada com o status relido (e as solicitações conferidas, quando o saldo partiu delas) e, por último, a gravação das `DemandRequest`. Se a demanda mudou nesse meio, a transição é recusada com `INVALID_TRANSITION`.
+
 | Caminho | O que trava |
 |---|---|
-| Submissão; recusa; cancelamento pelo solicitante ou, de demanda autorizada, pela UGP/Super Admin | limite → alocação, rubrica a rubrica → `Demand` → estado da reserva nas `DemandRequest` (`gravar_estado_da_reserva`, em ordem de pk) |
-| Edição e remoção de solicitação com reserva | limite → alocação → `DemandRequest` |
-| Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todos os limites e depois todas as alocações; só então as `Demand` e, por fim, o estado da reserva nas `DemandRequest` |
+| Submissão; autorização; recusa; conclusão pela FGD; cancelamento pelo solicitante ou, de demanda autorizada, pela UGP/Super Admin | limite → alocação, rubrica a rubrica → `Demand` → `DemandRequest` (estado da reserva, `valor_autorizado` e `valor_pago`, em ordem de pk) |
+| Pré-autorização, devolução, início do atendimento | só a `Demand` |
+| Importação do Arlo, por linha | limite → alocação da solicitação paga → `Demand` (status relido) → `DemandRequest` |
+| Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todos os limites e depois todas as alocações; só então as `Demand`, em ordem de pk, e por fim as `DemandRequest`. Se uma demanda mudou de status, a transação volta e a task é repetida |
+| Edição da demanda; inclusão de solicitação | só a `Demand` |
+| Edição e remoção de solicitação | limite → alocação (se há reserva) → `Demand` → `DemandRequest` |
 | Decisão de recurso extra | pedido → limite → alocações (territorial e origem) → `Demand` → todas as `DemandRequest` da demanda |
 | Parecer, devolução, submissão e edição do pedido | só o pedido |
 | Criação do pedido | a `Demand`, e depois o pedido novo, que nenhuma outra transação enxerga antes do commit |
-| Inclusão de solicitação | só a `Demand` |
 | Edição do limite individual (`PATCH /sgd/limites-individuais/{id}/` ou Django Admin); exclusão pelo Django Admin, só sem saldo | só o limite |
 | `remanejar`, `atualizar_valor_alocado` | alocações em ordem crescente de pk |
-
-Exceções, só em demandas fora de Rascunho/Devolvida: a importação do Arlo trava a `Demand` antes do limite, e `autorizar`/`concluir` gravam a solicitação de uma rubrica antes de travar o limite da seguinte. A decisão de recurso extra confere que a demanda está editável antes de travá-la, então nunca disputa essas linhas com elas. Entre si, e com o cancelamento (automático ou pela UGP/Super Admin) de uma demanda autorizada, essas exceções ainda podem formar ciclo: o Postgres derruba uma das transações, que precisa ser repetida.
 
 ### Reconciliação
 
