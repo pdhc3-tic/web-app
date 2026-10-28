@@ -184,8 +184,11 @@ export function MapeamentoDialog({
     try {
       await deleteArloMapping(linha.id);
       showToast("Coluna removida.", "success");
+      setConfirmarRemover(false);
       onSalvo();
     } catch (e) {
+      // O erro aparece no painel de edição, que fica coberto pela confirmação.
+      setConfirmarRemover(false);
       setGlobalError(
         e instanceof ApiError
           ? mensagemErroArloMapping(e)
@@ -239,6 +242,7 @@ export function MapeamentoDialog({
 
         <div className="flex flex-col gap-4 p-4">
           <Select
+            id="arlo-campo"
             label="Campo do SGD"
             required
             options={camposDisponiveis}
@@ -259,6 +263,7 @@ export function MapeamentoDialog({
           )}
 
           <Input
+            id="arlo-coluna"
             label="Coluna no Arlo"
             required
             value={form.coluna_arlo}
@@ -270,6 +275,7 @@ export function MapeamentoDialog({
           />
 
           <Select
+            id="arlo-formato"
             label="Formato"
             required
             options={formatosDoCampo}

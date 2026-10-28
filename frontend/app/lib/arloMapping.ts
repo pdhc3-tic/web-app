@@ -1,23 +1,11 @@
-import { apiClient, ApiError } from "@/app/lib/api";
+import { apiClient, type ApiError } from "@/app/lib/api";
 
 /**
- * Configuração do mapeamento Arlo ↔ SGD (#320, SGD-FE-9).
- *
- * O CRUD do `ArloFieldMappingViewSet` (BE-9) está em
- * `/api/v1/sgd/config/arlo-mapping/`. Lista, cria, edita, remove e reordena.
+ * Configuração do mapeamento Arlo ↔ SGD (#320, SGD-FE-9), sobre o
+ * `ArloFieldMappingViewSet` (BE-9) em `/api/v1/sgd/config/arlo-mapping/`:
+ * lista, cria, edita, remove e reordena; `campos/` publica o catálogo dos
+ * campos por direção e `preview/` monta uma linha de exemplo da exportação.
  * `direcao` e `campo_sgd` identificam a linha: no PATCH, viram read-only.
- *
- * O que ainda não existe no backend fica anotado em
- * docs/pendencias-backend-sprint-10.md (item 18) e vai pela issue #373:
- *   - `GET /api/v1/sgd/config/arlo-mapping/campos/` — catálogo dos campos SGD
- *     com rótulo, obrigatoriedade e formatos permitidos por direção;
- *   - `GET /api/v1/sgd/config/arlo-mapping/preview/?direcao=exportacao` —
- *     uma linha de exemplo da exportação, com o mapeamento vigente.
- *
- * Enquanto essas rotas não existem, a tela usa o `CAMPOS_FALLBACK` abaixo
- * (fiel ao `apps/sgd/services/arlo_mapping.py`) para o catálogo e um aviso
- * para o preview. Quando o backend responder, as duas funções passam a
- * consumir a rota — nenhum componente muda.
  */
 
 const PATH = "/api/v1/sgd/config/arlo-mapping/";
@@ -58,60 +46,6 @@ export type CampoArlo = {
 };
 
 export type CatalogoCamposArlo = Record<DirecaoArlo, CampoArlo[]>;
-
-/**
- * Catálogo espelhado de `apps/sgd/services/arlo_mapping.py` (verificado contra
- * a `main` em 26/10/2026). É a mesma fonte do backend; portanto, enquanto o
- * endpoint não publicar o catálogo, a tela mantém os campos em sincronia pela
- * revisão de código. Trocar aqui sem o backend saber geraria 400 no POST.
- *
- * O rótulo é escolhido no front — o endpoint ainda não devolve `label`, então
- * aqui ficam os títulos legíveis. Se o backend publicar outros, trocar.
- */
-export const CAMPOS_FALLBACK: CatalogoCamposArlo = {
-  exportacao: [
-    { campo: "demanda_id", label: "ID da demanda", obrigatorio: true, formatos: [{ value: "texto", label: "Texto" }] },
-    { campo: "solicitacao_id", label: "ID da solicitação", obrigatorio: false, formatos: [{ value: "texto", label: "Texto" }] },
-    { campo: "titulo", label: "Título", obrigatorio: false, formatos: [{ value: "texto", label: "Texto" }] },
-    { campo: "meta", label: "Meta", obrigatorio: true, formatos: [{ value: "texto", label: "Texto" }] },
-    { campo: "submeta", label: "Submeta", obrigatorio: true, formatos: [{ value: "texto", label: "Texto" }] },
-    { campo: "acao", label: "Ação", obrigatorio: true, formatos: [{ value: "texto", label: "Texto" }] },
-    { campo: "indicador", label: "Indicador", obrigatorio: true, formatos: [{ value: "texto", label: "Texto" }] },
-    { campo: "atividade", label: "Atividade", obrigatorio: true, formatos: [{ value: "texto", label: "Texto" }] },
-    { campo: "rubrica", label: "Rubrica", obrigatorio: true, formatos: [{ value: "texto", label: "Texto" }] },
-    { campo: "solicitante", label: "Solicitante", obrigatorio: false, formatos: [{ value: "texto", label: "Texto" }] },
-    {
-      campo: "valor_estimado",
-      label: "Valor estimado",
-      obrigatorio: false,
-      formatos: [{ value: "texto", label: "Texto" }, { value: "moeda", label: "Moeda" }],
-    },
-    {
-      campo: "valor_autorizado",
-      label: "Valor autorizado",
-      obrigatorio: false,
-      formatos: [{ value: "texto", label: "Texto" }, { value: "moeda", label: "Moeda" }],
-    },
-  ],
-  importacao: [
-    { campo: "demanda_id", label: "ID da demanda", obrigatorio: true, formatos: [{ value: "texto", label: "Texto" }] },
-    { campo: "solicitacao_id", label: "ID da solicitação", obrigatorio: false, formatos: [{ value: "texto", label: "Texto" }] },
-    { campo: "numero_processo", label: "Número do processo", obrigatorio: true, formatos: [{ value: "texto", label: "Texto" }] },
-    {
-      campo: "data_pagamento",
-      label: "Data do pagamento",
-      obrigatorio: true,
-      formatos: [{ value: "data", label: "Data" }],
-    },
-    {
-      campo: "valor_pago",
-      label: "Valor pago",
-      obrigatorio: true,
-      formatos: [{ value: "moeda", label: "Moeda" }],
-    },
-    { campo: "comprovante", label: "Comprovante", obrigatorio: false, formatos: [{ value: "texto", label: "Texto" }] },
-  ],
-};
 
 /** GET /api/v1/sgd/config/arlo-mapping/?direcao= — lista por direção, ordenada. */
 export async function listArloMapping(
@@ -169,48 +103,27 @@ export async function reordenarArloMapping(
   return res.json();
 }
 
-/**
- * GET catálogo dos campos — pendência do backend. Enquanto 404, cai no
- * fallback do serviço (mesma fonte do backend). Quando o endpoint existir,
- * nenhum chamador muda.
- */
+/** GET campos/ — catálogo dos campos do SGD por direção, com rótulo, obrigatoriedade e formatos. */
 export async function fetchCamposArloMapping(
   signal?: AbortSignal,
 ): Promise<CatalogoCamposArlo> {
-  try {
-    const res = await apiClient(`${PATH}campos/`, { signal });
-    return res.json();
-  } catch (e) {
-    if (e instanceof ApiError && e.status === 404) return CAMPOS_FALLBACK;
-    throw e;
-  }
+  const res = await apiClient(`${PATH}campos/`, { signal });
+  return res.json();
 }
 
-/** Linha do preview da exportação — uma coluna no cabeçalho e um valor. */
+/** `PreviewExportacaoArloSerializer`: o cabeçalho e uma linha do CSV, já formatada. */
 export type ArloMappingPreview = {
   colunas: string[];
-  linha: (string | number | null)[];
+  linha: string[];
 };
 
-/**
- * GET preview da exportação — pendência do backend (item 18 do doc da sprint
- * 10, repetido no #373). Enquanto a rota não existe, devolve `null` para a
- * tela mostrar o aviso de pendência. Quando o endpoint existir, o chamador
- * passa a receber a linha.
- */
+/** GET preview/?direcao=exportacao — a linha de exemplo com o mapeamento vigente. */
 export async function fetchPreviewArloMapping(
   direcao: DirecaoArlo,
   signal?: AbortSignal,
-): Promise<ArloMappingPreview | null> {
-  try {
-    const res = await apiClient(`${PATH}preview/?direcao=${direcao}`, {
-      signal,
-    });
-    return res.json();
-  } catch (e) {
-    if (e instanceof ApiError && e.status === 404) return null;
-    throw e;
-  }
+): Promise<ArloMappingPreview> {
+  const res = await apiClient(`${PATH}preview/?direcao=${direcao}`, { signal });
+  return res.json();
 }
 
 export const DIRECAO_LABEL: Record<DirecaoArlo, string> = {

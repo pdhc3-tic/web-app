@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type DragEvent } from "react";
+import { useEffect, useState, type DragEvent } from "react";
 import { ArrowDown, ArrowUp, GripVertical, Pencil } from "lucide-react";
 import { Badge } from "@/app/components/ui/Badge/Badge";
 import {
@@ -24,9 +24,8 @@ type Props = {
  * Tabela do mapeamento de uma direção. Reordenação com HTML5 drag-and-drop
  * nativo e, para teclado/leitor de tela, botões ↑/↓ (equivalentes no efeito).
  *
- * O rótulo do campo e a flag "obrigatório" vêm do catálogo (`camposDaDirecao`):
- * assim, quando o backend publicar o endpoint `/campos/`, o rótulo passa a
- * refletir o que o backend informa, sem mexer na tabela.
+ * O rótulo do campo e a flag "obrigatório" vêm do catálogo do backend
+ * (`GET .../arlo-mapping/campos/`, em `camposDaDirecao`).
  */
 export function MapeamentoTabela({
   linhas,
@@ -40,9 +39,19 @@ export function MapeamentoTabela({
 }: Props) {
   const [arrastando, setArrastando] = useState<number | null>(null);
   const [sobre, setSobre] = useState<number | null>(null);
-  // O `dragstart` precisa ser disparado por um gesto de "handle" só; se o row
-  // inteiro fosse draggable, qualquer clique em texto também arrastaria.
-  const handleRefs = useRef<Map<number, HTMLButtonElement | null>>(new Map());
+  // Só a linha com a alça pressionada fica `draggable`: o `dragstart` nasce no
+  // próprio <tr> (nunca no botão), então é o estado da alça que decide se a
+  // linha arrasta — clicar no texto não arrasta nada.
+  const [alcaPressionada, setAlcaPressionada] = useState<number | null>(null);
+
+  // Soltar o botão fora da alça (sem arrastar) também desarma a linha; se o
+  // arrasto começar, o navegador não manda o pointerup e quem desarma é o dragend.
+  useEffect(() => {
+    if (alcaPressionada === null) return;
+    const desarmar = () => setAlcaPressionada(null);
+    window.addEventListener("pointerup", desarmar);
+    return () => window.removeEventListener("pointerup", desarmar);
+  }, [alcaPressionada]);
 
   function metaDoCampo(campo: string): CampoArlo | undefined {
     return camposDaDirecao.find((c) => c.campo === campo);
@@ -50,12 +59,6 @@ export function MapeamentoTabela({
 
   function onDragStart(id: number) {
     return (e: DragEvent<HTMLTableRowElement>) => {
-      // Caminho só pelo handle: outros alvos cancelam o arrasto.
-      const alvo = e.target as HTMLElement;
-      if (!alvo.closest("[data-arlo-handle]")) {
-        e.preventDefault();
-        return;
-      }
       setArrastando(id);
       e.dataTransfer.effectAllowed = "move";
       e.dataTransfer.setData("text/plain", String(id));
@@ -86,6 +89,7 @@ export function MapeamentoTabela({
   function onDragEnd() {
     setArrastando(null);
     setSobre(null);
+    setAlcaPressionada(null);
   }
 
   return (
@@ -113,7 +117,7 @@ export function MapeamentoTabela({
             return (
               <tr
                 key={linha.id}
-                draggable={permiteReordenar}
+                draggable={permiteReordenar && alcaPressionada === linha.id}
                 onDragStart={onDragStart(linha.id)}
                 onDragOver={onDragOver(linha.id)}
                 onDrop={onDrop(linha.id)}
@@ -126,16 +130,11 @@ export function MapeamentoTabela({
                 {permiteReordenar && (
                   <td className="px-2">
                     <button
-                      ref={(el) => {
-                        handleRefs.current.set(linha.id, el);
-                      }}
                       type="button"
                       data-arlo-handle
                       aria-label={`Arrastar para reordenar ${meta?.label ?? linha.campo_sgd}`}
                       className="flex h-8 w-6 cursor-grab items-center justify-center rounded text-text-muted hover:text-text active:cursor-grabbing focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                      // O botão em si não arrasta — ele só serve de gatilho do
-                      // handle: o dragstart é captado no row via o seletor.
-                      onDragStart={(e) => e.stopPropagation()}
+                      onPointerDown={() => setAlcaPressionada(linha.id)}
                     >
                       <GripVertical className="h-4 w-4" aria-hidden />
                     </button>

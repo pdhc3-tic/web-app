@@ -34,13 +34,9 @@ const DIRECOES: DirecaoArlo[] = ["exportacao", "importacao"];
 /**
  * Configuração do mapeamento Arlo ↔ SGD (#320 · SGD-FE-9). CRUD do BE-9 em
  * `/api/v1/sgd/config/arlo-mapping/`, com reordenação (`reordenar`), ativar e
- * desativar.
- *
- * Catálogo de campos e preview da linha dependem de endpoints que ainda não
- * existem (anotado no `pendencias-backend-sprint-11.md`). Enquanto não existem,
- * o catálogo cai no `CAMPOS_FALLBACK` (fiel ao serviço do backend) e o
- * preview mostra o aviso — a tela não quebra, e vai consumir as rotas assim
- * que elas responderem.
+ * desativar. Rótulos, obrigatoriedade e formatos vêm do catálogo `campos/`;
+ * sem ele não há como montar uma coluna nova, então "Nova coluna" espera o
+ * catálogo carregar.
  */
 export default function IntegracaoArloMappingPage() {
   const { loading, isSuperAdmin } = useIsSuperAdmin();
@@ -159,6 +155,8 @@ export default function IntegracaoArloMappingPage() {
         <Breadcrumb
           items={[
             { label: "Início", href: "/dashboard" },
+            { label: "Configurações", href: "/admin/configuracoes" },
+            { label: "SGD" },
             { label: "Integração Arlo" },
           ]}
         />
@@ -206,11 +204,30 @@ export default function IntegracaoArloMappingPage() {
           </p>
           <Button
             onClick={() => setDialog({ modo: "criar", direcao: aba })}
+            disabled={!campos.isSuccess}
             data-testid="arlo-novo"
           >
             <Plus className="h-4 w-4" aria-hidden /> Nova coluna
           </Button>
         </div>
+
+        {campos.isError && (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-error-text bg-error-bg px-4 py-3 text-sm text-error-text"
+            data-testid="arlo-campos-erro"
+          >
+            <span className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
+              {campos.error instanceof Error && campos.error.message
+                ? campos.error.message
+                : "Não foi possível carregar o catálogo de campos do Arlo."}
+            </span>
+            <Button size="sm" variant="secondary" onClick={() => void campos.refetch()}>
+              Tentar novamente
+            </Button>
+          </div>
+        )}
 
         {lista.isPending ? (
           <div className="flex min-h-[30vh] items-center justify-center">
@@ -239,6 +256,7 @@ export default function IntegracaoArloMappingPage() {
               action={
                 <Button
                   onClick={() => setDialog({ modo: "criar", direcao: aba })}
+                  disabled={!campos.isSuccess}
                 >
                   <Plus className="h-4 w-4" aria-hidden /> Nova coluna
                 </Button>
