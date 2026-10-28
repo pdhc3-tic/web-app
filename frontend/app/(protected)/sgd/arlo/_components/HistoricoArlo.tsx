@@ -85,6 +85,7 @@ export function HistoricoArlo() {
             <tbody>
               {operacoes.map((op) => {
                 const erros = op.erros_json.length;
+                const glosas = (op.divergencias ?? []).filter((d) => d.risco_glosa).length;
                 return (
                   <tr
                     key={op.id}
@@ -116,6 +117,11 @@ export function HistoricoArlo() {
                       {erros > 0 && (
                         <span className="ml-2 text-xs text-error-text">
                           {erros} {erros === 1 ? "erro" : "erros"}
+                        </span>
+                      )}
+                      {glosas > 0 && (
+                        <span className="ml-2 text-xs font-medium text-error-text">
+                          {glosas} {glosas === 1 ? "glosa" : "glosas"}
                         </span>
                       )}
                     </td>

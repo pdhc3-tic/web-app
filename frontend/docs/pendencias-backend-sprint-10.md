@@ -533,6 +533,8 @@ com o mesmo drawer.
 
 ## 15. Risco de glosa da importação Arlo não é exposto (#298)
 
+> **Resolvido no backend pelo PR #375** (item 1 da #367): a importação devolve `divergencias`, com `risco_glosa` e a diferença com sinal. A tela mostra as divergências no acompanhamento e no histórico, com a glosa destacada; o E2E deixou de ser `fixme`.
+
 > **Reforçado na revisão do PR #341 (Pedro, 20/10/2026):** a #298 não pode
 > ser considerada concluída sem este item. As divergências precisam aparecer
 > logo após a importação **e** no detalhe da operação no histórico. Se a parte
@@ -559,6 +561,8 @@ pagamentos abaixo do autorizado, incluir esses casos com o sinal do valor.
 ---
 
 ## 16. Importação Arlo sempre falha no ambiente Docker local (#298)
+
+> **Resolvido no backend pelo PR #375** (item 2 da #367): `celery_worker` e `celery_beat` montam `./backend` como o `backend`, e o arquivo ausente grava uma mensagem legível.
 
 > **Bloqueio apontado na revisão do PR #341 (Pedro, 20/10/2026):** sem o
 > armazenamento compartilhado, o upload é confirmado e a task depois marca a

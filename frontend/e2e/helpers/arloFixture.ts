@@ -12,7 +12,8 @@ import path from "node:path";
  * Arlo registradas durante a execução.
  *
  * - `paga`: uma solicitação de R$ 1.200, paga pelo valor autorizado;
- * - `glosa`: uma solicitação de R$ 1.000, paga com R$ 1.500 (risco de glosa).
+ * - `glosa`: uma solicitação de R$ 1.000, paga com R$ 1.500 (risco de glosa);
+ * - `abaixo`: uma solicitação de R$ 1.000, paga com R$ 800 (divergência sem glosa).
  *
  * Roda como `postgres` por causa da row-level security de `sgd_demand`.
  */
@@ -24,7 +25,7 @@ export const PREFIXO_298 = "E2E-298";
 
 type Ref = { id: number; titulo: string; solicitacaoId: number };
 
-export type ArloFixture = { paga: Ref; glosa: Ref; ultimaOperacao: number };
+export type ArloFixture = { paga: Ref; glosa: Ref; abaixo: Ref; ultimaOperacao: number };
 
 const COMUM = `
 from decimal import Decimal
@@ -104,8 +105,9 @@ def autorizada(titulo, valor):
 
 paga = autorizada("Van da feira", "1200")
 glosa = autorizada("Van do mutirão", "1000")
+abaixo = autorizada("Van da oficina", "1000")
 ultima = ArloImport.objects.aggregate(m=Max("pk"))["m"] or 0
-print("${MARCADOR}_SETUP " + json.dumps({"paga": paga, "glosa": glosa, "ultimaOperacao": ultima}))
+print("${MARCADOR}_SETUP " + json.dumps({"paga": paga, "glosa": glosa, "abaixo": abaixo, "ultimaOperacao": ultima}))
 `;
 
 const teardownScript = (desde: number) => `${COMUM}
