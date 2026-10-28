@@ -79,9 +79,20 @@ class TestPermissaoDaListaDeRubricas:
         response = request.getfixturevalue(cliente).get(RUBRICAS_URL)
 
         assert response.status_code == 200
-        assert len(response.data) == BudgetRubrica.objects.count()
+        assert _ids(response) == list(
+            BudgetRubrica.objects.order_by("nome", "id").values_list("id", flat=True)
+        )
 
     def test_anonimo_recebe_401(self, api_client):
+        response = api_client.get(RUBRICAS_URL)
+
+        assert response.status_code == 401
+
+    def test_acesso_revogado_recebe_401(self, api_client, usuario_adt_rn):
+        usuario_adt_rn.acesso_revogado = True
+        usuario_adt_rn.save(update_fields=["acesso_revogado"])
+        api_client.force_authenticate(user=usuario_adt_rn)
+
         response = api_client.get(RUBRICAS_URL)
 
         assert response.status_code == 401

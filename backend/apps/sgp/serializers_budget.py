@@ -23,6 +23,7 @@ class BudgetRubricaSerializer(serializers.ModelSerializer):
     class Meta:
         model = BudgetRubrica
         fields = ["id", "slug", "nome", "ativo"]
+        read_only_fields = fields
 
 
 class BudgetAllocationSerializer(serializers.ModelSerializer):
