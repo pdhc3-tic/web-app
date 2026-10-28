@@ -318,6 +318,40 @@ def test_task_process_arlo_import_processa_e_e_idempotente(demanda_autorizada, u
     assert sgd_tasks.process_arlo_import.queue == "normal"
 
 
+def test_falha_no_meio_do_arquivo_preserva_o_progresso_das_linhas_aplicadas(
+    monkeypatch, demanda_autorizada, activity_rn, solicitante_rn, rubrica_diarias, usuario_fgd,
+):
+    """Cada linha commita sozinha: se o arquivo para no meio, a importação mostra as
+    linhas já pagas e a divergência delas, e a falha se soma aos erros."""
+    from apps.sgd.services import arlo_import
+
+    outra = _nova_demanda_autorizada(activity_rn, solicitante_rn, rubrica_diarias)
+    original = arlo_import._gravar_progresso
+    chamadas = []
+
+    def falhar_depois_da_primeira_linha(*args, **kwargs):
+        chamadas.append(1)
+        if len(chamadas) > 1:
+            raise RuntimeError("worker caiu")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(arlo_import, "_gravar_progresso", falhar_depois_da_primeira_linha)
+    importacao = _importar(
+        [_linha(demanda_autorizada, valor="800,00"), _linha(outra, valor="500,00", processo="PROC-2")], usuario_fgd,
+    )
+
+    with pytest.raises(RuntimeError):
+        sgd_tasks.process_arlo_import(importacao.pk)
+
+    importacao.refresh_from_db()
+    assert importacao.status == "falhou"
+    assert (importacao.total_registros, importacao.registros_ok) == (1, 1)
+    assert [d["solicitacao_id"] for d in importacao.divergencias_json] == [demanda_autorizada.pk]
+    assert importacao.erros_json == [{"linha": 0, "erro": "Falha inesperada ao processar o arquivo."}]
+    demanda_autorizada.refresh_from_db()
+    assert demanda_autorizada.valor_pago == Decimal("800.00")
+
+
 def test_historico_reflete_exportacao_e_importacao(
     auth_client_fgd, demanda_autorizada, usuario_fgd, monkeypatch, django_capture_on_commit_callbacks,
 ):

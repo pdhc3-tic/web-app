@@ -243,14 +243,23 @@ def verificar_duas_travas(
 def reler_reserva(demand_request) -> None:
     """Relê do banco o estado da reserva. Com o limite travado, o valor não muda
     até o commit: todo movimento da reserva trava o limite antes. Sem o lock,
-    serve para escolher o caminho, e a operação de saldo confere de novo."""
-    try:
-        demand_request.refresh_from_db(fields=["valor_reservado", "valor_executado"])
-    except DemandRequest.DoesNotExist:
-        # Removida por quem segurava o lock que esta operação esperava.
+    serve para escolher o caminho, e a operação de saldo confere de novo.
+
+    O limite é travado pela rubrica que quem chama leu antes. Se a solicitação foi
+    removida ou mudou de rubrica enquanto esperava o lock, mexer no saldo agora
+    tiraria a reserva do limite errado: a operação é recusada."""
+    atual = DemandRequest.objects.filter(pk=demand_request.pk).values_list(
+        "rubrica_id", "valor_reservado", "valor_executado",
+    ).first()
+    if atual is None:
         raise TransicaoInvalida(
             f"A solicitação #{demand_request.pk} foi removida durante a operação. Recarregue e tente de novo."
-        ) from None
+        )
+    rubrica_id, demand_request.valor_reservado, demand_request.valor_executado = atual
+    if rubrica_id != demand_request.rubrica_id:
+        raise TransicaoInvalida(
+            f"A solicitação #{demand_request.pk} mudou de rubrica durante a operação. Recarregue e tente de novo."
+        )
 
 
 def reler_reserva_travada(demand_request) -> None:

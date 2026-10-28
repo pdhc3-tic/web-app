@@ -181,9 +181,12 @@ def process_arlo_import(importacao_id: int) -> int:
             importacao, transacao_da_linha=_transacao_sem_contexto_de_sessao_rls,
         ).registros_ok
     except Exception as exc:
+        # As linhas já aplicadas ficaram gravadas, com o progresso: a falha se soma aos
+        # erros delas em vez de apagá-los.
+        erros = ArloImport.objects.filter(pk=importacao_id).values_list("erros_json", flat=True).first() or []
         ArloImport.objects.filter(pk=importacao_id).update(
             status=ArloImport.Status.FALHOU,
-            erros_json=[{"linha": 0, "erro": "Falha inesperada ao processar o arquivo."}],
+            erros_json=[*erros, {"linha": 0, "erro": "Falha inesperada ao processar o arquivo."}],
         )
         sentry_sdk.capture_exception(exc)
         logger.exception("Falha ao processar a importação Arlo #%s.", importacao_id)

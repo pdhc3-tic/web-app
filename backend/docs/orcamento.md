@@ -40,7 +40,7 @@ comportamento.
 | Formulário sendo preenchido (antes de criar) | `GET /api/v1/sgp/orcamento/saldo/` (ou `saldo_para_consulta`/`verificar_saldo` direto, se a chamada for interna) |
 | Demanda criada, saldo reservado | `reservar(allocation=..., valor=..., demanda_id=<id da demanda>, usuario=...)` |
 | Decisão final com valor diferente do estimado | `ajustar_reserva(demanda_id=..., novo_valor=..., usuario=...)` |
-| Demanda concluída pela FGD (consumo definitivo, valor efetivamente pago) | `executar(demanda_id=..., usuario=..., valor_executado=<valor pago>)` |
+| Demanda concluída pela FGD ou pelo retorno do Arlo (consumo definitivo) | `executar(demanda_id=..., usuario=..., valor_executado=<menor entre o pago e o autorizado>)`; o que for pago acima do autorizado vira `GlosaRisk`, não executado (`apps.sgd.services.workflow.registrar_pagamento`) |
 | Demanda recusada ou cancelada | `liberar(demanda_id=..., usuario=..., motivo=...)` |
 
 ### Invariantes

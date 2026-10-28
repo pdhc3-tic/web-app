@@ -420,3 +420,14 @@ def test_cancelar_demanda_em_atendimento_explica_que_nao_pode_ser_cancelada(acti
 
     with pytest.raises(TransicaoInvalida, match="não pode ser cancelada"):
         demand_service.cancelar_demanda(demand, usuario=solicitante_rn)
+
+
+def test_api_cancelar_demanda_de_outra_pessoa_e_403(auth_client_ugp, activity_rn):
+    """A UGP só cancela demanda autorizada; nas demais, o cancelamento é do solicitante."""
+    demand = DemandFactory(activity=activity_rn, status="submetida")
+
+    resposta = auth_client_ugp.post(f"/api/v1/sgd/demandas/{demand.pk}/cancelar/", {"motivo": "x"}, format="json")
+
+    assert resposta.status_code == 403
+    demand.refresh_from_db()
+    assert demand.status == "submetida"

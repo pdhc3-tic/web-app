@@ -1031,3 +1031,14 @@ def test_reler_reserva_de_solicitacao_removida_e_transicao_invalida(demand_reque
 
     with pytest.raises(TransicaoInvalida):
         balance_service.reler_reserva(demand_request_rn)
+
+
+def test_reler_reserva_de_solicitacao_que_mudou_de_rubrica_e_transicao_invalida(demand_request_rn):
+    """O limite foi travado pela rubrica lida antes; mexer no saldo com a rubrica
+    nova no banco tiraria a reserva do limite errado."""
+    from apps.sgp.tests.factories import BudgetRubricaFactory
+
+    DemandRequest.objects.filter(pk=demand_request_rn.pk).update(rubrica=BudgetRubricaFactory(slug="rubrica-trocada"))
+
+    with pytest.raises(TransicaoInvalida):
+        balance_service.reler_reserva(demand_request_rn)

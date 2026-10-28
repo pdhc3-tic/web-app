@@ -259,9 +259,16 @@ def _processar_importacao(importacao: ArloImport, transacao_da_linha) -> ArloImp
         try:
             with transacao_da_linha():
                 divergencia = _processar_linha(importacao, linha, colunas)
+                # O progresso entra na transação da linha: se o processo cair no meio
+                # do arquivo, a importação mostra exatamente as linhas já aplicadas.
+                _gravar_progresso(
+                    importacao, total=total, ok=ok + 1, erros=erros,
+                    divergencias=[*divergencias, divergencia] if divergencia else divergencias,
+                )
             ok += 1
             if divergencia:
                 divergencias.append(divergencia)
+            continue
         except LinhaInvalida as exc:
             erros.append({"linha": numero, "campo": exc.campo, "erro": exc.erro})
         except TransicaoInvalida as exc:
@@ -269,6 +276,7 @@ def _processar_importacao(importacao: ArloImport, transacao_da_linha) -> ArloImp
         except Exception:
             logger.exception("Erro inesperado na linha %s da importação Arlo #%s.", numero, importacao.pk)
             erros.append({"linha": numero, "campo": None, "erro": "Erro inesperado ao processar a linha."})
+        _gravar_progresso(importacao, total=total, ok=ok, erros=erros, divergencias=divergencias)
 
     importacao.total_registros = total
     importacao.registros_ok = ok
@@ -277,6 +285,12 @@ def _processar_importacao(importacao: ArloImport, transacao_da_linha) -> ArloImp
     importacao.status = ArloImport.Status.CONCLUIDO
     importacao.save(update_fields=["total_registros", "registros_ok", "erros_json", "divergencias_json", "status"])
     return importacao
+
+
+def _gravar_progresso(importacao: ArloImport, *, total: int, ok: int, erros: list, divergencias: list) -> None:
+    ArloImport.objects.filter(pk=importacao.pk).update(
+        total_registros=total, registros_ok=ok, erros_json=erros, divergencias_json=divergencias,
+    )
 
 
 def _falhar(importacao: ArloImport, erro: str) -> ArloImport:

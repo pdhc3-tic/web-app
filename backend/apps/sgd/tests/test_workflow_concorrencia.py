@@ -232,13 +232,16 @@ def test_edicoes_simultaneas_em_devolvida_deixam_reserva_e_saldo_iguais(
 
 
 @pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("com_reserva_vizinha", [False, True])
 def test_cancelamento_pela_task_recusado_quando_a_solicitacao_muda_de_rubrica(
-    demand_request_rn, solicitante_rn, activity_rn, rubrica_diarias, allocation_territorial_rn, limite_individual_rn,
+    com_reserva_vizinha, demand_request_rn, solicitante_rn, activity_rn, rubrica_diarias,
+    allocation_territorial_rn, limite_individual_rn,
 ):
     """A task leu a solicitação na rubrica r1 e espera o limite de r1. Nesse meio, ela
     passa para r2 e a demanda é submetida, reservando em r2. A liberação, que trava o
-    limite pela rubrica lida, tiraria a reserva de r1; a conferência sob o lock da
-    Demand desfaz tudo."""
+    limite pela rubrica lida, tiraria a reserva de r1: sem outra reserva em r1, daria
+    comprometido negativo (`IntegrityError`, sem nova tentativa); com outra, desfalcaria
+    r1 em silêncio. A releitura da reserva recusa a operação nos dois casos."""
     from apps.sgd.services import balance as balance_service
     from apps.sgd.tests.factories import DemandFactory, DemandIndividualLimitFactory, DemandRequestFactory
     from apps.sgp.tests.factories import BudgetAllocationFactory, BudgetRubricaFactory
@@ -249,12 +252,12 @@ def test_cancelamento_pela_task_recusado_quando_a_solicitacao_muda_de_rubrica(
         meta=activity_rn.acao.meta, rubrica=outra_rubrica, territorio=activity_rn.municipio.territory,
         valor_alocado=10_000,
     )
-    # Outra reserva em r1, para a liberação indevida não esbarrar no comprometido negativo.
-    vizinha = DemandRequestFactory(
-        demanda=DemandFactory(activity=activity_rn, solicitante=solicitante_rn, status="submetida"),
-        rubrica=rubrica_diarias, valor_estimado=Decimal("1000"),
-    )
-    balance_service.reservar_duas_travas(demand_request=vizinha, usuario=solicitante_rn)
+    if com_reserva_vizinha:
+        vizinha = DemandRequestFactory(
+            demanda=DemandFactory(activity=activity_rn, solicitante=solicitante_rn, status="submetida"),
+            rubrica=rubrica_diarias, valor_estimado=Decimal("1000"),
+        )
+        balance_service.reservar_duas_travas(demand_request=vizinha, usuario=solicitante_rn)
     demand = demand_request_rn.demanda
 
     def trocar_e_submeter(pausa):
@@ -276,7 +279,8 @@ def test_cancelamento_pela_task_recusado_quando_a_solicitacao_muda_de_rubrica(
     assert demand.status == "submetida"
     limite_individual_rn.refresh_from_db()
     limite_r2.refresh_from_db()
-    assert (limite_individual_rn.valor_comprometido, limite_r2.valor_comprometido) == (Decimal("1000"), Decimal("1000"))
+    reservado_em_r1 = Decimal("1000") if com_reserva_vizinha else Decimal("0")
+    assert (limite_individual_rn.valor_comprometido, limite_r2.valor_comprometido) == (reservado_em_r1, Decimal("1000"))
 
 
 @pytest.mark.django_db(transaction=True)
