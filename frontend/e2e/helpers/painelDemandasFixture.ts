@@ -16,6 +16,8 @@ import path from "node:path";
  * - `cancelar`: Autorizada, que a UGP cancela.
  * - `auditada`: já cancelada pela UGP depois de autorizada — a trilha de
  *   auditoria (#322) completa, sem depender da ordem dos testes.
+ * - `longa`: devolvida e ressubmetida várias vezes — a trilha passa da
+ *   primeira página da auditoria (20 eventos) e exercita o "carregar mais".
  *
  * Solicitante: o ADT do Território RN. Articulador de RN: o `articuladorPB`
  * (PB/RN/BA/MG); o `articuladorPE` não atua em RN e não deve vê-las.
@@ -43,6 +45,7 @@ export type PainelDemandasFixture = {
   atender: Ref;
   cancelar: Ref;
   auditada: Ref;
+  longa: Ref;
 };
 
 const COMUM = `
@@ -131,12 +134,20 @@ aud, _ = submetida("Van do seminário cancelado")
 ap.pre_autorizar(aud, responsavel=articulador)
 ap.autorizar(aud, responsavel=ugp)
 ds.cancelar_demanda(aud, usuario=ugp, motivo="Seminário cancelado pela coordenação.")
+lon, _ = submetida("Van com roteiro em revisão")
+for volta in range(1, 11):
+    ap.devolver(lon, responsavel=articulador, justificativa=f"Revisar o roteiro ({volta}).")
+    if volta < 10:
+        ds.submeter_demanda(lon, usuario=adt)
+# Cancelada pelo ADT: a reserva volta e o limite fica como nas outras seis.
+ds.cancelar_demanda(lon, usuario=adt, motivo="Roteiro desistido.")
 
 ref = lambda d: {"id": d.pk, "titulo": d.titulo}
 print("${MARCADOR}_SETUP " + json.dumps({
     "preAutorizar": ref(pre), "devolver": ref(dev),
     "autorizar": {**ref(aut), "solicitacaoId": aut_s.pk},
     "recusar": ref(rec), "atender": ref(atd), "cancelar": ref(can), "auditada": ref(aud),
+    "longa": ref(lon),
 }))
 `;
 

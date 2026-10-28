@@ -322,12 +322,17 @@ export async function getDemanda(id: number | string, signal?: AbortSignal): Pro
  */
 export type EventoAuditoria = {
   id: number;
-  /** "status" para transições da demanda, "saldo" para movimentações do SGP. */
-  tipo: "status" | "saldo";
+  /**
+   * "status" para transições da demanda, "saldo" para movimentações do SGP e
+   * "recurso_extra" para o pedido de recurso extra (inclui o aumento de limite
+   * e o remanejamento que ele gera).
+   */
+  tipo: "status" | "saldo" | "recurso_extra";
   /** Ex.: `demanda.criada`, `demanda.status_alterado`, `saldo.reserva`. */
   acao: string;
   /** Nulo quando a transição é do sistema (cancelamento automático). */
   usuario: { id: number; nome: string } | null;
+  /** Só para o Super Admin; nulo para os demais perfis. */
   ip: string | null;
   timestamp: string;
   valores_anteriores: Record<string, unknown>;
@@ -349,8 +354,7 @@ export const AUDITORIA_PAGINA = 20;
  * GET /api/v1/sgd/demandas/{id}/auditoria/?limit=&offset=
  *
  * Backend: `AuditLogPagination` (default 20, max 100) em `DemandViewSet.auditoria`.
- * Hoje a rota é restrita ao Super Admin — ver `pendencias-backend-sprint-10.md`,
- * item 19 (a issue #322 pede o mesmo escopo da visualização da demanda).
+ * Quem vê a demanda vê a trilha; `ip` só vem preenchido para o Super Admin.
  */
 export async function listAuditoriaDemanda(
   demandaId: number | string,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { CheckCircle2, CircleDollarSign } from "lucide-react";
+import { CheckCircle2, CircleDollarSign, HandCoins } from "lucide-react";
 import Spinner from "@/app/components/icons/Spinner";
 import { TabErroSection } from "@/app/components/sgp/CrudTab/CrudTab";
 import { ApiError } from "@/app/lib/api";
@@ -33,12 +33,38 @@ function rotuloStatus(valor: unknown): string {
   return STATUS_LABEL[valor as StatusDemanda] ?? valor;
 }
 
+/** Eventos do pedido de recurso extra; `acao` vem de `apps/sgd/services/recurso_extra.py`. */
+const RECURSO_EXTRA_LABEL: Record<string, string> = {
+  "recurso_extra.criado": "Pedido de recurso extra criado",
+  "recurso_extra.editado": "Pedido de recurso extra editado",
+  "recurso_extra.submetido": "Pedido de recurso extra submetido",
+  "recurso_extra.parecer_emitido": "Parecer do Articulador no recurso extra",
+  "recurso_extra.devolvido": "Pedido de recurso extra devolvido",
+  "recurso_extra.decidido_aprovar": "Recurso extra aprovado",
+  "recurso_extra.decidido_recusar": "Recurso extra recusado",
+  aumento_limite: "Limite individual elevado",
+  "remanejamento.efetivado": "Remanejamento para cobrir o recurso extra",
+};
+
+function textoDoRecursoExtra(evento: EventoAuditoria): string {
+  const base = RECURSO_EXTRA_LABEL[evento.acao] ?? `Recurso extra (${evento.acao})`;
+  const { valor, valor_limite } = evento.valores_novos;
+  const montante = evento.acao === "aumento_limite" ? valor_limite : valor;
+  if (typeof montante === "string" || typeof montante === "number") {
+    return `${base} — ${formatCurrencyBRL(montante)}`;
+  }
+  return base;
+}
+
 /**
  * Texto da ação na trilha. Para status, mostra a transição ("Submetida →
  * Pré-autorizada"); para saldo, o tipo da movimentação ("Reserva") e, quando
- * houver, o valor (liberação) ou a mudança do comprometido.
+ * houver, o valor (liberação) ou a mudança do comprometido; para recurso
+ * extra, o passo do pedido e, quando houver, o novo limite ou o valor remanejado.
  */
 function textoDaAcao(evento: EventoAuditoria): string {
+  if (evento.tipo === "recurso_extra") return textoDoRecursoExtra(evento);
+
   if (evento.tipo === "status") {
     if (evento.acao === "demanda.criada") {
       return `Demanda criada (${rotuloStatus(evento.valores_novos.status)})`;
@@ -70,13 +96,18 @@ function nomeDoAutor(evento: EventoAuditoria): string {
   return evento.usuario?.nome ?? "Sistema";
 }
 
+/** Ícone, fundo e rótulo para leitor de tela de cada tipo — leitura rápida pedida pela #322. */
+const APARENCIA: Record<
+  EventoAuditoria["tipo"],
+  { Icone: typeof CheckCircle2; classe: string; rotulo: string }
+> = {
+  status: { Icone: CheckCircle2, classe: "bg-primary/15 text-primary", rotulo: "Evento de status. " },
+  saldo: { Icone: CircleDollarSign, classe: "bg-warning-bg text-warning-text", rotulo: "Evento de saldo. " },
+  recurso_extra: { Icone: HandCoins, classe: "bg-info-bg text-info-text", rotulo: "Evento de recurso extra. " },
+};
+
 function LinhaEvento({ evento }: { evento: EventoAuditoria }) {
-  const Icone = evento.tipo === "status" ? CheckCircle2 : CircleDollarSign;
-  // Fundos distintos para a leitura rápida pedida pela #322 (ícone + cor).
-  const classeIcone =
-    evento.tipo === "status"
-      ? "bg-primary/15 text-primary"
-      : "bg-warning-bg text-warning-text";
+  const { Icone, classe: classeIcone, rotulo } = APARENCIA[evento.tipo] ?? APARENCIA.saldo;
   const quando = absoluteDateTime(evento.timestamp) ?? evento.timestamp;
 
   return (
@@ -97,9 +128,7 @@ function LinhaEvento({ evento }: { evento: EventoAuditoria }) {
           <span className="text-text-muted"> · {nomeDoAutor(evento)}</span>
         </p>
         <p className="text-xs text-text-muted">
-          <span className="sr-only">
-            {evento.tipo === "status" ? "Evento de status. " : "Evento de saldo. "}
-          </span>
+          <span className="sr-only">{rotulo}</span>
           {quando}
           {evento.ip && <span> · IP {evento.ip}</span>}
         </p>
@@ -109,8 +138,8 @@ function LinhaEvento({ evento }: { evento: EventoAuditoria }) {
 }
 
 /**
- * Painel de auditoria da demanda (#322): mudanças de status e movimentações de
- * saldo em ordem cronológica, com "carregar mais" sobre a paginação do backend
+ * Painel de auditoria da demanda (#322): mudanças de status, movimentações de
+ * saldo e passos do recurso extra em ordem cronológica, com "carregar mais" sobre a paginação do backend
  * (`DemandViewSet.auditoria`, BE-7).
  */
 export function DemandaAuditoria({ demandaId }: { demandaId: number }) {
