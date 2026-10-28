@@ -1,3 +1,5 @@
+import hashlib
+
 from django.core.cache import cache
 
 from apps.sgp.filters import UPFFilter
@@ -26,7 +28,10 @@ def build_upf_map_cache_key(user_id, query_params):
         for key in query_params.keys()
         if key in params_da_chave
     )
-    return f"sgp:upfs:mapa:v{version}:user:{user_id}:params:{normalized_params}"
+    # Hash em vez dos valores: o `q` traz nome ou CPF do titular, e a chave
+    # aparece no log quando o Django avisa de caractere inválido ou tamanho.
+    params_hash = hashlib.sha256(repr(normalized_params).encode()).hexdigest()
+    return f"sgp:upfs:mapa:v{version}:user:{user_id}:params:{params_hash}"
 
 
 def invalidate_upf_map_cache():

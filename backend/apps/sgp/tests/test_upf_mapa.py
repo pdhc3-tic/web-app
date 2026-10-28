@@ -1,4 +1,5 @@
 import json
+import warnings
 from datetime import datetime
 
 import pytest
@@ -374,6 +375,18 @@ def test_chave_do_cache_do_mapa_considera_todo_filtro_do_upf_filter(nome):
     com_filtro = build_upf_map_cache_key(1, QueryDict(f"{nome}=1"))
 
     assert com_filtro != sem_filtro
+
+
+@pytest.mark.parametrize("busca", ["86288366757", "Maria Souza", "x" * 5000])
+def test_chave_do_cache_do_mapa_nao_carrega_o_texto_da_busca(busca):
+    chave = build_upf_map_cache_key(1, QueryDict(f"q={busca}"))
+
+    assert busca not in chave
+    assert len(chave) < 250
+    with warnings.catch_warnings(record=True) as avisos:
+        warnings.simplefilter("always")
+        cache.get(chave)
+    assert avisos == []
 
 
 def test_chave_do_cache_do_mapa_ignora_parametro_que_nao_filtra():
