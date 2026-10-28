@@ -313,7 +313,11 @@ test.describe("Saldo por rubrica — ADT sem território", () => {
       await expect(
         page.getByRole("heading", { name: "Conteúdo restrito" }),
       ).toHaveCount(0);
-      await expect(page.getByTestId("orcamento-sem-territorio")).toBeVisible();
+      // O estado vazio vem do `code: "SEM_TERRITORIO"` do 403, com a
+      // mensagem do backend.
+      await expect(page.getByTestId("orcamento-sem-territorio")).toContainText(
+        "Seu perfil de ADT/ACR ainda não tem território vinculado.",
+      );
 
       // E o 403 não é apresentado como falha de rede: nada de "tentar
       // novamente", que aqui só repetiria a mesma negativa.
