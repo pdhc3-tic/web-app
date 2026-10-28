@@ -8,6 +8,8 @@
 
 ## 1. Não há rota que liste as rubricas do orçamento (#319)
 
+> **Ainda aberto em 27/10/2026.** A #373 foi fechada pelo PR #376 sem este item (o 14 de lá): `GET /api/v1/sgp/rubricas/` continua respondendo 404.
+
 *Compilado em 25/10/2026, ao planejar a issue #319 (configuração do mapeamento tipo de solicitação → rubrica).*
 
 A tela da #319 consome o CRUD da BE-8 (`/api/v1/sgd/config/tipo-rubrica/`). Para criar ou alterar um mapeamento, o Super Admin escolhe a rubrica, e o `POST`/`PATCH` espera o `id` dela (`rubrica`).
@@ -36,11 +38,13 @@ GET /api/v1/sgp/rubricas/?ativo=true
 - `?ativo=true` devolve só as ativas. Sem o parâmetro, devolve todas, para a tela mostrar o nome de uma rubrica inativa que ainda esteja num mapeamento antigo;
 - leitura para qualquer usuário autenticado. É um catálogo, sem valores de orçamento, e outras telas também podem usá-la.
 
-*Estado atual no frontend:* a tela de Tipos e Rubricas (`/admin/configuracoes/sgd/tipos-rubricas`) chama só essa rota para montar o campo "Rubrica". Enquanto ela não existe, o campo mostra o erro do componente, e não dá para criar um mapeamento nem trocar a rubrica de um existente. Listar, desativar, reativar e remover funcionam. No E2E, só a resposta dessa rota é simulada, com os ids reais do banco; o resto roda contra o CRUD real.
+*Estado atual no frontend:* a tela de Tipos e Rubricas (`/admin/configuracoes/sgd/tipos-rubricas`) chama só essa rota para montar o campo "Rubrica". Enquanto ela não existe, o campo mostra o erro do componente, e não dá para criar um mapeamento nem trocar a rubrica de um existente. Listar, desativar, reativar e remover funcionam. No E2E, que roda só contra o backend real, os testes de criar e de trocar a rubrica ficam escritos e marcados como `fixme` até a rota existir.
 
 ---
 
 ## 2. Mapeamento Arlo ↔ SGD: a #320 entregue sem o catálogo nem o preview
+
+> **Resolvido no backend em 26/10/2026 pelo PR #376** (item 7 da #373). A tela usa `campos/` e `preview/`; o `CAMPOS_FALLBACK` e o aviso de pendência saíram do front.
 
 *Compilado em 26/10/2026, ao implementar a issue #320 (configuração do mapeamento Arlo ↔ SGD).*
 
@@ -65,6 +69,8 @@ Os itens abaixo não cabiam nesta entrega sem backend novo. Ficam listados para 
 
 ### 3.1 A3 #238 — contrato real de `/sgp/producao/` e `/sgp/producao/indicadores/`
 
+> **Resolvido em 27/10/2026.** O `/indicadores/` já aplica o `ProducaoConsolidadaFilter` (`filter_queryset`); o front passou a mandar tipo, cultura e espécie também aos indicadores, e o E2E da produção roda contra o seed.
+
 A tela e os tipos (`ProducaoConsolidadaItem`, `IndicadoresProducao` em `app/lib/producao.ts`) foram escritos contra o contrato combinado, mas a conferência contra a resposta real do backend ainda não aconteceu — ela depende de rodar com o seed completo e um usuário com escopo nos três filtros (tipo, cultura, espécie).
 
 Também segue aberto o pedido do critério: **repassar os filtros de tipo, cultura e espécie aos indicadores**, se o backend os suportar. O endpoint `/indicadores/` hoje aceita só o escopo territorial e o período; para o painel reproduzir os mesmos recortes da listagem, o backend precisa aceitar os três filtros no `/indicadores/` também.
@@ -72,6 +78,8 @@ Também segue aberto o pedido do critério: **repassar os filtros de tipo, cultu
 **Pedido** — alinhar `IndicadoresProducaoView` para aceitar `?tipo=`, `?cultura=` e `?especie=` como `ProducaoConsolidadaFilter` já faz; e documentar o contrato de `/sgp/producao/` no `schema.yml`.
 
 ### 3.2 A4 #239 e A5 #240 — fluxo assíncrono dos relatórios
+
+> **Resolvido em 27/10/2026.** O backend já gera o Plano de Trabalho e as Atividades pelo `POST /sgp/exportacoes/` (tipos `plano_trabalho` e `atividades`); Relatórios, o Exportar do painel e as UPFs usam o mesmo fluxo (`app/lib/exportacoes.ts` e `useExportacao`).
 
 O fluxo assíncrono entregue para a listagem de UPFs (PR #306, `/sgp/exportacoes/{id}/`) **não foi estendido** à exportação do Plano de Trabalho (`/sgp/plano-trabalho/exportar/`) nem à de Atividades (`/sgp/atividades/exportar/`). As duas continuam síncronas, com o `ExportTimeoutError` do cliente (60s) como única defesa.
 
@@ -81,11 +89,15 @@ A migração dos dois fluxos é uma issue inteira — reaproveitar o `app/lib/ex
 
 ### 3.3 A6 #241 — pendência do `FIELD_ENCRYPTION_KEY` no CI
 
+> **Parte do backend resolvida:** o `playwright.yml` já injeta a `FIELD_ENCRYPTION_KEY`. Fica com o front rodar o workflow a frio e registrar a duração na #241 (o job ainda é cortado pelo `timeout-minutes: 20`).
+
 O workflow do Playwright do SGP foi escrito para rodar contra o seed real; falta ao backend injetar a chave `FIELD_ENCRYPTION_KEY` no job de CI para os campos criptografados saírem corretos. Enquanto não entra, o workflow pula os specs que dependem dos campos sensíveis.
 
 **Pedido** — adicionar `FIELD_ENCRYPTION_KEY` ao job de CI (segredos do repositório) e rodar o workflow a frio para registrar na #241 a duração da suíte, como o workflow já imprime em "Duração da suíte".
 
 ### 3.4 Pagina a listagem de demandas (NFR da #323)
+
+> **Resolvido em 27/10/2026.** `DemandViewSet` pagina com `DemandPagination` (`limit`/`offset`); o painel de demandas navega página a página e o E2E da #323 cria 10.000 demandas pela fixture `volumeDemandasFixture.ts`, sem precisar de um seed de volume.
 
 O NFR "paginação/scroll com volume alto, equivalente aos 10.000 registros" não cabe em E2E hoje:
 

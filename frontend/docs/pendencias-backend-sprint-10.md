@@ -119,6 +119,8 @@ expiração).
 
 ## 2. `CORS_EXPOSE_HEADERS` continua faltando — agora também na #240
 
+> **Resolvido no backend em 26/10/2026 pelo PR #376** (item 9 da #373): `CORS_EXPOSE_HEADERS = ["Content-Disposition"]`: o nome do arquivo chega ao front.
+
 *Item 7 da sprint 9, ainda aberto:* `backend/setup/settings.py:273` configura
 `CORS_ALLOWED_ORIGINS`, mas não `CORS_EXPOSE_HEADERS`. Sem ele o navegador não
 deixa o JavaScript ler o `Content-Disposition`, e o nome de arquivo que o
@@ -138,6 +140,8 @@ CORS_EXPOSE_HEADERS = ["Content-Disposition"]
 ---
 
 ## 3. `seed_demo` não permite testar o caso "acima de 1.000"
+
+> **Resolvido no backend em 26/10/2026 pelo PR #376** (item 10 da #373): o limite da exportação assíncrona de UPFs virou `UPF_EXPORT_ASYNC_THRESHOLD` (variável de ambiente, padrão 1.000). O E2E da #240 passa do limite com UPFs sintéticas criadas pela fixture.
 
 > *Ainda aberto em 01/10/2026:* o PR #306 manteve o limite fixo
 > (`UPF_EXPORT_SYNC_LIMIT = 1000` em `apps/sgp/services/upf_export.py`). Por
@@ -608,6 +612,8 @@ publicá-los no `/api/v1/choices/`, junto com o próprio tipo de solicitação
 
 ## 19. Auditoria da demanda só é visível ao Super Admin — divergente da #322
 
+> **Resolvido no backend em 26/10/2026 pelo PR #376** (item 4 da #373): quem vê a demanda vê a trilha; o IP sai só para o Super Admin.
+
 *Compilado em 21/10/2026, ao implementar a issue #322 (aba de auditoria no
 painel master-detail de demandas).*
 
@@ -641,6 +647,8 @@ política atual do backend seria 403 para eles. A diferenciação visual, o
 
 ## 18. Mapeamento Arlo ↔ SGD: sem catálogo de campos e sem preview — bloqueia parte da #320
 
+> **Resolvido no backend em 26/10/2026 pelo PR #376** (item 7 da #373): `GET .../arlo-mapping/campos/` e `GET .../arlo-mapping/preview/?direcao=exportacao`. A tela da #320 usa as duas rotas, sem catálogo copiado no front.
+
 O CRUD do BE-9 (`/api/v1/sgd/config/arlo-mapping/`) permite listar, editar,
 apagar e reordenar, mas a #320 pede mais duas coisas que a API não oferece:
 
@@ -669,6 +677,8 @@ inteira, por decisão do time de não entregar a tela pela metade.
 ---
 
 ## 22. Pedidos de recurso extra sem filtro por demanda (#321)
+
+> **Resolvido no backend em 26/10/2026 pelo PR #376** (item 2 da #373): `GET /sgd/remanejamentos/?demanda=`.
 
 *Compilado em 22/10/2026, ao implementar a issue #321 (fluxo "Solicitar recurso
 extra" e Fila de Remanejamentos). Numerado a partir do 22 porque os itens 20 e
@@ -718,6 +728,8 @@ quando a trava for a individual, ou numa rota de consulta
 
 ## 24. Notificações do SGD somem do sino e apontam para produção (#321)
 
+> **Resolvido no backend em 26/10/2026 pelo PR #376** (item 3 da #373): notificação in-app nasce entregue, o sino ordena com as sem data por último e o link local aponta para o frontend local.
+
 O caminho natural do solicitante até um pedido devolvido ou decidido é a
 notificação (`notificar_recurso_extra_devolvido` e `_decidido`, com link para
 `/sgd/remanejamentos/{id}`). No teste da #321 ela não aparece no sino, por dois
@@ -748,6 +760,8 @@ ambiente local.
 
 ## 25. O nome do arquivo exportado não chega ao front (#297)
 
+> **Resolvido no backend em 26/10/2026 pelo PR #376** (item 9 da #373): `CORS_EXPOSE_HEADERS = ["Content-Disposition"]`.
+
 `GET /api/v1/sgd/demandas/exportar/` manda o nome no `Content-Disposition`
 (`demandas_<data_hora>.<formato>`), mas o `setup/settings.py` não define
 `CORS_EXPOSE_HEADERS`. Com front e API em origens diferentes, como no ambiente
@@ -764,6 +778,8 @@ expuser o cabeçalho.
 ---
 
 ## 26. Filtros de solicitante e responsável sem lista para os perfis de gestão (#297)
+
+> **Resolvido no backend em 26/10/2026 pelo PR #376** (item 6 da #373): `GET /sgd/opcoes/usuarios/?papel=solicitante|responsavel`.
 
 O painel de execução filtra por `solicitante` e `responsavel_etapa_atual` (ids
 de usuário do `DemandFilter`), mas não há rota que liste esses usuários para
@@ -798,6 +814,8 @@ publicar com esse contrato, a lista aparece sem mudança no front.
 ---
 
 ## 27. O solicitante não vê o valor das diárias antes de salvar (#295)
+
+> **Resolvido no backend em 26/10/2026 pelo PR #376** (item 1 da #373): `GET /sgd/config/diarias/simular/`, com a mesma regra do salvamento. O E2E da #295 confere o total em tempo real.
 
 *Compilado em 24/10/2026, ao implementar a issue #295 (formulário de
 solicitação de recurso).*
@@ -851,6 +869,8 @@ mostra o valor que o backend calculou. O E2E do total em tempo real está como
 ---
 
 ## 28. Eventos do recurso extra fora da trilha de auditoria da demanda (#322)
+
+> **Resolvido no backend em 26/10/2026 pelo PR #376** (item 5 da #373): eventos do recurso extra na trilha da demanda, com `tipo: "recurso_extra"`.
 
 *Compilado em 24/10/2026, na revisão da #322.*
 
