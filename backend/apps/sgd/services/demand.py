@@ -111,6 +111,7 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
     só trocar o campo; a resubmissão não pede saldo adicional pra ela."""
     demand = solicitacao.demanda
     _exigir_editavel(demand)
+    balance_service.reler_reserva(solicitacao)
 
     tipo_final = tipo or solicitacao.tipo
     campos_final = campos_json if campos_json is not None else solicitacao.campos_json
@@ -124,14 +125,14 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
     if valor_final <= 0:
         raise RegraDeNegocio("Deve ser maior que zero.", campo="valor_estimado")
 
-    tem_reserva = balance_service.reserva_ativa(solicitacao)
+    tem_reserva = solicitacao.reserva_ativa
     if tem_reserva and rubrica.pk != solicitacao.rubrica_id:
         raise RegraDeNegocio(
             "Não é possível trocar o tipo de uma solicitação com reserva de saldo ativa "
             "(mudaria a rubrica). Remova e crie uma nova solicitação.",
             campo="tipo",
         )
-    if tem_reserva and valor_final != solicitacao.valor_estimado:
+    if tem_reserva and valor_final != solicitacao.valor_reservado:
         balance_service.ajustar_duas_travas(demand_request=solicitacao, novo_valor=valor_final, usuario=usuario)
 
     solicitacao.tipo = tipo_final
@@ -148,7 +149,8 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
 @transaction.atomic
 def remover_solicitacao(solicitacao, *, usuario) -> None:
     _exigir_editavel(solicitacao.demanda)
-    if balance_service.reserva_ativa(solicitacao):
+    balance_service.reler_reserva(solicitacao)
+    if solicitacao.reserva_ativa:
         balance_service.liberar_duas_travas(
             demand_request=solicitacao, usuario=usuario,
             motivo="Solicitação removida durante edição da demanda.",
@@ -193,7 +195,7 @@ def submeter_demanda(demand, *, usuario) -> Demand:
         # Com reserva já ativa (ex.: ressubmissão de Devolvida sem edição
         # nessa solicitação específica), o saldo já desconta essa reserva —
         # checar o valor cheio de novo bloquearia à toa.
-        if balance_service.reserva_ativa(solicitacao):
+        if solicitacao.reserva_ativa:
             continue
         consumo_previo = consumo_por_rubrica.get(solicitacao.rubrica_id, balance_service.ZERO)
         check = balance_service.verificar_duas_travas(
@@ -208,9 +210,10 @@ def submeter_demanda(demand, *, usuario) -> Demand:
         raise SaldoInsuficiente.para_submissao(bloqueios)
 
     for solicitacao in solicitacoes:
-        balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=usuario)
+        balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=usuario, adiar_gravacao=True)
 
     aplicar_transicao(demand, "submetida", usuario=usuario)
+    balance_service.gravar_estado_da_reserva(solicitacoes)
 
     sigla = demand.activity.municipio.state.sigla
     notifications_service.notificar_submissao(demand, notifications_service.usuarios_articuladores_do_estado(sigla))
@@ -228,10 +231,11 @@ def cancelar_demanda(demand, *, usuario, motivo: str = "") -> Demand:
     elif not pode_cancelar(demand, usuario):
         raise TransicaoInvalida("Você não pode cancelar esta demanda neste status.")
 
-    for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
+    solicitacoes = list(demand.solicitacoes.order_by("rubrica_id", "pk"))
+    for solicitacao in solicitacoes:
         balance_service.liberar_duas_travas(
             demand_request=solicitacao, usuario=usuario,
-            motivo=motivo or "Cancelada pelo solicitante.",
+            motivo=motivo or "Cancelada pelo solicitante.", adiar_gravacao=True,
         )
 
     # Dois cancelamentos simultâneos passam pela checagem acima com o mesmo status;
@@ -242,6 +246,7 @@ def cancelar_demanda(demand, *, usuario, motivo: str = "") -> Demand:
         raise TransicaoInvalida("A demanda mudou de status durante o cancelamento. Recarregue e tente de novo.")
 
     marcar_cancelada(demand, usuario=usuario)
+    balance_service.gravar_estado_da_reserva(solicitacoes)
     if estava_autorizada:
         ApprovalStep.objects.create(
             demanda=demand, etapa="cancelamento", responsavel=usuario,

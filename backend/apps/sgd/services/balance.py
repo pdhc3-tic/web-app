@@ -23,7 +23,7 @@ from apps.sgd.exceptions import (
     RegraDeNegocio,
     SaldoInsuficiente,
 )
-from apps.sgd.models import DemandIndividualLimit
+from apps.sgd.models import DemandIndividualLimit, DemandRequest
 from apps.sgd.services import notifications as notifications_service
 from apps.sgd.services import orcamento as orcamento_service
 from apps.sgd.services.orcamento import com_consumo_previo, com_orientacao
@@ -239,19 +239,31 @@ def verificar_duas_travas(
     return DuasTravasCheck(individual=individual, territorial=territorial, rubrica=rubrica, valor=valor)
 
 
-def _ja_registrado(*, acao: str, entidade_id: str) -> bool:
-    return AuditLog.objects.filter(entidade=_ENTIDADE_LIMITE, entidade_id=entidade_id, acao=acao).exists()
+def reler_reserva(demand_request) -> None:
+    """Relê do banco o estado da reserva. Com o limite travado, o valor não muda
+    até o commit: todo movimento da reserva trava o limite antes. Sem o lock,
+    serve para escolher o caminho, e a operação de saldo confere de novo."""
+    demand_request.refresh_from_db(fields=["valor_reservado", "valor_executado"])
 
 
-def reserva_ativa(demand_request) -> bool:
-    """Estado atual da reserva desta solicitação — não "já reservou alguma
-    vez", mas "está reservada agora". Distingue o ciclo reserva → liberação →
-    nova reserva (edição em Devolvida, resubmissão) olhando só o último
-    evento, não a existência histórica de um tipo de evento."""
-    ultimo = AuditLog.objects.filter(
-        entidade=_ENTIDADE_LIMITE, entidade_id=str(demand_request.pk), acao__in=["reserva", "liberacao"],
-    ).order_by("-timestamp", "-id").values_list("acao", flat=True).first()
-    return ultimo == "reserva"
+def _mover_reserva(demand_request, *, adiar: bool, **campos) -> None:
+    for campo, valor in campos.items():
+        setattr(demand_request, campo, valor)
+    if not adiar:
+        gravar_estado_da_reserva([demand_request])
+
+
+def gravar_estado_da_reserva(solicitacoes) -> None:
+    """Grava o estado da reserva já aplicado em memória. A solicitação é a última
+    da ordem de lock (`backend/docs/orcamento.md`): quem move o saldo de várias
+    solicitações e depois trava a `Demand` passa `adiar_gravacao=True` e chama
+    isto no fim. Gravar cada uma logo depois do seu pool deixaria a linha travada
+    antes do limite da rubrica seguinte e da `Demand`, e a decisão de recurso
+    extra, que trava `Demand` e depois as solicitações, fecharia um ciclo."""
+    for solicitacao in sorted(solicitacoes, key=lambda s: s.pk):
+        DemandRequest.objects.filter(pk=solicitacao.pk).update(
+            valor_reservado=solicitacao.valor_reservado, valor_executado=solicitacao.valor_executado,
+        )
 
 
 def _registrar_movimento_individual(
@@ -266,8 +278,9 @@ def _registrar_movimento_individual(
 
 
 @transaction.atomic
-def reservar_duas_travas(*, demand_request, usuario) -> None:
-    """Idempotente por `demand_request.pk`."""
+def reservar_duas_travas(*, demand_request, usuario, adiar_gravacao: bool = False) -> None:
+    """Idempotente por `demand_request.pk`. Com `adiar_gravacao`, ver
+    `gravar_estado_da_reserva`."""
     rubrica = demand_request.rubrica
     solicitante = demand_request.demanda.solicitante
     valor = demand_request.valor_estimado
@@ -282,7 +295,10 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
             rubrica=rubrica, limite=None, saldo=ZERO, valor=valor, solicitacao_id=demand_request.pk,
         )
     comprometido_individual_antes = limite.valor_comprometido
-    if not reserva_ativa(demand_request):
+    reler_reserva(demand_request)
+    # Executada, a reserva já foi convertida: submeter de novo não a refaz.
+    reservou = demand_request.valor_executado is None and not demand_request.reserva_ativa
+    if reservou:
         # Reconfere o saldo com a linha já travada (select_for_update acima)
         # — sem isso, duas reservas concorrentes que passaram no
         # verificar_duas_travas (antes do lock) comprometeriam o limite além
@@ -308,20 +324,8 @@ def reservar_duas_travas(*, demand_request, usuario) -> None:
         solicitante=solicitante, rubrica=rubrica, valor=valor, demand_request=demand_request, usuario=usuario,
     )
     _notificar_pool_se_piorou(movimento, demand=demand_request.demanda, rubrica_nome=rubrica.nome)
-
-
-def _valor_reservado_individual(entidade_id: str, *, fallback: Decimal) -> Decimal:
-    """Última reserva/ajuste aplicado para esta entidade — nunca um campo
-    congelado do model. Reaplicar `ajustar_duas_travas` com o mesmo
-    `novo_valor` (retry) dá diferença zero por construção, sem precisar de
-    uma guarda de "já processei esse evento"."""
-    ultimo = AuditLog.objects.filter(
-        entidade=_ENTIDADE_LIMITE, entidade_id=entidade_id, acao__in=["reserva", "ajuste"],
-    ).order_by("-timestamp", "-id").first()
-    if ultimo is None:
-        return fallback
-    valor = (ultimo.valores_novos or {}).get("valor")
-    return Decimal(valor) if valor is not None else fallback
+    if reservou:
+        _mover_reserva(demand_request, adiar=adiar_gravacao, valor_reservado=valor)
 
 
 @transaction.atomic
@@ -333,8 +337,8 @@ def ajustar_duas_travas(
 
     Reutilizável mais de uma vez para a mesma solicitação (autorização com
     valor ajustado, depois edição em Devolvida, depois nova autorização
-    etc.) — cada chamada reconsulta o valor efetivamente reservado agora,
-    nunca um total acumulado só em memória."""
+    etc.) — cada chamada parte do `valor_reservado` relido sob o lock, então
+    repetir o mesmo `novo_valor` não move o saldo de novo."""
     rubrica = demand_request.rubrica
     solicitante = demand_request.demanda.solicitante
     entidade_id = str(demand_request.pk)
@@ -342,7 +346,10 @@ def ajustar_duas_travas(
     limite = DemandIndividualLimit.objects.select_for_update().get(
         solicitante=solicitante, rubrica=rubrica,
     )
-    valor_anterior = _valor_reservado_individual(entidade_id, fallback=demand_request.valor_estimado)
+    reler_reserva(demand_request)
+    if not demand_request.reserva_ativa:
+        raise RegraDeNegocio(f"A solicitação #{demand_request.pk} não tem reserva ativa para ajustar.")
+    valor_anterior = demand_request.valor_reservado
     diferenca = novo_valor - valor_anterior
     comprometido_individual_antes = limite.valor_comprometido
     if diferenca != ZERO:
@@ -373,10 +380,12 @@ def ajustar_duas_travas(
         solicitante=solicitante, rubrica=rubrica, valor=novo_valor, demand_request=demand_request, usuario=usuario,
     )
     _notificar_pool_se_piorou(movimento, demand=demand_request.demanda, rubrica_nome=rubrica.nome)
+    if diferenca != ZERO:
+        _mover_reserva(demand_request, adiar=False, valor_reservado=novo_valor)
 
 
 @transaction.atomic
-def liberar_duas_travas(*, demand_request, usuario, motivo: str) -> None:
+def liberar_duas_travas(*, demand_request, usuario, motivo: str, adiar_gravacao: bool = False) -> None:
     rubrica = demand_request.rubrica
     solicitante = demand_request.demanda.solicitante
     entidade_id = str(demand_request.pk)
@@ -384,13 +393,14 @@ def liberar_duas_travas(*, demand_request, usuario, motivo: str) -> None:
     limite = DemandIndividualLimit.objects.select_for_update().filter(
         solicitante=solicitante, rubrica=rubrica,
     ).first()
-    # Só libera se há reserva ativa agora — cancelar um Rascunho (nunca
+    # Só libera com reserva ativa agora — cancelar um Rascunho (nunca
     # reservado) ou liberar duas vezes seguidas não pode decrementar o
-    # comprometido de novo. E libera o valor efetivamente reservado agora
-    # (último reserva/ajuste), não `valor_estimado` — que fica congelado no
-    # valor original mesmo depois de um ajuste na autorização ou numa edição.
-    if limite is not None and reserva_ativa(demand_request):
-        valor = _valor_reservado_individual(entidade_id, fallback=demand_request.valor_estimado)
+    # comprometido de novo. E libera o `valor_reservado`, não `valor_estimado`,
+    # que fica no valor original depois de um ajuste.
+    reler_reserva(demand_request)
+    liberou = demand_request.reserva_ativa
+    if liberou and limite is not None:
+        valor = demand_request.valor_reservado
         limite.valor_comprometido -= valor
         limite.save(update_fields=["valor_comprometido"])
         _registrar_movimento_individual(
@@ -401,10 +411,12 @@ def liberar_duas_travas(*, demand_request, usuario, motivo: str) -> None:
     orcamento_service.liberar_pool(
         solicitante=solicitante, rubrica=rubrica, demand_request=demand_request, usuario=usuario, motivo=motivo,
     )
+    if liberou:
+        _mover_reserva(demand_request, adiar=adiar_gravacao, valor_reservado=ZERO)
 
 
 @transaction.atomic
-def liberar_duas_travas_em_lote(solicitacoes, *, usuario, motivo: str) -> None:
+def liberar_duas_travas_em_lote(solicitacoes, *, usuario, motivo: str, adiar_gravacao: bool = False) -> None:
     """Libera as reservas de solicitações de várias demandas, de vários solicitantes.
     Liberar uma por uma travaria a alocação de um solicitante antes do limite do
     seguinte; por isso, rubrica a rubrica, trava antes todos os limites e depois todas
@@ -417,7 +429,9 @@ def liberar_duas_travas_em_lote(solicitacoes, *, usuario, motivo: str) -> None:
         ))
         orcamento_service.travar_pools_das_reservas(grupo)
         for solicitacao in grupo:
-            liberar_duas_travas(demand_request=solicitacao, usuario=usuario, motivo=motivo)
+            liberar_duas_travas(
+                demand_request=solicitacao, usuario=usuario, motivo=motivo, adiar_gravacao=adiar_gravacao,
+            )
 
 
 def _travar_em_ordem_de_pk(queryset) -> None:
@@ -428,25 +442,28 @@ def _travar_em_ordem_de_pk(queryset) -> None:
 def executar_duas_travas(*, demand_request, valor_pago: Decimal, usuario) -> None:
     rubrica = demand_request.rubrica
     solicitante = demand_request.demanda.solicitante
-    valor_reservado = demand_request.valor_autorizado or demand_request.valor_estimado
-    diferenca = valor_reservado - valor_pago
     entidade_id = str(demand_request.pk)
 
     limite = DemandIndividualLimit.objects.select_for_update().get(
         solicitante=solicitante, rubrica=rubrica,
     )
-    if not _ja_registrado(acao="execucao", entidade_id=entidade_id):
+    reler_reserva(demand_request)
+    executou = demand_request.valor_executado is None
+    if executou:
+        valor_reservado = demand_request.valor_reservado
         limite.valor_comprometido -= valor_reservado
         limite.valor_executado += valor_pago
         limite.save(update_fields=["valor_comprometido", "valor_executado"])
         _registrar_movimento_individual(
             acao="execucao", entidade_id=entidade_id, usuario=usuario,
-            valores_novos={"valor_pago": str(valor_pago), "diferenca_liberada": str(diferenca)},
+            valores_novos={"valor_pago": str(valor_pago), "diferenca_liberada": str(valor_reservado - valor_pago)},
         )
 
     orcamento_service.executar_pool(
         solicitante=solicitante, rubrica=rubrica, valor=valor_pago, demand_request=demand_request, usuario=usuario,
     )
+    if executou:
+        _mover_reserva(demand_request, adiar=False, valor_executado=valor_pago)
 
 
 @transaction.atomic

@@ -63,12 +63,14 @@ Toda transação que trava mais de uma destas linhas segue esta ordem, para que 
 
 | Caminho | O que trava |
 |---|---|
-| Submissão; recusa; cancelamento pelo solicitante ou, de demanda autorizada, pela UGP/Super Admin; edição e remoção de solicitação com reserva | limite → alocação → `Demand` ou `DemandRequest` |
-| Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todos os limites e depois todas as alocações; só então as `Demand` |
+| Submissão; recusa; cancelamento pelo solicitante ou, de demanda autorizada, pela UGP/Super Admin | limite → alocação, rubrica a rubrica → `Demand` → estado da reserva nas `DemandRequest` (`gravar_estado_da_reserva`, em ordem de pk) |
+| Edição e remoção de solicitação com reserva | limite → alocação → `DemandRequest` |
+| Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todos os limites e depois todas as alocações; só então as `Demand` e, por fim, o estado da reserva nas `DemandRequest` |
 | Decisão de recurso extra | pedido → limite → alocações (territorial e origem) → `Demand` → todas as `DemandRequest` da demanda |
 | Parecer, devolução, submissão e edição do pedido | só o pedido |
 | Criação do pedido | a `Demand`, e depois o pedido novo, que nenhuma outra transação enxerga antes do commit |
 | Inclusão de solicitação | só a `Demand` |
+| Edição do limite individual (`PATCH /sgd/limites-individuais/{id}/` ou Django Admin); exclusão pelo Django Admin, só sem saldo | só o limite |
 | `remanejar`, `atualizar_valor_alocado` | alocações em ordem crescente de pk |
 
 Exceções, só em demandas fora de Rascunho/Devolvida: a importação do Arlo trava a `Demand` antes do limite, e `autorizar`/`concluir` gravam a solicitação de uma rubrica antes de travar o limite da seguinte. A decisão de recurso extra confere que a demanda está editável antes de travá-la, então nunca disputa essas linhas com elas. Entre si, e com o cancelamento (automático ou pela UGP/Super Admin) de uma demanda autorizada, essas exceções ainda podem formar ciclo: o Postgres derruba uma das transações, que precisa ser repetida.
@@ -79,7 +81,7 @@ Exceções, só em demandas fora de Rascunho/Devolvida: a importação do Arlo t
 python manage.py verificar_saldos
 ```
 
-Confere, para cada `BudgetAllocation`, se `valor_comprometido`/`valor_executado` batem com a soma das suas `BudgetTransaction` por tipo (`reserva`/`execucao`/`liberacao`). Sai com código de saída ≠ 0 (via `CommandError`) e lista as divergências encontradas, se houver.
+Confere, para cada `BudgetAllocation`, se `valor_comprometido`/`valor_executado` batem com a soma das suas `BudgetTransaction` por tipo (`reserva`/`execucao`/`liberacao`). No SGD, confere também se o `valor_comprometido` de cada limite individual bate com a soma do `valor_reservado` das solicitações com reserva ativa (`valor_reservado > 0` e `valor_executado` nulo) do mesmo solicitante e rubrica; essa parte lê `sgd_demand` com visão total, já que o comando não passa pelo middleware que define o papel da sessão para o RLS. Sai com código de saída ≠ 0 (via `CommandError`) e lista as divergências encontradas, se houver.
 
 ## Endpoints HTTP
 
