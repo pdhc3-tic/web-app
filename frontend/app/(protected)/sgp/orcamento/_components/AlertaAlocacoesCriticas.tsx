@@ -3,7 +3,7 @@
 import { AlertTriangle, ChevronRight } from "lucide-react";
 import { SemaforoBadge } from "@/app/components/ui/SemaforoBadge/SemaforoBadge";
 import { formatCurrencyBRL } from "@/app/lib/format";
-import { LIMIAR_ALERTA_PCT, labelSemaforoOrcamento } from "@/app/lib/orcamento";
+import { labelSemaforoOrcamento, limiaresDaLinha } from "@/app/lib/orcamento";
 import { formatPercentual } from "@/app/lib/semaforo";
 import type { CelulaOrcamento } from "./tipos";
 
@@ -13,7 +13,7 @@ type Props = {
 };
 
 /**
- * "Alocações que exigem atenção" — o banner de ≥ 80% comprometido.
+ * "Alocações que exigem atenção" — o banner das alocações em vermelho.
  *
  * Fica no topo e reúne TODAS as alocações em vermelho, atravessando as Metas:
  * o ponto do requisito é que o gestor não precise varrer a matriz Meta por Meta
@@ -47,7 +47,7 @@ export function AlertaAlocacoesCriticas({ celulas, onSelect }: Props) {
             </span>
           </h2>
           <p className="text-xs leading-relaxed text-error-text">
-            {LIMIAR_ALERTA_PCT}% ou mais do valor aprovado já está comprometido.
+            {limiaresDaLinha(celulas[0].linha).vermelho}% ou mais do valor aprovado já está comprometido.
             Novas demandas sobre estas rubricas tendem a esbarrar em saldo
             insuficiente.
           </p>
@@ -90,7 +90,7 @@ export function AlertaAlocacoesCriticas({ celulas, onSelect }: Props) {
 
                 <SemaforoBadge
                   nivel={nivelSemaforo}
-                  label={labelSemaforoOrcamento(nivelSemaforo)}
+                  label={labelSemaforoOrcamento(nivelSemaforo, limiaresDaLinha(linha))}
                   className="shrink-0"
                 />
                 <ChevronRight

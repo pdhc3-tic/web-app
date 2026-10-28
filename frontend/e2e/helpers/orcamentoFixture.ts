@@ -42,7 +42,7 @@ export const META_COM_ORCAMENTO = 1;
 /** Número da Meta deixada deliberadamente sem nenhuma alocação (teste 7). */
 export const META_SEM_ORCAMENTO = 2;
 
-/** Rubrica levada a 85% de comprometido — vermelha em qualquer data (teste 2). */
+/** Rubrica levada a 95% de comprometido — vermelha com o limiar padrão de 90% (teste 2). */
 export const RUBRICA_CRITICA = { slug: "diarias", nome: "Diárias" };
 
 /** Rubrica mantida bem abaixo do limiar, para provar que nem tudo alerta. */
@@ -75,7 +75,7 @@ const MARCADOR = "PDHC_E2E_ORCAMENTO";
 /**
  * Cria as alocações.
  *
- * Nacional na Meta 1: `diarias` a 85% (85.000 de 100.000) para o vermelho e o
+ * Nacional na Meta 1: `diarias` a 95% (95.000 de 100.000) para o vermelho e o
  * banner; `passagens-aereas` a 20% para o verde. Territorial no território da
  * Marina, para que o painel dela tenha o que mostrar — e com valores DIFERENTES
  * dos nacionais, senão o teste do recorte não distinguiria uma coisa da outra.
@@ -132,7 +132,7 @@ def alocar(rubrica, nivel, alocado, comprometido, executado, **escopo):
     )
 
 # Nacional — o que o UGP/super-admin ve por padrao.
-alocar(diarias, "nacional", "100000.00", "85000.00", "10000.00")
+alocar(diarias, "nacional", "100000.00", "95000.00", "10000.00")
 alocar(passagens, "nacional", "50000.00", "10000.00", "2500.00")
 
 # Estadual em PE — o alvo do drill-down por estado. Valor DIFERENTE do

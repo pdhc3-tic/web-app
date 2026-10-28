@@ -121,3 +121,19 @@ Além do `q`, também ficam fora da chave `comunidade`, `cadastrado_de` e `cadas
 **Pedido (#377):** montar a chave com todos os parâmetros do `UPFFilter`, mais o `bbox`.
 
 *Estado atual no frontend:* a tela manda `?q=` corretamente. No E2E, o teste da busca sem resultado está escrito e marcado como `fixme` até a correção.
+
+---
+
+## 5. Limiares do semáforo do orçamento fora do alcance da tela — na #373 (item 15)
+
+*Compilado em 28/10/2026, ao corrigir a `orcamento.spec` (o vermelho passou de 80% para `budget_alert_red_pct`, 90% por padrão, na migração `core/0021`).*
+
+O semáforo de `GET /api/v1/sgp/orcamento/painel/` segue `budget_alert_yellow_pct` e `budget_alert_red_pct` do `SystemConfig`. A tela escreve esses números nos rótulos ("Comprometido ≥ 90%") e no banner de alerta, mas não tem como lê-los: `/system-config/` é só de Super Admin e UGP (`IsSuperAdminOrUGPReadOnly`), e o painel também é visto por Articulador e ADT. Se a configuração mudar, a cor continua certa (vem do backend) e o número escrito fica errado.
+
+**Pedido:** devolver em cada linha do painel os limiares em vigor, como inteiros:
+
+```json
+"limiares_semaforo": { "amarelo": 70, "vermelho": 90 }
+```
+
+*Estado atual no frontend:* `PainelOrcamentoLinhaApi.limiares_semaforo` já é lido por `limiaresDaLinha` (`app/lib/orcamento.ts`). Enquanto o campo não vem, os rótulos usam os padrões do backend (70 e 90). Nada muda no front quando o campo entrar.
