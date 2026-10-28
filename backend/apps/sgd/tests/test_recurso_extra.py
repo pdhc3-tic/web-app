@@ -1130,3 +1130,18 @@ def test_devolucao_notifica_o_solicitante(pedido, solicitante_rn, usuario_articu
     _acao(usuario_articulador_rn, pedido.pk, "devolver", {"justificativa": "Detalhe o valor."})
 
     assert Notification.objects.filter(user=solicitante_rn, evento="recurso_extra_devolvido").exists()
+
+
+def test_criar_pedido_nao_trava_a_linha_do_solicitante(demanda, solicitante_rn, rubrica_diarias):
+    """O `select_related("solicitante")` sem `of` levaria a linha do usuário para o FOR UPDATE."""
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    with CaptureQueriesContext(connection) as consultas:
+        recurso_extra_service.criar(
+            demanda=demanda, rubrica=rubrica_diarias, justificativa=JUSTIFICATIVA, usuario=solicitante_rn,
+        )
+
+    travas = [q["sql"] for q in consultas if "FOR UPDATE" in q["sql"] and '"sgd_demand"' in q["sql"]]
+    assert travas
+    assert all(" JOIN " not in sql or "FOR UPDATE OF" in sql for sql in travas)

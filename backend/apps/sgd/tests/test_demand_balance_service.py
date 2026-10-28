@@ -1042,3 +1042,45 @@ def test_reler_reserva_de_solicitacao_que_mudou_de_rubrica_e_transicao_invalida(
 
     with pytest.raises(TransicaoInvalida):
         balance_service.reler_reserva(demand_request_rn)
+
+
+def _travas_com_join_sem_of(consultas) -> list[str]:
+    return [
+        q["sql"] for q in consultas
+        if "FOR UPDATE" in q["sql"] and " JOIN " in q["sql"] and "FOR UPDATE OF" not in q["sql"]
+    ]
+
+
+def test_travas_de_saldo_nao_travam_a_linha_do_solicitante(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    """O `ordering` do limite é por solicitante e rubrica. Sem `of`, o FOR UPDATE
+    do `.first()` levaria o JOIN e travaria também a linha do usuário: quem grava
+    uma notificação ou auditoria para o solicitante esperaria esse lock no commit,
+    segurando a Demand, e fecharia um ciclo com quem espera a Demand."""
+    with CaptureQueriesContext(connection) as consultas:
+        balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+        balance_service.reler_reserva_travada(demand_request_rn)
+        balance_service.liberar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn, motivo="x")
+
+    assert any("FOR UPDATE" in q["sql"] for q in consultas)
+    assert _travas_com_join_sem_of(consultas) == []
+
+
+def test_fluxo_completo_nao_trava_linhas_alem_das_da_ordem_de_lock(
+    demand_request_rn, solicitante_rn, usuario_articulador_rn, usuario_ugp, usuario_fgd,
+    allocation_territorial_rn, limite_individual_rn,
+):
+    demand = demand_request_rn.demanda
+    with CaptureQueriesContext(connection) as consultas:
+        demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+        workflow_service.executar_transicao(demand, "pre_autorizada", ator=usuario_articulador_rn)
+        workflow_service.executar_transicao(
+            demand, "autorizada", ator=usuario_ugp, ajustes={demand_request_rn.pk: Decimal("900")},
+        )
+        workflow_service.executar_transicao(demand, "em_atendimento", ator=usuario_fgd)
+        workflow_service.executar_transicao(
+            demand, "concluida", ator=usuario_fgd, valores_pagos={demand_request_rn.pk: Decimal("800")},
+        )
+
+    assert _travas_com_join_sem_of(consultas) == []

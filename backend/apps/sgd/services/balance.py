@@ -262,12 +262,21 @@ def reler_reserva(demand_request) -> None:
         )
 
 
+def _travar_limite(*, solicitante_id, rubrica_id) -> DemandIndividualLimit | None:
+    """`of=("self",)`: o `ordering` do model é por solicitante e rubrica, e o
+    `.first()` levaria o JOIN com `core_user` e com a rubrica para dentro do FOR
+    UPDATE. A linha do solicitante ficaria travada, e o commit de qualquer outra
+    transação que gravou algo apontando para ele (notificação, auditoria, etapa)
+    esperaria este lock na checagem da FK."""
+    return DemandIndividualLimit.objects.select_for_update(of=("self",)).filter(
+        solicitante_id=solicitante_id, rubrica_id=rubrica_id,
+    ).first()
+
+
 def reler_reserva_travada(demand_request) -> None:
     """Trava o limite da solicitação e relê o estado da reserva, que daí até o
     commit não muda."""
-    DemandIndividualLimit.objects.select_for_update().filter(
-        solicitante_id=demand_request.demanda.solicitante_id, rubrica_id=demand_request.rubrica_id,
-    ).first()
+    _travar_limite(solicitante_id=demand_request.demanda.solicitante_id, rubrica_id=demand_request.rubrica_id)
     reler_reserva(demand_request)
 
 
@@ -313,9 +322,7 @@ def reservar_duas_travas(*, demand_request, usuario, adiar_gravacao: bool = Fals
     valor = demand_request.valor_estimado
 
     entidade_id = str(demand_request.pk)
-    limite = DemandIndividualLimit.objects.select_for_update().filter(
-        solicitante=solicitante, rubrica=rubrica,
-    ).first()
+    limite = _travar_limite(solicitante_id=solicitante.pk, rubrica_id=rubrica.pk)
     if limite is None:
         # Removido depois da pré-checagem: mesma resposta que ela daria.
         raise _bloqueio_individual(
@@ -418,9 +425,7 @@ def liberar_duas_travas(*, demand_request, usuario, motivo: str, adiar_gravacao:
     solicitante = demand_request.demanda.solicitante
     entidade_id = str(demand_request.pk)
 
-    limite = DemandIndividualLimit.objects.select_for_update().filter(
-        solicitante=solicitante, rubrica=rubrica,
-    ).first()
+    limite = _travar_limite(solicitante_id=solicitante.pk, rubrica_id=rubrica.pk)
     # Só libera com reserva ativa agora — cancelar um Rascunho (nunca
     # reservado) ou liberar duas vezes seguidas não pode decrementar o
     # comprometido de novo. E libera o `valor_reservado`, não `valor_estimado`,

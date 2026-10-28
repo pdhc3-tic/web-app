@@ -135,7 +135,8 @@ def _exigir_valor_cobre_o_deficit(demanda: Demand, rubrica, valor: Decimal) -> N
 def criar(*, demanda: Demand, rubrica, justificativa: str, usuario, valor_solicitado: Decimal | None = None,
           periodo_aplicacao: str = "", submeter: bool = True) -> BudgetIncreaseRequest:
     # Serializa pedidos concorrentes da mesma demanda: o de baixo vê o do de cima.
-    demanda = Demand.objects.select_for_update().select_related("solicitante").get(pk=demanda.pk)
+    # `of=("self",)`: sem ele, o FOR UPDATE travaria também a linha do solicitante.
+    demanda = Demand.objects.select_for_update(of=("self",)).select_related("solicitante").get(pk=demanda.pk)
     if demanda.status not in STATUS_EDITAVEIS:
         raise RegraDeNegocio(
             "Só uma demanda em Rascunho ou Devolvida, a que o bloqueio impede de submeter, pode pedir recurso extra.",

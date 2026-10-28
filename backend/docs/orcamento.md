@@ -61,6 +61,8 @@ Toda transação que trava mais de uma destas linhas segue esta ordem, para que 
 3. `Demand`.
 4. `DemandRequest`.
 
+O `FOR UPDATE` trava só a linha da tabela da ordem: com JOIN na query (`select_related` ou um `ordering` por FK, como o do limite individual, que ordena por solicitante e rubrica), usar `select_for_update(of=("self",))`. Sem isso, a linha do usuário fica travada junto, e o commit de outra transação que gravou uma notificação, auditoria ou etapa para ele espera esse lock na checagem da FK, fechando um ciclo com a `Demand`.
+
 As transições de status passam por `apps.sgd.services.workflow.executar_transicao` (o cancelamento automático, pela variante em lote `cancelar_pelo_sistema`): primeiro o efeito no saldo, depois a `Demand` travada com o status relido (e as solicitações conferidas, quando o saldo partiu delas) e, por último, a gravação das `DemandRequest`. Se a demanda mudou nesse meio, a transição é recusada com `INVALID_TRANSITION`.
 
 | Caminho | O que trava |
