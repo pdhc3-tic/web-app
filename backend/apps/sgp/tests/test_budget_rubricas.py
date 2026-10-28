@@ -26,9 +26,17 @@ class TestListaDeRubricas:
         assert response.status_code == 200
         assert isinstance(response.data, list)
         assert _ids(response) == list(
-            BudgetRubrica.objects.order_by("nome").values_list("id", flat=True)
+            BudgetRubrica.objects.order_by("nome", "id").values_list("id", flat=True)
         )
         assert rubrica_inativa.pk in _ids(response)
+
+    def test_rubricas_com_o_mesmo_nome_saem_pela_ordem_do_id(self, auth_client_super_admin):
+        primeira = BudgetRubricaFactory(nome="Aaa Repetida", slug="repetida-1")
+        segunda = BudgetRubricaFactory(nome="Aaa Repetida", slug="repetida-2")
+
+        response = auth_client_super_admin.get(RUBRICAS_URL)
+
+        assert _ids(response)[:2] == [primeira.pk, segunda.pk]
 
     def test_cada_rubrica_traz_id_slug_nome_e_ativo(self, auth_client_super_admin, rubrica_inativa):
         response = auth_client_super_admin.get(RUBRICAS_URL)
@@ -45,9 +53,8 @@ class TestListaDeRubricas:
         response = auth_client_super_admin.get(f"{RUBRICAS_URL}?ativo=true")
 
         assert response.status_code == 200
-        assert _ids(response) == list(
-            BudgetRubrica.objects.filter(ativo=True).order_by("nome").values_list("id", flat=True)
-        )
+        ativas = BudgetRubrica.objects.filter(ativo=True).order_by("nome", "id")
+        assert _ids(response) == list(ativas.values_list("id", flat=True))
         assert rubrica_inativa.pk not in _ids(response)
 
     def test_ativo_false_devolve_so_as_inativas(self, auth_client_super_admin, rubrica_inativa):

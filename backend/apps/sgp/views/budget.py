@@ -231,7 +231,7 @@ class BudgetRubricaListView(generics.ListAPIView):
 
     permission_classes = [IsAuthenticatedActiveAccess]
     serializer_class = BudgetRubricaSerializer
-    queryset = BudgetRubrica.objects.order_by("nome")
+    queryset = BudgetRubrica.objects.order_by("nome", "id")
     pagination_class = None
     filter_backends = [DjangoFilterBackend]
     filterset_class = BudgetRubricaFilter
