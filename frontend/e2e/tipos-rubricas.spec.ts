@@ -8,11 +8,13 @@ import { storageStatePath } from "./helpers/users";
 
 /**
  * #319 (SGD-FE-8) — Configurações → SGD → Tipos e Rubricas, contra o CRUD
- * real da BE-8.
+ * real da BE-8, sem nenhuma resposta simulada.
  *
- * Só a lista de rubricas é simulada: `GET /api/v1/sgp/rubricas/` ainda não
- * existe no backend (pendencias-backend-sprint-11.md, item 1). A resposta
- * usa os ids reais, lidos pela fixture.
+ * O campo Rubrica do formulário vem de `GET /api/v1/sgp/rubricas/`, que o
+ * backend ainda não publica (pendencias-backend-sprint-11.md, item 1; #373,
+ * item 14). Os fluxos que escolhem uma rubrica — criar e trocar a rubrica —
+ * ficam escritos e marcados como `fixme` até a rota existir; quando ela
+ * entrar, basta tirar o `fixme`.
  */
 
 let fx: TipoRubricaFixture;
@@ -30,20 +32,6 @@ test.afterAll(() => {
 const TELA = "/admin/configuracoes/sgd/tipos-rubricas";
 const AVISO = "vale só para novas solicitações";
 
-async function simularRubricas(page: Page) {
-  await page.route(
-    (url) => url.pathname === "/api/v1/sgp/rubricas/",
-    (route) => {
-      if (route.request().method() === "OPTIONS") return route.fallback();
-      return route.fulfill({
-        status: 200,
-        headers: { "access-control-allow-origin": "*", "content-type": "application/json" },
-        body: JSON.stringify(fx.rubricas),
-      });
-    },
-  );
-}
-
 /** Abre um `Select` do design system pelo id do campo e escolhe a opção. */
 async function escolher(page: Page, id: string, opcao: string) {
   await page.locator(`button#${id}`).click();
@@ -55,10 +43,6 @@ const rubrica = (slug: string) => fx.rubricas.find((r) => r.slug === slug)!;
 
 test.describe("Super Admin", () => {
   test.use({ storageState: storageStatePath("superAdmin") });
-
-  test.beforeEach(async ({ page }) => {
-    await simularRubricas(page);
-  });
 
   test("chega pela área de Configurações e vê um mapeamento ativo por tipo", async ({ page }) => {
     await page.goto("/dashboard");
@@ -75,7 +59,26 @@ test.describe("Super Admin", () => {
     await expect(veiculo).toContainText("Locação de Veículo");
   });
 
-  test("desativa, cria um novo para o tipo, edita a rubrica e desativa de novo", async ({ page }) => {
+  test("desativa e reativa um mapeamento, com o aviso de que não retroage", async ({ page }) => {
+    const veiculo = mapeamentoDoTipo("veiculo");
+    await page.goto(TELA);
+
+    await page.getByTestId(`mapeamento-situacao-${veiculo.id}`).click();
+    await expect(page.getByTestId("situacao-drawer")).toContainText(AVISO);
+    await page.getByTestId("situacao-confirmar").click();
+    await expect(page.getByText(`Mapeamento desativado. A alteração ${AVISO}`)).toBeVisible();
+    await expect(page.getByTestId(`mapeamento-${veiculo.id}`)).toHaveCount(0);
+
+    await page.getByTestId("mapeamentos-incluir-inativos").check();
+    await expect(page.getByTestId(`mapeamento-${veiculo.id}`)).toContainText("Inativo");
+    await page.getByTestId(`mapeamento-situacao-${veiculo.id}`).click();
+    await page.getByTestId("situacao-confirmar").click();
+    await expect(page.getByText(`Mapeamento reativado. A alteração ${AVISO}`)).toBeVisible();
+    await expect(page.getByTestId(`mapeamento-${veiculo.id}`)).toContainText("Ativo");
+  });
+
+  // Aguarda `GET /api/v1/sgp/rubricas/` (pendência 1 da sprint 11): o campo Rubrica vem dela.
+  test.fixme("desativa, cria um novo para o tipo, edita a rubrica e desativa de novo", async ({ page }) => {
     const antigo = mapeamentoDoTipo("veiculo");
     await page.goto(TELA);
 
@@ -133,7 +136,6 @@ test.describe("Super Admin", () => {
     await escolher(page, "mapeamento-tipo", "Diárias");
     const form = page.getByTestId("mapeamento-form");
     await expect(form).toContainText("Já existe um mapeamento ativo para este tipo de solicitação.");
-    await escolher(page, "mapeamento-rubrica", rubrica("diarias").nome);
     await page.getByTestId("mapeamento-salvar").click();
 
     // Continua aberto, com o aviso, e nenhum POST saiu.
@@ -146,7 +148,8 @@ test.describe("Super Admin", () => {
     await expect(form).not.toContainText("Já existe um mapeamento ativo");
   });
 
-  test("reativar um inativo com outro ativo no tipo é barrado com aviso", async ({ page }) => {
+  // Aguarda `GET /api/v1/sgp/rubricas/`: o inativo do teste é criado pelo formulário, com uma rubrica.
+  test.fixme("reativar um inativo com outro ativo no tipo é barrado com aviso", async ({ page }) => {
     const antigo = mapeamentoDoTipo("diaria");
     await page.goto(TELA);
     await page.getByTestId("mapeamento-novo").click();

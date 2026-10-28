@@ -9,9 +9,9 @@ import path from "node:path";
  * mapeamentos e o teardown volta exatamente a ela: apaga o que a spec criou
  * e devolve rubrica e situação dos que já existiam.
  *
- * Devolve também o catálogo de rubricas com os ids reais. A rota que o lista
- * (`GET /sgp/rubricas/`) ainda não existe (pendencias-backend-sprint-11.md,
- * item 1): a spec simula só a resposta dela, com estes dados.
+ * Devolve também o catálogo de rubricas com os ids reais, que os testes de
+ * criar e trocar a rubrica usam quando `GET /sgp/rubricas/` existir
+ * (pendencias-backend-sprint-11.md, item 1).
  */
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
