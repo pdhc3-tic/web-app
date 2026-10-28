@@ -10,10 +10,10 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from apps.core.tests.factories import RoleFactory, TerritoryFactory, UserFactory
-from apps.sgp.cache import build_upf_map_cache_key
+from apps.sgp.cache import build_upf_map_cache_key, get_upf_map_cache_version
 from apps.sgp.filters import UPFFilter
 from apps.sgp.models import UPF
-from apps.sgp.tests.factories import ComunidadeFactory, UPFFactory
+from apps.sgp.tests.factories import ComunidadeFactory, MembroFactory, UPFFactory
 from apps.sgp.views import UPFViewSet
 
 
@@ -394,6 +394,35 @@ def test_chave_do_cache_do_mapa_ignora_parametro_que_nao_filtra():
     com_ordenacao = build_upf_map_cache_key(1, QueryDict("ordering=criado_em"))
 
     assert com_ordenacao == sem_filtro
+
+
+def test_mapa_busca_pelo_nome_novo_logo_depois_de_renomear_o_titular(
+    auth_client, projeto, municipio_rn, territory_rn,
+):
+    upf = make_upf(projeto, municipio_rn, territory_rn, cpf="86288366757", nome="João Silva")
+    antes = auth_client.get("/api/v1/upfs/mapa/?q=Joaquim")
+    assert feature_ids(antes) == []
+
+    titular = upf.titular
+    titular.nome_completo = "Joaquim Silva"
+    titular.save()
+    depois = auth_client.get("/api/v1/upfs/mapa/?q=Joaquim")
+
+    assert feature_ids(depois) == [upf.pk]
+    assert depois.data["features"][0]["properties"]["nome_titular"] == "Joaquim Silva"
+
+
+def test_salvar_membro_que_nao_e_titular_nao_invalida_o_cache_do_mapa(
+    projeto, municipio_rn, territory_rn,
+):
+    upf = make_upf(projeto, municipio_rn, territory_rn, cpf="86288366757")
+    membro = MembroFactory(upf=upf)
+    versao = get_upf_map_cache_version()
+
+    membro.nome_completo = "Outro Nome"
+    membro.save()
+
+    assert get_upf_map_cache_version() == versao
 
 
 def test_mapa_inclui_estado(auth_client, projeto, municipio_rn, territory_rn):
