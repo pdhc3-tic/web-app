@@ -5,6 +5,7 @@ from django.db.models import Q
 
 from apps.core.models.notifications import Notification, TipoNotificacao
 from apps.core.models.user import User
+from apps.core.utils import formatar_brl
 
 
 def _link_demanda(demand) -> str:
@@ -161,7 +162,7 @@ def _link_pedido(pedido) -> str:
 
 
 def _descricao_pedido(pedido) -> str:
-    return f"R$ {pedido.valor_solicitado} em {pedido.rubrica.nome}"
+    return f"{formatar_brl(pedido.valor_solicitado)} em {pedido.rubrica.nome}"
 
 
 def notificar_recurso_extra_submetido(pedido, articuladores) -> None:
@@ -203,8 +204,11 @@ def notificar_recurso_extra_decidido(pedido) -> None:
 def notificar_remanejamento_efetivado(transferencia, usuarios) -> None:
     _notificar(
         usuarios=usuarios,
-        titulo=f"Remanejamento efetivado: R$ {transferencia.valor}",
-        mensagem=f"R$ {transferencia.valor} foram remanejados entre alocações. Motivo: {transferencia.motivo}",
+        titulo=f"Remanejamento efetivado: {formatar_brl(transferencia.valor)}",
+        mensagem=(
+            f"{formatar_brl(transferencia.valor)} foram remanejados entre alocações. "
+            f"Motivo: {transferencia.motivo}"
+        ),
         link=f"{settings.FRONTEND_BASE_URL.rstrip('/')}/sgd/remanejamentos",
         evento="remanejamento_efetivado", canais=_EMAIL_E_IN_APP,
     )

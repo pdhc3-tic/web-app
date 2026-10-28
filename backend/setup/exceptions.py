@@ -1,16 +1,22 @@
 import math
 import logging
 
-from rest_framework.views import exception_handler
+from rest_framework.views import exception_handler, set_rollback
 from rest_framework.exceptions import Throttled
 from rest_framework.response import Response
 from rest_framework import status
+
+from apps.sgd.exceptions import ErroDeDominio
 
 
 security_logger = logging.getLogger("security")
 
 
 def custom_exception_handler(exc, context):
+    if isinstance(exc, ErroDeDominio):
+        set_rollback()
+        return Response(exc.como_dict(), status=status.HTTP_400_BAD_REQUEST)
+
     response = exception_handler(exc, context)
 
     if isinstance(exc, Throttled):

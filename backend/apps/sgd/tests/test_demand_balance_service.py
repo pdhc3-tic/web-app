@@ -1,11 +1,12 @@
 from decimal import Decimal
 
 import pytest
-from rest_framework.exceptions import ValidationError as DRFValidationError
 
+from apps.sgd.exceptions import ErroDeDominio, SaldoInsuficiente
 from apps.sgd.services import approval as approval_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
+from apps.sgd.services import orcamento as orcamento_service
 from apps.sgd.tests.factories import DemandIndividualLimitFactory, DemandRequestFactory
 
 pytestmark = pytest.mark.django_db
@@ -13,7 +14,7 @@ pytestmark = pytest.mark.django_db
 
 def test_bloqueio_trava_individual_sem_limite_configurado(solicitante_rn, rubrica_diarias, activity_rn, allocation_territorial_rn):
     check = balance_service.verificar_duas_travas(
-        solicitante=solicitante_rn, rubrica=rubrica_diarias, meta=activity_rn.acao.meta, valor=Decimal("100"),
+        solicitante=solicitante_rn, rubrica=rubrica_diarias, activity=activity_rn, valor=Decimal("100"),
     )
     assert check.disponivel is False
     assert check.trava_bloqueada == "individual"
@@ -21,7 +22,7 @@ def test_bloqueio_trava_individual_sem_limite_configurado(solicitante_rn, rubric
 
 def test_bloqueio_trava_individual_insuficiente(solicitante_rn, rubrica_diarias, activity_rn, allocation_territorial_rn, limite_individual_rn):
     check = balance_service.verificar_duas_travas(
-        solicitante=solicitante_rn, rubrica=rubrica_diarias, meta=activity_rn.acao.meta,
+        solicitante=solicitante_rn, rubrica=rubrica_diarias, activity=activity_rn,
         valor=Decimal("999999"),
     )
     assert check.disponivel is False
@@ -36,7 +37,7 @@ def test_bloqueio_trava_territorial_esgotada(solicitante_rn, rubrica_diarias, ac
         valor_alocado=100, valor_comprometido=100,
     )
     check = balance_service.verificar_duas_travas(
-        solicitante=solicitante_rn, rubrica=rubrica_diarias, meta=activity_rn.acao.meta, valor=Decimal("50"),
+        solicitante=solicitante_rn, rubrica=rubrica_diarias, activity=activity_rn, valor=Decimal("50"),
     )
     assert check.disponivel is False
     assert check.trava_bloqueada == "territorial"
@@ -76,10 +77,10 @@ def test_ajustar_duas_travas_acima_do_limite_bloqueia_sem_bypass(demand_request_
     balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
     novo_valor = limite_individual_rn.valor_limite + Decimal("1")
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         balance_service.ajustar_duas_travas(demand_request=demand_request_rn, novo_valor=novo_valor, usuario=solicitante_rn)
 
-    assert "Solicitar recurso extra" in str(excinfo.value.detail["detail"])
+    assert "Solicitar recurso extra" in str(excinfo.value.como_dict()["detail"])
 
 
 def test_ajustar_duas_travas_acima_do_pool_territorial_orienta_acionar_articulador(
@@ -88,14 +89,14 @@ def test_ajustar_duas_travas_acima_do_pool_territorial_orienta_acionar_articulad
     balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
     novo_valor = allocation_territorial_rn.valor_alocado + Decimal("1")
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         balance_service.ajustar_duas_travas(
             demand_request=demand_request_rn, novo_valor=novo_valor, usuario=solicitante_rn,
             ignorar_limite_individual=True,
         )
 
-    assert "Acione o Articulador Estadual" in str(excinfo.value.detail["detail"])
-    assert "Território esgotado" in str(excinfo.value.detail["detail"])
+    assert "Acione o Articulador Estadual" in str(excinfo.value.como_dict()["detail"])
+    assert "Território esgotado" in str(excinfo.value.como_dict()["detail"])
 
 
 def test_ajustar_duas_travas_com_bypass_autoriza_excedente_sem_elevar_limite(demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn):
@@ -148,11 +149,11 @@ def test_autorizar_excedente_exige_justificativa(demand_request_rn, solicitante_
     from apps.sgp.tests.factories import BudgetAllocationFactory
 
     origem = BudgetAllocationFactory(
-        meta=demand_request_rn.meta, rubrica=demand_request_rn.rubrica,
+        meta=demand_request_rn.demanda.activity.acao.meta, rubrica=demand_request_rn.rubrica,
         nivel=BudgetAllocation.Nivel.ESTADUAL, territorio=None,
         estado=StateFactory(sigla="RN", nome="Rio Grande do Norte"), valor_alocado=5000,
     )
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         balance_service.autorizar_excedente(
             demand_request=demand_request_rn, origem_allocation=origem,
             valor_excedente=Decimal("500"), justificativa="", usuario=solicitante_rn,
@@ -170,7 +171,7 @@ def test_autorizar_excedente_com_justificativa_remaneja_sem_elevar_limite_indivi
     from apps.sgp.tests.factories import BudgetAllocationFactory
 
     origem = BudgetAllocationFactory(
-        meta=demand_request_rn.meta, rubrica=demand_request_rn.rubrica,
+        meta=demand_request_rn.demanda.activity.acao.meta, rubrica=demand_request_rn.rubrica,
         nivel=BudgetAllocation.Nivel.ESTADUAL, territorio=None,
         estado=StateFactory(sigla="RN", nome="Rio Grande do Norte"), valor_alocado=Decimal("5000"),
     )
@@ -212,14 +213,15 @@ def test_submeter_demanda_bloqueio_de_uma_solicitacao_identifica_so_a_bloqueada(
         },
     )
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand, usuario=solicitante_rn)
 
-    bloqueios = excinfo.value.detail["solicitacoes_bloqueadas"]
+    bloqueios = excinfo.value.como_dict()["solicitacoes_bloqueadas"]
     assert str(solicitacao_bloqueada.pk) in bloqueios
     assert str(demand_request_rn.pk) not in bloqueios
-    assert excinfo.value.detail["solicitacao_id"] == solicitacao_bloqueada.pk
-    assert excinfo.value.detail["code"] == "trava_individual"
+    assert excinfo.value.como_dict()["solicitacao_id"] == solicitacao_bloqueada.pk
+    assert excinfo.value.como_dict()["code"] == "INSUFFICIENT_BALANCE"
+    assert excinfo.value.como_dict()["trava"] == "individual"
 
     demand.refresh_from_db()
     assert demand.status == "rascunho"
@@ -238,16 +240,16 @@ def test_submeter_demanda_bloqueio_territorial_orienta_acionar_articulador(
         valor_alocado=Decimal("500"), valor_comprometido=Decimal("0"),
     )
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
 
-    bloqueio = excinfo.value.detail["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
+    bloqueio = excinfo.value.como_dict()["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
     assert bloqueio["trava"] == "territorial"
     assert bloqueio["acao_sugerida"] == "acionar_articulador"
-    assert "Acione o Articulador Estadual" in str(bloqueio["motivo"])
+    assert "Acione o Articulador Estadual" in str(bloqueio["detail"])
     # Pool de 500 com 500 livres: o território ainda tem saldo, só não
     # cobre os 1.000 pedidos.
-    assert "Território esgotado nesta rubrica para este valor" in str(bloqueio["motivo"])
+    assert "Território esgotado nesta rubrica para este valor" in str(bloqueio["detail"])
 
 
 def test_submeter_demanda_bloqueio_individual_orienta_recurso_extra(
@@ -256,13 +258,13 @@ def test_submeter_demanda_bloqueio_individual_orienta_recurso_extra(
     limite_individual_rn.valor_limite = Decimal("500")
     limite_individual_rn.save(update_fields=["valor_limite"])
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
 
-    bloqueio = excinfo.value.detail["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
+    bloqueio = excinfo.value.como_dict()["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
     assert bloqueio["trava"] == "individual"
     assert bloqueio["acao_sugerida"] == "solicitar_recurso_extra"
-    assert "Solicitar recurso extra" in str(bloqueio["motivo"])
+    assert "Solicitar recurso extra" in str(bloqueio["detail"])
 
 
 def _solicitacoes_diaria(demand, rubrica, *valores):
@@ -282,15 +284,16 @@ def test_submeter_demanda_pre_checagem_soma_solicitacoes_da_mesma_rubrica_no_lim
     limite_individual_rn.save(update_fields=["valor_limite"])
     _, segunda, terceira = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "60", "60", "60")
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
 
-    corpo = excinfo.value.detail
+    corpo = excinfo.value.como_dict()
     assert set(corpo["solicitacoes_bloqueadas"]) == {str(segunda.pk), str(terceira.pk)}
     assert corpo["solicitacao_id"] == segunda.pk
-    assert corpo["code"] == "trava_individual"
-    assert "R$ 40.00 disponível, R$ 60.00 solicitado" in corpo["detail"]
-    assert "Já descontados R$ 60.00 de outras solicitações desta demanda" in corpo["detail"]
+    assert corpo["code"] == "INSUFFICIENT_BALANCE"
+    assert corpo["trava"] == "individual"
+    assert "R$ 40,00 disponível, R$ 60,00 solicitado" in corpo["detail"]
+    assert "Já descontados R$ 60,00 de outras solicitações desta demanda" in corpo["detail"]
 
     demand_rascunho_rn.refresh_from_db()
     assert demand_rascunho_rn.status == "rascunho"
@@ -309,14 +312,15 @@ def test_submeter_demanda_pre_checagem_soma_solicitacoes_da_mesma_rubrica_no_poo
     )
     _, segunda, terceira = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "60", "60", "60")
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
 
-    corpo = excinfo.value.detail
+    corpo = excinfo.value.como_dict()
     assert set(corpo["solicitacoes_bloqueadas"]) == {str(segunda.pk), str(terceira.pk)}
-    assert corpo["code"] == "trava_territorial"
-    assert "R$ 40.00 disponível, R$ 60.00 solicitado" in corpo["detail"]
-    assert "Já descontados R$ 60.00 de outras solicitações desta demanda" in corpo["detail"]
+    assert corpo["code"] == "INSUFFICIENT_BALANCE"
+    assert corpo["trava"] == "territorial"
+    assert "R$ 40,00 disponível, R$ 60,00 solicitado" in corpo["detail"]
+    assert "Já descontados R$ 60,00 de outras solicitações desta demanda" in corpo["detail"]
     allocation.refresh_from_db()
     assert allocation.valor_comprometido == Decimal("0")
 
@@ -329,10 +333,10 @@ def test_submeter_demanda_pre_checagem_barrada_nao_consome_saldo_das_seguintes(
     limite_individual_rn.save(update_fields=["valor_limite"])
     _, barrada, _ = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "60", "60", "30")
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
 
-    assert set(excinfo.value.detail["solicitacoes_bloqueadas"]) == {str(barrada.pk)}
+    assert set(excinfo.value.como_dict()["solicitacoes_bloqueadas"]) == {str(barrada.pk)}
 
 
 def test_submeter_demanda_limite_zerado_pela_propria_demanda_mostra_valores_e_nao_diz_esgotado(
@@ -342,13 +346,13 @@ def test_submeter_demanda_limite_zerado_pela_propria_demanda_mostra_valores_e_na
     limite_individual_rn.save(update_fields=["valor_limite"])
     *_, terceira = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "50", "50", "10")
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
 
-    corpo = excinfo.value.detail
+    corpo = excinfo.value.como_dict()
     assert corpo["solicitacao_id"] == terceira.pk
-    assert "Limite individual insuficiente: R$ 0.00 disponível, R$ 10.00 solicitado" in corpo["detail"]
-    assert "Já descontados R$ 100.00" in corpo["detail"]
+    assert "Limite individual insuficiente: R$ 0,00 disponível, R$ 10,00 solicitado" in corpo["detail"]
+    assert "Já descontados R$ 100,00" in corpo["detail"]
     assert "esgotado" not in corpo["detail"]
 
 
@@ -364,13 +368,14 @@ def test_submeter_demanda_pool_zerado_pela_propria_demanda_mostra_valores_e_nao_
     )
     *_, terceira = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "50", "50", "10")
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
 
-    corpo = excinfo.value.detail
+    corpo = excinfo.value.como_dict()
     assert corpo["solicitacao_id"] == terceira.pk
-    assert corpo["code"] == "trava_territorial"
-    assert "R$ 0.00 disponível, R$ 10.00 solicitado" in corpo["detail"]
+    assert corpo["code"] == "INSUFFICIENT_BALANCE"
+    assert corpo["trava"] == "territorial"
+    assert "R$ 0,00 disponível, R$ 10,00 solicitado" in corpo["detail"]
     assert BLOQUEIO_SALDO_ZERO not in corpo["detail"]
     # O pool tem R$ 100 livres no banco: só não cobre esta demanda inteira.
     assert "Território esgotado nesta rubrica para este valor" in corpo["detail"]
@@ -383,10 +388,10 @@ def test_submeter_demanda_sem_outras_solicitacoes_nao_menciona_desconto(
     limite_individual_rn.valor_limite = Decimal("500")
     limite_individual_rn.save(update_fields=["valor_limite"])
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
 
-    assert "Já descontados" not in excinfo.value.detail["detail"]
+    assert "Já descontados" not in excinfo.value.como_dict()["detail"]
 
 
 def test_submeter_demanda_rubricas_diferentes_nao_somam_consumo(
@@ -428,11 +433,12 @@ def test_submeter_demanda_bloqueio_individual_na_reserva_identifica_trava_e_soli
     limite_individual_rn.save(update_fields=["valor_limite"])
     _pre_checagem_aprova_tudo(monkeypatch)
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
 
-    corpo = excinfo.value.detail
-    assert corpo["code"] == "trava_individual"
+    corpo = excinfo.value.como_dict()
+    assert corpo["code"] == "INSUFFICIENT_BALANCE"
+    assert corpo["trava"] == "individual"
     assert corpo["solicitacao_id"] == demand_request_rn.pk
     assert "Solicitar recurso extra" in corpo["detail"]
     bloqueio = corpo["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
@@ -456,11 +462,12 @@ def test_submeter_demanda_bloqueio_territorial_na_reserva_identifica_trava_e_sol
     )
     _pre_checagem_aprova_tudo(monkeypatch)
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
 
-    corpo = excinfo.value.detail
-    assert corpo["code"] == "trava_territorial"
+    corpo = excinfo.value.como_dict()
+    assert corpo["code"] == "INSUFFICIENT_BALANCE"
+    assert corpo["trava"] == "territorial"
     assert corpo["solicitacao_id"] == demand_request_rn.pk
     assert "Acione o Articulador Estadual" in corpo["detail"]
     bloqueio = corpo["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
@@ -475,14 +482,71 @@ def test_submeter_demanda_bloqueio_territorial_na_reserva_identifica_trava_e_sol
     assert limite_individual_rn.valor_comprometido == Decimal("0")
 
 
+def _bloqueio_da_submissao(demand) -> dict:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
+        demand_service.submeter_demanda(demand, usuario=demand.solicitante)
+    return excinfo.value.como_dict()
+
+
+def test_bloqueio_individual_na_pre_checagem_e_na_reserva_tem_o_mesmo_contrato(
+    monkeypatch, demand_request_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    limite_individual_rn.valor_limite = Decimal("500")
+    limite_individual_rn.save(update_fields=["valor_limite"])
+
+    pela_pre_checagem = _bloqueio_da_submissao(demand_request_rn.demanda)
+    _pre_checagem_aprova_tudo(monkeypatch)
+    pela_reserva = _bloqueio_da_submissao(demand_request_rn.demanda)
+
+    assert pela_pre_checagem == pela_reserva
+    assert pela_reserva["code"] == "INSUFFICIENT_BALANCE"
+    assert (pela_reserva["disponivel"], pela_reserva["solicitado"]) == ("500.00", "1000.00")
+
+
+def test_bloqueio_territorial_na_pre_checagem_e_na_reserva_tem_o_mesmo_contrato(
+    monkeypatch, demand_request_rn, activity_rn, rubrica_diarias, limite_individual_rn,
+):
+    from apps.sgp.tests.factories import BudgetAllocationFactory
+
+    BudgetAllocationFactory(
+        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
+        valor_alocado=Decimal("500"), valor_comprometido=Decimal("0"),
+    )
+
+    pela_pre_checagem = _bloqueio_da_submissao(demand_request_rn.demanda)
+    _pre_checagem_aprova_tudo(monkeypatch)
+    pela_reserva = _bloqueio_da_submissao(demand_request_rn.demanda)
+
+    assert pela_pre_checagem == pela_reserva
+    assert pela_reserva["trava"] == "territorial"
+    assert (pela_reserva["disponivel"], pela_reserva["solicitado"]) == ("500.00", "1000.00")
+
+
+def test_reservar_duas_travas_sem_limite_individual_responde_no_contrato_da_pre_checagem(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn,
+):
+    """O limite removido entre a pré-checagem e o lock não pode virar erro 500."""
+    with pytest.raises(SaldoInsuficiente) as excinfo:
+        balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+
+    corpo = excinfo.value.como_dict()
+    assert corpo["trava"] == "individual"
+    assert corpo["disponivel"] == "0.00"
+    assert corpo["solicitacao_id"] == demand_request_rn.pk
+    assert corpo["detail"].startswith("Nenhum limite individual configurado para você nesta rubrica")
+    allocation_territorial_rn.refresh_from_db()
+    assert allocation_territorial_rn.valor_comprometido == Decimal("0")
+
+
 def test_reservar_duas_travas_sem_alocacao_territorial_identifica_trava_e_solicitacao(
     demand_request_rn, solicitante_rn, limite_individual_rn,
 ):
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
 
-    assert excinfo.value.detail["code"] == "trava_territorial"
-    assert excinfo.value.detail["solicitacao_id"] == demand_request_rn.pk
+    assert excinfo.value.como_dict()["code"] == "INSUFFICIENT_BALANCE"
+    assert excinfo.value.como_dict()["trava"] == "territorial"
+    assert excinfo.value.como_dict()["solicitacao_id"] == demand_request_rn.pk
 
 
 def test_submeter_bloqueado_responde_400_com_code_e_solicitacao_id(
@@ -495,7 +559,8 @@ def test_submeter_bloqueado_responde_400_com_code_e_solicitacao_id(
 
     assert response.status_code == 400
     corpo = response.json()
-    assert corpo["code"] == "trava_individual"
+    assert corpo["code"] == "INSUFFICIENT_BALANCE"
+    assert corpo["trava"] == "individual"
     assert corpo["solicitacao_id"] == demand_request_rn.pk
     assert "Solicitar recurso extra" in corpo["detail"]
     assert corpo["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]["trava"] == "individual"
@@ -616,7 +681,7 @@ def test_trocar_tipo_com_reserva_ativa_bloqueado(
     demand_service.submeter_demanda(demand, usuario=solicitante_rn)
     approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Tipo errado.")
 
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         demand_service.atualizar_solicitacao(
             demand_request_rn, usuario=solicitante_rn, tipo="alimentacao",
             campos_json={
@@ -663,12 +728,12 @@ def test_autorizar_excedente_rejeita_origem_territorial(
     # fixture, e colidiria com a unique constraint de BudgetAllocation.
     outro_territorio = TerritoryFactory(nome="Território Origem Excedente", estados=["RN"])
     origem_territorial = BudgetAllocationFactory(
-        meta=demand_request_rn.meta, rubrica=demand_request_rn.rubrica,
+        meta=demand_request_rn.demanda.activity.acao.meta, rubrica=demand_request_rn.rubrica,
         nivel=BudgetAllocation.Nivel.TERRITORIAL, territorio=outro_territorio,
         valor_alocado=Decimal("5000"),
     )
 
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         balance_service.autorizar_excedente(
             demand_request=demand_request_rn, origem_allocation=origem_territorial,
             valor_excedente=Decimal("500"), justificativa="Tentativa inválida.", usuario=solicitante_rn,
@@ -685,4 +750,4 @@ def test_autorizar_excedente_rejeita_origem_territorial(
     ],
 )
 def test_orientacao_territorial_por_situacao_do_pool(allocation, saldo, esperado):
-    assert balance_service.orientacao_territorial(allocation=allocation, saldo=saldo) == esperado
+    assert orcamento_service.orientacao_territorial(allocation=allocation, saldo=saldo) == esperado
