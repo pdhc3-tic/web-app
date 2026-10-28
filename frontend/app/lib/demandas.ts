@@ -170,17 +170,27 @@ const DEMANDAS_PATH = "/api/v1/sgd/demandas/";
  */
 const LIMITE_LISTA_DEMANDAS = 200;
 
+/** Página padrão do painel de demandas (#323), que navega pela listagem página a página. */
+export const DEMANDAS_POR_PAGINA = 50;
+
+export type PaginaDemandas = { offset: number; limit: number };
+
 export type ListaDemandas = {
   demandas: Demanda[];
   /** Total no backend com os mesmos filtros; maior que `demandas.length` = lista parcial. */
   total: number;
 };
 
-async function lerListaDemandas(qs: URLSearchParams, signal?: AbortSignal): Promise<ListaDemandas> {
-  qs.set("limit", String(LIMITE_LISTA_DEMANDAS));
+async function lerListaDemandas(
+  qs: URLSearchParams,
+  signal?: AbortSignal,
+  pagina?: PaginaDemandas,
+): Promise<ListaDemandas> {
+  qs.set("limit", String(pagina?.limit ?? LIMITE_LISTA_DEMANDAS));
+  if (pagina?.offset) qs.set("offset", String(pagina.offset));
   const res = await apiClient(`${DEMANDAS_PATH}?${qs}`, { signal });
-  const pagina = (await res.json()) as { count: number; results: Demanda[] };
-  return { demandas: pagina.results, total: pagina.count };
+  const resposta = (await res.json()) as { count: number; results: Demanda[] };
+  return { demandas: resposta.results, total: resposta.count };
 }
 
 /** GET /api/v1/sgd/demandas/?atividade={id} — as demandas de uma atividade. */
@@ -276,12 +286,15 @@ export async function fetchContagemFila(signal?: AbortSignal): Promise<ContagemF
  * - `filtros`: os do `DemandFilter` do BE-5 (atividade, ação, território,
  *   período…) — o drill-down do painel de execução (#297) leva o recorte do
  *   painel para a lista mostrar as demandas que compõem o custo exibido.
+ * - `pagina`: `offset`/`limit` do `DemandPagination`. Sem ela, vem a página
+ *   cheia do backend (200).
  */
 export async function listDemandas(
   params: {
     status?: StatusDemanda[];
     aguardandoMinhaAcao?: boolean;
     filtros?: Record<string, string | undefined>;
+    pagina?: PaginaDemandas;
   } = {},
   signal?: AbortSignal,
 ): Promise<ListaDemandas> {
@@ -291,7 +304,7 @@ export async function listDemandas(
   for (const [chave, valor] of Object.entries(params.filtros ?? {})) {
     if (valor) qs.set(chave, valor);
   }
-  return lerListaDemandas(qs, signal);
+  return lerListaDemandas(qs, signal, params.pagina);
 }
 
 /** GET /api/v1/sgd/demandas/{id}/ */

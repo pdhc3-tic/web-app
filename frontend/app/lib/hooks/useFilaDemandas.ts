@@ -1,9 +1,9 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { perfisDecisoresSgd } from "@/app/lib/auth/roles";
-import { fetchContagemFila, listDemandas } from "@/app/lib/demandas";
+import { fetchContagemFila, listDemandas, type PaginaDemandas } from "@/app/lib/demandas";
 import { qk } from "@/app/lib/queryKeys";
 
 /**
@@ -29,16 +29,18 @@ export function useContagemFila() {
 
 /**
  * A fila "Aguardando minha ação" em si: a listagem com
- * `?aguardando_minha_acao=true`, pela mesma regra da contagem.
+ * `?aguardando_minha_acao=true`, pela mesma regra da contagem, uma página por
+ * vez (#323). A página anterior fica na tela enquanto a próxima carrega.
  */
-export function useFilaDemandas() {
+export function useFilaDemandas(pagina: PaginaDemandas) {
   const contagem = useContagemFila();
 
   const lista = useQuery({
-    queryKey: qk.demandas.fila,
-    queryFn: ({ signal }) => listDemandas({ aguardandoMinhaAcao: true }, signal),
+    queryKey: qk.demandas.filaPagina(pagina),
+    queryFn: ({ signal }) => listDemandas({ aguardandoMinhaAcao: true, pagina }, signal),
     enabled: contagem.decide,
     staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
 
   return {

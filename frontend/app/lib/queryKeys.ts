@@ -40,14 +40,18 @@ export const qk = {
   /** Painel de demandas do SGD (#296) — tudo sob "sgd/demandas" invalida junto. */
   demandas: {
     all: ["sgd", "demandas"] as const,
-    lista: (status: readonly string[]) =>
-      ["sgd", "demandas", "lista", { status: [...status] }] as const,
+    /** `pagina` (offset/limit) só no painel de demandas, que pagina a lista (#323). */
+    lista: (status: readonly string[], pagina?: { offset: number; limit: number }) =>
+      ["sgd", "demandas", "lista", { status: [...status], ...pagina }] as const,
     detalhe: (id: string | number) => ["sgd", "demandas", "detalhe", String(id)] as const,
+    /** Prefixo da fila: invalida todas as páginas de uma vez. */
     fila: ["sgd", "demandas", "fila", "lista"] as const,
+    filaPagina: (pagina: { offset: number; limit: number }) =>
+      ["sgd", "demandas", "fila", "lista", pagina] as const,
     contagemFila: ["sgd", "demandas", "fila", "contagem"] as const,
     /** Lista com o recorte vindo do drill-down do painel de execução (#297). */
-    recorte: (filtros: Record<string, string | undefined>) =>
-      ["sgd", "demandas", "recorte", filtros] as const,
+    recorte: (filtros: Record<string, string | undefined>, pagina?: { offset: number; limit: number }) =>
+      ["sgd", "demandas", "recorte", filtros, pagina ?? null] as const,
     preview: (id: number, solicitacaoId: number, valor: string) =>
       ["sgd", "demandas", "preview", { id, solicitacaoId, valor }] as const,
     auditoria: (id: string | number) =>
