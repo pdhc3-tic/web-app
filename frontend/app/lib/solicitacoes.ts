@@ -139,7 +139,8 @@ export async function consultarSaldo(
 
 /** Contrato pedido ao backend na pendência 27, com os nomes da SGD-REF-BE-12 (#358). */
 export type SimulacaoDiarias = {
-  faixa_destino: { id: number; nome: string };
+  /** `id` nulo enquanto não há tabela por faixa: todo destino usa o "Valor padrão". */
+  faixa_destino: { id: number | null; nome: string };
   valor_por_diaria: string;
   /** Decimal: com meia diária, "2.5". */
   numero_diarias: string;
@@ -151,8 +152,7 @@ export type SimulacaoDiarias = {
  *
  * Rota da SGD-REF-BE-12 (#358), pedida na pendência 27: o solicitante não lê o
  * valor da diária (`SystemConfig` é só do Super Admin e da UGP), então o total
- * em tempo real depende dela. Enquanto não existe, a pré-visualização mostra o
- * erro, e o total aparece ao salvar — calculado pelo backend.
+ * em tempo real vem dela, pela mesma regra que o backend usa ao gravar.
  */
 export async function simularDiarias(
   params: { municipioDestinoId: string; dataInicio: string; dataFim: string },
