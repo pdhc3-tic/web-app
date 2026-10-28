@@ -94,8 +94,11 @@ export function TecnicoSlideOver({
   const [confirmDeactivate, setConfirmDeactivate] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
 
+  // Reset a cada abertura, mesmo padrão do MapeamentoDialog: o painel limpa os
+  // controles no `open` de false→true, sem desmontar a cada ciclo da animação.
   useEffect(() => {
     if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setErrors({});
     setGlobalError(null);
     setConfirmDeactivate(false);
@@ -180,8 +183,11 @@ export function TecnicoSlideOver({
     setGlobalError(null);
     try {
       await deactivateTecnico(tecnico.id);
+      setConfirmDeactivate(false);
       onDeactivated(tecnico.id);
     } catch (e) {
+      // O erro aparece no painel de edição, que fica coberto pela confirmação.
+      setConfirmDeactivate(false);
       if (e instanceof ApiError && e.status === 403) {
         setGlobalError("Você não tem permissão para esta ação.");
       } else if (e instanceof ApiError) {
@@ -189,6 +195,7 @@ export function TecnicoSlideOver({
       } else {
         setGlobalError("Não foi possível desativar o técnico.");
       }
+    } finally {
       setDeactivating(false);
     }
   }
@@ -272,6 +279,7 @@ export function TecnicoSlideOver({
                 />
               )}
               <Input
+                id="tecnico-papel"
                 label="Papel"
                 required
                 value={form.papel}
@@ -280,6 +288,7 @@ export function TecnicoSlideOver({
                 placeholder="Ex.: ADT, Coordenador..."
               />
               <Select
+                id="tecnico-territorio"
                 label="Território"
                 options={territorioOptions}
                 value={form.territorio}
@@ -287,6 +296,7 @@ export function TecnicoSlideOver({
                 placeholder="Nenhum (acesso global)"
               />
               <Select
+                id="tecnico-osc"
                 label="OSC"
                 options={oscOptions}
                 value={form.osc}

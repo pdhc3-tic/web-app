@@ -109,6 +109,9 @@ function TecnicosView() {
 
   useEffect(() => {
     const controller = new AbortController();
+    // Busca com AbortController: o estado de carregando/erro sincroniza com a
+    // requisição que sai daqui (mesma supressão de lint das outras telas).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDataLoading(true);
     setError(null);
     listTecnicosSGP(

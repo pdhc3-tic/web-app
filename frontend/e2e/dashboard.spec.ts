@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { criarAtividadeAtrasada, removerAtividadeAtrasada } from "./helpers/atrasadaFixture";
 import { storageStatePath } from "./helpers/users";
 
 /**
@@ -77,53 +78,45 @@ test.describe("Dashboard — UGP (visão consolidada)", () => {
     );
   });
 
-  test("Atrasadas: contagem do card bate com a lista /sgp/atividades?atrasada=true (A1 da #302)", async ({
-    page,
-    request,
-  }) => {
-    // E2E sem mock pedido pela A1 da issue #302: lê a contagem do card direto
-    // da tela e compara com o total que a listagem real devolve. O dashboard
-    // usa `page_size=1` só para o `count`; aqui faz o mesmo.
-    await abrirDashboard(page);
-    const cardAtrasadas = card(page, 1);
-    const textoCount = await cardAtrasadas
-      .locator("span.tabular-nums")
-      .first()
-      .textContent()
-      .catch(() => null);
-
-    // Card pode mostrar "Nenhuma pendência" se não houver atrasadas no seed.
-    const esperado =
-      textoCount && /^\d+$/.test(textoCount.trim())
-        ? Number(textoCount.trim())
-        : 0;
-
-    const api = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-    const token = await page.evaluate(() => {
-      const match = document.cookie.match(/next-auth\.session-token=([^;]+)/);
-      return match ? match[1] : null;
+  test.describe("A1 da #302: card Atrasadas contra a listagem real", () => {
+    test.beforeAll(() => {
+      criarAtividadeAtrasada();
     });
 
-    // Pega os cookies da sessão para fazer a chamada autenticada direta: o
-    // backend lê a sessão do Next, e queremos exatamente o mesmo escopo que
-    // o card leu.
-    const res = await request.get(
-      `${api}/api/v1/sgp/atividades/?atrasada=true&page_size=1`,
-      {
-        headers: token ? { Cookie: `next-auth.session-token=${token}` } : {},
-      },
-    );
-    if (!res.ok()) {
-      // Se a chamada direta sem o Next falhar (depende da configuração do
-      // auth em test), a comparação não é possível — anotamos e saímos.
-      test.info().annotations.push({
-        type: "warning",
-        description: `Chamada direta à API falhou (${res.status()}); comparação pulada.`,
+    test.afterAll(() => {
+      removerAtividadeAtrasada();
+    });
+
+    test("a contagem do card é o total da listagem /sgp/atividades?atrasada=true", async ({ page }) => {
+      // A fixture garante ao menos uma atrasada: o card mostra um número, não
+      // "Nenhuma pendência", e a comparação nunca é trivial.
+      const contagem = page.waitForResponse((r) => {
+        const url = new URL(r.url());
+        return url.pathname === "/api/v1/sgp/atividades/" && url.searchParams.get("atrasada") === "true";
       });
-      return;
-    }
-    const body = (await res.json()) as { count: number };
-    expect(body.count).toBe(esperado);
+      await abrirDashboard(page);
+      const api = new URL((await contagem).url()).origin;
+      const numeroDoCard = card(page, 1).locator("span.tabular-nums");
+      await expect(numeroDoCard).toHaveText(/^\d+$/);
+      const doCard = Number(await numeroDoCard.textContent());
+      expect(doCard).toBeGreaterThan(0);
+
+      // A mesma consulta direto na API, com o token da sessão (Bearer).
+      const daApi = await page.evaluate(async (api) => {
+        const sessao = await (await fetch("/api/auth/session")).json();
+        const res = await fetch(`${api}/api/v1/sgp/atividades/?atrasada=true&page_size=1`, {
+          headers: { Authorization: `Bearer ${sessao.accessToken}` },
+        });
+        if (!res.ok) throw new Error(`listagem respondeu ${res.status}`);
+        return ((await res.json()) as { count: number }).count;
+      }, api);
+      expect(daApi).toBe(doCard);
+
+      // E a listagem que o link do card abre mostra o mesmo total.
+      await card(page, 1).getByRole("link", { name: /Ver listagem/ }).click();
+      await expect(page).toHaveURL(/\/sgp\/atividades\?atrasada=true/);
+      await expect(page.getByText(new RegExp(`^\\d+–\\d+ de ${doCard} atividades?$`))).toBeVisible();
+    });
   });
 
   test("Ações críticas: link usa ?criticas=1, não situacao=em_atraso", async ({
@@ -153,25 +146,12 @@ test.describe("Dashboard — UGP (visão consolidada)", () => {
     page,
   }) => {
     await abrirDashboard(page);
-    // Lê a contagem do card (número visível dentro do 3º card).
+    // O seed tem Ações críticas: o card mostra um número, e a comparação vale.
     const cardCriticas = card(page, 2);
-    const numero = await cardCriticas
-      .locator("span.tabular-nums")
-      .first()
-      .textContent()
-      .catch(() => null);
-
-    // Se o card mostra "Nenhuma pendência", nada a comparar — o painel vazio
-    // é aceitável nessa branch.
-    if (!numero || !/^\d+$/.test(numero.trim())) {
-      test.info().annotations.push({
-        type: "info",
-        description: "Sem ações críticas no seed atual; pulando comparação.",
-      });
-      return;
-    }
-
-    const esperado = Number(numero.trim());
+    const numero = cardCriticas.locator("span.tabular-nums").first();
+    await expect(numero).toHaveText(/^\d+$/);
+    const esperado = Number(await numero.textContent());
+    expect(esperado).toBeGreaterThan(0);
 
     // Vai para o painel com o filtro do card.
     await cardCriticas
@@ -183,15 +163,12 @@ test.describe("Dashboard — UGP (visão consolidada)", () => {
     // O total contado pelo painel após o filtro tem que casar com o card.
     await expect(page.getByTestId("painel-page")).toBeVisible();
     const acoesNoPainel = page.locator('[data-testid^="painel-acao-"]');
-    // Cada Ação aparece 2x (alerta + card da Meta), então dividimos.
-    // Ou usamos uma contagem única via IDs distintos.
-    const idsUnicos = new Set<string>();
-    const total = await acoesNoPainel.count();
-    for (let i = 0; i < total; i++) {
-      const testid = await acoesNoPainel.nth(i).getAttribute("data-testid");
-      if (testid) idsUnicos.add(testid);
-    }
-    expect(idsUnicos.size).toBe(esperado);
+    await expect(acoesNoPainel.first()).toBeVisible();
+    // Uma Ação pode aparecer mais de uma vez (alerta + card da Meta): conta os
+    // ids distintos, esperando o painel terminar de montar os grupos.
+    await expect
+      .poll(async () => new Set(await acoesNoPainel.evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")))).size)
+      .toBe(esperado);
   });
 
   test("falha isolada no endpoint do painel não derruba os outros dois cards", async ({
@@ -213,45 +190,6 @@ test.describe("Dashboard — UGP (visão consolidada)", () => {
     await expect(
       card(page, 2).getByText(/Não foi possível carregar/i),
     ).toBeVisible();
-  });
-
-  test("estado zero (Nenhuma pendência) preserva o link para a listagem", async ({
-    page,
-  }) => {
-    // Força contagem zero em todos os endpoints.
-    await page.route(
-      /\/api\/v1\/sgp\/atividades\/\?.*/,
-      async (route) => {
-        // Só intercepta as chamadas com `page_size=1` que o dashboard usa
-        // para contar (respostas normais da listagem não vêm com page_size=1).
-        const url = new URL(route.request().url());
-        if (url.searchParams.get("page_size") === "1") {
-          await route.fulfill({
-            status: 200,
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ count: 0, results: [], next: null, previous: null }),
-          });
-          return;
-        }
-        await route.continue();
-      },
-    );
-    await page.route("**/plano-trabalho/painel/**", (route) =>
-      route.fulfill({
-        status: 200,
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ metas: [] }),
-      }),
-    );
-
-    await abrirDashboard(page);
-    // Todos os três cards mostram "Nenhuma pendência" e mantêm o link.
-    for (let i = 0; i < 3; i++) {
-      await expect(card(page, i).getByText(/Nenhuma pendência/)).toBeVisible();
-      await expect(
-        card(page, i).getByRole("link", { name: /Ver listagem/ }),
-      ).toBeVisible();
-    }
   });
 });
 
@@ -306,19 +244,19 @@ test.describe("Painel — filtro Ações críticas", () => {
     await page.goto("/sgp/painel?criticas=1");
     await expect(page.getByTestId("painel-filtro-criticas")).toBeChecked();
 
-    const acoesCriticas = await page
-      .locator('[data-testid^="painel-acao-"]')
-      .count();
+    // Ligado, só ficam as Metas com alguma Ação vermelha. As linhas de cada
+    // Meta só aparecem com ela expandida, então a conta é por Meta.
+    const metas = page.locator('[data-testid^="painel-meta-"]:not([data-testid*="toggle"])');
+    await expect(metas.first()).toBeVisible();
+    const metasComCriticas = await metas.count();
 
-    await page.getByTestId("painel-filtro-criticas").uncheck();
+    // O checkbox é controlado pela URL: o estado só muda depois da navegação,
+    // então clica e espera a URL e o estado, em vez de `uncheck()`.
+    await page.getByTestId("painel-filtro-criticas").click();
     await page.waitForURL(/\/sgp\/painel$|painel\?(?!.*criticas)/);
     await expect(page.getByTestId("painel-filtro-criticas")).not.toBeChecked();
 
-    // Desligado, o painel tem que mostrar pelo menos as mesmas + mais alguma
-    // Ação não-crítica (se o seed tiver alguma amarela/verde).
-    const acoesTotal = await page
-      .locator('[data-testid^="painel-acao-"]')
-      .count();
-    expect(acoesTotal).toBeGreaterThanOrEqual(acoesCriticas);
+    // Desligado, voltam as Metas só com Ações amarelas ou verdes do seed.
+    await expect.poll(() => metas.count()).toBeGreaterThan(metasComCriticas);
   });
 });

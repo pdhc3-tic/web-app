@@ -255,11 +255,18 @@ export async function listProducaoConsolidada(
   return { ...data, results: data.results.map(toConsolidada) };
 }
 
+/**
+ * GET /api/v1/sgp/producao/indicadores/ — os totais sobre o mesmo recorte da
+ * listagem: o backend aplica o `ProducaoConsolidadaFilter` aqui também.
+ */
 export async function fetchIndicadoresProducao(
-  params: Pick<ListProducaoConsolidadaParams, "territorio" | "municipio">,
+  params: Omit<ListProducaoConsolidadaParams, "limit" | "offset">,
   signal?: AbortSignal,
 ): Promise<IndicadoresProducao> {
   const qs = new URLSearchParams();
+  if (params.tipo) qs.set("tipo", params.tipo);
+  if (params.cultura) qs.set("cultura", params.cultura);
+  if (params.especie) qs.set("especie", params.especie);
   if (params.territorio) qs.set("territorio", params.territorio);
   if (params.municipio) qs.set("municipio", params.municipio);
   const res = await apiClient(`/api/v1/sgp/producao/indicadores/?${qs}`, { signal });

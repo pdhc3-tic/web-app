@@ -93,7 +93,8 @@ export const qk = {
   atividadesElegiveis: (tecnicoId: string, busca: string) =>
     ["sgp", "atividades", "elegiveis", { tecnicoId, busca }] as const,
   /** Tarefa assíncrona de exportação da listagem de UPFs (#240). */
-  exportacaoUpfs: (id: string) => ["upfs", "exportacao", id] as const,
+  /** Job de exportação assíncrona do SGP (`/sgp/exportacoes/{id}/`), qualquer tipo. */
+  exportacao: (id: string) => ["sgp", "exportacao", id] as const,
   /** Execução por rubrica e custo por atividade (#297) e as opções dos filtros. */
   execucao: {
     painel: (filtros: Record<string, string | undefined>) =>

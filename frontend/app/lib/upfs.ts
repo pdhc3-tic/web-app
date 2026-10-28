@@ -1,9 +1,14 @@
 import { apiClient } from "@/app/lib/api";
 import {
-  dispararDownload,
-  ExportTimeoutError,
-  nomeDoContentDisposition,
-} from "@/app/lib/exportarPlano";
+  baixarExportacao,
+  baixarResposta,
+  fetchExportacao,
+  repetirExportacao,
+  type Exportacao,
+  type ResultadoExportacao,
+  type StatusExportacao,
+} from "@/app/lib/exportacoes";
+import { ExportTimeoutError } from "@/app/lib/exportarPlano";
 import type { Paginated } from "@/app/lib/users";
 import type { Territorio } from "@/app/lib/auth/types";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
@@ -637,7 +642,8 @@ export async function fetchProjetoOptions(
 // Contrato do backend (#240, PR #306 — backend/docs/export.md):
 //
 //   GET  /api/v1/upfs/exportar/?<filtros da listagem>&formato=csv
-//     200 text/csv   → até 1.000 registros (`UPF_EXPORT_SYNC_LIMIT`): o arquivo.
+//     200 text/csv   → até `UPF_EXPORT_ASYNC_THRESHOLD` registros (configuração do
+//                      backend, 1.000 por padrão): o arquivo.
 //     202 ExportJob  → acima disso: exportação criada em segundo plano.
 //     400 {code, message} → parâmetro desconhecido (`parametro_desconhecido`) ou
 //                           valor inválido; a mensagem vai para a tela.
@@ -659,46 +665,17 @@ export type ExportUpfsParams = {
   cadastradoAte?: string;
 };
 
-/** Acima deste total o backend responde 202 e processa em segundo plano. */
-export const EXPORT_UPFS_ASYNC_THRESHOLD = 1_000;
-
-/** Espelha `apps/sgp/models/export_job.py::ExportJob.Status`. */
-export type StatusExportacaoUpfs = "pendente" | "processando" | "concluida" | "erro";
-
-/** `ExportJobSerializer`. */
-export type ExportacaoUpfs = {
-  id: number;
-  tipo: "plano_trabalho" | "atividades" | "upfs";
-  formato: "csv" | "xlsx";
-  filtros: Record<string, string>;
-  status: StatusExportacaoUpfs;
-  /** 0–100. */
-  progresso: number;
-  /** Mensagem do backend quando `status === "erro"`; vazio nos outros casos. */
-  erro: string;
-  /** Total de UPFs no conjunto filtrado. */
-  total_registros: number | null;
-  nome_arquivo: string;
-  criado_em: string;
-  concluido_em: string | null;
-  /** O arquivo da exportação concluída vale até aqui (24 h). */
-  expira_em: string | null;
-};
-
-export type ResultadoExportacaoUpfs =
-  | { tipo: "arquivo"; nome: string }
-  | { tipo: "tarefa"; exportacao: ExportacaoUpfs };
+/** O job das UPFs é o `ExportJob` genérico (`app/lib/exportacoes.ts`). */
+export type StatusExportacaoUpfs = StatusExportacao;
+export type ExportacaoUpfs = Exportacao;
+export type ResultadoExportacaoUpfs = ResultadoExportacao;
 
 const EXPORT_UPFS_PATH = "/api/v1/upfs/exportar/";
-const EXPORTACOES_PATH = "/api/v1/sgp/exportacoes/";
 
-/** Teto da resposta síncrona: até 1.000 linhas cabem com folga em 60s. */
+/** Teto da resposta síncrona: até o limite do backend, cabe com folga em 60s. */
 const EXPORT_UPFS_TIMEOUT_MS = 60_000;
 
-/**
- * Nome usado quando o `Content-Disposition` não é legível: o backend ainda não
- * declara `CORS_EXPOSE_HEADERS` (docs/pendencias-backend-sprint-10.md, item 2).
- */
+/** Nome usado quando a resposta não traz o `Content-Disposition`. */
 function nomeDerivadoUpfs(): string {
   const agora = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -706,17 +683,10 @@ function nomeDerivadoUpfs(): string {
   return `upfs_${data}.csv`;
 }
 
-async function baixarResposta(res: Response, nomePadrao: string): Promise<string> {
-  const nome =
-    nomeDoContentDisposition(res.headers.get("Content-Disposition")) ?? nomePadrao;
-  dispararDownload(await res.blob(), nome);
-  return nome;
-}
-
 /**
  * Pede a exportação com os filtros da listagem (mesmo `buildUpfsFilterParams`).
  *
- * Devolve `arquivo` quando o download já foi disparado (≤ 1.000 registros) ou
+ * Devolve `arquivo` quando o download já foi disparado (até o limite) ou
  * `tarefa` quando o backend enfileirou a geração. Lança `ExportTimeoutError`
  * no estouro do tempo e `ApiError` nos erros da API.
  */
@@ -744,26 +714,11 @@ export async function iniciarExportacaoUpfs(
   return { tipo: "arquivo", nome: await baixarResposta(res, nomeDerivadoUpfs()) };
 }
 
-/** GET /api/v1/sgp/exportacoes/{id}/ — estado atual da exportação. */
-export async function fetchExportacaoUpfs(
-  id: number,
-  signal?: AbortSignal,
-): Promise<ExportacaoUpfs> {
-  const res = await apiClient(`${EXPORTACOES_PATH}${id}/`, { signal });
-  return res.json();
+/** Polling, download e "Tentar novamente" do job das UPFs: o fluxo genérico. */
+export const fetchExportacaoUpfs = fetchExportacao;
+
+export function baixarExportacaoUpfs(exportacao: ExportacaoUpfs): Promise<string> {
+  return baixarExportacao({ ...exportacao, nome_arquivo: exportacao.nome_arquivo || nomeDerivadoUpfs() });
 }
 
-/**
- * GET /api/v1/sgp/exportacoes/{id}/download/ — o arquivo da exportação
- * concluída. Um 410 (`exportacao_expirada`) chega como `ApiError`.
- */
-export async function baixarExportacaoUpfs(exportacao: ExportacaoUpfs): Promise<string> {
-  const res = await apiClient(`${EXPORTACOES_PATH}${exportacao.id}/download/`);
-  return baixarResposta(res, exportacao.nome_arquivo || nomeDerivadoUpfs());
-}
-
-/** POST /api/v1/sgp/exportacoes/{id}/repetir/ — reenfileira uma exportação em erro. */
-export async function repetirExportacaoUpfs(id: number): Promise<ExportacaoUpfs> {
-  const res = await apiClient(`${EXPORTACOES_PATH}${id}/repetir/`, { method: "POST" });
-  return res.json();
-}
+export const repetirExportacaoUpfs = repetirExportacao;
