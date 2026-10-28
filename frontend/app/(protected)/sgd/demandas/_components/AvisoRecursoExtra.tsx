@@ -17,11 +17,8 @@ const EDITAVEIS = ["rascunho", "devolvida"];
  * bloqueada; em análise, aguarda.
  *
  * Mostra o pedido mais recente que `GET /sgd/remanejamentos/?demanda={id}`
- * devolve. O filtro `demanda` AINDA NÃO EXISTE no backend
- * (pendencias-backend-sprint-10.md, item 22): até chegar, a lista traz todos
- * os pedidos do solicitante. Por isso o aviso só aparece se o pedido devolvido
- * for desta demanda — sem procurar outro na lista: na demanda cujo pedido não
- * é o mais recente, fica sem aviso até o filtro existir.
+ * devolve. A conferência do `demanda_id` fica como salvaguarda: o aviso nunca
+ * mostra o pedido de outra demanda.
  */
 export function AvisoRecursoExtra({ demanda }: { demanda: Demanda }) {
   const { data } = useQuery({

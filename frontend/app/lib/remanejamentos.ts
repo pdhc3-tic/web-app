@@ -101,10 +101,7 @@ export type ListaPedidos = {
  *
  * - `status`: repetido, o backend devolve a união. Sem `status`, a UGP recebe só
  *   os Com parecer; `"todos"` desliga o filtro para qualquer perfil.
- * - `demanda`: os pedidos de uma demanda. O filtro AINDA NÃO EXISTE no backend
- *   (docs/pendencias-backend-sprint-10.md, item 22): até chegar, o parâmetro é
- *   ignorado e voltam todos os pedidos visíveis. Nada é filtrado aqui para
- *   compensar.
+ * - `demanda`: só os pedidos daquela demanda.
  */
 export async function listPedidos(
   params: { status?: (StatusPedido | "todos")[]; demanda?: number } = {},
