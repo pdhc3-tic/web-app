@@ -147,6 +147,11 @@ class WorkPlanMetaNestedSerializer(serializers.ModelSerializer):
         fields = ["id", "numero", "titulo"]
 
 
+class LimiaresSemaforoSerializer(serializers.Serializer):
+    amarelo = serializers.IntegerField()
+    vermelho = serializers.IntegerField()
+
+
 class BudgetPainelLinhaSerializer(serializers.Serializer):
     """Uma célula da matriz Meta × Rubrica — espelha o dict devolvido por
     `services.budget.painel_orcamento`."""
@@ -161,6 +166,7 @@ class BudgetPainelLinhaSerializer(serializers.Serializer):
     saldo_disponivel = serializers.DecimalField(max_digits=14, decimal_places=2)
     semaforo = serializers.ChoiceField(choices=["verde", "amarelo", "vermelho"])
     alerta_80 = serializers.BooleanField()
+    limiares_semaforo = LimiaresSemaforoSerializer()
 
 
 class BudgetPainelQuerySerializer(serializers.Serializer):

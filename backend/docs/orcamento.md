@@ -155,15 +155,19 @@ filtro informado soma +1 query de validação — pior caso, 9 (Articulador Esta
     "valor_comprometido": "6000.00",
     "valor_executado": "2000.00",
     "saldo_disponivel": "-2000.00",
-    "semaforo": "vermelho",
-    "alerta_80": true
+    "semaforo": "verde",
+    "alerta_80": false,
+    "limiares_semaforo": {"amarelo": 70, "vermelho": 90}
   }
 ]
 ```
 
-`semaforo` ∈ `verde` (< 60% comprometido sobre o alocado), `amarelo` (60–79%), `vermelho`
-(≥ 80%) — `alerta_80` é `true` no mesmo limiar de `vermelho`. Alocação de valor 0 → `verde`,
-sem divisão por zero. A task diária `sgp.tasks.check_budget_threshold_alert` notifica UGP e
+`semaforo` segue o percentual comprometido sobre o alocado e os limiares globais do Core,
+`budget_alert_yellow_pct` e `budget_alert_red_pct` (70 e 90 por padrão): `verde` abaixo do
+amarelo, `amarelo` a partir dele e `vermelho` a partir do vermelho. `alerta_80` mantém o nome,
+mas é `true` no mesmo limiar de `vermelho`. `limiares_semaforo` devolve os dois limiares em
+vigor, como inteiros, em cada linha: a tela escreve esses números nos rótulos, e Articulador e
+ADT/ACR não leem o `/system-config/`. Alocação de valor 0 → `verde`, sem divisão por zero. A task diária `sgp.tasks.check_budget_threshold_alert` notifica UGP e
 Super Admin sobre toda `BudgetAllocation` em vermelho, em qualquer nível (nacional, estadual
 ou territorial), espelhando `sgp.tasks.check_acao_progress_alert` (que faz o mesmo para Ações
 do PT físico em vermelho).

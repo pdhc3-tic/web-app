@@ -147,6 +147,59 @@ class TestPainelSemaforo:
         assert Decimal(linha["valor_aprovado"]) == Decimal("0")
 
 
+class TestPainelLimiares:
+    def test_cada_linha_traz_os_limiares_padrao_como_inteiros(self, auth_client_super_admin):
+        WorkPlanMetaFactory()
+
+        response = auth_client_super_admin.get(PAINEL_URL)
+
+        assert response.status_code == 200
+        assert len(response.data) > 0
+        assert all(
+            linha["limiares_semaforo"] == {"amarelo": 70, "vermelho": 90}
+            for linha in response.data
+        )
+        assert isinstance(response.data[0]["limiares_semaforo"]["amarelo"], int)
+
+    def test_limiares_seguem_o_configurado_no_core(self, auth_client_super_admin):
+        from django.core.cache import cache
+
+        from apps.core.models.system_config import SystemConfig, TipoConfiguracao
+
+        WorkPlanMetaFactory()
+        SystemConfig.objects.update_or_create(
+            chave="budget_alert_yellow_pct", defaults={"valor": "60", "tipo": TipoConfiguracao.INTEGER},
+        )
+        SystemConfig.objects.update_or_create(
+            chave="budget_alert_red_pct", defaults={"valor": "85", "tipo": TipoConfiguracao.INTEGER},
+        )
+        try:
+            response = auth_client_super_admin.get(PAINEL_URL)
+
+            assert response.status_code == 200
+            assert all(
+                linha["limiares_semaforo"] == {"amarelo": 60, "vermelho": 85}
+                for linha in response.data
+            )
+        finally:
+            # Cache de SystemConfig não é transacional — limpa pra não vazar
+            # os limiares alterados pros testes seguintes.
+            cache.delete("system_config:budget_alert_yellow_pct")
+            cache.delete("system_config:budget_alert_red_pct")
+
+    @pytest.mark.parametrize("cliente", ["auth_client_adt_rn", "auth_client_articulador_rn"])
+    def test_perfis_sem_acesso_ao_system_config_recebem_os_limiares(
+        self, request, cliente, territory_rn,
+    ):
+        WorkPlanMetaFactory()
+
+        response = request.getfixturevalue(cliente).get(PAINEL_URL)
+
+        assert response.status_code == 200
+        assert len(response.data) > 0
+        assert response.data[0]["limiares_semaforo"] == {"amarelo": 70, "vermelho": 90}
+
+
 class TestPainelFiltros:
     def test_filtros(self, auth_client_super_admin, state_rn, territory_rn):
         meta = WorkPlanMetaFactory(numero=1)
