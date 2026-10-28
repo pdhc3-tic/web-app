@@ -42,7 +42,7 @@ export function LocalizacaoStep({
 }: LocalizacaoStepProps) {
   const comunidadeWithCreate: SelectOption[] = [
     ...comunidadeOptions,
-    { value: CREATE_COMUNIDADE_VALUE, label: "+ Criar nova comunidade" },
+    { value: CREATE_COMUNIDADE_VALUE, label: "Nova comunidade…" },
   ];
 
   return (
