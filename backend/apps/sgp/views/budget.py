@@ -1,19 +1,22 @@
 from django.shortcuts import get_object_or_404
+from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
-from rest_framework import status, viewsets
+from rest_framework import generics, status, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.core.services.permissions import user_has_role
-from apps.sgp.models import BudgetAllocation, WorkPlanMeta
+from apps.sgp.filters import BudgetRubricaFilter
+from apps.sgp.models import BudgetAllocation, BudgetRubrica, WorkPlanMeta
 from apps.sgp.serializers_budget import (
     BudgetAllocationCreateSerializer,
     BudgetAllocationSerializer,
     BudgetAllocationUpdateSerializer,
     BudgetPainelLinhaSerializer,
     BudgetPainelQuerySerializer,
+    BudgetRubricaSerializer,
     BudgetTransactionSerializer,
     RemanejamentoCreateSerializer,
     SaldoConsultaQuerySerializer,
@@ -218,3 +221,17 @@ class BudgetPainelView(APIView):
             territorio_id=territorio.pk if territorio else None,
         )
         return Response(BudgetPainelLinhaSerializer(linhas, many=True).data)
+
+
+class BudgetRubricaListView(generics.ListAPIView):
+    """GET .../rubricas/ — catálogo de rubricas, sem valores de orçamento.
+
+    Sem `ativo` devolve também as inativas: uma rubrica desativada ainda pode
+    estar num mapeamento antigo, e a tela precisa mostrar o nome dela."""
+
+    permission_classes = [IsAuthenticatedActiveAccess]
+    serializer_class = BudgetRubricaSerializer
+    queryset = BudgetRubrica.objects.order_by("nome")
+    pagination_class = None
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = BudgetRubricaFilter

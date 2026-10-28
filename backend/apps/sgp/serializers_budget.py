@@ -19,6 +19,12 @@ class BudgetRubricaNestedSerializer(serializers.ModelSerializer):
         fields = ["id", "nome", "slug"]
 
 
+class BudgetRubricaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BudgetRubrica
+        fields = ["id", "slug", "nome", "ativo"]
+
+
 class BudgetAllocationSerializer(serializers.ModelSerializer):
     """Leitura de uma alocação — usada na resposta das rotas de escrita e
     no `detalhamento` do orçamento por Meta."""

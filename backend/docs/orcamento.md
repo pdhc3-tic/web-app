@@ -111,6 +111,19 @@ Remanejamento emergencial — só UGP/Super Admin, com justificativa obrigatóri
 
 Histórico completo de `BudgetTransaction` de uma alocação, mais recente primeiro.
 
+### `GET /api/v1/sgp/rubricas/?ativo=`
+
+Catálogo de `BudgetRubrica`, sem paginação, ordenado por `nome`, para qualquer usuário
+autenticado. `?ativo=true` devolve só as ativas e `?ativo=false` só as inativas. Sem o
+parâmetro, devolve todas, porque uma rubrica inativa ainda pode estar num mapeamento antigo do
+SGD. Valor que não seja booleano em `ativo` retorna `400`.
+
+```json
+[
+  {"id": 4, "slug": "alimentacao-refeicoes", "nome": "Alimentação/Refeições", "ativo": true}
+]
+```
+
 ### `GET /api/v1/sgp/orcamento/painel/?meta=&rubrica=&estado=&territorio=`
 
 Matriz Meta × Rubrica com semáforo (§5.3.3), pro painel executivo. Todos os parâmetros são
