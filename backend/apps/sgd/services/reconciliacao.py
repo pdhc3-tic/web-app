@@ -5,10 +5,10 @@ from contextlib import contextmanager
 from decimal import Decimal
 
 from django.db import connection, transaction
-from django.db.models import DecimalField, Exists, F, OuterRef, Subquery, Sum, Value
+from django.db.models import DecimalField, Exists, F, OuterRef, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 
-from apps.sgd.models import DemandIndividualLimit, DemandRequest
+from apps.sgd.models import Demand, DemandIndividualLimit, DemandRequest
 from apps.sgd.models.demand_request import RESERVA_ATIVA
 
 ZERO = Decimal("0")
@@ -70,3 +70,31 @@ def _divergencias_dos_limites() -> list[str]:
         for pk, valor in sem_limite.order_by("pk").values_list("pk", "valor_reservado")
     ]
     return divergencias
+
+
+_MOEDA = DecimalField(max_digits=14, decimal_places=2)
+
+
+def divergencias_dos_totais() -> list[str]:
+    """Totais materializados de cada demanda contra a soma das solicitações dela."""
+    with _leitura_total_do_sgd():
+        return _divergencias_dos_totais()
+
+
+def _divergencias_dos_totais() -> list[str]:
+    somas = {
+        campo: Coalesce(Sum(f"solicitacoes__{campo}"), Value(ZERO, output_field=_MOEDA))
+        for campo in ("valor_estimado", "valor_autorizado", "valor_pago")
+    }
+    demandas = Demand.objects.order_by("pk").annotate(**{f"soma_{campo}": soma for campo, soma in somas.items()})
+    divergentes = demandas.filter(
+        ~Q(valor_estimado_total=F("soma_valor_estimado"))
+        | ~Q(valor_autorizado_total=F("soma_valor_autorizado"))
+        | ~Q(valor_pago_total=F("soma_valor_pago"))
+    )
+    return [
+        f"Demanda #{demanda.pk}: totais estimado/autorizado/pago = {demanda.valor_estimado_total}/"
+        f"{demanda.valor_autorizado_total}/{demanda.valor_pago_total} mas as solicitações somam "
+        f"{demanda.soma_valor_estimado}/{demanda.soma_valor_autorizado}/{demanda.soma_valor_pago}"
+        for demanda in divergentes
+    ]

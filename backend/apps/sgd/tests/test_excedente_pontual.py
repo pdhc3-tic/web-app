@@ -8,7 +8,7 @@ from apps.core.models.audit_log import AuditLog
 from apps.core.tests.factories import TerritoryFactory
 from apps.sgd.models import DemandIndividualLimit
 from apps.sgd.services import demand as demand_service
-from apps.sgd.services.reconciliacao import divergencias_dos_limites
+from apps.sgd.services.reconciliacao import divergencias_dos_limites, divergencias_dos_totais
 from apps.sgd.services.workflow import executar_transicao
 from apps.sgp.models import BudgetAllocation, BudgetTransfer
 from apps.sgp.tests.factories import BudgetAllocationFactory, BudgetRubricaFactory
@@ -82,6 +82,7 @@ def test_excedente_remaneja_da_origem_sem_alterar_o_valor_limite(
     assert allocation_territorial_rn.valor_alocado == Decimal("10300")
     assert allocation_territorial_rn.valor_comprometido == Decimal("5300")
     assert divergencias_dos_limites() == []
+    assert divergencias_dos_totais() == []
 
 
 def test_excedente_cancelado_devolve_o_limite_ao_valor_original(
@@ -113,6 +114,8 @@ def test_concluida_abaixo_do_autorizado_nao_devolve_o_excedente_ao_limite(
     limite = _limite(limite_individual_rn)
     assert (limite.valor_comprometido, limite.valor_executado) == (Decimal("0"), Decimal("5000"))
     assert limite.saldo_disponivel == Decimal("0")
+    demanda.refresh_from_db()
+    assert demanda.valor_pago_total == Decimal("5100")
 
 
 def test_sem_saldo_no_pool_remaneja_o_que_falta_nele(

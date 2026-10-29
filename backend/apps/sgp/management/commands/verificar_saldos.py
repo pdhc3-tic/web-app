@@ -4,7 +4,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q, Sum
 from django.db.models.functions import Coalesce
 
-from apps.sgd.services.reconciliacao import divergencias_dos_limites
+from apps.sgd.services.reconciliacao import divergencias_dos_limites, divergencias_dos_totais
 from apps.sgp.models import BudgetAllocation, BudgetTransaction
 
 ZERO = Decimal("0")
@@ -13,8 +13,9 @@ ZERO = Decimal("0")
 class Command(BaseCommand):
     help = (
         "Reconcilia valor_comprometido/valor_executado de cada BudgetAllocation "
-        "contra a soma das suas BudgetTransaction, e o comprometido de cada limite "
-        "individual do SGD contra as reservas ativas das solicitações."
+        "contra a soma das suas BudgetTransaction, o comprometido de cada limite "
+        "individual do SGD contra as reservas ativas das solicitações e os totais de "
+        "cada demanda contra a soma das solicitações."
     )
 
     def handle(self, *args, **options):
@@ -45,6 +46,7 @@ class Command(BaseCommand):
                 )
 
         divergencias += divergencias_dos_limites()
+        divergencias += divergencias_dos_totais()
 
         if divergencias:
             raise CommandError(

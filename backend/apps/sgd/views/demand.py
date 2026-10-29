@@ -41,6 +41,13 @@ from apps.sgp.models.workplan import WorkPlanAcao
 from apps.sgp.services.access import atividades_acessiveis_ao_usuario, municipios_acessiveis_ao_usuario
 
 
+ORDENACOES_DA_LISTAGEM = {
+    "valor_estimado_total": ("valor_estimado_total", "-pk"),
+    "-valor_estimado_total": ("-valor_estimado_total", "-pk"),
+}
+ORDENACAO_PADRAO = ("-criado_em", "-pk")
+
+
 class DemandPagination(LimitOffsetPagination):
     max_limit = 200
 
@@ -92,13 +99,20 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
                 "aguardando_minha_acao", OpenApiTypes.BOOL,
                 description="`true` aplica a fila do perfil autenticado (a mesma da rota de contagem).",
             ),
+            OpenApiParameter(
+                "ordering", OpenApiTypes.STR, enum=sorted(ORDENACOES_DA_LISTAGEM),
+                description="Sem o parâmetro, as mais recentes primeiro.",
+            ),
         ],
         responses={200: DemandSerializer(many=True), 400: OpenApiTypes.OBJECT},
     )
     def list(self, request):
+        ordenacao = request.query_params.get("ordering")
+        if ordenacao and ordenacao not in ORDENACOES_DA_LISTAGEM:
+            raise ValidationError({"ordering": f"Valor inválido. Esperado um de: {sorted(ORDENACOES_DA_LISTAGEM)}."})
         qs = consulta_service.filtrar_demandas(
             self.get_queryset(), request.query_params, request.user,
-        ).order_by("-criado_em", "-pk")
+        ).order_by(*ORDENACOES_DA_LISTAGEM.get(ordenacao, ORDENACAO_PADRAO))
         paginator = self.pagination_class()
         pagina = paginator.paginate_queryset(qs, request, view=self)
         return paginator.get_paginated_response(DemandSerializer(pagina, many=True).data)

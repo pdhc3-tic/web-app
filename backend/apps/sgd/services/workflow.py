@@ -400,6 +400,8 @@ def _aplicar(demand, transicao: Transicao, solicitacoes, *, ator, destinatarios:
     balance_service.gravar_estado_da_reserva(
         solicitacoes, outros_campos=_OUTROS_CAMPOS.get(transicao.efeito_saldo, ()),
     )
+    if transicao.efeito_saldo in _OUTROS_CAMPOS:
+        demand.recalcular_totais()
     if transicao.efeito_saldo == EXECUTAR:
         recalcular_valor_executado([demand.activity.acao_id])
     if transicao.etapa is not None:

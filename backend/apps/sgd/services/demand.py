@@ -98,10 +98,12 @@ def adicionar_solicitacao(demand, *, tipo, campos_json, valor_estimado=None, ord
     if valor_final <= 0:
         raise RegraDeNegocio("Deve ser maior que zero.", campo="valor_estimado")
 
-    return DemandRequest.objects.create(
+    solicitacao = DemandRequest.objects.create(
         demanda=demand, tipo=tipo, rubrica=rubrica, campos_json=validado.campos_json,
         beneficiario_cpf=validado.beneficiario_cpf, valor_estimado=valor_final, ordem=ordem,
     )
+    demand.recalcular_totais()
+    return solicitacao
 
 
 @transaction.atomic
@@ -151,6 +153,7 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
         "tipo", "rubrica", "campos_json", "beneficiario_cpf", "valor_estimado", "valor_reservado",
         "valor_excedente", "atualizado_em",
     ])
+    demand.recalcular_totais()
     return solicitacao
 
 
@@ -165,6 +168,7 @@ def remover_solicitacao(solicitacao, *, usuario) -> None:
         )
     _travar_editavel(solicitacao.demanda)
     solicitacao.delete()
+    solicitacao.demanda.recalcular_totais()
 
 
 def _exigir_minimo_cotacoes_equipamento(demand) -> None:

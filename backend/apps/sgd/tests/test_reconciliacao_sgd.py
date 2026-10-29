@@ -1,4 +1,4 @@
-"""`manage.py verificar_saldos` confere também o limite individual do SGD."""
+"""`manage.py verificar_saldos` confere também o limite individual e os totais das demandas do SGD."""
 from contextlib import contextmanager
 from decimal import Decimal
 
@@ -7,9 +7,9 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import connection
 
-from apps.sgd.models import DemandIndividualLimit, DemandRequest
+from apps.sgd.models import Demand, DemandIndividualLimit, DemandRequest
 from apps.sgd.services import balance as balance_service
-from apps.sgd.services.reconciliacao import divergencias_dos_limites
+from apps.sgd.services.reconciliacao import divergencias_dos_limites, divergencias_dos_totais
 
 pytestmark = pytest.mark.django_db
 
@@ -123,3 +123,23 @@ def test_reserva_com_excedente_nao_diverge(
     )
 
     assert divergencias_dos_limites() == []
+
+
+def test_falha_com_total_da_demanda_diferente_das_solicitacoes(demand_request_rn):
+    Demand.objects.filter(pk=demand_request_rn.demanda_id).update(valor_estimado_total=Decimal("1"))
+
+    divergencias = divergencias_dos_totais()
+
+    assert len(divergencias) == 1
+    assert divergencias[0].startswith(f"Demanda #{demand_request_rn.demanda_id}: totais estimado/autorizado/pago")
+    with pytest.raises(CommandError, match=f"Demanda #{demand_request_rn.demanda_id}"):
+        call_command("verificar_saldos")
+
+
+def test_total_divergente_aparece_com_o_papel_de_runtime(demand_request_rn):
+    Demand.objects.filter(pk=demand_request_rn.demanda_id).update(valor_estimado_total=Decimal("1"))
+
+    with _como_comando_com_credenciais_de_runtime():
+        divergencias = divergencias_dos_totais()
+
+    assert len(divergencias) == 1

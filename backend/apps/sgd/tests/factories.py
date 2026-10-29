@@ -28,6 +28,7 @@ class DemandFactory(factory.django.DjangoModelFactory):
 class DemandRequestFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = DemandRequest
+        skip_postgeneration_save = True
 
     demanda = factory.SubFactory(DemandFactory)
     tipo = "grafico"
@@ -38,6 +39,12 @@ class DemandRequestFactory(factory.django.DjangoModelFactory):
     })
     valor_estimado = 500
     ordem = 0
+
+    @factory.post_generation
+    def totais_da_demanda(obj, create, extracted, **kwargs):
+        # Como os serviços da demanda: os totais acompanham as solicitações.
+        if create:
+            obj.demanda.recalcular_totais()
 
 
 class DemandDiariaRequestFactory(DemandRequestFactory):
