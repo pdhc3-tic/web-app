@@ -302,8 +302,8 @@ def test_arquivo_ausente_no_storage_falha_com_mensagem_legivel(usuario_fgd):
 def test_movimentacoes_da_importacao_herdam_usuario_e_ip_do_envio(demanda_autorizada, usuario_fgd):
     processar_importacao(_importar([_linha(demanda_autorizada, valor="800,00")], usuario_fgd, ip="203.0.113.7"))
 
-    logs = AuditLog.objects.filter(acao__in=["execucao", "arlo_pagamento"], entidade_id=str(demanda_autorizada.pk))
-    assert {log.acao for log in logs} == {"execucao", "arlo_pagamento"}
+    logs = AuditLog.objects.filter(acao__in=["execucao", "pagamento"], entidade_id=str(demanda_autorizada.pk))
+    assert {log.acao for log in logs} == {"execucao", "pagamento"}
     assert all(log.ip == "203.0.113.7" and log.user == usuario_fgd for log in logs)
     assert get_audit_context()["ip"] is None  # contexto não vaza para a thread
 
@@ -316,6 +316,40 @@ def test_task_process_arlo_import_processa_e_e_idempotente(demanda_autorizada, u
     assert sgd_tasks.process_arlo_import(importacao.pk) == 1
     assert sgd_tasks.process_arlo_import(importacao.pk) == 0  # já processada
     assert sgd_tasks.process_arlo_import.queue == "normal"
+
+
+def test_falha_no_meio_do_arquivo_preserva_o_progresso_das_linhas_aplicadas(
+    monkeypatch, demanda_autorizada, activity_rn, solicitante_rn, rubrica_diarias, usuario_fgd,
+):
+    """Cada linha commita sozinha: se o arquivo para no meio, a importação mostra as
+    linhas já pagas e a divergência delas, e a falha se soma aos erros."""
+    from apps.sgd.services import arlo_import
+
+    outra = _nova_demanda_autorizada(activity_rn, solicitante_rn, rubrica_diarias)
+    original = arlo_import._gravar_progresso
+    chamadas = []
+
+    def falhar_depois_da_primeira_linha(*args, **kwargs):
+        chamadas.append(1)
+        if len(chamadas) > 1:
+            raise RuntimeError("worker caiu")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(arlo_import, "_gravar_progresso", falhar_depois_da_primeira_linha)
+    importacao = _importar(
+        [_linha(demanda_autorizada, valor="800,00"), _linha(outra, valor="500,00", processo="PROC-2")], usuario_fgd,
+    )
+
+    with pytest.raises(RuntimeError):
+        sgd_tasks.process_arlo_import(importacao.pk)
+
+    importacao.refresh_from_db()
+    assert importacao.status == "falhou"
+    assert (importacao.total_registros, importacao.registros_ok) == (1, 1)
+    assert [d["solicitacao_id"] for d in importacao.divergencias_json] == [demanda_autorizada.pk]
+    assert importacao.erros_json == [{"linha": 0, "erro": "Falha inesperada ao processar o arquivo."}]
+    demanda_autorizada.refresh_from_db()
+    assert demanda_autorizada.valor_pago == Decimal("800.00")
 
 
 def test_historico_reflete_exportacao_e_importacao(

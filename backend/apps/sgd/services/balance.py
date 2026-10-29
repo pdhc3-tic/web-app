@@ -22,6 +22,7 @@ from apps.sgd.exceptions import (
     JustificativaObrigatoria,
     RegraDeNegocio,
     SaldoInsuficiente,
+    TransicaoInvalida,
 )
 from apps.sgd.models import DemandIndividualLimit, DemandRequest
 from apps.sgd.services import notifications as notifications_service
@@ -242,8 +243,41 @@ def verificar_duas_travas(
 def reler_reserva(demand_request) -> None:
     """Relê do banco o estado da reserva. Com o limite travado, o valor não muda
     até o commit: todo movimento da reserva trava o limite antes. Sem o lock,
-    serve para escolher o caminho, e a operação de saldo confere de novo."""
-    demand_request.refresh_from_db(fields=["valor_reservado", "valor_executado"])
+    serve para escolher o caminho, e a operação de saldo confere de novo.
+
+    O limite é travado pela rubrica que quem chama leu antes. Se a solicitação foi
+    removida ou mudou de rubrica enquanto esperava o lock, mexer no saldo agora
+    tiraria a reserva do limite errado: a operação é recusada."""
+    atual = DemandRequest.objects.filter(pk=demand_request.pk).values_list(
+        "rubrica_id", "valor_reservado", "valor_executado",
+    ).first()
+    if atual is None:
+        raise TransicaoInvalida(
+            f"A solicitação #{demand_request.pk} foi removida durante a operação. Recarregue e tente de novo."
+        )
+    rubrica_id, demand_request.valor_reservado, demand_request.valor_executado = atual
+    if rubrica_id != demand_request.rubrica_id:
+        raise TransicaoInvalida(
+            f"A solicitação #{demand_request.pk} mudou de rubrica durante a operação. Recarregue e tente de novo."
+        )
+
+
+def _travar_limite(*, solicitante_id, rubrica_id) -> DemandIndividualLimit | None:
+    """`of=("self",)`: o `ordering` do model é por solicitante e rubrica, e o
+    `.first()` levaria o JOIN com `core_user` e com a rubrica para dentro do FOR
+    UPDATE. A linha do solicitante ficaria travada, e o commit de qualquer outra
+    transação que gravou algo apontando para ele (notificação, auditoria, etapa)
+    esperaria este lock na checagem da FK."""
+    return DemandIndividualLimit.objects.select_for_update(of=("self",)).filter(
+        solicitante_id=solicitante_id, rubrica_id=rubrica_id,
+    ).first()
+
+
+def reler_reserva_travada(demand_request) -> None:
+    """Trava o limite da solicitação e relê o estado da reserva, que daí até o
+    commit não muda."""
+    _travar_limite(solicitante_id=demand_request.demanda.solicitante_id, rubrica_id=demand_request.rubrica_id)
+    reler_reserva(demand_request)
 
 
 def _mover_reserva(demand_request, *, adiar: bool, **campos) -> None:
@@ -253,16 +287,18 @@ def _mover_reserva(demand_request, *, adiar: bool, **campos) -> None:
         gravar_estado_da_reserva([demand_request])
 
 
-def gravar_estado_da_reserva(solicitacoes) -> None:
-    """Grava o estado da reserva já aplicado em memória. A solicitação é a última
-    da ordem de lock (`backend/docs/orcamento.md`): quem move o saldo de várias
-    solicitações e depois trava a `Demand` passa `adiar_gravacao=True` e chama
-    isto no fim. Gravar cada uma logo depois do seu pool deixaria a linha travada
-    antes do limite da rubrica seguinte e da `Demand`, e a decisão de recurso
-    extra, que trava `Demand` e depois as solicitações, fecharia um ciclo."""
+def gravar_estado_da_reserva(solicitacoes, *, outros_campos=()) -> None:
+    """Grava o estado da reserva já aplicado em memória, mais `outros_campos`. A
+    solicitação é a última da ordem de lock (`backend/docs/orcamento.md`): quem
+    move o saldo de várias solicitações e depois trava a `Demand` passa
+    `adiar_gravacao=True` e chama isto no fim. Gravar cada uma logo depois do seu
+    pool deixaria a linha travada antes do limite da rubrica seguinte e da
+    `Demand`, e a decisão de recurso extra, que trava `Demand` e depois as
+    solicitações, fecharia um ciclo."""
+    campos = ("valor_reservado", "valor_executado", *outros_campos)
     for solicitacao in sorted(solicitacoes, key=lambda s: s.pk):
         DemandRequest.objects.filter(pk=solicitacao.pk).update(
-            valor_reservado=solicitacao.valor_reservado, valor_executado=solicitacao.valor_executado,
+            **{campo: getattr(solicitacao, campo) for campo in campos},
         )
 
 
@@ -286,9 +322,7 @@ def reservar_duas_travas(*, demand_request, usuario, adiar_gravacao: bool = Fals
     valor = demand_request.valor_estimado
 
     entidade_id = str(demand_request.pk)
-    limite = DemandIndividualLimit.objects.select_for_update().filter(
-        solicitante=solicitante, rubrica=rubrica,
-    ).first()
+    limite = _travar_limite(solicitante_id=solicitante.pk, rubrica_id=rubrica.pk)
     if limite is None:
         # Removido depois da pré-checagem: mesma resposta que ela daria.
         raise _bloqueio_individual(
@@ -331,6 +365,7 @@ def reservar_duas_travas(*, demand_request, usuario, adiar_gravacao: bool = Fals
 @transaction.atomic
 def ajustar_duas_travas(
     *, demand_request, novo_valor: Decimal, usuario, ignorar_limite_individual: bool = False,
+    adiar_gravacao: bool = False,
 ) -> None:
     """`ignorar_limite_individual=True` autoriza um excedente pontual (RF16) sem
     alterar `valor_limite` — usada só pelo fluxo de remanejamento emergencial da UGP.
@@ -381,7 +416,7 @@ def ajustar_duas_travas(
     )
     _notificar_pool_se_piorou(movimento, demand=demand_request.demanda, rubrica_nome=rubrica.nome)
     if diferenca != ZERO:
-        _mover_reserva(demand_request, adiar=False, valor_reservado=novo_valor)
+        _mover_reserva(demand_request, adiar=adiar_gravacao, valor_reservado=novo_valor)
 
 
 @transaction.atomic
@@ -390,9 +425,7 @@ def liberar_duas_travas(*, demand_request, usuario, motivo: str, adiar_gravacao:
     solicitante = demand_request.demanda.solicitante
     entidade_id = str(demand_request.pk)
 
-    limite = DemandIndividualLimit.objects.select_for_update().filter(
-        solicitante=solicitante, rubrica=rubrica,
-    ).first()
+    limite = _travar_limite(solicitante_id=solicitante.pk, rubrica_id=rubrica.pk)
     # Só libera com reserva ativa agora — cancelar um Rascunho (nunca
     # reservado) ou liberar duas vezes seguidas não pode decrementar o
     # comprometido de novo. E libera o `valor_reservado`, não `valor_estimado`,
@@ -439,7 +472,8 @@ def _travar_em_ordem_de_pk(queryset) -> None:
 
 
 @transaction.atomic
-def executar_duas_travas(*, demand_request, valor_pago: Decimal, usuario) -> None:
+def executar_duas_travas(*, demand_request, valor_pago: Decimal, usuario, adiar_gravacao: bool = False) -> bool:
+    """Devolve False quando a reserva já tinha sido executada: o saldo não muda."""
     rubrica = demand_request.rubrica
     solicitante = demand_request.demanda.solicitante
     entidade_id = str(demand_request.pk)
@@ -463,7 +497,8 @@ def executar_duas_travas(*, demand_request, valor_pago: Decimal, usuario) -> Non
         solicitante=solicitante, rubrica=rubrica, valor=valor_pago, demand_request=demand_request, usuario=usuario,
     )
     if executou:
-        _mover_reserva(demand_request, adiar=False, valor_executado=valor_pago)
+        _mover_reserva(demand_request, adiar=adiar_gravacao, valor_executado=valor_pago)
+    return executou
 
 
 @transaction.atomic

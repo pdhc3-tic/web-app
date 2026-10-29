@@ -3,6 +3,7 @@ from rest_framework import serializers
 from apps.sgd.models.demand import Demand
 from apps.sgd.serializers.approval_step import ApprovalStepSerializer
 from apps.sgd.serializers.demand_request import DemandRequestSerializer
+from apps.sgd.services.workflow import destinos_permitidos
 from apps.sgp.models.activity import TIPO_ATIVIDADE_CHOICES
 
 
@@ -71,8 +72,8 @@ class DemandSerializer(serializers.ModelSerializer):
             "criado_em", "atualizado_em",
         ]
 
-    def get_transicoes_permitidas(self, obj):
-        return sorted(obj.get_transicoes_permitidas())
+    def get_transicoes_permitidas(self, obj) -> list[str]:
+        return destinos_permitidos(obj.status)
 
     def get_contexto(self, obj):
         return DemandContextoSerializer(_contexto_da_activity(obj.activity)).data

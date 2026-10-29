@@ -5,13 +5,13 @@ from django.db import IntegrityError, connection, transaction
 from django.db.models import Sum
 from django.test.utils import CaptureQueriesContext
 
-from apps.sgd.exceptions import ErroDeDominio, RegraDeNegocio, SaldoInsuficiente
+from apps.sgd.exceptions import ErroDeDominio, RegraDeNegocio, SaldoInsuficiente, TransicaoInvalida
 from apps.sgd.models import DemandIndividualLimit, DemandRequest
 from apps.sgd.models.demand_request import RESERVA_ATIVA
-from apps.sgd.services import approval as approval_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import orcamento as orcamento_service
+from apps.sgd.services import workflow as workflow_service
 from apps.sgd.tests.factories import DemandFactory, DemandIndividualLimitFactory, DemandRequestFactory
 
 pytestmark = pytest.mark.django_db
@@ -604,7 +604,9 @@ def test_editar_valor_em_devolvida_ajusta_reserva_ativa(
     try:
         demand = demand_request_rn.demanda
         demand_service.submeter_demanda(demand, usuario=solicitante_rn)
-        approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Ajustar valor.")
+        workflow_service.executar_transicao(
+            demand, "devolvida", ator=usuario_articulador_rn, justificativa="Ajustar valor.",
+        )
 
         campos = _campos_diaria_com_dias(municipio=municipio_rn, dias_a_mais=4)
         demand_service.atualizar_solicitacao(demand_request_rn, usuario=solicitante_rn, campos_json=campos)
@@ -635,7 +637,9 @@ def test_resubmissao_apos_edicao_nao_bloqueia_a_toa(
     try:
         demand = demand_request_rn.demanda
         demand_service.submeter_demanda(demand, usuario=solicitante_rn)
-        approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Ajustar valor.")
+        workflow_service.executar_transicao(
+            demand, "devolvida", ator=usuario_articulador_rn, justificativa="Ajustar valor.",
+        )
 
         # Edita pro valor EXATO do limite — sem folga nenhuma pra "pedir de
         # novo". Se a ressubmissão checasse o valor cheio de novo (em vez de
@@ -662,7 +666,7 @@ def test_remover_solicitacao_com_reserva_ativa_libera_saldo(
 ):
     demand = demand_request_rn.demanda
     demand_service.submeter_demanda(demand, usuario=solicitante_rn)
-    approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Remover item.")
+    workflow_service.executar_transicao(demand, "devolvida", ator=usuario_articulador_rn, justificativa="Remover item.")
 
     demand_service.remover_solicitacao(demand_request_rn, usuario=solicitante_rn)
 
@@ -684,7 +688,7 @@ def test_trocar_tipo_com_reserva_ativa_bloqueado(
 
     demand = demand_request_rn.demanda
     demand_service.submeter_demanda(demand, usuario=solicitante_rn)
-    approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Tipo errado.")
+    workflow_service.executar_transicao(demand, "devolvida", ator=usuario_articulador_rn, justificativa="Tipo errado.")
 
     with pytest.raises(ErroDeDominio):
         demand_service.atualizar_solicitacao(
@@ -799,7 +803,9 @@ def test_ciclo_da_reserva_mantem_o_comprometido_igual_as_reservas_ativas(
     assert (demand_request_rn.valor_reservado, demand_request_rn.reserva_ativa) == (Decimal("1000"), True)
     _confere_comprometido(limite_individual_rn)
 
-    approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Ajustar valor.")
+    workflow_service.executar_transicao(
+        demand, "devolvida", ator=usuario_articulador_rn, justificativa="Ajustar valor.",
+    )
     _confere_comprometido(limite_individual_rn)
 
     campos = _campos_diaria_com_dias(municipio=municipio_rn, dias_a_mais=dias)
@@ -961,6 +967,48 @@ def test_cancelamento_grava_o_estado_da_reserva_depois_do_saldo_e_da_demand(dema
         assert limite.valor_comprometido == Decimal("0")
 
 
+def test_autorizacao_grava_as_solicitacoes_depois_do_saldo_e_da_demand(
+    demanda_com_duas_rubricas, solicitante_rn, usuario_ugp,
+):
+    """Ajustar e gravar uma rubrica antes de travar o limite da seguinte deixaria a
+    solicitação travada fora da ordem de lock."""
+    demand_service.submeter_demanda(demanda_com_duas_rubricas, usuario=solicitante_rn)
+    demanda_com_duas_rubricas.status = "pre_autorizada"
+    demanda_com_duas_rubricas.save(update_fields=["status"])
+    ajustes = {s.pk: s.valor_estimado - Decimal("50") for s in demanda_com_duas_rubricas.solicitacoes.all()}
+
+    with CaptureQueriesContext(connection) as consultas:
+        workflow_service.executar_transicao(
+            demanda_com_duas_rubricas, "autorizada", ator=usuario_ugp, ajustes=ajustes,
+        )
+
+    travas_de_saldo, demanda, gravacoes_da_reserva = _ordem(consultas)
+    assert len(gravacoes_da_reserva) == 2
+    assert max(travas_de_saldo) < min(demanda) < min(gravacoes_da_reserva)
+    assert dict(demanda_com_duas_rubricas.solicitacoes.values_list("pk", "valor_autorizado")) == ajustes
+    assert dict(demanda_com_duas_rubricas.solicitacoes.values_list("pk", "valor_reservado")) == ajustes
+
+
+def test_conclusao_grava_as_solicitacoes_depois_do_saldo_e_da_demand(
+    demanda_com_duas_rubricas, solicitante_rn, usuario_fgd,
+):
+    demand_service.submeter_demanda(demanda_com_duas_rubricas, usuario=solicitante_rn)
+    demanda_com_duas_rubricas.status = "em_atendimento"
+    demanda_com_duas_rubricas.save(update_fields=["status"])
+    pagos = {s.pk: s.valor_estimado for s in demanda_com_duas_rubricas.solicitacoes.all()}
+
+    with CaptureQueriesContext(connection) as consultas:
+        workflow_service.executar_transicao(
+            demanda_com_duas_rubricas, "concluida", ator=usuario_fgd, valores_pagos=pagos,
+        )
+
+    travas_de_saldo, demanda, gravacoes_da_reserva = _ordem(consultas)
+    assert len(gravacoes_da_reserva) == 2
+    assert max(travas_de_saldo) < min(demanda) < min(gravacoes_da_reserva)
+    assert dict(demanda_com_duas_rubricas.solicitacoes.values_list("pk", "valor_pago")) == pagos
+    assert dict(demanda_com_duas_rubricas.solicitacoes.values_list("pk", "valor_executado")) == pagos
+
+
 def test_recusa_libera_e_grava_o_estado_da_reserva(
     demand_request_rn, solicitante_rn, usuario_ugp, allocation_territorial_rn, limite_individual_rn,
 ):
@@ -969,8 +1017,70 @@ def test_recusa_libera_e_grava_o_estado_da_reserva(
     demand.status = "pre_autorizada"
     demand.save(update_fields=["status"])
 
-    approval_service.recusar(demand, responsavel=usuario_ugp, justificativa="Sem prioridade.")
+    workflow_service.executar_transicao(demand, "recusada", ator=usuario_ugp, justificativa="Sem prioridade.")
 
     demand_request_rn.refresh_from_db()
     assert demand_request_rn.valor_reservado == Decimal("0")
     _confere_comprometido(limite_individual_rn)
+
+
+def test_reler_reserva_de_solicitacao_removida_e_transicao_invalida(demand_request_rn):
+    """Quem esperava o lock de uma remoção encontra a solicitação apagada: a operação
+    é recusada como mudança concorrente, não estoura `DoesNotExist`."""
+    DemandRequest.objects.filter(pk=demand_request_rn.pk).delete()
+
+    with pytest.raises(TransicaoInvalida):
+        balance_service.reler_reserva(demand_request_rn)
+
+
+def test_reler_reserva_de_solicitacao_que_mudou_de_rubrica_e_transicao_invalida(demand_request_rn):
+    """O limite foi travado pela rubrica lida antes; mexer no saldo com a rubrica
+    nova no banco tiraria a reserva do limite errado."""
+    from apps.sgp.tests.factories import BudgetRubricaFactory
+
+    DemandRequest.objects.filter(pk=demand_request_rn.pk).update(rubrica=BudgetRubricaFactory(slug="rubrica-trocada"))
+
+    with pytest.raises(TransicaoInvalida):
+        balance_service.reler_reserva(demand_request_rn)
+
+
+def _travas_com_join_sem_of(consultas) -> list[str]:
+    return [
+        q["sql"] for q in consultas
+        if "FOR UPDATE" in q["sql"] and " JOIN " in q["sql"] and "FOR UPDATE OF" not in q["sql"]
+    ]
+
+
+def test_travas_de_saldo_nao_travam_a_linha_do_solicitante(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    """O `ordering` do limite é por solicitante e rubrica. Sem `of`, o FOR UPDATE
+    do `.first()` levaria o JOIN e travaria também a linha do usuário: quem grava
+    uma notificação ou auditoria para o solicitante esperaria esse lock no commit,
+    segurando a Demand, e fecharia um ciclo com quem espera a Demand."""
+    with CaptureQueriesContext(connection) as consultas:
+        balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+        balance_service.reler_reserva_travada(demand_request_rn)
+        balance_service.liberar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn, motivo="x")
+
+    assert any("FOR UPDATE" in q["sql"] for q in consultas)
+    assert _travas_com_join_sem_of(consultas) == []
+
+
+def test_fluxo_completo_nao_trava_linhas_alem_das_da_ordem_de_lock(
+    demand_request_rn, solicitante_rn, usuario_articulador_rn, usuario_ugp, usuario_fgd,
+    allocation_territorial_rn, limite_individual_rn,
+):
+    demand = demand_request_rn.demanda
+    with CaptureQueriesContext(connection) as consultas:
+        demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+        workflow_service.executar_transicao(demand, "pre_autorizada", ator=usuario_articulador_rn)
+        workflow_service.executar_transicao(
+            demand, "autorizada", ator=usuario_ugp, ajustes={demand_request_rn.pk: Decimal("900")},
+        )
+        workflow_service.executar_transicao(demand, "em_atendimento", ator=usuario_fgd)
+        workflow_service.executar_transicao(
+            demand, "concluida", ator=usuario_fgd, valores_pagos={demand_request_rn.pk: Decimal("800")},
+        )
+
+    assert _travas_com_join_sem_of(consultas) == []

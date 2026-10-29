@@ -4,9 +4,9 @@ from unittest.mock import patch
 import pytest
 
 from apps.core.models.notifications import TipoNotificacao
-from apps.sgd.services import approval as approval_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
+from apps.sgd.services import workflow as workflow_service
 
 pytestmark = pytest.mark.django_db
 
@@ -29,7 +29,9 @@ def test_devolucao_notifica_solicitante(mocked_delay, demand_rascunho_rn, solici
     demand_rascunho_rn.status = "submetida"
     demand_rascunho_rn.save(update_fields=["status"])
 
-    approval_service.devolver(demand_rascunho_rn, responsavel=usuario_articulador_rn, justificativa="Falta anexo.")
+    workflow_service.executar_transicao(
+        demand_rascunho_rn, "devolvida", ator=usuario_articulador_rn, justificativa="Falta anexo.",
+    )
 
     assert solicitante_rn.notifications.filter(evento="demand_devolvida").exists()
 
@@ -39,7 +41,7 @@ def test_pre_autorizacao_notifica_ugp(mocked_delay, demand_rascunho_rn, usuario_
     demand_rascunho_rn.status = "submetida"
     demand_rascunho_rn.save(update_fields=["status"])
 
-    approval_service.pre_autorizar(demand_rascunho_rn, responsavel=usuario_articulador_rn)
+    workflow_service.executar_transicao(demand_rascunho_rn, "pre_autorizada", ator=usuario_articulador_rn)
 
     assert usuario_ugp.notifications.filter(evento="demand_pre_autorizada").exists()
 
@@ -54,7 +56,7 @@ def test_autorizacao_notifica_solicitante_e_fgd(
     demand.save(update_fields=["status"])
     balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
 
-    approval_service.autorizar(demand, responsavel=usuario_ugp)
+    workflow_service.executar_transicao(demand, "autorizada", ator=usuario_ugp)
 
     assert solicitante_rn.notifications.filter(evento="demand_autorizada").exists()
     assert usuario_fgd.notifications.filter(evento="demand_autorizada").exists()
@@ -65,7 +67,7 @@ def test_atender_notifica_apenas_in_app(mocked_delay, demand_rascunho_rn, solici
     demand_rascunho_rn.status = "autorizada"
     demand_rascunho_rn.save(update_fields=["status"])
 
-    approval_service.atender(demand_rascunho_rn, responsavel=usuario_fgd)
+    workflow_service.executar_transicao(demand_rascunho_rn, "em_atendimento", ator=usuario_fgd)
 
     notifs = solicitante_rn.notifications.filter(evento="demand_em_atendimento")
     assert notifs.count() == 1

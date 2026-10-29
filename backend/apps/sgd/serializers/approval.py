@@ -23,6 +23,13 @@ class ApprovalStepSerializer(serializers.ModelSerializer):
         return obj.responsavel.nome if obj.responsavel_id else None
 
 
+def _por_id_de_solicitacao(valores: dict) -> dict:
+    try:
+        return {int(chave): valor for chave, valor in valores.items()}
+    except ValueError:
+        raise serializers.ValidationError("As chaves devem ser IDs de solicitação.")
+
+
 class DevolverSerializer(serializers.Serializer):
     justificativa = serializers.CharField()
 
@@ -37,7 +44,7 @@ class AutorizarSerializer(serializers.Serializer):
     justificativa = serializers.CharField(required=False, allow_blank=True, default="")
 
     def validate_ajustes(self, value):
-        return {int(k): v for k, v in value.items()}
+        return _por_id_de_solicitacao(value)
 
     def validate(self, data):
         if data.get("excedente_autorizado") and not data.get("justificativa"):
@@ -54,11 +61,14 @@ class RecusarSerializer(serializers.Serializer):
 class ConcluirSerializer(serializers.Serializer):
     valores_pagos = serializers.DictField(
         child=serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0),
-        help_text="{demand_request_id: valor_pago}",
+        help_text=(
+            "{demand_request_id: valor_pago} das solicitações ainda sem pagamento. Acima do "
+            "autorizado, executa o autorizado e registra o excedente como risco de glosa."
+        ),
     )
 
     def validate_valores_pagos(self, value):
-        return {int(k): v for k, v in value.items()}
+        return _por_id_de_solicitacao(value)
 
 
 class PreviewDecisaoSerializer(serializers.Serializer):
