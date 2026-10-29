@@ -15,7 +15,7 @@ from apps.sgd.serializers.approval import (
 from apps.sgd.serializers.demand import DemandSerializer
 from apps.sgd.services import approval as approval_service
 from apps.sgd.services import balance as balance_service
-from apps.sgp.models.budget import BudgetAllocation
+from apps.sgp.models import BudgetAllocation
 
 
 class DemandApprovalMixin:

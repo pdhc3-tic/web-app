@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q
 
 from apps.core.fields import EncryptedCharField
 
@@ -51,6 +52,16 @@ class DemandRequest(models.Model):
         verbose_name="Valor Pago (R$)",
     )
 
+    # Estado da reserva no limite individual, gravado sob o lock do limite.
+    # `valor_executado` preenchido encerra a reserva: `valor_reservado` fica
+    # como registro do que foi convertido em executado.
+    valor_reservado = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0, verbose_name="Valor Reservado (R$)",
+    )
+    valor_executado = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True, verbose_name="Valor Executado (R$)",
+    )
+
     ordem = models.PositiveSmallIntegerField(default=0, verbose_name="Ordem")
 
     criado_em = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
@@ -60,6 +71,15 @@ class DemandRequest(models.Model):
         verbose_name = "Solicitação de Recurso"
         verbose_name_plural = "Solicitações de Recurso"
         ordering = ["demanda", "ordem"]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(valor_reservado__gte=0), name="ck_demandrequest_valor_reservado_nao_negativo",
+            ),
+            models.CheckConstraint(
+                condition=Q(valor_executado__isnull=True) | Q(valor_executado__gte=0),
+                name="ck_demandrequest_valor_executado_nao_negativo",
+            ),
+        ]
         indexes = [
             models.Index(fields=["demanda"], name="idx_demandrequest_demanda"),
             models.Index(
@@ -71,5 +91,8 @@ class DemandRequest(models.Model):
         return f"{self.get_tipo_display()} — {self.demanda_id}"
 
     @property
-    def meta(self):
-        return self.demanda.meta
+    def reserva_ativa(self) -> bool:
+        return self.valor_reservado > 0 and self.valor_executado is None
+
+
+RESERVA_ATIVA = Q(valor_reservado__gt=0, valor_executado__isnull=True)

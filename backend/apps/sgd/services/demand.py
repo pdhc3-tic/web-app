@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
-from rest_framework.exceptions import PermissionDenied
-from rest_framework.exceptions import ValidationError as DRFValidationError
 
+from apps.sgd.exceptions import JustificativaObrigatoria, RegraDeNegocio, SaldoInsuficiente, TransicaoInvalida
 from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.models.demand import STATUS_EDITAVEIS, Demand
 from apps.sgd.models.demand_document import DemandDocument
@@ -23,9 +23,9 @@ ACTIVITY_STATUS_EXIGEM_JUSTIFICATIVA = {"em_andamento", "concluido", "concluido_
 
 def _despesa_posterior_e_valida(activity) -> bool:
     if activity.status in ACTIVITY_STATUS_BLOQUEIAM_NOVA_DEMANDA:
-        raise DRFValidationError({
-            "activity": f"Atividade em status '{activity.get_status_display()}' não aceita novas demandas."
-        })
+        raise RegraDeNegocio(
+            f"Atividade em status '{activity.get_status_display()}' não aceita novas demandas.", campo="activity",
+        )
     return activity.status in ACTIVITY_STATUS_EXIGEM_JUSTIFICATIVA
 
 
@@ -47,9 +47,7 @@ def criar_activity_inline(*, titulo, tipo_atividade, acao, municipio, data_previ
 def criar_demanda(*, titulo, activity, justificativa, solicitante) -> Demand:
     despesa_posterior = _despesa_posterior_e_valida(activity)
     if despesa_posterior and not justificativa:
-        raise DRFValidationError({
-            "justificativa": "Obrigatória para demandas de atividades já em andamento/concluídas (§2.3)."
-        })
+        raise JustificativaObrigatoria("Obrigatória para demandas de atividades já em andamento/concluídas.")
     demand = Demand.objects.create(
         titulo=titulo, activity=activity, justificativa=justificativa,
         solicitante=solicitante, despesa_posterior=despesa_posterior,
@@ -60,9 +58,9 @@ def criar_demanda(*, titulo, activity, justificativa, solicitante) -> Demand:
 
 def _exigir_editavel(demand) -> None:
     if demand.status not in STATUS_EDITAVEIS:
-        raise DRFValidationError({
-            "status": f"Demanda em status '{demand.get_status_display()}' não pode ser editada (RF07)."
-        })
+        raise RegraDeNegocio(
+            f"Demanda em status '{demand.get_status_display()}' não pode ser editada.", campo="status",
+        )
 
 
 @transaction.atomic
@@ -93,9 +91,9 @@ def adicionar_solicitacao(demand, *, tipo, campos_json, valor_estimado=None, ord
 
     valor_final = validado.valor_estimado_auto if validado.valor_estimado_auto is not None else valor_estimado
     if valor_final is None:
-        raise DRFValidationError({"valor_estimado": "Obrigatório para este tipo de solicitação."})
+        raise RegraDeNegocio("Obrigatório para este tipo de solicitação.", campo="valor_estimado")
     if valor_final <= 0:
-        raise DRFValidationError({"valor_estimado": "Deve ser maior que zero."})
+        raise RegraDeNegocio("Deve ser maior que zero.", campo="valor_estimado")
 
     return DemandRequest.objects.create(
         demanda=demand, tipo=tipo, rubrica=rubrica, campos_json=validado.campos_json,
@@ -113,6 +111,7 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
     só trocar o campo; a resubmissão não pede saldo adicional pra ela."""
     demand = solicitacao.demanda
     _exigir_editavel(demand)
+    balance_service.reler_reserva(solicitacao)
 
     tipo_final = tipo or solicitacao.tipo
     campos_final = campos_json if campos_json is not None else solicitacao.campos_json
@@ -124,17 +123,16 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
     if valor_final is None:
         valor_final = valor_estimado if valor_estimado is not None else solicitacao.valor_estimado
     if valor_final <= 0:
-        raise DRFValidationError({"valor_estimado": "Deve ser maior que zero."})
+        raise RegraDeNegocio("Deve ser maior que zero.", campo="valor_estimado")
 
-    tem_reserva = balance_service.reserva_ativa(solicitacao)
+    tem_reserva = solicitacao.reserva_ativa
     if tem_reserva and rubrica.pk != solicitacao.rubrica_id:
-        raise DRFValidationError({
-            "tipo": (
-                "Não é possível trocar o tipo de uma solicitação com reserva de saldo ativa "
-                "(mudaria a rubrica). Remova e crie uma nova solicitação."
-            )
-        })
-    if tem_reserva and valor_final != solicitacao.valor_estimado:
+        raise RegraDeNegocio(
+            "Não é possível trocar o tipo de uma solicitação com reserva de saldo ativa "
+            "(mudaria a rubrica). Remova e crie uma nova solicitação.",
+            campo="tipo",
+        )
+    if tem_reserva and valor_final != solicitacao.valor_reservado:
         balance_service.ajustar_duas_travas(demand_request=solicitacao, novo_valor=valor_final, usuario=usuario)
 
     solicitacao.tipo = tipo_final
@@ -151,7 +149,8 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
 @transaction.atomic
 def remover_solicitacao(solicitacao, *, usuario) -> None:
     _exigir_editavel(solicitacao.demanda)
-    if balance_service.reserva_ativa(solicitacao):
+    balance_service.reler_reserva(solicitacao)
+    if solicitacao.reserva_ativa:
         balance_service.liberar_duas_travas(
             demand_request=solicitacao, usuario=usuario,
             motivo="Solicitação removida durante edição da demanda.",
@@ -167,13 +166,11 @@ def _exigir_minimo_cotacoes_equipamento(demand) -> None:
         .values_list("fornecedor", flat=True)
     )
     if len(fornecedores) < 3:
-        raise DRFValidationError({
-            "documentos": "Solicitação de Aquisição de Equipamentos exige no mínimo 3 cotações em PDF (§3.6)."
-        })
+        raise RegraDeNegocio(
+            "Solicitação de Aquisição de Equipamentos exige no mínimo 3 cotações em PDF.", campo="documentos",
+        )
     if len(set(fornecedores)) < len(fornecedores):
-        raise DRFValidationError({
-            "documentos": "As cotações precisam ser de fornecedores distintos (§3.6)."
-        })
+        raise RegraDeNegocio("As cotações precisam ser de fornecedores distintos.", campo="documentos")
 
 
 @transaction.atomic
@@ -186,9 +183,8 @@ def submeter_demanda(demand, *, usuario) -> Demand:
     # travam BudgetAllocation na mesma ordem, evitando deadlock.
     solicitacoes = list(demand.solicitacoes.select_related("rubrica").order_by("rubrica_id", "pk").all())
     if not solicitacoes:
-        raise DRFValidationError({"solicitacoes": "A demanda precisa ter ao menos uma solicitação de recurso."})
+        raise RegraDeNegocio("A demanda precisa ter ao menos uma solicitação de recurso.", campo="solicitacoes")
 
-    meta = demand.meta
     bloqueios = {}
     # Solicitações da mesma rubrica disputam o mesmo limite e a mesma
     # alocação: cada uma é conferida contra o saldo que sobra depois das
@@ -199,26 +195,25 @@ def submeter_demanda(demand, *, usuario) -> Demand:
         # Com reserva já ativa (ex.: ressubmissão de Devolvida sem edição
         # nessa solicitação específica), o saldo já desconta essa reserva —
         # checar o valor cheio de novo bloquearia à toa.
-        if balance_service.reserva_ativa(solicitacao):
+        if solicitacao.reserva_ativa:
             continue
         consumo_previo = consumo_por_rubrica.get(solicitacao.rubrica_id, balance_service.ZERO)
         check = balance_service.verificar_duas_travas(
-            solicitante=demand.solicitante, rubrica=solicitacao.rubrica, meta=meta,
-            valor=solicitacao.valor_estimado, consumo_previo=consumo_previo,
+            solicitante=demand.solicitante, rubrica=solicitacao.rubrica, valor=solicitacao.valor_estimado,
+            demand_request=solicitacao, consumo_previo=consumo_previo,
         )
         if not check.disponivel:
-            trava = check.trava_bloqueada
-            motivo = (check.individual if trava == balance_service.TRAVA_INDIVIDUAL else check.territorial).motivo_bloqueio
-            bloqueios[solicitacao.pk] = balance_service.bloqueio(trava, motivo)
+            bloqueios[solicitacao.pk] = check.bloqueio(solicitacao_id=solicitacao.pk)
         else:
             consumo_por_rubrica[solicitacao.rubrica_id] = consumo_previo + solicitacao.valor_estimado
     if bloqueios:
-        raise balance_service.SubmissaoBloqueada(bloqueios)
+        raise SaldoInsuficiente.para_submissao(bloqueios)
 
     for solicitacao in solicitacoes:
-        balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=usuario)
+        balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=usuario, adiar_gravacao=True)
 
     aplicar_transicao(demand, "submetida", usuario=usuario)
+    balance_service.gravar_estado_da_reserva(solicitacoes)
 
     sigla = demand.activity.municipio.state.sigla
     notifications_service.notificar_submissao(demand, notifications_service.usuarios_articuladores_do_estado(sigla))
@@ -232,14 +227,15 @@ def cancelar_demanda(demand, *, usuario, motivo: str = "") -> Demand:
         if not pode_cancelar_autorizada(usuario):
             raise PermissionDenied("Seu perfil não pode cancelar uma demanda autorizada.")
         if not motivo.strip():
-            raise DRFValidationError({"justificativa": "Obrigatória para cancelar uma demanda autorizada."})
+            raise JustificativaObrigatoria("Obrigatória para cancelar uma demanda autorizada.")
     elif not pode_cancelar(demand, usuario):
-        raise DRFValidationError({"status": "Você não pode cancelar esta demanda neste status (RF09)."})
+        raise TransicaoInvalida("Você não pode cancelar esta demanda neste status.")
 
-    for solicitacao in demand.solicitacoes.order_by("rubrica_id", "pk"):
+    solicitacoes = list(demand.solicitacoes.order_by("rubrica_id", "pk"))
+    for solicitacao in solicitacoes:
         balance_service.liberar_duas_travas(
             demand_request=solicitacao, usuario=usuario,
-            motivo=motivo or "Cancelada pelo solicitante.",
+            motivo=motivo or "Cancelada pelo solicitante.", adiar_gravacao=True,
         )
 
     # Dois cancelamentos simultâneos passam pela checagem acima com o mesmo status;
@@ -247,11 +243,10 @@ def cancelar_demanda(demand, *, usuario, motivo: str = "") -> Demand:
     # na ordem da submissão (limite → alocação → Demand).
     status_atual = Demand.objects.select_for_update().values_list("status", flat=True).get(pk=demand.pk)
     if status_atual != demand.status:
-        raise DRFValidationError({
-            "status": "A demanda mudou de status durante o cancelamento. Recarregue e tente de novo."
-        })
+        raise TransicaoInvalida("A demanda mudou de status durante o cancelamento. Recarregue e tente de novo.")
 
     marcar_cancelada(demand, usuario=usuario)
+    balance_service.gravar_estado_da_reserva(solicitacoes)
     if estava_autorizada:
         ApprovalStep.objects.create(
             demanda=demand, etapa="cancelamento", responsavel=usuario,

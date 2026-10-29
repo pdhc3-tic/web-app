@@ -1,7 +1,7 @@
 import pytest
-from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from apps.core.models.audit_log import AuditLog
+from apps.sgd.exceptions import ErroDeDominio
 from apps.sgd.models import DemandTypeRubricaMapping
 from apps.sgd.services import demand as demand_service
 from apps.sgd.tests.factories import DemandTypeRubricaMappingFactory
@@ -118,7 +118,7 @@ def test_criacao_de_solicitacao_consulta_a_tabela_de_mapeamento(demand_rascunho_
 def test_tipo_sem_mapeamento_ativo_retorna_validacao(demand_rascunho_rn, limpar_mapeamentos):
     DemandTypeRubricaMappingFactory(tipo="grafico", ativo=False)
 
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         demand_service.adicionar_solicitacao(
             demand_rascunho_rn, tipo="grafico", campos_json=CAMPOS_GRAFICO, valor_estimado=100,
         )

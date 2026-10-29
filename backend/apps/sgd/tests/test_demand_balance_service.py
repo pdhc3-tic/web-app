@@ -1,19 +1,25 @@
 from decimal import Decimal
 
 import pytest
-from rest_framework.exceptions import ValidationError as DRFValidationError
+from django.db import IntegrityError, connection, transaction
+from django.db.models import Sum
+from django.test.utils import CaptureQueriesContext
 
+from apps.sgd.exceptions import ErroDeDominio, RegraDeNegocio, SaldoInsuficiente
+from apps.sgd.models import DemandIndividualLimit, DemandRequest
+from apps.sgd.models.demand_request import RESERVA_ATIVA
 from apps.sgd.services import approval as approval_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
-from apps.sgd.tests.factories import DemandIndividualLimitFactory, DemandRequestFactory
+from apps.sgd.services import orcamento as orcamento_service
+from apps.sgd.tests.factories import DemandFactory, DemandIndividualLimitFactory, DemandRequestFactory
 
 pytestmark = pytest.mark.django_db
 
 
 def test_bloqueio_trava_individual_sem_limite_configurado(solicitante_rn, rubrica_diarias, activity_rn, allocation_territorial_rn):
     check = balance_service.verificar_duas_travas(
-        solicitante=solicitante_rn, rubrica=rubrica_diarias, meta=activity_rn.acao.meta, valor=Decimal("100"),
+        solicitante=solicitante_rn, rubrica=rubrica_diarias, activity=activity_rn, valor=Decimal("100"),
     )
     assert check.disponivel is False
     assert check.trava_bloqueada == "individual"
@@ -21,7 +27,7 @@ def test_bloqueio_trava_individual_sem_limite_configurado(solicitante_rn, rubric
 
 def test_bloqueio_trava_individual_insuficiente(solicitante_rn, rubrica_diarias, activity_rn, allocation_territorial_rn, limite_individual_rn):
     check = balance_service.verificar_duas_travas(
-        solicitante=solicitante_rn, rubrica=rubrica_diarias, meta=activity_rn.acao.meta,
+        solicitante=solicitante_rn, rubrica=rubrica_diarias, activity=activity_rn,
         valor=Decimal("999999"),
     )
     assert check.disponivel is False
@@ -36,7 +42,7 @@ def test_bloqueio_trava_territorial_esgotada(solicitante_rn, rubrica_diarias, ac
         valor_alocado=100, valor_comprometido=100,
     )
     check = balance_service.verificar_duas_travas(
-        solicitante=solicitante_rn, rubrica=rubrica_diarias, meta=activity_rn.acao.meta, valor=Decimal("50"),
+        solicitante=solicitante_rn, rubrica=rubrica_diarias, activity=activity_rn, valor=Decimal("50"),
     )
     assert check.disponivel is False
     assert check.trava_bloqueada == "territorial"
@@ -76,10 +82,10 @@ def test_ajustar_duas_travas_acima_do_limite_bloqueia_sem_bypass(demand_request_
     balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
     novo_valor = limite_individual_rn.valor_limite + Decimal("1")
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         balance_service.ajustar_duas_travas(demand_request=demand_request_rn, novo_valor=novo_valor, usuario=solicitante_rn)
 
-    assert "Solicitar recurso extra" in str(excinfo.value.detail["detail"])
+    assert "Solicitar recurso extra" in str(excinfo.value.como_dict()["detail"])
 
 
 def test_ajustar_duas_travas_acima_do_pool_territorial_orienta_acionar_articulador(
@@ -88,14 +94,14 @@ def test_ajustar_duas_travas_acima_do_pool_territorial_orienta_acionar_articulad
     balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
     novo_valor = allocation_territorial_rn.valor_alocado + Decimal("1")
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         balance_service.ajustar_duas_travas(
             demand_request=demand_request_rn, novo_valor=novo_valor, usuario=solicitante_rn,
             ignorar_limite_individual=True,
         )
 
-    assert "Acione o Articulador Estadual" in str(excinfo.value.detail["detail"])
-    assert "Território esgotado" in str(excinfo.value.detail["detail"])
+    assert "Acione o Articulador Estadual" in str(excinfo.value.como_dict()["detail"])
+    assert "Território esgotado" in str(excinfo.value.como_dict()["detail"])
 
 
 def test_ajustar_duas_travas_com_bypass_autoriza_excedente_sem_elevar_limite(demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn):
@@ -148,11 +154,11 @@ def test_autorizar_excedente_exige_justificativa(demand_request_rn, solicitante_
     from apps.sgp.tests.factories import BudgetAllocationFactory
 
     origem = BudgetAllocationFactory(
-        meta=demand_request_rn.meta, rubrica=demand_request_rn.rubrica,
+        meta=demand_request_rn.demanda.activity.acao.meta, rubrica=demand_request_rn.rubrica,
         nivel=BudgetAllocation.Nivel.ESTADUAL, territorio=None,
         estado=StateFactory(sigla="RN", nome="Rio Grande do Norte"), valor_alocado=5000,
     )
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         balance_service.autorizar_excedente(
             demand_request=demand_request_rn, origem_allocation=origem,
             valor_excedente=Decimal("500"), justificativa="", usuario=solicitante_rn,
@@ -170,7 +176,7 @@ def test_autorizar_excedente_com_justificativa_remaneja_sem_elevar_limite_indivi
     from apps.sgp.tests.factories import BudgetAllocationFactory
 
     origem = BudgetAllocationFactory(
-        meta=demand_request_rn.meta, rubrica=demand_request_rn.rubrica,
+        meta=demand_request_rn.demanda.activity.acao.meta, rubrica=demand_request_rn.rubrica,
         nivel=BudgetAllocation.Nivel.ESTADUAL, territorio=None,
         estado=StateFactory(sigla="RN", nome="Rio Grande do Norte"), valor_alocado=Decimal("5000"),
     )
@@ -212,14 +218,15 @@ def test_submeter_demanda_bloqueio_de_uma_solicitacao_identifica_so_a_bloqueada(
         },
     )
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand, usuario=solicitante_rn)
 
-    bloqueios = excinfo.value.detail["solicitacoes_bloqueadas"]
+    bloqueios = excinfo.value.como_dict()["solicitacoes_bloqueadas"]
     assert str(solicitacao_bloqueada.pk) in bloqueios
     assert str(demand_request_rn.pk) not in bloqueios
-    assert excinfo.value.detail["solicitacao_id"] == solicitacao_bloqueada.pk
-    assert excinfo.value.detail["code"] == "trava_individual"
+    assert excinfo.value.como_dict()["solicitacao_id"] == solicitacao_bloqueada.pk
+    assert excinfo.value.como_dict()["code"] == "INSUFFICIENT_BALANCE"
+    assert excinfo.value.como_dict()["trava"] == "individual"
 
     demand.refresh_from_db()
     assert demand.status == "rascunho"
@@ -238,16 +245,16 @@ def test_submeter_demanda_bloqueio_territorial_orienta_acionar_articulador(
         valor_alocado=Decimal("500"), valor_comprometido=Decimal("0"),
     )
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
 
-    bloqueio = excinfo.value.detail["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
+    bloqueio = excinfo.value.como_dict()["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
     assert bloqueio["trava"] == "territorial"
     assert bloqueio["acao_sugerida"] == "acionar_articulador"
-    assert "Acione o Articulador Estadual" in str(bloqueio["motivo"])
+    assert "Acione o Articulador Estadual" in str(bloqueio["detail"])
     # Pool de 500 com 500 livres: o território ainda tem saldo, só não
     # cobre os 1.000 pedidos.
-    assert "Território esgotado nesta rubrica para este valor" in str(bloqueio["motivo"])
+    assert "Território esgotado nesta rubrica para este valor" in str(bloqueio["detail"])
 
 
 def test_submeter_demanda_bloqueio_individual_orienta_recurso_extra(
@@ -256,13 +263,13 @@ def test_submeter_demanda_bloqueio_individual_orienta_recurso_extra(
     limite_individual_rn.valor_limite = Decimal("500")
     limite_individual_rn.save(update_fields=["valor_limite"])
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
 
-    bloqueio = excinfo.value.detail["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
+    bloqueio = excinfo.value.como_dict()["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
     assert bloqueio["trava"] == "individual"
     assert bloqueio["acao_sugerida"] == "solicitar_recurso_extra"
-    assert "Solicitar recurso extra" in str(bloqueio["motivo"])
+    assert "Solicitar recurso extra" in str(bloqueio["detail"])
 
 
 def _solicitacoes_diaria(demand, rubrica, *valores):
@@ -282,15 +289,16 @@ def test_submeter_demanda_pre_checagem_soma_solicitacoes_da_mesma_rubrica_no_lim
     limite_individual_rn.save(update_fields=["valor_limite"])
     _, segunda, terceira = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "60", "60", "60")
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
 
-    corpo = excinfo.value.detail
+    corpo = excinfo.value.como_dict()
     assert set(corpo["solicitacoes_bloqueadas"]) == {str(segunda.pk), str(terceira.pk)}
     assert corpo["solicitacao_id"] == segunda.pk
-    assert corpo["code"] == "trava_individual"
-    assert "R$ 40.00 disponível, R$ 60.00 solicitado" in corpo["detail"]
-    assert "Já descontados R$ 60.00 de outras solicitações desta demanda" in corpo["detail"]
+    assert corpo["code"] == "INSUFFICIENT_BALANCE"
+    assert corpo["trava"] == "individual"
+    assert "R$ 40,00 disponível, R$ 60,00 solicitado" in corpo["detail"]
+    assert "Já descontados R$ 60,00 de outras solicitações desta demanda" in corpo["detail"]
 
     demand_rascunho_rn.refresh_from_db()
     assert demand_rascunho_rn.status == "rascunho"
@@ -309,14 +317,15 @@ def test_submeter_demanda_pre_checagem_soma_solicitacoes_da_mesma_rubrica_no_poo
     )
     _, segunda, terceira = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "60", "60", "60")
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
 
-    corpo = excinfo.value.detail
+    corpo = excinfo.value.como_dict()
     assert set(corpo["solicitacoes_bloqueadas"]) == {str(segunda.pk), str(terceira.pk)}
-    assert corpo["code"] == "trava_territorial"
-    assert "R$ 40.00 disponível, R$ 60.00 solicitado" in corpo["detail"]
-    assert "Já descontados R$ 60.00 de outras solicitações desta demanda" in corpo["detail"]
+    assert corpo["code"] == "INSUFFICIENT_BALANCE"
+    assert corpo["trava"] == "territorial"
+    assert "R$ 40,00 disponível, R$ 60,00 solicitado" in corpo["detail"]
+    assert "Já descontados R$ 60,00 de outras solicitações desta demanda" in corpo["detail"]
     allocation.refresh_from_db()
     assert allocation.valor_comprometido == Decimal("0")
 
@@ -329,10 +338,10 @@ def test_submeter_demanda_pre_checagem_barrada_nao_consome_saldo_das_seguintes(
     limite_individual_rn.save(update_fields=["valor_limite"])
     _, barrada, _ = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "60", "60", "30")
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
 
-    assert set(excinfo.value.detail["solicitacoes_bloqueadas"]) == {str(barrada.pk)}
+    assert set(excinfo.value.como_dict()["solicitacoes_bloqueadas"]) == {str(barrada.pk)}
 
 
 def test_submeter_demanda_limite_zerado_pela_propria_demanda_mostra_valores_e_nao_diz_esgotado(
@@ -342,13 +351,13 @@ def test_submeter_demanda_limite_zerado_pela_propria_demanda_mostra_valores_e_na
     limite_individual_rn.save(update_fields=["valor_limite"])
     *_, terceira = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "50", "50", "10")
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
 
-    corpo = excinfo.value.detail
+    corpo = excinfo.value.como_dict()
     assert corpo["solicitacao_id"] == terceira.pk
-    assert "Limite individual insuficiente: R$ 0.00 disponível, R$ 10.00 solicitado" in corpo["detail"]
-    assert "Já descontados R$ 100.00" in corpo["detail"]
+    assert "Limite individual insuficiente: R$ 0,00 disponível, R$ 10,00 solicitado" in corpo["detail"]
+    assert "Já descontados R$ 100,00" in corpo["detail"]
     assert "esgotado" not in corpo["detail"]
 
 
@@ -364,13 +373,14 @@ def test_submeter_demanda_pool_zerado_pela_propria_demanda_mostra_valores_e_nao_
     )
     *_, terceira = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "50", "50", "10")
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
 
-    corpo = excinfo.value.detail
+    corpo = excinfo.value.como_dict()
     assert corpo["solicitacao_id"] == terceira.pk
-    assert corpo["code"] == "trava_territorial"
-    assert "R$ 0.00 disponível, R$ 10.00 solicitado" in corpo["detail"]
+    assert corpo["code"] == "INSUFFICIENT_BALANCE"
+    assert corpo["trava"] == "territorial"
+    assert "R$ 0,00 disponível, R$ 10,00 solicitado" in corpo["detail"]
     assert BLOQUEIO_SALDO_ZERO not in corpo["detail"]
     # O pool tem R$ 100 livres no banco: só não cobre esta demanda inteira.
     assert "Território esgotado nesta rubrica para este valor" in corpo["detail"]
@@ -383,10 +393,10 @@ def test_submeter_demanda_sem_outras_solicitacoes_nao_menciona_desconto(
     limite_individual_rn.valor_limite = Decimal("500")
     limite_individual_rn.save(update_fields=["valor_limite"])
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
 
-    assert "Já descontados" not in excinfo.value.detail["detail"]
+    assert "Já descontados" not in excinfo.value.como_dict()["detail"]
 
 
 def test_submeter_demanda_rubricas_diferentes_nao_somam_consumo(
@@ -428,11 +438,12 @@ def test_submeter_demanda_bloqueio_individual_na_reserva_identifica_trava_e_soli
     limite_individual_rn.save(update_fields=["valor_limite"])
     _pre_checagem_aprova_tudo(monkeypatch)
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
 
-    corpo = excinfo.value.detail
-    assert corpo["code"] == "trava_individual"
+    corpo = excinfo.value.como_dict()
+    assert corpo["code"] == "INSUFFICIENT_BALANCE"
+    assert corpo["trava"] == "individual"
     assert corpo["solicitacao_id"] == demand_request_rn.pk
     assert "Solicitar recurso extra" in corpo["detail"]
     bloqueio = corpo["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
@@ -456,11 +467,12 @@ def test_submeter_demanda_bloqueio_territorial_na_reserva_identifica_trava_e_sol
     )
     _pre_checagem_aprova_tudo(monkeypatch)
 
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
 
-    corpo = excinfo.value.detail
-    assert corpo["code"] == "trava_territorial"
+    corpo = excinfo.value.como_dict()
+    assert corpo["code"] == "INSUFFICIENT_BALANCE"
+    assert corpo["trava"] == "territorial"
     assert corpo["solicitacao_id"] == demand_request_rn.pk
     assert "Acione o Articulador Estadual" in corpo["detail"]
     bloqueio = corpo["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]
@@ -475,14 +487,71 @@ def test_submeter_demanda_bloqueio_territorial_na_reserva_identifica_trava_e_sol
     assert limite_individual_rn.valor_comprometido == Decimal("0")
 
 
+def _bloqueio_da_submissao(demand) -> dict:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
+        demand_service.submeter_demanda(demand, usuario=demand.solicitante)
+    return excinfo.value.como_dict()
+
+
+def test_bloqueio_individual_na_pre_checagem_e_na_reserva_tem_o_mesmo_contrato(
+    monkeypatch, demand_request_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    limite_individual_rn.valor_limite = Decimal("500")
+    limite_individual_rn.save(update_fields=["valor_limite"])
+
+    pela_pre_checagem = _bloqueio_da_submissao(demand_request_rn.demanda)
+    _pre_checagem_aprova_tudo(monkeypatch)
+    pela_reserva = _bloqueio_da_submissao(demand_request_rn.demanda)
+
+    assert pela_pre_checagem == pela_reserva
+    assert pela_reserva["code"] == "INSUFFICIENT_BALANCE"
+    assert (pela_reserva["disponivel"], pela_reserva["solicitado"]) == ("500.00", "1000.00")
+
+
+def test_bloqueio_territorial_na_pre_checagem_e_na_reserva_tem_o_mesmo_contrato(
+    monkeypatch, demand_request_rn, activity_rn, rubrica_diarias, limite_individual_rn,
+):
+    from apps.sgp.tests.factories import BudgetAllocationFactory
+
+    BudgetAllocationFactory(
+        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
+        valor_alocado=Decimal("500"), valor_comprometido=Decimal("0"),
+    )
+
+    pela_pre_checagem = _bloqueio_da_submissao(demand_request_rn.demanda)
+    _pre_checagem_aprova_tudo(monkeypatch)
+    pela_reserva = _bloqueio_da_submissao(demand_request_rn.demanda)
+
+    assert pela_pre_checagem == pela_reserva
+    assert pela_reserva["trava"] == "territorial"
+    assert (pela_reserva["disponivel"], pela_reserva["solicitado"]) == ("500.00", "1000.00")
+
+
+def test_reservar_duas_travas_sem_limite_individual_responde_no_contrato_da_pre_checagem(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn,
+):
+    """O limite removido entre a pré-checagem e o lock não pode virar erro 500."""
+    with pytest.raises(SaldoInsuficiente) as excinfo:
+        balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+
+    corpo = excinfo.value.como_dict()
+    assert corpo["trava"] == "individual"
+    assert corpo["disponivel"] == "0.00"
+    assert corpo["solicitacao_id"] == demand_request_rn.pk
+    assert corpo["detail"].startswith("Nenhum limite individual configurado para você nesta rubrica")
+    allocation_territorial_rn.refresh_from_db()
+    assert allocation_territorial_rn.valor_comprometido == Decimal("0")
+
+
 def test_reservar_duas_travas_sem_alocacao_territorial_identifica_trava_e_solicitacao(
     demand_request_rn, solicitante_rn, limite_individual_rn,
 ):
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(SaldoInsuficiente) as excinfo:
         balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
 
-    assert excinfo.value.detail["code"] == "trava_territorial"
-    assert excinfo.value.detail["solicitacao_id"] == demand_request_rn.pk
+    assert excinfo.value.como_dict()["code"] == "INSUFFICIENT_BALANCE"
+    assert excinfo.value.como_dict()["trava"] == "territorial"
+    assert excinfo.value.como_dict()["solicitacao_id"] == demand_request_rn.pk
 
 
 def test_submeter_bloqueado_responde_400_com_code_e_solicitacao_id(
@@ -495,7 +564,8 @@ def test_submeter_bloqueado_responde_400_com_code_e_solicitacao_id(
 
     assert response.status_code == 400
     corpo = response.json()
-    assert corpo["code"] == "trava_individual"
+    assert corpo["code"] == "INSUFFICIENT_BALANCE"
+    assert corpo["trava"] == "individual"
     assert corpo["solicitacao_id"] == demand_request_rn.pk
     assert "Solicitar recurso extra" in corpo["detail"]
     assert corpo["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]["trava"] == "individual"
@@ -616,7 +686,7 @@ def test_trocar_tipo_com_reserva_ativa_bloqueado(
     demand_service.submeter_demanda(demand, usuario=solicitante_rn)
     approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Tipo errado.")
 
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         demand_service.atualizar_solicitacao(
             demand_request_rn, usuario=solicitante_rn, tipo="alimentacao",
             campos_json={
@@ -663,12 +733,12 @@ def test_autorizar_excedente_rejeita_origem_territorial(
     # fixture, e colidiria com a unique constraint de BudgetAllocation.
     outro_territorio = TerritoryFactory(nome="Território Origem Excedente", estados=["RN"])
     origem_territorial = BudgetAllocationFactory(
-        meta=demand_request_rn.meta, rubrica=demand_request_rn.rubrica,
+        meta=demand_request_rn.demanda.activity.acao.meta, rubrica=demand_request_rn.rubrica,
         nivel=BudgetAllocation.Nivel.TERRITORIAL, territorio=outro_territorio,
         valor_alocado=Decimal("5000"),
     )
 
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         balance_service.autorizar_excedente(
             demand_request=demand_request_rn, origem_allocation=origem_territorial,
             valor_excedente=Decimal("500"), justificativa="Tentativa inválida.", usuario=solicitante_rn,
@@ -685,4 +755,222 @@ def test_autorizar_excedente_rejeita_origem_territorial(
     ],
 )
 def test_orientacao_territorial_por_situacao_do_pool(allocation, saldo, esperado):
-    assert balance_service.orientacao_territorial(allocation=allocation, saldo=saldo) == esperado
+    assert orcamento_service.orientacao_territorial(allocation=allocation, saldo=saldo) == esperado
+
+
+# ── Estado da reserva materializado na solicitação ───────────────────────────
+
+def _confere_comprometido(limite) -> None:
+    """O invariante do limite individual: o comprometido é a soma das reservas ativas."""
+    limite.refresh_from_db()
+    reservado = DemandRequest.objects.filter(
+        RESERVA_ATIVA, demanda__solicitante=limite.solicitante, rubrica=limite.rubrica,
+    ).aggregate(total=Sum("valor_reservado"))["total"] or Decimal("0")
+    assert limite.valor_comprometido == reservado
+
+
+@pytest.fixture
+def diaria_a_200(db):
+    from django.core.cache import cache
+
+    from apps.core.models.system_config import SystemConfig, TipoConfiguracao
+
+    SystemConfig.objects.update_or_create(
+        chave="sgd_valor_diaria_padrao", defaults={"valor": "200", "tipo": TipoConfiguracao.STRING},
+    )
+    yield
+    cache.delete("system_config:sgd_valor_diaria_padrao")
+
+
+@pytest.mark.parametrize(("dias", "valor_editado"), [(2, Decimal("400")), (7, Decimal("1400"))])
+def test_ciclo_da_reserva_mantem_o_comprometido_igual_as_reservas_ativas(
+    dias, valor_editado, diaria_a_200, demand_request_rn, solicitante_rn, usuario_articulador_rn,
+    limite_individual_rn, allocation_territorial_rn, activity_rn, rubrica_diarias, municipio_rn,
+):
+    outra = DemandRequestFactory(
+        demanda=DemandFactory(activity=activity_rn, solicitante=solicitante_rn), tipo="diaria",
+        rubrica=rubrica_diarias, valor_estimado=Decimal("300"),
+    )
+    balance_service.reservar_duas_travas(demand_request=outra, usuario=solicitante_rn)
+    demand = demand_request_rn.demanda
+
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    demand_request_rn.refresh_from_db()
+    assert (demand_request_rn.valor_reservado, demand_request_rn.reserva_ativa) == (Decimal("1000"), True)
+    _confere_comprometido(limite_individual_rn)
+
+    approval_service.devolver(demand, responsavel=usuario_articulador_rn, justificativa="Ajustar valor.")
+    _confere_comprometido(limite_individual_rn)
+
+    campos = _campos_diaria_com_dias(municipio=municipio_rn, dias_a_mais=dias)
+    demand_service.atualizar_solicitacao(demand_request_rn, usuario=solicitante_rn, campos_json=campos)
+    demand_request_rn.refresh_from_db()
+    assert demand_request_rn.valor_reservado == valor_editado
+    _confere_comprometido(limite_individual_rn)
+
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    demand_request_rn.refresh_from_db()
+    assert demand_request_rn.valor_reservado == valor_editado
+    _confere_comprometido(limite_individual_rn)
+
+    balance_service.liberar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn, motivo="Teste.")
+    demand_request_rn.refresh_from_db()
+    assert (demand_request_rn.valor_reservado, demand_request_rn.reserva_ativa) == (Decimal("0"), False)
+    _confere_comprometido(limite_individual_rn)
+
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    demand_request_rn.refresh_from_db()
+    assert demand_request_rn.valor_reservado == demand_request_rn.valor_estimado == valor_editado
+    _confere_comprometido(limite_individual_rn)
+
+
+def test_reservar_duas_vezes_nao_reserva_de_novo_mesmo_com_instancia_desatualizada(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    desatualizada = DemandRequest.objects.get(pk=demand_request_rn.pk)
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+
+    balance_service.reservar_duas_travas(demand_request=desatualizada, usuario=solicitante_rn)
+
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == Decimal("1000")
+    _confere_comprometido(limite_individual_rn)
+
+
+def test_executar_tira_do_comprometido_o_valor_reservado_e_e_idempotente(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    """Sem `valor_autorizado`, o código antigo tirava o `valor_estimado` (1.000)
+    de um comprometido de 800 e deixava o limite negativo."""
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    balance_service.ajustar_duas_travas(
+        demand_request=demand_request_rn, novo_valor=Decimal("800"), usuario=solicitante_rn,
+    )
+
+    for _ in range(2):
+        balance_service.executar_duas_travas(
+            demand_request=demand_request_rn, valor_pago=Decimal("750"), usuario=solicitante_rn,
+        )
+
+    demand_request_rn.refresh_from_db()
+    assert (demand_request_rn.valor_reservado, demand_request_rn.valor_executado) == (Decimal("800"), Decimal("750"))
+    assert demand_request_rn.reserva_ativa is False
+    limite_individual_rn.refresh_from_db()
+    assert (limite_individual_rn.valor_comprometido, limite_individual_rn.valor_executado) == (
+        Decimal("0"), Decimal("750"),
+    )
+    _confere_comprometido(limite_individual_rn)
+
+
+def test_liberar_depois_de_executar_nao_devolve_nada(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    balance_service.executar_duas_travas(
+        demand_request=demand_request_rn, valor_pago=Decimal("1000"), usuario=solicitante_rn,
+    )
+
+    balance_service.liberar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn, motivo="Teste.")
+
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == Decimal("0")
+    demand_request_rn.refresh_from_db()
+    assert demand_request_rn.valor_executado == Decimal("1000")
+
+
+def test_ajustar_sem_reserva_ativa_e_regra_de_negocio(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    with pytest.raises(RegraDeNegocio):
+        balance_service.ajustar_duas_travas(
+            demand_request=demand_request_rn, novo_valor=Decimal("800"), usuario=solicitante_rn,
+        )
+
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == Decimal("0")
+
+
+@pytest.mark.parametrize(
+    ("campo", "valor"),
+    [("valor_reservado", Decimal("-1")), ("valor_executado", Decimal("-1"))],
+)
+def test_estado_da_reserva_nao_aceita_valor_negativo(demand_request_rn, campo, valor):
+    with pytest.raises(IntegrityError), transaction.atomic():
+        DemandRequest.objects.filter(pk=demand_request_rn.pk).update(**{campo: valor})
+
+
+@pytest.mark.parametrize("campo", ["valor_comprometido", "valor_executado"])
+def test_limite_individual_nao_aceita_saldo_negativo(limite_individual_rn, campo):
+    with pytest.raises(IntegrityError), transaction.atomic():
+        DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(**{campo: Decimal("-1")})
+
+
+@pytest.fixture
+def demanda_com_duas_rubricas(demand_request_rn, solicitante_rn, activity_rn, allocation_territorial_rn, limite_individual_rn):
+    from apps.sgp.tests.factories import BudgetAllocationFactory, BudgetRubricaFactory
+
+    outra = BudgetRubricaFactory(slug="rubrica-ordem-de-lock")
+    BudgetAllocationFactory(
+        meta=activity_rn.acao.meta, rubrica=outra, territorio=activity_rn.municipio.territory,
+        valor_alocado=Decimal("10000"),
+    )
+    DemandIndividualLimitFactory(solicitante=solicitante_rn, rubrica=outra, valor_limite=Decimal("5000"))
+    DemandRequestFactory(demanda=demand_request_rn.demanda, rubrica=outra, valor_estimado=Decimal("200"))
+    return demand_request_rn.demanda
+
+
+def _ordem(consultas):
+    sqls = [q["sql"] for q in consultas]
+    travas_de_saldo = [
+        i for i, sql in enumerate(sqls)
+        if "FOR UPDATE" in sql and ('"sgd_demandindividuallimit"' in sql or '"sgp_budgetallocation"' in sql)
+    ]
+    demanda = [
+        i for i, sql in enumerate(sqls)
+        if sql.startswith('UPDATE "sgd_demand" ') or ("FOR UPDATE" in sql and 'FROM "sgd_demand" ' in sql)
+    ]
+    gravacoes_da_reserva = [i for i, sql in enumerate(sqls) if sql.startswith('UPDATE "sgd_demandrequest"')]
+    return travas_de_saldo, demanda, gravacoes_da_reserva
+
+
+def test_submissao_grava_o_estado_da_reserva_depois_do_saldo_e_da_demand(demanda_com_duas_rubricas, solicitante_rn):
+    """Gravar a solicitação logo depois do seu pool a deixaria travada antes do limite
+    da rubrica seguinte e da Demand; a decisão de recurso extra trava Demand e depois
+    as solicitações, e as duas fechariam um ciclo."""
+    with CaptureQueriesContext(connection) as consultas:
+        demand_service.submeter_demanda(demanda_com_duas_rubricas, usuario=solicitante_rn)
+
+    travas_de_saldo, demanda, gravacoes_da_reserva = _ordem(consultas)
+    assert len(gravacoes_da_reserva) == 2
+    assert max(travas_de_saldo) < min(demanda) < min(gravacoes_da_reserva)
+    assert all(s.reserva_ativa for s in demanda_com_duas_rubricas.solicitacoes.all())
+    _confere_comprometido(DemandIndividualLimit.objects.get(solicitante=solicitante_rn, rubrica__slug="diarias"))
+
+
+def test_cancelamento_grava_o_estado_da_reserva_depois_do_saldo_e_da_demand(demanda_com_duas_rubricas, solicitante_rn):
+    demand_service.submeter_demanda(demanda_com_duas_rubricas, usuario=solicitante_rn)
+
+    with CaptureQueriesContext(connection) as consultas:
+        demand_service.cancelar_demanda(demanda_com_duas_rubricas, usuario=solicitante_rn)
+
+    travas_de_saldo, demanda, gravacoes_da_reserva = _ordem(consultas)
+    assert len(gravacoes_da_reserva) == 2
+    assert max(travas_de_saldo) < min(demanda) < min(gravacoes_da_reserva)
+    assert not any(s.reserva_ativa for s in demanda_com_duas_rubricas.solicitacoes.all())
+    for limite in DemandIndividualLimit.objects.filter(solicitante=solicitante_rn):
+        assert limite.valor_comprometido == Decimal("0")
+
+
+def test_recusa_libera_e_grava_o_estado_da_reserva(
+    demand_request_rn, solicitante_rn, usuario_ugp, allocation_territorial_rn, limite_individual_rn,
+):
+    demand = demand_request_rn.demanda
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    demand.status = "pre_autorizada"
+    demand.save(update_fields=["status"])
+
+    approval_service.recusar(demand, responsavel=usuario_ugp, justificativa="Sem prioridade.")
+
+    demand_request_rn.refresh_from_db()
+    assert demand_request_rn.valor_reservado == Decimal("0")
+    _confere_comprometido(limite_individual_rn)

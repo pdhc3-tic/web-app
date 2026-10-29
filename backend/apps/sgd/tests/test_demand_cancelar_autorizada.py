@@ -4,8 +4,8 @@ from decimal import Decimal
 
 import pytest
 from django.db import connection
-from rest_framework.exceptions import ValidationError
 
+from apps.sgd.exceptions import TransicaoInvalida
 from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.models.demand import Demand
 from apps.sgd.services import demand as demand_service
@@ -67,7 +67,7 @@ def test_cancelamentos_simultaneos_registram_um_so_evento(demanda_autorizada, us
             barreira.wait()
             demand_service.cancelar_demanda(demand, usuario=usuario, motivo="Evento suspenso")
             resultados.append("cancelada")
-        except ValidationError:
+        except TransicaoInvalida:
             resultados.append("recusada")
         finally:
             connection.close()

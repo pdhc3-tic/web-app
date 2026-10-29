@@ -5,10 +5,10 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from django.db import models
-from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from apps.core.models.municipality import Municipality
 from apps.core.utils import get_config
+from apps.sgd.exceptions import RegraDeNegocio
 from apps.sgd.constants import (
     Classe,
     MeioTransporte,
@@ -20,7 +20,7 @@ from apps.sgd.constants import (
 )
 from apps.sgd.models.demand_type_rubrica_mapping import DemandTypeRubricaMapping
 from apps.sgp.models import BudgetRubrica
-from apps.sgp.validators import validate_cpf
+from apps.sgp import validators as sgp_validators
 
 
 @dataclass
@@ -34,32 +34,36 @@ def rubrica_para_tipo(tipo: str) -> BudgetRubrica:
     """Rubrica do mapeamento ativo do tipo (config do Super Admin, SGD-RF05)."""
     mapeamento = DemandTypeRubricaMapping.objects.select_related("rubrica").filter(tipo=tipo, ativo=True).first()
     if mapeamento is None:
-        raise DRFValidationError(
-            {"tipo": f"Nenhuma rubrica mapeada para o tipo '{tipo}'. Configure em Super Admin."}
-        )
+        raise RegraDeNegocio(f"Nenhuma rubrica mapeada para o tipo '{tipo}'. Configure em Super Admin.", campo="tipo")
     return mapeamento.rubrica
 
 
 def _obrigatorios(campos: dict, nomes: list[str]) -> None:
     faltando = [n for n in nomes if campos.get(n) in (None, "")]
     if faltando:
-        raise DRFValidationError(
-            {"campos_json": f"Campos obrigatórios ausentes: {', '.join(faltando)}."}
-        )
+        raise RegraDeNegocio(f"Campos obrigatórios ausentes: {', '.join(faltando)}.", campo="campos_json")
 
 
 def _choice(campos: dict, campo: str, choices: type[models.TextChoices]) -> None:
     if campos.get(campo) not in choices.values:
-        raise DRFValidationError({campo: f"Valor inválido. Esperado um de: {sorted(choices.values)}."})
+        raise RegraDeNegocio(f"Valor inválido. Esperado um de: {sorted(choices.values)}.", campo=campo)
 
 
 def _positivo(campos: dict, campo: str) -> None:
     try:
         valor = int(campos[campo])
     except (TypeError, ValueError):
-        raise DRFValidationError({campo: "Deve ser um número inteiro."})
+        raise RegraDeNegocio("Deve ser um número inteiro.", campo=campo)
     if valor <= 0:
-        raise DRFValidationError({campo: "Deve ser maior que zero."})
+        raise RegraDeNegocio("Deve ser maior que zero.", campo=campo)
+
+
+def _cpf(campos: dict, campo: str) -> str:
+    # O validador é do SGP e levanta o erro do DRF; aqui ele vira erro do campo.
+    try:
+        return sgp_validators.validate_cpf(campos[campo])
+    except sgp_validators.serializers.ValidationError as exc:
+        raise RegraDeNegocio(str(exc.detail[0]), campo=campo) from exc
 
 
 def _parse_date(valor) -> date:
@@ -68,14 +72,14 @@ def _parse_date(valor) -> date:
     try:
         return date.fromisoformat(str(valor))
     except ValueError:
-        raise DRFValidationError({"data": f"Data inválida: {valor!r}."})
+        raise RegraDeNegocio(f"Data inválida: {valor!r}.", campo="data")
 
 
 def _parse_decimal(valor) -> Decimal:
     try:
         return Decimal(str(valor))
     except (InvalidOperation, TypeError):
-        raise DRFValidationError({"valor": f"Valor decimal inválido: {valor!r}."})
+        raise RegraDeNegocio(f"Valor decimal inválido: {valor!r}.", campo="valor")
 
 
 @dataclass
@@ -93,18 +97,19 @@ def calcular_diarias(*, municipio_destino_id, data_inicio, data_fim) -> Diarias:
     except (TypeError, ValueError):
         existe = False
     if not existe:
-        raise DRFValidationError({"municipio_destino_id": "Município não encontrado."})
+        raise RegraDeNegocio("Município não encontrado.", campo="municipio_destino_id")
     inicio = _parse_date(data_inicio)
     fim = _parse_date(data_fim)
     if fim < inicio:
-        raise DRFValidationError({"data_fim": "Não pode ser anterior à data de início."})
+        raise RegraDeNegocio("Não pode ser anterior à data de início.", campo="data_fim")
 
     numero = max((fim - inicio).days, 1)
     valor_por_diaria = _parse_decimal(get_config("sgd_valor_diaria_padrao", "0"))
     if valor_por_diaria <= 0:
-        raise DRFValidationError({
-            "valor_por_diaria": "Valor de diária não configurado — contate o Super Admin (sgd_valor_diaria_padrao)."
-        })
+        raise RegraDeNegocio(
+            "Valor de diária não configurado — contate o Super Admin (sgd_valor_diaria_padrao).",
+            campo="valor_por_diaria",
+        )
     return Diarias(numero=numero, valor_por_diaria=valor_por_diaria, valor_total=numero * valor_por_diaria)
 
 
@@ -120,7 +125,7 @@ def _validar_diaria(campos: dict, activity) -> CamposValidados:
         municipio_destino_id=campos["municipio_destino_id"],
         data_inicio=campos["data_inicio"], data_fim=campos["data_fim"],
     )
-    cpf = validate_cpf(campos["beneficiario_cpf"])
+    cpf = _cpf(campos, "beneficiario_cpf")
 
     campos_limpos = {k: v for k, v in campos.items() if k != "beneficiario_cpf"}
     campos_limpos.update({
@@ -142,18 +147,14 @@ def _validar_passagem(campos: dict, activity) -> CamposValidados:
     if not isinstance(campos["ida_e_volta"], bool):
         # `1 in (True, False)` é True em Python (1 == True) — checar o tipo
         # direto, não só o valor, senão 1/0 passariam pela checagem "estrita".
-        raise DRFValidationError({"ida_e_volta": "Deve ser um booleano."})
+        raise RegraDeNegocio("Deve ser um booleano.", campo="ida_e_volta")
 
     if campos["ida_e_volta"] and not campos.get("data_hora_volta"):
-        raise DRFValidationError(
-            {"data_hora_volta": "Obrigatório quando 'Viagem de ida e volta' é verdadeiro."}
-        )
+        raise RegraDeNegocio("Obrigatório quando 'Viagem de ida e volta' é verdadeiro.", campo="data_hora_volta")
     if campos["classe"] == "executiva" and not campos.get("justificativa_executiva"):
-        raise DRFValidationError(
-            {"justificativa_executiva": "Obrigatório quando a classe é Executiva."}
-        )
+        raise RegraDeNegocio("Obrigatório quando a classe é Executiva.", campo="justificativa_executiva")
 
-    cpf = validate_cpf(campos["passageiro_cpf"])
+    cpf = _cpf(campos, "passageiro_cpf")
     campos_limpos = {k: v for k, v in campos.items() if k != "passageiro_cpf"}
     return CamposValidados(campos_json=campos_limpos, beneficiario_cpf=cpf, valor_estimado_auto=None)
 
@@ -219,7 +220,7 @@ _VALIDADORES = {
 def validar_campos_json(tipo: str, campos: dict, activity) -> CamposValidados:
     validador = _VALIDADORES.get(tipo)
     if validador is None:
-        raise DRFValidationError({"tipo": f"Tipo de solicitação desconhecido: '{tipo}'."})
+        raise RegraDeNegocio(f"Tipo de solicitação desconhecido: '{tipo}'.", campo="tipo")
     if not isinstance(campos, dict):
-        raise DRFValidationError({"campos_json": "Deve ser um objeto JSON."})
+        raise RegraDeNegocio("Deve ser um objeto JSON.", campo="campos_json")
     return validador(campos, activity)
