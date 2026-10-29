@@ -205,9 +205,10 @@ export default function IntegracaoArloMappingPage() {
           <Button
             onClick={() => setDialog({ modo: "criar", direcao: aba })}
             disabled={!campos.isSuccess}
+            leftIcon={<Plus className="h-4 w-4" aria-hidden />}
             data-testid="arlo-novo"
           >
-            <Plus className="h-4 w-4" aria-hidden /> Nova coluna
+            Nova coluna
           </Button>
         </div>
 
@@ -257,8 +258,9 @@ export default function IntegracaoArloMappingPage() {
                 <Button
                   onClick={() => setDialog({ modo: "criar", direcao: aba })}
                   disabled={!campos.isSuccess}
+                  leftIcon={<Plus className="h-4 w-4" aria-hidden />}
                 >
-                  <Plus className="h-4 w-4" aria-hidden /> Nova coluna
+                  Nova coluna
                 </Button>
               }
             />

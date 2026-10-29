@@ -112,6 +112,12 @@ function isActive(pathname: string | null, href: string): boolean {
   return pathname.startsWith(href + "/");
 }
 
+/** Entre itens aninhados (Configurações e, dentro dela, Integração Arlo), só o mais específico acende. */
+function hrefMaisEspecifico(pathname: string | null, items: ModuleItem[]): string | null {
+  const casam = items.filter((item) => isActive(pathname, item.href));
+  return casam.sort((a, b) => b.href.length - a.href.length)[0]?.href ?? null;
+}
+
 type SidebarItemProps = {
   item: ModuleItem;
   active: boolean;
@@ -339,7 +345,7 @@ export function Sidebar() {
             <li key={item.href}>
               <SidebarItem
                 item={item}
-                active={isActive(pathname, item.href)}
+                active={item.href === hrefMaisEspecifico(pathname, ADMIN_ITEMS)}
                 collapsed={collapsed}
               />
             </li>
