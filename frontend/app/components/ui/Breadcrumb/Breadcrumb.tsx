@@ -32,7 +32,7 @@ export function Breadcrumb({ items }: BreadcrumbProps) {
                   <span
                     aria-current={isLast ? "page" : undefined}
                     className={
-                      isLast ? "truncate font-medium text-text" : undefined
+                      isLast ? "block truncate font-medium text-text" : undefined
                     }
                   >
                     {item.label}
