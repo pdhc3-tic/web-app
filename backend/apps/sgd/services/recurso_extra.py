@@ -18,7 +18,6 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 
-from apps.core.signals.audit import get_audit_context
 from apps.core.utils import formatar_brl
 from apps.sgd.exceptions import JustificativaObrigatoria, RegraDeNegocio, TransicaoInvalida
 from apps.sgd.models import Demand, DemandIndividualLimit
@@ -26,7 +25,7 @@ from apps.sgd.models.demand import STATUS_EDITAVEIS
 from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import notifications as notifications_service
 from apps.sgd.services import orcamento as orcamento_service
-from apps.sgd.services.balance import _destinatarios_saldo_territorial
+from apps.sgd.services import remanejamento as remanejamento_service
 from apps.sgp.models import BudgetAllocation, BudgetIncreaseRequest, BudgetTransfer
 
 Status = BudgetIncreaseRequest.Status
@@ -34,7 +33,6 @@ ZERO = Decimal("0")
 
 ENTIDADE_PEDIDO = "BudgetIncreaseRequest"
 ENTIDADE_LIMITE = "DemandIndividualLimit"
-ENTIDADE_REMANEJAMENTO = "BudgetTransfer"
 
 DECISOES = {
     "aprovar": Status.APROVADA,
@@ -112,8 +110,8 @@ def _necessario(solicitacoes) -> Decimal:
 
 def _deficit_individual(demanda: Demand, rubrica) -> Decimal:
     limite = DemandIndividualLimit.objects.filter(solicitante=demanda.solicitante, rubrica=rubrica).first()
-    # Sem truncar em zero: o saldo fica negativo depois de um excedente autorizado
-    # (`ignorar_limite_individual`), e o aumento precisa cobrir isso também.
+    # Sem truncar em zero: um excedente autorizado antes do remanejamento pontual
+    # deixou saldo negativo, e o aumento precisa cobrir isso também.
     saldo = limite.saldo_disponivel if limite else ZERO
     return _necessario(demanda.solicitacoes.filter(rubrica=rubrica)) - saldo
 
@@ -281,8 +279,8 @@ def _travar_alocacoes(pedido, origem: BudgetAllocation | None):
     destino = orcamento_service.localizar_pool(
         solicitante=pedido.user, rubrica=pedido.rubrica, activity=_activity_do_pedido(pedido),
     )
-    if origem is not None and origem.nivel not in (orcamento_service.Nivel.ESTADUAL, orcamento_service.Nivel.NACIONAL):
-        raise RegraDeNegocio("O remanejamento só pode vir de saldo estadual ou nacional.", campo="origem_allocation")
+    if origem is not None:
+        remanejamento_service.exigir_origem_acima_do_territorio(origem)
 
     travadas = orcamento_service.travar_pools({destino.pk} | ({origem.pk} if origem is not None else set()))
     return travadas[destino.pk], (travadas[origem.pk] if origem is not None else None)
@@ -302,44 +300,12 @@ def _cobrir_pool(pedido, necessario: Decimal, destino: BudgetAllocation, origem:
             "nacional que cobre a diferença.",
             campo="origem_allocation",
         )
-    origem_antes, destino_antes = orcamento_service.saldo_do_pool(origem), orcamento_service.saldo_do_pool(destino)
-    motivo = f"Recurso extra #{pedido.pk}: {pedido.justificativa}"
-    orcamento_service.remanejar(origem=origem, destino=destino, valor=faltante, usuario=usuario, justificativa=motivo)
-    origem.refresh_from_db()
-    destino.refresh_from_db()
-
-    transferencia = BudgetTransfer.objects.create(
-        tipo=BudgetTransfer.Tipo.ENTRE_NIVEIS, allocation_origem=origem, allocation_destino=destino,
-        valor=faltante, motivo=motivo,
-        saldo_origem_antes=origem_antes, saldo_origem_depois=orcamento_service.saldo_do_pool(origem),
-        saldo_destino_antes=destino_antes, saldo_destino_depois=orcamento_service.saldo_do_pool(destino),
-        aprovado_por=usuario, ip=get_audit_context()["ip"], increase_request=pedido,
+    return remanejamento_service.remanejar_para_pool(
+        origem=origem, destino=destino, valor=faltante, usuario=usuario,
+        motivo=f"Recurso extra #{pedido.pk}: {pedido.justificativa}",
+        escopo=remanejamento_service.Escopo.ELEVACAO_LIMITE, increase_request=pedido,
+        demanda_id=pedido.demanda_id,
     )
-    auditoria_service.registrar_evento(
-        acao="remanejamento.efetivado", entidade=ENTIDADE_REMANEJAMENTO, entidade_id=transferencia.pk,
-        usuario=usuario,
-        anteriores={"saldo_origem": str(origem_antes), "saldo_destino": str(destino_antes)},
-        novos={
-            "valor": str(faltante), "pedido": pedido.pk, "demanda": pedido.demanda_id,
-            "origem": origem.pk, "destino": destino.pk,
-            "saldo_origem": str(transferencia.saldo_origem_depois),
-            "saldo_destino": str(transferencia.saldo_destino_depois),
-        },
-    )
-    destinatarios = {
-        u.pk: u for u in (
-            *_destinatarios_saldo_territorial(
-                nivel=origem.nivel, estado_sigla=origem.estado.sigla if origem.estado else None,
-                territorio=origem.territorio,
-            ),
-            *_destinatarios_saldo_territorial(
-                nivel=destino.nivel, estado_sigla=destino.estado.sigla if destino.estado else None,
-                territorio=destino.territorio,
-            ),
-        )
-    }
-    notifications_service.notificar_remanejamento_efetivado(transferencia, list(destinatarios.values()))
-    return transferencia
 
 
 def _exigir_demanda_editavel(demanda: Demand) -> None:

@@ -9,7 +9,6 @@ from apps.sgd.services import balance as balance_service
 from apps.sgd.services.approval import demand_visibility_scope, preview_impacto
 from apps.sgd.services.workflow import executar_transicao
 from apps.sgd.tests.factories import DemandFactory
-from apps.sgp.tests.factories import BudgetAllocationFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -59,80 +58,6 @@ def test_autorizar_excedente_sem_justificativa_bloqueia(
         )
 
 
-def test_autorizar_excedente_com_justificativa_autoriza_sem_elevar_limite(
-    demand_request_rn, solicitante_rn, usuario_ugp, allocation_territorial_rn, limite_individual_rn,
-):
-    demand = demand_request_rn.demanda
-    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
-    demand.status = "pre_autorizada"
-    demand.save(update_fields=["status"])
-    valor_limite_antes = limite_individual_rn.valor_limite
-    novo_valor = valor_limite_antes + Decimal("1")
-
-    executar_transicao(
-        demand, "autorizada", ator=usuario_ugp, ajustes={demand_request_rn.pk: novo_valor},
-        excedente_autorizado=True, justificativa="Demanda urgente aprovada pela UGP.",
-    )
-
-    demand_request_rn.refresh_from_db()
-    assert demand_request_rn.valor_autorizado == novo_valor
-    limite_individual_rn.refresh_from_db()
-    assert limite_individual_rn.valor_limite == valor_limite_antes
-
-    ultimo_step = demand.etapas.latest("criado_em")
-    assert ultimo_step.excedente_autorizado is True
-    assert ultimo_step.justificativa == "Demanda urgente aprovada pela UGP."
-
-
-def test_remanejamento_territorial_seguido_de_autorizar_completa_a_decisao(
-    demand_request_rn, solicitante_rn, usuario_ugp, limite_individual_rn,
-):
-    """RF16, caso pool territorial: `autorizar-excedente` só remaneja o saldo
-    entre alocações — quem efetivamente transiciona a demanda e registra o
-    `ApprovalStep` é a chamada seguinte a `autorizar` (duas chamadas
-    ordenadas, documentado no corpo do PR)."""
-    from apps.core.tests.factories import StateFactory
-    from apps.sgp.models.budget import BudgetAllocation
-    from apps.sgp.tests.factories import BudgetAllocationFactory
-
-    territorio = demand_request_rn.demanda.activity.municipio.territory
-    allocation_territorial = BudgetAllocationFactory(
-        meta=demand_request_rn.demanda.activity.acao.meta, rubrica=demand_request_rn.rubrica,
-        nivel=BudgetAllocation.Nivel.TERRITORIAL, territorio=territorio, valor_alocado=Decimal("1000"),
-    )
-    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
-
-    origem = BudgetAllocationFactory(
-        meta=demand_request_rn.demanda.activity.acao.meta, rubrica=demand_request_rn.rubrica,
-        nivel=BudgetAllocation.Nivel.ESTADUAL, territorio=None,
-        estado=StateFactory(sigla="RN", nome="Rio Grande do Norte"), valor_alocado=Decimal("5000"),
-    )
-    novo_valor = Decimal("1500")
-
-    balance_service.autorizar_excedente(
-        demand_request=demand_request_rn, origem_allocation=origem,
-        valor_excedente=Decimal("500"), justificativa="Remanejamento aprovado pela UGP.",
-        usuario=solicitante_rn,
-    )
-
-    demand = demand_request_rn.demanda
-    demand.status = "pre_autorizada"
-    demand.save(update_fields=["status"])
-
-    executar_transicao(
-        demand, "autorizada", ator=usuario_ugp, ajustes={demand_request_rn.pk: novo_valor},
-        excedente_autorizado=True, justificativa="Remanejamento aprovado pela UGP.",
-    )
-
-    demand.refresh_from_db()
-    assert demand.status == "autorizada"
-    demand_request_rn.refresh_from_db()
-    assert demand_request_rn.valor_autorizado == novo_valor
-    allocation_territorial.refresh_from_db()
-    assert allocation_territorial.valor_alocado == Decimal("1500")
-    assert allocation_territorial.valor_comprometido == novo_valor
-
-
 def test_preview_decisao_retorna_semaforo(demand_request_rn, allocation_territorial_rn, limite_individual_rn):
     preview = preview_impacto(demand_request_rn, Decimal("4600"))
     assert preview["individual"]["semaforo_apos"] in {"verde", "amarelo", "vermelho"}
@@ -174,30 +99,6 @@ def test_preview_decisao_com_solicitante_sem_nivel_e_regra_de_negocio(
     assert excinfo.value.mensagem.startswith("Não há como conferir o pool territorial do solicitante.")
 
 
-def test_api_autorizar_excedente_com_solicitante_sem_nivel_devolve_400(
-    auth_client_ugp, demand_request_rn, solicitante_rn_sem_nivel, allocation_territorial_rn,
-):
-    origem = BudgetAllocationFactory(
-        meta=allocation_territorial_rn.meta, rubrica=allocation_territorial_rn.rubrica,
-        nivel="nacional", territorio=None, valor_alocado=Decimal("1000"),
-    )
-
-    response = auth_client_ugp.post(
-        f"/api/v1/sgd/demandas/{demand_request_rn.demanda_id}/autorizar-excedente/",
-        {
-            "demand_request_id": demand_request_rn.pk,
-            "origem_allocation_id": origem.pk,
-            "valor_excedente": "100.00",
-            "justificativa": "Excedente.",
-        },
-        format="json",
-    )
-
-    assert response.status_code == 400
-    assert response.data["code"] == "BUSINESS_RULE"
-    assert response.data["detail"].startswith("Não há como conferir o pool territorial do solicitante.")
-
-
 def test_autorizar_com_ajuste_nao_depende_do_nivel_atual_do_solicitante(
     demand_request_rn, solicitante_rn, usuario_ugp, allocation_territorial_rn, limite_individual_rn,
 ):
@@ -213,32 +114,6 @@ def test_autorizar_com_ajuste_nao_depende_do_nivel_atual_do_solicitante(
 
     allocation_territorial_rn.refresh_from_db()
     assert allocation_territorial_rn.valor_comprometido == Decimal("1200")
-
-
-def test_api_autorizar_excedente_com_valor_zero_devolve_400_sem_remanejar(
-    auth_client_ugp, demand_request_rn, allocation_territorial_rn,
-):
-    from apps.sgp.models import BudgetTransaction
-
-    origem = BudgetAllocationFactory(
-        meta=allocation_territorial_rn.meta, rubrica=allocation_territorial_rn.rubrica,
-        nivel="nacional", territorio=None, valor_alocado=Decimal("1000"),
-    )
-
-    response = auth_client_ugp.post(
-        f"/api/v1/sgd/demandas/{demand_request_rn.demanda_id}/autorizar-excedente/",
-        {
-            "demand_request_id": demand_request_rn.pk,
-            "origem_allocation_id": origem.pk,
-            "valor_excedente": "0.00",
-            "justificativa": "Excedente.",
-        },
-        format="json",
-    )
-
-    assert response.status_code == 400
-    assert response.data == {"valor_excedente": ["Deve ser maior que zero."], "code": "BUSINESS_RULE"}
-    assert not BudgetTransaction.objects.filter(tipo=BudgetTransaction.Tipo.REMANEJAMENTO).exists()
 
 
 def test_articulador_nao_pode_pre_autorizar_a_propria_demanda(activity_rn, usuario_articulador_rn):

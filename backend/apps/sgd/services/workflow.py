@@ -29,6 +29,7 @@ from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
+from apps.sgd.services import remanejamento as remanejamento_service
 from apps.sgd.services.approval import PERFIS_QUE_CANCELAM_AUTORIZADA, exigir_pode_decidir_articulador
 from apps.sgp.models import GlosaRisk
 from apps.sgp.services.apuracao import recalcular_valor_executado
@@ -135,7 +136,7 @@ _JUSTIFICATIVA_PARA = {
     "cancelada": "cancelar uma demanda autorizada",
 }
 
-_DADOS_DAS_ACOES = {"justificativa", "ajustes", "excedente_autorizado", "valores_pagos"}
+_DADOS_DAS_ACOES = {"justificativa", "ajustes", "excedente_autorizado", "origem_allocation", "valores_pagos"}
 
 # Além do estado da reserva, que todo efeito no saldo grava.
 _OUTROS_CAMPOS = {AJUSTAR: ("valor_autorizado",), EXECUTAR: ("valor_pago",)}
@@ -256,12 +257,29 @@ def _reservar(demand, transicao, *, ator, **_) -> tuple[list, dict | None]:
 
 
 def _ajustar(demand, transicao, *, ator, ajustes: dict | None = None, excedente_autorizado: bool = False,
-             justificativa: str = "", **_) -> tuple[list, dict | None]:
-    """`ajustes`: {demand_request_id: novo_valor}; sem ajuste, autoriza o estimado."""
+             origem_allocation=None, justificativa: str = "", **_) -> tuple[list, dict | None]:
+    """`ajustes`: {demand_request_id: novo_valor}; sem ajuste, autoriza o estimado.
+
+    Com `excedente_autorizado`, o que as solicitações da rubrica de
+    `origem_allocation` passarem do limite individual ou do pool territorial é
+    remanejado dela (remanejamento emergencial), sem elevar o limite."""
     if excedente_autorizado and not justificativa:
         raise JustificativaObrigatoria("Obrigatória para autorizar excedendo o limite individual.")
+    if excedente_autorizado and origem_allocation is None:
+        raise RegraDeNegocio(
+            "Informe a alocação estadual ou nacional que cobre o excedente.", campo="origem_allocation",
+        )
+    if origem_allocation is not None and not excedente_autorizado:
+        raise RegraDeNegocio("A origem só é usada ao autorizar excedente.", campo="origem_allocation")
     ajustes = ajustes or {}
     solicitacoes = _solicitacoes(demand)
+    if excedente_autorizado:
+        remanejamento_service.exigir_origem_acima_do_territorio(origem_allocation)
+        if all(s.rubrica_id != origem_allocation.rubrica_id for s in solicitacoes):
+            raise RegraDeNegocio(
+                "A alocação de origem precisa ser da rubrica de uma das solicitações da demanda.",
+                campo="origem_allocation",
+            )
     _exigir_da_demanda(ajustes, solicitacoes, "ajustes")
     if any(valor <= 0 for valor in ajustes.values()):
         raise RegraDeNegocio(
@@ -269,14 +287,27 @@ def _ajustar(demand, transicao, *, ator, ajustes: dict | None = None, excedente_
         )
     retrato = _retrato(solicitacoes)
 
+    cobriu_excedente = False
     for solicitacao in solicitacoes:
         novo_valor = ajustes.get(solicitacao.pk, solicitacao.valor_estimado)
         if novo_valor != solicitacao.valor_reservado:
+            excedente = balance_service.ZERO
+            if excedente_autorizado and solicitacao.rubrica_id == origem_allocation.rubrica_id:
+                excedente, transferencia = remanejamento_service.cobrir_excedente(
+                    solicitacao, novo_valor, origem=origem_allocation, justificativa=justificativa, usuario=ator,
+                )
+                cobriu_excedente |= transferencia is not None
             balance_service.ajustar_duas_travas(
-                demand_request=solicitacao, novo_valor=novo_valor, usuario=ator,
-                ignorar_limite_individual=excedente_autorizado, adiar_gravacao=True,
+                demand_request=solicitacao, novo_valor=novo_valor, usuario=ator, excedente=excedente,
+                adiar_gravacao=True,
             )
         solicitacao.valor_autorizado = novo_valor
+    if excedente_autorizado and not cobriu_excedente:
+        raise RegraDeNegocio(
+            "Nenhuma solicitação desta rubrica passa do limite individual nem do pool territorial. "
+            "Autorize sem excedente.",
+            campo="excedente_autorizado",
+        )
     return solicitacoes, retrato
 
 

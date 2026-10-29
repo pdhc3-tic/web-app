@@ -29,7 +29,8 @@ from apps.sgd.services import consulta as consulta_service
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services.approval import demand_visibility_scope
 from apps.sgd.services.auditoria import ENTIDADE_DEMANDA, ENTIDADE_MOVIMENTACAO_SALDO
-from apps.sgd.services.recurso_extra import ENTIDADE_LIMITE, ENTIDADE_PEDIDO, ENTIDADE_REMANEJAMENTO
+from apps.sgd.services.recurso_extra import ENTIDADE_LIMITE, ENTIDADE_PEDIDO
+from apps.sgd.services.remanejamento import ENTIDADE_REMANEJAMENTO
 from apps.sgd.views.approval import DemandApprovalMixin
 from apps.sgd.views.demand_document import DemandDocumentMixin
 from apps.sgd.views.remanejamento import RecursoExtraMixin
@@ -192,6 +193,11 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
             # `demanda` fica em valores_novos porque a BudgetTransaction só
             # conhece a solicitação, e a solicitação pode ser removida depois.
             | Q(entidade=ENTIDADE_MOVIMENTACAO_SALDO, valores_novos__demanda=demand.pk)
+            # Excedente autorizado na própria demanda: sem pedido de recurso extra.
+            | Q(
+                entidade=ENTIDADE_REMANEJAMENTO, acao="remanejamento.efetivado",
+                valores_novos__demanda=str(demand.pk), valores_novos__pedido=None,
+            )
         )
         pedidos = list(BudgetIncreaseRequest.objects.filter(demanda_id=str(demand.pk)).values_list("pk", flat=True))
         if pedidos:

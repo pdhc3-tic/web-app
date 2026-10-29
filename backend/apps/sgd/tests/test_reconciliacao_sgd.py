@@ -111,3 +111,15 @@ def test_conferencia_devolve_o_papel_da_sessao():
         divergencias_dos_limites()
         cursor.execute("SELECT current_setting('app.user_role', true)")
         assert cursor.fetchone()[0] == "adt-acr"
+
+
+def test_reserva_com_excedente_nao_diverge(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    balance_service.ajustar_duas_travas(
+        demand_request=demand_request_rn, novo_valor=Decimal("5300"), usuario=solicitante_rn,
+        excedente=Decimal("300"),
+    )
+
+    assert divergencias_dos_limites() == []

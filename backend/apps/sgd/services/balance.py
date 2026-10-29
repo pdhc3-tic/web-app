@@ -19,7 +19,6 @@ from apps.sgd.exceptions import (
     ACAO_SUGERIDA,
     TRAVA_INDIVIDUAL,
     TRAVA_TERRITORIAL,
-    JustificativaObrigatoria,
     RegraDeNegocio,
     SaldoInsuficiente,
     TransicaoInvalida,
@@ -249,13 +248,15 @@ def reler_reserva(demand_request) -> None:
     removida ou mudou de rubrica enquanto esperava o lock, mexer no saldo agora
     tiraria a reserva do limite errado: a operação é recusada."""
     atual = DemandRequest.objects.filter(pk=demand_request.pk).values_list(
-        "rubrica_id", "valor_reservado", "valor_executado",
+        "rubrica_id", "valor_reservado", "valor_executado", "valor_excedente",
     ).first()
     if atual is None:
         raise TransicaoInvalida(
             f"A solicitação #{demand_request.pk} foi removida durante a operação. Recarregue e tente de novo."
         )
-    rubrica_id, demand_request.valor_reservado, demand_request.valor_executado = atual
+    (
+        rubrica_id, demand_request.valor_reservado, demand_request.valor_executado, demand_request.valor_excedente,
+    ) = atual
     if rubrica_id != demand_request.rubrica_id:
         raise TransicaoInvalida(
             f"A solicitação #{demand_request.pk} mudou de rubrica durante a operação. Recarregue e tente de novo."
@@ -295,7 +296,7 @@ def gravar_estado_da_reserva(solicitacoes, *, outros_campos=()) -> None:
     pool deixaria a linha travada antes do limite da rubrica seguinte e da
     `Demand`, e a decisão de recurso extra, que trava `Demand` e depois as
     solicitações, fecharia um ciclo."""
-    campos = ("valor_reservado", "valor_executado", *outros_campos)
+    campos = ("valor_reservado", "valor_executado", "valor_excedente", *outros_campos)
     for solicitacao in sorted(solicitacoes, key=lambda s: s.pk):
         DemandRequest.objects.filter(pk=solicitacao.pk).update(
             **{campo: getattr(solicitacao, campo) for campo in campos},
@@ -359,16 +360,17 @@ def reservar_duas_travas(*, demand_request, usuario, adiar_gravacao: bool = Fals
     )
     _notificar_pool_se_piorou(movimento, demand=demand_request.demanda, rubrica_nome=rubrica.nome)
     if reservou:
-        _mover_reserva(demand_request, adiar=adiar_gravacao, valor_reservado=valor)
+        _mover_reserva(demand_request, adiar=adiar_gravacao, valor_reservado=valor, valor_excedente=ZERO)
 
 
 @transaction.atomic
 def ajustar_duas_travas(
-    *, demand_request, novo_valor: Decimal, usuario, ignorar_limite_individual: bool = False,
-    adiar_gravacao: bool = False,
+    *, demand_request, novo_valor: Decimal, usuario, excedente: Decimal = ZERO, adiar_gravacao: bool = False,
 ) -> None:
-    """`ignorar_limite_individual=True` autoriza um excedente pontual (RF16) sem
-    alterar `valor_limite` — usada só pelo fluxo de remanejamento emergencial da UGP.
+    """`excedente` é a parte do aumento já coberta por remanejamento emergencial
+    (`remanejamento.cobrir_excedente`): não entra no limite individual, que não
+    tem `valor_limite` alterado. Numa redução, sai primeiro o excedente e só o
+    resto volta ao limite.
 
     Reutilizável mais de uma vez para a mesma solicitação (autorização com
     valor ajustado, depois edição em Devolvida, depois nova autorização
@@ -385,25 +387,36 @@ def ajustar_duas_travas(
     if not demand_request.reserva_ativa:
         raise RegraDeNegocio(f"A solicitação #{demand_request.pk} não tem reserva ativa para ajustar.")
     valor_anterior = demand_request.valor_reservado
+    excedente_anterior = demand_request.valor_excedente
     diferenca = novo_valor - valor_anterior
+    if excedente > max(diferenca, ZERO):
+        raise ValueError("O excedente não pode passar do aumento da reserva.")
+    if diferenca >= ZERO:
+        no_limite = diferenca - excedente
+        excedente_novo = excedente_anterior + excedente
+    else:
+        sai_do_excedente = min(-diferenca, excedente_anterior)
+        no_limite = diferenca + sai_do_excedente
+        excedente_novo = excedente_anterior - sai_do_excedente
+
     comprometido_individual_antes = limite.valor_comprometido
+    if no_limite > ZERO and no_limite > limite.saldo_disponivel:
+        raise SaldoInsuficiente(
+            trava=TRAVA_INDIVIDUAL, rubrica=rubrica.slug, disponivel=limite.saldo_disponivel,
+            solicitado=no_limite, solicitacao_id=demand_request.pk,
+            detail=com_orientacao(
+                f"Limite individual insuficiente para o ajuste: {formatar_brl(limite.saldo_disponivel)} "
+                f"disponível, {formatar_brl(no_limite)} a mais solicitado.",
+                ORIENTACAO_INDIVIDUAL,
+            ),
+        )
     if diferenca != ZERO:
-        if not ignorar_limite_individual and diferenca > ZERO and diferenca > limite.saldo_disponivel:
-            raise SaldoInsuficiente(
-                trava=TRAVA_INDIVIDUAL, rubrica=rubrica.slug, disponivel=limite.saldo_disponivel,
-                solicitado=diferenca, solicitacao_id=demand_request.pk,
-                detail=com_orientacao(
-                    f"Limite individual insuficiente para o ajuste: {formatar_brl(limite.saldo_disponivel)} "
-                    f"disponível, {formatar_brl(diferenca)} a mais solicitado.",
-                    ORIENTACAO_INDIVIDUAL,
-                ),
-            )
-        limite.valor_comprometido += diferenca
+        limite.valor_comprometido += no_limite
         limite.save(update_fields=["valor_comprometido"])
         _registrar_movimento_individual(
             acao="ajuste", entidade_id=entidade_id, usuario=usuario,
-            valores_anteriores={"valor": str(valor_anterior)},
-            valores_novos={"valor": str(novo_valor)},
+            valores_anteriores={"valor": str(valor_anterior), "excedente": str(excedente_anterior)},
+            valores_novos={"valor": str(novo_valor), "excedente": str(excedente_novo)},
         )
         _notificar_se_piorou(
             usuarios=[solicitante], demand=demand_request.demanda, rubrica_nome=rubrica.nome,
@@ -416,7 +429,9 @@ def ajustar_duas_travas(
     )
     _notificar_pool_se_piorou(movimento, demand=demand_request.demanda, rubrica_nome=rubrica.nome)
     if diferenca != ZERO:
-        _mover_reserva(demand_request, adiar=adiar_gravacao, valor_reservado=novo_valor)
+        _mover_reserva(
+            demand_request, adiar=adiar_gravacao, valor_reservado=novo_valor, valor_excedente=excedente_novo,
+        )
 
 
 @transaction.atomic
@@ -433,19 +448,22 @@ def liberar_duas_travas(*, demand_request, usuario, motivo: str, adiar_gravacao:
     reler_reserva(demand_request)
     liberou = demand_request.reserva_ativa
     if liberou and limite is not None:
-        valor = demand_request.valor_reservado
+        # O excedente nunca esteve no limite: não volta como saldo individual.
+        valor = demand_request.valor_no_limite
         limite.valor_comprometido -= valor
         limite.save(update_fields=["valor_comprometido"])
         _registrar_movimento_individual(
             acao="liberacao", entidade_id=entidade_id, usuario=usuario,
-            valores_novos={"limite_id": limite.pk, "valor": str(valor)},
+            valores_novos={
+                "limite_id": limite.pk, "valor": str(valor), "excedente": str(demand_request.valor_excedente),
+            },
         )
 
     orcamento_service.liberar_pool(
         solicitante=solicitante, rubrica=rubrica, demand_request=demand_request, usuario=usuario, motivo=motivo,
     )
     if liberou:
-        _mover_reserva(demand_request, adiar=adiar_gravacao, valor_reservado=ZERO)
+        _mover_reserva(demand_request, adiar=adiar_gravacao, valor_reservado=ZERO, valor_excedente=ZERO)
 
 
 @transaction.atomic
@@ -484,13 +502,19 @@ def executar_duas_travas(*, demand_request, valor_pago: Decimal, usuario, adiar_
     reler_reserva(demand_request)
     executou = demand_request.valor_executado is None
     if executou:
-        valor_reservado = demand_request.valor_reservado
-        limite.valor_comprometido -= valor_reservado
-        limite.valor_executado += valor_pago
+        # Do pago, o limite individual executa só até a parte que comprometeu; o
+        # resto saiu do excedente, e o excedente que sobrar não vira saldo individual.
+        no_limite = demand_request.valor_no_limite
+        executado_no_limite = min(valor_pago, no_limite)
+        limite.valor_comprometido -= no_limite
+        limite.valor_executado += executado_no_limite
         limite.save(update_fields=["valor_comprometido", "valor_executado"])
         _registrar_movimento_individual(
             acao="execucao", entidade_id=entidade_id, usuario=usuario,
-            valores_novos={"valor_pago": str(valor_pago), "diferenca_liberada": str(valor_reservado - valor_pago)},
+            valores_novos={
+                "valor_pago": str(valor_pago), "executado_no_limite": str(executado_no_limite),
+                "diferenca_liberada": str(no_limite - executado_no_limite),
+            },
         )
 
     orcamento_service.executar_pool(
@@ -500,39 +524,3 @@ def executar_duas_travas(*, demand_request, valor_pago: Decimal, usuario, adiar_
         _mover_reserva(demand_request, adiar=adiar_gravacao, valor_executado=valor_pago)
     return executou
 
-
-@transaction.atomic
-def autorizar_excedente(*, demand_request, origem_allocation, valor_excedente: Decimal,
-                         justificativa: str, usuario) -> None:
-    if not justificativa:
-        raise JustificativaObrigatoria("Obrigatória para autorizar excedente.")
-    if valor_excedente <= ZERO:
-        raise RegraDeNegocio("Deve ser maior que zero.", campo="valor_excedente")
-    if origem_allocation.nivel not in (orcamento_service.Nivel.ESTADUAL, orcamento_service.Nivel.NACIONAL):
-        raise RegraDeNegocio(
-            "Remanejamento emergencial só pode vir de saldo estadual ou nacional.",
-            campo="origem_allocation",
-        )
-
-    with orcamento_service.pelo_solicitante():
-        destino = orcamento_service.consultar_pool(
-            solicitante=demand_request.demanda.solicitante, rubrica=demand_request.rubrica, valor=ZERO,
-            demand_request=demand_request,
-        ).allocation
-    if destino is None:
-        raise RegraDeNegocio("Nenhuma alocação territorial encontrada para remanejar.")
-
-    orcamento_service.remanejar(
-        origem=origem_allocation, destino=destino, valor=valor_excedente,
-        usuario=usuario, justificativa=justificativa,
-    )
-
-    # Remanejamento é pontual: só move o pool territorial de origem pro destino
-    # e libera esta solicitação específica via `ignorar_limite_individual` (em
-    # `ajustar_duas_travas`) — não eleva `valor_limite`, ou o solicitante
-    # ganharia teto maior permanentemente por um excedente de uma única vez.
-    AuditLog.objects.create(
-        user=usuario, acao="remanejamento_emergencial", modulo="sgd", entidade=_ENTIDADE_LIMITE,
-        entidade_id=str(demand_request.pk),
-        valores_novos={"valor_excedente": str(valor_excedente), "justificativa": justificativa},
-    )

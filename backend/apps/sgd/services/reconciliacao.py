@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from decimal import Decimal
 
 from django.db import connection, transaction
-from django.db.models import DecimalField, Exists, OuterRef, Subquery, Sum, Value
+from django.db.models import DecimalField, Exists, F, OuterRef, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 
 from apps.sgd.models import DemandIndividualLimit, DemandRequest
@@ -30,8 +30,8 @@ def _leitura_total_do_sgd():
 
 
 def divergencias_dos_limites() -> list[str]:
-    """`valor_comprometido` de cada limite contra a soma do `valor_reservado` das
-    solicitações com reserva ativa do mesmo solicitante e rubrica, e reservas
+    """`valor_comprometido` de cada limite contra a soma das reservas ativas do mesmo
+    solicitante e rubrica, sem o excedente (que fica fora do limite), e reservas
     ativas sem limite nenhum."""
     with _leitura_total_do_sgd():
         return _divergencias_dos_limites()
@@ -44,7 +44,7 @@ def _divergencias_dos_limites() -> list[str]:
         )
         .order_by()
         .values("rubrica")
-        .annotate(total=Sum("valor_reservado"))
+        .annotate(total=Sum(F("valor_reservado") - F("valor_excedente")))
         .values("total")
     )
     limites = DemandIndividualLimit.objects.annotate(

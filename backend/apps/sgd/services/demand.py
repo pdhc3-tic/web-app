@@ -148,7 +148,8 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
     solicitacao.beneficiario_cpf = validado.beneficiario_cpf
     solicitacao.valor_estimado = valor_final
     solicitacao.save(update_fields=[
-        "tipo", "rubrica", "campos_json", "beneficiario_cpf", "valor_estimado", "valor_reservado", "atualizado_em",
+        "tipo", "rubrica", "campos_json", "beneficiario_cpf", "valor_estimado", "valor_reservado",
+        "valor_excedente", "atualizado_em",
     ])
     return solicitacao
 

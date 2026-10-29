@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.sgp.models import BudgetAllocation, BudgetIncreaseRequest, BudgetRubrica
+from apps.sgp.models import BudgetAllocation, BudgetIncreaseRequest, BudgetRubrica, BudgetTransfer
 from apps.sgd.services.recurso_extra import DECISOES
 
 
@@ -65,3 +65,34 @@ class DecidirRemanejamentoSerializer(serializers.Serializer):
         queryset=BudgetAllocation.objects.all(), required=False, allow_null=True, default=None,
         help_text="Alocação estadual ou nacional que cobre o que faltar no pool territorial.",
     )
+
+
+class AlocacaoDoRemanejamentoSerializer(serializers.ModelSerializer):
+    estado = serializers.CharField(source="estado.sigla", read_only=True, allow_null=True)
+    territorio = serializers.CharField(source="territorio.nome", read_only=True, allow_null=True)
+
+    class Meta:
+        model = BudgetAllocation
+        fields = ["id", "nivel", "estado", "territorio"]
+        read_only_fields = fields
+
+
+class BudgetTransferSerializer(serializers.ModelSerializer):
+    """Remanejamento efetivado (SGP §6.7). Sem o IP de quem aprovou: é dado pessoal,
+    e a trilha de auditoria só o mostra ao Super Admin."""
+
+    origem = AlocacaoDoRemanejamentoSerializer(source="allocation_origem", read_only=True)
+    destino = AlocacaoDoRemanejamentoSerializer(source="allocation_destino", read_only=True)
+    rubrica = serializers.SlugRelatedField(source="allocation_destino.rubrica", slug_field="slug", read_only=True)
+    escopo_display = serializers.CharField(source="get_escopo_display", read_only=True)
+    aprovado_por_nome = serializers.CharField(source="aprovado_por.nome", read_only=True, allow_null=True)
+    pedido = serializers.IntegerField(source="increase_request_id", read_only=True, allow_null=True)
+
+    class Meta:
+        model = BudgetTransfer
+        fields = [
+            "id", "tipo", "escopo", "escopo_display", "origem", "destino", "rubrica", "valor", "motivo",
+            "saldo_origem_antes", "saldo_origem_depois", "saldo_destino_antes", "saldo_destino_depois",
+            "aprovado_por", "aprovado_por_nome", "pedido", "demanda_id", "solicitacao_id", "criado_em",
+        ]
+        read_only_fields = fields

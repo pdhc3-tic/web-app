@@ -15,7 +15,7 @@ from uuid import NAMESPACE_URL, uuid5
 from django.db import connection
 from django.utils import timezone
 
-from apps.core.models import Territory, UserProfile
+from apps.core.models import State, Territory, UserProfile
 from apps.sgd.models import ArloImport, Demand, DemandIndividualLimit, DemandRequest
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import workflow as workflow_service
@@ -27,6 +27,8 @@ RUBRICA_GRAFICO = "material-grafico"
 LIMITE_INDIVIDUAL = {"PE": Decimal("6000"), "RN": Decimal("3000")}
 LIMITE_INDIVIDUAL_GRAFICO = Decimal("2000")
 ALOCACAO_TERRITORIAL = Decimal("60000")
+# De onde a UGP remaneja o excedente autorizado na demanda.
+ALOCACAO_ESTADUAL = Decimal("20000")
 
 # Passa de 5 dias úteis em qualquer janela de 14 dias corridos, feriados à parte.
 DIAS_SEM_MOVIMENTACAO = 14
@@ -115,6 +117,10 @@ def _preparar_saldos(acao, solicitantes) -> None:
                 meta=acao.meta, rubrica=rubrica, nivel=BudgetAllocation.Nivel.TERRITORIAL,
                 territorio=territorio, defaults={"valor_alocado": ALOCACAO_TERRITORIAL},
             )
+        BudgetAllocation.objects.get_or_create(
+            meta=acao.meta, rubrica=rubricas[RUBRICA_ALIMENTACAO], nivel=BudgetAllocation.Nivel.ESTADUAL,
+            estado=State.objects.get(sigla=uf), defaults={"valor_alocado": ALOCACAO_ESTADUAL},
+        )
         DemandIndividualLimit.objects.update_or_create(
             solicitante=solicitante, rubrica=rubricas[RUBRICA_ALIMENTACAO],
             defaults={"valor_limite": LIMITE_INDIVIDUAL[uf]},
@@ -214,9 +220,13 @@ def _conduzir(demanda, cenario, solicitante, aprovadores) -> None:
 
     if cenario.excedente:
         solicitacao = demanda.solicitacoes.get()
+        origem = BudgetAllocation.objects.get(
+            meta_id=demanda.activity.acao.meta_id, rubrica=solicitacao.rubrica,
+            nivel=BudgetAllocation.Nivel.ESTADUAL, estado__sigla=cenario.uf,
+        )
         workflow_service.executar_transicao(
             demanda, "autorizada", ator=ugp, ajustes={solicitacao.pk: LIMITE_INDIVIDUAL[cenario.uf] + Decimal("1000")},
-            excedente_autorizado=True,
+            excedente_autorizado=True, origem_allocation=origem,
             justificativa="Remanejamento emergencial: mutirão antecipado pela estiagem na região.",
         )
     else:

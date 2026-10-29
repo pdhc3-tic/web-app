@@ -506,7 +506,7 @@ def test_aprovacao_com_deficit_menor_que_o_solicitado_concede_o_solicitado(
 def test_saldo_individual_negativo_entra_no_deficit(
     demanda, solicitante_rn, usuario_articulador_rn, usuario_ugp, rubrica_diarias, limite_individual_rn,
 ):
-    # Saldo de −R$ 200, como fica depois de um excedente autorizado.
+    # Saldo de −R$ 200, como ficou o excedente autorizado antes do remanejamento pontual.
     DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_comprometido=Decimal("500"))
 
     assert _solicitar(solicitante_rn, demanda, valor_solicitado="1000").status_code == 400
@@ -593,6 +593,8 @@ def test_remanejamento_de_pool_estadual_cobre_o_que_falta(
     assert (transferencia.saldo_destino_antes, transferencia.saldo_destino_depois) == (Decimal("200"), Decimal("1000"))
     assert transferencia.aprovado_por == usuario_ugp
     assert transferencia.increase_request == pedido_com_parecer
+    assert transferencia.escopo == BudgetTransfer.Escopo.ELEVACAO_LIMITE
+    assert (transferencia.demanda_id, transferencia.solicitacao_id) == (str(demanda.pk), None)
     assert Notification.objects.filter(
         evento="remanejamento_efetivado", titulo="Remanejamento efetivado: R$ 800,00",
     ).exists()

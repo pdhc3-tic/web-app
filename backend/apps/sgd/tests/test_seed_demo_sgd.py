@@ -13,7 +13,7 @@ from apps.sgd.services.approval import alerta_rubrica_fora_do_previsto, demand_v
 from apps.sgd.tasks import DIAS_UTEIS_LIMITE, _dias_uteis_entre
 from apps.sgp.cache import get_power_bi_snapshot
 from apps.sgp.management.commands.seed_demo import SUPER_ADMIN, email_de_demo
-from apps.sgp.models import GoogleCalendarSyncEvent
+from apps.sgp.models import BudgetTransfer, GoogleCalendarSyncEvent
 
 User = get_user_model()
 
@@ -51,6 +51,9 @@ def test_existe_remanejamento_emergencial_com_excedente_autorizado(seed):
     assert etapa.etapa == "autorizacao"
     assert "emergencial" in etapa.justificativa.lower()
     assert etapa.demanda.status == "autorizada"
+    remanejamento = BudgetTransfer.objects.get(escopo=BudgetTransfer.Escopo.PONTUAL)
+    assert remanejamento.demanda_id == str(etapa.demanda_id)
+    assert remanejamento.allocation_origem.nivel == "estadual"
 
 
 def test_existe_solicitacao_com_rubrica_fora_das_previstas_da_acao(seed):

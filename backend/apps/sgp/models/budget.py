@@ -303,7 +303,15 @@ class BudgetTransfer(models.Model):
         ENTRE_TERRITORIOS = "entre_territorios", "Entre territórios"
         ENTRE_NIVEIS = "entre_niveis", "Entre níveis"
 
+    class Escopo(models.TextChoices):
+        PONTUAL = "pontual", "Pontual (excedente autorizado na demanda)"
+        ELEVACAO_LIMITE = "elevacao_limite", "Elevação do limite individual (recurso extra)"
+
     tipo = models.CharField(max_length=20, choices=Tipo.choices, verbose_name="Tipo")
+    escopo = models.CharField(
+        max_length=20, choices=Escopo.choices, blank=True, default="", verbose_name="Escopo",
+        help_text="Em branco no remanejamento feito direto entre alocações, sem demanda envolvida.",
+    )
     allocation_origem = models.ForeignKey(
         BudgetAllocation, on_delete=models.PROTECT,
         related_name="transferencias_de_saida", verbose_name="Alocação de origem",
@@ -327,6 +335,14 @@ class BudgetTransfer(models.Model):
     increase_request = models.ForeignKey(
         BudgetIncreaseRequest, on_delete=models.PROTECT, null=True, blank=True,
         related_name="transferencias", verbose_name="Solicitação de recurso extra",
+    )
+    demanda_id = models.CharField(
+        max_length=64, null=True, blank=True, default=None, verbose_name="ID da Demanda",
+        help_text="Referência fraca à Demand do SGD (apps.sgd), no padrão de BudgetTransaction.demanda_id.",
+    )
+    solicitacao_id = models.CharField(
+        max_length=64, null=True, blank=True, default=None, verbose_name="ID da Solicitação",
+        help_text="Referência fraca à DemandRequest que recebeu o excedente pontual (apps.sgd).",
     )
     criado_em = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
 
