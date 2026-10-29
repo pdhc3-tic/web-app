@@ -137,3 +137,15 @@ O semáforo de `GET /api/v1/sgp/orcamento/painel/` segue `budget_alert_yellow_pc
 ```
 
 *Estado atual no frontend:* `PainelOrcamentoLinhaApi.limiares_semaforo` já é lido por `limiaresDaLinha` (`app/lib/orcamento.ts`). Enquanto o campo não vem, os rótulos usam os padrões do backend (70 e 90). Nada muda no front quando o campo entrar.
+
+---
+
+## 6. Demandas do `seed_demo` sem trilha de auditoria (#322)
+
+*Compilado em 29/10/2026, na revisão final da sprint 11.*
+
+A aba Auditoria do painel de demandas (#322) lê `GET /api/v1/sgd/demandas/{id}/auditoria/`, que devolve os `AuditLog` da demanda (`entidade="Demand"`) e das movimentações de saldo (`entidade="BudgetTransaction"`). O `popular_demandas` de `apps/sgd/seed_demo.py` grava as demandas de demonstração direto no status final, sem passar pelos serviços que chamam `auditoria.registrar_status`. Conferido em 29/10/2026: das 11 demandas do seed, só 1 tem evento de auditoria. Quem abre a aba numa demanda Submetida, Concluída ou Recusada do seed vê "Esta demanda ainda não tem eventos de auditoria".
+
+**Pedido:** o `popular_demandas` registrar, para cada demanda, a criação e as transições até o status em que ela fica, com `registrar_status`, e as movimentações de saldo das que reservaram ou executaram, como os serviços fazem.
+
+*Estado atual no frontend:* a aba funciona com as demandas criadas pelo fluxo real (é o que a `painel-demandas.spec` cobre, com a fixture). Nada muda no front quando o seed for corrigido.
