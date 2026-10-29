@@ -329,6 +329,8 @@ serializer: o dado não existe.
 
 ## 8. O detalhe da atividade não traz o nome do território nem a Meta da Ação
 
+> **Resolvido no backend pelo PR #328** (conferido em 29/10/2026 na `main`): o detalhe da atividade traz `territorio` e a Meta da Ação.
+
 > *Em andamento em 08/10/2026:* o PR #328 (aberto) aninha `territorio` e
 > `acao.meta`/`submeta`/`indicador` no detalhe. O frontend já espera esses
 > nomes e mostra a cadeia completa assim que o PR entrar.
@@ -366,6 +368,8 @@ os mesmos campos que `DemandContextoSerializer` já lê.
 
 ## 9. `ActivityFilter` sem busca textual e com `status` de um valor só
 
+> **Resolvido no backend pelo PR #328** (conferido em 29/10/2026 na `main`): `status` é `MultipleChoiceFilter` e `q` busca pelo título.
+
 > *Em andamento em 08/10/2026:* o PR #328 (aberto) traz status múltiplo e
 > busca nas atividades.
 
@@ -397,6 +401,8 @@ cliente para compensar.
 ---
 
 ## 10. Criar demanda não confere o escopo da atividade — falha de segurança
+
+> **Resolvido no backend pelo PR #325** (conferido em 29/10/2026): a criação de demanda respeita o escopo territorial do solicitante.
 
 > *Em andamento em 08/10/2026:* o PR #325 (aberto) faz a criação de demanda
 > respeitar o escopo territorial do solicitante.
@@ -598,6 +604,8 @@ não explica o que aconteceu.
 ---
 
 ## 17. Opções dos campos das solicitações do SGD fora do `/api/v1/choices/` — bloqueia a #295
+
+> **Resolvido no backend** (conferido em 29/10/2026 na `main`): o `/choices/` publica `solicitacao_tipo` e as sete listas dos campos (`beneficiario_vinculo`, `meio_transporte`, `classe`, `urgencia`, `tipo_veiculo`, `tipo_material`, `tipo_refeicao`), que o formulário da #295 já consome.
 
 A #295 exige que todos os selects do formulário de solicitação usem a fonte
 única de choices da #272, sem nenhum `enum` duplicado no frontend. No backend,

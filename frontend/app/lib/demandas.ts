@@ -238,11 +238,7 @@ export type AtividadeElegivel = {
 /**
  * GET /api/v1/sgp/atividades/?tecnico_id={eu}&status=planejado&status=agendado&q={texto}
  * — atividades do solicitante que aceitam demanda, para o campo com busca.
- *
- * O contrato é o certo, mas dois filtros ainda não existem no `ActivityFilter`
- * (docs/pendencias-backend-sprint-10.md, item 9): `q` é ignorado — a lista
- * não estreita pelo texto digitado — e `status` só considera o último valor,
- * então hoje vêm só as Agendadas. Nada é filtrado aqui para compensar.
+ * `status` repetido e `q` pelo título são do `ActivityFilter` (PR #328).
  */
 export async function buscarAtividadesElegiveis(
   params: { tecnicoId: string; busca: string },
