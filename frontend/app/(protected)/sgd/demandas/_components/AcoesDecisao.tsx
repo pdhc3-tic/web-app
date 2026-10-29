@@ -8,10 +8,11 @@ import { ConfirmationDrawer } from "@/app/components/ui/ConfirmationDrawer/Confi
 import { Input } from "@/app/components/ui/Input/Input";
 import { Textarea } from "@/app/components/ui/Textarea/Textarea";
 import { ApiError } from "@/app/lib/api";
-import { perfisDecisoresSgd } from "@/app/lib/auth/roles";
+import { canCancelarDemandaAutorizada, perfisDecisoresSgd } from "@/app/lib/auth/roles";
 import {
   atenderDemanda,
   autorizarDemanda,
+  cancelarDemanda,
   concluirDemanda,
   devolverDemanda,
   preAutorizarDemanda,
@@ -41,6 +42,7 @@ const paraInput = (v: string | null) => (v === null ? "" : String(Number(v)));
  * - Articulador Estadual, em Submetida: Pré-autorizar · Devolver para revisão
  * - UGP, em Pré-autorizada: Autorizar · Autorizar com valor ajustado · Recusar
  * - FGD, em Autorizada: Iniciar atendimento; em Em atendimento: Concluir
+ * - UGP e Super Admin, em Autorizada: Cancelar demanda
  *
  * Toda decisão que reserva recurso passa por uma confirmação com o preview de
  * impacto no saldo. O backend continua sendo quem autoriza — um 403/400 volta
@@ -66,6 +68,7 @@ export function AcoesDecisao({
   const [justificativa, setJustificativa] = useState("");
   const [erroJustificativa, setErroJustificativa] = useState<string | null>(null);
   const [recusando, setRecusando] = useState(false);
+  const [cancelando, setCancelando] = useState(false);
   const [valores, setValores] = useState<Record<number, string>>({});
 
   const { status, solicitacoes } = demanda;
@@ -73,6 +76,7 @@ export function AcoesDecisao({
   const podeUgp = perfis.includes("ugp") && status === "pre_autorizada";
   const podeAtender = perfis.includes("fgd") && status === "autorizada";
   const podeConcluir = perfis.includes("fgd") && status === "em_atendimento";
+  const podeCancelar = canCancelarDemandaAutorizada(session?.user) && status === "autorizada";
 
   // As decisões que reservam recurso mostram o impacto ANTES de confirmar: com o
   // valor pedido (pré-autorizar, autorizar) ou com o valor ajustado.
@@ -84,7 +88,7 @@ export function AcoesDecisao({
         : [];
   const previews = usePreviewsDecisao(demanda.id, itensPreview);
 
-  if (!podeArticulador && !podeUgp && !podeAtender && !podeConcluir) return null;
+  if (!podeArticulador && !podeUgp && !podeAtender && !podeConcluir && !podeCancelar) return null;
 
   function abrir(novo: Modo) {
     onIniciar();
@@ -347,6 +351,11 @@ export function AcoesDecisao({
       <>
         {erroBox}
         <div className="flex flex-wrap justify-end gap-2">
+          {podeCancelar && (
+            <Button variant="danger" onClick={() => setCancelando(true)} data-testid="acao-cancelar">
+              Cancelar demanda
+            </Button>
+          )}
           {podeArticulador && (
             <>
               <Button variant="secondary" onClick={() => abrir("devolver")} data-testid="acao-devolver">
@@ -429,6 +438,40 @@ export function AcoesDecisao({
           });
         }}
         data-testid="recusar-drawer"
+      />
+
+      <ConfirmationDrawer
+        open={cancelando}
+        title="Cancelar demanda autorizada"
+        description={
+          <>
+            <p className="font-medium text-text">O cancelamento é definitivo.</p>
+            <p className="mt-1">
+              A demanda “{demanda.titulo}” já foi autorizada. Ela será encerrada e o saldo
+              reservado para as suas solicitações volta a ficar disponível. O solicitante recebe a
+              justificativa.
+            </p>
+          </>
+        }
+        confirmLabel="Cancelar demanda"
+        keepLabel="Manter demanda"
+        justificativaLabel="Justificativa do cancelamento"
+        onClose={() => setCancelando(false)}
+        onConfirm={async (texto) => {
+          onIniciar();
+          let atualizada: Demanda;
+          try {
+            atualizada = await cancelarDemanda(demanda.id, texto);
+          } catch (e) {
+            throw new Error(mensagemDe(e));
+          }
+          setCancelando(false);
+          aplicarDecisao(atualizada, {
+            tipo: "info",
+            texto: "Demanda cancelada. O saldo reservado foi liberado.",
+          });
+        }}
+        data-testid="cancelar-drawer"
       />
     </div>
   );

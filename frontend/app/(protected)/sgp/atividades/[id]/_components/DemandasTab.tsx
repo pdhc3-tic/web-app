@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useQuery } from "@tanstack/react-query";
 import { FileText, Plus } from "lucide-react";
@@ -19,6 +20,7 @@ import {
 } from "@/app/lib/demandas";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import { qk } from "@/app/lib/queryKeys";
+import { podeMontarDemanda } from "@/app/lib/solicitacoes";
 import type { AtividadeDetail } from "@/app/lib/atividades";
 
 function DemandasSkeleton() {
@@ -130,6 +132,15 @@ export function DemandasTab({ atividade }: { atividade: AtividadeDetail }) {
                   {formatCurrencyBRL(d.valor_estimado_total)}
                 </span>
                 <Badge status={badgeStatusDaDemanda(d.status)} label={d.status_display} />
+                {podeMontarDemanda(d, session?.user?.id) && (
+                  <Link
+                    href={`/sgd/demandas/${d.id}/editar`}
+                    className="text-sm font-medium text-primary hover:underline"
+                    data-testid={`demanda-montar-${d.id}`}
+                  >
+                    Editar e submeter
+                  </Link>
+                )}
               </li>
             ))}
           </ul>

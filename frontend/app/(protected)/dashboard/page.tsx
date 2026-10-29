@@ -94,8 +94,13 @@ export default function DashboardPage() {
   const [atrasadas, setAtrasadas] = useState<CardState>({ phase: "loading" });
   const [acoesCriticas, setAcoesCriticas] = useState<CardState>({ phase: "loading" });
 
+  // Depende de quem é o usuário, não do objeto da sessão: o next-auth entrega
+  // um objeto novo a cada recarga da sessão (inclusive as disparadas por outra
+  // aba), e refazer as buscas a cada recarga gerava um laço entre abas.
+  const usuarioId = session?.user?.id;
+
   useEffect(() => {
-    if (status !== "authenticated" || !session) return;
+    if (status !== "authenticated" || !usuarioId) return;
 
     const controller = new AbortController();
 
@@ -123,7 +128,7 @@ export default function DashboardPage() {
       .catch(() => setAcoesCriticas({ phase: "error" }));
 
     return () => controller.abort();
-  }, [session, status]);
+  }, [usuarioId, status]);
 
   if (status === "loading") {
     return (

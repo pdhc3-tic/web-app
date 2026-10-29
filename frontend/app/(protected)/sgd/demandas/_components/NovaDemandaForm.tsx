@@ -93,7 +93,8 @@ type NovaDemandaFormProps = {
  * - pelo SGD, escolhendo a atividade no campo com busca;
  * - pelo SGD, criando a atividade (em Planejado) com os cinco campos mínimos.
  *
- * A demanda nasce em Rascunho; a submissão é outro passo (#295/#296).
+ * A demanda nasce em Rascunho e segue para a montagem (`/sgd/demandas/{id}/editar`,
+ * #295): solicitações, documentos e submissão.
  */
 export function NovaDemandaForm({ atividadeIdInicial }: NovaDemandaFormProps) {
   const router = useRouter();
@@ -223,8 +224,9 @@ export function NovaDemandaForm({ atividadeIdInicial }: NovaDemandaFormProps) {
       await queryClient.invalidateQueries({
         queryKey: qk.demandasDaAtividade(demanda.activity),
       });
-      showToast(`Demanda "${demanda.titulo}" criada como rascunho.`, "success");
-      router.push(`/sgp/atividades/${demanda.activity}?tab=demandas`);
+      showToast(`Demanda "${demanda.titulo}" criada como rascunho. Agora adicione as solicitações.`, "success");
+      // A demanda nasce vazia: o próximo passo é montá-la (#295).
+      router.push(`/sgd/demandas/${demanda.id}/editar`);
     } catch (err) {
       if (err instanceof ApiError) {
         const porCampo: Erros = {};

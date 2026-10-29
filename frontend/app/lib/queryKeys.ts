@@ -28,6 +28,8 @@ export const qk = {
   },
   /** Detalhe de uma atividade — contexto herdado pela nova demanda (#294). */
   atividade: (id: string | number) => ["sgp", "atividade", String(id)] as const,
+  /** Orçamento de uma Meta por rubrica, com o detalhamento por nível (#321). */
+  orcamentoDaMeta: (metaId: number) => ["sgp", "orcamento", "meta", metaId] as const,
   /** Ações do Plano de Trabalho para selects (#294). */
   acoesPT: ["sgp", "acoes"] as const,
   /** Municípios de um território (#294). */
@@ -41,12 +43,35 @@ export const qk = {
     lista: (status: readonly string[]) =>
       ["sgd", "demandas", "lista", { status: [...status] }] as const,
     detalhe: (id: string | number) => ["sgd", "demandas", "detalhe", String(id)] as const,
+    fila: ["sgd", "demandas", "fila", "lista"] as const,
     contagemFila: ["sgd", "demandas", "fila", "contagem"] as const,
     /** Lista com o recorte vindo do drill-down do painel de execução (#297). */
     recorte: (filtros: Record<string, string | undefined>) =>
       ["sgd", "demandas", "recorte", filtros] as const,
     preview: (id: number, solicitacaoId: number, valor: string) =>
       ["sgd", "demandas", "preview", { id, solicitacaoId, valor }] as const,
+    auditoria: (id: string | number) =>
+      ["sgd", "demandas", "auditoria", String(id)] as const,
+    /** Documentos da demanda (#295). */
+    documentos: (id: number) => ["sgd", "demandas", "documentos", String(id)] as const,
+  },
+  /** Montagem da demanda (#295): saldo, simulação de diárias e destinos. */
+  solicitacao: {
+    saldo: (atividadeId: number, tipo: string, valor: string) =>
+      ["sgd", "saldo", { atividadeId, tipo, valor }] as const,
+    simulacaoDiarias: (municipioId: string, inicio: string, fim: string) =>
+      ["sgd", "diarias", "simulacao", { municipioId, inicio, fim }] as const,
+    municipios: (texto: string) => ["core", "municipios", "busca", texto] as const,
+    municipio: (id: string) => ["core", "municipios", "detalhe", id] as const,
+  },
+  /** Recurso extra e Fila de Remanejamentos do SGD (#321). */
+  remanejamentos: {
+    all: ["sgd", "remanejamentos"] as const,
+    lista: (status: readonly string[]) =>
+      ["sgd", "remanejamentos", "lista", { status: [...status] }] as const,
+    detalhe: (id: string | number) => ["sgd", "remanejamentos", "detalhe", String(id)] as const,
+    daDemanda: (demandaId: number) =>
+      ["sgd", "remanejamentos", "demanda", String(demandaId)] as const,
   },
   /** Demandas do SGD vinculadas a uma atividade (#294). */
   demandasDaAtividade: (atividadeId: string | number) =>

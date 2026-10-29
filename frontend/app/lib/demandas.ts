@@ -71,9 +71,9 @@ export type SolicitacaoDemanda = {
 /** `ApprovalStepSerializer` — uma decisão na linha do tempo da demanda. */
 export type EtapaDemanda = {
   id: number;
-  etapa: "pre_autorizacao" | "autorizacao" | "atendimento";
+  etapa: "pre_autorizacao" | "autorizacao" | "atendimento" | "cancelamento";
   etapa_display: string;
-  acao: "aprovado" | "recusado" | "devolvido" | "atendido";
+  acao: "aprovado" | "recusado" | "devolvido" | "atendido" | "cancelado";
   acao_display: string;
   responsavel_nome: string | null;
   justificativa: string;
@@ -266,24 +266,28 @@ export async function fetchContagemFila(signal?: AbortSignal): Promise<ContagemF
 }
 
 /**
- * GET /api/v1/sgd/demandas/?status=… — listagem, já no escopo do perfil
- * (o Articulador só enxerga as Submetidas do próprio estado).
+ * GET /api/v1/sgd/demandas/ — listagem, já no escopo do perfil (o Articulador
+ * só enxerga as Submetidas do próprio estado).
  *
- * Vários status vão como parâmetro repetido. O `DemandViewSet.list` hoje só lê
- * o último — para a FGD, que aguarda dois status, a LISTA da fila vem
- * incompleta, embora a contagem venha certa
- * (docs/pendencias-backend-sprint-10.md, item 13).
- *
- * `filtros` são os do `DemandFilter` do BE-5 (atividade, ação, território,
- * período…) — o drill-down do painel de execução (#297) leva o recorte do
- * painel para a lista mostrar as demandas que compõem o custo exibido.
+ * - `status`: vários vão como parâmetro repetido, e o backend devolve a união.
+ * - `aguardandoMinhaAcao`: a fila do perfil logado, pela mesma regra da
+ *   contagem (`aguardando-minha-acao/contagem/`) — o `count` da lista bate com
+ *   o `total` do badge.
+ * - `filtros`: os do `DemandFilter` do BE-5 (atividade, ação, território,
+ *   período…) — o drill-down do painel de execução (#297) leva o recorte do
+ *   painel para a lista mostrar as demandas que compõem o custo exibido.
  */
 export async function listDemandas(
-  params: { status?: StatusDemanda[]; filtros?: Record<string, string | undefined> } = {},
+  params: {
+    status?: StatusDemanda[];
+    aguardandoMinhaAcao?: boolean;
+    filtros?: Record<string, string | undefined>;
+  } = {},
   signal?: AbortSignal,
 ): Promise<ListaDemandas> {
   const qs = new URLSearchParams();
   for (const st of params.status ?? []) qs.append("status", st);
+  if (params.aguardandoMinhaAcao) qs.set("aguardando_minha_acao", "true");
   for (const [chave, valor] of Object.entries(params.filtros ?? {})) {
     if (valor) qs.set(chave, valor);
   }
@@ -294,6 +298,67 @@ export async function listDemandas(
 export async function getDemanda(id: number | string, signal?: AbortSignal): Promise<Demanda> {
   const res = await apiClient(`${DEMANDAS_PATH}${id}/`, { signal });
   return res.json();
+}
+
+// ─── Auditoria (#322, BE-7) ──────────────────────────────────────────────────
+
+/**
+ * Uma entrada da trilha de auditoria de uma demanda — mudança de status ou
+ * movimentação de saldo. Espelha `DemandAuditEntrySerializer`
+ * (`apps/sgd/serializers/auditoria.py`).
+ */
+export type EventoAuditoria = {
+  id: number;
+  /** "status" para transições da demanda, "saldo" para movimentações do SGP. */
+  tipo: "status" | "saldo";
+  /** Ex.: `demanda.criada`, `demanda.status_alterado`, `saldo.reserva`. */
+  acao: string;
+  /** Nulo quando a transição é do sistema (cancelamento automático). */
+  usuario: { id: number; nome: string } | null;
+  ip: string | null;
+  timestamp: string;
+  valores_anteriores: Record<string, unknown>;
+  valores_novos: Record<string, unknown>;
+};
+
+export type PaginaAuditoria = {
+  resultados: EventoAuditoria[];
+  /** Total no backend; a lista entregue é parcial enquanto `proxima_offset` existir. */
+  total: number;
+  /** Próximo `offset` a pedir, ou null quando acabou. */
+  proxima_offset: number | null;
+};
+
+/** Tamanho de página da trilha; o backend aceita `limit`/`offset` (BE-10). */
+export const AUDITORIA_PAGINA = 20;
+
+/**
+ * GET /api/v1/sgd/demandas/{id}/auditoria/?limit=&offset=
+ *
+ * Backend: `AuditLogPagination` (default 20, max 100) em `DemandViewSet.auditoria`.
+ * Hoje a rota é restrita ao Super Admin — ver `pendencias-backend-sprint-10.md`,
+ * item 19 (a issue #322 pede o mesmo escopo da visualização da demanda).
+ */
+export async function listAuditoriaDemanda(
+  demandaId: number | string,
+  params: { offset?: number; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<PaginaAuditoria> {
+  const qs = new URLSearchParams();
+  qs.set("limit", String(params.limit ?? AUDITORIA_PAGINA));
+  if (params.offset) qs.set("offset", String(params.offset));
+  const res = await apiClient(`${DEMANDAS_PATH}${demandaId}/auditoria/?${qs}`, { signal });
+  const pagina = (await res.json()) as {
+    count: number;
+    next: string | null;
+    results: EventoAuditoria[];
+  };
+  const consumidos = (params.offset ?? 0) + pagina.results.length;
+  return {
+    resultados: pagina.results,
+    total: pagina.count,
+    proxima_offset: pagina.next ? consumidos : null,
+  };
 }
 
 export type FaixaSemaforo = "verde" | "amarelo" | "vermelho";
@@ -354,3 +419,10 @@ export const recusarDemanda = (id: number, justificativa: string) =>
 export const atenderDemanda = (id: number) => decidir(id, "atender");
 export const concluirDemanda = (id: number, valoresPagos: Record<number, string>) =>
   decidir(id, "concluir", { valores_pagos: valoresPagos });
+
+/**
+ * UGP e Super Admin, em Autorizada. O backend libera as reservas de saldo e
+ * grava a etapa de cancelamento, que já volta em `etapas`.
+ */
+export const cancelarDemanda = (id: number, justificativa: string) =>
+  decidir(id, "cancelar", { justificativa });
