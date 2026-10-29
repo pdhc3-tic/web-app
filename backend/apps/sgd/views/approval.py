@@ -106,5 +106,7 @@ class DemandApprovalMixin:
         solicitacao = get_object_or_404(
             DemandRequest, pk=query.validated_data["demand_request_id"], demanda=demand,
         )
-        preview = approval_service.preview_impacto(solicitacao, query.validated_data["valor"])
+        preview = approval_service.preview_impacto(
+            solicitacao, query.validated_data["valor"], origem=query.validated_data["origem_allocation"],
+        )
         return Response(preview)

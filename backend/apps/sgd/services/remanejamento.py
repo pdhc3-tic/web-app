@@ -84,6 +84,28 @@ def remanejar_para_pool(*, origem: BudgetAllocation, destino: BudgetAllocation, 
     return transferencia
 
 
+def calcular_excedente(*, aumento: Decimal, saldo_limite: Decimal, saldo_pool: Decimal) -> tuple[Decimal, Decimal]:
+    """(parte acima do limite individual, valor a remanejar): remaneja o maior entre o
+    que passa do limite e o que falta no pool. Saldo negativo no limite vem de
+    excedente autorizado antes deste fluxo e não cobre nada."""
+    if aumento <= ZERO:
+        return ZERO, ZERO
+    acima_do_limite = max(aumento - max(saldo_limite, ZERO), ZERO)
+    acima_do_pool = max(aumento - saldo_pool, ZERO)
+    return acima_do_limite, max(acima_do_limite, acima_do_pool)
+
+
+def exigir_origem_da_solicitacao(
+    origem: BudgetAllocation, solicitacao, destino: BudgetAllocation | None = None,
+) -> None:
+    exigir_origem_acima_do_territorio(origem, destino)
+    if origem.rubrica_id != solicitacao.rubrica_id:
+        raise RegraDeNegocio(
+            "A alocação de origem precisa ser da mesma rubrica da solicitação que excede.",
+            campo="origem_allocation",
+        )
+
+
 def cobrir_excedente(solicitacao, novo_valor: Decimal, *, origem: BudgetAllocation, justificativa: str,
                      usuario) -> tuple[Decimal, BudgetTransfer | None]:
     """Remaneja de `origem` o que o aumento da reserva para `novo_valor` passa do limite
@@ -92,12 +114,7 @@ def cobrir_excedente(solicitacao, novo_valor: Decimal, *, origem: BudgetAllocati
     transferência.
 
     Sem nada acima do limite nem do pool, não remaneja: (zero, None)."""
-    exigir_origem_acima_do_territorio(origem)
-    if origem.rubrica_id != solicitacao.rubrica_id:
-        raise RegraDeNegocio(
-            "A alocação de origem precisa ser da mesma rubrica da solicitação que excede.",
-            campo="origem_allocation",
-        )
+    exigir_origem_da_solicitacao(origem, solicitacao)
     solicitante = solicitacao.demanda.solicitante
     limite = balance_service._travar_limite(solicitante_id=solicitante.pk, rubrica_id=solicitacao.rubrica_id)
     balance_service.reler_reserva(solicitacao)
@@ -105,8 +122,6 @@ def cobrir_excedente(solicitacao, novo_valor: Decimal, *, origem: BudgetAllocati
     if limite is None or not solicitacao.reserva_ativa or aumento <= ZERO:
         return ZERO, None
 
-    # Saldo negativo vem de excedente autorizado antes deste fluxo: não cobre nada.
-    acima_do_limite = max(aumento - max(limite.saldo_disponivel, ZERO), ZERO)
     # O pool da reserva, que é o que o ajuste move, e não o do perfil atual do
     # solicitante, que pode ter mudado depois da submissão.
     destino = orcamento_service.pool_da_reserva(solicitacao)
@@ -115,8 +130,9 @@ def cobrir_excedente(solicitacao, novo_valor: Decimal, *, origem: BudgetAllocati
     travadas = orcamento_service.travar_pools({origem.pk, destino.pk})
     origem, destino = travadas[origem.pk], travadas[destino.pk]
     exigir_origem_acima_do_territorio(origem, destino)
-    acima_do_pool = max(aumento - orcamento_service.saldo_do_pool(destino), ZERO)
-    valor = max(acima_do_limite, acima_do_pool)
+    acima_do_limite, valor = calcular_excedente(
+        aumento=aumento, saldo_limite=limite.saldo_disponivel, saldo_pool=orcamento_service.saldo_do_pool(destino),
+    )
     if valor == ZERO:
         return ZERO, None
 

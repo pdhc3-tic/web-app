@@ -88,6 +88,10 @@ class ConcluirSerializer(serializers.Serializer):
 class PreviewDecisaoSerializer(serializers.Serializer):
     demand_request_id = serializers.IntegerField()
     valor = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
+    origem_allocation = serializers.PrimaryKeyRelatedField(
+        queryset=BudgetAllocation.objects.all(), required=False, allow_null=True, default=None,
+        help_text="Simula a autorização com excedente coberto por esta alocação estadual ou nacional.",
+    )
 
 
 class CancelarSerializer(serializers.Serializer):

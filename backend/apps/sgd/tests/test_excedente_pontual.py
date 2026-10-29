@@ -307,6 +307,75 @@ def test_excedente_entra_na_trilha_de_auditoria_da_demanda(
     assert evento.valores_novos["solicitacao"] == str(demand_request_rn.pk)
 
 
+# --- prévia da decisão com excedente ----------------------------------------
+
+
+def _previa(usuario, demanda, solicitacao, valor, **params):
+    return _cliente(usuario).get(
+        f"/api/v1/sgd/demandas/{demanda.pk}/preview-decisao/",
+        {"demand_request_id": solicitacao.pk, "valor": valor, **params},
+    )
+
+
+def _decimal(valor):
+    return Decimal(str(valor))
+
+
+def test_previa_sem_origem_mostra_o_bloqueio_do_limite(demanda, demand_request_rn, usuario_ugp):
+    corpo = _previa(usuario_ugp, demanda, demand_request_rn, "5300").json()
+
+    assert (corpo["disponivel"], corpo["trava_bloqueada"]) == (False, "individual")
+    assert corpo["origem"] is None
+
+
+def test_previa_com_origem_simula_o_excedente(demanda, demand_request_rn, usuario_ugp, origem):
+    """Aumento de 4.300 com 4.000 livres no limite: 300 ficam fora dele e saem da origem."""
+    resposta = _previa(usuario_ugp, demanda, demand_request_rn, "5300", origem_allocation=origem.pk)
+
+    assert resposta.status_code == 200, resposta.data
+    corpo = resposta.json()
+    assert (corpo["disponivel"], corpo["trava_bloqueada"]) == (True, None)
+    assert _decimal(corpo["individual"]["saldo_apos"]) == Decimal("0")
+    assert _decimal(corpo["territorial"]["saldo_apos"]) == Decimal("5000")
+    assert corpo["origem"]["id"] == origem.pk
+    assert _decimal(corpo["origem"]["valor_remanejado"]) == Decimal("300")
+    assert _decimal(corpo["origem"]["fora_do_limite"]) == Decimal("300")
+    assert (_decimal(corpo["origem"]["saldo_antes"]), _decimal(corpo["origem"]["saldo_apos"])) == (
+        Decimal("5000"), Decimal("4700"),
+    )
+    assert not BudgetTransfer.objects.exists()
+
+
+def test_previa_com_origem_bate_com_o_que_a_autorizacao_remaneja(
+    demanda, demand_request_rn, usuario_ugp, origem, limite_individual_rn, allocation_territorial_rn,
+):
+    DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_limite=Decimal("1200"))
+    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("1100"))
+    previa = _previa(usuario_ugp, demanda, demand_request_rn, "1500", origem_allocation=origem.pk).json()
+
+    assert _autorizar(usuario_ugp, demanda, demand_request_rn, "1500", origem_allocation=origem.pk).status_code == 200
+
+    transferencia = BudgetTransfer.objects.get()
+    demand_request_rn.refresh_from_db()
+    assert _decimal(previa["origem"]["valor_remanejado"]) == transferencia.valor == Decimal("400")
+    assert _decimal(previa["origem"]["fora_do_limite"]) == demand_request_rn.valor_excedente == Decimal("300")
+
+
+def test_previa_com_origem_sem_saldo_bloqueia_na_origem(demanda, demand_request_rn, usuario_ugp, origem):
+    BudgetAllocation.objects.filter(pk=origem.pk).update(valor_alocado=Decimal("100"))
+
+    corpo = _previa(usuario_ugp, demanda, demand_request_rn, "5300", origem_allocation=origem.pk).json()
+
+    assert (corpo["disponivel"], corpo["trava_bloqueada"]) == (False, "origem")
+
+
+def test_previa_com_origem_de_outro_estado_e_400(demanda, demand_request_rn, usuario_ugp, origem_de_outro_estado):
+    resposta = _previa(usuario_ugp, demanda, demand_request_rn, "5300", origem_allocation=origem_de_outro_estado.pk)
+
+    assert resposta.status_code == 400
+    assert "origem_allocation" in resposta.data
+
+
 # --- listagem dos remanejamentos ---------------------------------------------
 
 
