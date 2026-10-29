@@ -117,6 +117,9 @@ print("${MARCADOR}_SETUP " + json.dumps(saida))
 
 const TEARDOWN_SCRIPT = `${COMUM}
 limpar()
+# A limpeza apaga o limite de locação do Ewerton; devolve o do seed
+# (SGD_LIMITES_ADT_MONTAGEM) para as specs que rodam depois.
+DemandIndividualLimit.objects.get_or_create(solicitante=adt, rubrica=rubrica, defaults={"valor_limite": Decimal("1000")})
 print("${MARCADOR}_TEARDOWN_OK")
 `;
 
