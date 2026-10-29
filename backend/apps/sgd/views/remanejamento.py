@@ -83,7 +83,7 @@ class RemanejamentoViewSet(viewsets.ViewSet):
         "parecer": (IsArticuladorEstadual | IsSuperAdmin),
         "devolver": (IsArticuladorEstadual | IsSuperAdmin),
         "decidir": (IsUGP | IsSuperAdmin),
-        # Remanejamento é da coordenação (SGP §6.7); a FGD acompanha em leitura.
+        # Remanejamento é da coordenação; a FGD acompanha em leitura.
         "transferencias": (IsUGP | IsSuperAdmin | IsFGD),
     }
 

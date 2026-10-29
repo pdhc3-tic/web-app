@@ -1,4 +1,4 @@
-"""Excedente autorizado pela UGP na própria demanda (remanejamento emergencial, SGD-RF16)."""
+"""Excedente autorizado pela UGP na própria demanda (remanejamento emergencial)."""
 from decimal import Decimal
 
 import pytest
@@ -6,10 +6,11 @@ from rest_framework.test import APIClient
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.tests.factories import TerritoryFactory
-from apps.sgd.models import DemandIndividualLimit
+from apps.sgd.models import DemandIndividualLimit, DemandRequest
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services.reconciliacao import divergencias_dos_limites, divergencias_dos_totais
 from apps.sgd.services.workflow import executar_transicao
+from apps.sgd.tests.factories import DemandRequestFactory
 from apps.sgp.models import BudgetAllocation, BudgetTransfer
 from apps.sgp.tests.factories import BudgetAllocationFactory, BudgetRubricaFactory
 
@@ -199,7 +200,17 @@ def origem_de_outra_rubrica(allocation_territorial_rn, activity_rn):
     )
 
 
-@pytest.mark.parametrize("nome_da_origem", ["origem_territorial", "origem_de_outra_rubrica"])
+@pytest.fixture
+def origem_de_outro_estado(allocation_territorial_rn, municipio_ce, rubrica_diarias):
+    return BudgetAllocationFactory(
+        meta=allocation_territorial_rn.meta, rubrica=rubrica_diarias, nivel=BudgetAllocation.Nivel.ESTADUAL,
+        estado=municipio_ce.state, territorio=None, valor_alocado=Decimal("5000"),
+    )
+
+
+@pytest.mark.parametrize(
+    "nome_da_origem", ["origem_territorial", "origem_de_outra_rubrica", "origem_de_outro_estado"],
+)
 def test_origem_que_nao_pode_cobrir_o_excedente_e_400(
     request, demanda, demand_request_rn, usuario_ugp, limite_individual_rn, nome_da_origem,
 ):
@@ -212,6 +223,65 @@ def test_origem_que_nao_pode_cobrir_o_excedente_e_400(
     assert "origem_allocation" in resposta.data
     assert _limite(limite_individual_rn).valor_comprometido == Decimal("1000")
     assert not BudgetTransfer.objects.exists()
+
+
+def test_origem_nacional_cobre_qualquer_territorio(demanda, demand_request_rn, usuario_ugp, allocation_territorial_rn):
+    nacional = BudgetAllocationFactory(
+        meta=allocation_territorial_rn.meta, rubrica=allocation_territorial_rn.rubrica,
+        nivel=BudgetAllocation.Nivel.NACIONAL, estado=None, territorio=None, valor_alocado=Decimal("5000"),
+    )
+
+    resposta = _autorizar(usuario_ugp, demanda, demand_request_rn, "5300", origem_allocation=nacional.pk)
+
+    assert resposta.status_code == 200, resposta.data
+    assert BudgetTransfer.objects.get().allocation_origem == nacional
+
+
+@pytest.fixture
+def duas_solicitacoes_no_limite(demand_request_rn, solicitante_rn, rubrica_diarias, limite_individual_rn,
+                                allocation_territorial_rn):
+    """Limite de 6.000 todo comprometido por duas solicitações de 3.000 da mesma rubrica."""
+    DemandRequest.objects.filter(pk=demand_request_rn.pk).update(valor_estimado=Decimal("3000"))
+    demand_request_rn.refresh_from_db()
+    segunda = DemandRequestFactory(
+        demanda=demand_request_rn.demanda, tipo="diaria", rubrica=rubrica_diarias, valor_estimado=Decimal("3000"),
+    )
+    DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_limite=Decimal("6000"))
+    demand = demand_request_rn.demanda
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    demand.status = "pre_autorizada"
+    demand.save(update_fields=["status"])
+    return demand, demand_request_rn, segunda
+
+
+def test_reducao_de_uma_solicitacao_cobre_o_aumento_de_outra_sem_excedente(
+    duas_solicitacoes_no_limite, usuario_ugp, limite_individual_rn,
+):
+    """O aumento vem antes pela ordem de pk; a redução da outra é aplicada primeiro."""
+    demand, primeira, segunda = duas_solicitacoes_no_limite
+
+    executar_transicao(
+        demand, "autorizada", ator=usuario_ugp,
+        ajustes={primeira.pk: Decimal("4000"), segunda.pk: Decimal("2000")},
+    )
+
+    assert _limite(limite_individual_rn).valor_comprometido == Decimal("6000")
+
+
+def test_excedente_nao_remaneja_o_que_a_reducao_de_outra_solicitacao_cobre(
+    duas_solicitacoes_no_limite, usuario_ugp, origem, limite_individual_rn,
+):
+    demand, primeira, segunda = duas_solicitacoes_no_limite
+
+    resposta = _cliente(usuario_ugp).post(f"/api/v1/sgd/demandas/{demand.pk}/autorizar/", {
+        "ajustes": {str(primeira.pk): "4000.00", str(segunda.pk): "2000.00"},
+        "excedente_autorizado": True, "origem_allocation": origem.pk, "justificativa": "Mutirão.",
+    }, format="json")
+
+    assert resposta.status_code == 400
+    assert "excedente_autorizado" in resposta.data
+    assert not BudgetTransfer.objects.exists()
+    assert _limite(limite_individual_rn).valor_comprometido == Decimal("6000")
 
 
 def test_excedente_sem_nada_a_exceder_e_400(demanda, demand_request_rn, usuario_ugp, origem):

@@ -287,8 +287,14 @@ def _ajustar(demand, transicao, *, ator, ajustes: dict | None = None, excedente_
         )
     retrato = _retrato(solicitacoes)
 
+    # Dentro de cada rubrica, as reduções antes dos aumentos: o que uma solicitação
+    # devolve ao limite e ao pool cobre o aumento de outra, sem excedente.
+    ordem = sorted(
+        solicitacoes,
+        key=lambda s: (s.rubrica_id, ajustes.get(s.pk, s.valor_estimado) - s.valor_reservado, s.pk),
+    )
     cobriu_excedente = False
-    for solicitacao in solicitacoes:
+    for solicitacao in ordem:
         novo_valor = ajustes.get(solicitacao.pk, solicitacao.valor_estimado)
         if novo_valor != solicitacao.valor_reservado:
             excedente = balance_service.ZERO

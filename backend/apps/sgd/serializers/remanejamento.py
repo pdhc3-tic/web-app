@@ -78,7 +78,7 @@ class AlocacaoDoRemanejamentoSerializer(serializers.ModelSerializer):
 
 
 class BudgetTransferSerializer(serializers.ModelSerializer):
-    """Remanejamento efetivado (SGP §6.7). Sem o IP de quem aprovou: é dado pessoal,
+    """Remanejamento efetivado. Sem o IP de quem aprovou: é dado pessoal,
     e a trilha de auditoria só o mostra ao Super Admin."""
 
     origem = AlocacaoDoRemanejamentoSerializer(source="allocation_origem", read_only=True)

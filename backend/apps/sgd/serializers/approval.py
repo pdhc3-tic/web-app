@@ -58,7 +58,7 @@ class AutorizarSerializer(serializers.Serializer):
         if data.get("excedente_autorizado"):
             erros = {}
             if not data.get("justificativa"):
-                erros["justificativa"] = "Obrigatória para autorizar excedendo o limite individual (RF16)."
+                erros["justificativa"] = "Obrigatória para autorizar excedendo o limite individual."
             if data.get("origem_allocation") is None:
                 erros["origem_allocation"] = "Informe a alocação estadual ou nacional que cobre o excedente."
             if erros:

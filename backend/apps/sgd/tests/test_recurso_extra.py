@@ -604,6 +604,23 @@ def test_remanejamento_de_pool_estadual_cobre_o_que_falta(
     assert demanda.status == "submetida"
 
 
+def test_saldo_estadual_de_outro_estado_nao_cobre_o_pool(
+    pedido_com_parecer, usuario_ugp, allocation_territorial_rn, municipio_ce, rubrica_diarias, solicitante_rn,
+):
+    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
+    estadual_ce = BudgetAllocationFactory(
+        meta=allocation_territorial_rn.meta, rubrica=rubrica_diarias, nivel=BudgetAllocation.Nivel.ESTADUAL,
+        estado=municipio_ce.state, territorio=None, valor_alocado=Decimal("50000"),
+    )
+
+    resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {**APROVAR, "origem_allocation": estadual_ce.pk})
+
+    assert resposta.status_code == 400
+    assert "origem_allocation" in resposta.data
+    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")
+    assert not BudgetTransfer.objects.exists()
+
+
 def test_pool_com_saldo_negativo_remaneja_o_deficit_inteiro(
     demanda, pedido_com_parecer, usuario_ugp, allocation_territorial_rn, alocacao_estadual, solicitante_rn,
 ):

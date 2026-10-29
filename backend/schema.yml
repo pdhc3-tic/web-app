@@ -8911,7 +8911,7 @@ components:
     BudgetTransfer:
       type: object
       description: |-
-        Remanejamento efetivado (SGP §6.7). Sem o IP de quem aprovou: é dado pessoal,
+        Remanejamento efetivado. Sem o IP de quem aprovou: é dado pessoal,
         e a trilha de auditoria só o mostra ao Super Admin.
       properties:
         id:

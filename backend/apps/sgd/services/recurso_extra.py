@@ -280,7 +280,7 @@ def _travar_alocacoes(pedido, origem: BudgetAllocation | None):
         solicitante=pedido.user, rubrica=pedido.rubrica, activity=_activity_do_pedido(pedido),
     )
     if origem is not None:
-        remanejamento_service.exigir_origem_acima_do_territorio(origem)
+        remanejamento_service.exigir_origem_acima_do_territorio(origem, destino)
 
     travadas = orcamento_service.travar_pools({destino.pk} | ({origem.pk} if origem is not None else set()))
     return travadas[destino.pk], (travadas[origem.pk] if origem is not None else None)

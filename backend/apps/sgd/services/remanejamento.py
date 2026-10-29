@@ -27,9 +27,20 @@ ENTIDADE_REMANEJAMENTO = "BudgetTransfer"
 Escopo = BudgetTransfer.Escopo
 
 
-def exigir_origem_acima_do_territorio(origem: BudgetAllocation) -> None:
+def exigir_origem_acima_do_territorio(origem: BudgetAllocation, destino: BudgetAllocation | None = None) -> None:
+    """Com `destino`, confere também a hierarquia dos pools: o saldo estadual só
+    cobre territórios do próprio estado; o nacional cobre qualquer um."""
     if origem.nivel not in (orcamento_service.Nivel.ESTADUAL, orcamento_service.Nivel.NACIONAL):
         raise RegraDeNegocio("O remanejamento só pode vir de saldo estadual ou nacional.", campo="origem_allocation")
+    if destino is None or origem.nivel != orcamento_service.Nivel.ESTADUAL:
+        return
+    estados_do_destino = (destino.territorio.estados or []) if destino.territorio else []
+    if origem.estado is None or origem.estado.sigla not in estados_do_destino:
+        raise RegraDeNegocio(
+            "O saldo estadual só cobre territórios do próprio estado. Use a alocação do estado do "
+            "território ou uma nacional.",
+            campo="origem_allocation",
+        )
 
 
 def remanejar_para_pool(*, origem: BudgetAllocation, destino: BudgetAllocation, valor: Decimal, motivo: str,
@@ -103,6 +114,7 @@ def cobrir_excedente(solicitacao, novo_valor: Decimal, *, origem: BudgetAllocati
         raise RegraDeNegocio(f"A solicitação #{solicitacao.pk} não tem reserva no pool territorial.")
     travadas = orcamento_service.travar_pools({origem.pk, destino.pk})
     origem, destino = travadas[origem.pk], travadas[destino.pk]
+    exigir_origem_acima_do_territorio(origem, destino)
     acima_do_pool = max(aumento - orcamento_service.saldo_do_pool(destino), ZERO)
     valor = max(acima_do_limite, acima_do_pool)
     if valor == ZERO:
