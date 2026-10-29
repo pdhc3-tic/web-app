@@ -203,8 +203,11 @@ export function erroDoCampo(e: unknown, campo: string): string | null {
 export type BloqueioRecursoExtra = {
   solicitacaoId: number;
   rubrica: { slug: string; nome: string };
-  /** O texto do backend, já com a orientação ("Use a opção 'Solicitar recurso extra'."). */
-  motivo: string | null;
+  /** O que o limite individual ainda comportava e o que a solicitação pedia. */
+  disponivel: string;
+  solicitado: string;
+  /** O que falta na rubrica; null até o backend expor (sprint 10, item 23). */
+  valorFaltante: string | null;
 };
 
 /**
@@ -220,7 +223,9 @@ export function recursoExtraDoBloqueio(
   return {
     solicitacaoId: solicitacao.id,
     rubrica: { slug: solicitacao.rubrica_slug, nome: solicitacao.rubrica_nome },
-    motivo: bloqueio.motivo,
+    disponivel: bloqueio.disponivel,
+    solicitado: bloqueio.solicitado,
+    valorFaltante: bloqueio.valor_faltante ?? null,
   };
 }
 

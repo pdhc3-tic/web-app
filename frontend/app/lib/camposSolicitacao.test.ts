@@ -117,23 +117,40 @@ describe("pendenciaDeCotacoes", () => {
 });
 
 describe("bloqueiosDaSubmissao", () => {
-  it("lê as solicitações barradas do 400 da submissão", () => {
+  const individual = {
+    code: "INSUFFICIENT_BALANCE",
+    trava: "individual",
+    rubrica: "passagens-aereas",
+    disponivel: "5000.00",
+    solicitado: "6000.00",
+    acao_sugerida: "solicitar_recurso_extra",
+    detail: "Limite individual insuficiente.",
+  } as const;
+  const territorial = {
+    ...individual,
+    trava: "territorial",
+    rubrica: "locacao-veiculo",
+    disponivel: "0.00",
+    solicitado: "700.00",
+    acao_sugerida: "acionar_articulador",
+    detail: "Saldo territorial zerado nesta rubrica.",
+  } as const;
+
+  it("lê todas as solicitações barradas do INSUFFICIENT_BALANCE da submissão", () => {
     const raw = {
-      detail: "Limite individual insuficiente.",
-      solicitacoes_bloqueadas: {
-        "11": { trava: "individual", motivo: "Sem limite.", acao_sugerida: "solicitar_recurso_extra" },
-        "12": { trava: "territorial", motivo: "Território esgotado.", acao_sugerida: "acionar_articulador" },
-      },
+      ...individual,
+      solicitacao_id: 11,
+      solicitacoes_bloqueadas: { "11": individual, "12": territorial },
     };
-    const erro = new ApiError(400, { code: "validation_error", message: "x" }, raw);
-    expect(bloqueiosDaSubmissao(erro)).toEqual({
-      11: raw.solicitacoes_bloqueadas["11"],
-      12: raw.solicitacoes_bloqueadas["12"],
-    });
+    const erro = new ApiError(400, { code: "INSUFFICIENT_BALANCE", message: "x" }, raw);
+    expect(bloqueiosDaSubmissao(erro)).toEqual({ 11: individual, 12: territorial });
   });
 
   it("outro 400, ou outro erro, não é bloqueio de saldo", () => {
     expect(bloqueiosDaSubmissao(new ApiError(400, { code: "x", message: "x" }, { documentos: "faltam" }))).toBeNull();
+    // Sem o code, nem o formato antigo (motivo em texto) vale como bloqueio.
+    const semCode = { solicitacoes_bloqueadas: { "11": { trava: "individual", motivo: "Sem limite." } } };
+    expect(bloqueiosDaSubmissao(new ApiError(400, { code: "x", message: "x" }, semCode))).toBeNull();
     expect(bloqueiosDaSubmissao(new Error("rede"))).toBeNull();
   });
 });

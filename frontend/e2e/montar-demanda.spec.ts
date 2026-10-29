@@ -151,6 +151,10 @@ test.describe("SGD — montar e submeter a demanda (ADT)", () => {
     await expect(page.getByTestId("submissao-bloqueada")).toContainText("uma solicitação foi barrada");
     const bloqueio = page.getByTestId(`bloqueio-${fx.multipla.passagemId}`);
     await expect(bloqueio).toContainText("Limite individual insuficiente.");
+    // Os valores vêm do INSUFFICIENT_BALANCE (#359): limite de R$ 5.000, passagem de R$ 6.000.
+    await expect(page.getByTestId(`bloqueio-valores-${fx.multipla.passagemId}`)).toHaveText(
+      "Disponível no seu limite: R$ 5.000,00 · Solicitado: R$ 6.000,00",
+    );
     await expect(page.getByTestId(`recurso-extra-atalho-${fx.multipla.passagemId}`)).toBeVisible();
     // A de veículo coube: sem bloqueio, e continua lá.
     await expect(page.getByTestId(`bloqueio-${fx.multipla.veiculoId}`)).toHaveCount(0);
@@ -168,6 +172,9 @@ test.describe("SGD — montar e submeter a demanda (ADT)", () => {
 
     const drawer = page.getByTestId("recurso-extra-drawer");
     await expect(drawer).toContainText("Passagens Aéreas");
+    await expect(page.getByTestId("recurso-extra-bloqueio")).toHaveText(
+      "Limite individual insuficiente: R$ 5.000,00 disponível, R$ 6.000,00 solicitado.",
+    );
     await drawer.getByLabel("Justificativa").fill("A caravana precisa da passagem da facilitadora.");
     await page.getByTestId("recurso-extra-revisar").click();
     await page.getByTestId("recurso-extra-enviar").click();
@@ -197,6 +204,9 @@ test.describe("SGD — montar e submeter a demanda (ADT)", () => {
 
     const bloqueio = page.getByTestId(`bloqueio-${fx.territorial.diariaId}`);
     await expect(bloqueio).toContainText("Verba do território insuficiente.");
+    await expect(page.getByTestId(`bloqueio-valores-${fx.territorial.diariaId}`)).toHaveText(
+      "Disponível na verba do território: R$ 295,00 · Solicitado: R$ 600,00",
+    );
     await expect(bloqueio).toContainText("Articulador Estadual");
     // A trava territorial não tem atalho: quem remaneja é o Articulador.
     await expect(page.getByTestId(`recurso-extra-atalho-${fx.territorial.diariaId}`)).toHaveCount(0);

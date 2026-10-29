@@ -29,8 +29,10 @@ type Etapa = "preencher" | "confirmar" | "enviado";
  *
  * Três passos: justificativa → revisão → pedido enviado. O valor não é
  * calculado na tela: sem `valor_solicitado`, o backend assume o que falta no
- * limite individual, e o valor registrado aparece no passo final (o bloqueio
- * não informa o valor faltante antes — pendencias-backend-sprint-10.md, item 23).
+ * limite individual da rubrica inteira, e o valor registrado aparece no passo
+ * final. O disponível e o solicitado do bloqueio são só da solicitação
+ * barrada; o que falta na rubrica vem em `valor_faltante`, quando o backend
+ * o expuser (pendencias-backend-sprint-10.md, item 23).
  */
 export function SolicitarRecursoExtra({
   open,
@@ -102,7 +104,9 @@ export function SolicitarRecursoExtra({
           value:
             etapa === "enviado" && pedido
               ? formatCurrencyBRL(pedido.valor_solicitado)
-              : "O que falta no seu limite individual, calculado pelo sistema ao registrar o pedido",
+              : bloqueio.valorFaltante !== null
+                ? formatCurrencyBRL(bloqueio.valorFaltante)
+                : "O que falta no seu limite individual, calculado pelo sistema ao registrar o pedido",
         },
         ...(etapa !== "preencher" ? [{ label: "Justificativa", value: justificativa.trim() }] : []),
       ]}
@@ -158,9 +162,15 @@ export function SolicitarRecursoExtra({
           </>
         ) : (
           <>
-            <p className="flex items-start gap-2 rounded-md border border-warning-text bg-warning-bg px-3 py-2.5 text-sm text-warning-text">
+            <p
+              className="flex items-start gap-2 rounded-md border border-warning-text bg-warning-bg px-3 py-2.5 text-sm text-warning-text"
+              data-testid="recurso-extra-bloqueio"
+            >
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-              {bloqueio.motivo ?? "A demanda ultrapassa o seu limite individual nesta rubrica."}
+              <span className="tabular-nums">
+                Limite individual insuficiente: {formatCurrencyBRL(bloqueio.disponivel)} disponível,{" "}
+                {formatCurrencyBRL(bloqueio.solicitado)} solicitado.
+              </span>
             </p>
 
             {etapa === "confirmar" && (

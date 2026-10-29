@@ -706,7 +706,15 @@ modelo; comparar com o id como string).
 
 ---
 
-## 23. O bloqueio na submissão não informa o valor faltante (#321)
+## 23. O bloqueio na submissão não informa o valor faltante (#321) — na #373 (item 16)
+
+> **Ainda aberto em 29/10/2026.** O `INSUFFICIENT_BALANCE` da #349 (PR #370)
+> trouxe `disponivel` e `solicitado`, mas os dois são da solicitação barrada,
+> não da rubrica: com mais de uma solicitação na mesma rubrica, ou em Devolvida
+> com reservas ativas (o front não sabe quais), `solicitado − disponivel` não é
+> o que o pedido de recurso extra registra. A #359 já lê `valor_faltante` em
+> cada item de `solicitacoes_bloqueadas` e o mostra preenchido no fluxo guiado;
+> sem o campo, mantém "calculado pelo sistema ao registrar o pedido".
 
 *Compilado em 22/10/2026, ao implementar a issue #321.*
 
