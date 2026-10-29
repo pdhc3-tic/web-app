@@ -267,8 +267,19 @@ def _reservar(demand, transicao, *, ator, **_) -> tuple[list, dict | None]:
             bloqueio.valor_faltante = faltante_por_rubrica[solicitacao.rubrica_id]
         raise SaldoInsuficiente.para_submissao(bloqueios)
 
-    for solicitacao in solicitacoes:
-        balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=ator, adiar_gravacao=True)
+    try:
+        # Savepoint: barrada uma solicitação já sob o lock, as reservas anteriores
+        # são desfeitas, e o valor faltante sai do estado de antes da submissão,
+        # como na checagem acima. Os locks tomados dentro dele também saem, mas a
+        # transação é desfeita logo depois e o valor só informa o solicitante.
+        with transaction.atomic():
+            for solicitacao in solicitacoes:
+                balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=ator, adiar_gravacao=True)
+    except SaldoInsuficiente as exc:
+        if exc.trava == TRAVA_INDIVIDUAL:
+            barrada = next(s for s in solicitacoes if s.pk == exc.solicitacao_id)
+            exc.valor_faltante = recurso_extra_service.deficit_individual(demand, barrada.rubrica)
+        raise
     return solicitacoes, retrato
 
 

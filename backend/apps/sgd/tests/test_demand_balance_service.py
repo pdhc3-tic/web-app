@@ -506,6 +506,7 @@ def test_bloqueio_individual_na_pre_checagem_e_na_reserva_tem_o_mesmo_contrato(
     assert pela_pre_checagem == pela_reserva
     assert pela_reserva["code"] == "INSUFFICIENT_BALANCE"
     assert (pela_reserva["disponivel"], pela_reserva["solicitado"]) == ("500.00", "1000.00")
+    assert pela_reserva["valor_faltante"] == "500.00"
 
 
 def test_bloqueio_territorial_na_pre_checagem_e_na_reserva_tem_o_mesmo_contrato(
