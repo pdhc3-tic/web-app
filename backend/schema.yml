@@ -2580,6 +2580,14 @@ paths:
         schema:
           type: integer
       - in: query
+        name: ordering
+        schema:
+          type: string
+          enum:
+          - -valor_estimado_total
+          - valor_estimado_total
+        description: Sem o parâmetro, as mais recentes primeiro.
+      - in: query
         name: periodo_fim
         schema:
           type: string
@@ -2757,26 +2765,6 @@ paths:
   /api/v1/sgd/demandas/{id}/autorizar/:
     post:
       operationId: v1_sgd_demandas_autorizar_create
-      description: |-
-        Pressupõe que `self.get_queryset()` devolve o queryset com o escopo de
-        visibilidade já aplicado (`demand_visibility_scope`).
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: Um valor inteiro único que identifica este Demanda.
-        required: true
-      tags:
-      - v1
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          description: No response body
-  /api/v1/sgd/demandas/{id}/autorizar-excedente/:
-    post:
-      operationId: v1_sgd_demandas_autorizar_excedente_create
       description: |-
         Pressupõe que `self.get_queryset()` devolve o queryset com o escopo de
         visibilidade já aplicado (`demand_visibility_scope`).
@@ -3427,6 +3415,42 @@ paths:
       responses:
         '200':
           description: No response body
+  /api/v1/sgd/remanejamentos/transferencias/:
+    get:
+      operationId: v1_sgd_remanejamentos_transferencias_list
+      description: |-
+        Remanejamentos efetivados: o excedente autorizado na demanda (`pontual`) e o
+        que cobriu o pool na decisão de recurso extra (`elevacao_limite`).
+      parameters:
+      - in: query
+        name: demanda
+        schema:
+          type: integer
+      - in: query
+        name: escopo
+        schema:
+          type: string
+          enum:
+          - elevacao_limite
+          - pontual
+      - in: query
+        name: rubrica
+        schema:
+          type: string
+        description: Slug da rubrica.
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BudgetTransfer'
+          description: ''
   /api/v1/sgd/saldo/:
     get:
       operationId: v1_sgd_saldo_retrieve
@@ -8191,6 +8215,30 @@ components:
         * `6` - Chuva
         * `7` - Outro
         * `8` - Não Informado
+    AlocacaoDoRemanejamento:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        nivel:
+          allOf:
+          - $ref: '#/components/schemas/NivelEnum'
+          readOnly: true
+          title: Nível
+        estado:
+          type: string
+          readOnly: true
+          nullable: true
+        territorio:
+          type: string
+          readOnly: true
+          nullable: true
+      required:
+      - estado
+      - id
+      - nivel
+      - territorio
     AmbitoEnum:
       enum:
       - municipal
@@ -8860,6 +8908,134 @@ components:
         * `execucao` - Execução
         * `remanejamento` - Remanejamento
         * `ajuste` - Ajuste
+    BudgetTransfer:
+      type: object
+      description: |-
+        Remanejamento efetivado (SGP §6.7). Sem o IP de quem aprovou: é dado pessoal,
+        e a trilha de auditoria só o mostra ao Super Admin.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        tipo:
+          allOf:
+          - $ref: '#/components/schemas/BudgetTransferTipoEnum'
+          readOnly: true
+        escopo:
+          allOf:
+          - $ref: '#/components/schemas/EscopoEnum'
+          readOnly: true
+          description: |-
+            Em branco no remanejamento feito direto entre alocações, sem demanda envolvida.
+
+            * `pontual` - Pontual (excedente autorizado na demanda)
+            * `elevacao_limite` - Elevação do limite individual (recurso extra)
+        escopo_display:
+          type: string
+          readOnly: true
+        origem:
+          allOf:
+          - $ref: '#/components/schemas/AlocacaoDoRemanejamento'
+          readOnly: true
+        destino:
+          allOf:
+          - $ref: '#/components/schemas/AlocacaoDoRemanejamento'
+          readOnly: true
+        rubrica:
+          type: string
+          readOnly: true
+        valor:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          title: Valor (R$)
+        motivo:
+          type: string
+          readOnly: true
+        saldo_origem_antes:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          title: Saldo da origem antes
+        saldo_origem_depois:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          title: Saldo da origem depois
+        saldo_destino_antes:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          title: Saldo do destino antes
+        saldo_destino_depois:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          title: Saldo do destino depois
+        aprovado_por:
+          type: integer
+          readOnly: true
+          nullable: true
+        aprovado_por_nome:
+          type: string
+          readOnly: true
+          nullable: true
+        pedido:
+          type: integer
+          readOnly: true
+          nullable: true
+        demanda_id:
+          type: string
+          readOnly: true
+          nullable: true
+          title: ID da Demanda
+          description: Referência fraca à Demand do SGD (apps.sgd), no padrão de BudgetTransaction.demanda_id.
+        solicitacao_id:
+          type: string
+          readOnly: true
+          nullable: true
+          title: ID da Solicitação
+          description: Referência fraca à DemandRequest que recebeu o excedente pontual
+            (apps.sgd).
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - aprovado_por
+      - aprovado_por_nome
+      - criado_em
+      - demanda_id
+      - destino
+      - escopo
+      - escopo_display
+      - id
+      - motivo
+      - origem
+      - pedido
+      - rubrica
+      - saldo_destino_antes
+      - saldo_destino_depois
+      - saldo_origem_antes
+      - saldo_origem_depois
+      - solicitacao_id
+      - tipo
+      - valor
+    BudgetTransferTipoEnum:
+      enum:
+      - entre_rubricas
+      - entre_territorios
+      - entre_niveis
+      type: string
+      description: |-
+        * `entre_rubricas` - Entre rubricas
+        * `entre_territorios` - Entre territórios
+        * `entre_niveis` - Entre níveis
     CampoArlo:
       type: object
       properties:
@@ -9909,6 +10085,14 @@ components:
         * `5` - Médio completo
         * `6` - Superior incompleto
         * `7` - Superior completo
+    EscopoEnum:
+      enum:
+      - pontual
+      - elevacao_limite
+      type: string
+      description: |-
+        * `pontual` - Pontual (excedente autorizado na demanda)
+        * `elevacao_limite` - Elevação do limite individual (recurso extra)
     EspecieAnimal:
       type: object
       properties:
