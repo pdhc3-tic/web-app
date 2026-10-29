@@ -1,14 +1,15 @@
 import logging
+from contextlib import contextmanager
 
 from celery import shared_task
 from django.db import connection, transaction
 from django.utils import timezone
 
 from apps.core.models.notifications import Notification
+from apps.sgd.exceptions import TransicaoInvalida
 from apps.sgd.models.demand import STATUS_TERMINAIS, Demand
-from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.services import business_days
-from apps.sgd.services.approval import marcar_cancelada, responsaveis_pela_etapa_atual
+from apps.sgd.services.approval import responsaveis_pela_etapa_atual
 from apps.sgd.services.notifications import EVENTO_INATIVIDADE, link_inatividade, notificar_inatividade
 
 try:
@@ -30,8 +31,9 @@ _dias_uteis_entre = business_days.dias_uteis_entre
 DIAS_UTEIS_LIMITE = business_days.DIAS_UTEIS_LIMITE
 
 
-def _sem_contexto_de_sessao_rls(fn):
-    """Roda `fn()` com a SESSION VARIABLE `app.user_role` setada como
+@contextmanager
+def _transacao_sem_contexto_de_sessao_rls():
+    """Abre uma transação com a SESSION VARIABLE `app.user_role` setada como
     'super-admin' — uma task do Celery não passa pelo `SessionContextMiddleware`
     (apps/core/middleware.py), que é quem normalmente faz o `SET LOCAL` das
     variáveis que a política RLS de `sgd_demand` exige; sem isso, rodando como
@@ -40,6 +42,11 @@ def _sem_contexto_de_sessao_rls(fn):
     with transaction.atomic():
         with connection.cursor() as cursor:
             cursor.execute("SET LOCAL app.user_role = %s;", ["super-admin"])
+        yield
+
+
+def _sem_contexto_de_sessao_rls(fn):
+    with _transacao_sem_contexto_de_sessao_rls():
         return fn()
 
 
@@ -75,8 +82,8 @@ def _verificar_inatividade() -> int:
     return notificadas
 
 
-@shared_task(name="sgd.tasks.cancelar_demandas_da_atividade")
-def cancelar_demandas_da_atividade(activity_id: int) -> int:
+@shared_task(bind=True, max_retries=3, name="sgd.tasks.cancelar_demandas_da_atividade")
+def cancelar_demandas_da_atividade(self, activity_id: int) -> int:
     """Despachada por `apps.sgd.signals.activity._cancelar_demandas_nao_atendidas`
     via `transaction.on_commit`, em vez de rodar direto no `post_save` — o
     signal roda dentro da transação de quem salvou a Activity, e setar a
@@ -85,6 +92,14 @@ def cancelar_demandas_da_atividade(activity_id: int) -> int:
     savepoint que só é liberado (não revertido)."""
     try:
         return _sem_contexto_de_sessao_rls(lambda: _cancelar_demandas_da_atividade(activity_id))
+    except TransicaoInvalida as exc:
+        # Uma demanda mudou depois que o saldo de todas foi liberado: a transação
+        # inteira volta e a task recomeça, relendo as demandas.
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc, countdown=5)
+        sentry_sdk.capture_exception(exc)
+        logger.exception("Demandas da atividade %s não canceladas: mudaram em todas as tentativas.", activity_id)
+        raise
     except Exception as exc:
         sentry_sdk.capture_exception(exc)
         logger.exception("Falha ao cancelar demandas da atividade %s.", activity_id)
@@ -92,35 +107,24 @@ def cancelar_demandas_da_atividade(activity_id: int) -> int:
 
 
 def _cancelar_demandas_da_atividade(activity_id: int) -> int:
-    from apps.sgd.services import balance as balance_service
-    from apps.sgd.services import notifications as notifications_service
+    from apps.sgd.services import workflow as workflow_service
     from apps.sgd.signals.activity import ACTIVITY_STATUS_CANCELAM_DEMANDAS
     from apps.sgp.models.activity import Activity
 
     try:
-        activity = Activity.objects.select_related("municipio__state").get(pk=activity_id)
+        activity = Activity.objects.get(pk=activity_id)
     except Activity.DoesNotExist:
         return 0
     if activity.status not in ACTIVITY_STATUS_CANCELAM_DEMANDAS:
         # Mudou de status de novo entre o commit e a task rodar — nada a fazer.
         return 0
 
-    # "Em atendimento" fica de fora — já está sendo atendida pela FGD, não é
-    # uma "demanda não atendida" (RF10).
-    demandas = list(Demand.objects.filter(activity=activity).exclude(
-        status__in=STATUS_TERMINAIS | {"em_atendimento"}
-    ).order_by("pk"))
-    # A transação é uma só: o saldo de todas as demandas sai antes de qualquer Demand
-    # ser cancelada, na ordem de lock de backend/docs/orcamento.md.
-    balance_service.liberar_duas_travas_em_lote(
-        DemandRequest.objects.filter(demanda__in=demandas).select_related("rubrica", "demanda__solicitante"),
-        usuario=None, motivo=f"Atividade vinculada em status '{activity.get_status_display()}'.",
+    demandas = list(Demand.objects.filter(
+        activity=activity, status__in=workflow_service.CANCELAVEIS_PELO_SISTEMA,
+    ).select_related("activity__municipio__state", "solicitante"))
+    workflow_service.cancelar_pelo_sistema(
+        demandas, motivo=f"Atividade vinculada em status '{activity.get_status_display()}'.",
     )
-
-    articuladores = notifications_service.usuarios_articuladores_do_estado(activity.municipio.state.sigla)
-    for demand in demandas:
-        marcar_cancelada(demand)
-        notifications_service.notificar_cancelamento_automatico(demand, articuladores)
     return len(demandas)
 
 
@@ -172,11 +176,17 @@ def process_arlo_import(importacao_id: int) -> int:
     if importacao.tipo != ArloImport.Tipo.IMPORTACAO or importacao.status != ArloImport.Status.PENDENTE:
         return 0
     try:
-        return _sem_contexto_de_sessao_rls(lambda: processar_importacao(importacao)).registros_ok
+        # Uma transação por linha, não uma para o arquivo (ver `processar_importacao`).
+        return processar_importacao(
+            importacao, transacao_da_linha=_transacao_sem_contexto_de_sessao_rls,
+        ).registros_ok
     except Exception as exc:
+        # As linhas já aplicadas ficaram gravadas, com o progresso: a falha se soma aos
+        # erros delas em vez de apagá-los.
+        erros = ArloImport.objects.filter(pk=importacao_id).values_list("erros_json", flat=True).first() or []
         ArloImport.objects.filter(pk=importacao_id).update(
             status=ArloImport.Status.FALHOU,
-            erros_json=[{"linha": 0, "erro": "Falha inesperada ao processar o arquivo."}],
+            erros_json=[*erros, {"linha": 0, "erro": "Falha inesperada ao processar o arquivo."}],
         )
         sentry_sdk.capture_exception(exc)
         logger.exception("Falha ao processar a importação Arlo #%s.", importacao_id)

@@ -9,9 +9,9 @@ from rest_framework.test import APIClient
 from apps.core.models.audit_log import AuditLog
 from apps.core.signals.audit import clear_audit_context, set_audit_context
 from apps.sgd.models import Demand
-from apps.sgd.services import approval as approval_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
+from apps.sgd.services import workflow as workflow_service
 from apps.sgp.models import BudgetTransaction
 
 pytestmark = pytest.mark.django_db
@@ -100,13 +100,13 @@ def test_devolucao_resubmissao_e_recusa_geram_uma_entrada_com_usuario_e_ip(
         assert entradas[-1].valores_novos == {"status": para}
 
 
-def test_falha_na_auditoria_desfaz_a_transicao(demanda, demand_request_rn, solicitante_rn):
+def test_falha_na_auditoria_desfaz_a_transicao(demanda, demand_request_rn, solicitante_rn, usuario_articulador_rn):
     demand_service.submeter_demanda(demanda, usuario=solicitante_rn)
     total = AuditLog.objects.count()
 
     with patch("apps.sgd.services.auditoria.log_audit", side_effect=DatabaseError("falhou")):
         with pytest.raises(DatabaseError):
-            approval_service.aplicar_transicao(demanda, "pre_autorizada")
+            workflow_service.executar_transicao(demanda, "pre_autorizada", ator=usuario_articulador_rn)
 
     demanda.refresh_from_db()
     assert demanda.status == "submetida"
@@ -119,7 +119,7 @@ def test_falha_na_auditoria_desfaz_o_cancelamento_automatico(demanda, demand_req
 
     with patch("apps.sgd.services.auditoria.log_audit", side_effect=DatabaseError("falhou")):
         with pytest.raises(DatabaseError):
-            approval_service.marcar_cancelada(demanda)
+            workflow_service.cancelar_pelo_sistema([demanda], motivo="Atividade cancelada.")
 
     demanda.refresh_from_db()
     assert demanda.status == "submetida"
@@ -159,7 +159,7 @@ def test_cancelamento_pelo_solicitante_gera_entrada(demanda, demand_request_rn, 
 def test_cancelamento_automatico_registra_o_sistema(demanda, demand_request_rn, solicitante_rn):
     demand_service.submeter_demanda(demanda, usuario=solicitante_rn)
 
-    approval_service.marcar_cancelada(demanda)
+    workflow_service.cancelar_pelo_sistema([demanda], motivo="Atividade cancelada.")
 
     ultima = _status(demanda)[-1]
     assert ultima.acao == "demanda.status_alterado"
@@ -171,7 +171,7 @@ def test_transicao_de_task_em_nome_de_um_usuario_usa_o_contexto(demanda, demand_
     demand_service.submeter_demanda(demanda, usuario=solicitante_rn)
     set_audit_context(user=usuario_ugp, ip="203.0.113.20", user_agent="arlo-import")
     try:
-        approval_service.marcar_cancelada(demanda)
+        workflow_service.cancelar_pelo_sistema([demanda], motivo="Atividade cancelada.")
     finally:
         clear_audit_context()
 
@@ -197,10 +197,14 @@ def test_reserva_ajuste_execucao_e_liberacao_ligadas_a_transacao(
     demanda, demand_request_rn, solicitante_rn, usuario_articulador_rn, usuario_ugp, usuario_fgd,
 ):
     demand_service.submeter_demanda(demanda, usuario=solicitante_rn)
-    approval_service.pre_autorizar(demanda, responsavel=usuario_articulador_rn)
-    approval_service.autorizar(demanda, responsavel=usuario_ugp, ajustes={demand_request_rn.pk: Decimal("1200")})
-    approval_service.atender(demanda, responsavel=usuario_fgd)
-    approval_service.concluir(demanda, responsavel=usuario_fgd, valores_pagos={demand_request_rn.pk: Decimal("1100")})
+    workflow_service.executar_transicao(demanda, "pre_autorizada", ator=usuario_articulador_rn)
+    workflow_service.executar_transicao(
+        demanda, "autorizada", ator=usuario_ugp, ajustes={demand_request_rn.pk: Decimal("1200")},
+    )
+    workflow_service.executar_transicao(demanda, "em_atendimento", ator=usuario_fgd)
+    workflow_service.executar_transicao(
+        demanda, "concluida", ator=usuario_fgd, valores_pagos={demand_request_rn.pk: Decimal("1100")},
+    )
 
     por_tipo = {t.tipo: t for t in BudgetTransaction.objects.filter(demanda_id=str(demand_request_rn.pk))}
     assert set(por_tipo) == {"reserva", "ajuste", "execucao", "liberacao"}
@@ -295,7 +299,7 @@ def test_rota_devolve_a_trilha_em_ordem_cronologica(
     demanda, demand_request_rn, solicitante_rn, usuario_articulador_rn, usuario_super_admin,
 ):
     demand_service.submeter_demanda(demanda, usuario=solicitante_rn)
-    approval_service.pre_autorizar(demanda, responsavel=usuario_articulador_rn)
+    workflow_service.executar_transicao(demanda, "pre_autorizada", ator=usuario_articulador_rn)
 
     resposta = _cliente(usuario_super_admin).get(f"{URL}{demanda.pk}/auditoria/")
 

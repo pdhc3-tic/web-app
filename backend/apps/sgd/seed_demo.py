@@ -17,8 +17,8 @@ from django.utils import timezone
 
 from apps.core.models import Territory, UserProfile
 from apps.sgd.models import ArloImport, Demand, DemandIndividualLimit, DemandRequest
-from apps.sgd.services import approval as approval_service
 from apps.sgd.services import demand as demand_service
+from apps.sgd.services import workflow as workflow_service
 from apps.sgp.models import Activity, BudgetAllocation, BudgetRubrica
 
 RUBRICA_ALIMENTACAO = "alimentacao-refeicoes"
@@ -192,8 +192,8 @@ def _conduzir(demanda, cenario, solicitante, aprovadores) -> None:
     if destino == "submetida":
         return
     if destino == "devolvida":
-        approval_service.devolver(
-            demanda, responsavel=articulador,
+        workflow_service.executar_transicao(
+            demanda, "devolvida", ator=articulador,
             justificativa="Detalhe o número de participantes e o local do serviço.",
         )
         return
@@ -203,33 +203,33 @@ def _conduzir(demanda, cenario, solicitante, aprovadores) -> None:
         )
         return
 
-    approval_service.pre_autorizar(demanda, responsavel=articulador)
+    workflow_service.executar_transicao(demanda, "pre_autorizada", ator=articulador)
     if destino == "pre_autorizada":
         return
     if destino == "recusada":
-        approval_service.recusar(
-            demanda, responsavel=ugp, justificativa="Rubrica sem saldo previsto para o trimestre.",
+        workflow_service.executar_transicao(
+            demanda, "recusada", ator=ugp, justificativa="Rubrica sem saldo previsto para o trimestre.",
         )
         return
 
     if cenario.excedente:
         solicitacao = demanda.solicitacoes.get()
-        approval_service.autorizar(
-            demanda, responsavel=ugp, ajustes={solicitacao.pk: LIMITE_INDIVIDUAL[cenario.uf] + Decimal("1000")},
+        workflow_service.executar_transicao(
+            demanda, "autorizada", ator=ugp, ajustes={solicitacao.pk: LIMITE_INDIVIDUAL[cenario.uf] + Decimal("1000")},
             excedente_autorizado=True,
             justificativa="Remanejamento emergencial: mutirão antecipado pela estiagem na região.",
         )
     else:
-        approval_service.autorizar(demanda, responsavel=ugp)
+        workflow_service.executar_transicao(demanda, "autorizada", ator=ugp)
     if destino == "autorizada":
         return
 
-    approval_service.atender(demanda, responsavel=fgd)
+    workflow_service.executar_transicao(demanda, "em_atendimento", ator=fgd)
     if destino == "em_atendimento":
         return
 
-    approval_service.concluir(
-        demanda, responsavel=fgd,
+    workflow_service.executar_transicao(
+        demanda, "concluida", ator=fgd,
         valores_pagos={s.pk: s.valor_autorizado - Decimal("40") for s in demanda.solicitacoes.all()},
     )
 

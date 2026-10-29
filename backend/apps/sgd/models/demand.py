@@ -20,20 +20,6 @@ STATUS_CHOICES = [
 
 STATUS_TERMINAIS = {"concluida", "recusada", "cancelada"}
 
-# "cancelada" nunca aparece como destino aqui de propósito: cancelamento é
-# tratado fora desta tabela, por apps.sgd.services.approval.marcar_cancelada.
-STATUS_TRANSITIONS: dict[str, set[str]] = {
-    "rascunho": {"submetida"},
-    "submetida": {"pre_autorizada", "devolvida"},
-    "devolvida": {"submetida"},
-    "pre_autorizada": {"autorizada", "recusada"},
-    "autorizada": {"em_atendimento"},
-    "em_atendimento": {"concluida"},
-    "concluida": set(),
-    "recusada": set(),
-    "cancelada": set(),
-}
-
 STATUS_EDITAVEIS = {"rascunho", "devolvida"}
 
 STATUS_CANCELAVEIS_PELO_SOLICITANTE = {"rascunho", "submetida", "devolvida", "pre_autorizada"}
@@ -109,10 +95,6 @@ class Demand(models.Model):
     def __str__(self):
         return f"{self.titulo} [{self.get_status_display()}]"
 
-    @property
-    def meta(self):
-        return self.activity.acao.meta
-
     def _total_solicitacoes(self, campo: str):
         # Com `solicitacoes` já prefetchada (listagem), soma em memória: o
         # `aggregate()` ignora o prefetch e custaria 1 query por demanda e total.
@@ -131,6 +113,3 @@ class Demand(models.Model):
     @property
     def valor_pago_total(self):
         return self._total_solicitacoes("valor_pago")
-
-    def get_transicoes_permitidas(self) -> set[str]:
-        return STATUS_TRANSITIONS.get(self.status, set())

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from rest_framework.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied
 
 from apps.core.services.permissions import user_has_role
 from apps.sgd.models.demand import STATUS_EDITAVEIS

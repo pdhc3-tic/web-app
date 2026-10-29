@@ -9715,7 +9715,9 @@ components:
           type: string
           readOnly: true
         transicoes_permitidas:
-          type: string
+          type: array
+          items:
+            type: string
           readOnly: true
         solicitante:
           type: integer

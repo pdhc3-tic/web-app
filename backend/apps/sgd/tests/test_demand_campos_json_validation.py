@@ -1,8 +1,8 @@
 from decimal import Decimal
 
 import pytest
-from rest_framework.exceptions import ValidationError as DRFValidationError
 
+from apps.sgd.exceptions import ErroDeDominio
 from apps.sgd.services.demand_request import validar_campos_json
 
 pytestmark = pytest.mark.django_db
@@ -22,7 +22,7 @@ def _campos_passagem(**overrides):
 
 def test_passagem_ida_e_volta_sem_data_volta_bloqueia(activity_rn):
     campos = _campos_passagem(ida_e_volta=True)
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         validar_campos_json("passagem", campos, activity_rn)
 
 
@@ -40,14 +40,14 @@ def test_passagem_ida_e_volta_false_nao_exige_data_volta(activity_rn):
 
 def test_passagem_classe_executiva_sem_justificativa_bloqueia(activity_rn):
     campos = _campos_passagem(classe="executiva")
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         validar_campos_json("passagem", campos, activity_rn)
 
 
 def test_passagem_urgencia_aceita_o_valor_e_nao_o_rotulo(activity_rn):
-    with pytest.raises(DRFValidationError) as excinfo:
+    with pytest.raises(ErroDeDominio) as excinfo:
         validar_campos_json("passagem", _campos_passagem(urgencia="Urgente"), activity_rn)
-    assert "urgencia" in excinfo.value.detail
+    assert excinfo.value.campo == "urgencia"
 
     validado = validar_campos_json("passagem", _campos_passagem(urgencia="urgente"), activity_rn)
     assert validado.campos_json["urgencia"] == "urgente"
@@ -63,7 +63,7 @@ def test_passagem_ida_e_volta_string_truthy_rejeitada(activity_rn):
     """`"false"` (string) é truthy em Python — sem checagem estrita, seria
     tratado como ida_e_volta=True."""
     campos = _campos_passagem(ida_e_volta="false")
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         validar_campos_json("passagem", campos, activity_rn)
 
 
@@ -71,13 +71,13 @@ def test_passagem_ida_e_volta_inteiro_truthy_rejeitado(activity_rn):
     """`1 == True` em Python — checar `isinstance(..., bool)`, não só o
     valor contra `(True, False)`, senão 1/0 passariam pela checagem."""
     campos = _campos_passagem(ida_e_volta=1)
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         validar_campos_json("passagem", campos, activity_rn)
 
 
 def test_passagem_cpf_invalido_bloqueia(activity_rn):
     campos = _campos_passagem(passageiro_cpf="11111111111")
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         validar_campos_json("passagem", campos, activity_rn)
 
 
@@ -90,7 +90,7 @@ def test_diaria_com_valor_padrao_zero_bloqueia(activity_rn, municipio_rn):
         "municipio_destino_id": municipio_rn.pk, "data_inicio": "2026-06-01", "data_fim": "2026-06-03",
         "meio_transporte": "rodoviario", "justificativa": "Visita técnica.",
     }
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         validar_campos_json("diaria", campos, activity_rn)
 
 
@@ -130,7 +130,7 @@ def test_equipamento_menos_de_3_cotacoes_bloqueia_submissao(demand_rascunho_rn):
     DemandDocumentFactory(demanda=demand_rascunho_rn, tipo="cotacao")
     DemandDocumentFactory(demanda=demand_rascunho_rn, tipo="cotacao")
 
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         _exigir_minimo_cotacoes_equipamento(demand_rascunho_rn)
 
 
@@ -159,7 +159,7 @@ def test_equipamento_3_cotacoes_do_mesmo_fornecedor_bloqueia(demand_rascunho_rn)
     for _ in range(3):
         DemandDocumentFactory(demanda=demand_rascunho_rn, tipo="cotacao", fornecedor="Fornecedor Único Ltda")
 
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         _exigir_minimo_cotacoes_equipamento(demand_rascunho_rn)
 
 
@@ -204,7 +204,7 @@ def test_atualizar_solicitacao_bloqueada_fora_de_rascunho_devolvida(demand_rascu
         "especificacoes_tecnicas": "1x1m", "prazo_entrega": "2026-12-01",
     })
 
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         atualizar_solicitacao(solicitacao, usuario=demand_rascunho_rn.solicitante, campos_json={"quantidade": 2})
 
 
@@ -214,5 +214,5 @@ def test_rubrica_para_tipo_sem_mapeamento_ativo_levanta_validacao():
 
     DemandTypeRubricaMapping.objects.filter(tipo="diaria").delete()
 
-    with pytest.raises(DRFValidationError):
+    with pytest.raises(ErroDeDominio):
         rubrica_para_tipo("diaria")

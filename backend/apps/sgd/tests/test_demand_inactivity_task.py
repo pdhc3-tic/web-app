@@ -90,14 +90,14 @@ def test_edicao_sem_mudar_status_nao_zera_contagem(activity_rn):
 def test_mudanca_de_status_reinicia_contagem(activity_rn, usuario_articulador_rn):
     """Resubmeter/decidir é movimentação — a referência passa a ser a nova
     mudança de status, não a etapa anterior (ex.: uma devolução antiga)."""
-    from apps.sgd.services.approval import pre_autorizar
+    from apps.sgd.services.workflow import executar_transicao
 
     demand = DemandFactory(activity=activity_rn, status="submetida")
     _voltar_no_tempo_dias_uteis(demand, 10)
     demand.refresh_from_db()
 
     with patch("apps.sgd.services.notifications.notificar_pre_autorizacao"):
-        pre_autorizar(demand, responsavel=usuario_articulador_rn)
+        executar_transicao(demand, "pre_autorizada", ator=usuario_articulador_rn)
 
     demand.refresh_from_db()
     assert timezone.localdate(demand.status_alterado_em) == timezone.localdate()

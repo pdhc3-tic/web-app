@@ -7,7 +7,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from apps.sgd.services import balance as balance_service
-from apps.sgd.services.approval import concluir
+from apps.sgd.services.workflow import executar_transicao
 from apps.sgd.tests.factories import DemandFactory
 from apps.sgp.models import WorkPlanAcao
 
@@ -84,7 +84,7 @@ def test_listagem_traz_a_cadeia_sem_consulta_a_mais(
 
 
 def test_concluir_atualiza_valor_executado_da_acao(
-    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+    demand_request_rn, solicitante_rn, usuario_fgd, allocation_territorial_rn, limite_individual_rn,
 ):
     demand = demand_request_rn.demanda
     balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
@@ -93,9 +93,8 @@ def test_concluir_atualiza_valor_executado_da_acao(
     demand.status = "em_atendimento"
     demand.save(update_fields=["status"])
 
-    concluir(
-        demand, responsavel=solicitante_rn,
-        valores_pagos={demand_request_rn.pk: Decimal("800.00")},
+    executar_transicao(
+        demand, "concluida", ator=usuario_fgd, valores_pagos={demand_request_rn.pk: Decimal("800.00")},
     )
 
     acao = WorkPlanAcao.objects.get(pk=demand.activity.acao_id)

@@ -1,5 +1,8 @@
 from django.conf import settings
 from django.db import models
+from django.db.models import Q
+
+from apps.core.utils import formatar_brl
 
 
 class DemandIndividualLimit(models.Model):
@@ -43,6 +46,12 @@ class DemandIndividualLimit(models.Model):
                 fields=["solicitante", "rubrica"],
                 name="unique_demandindividuallimit_solicitante_rubrica",
             ),
+            models.CheckConstraint(
+                condition=Q(valor_comprometido__gte=0), name="ck_demandindividuallimit_comprometido_nao_negativo",
+            ),
+            models.CheckConstraint(
+                condition=Q(valor_executado__gte=0), name="ck_demandindividuallimit_executado_nao_negativo",
+            ),
         ]
 
     def __str__(self):
@@ -51,3 +60,11 @@ class DemandIndividualLimit(models.Model):
     @property
     def saldo_disponivel(self):
         return self.valor_limite - self.valor_comprometido - self.valor_executado
+
+    def erro_de_reducao(self, novo_valor) -> str | None:
+        """Depois de um excedente o limite já pode estar abaixo do comprometido:
+        só a redução é barrada, o aumento ajuda. Confiável só com a linha travada."""
+        minimo = self.valor_comprometido + self.valor_executado
+        if novo_valor < minimo and novo_valor < self.valor_limite:
+            return f"Não pode ser reduzido abaixo do já comprometido e executado: {formatar_brl(minimo)}."
+        return None

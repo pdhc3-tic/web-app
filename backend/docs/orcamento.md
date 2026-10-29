@@ -22,9 +22,11 @@ def liberar(*, demanda_id, usuario, motivo) -> BudgetTransaction
 ```
 
 `saldo_para_consulta` é a variante que resolve tudo a partir de ids/slugs crus
-(usada pelo `SaldoConsultaView` e pelo motor de duas travas do SGD,
-`apps.sgd.services.balance`) — `verificar_saldo` espera instâncias já
-resolvidas. `ajustar_reserva` e o parâmetro `valor_executado` de `executar`
+(usada pelo `SaldoConsultaView` e pela porta de orçamento do SGD,
+`apps.sgd.services.orcamento`) — `verificar_saldo` espera instâncias já
+resolvidas. No SGD, só a porta importa o motor; ela resolve a Meta pela
+atividade da demanda e devolve os erros do motor como exceções de domínio
+(`apps.sgd.exceptions`). `ajustar_reserva` e o parâmetro `valor_executado` de `executar`
 foram adicionados para o SGD (`Pré-autorizada → Autorizada com valor
 ajustado` e conclusão com valor efetivamente pago menor que o autorizado,
 §4.2 do documento do SGD) — aditivos: nenhum código que só chama
@@ -38,7 +40,7 @@ comportamento.
 | Formulário sendo preenchido (antes de criar) | `GET /api/v1/sgp/orcamento/saldo/` (ou `saldo_para_consulta`/`verificar_saldo` direto, se a chamada for interna) |
 | Demanda criada, saldo reservado | `reservar(allocation=..., valor=..., demanda_id=<id da demanda>, usuario=...)` |
 | Decisão final com valor diferente do estimado | `ajustar_reserva(demanda_id=..., novo_valor=..., usuario=...)` |
-| Demanda concluída pela FGD (consumo definitivo, valor efetivamente pago) | `executar(demanda_id=..., usuario=..., valor_executado=<valor pago>)` |
+| Demanda concluída pela FGD ou pelo retorno do Arlo (consumo definitivo) | `executar(demanda_id=..., usuario=..., valor_executado=<menor entre o pago e o autorizado>)`; o que for pago acima do autorizado vira `GlosaRisk`, não executado (`apps.sgd.services.workflow.registrar_pagamento`) |
 | Demanda recusada ou cancelada | `liberar(demanda_id=..., usuario=..., motivo=...)` |
 
 ### Invariantes
@@ -59,17 +61,23 @@ Toda transação que trava mais de uma destas linhas segue esta ordem, para que 
 3. `Demand`.
 4. `DemandRequest`.
 
+O `FOR UPDATE` trava só a linha da tabela da ordem: com JOIN na query (`select_related` ou um `ordering` por FK, como o do limite individual, que ordena por solicitante e rubrica), usar `select_for_update(of=("self",))`. Sem isso, a linha do usuário fica travada junto, e o commit de outra transação que gravou uma notificação, auditoria ou etapa para ele espera esse lock na checagem da FK, fechando um ciclo com a `Demand`.
+
+As transições de status passam por `apps.sgd.services.workflow.executar_transicao` (o cancelamento automático, pela variante em lote `cancelar_pelo_sistema`): primeiro o efeito no saldo, depois a `Demand` travada com o status relido (e as solicitações conferidas, quando o saldo partiu delas) e, por último, a gravação das `DemandRequest`. Se a demanda mudou nesse meio, a transição é recusada com `INVALID_TRANSITION`.
+
 | Caminho | O que trava |
 |---|---|
-| Submissão; recusa; cancelamento pelo solicitante ou, de demanda autorizada, pela UGP/Super Admin; edição e remoção de solicitação com reserva | limite → alocação → `Demand` ou `DemandRequest` |
-| Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todos os limites e depois todas as alocações; só então as `Demand` |
+| Submissão; autorização; recusa; conclusão pela FGD; cancelamento pelo solicitante ou, de demanda autorizada, pela UGP/Super Admin | limite → alocação, rubrica a rubrica → `Demand` → `DemandRequest` (estado da reserva, `valor_autorizado` e `valor_pago`, em ordem de pk) |
+| Pré-autorização, devolução, início do atendimento | só a `Demand` |
+| Importação do Arlo, por linha | limite → alocação da solicitação paga → `Demand` (status relido) → `DemandRequest`. Cada linha numa transação própria: com o arquivo numa só, os locks de uma linha ficariam presos enquanto a seguinte trava o limite de outro solicitante |
+| Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todos os limites e depois todas as alocações; só então as `Demand`, em ordem de pk, e por fim as `DemandRequest`. Se uma demanda deixou de ser cancelável ou ganhou, perdeu ou trocou a rubrica de uma solicitação, a transação volta e a task é repetida (até 3 vezes) |
+| Edição da demanda; inclusão de solicitação | só a `Demand` |
+| Edição e remoção de solicitação | limite → alocação (se há reserva) → `Demand` → `DemandRequest`; a edição relê a reserva já com o limite travado |
 | Decisão de recurso extra | pedido → limite → alocações (territorial e origem) → `Demand` → todas as `DemandRequest` da demanda |
 | Parecer, devolução, submissão e edição do pedido | só o pedido |
 | Criação do pedido | a `Demand`, e depois o pedido novo, que nenhuma outra transação enxerga antes do commit |
-| Inclusão de solicitação | só a `Demand` |
+| Edição do limite individual (`PATCH /sgd/limites-individuais/{id}/` ou Django Admin); exclusão pelo Django Admin, só sem saldo | só o limite |
 | `remanejar`, `atualizar_valor_alocado` | alocações em ordem crescente de pk |
-
-Exceções, só em demandas fora de Rascunho/Devolvida: a importação do Arlo trava a `Demand` antes do limite, e `autorizar`/`concluir` gravam a solicitação de uma rubrica antes de travar o limite da seguinte. A decisão de recurso extra confere que a demanda está editável antes de travá-la, então nunca disputa essas linhas com elas. Entre si, e com o cancelamento (automático ou pela UGP/Super Admin) de uma demanda autorizada, essas exceções ainda podem formar ciclo: o Postgres derruba uma das transações, que precisa ser repetida.
 
 ### Reconciliação
 
@@ -77,7 +85,7 @@ Exceções, só em demandas fora de Rascunho/Devolvida: a importação do Arlo t
 python manage.py verificar_saldos
 ```
 
-Confere, para cada `BudgetAllocation`, se `valor_comprometido`/`valor_executado` batem com a soma das suas `BudgetTransaction` por tipo (`reserva`/`execucao`/`liberacao`). Sai com código de saída ≠ 0 (via `CommandError`) e lista as divergências encontradas, se houver.
+Confere, para cada `BudgetAllocation`, se `valor_comprometido`/`valor_executado` batem com a soma das suas `BudgetTransaction` por tipo (`reserva`/`execucao`/`liberacao`). No SGD, confere também se o `valor_comprometido` de cada limite individual bate com a soma do `valor_reservado` das solicitações com reserva ativa (`valor_reservado > 0` e `valor_executado` nulo) do mesmo solicitante e rubrica; essa parte lê `sgd_demand` com visão total, já que o comando não passa pelo middleware que define o papel da sessão para o RLS. Sai com código de saída ≠ 0 (via `CommandError`) e lista as divergências encontradas, se houver.
 
 ## Endpoints HTTP
 

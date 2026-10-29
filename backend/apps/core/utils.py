@@ -1,5 +1,6 @@
 import ipaddress
 import json
+from decimal import Decimal
 
 from django.conf import settings
 
@@ -27,6 +28,12 @@ def _ip_valido(valor) -> str | None:
         return str(ipaddress.ip_address(valor))
     except ValueError:
         return None
+
+
+def formatar_brl(valor) -> str:
+    """`R$ 1.234,56`, sem depender do locale do servidor."""
+    texto = f"{Decimal(valor):,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+    return f"R$ {texto}"
 
 
 from django.core.cache import cache

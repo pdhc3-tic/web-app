@@ -63,8 +63,9 @@ def test_task_trava_os_limites_antes_das_alocacoes_e_cancela_as_demandas_por_ult
     rubrica_diarias, territory_rn,
 ):
     """Dois solicitantes com reserva na mesma alocação: a primeira trava de limite já pega
-    os dois, antes de qualquer alocação, e as Demand só mudam depois de todo o saldo
-    (ordem de lock de backend/docs/orcamento.md)."""
+    os dois, antes de qualquer alocação, as Demand só mudam depois de todo o saldo e o
+    estado da reserva nas solicitações vem por último (ordem de lock de
+    backend/docs/orcamento.md)."""
     vizinho = UserFactory(profiles=[(RoleFactory(slug="adt-acr"), territory_rn)])
     DemandIndividualLimitFactory(solicitante=vizinho, rubrica=rubrica_diarias, valor_limite=5_000)
     da_vizinha = DemandRequestFactory(
@@ -90,6 +91,9 @@ def test_task_trava_os_limites_antes_das_alocacoes_e_cancela_as_demandas_por_ult
     assert travas_de_limite[0] < travas_de_alocacao[0]
     assert len(cancelamentos) == 2
     assert min(cancelamentos) > max(travas_de_limite + travas_de_alocacao)
+    gravacoes_da_reserva = [i for i, sql in enumerate(sqls) if sql.startswith('UPDATE "sgd_demandrequest"')]
+    assert len(gravacoes_da_reserva) == 2
+    assert min(gravacoes_da_reserva) > max(cancelamentos)
     limite_individual_rn.refresh_from_db()
     allocation_territorial_rn.refresh_from_db()
     assert (limite_individual_rn.valor_comprometido, allocation_territorial_rn.valor_comprometido) == (0, 0)

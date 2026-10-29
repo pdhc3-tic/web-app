@@ -15,7 +15,8 @@ from apps.sgd.serializers.approval import (
 from apps.sgd.serializers.demand import DemandSerializer
 from apps.sgd.services import approval as approval_service
 from apps.sgd.services import balance as balance_service
-from apps.sgp.models.budget import BudgetAllocation
+from apps.sgd.services import workflow as workflow_service
+from apps.sgp.models import BudgetAllocation
 
 
 class DemandApprovalMixin:
@@ -52,7 +53,7 @@ class DemandApprovalMixin:
     @action(detail=True, methods=["post"], url_path="pre-autorizar")
     def pre_autorizar(self, request, pk=None):
         demand = self._get_demand(pk)
-        demand = approval_service.pre_autorizar(demand, responsavel=request.user)
+        demand = workflow_service.executar_transicao(demand, "pre_autorizada", ator=request.user)
         return Response(DemandSerializer(demand).data)
 
     @action(detail=True, methods=["post"], url_path="devolver")
@@ -60,7 +61,9 @@ class DemandApprovalMixin:
         demand = self._get_demand(pk)
         entrada = DevolverSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
-        demand = approval_service.devolver(demand, responsavel=request.user, **entrada.validated_data)
+        demand = workflow_service.executar_transicao(
+            demand, "devolvida", ator=request.user, **entrada.validated_data,
+        )
         return Response(DemandSerializer(demand).data)
 
     @action(detail=True, methods=["post"], url_path="autorizar")
@@ -68,7 +71,9 @@ class DemandApprovalMixin:
         demand = self._get_demand(pk)
         entrada = AutorizarSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
-        demand = approval_service.autorizar(demand, responsavel=request.user, **entrada.validated_data)
+        demand = workflow_service.executar_transicao(
+            demand, "autorizada", ator=request.user, **entrada.validated_data,
+        )
         return Response(DemandSerializer(demand).data)
 
     @action(detail=True, methods=["post"], url_path="recusar")
@@ -76,7 +81,9 @@ class DemandApprovalMixin:
         demand = self._get_demand(pk)
         entrada = RecusarSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
-        demand = approval_service.recusar(demand, responsavel=request.user, **entrada.validated_data)
+        demand = workflow_service.executar_transicao(
+            demand, "recusada", ator=request.user, **entrada.validated_data,
+        )
         return Response(DemandSerializer(demand).data)
 
     @action(detail=True, methods=["post"], url_path="autorizar-excedente")
@@ -97,7 +104,7 @@ class DemandApprovalMixin:
     @action(detail=True, methods=["post"], url_path="atender")
     def atender(self, request, pk=None):
         demand = self._get_demand(pk)
-        demand = approval_service.atender(demand, responsavel=request.user)
+        demand = workflow_service.executar_transicao(demand, "em_atendimento", ator=request.user)
         return Response(DemandSerializer(demand).data)
 
     @action(detail=True, methods=["post"], url_path="concluir")
@@ -105,7 +112,9 @@ class DemandApprovalMixin:
         demand = self._get_demand(pk)
         entrada = ConcluirSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
-        demand = approval_service.concluir(demand, responsavel=request.user, **entrada.validated_data)
+        demand = workflow_service.executar_transicao(
+            demand, "concluida", ator=request.user, **entrada.validated_data,
+        )
         return Response(DemandSerializer(demand).data)
 
     @action(detail=True, methods=["get"], url_path="preview-decisao")

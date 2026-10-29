@@ -1,22 +1,22 @@
 """Solicitação de recurso extra (SGP §6.6): pedido, parecer, decisão da UGP e remanejamento."""
 import threading
-import time
 from decimal import Decimal
 
 import pytest
 from django.db import connection, transaction
-from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIClient
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.models.notifications import Notification
 from apps.core.models.user_profile import UserProfile
 from apps.core.tests.factories import RoleFactory, UserFactory
+from apps.sgd.exceptions import ErroDeDominio
 from apps.sgd.models import Demand, DemandIndividualLimit, DemandRequest, DemandTypeRubricaMapping
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import recurso_extra as recurso_extra_service
 from apps.sgd.tasks import cancelar_demandas_da_atividade
+from apps.sgd.tests.concorrencia import intercalar
 from apps.sgd.tests.factories import (
     BudgetIncreaseRequestFactory,
     DemandFactory,
@@ -184,7 +184,7 @@ def test_criacoes_simultaneas_geram_um_so_pedido(demanda, solicitante_rn, rubric
                 demanda=demanda, rubrica=rubrica_diarias, justificativa=JUSTIFICATIVA, usuario=solicitante_rn,
             )
             resultados.append("criado")
-        except ValidationError:
+        except ErroDeDominio:
             resultados.append("recusado")
         finally:
             connection.close()
@@ -365,7 +365,7 @@ def test_so_o_solicitante_submete_e_edita(demanda, solicitante_rn, usuario_artic
 def test_aprovacao_eleva_o_limite_e_libera_a_submissao(
     demanda, pedido_com_parecer, solicitante_rn, usuario_ugp, rubrica_diarias,
 ):
-    with pytest.raises(ValidationError), transaction.atomic():
+    with pytest.raises(ErroDeDominio), transaction.atomic():
         demand_service.submeter_demanda(demanda, usuario=solicitante_rn)
 
     resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", APROVAR)
@@ -386,7 +386,7 @@ def test_recusa_mantem_o_bloqueio_da_demanda(demanda, pedido_com_parecer, solici
     assert resposta.data["status"] == "recusada"
     assert resposta.data["valor_aprovado"] is None
     assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")
-    with pytest.raises(ValidationError), transaction.atomic():
+    with pytest.raises(ErroDeDominio), transaction.atomic():
         demand_service.submeter_demanda(demanda, usuario=solicitante_rn)
 
 
@@ -593,6 +593,9 @@ def test_remanejamento_de_pool_estadual_cobre_o_que_falta(
     assert (transferencia.saldo_destino_antes, transferencia.saldo_destino_depois) == (Decimal("200"), Decimal("1000"))
     assert transferencia.aprovado_por == usuario_ugp
     assert transferencia.increase_request == pedido_com_parecer
+    assert Notification.objects.filter(
+        evento="remanejamento_efetivado", titulo="Remanejamento efetivado: R$ 800,00",
+    ).exists()
     allocation_territorial_rn.refresh_from_db()
     assert allocation_territorial_rn.valor_alocado == Decimal("1000")
     demand_service.submeter_demanda(demanda, usuario=solicitante_rn)
@@ -695,61 +698,6 @@ def test_decisao_trava_limite_alocacoes_demanda_e_solicitacoes_nessa_ordem(
 
 # ── Concorrência entre conexões ──────────────────────────────────────────────
 
-def _esperar_alguem_bloqueado(timeout=10):
-    """Espera outra conexão ficar parada num lock de linha. Roda na thread do teste, em
-    autocommit: cada consulta abre um snapshot novo de `pg_stat_activity`."""
-    prazo = time.monotonic() + timeout
-    while time.monotonic() < prazo:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT count(*) FROM pg_stat_activity "
-                "WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()"
-            )
-            if cursor.fetchone()[0]:
-                return
-        time.sleep(0.02)
-    raise AssertionError("Nenhuma conexão ficou esperando lock.")
-
-
-def _intercalar(segura, espera):
-    """`segura(pausa)` roda numa transação e, ao chamar `pausa()`, para com ela aberta.
-    Então `espera()` começa em outra conexão; quando `espera()` fica bloqueada num lock,
-    `segura` segue e commita. Devolve resultados e exceções nas chaves "segura" e "espera"."""
-    pausou, pode_seguir = threading.Event(), threading.Event()
-    resultados, erros = {}, {}
-
-    def pausa():
-        pausou.set()
-        pode_seguir.wait(timeout=10)
-
-    def segurar():
-        with transaction.atomic():
-            return segura(pausa)
-
-    def rodar(lado, funcao):
-        try:
-            resultados[lado] = funcao()
-        except Exception as exc:
-            erros[lado] = exc
-        finally:
-            pausou.set()
-            connection.close()
-
-    thread_segura = threading.Thread(target=rodar, args=("segura", segurar))
-    thread_segura.start()
-    assert pausou.wait(timeout=10)
-    thread_espera = threading.Thread(target=rodar, args=("espera", espera))
-    thread_espera.start()
-    try:
-        _esperar_alguem_bloqueado()
-    finally:
-        pode_seguir.set()
-        thread_segura.join(timeout=15)
-        thread_espera.join(timeout=15)
-    assert not thread_segura.is_alive() and not thread_espera.is_alive()
-    return resultados, erros
-
-
 def _decidir_contra(pedido, *, travar, usuario, mexer=None, **corpo):
     """A thread B executa `travar` e segura a transação; a decisão começa e fica bloqueada
     no que B travou; só então B executa `mexer` e commita. Devolve o resultado da decisão
@@ -760,7 +708,7 @@ def _decidir_contra(pedido, *, travar, usuario, mexer=None, **corpo):
         if mexer is not None:
             mexer()
 
-    resultados, erros = _intercalar(
+    resultados, erros = intercalar(
         concorrente, lambda: recurso_extra_service.decidir(pedido, usuario=usuario, **corpo),
     )
     nomes = {"segura": "concorrente", "espera": "decisao"}
@@ -799,7 +747,7 @@ def test_parecer_e_devolucao_simultaneos_nao_gravam_um_por_cima_do_outro(pedido,
         recurso_extra_service.emitir_parecer(pedido, usuario=usuario_articulador_rn, parecer="Procede.")
         pausa()
 
-    _, erros = _intercalar(
+    _, erros = intercalar(
         emitir_parecer,
         lambda: recurso_extra_service.devolver_pedido(
             pedido, usuario=usuario_articulador_rn, justificativa="Ajustar o valor.",
@@ -807,7 +755,7 @@ def test_parecer_e_devolucao_simultaneos_nao_gravam_um_por_cima_do_outro(pedido,
     )
 
     assert set(erros) == {"espera"}
-    assert isinstance(erros["espera"], ValidationError)
+    assert isinstance(erros["espera"], ErroDeDominio)
     pedido.refresh_from_db()
     assert (pedido.status, pedido.parecer_articulador) == ("com_parecer", "Procede.")
 
@@ -869,8 +817,8 @@ def test_pool_suficiente_na_consulta_e_consumido_antes_do_lock_exige_origem(
 
     assert resultado is None
     assert set(erros) == {"decisao"}
-    assert isinstance(erros["decisao"], ValidationError)
-    assert "origem_allocation" in erros["decisao"].detail
+    assert isinstance(erros["decisao"], ErroDeDominio)
+    assert erros["decisao"].campo == "origem_allocation"
     pedido.refresh_from_db()
     assert pedido.status == "com_parecer"
     assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")
@@ -893,8 +841,8 @@ def grafico_em_diarias(rubrica_diarias):
 def _conferir_barrada_pelo_deficit(resultado, erros, pedido, solicitante, rubrica):
     assert resultado is None
     assert set(erros) == {"decisao"}
-    assert isinstance(erros["decisao"], ValidationError)
-    assert "valor_aprovado" in erros["decisao"].detail
+    assert isinstance(erros["decisao"], ErroDeDominio)
+    assert erros["decisao"].campo == "valor_aprovado"
     pedido.refresh_from_db()
     assert pedido.status == "com_parecer"
     assert _limite(solicitante, rubrica) == Decimal("300")
@@ -932,7 +880,7 @@ def test_inclusao_de_solicitacao_espera_a_decisao_que_travou_a_demanda(
         recurso_extra_service.decidir(pedido, usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.")
         pausa()
 
-    _, erros = _intercalar(
+    _, erros = intercalar(
         decidir,
         lambda: demand_service.adicionar_solicitacao(
             demanda, tipo="grafico", campos_json=CAMPOS_GRAFICO, valor_estimado=Decimal("500"),
@@ -950,7 +898,7 @@ def test_inclusao_confere_o_status_da_demanda_travada(demanda, grafico_em_diaria
     """O objeto em memória ainda diz Rascunho; a linha travada já foi submetida."""
     Demand.objects.filter(pk=demanda.pk).update(status="submetida")
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(ErroDeDominio):
         demand_service.adicionar_solicitacao(
             demanda, tipo="grafico", campos_json=CAMPOS_GRAFICO, valor_estimado=Decimal("500"),
         )
@@ -986,7 +934,7 @@ def test_cancelamento_da_atividade_durante_a_decisao_nao_entra_em_deadlock(
     pedido = _pedido_com_parecer(demanda, solicitante_rn, usuario_articulador_rn, "700")
     Activity.objects.filter(pk=demanda.activity_id).update(status="cancelada")
 
-    resultados, erros = _intercalar(
+    resultados, erros = intercalar(
         _decisao_pausada(monkeypatch, pedido, usuario_ugp, antes_de=antes_de),
         lambda: cancelar_demandas_da_atividade(demanda.activity_id),
     )
@@ -1019,7 +967,7 @@ def test_demanda_submetida_enquanto_a_decisao_espera_o_lock_nao_tem_pedido_aprov
 
     assert resultado is None
     assert set(erros) == {"decisao"}
-    assert "demanda" in erros["decisao"].detail
+    assert erros["decisao"].campo == "demanda"
     pedido.refresh_from_db()
     assert pedido.status == "com_parecer"
     assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")
@@ -1107,6 +1055,7 @@ def test_remanejamento_sem_saldo_na_origem_desfaz_a_decisao(
     })
 
     assert resposta.status_code == 400
+    assert resposta.data["valor"] == ["Saldo insuficiente na origem: R$ 100,00 disponível, R$ 800,00 solicitado."]
     pedido_com_parecer.refresh_from_db()
     assert pedido_com_parecer.status == "com_parecer"
     assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")
@@ -1181,3 +1130,18 @@ def test_devolucao_notifica_o_solicitante(pedido, solicitante_rn, usuario_articu
     _acao(usuario_articulador_rn, pedido.pk, "devolver", {"justificativa": "Detalhe o valor."})
 
     assert Notification.objects.filter(user=solicitante_rn, evento="recurso_extra_devolvido").exists()
+
+
+def test_criar_pedido_nao_trava_a_linha_do_solicitante(demanda, solicitante_rn, rubrica_diarias):
+    """O `select_related("solicitante")` sem `of` levaria a linha do usuário para o FOR UPDATE."""
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    with CaptureQueriesContext(connection) as consultas:
+        recurso_extra_service.criar(
+            demanda=demanda, rubrica=rubrica_diarias, justificativa=JUSTIFICATIVA, usuario=solicitante_rn,
+        )
+
+    travas = [q["sql"] for q in consultas if "FOR UPDATE" in q["sql"] and '"sgd_demand"' in q["sql"]]
+    assert travas
+    assert all(" JOIN " not in sql or "FOR UPDATE OF" in sql for sql in travas)

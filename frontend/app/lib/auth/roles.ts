@@ -146,6 +146,48 @@ export function perfisDecisoresSgd(
 }
 
 /**
+ * Cancelar demanda Autorizada (#296): UGP e Super Admin, com justificativa.
+ * Espelha `PERFIS_QUE_CANCELAM_AUTORIZADA` (`apps/sgd/services/approval.py`).
+ */
+export function canCancelarDemandaAutorizada(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return hasRole(user, UGP_SLUG) || isSuperAdmin(user);
+}
+
+/**
+ * Decidir pedido de recurso extra (#321): aprovar, aprovar parcialmente ou
+ * recusar. Espelha o `IsUGP | IsSuperAdmin` de `RemanejamentoViewSet.decidir`.
+ */
+export function canDecidirRemanejamento(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return hasRole(user, UGP_SLUG) || isSuperAdmin(user);
+}
+
+/**
+ * Emitir parecer ou devolver pedido de recurso extra (#321). Espelha o
+ * `IsArticuladorEstadual | IsSuperAdmin` de `parecer` e `devolver`.
+ */
+export function canEmitirParecerRemanejamento(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return hasRole(user, ARTICULADOR_ESTADUAL_SLUG) || isSuperAdmin(user);
+}
+
+/**
+ * Fila de Remanejamentos (#321): quem age sobre os pedidos — a UGP decide, o
+ * Articulador emite o parecer que leva o pedido à UGP. O solicitante não entra
+ * na fila; abre o próprio pedido pelo link da notificação
+ * (`/sgd/remanejamentos/{id}`).
+ */
+export function canAcessarFilaRemanejamentos(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return canDecidirRemanejamento(user) || canEmitirParecerRemanejamento(user);
+}
+
+/**
  * Gestão do SGD (painel por rubrica e relatórios — BE-5 / #293 / #297).
  * Restrito aos perfis de gestão: Super Admin, UGP, FGD e Articulador Estadual.
  */

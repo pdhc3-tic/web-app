@@ -10,9 +10,7 @@ import { storageStatePath } from "./helpers/users";
  * #296 — Painel master-detail de Demandas + decisões por perfil (SGD).
  *
  * Contra o backend real: a fixture leva cada demanda ao status pelos services
- * do SGD, com reservas de saldo de verdade. Cancelar demanda autorizada
- * depende de uma decisão de regra no backend
- * (docs/pendencias-backend-sprint-10.md, item 14) e fica em `test.fixme`.
+ * do SGD, com reservas de saldo de verdade.
  */
 
 let fx: PainelDemandasFixture;
@@ -131,6 +129,21 @@ test.describe("Articulador Estadual de outro estado", () => {
       await expect(page.getByText(d.titulo)).toHaveCount(0);
     }
   });
+
+  test("abrir a URL direta de uma demanda de outro estado não revela a auditoria (#322)", async ({
+    page,
+  }) => {
+    // Sem acesso à demanda, o detalhe responde 404 e o painel não abre as abas:
+    // a aba "Auditoria" nunca aparece para quem não enxerga a demanda.
+    const detalhe = page.waitForResponse(
+      (r) => r.url().includes(`/api/v1/sgd/demandas/${fx.auditada.id}/`) && r.request().method() === "GET",
+    );
+    await page.goto(`/sgd/demandas?demanda=${fx.auditada.id}`);
+    expect((await detalhe).status()).toBe(404);
+    await expect(page.getByRole("heading", { name: "Demandas" })).toBeVisible();
+    await expect(painel(page).getByRole("tab")).toHaveCount(0);
+    await expect(painel(page).getByTestId("painel-auditoria")).toHaveCount(0);
+  });
 });
 
 test.describe("UGP", () => {
@@ -233,13 +246,56 @@ test.describe("UGP", () => {
     await expect(painel(page)).toContainText("Recusada");
   });
 
-  // Pendência de backend (item 14): só o solicitante cancela, e só até
-  // Pré-autorizada — não há como cancelar uma demanda autorizada.
-  test.fixme("cancelar uma demanda autorizada pede justificativa no ConfirmationDrawer", async () => {});
+  test("cancelar uma demanda autorizada pede justificativa no ConfirmationDrawer", async ({
+    page,
+  }) => {
+    await page.goto(`/sgd/demandas?visao=todas&demanda=${fx.cancelar.id}`);
+    await painel(page).getByTestId("acao-cancelar").click();
+
+    const drawer = page.getByTestId("cancelar-drawer");
+    await expect(drawer).toBeVisible();
+    await expect(drawer).toContainText("já foi autorizada");
+
+    await page.getByTestId("cancelar-drawer-confirmar").click();
+    await expect(drawer).toContainText("A justificativa é obrigatória.");
+
+    await drawer
+      .getByLabel("Justificativa do cancelamento")
+      .fill("A visita foi adiada para o próximo semestre.");
+    await page.getByTestId("cancelar-drawer-confirmar").click();
+
+    await expect(painel(page).getByTestId("painel-mensagem-info")).toContainText("cancelada");
+    await expect(painel(page)).toContainText("Cancelada");
+    await expect(painel(page).getByTestId("acao-cancelar")).toHaveCount(0);
+
+    await painel(page).getByRole("tab", { name: "Linha do tempo" }).click();
+    const timeline = painel(page).getByTestId("painel-timeline");
+    await expect(timeline).toContainText("Cancelamento: Cancelado");
+    await expect(timeline).toContainText("A visita foi adiada para o próximo semestre.");
+  });
 });
 
 test.describe("FGD", () => {
   test.use({ storageState: storageStatePath("fgd") });
+
+  test("a fila traz as Autorizadas, com o mesmo total do badge", async ({ page }) => {
+    const listagem = page.waitForRequest(
+      (req) => req.url().includes("/api/v1/sgd/demandas/?") && req.url().includes("aguardando"),
+    );
+    await page.goto("/sgd/demandas");
+    const params = new URL((await listagem).url()).searchParams;
+    expect(params.get("aguardando_minha_acao")).toBe("true");
+
+    await expect(linha(page, fx.atender.id)).toBeVisible();
+    const n = await page.getByTestId("demandas-tabela").locator("tbody tr").count();
+    await expect(page.getByTestId("sidebar-badge-sgd")).toHaveText(String(n));
+  });
+
+  test("a FGD não cancela uma demanda autorizada", async ({ page }) => {
+    await page.goto(`/sgd/demandas?demanda=${fx.atender.id}`);
+    await expect(painel(page).getByTestId("acao-atender")).toBeVisible();
+    await expect(painel(page).getByTestId("acao-cancelar")).toHaveCount(0);
+  });
 
   test("inicia o atendimento e conclui em seguida, sem recarregar", async ({ page }) => {
     await page.goto(`/sgd/demandas?demanda=${fx.atender.id}`);
@@ -261,5 +317,143 @@ test.describe("FGD", () => {
     );
     await expect(painel(page)).toContainText("Concluída");
     await expect(painel(page)).toContainText("pago R$ 1.100,00");
+  });
+
+  test("a FGD não vê a aba Auditoria — ela é restrita ao Super Admin (#322)", async ({ page }) => {
+    await page.goto(`/sgd/demandas?demanda=${fx.atender.id}`);
+    await expect(painel(page).getByRole("tab", { name: "Linha do tempo" })).toBeVisible();
+    await expect(painel(page).getByRole("tab", { name: "Auditoria" })).toHaveCount(0);
+  });
+});
+
+/**
+ * #322 — Aba de auditoria no painel master-detail, consumindo o endpoint
+ * `GET /api/v1/sgd/demandas/{id}/auditoria/` (BE-7). O backend restringe a
+ * trilha ao Super Admin porque devolve IP de origem (ver
+ * `pendencias-backend-sprint-10.md`, item 19).
+ */
+test.describe("Super Admin — Auditoria da demanda (#322)", () => {
+  test.use({ storageState: storageStatePath("superAdmin") });
+
+  async function abrirAuditoria(page: Page, id: number) {
+    await page.goto(`/sgd/demandas?visao=todas&demanda=${id}`);
+    const aba = painel(page).getByRole("tab", { name: "Auditoria" });
+    await expect(aba).toBeVisible();
+    await aba.click();
+    await expect(painel(page).getByTestId("painel-auditoria")).toBeVisible();
+  }
+
+  test("eventos em ordem cronológica, com usuário, timestamp e ação", async ({ page }) => {
+    // `auditada` sai da fixture já percorrida: criada, submetida (reserva),
+    // pré-autorizada, autorizada e cancelada pela UGP (liberação). O backend
+    // ordena por timestamp e id.
+    await abrirAuditoria(page, fx.auditada.id);
+    const status = painel(page).locator("[data-tipo='status']");
+
+    // Todas as transições, nesta ordem e sem outras no meio.
+    await expect(status).toHaveText([
+      /Demanda criada/,
+      /Rascunho → Submetida/,
+      /Submetida → Pré-autorizada/,
+      /Pré-autorizada → Autorizada/,
+      /Autorizada → Cancelada/,
+    ]);
+
+    // Quem agiu e quando: o ADT cria, a UGP cancela; timestamp DD/MM/AAAA HH:mm.
+    await expect(status.first()).toContainText("Ewerton Bandeira");
+    await expect(status.first()).toContainText(/\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}/);
+    await expect(status.last()).toContainText("Beatriz Nogueira");
+  });
+
+  test("diferenciação visual: ícone de status e ícone de saldo", async ({ page }) => {
+    await abrirAuditoria(page, fx.auditada.id);
+    // A reserva de saldo entra na submissão; o cancelamento emite liberação.
+    await expect(painel(page).locator("[data-tipo='status']").first()).toBeVisible();
+    await expect(painel(page).locator("[data-tipo='saldo']").first()).toBeVisible();
+  });
+
+  test("'carregar mais' pede a próxima página do backend", async ({ page }) => {
+    const CORS = { "access-control-allow-origin": "*" };
+    const totalFake = 25;
+
+    function evento(id: number, offset: number) {
+      const tipo = id % 2 === 0 ? "status" : "saldo";
+      const acao = tipo === "status" ? "demanda.status_alterado" : "saldo.reserva";
+      return {
+        id,
+        tipo,
+        acao,
+        usuario: { id: 1, nome: "Vera Lucena" },
+        ip: "203.0.113.9",
+        timestamp: new Date(Date.UTC(2026, 9, 1, 12, offset)).toISOString(),
+        valores_anteriores: tipo === "status" ? { status: "submetida" } : {},
+        valores_novos: tipo === "status" ? { status: "pre_autorizada" } : { valor: "100.00" },
+      };
+    }
+
+    await page.route(
+      (url) => /\/api\/v1\/sgd\/demandas\/\d+\/auditoria\/?/.test(url.pathname),
+      async (route) => {
+        if (route.request().method() === "OPTIONS") return route.fallback();
+        const params = new URL(route.request().url()).searchParams;
+        const limit = Number(params.get("limit") ?? 20);
+        const offset = Number(params.get("offset") ?? 0);
+        const paginaIds = Array.from({ length: Math.min(limit, totalFake - offset) }, (_, i) =>
+          evento(offset + i + 1, offset + i),
+        );
+        const temProxima = offset + paginaIds.length < totalFake;
+        await route.fulfill({
+          status: 200,
+          headers: { ...CORS, "content-type": "application/json" },
+          body: JSON.stringify({
+            count: totalFake,
+            next: temProxima ? `?limit=${limit}&offset=${offset + limit}` : null,
+            previous: null,
+            results: paginaIds,
+          }),
+        });
+      },
+    );
+
+    await abrirAuditoria(page, fx.cancelar.id);
+    const eventos = painel(page).locator("[data-testid^='auditoria-evento-']");
+    await expect(eventos).toHaveCount(20);
+
+    const botao = painel(page).getByTestId("auditoria-carregar-mais");
+    await expect(botao).toContainText("20 de 25");
+    await botao.click();
+
+    await expect(eventos).toHaveCount(25);
+    await expect(painel(page).getByTestId("auditoria-carregar-mais")).toHaveCount(0);
+  });
+
+});
+
+test.describe("UGP — sem acesso à auditoria (#322)", () => {
+  test.use({ storageState: storageStatePath("ugp") });
+
+  test("vê a demanda, mas não a aba Auditoria, e o backend recusa a trilha", async ({ page }) => {
+    // A UGP enxerga a demanda, mas a trilha é só do Super Admin (pendência 19):
+    // além de a aba não aparecer, a rota responde 403 mesmo chamada direto.
+    const doDetalhe = page.waitForRequest((r) =>
+      r.url().includes(`/api/v1/sgd/demandas/${fx.auditada.id}/`),
+    );
+    await page.goto(`/sgd/demandas?visao=todas&demanda=${fx.auditada.id}`);
+    const api = new URL((await doDetalhe).url()).origin;
+
+    await expect(painel(page).getByRole("tab", { name: "Linha do tempo" })).toBeVisible();
+    await expect(painel(page).getByRole("tab", { name: "Auditoria" })).toHaveCount(0);
+
+    const status = await page.evaluate(
+      async ({ api, id }) => {
+        const sessao = await (await fetch("/api/auth/session")).json();
+        const res = await fetch(`${api}/api/v1/sgd/demandas/${id}/auditoria/`, {
+          headers: { Authorization: `Bearer ${sessao.accessToken}` },
+        });
+        return res.status;
+      },
+      { api, id: fx.auditada.id },
+    );
+    expect(status).toBe(403);
   });
 });

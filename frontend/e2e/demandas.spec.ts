@@ -37,6 +37,15 @@ function linhaDaDemanda(page: Page, titulo: string) {
   return page.getByTestId("demandas-lista").locator("li").filter({ hasText: titulo });
 }
 
+/** Criada, a demanda segue para a montagem (#295); a aba da atividade a lista em Rascunho. */
+async function esperarMontagemEVoltarAAba(page: Page, titulo: string, atividadeId: number) {
+  await page.waitForURL(/\/sgd\/demandas\/\d+\/editar$/);
+  await expect(page.getByTestId("montar-demanda")).toContainText(titulo);
+  await page.goto(`/sgp/atividades/${atividadeId}?tab=demandas`);
+  await expect(linhaDaDemanda(page, titulo)).toContainText("Rascunho");
+  await expect(linhaDaDemanda(page, titulo).getByText("Editar e submeter")).toBeVisible();
+}
+
 test.describe("SGD — demandas pela ficha da atividade (ADT)", () => {
   test.use({ storageState: storageStatePath("adt") });
 
@@ -66,8 +75,7 @@ test.describe("SGD — demandas pela ficha da atividade (ADT)", () => {
     await page.getByLabel("Título da demanda").fill(titulo);
     await page.getByTestId("nova-demanda-salvar").click();
 
-    await page.waitForURL(`**/sgp/atividades/${fx.agendada.id}?tab=demandas`);
-    await expect(linhaDaDemanda(page, titulo)).toContainText("Rascunho");
+    await esperarMontagemEVoltarAAba(page, titulo, fx.agendada.id);
   });
 
   test("o contexto herdado mostra território, comunidade, data e a cadeia completa do PT", async ({
@@ -180,8 +188,7 @@ test.describe("SGD — demandas pela ficha da atividade (ADT)", () => {
     await page.getByLabel("Título da demanda").fill(titulo);
     await page.getByTestId("nova-demanda-salvar").click();
 
-    await page.waitForURL(`**/sgp/atividades/${fx.agendada.id}?tab=demandas`);
-    await expect(linhaDaDemanda(page, titulo)).toContainText("Rascunho");
+    await esperarMontagemEVoltarAAba(page, titulo, fx.agendada.id);
   });
 
   test("sem atividade prévia, cria a atividade em Planejado junto com a demanda", async ({
@@ -201,6 +208,8 @@ test.describe("SGD — demandas pela ficha da atividade (ADT)", () => {
     await page.getByLabel("Título da demanda").fill(titulo);
     await page.getByTestId("nova-demanda-salvar").click();
 
+    await page.waitForURL(/\/sgd\/demandas\/\d+\/editar$/);
+    await page.getByRole("link", { name: "Abrir ficha da atividade" }).click();
     await page.waitForURL(/\/sgp\/atividades\/\d+\?tab=demandas$/);
     const novoId = Number(/atividades\/(\d+)/.exec(page.url())![1]);
     expect([fx.agendada.id, fx.comDemandas.id, fx.outra.id]).not.toContain(novoId);

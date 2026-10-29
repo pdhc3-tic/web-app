@@ -12,14 +12,17 @@ import path from "node:path";
  *
  * - `preAutorizar` e `devolver`: Submetidas (fila do Articulador de RN);
  * - `autorizar` e `recusar`: Pré-autorizadas (fila da UGP);
- * - `atender`: Autorizada (fila da FGD).
+ * - `atender`: Autorizada (fila da FGD);
+ * - `cancelar`: Autorizada, que a UGP cancela.
+ * - `auditada`: já cancelada pela UGP depois de autorizada — a trilha de
+ *   auditoria (#322) completa, sem depender da ordem dos testes.
  *
  * Solicitante: o ADT do Território RN. Articulador de RN: o `articuladorPB`
  * (PB/RN/BA/MG); o `articuladorPE` não atua em RN e não deve vê-las.
  *
- * Limite individual de R$ 10.000 e pool territorial de R$ 20.296: com 5
+ * Limite individual de R$ 12.000 e pool territorial de R$ 20.296: com 6
  * demandas de R$ 1.200 reservadas (60%), ajustar a de `autorizar` para
- * R$ 3.000 leva o limite individual de verde para amarelo — o caso do
+ * R$ 3.000 (75%) leva o limite individual de verde para amarelo — o caso do
  * preview com mudança de faixa.
  *
  * Roda como `postgres` por causa da row-level security de `sgd_demand`.
@@ -38,6 +41,8 @@ export type PainelDemandasFixture = {
   autorizar: Ref & { solicitacaoId: number };
   recusar: Ref;
   atender: Ref;
+  cancelar: Ref;
+  auditada: Ref;
 };
 
 const COMUM = `
@@ -87,7 +92,7 @@ META_ID = acao.meta_id
 BudgetAllocation.objects.create(
     meta_id=META_ID, rubrica=rubrica, nivel="territorial", territorio_id=territorio_id, valor_alocado=POOL,
 )
-DemandIndividualLimit.objects.create(solicitante=adt, rubrica=rubrica, valor_limite=Decimal("10000"))
+DemandIndividualLimit.objects.create(solicitante=adt, rubrica=rubrica, valor_limite=Decimal("12000"))
 
 municipio = Municipality.objects.filter(territory_id=territorio_id).order_by("nome").first()
 quando = timezone.now() + timedelta(days=20)
@@ -119,12 +124,19 @@ ap.pre_autorizar(rec, responsavel=articulador)
 atd, _ = submetida("Van do retorno")
 ap.pre_autorizar(atd, responsavel=articulador)
 ap.autorizar(atd, responsavel=ugp)
+can, _ = submetida("Van da visita adiada")
+ap.pre_autorizar(can, responsavel=articulador)
+ap.autorizar(can, responsavel=ugp)
+aud, _ = submetida("Van do seminário cancelado")
+ap.pre_autorizar(aud, responsavel=articulador)
+ap.autorizar(aud, responsavel=ugp)
+ds.cancelar_demanda(aud, usuario=ugp, motivo="Seminário cancelado pela coordenação.")
 
 ref = lambda d: {"id": d.pk, "titulo": d.titulo}
 print("${MARCADOR}_SETUP " + json.dumps({
     "preAutorizar": ref(pre), "devolver": ref(dev),
     "autorizar": {**ref(aut), "solicitacaoId": aut_s.pk},
-    "recusar": ref(rec), "atender": ref(atd),
+    "recusar": ref(rec), "atender": ref(atd), "cancelar": ref(can), "auditada": ref(aud),
 }))
 `;
 
