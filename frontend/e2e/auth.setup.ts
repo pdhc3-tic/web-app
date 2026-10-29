@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { expect, test as setup } from "@playwright/test";
+import { expect, test as setup, type Browser } from "@playwright/test";
 import { esperarHidratacao } from "./helpers/hidratacao";
 import { USERS, storageStatePath, type UserKey } from "./helpers/users";
 
@@ -20,9 +20,38 @@ function segundosDeEspera(mensagem: string): number {
   return Math.min(parseInt(m[1], 10) + 3, ESPERA_MAXIMA_S);
 }
 
+/**
+ * Reaproveita a sessão gravada quando ela ainda vale. O `/api/auth/session`
+ * do Auth.js renova o access token pelo refresh token; só quando o refresh
+ * também venceu (`RefreshTokenExpired`) ou o e-mail não bate é que o login
+ * pela tela é necessário — e ele é o que esbarra no rate limit.
+ */
+async function sessaoGravadaValida(browser: Browser, key: UserKey): Promise<boolean> {
+  const destino = storageStatePath(key);
+  if (!fs.existsSync(destino)) return false;
+  const contexto = await browser.newContext({
+    storageState: destino,
+    baseURL: setup.info().project.use.baseURL,
+  });
+  try {
+    const res = await contexto.request.get("/api/auth/session");
+    if (!res.ok()) return false;
+    const sessao = (await res.json().catch(() => null)) as
+      | { user?: { email?: string }; error?: string }
+      | null;
+    if (!sessao?.user || sessao.error || sessao.user.email !== USERS[key].email) return false;
+    // A renovação pode ter trocado o cookie da sessão: grava o estado novo.
+    await contexto.storageState({ path: destino });
+    return true;
+  } finally {
+    await contexto.close();
+  }
+}
+
 for (const key of Object.keys(USERS) as UserKey[]) {
-  setup(`autentica ${key}`, async ({ page }) => {
+  setup(`autentica ${key}`, async ({ page, browser }) => {
     setup.setTimeout(20 * 60_000);
+    if (await sessaoGravadaValida(browser, key)) return;
     const { email, password } = USERS[key];
     // O overlay do Next dev também expõe role=alert; escopar no <main> isola
     // o alerta do formulário de login.
