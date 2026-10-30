@@ -20,10 +20,16 @@ import {
   type ExecucaoFiltros,
 } from "@/app/lib/execucaoSgd";
 import { qk } from "@/app/lib/queryKeys";
-import { CustoPorAtividadeTable } from "./_components/CustoPorAtividadeTable";
+import {
+  CustoPorAtividadeTable,
+  CustoPorAtividadeTableSkeleton,
+} from "./_components/CustoPorAtividadeTable";
 import { ExecucaoFilters } from "./_components/ExecucaoFilters";
 import { ExportarButton } from "./_components/ExportarButton";
-import { PainelRubricasTable } from "./_components/PainelRubricasTable";
+import {
+  PainelRubricasTable,
+  PainelRubricasTableSkeleton,
+} from "./_components/PainelRubricasTable";
 
 type Aba = "rubricas" | "atividades";
 
@@ -162,9 +168,13 @@ function ExecucaoView() {
 
       <div aria-busy={atual.isFetching}>
         {atual.isPending ? (
-          <div className="flex justify-center py-16" data-testid="carregando-spinner">
-            <Spinner className="h-8 w-8 animate-spin text-primary" />
-          </div>
+          // Esqueleto na mesma grade da tabela: não quebra layout quando os
+          // dados chegam, e dá uma sensação visível de progresso (#323).
+          aba === "rubricas" ? (
+            <PainelRubricasTableSkeleton />
+          ) : (
+            <CustoPorAtividadeTableSkeleton />
+          )
         ) : atual.isError ? (
           <TabErroSection message={mensagemDeErro(atual.error)} onRetry={() => void atual.refetch()} />
         ) : aba === "rubricas" ? (

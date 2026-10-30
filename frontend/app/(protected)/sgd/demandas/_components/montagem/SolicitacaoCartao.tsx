@@ -7,12 +7,17 @@ import type { SolicitacaoDemanda } from "@/app/lib/demandas";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import type { BloqueioSolicitacao } from "@/app/lib/solicitacoes";
 
+const ORIENTACAO: Record<BloqueioSolicitacao["acao_sugerida"], string> = {
+  solicitar_recurso_extra: "Peça recurso extra para cobrir a diferença.",
+  acionar_articulador: "Acione o Articulador Estadual para remanejar verba ao território.",
+};
+
 /**
  * Uma solicitação da demanda em montagem: o que é, quanto custa e, depois de
- * uma submissão barrada, por que foi barrada e o que fazer (§4.1):
+ * uma submissão barrada, qual trava barrou, com o disponível e o solicitado
+ * do `INSUFFICIENT_BALANCE` (#359), e o que fazer (§4.1):
  * - limite individual → atalho "Solicitar recurso extra" (#321);
- * - verba do território → o motivo do backend orienta a acionar o
- *   Articulador Estadual; não há atalho.
+ * - verba do território → orienta acionar o Articulador Estadual; sem atalho.
  */
 export function SolicitacaoCartao({
   solicitacao,
@@ -83,18 +88,20 @@ export function SolicitacaoCartao({
         >
           <p className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            <span>
-              <strong>
-                {bloqueio.trava === "individual"
-                  ? "Limite individual insuficiente."
-                  : "Verba do território insuficiente."}
-              </strong>{" "}
-              {bloqueio.motivo}
-            </span>
+            <strong>
+              {bloqueio.trava === "individual"
+                ? "Limite individual insuficiente."
+                : "Verba do território insuficiente."}
+            </strong>
           </p>
-          {/* O motivo já traz a orientação; a trava territorial não tem atalho. */}
+          <p className="pl-6 tabular-nums" data-testid={`bloqueio-valores-${solicitacao.id}`}>
+            {bloqueio.trava === "individual" ? "Disponível no seu limite" : "Disponível na verba do território"}:{" "}
+            {formatCurrencyBRL(bloqueio.disponivel)} · Solicitado: {formatCurrencyBRL(bloqueio.solicitado)}
+          </p>
+          <p className="pl-6">{ORIENTACAO[bloqueio.acao_sugerida]}</p>
+          {/* A trava territorial não tem atalho: quem remaneja é o Articulador. */}
           {bloqueio.acao_sugerida === "solicitar_recurso_extra" && (
-            <div>
+            <div className="pl-6">
               <Button
                 size="sm"
                 variant="secondary"

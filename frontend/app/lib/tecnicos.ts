@@ -2,6 +2,12 @@ import { apiClient } from "@/app/lib/api";
 import type { Paginated } from "@/app/lib/users";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 
+export type UsuarioElegivel = {
+  id: number;
+  nome_completo: string;
+  email: string;
+};
+
 export type TecnicoListItem = {
   id: number;
   user: number;
@@ -88,20 +94,25 @@ export async function fetchOscOptions(
   }
 }
 
-export async function fetchUserOptions(
+/**
+ * Busca de usuários elegíveis a técnico (A2 da #302): usuários ativos sem
+ * vínculo em `Tecnico`, retornados pelo backend em `GET
+ * /api/v1/sgp/tecnicos/usuarios-elegiveis/?q=`. Troca o `fetchUserOptions()`
+ * antigo (`/users/?limit=500`), que era restrito ao Super Admin e cortava a
+ * lista em 500. A busca é no servidor para a cadastradora que começa com
+ * centenas de usuários.
+ */
+export async function searchUsuariosElegiveis(
+  q: string,
   signal?: AbortSignal,
-): Promise<SelectOption[]> {
-  try {
-    const res = await apiClient("/api/v1/users/?limit=500&ativo=true", {
-      signal,
-    });
-    const data: Paginated<{ id: number; nome_completo: string }> =
-      await res.json();
-    return data.results.map((u) => ({
-      value: String(u.id),
-      label: u.nome_completo,
-    }));
-  } catch {
-    return [];
-  }
+): Promise<UsuarioElegivel[]> {
+  const qs = new URLSearchParams();
+  if (q.trim()) qs.set("q", q.trim());
+  qs.set("limit", "20");
+  const url = qs.toString()
+    ? `/api/v1/sgp/tecnicos/usuarios-elegiveis/?${qs}`
+    : "/api/v1/sgp/tecnicos/usuarios-elegiveis/";
+  const res = await apiClient(url, { signal });
+  const data: Paginated<UsuarioElegivel> = await res.json();
+  return data.results;
 }

@@ -14,7 +14,6 @@ import { ApiError } from "@/app/lib/api";
 import { canManageWorkPlan } from "@/app/lib/auth/roles";
 import {
   fetchOscOptions,
-  fetchUserOptions,
   listTecnicosSGP,
   type TecnicoListItem,
 } from "@/app/lib/tecnicos";
@@ -73,7 +72,6 @@ function TecnicosView() {
 
   const [territorioOptions, setTerritorioOptions] = useState<SelectOption[]>([]);
   const [oscOptions, setOscOptions] = useState<SelectOption[]>([]);
-  const [userOptions, setUserOptions] = useState<SelectOption[]>([]);
 
   const [slideOver, setSlideOver] = useState<{
     open: boolean;
@@ -101,18 +99,19 @@ function TecnicosView() {
     Promise.all([
       fetchTerritoryOptions(controller.signal).catch(() => [] as SelectOption[]),
       fetchOscOptions(controller.signal),
-      fetchUserOptions(controller.signal),
-    ]).then(([territorios, oscs, users]) => {
+    ]).then(([territorios, oscs]) => {
       if (controller.signal.aborted) return;
       setTerritorioOptions(territorios);
       setOscOptions(oscs);
-      setUserOptions(users);
     });
     return () => controller.abort();
   }, []);
 
   useEffect(() => {
     const controller = new AbortController();
+    // Busca com AbortController: o estado de carregando/erro sincroniza com a
+    // requisição que sai daqui (mesma supressão de lint das outras telas).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDataLoading(true);
     setError(null);
     listTecnicosSGP(
@@ -288,7 +287,6 @@ function TecnicosView() {
         onClose={() => setSlideOver((s) => ({ ...s, open: false }))}
         mode={slideOver.mode}
         tecnico={slideOver.tecnico}
-        userOptions={userOptions}
         territorioOptions={territorioOptions}
         oscOptions={oscOptions}
         onSaved={handleSaved}

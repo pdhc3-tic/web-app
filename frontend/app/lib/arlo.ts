@@ -21,6 +21,22 @@ export type ErroLinhaArlo = {
   erro: string;
 };
 
+/**
+ * Linha paga com valor diferente do autorizado (`ArloDivergenciaSerializer`).
+ * Os valores são decimais em string. `diferenca` = pago − autorizado: positiva
+ * acima do autorizado, que o backend registra como risco de glosa
+ * (`risco_glosa`); negativa abaixo, com a sobra devolvida aos limites.
+ */
+export type DivergenciaArlo = {
+  demanda_id: number;
+  demanda_titulo: string;
+  solicitacao_id: number;
+  valor_autorizado: string;
+  valor_pago: string;
+  diferenca: string;
+  risco_glosa: boolean;
+};
+
 /** Espelha `ArloImportSerializer`. */
 export type OperacaoArlo = {
   id: number;
@@ -36,6 +52,8 @@ export type OperacaoArlo = {
   total_registros: number;
   registros_ok: number;
   erros_json: ErroLinhaArlo[];
+  /** Só nas importações concluídas; vazio quando tudo foi pago pelo autorizado. */
+  divergencias: DivergenciaArlo[];
   mapeamento_snapshot: Record<string, unknown>;
 };
 

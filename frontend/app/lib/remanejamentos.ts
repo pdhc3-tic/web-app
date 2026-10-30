@@ -101,10 +101,7 @@ export type ListaPedidos = {
  *
  * - `status`: repetido, o backend devolve a união. Sem `status`, a UGP recebe só
  *   os Com parecer; `"todos"` desliga o filtro para qualquer perfil.
- * - `demanda`: os pedidos de uma demanda. O filtro AINDA NÃO EXISTE no backend
- *   (docs/pendencias-backend-sprint-10.md, item 22): até chegar, o parâmetro é
- *   ignorado e voltam todos os pedidos visíveis. Nada é filtrado aqui para
- *   compensar.
+ * - `demanda`: só os pedidos daquela demanda.
  */
 export async function listPedidos(
   params: { status?: (StatusPedido | "todos")[]; demanda?: number } = {},
@@ -206,8 +203,11 @@ export function erroDoCampo(e: unknown, campo: string): string | null {
 export type BloqueioRecursoExtra = {
   solicitacaoId: number;
   rubrica: { slug: string; nome: string };
-  /** O texto do backend, já com a orientação ("Use a opção 'Solicitar recurso extra'."). */
-  motivo: string | null;
+  /** O que o limite individual ainda comportava e o que a solicitação pedia. */
+  disponivel: string;
+  solicitado: string;
+  /** O que falta na rubrica; null até o backend expor (sprint 10, item 23). */
+  valorFaltante: string | null;
 };
 
 /**
@@ -223,7 +223,9 @@ export function recursoExtraDoBloqueio(
   return {
     solicitacaoId: solicitacao.id,
     rubrica: { slug: solicitacao.rubrica_slug, nome: solicitacao.rubrica_nome },
-    motivo: bloqueio.motivo,
+    disponivel: bloqueio.disponivel,
+    solicitado: bloqueio.solicitado,
+    valorFaltante: bloqueio.valor_faltante ?? null,
   };
 }
 

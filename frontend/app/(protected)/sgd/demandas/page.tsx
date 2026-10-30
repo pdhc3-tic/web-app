@@ -1,18 +1,19 @@
 "use client";
 
-import { Suspense, useMemo } from "react";
+import { Suspense, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Inbox, X } from "lucide-react";
 import Spinner from "@/app/components/icons/Spinner";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { TabErroSection } from "@/app/components/sgp/CrudTab/CrudTab";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
+import { Pagination } from "@/app/components/ui/Pagination/Pagination";
 import { ApiError } from "@/app/lib/api";
 import { getAtividade, listAcoes } from "@/app/lib/atividades";
-import { listDemandas } from "@/app/lib/demandas";
+import { DEMANDAS_POR_PAGINA, listDemandas } from "@/app/lib/demandas";
 import {
   CHAVES_FILTRO,
   filtrosDaUrl,
@@ -21,9 +22,8 @@ import {
 } from "@/app/lib/execucaoSgd";
 import { useFilaDemandas } from "@/app/lib/hooks/useFilaDemandas";
 import { qk } from "@/app/lib/queryKeys";
-import { AvisoListaParcial } from "./_components/AvisoListaParcial";
 import { DemandaPainel } from "./_components/DemandaPainel";
-import { DemandasTabela } from "./_components/DemandasTabela";
+import { DemandasTabela, DemandasTabelaSkeleton } from "./_components/DemandasTabela";
 
 type Visao = "minha" | "todas";
 
@@ -114,7 +114,18 @@ function PainelDemandasView() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const fila = useFilaDemandas();
+  // Página da listagem na URL (#323), no `limit`/`offset` do `DemandPagination`:
+  // o backend pagina, e a tela pede uma página por vez.
+  const pagina = useMemo(() => {
+    const limite = Number(searchParams.get("limit"));
+    const deslocamento = Number(searchParams.get("offset"));
+    return {
+      limit: Number.isInteger(limite) && limite > 0 ? limite : DEMANDAS_POR_PAGINA,
+      offset: Number.isInteger(deslocamento) && deslocamento > 0 ? deslocamento : 0,
+    };
+  }, [searchParams]);
+
+  const fila = useFilaDemandas(pagina);
   // Filtros do `DemandFilter` na URL vêm do drill-down do painel de execução
   // (#297): a tela deixa a fila/visão geral e pede ao backend só esse recorte.
   const recorte = useMemo(
@@ -130,17 +141,21 @@ function PainelDemandasView() {
   const bruto = searchParams.get("demanda") ?? "";
   const selecionada = /^\d+$/.test(bruto) ? Number(bruto) : null;
 
+  // `keepPreviousData`: ao trocar de página, a anterior fica na tela até a
+  // próxima chegar, sem voltar ao skeleton nem "pular" o layout.
   const porRecorte = useQuery({
-    queryKey: qk.demandas.recorte(recorte),
-    queryFn: ({ signal }) => listDemandas({ filtros: recorte }, signal),
+    queryKey: qk.demandas.recorte(recorte, pagina),
+    queryFn: ({ signal }) => listDemandas({ filtros: recorte, pagina }, signal),
     enabled: temRecorte,
     staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
   const todas = useQuery({
-    queryKey: qk.demandas.lista([]),
-    queryFn: ({ signal }) => listDemandas({}, signal),
+    queryKey: qk.demandas.lista([], pagina),
+    queryFn: ({ signal }) => listDemandas({ pagina }, signal),
     enabled: visao === "todas" && !temRecorte,
     staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
   const atual = temRecorte
     ? porRecorte
@@ -148,6 +163,22 @@ function PainelDemandasView() {
       ? fila
       : todas;
   const demandas = atual.data?.demandas ?? [];
+  const total = atual.data?.total ?? 0;
+
+  // A página pode ficar além do fim: a última demanda dela foi decidida e saiu
+  // da fila, ou o link é antigo. Volta para a última página que existe, em vez
+  // de mostrar "nenhuma demanda" sem a paginação para sair dali.
+  const alemDoFim =
+    atual.isSuccess && !atual.isPlaceholderData && pagina.offset > 0 && pagina.offset >= total;
+  useEffect(() => {
+    if (!alemDoFim) return;
+    const ultima = total > 0 ? Math.floor((total - 1) / pagina.limit) * pagina.limit : 0;
+    const next = new URLSearchParams(searchParams.toString());
+    if (ultima > 0) next.set("offset", String(ultima));
+    else next.delete("offset");
+    const qs = next.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [alemDoFim, total, pagina.limit, searchParams, router, pathname]);
 
   function navegar(patch: Record<string, string | null>) {
     const next = new URLSearchParams(searchParams.toString());
@@ -201,7 +232,9 @@ function PainelDemandasView() {
                 type="button"
                 role="tab"
                 aria-selected={visao === valor}
-                onClick={() => navegar({ visao: valor === "minha" ? null : "todas", demanda: null })}
+                onClick={() =>
+                  navegar({ visao: valor === "minha" ? null : "todas", demanda: null, offset: null })
+                }
                 className={`rounded px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
                   visao === valor ? "bg-primary text-surface" : "text-text-muted hover:text-text"
                 }`}
@@ -221,19 +254,22 @@ function PainelDemandasView() {
             navegar({
               ...Object.fromEntries(CHAVES_FILTRO.map((k) => [k, null])),
               demanda: null,
+              offset: null,
             })
           }
         />
       )}
 
       <div
-        className={`grid items-start gap-5 ${
+        className={`grid grid-cols-[minmax(0,1fr)] items-start gap-5 ${
           selecionada !== null ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)]" : ""
         }`}
       >
         <div className="min-w-0">
           {atual.isPending ? (
-            <Carregando />
+            // Skeleton na mesma grade da tabela (#323): a tabela cresce com o
+            // conteúdo, mas as colunas e as alturas são as mesmas — sem "pulo".
+            <DemandasTabelaSkeleton compacta={selecionada !== null} />
           ) : erro ? (
             <TabErroSection message={erro} onRetry={() => void atual.refetch()} />
           ) : demandas.length === 0 ? (
@@ -257,14 +293,35 @@ function PainelDemandasView() {
               />
             </div>
           ) : (
-            <div className="flex flex-col gap-2">
+            <div
+              className={`flex flex-col gap-2 transition-opacity ${atual.isPlaceholderData ? "opacity-60" : ""}`}
+              aria-busy={atual.isPlaceholderData}
+              data-testid="demandas-lista"
+            >
               <DemandasTabela
                 demandas={demandas}
                 selecionada={selecionada}
                 compacta={selecionada !== null}
                 onSelecionar={(id) => navegar({ demanda: String(id) })}
               />
-              <AvisoListaParcial lista={atual.data} />
+              {total > DEMANDAS_POR_PAGINA || pagina.offset > 0 || pagina.limit !== DEMANDAS_POR_PAGINA ? (
+                <Pagination
+                  count={total}
+                  offset={pagina.offset}
+                  limit={pagina.limit}
+                  onOffsetChange={(offset) =>
+                    navegar({ offset: offset > 0 ? String(offset) : null, demanda: null })
+                  }
+                  onLimitChange={(limit) =>
+                    navegar({
+                      limit: limit === DEMANDAS_POR_PAGINA ? null : String(limit),
+                      offset: null,
+                      demanda: null,
+                    })
+                  }
+                  itemNoun={{ one: "demanda", other: "demandas" }}
+                />
+              ) : null}
             </div>
           )}
         </div>

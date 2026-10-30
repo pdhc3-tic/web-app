@@ -12,9 +12,8 @@ import { storageStatePath } from "./helpers/users";
  * formulário de cada tipo, o saldo antes de submeter, os bloqueios das duas
  * travas, o atalho do recurso extra (#321) e as cotações de equipamentos.
  *
- * O total das diárias em tempo real depende de `GET /sgd/config/diarias/simular/`,
- * que o backend ainda não publica (pendencias-backend-sprint-10.md, item 27):
- * fica `fixme`. O total calculado pelo backend ao salvar é coberto.
+ * O total das diárias em tempo real vem de `GET /sgd/config/diarias/simular/`
+ * (SGD-REF-BE-12, #358); o calculado ao salvar também é conferido.
  */
 
 let fx: MontarDemandaFixture;
@@ -85,8 +84,43 @@ test.describe("SGD — montar e submeter a demanda (ADT)", () => {
     await expect(page.getByTestId("montar-total")).toHaveText("R$ 600,00");
   });
 
-  test.fixme("diária: o total aparece em tempo real e muda com as datas", async () => {
-    // Depende de GET /sgd/config/diarias/simular/ (pendência 27, SGD-REF-BE-12 #358).
+  test("diária: o total aparece em tempo real e muda com as datas", async ({ page }) => {
+    await abrirMontagem(page, fx.vazia.id);
+    await page.getByTestId("solicitacao-adicionar").click();
+    const form = page.getByTestId("solicitacao-form");
+    await escolher(page, "solicitacao-tipo", "Diárias");
+    await page.getByTestId("campo-municipio_destino_id").fill(fx.municipioNome);
+    await page.getByRole("option", { name: fx.municipioNome, exact: true }).click();
+
+    // O esperado vem da própria rota (`GET /sgd/config/diarias/simular/`), com o token da sessão.
+    const simulacao = page.waitForResponse((r) => r.url().includes("/api/v1/sgd/config/diarias/simular/"));
+    await form.getByLabel("Data de ida").fill("2026-11-10");
+    await form.getByLabel("Data de volta").fill("2026-11-12");
+    const api = new URL((await simulacao).url()).origin;
+    const valorTotal = (dataFim: string) =>
+      page.evaluate(
+        async ({ api, municipio, dataFim }) => {
+          const sessao = await (await fetch("/api/auth/session")).json();
+          const qs = new URLSearchParams({ municipio_destino_id: municipio, data_inicio: "2026-11-10", data_fim: dataFim });
+          const res = await fetch(`${api}/api/v1/sgd/config/diarias/simular/?${qs}`, {
+            headers: { Authorization: `Bearer ${sessao.accessToken}` },
+          });
+          return ((await res.json()) as { valor_total: string }).valor_total;
+        },
+        { api, municipio: String(fx.municipioId), dataFim },
+      );
+    const brl = (valor: string) =>
+      Number(valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }).replace(/\s/g, " ");
+    const totalNaTela = () =>
+      page.getByTestId("simulacao-diarias-total").textContent().then((t) => (t ?? "").replace(/\s/g, " "));
+
+    const ate12 = await valorTotal("2026-11-12");
+    await expect.poll(totalNaTela).toBe(brl(ate12));
+
+    await form.getByLabel("Data de volta").fill("2026-11-14");
+    const ate14 = await valorTotal("2026-11-14");
+    expect(Number(ate14)).toBeGreaterThan(Number(ate12));
+    await expect.poll(totalNaTela).toBe(brl(ate14));
   });
 
   test("passagem: com ida e volta = Sim aparecem os campos da volta; com Não, somem", async ({ page }) => {
@@ -117,6 +151,10 @@ test.describe("SGD — montar e submeter a demanda (ADT)", () => {
     await expect(page.getByTestId("submissao-bloqueada")).toContainText("uma solicitação foi barrada");
     const bloqueio = page.getByTestId(`bloqueio-${fx.multipla.passagemId}`);
     await expect(bloqueio).toContainText("Limite individual insuficiente.");
+    // Os valores vêm do INSUFFICIENT_BALANCE (#359): limite de R$ 5.000, passagem de R$ 6.000.
+    await expect(page.getByTestId(`bloqueio-valores-${fx.multipla.passagemId}`)).toHaveText(
+      "Disponível no seu limite: R$ 5.000,00 · Solicitado: R$ 6.000,00",
+    );
     await expect(page.getByTestId(`recurso-extra-atalho-${fx.multipla.passagemId}`)).toBeVisible();
     // A de veículo coube: sem bloqueio, e continua lá.
     await expect(page.getByTestId(`bloqueio-${fx.multipla.veiculoId}`)).toHaveCount(0);
@@ -134,6 +172,9 @@ test.describe("SGD — montar e submeter a demanda (ADT)", () => {
 
     const drawer = page.getByTestId("recurso-extra-drawer");
     await expect(drawer).toContainText("Passagens Aéreas");
+    await expect(page.getByTestId("recurso-extra-bloqueio")).toHaveText(
+      "Limite individual insuficiente: R$ 5.000,00 disponível, R$ 6.000,00 solicitado.",
+    );
     await drawer.getByLabel("Justificativa").fill("A caravana precisa da passagem da facilitadora.");
     await page.getByTestId("recurso-extra-revisar").click();
     await page.getByTestId("recurso-extra-enviar").click();
@@ -163,6 +204,9 @@ test.describe("SGD — montar e submeter a demanda (ADT)", () => {
 
     const bloqueio = page.getByTestId(`bloqueio-${fx.territorial.diariaId}`);
     await expect(bloqueio).toContainText("Verba do território insuficiente.");
+    await expect(page.getByTestId(`bloqueio-valores-${fx.territorial.diariaId}`)).toHaveText(
+      "Disponível na verba do território: R$ 295,00 · Solicitado: R$ 600,00",
+    );
     await expect(bloqueio).toContainText("Articulador Estadual");
     // A trava territorial não tem atalho: quem remaneja é o Articulador.
     await expect(page.getByTestId(`recurso-extra-atalho-${fx.territorial.diariaId}`)).toHaveCount(0);

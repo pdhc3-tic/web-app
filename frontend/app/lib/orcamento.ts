@@ -4,7 +4,7 @@ import type { NivelSemaforo } from "@/app/lib/semaforo";
 /**
  * Camada de dados do Painel de Orçamento (§5.3.3).
  *
- * Os cinco valores, o semáforo e o alerta de 80% vêm PRONTOS do backend, por
+ * Os cinco valores, o semáforo e o alerta de vermelho vêm PRONTOS do backend, por
  * `GET /api/v1/sgp/orcamento/painel/` (Issue #224). A regra de classificação
  * mora em `apps/sgp/services/budget.py::_semaforo_orcamento` e é a mesma que
  * alimenta a task diária `check_budget_threshold_alert` — recalcular aqui
@@ -68,9 +68,22 @@ export type PainelOrcamentoLinhaApi = {
   valor_executado: string;
   saldo_disponivel: string;
   semaforo: SemaforoOrcamentoApi;
-  /** true no mesmo limiar de `vermelho` — ≥ 80% do aprovado comprometido. */
+  /**
+   * true no mesmo limiar de `vermelho`. O nome é de contrato: o limiar segue
+   * `budget_alert_red_pct` (90% por padrão), não 80 fixo.
+   */
   alerta_80: boolean;
+  /**
+   * Limiares do semáforo em vigor, em % do aprovado comprometido. Pedido ao
+   * backend (#373 item 15; pendencias-backend-sprint-11.md, item 5): só Super Admin e UGP
+   * leem o `/system-config/`, e a tela precisa escrever o número para todo
+   * perfil que vê o painel. Ausente, valem os padrões de `LIMIARES_PADRAO`.
+   */
+  limiares_semaforo?: LimiaresSemaforo;
 };
+
+/** `budget_alert_yellow_pct` e `budget_alert_red_pct` do backend. */
+export type LimiaresSemaforo = { amarelo: number; vermelho: number };
 
 /** Filtros de `BudgetPainelQuerySerializer`. */
 export type PainelOrcamentoFiltrosApi = {
@@ -195,21 +208,18 @@ export const RUBRICA_SLUGS: string[] = RUBRICAS.map((r) => r.slug);
 // ─── Semáforo do orçamento ──────────────────────────────────────────────────
 
 /**
- * Limiar de vermelho e do alerta: 80% do aprovado já comprometido. Espelha
- * `LIMIAR_SEMAFORO_VERMELHO` do backend — aqui serve só para escrever o número
- * no texto do alerta, não para classificar.
+ * Padrões de `LIMIAR_SEMAFORO_AMARELO_PADRAO` e `LIMIAR_SEMAFORO_VERMELHO_PADRAO`
+ * do backend. Servem só para escrever o número nos rótulos, não para
+ * classificar, e só enquanto o painel não devolve `limiares_semaforo`.
  */
-export const LIMIAR_ALERTA_PCT = 80;
+export const LIMIARES_PADRAO: LimiaresSemaforo = { amarelo: 70, vermelho: 90 };
 
-/** Limiar de amarelo — `LIMIAR_SEMAFORO_AMARELO` do backend. */
-export const LIMIAR_ATENCAO_PCT = 60;
-
-const LABEL_ORCAMENTO: Record<NivelSemaforo, string> = {
-  verde: `Abaixo de ${LIMIAR_ATENCAO_PCT}%`,
-  amarelo: `${LIMIAR_ATENCAO_PCT}–${LIMIAR_ALERTA_PCT - 1}% comprometido`,
-  vermelho: `Comprometido ≥ ${LIMIAR_ALERTA_PCT}%`,
-  "sem-dado": "Sem orçamento",
-};
+/** Limiares em vigor para uma linha do painel. */
+export function limiaresDaLinha(
+  linha: PainelOrcamentoLinhaApi | null | undefined,
+): LimiaresSemaforo {
+  return linha?.limiares_semaforo ?? LIMIARES_PADRAO;
+}
 
 /**
  * Rótulo do semáforo no vocabulário do ORÇAMENTO.
@@ -220,8 +230,20 @@ const LABEL_ORCAMENTO: Record<NivelSemaforo, string> = {
  * afirmação diferente da que o dado sustenta. As CORES são as mesmas (tokens do
  * B7, via SemaforoBadge); só o texto muda, pela prop `label`.
  */
-export function labelSemaforoOrcamento(nivel: NivelSemaforo): string {
-  return LABEL_ORCAMENTO[nivel];
+export function labelSemaforoOrcamento(
+  nivel: NivelSemaforo,
+  { amarelo, vermelho }: LimiaresSemaforo = LIMIARES_PADRAO,
+): string {
+  switch (nivel) {
+    case "verde":
+      return `Abaixo de ${amarelo}%`;
+    case "amarelo":
+      return `${amarelo}–${vermelho - 1}% comprometido`;
+    case "vermelho":
+      return `Comprometido ≥ ${vermelho}%`;
+    case "sem-dado":
+      return "Sem orçamento";
+  }
 }
 
 /** Decimal do DRF ("1234.50") → number. Ausente ou inválido vira 0. */

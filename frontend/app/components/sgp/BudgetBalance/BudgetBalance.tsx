@@ -40,22 +40,14 @@ type Props = {
  *
  * ─── Por que o "sem território" sai da SESSÃO, e não da API ─────────────────
  *
- * `resolver_nivel_painel` responde 403 a um ADT/ACR sem território, com a MESMA
- * mensagem que devolve a quem não tem acesso nenhum ao orçamento. Pela resposta
- * é impossível separar "você não tem território" de "esta tela não é para o seu
- * perfil" — e os dois pedem telas diferentes: estado vazio explicativo no
- * primeiro caso, RestrictedAccess no segundo.
- *
- * A sessão já sabe a diferença: `user.territorios` vem do /me. Então o
- * componente decide ANTES de chamar a API e nem gasta a requisição.
+ * A sessão já sabe se o ADT/ACR tem território: `user.territorios` vem do /me.
+ * Então o componente decide ANTES de chamar a API e nem gasta a requisição.
  *
  * A sessão pode estar VELHA, no entanto: `territorios` é gravado no JWT no
  * login (ver auth.ts) e não é relido do /me depois. Quem tiver o vínculo
- * removido no meio da sessão continua com a lista antiga no token, chama a API
- * e leva 403. Por isso o 403 também vira "sem território" — para um ADT/ACR
- * essa é a única leitura possível: a chamada não manda `estado` nem
- * `territorio`, e esses são os outros dois motivos de `PermissionDenied` em
- * `resolver_nivel_painel`.
+ * removido no meio da sessão chama a API e leva o 403 com
+ * `code: "SEM_TERRITORIO"` (`resolver_nivel_painel`), que separa a falta do
+ * vínculo do "sem acesso" — e também cai no estado vazio.
  */
 export function BudgetBalance({
   metaId,
@@ -106,7 +98,7 @@ export function BudgetBalance({
       .catch((e: unknown) => {
         if (controller.signal.aborted) return;
         setSaldos(null);
-        if (e instanceof ApiError && e.status === 403 && adt) {
+        if (e instanceof ApiError && e.status === 403 && e.code === "SEM_TERRITORIO") {
           // Não é falha de rede nem falta de permissão para a tela: é o
           // vínculo com o território que sumiu. Cai no mesmo estado vazio, com
           // a instrução do que fazer — um "tentar novamente" aqui só repetiria

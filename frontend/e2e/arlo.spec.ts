@@ -136,9 +136,33 @@ test.describe("Integração Arlo — FGD", () => {
     await expect(detalhe.getByTestId("arlo-falha")).toContainText("Envie a planilha de novo.");
   });
 
-  // Pendência de backend (docs/pendencias-backend-sprint-10.md): o risco de
-  // glosa é gravado na importação (`GlosaRisk`), mas nenhum endpoint o devolve.
-  test.fixme("demanda paga acima do autorizado aparece destacada como risco de glosa", async () => {});
+  test("pago acima do autorizado aparece como risco de glosa; abaixo, como divergência", async ({ page }) => {
+    await page.goto("/sgd/arlo");
+    const nome = `${PREFIXO_298}-retorno-divergente.csv`;
+    const acompanhamento = await importar(
+      page,
+      nome,
+      planilhaDeRetorno([{ demanda: fx.abaixo.id, solicitacao: fx.abaixo.solicitacaoId, valorPago: "800,00" }]),
+    );
+    await expect(acompanhamento).toContainText("Concluído");
+    const abaixo = page.getByTestId(`arlo-divergencia-${fx.abaixo.solicitacaoId}`);
+    await expect(abaixo).toContainText("Pago abaixo do autorizado");
+    await expect(abaixo).toContainText("-R$ 200,00");
+    await expect(page.getByTestId("arlo-resumo")).not.toContainText("risco de glosa");
+
+    // A glosa veio da importação com a linha malformada (R$ 1.500 sobre R$ 1.000).
+    const linha = page
+      .getByTestId("arlo-historico")
+      .locator("tbody tr")
+      .filter({ hasText: `${PREFIXO_298}-retorno-com-erro.csv` });
+    await expect(linha).toContainText("1 glosa");
+    await linha.click();
+    const detalhe = page.getByTestId("arlo-operacao-detalhe");
+    await expect(detalhe.getByTestId("arlo-resumo")).toContainText("1 com risco de glosa");
+    const glosa = detalhe.getByTestId(`arlo-divergencia-${fx.glosa.solicitacaoId}`);
+    await expect(glosa).toContainText("Risco de glosa: pago acima do autorizado");
+    await expect(glosa).toContainText("+R$ 500,00");
+  });
 });
 
 test.describe("Integração Arlo — acesso", () => {

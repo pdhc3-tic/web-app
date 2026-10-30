@@ -11,7 +11,7 @@ import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { RestrictedAccess } from "@/app/components/ui/RestrictedAccess/RestrictedAccess";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 import { ApiError } from "@/app/lib/api";
-import { useCanManageWorkPlan } from "@/app/lib/auth/roles";
+import { useCanExportWorkPlan, useCanManageWorkPlan } from "@/app/lib/auth/roles";
 import type { Acao } from "@/app/lib/acoes";
 import { listMetas, type MetaListItem } from "@/app/lib/metas";
 import {
@@ -50,6 +50,7 @@ function compararNumeroAcao(a: string, b: string): number {
 
 function PainelAcompanhamentoConteudo() {
   const { loading: authLoading, canManage } = useCanManageWorkPlan();
+  const { canExport } = useCanExportWorkPlan();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -271,9 +272,9 @@ function PainelAcompanhamentoConteudo() {
         <h1 className="truncate text-base font-semibold text-text">
           Painel de Acompanhamento
         </h1>
-        {/* Exportar é leitura: quem enxerga o painel pode baixar o mesmo
-            recorte — o endpoint aplica o escopo territorial do usuário. */}
-        {!forbidden && (
+        {/* O painel é aberto a qualquer autenticado, mas a exportação segue o
+            escopo do SGP: sem ele (ex.: FGD) o backend responde 403. */}
+        {!forbidden && canExport && (
           <Button
             size="sm"
             variant="secondary"

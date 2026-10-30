@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { storageStatePath } from "./helpers/users";
-import { primeiroUpfId } from "./helpers/upf";
+import { primeiraUpfComComunidadeId, primeiroUpfId } from "./helpers/upf";
 
 /**
  * Cascata de localização da UPF (#235).
@@ -114,7 +114,7 @@ test.describe("Wizard — cascata de localização", () => {
     await estadoSelect.click();
     await page
       .getByRole("option")
-      .filter({ hasText: /Cear[áa]/i })
+      .filter({ hasText: /Para[íi]ba/i })
       .click();
 
     // Aguarda o segundo Estado carregar municípios.
@@ -134,18 +134,16 @@ test.describe("Wizard — cascata de localização", () => {
   test("edição de UPF com comunidade carrega a comunidade selecionada", async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
+    const upfId = primeiraUpfComComunidadeId();
     await page.goto(`/sgp/upfs/${upfId}/editar/`);
 
-    await expect(
-      page.getByRole("combobox", { name: /comunidade/i }),
-    ).toBeEnabled();
     // Combobox exibe algum texto que não seja o placeholder — comunidade
-    // preenchida a partir do initialData.
+    // preenchida a partir do initialData. A asserção espera: as opções da
+    // comunidade chegam depois que o combobox já está habilitado.
     const comboComunidade = page.getByRole("combobox", { name: /comunidade/i });
-    const label = (await comboComunidade.textContent())?.trim() ?? "";
-    expect(label).not.toMatch(/Selecione a comunidade/i);
-    expect(label.length).toBeGreaterThan(0);
+    await expect(comboComunidade).toBeEnabled();
+    await expect(comboComunidade).not.toHaveText(/Selecione a comunidade/i);
+    await expect(comboComunidade).toHaveText(/\S/);
   });
 
   test("edição de UPF SEM comunidade mantém combobox habilitado com opções", async ({
@@ -270,7 +268,7 @@ test.describe("Wizard — comportamento do formulário", () => {
     await estadoSelect.click();
     await page
       .getByRole("option")
-      .filter({ hasText: /Cear[áa]/i })
+      .filter({ hasText: /Para[íi]ba/i })
       .click();
 
     await expect(municipioSelect).toHaveText(/Selecione o município/i);

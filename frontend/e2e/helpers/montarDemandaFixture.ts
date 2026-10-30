@@ -34,6 +34,7 @@ type Ref = { id: number; titulo: string };
 
 export type MontarDemandaFixture = {
   atividadeId: number;
+  municipioId: number;
   municipioNome: string;
   vazia: Ref;
   multipla: Ref & { passagemId: number; veiculoId: number };
@@ -171,6 +172,7 @@ decidir(recusada.pk, "recusar")
 
 print("${MARCADOR}_SETUP " + json.dumps({
     "atividadeId": atividade.pk,
+    "municipioId": municipio.pk,
     "municipioNome": municipio.nome,
     "vazia": ref(vazia),
     "multipla": ref(multipla, passagemId=passagem.pk, veiculoId=veiculo.pk),

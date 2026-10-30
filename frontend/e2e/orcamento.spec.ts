@@ -23,7 +23,7 @@ import { storageStatePath } from "./helpers/users";
  * ─── Por que os testes criam o orçamento ────────────────────────────────────
  *
  * O `seed_demo` não cria nenhuma `BudgetAllocation`. A fixture monta um cenário
- * determinístico — 85% comprometido em Diárias, 20% em Passagens — que não
+ * determinístico — 95% comprometido em Diárias, 20% em Passagens — que não
  * depende da data em que a suíte roda, ao contrário do semáforo do PT físico.
  * Ver `helpers/orcamentoFixture.ts` para o porquê do ORM cru.
  */
@@ -93,7 +93,7 @@ test.describe("Painel de Orçamento — UGP", () => {
     // BRL em pt-BR: 100000.00 → "R$ 100.000,00". O espaço do Intl é NBSP.
     const critica = linha(page, metaId, RUBRICA_CRITICA.slug);
     await expect(critica).toContainText(/R\$\s*100\.000,00/);
-    await expect(critica).toContainText(/R\$\s*85\.000,00/);
+    await expect(critica).toContainText(/R\$\s*95\.000,00/);
 
     // Acessibilidade: <caption> nomeando a tabela e o nível exibido.
     await expect(matriz.locator("caption")).toContainText("Nacional");
@@ -103,7 +103,7 @@ test.describe("Painel de Orçamento — UGP", () => {
     await abrirPainel(page);
     const metaId = await idDaMeta(page, META_COM_ORCAMENTO);
 
-    // 85.000 de 100.000 = 85% ≥ 80% → vermelho.
+    // 95.000 de 100.000 = 95% ≥ 90% (budget_alert_red_pct padrão) → vermelho.
     const critica = linha(page, metaId, RUBRICA_CRITICA.slug);
     await expect(critica).toHaveAttribute("data-nivel", "vermelho");
     await expect(critica.getByTestId("semaforo-badge")).toHaveAttribute(
@@ -112,7 +112,7 @@ test.describe("Painel de Orçamento — UGP", () => {
     );
 
     // O semáforo não comunica só por cor: o badge carrega texto.
-    await expect(critica.getByTestId("semaforo-badge")).toContainText("80%");
+    await expect(critica.getByTestId("semaforo-badge")).toContainText("90%");
 
     // 10.000 de 50.000 = 20% → verde. Prova que a cor vem do dado.
     const tranquila = linha(page, metaId, RUBRICA_TRANQUILA.slug);
@@ -288,7 +288,7 @@ test.describe("Painel de Orçamento — ADT/ACR", () => {
     await expect(critica).toContainText(/R\$\s*7\.000,00/);
     await expect(critica).not.toContainText(/R\$\s*100\.000,00/);
     await expect(page.getByTestId("orcamento-matriz")).not.toContainText(
-      /R\$\s*85\.000,00/,
+      /R\$\s*95\.000,00/,
     );
 
     // 1.400 de 7.000 = 20% → verde, e portanto sem banner de alerta.

@@ -1,269 +1,114 @@
 import { expect, test } from "@playwright/test";
+import {
+  criarMapaFixture,
+  PREFIXO_MAPA,
+  removerMapaFixture,
+  TOTAL_UPFS_MAPA,
+  type MapaFixture,
+} from "./helpers/mapaFixture";
 import { storageStatePath } from "./helpers/users";
+
+/**
+ * Mapa de UPFs (B6 da #302) contra o backend real. As UPFs próximas do
+ * clustering vêm da fixture (`mapaFixture.ts`); só a falha 500 é forçada.
+ */
 
 const MAPA_API = "**/api/v1/upfs/mapa/**";
 
-function upfMapaFake(
-  id: number,
-  nome: string,
-  municipio: string,
-  lat: number,
-  lng: number,
-  ativa = true,
-): Record<string, unknown> {
-  return {
-    id,
-    nome_titular: nome,
-    municipio,
-    territorio: "Território Sertão Central",
-    latitude: lat,
-    longitude: lng,
-    ativa,
-  };
-}
+let fx: MapaFixture;
 
-type UpfMapaFake = ReturnType<typeof upfMapaFake>;
+test.describe.configure({ mode: "serial" });
 
-/**
- * Constrói a resposta do endpoint /api/v1/upfs/mapa/ no formato GeoJSON
- * FeatureCollection esperado por fetchUpfsMapa. Coordenadas em [lng, lat]
- * conforme a especificação GeoJSON (fetchUpfsMapa inverte para [lat, lng]).
- */
-function mapaResponse(upfs: UpfMapaFake[]): string {
-  return JSON.stringify({
-    type: "FeatureCollection",
-    features: upfs.map((u) => ({
-      type: "Feature",
-      geometry: {
-        type: "Point",
-        coordinates: [u.longitude as number, u.latitude as number],
-      },
-      properties: {
-        id: u.id,
-        nome_titular: u.nome_titular,
-        municipio: u.municipio,
-        territorio: u.territorio,
-        ativa: u.ativa,
-      },
-    })),
-    truncated: false,
-  });
-}
+test.beforeAll(() => {
+  fx = criarMapaFixture();
+});
+
+test.afterAll(() => {
+  removerMapaFixture();
+});
 
 test.describe("SGP — Mapa de UPFs", () => {
   test.use({ storageState: storageStatePath("ugp") });
 
-  test("página do mapa carrega e exibe o componente de mapa", async ({
-    page,
-  }) => {
-    await page.route(MAPA_API, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: mapaResponse([
-          upfMapaFake(1, "João Silva", "Ouricuri", -7.88, -40.08),
-          upfMapaFake(2, "Maria Santos", "Ouricuri", -7.90, -40.10),
-        ]),
-      });
-    });
-
+  test("página do mapa carrega e exibe o componente de mapa", async ({ page }) => {
     await page.goto("/sgp/upfs/mapa");
     await expect(page.getByRole("heading", { name: "UPFs" })).toBeVisible();
-    await expect(page.locator('[data-testid="map-view"]').or(page.locator(".leaflet-container")).or(page.locator('[id^="map"]'))).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator(".leaflet-container")).toBeVisible();
+    await expect(page.locator(".leaflet-marker-icon").first()).toBeVisible();
   });
 
-  test("estado de erro exibe mensagem e botão Tentar novamente", async ({
-    page,
-  }) => {
-    await page.route(MAPA_API, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({ status: 500, body: "Internal Server Error" });
-    });
-
-    await page.goto("/sgp/upfs/mapa");
-    await expect(page.getByText(/Não foi possível carregar/i)).toBeVisible();
-  });
-
-  test("estado vazio exibe mensagem de nenhuma UPF encontrada", async ({
-    page,
-  }) => {
+  test("estado de erro exibe mensagem e botão Tentar novamente", async ({ page }) => {
+    // Falha forçada: o único caso em que a resposta é interceptada.
     await page.route(MAPA_API, async (route) => {
       if (route.request().method() !== "GET") return route.fallback();
       await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: mapaResponse([]),
+        status: 500,
+        headers: { "access-control-allow-origin": "*" },
+        body: "Internal Server Error",
       });
     });
 
     await page.goto("/sgp/upfs/mapa");
-    await expect(
-      page.getByText(/Nenhuma UPF/i).or(page.getByText(/sem resultado/i)),
-    ).toBeVisible({ timeout: 8_000 });
+    await expect(page.getByText(/Erro inesperado \(500\)|Não foi possível carregar/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Tentar novamente" })).toBeVisible();
+  });
+
+  test("estado vazio: município sem UPF com coordenadas", async ({ page }) => {
+    await page.goto(`/sgp/upfs/mapa?municipio=${fx.municipioVazio}`);
+    await expect(page.getByText(/Nenhuma UPF/i).first()).toBeVisible();
+  });
+
+  // Pendência de backend #377 (pendencias-backend-sprint-11.md, item 4): a chave do
+  // cache do `/upfs/mapa/` não inclui o `q`, então por 60 s a busca devolve o
+  // resultado sem filtro. Sai do `fixme` quando a chave incluir a busca.
+  test.fixme("busca por texto sem resultado mostra o estado vazio", async ({ page }) => {
+    await page.goto("/sgp/upfs/mapa");
+    await expect(page.locator(".leaflet-marker-icon").first()).toBeVisible();
+    await page.goto(`/sgp/upfs/mapa?q=${PREFIXO_MAPA}-nao-existe`);
+    await expect(page.getByText(/Nenhuma UPF/i).first()).toBeVisible();
   });
 
   test("botão de filtros abre o painel lateral", async ({ page }) => {
-    await page.route(MAPA_API, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: mapaResponse([]),
-      });
-    });
-
     await page.goto("/sgp/upfs/mapa");
     const filterBtn = page.getByRole("button", { name: /Filtros/i });
     await expect(filterBtn).toBeVisible();
     await filterBtn.click();
-    await expect(page.getByLabel("Município").or(page.getByText("Filtros")).first()).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Filtros" })).toBeVisible();
   });
 
-  test("toggle de visão alterna entre mapa e tabela", async ({ page }) => {
-    await page.route(MAPA_API, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: mapaResponse([
-          upfMapaFake(1, "João Silva", "Ouricuri", -7.88, -40.08),
-        ]),
-      });
-    });
-
+  test("a visão de lista fica a um clique do mapa", async ({ page }) => {
     await page.goto("/sgp/upfs/mapa");
-
-    const listBtn = page.getByRole("link", { name: /Lista/i }).or(
-      page.getByRole("button", { name: /Lista/i }),
-    );
+    const listBtn = page.getByRole("link", { name: /Lista/i }).or(page.getByRole("button", { name: /Lista/i }));
     await expect(listBtn.first()).toBeVisible();
   });
 
-  test("mini-ficha é exibida ao selecionar uma UPF no mapa", async ({
-    page,
-  }) => {
-    await page.route(MAPA_API, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: mapaResponse([
-          upfMapaFake(1, "João Silva", "Ouricuri", -7.88, -40.08),
-        ]),
-      });
-    });
+  test("UPFs próximas viram cluster; o clique expande e a UPF abre a mini-ficha", async ({ page }) => {
+    await page.goto(`/sgp/upfs/mapa?municipio=${fx.municipio}`);
+    await expect(page.locator(".leaflet-container")).toBeVisible();
 
-    await page.route("**/api/v1/upfs/1/", async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          id: 1,
-          projeto: { id: 1, nome: "Projeto Demo" },
-          titular: {
-            id: 1,
-            nome_completo: "João Silva",
-            cpf: "000.000.000-00",
-            rg: "",
-            data_nascimento: null,
-            genero: null,
-            genero_display: "",
-            escolaridade: null,
-            escolaridade_display: "",
-            nis: "",
-            idade: null,
-          },
-          apelido: "",
-          celular: "",
-          whatsapp: "",
-          internet: false,
-          dispositivo: null,
-          cep: "",
-          logradouro: "",
-          numero: "",
-          complemento: "",
-          bairro: "",
-          municipio: { id: 1001, nome: "Ouricuri" },
-          territorio: null,
-          comunidade: null,
-          latitude: null,
-          longitude: null,
-          pct: null,
-          posse_terra: null,
-          area_terra_ha: null,
-          situacao_moradia: null,
-          tipo_moradia: null,
-          material_construcao: null,
-          num_comodos: null,
-          energia: null,
-          agua: null,
-          daf_caf: "",
-          seguridade_social: [],
-          foto_url: "",
-          criado_por: null,
-          ativa: true,
-          criado_em: "2026-01-01T00:00:00Z",
-          atualizado_em: "2026-01-01T00:00:00Z",
-          device_id: "",
-          uuid_local: null,
-          ultima_origem: "web",
-          ultimo_sync_em: null,
-        }),
-      });
-    });
-
-    await page.goto("/sgp/upfs/mapa");
-
-    const marker = page.locator(".leaflet-marker-icon").first();
-    await expect(marker).toBeVisible({ timeout: 10_000 });
-    await marker.click();
-    const miniFicha = page.locator('[role="dialog"]');
-    await expect(miniFicha).toBeVisible({ timeout: 5_000 });
-    await expect(miniFicha.getByText("João Silva")).toBeVisible();
-  });
-
-  test("cluster aparece quando há UPFs com coordenadas próximas", async ({
-    page,
-  }) => {
-    // Clustering ativa acima de 200 marcadores (clusteringThreshold = 200 em
-    // MapViewClient.tsx). Gerar 201 UPFs próximas garante a ativação.
-    const upfsProximas = Array.from({ length: 201 }, (_, i) =>
-      upfMapaFake(100 + i, `Titular ${i}`, "Ouricuri", -7.8800 + i * 0.00001, -40.0800 + i * 0.00001),
-    );
-
-    await page.route(MAPA_API, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: mapaResponse(upfsProximas),
-      });
-    });
-
-    await page.goto("/sgp/upfs/mapa");
-
-    await expect(
-      page.locator(".leaflet-container").or(page.locator('[data-testid="map-view"]')),
-    ).toBeVisible({ timeout: 10_000 });
-
-    // O ícone de cluster usa <span class="mapview-cluster"> (markerIcons.ts:26).
+    // O ícone de cluster usa <span class="mapview-cluster"> (markerIcons.ts).
     const cluster = page.locator(".mapview-cluster").first();
-    await expect(cluster).toBeVisible({ timeout: 10_000 });
+    await expect(cluster).toBeVisible();
+    await expect(page.locator(".mapview-marker")).toHaveCount(0);
+    // Os clusters somam todas as UPFs da fixture. Durante a animação inicial os
+    // ícones antigos e os novos coexistem, por isso a soma é lida até assentar.
+    await expect
+      .poll(async () =>
+        (await page.locator(".mapview-cluster").allTextContents()).reduce((soma, t) => soma + Number(t.trim()), 0),
+      )
+      .toBe(TOTAL_UPFS_MAPA);
 
-    // A contagem exibida no cluster deve ser numérica.
-    const texto = await cluster.textContent();
-    expect(Number(texto?.trim())).toBeGreaterThan(1);
+    // O clique dá zoom-in e parte dos marcadores sai do cluster como ícones
+    // individuais; o sinal da expansão é o aparecimento de .mapview-marker.
+    // Coordenadas a ~1 m umas das outras podem pedir mais de um nível de zoom.
+    await expect(async () => {
+      await page.locator(".mapview-cluster").first().click();
+      await expect(page.locator(".mapview-marker").first()).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 20_000 });
 
-    // Clique no cluster: o Leaflet dá zoom-in e parte dos marcadores saem do
-    // cluster como ícones individuais. A quantidade total de .mapview-cluster
-    // pode continuar igual (os demais clusters permanecem no mapa), então o
-    // sinal real da expansão é o aparecimento de .mapview-marker, nunca
-    // .leaflet-marker-icon (que também inclui os próprios clusters).
-    await cluster.click();
-    await expect(page.locator(".mapview-marker").first()).toBeVisible({
-      timeout: 5_000,
-    });
+    await page.locator(".mapview-marker").first().click();
+    const miniFicha = page.getByRole("dialog");
+    await expect(miniFicha).toBeVisible();
+    await expect(miniFicha).toContainText(PREFIXO_MAPA);
   });
 });

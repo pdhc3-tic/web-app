@@ -1,665 +1,256 @@
-import path from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import {
+  contarAnexos,
+  criarAtividadesFixture,
+  desativarFotos,
+  PREFIXO_B6,
+  removerAtividadesFixture,
+  type AtividadesFixture,
+} from "./helpers/atividadesFixture";
 import { storageStatePath } from "./helpers/users";
-import { primeiroUpfId } from "./helpers/upf";
 
-const ATIVIDADES_API = "**/api/v1/sgp/atividades/**";
-const FOTOS_API = "**/api/v1/sgp/atividades/*/fotos/**";
-const DOCUMENTOS_API = "**/api/v1/sgp/atividades/*/documentos/**";
+/**
+ * Atividades de campo do SGP contra o backend real (B6 da #302): criação,
+ * listagem, evidências (upload de foto e de documento pelo storage local) e a
+ * transição para Concluído com e sem evidência. As atividades vêm da fixture
+ * (`atividadesFixture.ts`); nenhuma resposta é simulada.
+ */
 
-function atividadeFake(
-  id: number,
-  titulo: string,
-  status: string,
-): Record<string, unknown> {
-  return {
-    id,
-    titulo,
-    status,
-    tipo_atividade: "visita_tecnica",
-    tipo_atividade_display: "Visita técnica",
-    acao: { id: 1, numero: "1.1", descricao: "Ação teste" },
-    forma_atuacao: "realizacao",
-    tecnico_responsavel: { id: 10, nome_completo: "Beatriz Nogueira" },
-    equipe_adicional: [],
-    municipio: { id: 1001, nome: "Ouricuri", state: 17 },
-    comunidade: null,
-    ambito: "municipal",
-    latitude: null,
-    longitude: null,
-    data_inicio: "2026-06-01",
-    data_fim: "2026-06-01",
-    upfs_participantes: [],
-    membros_participantes: [],
-    parceiros: "",
-    descricao_narrativa: "Visita de acompanhamento.",
-    resultados_alcancados: "",
-    justificativa: "",
-    fotos: [],
-    documentos: [],
-    transicoes_permitidas: ["concluido"],
-    criado_em: "2026-06-01T10:00:00Z",
-    atualizado_em: "2026-06-01T10:00:00Z",
-  };
+let fx: AtividadesFixture;
+
+test.describe.configure({ mode: "serial" });
+
+test.beforeAll(() => {
+  fx = criarAtividadesFixture();
+});
+
+test.afterAll(() => {
+  removerAtividadesFixture();
+});
+
+/**
+ * Abre o formulário de nova atividade já hidratado: o técnico responsável vem
+ * preenchido com o usuário depois que a tela carrega os dados. Antes disso, o
+ * React descarta o que for digitado.
+ */
+async function abrirNovaAtividade(page: Page) {
+  await page.goto("/sgp/atividades/nova");
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(page.locator("#atividade-tecnico-responsavel")).not.toHaveText(/Selecione/);
 }
 
-function paginated(results: unknown[]): string {
-  return JSON.stringify({
-    count: results.length,
-    next: null,
-    previous: null,
-    results,
-  });
+/** Abre um `Select` do design system pelo id e escolhe a opção. */
+async function escolher(page: Page, id: string, opcao: string | RegExp) {
+  await page.locator(`#${id}`).click();
+  await page.getByRole("option", { name: opcao }).first().click();
 }
 
 test.describe("SGP — Criação de atividade", () => {
   test.use({ storageState: storageStatePath("ugp") });
 
   test("submit sem campos obrigatórios exibe erros inline", async ({ page }) => {
-    await page.goto("/sgp/atividades/nova");
-    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await abrirNovaAtividade(page);
 
-    await page.getByRole("button", { name: "Salvar atividade" }).click();
+    await page.getByRole("button", { name: "Salvar", exact: true }).click();
 
     await expect(page.getByText("Informe o título da atividade.")).toBeVisible();
     await expect(page.getByText("Selecione o tipo de atividade.")).toBeVisible();
     await expect(page.getByText("Selecione a Ação do PT.")).toBeVisible();
-    await expect(page.getByText("Selecione o técnico responsável.")).toBeVisible();
+    await expect(page.getByText("Selecione a forma de atuação.")).toBeVisible();
     await expect(page.getByText("Descreva a atividade.")).toBeVisible();
   });
 
   test("data de fim anterior à de início exibe mensagem de erro", async ({
     page,
   }) => {
-    await page.goto("/sgp/atividades/nova");
+    await abrirNovaAtividade(page);
 
     await page.locator("#atividade-data-inicio").fill("2026-06-10");
     await page.locator("#atividade-data-fim").fill("2026-06-05");
-    await page.getByRole("button", { name: "Salvar atividade" }).click();
+    await page.getByRole("button", { name: "Salvar", exact: true }).click();
 
     await expect(
       page.getByText("A data de fim não pode ser anterior à data de início."),
     ).toBeVisible();
   });
 
-  test("justificativa é exigida quando status é Não realizada", async ({
+  test("preencher só o título ainda cobra os demais obrigatórios", async ({
     page,
   }) => {
-    await page.goto("/sgp/atividades/nova");
+    await abrirNovaAtividade(page);
 
-    await page.locator("#atividade-titulo").fill("Teste de justificativa");
-    await page.getByRole("button", { name: "Salvar atividade" }).click();
+    await page.locator("#atividade-titulo").fill("Teste de obrigatórios");
+    await page.getByRole("button", { name: "Salvar", exact: true }).click();
 
     await expect(page.getByText("Selecione o tipo de atividade.")).toBeVisible();
   });
 
-  test("criação bem-sucedida redireciona para edição da atividade", async ({
-    page,
-  }) => {
-    // Mock dos dropdowns que o formulário carrega ao montar
-    await page.route("**/api/v1/acoes/**", async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          count: 1, next: null, previous: null,
-          results: [{ id: 1, meta: 1, numero: "1.1", descricao: "Ação teste" }],
-        }),
-      });
-    });
+  test("criação bem-sucedida grava no backend e leva à atividade", async ({ page }) => {
+    await abrirNovaAtividade(page);
 
-    await page.route("**/api/v1/users/**", async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          count: 1, next: null, previous: null,
-          results: [{ id: 10, nome_completo: "Beatriz Nogueira" }],
-        }),
-      });
-    });
+    await page.locator("#atividade-titulo").fill(`${PREFIXO_B6} Visita criada pela tela`);
+    await escolher(page, "atividade-tipo-atividade", "Visita técnica");
+    await escolher(page, "atividade-forma-atuacao", "Realização");
 
-    await page.route("**/api/v1/states/**", async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          count: 1, next: null, previous: null,
-          results: [{ id: 17, sigla: "PE", nome: "Pernambuco" }],
-        }),
-      });
-    });
+    // AcaoCombobox: digitar abre a lista das Ações do Plano de Trabalho.
+    await page.locator("#atividade-acao").fill("1.");
+    await page.getByRole("option").first().click();
 
-    await page.route("**/api/v1/municipalities/**", async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          count: 1, next: null, previous: null,
-          results: [{ id: 1001, nome: "Ouricuri", state: 17, territory: null }],
-        }),
-      });
-    });
+    await escolher(page, "atividade-tecnico-responsavel", /.+/);
+    await escolher(page, "atividade-estado", /\(RN\)/);
+    await expect(page.locator("#atividade-municipio")).toBeEnabled();
+    await escolher(page, "atividade-municipio", /.+/);
+    await escolher(page, "atividade-ambito", "Municipal");
 
-    await page.route("**/api/v1/municipios/**", async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ count: 0, next: null, previous: null, results: [] }),
-      });
-    });
+    await page.locator("#atividade-data-inicio").fill("2026-11-10");
+    await page.locator("#atividade-data-fim").fill("2026-11-10");
+    await page.locator("#atividade-descricao-narrativa").fill("Visita de acompanhamento criada pelo E2E.");
 
-    await page.route(ATIVIDADES_API, async (route) => {
-      if (route.request().method() !== "POST") return route.fallback();
-      await route.fulfill({
-        status: 201,
-        contentType: "application/json",
-        body: JSON.stringify(atividadeFake(4242, "Visita E2E", "planejado")),
-      });
-    });
-
-    await page.goto("/sgp/atividades/nova");
-    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    // Aguarda carregamento dos dados relacionados (ações, técnicos, estados)
-    await expect(page.getByText("Carregando atividades…")).not.toBeVisible({
-      timeout: 10_000,
-    });
-
-    await page.locator("#atividade-titulo").fill("Visita E2E");
-
-    await page.locator("#atividade-tipo-atividade").click();
-    await page.getByRole("option", { name: "Visita técnica" }).click();
-
-    await page.locator("#atividade-forma-atuacao").click();
-    await page.getByRole("option", { name: "Realização" }).click();
-
-    // AcaoCombobox: campo de texto com dropdown; digitar abre e filtra a lista
-    await page.locator("#atividade-acao").fill("1.1");
-    await page.getByRole("option", { name: /1\.1 — Ação teste/ }).click();
-
-    await page.locator("#atividade-tecnico-responsavel").click();
-    await page.getByRole("option", { name: "Beatriz Nogueira" }).click();
-
-    // Cascata estado → município
-    await page.locator("#atividade-estado").click();
-    await page.getByRole("option", { name: "Pernambuco (PE)" }).click();
-
-    // Aguarda o select de município ser habilitado após a seleção do estado
-    await expect(page.locator("#atividade-municipio")).not.toBeDisabled({
-      timeout: 5_000,
-    });
-    await page.locator("#atividade-municipio").click();
-    await page.getByRole("option", { name: "Ouricuri" }).click();
-
-    await page.locator("#atividade-ambito").click();
-    await page.getByRole("option", { name: "Municipal" }).click();
-
-    await page.locator("#atividade-data-inicio").fill("2026-06-01");
-    await page.locator("#atividade-data-fim").fill("2026-06-01");
-
-    await page.locator("#atividade-descricao-narrativa").fill(
-      "Visita de acompanhamento.",
+    const criacao = page.waitForResponse(
+      (r) => new URL(r.url()).pathname === "/api/v1/sgp/atividades/" && r.request().method() === "POST",
     );
-
-    await page.getByRole("button", { name: "Salvar atividade" }).click();
-
-    // Verifica que o formulário redirecionou para a tela de edição da nova atividade
-    await page.waitForURL("**/sgp/atividades/4242/**", { timeout: 10_000 });
+    await page.getByRole("button", { name: "Salvar", exact: true }).click();
+    const resposta = await criacao;
+    expect(resposta.status()).toBe(201);
+    const { id } = (await resposta.json()) as { id: number };
+    await page.waitForURL(new RegExp(`/sgp/atividades/${id}/`));
   });
 });
 
 test.describe("SGP — Listagem de atividades", () => {
   test.use({ storageState: storageStatePath("ugp") });
 
-  test("listagem renderiza atividades do seed com colunas corretas", async ({
-    page,
-  }) => {
+  test("listagem renderiza atividades do seed com colunas corretas", async ({ page }) => {
     await page.goto("/sgp/atividades");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expect(page.getByRole("columnheader", { name: "Título" })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Atividade" })).toBeVisible();
     await expect(page.getByRole("columnheader", { name: "Status" })).toBeVisible();
   });
 
-  test("filtro por status=concluido_sem_evidencia lista apenas as pendentes", async ({
-    page,
-  }) => {
-    await page.route(ATIVIDADES_API, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: paginated([
-          atividadeFake(1, "Visita sem fotos", "concluido_sem_evidencia"),
-          atividadeFake(2, "Oficina pendente", "concluido_sem_evidencia"),
-        ]),
-      });
-    });
-
+  test("filtro por Concluído sem evidência traz só as pendentes, com o selo certo", async ({ page }) => {
     await page.goto("/sgp/atividades?status=concluido_sem_evidencia");
-    await expect(page.getByText("Visita sem fotos")).toBeVisible();
-    await expect(page.getByText("Oficina pendente")).toBeVisible();
-    await expect(page.getByText("Concluído sem evidência").first()).toBeVisible();
+    const pendente = page.getByRole("row").filter({ hasText: fx.pendente.titulo });
+    await expect(pendente).toBeVisible();
+    await expect(pendente).toContainText("Concluído sem evidência");
+    // As da fixture em andamento ficam de fora do filtro.
+    await expect(page.getByRole("row").filter({ hasText: fx.semEvidencia.titulo })).toHaveCount(0);
   });
 
-  test("estado vazio com filtros ativos exibe botão Limpar filtros", async ({
-    page,
-  }) => {
-    await page.route(ATIVIDADES_API, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: paginated([]),
-      });
-    });
-
-    await page.goto("/sgp/atividades?status=concluido");
-    await expect(page.getByText(/Nenhuma atividade/i)).toBeVisible();
+  test("estado vazio com filtros ativos exibe botão Limpar filtros", async ({ page }) => {
+    await page.goto("/sgp/atividades?status=concluido&de=2000-01-01&ate=2000-01-02");
+    await expect(page.getByRole("heading", { name: "Nenhuma atividade neste período." })).toBeVisible();
+    // O botão do estado vazio (o outro fica na barra de filtros) limpa tudo.
+    await page.getByRole("button", { name: "Limpar filtros" }).last().click();
+    await expect(page).not.toHaveURL(/status=/);
+    await expect(page.getByRole("columnheader", { name: "Atividade" })).toBeVisible();
   });
 });
 
 test.describe("SGP — Evidências (fotos e documentos)", () => {
   test.use({ storageState: storageStatePath("ugp") });
 
-  test("atividade com status concluido_sem_evidencia exibe badge correto na listagem", async ({
-    page,
-  }) => {
-    await page.route(ATIVIDADES_API, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: paginated([
-          atividadeFake(1, "Atividade sem evidência", "concluido_sem_evidencia"),
-        ]),
-      });
-    });
-
-    await page.goto("/sgp/atividades");
-    await expect(page.getByText("Concluído sem evidência")).toBeVisible();
+  test("a edição mostra a galeria de fotos e a seção de documentos", async ({ page }) => {
+    await page.goto(`/sgp/atividades/${fx.comFoto.id}/editar`);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Fotos/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Documentos/i })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Adicionar foto/i }).or(page.getByLabel(/Adicionar foto/i)).first(),
+    ).toBeVisible();
   });
 
-  test("galeria de fotos aparece no formulário de edição", async ({ page }) => {
-    const upfId = primeiroUpfId();
-
-    await page.route(`**/api/v1/sgp/atividades/9001/`, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(atividadeFake(9001, "Atividade editável", "planejado")),
-      });
-    });
-
-    await page.route(FOTOS_API, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify([]),
-      });
-    });
-
-    await page.route(DOCUMENTOS_API, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify([]),
-      });
-    });
-
-    await page.goto("/sgp/atividades/9001/editar");
+  test("upload de foto passa pelo storage e fica gravado na atividade", async ({ page }) => {
+    await page.goto(`/sgp/atividades/${fx.anexos.id}/editar`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
-    await expect(
-      page.getByRole("heading", { name: /Fotos/i }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: /Documentos/i }),
-    ).toBeVisible();
-
-    const uploadBtn = page
-      .getByRole("button", { name: /Adicionar foto/i })
-      .or(page.getByLabel(/Adicionar foto/i));
-    await expect(uploadBtn.first()).toBeVisible();
-  });
-
-  test("upload de foto é enviado ao endpoint correto", async ({ page }) => {
-    const STORAGE_URL = "https://storage.example.com/upload";
-
-    await page.route(`**/api/v1/sgp/atividades/9001/`, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(atividadeFake(9001, "Atividade editável", "planejado")),
-      });
-    });
-
-    // Endpoint de solicitação da URL pré-assinada
-    await page.route(
-      "**/api/v1/sgp/atividades/9001/fotos/upload-url/",
-      async (route) => {
-        if (route.request().method() !== "POST") return route.fallback();
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            url: STORAGE_URL,
-            key: "test-key-123",
-            expires_in: 3600,
-          }),
-        });
-      },
-    );
-
-    // Simulação do storage externo (R2 / S3 pré-assinado)
-    await page.route("https://storage.example.com/**", async (route) => {
-      await route.fulfill({ status: 200 });
-    });
-
-    // Endpoint de confirmação do upload
-    await page.route(
-      "**/api/v1/sgp/atividades/9001/fotos/confirm/",
-      async (route) => {
-        if (route.request().method() !== "POST") return route.fallback();
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            id: 1,
-            url: `${STORAGE_URL}/foto.jpg`,
-            legenda: "",
-            ordem: 0,
-          }),
-        });
-      },
-    );
-
-    // Listagem de fotos e documentos (GET)
-    await page.route(FOTOS_API, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify([]),
-      });
-    });
-
-    await page.route(DOCUMENTOS_API, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify([]),
-      });
-    });
-
-    await page.goto("/sgp/atividades/9001/editar");
-    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-
-    // O input de arquivo deve existir no DOM (não condicional)
     const fileInput = page.locator('input[type="file"]').first();
-    await expect(fileInput).toBeAttached({ timeout: 5_000 });
+    await expect(fileInput).toBeAttached();
+    await fileInput.setInputFiles({ name: "foto-teste.jpg", mimeType: "image/jpeg", buffer: Buffer.alloc(1024) });
 
-    await fileInput.setInputFiles({
-      name: "foto-teste.jpg",
-      mimeType: "image/jpeg",
-      buffer: Buffer.alloc(1024),
-    });
-
-    // Após selecionar o arquivo, o botão "Enviar" deve aparecer para confirmar o envio
-    const uploadBtn = page.getByRole("button", { name: /Enviar .* foto/i });
-    await expect(uploadBtn).toBeVisible({ timeout: 5_000 });
-
-    // Aguarda a requisição ao endpoint de upload-url e então clica em Enviar
-    const uploadUrlRequest = page.waitForRequest(
-      (req) =>
-        req.url().includes("/fotos/upload-url/") && req.method() === "POST",
-      { timeout: 10_000 },
+    const confirmacao = page.waitForResponse(
+      (r) => r.url().includes(`/atividades/${fx.anexos.id}/fotos/confirm/`) && r.request().method() === "POST",
     );
-    await uploadBtn.click();
-    await uploadUrlRequest;
+    await page.getByRole("button", { name: /Enviar .* foto/i }).click();
+    expect((await confirmacao).status()).toBe(201);
+    await expect.poll(() => contarAnexos(fx.anexos.id).fotos).toBe(1);
   });
 
-  test("upload de documento PDF é enviado ao endpoint correto", async ({
-    page,
-  }) => {
-    const STORAGE_URL = "https://storage.example.com/upload";
-
-    await page.route(`**/api/v1/sgp/atividades/9001/`, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(atividadeFake(9001, "Atividade editável", "planejado")),
-      });
-    });
-
-    await page.route(
-      "**/api/v1/sgp/atividades/9001/documentos/upload-url/",
-      async (route) => {
-        if (route.request().method() !== "POST") return route.fallback();
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({ url: STORAGE_URL, key: "doc-key-123", expires_in: 3600 }),
-        });
-      },
-    );
-
-    await page.route("https://storage.example.com/**", async (route) => {
-      await route.fulfill({ status: 200 });
-    });
-
-    await page.route(
-      "**/api/v1/sgp/atividades/9001/documentos/confirm/",
-      async (route) => {
-        if (route.request().method() !== "POST") return route.fallback();
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            id: 1,
-            tipo: "ata",
-            tipo_display: "Ata",
-            descricao: "",
-            nome_original: "ata-reuniao.pdf",
-            data_documento: "2026-06-01",
-            tamanho_bytes: 1024,
-            criado_em: "2026-06-01T10:00:00Z",
-            arquivo_url: `${STORAGE_URL}/doc.pdf`,
-            pendente_sincronizacao: false,
-          }),
-        });
-      },
-    );
-
-    await page.route(FOTOS_API, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });
-    });
-
-    await page.route(DOCUMENTOS_API, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });
-    });
-
-    await page.goto("/sgp/atividades/9001/editar");
+  test("upload de documento PDF passa pelo storage e aparece na lista", async ({ page }) => {
+    await page.goto(`/sgp/atividades/${fx.anexos.id}/editar`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
-    // Input de documento: aceita somente PDF (application/pdf).
     const docInput = page.locator('input[type="file"][accept*="pdf"]');
-    await expect(docInput).toBeAttached({ timeout: 5_000 });
+    await expect(docInput).toBeAttached();
+    await docInput.setInputFiles({ name: "ata-reuniao.pdf", mimeType: "application/pdf", buffer: Buffer.alloc(1024) });
 
-    await docInput.setInputFiles({
-      name: "ata-reuniao.pdf",
-      mimeType: "application/pdf",
-      buffer: Buffer.alloc(1024),
-    });
-
-    // "Tipo" é um combobox customizado (button role=combobox), não um <select>
-    // HTML, então usamos clique + opção. Escopamos pela seção de Documentos
+    // "Tipo" é um combobox do design system, escopado pela seção de Documentos
     // para não colidir com o "Tipo de atividade" do formulário principal.
-    const docSection = page.getByRole("region", {
-      name: "Documentos da atividade",
-    });
+    const docSection = page.getByRole("region", { name: "Documentos da atividade" });
     await docSection.getByRole("combobox", { name: "Tipo" }).click();
     await page.getByRole("option", { name: "Ata" }).click();
     await docSection.locator('input[type="date"]').last().fill("2026-06-01");
 
-    const uploadBtn = page.getByRole("button", { name: "Enviar pendentes" });
-    await expect(uploadBtn).toBeEnabled({ timeout: 5_000 });
-
-    const uploadUrlRequest = page.waitForRequest(
-      (req) =>
-        req.url().includes("/documentos/upload-url/") && req.method() === "POST",
-      { timeout: 10_000 },
+    const confirmacao = page.waitForResponse(
+      (r) => r.url().includes(`/atividades/${fx.anexos.id}/documentos/confirm/`) && r.request().method() === "POST",
     );
-    const confirmRequest = page.waitForRequest(
-      (req) =>
-        req.url().includes("/documentos/confirm/") && req.method() === "POST",
-      { timeout: 10_000 },
-    );
-    await uploadBtn.click();
-    await uploadUrlRequest;
-    await confirmRequest;
+    await page.getByRole("button", { name: "Enviar pendentes" }).click();
+    expect((await confirmacao).status()).toBe(201);
+    await expect(docSection.getByText("ata-reuniao.pdf", { exact: false })).toBeVisible();
+    expect(contarAnexos(fx.anexos.id).documentos).toBe(1);
 
-    // Após o confirm, o front move o item de pendente para a lista oficial
-    // (setDocs). O arquivo deve aparecer na seção de documentos.
+    // Recarregar mostra o documento vindo do backend, não do estado da tela.
+    await page.reload();
     await expect(
-      docSection.getByText("ata-reuniao.pdf", { exact: false }),
-    ).toBeVisible({ timeout: 5_000 });
+      page.getByRole("region", { name: "Documentos da atividade" }).getByText("ata-reuniao.pdf", { exact: false }),
+    ).toBeVisible();
   });
 });
 
 test.describe("SGP — Transição de status", () => {
   test.use({ storageState: storageStatePath("ugp") });
 
-  function atividadeParaTransicao(comEvidencia: boolean): Record<string, unknown> {
-    return {
-      ...atividadeFake(9001, "Atividade teste", "planejado"),
-      transicoes_permitidas: ["concluido"],
-      fotos: comEvidencia
-        ? [{ id: 1, url: "https://storage.example.com/foto.jpg", legenda: "", ordem: 0 }]
-        : [],
-      documentos: [],
-    };
-  }
-
-  async function abrirFichaComMock(
-    page: import("@playwright/test").Page,
-    comEvidencia: boolean,
-  ) {
-    await page.route(`**/api/v1/sgp/atividades/9001/`, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(atividadeParaTransicao(comEvidencia)),
-      });
-    });
-    await page.route(FOTOS_API, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });
-    });
-    await page.route(DOCUMENTOS_API, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });
-    });
-
-    await page.goto("/sgp/atividades/9001/");
+  async function abrirTransicaoParaConcluido(page: Page, atividadeId: number) {
+    await page.goto(`/sgp/atividades/${atividadeId}/`);
     await expect(page.getByTestId("atividade-ficha-page")).toBeVisible();
-  }
-
-  test("sem evidência: aviso aparece e Confirmar fica desabilitado", async ({
-    page,
-  }) => {
-    await abrirFichaComMock(page, false);
-
     await page.getByTestId("atividade-status-btn").click();
     await expect(page.getByTestId("transicao-dialog")).toBeVisible();
-
-    // Seleciona "Concluído" para acionar a exigência de evidência.
     await page.getByLabel("Novo status").click();
-    await page.getByRole("option", { name: "Concluído" }).click();
+    await page.getByRole("option", { name: "Concluído", exact: true }).click();
+  }
 
+  test("sem evidência: aviso aparece e Confirmar fica desabilitado", async ({ page }) => {
+    await abrirTransicaoParaConcluido(page, fx.semEvidencia.id);
     await expect(page.getByTestId("transicao-aviso-evidencia")).toBeVisible();
     await expect(page.getByTestId("transicao-confirmar")).toBeDisabled();
   });
 
-  test("backend recusa 400 ao concluir sem evidência: mensagem aparece e status não muda", async ({
-    page,
-  }) => {
-    // GET retorna atividade COM foto — o front deixa prosseguir.
-    // PATCH responde 400 — simula o backend como segunda barreira.
-    await abrirFichaComMock(page, true);
+  test("foto removida depois de abrir a ficha: o backend recusa e a mensagem aparece", async ({ page }) => {
+    await abrirTransicaoParaConcluido(page, fx.fotoRemovida.id);
+    await expect(page.getByTestId("transicao-confirmar")).toBeEnabled();
 
-    await page.route(`**/api/v1/sgp/atividades/9001/`, async (route) => {
-      if (route.request().method() !== "PATCH") return route.fallback();
-      await route.fulfill({
-        status: 400,
-        contentType: "application/json",
-        body: JSON.stringify({
-          detail: "É necessário ao menos uma evidência para concluir a atividade.",
-        }),
-      });
-    });
-
-    await page.getByTestId("atividade-status-btn").click();
-    await expect(page.getByTestId("transicao-dialog")).toBeVisible();
-
-    await page.getByLabel("Novo status").click();
-    await page.getByRole("option", { name: "Concluído" }).click();
-
+    // Outra aba remove a única foto: a tela ainda acha que há evidência.
+    desativarFotos(fx.fotoRemovida.id);
+    const patch = page.waitForResponse(
+      (r) => r.url().includes(`/sgp/atividades/${fx.fotoRemovida.id}/`) && r.request().method() === "PATCH",
+    );
     await page.getByTestId("transicao-confirmar").click();
+    expect((await patch).status()).toBe(400);
 
-    // Mensagem de erro do backend aparece no diálogo.
-    await expect(page.getByTestId("transicao-erro")).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByTestId("transicao-erro")).toContainText(/evidência/i);
-
-    // Diálogo ainda está aberto — status não mudou.
+    await expect(page.getByTestId("transicao-erro")).toContainText("sem ao menos uma foto ou documento");
     await expect(page.getByTestId("transicao-dialog")).toBeVisible();
   });
 
-  test("com evidência: confirma transição e diálogo fecha", async ({ page }) => {
-    await abrirFichaComMock(page, true);
-
-    // Mock do PATCH de transição: retorna atividade já concluída.
-    await page.route(`**/api/v1/sgp/atividades/9001/`, async (route) => {
-      if (route.request().method() !== "PATCH") return route.fallback();
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          ...atividadeParaTransicao(true),
-          status: "concluido",
-          transicoes_permitidas: [],
-        }),
-      });
-    });
-
-    await page.getByTestId("atividade-status-btn").click();
-    await expect(page.getByTestId("transicao-dialog")).toBeVisible();
-
-    await page.getByLabel("Novo status").click();
-    await page.getByRole("option", { name: "Concluído" }).click();
-
-    // Com evidência, o aviso não aparece e o botão está habilitado.
+  test("com evidência: conclui no backend e o diálogo fecha", async ({ page }) => {
+    await abrirTransicaoParaConcluido(page, fx.comFoto.id);
     await expect(page.getByTestId("transicao-aviso-evidencia")).toHaveCount(0);
-    await expect(page.getByTestId("transicao-confirmar")).toBeEnabled();
 
+    const patch = page.waitForResponse(
+      (r) => r.url().includes(`/sgp/atividades/${fx.comFoto.id}/`) && r.request().method() === "PATCH",
+    );
     await page.getByTestId("transicao-confirmar").click();
-
-    // Após o PATCH, o diálogo fecha.
-    await expect(page.getByTestId("transicao-dialog")).toHaveCount(0, {
-      timeout: 5_000,
-    });
+    const resposta = await patch;
+    expect(resposta.status()).toBe(200);
+    expect(((await resposta.json()) as { status: string }).status).toBe("concluido");
+    await expect(page.getByTestId("transicao-dialog")).toHaveCount(0);
   });
 });

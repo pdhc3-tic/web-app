@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "@/app/lib/api";
 import type { Demanda, SolicitacaoDemanda } from "@/app/lib/demandas";
 import { bloqueioDeRecursoExtra } from "@/app/lib/remanejamentos";
+import type { ErroSaldoInsuficiente } from "@/app/lib/solicitacoes";
 
 /**
- * Leitura do 400 da submissão para o atalho "Solicitar recurso extra" (#321),
- * que a tela de submissão da #295 vai chamar.
+ * Leitura do 400 `INSUFFICIENT_BALANCE` da submissão para o atalho
+ * "Solicitar recurso extra" (#321, #359).
  */
 
 function solicitacao(id: number, slug: string, nome: string): SolicitacaoDemanda {
@@ -20,62 +21,54 @@ const demanda = {
   ],
 } as Demanda;
 
-function erro400(raw: unknown): ApiError {
-  return new ApiError(400, { code: "validation_error", message: "x" }, raw);
+function bloqueio(trava: "individual" | "territorial", extra: Partial<ErroSaldoInsuficiente> = {}): ErroSaldoInsuficiente {
+  return {
+    code: "INSUFFICIENT_BALANCE",
+    trava,
+    rubrica: "locacao-veiculo",
+    disponivel: "1000.00",
+    solicitado: "1200.00",
+    acao_sugerida: trava === "individual" ? "solicitar_recurso_extra" : "acionar_articulador",
+    detail: "Texto do backend.",
+    ...extra,
+  };
+}
+
+function erro400(bloqueadas: Record<string, ErroSaldoInsuficiente>): ApiError {
+  const [id, primeiro] = Object.entries(bloqueadas)[0];
+  return new ApiError(
+    400,
+    { code: "INSUFFICIENT_BALANCE", message: "x" },
+    { ...primeiro, solicitacao_id: Number(id), solicitacoes_bloqueadas: bloqueadas },
+  );
 }
 
 describe("bloqueioDeRecursoExtra", () => {
-  it("lê o contrato do PR #343 e devolve a solicitação barrada pelo limite individual", () => {
-    const erro = erro400({
-      detail: "Limite individual insuficiente. Use a opção 'Solicitar recurso extra'.",
-      code: "trava_individual",
-      solicitacao_id: 11,
-      solicitacoes_bloqueadas: {
-        "11": {
-          trava: "individual",
-          motivo: "Limite individual insuficiente. Use a opção 'Solicitar recurso extra'.",
-          acao_sugerida: "solicitar_recurso_extra",
-        },
-      },
-    });
-
-    expect(bloqueioDeRecursoExtra(erro, demanda)).toEqual({
+  it("devolve a solicitação barrada pelo limite individual com o disponível e o solicitado", () => {
+    expect(bloqueioDeRecursoExtra(erro400({ "11": bloqueio("individual") }), demanda)).toEqual({
       solicitacaoId: 11,
       rubrica: { slug: "locacao-veiculo", nome: "Locação de veículo" },
-      motivo: "Limite individual insuficiente. Use a opção 'Solicitar recurso extra'.",
+      disponivel: "1000.00",
+      solicitado: "1200.00",
+      valorFaltante: null,
     });
   });
 
-  it("aceita o contrato atual da main, só com `solicitacoes_bloqueadas`", () => {
-    const erro = erro400({
-      solicitacoes_bloqueadas: {
-        "10": { trava: "individual", motivo: "Sem limite.", acao_sugerida: "solicitar_recurso_extra" },
-      },
-    });
-
-    expect(bloqueioDeRecursoExtra(erro, demanda)?.rubrica.slug).toBe("diarias");
+  it("leva o valor que falta na rubrica quando o backend o envia", () => {
+    const erro = erro400({ "11": bloqueio("individual", { valor_faltante: "200.00" }) });
+    expect(bloqueioDeRecursoExtra(erro, demanda)?.valorFaltante).toBe("200.00");
   });
 
   it("pula a trava territorial, que pede o Articulador e não recurso extra", () => {
-    const erro = erro400({
-      code: "trava_territorial",
-      solicitacoes_bloqueadas: {
-        "10": { trava: "territorial", motivo: "Pool esgotado.", acao_sugerida: "acionar_articulador" },
-        "11": { trava: "individual", motivo: "Sem limite.", acao_sugerida: "solicitar_recurso_extra" },
-      },
-    });
-
+    const erro = erro400({ "10": bloqueio("territorial"), "11": bloqueio("individual") });
     expect(bloqueioDeRecursoExtra(erro, demanda)?.solicitacaoId).toBe(11);
   });
 
-  it("devolve null sem bloqueio individual, em outro status ou fora de ApiError", () => {
-    const soTerritorial = erro400({
-      solicitacoes_bloqueadas: {
-        "10": { trava: "territorial", motivo: null, acao_sugerida: "acionar_articulador" },
-      },
-    });
-    expect(bloqueioDeRecursoExtra(soTerritorial, demanda)).toBeNull();
-    expect(bloqueioDeRecursoExtra(erro400({ solicitacoes: "vazia" }), demanda)).toBeNull();
+  it("devolve null sem bloqueio individual, em outro 400 ou fora de ApiError", () => {
+    expect(bloqueioDeRecursoExtra(erro400({ "10": bloqueio("territorial") }), demanda)).toBeNull();
+    expect(
+      bloqueioDeRecursoExtra(new ApiError(400, { code: "x", message: "x" }, { solicitacoes: "vazia" }), demanda),
+    ).toBeNull();
     expect(
       bloqueioDeRecursoExtra(new ApiError(403, { code: "x", message: "x" }, {}), demanda),
     ).toBeNull();

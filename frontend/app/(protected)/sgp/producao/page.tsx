@@ -57,7 +57,7 @@ function IndicadoresBar({ indicadores }: { indicadores: IndicadoresProducao }) {
         <p className="text-xs font-medium uppercase tracking-wide text-text-muted">
           UPFs produtoras
         </p>
-        <p className="mt-1 text-2xl font-semibold text-text">
+        <p className="mt-1 text-2xl font-semibold text-text" data-testid="producao-indicador-upfs">
           {indicadores.total_upfs_produtoras}
         </p>
       </div>
@@ -66,7 +66,7 @@ function IndicadoresBar({ indicadores }: { indicadores: IndicadoresProducao }) {
           <p className="text-xs font-medium uppercase tracking-wide text-text-muted">
             Área total (ha)
           </p>
-          <p className="mt-1 text-2xl font-semibold text-text">
+          <p className="mt-1 text-2xl font-semibold text-text" data-testid="producao-indicador-area">
             {Number(indicadores.area_total_ha).toLocaleString("pt-BR", {
               maximumFractionDigits: 1,
             })}
@@ -189,18 +189,32 @@ function ProducaoView() {
 
   useEffect(() => {
     const controller = new AbortController();
+    // Busca com AbortController: o estado de carregando/erro sincroniza com a
+    // requisição que sai daqui (mesma supressão de lint das outras telas).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIndicadoresError(false);
+    // Os indicadores seguem os mesmos filtros da listagem: o `/indicadores/`
+    // aplica o `ProducaoConsolidadaFilter` (A3 da #302).
     fetchIndicadoresProducao(
-      { territorio: filters.territorio || undefined, municipio: filters.municipio || undefined },
+      {
+        tipo: filters.tipo || undefined,
+        territorio: filters.territorio || undefined,
+        municipio: filters.municipio || undefined,
+        cultura: filters.cultura || undefined,
+        especie: filters.especie || undefined,
+      },
       controller.signal,
     )
       .then((data) => { if (!controller.signal.aborted) setIndicadores(data); })
       .catch(() => { if (!controller.signal.aborted) setIndicadoresError(true); });
     return () => controller.abort();
-  }, [filters.territorio, filters.municipio, indicadoresReloadKey]);
+  }, [filters.tipo, filters.territorio, filters.municipio, filters.cultura, filters.especie, indicadoresReloadKey]);
 
   useEffect(() => {
     const controller = new AbortController();
+    // Busca com AbortController: o estado de carregando/erro sincroniza com a
+    // requisição que sai daqui (mesma supressão de lint das outras telas).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDataLoading(true);
     setError(null);
     listProducaoConsolidada(
@@ -392,7 +406,7 @@ function ProducaoView() {
               </thead>
               <tbody className="divide-y divide-border bg-surface">
                 {items.map((item) => (
-                  <tr key={item.id} className="hover:bg-surface-muted">
+                  <tr key={item.id} className="hover:bg-surface-muted" data-testid={`producao-linha-${item.id}`}>
                     <td className="px-4 py-3 font-medium text-text">
                       <Link
                         href={`/sgp/upfs/${item.upf_id}?tab=producao`}

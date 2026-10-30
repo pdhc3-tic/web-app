@@ -1,7 +1,9 @@
 "use client";
 
+import { AlertTriangle } from "lucide-react";
 import { Badge, type BadgeStatus } from "@/app/components/ui/Badge/Badge";
-import type { OperacaoArlo, StatusOperacaoArlo } from "@/app/lib/arlo";
+import type { DivergenciaArlo, OperacaoArlo, StatusOperacaoArlo } from "@/app/lib/arlo";
+import { formatCurrencyBRL } from "@/app/lib/format";
 
 const BADGE_DO_STATUS: Record<StatusOperacaoArlo, BadgeStatus> = {
   pendente: "agendado",
@@ -36,6 +38,8 @@ const TH = "px-3 py-2 text-left text-2xs font-medium uppercase tracking-[0.06em]
 export function ErrosDaImportacao({ operacao }: { operacao: OperacaoArlo }) {
   const erros = [...operacao.erros_json].sort((a, b) => a.linha - b.linha);
   const falhou = operacao.status === "falhou";
+  const divergencias = operacao.divergencias ?? [];
+  const glosas = divergencias.filter((d) => d.risco_glosa).length;
 
   return (
     <div className="space-y-3" data-testid="arlo-erros">
@@ -48,6 +52,14 @@ export function ErrosDaImportacao({ operacao }: { operacao: OperacaoArlo }) {
               {" · "}
               <span className="text-error-text">
                 {erros.length} {erros.length === 1 ? "linha recusada" : "linhas recusadas"}
+              </span>
+            </>
+          )}
+          {glosas > 0 && (
+            <>
+              {" · "}
+              <span className="font-medium text-error-text">
+                {glosas} com risco de glosa
               </span>
             </>
           )}
@@ -84,15 +96,79 @@ export function ErrosDaImportacao({ operacao }: { operacao: OperacaoArlo }) {
           </table>
         </div>
       )}
+
+      {divergencias.length > 0 && <DivergenciasDaImportacao divergencias={divergencias} />}
     </div>
   );
 }
 
 /**
+ * Linhas pagas com valor diferente do autorizado. Acima do autorizado é risco
+ * de glosa: a linha vem destacada, primeiro, e o excedente não entra na
+ * execução do orçamento. Abaixo, a sobra volta aos limites.
+ */
+function DivergenciasDaImportacao({ divergencias }: { divergencias: DivergenciaArlo[] }) {
+  const ordenadas = [...divergencias].sort((a, b) => Number(b.risco_glosa) - Number(a.risco_glosa));
+  return (
+    <section className="space-y-2" aria-labelledby="arlo-divergencias-titulo" data-testid="arlo-divergencias">
+      <h3 id="arlo-divergencias-titulo" className="text-sm font-semibold text-text">
+        Pagamentos diferentes do autorizado
+      </h3>
+      <div className="max-h-80 overflow-auto rounded-lg border border-border">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 border-b border-border bg-surface-muted">
+            <tr>
+              <th className={TH}>Demanda</th>
+              <th className={`${TH} text-right`}>Autorizado</th>
+              <th className={`${TH} text-right`}>Pago</th>
+              <th className={`${TH} text-right`}>Diferença</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ordenadas.map((d) => (
+              <tr
+                key={d.solicitacao_id}
+                className={`border-b border-border last:border-0 ${d.risco_glosa ? "bg-error-bg" : ""}`}
+                data-testid={`arlo-divergencia-${d.solicitacao_id}`}
+              >
+                <td className="px-3 py-2 align-top text-text">
+                  <span className="font-medium">#{d.demanda_id}</span> {d.demanda_titulo}
+                  {d.risco_glosa ? (
+                    <span className="mt-1 flex items-center gap-1 text-xs font-medium text-error-text">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      Risco de glosa: pago acima do autorizado
+                    </span>
+                  ) : (
+                    <span className="mt-1 block text-xs text-text-muted">
+                      Pago abaixo do autorizado; a diferença voltou ao saldo
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2 align-top text-right tabular-nums text-text-muted">
+                  {formatCurrencyBRL(d.valor_autorizado)}
+                </td>
+                <td className="px-3 py-2 align-top text-right tabular-nums text-text">
+                  {formatCurrencyBRL(d.valor_pago)}
+                </td>
+                <td
+                  className={`px-3 py-2 align-top text-right tabular-nums font-medium ${d.risco_glosa ? "text-error-text" : "text-text-muted"}`}
+                >
+                  {Number(d.diferenca) > 0 ? "+" : ""}
+                  {formatCurrencyBRL(d.diferenca)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+/**
  * Importação que falhou antes de ler as linhas (arquivo não encontrado ou
- * ilegível): nenhuma demanda foi alterada. O motivo gravado pelo backend vai
- * como detalhe técnico, porque hoje pode ser só o caminho do arquivo
- * (pendência 16 do backend).
+ * ilegível): nenhuma demanda foi alterada. O motivo gravado pelo backend (ex.:
+ * colunas obrigatórias ausentes) vai como detalhe técnico, para o suporte.
  */
 export function FalhaDaImportacao({ operacao }: { operacao: OperacaoArlo }) {
   const detalhe = operacao.erros_json[0]?.erro;

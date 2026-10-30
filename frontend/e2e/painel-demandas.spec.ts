@@ -4,6 +4,7 @@ import {
   removerPainelDemandasFixture,
   type PainelDemandasFixture,
 } from "./helpers/painelDemandasFixture";
+import { abrirComApi, apiGet } from "./helpers/apiReal";
 import { storageStatePath } from "./helpers/users";
 
 /**
@@ -150,30 +151,22 @@ test.describe("UGP", () => {
   test.use({ storageState: storageStatePath("ugp") });
 
   test("a confirmação só libera quando o impacto no saldo foi validado", async ({ page }) => {
+    // A interceptação só segura a resposta real (passo 1) ou força a falha
+    // (passo 3); o impacto vem sempre do backend.
     const CORS = { "access-control-allow-origin": "*" };
-    let modo: "segurar" | "sem-saldo" | "erro" | "real" = "segurar";
+    let modo: "segurar" | "erro" | "real" = "segurar";
     let liberar: () => void = () => {};
     const segurando = new Promise<void>((r) => (liberar = r));
 
     await page.route(
       (url) => url.pathname.endsWith("/preview-decisao/"),
       async (route) => {
-        if (route.request().method() === "OPTIONS" || modo === "real") return route.fallback();
+        if (route.request().method() === "OPTIONS") return route.fallback();
         if (modo === "erro") {
           return route.fulfill({ status: 500, headers: CORS, body: "erro" });
         }
         if (modo === "segurar") await segurando;
-        const trava = { semaforo_antes: "verde", semaforo_apos: "vermelho", saldo_apos: -100 };
-        await route.fulfill({
-          status: 200,
-          headers: { ...CORS, "content-type": "application/json" },
-          body: JSON.stringify({
-            disponivel: false,
-            trava_bloqueada: "individual",
-            individual: trava,
-            territorial: { ...trava, semaforo_apos: "verde", saldo_apos: 1000 },
-          }),
-        });
+        return route.fallback();
       },
     );
 
@@ -182,13 +175,14 @@ test.describe("UGP", () => {
     const confirmar = painel(page).getByTestId("decisao-confirmar");
     const bloqueio = painel(page).getByTestId("decisao-bloqueio");
 
-    // 1. Calculando: a resposta ainda não chegou.
+    // 1. Calculando: a resposta ainda não chegou. R$ 9.000 leva o comprometido
+    // do ADT a R$ 15.000, acima do limite individual de R$ 12.000 da fixture.
     await painel(page).getByLabel(/Valor autorizado/).fill("9000");
     await expect(bloqueio).toContainText("Calculando o impacto");
     await expect(confirmar).toBeDisabled();
 
-    // 2. O impacto chegou, mas sem saldo.
-    modo = "sem-saldo";
+    // 2. O impacto real chegou, mas sem saldo.
+    modo = "real";
     liberar();
     await expect(bloqueio).toContainText("excede o saldo");
     await expect(confirmar).toBeDisabled();
@@ -319,18 +313,24 @@ test.describe("FGD", () => {
     await expect(painel(page)).toContainText("pago R$ 1.100,00");
   });
 
-  test("a FGD não vê a aba Auditoria — ela é restrita ao Super Admin (#322)", async ({ page }) => {
+  test("a FGD vê a aba Auditoria da demanda que atende (#322)", async ({ page }) => {
     await page.goto(`/sgd/demandas?demanda=${fx.atender.id}`);
-    await expect(painel(page).getByRole("tab", { name: "Linha do tempo" })).toBeVisible();
-    await expect(painel(page).getByRole("tab", { name: "Auditoria" })).toHaveCount(0);
+    const aba = painel(page).getByRole("tab", { name: "Auditoria" });
+    await expect(aba).toBeVisible();
+    await aba.click();
+    await expect(painel(page).getByTestId("painel-auditoria")).toBeVisible();
   });
 });
 
+type PaginaAuditoriaApi = {
+  count: number;
+  results: { ip: string | null }[];
+};
+
 /**
  * #322 — Aba de auditoria no painel master-detail, consumindo o endpoint
- * `GET /api/v1/sgd/demandas/{id}/auditoria/` (BE-7). O backend restringe a
- * trilha ao Super Admin porque devolve IP de origem (ver
- * `pendencias-backend-sprint-10.md`, item 19).
+ * `GET /api/v1/sgd/demandas/{id}/auditoria/` (BE-7). Quem vê a demanda vê a
+ * trilha; o IP de quem agiu só chega ao Super Admin (item 4 da #373, PR #376).
  */
 test.describe("Super Admin — Auditoria da demanda (#322)", () => {
   test.use({ storageState: storageStatePath("superAdmin") });
@@ -373,87 +373,48 @@ test.describe("Super Admin — Auditoria da demanda (#322)", () => {
   });
 
   test("'carregar mais' pede a próxima página do backend", async ({ page }) => {
-    const CORS = { "access-control-allow-origin": "*" };
-    const totalFake = 25;
-
-    function evento(id: number, offset: number) {
-      const tipo = id % 2 === 0 ? "status" : "saldo";
-      const acao = tipo === "status" ? "demanda.status_alterado" : "saldo.reserva";
-      return {
-        id,
-        tipo,
-        acao,
-        usuario: { id: 1, nome: "Vera Lucena" },
-        ip: "203.0.113.9",
-        timestamp: new Date(Date.UTC(2026, 9, 1, 12, offset)).toISOString(),
-        valores_anteriores: tipo === "status" ? { status: "submetida" } : {},
-        valores_novos: tipo === "status" ? { status: "pre_autorizada" } : { valor: "100.00" },
-      };
-    }
-
-    await page.route(
-      (url) => /\/api\/v1\/sgd\/demandas\/\d+\/auditoria\/?/.test(url.pathname),
-      async (route) => {
-        if (route.request().method() === "OPTIONS") return route.fallback();
-        const params = new URL(route.request().url()).searchParams;
-        const limit = Number(params.get("limit") ?? 20);
-        const offset = Number(params.get("offset") ?? 0);
-        const paginaIds = Array.from({ length: Math.min(limit, totalFake - offset) }, (_, i) =>
-          evento(offset + i + 1, offset + i),
-        );
-        const temProxima = offset + paginaIds.length < totalFake;
-        await route.fulfill({
-          status: 200,
-          headers: { ...CORS, "content-type": "application/json" },
-          body: JSON.stringify({
-            count: totalFake,
-            next: temProxima ? `?limit=${limit}&offset=${offset + limit}` : null,
-            previous: null,
-            results: paginaIds,
-          }),
-        });
-      },
+    // `longa` foi devolvida e ressubmetida dez vezes: a trilha real passa dos
+    // 20 eventos da primeira página.
+    const origem = await abrirComApi(page, `/sgd/demandas?visao=todas&demanda=${fx.longa.id}`);
+    const { count } = await apiGet<PaginaAuditoriaApi>(
+      page,
+      origem,
+      `/api/v1/sgd/demandas/${fx.longa.id}/auditoria/?limit=1`,
     );
+    expect(count).toBeGreaterThan(20);
 
-    await abrirAuditoria(page, fx.cancelar.id);
+    await painel(page).getByRole("tab", { name: "Auditoria" }).click();
     const eventos = painel(page).locator("[data-testid^='auditoria-evento-']");
     await expect(eventos).toHaveCount(20);
 
     const botao = painel(page).getByTestId("auditoria-carregar-mais");
-    await expect(botao).toContainText("20 de 25");
+    await expect(botao).toContainText(`20 de ${count}`);
     await botao.click();
 
-    await expect(eventos).toHaveCount(25);
+    await expect(eventos).toHaveCount(count);
     await expect(painel(page).getByTestId("auditoria-carregar-mais")).toHaveCount(0);
   });
-
 });
 
-test.describe("UGP — sem acesso à auditoria (#322)", () => {
+test.describe("UGP — auditoria sem IP (#322)", () => {
   test.use({ storageState: storageStatePath("ugp") });
 
-  test("vê a demanda, mas não a aba Auditoria, e o backend recusa a trilha", async ({ page }) => {
-    // A UGP enxerga a demanda, mas a trilha é só do Super Admin (pendência 19):
-    // além de a aba não aparecer, a rota responde 403 mesmo chamada direto.
-    const doDetalhe = page.waitForRequest((r) =>
-      r.url().includes(`/api/v1/sgd/demandas/${fx.auditada.id}/`),
-    );
-    await page.goto(`/sgd/demandas?visao=todas&demanda=${fx.auditada.id}`);
-    const api = new URL((await doDetalhe).url()).origin;
+  test("vê a aba Auditoria da demanda, e o backend não entrega o IP", async ({ page }) => {
+    const origem = await abrirComApi(page, `/sgd/demandas?visao=todas&demanda=${fx.auditada.id}`);
 
-    await expect(painel(page).getByRole("tab", { name: "Linha do tempo" })).toBeVisible();
-    await expect(painel(page).getByRole("tab", { name: "Auditoria" })).toHaveCount(0);
+    const aba = painel(page).getByRole("tab", { name: "Auditoria" });
+    await expect(aba).toBeVisible();
+    await aba.click();
+    await expect(painel(page).locator("[data-tipo='status']")).toHaveCount(5);
+    await expect(painel(page).getByTestId("painel-auditoria")).not.toContainText("IP ");
 
-    const status = await page.evaluate(
-      async ({ api, id }) => {
-        const sessao = await (await fetch("/api/auth/session")).json();
-        const res = await fetch(`${api}/api/v1/sgd/demandas/${id}/auditoria/`, {
-          headers: { Authorization: `Bearer ${sessao.accessToken}` },
-        });
-        return res.status;
-      },
-      { api, id: fx.auditada.id },
+    // O IP é dado pessoal: fora do Super Admin, a rota devolve a trilha sem ele.
+    const { results } = await apiGet<PaginaAuditoriaApi>(
+      page,
+      origem,
+      `/api/v1/sgd/demandas/${fx.auditada.id}/auditoria/`,
     );
-    expect(status).toBe(403);
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.every((e) => e.ip === null)).toBe(true);
   });
 });

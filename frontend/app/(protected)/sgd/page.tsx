@@ -13,6 +13,7 @@ import {
   canViewSgdGestao,
 } from "@/app/lib/auth/roles";
 import { useContagemFila } from "@/app/lib/hooks/useFilaDemandas";
+import { PainelSgd } from "./_components/PainelSgd";
 
 type Submodule = {
   key: string;
@@ -25,11 +26,8 @@ type Submodule = {
 };
 
 /**
- * Tela-índice do SGD, no mesmo padrão das do SGP e do SCA: cards por
- * submódulo, os entregues navegáveis e os planejados como "Em breve".
- *
- * Os "Em breve" são as issues abertas do SGD no frontend: #295 (formulário de
- * solicitação de recurso) e #297 (execução por rubrica).
+ * Home do SGD: o painel consolidado do perfil (#318) e, abaixo, os cards por
+ * submódulo, no mesmo padrão das telas-índice do SGP e do SCA.
  */
 const SUBMODULES: Submodule[] = [
   {
@@ -105,6 +103,9 @@ export default function SGDPage() {
           </p>
         </div>
 
+        <PainelSgd />
+
+        <h2 className="text-sm font-semibold text-text">Módulos</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {visiveis.map((sub) => (
             <SubmoduleCard

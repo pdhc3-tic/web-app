@@ -11,7 +11,6 @@ import {
   createUpf,
   fetchComunidadeOptions,
   fetchMunicipalitiesByState,
-  fetchMunicipality,
   fetchProjetoOptions,
   fetchStateOptions,
   fetchTerritoryMap,
@@ -170,8 +169,8 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
     [],
   );
 
-  // Prefill de edição: descobre o estado a partir do município e hidrata a
-  // cascata. Compartilha `hydrateCascadeRef` com `continueDraft` — assim,
+  // Prefill de edição: o estado já vem do detalhe (`detailToForm`); aqui só
+  // hidrata as opções da cascata. Compartilha `hydrateCascadeRef` com `continueDraft` — assim,
   // quando o usuário clica "Continuar rascunho" no meio da hidratação inicial
   // da edição, o abort no continueDraft encerra estas requisições em voo
   // (senão elas resolveriam depois com dados da edição por cima do rascunho).
@@ -182,15 +181,10 @@ export function UpfWizard({ mode, upfId, initialData }: UpfWizardProps) {
     hydrateCascadeRef.current = controller;
     (async () => {
       try {
-        const muni = await fetchMunicipality(
-          initialData.municipio.id,
-          controller.signal,
-        );
-        if (controller.signal.aborted) return;
-        const estado = String(muni.state);
-        setForm((prev) => ({ ...prev, estado }));
+        const estado = initialData.municipio.estado;
+        if (!estado) return;
         const [munis, comus] = await Promise.all([
-          fetchMunicipalitiesByState(estado, controller.signal).catch(
+          fetchMunicipalitiesByState(String(estado.id), controller.signal).catch(
             () => [] as MunicipalityOpt[],
           ),
           // Sempre carrega as comunidades do município, mesmo que a UPF não

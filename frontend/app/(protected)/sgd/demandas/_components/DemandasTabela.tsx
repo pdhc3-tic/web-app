@@ -18,6 +18,77 @@ const TH = "px-4 py-2.5 text-left text-2xs font-medium uppercase tracking-[0.06e
 const TD = "px-4 py-3 align-middle";
 
 /**
+ * Skeleton da listagem — mesma grade, mesma altura, para não "pular" o
+ * layout da listagem master do painel master-detail quando os dados chegam
+ * (#323). `compacta` espelha a decisão da tabela de verdade: com o painel
+ * aberto, só três colunas aparecem.
+ */
+export function DemandasTabelaSkeleton({
+  linhas = 10,
+  compacta,
+}: {
+  linhas?: number;
+  compacta: boolean;
+}) {
+  return (
+    <div
+      className="overflow-x-auto rounded-lg border border-border bg-surface"
+      aria-hidden
+      data-testid="demandas-skeleton"
+    >
+      <table className="w-full text-sm">
+        <thead className="border-b border-border bg-surface-muted/50">
+          <tr>
+            <th className={TH}>Título</th>
+            <th className={TH}>Status</th>
+            <th className={TH}>Solicitante</th>
+            {!compacta && (
+              <>
+                <th className={TH}>Território</th>
+                <th className={TH}>Meta PT</th>
+                <th className={TH}>Criada em</th>
+                <th className={`${TH} text-right`}>Valor estimado</th>
+              </>
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: linhas }).map((_, i) => (
+            <tr key={i} className="border-b border-border last:border-b-0">
+              <td className={TD}>
+                <div className="h-4 w-56 animate-pulse rounded bg-surface-muted" />
+              </td>
+              <td className={TD}>
+                <div className="h-5 w-24 animate-pulse rounded-full bg-surface-muted" />
+              </td>
+              <td className={TD}>
+                <div className="h-4 w-32 animate-pulse rounded bg-surface-muted" />
+              </td>
+              {!compacta && (
+                <>
+                  <td className={TD}>
+                    <div className="h-4 w-20 animate-pulse rounded bg-surface-muted" />
+                  </td>
+                  <td className={TD}>
+                    <div className="h-4 w-28 animate-pulse rounded bg-surface-muted" />
+                  </td>
+                  <td className={TD}>
+                    <div className="h-4 w-20 animate-pulse rounded bg-surface-muted" />
+                  </td>
+                  <td className={TD}>
+                    <div className="ml-auto h-4 w-24 animate-pulse rounded bg-surface-muted" />
+                  </td>
+                </>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
  * Lista master das demandas. Com o painel aberto, Território, Meta PT, Data de
  * criação e Valor estimado saem de cena; Título, Status e Solicitante ficam.
  */

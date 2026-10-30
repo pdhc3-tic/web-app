@@ -16,6 +16,7 @@ import {
   LogOut,
   Plug,
   GitCompareArrows,
+  Settings,
   ShieldOff,
   SlidersHorizontal,
   Smartphone,
@@ -66,6 +67,21 @@ const ADMIN_ITEMS: ModuleItem[] = [
     label: "Integrações",
     Icon: Plug,
   },
+  {
+    // Configuração do mapeamento Arlo ↔ SGD (#320). Em /admin/configuracoes/sgd
+    // porque o grupo prevê outras telas de configuração do SGD (tipos-rubricas
+    // etc. — pendencias-backend-sprint-11.md).
+    href: "/admin/configuracoes/sgd/integracao-arlo",
+    label: "Integração Arlo",
+    Icon: SlidersHorizontal,
+  },
+  {
+    // Hub das configurações dos módulos — no SGD, Tipos e Rubricas (#319) e
+    // Integração Arlo (#320).
+    href: "/admin/configuracoes",
+    label: "Configurações",
+    Icon: Settings,
+  },
 ];
 
 // Revisão de conflitos de sincronização: Super Admin, UGP e Articulador Estadual.
@@ -94,6 +110,12 @@ function isActive(pathname: string | null, href: string): boolean {
   if (!pathname) return false;
   if (pathname === href) return true;
   return pathname.startsWith(href + "/");
+}
+
+/** Entre itens aninhados (Configurações e, dentro dela, Integração Arlo), só o mais específico acende. */
+function hrefMaisEspecifico(pathname: string | null, items: ModuleItem[]): string | null {
+  const casam = items.filter((item) => isActive(pathname, item.href));
+  return casam.sort((a, b) => b.href.length - a.href.length)[0]?.href ?? null;
 }
 
 type SidebarItemProps = {
@@ -323,7 +345,7 @@ export function Sidebar() {
             <li key={item.href}>
               <SidebarItem
                 item={item}
-                active={isActive(pathname, item.href)}
+                active={item.href === hrefMaisEspecifico(pathname, ADMIN_ITEMS)}
                 collapsed={collapsed}
               />
             </li>
