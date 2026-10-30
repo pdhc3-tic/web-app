@@ -34,6 +34,7 @@ def test_saldo_insuficiente_responde_400_no_contrato_insufficient_balance():
         "disponivel": "350.00",
         "solicitado": "900.00",
         "acao_sugerida": "solicitar_recurso_extra",
+        "valor_faltante": None,
         "detail": DETAIL_INDIVIDUAL,
     }
 
@@ -71,8 +72,18 @@ def test_saldo_insuficiente_da_submissao_traz_cada_bloqueio_no_mesmo_formato():
         "disponivel": "0.00",
         "solicitado": "50.00",
         "acao_sugerida": "acionar_articulador",
+        "valor_faltante": None,
         "detail": "Território esgotado.",
     }
+
+
+def test_valor_faltante_da_trava_individual_vai_no_topo_e_no_bloqueio():
+    individual = _saldo_insuficiente(solicitacao_id=10, valor_faltante=Decimal("1000"))
+
+    corpo = _responder(SaldoInsuficiente.para_submissao({10: individual})).data
+
+    assert corpo["valor_faltante"] == "1000.00"
+    assert corpo["solicitacoes_bloqueadas"]["10"]["valor_faltante"] == "1000.00"
 
 
 def test_saldo_insuficiente_de_uma_solicitacao_lista_ela_mesma_como_bloqueada():

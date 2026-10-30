@@ -141,7 +141,14 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
             OpenApiParameter("municipio", OpenApiTypes.INT, OpenApiParameter.QUERY),
             OpenApiParameter("territorio", OpenApiTypes.INT, OpenApiParameter.QUERY),
             OpenApiParameter("projeto", OpenApiTypes.INT, OpenApiParameter.QUERY),
+            OpenApiParameter("comunidade", OpenApiTypes.INT, OpenApiParameter.QUERY),
             OpenApiParameter("ativo", OpenApiTypes.BOOL, OpenApiParameter.QUERY),
+            OpenApiParameter("cadastrado_de", OpenApiTypes.DATE, OpenApiParameter.QUERY),
+            OpenApiParameter("cadastrado_ate", OpenApiTypes.DATE, OpenApiParameter.QUERY),
+            OpenApiParameter(
+                "q", OpenApiTypes.STR, OpenApiParameter.QUERY,
+                description="Nome do titular ou início do CPF.",
+            ),
         ],
         responses={
             200: inline_serializer(
