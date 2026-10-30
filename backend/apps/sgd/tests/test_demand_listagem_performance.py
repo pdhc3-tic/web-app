@@ -40,8 +40,12 @@ def test_listagem_com_10_mil_demandas_e_filtros_combinados_em_menos_de_2s(
 
 
 def _criar_massa_com_relacionamentos(activity, solicitante, rubrica, responsavel):
+    # `bulk_create` não passa pelos serviços: o total já vai com as duas solicitações de 100.
     Demand.objects.bulk_create([
-        Demand(titulo=f"Demanda {i}", activity=activity, solicitante=solicitante, status="submetida")
+        Demand(
+            titulo=f"Demanda {i}", activity=activity, solicitante=solicitante, status="submetida",
+            valor_estimado_total=200,
+        )
         for i in range(TOTAL)
     ], batch_size=1000)
     demandas = list(Demand.objects.values_list("pk", flat=True))

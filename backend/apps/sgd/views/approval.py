@@ -5,7 +5,6 @@ from rest_framework.response import Response
 from apps.core.permissions import IsArticuladorEstadual, IsAuthenticatedActiveAccess, IsFGD, IsUGP
 from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.serializers.approval import (
-    AutorizarExcedenteSerializer,
     AutorizarSerializer,
     ConcluirSerializer,
     DevolverSerializer,
@@ -14,9 +13,7 @@ from apps.sgd.serializers.approval import (
 )
 from apps.sgd.serializers.demand import DemandSerializer
 from apps.sgd.services import approval as approval_service
-from apps.sgd.services import balance as balance_service
 from apps.sgd.services import workflow as workflow_service
-from apps.sgp.models import BudgetAllocation
 
 
 class DemandApprovalMixin:
@@ -28,7 +25,6 @@ class DemandApprovalMixin:
         "devolver": IsArticuladorEstadual,
         "autorizar": IsUGP,
         "recusar": IsUGP,
-        "autorizar_excedente": IsUGP,
         "atender": IsFGD,
         "concluir": IsFGD,
     }
@@ -86,21 +82,6 @@ class DemandApprovalMixin:
         )
         return Response(DemandSerializer(demand).data)
 
-    @action(detail=True, methods=["post"], url_path="autorizar-excedente")
-    def autorizar_excedente(self, request, pk=None):
-        demand = self._get_demand(pk)
-        entrada = AutorizarExcedenteSerializer(data=request.data)
-        entrada.is_valid(raise_exception=True)
-        dados = entrada.validated_data
-        solicitacao = get_object_or_404(DemandRequest, pk=dados["demand_request_id"], demanda=demand)
-        origem = get_object_or_404(BudgetAllocation, pk=dados["origem_allocation_id"])
-        balance_service.autorizar_excedente(
-            demand_request=solicitacao, origem_allocation=origem,
-            valor_excedente=dados["valor_excedente"], justificativa=dados["justificativa"],
-            usuario=request.user,
-        )
-        return Response(DemandSerializer(demand).data)
-
     @action(detail=True, methods=["post"], url_path="atender")
     def atender(self, request, pk=None):
         demand = self._get_demand(pk)
@@ -125,5 +106,7 @@ class DemandApprovalMixin:
         solicitacao = get_object_or_404(
             DemandRequest, pk=query.validated_data["demand_request_id"], demanda=demand,
         )
-        preview = approval_service.preview_impacto(solicitacao, query.validated_data["valor"])
+        preview = approval_service.preview_impacto(
+            solicitacao, query.validated_data["valor"], origem=query.validated_data["origem_allocation"],
+        )
         return Response(preview)

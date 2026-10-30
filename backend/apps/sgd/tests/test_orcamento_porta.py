@@ -210,21 +210,27 @@ def test_remanejar_para_a_mesma_alocacao_e_regra_de_negocio(allocation_territori
 
 
 def test_remanejamento_com_meta_incompativel_devolve_business_rule(
-    auth_client_ugp, demand_request_rn, allocation_territorial_rn, rubrica_diarias,
+    auth_client_ugp, demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+    rubrica_diarias,
 ):
     """Origem com saldo e a mesma rubrica, só a Meta difere: a recusa é a
     incompatibilidade, não falta de saldo nem de permissão."""
+    from apps.sgd.services import balance as balance_service
+
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    demand_request_rn.demanda.status = "pre_autorizada"
+    demand_request_rn.demanda.save(update_fields=["status"])
     origem = BudgetAllocationFactory(
         meta=WorkPlanMetaFactory(), rubrica=rubrica_diarias,
         nivel="nacional", territorio=None, valor_alocado=Decimal("1000"),
     )
 
     response = auth_client_ugp.post(
-        f"/api/v1/sgd/demandas/{demand_request_rn.demanda_id}/autorizar-excedente/",
+        f"/api/v1/sgd/demandas/{demand_request_rn.demanda_id}/autorizar/",
         {
-            "demand_request_id": demand_request_rn.pk,
-            "origem_allocation_id": origem.pk,
-            "valor_excedente": "100.00",
+            "ajustes": {str(demand_request_rn.pk): "5100.00"},
+            "excedente_autorizado": True,
+            "origem_allocation": origem.pk,
             "justificativa": "Teste do contrato da porta",
         },
         format="json",

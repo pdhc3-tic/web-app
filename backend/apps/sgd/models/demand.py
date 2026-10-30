@@ -79,6 +79,18 @@ class Demand(models.Model):
         ),
     )
 
+    # Somas das solicitações, gravadas por `recalcular_totais` na mesma transação
+    # que muda as solicitações: a listagem ordena por elas sem agregar.
+    valor_estimado_total = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0, verbose_name="Valor Estimado Total (R$)",
+    )
+    valor_autorizado_total = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0, verbose_name="Valor Autorizado Total (R$)",
+    )
+    valor_pago_total = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0, verbose_name="Valor Pago Total (R$)",
+    )
+
     criado_em = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
     atualizado_em = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
 
@@ -90,26 +102,23 @@ class Demand(models.Model):
             models.Index(fields=["activity"], name="idx_demand_activity"),
             models.Index(fields=["status", "solicitante"], name="idx_demand_status_solic"),
             models.Index(fields=["status", "-criado_em"], name="idx_demand_status_criado"),
+            models.Index(fields=["status", "-valor_estimado_total"], name="idx_demand_status_estimado"),
         ]
 
     def __str__(self):
         return f"{self.titulo} [{self.get_status_display()}]"
 
-    def _total_solicitacoes(self, campo: str):
-        # Com `solicitacoes` já prefetchada (listagem), soma em memória: o
-        # `aggregate()` ignora o prefetch e custaria 1 query por demanda e total.
-        if "solicitacoes" in getattr(self, "_prefetched_objects_cache", {}):
-            return sum((getattr(s, campo) or 0 for s in self.solicitacoes.all()), Decimal("0"))
-        return self.solicitacoes.aggregate(total=Sum(campo))["total"] or 0
-
-    @property
-    def valor_estimado_total(self):
-        return self._total_solicitacoes("valor_estimado")
-
-    @property
-    def valor_autorizado_total(self):
-        return self._total_solicitacoes("valor_autorizado")
-
-    @property
-    def valor_pago_total(self):
-        return self._total_solicitacoes("valor_pago")
+    def recalcular_totais(self) -> None:
+        """Quem chama já trava a demanda: duas transações mudando solicitações dela
+        não podem gravar cada uma a soma sem a outra."""
+        totais = self.solicitacoes.aggregate(
+            estimado=Sum("valor_estimado"), autorizado=Sum("valor_autorizado"), pago=Sum("valor_pago"),
+        )
+        self.valor_estimado_total = totais["estimado"] or Decimal("0")
+        self.valor_autorizado_total = totais["autorizado"] or Decimal("0")
+        self.valor_pago_total = totais["pago"] or Decimal("0")
+        Demand.objects.filter(pk=self.pk).update(
+            valor_estimado_total=self.valor_estimado_total,
+            valor_autorizado_total=self.valor_autorizado_total,
+            valor_pago_total=self.valor_pago_total,
+        )

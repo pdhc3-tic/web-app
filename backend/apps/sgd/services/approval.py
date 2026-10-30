@@ -12,6 +12,7 @@ from apps.sgd.models.individual_limit import DemandIndividualLimit
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
 from apps.sgd.services import orcamento as orcamento_service
+from apps.sgd.services import remanejamento as remanejamento_service
 
 
 # Perfis que desfazem uma autorização já dada; o solicitante cancela só até a pré-autorização.
@@ -88,11 +89,19 @@ def responsaveis_pela_etapa_atual(demand):
     return User.objects.none()
 
 
-def preview_impacto(demand_request, valor: Decimal) -> dict:
+def _faixa(comprometido: Decimal, total: Decimal, limiares) -> str:
+    return orcamento_service.faixa_semaforo(orcamento_service.percentual_comprometido(comprometido, total), limiares)
+
+
+def preview_impacto(demand_request, valor: Decimal, *, origem=None) -> dict:
     """`valor` é o novo valor proposto pelo aprovador — a solicitação já está
     reservada (pré-autorizada/autorizada) pelo valor atual, então só o delta
     entre os dois pesa no saldo; contar `valor` inteiro de novo dobraria a
-    reserva já feita."""
+    reserva já feita.
+
+    Com `origem`, simula a autorização com excedente pela mesma conta de
+    `remanejamento.cobrir_excedente`: o que passa do limite individual fica fora
+    dele, e o pool recebe o remanejado da origem."""
     solicitante = demand_request.demanda.solicitante
     rubrica = demand_request.rubrica
     valor_reservado = demand_request.valor_autorizado or demand_request.valor_estimado
@@ -112,28 +121,57 @@ def preview_impacto(demand_request, valor: Decimal) -> dict:
             ).allocation
             disponivel, trava_bloqueada = True, None
 
-    limiares = orcamento_service.limiares_semaforo()
     limite = DemandIndividualLimit.objects.filter(solicitante=solicitante, rubrica=rubrica).first()
+    acima_do_limite = remanejado = Decimal("0")
+    if origem is not None:
+        # O remanejamento vai para o pool da reserva, como na autorização.
+        allocation = orcamento_service.pool_da_reserva(demand_request) or allocation
+        remanejamento_service.exigir_origem_da_solicitacao(origem, demand_request, allocation)
+        acima_do_limite, remanejado = remanejamento_service.calcular_excedente(
+            aumento=delta,
+            saldo_limite=limite.saldo_disponivel if limite is not None else Decimal("0"),
+            saldo_pool=orcamento_service.saldo_do_pool(allocation) if allocation is not None else Decimal("0"),
+        )
+    no_limite = delta - acima_do_limite
+
+    limiares = orcamento_service.limiares_semaforo()
     individual = {"semaforo_antes": None, "semaforo_apos": None, "saldo_apos": None}
     if limite is not None:
         individual["semaforo_antes"], individual["semaforo_apos"] = balance_service.faixas_antes_e_depois(
-            comprometido=limite.valor_comprometido, total=limite.valor_limite, delta=delta, limiares=limiares,
+            comprometido=limite.valor_comprometido, total=limite.valor_limite, delta=no_limite, limiares=limiares,
         )
-        individual["saldo_apos"] = limite.saldo_disponivel - delta
+        individual["saldo_apos"] = limite.saldo_disponivel - no_limite
 
     territorial = {"semaforo_antes": None, "semaforo_apos": None, "saldo_apos": None}
     if allocation is not None:
-        territorial["semaforo_antes"], territorial["semaforo_apos"] = balance_service.faixas_antes_e_depois(
-            comprometido=allocation.valor_comprometido, total=allocation.valor_alocado, delta=delta,
-            limiares=limiares,
-        )
-        territorial["saldo_apos"] = allocation.valor_alocado - allocation.valor_comprometido - delta
+        alocado_apos = allocation.valor_alocado + remanejado
+        territorial["semaforo_antes"] = _faixa(allocation.valor_comprometido, allocation.valor_alocado, limiares)
+        territorial["semaforo_apos"] = _faixa(allocation.valor_comprometido + delta, alocado_apos, limiares)
+        territorial["saldo_apos"] = alocado_apos - allocation.valor_comprometido - delta
+
+    impacto_origem = None
+    if origem is not None:
+        saldo_origem = orcamento_service.saldo_do_pool(origem)
+        impacto_origem = {
+            "id": origem.pk,
+            "valor_remanejado": remanejado,
+            "fora_do_limite": acima_do_limite,
+            "saldo_antes": saldo_origem,
+            "saldo_apos": saldo_origem - remanejado,
+            "semaforo_antes": _faixa(origem.valor_comprometido, origem.valor_alocado, limiares),
+            "semaforo_apos": _faixa(origem.valor_comprometido, origem.valor_alocado - remanejado, limiares),
+        }
+        if remanejado > saldo_origem:
+            disponivel, trava_bloqueada = False, "origem"
+        elif remanejado > Decimal("0"):
+            disponivel, trava_bloqueada = True, None
 
     return {
         "disponivel": disponivel,
         "trava_bloqueada": trava_bloqueada,
         "individual": individual,
         "territorial": territorial,
+        "origem": impacto_origem,
     }
 
 

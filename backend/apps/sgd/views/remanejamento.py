@@ -1,4 +1,5 @@
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -9,6 +10,7 @@ from apps.core.permissions import (
     IsADTInTerritory,
     IsArticuladorEstadual,
     IsAuthenticatedActiveAccess,
+    IsFGD,
     IsSuperAdmin,
     IsUGP,
 )
@@ -17,13 +19,14 @@ from apps.sgd.constants import PERFIS_NACIONAIS
 from apps.sgd.serializers.remanejamento import (
     AtualizarRemanejamentoSerializer,
     BudgetIncreaseRequestSerializer,
+    BudgetTransferSerializer,
     DecidirRemanejamentoSerializer,
     DevolverRemanejamentoSerializer,
     ParecerSerializer,
     SolicitarRecursoExtraSerializer,
 )
 from apps.sgd.services import recurso_extra as recurso_extra_service
-from apps.sgp.models import BudgetIncreaseRequest
+from apps.sgp.models import BudgetIncreaseRequest, BudgetTransfer
 
 PERFIS_DA_DECISAO = {"super-admin", "ugp"}
 
@@ -80,6 +83,8 @@ class RemanejamentoViewSet(viewsets.ViewSet):
         "parecer": (IsArticuladorEstadual | IsSuperAdmin),
         "devolver": (IsArticuladorEstadual | IsSuperAdmin),
         "decidir": (IsUGP | IsSuperAdmin),
+        # Remanejamento é da coordenação; a FGD acompanha em leitura.
+        "transferencias": (IsUGP | IsSuperAdmin | IsFGD),
     }
 
     def get_permissions(self):
@@ -109,6 +114,42 @@ class RemanejamentoViewSet(viewsets.ViewSet):
         paginador = RemanejamentoPagination()
         pagina = paginador.paginate_queryset(qs.order_by("-criado_em", "-id"), request)
         return paginador.get_paginated_response(BudgetIncreaseRequestSerializer(pagina, many=True).data)
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("demanda", OpenApiTypes.INT),
+            OpenApiParameter("escopo", OpenApiTypes.STR, enum=sorted(BudgetTransfer.Escopo.values)),
+            OpenApiParameter("rubrica", OpenApiTypes.STR, description="Slug da rubrica."),
+        ],
+        responses=BudgetTransferSerializer(many=True),
+    )
+    @action(detail=False, methods=["get"], url_path="transferencias")
+    def transferencias(self, request):
+        """Remanejamentos efetivados: o excedente autorizado na demanda (`pontual`) e o
+        que cobriu o pool na decisão de recurso extra (`elevacao_limite`)."""
+        qs = BudgetTransfer.objects.select_related(
+            "allocation_origem__estado", "allocation_origem__territorio",
+            "allocation_destino__estado", "allocation_destino__territorio", "allocation_destino__rubrica",
+            "aprovado_por",
+        )
+        demanda = request.query_params.get("demanda")
+        if demanda:
+            try:
+                qs = qs.filter(demanda_id=str(int(demanda)))
+            except ValueError:
+                raise ValidationError({"demanda": "Informe o id numérico da demanda."})
+        escopo = request.query_params.get("escopo")
+        if escopo:
+            escopos = sorted(BudgetTransfer.Escopo.values)
+            if escopo not in escopos:
+                raise ValidationError({"escopo": f"Valor inválido. Esperado um de: {escopos}."})
+            qs = qs.filter(escopo=escopo)
+        rubrica = request.query_params.get("rubrica")
+        if rubrica:
+            qs = qs.filter(allocation_destino__rubrica__slug=rubrica)
+        paginador = RemanejamentoPagination()
+        pagina = paginador.paginate_queryset(qs.order_by("-criado_em", "-id"), request)
+        return paginador.get_paginated_response(BudgetTransferSerializer(pagina, many=True).data)
 
     def retrieve(self, request, pk=None):
         return Response(BudgetIncreaseRequestSerializer(self._pedido(request, pk)).data)

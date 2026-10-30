@@ -8,15 +8,14 @@ from __future__ import annotations
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 
-from django.db.models import Count, DecimalField, OuterRef, Subquery, Sum
-from django.db.models.functions import Coalesce, TruncDate
+from django.db.models import Count
+from django.db.models.functions import TruncDate
 from django.utils import timezone
 
 from apps.core.models.user_profile import UserProfile
 from apps.core.services.permissions import user_role_slugs, user_states
 from apps.sgd.constants import PERFIS_NACIONAIS
 from apps.sgd.models.demand import STATUS_CHOICES, STATUS_TERMINAIS, Demand
-from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.services import business_days
 from apps.sgd.services.approval import demand_visibility_scope, demandas_aguardando_acao
 from apps.sgd.services import orcamento as orcamento_service
@@ -46,28 +45,14 @@ def _demandas_do_escopo(user):
     return Demand.objects.filter(pk__in=Demand.objects.filter(scope).values("pk"))
 
 
-def _valor_estimado_subquery():
-    return Coalesce(
-        Subquery(
-            DemandRequest.objects.filter(demanda=OuterRef("pk"))
-            .order_by()
-            .values("demanda")
-            .annotate(total=Sum("valor_estimado"))
-            .values("total")[:1],
-            output_field=DecimalField(max_digits=14, decimal_places=2),
-        ),
-        ZERO,
-    )
-
-
 def fila_aguardando_acao(user, base_qs, *, limite: int = LIMITE_FILA) -> dict:
     """Mais antiga primeiro; em empate (mesmo dia de espera), maior valor
     primeiro. O empate é por dia — comparar o timestamp exato nunca empataria."""
     qs = (
         demandas_aguardando_acao(user, base_qs)
-        .annotate(valor_estimado=_valor_estimado_subquery(), dia_da_espera=TruncDate("status_alterado_em"))
+        .annotate(dia_da_espera=TruncDate("status_alterado_em"))
         .select_related("activity__municipio__state", "activity__municipio__territory")
-        .order_by("dia_da_espera", "-valor_estimado", "status_alterado_em", "pk")
+        .order_by("dia_da_espera", "-valor_estimado_total", "status_alterado_em", "pk")
     )
     total = qs.count()
     hoje = timezone.localdate()
@@ -80,7 +65,7 @@ def fila_aguardando_acao(user, base_qs, *, limite: int = LIMITE_FILA) -> dict:
             "status": demanda.status,
             "status_alterado_em": demanda.status_alterado_em,
             "dias_em_espera": (hoje - timezone.localdate(demanda.status_alterado_em)).days,
-            "valor_estimado": demanda.valor_estimado,
+            "valor_estimado": demanda.valor_estimado_total,
             "atividade_id": demanda.activity_id,
             "atividade_titulo": demanda.activity.titulo,
             "estado": municipio.state.sigla,

@@ -68,6 +68,7 @@ As transições de status passam por `apps.sgd.services.workflow.executar_transi
 | Caminho | O que trava |
 |---|---|
 | Submissão; autorização; recusa; conclusão pela FGD; cancelamento pelo solicitante ou, de demanda autorizada, pela UGP/Super Admin | limite → alocação, rubrica a rubrica → `Demand` → `DemandRequest` (estado da reserva, `valor_autorizado` e `valor_pago`, em ordem de pk) |
+| Autorização com excedente (remanejamento emergencial) | por solicitação da rubrica da origem: limite → alocações (origem e a da reserva, em ordem de pk) → depois segue como a autorização |
 | Pré-autorização, devolução, início do atendimento | só a `Demand` |
 | Importação do Arlo, por linha | limite → alocação da solicitação paga → `Demand` (status relido) → `DemandRequest`. Cada linha numa transação própria: com o arquivo numa só, os locks de uma linha ficariam presos enquanto a seguinte trava o limite de outro solicitante |
 | Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todos os limites e depois todas as alocações; só então as `Demand`, em ordem de pk, e por fim as `DemandRequest`. Se uma demanda deixou de ser cancelável ou ganhou, perdeu ou trocou a rubrica de uma solicitação, a transação volta e a task é repetida (até 3 vezes) |
@@ -85,7 +86,7 @@ As transições de status passam por `apps.sgd.services.workflow.executar_transi
 python manage.py verificar_saldos
 ```
 
-Confere, para cada `BudgetAllocation`, se `valor_comprometido`/`valor_executado` batem com a soma das suas `BudgetTransaction` por tipo (`reserva`/`execucao`/`liberacao`). No SGD, confere também se o `valor_comprometido` de cada limite individual bate com a soma do `valor_reservado` das solicitações com reserva ativa (`valor_reservado > 0` e `valor_executado` nulo) do mesmo solicitante e rubrica; essa parte lê `sgd_demand` com visão total, já que o comando não passa pelo middleware que define o papel da sessão para o RLS. Sai com código de saída ≠ 0 (via `CommandError`) e lista as divergências encontradas, se houver.
+Confere, para cada `BudgetAllocation`, se `valor_comprometido`/`valor_executado` batem com a soma das suas `BudgetTransaction` por tipo (`reserva`/`execucao`/`liberacao`). No SGD, confere também se o `valor_comprometido` de cada limite individual bate com a soma de `valor_reservado − valor_excedente` das solicitações com reserva ativa (`valor_reservado > 0` e `valor_executado` nulo) do mesmo solicitante e rubrica, e se os totais de cada demanda (`valor_estimado_total`, `valor_autorizado_total`, `valor_pago_total`) batem com a soma das suas solicitações; essa parte lê `sgd_demand` com visão total, já que o comando não passa pelo middleware que define o papel da sessão para o RLS. Sai com código de saída ≠ 0 (via `CommandError`) e lista as divergências encontradas, se houver.
 
 ## Endpoints HTTP
 

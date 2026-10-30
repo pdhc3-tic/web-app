@@ -184,6 +184,7 @@ def _processar_linha(importacao, linha: dict, colunas: dict) -> dict | None:
         )
 
     balance_service.gravar_estado_da_reserva([solicitacao], outros_campos=("valor_pago",))
+    demand.recalcular_totais()
     demand.numero_processo = numero_processo
     demand.save(update_fields=["numero_processo"])
 

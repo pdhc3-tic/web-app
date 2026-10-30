@@ -5,7 +5,7 @@ from django.db import IntegrityError, connection, transaction
 from django.db.models import Sum
 from django.test.utils import CaptureQueriesContext
 
-from apps.sgd.exceptions import ErroDeDominio, RegraDeNegocio, SaldoInsuficiente, TransicaoInvalida
+from apps.sgd.exceptions import TRAVA_INDIVIDUAL, ErroDeDominio, RegraDeNegocio, SaldoInsuficiente, TransicaoInvalida
 from apps.sgd.models import DemandIndividualLimit, DemandRequest
 from apps.sgd.models.demand_request import RESERVA_ATIVA
 from apps.sgd.services import balance as balance_service
@@ -93,32 +93,131 @@ def test_ajustar_duas_travas_acima_do_pool_territorial_orienta_acionar_articulad
 ):
     balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
     novo_valor = allocation_territorial_rn.valor_alocado + Decimal("1")
+    # O que passa do limite individual vai como excedente: só o pool bloqueia.
+    excedente = novo_valor - limite_individual_rn.valor_limite
 
     with pytest.raises(SaldoInsuficiente) as excinfo:
         balance_service.ajustar_duas_travas(
-            demand_request=demand_request_rn, novo_valor=novo_valor, usuario=solicitante_rn,
-            ignorar_limite_individual=True,
+            demand_request=demand_request_rn, novo_valor=novo_valor, usuario=solicitante_rn, excedente=excedente,
         )
 
     assert "Acione o Articulador Estadual" in str(excinfo.value.como_dict()["detail"])
     assert "Território esgotado" in str(excinfo.value.como_dict()["detail"])
 
 
-def test_ajustar_duas_travas_com_bypass_autoriza_excedente_sem_elevar_limite(demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn):
-    """RF16: `ignorar_limite_individual=True` autoriza o ajuste pontual acima do
-    saldo individual disponível, mas `valor_limite` continua o mesmo."""
-    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
-    valor_limite_antes = limite_individual_rn.valor_limite
-    novo_valor = valor_limite_antes + Decimal("1")
-
+def _reservar_com_excedente(demand_request, solicitante, limite, *, novo_valor, excedente):
+    balance_service.reservar_duas_travas(demand_request=demand_request, usuario=solicitante)
     balance_service.ajustar_duas_travas(
-        demand_request=demand_request_rn, novo_valor=novo_valor, usuario=solicitante_rn,
-        ignorar_limite_individual=True,
+        demand_request=demand_request, novo_valor=novo_valor, usuario=solicitante, excedente=excedente,
+    )
+    demand_request.refresh_from_db()
+    limite.refresh_from_db()
+
+
+def test_ajustar_com_excedente_compromete_no_limite_so_a_parte_coberta(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    """Limite de 5.000 e reserva de 1.000: ajustar para 5.300 com 300 de excedente
+    esgota o limite sem passar dele, e `valor_limite` não muda."""
+    _reservar_com_excedente(
+        demand_request_rn, solicitante_rn, limite_individual_rn,
+        novo_valor=Decimal("5300"), excedente=Decimal("300"),
     )
 
+    assert limite_individual_rn.valor_comprometido == Decimal("5000")
+    assert limite_individual_rn.valor_limite == Decimal("5000")
+    assert demand_request_rn.valor_reservado == Decimal("5300")
+    assert demand_request_rn.valor_excedente == Decimal("300")
+    allocation_territorial_rn.refresh_from_db()
+    assert allocation_territorial_rn.valor_comprometido == Decimal("5300")
+
+
+def test_ajustar_com_excedente_que_nao_cabe_no_limite_bloqueia(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+
+    with pytest.raises(SaldoInsuficiente) as excinfo:
+        balance_service.ajustar_duas_travas(
+            demand_request=demand_request_rn, novo_valor=Decimal("5300"), usuario=solicitante_rn,
+            excedente=Decimal("100"),
+        )
+
+    assert excinfo.value.trava == TRAVA_INDIVIDUAL
+    assert excinfo.value.solicitado == Decimal("4200")
+
+
+def test_ajustar_com_excedente_maior_que_o_aumento_e_erro_de_programacao(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+
+    with pytest.raises(ValueError):
+        balance_service.ajustar_duas_travas(
+            demand_request=demand_request_rn, novo_valor=Decimal("1100"), usuario=solicitante_rn,
+            excedente=Decimal("200"),
+        )
+
+
+def test_reducao_tira_primeiro_do_excedente(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    _reservar_com_excedente(
+        demand_request_rn, solicitante_rn, limite_individual_rn,
+        novo_valor=Decimal("5300"), excedente=Decimal("300"),
+    )
+
+    balance_service.ajustar_duas_travas(demand_request=demand_request_rn, novo_valor=Decimal("4800"), usuario=solicitante_rn)
+
+    demand_request_rn.refresh_from_db()
     limite_individual_rn.refresh_from_db()
-    assert limite_individual_rn.valor_comprometido == novo_valor
-    assert limite_individual_rn.valor_limite == valor_limite_antes
+    assert demand_request_rn.valor_excedente == Decimal("0")
+    assert limite_individual_rn.valor_comprometido == Decimal("4800")
+
+
+def test_liberar_com_excedente_devolve_ao_limite_so_a_parte_coberta(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+):
+    """Limite de 5.000, reserva autorizada a 5.300 com excedente e depois liberada:
+    o disponível volta a 5.000, não a 5.300."""
+    _reservar_com_excedente(
+        demand_request_rn, solicitante_rn, limite_individual_rn,
+        novo_valor=Decimal("5300"), excedente=Decimal("300"),
+    )
+
+    balance_service.liberar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn, motivo="Cancelada.")
+
+    demand_request_rn.refresh_from_db()
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == Decimal("0")
+    assert limite_individual_rn.saldo_disponivel == Decimal("5000")
+    assert (demand_request_rn.valor_reservado, demand_request_rn.valor_excedente) == (Decimal("0"), Decimal("0"))
+    allocation_territorial_rn.refresh_from_db()
+    assert allocation_territorial_rn.valor_comprometido == Decimal("0")
+
+
+@pytest.mark.parametrize(
+    ("valor_pago", "executado_no_limite"),
+    [(Decimal("5300"), Decimal("5000")), (Decimal("5100"), Decimal("5000")), (Decimal("4800"), Decimal("4800"))],
+    ids=["pago-integral", "pago-menor-dentro-do-excedente", "pago-menor-que-a-parte-coberta"],
+)
+def test_executar_com_excedente_nao_devolve_o_excedente_ao_limite(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
+    valor_pago, executado_no_limite,
+):
+    _reservar_com_excedente(
+        demand_request_rn, solicitante_rn, limite_individual_rn,
+        novo_valor=Decimal("5300"), excedente=Decimal("300"),
+    )
+
+    balance_service.executar_duas_travas(demand_request=demand_request_rn, valor_pago=valor_pago, usuario=solicitante_rn)
+
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == Decimal("0")
+    assert limite_individual_rn.valor_executado == executado_no_limite
+    assert limite_individual_rn.saldo_disponivel == Decimal("5000") - executado_no_limite
+    allocation_territorial_rn.refresh_from_db()
+    assert allocation_territorial_rn.valor_executado == valor_pago
 
 
 def test_liberar_duas_travas_libera_100_por_cento(demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn):
@@ -146,58 +245,6 @@ def test_executar_duas_travas_valor_pago_menor_libera_diferenca(demand_request_r
     allocation_territorial_rn.refresh_from_db()
     assert allocation_territorial_rn.valor_comprometido == Decimal("0")
     assert allocation_territorial_rn.valor_executado == valor_pago
-
-
-def test_autorizar_excedente_exige_justificativa(demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn):
-    from apps.core.tests.factories import StateFactory
-    from apps.sgp.models.budget import BudgetAllocation
-    from apps.sgp.tests.factories import BudgetAllocationFactory
-
-    origem = BudgetAllocationFactory(
-        meta=demand_request_rn.demanda.activity.acao.meta, rubrica=demand_request_rn.rubrica,
-        nivel=BudgetAllocation.Nivel.ESTADUAL, territorio=None,
-        estado=StateFactory(sigla="RN", nome="Rio Grande do Norte"), valor_alocado=5000,
-    )
-    with pytest.raises(ErroDeDominio):
-        balance_service.autorizar_excedente(
-            demand_request=demand_request_rn, origem_allocation=origem,
-            valor_excedente=Decimal("500"), justificativa="", usuario=solicitante_rn,
-        )
-
-
-def test_autorizar_excedente_com_justificativa_remaneja_sem_elevar_limite_individual(
-    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
-):
-    """RF16: o remanejamento emergencial move o pool territorial, mas nunca eleva
-    `valor_limite` — senão o solicitante ganharia teto maior permanentemente por
-    causa de um excedente pontual."""
-    from apps.core.tests.factories import StateFactory
-    from apps.sgp.models.budget import BudgetAllocation, BudgetTransaction
-    from apps.sgp.tests.factories import BudgetAllocationFactory
-
-    origem = BudgetAllocationFactory(
-        meta=demand_request_rn.demanda.activity.acao.meta, rubrica=demand_request_rn.rubrica,
-        nivel=BudgetAllocation.Nivel.ESTADUAL, territorio=None,
-        estado=StateFactory(sigla="RN", nome="Rio Grande do Norte"), valor_alocado=Decimal("5000"),
-    )
-    valor_limite_antes = limite_individual_rn.valor_limite
-
-    balance_service.autorizar_excedente(
-        demand_request=demand_request_rn, origem_allocation=origem,
-        valor_excedente=Decimal("500"), justificativa="Demanda urgente aprovada pela UGP.",
-        usuario=solicitante_rn,
-    )
-
-    origem.refresh_from_db()
-    allocation_territorial_rn.refresh_from_db()
-    limite_individual_rn.refresh_from_db()
-
-    assert origem.valor_alocado == Decimal("4500")
-    assert allocation_territorial_rn.valor_alocado == Decimal("10500")
-    assert limite_individual_rn.valor_limite == valor_limite_antes
-    assert BudgetTransaction.objects.filter(
-        allocation=origem, tipo=BudgetTransaction.Tipo.REMANEJAMENTO,
-    ).exists()
 
 
 def test_submeter_demanda_bloqueio_de_uma_solicitacao_identifica_so_a_bloqueada(
@@ -764,32 +811,6 @@ def test_liberar_apos_ajuste_libera_o_valor_ajustado_nao_o_congelado(
     allocation_territorial_rn.refresh_from_db()
     assert limite_individual_rn.valor_comprometido == Decimal("0")
     assert allocation_territorial_rn.valor_comprometido == Decimal("0")
-
-
-def test_autorizar_excedente_rejeita_origem_territorial(
-    demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
-):
-    """RF16: remanejamento emergencial só pode vir de saldo estadual ou
-    nacional, nunca de outro pool territorial."""
-    from apps.core.tests.factories import TerritoryFactory
-    from apps.sgp.models.budget import BudgetAllocation
-    from apps.sgp.tests.factories import BudgetAllocationFactory
-
-    # Território diferente do de allocation_territorial_rn — mesma
-    # combinação (meta, rubrica, nivel, território) já existe naquela
-    # fixture, e colidiria com a unique constraint de BudgetAllocation.
-    outro_territorio = TerritoryFactory(nome="Território Origem Excedente", estados=["RN"])
-    origem_territorial = BudgetAllocationFactory(
-        meta=demand_request_rn.demanda.activity.acao.meta, rubrica=demand_request_rn.rubrica,
-        nivel=BudgetAllocation.Nivel.TERRITORIAL, territorio=outro_territorio,
-        valor_alocado=Decimal("5000"),
-    )
-
-    with pytest.raises(ErroDeDominio):
-        balance_service.autorizar_excedente(
-            demand_request=demand_request_rn, origem_allocation=origem_territorial,
-            valor_excedente=Decimal("500"), justificativa="Tentativa inválida.", usuario=solicitante_rn,
-        )
 
 
 @pytest.mark.parametrize(
