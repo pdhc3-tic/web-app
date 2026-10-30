@@ -1,12 +1,19 @@
 import json
+import warnings
+from datetime import datetime
 
 import pytest
 from django.core.cache import cache
 from django.db import connection
+from django.http import QueryDict
 from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 
 from apps.core.tests.factories import RoleFactory, TerritoryFactory, UserFactory
-from apps.sgp.tests.factories import UPFFactory
+from apps.sgp.cache import build_upf_map_cache_key, get_upf_map_cache_version
+from apps.sgp.filters import UPFFilter
+from apps.sgp.models import UPF
+from apps.sgp.tests.factories import ComunidadeFactory, MembroFactory, UPFFactory
 from apps.sgp.views import UPFViewSet
 
 
@@ -304,6 +311,118 @@ def test_mapa_cache_invalidated_on_upf_save(
 
     assert second.status_code == 200
     assert feature_ids(second) == [first_upf.pk, new_upf.pk]
+
+
+def test_mapa_busca_sem_resultado_nao_reaproveita_o_cache_sem_filtro(
+    auth_client, projeto, municipio_rn, territory_rn,
+):
+    upf = make_upf(projeto, municipio_rn, territory_rn, cpf="86288366757")
+
+    sem_filtro = auth_client.get("/api/v1/upfs/mapa/")
+    com_busca = auth_client.get("/api/v1/upfs/mapa/?q=texto-que-nao-existe")
+
+    assert feature_ids(sem_filtro) == [upf.pk]
+    assert com_busca.status_code == 200
+    assert feature_ids(com_busca) == []
+
+
+def test_mapa_sem_filtro_nao_reaproveita_o_cache_da_busca(
+    auth_client, projeto, municipio_rn, territory_rn,
+):
+    upf = make_upf(projeto, municipio_rn, territory_rn, cpf="86288366757")
+
+    com_busca = auth_client.get("/api/v1/upfs/mapa/?q=texto-que-nao-existe")
+    sem_filtro = auth_client.get("/api/v1/upfs/mapa/")
+
+    assert feature_ids(com_busca) == []
+    assert feature_ids(sem_filtro) == [upf.pk]
+
+
+@pytest.mark.parametrize(
+    ("montar_params", "esperada"),
+    [
+        (lambda comunidade: "q=Maria", "a"),
+        (lambda comunidade: f"comunidade={comunidade.pk}", "a"),
+        (lambda comunidade: "cadastrado_de=2025-01-01", "a"),
+        (lambda comunidade: "cadastrado_ate=2020-12-31", "b"),
+    ],
+    ids=["q", "comunidade", "cadastrado_de", "cadastrado_ate"],
+)
+def test_mapa_com_filtro_depois_do_mapa_sem_filtro_respeita_o_filtro(
+    auth_client, projeto, municipio_rn, territory_rn, montar_params, esperada,
+):
+    comunidade = ComunidadeFactory(municipio=municipio_rn)
+    upfs = {
+        "a": make_upf(projeto, municipio_rn, territory_rn, cpf="86288366757", nome="Maria Souza"),
+        "b": make_upf(projeto, municipio_rn, territory_rn, cpf="52998224725", nome="José Lima"),
+    }
+    UPF.all_objects.filter(pk=upfs["a"].pk).update(comunidade=comunidade)
+    UPF.all_objects.filter(pk=upfs["b"].pk).update(
+        criado_em=timezone.make_aware(datetime(2020, 6, 1, 12, 0)),
+    )
+
+    sem_filtro = auth_client.get("/api/v1/upfs/mapa/")
+    filtrado = auth_client.get(f"/api/v1/upfs/mapa/?{montar_params(comunidade)}")
+
+    assert sorted(feature_ids(sem_filtro)) == sorted(upf.pk for upf in upfs.values())
+    assert filtrado.status_code == 200
+    assert feature_ids(filtrado) == [upfs[esperada].pk]
+
+
+@pytest.mark.parametrize("nome", ["bbox", *UPFFilter.base_filters])
+def test_chave_do_cache_do_mapa_considera_todo_filtro_do_upf_filter(nome):
+    sem_filtro = build_upf_map_cache_key(1, QueryDict(""))
+    com_filtro = build_upf_map_cache_key(1, QueryDict(f"{nome}=1"))
+
+    assert com_filtro != sem_filtro
+
+
+@pytest.mark.parametrize("busca", ["86288366757", "Maria Souza", "x" * 5000])
+def test_chave_do_cache_do_mapa_nao_carrega_o_texto_da_busca(busca):
+    chave = build_upf_map_cache_key(1, QueryDict(f"q={busca}"))
+
+    assert busca not in chave
+    assert len(chave) < 250
+    with warnings.catch_warnings(record=True) as avisos:
+        warnings.simplefilter("always")
+        cache.get(chave)
+    assert avisos == []
+
+
+def test_chave_do_cache_do_mapa_ignora_parametro_que_nao_filtra():
+    sem_filtro = build_upf_map_cache_key(1, QueryDict(""))
+    com_ordenacao = build_upf_map_cache_key(1, QueryDict("ordering=criado_em"))
+
+    assert com_ordenacao == sem_filtro
+
+
+def test_mapa_busca_pelo_nome_novo_logo_depois_de_renomear_o_titular(
+    auth_client, projeto, municipio_rn, territory_rn,
+):
+    upf = make_upf(projeto, municipio_rn, territory_rn, cpf="86288366757", nome="João Silva")
+    antes = auth_client.get("/api/v1/upfs/mapa/?q=Joaquim")
+    assert feature_ids(antes) == []
+
+    titular = upf.titular
+    titular.nome_completo = "Joaquim Silva"
+    titular.save()
+    depois = auth_client.get("/api/v1/upfs/mapa/?q=Joaquim")
+
+    assert feature_ids(depois) == [upf.pk]
+    assert depois.data["features"][0]["properties"]["nome_titular"] == "Joaquim Silva"
+
+
+def test_salvar_membro_que_nao_e_titular_nao_invalida_o_cache_do_mapa(
+    projeto, municipio_rn, territory_rn,
+):
+    upf = make_upf(projeto, municipio_rn, territory_rn, cpf="86288366757")
+    membro = MembroFactory(upf=upf)
+    versao = get_upf_map_cache_version()
+
+    membro.nome_completo = "Outro Nome"
+    membro.save()
+
+    assert get_upf_map_cache_version() == versao
 
 
 def test_mapa_inclui_estado(auth_client, projeto, municipio_rn, territory_rn):

@@ -553,6 +553,7 @@ def test_bloqueio_individual_na_pre_checagem_e_na_reserva_tem_o_mesmo_contrato(
     assert pela_pre_checagem == pela_reserva
     assert pela_reserva["code"] == "INSUFFICIENT_BALANCE"
     assert (pela_reserva["disponivel"], pela_reserva["solicitado"]) == ("500.00", "1000.00")
+    assert pela_reserva["valor_faltante"] == "500.00"
 
 
 def test_bloqueio_territorial_na_pre_checagem_e_na_reserva_tem_o_mesmo_contrato(
@@ -616,6 +617,48 @@ def test_submeter_bloqueado_responde_400_com_code_e_solicitacao_id(
     assert corpo["solicitacao_id"] == demand_request_rn.pk
     assert "Solicitar recurso extra" in corpo["detail"]
     assert corpo["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]["trava"] == "individual"
+
+
+def test_bloqueio_individual_traz_o_que_falta_na_rubrica_inteira(
+    auth_client_solicitante, demand_rascunho_rn, rubrica_diarias, allocation_territorial_rn, limite_individual_rn,
+):
+    """Limite de 500 e solicitações de 600 e 300: a de 600 é barrada (500 disponível),
+    mas o que falta para a demanda passar é 900 − 500 = 400, o mesmo valor que o
+    pedido de recurso extra registra sem `valor_solicitado`."""
+    limite_individual_rn.valor_limite = Decimal("500")
+    limite_individual_rn.save(update_fields=["valor_limite"])
+    barrada, _ = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "600", "300")
+
+    response = auth_client_solicitante.post(f"/api/v1/sgd/demandas/{demand_rascunho_rn.pk}/submeter/")
+
+    assert response.status_code == 400
+    corpo = response.json()
+    assert corpo["solicitacao_id"] == barrada.pk
+    assert corpo["valor_faltante"] == "400.00"
+    assert corpo["solicitacoes_bloqueadas"][str(barrada.pk)]["valor_faltante"] == "400.00"
+
+    pedido = auth_client_solicitante.post(
+        f"/api/v1/sgd/demandas/{demand_rascunho_rn.pk}/solicitar-recurso-extra/",
+        {"rubrica": "diarias", "justificativa": "Diárias além do limite."}, format="json",
+    )
+    assert pedido.status_code == 201, pedido.data
+    assert Decimal(pedido.data["valor_solicitado"]) == Decimal(corpo["valor_faltante"])
+
+
+def test_bloqueio_territorial_vem_sem_valor_faltante(
+    demand_request_rn, solicitante_rn, activity_rn, rubrica_diarias, limite_individual_rn,
+):
+    from apps.sgp.tests.factories import BudgetAllocationFactory
+
+    BudgetAllocationFactory(
+        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
+        valor_alocado=Decimal("500"), valor_comprometido=Decimal("0"),
+    )
+
+    with pytest.raises(SaldoInsuficiente) as excinfo:
+        demand_service.submeter_demanda(demand_request_rn.demanda, usuario=solicitante_rn)
+
+    assert excinfo.value.como_dict()["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]["valor_faltante"] is None
 
 
 def _campos_diaria_com_dias(*, municipio, dias_a_mais: int) -> dict:

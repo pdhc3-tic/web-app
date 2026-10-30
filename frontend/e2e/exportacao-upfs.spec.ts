@@ -1,5 +1,14 @@
 import { readFile } from "node:fs/promises";
-import { expect, test, type Download, type Page, type Route } from "@playwright/test";
+import { expect, test, type Download, type Page } from "@playwright/test";
+import { abrirComApi, guardarTarefaDeExportacao } from "./helpers/apiReal";
+import {
+  apagarJob,
+  apagarJobsDesde,
+  criarJob,
+  criarUpfsEmVolume,
+  marcoDosJobs,
+  removerUpfsEmVolume,
+} from "./helpers/exportacaoFixture";
 import { storageStatePath } from "./helpers/users";
 
 /**
@@ -11,13 +20,18 @@ import { storageStatePath } from "./helpers/users";
  *    síncrono, a igualdade entre arquivo e listagem, o CPF por perfil, o
  *    recorte territorial e o 400 de filtro inválido.
  *
- * 2. **Estados da exportação assíncrona, com respostas forjadas.** Acima de
- *    1.000 UPFs o backend responde 202 e o job é acompanhado em
- *    `/api/v1/sgp/exportacoes/{id}/`; o seed tem 41 UPFs e o limite está fixo
- *    no código (`UPF_EXPORT_SYNC_LIMIT`, docs/pendencias-backend-sprint-10.md,
- *    item 3), então esses estados só são alcançáveis forjando a resposta —
- *    sempre no formato do `ExportJobSerializer`.
+ * 2. **Exportação em segundo plano, também contra o backend real.** Acima do
+ *    limite do backend (`UPF_EXPORT_ASYNC_THRESHOLD`, 1.000 por padrão) ele
+ *    responde 202 e o worker gera o arquivo. A fixture cria 1.001 UPFs para a
+ *    listagem passar do limite; os estados que o fluxo normal não segura por
+ *    tempo bastante (erro, job removido, arquivo vencido) são jobs reais do
+ *    usuário criados no banco. Só o 500 do servidor é forçado.
  */
+
+test.describe.configure({ mode: "serial" });
+
+const UGP = "beatriz.nogueira@demo.pdhc.local";
+const CHAVE_TAREFA = "sgp.upfs.exportacao";
 
 const COLUNAS = "Estado,Município,Território,Comunidade,Titular,CPF,Data de cadastro";
 
@@ -57,7 +71,9 @@ test.beforeEach(async ({ page }) => {
   // Cada teste começa sem exportação herdada de outro (ela fica no localStorage).
   await page.addInitScript(() => {
     if (!sessionStorage.getItem("e2e-limpo")) {
-      localStorage.removeItem("sgp.upfs.exportacao");
+      for (const chave of Object.keys(localStorage)) {
+        if (chave.startsWith("sgp.upfs.exportacao")) localStorage.removeItem(chave);
+      }
       sessionStorage.setItem("e2e-limpo", "1");
     }
   });
@@ -71,8 +87,7 @@ test.describe("Exportação de UPFs — backend real (UGP)", () => {
   test("até 1.000 registros o CSV sai direto, com as colunas e o CPF completo", async ({ page }) => {
     const { download, count } = await exportarComListagem(page, "/sgp/upfs");
 
-    // O nome vem do backend; sem CORS_EXPOSE_HEADERS o front deriva o mesmo
-    // padrão (pendência 2).
+    // O nome vem do `Content-Disposition` do backend.
     expect(download.suggestedFilename()).toMatch(/^upfs_\d{4}-\d{2}-\d{2}.*\.csv$/);
     await expect(page.getByText(/Download de upfs_.*\.csv iniciado/)).toBeVisible();
     await expect(statusPanel(page)).toHaveCount(0);
@@ -125,135 +140,65 @@ test.describe("Exportação de UPFs — backend real (escopo territorial)", () =
   });
 });
 
-// ─── 2. Estados assíncronos (resposta forjada) ───────────────────────────────
+// ─── 2. Exportação em segundo plano ─────────────────────────────────────────
 
-const CORS = {
-  "access-control-allow-origin": "*",
-  "access-control-expose-headers": "content-disposition",
-};
-
-type Handlers = {
-  inicio?: (route: Route, url: URL) => Promise<void>;
-  job?: (route: Route) => Promise<void>;
-  download?: (route: Route) => Promise<void>;
-  repetir?: (route: Route) => Promise<void>;
-};
-
-/** Forja as rotas da exportação; o preflight de CORS é respondido aqui. */
-async function mockExportacao(page: Page, h: Handlers) {
-  await page.route(
-    (url) =>
-      url.pathname.startsWith("/api/v1/upfs/exportar/") ||
-      url.pathname.startsWith("/api/v1/sgp/exportacoes/"),
-    async (route) => {
-      const req = route.request();
-      if (req.method() === "OPTIONS") {
-        await route.fulfill({
-          status: 204,
-          headers: {
-            ...CORS,
-            "access-control-allow-methods": "GET, POST, OPTIONS",
-            "access-control-allow-headers": "authorization, content-type",
-          },
-        });
-        return;
-      }
-      const url = new URL(req.url());
-      if (url.pathname.startsWith("/api/v1/upfs/exportar/") && h.inicio) return h.inicio(route, url);
-      if (url.pathname.endsWith("/download/") && h.download) return h.download(route);
-      if (url.pathname.endsWith("/repetir/") && h.repetir) return h.repetir(route);
-      if (/\/exportacoes\/\d+\/$/.test(url.pathname) && h.job) return h.job(route);
-      await route.fulfill({ status: 404, headers: CORS, body: '{"detail":"Não encontrado."}' });
-    },
-  );
-}
-
-function json(route: Route, status: number, body: unknown) {
-  return route.fulfill({
-    status,
-    headers: { ...CORS, "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-
-function csv(route: Route, nome: string) {
-  return route.fulfill({
-    status: 200,
-    headers: {
-      ...CORS,
-      "content-type": "text/csv; charset=utf-8",
-      "content-disposition": `attachment; filename="${nome}"`,
-    },
-    body: `${COLUNAS}\r\n`,
-  });
-}
-
-/** Um `ExportJobSerializer` com 1.500 UPFs. */
-function job(status: string, extra: Record<string, unknown> = {}) {
-  return {
-    id: 7,
-    tipo: "upfs",
-    formato: "csv",
-    filtros: {},
-    status,
-    progresso: 0,
-    erro: "",
-    total_registros: 1500,
-    nome_arquivo: "upfs_2026-10-01_10-00-00.csv",
-    criado_em: "2026-10-01T10:00:00-03:00",
-    concluido_em: null,
-    expira_em: null,
-    ...extra,
-  };
-}
-
-test.describe("Exportação de UPFs — acima de 1.000 registros (job forjado)", () => {
+test.describe("Exportação de UPFs — acima do limite, em segundo plano (UGP)", () => {
   test.use({ storageState: storageStatePath("ugp") });
 
-  test("vira exportação em segundo plano: aviso, progresso, conclusão e download", async ({
-    page,
-  }) => {
-    let consultas = 0;
-    await mockExportacao(page, {
-      inicio: (route) => json(route, 202, job("pendente")),
-      job: (route) => {
-        consultas += 1;
-        return json(
-          route,
-          200,
-          consultas === 1 ? job("processando", { progresso: 40 }) : job("concluida", { progresso: 100 }),
-        );
-      },
-      download: (route) => csv(route, "upfs_2026-10-01_10-00-00.csv"),
-    });
+  let marco: number;
 
+  test.beforeAll(() => {
+    marco = marcoDosJobs();
+    criarUpfsEmVolume();
+  });
+
+  test.afterAll(() => {
+    removerUpfsEmVolume();
+    apagarJobsDesde(marco);
+  });
+
+  /** Exporta e devolve o `count` da listagem que a tela mostrava. */
+  async function exportar(page: Page): Promise<number> {
+    const listagem = page.waitForResponse(
+      (r) => /\/api\/v1\/upfs\/\?/.test(r.url()) && r.request().method() === "GET",
+    );
     await page.goto("/sgp/upfs");
+    const { count } = (await (await listagem).json()) as { count: number };
+    const inicio = page.waitForResponse((r) => r.url().includes("/api/v1/upfs/exportar/"));
     await botaoExportar(page).click();
+    expect((await inicio).status()).toBe(202);
+    return count;
+  }
 
-    await expect(page.getByText(/1\.500 registros.*segundo plano/)).toBeVisible();
-    await expect(botaoExportar(page)).toBeDisabled();
-    await expect(statusPanel(page)).toHaveAttribute("data-status", "processando");
-    await expect(statusPanel(page)).toContainText("40%");
-
-    await expect(statusPanel(page)).toHaveAttribute("data-status", "concluida", { timeout: 10_000 });
-    await expect(botaoExportar(page)).toBeEnabled();
-
+  async function baixar(page: Page): Promise<Download> {
     const [download] = await Promise.all([
       page.waitForEvent("download"),
       page.getByRole("button", { name: "Baixar arquivo" }).click(),
     ]);
-    expect(download.suggestedFilename()).toBe("upfs_2026-10-01_10-00-00.csv");
+    return download;
+  }
+
+  test("vira exportação em segundo plano: aviso, andamento, conclusão e download", async ({ page }) => {
+    const total = await exportar(page);
+    expect(total).toBeGreaterThan(1000);
+
+    await expect(page.getByText(`${total.toLocaleString("pt-BR")} registros`, { exact: false })).toBeVisible();
+    await expect(statusPanel(page)).toHaveAttribute("data-status", /pendente|processando/);
+    await expect(botaoExportar(page)).toBeDisabled();
+
+    await expect(statusPanel(page)).toHaveAttribute("data-status", "concluida", { timeout: 30_000 });
+    await expect(botaoExportar(page)).toBeEnabled();
+
+    const download = await baixar(page);
+    expect(download.suggestedFilename()).toMatch(/^upfs_.*\.csv$/);
+    const { cabecalho, linhas } = await linhasDoCsv(download);
+    expect(cabecalho).toBe(COLUNAS);
+    expect(linhas).toHaveLength(total);
   });
 
   test("a tela continua utilizável durante a geração", async ({ page }) => {
-    await mockExportacao(page, {
-      inicio: (route) => json(route, 202, job("pendente")),
-      job: (route) => json(route, 200, job("processando", { progresso: 10 })),
-    });
-
-    await page.goto("/sgp/upfs");
-    await botaoExportar(page).click();
-    await expect(statusPanel(page)).toHaveAttribute("data-status", "processando");
+    await exportar(page);
+    await expect(statusPanel(page)).toBeVisible();
 
     const novaListagem = page.waitForRequest(
       (req) => /\/api\/v1\/upfs\/\?/.test(req.url()) && req.url().includes("q=Jos"),
@@ -261,118 +206,86 @@ test.describe("Exportação de UPFs — acima de 1.000 registros (job forjado)",
     await page.getByPlaceholder("Buscar por nome ou CPF...").fill("Jos");
     await novaListagem;
     await expect(statusPanel(page)).toBeVisible();
+    await expect(statusPanel(page)).toHaveAttribute("data-status", "concluida", { timeout: 30_000 });
   });
 
   test("download posterior: a exportação sobrevive a sair e voltar", async ({ page }) => {
-    let concluida = false;
-    await mockExportacao(page, {
-      inicio: (route) => json(route, 202, job("pendente")),
-      job: (route) =>
-        json(route, 200, concluida ? job("concluida", { progresso: 100 }) : job("processando", { progresso: 20 })),
-      download: (route) => csv(route, "upfs_2026-10-01_10-00-00.csv"),
-    });
-
-    await page.goto("/sgp/upfs");
-    await botaoExportar(page).click();
-    await expect(statusPanel(page)).toHaveAttribute("data-status", "processando");
-
+    await exportar(page);
     await page.goto("/sgp");
-    concluida = true;
     await page.goto("/sgp/upfs");
 
-    await expect(statusPanel(page)).toHaveAttribute("data-status", "concluida", { timeout: 10_000 });
-    const [download] = await Promise.all([
-      page.waitForEvent("download"),
-      page.getByRole("button", { name: "Baixar arquivo" }).click(),
-    ]);
-    expect(download.suggestedFilename()).toBe("upfs_2026-10-01_10-00-00.csv");
+    await expect(statusPanel(page)).toHaveAttribute("data-status", "concluida", { timeout: 30_000 });
+    expect((await baixar(page)).suggestedFilename()).toMatch(/^upfs_.*\.csv$/);
   });
 
-  test("erro: mostra a mensagem e 'Tentar novamente' reenfileira pelo /repetir/", async ({ page }) => {
-    let repetida = false;
-    await mockExportacao(page, {
-      inicio: (route) => json(route, 202, job("pendente")),
-      job: (route) =>
-        json(
-          route,
-          200,
-          repetida
-            ? job("concluida", { progresso: 100 })
-            : job("erro", { erro: "O worker de exportação ficou indisponível." }),
-        ),
-      repetir: (route) => {
-        repetida = true;
-        return json(route, 202, job("pendente"));
-      },
-      download: (route) => csv(route, "upfs_2026-10-01_10-00-00.csv"),
-    });
+  test("erro: mostra a mensagem do job e 'Tentar novamente' reenfileira pelo /repetir/", async ({ page }) => {
+    const id = criarJob(UGP, "upfs", "erro");
+    const origem = await abrirComApi(page, "/sgp/upfs");
+    await guardarTarefaDeExportacao(page, origem, CHAVE_TAREFA, id);
+    await page.reload();
 
-    await page.goto("/sgp/upfs");
-    await botaoExportar(page).click();
+    await expect(statusPanel(page)).toHaveAttribute("data-status", "erro");
+    await expect(statusPanel(page)).toContainText("O worker não conseguiu gerar o arquivo.");
 
-    await expect(statusPanel(page)).toHaveAttribute("data-status", "erro", { timeout: 10_000 });
-    await expect(statusPanel(page)).toContainText("O worker de exportação ficou indisponível.");
-
-    const pedidoRepetir = page.waitForRequest(
-      (r) => r.url().endsWith("/api/v1/sgp/exportacoes/7/repetir/") && r.method() === "POST",
-    );
+    const repetir = page.waitForResponse((r) => r.url().endsWith(`/api/v1/sgp/exportacoes/${id}/repetir/`));
     await page.getByRole("button", { name: "Tentar novamente" }).click();
-    await pedidoRepetir;
+    expect((await repetir).status()).toBe(202);
 
-    await expect(statusPanel(page)).toHaveAttribute("data-status", "concluida", { timeout: 10_000 });
+    await expect(statusPanel(page)).toHaveAttribute("data-status", "concluida", { timeout: 30_000 });
+    expect((await baixar(page)).suggestedFilename()).toMatch(/^upfs_.*\.csv$/);
   });
 
-  test("exportação que o backend não conhece mais (404): gerar de novo com os mesmos filtros", async ({
-    page,
-  }) => {
-    const pedidos: string[] = [];
-    await mockExportacao(page, {
-      inicio: (route, url) => {
-        pedidos.push(url.search);
-        return pedidos.length === 1 ? json(route, 202, job("pendente")) : csv(route, "upfs.csv");
-      },
-      job: (route) => json(route, 404, { detail: "Não encontrado." }),
-    });
+  test("job que o backend não conhece mais (404): gerar de novo com os mesmos filtros", async ({ page }) => {
+    const id = criarJob(UGP, "upfs", "pendente");
+    const origem = await abrirComApi(page, "/sgp/upfs");
+    // Filtro com poucas UPFs: a nova exportação sai na hora, como arquivo.
+    const filtros = { search: "E2E-240 Titular 000" };
+    await guardarTarefaDeExportacao(page, origem, CHAVE_TAREFA, id, filtros);
+    await page.reload();
+    await expect(statusPanel(page)).toHaveAttribute("data-status", "pendente");
 
-    await page.goto("/sgp/upfs?status=todas");
-    await botaoExportar(page).click();
+    apagarJob(id);
     await expect(statusPanel(page)).toHaveAttribute("data-status", "erro", { timeout: 10_000 });
     await expect(statusPanel(page)).toContainText("não está mais disponível");
 
-    await Promise.all([
+    const pedido = page.waitForRequest((r) => r.url().includes("/api/v1/upfs/exportar/"));
+    const [download] = await Promise.all([
       page.waitForEvent("download"),
       page.getByRole("button", { name: "Tentar novamente" }).click(),
     ]);
-    expect(pedidos).toHaveLength(2);
-    expect(pedidos[1]).toBe(pedidos[0]);
+    expect(new URL((await pedido).url()).searchParams.get("q")).toBe(filtros.search);
+    const { linhas } = await linhasDoCsv(download);
+    expect(linhas).toHaveLength(9);
   });
 
   test("arquivo expirado (410): avisa e oferece gerar novamente", async ({ page }) => {
-    await mockExportacao(page, {
-      inicio: (route) => json(route, 202, job("pendente")),
-      job: (route) => json(route, 200, job("concluida", { progresso: 100 })),
-      download: (route) =>
-        json(route, 410, {
-          code: "exportacao_expirada",
-          message: "O arquivo desta exportação expirou. Gere uma nova exportação.",
-        }),
-    });
+    const id = criarJob(UGP, "upfs", "expirado");
+    const origem = await abrirComApi(page, "/sgp/upfs");
+    await guardarTarefaDeExportacao(page, origem, CHAVE_TAREFA, id);
+    await page.reload();
+    await expect(statusPanel(page)).toHaveAttribute("data-status", "concluida");
 
-    await page.goto("/sgp/upfs");
-    await botaoExportar(page).click();
-    await expect(statusPanel(page)).toHaveAttribute("data-status", "concluida", { timeout: 10_000 });
-
+    const download = page.waitForResponse((r) => r.url().endsWith(`/api/v1/sgp/exportacoes/${id}/download/`));
     await page.getByRole("button", { name: "Baixar arquivo" }).click();
+    expect((await download).status()).toBe(410);
     await expect(page.getByText("O arquivo desta exportação expirou.", { exact: false }).first()).toBeVisible();
     await expect(statusPanel(page)).toHaveAttribute("data-status", "expirada");
     await expect(page.getByRole("button", { name: "Gerar novamente" })).toBeVisible();
   });
 
   test("erro inesperado do servidor mostra a mensagem genérica", async ({ page }) => {
-    await mockExportacao(page, {
-      inicio: (route) => route.fulfill({ status: 500, headers: CORS, body: "Internal Server Error" }),
-    });
-
+    // Falha forçada: o único caso em que a resposta é interceptada.
+    await page.route(
+      (url) => url.pathname.startsWith("/api/v1/upfs/exportar/"),
+      (route) =>
+        route.request().method() === "OPTIONS"
+          ? route.fallback()
+          : route.fulfill({
+              status: 500,
+              headers: { "access-control-allow-origin": "*" },
+              body: "Internal Server Error",
+            }),
+    );
     await page.goto("/sgp/upfs");
     await botaoExportar(page).click();
     await expect(page.getByText(/Erro inesperado \(500\)|Não foi possível exportar/)).toBeVisible();

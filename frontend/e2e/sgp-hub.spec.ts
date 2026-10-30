@@ -4,14 +4,9 @@ import { storageStatePath } from "./helpers/users";
 /**
  * Hub do SGP (#276) — a página `/sgp` lista os submódulos do módulo.
  *
- * Ativos nesta branch: UPFs, Atividades, Calendário, Plano de Trabalho, Painel
- * e Orçamento. Técnicos, Produção e Relatórios aparecem como "Em breve" (sem
- * href) porque as páginas só existem no sprint 9d — deixar o href aqui levaria
- * a 404 até que o PR de lá mergeie.
- *
- * Estes testes travam esse contrato: nenhum card ativo pode virar link morto, e
- * os três "Em breve" precisam continuar como `aria-disabled` sem link enquanto
- * as páginas não estiverem no ar.
+ * Os nove submódulos estão no ar. Estes testes travam o contrato de que nenhum
+ * card vira link morto. Relatórios só aparece para quem pode exportar
+ * (relatorios.spec.ts cobre a FGD, que não vê o card).
  */
 const PAGE_URL = "/sgp";
 
@@ -25,12 +20,9 @@ const CARDS_ATIVOS: ReadonlyArray<{
   { key: "plano", destino: /\/sgp\/metas\/?$/ },
   { key: "painel", destino: /\/sgp\/painel\/?$/ },
   { key: "orcamento", destino: /\/sgp\/orcamento\/?$/ },
-];
-
-const CARDS_EM_BREVE: readonly string[] = [
-  "tecnicos",
-  "producao",
-  "relatorios",
+  { key: "tecnicos", destino: /\/sgp\/tecnicos\/?$/ },
+  { key: "producao", destino: /\/sgp\/producao\/?$/ },
+  { key: "relatorios", destino: /\/sgp\/relatorios\/?$/ },
 ];
 
 async function abrirHub(page: Page): Promise<void> {
@@ -45,9 +37,6 @@ test.describe("SGP — Hub", () => {
     await abrirHub(page);
 
     for (const { key } of CARDS_ATIVOS) {
-      await expect(page.getByTestId(`sgp-hub-card-${key}`)).toBeVisible();
-    }
-    for (const key of CARDS_EM_BREVE) {
       await expect(page.getByTestId(`sgp-hub-card-${key}`)).toBeVisible();
     }
   });
@@ -66,22 +55,6 @@ test.describe("SGP — Hub", () => {
 
       await card.click();
       await page.waitForURL(destino);
-    });
-  }
-
-  for (const key of CARDS_EM_BREVE) {
-    test(`card "Em breve" (${key}) fica desabilitado e sem link`, async ({
-      page,
-    }) => {
-      await abrirHub(page);
-
-      const card = page.getByTestId(`sgp-hub-card-${key}`);
-      await expect(card).toBeVisible();
-      // Contrato do estado "Em breve" do SubmoduleCard: <div aria-disabled>
-      // (não <a>), com badge "Em breve" e sem alvo de navegação.
-      await expect(card).toHaveAttribute("aria-disabled", "true");
-      await expect(card).not.toHaveAttribute("href", /.+/);
-      await expect(card).toContainText("Em breve");
     });
   }
 });

@@ -924,6 +924,7 @@ def painel_orcamento(
                 "saldo_disponivel": saldo_disponivel,
                 "semaforo": semaforo,
                 "alerta_80": alerta_80,
+                "limiares_semaforo": limiares,
             })
     return resultado
 

@@ -2,6 +2,7 @@ from django.db.models.signals import pre_delete, pre_save
 from django.dispatch import receiver
 
 from apps.sgp.cache import invalidate_upf_map_cache
+from apps.sgp.models.membro import MembroFamilia
 from apps.sgp.models.upf import UPF
 
 
@@ -20,3 +21,12 @@ def auto_preencher_territorio(sender, instance, **kwargs):
 @receiver(pre_delete, sender=UPF)
 def invalidate_mapa_cache(sender, instance, **kwargs):
     invalidate_upf_map_cache()
+
+
+@receiver(pre_save, sender=MembroFamilia)
+@receiver(pre_delete, sender=MembroFamilia)
+def invalidate_mapa_cache_do_titular(sender, instance, **kwargs):
+    # O mapa mostra o nome do titular e a busca `q` filtra pelo nome e CPF dele;
+    # os demais membros não aparecem no mapa.
+    if instance.grau_parentesco == "titular":
+        invalidate_upf_map_cache()

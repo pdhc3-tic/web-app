@@ -5280,6 +5280,32 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProducaoIndicadores'
           description: ''
+  /api/v1/sgp/rubricas/:
+    get:
+      operationId: v1_sgp_rubricas_list
+      description: |-
+        GET .../rubricas/ — catálogo de rubricas, sem valores de orçamento.
+
+        Sem `ativo` devolve também as inativas: uma rubrica desativada ainda pode
+        estar num mapeamento antigo, e a tela precisa mostrar o nome dela.
+      parameters:
+      - in: query
+        name: ativo
+        schema:
+          type: boolean
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BudgetRubrica'
+          description: ''
   /api/v1/sgp/submetas/:
     get:
       operationId: v1_sgp_submetas_list
@@ -7183,6 +7209,20 @@ paths:
           type: string
         description: Bounding box no formato lng_sw,lat_sw,lng_ne,lat_ne.
       - in: query
+        name: cadastrado_ate
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: cadastrado_de
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: comunidade
+        schema:
+          type: integer
+      - in: query
         name: municipio
         schema:
           type: integer
@@ -7190,6 +7230,11 @@ paths:
         name: projeto
         schema:
           type: integer
+      - in: query
+        name: q
+        schema:
+          type: string
+        description: Nome do titular ou início do CPF.
       - in: query
         name: territorio
         schema:
@@ -8779,8 +8824,11 @@ components:
           $ref: '#/components/schemas/SemaforoEnum'
         alerta_80:
           type: boolean
+        limiares_semaforo:
+          $ref: '#/components/schemas/LimiaresSemaforo'
       required:
       - alerta_80
+      - limiares_semaforo
       - meta
       - nivel
       - rubrica
@@ -8790,6 +8838,27 @@ components:
       - valor_comprometido
       - valor_distribuido
       - valor_executado
+    BudgetRubrica:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        slug:
+          type: string
+          readOnly: true
+          pattern: ^[-a-zA-Z0-9_]+$
+        nome:
+          type: string
+          readOnly: true
+        ativo:
+          type: boolean
+          readOnly: true
+      required:
+      - ativo
+      - id
+      - nome
+      - slug
     BudgetRubricaNested:
       type: object
       properties:
@@ -10805,6 +10874,16 @@ components:
       - id
       - nome
       - unidade_medida
+    LimiaresSemaforo:
+      type: object
+      properties:
+        amarelo:
+          type: integer
+        vermelho:
+          type: integer
+      required:
+      - amarelo
+      - vermelho
     LoginRequest:
       type: object
       properties:

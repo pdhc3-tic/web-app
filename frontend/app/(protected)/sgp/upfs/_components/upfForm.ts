@@ -95,10 +95,14 @@ function strToInt(value: string): number | null {
   return value ? Number(value) : null;
 }
 
-/** Preenche o formulário a partir do detalhe (edição). `estado` é resolvido à parte. */
+/**
+ * Preenche o formulário a partir do detalhe (edição). O `estado` vem do
+ * município aninhado (`MunicipioNestedSerializer` traz o estado embutido).
+ */
 export function detailToForm(upf: UpfDetail): UpfFormData {
   return {
     ...EMPTY_FORM,
+    estado: upf.municipio.estado ? String(upf.municipio.estado.id) : "",
     municipio: String(upf.municipio.id),
     comunidade: upf.comunidade ? String(upf.comunidade.id) : "",
     projeto: String(upf.projeto.id),

@@ -1,4 +1,8 @@
+import hashlib
+
 from django.core.cache import cache
+
+from apps.sgp.filters import UPFFilter
 
 
 UPF_MAP_CACHE_TIMEOUT = 60
@@ -15,13 +19,19 @@ def get_upf_map_cache_version():
 
 
 def build_upf_map_cache_key(user_id, query_params):
+    # Derivada do FilterSet que o mapa aplica: um filtro novo no UPFFilter
+    # entra na chave sem precisar lembrar daqui.
+    params_da_chave = {"bbox", *UPFFilter.base_filters}
     version = get_upf_map_cache_version()
     normalized_params = sorted(
         (key, tuple(query_params.getlist(key)))
         for key in query_params.keys()
-        if key in {"bbox", "municipio", "territorio", "projeto", "ativo"}
+        if key in params_da_chave
     )
-    return f"sgp:upfs:mapa:v{version}:user:{user_id}:params:{normalized_params}"
+    # Hash em vez dos valores: o `q` traz nome ou CPF do titular, e a chave
+    # aparece no log quando o Django avisa de caractere inválido ou tamanho.
+    params_hash = hashlib.sha256(repr(normalized_params).encode()).hexdigest()
+    return f"sgp:upfs:mapa:v{version}:user:{user_id}:params:{params_hash}"
 
 
 def invalidate_upf_map_cache():

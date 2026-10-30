@@ -16,6 +16,7 @@ import type { LucideIcon } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
 import { SubmoduleCard } from "@/app/components/ui/SubmoduleCard/SubmoduleCard";
+import { useCanExportWorkPlan } from "@/app/lib/auth/roles";
 import { fetchUpfCount } from "@/app/lib/upfs";
 
 type Submodule = {
@@ -96,6 +97,9 @@ const SUBMODULES: Submodule[] = [
 ];
 
 export default function SGPPage() {
+  // Relatórios é só exportação: some para quem o backend não deixa exportar.
+  const { canExport } = useCanExportWorkPlan();
+  const submodulos = SUBMODULES.filter((s) => s.key !== "relatorios" || canExport);
   // `null` = carregando ou erro silencioso → o card exibe "—" sem bloquear o layout.
   const [upfCount, setUpfCount] = useState<number | null>(null);
 
@@ -133,7 +137,7 @@ export default function SGPPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {SUBMODULES.map((sub) => (
+          {submodulos.map((sub) => (
             <SubmoduleCard
               key={sub.key}
               title={sub.title}

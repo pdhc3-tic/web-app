@@ -170,17 +170,27 @@ const DEMANDAS_PATH = "/api/v1/sgd/demandas/";
  */
 const LIMITE_LISTA_DEMANDAS = 200;
 
+/** Página padrão do painel de demandas (#323), que navega pela listagem página a página. */
+export const DEMANDAS_POR_PAGINA = 50;
+
+export type PaginaDemandas = { offset: number; limit: number };
+
 export type ListaDemandas = {
   demandas: Demanda[];
   /** Total no backend com os mesmos filtros; maior que `demandas.length` = lista parcial. */
   total: number;
 };
 
-async function lerListaDemandas(qs: URLSearchParams, signal?: AbortSignal): Promise<ListaDemandas> {
-  qs.set("limit", String(LIMITE_LISTA_DEMANDAS));
+async function lerListaDemandas(
+  qs: URLSearchParams,
+  signal?: AbortSignal,
+  pagina?: PaginaDemandas,
+): Promise<ListaDemandas> {
+  qs.set("limit", String(pagina?.limit ?? LIMITE_LISTA_DEMANDAS));
+  if (pagina?.offset) qs.set("offset", String(pagina.offset));
   const res = await apiClient(`${DEMANDAS_PATH}?${qs}`, { signal });
-  const pagina = (await res.json()) as { count: number; results: Demanda[] };
-  return { demandas: pagina.results, total: pagina.count };
+  const resposta = (await res.json()) as { count: number; results: Demanda[] };
+  return { demandas: resposta.results, total: resposta.count };
 }
 
 /** GET /api/v1/sgd/demandas/?atividade={id} — as demandas de uma atividade. */
@@ -228,11 +238,7 @@ export type AtividadeElegivel = {
 /**
  * GET /api/v1/sgp/atividades/?tecnico_id={eu}&status=planejado&status=agendado&q={texto}
  * — atividades do solicitante que aceitam demanda, para o campo com busca.
- *
- * O contrato é o certo, mas dois filtros ainda não existem no `ActivityFilter`
- * (docs/pendencias-backend-sprint-10.md, item 9): `q` é ignorado — a lista
- * não estreita pelo texto digitado — e `status` só considera o último valor,
- * então hoje vêm só as Agendadas. Nada é filtrado aqui para compensar.
+ * `status` repetido e `q` pelo título são do `ActivityFilter` (PR #328).
  */
 export async function buscarAtividadesElegiveis(
   params: { tecnicoId: string; busca: string },
@@ -276,12 +282,15 @@ export async function fetchContagemFila(signal?: AbortSignal): Promise<ContagemF
  * - `filtros`: os do `DemandFilter` do BE-5 (atividade, ação, território,
  *   período…) — o drill-down do painel de execução (#297) leva o recorte do
  *   painel para a lista mostrar as demandas que compõem o custo exibido.
+ * - `pagina`: `offset`/`limit` do `DemandPagination`. Sem ela, vem a página
+ *   cheia do backend (200).
  */
 export async function listDemandas(
   params: {
     status?: StatusDemanda[];
     aguardandoMinhaAcao?: boolean;
     filtros?: Record<string, string | undefined>;
+    pagina?: PaginaDemandas;
   } = {},
   signal?: AbortSignal,
 ): Promise<ListaDemandas> {
@@ -291,7 +300,7 @@ export async function listDemandas(
   for (const [chave, valor] of Object.entries(params.filtros ?? {})) {
     if (valor) qs.set(chave, valor);
   }
-  return lerListaDemandas(qs, signal);
+  return lerListaDemandas(qs, signal, params.pagina);
 }
 
 /** GET /api/v1/sgd/demandas/{id}/ */
@@ -309,12 +318,17 @@ export async function getDemanda(id: number | string, signal?: AbortSignal): Pro
  */
 export type EventoAuditoria = {
   id: number;
-  /** "status" para transições da demanda, "saldo" para movimentações do SGP. */
-  tipo: "status" | "saldo";
+  /**
+   * "status" para transições da demanda, "saldo" para movimentações do SGP e
+   * "recurso_extra" para o pedido de recurso extra (inclui o aumento de limite
+   * e o remanejamento que ele gera).
+   */
+  tipo: "status" | "saldo" | "recurso_extra";
   /** Ex.: `demanda.criada`, `demanda.status_alterado`, `saldo.reserva`. */
   acao: string;
   /** Nulo quando a transição é do sistema (cancelamento automático). */
   usuario: { id: number; nome: string } | null;
+  /** Só para o Super Admin; nulo para os demais perfis. */
   ip: string | null;
   timestamp: string;
   valores_anteriores: Record<string, unknown>;
@@ -336,8 +350,7 @@ export const AUDITORIA_PAGINA = 20;
  * GET /api/v1/sgd/demandas/{id}/auditoria/?limit=&offset=
  *
  * Backend: `AuditLogPagination` (default 20, max 100) em `DemandViewSet.auditoria`.
- * Hoje a rota é restrita ao Super Admin — ver `pendencias-backend-sprint-10.md`,
- * item 19 (a issue #322 pede o mesmo escopo da visualização da demanda).
+ * Quem vê a demanda vê a trilha; `ip` só vem preenchido para o Super Admin.
  */
 export async function listAuditoriaDemanda(
   demandaId: number | string,

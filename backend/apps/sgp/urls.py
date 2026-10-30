@@ -36,6 +36,7 @@ from .views.workplan import (
 from .views.budget import (
     BudgetAllocationViewSet,
     BudgetPainelView,
+    BudgetRubricaListView,
     RemanejamentoView,
     SaldoConsultaView,
 )
@@ -261,5 +262,10 @@ urlpatterns = router.urls + [
         "sgp/orcamento/painel/",
         BudgetPainelView.as_view(),
         name="budget-painel",
+    ),
+    path(
+        "sgp/rubricas/",
+        BudgetRubricaListView.as_view(),
+        name="budget-rubricas",
     ),
 ]

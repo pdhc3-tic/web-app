@@ -12,7 +12,6 @@ import { Button } from "@/app/components/ui/Button/Button";
 import { DefinitionList } from "@/app/components/ui/DefinitionList/DefinitionList";
 import { Tabs } from "@/app/components/ui/Tabs/Tabs";
 import { ApiError } from "@/app/lib/api";
-import { useIsSuperAdmin } from "@/app/lib/auth/roles";
 import { absoluteDateTime, formatDate } from "@/app/lib/datetime";
 import {
   badgeStatusDaDemanda,
@@ -112,11 +111,6 @@ export function DemandaPainel({
 }) {
   const [aba, setAba] = useState("solicitacoes");
   const [desfecho, setDesfecho] = useState<Desfecho | null>(null);
-  // A trilha de auditoria é restrita ao Super Admin no backend
-  // (`DemandViewSet.auditoria`) — a #322 pede o escopo da visualização, mas o
-  // backend decidiu guardá-la pelo IP; divergência registrada em
-  // pendencias-backend-sprint-10.md, item 19.
-  const { isSuperAdmin } = useIsSuperAdmin();
   const { data: session } = useSession();
 
   const { data: demanda, isPending, error, refetch } = useQuery({
@@ -239,15 +233,9 @@ export function DemandaPainel({
                 content: <Solicitacoes demanda={demanda} />,
               },
               { id: "timeline", label: "Linha do tempo", content: <LinhaDoTempo demanda={demanda} /> },
-              ...(isSuperAdmin
-                ? [
-                    {
-                      id: "auditoria",
-                      label: "Auditoria",
-                      content: <DemandaAuditoria demandaId={demanda.id} />,
-                    },
-                  ]
-                : []),
+              // Quem vê a demanda vê a trilha; o IP só chega ao Super Admin
+              // (`DemandViewSet.auditoria`).
+              { id: "auditoria", label: "Auditoria", content: <DemandaAuditoria demandaId={demanda.id} /> },
             ]}
           />
 

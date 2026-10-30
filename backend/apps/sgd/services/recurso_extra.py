@@ -108,7 +108,9 @@ def _necessario(solicitacoes) -> Decimal:
     return sum((s.valor_estimado for s in solicitacoes if not s.reserva_ativa), ZERO)
 
 
-def _deficit_individual(demanda: Demand, rubrica) -> Decimal:
+def deficit_individual(demanda: Demand, rubrica) -> Decimal:
+    """O que falta no limite individual para a próxima submissão passar na rubrica:
+    é o valor que o pedido de recurso extra registra sem `valor_solicitado`."""
     limite = DemandIndividualLimit.objects.filter(solicitante=demanda.solicitante, rubrica=rubrica).first()
     # Sem truncar em zero: um excedente autorizado antes do remanejamento pontual
     # deixou saldo negativo, e o aumento precisa cobrir isso também.
@@ -117,7 +119,7 @@ def _deficit_individual(demanda: Demand, rubrica) -> Decimal:
 
 
 def _exigir_valor_cobre_o_deficit(demanda: Demand, rubrica, valor: Decimal) -> None:
-    deficit = _deficit_individual(demanda, rubrica)
+    deficit = deficit_individual(demanda, rubrica)
     if deficit <= ZERO:
         raise RegraDeNegocio("A demanda não está bloqueada pelo limite individual nesta rubrica.", campo="demanda")
     # SGP §6.6 deixa o valor livre para ajuste na devolução; o piso é o "valor faltante" do
@@ -149,7 +151,7 @@ def criar(*, demanda: Demand, rubrica, justificativa: str, usuario, valor_solici
         demanda_id=str(demanda.pk), rubrica=rubrica,
     ).exclude(status__in=BudgetIncreaseRequest.TERMINAIS).exists():
         raise RegraDeNegocio("Já existe um pedido de recurso extra em andamento nesta rubrica.", campo="demanda")
-    deficit = _deficit_individual(demanda, rubrica)
+    deficit = deficit_individual(demanda, rubrica)
     if valor_solicitado is None:
         valor_solicitado = deficit
     _exigir_valor_cobre_o_deficit(demanda, rubrica, valor_solicitado)

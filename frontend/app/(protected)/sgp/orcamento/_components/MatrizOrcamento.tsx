@@ -5,6 +5,7 @@ import { formatCurrencyBRL } from "@/app/lib/format";
 import {
   descreverEscopo,
   labelSemaforoOrcamento,
+  limiaresDaLinha,
   valorNumerico,
 } from "@/app/lib/orcamento";
 import { formatPercentual } from "@/app/lib/semaforo";
@@ -82,7 +83,7 @@ function LinhaRubrica({
           </span>
           <SemaforoBadge
             nivel={nivelSemaforo}
-            label={labelSemaforoOrcamento(nivelSemaforo)}
+            label={labelSemaforoOrcamento(nivelSemaforo, limiaresDaLinha(linha))}
           />
         </div>
       </td>

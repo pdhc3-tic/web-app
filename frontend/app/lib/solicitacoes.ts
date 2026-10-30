@@ -71,25 +71,48 @@ export async function submeterDemanda(demandaId: number): Promise<Demanda> {
 
 // ─── Bloqueio na submissão ───────────────────────────────────────────────────
 
-/** Um item de `solicitacoes_bloqueadas` (`balance.bloqueio`). */
-export type BloqueioSolicitacao = {
+/**
+ * O 400 `INSUFFICIENT_BALANCE` (#349, `SaldoInsuficiente` em
+ * `apps/sgd/exceptions.py`). Escrito à mão enquanto a #273 não gera os tipos
+ * do schema.
+ */
+export type ErroSaldoInsuficiente = {
+  code: "INSUFFICIENT_BALANCE";
   trava: "individual" | "territorial";
-  motivo: string | null;
+  /** Slug da rubrica. */
+  rubrica: string;
+  /** Decimais em string: o que a trava ainda comportava e o que a solicitação pedia. */
+  disponivel: string;
+  solicitado: string;
   acao_sugerida: "solicitar_recurso_extra" | "acionar_articulador";
+  /** Texto do backend; a tela monta o bloqueio pelos campos acima, não por ele. */
+  detail: string;
+  /**
+   * O que falta no limite individual para a rubrica inteira — o que o pedido
+   * de recurso extra registra. Pedido ao backend (pendencias-backend-sprint-10.md,
+   * item 23); ausente até lá.
+   */
+  valor_faltante?: string;
 };
+
+/** Na submissão, o primeiro bloqueio vai no topo e todos, em `solicitacoes_bloqueadas`. */
+type ErroSubmissaoBarrada = ErroSaldoInsuficiente & {
+  solicitacao_id: number;
+  solicitacoes_bloqueadas: Record<string, ErroSaldoInsuficiente>;
+};
+
+/** Um item de `solicitacoes_bloqueadas`. */
+export type BloqueioSolicitacao = ErroSaldoInsuficiente;
 
 /**
  * Lê o 400 de `submeter/` barrado por saldo: {id da solicitação: bloqueio}.
  * Null quando o 400 é outro (sem solicitações, cotações faltando…).
- *
- * Lê o contrato atual (`solicitacoes_bloqueadas` com o motivo em texto); a
- * SGD-REF-FE-01 (#359) troca pelo `INSUFFICIENT_BALANCE` quando o backend
- * publicar a #349.
  */
 export function bloqueiosDaSubmissao(erro: unknown): Record<number, BloqueioSolicitacao> | null {
   if (!(erro instanceof ApiError) || erro.status !== 400) return null;
-  const raw = erro.raw as { solicitacoes_bloqueadas?: Record<string, BloqueioSolicitacao> } | undefined;
-  const bloqueadas = raw?.solicitacoes_bloqueadas;
+  const raw = erro.raw as Partial<ErroSubmissaoBarrada> | undefined;
+  if (raw?.code !== "INSUFFICIENT_BALANCE") return null;
+  const bloqueadas = raw.solicitacoes_bloqueadas;
   if (!bloqueadas || typeof bloqueadas !== "object") return null;
   const porId: Record<number, BloqueioSolicitacao> = {};
   for (const [id, bloqueio] of Object.entries(bloqueadas)) porId[Number(id)] = bloqueio;
@@ -139,7 +162,8 @@ export async function consultarSaldo(
 
 /** Contrato pedido ao backend na pendência 27, com os nomes da SGD-REF-BE-12 (#358). */
 export type SimulacaoDiarias = {
-  faixa_destino: { id: number; nome: string };
+  /** `id` nulo enquanto não há tabela por faixa: todo destino usa o "Valor padrão". */
+  faixa_destino: { id: number | null; nome: string };
   valor_por_diaria: string;
   /** Decimal: com meia diária, "2.5". */
   numero_diarias: string;
@@ -151,8 +175,7 @@ export type SimulacaoDiarias = {
  *
  * Rota da SGD-REF-BE-12 (#358), pedida na pendência 27: o solicitante não lê o
  * valor da diária (`SystemConfig` é só do Super Admin e da UGP), então o total
- * em tempo real depende dela. Enquanto não existe, a pré-visualização mostra o
- * erro, e o total aparece ao salvar — calculado pelo backend.
+ * em tempo real vem dela, pela mesma regra que o backend usa ao gravar.
  */
 export async function simularDiarias(
   params: { municipioDestinoId: string; dataInicio: string; dataFim: string },

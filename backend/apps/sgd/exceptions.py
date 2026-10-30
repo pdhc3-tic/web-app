@@ -61,12 +61,16 @@ class SaldoInsuficiente(ErroDeDominio):
     code = "INSUFFICIENT_BALANCE"
 
     def __init__(self, *, trava: str, rubrica: str, disponivel: Decimal, solicitado: Decimal,
-                 detail: str, acao_sugerida: str | None = None, solicitacao_id: int | None = None):
+                 detail: str, acao_sugerida: str | None = None, solicitacao_id: int | None = None,
+                 valor_faltante: Decimal | None = None):
         super().__init__(detail)
         self.trava = trava
         self.rubrica = rubrica
         self.disponivel = disponivel
         self.solicitado = solicitado
+        # Só na trava individual da submissão: o que falta na rubrica inteira, que
+        # `disponivel` e `solicitado` (da solicitação barrada) não dão para calcular.
+        self.valor_faltante = valor_faltante
         self.acao_sugerida = acao_sugerida or ACAO_SUGERIDA[trava]
         self.solicitacao_id = solicitacao_id
         self.bloqueios: dict[int, SaldoInsuficiente] = {}
@@ -77,7 +81,7 @@ class SaldoInsuficiente(ErroDeDominio):
         erro = cls(
             trava=primeiro.trava, rubrica=primeiro.rubrica, disponivel=primeiro.disponivel,
             solicitado=primeiro.solicitado, acao_sugerida=primeiro.acao_sugerida,
-            detail=primeiro.mensagem, solicitacao_id=solicitacao_id,
+            detail=primeiro.mensagem, solicitacao_id=solicitacao_id, valor_faltante=primeiro.valor_faltante,
         )
         erro.bloqueios = bloqueios
         return erro
@@ -90,6 +94,7 @@ class SaldoInsuficiente(ErroDeDominio):
             "disponivel": _valor(self.disponivel),
             "solicitado": _valor(self.solicitado),
             "acao_sugerida": self.acao_sugerida,
+            "valor_faltante": _valor(self.valor_faltante) if self.valor_faltante is not None else None,
             "detail": self.mensagem,
         }
 

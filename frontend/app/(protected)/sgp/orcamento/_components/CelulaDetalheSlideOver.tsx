@@ -12,6 +12,7 @@ import { formatCurrencyBRL } from "@/app/lib/format";
 import {
   fetchOrcamentoDaMeta,
   labelSemaforoOrcamento,
+  limiaresDaLinha,
   nivelOrcamentoLabel,
   valorNumerico,
   type AlocacaoApi,
@@ -154,7 +155,7 @@ export function CelulaDetalheSlideOver({ celula, onClose, soTerritorio }: Props)
         celula ? (
           <SemaforoBadge
             nivel={celula.nivelSemaforo}
-            label={labelSemaforoOrcamento(celula.nivelSemaforo)}
+            label={labelSemaforoOrcamento(celula.nivelSemaforo, limiaresDaLinha(celula.linha))}
           />
         ) : undefined
       }

@@ -30,13 +30,15 @@ const RUBRICAS = 6;
 /** Rubrica que este spec deixa com saldo negativo. Ver `criarSaldoNegativo`. */
 const RUBRICA_NEGATIVA = { slug: "passagens-aereas", nome: "Passagens Aéreas" };
 
-/** Slugs das quatro que ficam sem alocação territorial na fixture. */
-const ZERADAS = [
-  "locacao-veiculo",
-  "alimentacao-refeicoes",
-  "material-grafico",
-  "equipamentos-capital",
-];
+/**
+ * Slugs das rubricas sem alocação territorial na Meta da fixture — num banco
+ * recém-semeado, as quatro além de Diárias e Passagens.
+ *
+ * Lidas do banco, e não fixadas: uma verba territorial criada pelo service (um
+ * roteiro manual, por exemplo) tem `BudgetTransaction`, que é PROTECT, e não sai
+ * mais. Ela tira a rubrica do grupo das bloqueadas sem que a tela esteja errada.
+ */
+let zeradas: string[] = [];
 
 /**
  * Saldo negativo no território do ADT: 1.000 alocado, 1.500 comprometido.
@@ -49,8 +51,8 @@ const ZERADAS = [
  * reduzir abaixo do comprometido. O ORM cru é o mesmo caminho da fixture
  * compartilhada, e o teardown dela apaga esta linha junto (filtra por Meta).
  */
-function criarSaldoNegativo(): void {
-  execFileSync(
+function criarSaldoNegativo(): string[] {
+  const saida = execFileSync(
     "docker",
     [
       "compose", "exec", "-T", "backend", "python", "manage.py", "shell", "-c",
@@ -78,15 +80,25 @@ BudgetAllocation.objects.update_or_create(
         "valor_executado": Decimal("200.00"),
     },
 )
+
+import json
+com_verba = BudgetAllocation.objects.filter(
+    meta__numero=${META_COM_ORCAMENTO}, nivel="territorial", territorio=perfil.territorio,
+).values_list("rubrica__slug", flat=True)
+zeradas = BudgetRubrica.objects.filter(ativo=True).exclude(slug__in=list(com_verba)).values_list("slug", flat=True)
+print("SALDO_ZERADAS " + json.dumps(list(zeradas)))
 `,
     ],
     { cwd: path.resolve(__dirname, ".."), encoding: "utf8", timeout: 120_000 },
   );
+  const linha = saida.split("\n").find((l) => l.startsWith("SALDO_ZERADAS "));
+  if (!linha) throw new Error(`Saldo negativo não confirmou a criação:\n${saida}`);
+  return JSON.parse(linha.slice("SALDO_ZERADAS ".length)) as string[];
 }
 
 test.beforeAll(() => {
   criarOrcamentoFixture();
-  criarSaldoNegativo();
+  zeradas = criarSaldoNegativo();
 });
 
 test.afterAll(() => {
@@ -148,7 +160,8 @@ test.describe("Saldo por rubrica — ADT com território", () => {
       page.getByTestId(`budget-balance-motivo-${RUBRICA_CRITICA.slug}`),
     ).toHaveCount(0);
 
-    for (const slug of ZERADAS) {
+    expect(zeradas.length).toBeGreaterThan(0);
+    for (const slug of zeradas) {
       await expect(
         page.getByTestId(`budget-balance-rubrica-${slug}`),
       ).toHaveAttribute("data-bloqueada", "true");
@@ -157,8 +170,9 @@ test.describe("Saldo por rubrica — ADT com território", () => {
       );
     }
 
+    // As zeradas mais a de saldo negativo.
     await expect(page.getByTestId("budget-balance-resumo")).toHaveText(
-      /5 de 6 rubricas bloqueadas/,
+      new RegExp(`${zeradas.length + 1} de ${RUBRICAS} rubricas bloqueadas`),
     );
   });
 
@@ -313,7 +327,11 @@ test.describe("Saldo por rubrica — ADT sem território", () => {
       await expect(
         page.getByRole("heading", { name: "Conteúdo restrito" }),
       ).toHaveCount(0);
-      await expect(page.getByTestId("orcamento-sem-territorio")).toBeVisible();
+      // O estado vazio vem do `code: "SEM_TERRITORIO"` do 403, com a
+      // mensagem do backend.
+      await expect(page.getByTestId("orcamento-sem-territorio")).toContainText(
+        "Seu perfil de ADT/ACR ainda não tem território vinculado.",
+      );
 
       // E o 403 não é apresentado como falha de rede: nada de "tentar
       // novamente", que aqui só repetiria a mesma negativa.

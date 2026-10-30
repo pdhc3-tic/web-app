@@ -45,10 +45,13 @@ export function canManageWorkPlan(
 }
 
 /**
- * Exportação do Plano de Trabalho e de Atividades.
+ * Exportação do Plano de Trabalho e de Atividades (Relatórios e Exportar do
+ * painel).
  *
- * UGP e Super Admin têm visão global; ADT/ACR tem visão territorial — o
- * backend já aplica o escopo via RLS, então o frontend apenas libera o botão.
+ * Espelha o `resolver_escopo` de apps/sgp/services/access.py, que o
+ * `POST /sgp/exportacoes/` usa: Super Admin e UGP exportam tudo, Articulador
+ * Estadual os seus estados e ADT/ACR os seus territórios. Os demais perfis
+ * (ex.: FGD) recebem 403, então nem veem a afordância.
  */
 export function canExportWorkPlan(
   user: Pick<NonNullable<User>, "perfis"> | null | undefined,
@@ -56,6 +59,7 @@ export function canExportWorkPlan(
   return (
     isSuperAdmin(user) ||
     hasRole(user, UGP_SLUG) ||
+    hasRole(user, ARTICULADOR_ESTADUAL_SLUG) ||
     hasRole(user, ADT_ACR_SLUG)
   );
 }
@@ -355,5 +359,15 @@ export function useCanManageWorkPlan(): WorkPlanAccessState {
   return {
     loading,
     canManage: !loading && canManageWorkPlan(session?.user),
+  };
+}
+
+/** Gate de Relatórios e do Exportar do painel (ver `canExportWorkPlan`). */
+export function useCanExportWorkPlan(): { loading: boolean; canExport: boolean } {
+  const { data: session, status } = useSession();
+  const loading = status === "loading";
+  return {
+    loading,
+    canExport: !loading && canExportWorkPlan(session?.user),
   };
 }

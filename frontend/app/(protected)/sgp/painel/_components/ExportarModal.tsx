@@ -2,19 +2,26 @@
 
 import { useState } from "react";
 import { Download } from "lucide-react";
-import Spinner from "@/app/components/icons/Spinner";
+import { ExportacaoStatus } from "@/app/components/sgp/Exportacao/ExportacaoStatus";
 import { Button } from "@/app/components/ui/Button/Button";
 import { Input } from "@/app/components/ui/Input/Input";
 import { Select, type SelectOption } from "@/app/components/ui/Select/Select";
 import { SlideOver } from "@/app/components/ui/SlideOver/SlideOver";
-import { useToast } from "@/app/components/ui/Toast/Toast";
-import { ApiError } from "@/app/lib/api";
-import {
-  baixarPlanoTrabalho,
-  ExportTimeoutError,
-  FORMATO_OPTIONS,
-  type FormatoExport,
-} from "@/app/lib/exportarPlano";
+import { criarExportacao, type ResultadoExportacao } from "@/app/lib/exportacoes";
+import { FORMATO_OPTIONS, type FormatoExport } from "@/app/lib/exportarPlano";
+import { useExportacao } from "@/app/lib/hooks/useExportacao";
+
+type FiltrosPlano = {
+  formato: FormatoExport;
+  meta_id?: string;
+  territorio_id?: string;
+  periodo_inicio?: string;
+  periodo_fim?: string;
+};
+
+async function iniciarPlano({ formato, ...filtros }: FiltrosPlano): Promise<ResultadoExportacao> {
+  return { tipo: "tarefa", exportacao: await criarExportacao({ tipo: "plano_trabalho", formato, filtros }) };
+}
 
 type Props = {
   open: boolean;
@@ -29,6 +36,11 @@ type Props = {
   situacaoAtiva: boolean;
 };
 
+/**
+ * Exportação do Plano de Trabalho a partir do painel (#142), gerada em segundo
+ * plano (A4 da #302). O acompanhamento fica no próprio modal; fechar não perde
+ * a tarefa, que reaparece ao reabrir.
+ */
 export function ExportarModal({
   open,
   onClose,
@@ -37,13 +49,17 @@ export function ExportarModal({
   territorioId,
   situacaoAtiva,
 }: Props) {
-  const { showToast } = useToast();
+  const exportacao = useExportacao<FiltrosPlano>({
+    chave: "sgp.painel.plano-trabalho",
+    iniciar: iniciarPlano,
+    erroAoIniciar: "Não foi possível exportar o Plano de Trabalho. Tente novamente.",
+  });
+  const gerando = exportacao.iniciando || exportacao.acompanhando;
 
   const [formato, setFormato] = useState<FormatoExport>("csv");
   const [meta, setMeta] = useState(metaIdInicial);
   const [inicio, setInicio] = useState("");
   const [fim, setFim] = useState("");
-  const [gerando, setGerando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   // Cada abertura reflete o filtro vigente do painel e esquece o erro da
@@ -59,7 +75,7 @@ export function ExportarModal({
   }
 
   function fechar() {
-    if (gerando) return;
+    if (exportacao.iniciando) return;
     setErro(null);
     onClose();
   }
@@ -75,33 +91,13 @@ export function ExportarModal({
     }
 
     setErro(null);
-    setGerando(true);
-    try {
-      const nome = await baixarPlanoTrabalho({
-        formato,
-        meta_id: meta || undefined,
-        territorio_id: territorioId || undefined,
-        periodo_inicio: inicio || undefined,
-        periodo_fim: fim || undefined,
-      });
-      showToast(`Download de ${nome} iniciado.`);
-      onClose();
-    } catch (e: unknown) {
-      if (e instanceof ExportTimeoutError) {
-        setErro(
-          "A geração do arquivo passou de 60 segundos e foi interrompida. " +
-            "Tente de novo filtrando uma Meta ou um período menor.",
-        );
-      } else if (e instanceof ApiError) {
-        setErro(e.message);
-      } else {
-        setErro(
-          "Não foi possível exportar o Plano de Trabalho. Tente novamente.",
-        );
-      }
-    } finally {
-      setGerando(false);
-    }
+    await exportacao.exportar({
+      formato,
+      meta_id: meta || undefined,
+      territorio_id: territorioId || undefined,
+      periodo_inicio: inicio || undefined,
+      periodo_fim: fim || undefined,
+    });
   }
 
   return (
@@ -114,15 +110,16 @@ export function ExportarModal({
           <Button
             variant="ghost"
             onClick={fechar}
-            disabled={gerando}
+            disabled={exportacao.iniciando}
             data-testid="exportar-cancelar"
           >
-            Cancelar
+            Fechar
           </Button>
           <Button
             variant="primary"
             onClick={handleConfirmar}
-            loading={gerando}
+            loading={exportacao.iniciando}
+            disabled={exportacao.acompanhando}
             leftIcon={<Download className="h-4 w-4" />}
             data-testid="exportar-confirmar"
           >
@@ -206,15 +203,18 @@ export function ExportarModal({
           </p>
         )}
 
-        {gerando && (
-          <p
-            className="inline-flex items-center gap-2 text-sm text-text-muted"
-            data-testid="exportar-carregando"
-            role="status"
-          >
-            <Spinner className="h-4 w-4 animate-spin" />
-            Gerando o arquivo… isso pode levar alguns segundos.
-          </p>
+        {exportacao.tarefa && (
+          <ExportacaoStatus
+            tarefa={exportacao.tarefa}
+            objeto="do Plano de Trabalho"
+            prefixo="exportar"
+            baixando={exportacao.baixando}
+            erroAcompanhamento={exportacao.erroAcompanhamento}
+            onBaixar={exportacao.baixar}
+            onRepetir={exportacao.repetir}
+            onReconsultar={exportacao.reconsultar}
+            onDescartar={exportacao.descartar}
+          />
         )}
 
         {erro && (

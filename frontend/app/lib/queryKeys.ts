@@ -40,20 +40,33 @@ export const qk = {
   /** Painel de demandas do SGD (#296) — tudo sob "sgd/demandas" invalida junto. */
   demandas: {
     all: ["sgd", "demandas"] as const,
-    lista: (status: readonly string[]) =>
-      ["sgd", "demandas", "lista", { status: [...status] }] as const,
+    /** `pagina` (offset/limit) só no painel de demandas, que pagina a lista (#323). */
+    lista: (status: readonly string[], pagina?: { offset: number; limit: number }) =>
+      ["sgd", "demandas", "lista", { status: [...status], ...pagina }] as const,
     detalhe: (id: string | number) => ["sgd", "demandas", "detalhe", String(id)] as const,
+    /** Prefixo da fila: invalida todas as páginas de uma vez. */
     fila: ["sgd", "demandas", "fila", "lista"] as const,
+    filaPagina: (pagina: { offset: number; limit: number }) =>
+      ["sgd", "demandas", "fila", "lista", pagina] as const,
     contagemFila: ["sgd", "demandas", "fila", "contagem"] as const,
     /** Lista com o recorte vindo do drill-down do painel de execução (#297). */
-    recorte: (filtros: Record<string, string | undefined>) =>
-      ["sgd", "demandas", "recorte", filtros] as const,
+    recorte: (filtros: Record<string, string | undefined>, pagina?: { offset: number; limit: number }) =>
+      ["sgd", "demandas", "recorte", filtros, pagina ?? null] as const,
     preview: (id: number, solicitacaoId: number, valor: string) =>
       ["sgd", "demandas", "preview", { id, solicitacaoId, valor }] as const,
     auditoria: (id: string | number) =>
       ["sgd", "demandas", "auditoria", String(id)] as const,
     /** Documentos da demanda (#295). */
     documentos: (id: number) => ["sgd", "demandas", "documentos", String(id)] as const,
+    /** Painel consolidado da home do SGD (#318): as decisões o invalidam junto. */
+    dashboard: ["sgd", "demandas", "dashboard"] as const,
+  },
+  /** Configuração do SGD (#319): mapeamento tipo → rubrica e o catálogo de rubricas. */
+  configSgd: {
+    tipoRubrica: ["sgd", "config", "tipo-rubrica"] as const,
+    tipoRubricaLista: (incluirInativos: boolean) =>
+      ["sgd", "config", "tipo-rubrica", { incluirInativos }] as const,
+    rubricas: ["sgp", "rubricas"] as const,
   },
   /** Montagem da demanda (#295): saldo, simulação de diárias e destinos. */
   solicitacao: {
@@ -80,7 +93,8 @@ export const qk = {
   atividadesElegiveis: (tecnicoId: string, busca: string) =>
     ["sgp", "atividades", "elegiveis", { tecnicoId, busca }] as const,
   /** Tarefa assíncrona de exportação da listagem de UPFs (#240). */
-  exportacaoUpfs: (id: string) => ["upfs", "exportacao", id] as const,
+  /** Job de exportação assíncrona do SGP (`/sgp/exportacoes/{id}/`), qualquer tipo. */
+  exportacao: (id: string) => ["sgp", "exportacao", id] as const,
   /** Execução por rubrica e custo por atividade (#297) e as opções dos filtros. */
   execucao: {
     painel: (filtros: Record<string, string | undefined>) =>
@@ -97,5 +111,17 @@ export const qk = {
     all: ["sgd", "arlo"] as const,
     operacoes: ["sgd", "arlo", "operacoes"] as const,
     operacao: (id: number) => ["sgd", "arlo", "operacao", id] as const,
+  },
+  /** Busca de usuários elegíveis a técnico (A2 da #302, SGP). */
+  usuariosElegiveisTecnico: (busca: string) =>
+    ["sgp", "tecnicos", "usuarios-elegiveis", busca] as const,
+  /** Mapeamento Arlo ↔ SGD, por direção (#320, SGD-FE-9). */
+  arloMapping: {
+    all: ["sgd", "arlo-mapping"] as const,
+    lista: (direcao: "exportacao" | "importacao") =>
+      ["sgd", "arlo-mapping", "lista", direcao] as const,
+    campos: ["sgd", "arlo-mapping", "campos"] as const,
+    preview: (direcao: "exportacao" | "importacao") =>
+      ["sgd", "arlo-mapping", "preview", direcao] as const,
   },
 } as const;

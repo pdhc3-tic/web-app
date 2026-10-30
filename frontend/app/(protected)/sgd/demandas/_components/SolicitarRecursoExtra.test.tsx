@@ -28,17 +28,19 @@ vi.mock("@/app/lib/remanejamentos", async (original) => ({
 const bloqueio = {
   solicitacaoId: 11,
   rubrica: { slug: "locacao-veiculo", nome: "Locação de veículo" },
-  motivo: "Limite individual insuficiente. Use a opção 'Solicitar recurso extra'.",
+  disponivel: "1000.00",
+  solicitado: "1200.00",
+  valorFaltante: null as string | null,
 };
 
-function renderFluxo(onEnviado = vi.fn()) {
+function renderFluxo(onEnviado = vi.fn(), valorFaltante: string | null = null) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
       <SolicitarRecursoExtra
         open
         demanda={{ id: 47, titulo: "Van da comitiva" }}
-        bloqueio={bloqueio}
+        bloqueio={{ ...bloqueio, valorFaltante }}
         onClose={vi.fn()}
         onEnviado={onEnviado}
       />
@@ -50,9 +52,13 @@ function renderFluxo(onEnviado = vi.fn()) {
 beforeEach(() => api.solicitar.mockReset());
 
 describe("SolicitarRecursoExtra", () => {
-  it("mostra o motivo do bloqueio e exige justificativa antes da revisão", async () => {
+  it("mostra o disponível e o solicitado do bloqueio e exige justificativa antes da revisão", async () => {
     renderFluxo();
-    expect(await screen.findByText(bloqueio.motivo)).toBeInTheDocument();
+    expect(await screen.findByTestId("recurso-extra-bloqueio")).toHaveTextContent(
+      "Limite individual insuficiente: R$ 1.000,00 disponível, R$ 1.200,00 solicitado.",
+    );
+    // Sem valor_faltante do backend, o valor fica para o sistema calcular.
+    expect(screen.getByText(/calculado pelo sistema ao registrar o pedido/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("recurso-extra-revisar"));
     expect(screen.getByText("A justificativa é obrigatória.")).toBeInTheDocument();
@@ -83,6 +89,12 @@ describe("SolicitarRecursoExtra", () => {
       "/sgd/remanejamentos/5",
     );
     expect(onEnviado).toHaveBeenCalledWith(expect.objectContaining({ id: 5 }));
+  });
+
+  it("com o valor que falta informado pelo backend, já o mostra preenchido", async () => {
+    renderFluxo(vi.fn(), "200.00");
+    expect(await screen.findByText("R$ 200,00")).toBeInTheDocument();
+    expect(screen.queryByText(/calculado pelo sistema/)).not.toBeInTheDocument();
   });
 
   it("mostra o erro do backend e continua na revisão", async () => {

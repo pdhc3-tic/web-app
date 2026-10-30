@@ -146,18 +146,23 @@ test.describe("Solicitante (ADT de RN)", () => {
     );
   });
 
-  test("a demanda de outro pedido não mostra o aviso do pedido mais recente", async ({ page }) => {
-    // Sem o filtro ?demanda= no backend (pendência 22), a lista traz o pedido
-    // mais recente do solicitante, que é o de `aprovar`: aqui ele não é desta
-    // demanda e não pode virar aviso.
+  test("cada demanda mostra o aviso do próprio pedido, não o do mais recente", async ({ page }) => {
+    // O pedido mais recente do solicitante é o de `aprovar`. Com o filtro
+    // ?demanda= do backend, a demanda de `recusar` mostra a recusa do pedido
+    // dela, e não a aprovação do outro.
     const lista = page.waitForResponse(
       (r) => r.url().includes("/api/v1/sgd/remanejamentos/") && r.url().includes(`demanda=${fx.recusar.demandaId}`),
     );
     await page.goto(`/sgd/demandas?visao=todas&demanda=${fx.recusar.demandaId}`);
     await lista;
     const painel = page.getByTestId("demanda-painel");
-    await expect(painel).toBeVisible();
-    await expect(painel.locator('[data-testid^="aviso-recurso-extra-"]')).toHaveCount(0);
+    const aviso = painel.getByTestId("aviso-recurso-extra-recusado");
+    await expect(aviso).toContainText("duplicidade");
+    await expect(aviso.getByRole("link")).toHaveAttribute(
+      "href",
+      `/sgd/remanejamentos/${fx.recusar.pedidoId}`,
+    );
+    await expect(painel.getByTestId("aviso-recurso-extra-aprovado")).toHaveCount(0);
   });
 
   test("ajusta o pedido devolvido e reenvia ao Articulador", async ({ page }) => {

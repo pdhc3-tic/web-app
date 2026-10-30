@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.sgp.models import Activity, FormResponse, Production, Tecnico, UPF
+from apps.sgp.models import Activity, BudgetRubrica, FormResponse, Production, Tecnico, UPF
 from apps.sgp.models.activity import GOOGLE_CALENDAR_SYNC_STATUS_CHOICES, STATUS_CHOICES, filtro_atrasada
 
 
@@ -93,6 +93,14 @@ def somente_ativas_sem_filtro_ativo(queryset, params):
     if "ativo" not in params:
         return queryset.filter(ativo=True)
     return queryset
+
+
+class BudgetRubricaFilter(django_filters.FilterSet):
+    ativo = StrictBooleanFilter(widget=StrictBooleanWidget)
+
+    class Meta:
+        model = BudgetRubrica
+        fields = ["ativo"]
 
 
 class ActivityFilter(django_filters.FilterSet):

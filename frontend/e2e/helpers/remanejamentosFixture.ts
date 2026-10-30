@@ -12,10 +12,9 @@ import path from "node:path";
  * - `parecer` e `devolver`: Submetidos (fila do Articulador de RN);
  * - `recusar` e `aprovar`: Com parecer (fila da UGP).
  *
- * `aprovar` é criado por último de propósito: o aviso na demanda mostra o
- * pedido mais recente que `GET /sgd/remanejamentos/?demanda=` devolve, e o
- * filtro `demanda` ainda não existe no backend (pendencias-backend-sprint-10.md,
- * item 22) — a lista traz todos os pedidos do solicitante.
+ * `aprovar` é criado por último de propósito: é o pedido mais recente do
+ * solicitante, e o teste confere que a demanda de `recusar` não mostra o aviso
+ * dele — o `GET /sgd/remanejamentos/?demanda=` traz só os pedidos da demanda.
  *
  * O pool territorial de R$ 20.321 cobre as demandas: a aprovação não precisa de
  * alocação de origem.
@@ -118,6 +117,9 @@ print("${MARCADOR}_SETUP " + json.dumps(saida))
 
 const TEARDOWN_SCRIPT = `${COMUM}
 limpar()
+# A limpeza apaga o limite de locação do Ewerton; devolve o do seed
+# (SGD_LIMITES_ADT_MONTAGEM) para as specs que rodam depois.
+DemandIndividualLimit.objects.get_or_create(solicitante=adt, rubrica=rubrica, defaults={"valor_limite": Decimal("1000")})
 print("${MARCADOR}_TEARDOWN_OK")
 `;
 

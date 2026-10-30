@@ -22,13 +22,20 @@ from django.utils import timezone
 
 from apps.core.services.permissions import user_role_slugs
 from apps.core.utils import formatar_brl
-from apps.sgd.exceptions import JustificativaObrigatoria, RegraDeNegocio, SaldoInsuficiente, TransicaoInvalida
+from apps.sgd.exceptions import (
+    TRAVA_INDIVIDUAL,
+    JustificativaObrigatoria,
+    RegraDeNegocio,
+    SaldoInsuficiente,
+    TransicaoInvalida,
+)
 from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.models.demand import STATUS_CANCELAVEIS_PELO_SOLICITANTE, STATUS_CHOICES, Demand
 from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
+from apps.sgd.services import recurso_extra as recurso_extra_service
 from apps.sgd.services import remanejamento as remanejamento_service
 from apps.sgd.services.approval import PERFIS_QUE_CANCELAM_AUTORIZADA, exigir_pode_decidir_articulador
 from apps.sgp.models import GlosaRisk
@@ -249,10 +256,31 @@ def _reservar(demand, transicao, *, ator, **_) -> tuple[list, dict | None]:
         else:
             consumo_por_rubrica[solicitacao.rubrica_id] = consumo_previo + solicitacao.valor_estimado
     if bloqueios:
+        faltante_por_rubrica = {}
+        for solicitacao in solicitacoes:
+            bloqueio = bloqueios.get(solicitacao.pk)
+            if bloqueio is None or bloqueio.trava != TRAVA_INDIVIDUAL:
+                continue
+            if solicitacao.rubrica_id not in faltante_por_rubrica:
+                faltante_por_rubrica[solicitacao.rubrica_id] = recurso_extra_service.deficit_individual(
+                    demand, solicitacao.rubrica,
+                )
+            bloqueio.valor_faltante = faltante_por_rubrica[solicitacao.rubrica_id]
         raise SaldoInsuficiente.para_submissao(bloqueios)
 
-    for solicitacao in solicitacoes:
-        balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=ator, adiar_gravacao=True)
+    try:
+        # Savepoint: barrada uma solicitação já sob o lock, as reservas anteriores
+        # são desfeitas, e o valor faltante sai do estado de antes da submissão,
+        # como na checagem acima. Os locks tomados dentro dele também saem, mas a
+        # transação é desfeita logo depois e o valor só informa o solicitante.
+        with transaction.atomic():
+            for solicitacao in solicitacoes:
+                balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=ator, adiar_gravacao=True)
+    except SaldoInsuficiente as exc:
+        if exc.trava == TRAVA_INDIVIDUAL:
+            barrada = next(s for s in solicitacoes if s.pk == exc.solicitacao_id)
+            exc.valor_faltante = recurso_extra_service.deficit_individual(demand, barrada.rubrica)
+        raise
     return solicitacoes, retrato
 
 
