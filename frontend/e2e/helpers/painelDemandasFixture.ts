@@ -83,7 +83,7 @@ from datetime import timedelta
 from django.utils import timezone
 from apps.core.models import Municipality
 from apps.sgp.models.workplan import WorkPlanAcao
-from apps.sgd.services import demand as ds, approval as ap
+from apps.sgd.services import demand as ds, workflow as wf
 
 limpar()
 articulador = U.objects.get(email="helio.fontenele@demo.pdhc.local")
@@ -121,22 +121,22 @@ def submetida(titulo):
 pre, _ = submetida("Van para o intercâmbio")
 dev, _ = submetida("Van sem roteiro definido")
 aut, aut_s = submetida("Van da comitiva")
-ap.pre_autorizar(aut, responsavel=articulador)
+wf.executar_transicao(aut, "pre_autorizada", ator=articulador)
 rec, _ = submetida("Van em duplicidade")
-ap.pre_autorizar(rec, responsavel=articulador)
+wf.executar_transicao(rec, "pre_autorizada", ator=articulador)
 atd, _ = submetida("Van do retorno")
-ap.pre_autorizar(atd, responsavel=articulador)
-ap.autorizar(atd, responsavel=ugp)
+wf.executar_transicao(atd, "pre_autorizada", ator=articulador)
+wf.executar_transicao(atd, "autorizada", ator=ugp)
 can, _ = submetida("Van da visita adiada")
-ap.pre_autorizar(can, responsavel=articulador)
-ap.autorizar(can, responsavel=ugp)
+wf.executar_transicao(can, "pre_autorizada", ator=articulador)
+wf.executar_transicao(can, "autorizada", ator=ugp)
 aud, _ = submetida("Van do seminário cancelado")
-ap.pre_autorizar(aud, responsavel=articulador)
-ap.autorizar(aud, responsavel=ugp)
+wf.executar_transicao(aud, "pre_autorizada", ator=articulador)
+wf.executar_transicao(aud, "autorizada", ator=ugp)
 ds.cancelar_demanda(aud, usuario=ugp, motivo="Seminário cancelado pela coordenação.")
 lon, _ = submetida("Van com roteiro em revisão")
 for volta in range(1, 11):
-    ap.devolver(lon, responsavel=articulador, justificativa=f"Revisar o roteiro ({volta}).")
+    wf.executar_transicao(lon, "devolvida", ator=articulador, justificativa=f"Revisar o roteiro ({volta}).")
     if volta < 10:
         ds.submeter_demanda(lon, usuario=adt)
 # Cancelada pelo ADT: a reserva volta e o limite fica como nas outras seis.
