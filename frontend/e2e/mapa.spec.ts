@@ -58,10 +58,7 @@ test.describe("SGP — Mapa de UPFs", () => {
     await expect(page.getByText(/Nenhuma UPF/i).first()).toBeVisible();
   });
 
-  // Pendência de backend #377 (pendencias-backend-sprint-11.md, item 4): a chave do
-  // cache do `/upfs/mapa/` não inclui o `q`, então por 60 s a busca devolve o
-  // resultado sem filtro. Sai do `fixme` quando a chave incluir a busca.
-  test.fixme("busca por texto sem resultado mostra o estado vazio", async ({ page }) => {
+  test("busca por texto sem resultado mostra o estado vazio", async ({ page }) => {
     await page.goto("/sgp/upfs/mapa");
     await expect(page.locator(".leaflet-marker-icon").first()).toBeVisible();
     await page.goto(`/sgp/upfs/mapa?q=${PREFIXO_MAPA}-nao-existe`);
