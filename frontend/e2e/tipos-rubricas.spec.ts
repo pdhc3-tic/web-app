@@ -10,11 +10,7 @@ import { storageStatePath } from "./helpers/users";
  * #319 (SGD-FE-8) — Configurações → SGD → Tipos e Rubricas, contra o CRUD
  * real da BE-8, sem nenhuma resposta simulada.
  *
- * O campo Rubrica do formulário vem de `GET /api/v1/sgp/rubricas/`, que o
- * backend ainda não publica (pendencias-backend-sprint-11.md, item 1; #373,
- * item 14). Os fluxos que escolhem uma rubrica — criar e trocar a rubrica —
- * ficam escritos e marcados como `fixme` até a rota existir; quando ela
- * entrar, basta tirar o `fixme`.
+ * O campo Rubrica do formulário vem de `GET /api/v1/sgp/rubricas/`.
  */
 
 let fx: TipoRubricaFixture;
@@ -77,8 +73,7 @@ test.describe("Super Admin", () => {
     await expect(page.getByTestId(`mapeamento-${veiculo.id}`)).toContainText("Ativo");
   });
 
-  // Aguarda `GET /api/v1/sgp/rubricas/` (pendência 1 da sprint 11): o campo Rubrica vem dela.
-  test.fixme("desativa, cria um novo para o tipo, edita a rubrica e desativa de novo", async ({ page }) => {
+  test("desativa, cria um novo para o tipo, edita a rubrica e desativa de novo", async ({ page }) => {
     const antigo = mapeamentoDoTipo("veiculo");
     await page.goto(TELA);
 
@@ -148,8 +143,8 @@ test.describe("Super Admin", () => {
     await expect(form).not.toContainText("Já existe um mapeamento ativo");
   });
 
-  // Aguarda `GET /api/v1/sgp/rubricas/`: o inativo do teste é criado pelo formulário, com uma rubrica.
-  test.fixme("reativar um inativo com outro ativo no tipo é barrado com aviso", async ({ page }) => {
+  // O inativo do teste é criado pelo formulário, com uma rubrica.
+  test("reativar um inativo com outro ativo no tipo é barrado com aviso", async ({ page }) => {
     const antigo = mapeamentoDoTipo("diaria");
     await page.goto(TELA);
     await page.getByTestId("mapeamento-novo").click();
