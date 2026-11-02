@@ -175,6 +175,8 @@ test.describe("SGD — montar e submeter a demanda (ADT)", () => {
     await expect(page.getByTestId("recurso-extra-bloqueio")).toHaveText(
       "Limite individual insuficiente: R$ 5.000,00 disponível, R$ 6.000,00 solicitado.",
     );
+    // O que falta na rubrica vem em `valor_faltante`, antes de enviar (#321, #359).
+    await expect(drawer).toContainText("R$ 1.000,00");
     await drawer.getByLabel("Justificativa").fill("A caravana precisa da passagem da facilitadora.");
     await page.getByTestId("recurso-extra-revisar").click();
     await page.getByTestId("recurso-extra-enviar").click();

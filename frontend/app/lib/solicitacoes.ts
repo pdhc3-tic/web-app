@@ -89,10 +89,9 @@ export type ErroSaldoInsuficiente = {
   detail: string;
   /**
    * O que falta no limite individual para a rubrica inteira — o que o pedido
-   * de recurso extra registra. Pedido ao backend (pendencias-backend-sprint-10.md,
-   * item 23); ausente até lá.
+   * de recurso extra registra. Nulo na trava territorial.
    */
-  valor_faltante?: string;
+  valor_faltante?: string | null;
 };
 
 /** Na submissão, o primeiro bloqueio vai no topo e todos, em `solicitacoes_bloqueadas`. */
