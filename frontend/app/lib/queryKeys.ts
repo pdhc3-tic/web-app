@@ -52,8 +52,8 @@ export const qk = {
     /** Lista com o recorte vindo do drill-down do painel de execução (#297). */
     recorte: (filtros: Record<string, string | undefined>, pagina?: { offset: number; limit: number }) =>
       ["sgd", "demandas", "recorte", filtros, pagina ?? null] as const,
-    preview: (id: number, solicitacaoId: number, valor: string) =>
-      ["sgd", "demandas", "preview", { id, solicitacaoId, valor }] as const,
+    preview: (id: number, solicitacaoId: number, valor: string, origem: string) =>
+      ["sgd", "demandas", "preview", { id, solicitacaoId, valor, origem }] as const,
     auditoria: (id: string | number) =>
       ["sgd", "demandas", "auditoria", String(id)] as const,
     /** Documentos da demanda (#295). */
@@ -82,6 +82,7 @@ export const qk = {
     all: ["sgd", "remanejamentos"] as const,
     lista: (status: readonly string[]) =>
       ["sgd", "remanejamentos", "lista", { status: [...status] }] as const,
+    excedentes: ["sgd", "remanejamentos", "excedentes"] as const,
     detalhe: (id: string | number) => ["sgd", "remanejamentos", "detalhe", String(id)] as const,
     daDemanda: (demandaId: number) =>
       ["sgd", "remanejamentos", "demanda", String(demandaId)] as const,

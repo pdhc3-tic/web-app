@@ -399,22 +399,38 @@ type ImpactoTrava = {
 /** Resposta de `preview-decisao` (BE-3): o saldo das duas travas depois da decisão. */
 export type PreviewDecisao = {
   disponivel: boolean;
-  trava_bloqueada: "individual" | "territorial" | null;
+  trava_bloqueada: "individual" | "territorial" | "origem" | null;
   individual: ImpactoTrava;
   territorial: ImpactoTrava;
+  /** Só com `origem_allocation`: o efeito do excedente na alocação de origem. */
+  origem?: ImpactoOrigem | null;
+};
+
+/** Efeito da autorização com excedente na alocação de origem (#363). */
+export type ImpactoOrigem = {
+  id: number;
+  valor_remanejado: number | string;
+  fora_do_limite: number | string;
+  saldo_antes: number | string;
+  saldo_apos: number | string;
+  semaforo_antes: FaixaSemaforo | null;
+  semaforo_apos: FaixaSemaforo | null;
 };
 
 /**
  * GET /api/v1/sgd/demandas/{id}/preview-decisao/?demand_request_id=&valor=
- * `valor` é o valor que a decisão vai reservar para a solicitação.
+ * `valor` é o valor que a decisão vai reservar para a solicitação. Com
+ * `origemAllocation`, simula a autorização com excedente coberto por ela.
  */
 export async function previewDecisao(
   demandaId: number,
   solicitacaoId: number,
   valor: string,
+  origemAllocation: string,
   signal?: AbortSignal,
 ): Promise<PreviewDecisao> {
   const qs = new URLSearchParams({ demand_request_id: String(solicitacaoId), valor });
+  if (origemAllocation) qs.set("origem_allocation", origemAllocation);
   const res = await apiClient(`${DEMANDAS_PATH}${demandaId}/preview-decisao/?${qs}`, { signal });
   return res.json();
 }
@@ -436,9 +452,23 @@ export const preAutorizarDemanda = (id: number) => decidir(id, "pre-autorizar");
 export const devolverDemanda = (id: number, justificativa: string) =>
   decidir(id, "devolver", { justificativa });
 
-/** UGP. `ajustes`: {id da solicitação: novo valor} — vazio autoriza como pedido. */
-export const autorizarDemanda = (id: number, ajustes: Record<number, string> = {}) =>
-  decidir(id, "autorizar", { ajustes });
+/**
+ * UGP. `ajustes`: {id da solicitação: novo valor} — vazio autoriza como pedido.
+ * `excedente`: o que passar do limite ou do pool sai da alocação de origem.
+ */
+export const autorizarDemanda = (
+  id: number,
+  ajustes: Record<number, string> = {},
+  excedente?: { origemAllocation: number; justificativa: string },
+) =>
+  decidir(id, "autorizar", {
+    ajustes,
+    ...(excedente && {
+      excedente_autorizado: true,
+      origem_allocation: excedente.origemAllocation,
+      justificativa: excedente.justificativa,
+    }),
+  });
 export const recusarDemanda = (id: number, justificativa: string) =>
   decidir(id, "recusar", { justificativa });
 

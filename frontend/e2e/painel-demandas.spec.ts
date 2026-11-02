@@ -267,6 +267,40 @@ test.describe("UGP", () => {
     await expect(timeline).toContainText("Cancelamento: Cancelado");
     await expect(timeline).toContainText("A visita foi adiada para o próximo semestre.");
   });
+
+  test("autoriza com excedente: escolhe a origem, vê o efeito nela e o excedente vai para a fila como pontual (#363)", async ({
+    page,
+  }) => {
+    await page.goto(`/sgd/demandas?demanda=${fx.excedente.id}`);
+    await painel(page).getByTestId("acao-ajustar").click();
+    await painel(page).getByLabel(/Valor autorizado/).fill("15000");
+    await expect(painel(page).getByTestId("preview-bloqueio")).toContainText("limite individual");
+    const confirmar = painel(page).getByTestId("decisao-confirmar");
+    await expect(confirmar).toBeDisabled();
+
+    await painel(page).getByTestId("excedente-ativo").check();
+    await expect(painel(page).getByTestId("excedente-aviso")).toContainText("não aumenta o limite individual");
+    await painel(page).locator("button#excedente-origem").click();
+    await page.getByRole("option", { name: new RegExp(fx.excedente.estado) }).click();
+
+    const origem = painel(page).getByTestId(`preview-origem-${fx.excedente.estadualId}`);
+    await expect(origem).toContainText("Origem do excedente");
+    await expect(origem).toContainText("Remanejado ao pool");
+    // Sem justificativa, a origem sozinha não libera.
+    await expect(painel(page).getByTestId("preview-bloqueio")).toHaveCount(0);
+    await expect(confirmar).toBeDisabled();
+
+    await painel(page).getByLabel(/Justificativa do excedente/).fill("Mutirão estadual fora do previsto.");
+    await expect(confirmar).toBeEnabled();
+    await confirmar.click();
+    await expect(painel(page).getByTestId("painel-mensagem-sucesso")).toContainText("valor ajustado");
+    await expect(painel(page)).toContainText("Autorizada");
+
+    await page.goto("/sgd/remanejamentos?visao=excedentes");
+    const linha = page.getByTestId("excedentes-tabela").locator("tr", { hasText: `Demanda #${fx.excedente.id}` });
+    await expect(linha).toContainText("Pontual");
+    await expect(linha).toContainText("Beatriz");
+  });
 });
 
 test.describe("FGD", () => {

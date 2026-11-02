@@ -117,6 +117,40 @@ export async function listPedidos(
 }
 
 /** GET /api/v1/sgd/remanejamentos/{id}/ */
+/** Alocação de um remanejamento, em `BudgetTransferSerializer`. */
+export type AlocacaoDoRemanejamento = {
+  id: number;
+  nivel: "nacional" | "estadual" | "territorial";
+  estado: string | null;
+  territorio: string | null;
+};
+
+/** `BudgetTransferSerializer` — um remanejamento efetivado. */
+export type TransferenciaRemanejamento = {
+  id: number;
+  escopo: "pontual" | "elevacao_limite" | "";
+  escopo_display: string;
+  origem: AlocacaoDoRemanejamento;
+  destino: AlocacaoDoRemanejamento;
+  rubrica: string;
+  valor: string;
+  motivo: string;
+  aprovado_por_nome: string | null;
+  demanda_id: string | null;
+  solicitacao_id: string | null;
+  criado_em: string;
+};
+
+/** GET /api/v1/sgd/remanejamentos/transferencias/?escopo=pontual — os excedentes autorizados nas demandas (#363). */
+export async function listExcedentes(
+  signal?: AbortSignal,
+): Promise<{ excedentes: TransferenciaRemanejamento[]; total: number }> {
+  const qs = new URLSearchParams({ escopo: "pontual", limit: String(LIMITE_LISTA_PEDIDOS) });
+  const res = await apiClient(`${REMANEJAMENTOS_PATH}transferencias/?${qs}`, { signal });
+  const pagina = (await res.json()) as { count: number; results: TransferenciaRemanejamento[] };
+  return { excedentes: pagina.results, total: pagina.count };
+}
+
 export async function getPedido(id: number | string, signal?: AbortSignal): Promise<PedidoRecursoExtra> {
   const res = await apiClient(`${REMANEJAMENTOS_PATH}${id}/`, { signal });
   return res.json();

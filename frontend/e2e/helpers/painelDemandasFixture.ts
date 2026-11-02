@@ -46,6 +46,7 @@ export type PainelDemandasFixture = {
   cancelar: Ref;
   auditada: Ref;
   longa: Ref;
+  excedente: Ref & { solicitacaoId: number; estadualId: number; estado: string };
 };
 
 const COMUM = `
@@ -53,13 +54,15 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from apps.sgp.models import Activity
 from apps.sgp.models import GlosaRisk
-from apps.sgp.models.budget import BudgetAllocation, BudgetRubrica, BudgetTransaction
+from django.db.models import F
+from apps.sgp.models.budget import BudgetAllocation, BudgetRubrica, BudgetTransaction, BudgetTransfer
 from apps.sgd.models.demand import Demand
 from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.models.individual_limit import DemandIndividualLimit
 
 P = "${PREFIXO_296}"
 POOL = Decimal("20296.00")
+ESTADUAL = Decimal("50296.00")
 U = get_user_model()
 adt = U.objects.get(email="ewerton.bandeira@demo.pdhc.local")
 territorio_id = adt.profiles.get(perfil__slug="adt-acr").territorio_id
@@ -67,12 +70,22 @@ rubrica = BudgetRubrica.objects.get(slug="locacao-veiculo")
 
 def limpar():
     demandas = Demand.objects.filter(titulo__startswith=P)
+    # O excedente da #363 move valor entre as alocações: desfaz antes de achá-las pelo valor.
+    # _raw_delete: o modelo é imutável e recusa o delete comum.
+    transferencias = BudgetTransfer.objects.filter(demanda_id__in=[str(pk) for pk in demandas.values_list("pk", flat=True)])
+    for t in transferencias:
+        BudgetAllocation.objects.filter(pk=t.allocation_origem_id).update(valor_alocado=F("valor_alocado") + t.valor)
+        BudgetAllocation.objects.filter(pk=t.allocation_destino_id).update(valor_alocado=F("valor_alocado") - t.valor)
+    transferencias._raw_delete(transferencias.db)
     ApprovalStep.objects.filter(demanda__in=demandas).delete()
     GlosaRisk.objects.filter(demanda_id__in=[str(pk) for pk in demandas.values_list("pk", flat=True)]).delete()
     pools = BudgetAllocation.objects.filter(
         nivel="territorial", territorio_id=territorio_id, rubrica=rubrica, valor_alocado=POOL,
     )
+    estaduais = BudgetAllocation.objects.filter(nivel="estadual", rubrica=rubrica, valor_alocado=ESTADUAL)
     BudgetTransaction.objects.filter(allocation__in=pools).delete()
+    BudgetTransaction.objects.filter(allocation__in=estaduais).delete()
+    estaduais.delete()
     demandas.delete()
     Activity.objects.filter(titulo__startswith=P).delete()
     DemandIndividualLimit.objects.filter(solicitante=adt, rubrica=rubrica).delete()
@@ -100,6 +113,9 @@ BudgetAllocation.objects.create(
 DemandIndividualLimit.objects.create(solicitante=adt, rubrica=rubrica, valor_limite=Decimal("12000"))
 
 municipio = Municipality.objects.filter(territory_id=territorio_id).order_by("nome").first()
+estadual = BudgetAllocation.objects.create(
+    meta_id=META_ID, rubrica=rubrica, nivel="estadual", estado=municipio.state, valor_alocado=ESTADUAL,
+)
 quando = timezone.now() + timedelta(days=20)
 atividade = Activity.objects.create(
     titulo=f"{P} Intercâmbio regional", tipo_atividade="intercambio", acao=acao, municipio=municipio,
@@ -114,9 +130,9 @@ CAMPOS = {
     "numero_passageiros": 12,
 }
 
-def submetida(titulo):
+def submetida(titulo, valor="1200"):
     d = ds.criar_demanda(titulo=f"{P} {titulo}", activity=atividade, justificativa="", solicitante=adt)
-    s = ds.adicionar_solicitacao(d, tipo="veiculo", campos_json=CAMPOS, valor_estimado=Decimal("1200"))
+    s = ds.adicionar_solicitacao(d, tipo="veiculo", campos_json=CAMPOS, valor_estimado=Decimal(valor))
     ds.submeter_demanda(d, usuario=adt)
     return d, s
 
@@ -136,6 +152,8 @@ aud, _ = submetida("Van do seminário cancelado")
 wf.executar_transicao(aud, "pre_autorizada", ator=articulador)
 wf.executar_transicao(aud, "autorizada", ator=ugp)
 ds.cancelar_demanda(aud, usuario=ugp, motivo="Seminário cancelado pela coordenação.")
+exc, exc_s = submetida("Van do mutirão estadual", "100")
+wf.executar_transicao(exc, "pre_autorizada", ator=articulador)
 lon, _ = submetida("Van com roteiro em revisão")
 for volta in range(1, 11):
     wf.executar_transicao(lon, "devolvida", ator=articulador, justificativa=f"Revisar o roteiro ({volta}).")
@@ -150,6 +168,7 @@ print("${MARCADOR}_SETUP " + json.dumps({
     "autorizar": {**ref(aut), "solicitacaoId": aut_s.pk},
     "recusar": ref(rec), "atender": ref(atd), "cancelar": ref(can), "auditada": ref(aud),
     "longa": ref(lon),
+    "excedente": {**ref(exc), "solicitacaoId": exc_s.pk, "estadualId": estadual.pk, "estado": municipio.state.nome},
 }))
 `;
 
