@@ -81,6 +81,19 @@ export type EtapaDemanda = {
   criado_em: string;
 };
 
+/**
+ * Risco de glosa registrado num pagamento acima do autorizado. Pedido ao
+ * backend (pendencias-backend-sprint-12.md, item 1); ausente até lá.
+ */
+export type GlosaDemanda = {
+  id: number;
+  demand_request_id: number;
+  valor_autorizado: string;
+  valor_pago: string;
+  excedente: string;
+  criado_em: string;
+};
+
 /** `DemandSerializer` — leitura. Valores monetários vêm como string decimal. */
 export type Demanda = {
   id: number;
@@ -100,6 +113,7 @@ export type Demanda = {
   solicitante_nome: string;
   /** Decisões em ordem cronológica (pré-autorização, autorização, atendimento). */
   etapas: EtapaDemanda[];
+  glosas?: GlosaDemanda[];
   criado_em: string;
   atualizado_em: string;
 };
@@ -430,6 +444,13 @@ export const recusarDemanda = (id: number, justificativa: string) =>
 
 /** FGD. `valoresPagos`: {id da solicitação: valor pago}. */
 export const atenderDemanda = (id: number) => decidir(id, "atender");
+/** Quanto o valor pago passa do autorizado; `null` se não passa ou se o campo está vazio. */
+export function excedenteDoPago(pago: string, autorizado: string): number | null {
+  const centavos = (valor: string) => Math.round(Number(valor) * 100);
+  const diferenca = centavos(pago) - centavos(autorizado);
+  return pago.trim() !== "" && diferenca > 0 ? diferenca / 100 : null;
+}
+
 export const concluirDemanda = (id: number, valoresPagos: Record<number, string>) =>
   decidir(id, "concluir", { valores_pagos: valoresPagos });
 

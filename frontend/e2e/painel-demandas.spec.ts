@@ -304,13 +304,20 @@ test.describe("FGD", () => {
     // recarregarem (a corrida que desfazia o formulário do Concluir sozinho).
     await painel(page).getByTestId("acao-concluir").click();
     await expect(painel(page).getByTestId("painel-mensagem-sucesso")).toHaveCount(0);
-    await painel(page).getByLabel(/Valor pago/).fill("1100");
+    const valorPago = painel(page).getByLabel(/Valor pago/);
+    await valorPago.fill("1100");
+    await expect(painel(page).getByTestId(/^aviso-acima-do-autorizado-/)).toHaveCount(0);
+    // Acima do autorizado (R$ 1.200): avisa e conclui normalmente (#360).
+    await valorPago.fill("1400");
+    await expect(painel(page).getByTestId(/^aviso-acima-do-autorizado-/)).toContainText(
+      "200,00 acima do autorizado; será registrado no relatório de risco de glosa.",
+    );
     await painel(page).getByTestId("decisao-confirmar").click();
     await expect(painel(page).getByTestId("painel-mensagem-sucesso")).toContainText(
       "Demanda concluída",
     );
     await expect(painel(page)).toContainText("Concluída");
-    await expect(painel(page)).toContainText("pago R$ 1.100,00");
+    await expect(painel(page)).toContainText("pago R$ 1.400,00");
   });
 
   test("a FGD vê a aba Auditoria da demanda que atende (#322)", async ({ page }) => {

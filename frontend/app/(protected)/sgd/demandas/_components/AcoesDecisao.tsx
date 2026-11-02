@@ -22,6 +22,7 @@ import {
 import { formatCurrencyBRL } from "@/app/lib/format";
 import { qk } from "@/app/lib/queryKeys";
 import { PreviewImpacto, usePreviewsDecisao } from "./PreviewImpacto";
+import { AvisoAcimaDoAutorizado } from "./AvisoAcimaDoAutorizado";
 
 export type Desfecho = { tipo: "sucesso" | "info"; texto: string };
 
@@ -308,19 +309,25 @@ export function AcoesDecisao({
     conteudo = (
       <>
         {solicitacoes.map((s) => (
-          <Input
-            key={s.id}
-            id={`pago-${s.id}`}
-            label={`Valor pago — ${s.tipo_display}`}
-            type="number"
-            min={0}
-            step="0.01"
-            inputMode="decimal"
-            required
-            value={valores[s.id] ?? ""}
-            onChange={(e) => setValores((v) => ({ ...v, [s.id]: e.target.value }))}
-            helperText={`Autorizado: ${formatCurrencyBRL(s.valor_autorizado ?? s.valor_estimado)}`}
-          />
+          <div key={s.id} className="flex flex-col gap-1">
+            <Input
+              id={`pago-${s.id}`}
+              label={`Valor pago — ${s.tipo_display}`}
+              type="number"
+              min={0}
+              step="0.01"
+              inputMode="decimal"
+              required
+              value={valores[s.id] ?? ""}
+              onChange={(e) => setValores((v) => ({ ...v, [s.id]: e.target.value }))}
+              helperText={`Autorizado: ${formatCurrencyBRL(s.valor_autorizado ?? s.valor_estimado)}`}
+            />
+            <AvisoAcimaDoAutorizado
+              solicitacaoId={s.id}
+              pago={valores[s.id] ?? ""}
+              autorizado={s.valor_autorizado ?? s.valor_estimado}
+            />
+          </div>
         ))}
         {erroBox}
         <div className="flex justify-end gap-2">

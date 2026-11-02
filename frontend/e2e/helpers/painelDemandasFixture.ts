@@ -52,6 +52,7 @@ const COMUM = `
 from decimal import Decimal
 from django.contrib.auth import get_user_model
 from apps.sgp.models import Activity
+from apps.sgp.models import GlosaRisk
 from apps.sgp.models.budget import BudgetAllocation, BudgetRubrica, BudgetTransaction
 from apps.sgd.models.demand import Demand
 from apps.sgd.models.approval_step import ApprovalStep
@@ -67,6 +68,7 @@ rubrica = BudgetRubrica.objects.get(slug="locacao-veiculo")
 def limpar():
     demandas = Demand.objects.filter(titulo__startswith=P)
     ApprovalStep.objects.filter(demanda__in=demandas).delete()
+    GlosaRisk.objects.filter(demanda_id__in=[str(pk) for pk in demandas.values_list("pk", flat=True)]).delete()
     pools = BudgetAllocation.objects.filter(
         nivel="territorial", territorio_id=territorio_id, rubrica=rubrica, valor_alocado=POOL,
     )
