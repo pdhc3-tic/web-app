@@ -15,6 +15,7 @@ import path from "node:path";
  *   de R$ 700 (cabe) — uma barrada, a outra não;
  * - `territorial`: a diária de R$ 600 contra os R$ 295 do território;
  * - `equipamento`: kit de R$ 3.000 com 2 cotações — falta 1;
+ * - `equipamentoCompleto`: kit de R$ 1.000 com 3 cotações válidas;
  * - `recusada`: veículo de R$ 1.200 (limite de R$ 1.000) com o pedido de
  *   recurso extra já recusado pela UGP.
  *
@@ -40,6 +41,7 @@ export type MontarDemandaFixture = {
   multipla: Ref & { passagemId: number; veiculoId: number };
   territorial: Ref & { diariaId: number };
   equipamento: Ref;
+  equipamentoCompleto: Ref;
   recusada: Ref & { veiculoId: number };
   limites: Record<string, { limite: string; comprometido: string; executado: string }>;
 };
@@ -155,12 +157,18 @@ diaria = ds.adicionar_solicitacao(territorial, tipo="diaria", campos_json=DIARIA
 
 equipamento = demanda("Compra de kits de irrigação")
 ds.adicionar_solicitacao(equipamento, tipo="equipamento", campos_json=EQUIPAMENTO, valor_estimado=Decimal("3000"))
-for fornecedor in ("Agro Norte", "Irriga Sul"):
-    DemandDocument.objects.create(
-        demanda=equipamento, tipo="cotacao", fornecedor=fornecedor, nome_original=f"cotacao-{fornecedor}.pdf",
-        arquivo_key=f"demandas/{equipamento.pk}/documentos/{uuid4()}.pdf",
-        arquivo_url="", content_type="application/pdf", tamanho_bytes=1024, enviado_por=adt,
-    )
+equipamento_completo = demanda("Compra de bombas d'água")
+ds.adicionar_solicitacao(equipamento_completo, tipo="equipamento", campos_json=EQUIPAMENTO, valor_estimado=Decimal("1000"))
+for dona, fornecedores in (
+    (equipamento, ("Agro Norte", "Irriga Sul")),
+    (equipamento_completo, ("Agro Norte", "Irriga Sul", "Campo Verde")),
+):
+    for fornecedor in fornecedores:
+        DemandDocument.objects.create(
+            demanda=dona, tipo="cotacao", fornecedor=fornecedor, nome_original=f"cotacao-{fornecedor}.pdf",
+            arquivo_key=f"demandas/{dona.pk}/documentos/{uuid4()}.pdf",
+            arquivo_url="", content_type="application/pdf", tamanho_bytes=1024, enviado_por=adt,
+        )
 
 recusada = demanda("Van recusada")
 veiculo_recusado = ds.adicionar_solicitacao(recusada, tipo="veiculo", campos_json=VEICULO, valor_estimado=Decimal("1200"))
@@ -178,6 +186,7 @@ print("${MARCADOR}_SETUP " + json.dumps({
     "multipla": ref(multipla, passagemId=passagem.pk, veiculoId=veiculo.pk),
     "territorial": ref(territorial, diariaId=diaria.pk),
     "equipamento": ref(equipamento),
+    "equipamentoCompleto": ref(equipamento_completo),
     "recusada": ref(recusada, veiculoId=veiculo_recusado.pk),
     "limites": foto,
 }))

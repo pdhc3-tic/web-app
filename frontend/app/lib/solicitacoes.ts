@@ -306,17 +306,20 @@ export const COTACOES_SEM_DOCUMENTOS =
  * API: com solicitação de equipamento, ao menos 3 cotações, de fornecedores
  * distintos. Devolve o aviso, ou null quando está tudo certo.
  *
- * `documentos` indefinido é a lista ainda não carregada (ou que falhou, com
- * `falhou`): com equipamento, a regra não tem como ser conferida e a
- * submissão fica bloqueada.
+ * Com equipamento, a regra só vale sobre a lista atual: enquanto a consulta
+ * está em andamento (`atualizando`) ou se ela falhou (`falhou`), a submissão
+ * fica bloqueada, mesmo com uma lista anterior no cache, que pode já não
+ * refletir o backend.
  */
 export function pendenciaDeCotacoes(
   demanda: Pick<Demanda, "solicitacoes">,
   documentos: Pick<DocumentoDemanda, "tipo" | "fornecedor">[] | undefined,
-  falhou = false,
+  { atualizando = false, falhou = false }: { atualizando?: boolean; falhou?: boolean } = {},
 ): string | null {
   if (!demanda.solicitacoes.some((s) => s.tipo === "equipamento")) return null;
-  if (!documentos) return falhou ? COTACOES_SEM_DOCUMENTOS : COTACOES_CONFERINDO;
+  if (atualizando) return COTACOES_CONFERINDO;
+  if (falhou) return COTACOES_SEM_DOCUMENTOS;
+  if (!documentos) return COTACOES_CONFERINDO;
   const fornecedores = documentos.filter((d) => d.tipo === "cotacao").map((d) => d.fornecedor.trim());
   if (fornecedores.length < COTACOES_MINIMAS) {
     return `Aquisição de equipamentos exige ao menos ${COTACOES_MINIMAS} cotações em PDF — há ${fornecedores.length}.`;

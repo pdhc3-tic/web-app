@@ -108,11 +108,25 @@ describe("pendenciaDeCotacoes", () => {
 
   it("com equipamento, bloqueia enquanto os documentos não carregaram e se a consulta falhou", () => {
     expect(pendenciaDeCotacoes(comEquipamento, undefined)).toBe(COTACOES_CONFERINDO);
-    expect(pendenciaDeCotacoes(comEquipamento, undefined, true)).toBe(COTACOES_SEM_DOCUMENTOS);
+    expect(pendenciaDeCotacoes(comEquipamento, undefined, { falhou: true })).toBe(COTACOES_SEM_DOCUMENTOS);
+  });
+
+  it("com equipamento, a lista do cache não libera enquanto atualiza ou se a atualização falhou (#380)", () => {
+    const validas = [cotacao("A"), cotacao("B"), cotacao("C")];
+    expect(pendenciaDeCotacoes(comEquipamento, validas, { atualizando: true })).toBe(COTACOES_CONFERINDO);
+    expect(pendenciaDeCotacoes(comEquipamento, validas, { falhou: true })).toBe(COTACOES_SEM_DOCUMENTOS);
+    // "Tentar de novo": a nova consulta está em andamento, com a falha anterior ainda no estado.
+    expect(pendenciaDeCotacoes(comEquipamento, validas, { atualizando: true, falhou: true })).toBe(COTACOES_CONFERINDO);
+  });
+
+  it("recuperada a lista, vale a regra sobre as cotações atuais (#380)", () => {
+    expect(pendenciaDeCotacoes(comEquipamento, [cotacao("A"), cotacao("B")], {})).toMatch(/há 2/);
+    expect(pendenciaDeCotacoes(comEquipamento, [cotacao("A"), cotacao("B"), cotacao("C")], {})).toBeNull();
   });
 
   it("sem equipamento, não espera os documentos", () => {
-    expect(pendenciaDeCotacoes({ solicitacoes: [] }, undefined, true)).toBeNull();
+    expect(pendenciaDeCotacoes({ solicitacoes: [] }, undefined, { falhou: true })).toBeNull();
+    expect(pendenciaDeCotacoes({ solicitacoes: [] }, [], { atualizando: true })).toBeNull();
   });
 });
 
