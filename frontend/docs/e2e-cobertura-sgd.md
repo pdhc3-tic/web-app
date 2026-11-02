@@ -43,6 +43,10 @@ npx playwright test e2e/ciclo-demanda.spec.ts --project=chromium --no-deps
 
 O cancelamento automático depende do `celery_worker`. Sem ele, a demanda não muda de status e o teste falha por tempo.
 
+## Validação contra o backend da sprint 12 (#362)
+
+Em 01/11/2026, as 11 specs do SGD e a `orcamento-saldo` rodaram juntas contra a `main` com os PRs #378, #379 e #382: 100 testes passando em 4,9 minutos, sem `fixme` nem simulação de resposta. O `page.route` dessas specs só atrasa ou derruba requisições.
+
 ## Situação do CI
 
 O workflow `Playwright E2E` (`.github/workflows/playwright.yml`) roda a suíte completa em cada PR para a `main`. Hoje ele não chega ao fim:
