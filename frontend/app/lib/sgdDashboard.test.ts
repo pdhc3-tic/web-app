@@ -57,6 +57,12 @@ describe("links do painel", () => {
     );
   });
 
+  it("alerta nacional preserva rubrica e meta, sem recorte de território (#383)", () => {
+    expect(
+      linkDoAlerta(alerta({ nivel: "nacional", estado_sigla: null, territorio_id: null }), true),
+    ).toBe("/sgd/execucao?rubrica=alimentacao-refeicoes&meta=9");
+  });
+
   it("sem acesso à Execução (ADT), vai ao saldo do Painel de Orçamento", () => {
     expect(linkDoAlerta(alerta({ territorio_id: 4 }), false)).toBe("/sgp/orcamento/?meta=9");
   });
