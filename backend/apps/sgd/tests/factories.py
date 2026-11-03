@@ -5,7 +5,6 @@ from apps.sgd.models import (
     ApprovalStep,
     Demand,
     DemandDocument,
-    DemandIndividualLimit,
     DemandRequest,
     DemandTypeRubricaMapping,
 )
@@ -91,17 +90,6 @@ class ApprovalStepFactory(factory.django.DjangoModelFactory):
     justificativa = ""
     excedente_autorizado = False
 
-
-class DemandIndividualLimitFactory(factory.django.DjangoModelFactory):
-    class Meta:
-        model = DemandIndividualLimit
-
-    solicitante = factory.SubFactory(UserFactory)
-    rubrica = factory.SubFactory(BudgetRubricaFactory)
-    valor_limite = 10_000
-    valor_comprometido = 0
-    valor_executado = 0
-    criado_por = factory.SubFactory(UserFactory)
 
 
 class BudgetIncreaseRequestFactory(factory.django.DjangoModelFactory):

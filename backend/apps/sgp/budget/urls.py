@@ -6,6 +6,7 @@ from .views import (
     BudgetRubricaListView,
     RemanejamentoView,
     SaldoConsultaView,
+    SpendingLimitViewSet,
 )
 
 urlpatterns = [
@@ -39,6 +40,16 @@ urlpatterns = [
         "sgp/orcamento/alocacoes/<int:pk>/transacoes/",
         BudgetPoolViewSet.as_view({"get": "transacoes"}),
         name="budget-alocacoes-transacoes",
+    ),
+    path(
+        "sgp/orcamento/limites/",
+        SpendingLimitViewSet.as_view({"get": "list", "post": "create"}),
+        name="budget-limites",
+    ),
+    path(
+        "sgp/orcamento/limites/<int:pk>/",
+        SpendingLimitViewSet.as_view({"patch": "partial_update"}),
+        name="budget-limites-detail",
     ),
     path(
         "sgp/orcamento/saldo/",

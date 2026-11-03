@@ -206,7 +206,9 @@ def test_reserva_ajuste_execucao_e_liberacao_ligadas_a_transacao(
         demanda, "concluida", ator=usuario_fgd, valores_pagos={demand_request_rn.pk: Decimal("1100")},
     )
 
-    por_tipo = {t.tipo: t for t in BudgetTransaction.objects.filter(demanda_id=str(demand_request_rn.pk))}
+    por_tipo = {
+        t.tipo: t for t in BudgetTransaction.objects.filter(demanda_id=str(demand_request_rn.pk), pool__isnull=False)
+    }
     assert set(por_tipo) == {"reserva", "ajuste", "execucao", "liberacao"}
 
     esperados = {

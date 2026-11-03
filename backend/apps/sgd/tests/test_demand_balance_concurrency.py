@@ -8,8 +8,9 @@ from django.test import TransactionTestCase
 from apps.core.tests.factories import MunicipalityFactory, RoleFactory, StateFactory, TerritoryFactory, UserFactory
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
-from apps.sgd.tests.factories import DemandFactory, DemandIndividualLimitFactory, DemandRequestFactory
+from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
 from apps.sgp.tests.factories import ActivityFactory, BudgetPoolFactory, BudgetRubricaFactory, WorkPlanAcaoFactory
+from apps.sgp.tests.factories import SpendingLimitFactory
 
 
 class TestReservarDuasTravasConcorrente(TransactionTestCase):
@@ -36,8 +37,8 @@ class TestReservarDuasTravasConcorrente(TransactionTestCase):
         BudgetPoolFactory(
             rubrica=rubrica, territorio=territory, valor_alocado=Decimal("1000"),
         )
-        self.limite = DemandIndividualLimitFactory(
-            solicitante=self.solicitante, rubrica=rubrica, valor_limite=Decimal("100"),
+        self.limite = SpendingLimitFactory(
+            user=self.solicitante, rubrica=rubrica, valor_limite=Decimal("100"),
         )
 
         campos_grafico = {
@@ -100,8 +101,8 @@ class TestSubmissaoConcorrenteEstouraPoolTerritorial(TransactionTestCase):
         BudgetPoolFactory(
             rubrica=rubrica, territorio=territory, valor_alocado=Decimal("100"),
         )
-        DemandIndividualLimitFactory(solicitante=self.solicitante_1, rubrica=rubrica, valor_limite=Decimal("1000"))
-        DemandIndividualLimitFactory(solicitante=self.solicitante_2, rubrica=rubrica, valor_limite=Decimal("1000"))
+        SpendingLimitFactory(user=self.solicitante_1, rubrica=rubrica, valor_limite=Decimal("1000"))
+        SpendingLimitFactory(user=self.solicitante_2, rubrica=rubrica, valor_limite=Decimal("1000"))
 
         campos_grafico = {
             "tipo_material": "banner", "quantidade": 1,
@@ -162,8 +163,8 @@ class TestVerificarDuasTravasPerformance(TransactionTestCase):
         allocation = BudgetPoolFactory(
             rubrica=self.rubrica, territorio=territory, valor_alocado=Decimal("1_000_000"),
         )
-        DemandIndividualLimitFactory(
-            solicitante=self.solicitante, rubrica=self.rubrica, valor_limite=Decimal("1_000_000"),
+        SpendingLimitFactory(
+            user=self.solicitante, rubrica=self.rubrica, valor_limite=Decimal("1_000_000"),
         )
 
         # Histórico representativo — sem isso a consulta bate numa tabela vazia,

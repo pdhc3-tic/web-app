@@ -7,7 +7,7 @@ import pytest
 from django.db import connection
 
 from apps.sgd.exceptions import ErroDeDominio, TransicaoInvalida
-from apps.sgd.models import Demand, DemandIndividualLimit, DemandRequest
+from apps.sgd.models import Demand, DemandRequest
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import workflow as workflow_service
 from apps.sgd.services.arlo_import import processar_importacao
@@ -18,6 +18,8 @@ from apps.sgd.tests.test_arlo_integration import (  # noqa: F401
     _importar, _linha, _nova_demanda_autorizada, storage_local,
 )
 from apps.sgp.models import GlosaRisk
+from apps.sgp.tests.factories import SpendingLimitFactory
+from apps.sgp.models import SpendingLimit
 
 
 @pytest.fixture
@@ -32,7 +34,7 @@ def autorizada(demand_request_rn, solicitante_rn, usuario_articulador_rn, usuari
 
 def _travar_limite(demand):
     solicitacao = demand.solicitacoes.get()
-    DemandIndividualLimit.objects.select_for_update().get(solicitante=demand.solicitante, rubrica=solicitacao.rubrica)
+    SpendingLimit.objects.select_for_update(of=("self",)).get(user=demand.solicitante, rubrica=solicitacao.rubrica)
 
 
 def _saldo(limite, allocation):
@@ -243,11 +245,11 @@ def test_cancelamento_pela_task_recusado_quando_a_solicitacao_muda_de_rubrica(
     comprometido negativo (`IntegrityError`, sem nova tentativa); com outra, desfalcaria
     r1 em silêncio. A releitura da reserva recusa a operação nos dois casos."""
     from apps.sgd.services import balance as balance_service
-    from apps.sgd.tests.factories import DemandFactory, DemandIndividualLimitFactory, DemandRequestFactory
+    from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
     from apps.sgp.tests.factories import BudgetPoolFactory, BudgetRubricaFactory
 
     outra_rubrica = BudgetRubricaFactory(slug="rubrica-troca-durante-o-cancelamento")
-    limite_r2 = DemandIndividualLimitFactory(solicitante=solicitante_rn, rubrica=outra_rubrica, valor_limite=5_000)
+    limite_r2 = SpendingLimitFactory(user=solicitante_rn, rubrica=outra_rubrica, valor_limite=5_000)
     BudgetPoolFactory(
         rubrica=outra_rubrica, territorio=activity_rn.municipio.territory,
         valor_alocado=10_000,
@@ -261,7 +263,7 @@ def test_cancelamento_pela_task_recusado_quando_a_solicitacao_muda_de_rubrica(
     demand = demand_request_rn.demanda
 
     def trocar_e_submeter(pausa):
-        DemandIndividualLimit.objects.select_for_update().get(pk=limite_individual_rn.pk)
+        SpendingLimit.objects.select_for_update(of=("self",)).get(pk=limite_individual_rn.pk)
         pausa()
         DemandRequest.objects.filter(pk=demand_request_rn.pk).update(rubrica=outra_rubrica)
         demand_service.submeter_demanda(Demand.objects.get(pk=demand.pk), usuario=solicitante_rn)

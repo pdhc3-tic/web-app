@@ -1,7 +1,7 @@
 """Porta do SGD para o motor de saldo do SGP.
 
 É o único módulo do SGD que importa `apps.sgp.budget.services` e
-`apps.sgp.budget.models`. O pool é localizado pelo nível do solicitante e pela
+`apps.sgp.budget.models` e `apps.sgp.budget.limites`. O pool é localizado pelo nível do solicitante e pela
 rubrica. Erros do motor saem daqui como exceções de domínio do SGD.
 """
 from __future__ import annotations
@@ -14,8 +14,9 @@ from django.core.exceptions import PermissionDenied
 
 from apps.core.utils import formatar_brl
 from apps.sgd.exceptions import TRAVA_TERRITORIAL, RegraDeNegocio, SaldoInsuficiente
-from apps.sgp.budget.models import BudgetPool, BudgetTransaction
+from apps.sgp.budget import limites as limites_service
 from apps.sgp.budget import services as budget_service
+from apps.sgp.budget.models import BudgetPool, BudgetTransaction, SpendingLimit
 
 ZERO = Decimal("0")
 
@@ -27,6 +28,17 @@ limiares_semaforo = budget_service.limiares_semaforo
 faixa_semaforo = budget_service.faixa_semaforo
 percentual_comprometido = budget_service.percentual_comprometido
 painel_orcamento = budget_service.painel_orcamento
+
+TipoTransacao = BudgetTransaction.Tipo
+travar_limite_vigente = limites_service.travar_limite_vigente
+travar_limite_para_elevar = limites_service.travar_limite_para_elevar
+hoje = limites_service.hoje
+criar_sobrescrita = limites_service.criar_sobrescrita
+alterar_sobrescrita = limites_service.alterar_sobrescrita
+auditar_criacao_do_limite = limites_service.auditar_criacao
+auditar_alteracao_do_limite = limites_service.auditar_alteracao
+registrar_alteracao_do_limite = limites_service.registrar_movimento
+definir_limite_de_demonstracao = limites_service.definir_limite_de_demonstracao
 
 
 @dataclass
@@ -210,7 +222,7 @@ def reservar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuar
 
 def pool_da_reserva(demand_request) -> BudgetPool | None:
     pool_id = BudgetTransaction.objects.filter(
-        demanda_id=str(demand_request.pk), tipo=BudgetTransaction.Tipo.RESERVA,
+        demanda_id=str(demand_request.pk), tipo=BudgetTransaction.Tipo.RESERVA, pool__isnull=False,
     ).values_list("pool_id", flat=True).first()
     if not pool_id:
         return None
@@ -279,6 +291,7 @@ def travar_pools_das_reservas(solicitacoes) -> None:
     _travar_em_ordem_de_pk(BudgetPool.objects.filter(
         pk__in=BudgetTransaction.objects.filter(
             tipo=BudgetTransaction.Tipo.RESERVA, demanda_id__in=[str(s.pk) for s in solicitacoes],
+            pool__isnull=False,
         ).values("pool_id"),
     ))
 
@@ -312,3 +325,55 @@ def remanejar(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal, usuari
         )
     except budget_service.DRFValidationError as exc:
         raise _regra_do_motor(exc) from exc
+
+
+# ---------------------------------------------------------------------------
+# Limite individual: a primeira trava.
+# ---------------------------------------------------------------------------
+
+def limite_efetivo(*, solicitante_id, rubrica_id) -> SpendingLimit | None:
+    return limites_service.limite_efetivo(solicitante_id, rubrica_id)
+
+
+def travar_limite_da_reserva(demand_request) -> SpendingLimit | None:
+    """A linha em que a reserva foi feita, que pode ser de um período já encerrado."""
+    pk = limites_service.linha_da_reserva(str(demand_request.pk))
+    return limites_service.travar_linha(pk) if pk is not None else None
+
+
+def limite_da_solicitacao(demand_request) -> SpendingLimit | None:
+    """Somente leitura: a linha da reserva ativa ou, sem reserva, o limite efetivo do solicitante."""
+    if demand_request.reserva_ativa:
+        pk = limites_service.linha_da_reserva(str(demand_request.pk))
+        if pk is not None:
+            return SpendingLimit.objects.get(pk=pk)
+    return limite_efetivo(
+        solicitante_id=demand_request.demanda.solicitante_id, rubrica_id=demand_request.rubrica_id,
+    )
+
+
+def travar_limites_do_lote(solicitacoes, *, rubrica_id) -> None:
+    """`solicitacoes` são todas da `rubrica_id`."""
+    limites_service.travar_linhas_do_lote(
+        rubrica_id=rubrica_id, user_ids={s.demanda.solicitante_id for s in solicitacoes},
+        chaves_das_reservas=[str(s.pk) for s in solicitacoes],
+    )
+
+
+def registrar_movimento_do_limite(*, limite, tipo: str, valor: Decimal, demand_request, usuario,
+                                  justificativa: str = "") -> None:
+    limites_service.registrar_movimento(
+        limite=limite, tipo=tipo, valor=valor, usuario=usuario, demanda_id=str(demand_request.pk),
+        activity_id=demand_request.demanda.activity_id, justificativa=justificativa,
+    )
+
+
+def elevar_limite(*, limite: SpendingLimit, valor: Decimal, justificativa: str, usuario) -> None:
+    """A linha travada vira sobrescrita: o valor a mais não veio do padrão do perfil."""
+    limite.valor_limite += valor
+    limite.herdado = False
+    limite.justificativa = justificativa
+    limite.save(update_fields=["valor_limite", "herdado", "justificativa", "atualizado_em"])
+    limites_service.registrar_movimento(
+        limite=limite, tipo=TipoTransacao.AUMENTO_LIMITE, valor=valor, usuario=usuario, justificativa=justificativa,
+    )

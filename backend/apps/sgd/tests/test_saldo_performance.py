@@ -44,5 +44,5 @@ def test_verificacao_de_saldo_nao_consulta_o_limite_individual_duas_vezes(
         response = auth_client_solicitante.get("/api/v1/sgd/saldo/", params)
 
     assert response.status_code == 200
-    limites = [q for q in consultas.captured_queries if 'FROM "sgd_demandindividuallimit"' in q["sql"]]
+    limites = [q for q in consultas.captured_queries if 'FROM "sgp_spendinglimit"' in q["sql"]]
     assert len(limites) == 1

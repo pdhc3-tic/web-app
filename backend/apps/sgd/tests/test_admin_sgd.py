@@ -12,9 +12,10 @@ from django.test.utils import CaptureQueriesContext
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.tests.factories import UserFactory
-from apps.sgd.models import Demand, DemandIndividualLimit, DemandRequest
+from apps.sgd.models import Demand, DemandRequest
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services.reconciliacao import divergencias_dos_limites
+from apps.sgp.models import SpendingLimit
 
 pytestmark = pytest.mark.django_db
 
@@ -78,7 +79,7 @@ def test_solicitacao_salva_pelo_admin_mantem_a_reserva_feita_depois_da_leitura(
 def test_limite_salvo_pelo_admin_mantem_o_comprometido_gravado_depois_da_leitura(
     demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
 ):
-    carregado_pelo_admin = DemandIndividualLimit.objects.get(pk=limite_individual_rn.pk)
+    carregado_pelo_admin = SpendingLimit.objects.get(pk=limite_individual_rn.pk)
     balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
 
     _salvar_pelo_admin(carregado_pelo_admin, valor_limite="6000")
@@ -90,17 +91,17 @@ def test_limite_salvo_pelo_admin_mantem_o_comprometido_gravado_depois_da_leitura
 
 
 def test_admin_nao_move_o_limite_para_outro_solicitante_ou_rubrica(limite_individual_rn):
-    readonly = site._registry[DemandIndividualLimit].get_readonly_fields(
+    readonly = site._registry[SpendingLimit].get_readonly_fields(
         _request_de_super_admin("get"), limite_individual_rn,
     )
-    na_criacao = site._registry[DemandIndividualLimit].get_readonly_fields(_request_de_super_admin("get"))
+    na_criacao = site._registry[SpendingLimit].get_readonly_fields(_request_de_super_admin("get"))
 
-    assert {"solicitante", "rubrica"} <= set(readonly)
-    assert not {"solicitante", "rubrica"} & set(na_criacao)
+    assert {"user", "rubrica"} <= set(readonly)
+    assert not {"user", "rubrica"} & set(na_criacao)
 
 
 def test_admin_recusa_reduzir_o_limite_abaixo_do_comprometido_e_executado(limite_individual_rn):
-    DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(
         valor_comprometido=Decimal("3000"), valor_executado=Decimal("1000"),
     )
     limite_individual_rn.refresh_from_db()
@@ -116,7 +117,7 @@ def test_admin_recusa_reduzir_o_limite_abaixo_do_comprometido_e_executado(limite
 
 def test_admin_aceita_aumentar_limite_que_ja_esta_abaixo_do_comprometido(limite_individual_rn):
     # Depois de um excedente autorizado o comprometido passa do limite.
-    DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_comprometido=Decimal("7000"))
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_comprometido=Decimal("7000"))
     limite_individual_rn.refresh_from_db()
 
     assert _formulario_de_edicao(limite_individual_rn, valor_limite="6000").is_valid()
@@ -130,7 +131,7 @@ def test_admin_recusa_limite_negativo(limite_individual_rn):
 
 
 def test_admin_trava_o_limite_so_no_post_da_edicao(limite_individual_rn):
-    model_admin = site._registry[DemandIndividualLimit]
+    model_admin = site._registry[SpendingLimit]
     post, get = _request_de_super_admin("post"), _request_de_super_admin("get")
 
     with CaptureQueriesContext(connection) as no_post:
@@ -144,9 +145,9 @@ def test_admin_trava_o_limite_so_no_post_da_edicao(limite_individual_rn):
 
 @pytest.mark.parametrize("campo", ["valor_comprometido", "valor_executado"])
 def test_admin_nao_exclui_limite_com_saldo(campo, limite_individual_rn):
-    model_admin = site._registry[DemandIndividualLimit]
+    model_admin = site._registry[SpendingLimit]
     request = _request_de_super_admin("post")
-    DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(**{campo: Decimal("1")})
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(**{campo: Decimal("1")})
 
     travado = model_admin.get_object(request, str(limite_individual_rn.pk))
 
@@ -154,7 +155,7 @@ def test_admin_nao_exclui_limite_com_saldo(campo, limite_individual_rn):
 
 
 def test_admin_exclui_limite_sem_saldo_e_nao_oferece_exclusao_em_lote(limite_individual_rn):
-    model_admin = site._registry[DemandIndividualLimit]
+    model_admin = site._registry[SpendingLimit]
     request = _request_de_super_admin("get")
 
     assert model_admin.has_delete_permission(request, limite_individual_rn)
@@ -173,26 +174,26 @@ def client_super_admin(client, super_admin):
 
 
 def _url_do_limite(limite, acao="change"):
-    return f"/admin/sgd/demandindividuallimit/{limite.pk}/{acao}/"
+    return f"/admin/sgp/spendinglimit/{limite.pk}/{acao}/"
 
 
 def test_post_do_admin_altera_so_o_valor_limite(client_super_admin, limite_individual_rn):
-    DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_comprometido=Decimal("1000"))
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_comprometido=Decimal("1000"))
     outro_solicitante = UserFactory()
 
     resposta = client_super_admin.post(_url_do_limite(limite_individual_rn), {
-        "valor_limite": "6000", "solicitante": outro_solicitante.pk, "_save": "Salvar",
+        "valor_limite": "6000", "justificativa": "Ajuste no Admin.", "user": outro_solicitante.pk, "_save": "Salvar",
     })
 
     assert resposta.status_code == 302
     limite_individual_rn.refresh_from_db()
     assert limite_individual_rn.valor_limite == Decimal("6000")
     assert limite_individual_rn.valor_comprometido == Decimal("1000")
-    assert limite_individual_rn.solicitante_id != outro_solicitante.pk
+    assert limite_individual_rn.user_id != outro_solicitante.pk
 
 
 def test_post_do_admin_recusa_reduzir_abaixo_do_comprometido(client_super_admin, limite_individual_rn):
-    DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_comprometido=Decimal("3000"))
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_comprometido=Decimal("3000"))
 
     resposta = client_super_admin.post(_url_do_limite(limite_individual_rn), {
         "valor_limite": "2000", "_save": "Salvar",
@@ -205,12 +206,12 @@ def test_post_do_admin_recusa_reduzir_abaixo_do_comprometido(client_super_admin,
 
 
 def test_post_do_admin_nao_exclui_limite_com_saldo(client_super_admin, limite_individual_rn):
-    DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_comprometido=Decimal("1000"))
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_comprometido=Decimal("1000"))
 
     resposta = client_super_admin.post(_url_do_limite(limite_individual_rn, "delete"), {"post": "yes"})
 
     assert resposta.status_code == 403
-    assert DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).exists()
+    assert SpendingLimit.objects.filter(pk=limite_individual_rn.pk).exists()
 
 
 def test_admin_mostra_demanda_e_solicitacao_para_consulta(client_super_admin, demand_request_rn):
@@ -231,19 +232,21 @@ def test_admin_mostra_demanda_e_solicitacao_para_consulta(client_super_admin, de
 def test_criacao_e_alteracao_pelo_admin_ficam_na_auditoria(
     client_super_admin, super_admin, solicitante_rn, rubrica_diarias,
 ):
-    criado = client_super_admin.post("/admin/sgd/demandindividuallimit/add/", {
-        "solicitante": solicitante_rn.pk, "rubrica": rubrica_diarias.pk, "valor_limite": "1000", "_save": "Salvar",
+    criado = client_super_admin.post("/admin/sgp/spendinglimit/add/", {
+        "escopo": "individual", "user": solicitante_rn.pk, "rubrica": rubrica_diarias.pk, "valor_limite": "1000",
+        "justificativa": "Criado no Admin.", "periodo_inicio": "2026-10-01", "periodo_fim": "2026-12-31",
+        "valor_comprometido": "0", "valor_executado": "0", "_save": "Salvar",
     })
     assert criado.status_code == 302
-    limite = DemandIndividualLimit.objects.get(solicitante=solicitante_rn, rubrica=rubrica_diarias)
+    limite = SpendingLimit.objects.get(user=solicitante_rn, rubrica=rubrica_diarias)
 
     for _ in range(2):
-        resposta = client_super_admin.post(_url_do_limite(limite), {"valor_limite": "1500", "_save": "Salvar"})
+        resposta = client_super_admin.post(_url_do_limite(limite), {"valor_limite": "1500", "justificativa": "Ajuste no Admin.", "_save": "Salvar"})
         assert resposta.status_code == 302
 
     limite.refresh_from_db()
     assert limite.criado_por == super_admin
-    eventos = AuditLog.objects.filter(entidade="DemandIndividualLimit", entidade_id=str(limite.pk)).order_by("id")
+    eventos = AuditLog.objects.filter(entidade="SpendingLimit", entidade_id=str(limite.pk)).order_by("id")
     assert [e.acao for e in eventos] == ["limite_individual.criado", "limite_individual.alterado"]
     assert eventos.last().user == super_admin
     assert eventos.last().valores_anteriores == {"valor_limite": "1000.00"}

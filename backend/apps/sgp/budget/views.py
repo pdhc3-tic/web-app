@@ -8,10 +8,11 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.core.permissions import IsAuthenticatedActiveAccess
+from apps.core.permissions import IsAuthenticatedActiveAccess, IsSuperAdmin, IsUGP
 from apps.core.services.permissions import user_has_role
+from apps.sgp.budget import limites as limites_service
 from apps.sgp.filters import BudgetRubricaFilter
-from apps.sgp.models import BudgetPool, BudgetRubrica, WorkPlanMeta
+from apps.sgp.models import BudgetPool, BudgetRubrica, SpendingLimit, WorkPlanMeta
 from apps.sgp.budget.serializers import (
     BudgetPainelLinhaSerializer,
     BudgetPainelQuerySerializer,
@@ -23,6 +24,10 @@ from apps.sgp.budget.serializers import (
     RemanejamentoCreateSerializer,
     SaldoConsultaQuerySerializer,
     SaldoConsultaSerializer,
+    SpendingLimitCreateSerializer,
+    SpendingLimitQuerySerializer,
+    SpendingLimitSerializer,
+    SpendingLimitUpdateSerializer,
 )
 from apps.sgp.budget import services as budget_service
 
@@ -239,3 +244,59 @@ class BudgetRubricaListView(generics.ListAPIView):
     pagination_class = None
     filter_backends = [DjangoFilterBackend]
     filterset_class = BudgetRubricaFilter
+
+
+class SpendingLimitViewSet(viewsets.ViewSet):
+    """GET/POST .../orcamento/limites/ e PATCH .../orcamento/limites/{id}/: padrão por perfil e
+    sobrescrita individual. A lista traz os vigentes em `?data=`, ou hoje."""
+
+    permission_classes = [IsSuperAdmin | IsUGP]
+
+    @extend_schema(
+        parameters=[SpendingLimitQuerySerializer],
+        responses=SpendingLimitSerializer(many=True),
+    )
+    def list(self, request):
+        query = SpendingLimitQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        dados = query.validated_data
+        data = dados.get("data") or limites_service.hoje()
+        limites = SpendingLimit.objects.select_related("rubrica", "perfil", "user").filter(
+            periodo_inicio__lte=data, periodo_fim__gte=data,
+        )
+        for campo in ("escopo", "rubrica", "user", "perfil"):
+            if campo in dados:
+                limites = limites.filter(**{campo: dados[campo]})
+        return Response(SpendingLimitSerializer(limites, many=True).data)
+
+    @extend_schema(request=SpendingLimitCreateSerializer, responses={201: SpendingLimitSerializer})
+    def create(self, request):
+        entrada = SpendingLimitCreateSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        dados = entrada.validated_data
+        if dados["escopo"] == SpendingLimit.Escopo.PERFIL:
+            limite = limites_service.criar_padrao(
+                perfil=dados["perfil"], rubrica=dados["rubrica"], valor_limite=dados["valor_limite"],
+                justificativa=dados["justificativa"], usuario=request.user,
+                periodo_inicio=dados.get("periodo_inicio"),
+            )
+        else:
+            limite = limites_service.criar_sobrescrita(
+                user=dados["user"], rubrica=dados["rubrica"], valor_limite=dados["valor_limite"],
+                justificativa=dados["justificativa"], usuario=request.user,
+                periodo_inicio=dados.get("periodo_inicio"), periodo_fim=dados.get("periodo_fim"),
+            )
+        return Response(SpendingLimitSerializer(limite).data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(request=SpendingLimitUpdateSerializer, responses={200: SpendingLimitSerializer})
+    def partial_update(self, request, pk=None):
+        limite = get_object_or_404(SpendingLimit, pk=pk)
+        entrada = SpendingLimitUpdateSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        dados = entrada.validated_data
+        alterar = (
+            limites_service.alterar_padrao if limite.escopo == SpendingLimit.Escopo.PERFIL
+            else limites_service.alterar_sobrescrita
+        )
+        limite = alterar(limite.pk, valor_limite=dados["valor_limite"], justificativa=dados["justificativa"], usuario=request.user)
+        return Response(SpendingLimitSerializer(limite).data)

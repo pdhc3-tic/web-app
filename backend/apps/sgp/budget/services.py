@@ -417,8 +417,13 @@ def verificar_saldo(*, rubrica, nivel: str, territorio=None, estado=None, valor:
     return _saldo_check_de_pool(pool, valor)
 
 
+def _transacoes_do_pool(demanda_id: str) -> QuerySet[BudgetTransaction]:
+    """O limite individual lança no mesmo ledger, com a mesma chave: aqui só interessa o pool."""
+    return BudgetTransaction.objects.filter(demanda_id=demanda_id, pool__isnull=False)
+
+
 def _transacao_existente(demanda_id: str, tipo: str) -> BudgetTransaction | None:
-    return BudgetTransaction.objects.filter(demanda_id=demanda_id, tipo=tipo).first()
+    return _transacoes_do_pool(demanda_id).filter(tipo=tipo).first()
 
 
 _VERBO_PASSADO = {
@@ -439,11 +444,11 @@ def _valor_total_reservado(demanda_id: str) -> Decimal:
     """Reserva original + todo `ajustar_reserva` aplicado depois. `executar`/
     `liberar` usam isto, não `reserva.valor` puro, senão um ajuste ficaria
     fora da conta."""
-    reserva = BudgetTransaction.objects.filter(demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.RESERVA).first()
+    reserva = _transacao_existente(demanda_id, BudgetTransaction.Tipo.RESERVA)
     if reserva is None:
         return ZERO
-    ajustes = BudgetTransaction.objects.filter(
-        demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.AJUSTE,
+    ajustes = _transacoes_do_pool(demanda_id).filter(
+        tipo=BudgetTransaction.Tipo.AJUSTE,
     ).aggregate(total=Coalesce(Sum("valor"), ZERO))["total"]
     return reserva.valor + ajustes
 
@@ -485,7 +490,7 @@ def ajustar_reserva(*, demanda_id: str, novo_valor: Decimal, usuario, justificat
     em vez de reescrever a reserva original. Não é idempotente — ao
     contrário de reservar/executar/liberar, quem chama garante que só
     invoca isto uma vez por decisão."""
-    reserva = BudgetTransaction.objects.filter(demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.RESERVA).first()
+    reserva = _transacao_existente(demanda_id, BudgetTransaction.Tipo.RESERVA)
     if reserva is None:
         raise DemandaInvalidaError(f"Nenhuma reserva encontrada para a demanda {demanda_id!r}.")
     _rejeitar_se_finalizada(
@@ -520,7 +525,7 @@ def executar(*, demanda_id: str, usuario, valor_executado: Decimal | None = None
     if valor_reservado <= ZERO:
         raise DemandaInvalidaError(f"Nenhuma reserva encontrada para a demanda {demanda_id!r}.")
 
-    reserva = BudgetTransaction.objects.filter(demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.RESERVA).first()
+    reserva = _transacao_existente(demanda_id, BudgetTransaction.Tipo.RESERVA)
     pool = BudgetPool.objects.select_for_update().get(pk=reserva.pool_id)
     existente = _transacao_existente(demanda_id, BudgetTransaction.Tipo.EXECUCAO)
     if existente is not None:
@@ -555,7 +560,7 @@ def liberar(*, demanda_id: str, usuario, motivo: str) -> BudgetTransaction:
     if valor_reservado <= ZERO:
         raise DemandaInvalidaError(f"Nenhuma reserva encontrada para a demanda {demanda_id!r}.")
 
-    reserva = BudgetTransaction.objects.filter(demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.RESERVA).first()
+    reserva = _transacao_existente(demanda_id, BudgetTransaction.Tipo.RESERVA)
     pool = BudgetPool.objects.select_for_update().get(pk=reserva.pool_id)
     existente = _transacao_existente(demanda_id, BudgetTransaction.Tipo.LIBERACAO)
     if existente is not None:

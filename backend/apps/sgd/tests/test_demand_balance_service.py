@@ -6,13 +6,15 @@ from django.db.models import Sum
 from django.test.utils import CaptureQueriesContext
 
 from apps.sgd.exceptions import TRAVA_INDIVIDUAL, ErroDeDominio, RegraDeNegocio, SaldoInsuficiente, TransicaoInvalida
-from apps.sgd.models import DemandIndividualLimit, DemandRequest
+from apps.sgd.models import DemandRequest
 from apps.sgd.models.demand_request import RESERVA_ATIVA
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import orcamento as orcamento_service
 from apps.sgd.services import workflow as workflow_service
-from apps.sgd.tests.factories import DemandFactory, DemandIndividualLimitFactory, DemandRequestFactory
+from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
+from apps.sgp.tests.factories import SpendingLimitFactory
+from apps.sgp.models import SpendingLimit
 
 pytestmark = pytest.mark.django_db
 
@@ -452,7 +454,7 @@ def test_submeter_demanda_rubricas_diferentes_nao_somam_consumo(
     from apps.sgp.tests.factories import BudgetPoolFactory, BudgetRubricaFactory
 
     outra = BudgetRubricaFactory(slug="outra-rubrica-sgd")
-    DemandIndividualLimitFactory(solicitante=solicitante_rn, rubrica=outra, valor_limite=100)
+    SpendingLimitFactory(user=solicitante_rn, rubrica=outra, valor_limite=100)
     BudgetPoolFactory(
         rubrica=outra, territorio=activity_rn.municipio.territory,
         valor_alocado=Decimal("100"), valor_comprometido=Decimal("0"),
@@ -832,7 +834,7 @@ def _confere_comprometido(limite) -> None:
     """O invariante do limite individual: o comprometido é a soma das reservas ativas."""
     limite.refresh_from_db()
     reservado = DemandRequest.objects.filter(
-        RESERVA_ATIVA, demanda__solicitante=limite.solicitante, rubrica=limite.rubrica,
+        RESERVA_ATIVA, demanda__solicitante=limite.user, rubrica=limite.rubrica,
     ).aggregate(total=Sum("valor_reservado"))["total"] or Decimal("0")
     assert limite.valor_comprometido == reservado
 
@@ -972,7 +974,7 @@ def test_estado_da_reserva_nao_aceita_valor_negativo(demand_request_rn, campo, v
 @pytest.mark.parametrize("campo", ["valor_comprometido", "valor_executado"])
 def test_limite_individual_nao_aceita_saldo_negativo(limite_individual_rn, campo):
     with pytest.raises(IntegrityError), transaction.atomic():
-        DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(**{campo: Decimal("-1")})
+        SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(**{campo: Decimal("-1")})
 
 
 @pytest.fixture
@@ -984,7 +986,7 @@ def demanda_com_duas_rubricas(demand_request_rn, solicitante_rn, activity_rn, al
         rubrica=outra, territorio=activity_rn.municipio.territory,
         valor_alocado=Decimal("10000"),
     )
-    DemandIndividualLimitFactory(solicitante=solicitante_rn, rubrica=outra, valor_limite=Decimal("5000"))
+    SpendingLimitFactory(user=solicitante_rn, rubrica=outra, valor_limite=Decimal("5000"))
     DemandRequestFactory(demanda=demand_request_rn.demanda, rubrica=outra, valor_estimado=Decimal("200"))
     return demand_request_rn.demanda
 
@@ -993,7 +995,7 @@ def _ordem(consultas):
     sqls = [q["sql"] for q in consultas]
     travas_de_saldo = [
         i for i, sql in enumerate(sqls)
-        if "FOR UPDATE" in sql and ('"sgd_demandindividuallimit"' in sql or '"sgp_budgetpool"' in sql)
+        if "FOR UPDATE" in sql and ('"sgp_spendinglimit"' in sql or '"sgp_budgetpool"' in sql)
     ]
     demanda = [
         i for i, sql in enumerate(sqls)
@@ -1014,7 +1016,7 @@ def test_submissao_grava_o_estado_da_reserva_depois_do_saldo_e_da_demand(demanda
     assert len(gravacoes_da_reserva) == 2
     assert max(travas_de_saldo) < min(demanda) < min(gravacoes_da_reserva)
     assert all(s.reserva_ativa for s in demanda_com_duas_rubricas.solicitacoes.all())
-    _confere_comprometido(DemandIndividualLimit.objects.get(solicitante=solicitante_rn, rubrica__slug="diarias"))
+    _confere_comprometido(SpendingLimit.objects.get(user=solicitante_rn, rubrica__slug="diarias"))
 
 
 def test_cancelamento_grava_o_estado_da_reserva_depois_do_saldo_e_da_demand(demanda_com_duas_rubricas, solicitante_rn):
@@ -1027,7 +1029,7 @@ def test_cancelamento_grava_o_estado_da_reserva_depois_do_saldo_e_da_demand(dema
     assert len(gravacoes_da_reserva) == 2
     assert max(travas_de_saldo) < min(demanda) < min(gravacoes_da_reserva)
     assert not any(s.reserva_ativa for s in demanda_com_duas_rubricas.solicitacoes.all())
-    for limite in DemandIndividualLimit.objects.filter(solicitante=solicitante_rn):
+    for limite in SpendingLimit.objects.filter(user=solicitante_rn):
         assert limite.valor_comprometido == Decimal("0")
 
 

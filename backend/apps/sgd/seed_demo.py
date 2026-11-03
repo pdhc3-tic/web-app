@@ -16,9 +16,10 @@ from django.db import connection
 from django.utils import timezone
 
 from apps.core.models import State, Territory, UserProfile
-from apps.sgd.models import ArloImport, Demand, DemandIndividualLimit, DemandRequest
+from apps.sgd.models import ArloImport, Demand, DemandRequest
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import workflow as workflow_service
+from apps.sgd.services import orcamento as orcamento_service
 from apps.sgp.models import Activity, BudgetPool, BudgetRubrica
 
 RUBRICA_ALIMENTACAO = "alimentacao-refeicoes"
@@ -121,13 +122,11 @@ def _preparar_saldos(acao, solicitantes) -> None:
             rubrica=rubricas[RUBRICA_ALIMENTACAO], nivel=BudgetPool.Nivel.ESTADUAL,
             estado=State.objects.get(sigla=uf), defaults={"valor_alocado": ALOCACAO_ESTADUAL},
         )
-        DemandIndividualLimit.objects.update_or_create(
-            solicitante=solicitante, rubrica=rubricas[RUBRICA_ALIMENTACAO],
-            defaults={"valor_limite": LIMITE_INDIVIDUAL[uf]},
+        orcamento_service.definir_limite_de_demonstracao(
+            user=solicitante, rubrica=rubricas[RUBRICA_ALIMENTACAO], valor_limite=LIMITE_INDIVIDUAL[uf],
         )
-        DemandIndividualLimit.objects.update_or_create(
-            solicitante=solicitante, rubrica=rubricas[RUBRICA_GRAFICO],
-            defaults={"valor_limite": LIMITE_INDIVIDUAL_GRAFICO},
+        orcamento_service.definir_limite_de_demonstracao(
+            user=solicitante, rubrica=rubricas[RUBRICA_GRAFICO], valor_limite=LIMITE_INDIVIDUAL_GRAFICO,
         )
 
 

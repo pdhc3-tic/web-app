@@ -5,10 +5,10 @@ import pytest
 from rest_framework.test import APIClient
 
 from apps.core.models.audit_log import AuditLog
-from apps.sgd.models import DemandIndividualLimit
 from apps.sgd.serializers.individual_limit import DemandIndividualLimitSerializer
 from apps.sgd.tests.concorrencia import intercalar
 from apps.sgp.tests.factories import BudgetRubricaFactory
+from apps.sgp.models import SpendingLimit
 
 pytestmark = pytest.mark.django_db
 
@@ -20,7 +20,7 @@ def _patch(cliente, limite, corpo):
 
 
 def test_patch_altera_so_o_valor_limite(auth_client_super_admin, limite_individual_rn):
-    DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_comprometido=Decimal("700"))
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_comprometido=Decimal("700"))
 
     resposta = _patch(auth_client_super_admin, limite_individual_rn, {"valor_limite": "8000"})
 
@@ -50,7 +50,7 @@ def test_patch_nao_move_o_limite_para_outro_solicitante(
     assert resposta.status_code == 400
     assert "solicitante" in resposta.data
     limite_individual_rn.refresh_from_db()
-    assert limite_individual_rn.solicitante_id != usuario_ugp.pk
+    assert limite_individual_rn.user_id != usuario_ugp.pk
 
 
 def test_patch_com_a_mesma_rubrica_e_aceito(auth_client_super_admin, limite_individual_rn):
@@ -63,7 +63,7 @@ def test_patch_com_a_mesma_rubrica_e_aceito(auth_client_super_admin, limite_indi
 
 
 def _com_saldo(limite, *, comprometido, executado="0"):
-    DemandIndividualLimit.objects.filter(pk=limite.pk).update(
+    SpendingLimit.objects.filter(pk=limite.pk).update(
         valor_comprometido=Decimal(comprometido), valor_executado=Decimal(executado),
     )
 
@@ -113,12 +113,12 @@ def test_create_e_patch_ficam_na_auditoria(auth_client_super_admin, solicitante_
         "solicitante": solicitante_rn.pk, "rubrica": rubrica_diarias.pk, "valor_limite": "1000",
     }, format="json")
     assert criado.status_code == 201, criado.data
-    limite = DemandIndividualLimit.objects.get(pk=criado.data["id"])
+    limite = SpendingLimit.objects.get(pk=criado.data["id"])
 
     assert _patch(auth_client_super_admin, limite, {"valor_limite": "1500"}).status_code == 200
     assert _patch(auth_client_super_admin, limite, {"valor_limite": "1500"}).status_code == 200
 
-    eventos = AuditLog.objects.filter(entidade="DemandIndividualLimit", entidade_id=str(limite.pk)).order_by("id")
+    eventos = AuditLog.objects.filter(entidade="SpendingLimit", entidade_id=str(limite.pk)).order_by("id")
     assert [e.acao for e in eventos] == ["limite_individual.criado", "limite_individual.alterado"]
     alteracao = eventos.last()
     assert alteracao.user == usuario_super_admin
@@ -134,19 +134,19 @@ def test_create_concorrente_com_limite_ja_criado_responde_400(
     monkeypatch.setattr(DemandIndividualLimitSerializer, "get_validators", lambda self: [])
 
     resposta = auth_client_super_admin.post(URL, {
-        "solicitante": limite_individual_rn.solicitante_id, "rubrica": limite_individual_rn.rubrica_id,
+        "solicitante": limite_individual_rn.user_id, "rubrica": limite_individual_rn.rubrica_id,
         "valor_limite": "100",
     }, format="json")
 
     assert resposta.status_code == 400
     assert "rubrica" in resposta.data
-    assert DemandIndividualLimit.objects.count() == 1
+    assert SpendingLimit.objects.count() == 1
 
 
 @pytest.mark.django_db(transaction=True)
 def test_patch_concorrente_com_reserva_nao_apaga_o_comprometido(limite_individual_rn, usuario_super_admin):
     def reservar(pausa):
-        limite = DemandIndividualLimit.objects.select_for_update().get(pk=limite_individual_rn.pk)
+        limite = SpendingLimit.objects.select_for_update(of=("self",)).get(pk=limite_individual_rn.pk)
         pausa()
         limite.valor_comprometido = Decimal("700")
         limite.save(update_fields=["valor_comprometido"])

@@ -3,7 +3,7 @@ from pathlib import Path
 
 RAIZ_SGD = Path(__file__).resolve().parent.parent
 PORTA_ORCAMENTO = RAIZ_SGD / "services" / "orcamento.py"
-MOTOR_DO_SGP = {"apps.sgp.budget.services", "apps.sgp.budget.models"}
+MOTOR_DO_SGP = {"apps.sgp.budget.services", "apps.sgp.budget.models", "apps.sgp.budget.limites"}
 
 
 def _modulos_importados(arquivo: Path) -> set[str]:

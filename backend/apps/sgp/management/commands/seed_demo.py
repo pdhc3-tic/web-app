@@ -45,7 +45,7 @@ from apps.core.models import (
 )
 from apps.core.models.notifications import Notification
 from apps.sca.models import ConflictLog, SyncDevice, SyncEvent
-from apps.sgd.models import ApprovalStep, ArloImport, Demand, DemandIndividualLimit, DemandRequest
+from apps.sgd.models import ApprovalStep, ArloImport, Demand, DemandRequest
 from apps.sgd.models.demand_type_rubrica_mapping import DemandTypeRubricaMapping
 from apps.sgd.seed_demo import popular_arlo, popular_demandas
 from apps.sgp.models import (
@@ -68,7 +68,8 @@ from apps.sgp.models import (
 )
 from apps.sgp.tasks import refresh_power_bi_snapshot
 from apps.sgp.models.activity import filtro_atrasada
-from apps.sgp.budget.models import BudgetPool, BudgetTransaction, BudgetTransfer
+from apps.sgp.budget import limites as limites_service
+from apps.sgp.budget.models import BudgetPool, BudgetTransaction, BudgetTransfer, SpendingLimit
 from apps.sgp.models.google_calendar_sync_event import GoogleCalendarSyncEvent
 from apps.sgp.services.workplan_dashboard import (
     dashboard_actions,
@@ -530,9 +531,9 @@ class Command(BaseCommand):
         )
         adt = User.objects.get(email=email_de_demo(*SGD_ADT_MONTAGEM))
         for mapeamento in DemandTypeRubricaMapping.objects.filter(ativo=True).select_related("rubrica"):
-            DemandIndividualLimit.objects.update_or_create(
-                solicitante=adt, rubrica=mapeamento.rubrica,
-                defaults={"valor_limite": SGD_LIMITES_ADT_MONTAGEM.get(mapeamento.rubrica.slug, Decimal("5000"))},
+            limites_service.definir_limite_de_demonstracao(
+                user=adt, rubrica=mapeamento.rubrica,
+                valor_limite=SGD_LIMITES_ADT_MONTAGEM.get(mapeamento.rubrica.slug, Decimal("5000")),
             )
         self.stdout.write(
             f"Montagem de demanda: diária a R$ {SGD_VALOR_DIARIA_DEMO}; limites de {adt.email} nas rubricas do SGD"
@@ -732,10 +733,10 @@ class Command(BaseCommand):
             ApprovalStep.objects.all().delete()
             DemandRequest.objects.all().delete()
             Demand.objects.all().delete()
-            DemandIndividualLimit.objects.all().delete()
             ArloImport.objects.all().delete()
             BudgetTransaction.objects.all().delete()
             BudgetTransfer.objects.all().delete()
+            SpendingLimit.objects.all().delete()
             BudgetPool.objects.all().delete()
             Notification.objects.filter(modulo_origem="sgd").delete()
             PowerBIToken.objects.all().delete()

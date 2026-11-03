@@ -1,5 +1,5 @@
 """
-Ordem de lock fixa em todo o módulo — `DemandIndividualLimit` primeiro
+Ordem de lock fixa em todo o módulo — `SpendingLimit` primeiro
 (`select_for_update` aqui), `BudgetPool` depois (travada dentro do motor
 do SGP, via `apps.sgd.services.orcamento`) — nunca inverter, ou duas chamadas
 concorrentes podem deadlockar.
@@ -23,14 +23,14 @@ from apps.sgd.exceptions import (
     SaldoInsuficiente,
     TransicaoInvalida,
 )
-from apps.sgd.models import DemandIndividualLimit, DemandRequest
+from apps.sgd.models import DemandRequest
 from apps.sgd.services import notifications as notifications_service
 from apps.sgd.services import orcamento as orcamento_service
 from apps.sgd.services.orcamento import com_consumo_previo, com_orientacao
 
 ZERO = Decimal("0")
 
-_ENTIDADE_LIMITE = "DemandIndividualLimit"
+_ENTIDADE_LIMITE = "SpendingLimit"
 
 ORIENTACAO_INDIVIDUAL = "Use a opção 'Solicitar recurso extra'."
 
@@ -71,7 +71,7 @@ class TravaCheck:
     motivo_bloqueio: str | None = None
     acao_sugerida: str | None = None
     # Limite lido na checagem, reaproveitado no payload (evita 2ª query).
-    limite: DemandIndividualLimit | None = None
+    limite: object | None = None
 
 
 @dataclass
@@ -205,7 +205,7 @@ def _notificar_pool_se_piorou(movimento: "orcamento_service.MovimentoPool", *, d
 
 
 def _checar_individual(*, solicitante, rubrica, valor: Decimal, consumo_previo: Decimal = ZERO) -> TravaCheck:
-    limite = DemandIndividualLimit.objects.filter(solicitante=solicitante, rubrica=rubrica).first()
+    limite = orcamento_service.limite_efetivo(solicitante_id=solicitante.pk, rubrica_id=rubrica.pk)
     if limite is None:
         saldo, bloqueado = ZERO, True
     else:
@@ -261,21 +261,23 @@ def reler_reserva(demand_request) -> None:
         )
 
 
-def _travar_limite(*, solicitante_id, rubrica_id) -> DemandIndividualLimit | None:
-    """`of=("self",)`: o `ordering` do model é por solicitante e rubrica, e o
-    `.first()` levaria o JOIN com `core_user` e com a rubrica para dentro do FOR
-    UPDATE. A linha do solicitante ficaria travada, e o commit de qualquer outra
-    transação que gravou algo apontando para ele (notificação, auditoria, etapa)
-    esperaria este lock na checagem da FK."""
-    return DemandIndividualLimit.objects.select_for_update(of=("self",)).filter(
-        solicitante_id=solicitante_id, rubrica_id=rubrica_id,
-    ).first()
+def travar_limite_da_solicitacao(demand_request, *, criar: bool = False):
+    """Com reserva ativa, a linha em que ela foi feita, mesmo de um período encerrado: é dela que o
+    valor tem de sair. Sem reserva, a linha do período, que `criar` gera do padrão do perfil."""
+    reler_reserva(demand_request)
+    if demand_request.reserva_ativa:
+        limite = orcamento_service.travar_limite_da_reserva(demand_request)
+        if limite is not None:
+            return limite
+    return orcamento_service.travar_limite_vigente(
+        user_id=demand_request.demanda.solicitante_id, rubrica_id=demand_request.rubrica_id, criar=criar,
+    )
 
 
 def reler_reserva_travada(demand_request) -> None:
     """Trava o limite da solicitação e relê o estado da reserva, que daí até o
     commit não muda."""
-    _travar_limite(solicitante_id=demand_request.demanda.solicitante_id, rubrica_id=demand_request.rubrica_id)
+    travar_limite_da_solicitacao(demand_request)
     reler_reserva(demand_request)
 
 
@@ -321,7 +323,7 @@ def reservar_duas_travas(*, demand_request, usuario, adiar_gravacao: bool = Fals
     valor = demand_request.valor_estimado
 
     entidade_id = str(demand_request.pk)
-    limite = _travar_limite(solicitante_id=solicitante.pk, rubrica_id=rubrica.pk)
+    limite = travar_limite_da_solicitacao(demand_request, criar=True)
     if limite is None:
         # Removido depois da pré-checagem: mesma resposta que ela daria.
         raise _bloqueio_individual(
@@ -343,6 +345,10 @@ def reservar_duas_travas(*, demand_request, usuario, adiar_gravacao: bool = Fals
             )
         limite.valor_comprometido += valor
         limite.save(update_fields=["valor_comprometido"])
+        orcamento_service.registrar_movimento_do_limite(
+            limite=limite, tipo=orcamento_service.TipoTransacao.RESERVA, valor=valor, demand_request=demand_request,
+            usuario=usuario, justificativa=f"Reserva SGD — solicitação #{demand_request.pk}.",
+        )
         _registrar_movimento_individual(
             acao="reserva", entidade_id=entidade_id, usuario=usuario,
             valores_novos={"limite_id": limite.pk, "valor": str(valor)},
@@ -378,12 +384,12 @@ def ajustar_duas_travas(
     solicitante = demand_request.demanda.solicitante
     entidade_id = str(demand_request.pk)
 
-    limite = DemandIndividualLimit.objects.select_for_update().get(
-        solicitante=solicitante, rubrica=rubrica,
-    )
+    limite = travar_limite_da_solicitacao(demand_request)
     reler_reserva(demand_request)
     if not demand_request.reserva_ativa:
         raise RegraDeNegocio(f"A solicitação #{demand_request.pk} não tem reserva ativa para ajustar.")
+    if limite is None:
+        raise RegraDeNegocio(f"A solicitação #{demand_request.pk} não tem limite individual para ajustar.")
     valor_anterior = demand_request.valor_reservado
     excedente_anterior = demand_request.valor_excedente
     diferenca = novo_valor - valor_anterior
@@ -411,6 +417,12 @@ def ajustar_duas_travas(
     if diferenca != ZERO:
         limite.valor_comprometido += no_limite
         limite.save(update_fields=["valor_comprometido"])
+        if no_limite != ZERO:
+            orcamento_service.registrar_movimento_do_limite(
+                limite=limite, tipo=orcamento_service.TipoTransacao.AJUSTE, valor=no_limite,
+                demand_request=demand_request, usuario=usuario,
+                justificativa=f"Ajuste SGD — solicitação #{demand_request.pk}.",
+            )
         _registrar_movimento_individual(
             acao="ajuste", entidade_id=entidade_id, usuario=usuario,
             valores_anteriores={"valor": str(valor_anterior), "excedente": str(excedente_anterior)},
@@ -438,7 +450,7 @@ def liberar_duas_travas(*, demand_request, usuario, motivo: str, adiar_gravacao:
     solicitante = demand_request.demanda.solicitante
     entidade_id = str(demand_request.pk)
 
-    limite = _travar_limite(solicitante_id=solicitante.pk, rubrica_id=rubrica.pk)
+    limite = travar_limite_da_solicitacao(demand_request)
     # Só libera com reserva ativa agora — cancelar um Rascunho (nunca
     # reservado) ou liberar duas vezes seguidas não pode decrementar o
     # comprometido de novo. E libera o `valor_reservado`, não `valor_estimado`,
@@ -450,6 +462,11 @@ def liberar_duas_travas(*, demand_request, usuario, motivo: str, adiar_gravacao:
         valor = demand_request.valor_no_limite
         limite.valor_comprometido -= valor
         limite.save(update_fields=["valor_comprometido"])
+        if valor > ZERO:
+            orcamento_service.registrar_movimento_do_limite(
+                limite=limite, tipo=orcamento_service.TipoTransacao.LIBERACAO, valor=valor,
+                demand_request=demand_request, usuario=usuario, justificativa=motivo,
+            )
         _registrar_movimento_individual(
             acao="liberacao", entidade_id=entidade_id, usuario=usuario,
             valores_novos={
@@ -473,18 +490,12 @@ def liberar_duas_travas_em_lote(solicitacoes, *, usuario, motivo: str, adiar_gra
     solicitacoes = sorted(solicitacoes, key=lambda s: (s.rubrica_id, s.pk))
     for rubrica_id, grupo in groupby(solicitacoes, key=lambda s: s.rubrica_id):
         grupo = list(grupo)
-        _travar_em_ordem_de_pk(DemandIndividualLimit.objects.filter(
-            rubrica_id=rubrica_id, solicitante_id__in={s.demanda.solicitante_id for s in grupo},
-        ))
+        orcamento_service.travar_limites_do_lote(grupo, rubrica_id=rubrica_id)
         orcamento_service.travar_pools_das_reservas(grupo)
         for solicitacao in grupo:
             liberar_duas_travas(
                 demand_request=solicitacao, usuario=usuario, motivo=motivo, adiar_gravacao=adiar_gravacao,
             )
-
-
-def _travar_em_ordem_de_pk(queryset) -> None:
-    list(queryset.select_for_update().order_by("pk").values_list("pk", flat=True))
 
 
 @transaction.atomic
@@ -494,11 +505,11 @@ def executar_duas_travas(*, demand_request, valor_pago: Decimal, usuario, adiar_
     solicitante = demand_request.demanda.solicitante
     entidade_id = str(demand_request.pk)
 
-    limite = DemandIndividualLimit.objects.select_for_update().get(
-        solicitante=solicitante, rubrica=rubrica,
-    )
+    limite = travar_limite_da_solicitacao(demand_request)
     reler_reserva(demand_request)
     executou = demand_request.valor_executado is None
+    if executou and limite is None:
+        raise RegraDeNegocio(f"A solicitação #{demand_request.pk} não tem limite individual para executar.")
     if executou:
         # Do pago, o limite individual executa só até a parte que comprometeu; o
         # resto saiu do excedente, e o excedente que sobrar não vira saldo individual.
@@ -507,6 +518,18 @@ def executar_duas_travas(*, demand_request, valor_pago: Decimal, usuario, adiar_
         limite.valor_comprometido -= no_limite
         limite.valor_executado += executado_no_limite
         limite.save(update_fields=["valor_comprometido", "valor_executado"])
+        Tipo = orcamento_service.TipoTransacao
+        if no_limite > ZERO:
+            orcamento_service.registrar_movimento_do_limite(
+                limite=limite, tipo=Tipo.EXECUCAO, valor=executado_no_limite, demand_request=demand_request,
+                usuario=usuario, justificativa="Execução da demanda.",
+            )
+        if no_limite > executado_no_limite:
+            orcamento_service.registrar_movimento_do_limite(
+                limite=limite, tipo=Tipo.LIBERACAO, valor=no_limite - executado_no_limite,
+                demand_request=demand_request, usuario=usuario,
+                justificativa="Diferença entre valor reservado e valor efetivamente pago na execução.",
+            )
         _registrar_movimento_individual(
             acao="execucao", entidade_id=entidade_id, usuario=usuario,
             valores_novos={

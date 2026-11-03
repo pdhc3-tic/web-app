@@ -3222,6 +3222,9 @@ paths:
   /api/v1/sgd/limites-individuais/:
     get:
       operationId: v1_sgd_limites_individuais_retrieve
+      description: |-
+        Alias de `/sgp/orcamento/limites/` para as linhas individuais do período vigente,
+        enquanto o front migra. A rota antiga não pede justificativa: ela é preenchida aqui.
       tags:
       - v1
       security:
@@ -3231,6 +3234,9 @@ paths:
           description: No response body
     post:
       operationId: v1_sgd_limites_individuais_create
+      description: |-
+        Alias de `/sgp/orcamento/limites/` para as linhas individuais do período vigente,
+        enquanto o front migra. A rota antiga não pede justificativa: ela é preenchida aqui.
       tags:
       - v1
       security:
@@ -3241,6 +3247,9 @@ paths:
   /api/v1/sgd/limites-individuais/{id}/:
     patch:
       operationId: v1_sgd_limites_individuais_partial_update
+      description: |-
+        Alias de `/sgp/orcamento/limites/` para as linhas individuais do período vigente,
+        enquanto o front migra. A rota antiga não pede justificativa: ela é preenchida aqui.
       parameters:
       - in: path
         name: id
@@ -4899,6 +4908,132 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/BudgetTransaction'
+          description: ''
+  /api/v1/sgp/orcamento/limites/:
+    get:
+      operationId: v1_sgp_orcamento_limites_list
+      description: |-
+        GET/POST .../orcamento/limites/ e PATCH .../orcamento/limites/{id}/: padrão por perfil e
+        sobrescrita individual. A lista traz os vigentes em `?data=`, ou hoje.
+      parameters:
+      - in: query
+        name: data
+        schema:
+          type: string
+          format: date
+        description: Limites vigentes nesta data. Sem ela, hoje.
+      - in: query
+        name: escopo
+        schema:
+          enum:
+          - perfil
+          - individual
+          type: string
+          minLength: 1
+        description: |-
+          * `perfil` - Padrão do perfil
+          * `individual` - Individual
+      - in: query
+        name: perfil
+        schema:
+          enum:
+          - agricultor
+          - adt-acr
+          - articulador-estadual
+          - ugp
+          - fgd
+          - super-admin
+          type: string
+        description: |-
+          * `agricultor` - Agricultor / Beneficiário
+          * `adt-acr` - ADT / ACR
+          * `articulador-estadual` - Articulador Estadual
+          * `ugp` - UGP — Coordenação
+          * `fgd` - FGD — Administrativo
+          * `super-admin` - Super Admin
+      - in: query
+        name: rubrica
+        schema:
+          type: string
+          minLength: 1
+      - in: query
+        name: user
+        schema:
+          type: integer
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SpendingLimit'
+          description: ''
+    post:
+      operationId: v1_sgp_orcamento_limites_create
+      description: |-
+        GET/POST .../orcamento/limites/ e PATCH .../orcamento/limites/{id}/: padrão por perfil e
+        sobrescrita individual. A lista traz os vigentes em `?data=`, ou hoje.
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpendingLimitCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SpendingLimitCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SpendingLimitCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpendingLimit'
+          description: ''
+  /api/v1/sgp/orcamento/limites/{id}/:
+    patch:
+      operationId: v1_sgp_orcamento_limites_partial_update
+      description: |-
+        GET/POST .../orcamento/limites/ e PATCH .../orcamento/limites/{id}/: padrão por perfil e
+        sobrescrita individual. A lista traz os vigentes em `?data=`, ou hoje.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedSpendingLimitUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedSpendingLimitUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedSpendingLimitUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpendingLimit'
           description: ''
   /api/v1/sgp/orcamento/painel/:
     get:
@@ -9040,6 +9175,12 @@ components:
         pool:
           type: integer
           readOnly: true
+          nullable: true
+        spending_limit:
+          type: integer
+          readOnly: true
+          nullable: true
+          title: Limite de gasto
         allocation:
           type: integer
           readOnly: true
@@ -9087,6 +9228,7 @@ components:
       - id
       - justificativa
       - pool
+      - spending_limit
       - tipo
       - valor
     BudgetTransactionTipoEnum:
@@ -9096,6 +9238,7 @@ components:
       - execucao
       - remanejamento
       - ajuste
+      - aumento_limite
       type: string
       description: |-
         * `reserva` - Reserva
@@ -9103,6 +9246,7 @@ components:
         * `execucao` - Execução
         * `remanejamento` - Remanejamento
         * `ajuste` - Ajuste
+        * `aumento_limite` - Alteração de limite
     BudgetTransfer:
       type: object
       description: |-
@@ -9118,7 +9262,7 @@ components:
           readOnly: true
         escopo:
           allOf:
-          - $ref: '#/components/schemas/EscopoEnum'
+          - $ref: '#/components/schemas/EscopoRemanejamentoEnum'
           readOnly: true
           description: |-
             Em branco no remanejamento feito direto entre pools, sem demanda envolvida.
@@ -10282,7 +10426,15 @@ components:
         * `5` - Médio completo
         * `6` - Superior incompleto
         * `7` - Superior completo
-    EscopoEnum:
+    EscopoLimiteDeGastoEnum:
+      enum:
+      - perfil
+      - individual
+      type: string
+      description: |-
+        * `perfil` - Padrão do perfil
+        * `individual` - Individual
+    EscopoRemanejamentoEnum:
       enum:
       - pontual
       - elevacao_limite
@@ -13070,6 +13222,16 @@ components:
           type: string
         ativo:
           type: boolean
+    PatchedSpendingLimitUpdateRequest:
+      type: object
+      properties:
+        valor_limite:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        justificativa:
+          type: string
+          default: ''
     PatchedStateRequest:
       type: object
       properties:
@@ -14252,6 +14414,156 @@ components:
         * `ugp` - UGP — Coordenação
         * `fgd` - FGD — Administrativo
         * `super-admin` - Super Admin
+    SpendingLimit:
+      type: object
+      description: |-
+        Padrão por perfil ou linha individual. `herdado` diz se a linha veio do padrão do perfil
+        ou é uma sobrescrita.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        escopo:
+          allOf:
+          - $ref: '#/components/schemas/EscopoLimiteDeGastoEnum'
+          readOnly: true
+        perfil:
+          type: integer
+          readOnly: true
+          nullable: true
+        perfil_slug:
+          type: string
+          readOnly: true
+          nullable: true
+        user:
+          type: integer
+          readOnly: true
+          nullable: true
+          title: Usuário
+        user_nome:
+          type: string
+          readOnly: true
+          nullable: true
+        rubrica:
+          type: integer
+          readOnly: true
+        rubrica_slug:
+          type: string
+          readOnly: true
+        rubrica_nome:
+          type: string
+          readOnly: true
+        territorio:
+          type: integer
+          readOnly: true
+          nullable: true
+          title: Território
+        valor_limite:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          title: Valor Limite (R$)
+        valor_comprometido:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          title: Valor Comprometido (R$)
+        valor_executado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          title: Valor Executado (R$)
+        saldo_disponivel:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        herdado:
+          type: boolean
+          readOnly: true
+          title: Herdado do perfil
+        justificativa:
+          type: string
+          readOnly: true
+        periodo_inicio:
+          type: string
+          format: date
+          readOnly: true
+          title: Início do período
+        periodo_fim:
+          type: string
+          format: date
+          readOnly: true
+          title: Fim do período
+        criado_por:
+          type: integer
+          readOnly: true
+          nullable: true
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        atualizado_em:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - atualizado_em
+      - criado_em
+      - criado_por
+      - escopo
+      - herdado
+      - id
+      - justificativa
+      - perfil
+      - perfil_slug
+      - periodo_fim
+      - periodo_inicio
+      - rubrica
+      - rubrica_nome
+      - rubrica_slug
+      - saldo_disponivel
+      - territorio
+      - user
+      - user_nome
+      - valor_comprometido
+      - valor_executado
+      - valor_limite
+    SpendingLimitCreateRequest:
+      type: object
+      description: 'Sem período, vale o período vigente. O padrão por perfil não tem
+        fim: vale até ser alterado.'
+      properties:
+        escopo:
+          $ref: '#/components/schemas/EscopoLimiteDeGastoEnum'
+        perfil:
+          type: integer
+          nullable: true
+        user:
+          type: integer
+          nullable: true
+        rubrica:
+          type: integer
+        valor_limite:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        justificativa:
+          type: string
+          default: ''
+        periodo_inicio:
+          type: string
+          format: date
+        periodo_fim:
+          type: string
+          format: date
+      required:
+      - escopo
+      - rubrica
+      - valor_limite
     State:
       type: object
       properties:

@@ -7,9 +7,10 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import connection
 
-from apps.sgd.models import Demand, DemandIndividualLimit, DemandRequest
+from apps.sgd.models import Demand, DemandRequest
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services.reconciliacao import divergencias_dos_limites, divergencias_dos_totais
+from apps.sgp.models import SpendingLimit
 
 pytestmark = pytest.mark.django_db
 
@@ -51,13 +52,14 @@ def test_falha_com_comprometido_diferente_das_reservas_ativas(
     demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
 ):
     balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
-    DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_comprometido=Decimal("999"))
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_comprometido=Decimal("999"))
 
     assert divergencias_dos_limites() == [
-        f"Limite individual #{limite_individual_rn.pk}: valor_comprometido=999.00 "
+        f"Limite individual do usuário #{limite_individual_rn.user_id} na rubrica "
+        f"#{limite_individual_rn.rubrica_id}: valor_comprometido=999.00 "
         "mas as reservas ativas somam 1000.00"
     ]
-    with pytest.raises(CommandError, match=f"Limite individual #{limite_individual_rn.pk}"):
+    with pytest.raises(CommandError, match=f"Limite individual do usuário #{limite_individual_rn.user_id}"):
         call_command("verificar_saldos")
 
 

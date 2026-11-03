@@ -6,13 +6,14 @@ from rest_framework.test import APIClient
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.tests.factories import TerritoryFactory
-from apps.sgd.models import DemandIndividualLimit, DemandRequest
+from apps.sgd.models import DemandRequest
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services.reconciliacao import divergencias_dos_limites, divergencias_dos_totais
 from apps.sgd.services.workflow import executar_transicao
 from apps.sgd.tests.factories import DemandRequestFactory
 from apps.sgp.models import BudgetPool, BudgetTransfer
 from apps.sgp.tests.factories import BudgetPoolFactory, BudgetRubricaFactory
+from apps.sgp.models import SpendingLimit
 
 pytestmark = pytest.mark.django_db
 
@@ -91,7 +92,7 @@ def test_excedente_cancelado_devolve_o_limite_ao_valor_original(
 ):
     """Limite de 1.000, solicitação de 1.300 autorizada com excedente e depois
     cancelada: o disponível volta a 1.000, e não a 1.300."""
-    DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_limite=Decimal("1000"))
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_limite=Decimal("1000"))
     assert _autorizar(usuario_ugp, demanda, demand_request_rn, "1300", origem_allocation=origem.pk).status_code == 200
     demanda.refresh_from_db()
 
@@ -140,7 +141,7 @@ def test_acima_do_limite_e_do_pool_remaneja_o_maior_dos_dois(
 ):
     """Aumento de 500 com 200 livres no limite (300 acima) e 100 livres no pool (400
     acima): remaneja 400, e só os 300 acima do limite ficam fora dele."""
-    DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_limite=Decimal("1200"))
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_limite=Decimal("1200"))
     BudgetPool.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("1100"))
 
     resposta = _autorizar(usuario_ugp, demanda, demand_request_rn, "1500", origem_allocation=origem.pk)
@@ -246,7 +247,7 @@ def duas_solicitacoes_no_limite(demand_request_rn, solicitante_rn, rubrica_diari
     segunda = DemandRequestFactory(
         demanda=demand_request_rn.demanda, tipo="diaria", rubrica=rubrica_diarias, valor_estimado=Decimal("3000"),
     )
-    DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_limite=Decimal("6000"))
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_limite=Decimal("6000"))
     demand = demand_request_rn.demanda
     demand_service.submeter_demanda(demand, usuario=solicitante_rn)
     demand.status = "pre_autorizada"
@@ -349,7 +350,7 @@ def test_previa_com_origem_simula_o_excedente(demanda, demand_request_rn, usuari
 def test_previa_com_origem_bate_com_o_que_a_autorizacao_remaneja(
     demanda, demand_request_rn, usuario_ugp, origem, limite_individual_rn, allocation_territorial_rn,
 ):
-    DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_limite=Decimal("1200"))
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_limite=Decimal("1200"))
     BudgetPool.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("1100"))
     previa = _previa(usuario_ugp, demanda, demand_request_rn, "1500", origem_allocation=origem.pk).json()
 

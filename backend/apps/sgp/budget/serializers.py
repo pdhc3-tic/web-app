@@ -2,8 +2,8 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from apps.core.models import State, Territory
-from apps.sgp.models import BudgetPool, BudgetRubrica, BudgetTransaction, WorkPlanMeta
+from apps.core.models import Role, State, Territory, User
+from apps.sgp.models import BudgetPool, BudgetRubrica, BudgetTransaction, SpendingLimit, WorkPlanMeta
 from apps.sgp.serializers.common import EstadoNestedSerializer
 
 
@@ -114,7 +114,7 @@ class BudgetTransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = BudgetTransaction
         fields = [
-            "id", "pool", "allocation", "activity", "tipo", "valor", "demanda_id",
+            "id", "pool", "spending_limit", "allocation", "activity", "tipo", "valor", "demanda_id",
             "justificativa", "criado_por", "criado_em",
         ]
         read_only_fields = fields
@@ -201,3 +201,65 @@ class BudgetPainelQuerySerializer(serializers.Serializer):
         queryset=Territory.objects.all(), required=False,
     )
     nivel = serializers.ChoiceField(choices=BudgetPool.Nivel.choices, required=False)
+
+
+class SpendingLimitSerializer(serializers.ModelSerializer):
+    """Padrão por perfil ou linha individual. `herdado` diz se a linha veio do padrão do perfil
+    ou é uma sobrescrita."""
+
+    saldo_disponivel = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    rubrica_slug = serializers.CharField(source="rubrica.slug", read_only=True)
+    rubrica_nome = serializers.CharField(source="rubrica.nome", read_only=True)
+    perfil_slug = serializers.CharField(source="perfil.slug", read_only=True, allow_null=True)
+    user_nome = serializers.CharField(source="user.nome", read_only=True, allow_null=True)
+
+    class Meta:
+        model = SpendingLimit
+        fields = [
+            "id", "escopo", "perfil", "perfil_slug", "user", "user_nome", "rubrica", "rubrica_slug", "rubrica_nome",
+            "territorio", "valor_limite", "valor_comprometido", "valor_executado", "saldo_disponivel",
+            "herdado", "justificativa", "periodo_inicio", "periodo_fim", "criado_por", "criado_em", "atualizado_em",
+        ]
+        read_only_fields = fields
+
+
+class SpendingLimitCreateSerializer(serializers.Serializer):
+    """Sem período, vale o período vigente. O padrão por perfil não tem fim: vale até ser alterado."""
+
+    escopo = serializers.ChoiceField(choices=SpendingLimit.Escopo.choices)
+    perfil = serializers.PrimaryKeyRelatedField(queryset=Role.objects.all(), required=False, allow_null=True)
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)
+    rubrica = serializers.PrimaryKeyRelatedField(queryset=BudgetRubrica.objects.filter(ativo=True))
+    valor_limite = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
+    justificativa = serializers.CharField(required=False, allow_blank=True, default="")
+    periodo_inicio = serializers.DateField(required=False)
+    periodo_fim = serializers.DateField(required=False)
+
+    def validate(self, attrs):
+        if attrs["escopo"] == SpendingLimit.Escopo.PERFIL:
+            if attrs.get("perfil") is None:
+                raise serializers.ValidationError({"perfil": "Obrigatório no padrão por perfil."})
+            if attrs.get("user") is not None:
+                raise serializers.ValidationError({"user": "Só se aplica ao limite individual."})
+        else:
+            if attrs.get("user") is None:
+                raise serializers.ValidationError({"user": "Obrigatório no limite individual."})
+            if attrs.get("perfil") is not None:
+                raise serializers.ValidationError({"perfil": "Só se aplica ao padrão por perfil."})
+        inicio, fim = attrs.get("periodo_inicio"), attrs.get("periodo_fim")
+        if inicio and fim and fim < inicio:
+            raise serializers.ValidationError({"periodo_fim": "Não pode ser anterior ao início."})
+        return attrs
+
+
+class SpendingLimitUpdateSerializer(serializers.Serializer):
+    valor_limite = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
+    justificativa = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class SpendingLimitQuerySerializer(serializers.Serializer):
+    data = serializers.DateField(required=False, help_text="Limites vigentes nesta data. Sem ela, hoje.")
+    escopo = serializers.ChoiceField(choices=SpendingLimit.Escopo.choices, required=False)
+    rubrica = serializers.SlugRelatedField(slug_field="slug", queryset=BudgetRubrica.objects.all(), required=False)
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)
+    perfil = serializers.SlugRelatedField(slug_field="slug", queryset=Role.objects.all(), required=False)

@@ -212,11 +212,11 @@ class BudgetPoolAdmin(admin.ModelAdmin):
 
 @admin.register(BudgetTransaction)
 class BudgetTransactionAdmin(admin.ModelAdmin):
-    list_display = ["pool", "tipo", "valor", "demanda_id", "criado_por", "criado_em"]
+    list_display = ["pool", "spending_limit", "tipo", "valor", "demanda_id", "criado_por", "criado_em"]
     list_filter = ["tipo"]
     search_fields = ["demanda_id", "justificativa"]
     readonly_fields = [
-        "pool", "activity", "tipo", "valor", "demanda_id",
+        "pool", "spending_limit", "activity", "tipo", "valor", "demanda_id",
         "justificativa", "criado_por", "criado_em",
     ]
 

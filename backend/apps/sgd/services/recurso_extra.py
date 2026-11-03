@@ -7,7 +7,7 @@ pool estadual ou nacional e o remanejamento acontece na própria decisão. A
 demanda bloqueada não é submetida sozinha: o limite maior só a deixa passar nas
 duas travas quando o solicitante submeter de novo.
 
-Ordem de lock: pedido → `DemandIndividualLimit` → `BudgetPool` (em ordem de pk)
+Ordem de lock: pedido → `SpendingLimit` → `BudgetPool` (em ordem de pk)
 → `Demand` → `DemandRequest` da demanda, a ordem de `backend/docs/orcamento.md`.
 """
 
@@ -20,19 +20,19 @@ from django.utils import timezone
 
 from apps.core.utils import formatar_brl
 from apps.sgd.exceptions import JustificativaObrigatoria, RegraDeNegocio, TransicaoInvalida
-from apps.sgd.models import Demand, DemandIndividualLimit
+from apps.sgd.models import Demand
 from apps.sgd.models.demand import STATUS_EDITAVEIS
 from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import notifications as notifications_service
 from apps.sgd.services import orcamento as orcamento_service
 from apps.sgd.services import remanejamento as remanejamento_service
-from apps.sgp.models import BudgetIncreaseRequest, BudgetPool, BudgetTransfer
+from apps.sgp.models import BudgetIncreaseRequest, BudgetPool, BudgetTransfer, SpendingLimit
 
 Status = BudgetIncreaseRequest.Status
 ZERO = Decimal("0")
 
 ENTIDADE_PEDIDO = "BudgetIncreaseRequest"
-ENTIDADE_LIMITE = "DemandIndividualLimit"
+ENTIDADE_LIMITE = auditoria_service.ENTIDADE_LIMITE
 
 DECISOES = {
     "aprovar": Status.APROVADA,
@@ -111,7 +111,7 @@ def _necessario(solicitacoes) -> Decimal:
 def deficit_individual(demanda: Demand, rubrica) -> Decimal:
     """O que falta no limite individual para a próxima submissão passar na rubrica:
     é o valor que o pedido de recurso extra registra sem `valor_solicitado`."""
-    limite = DemandIndividualLimit.objects.filter(solicitante=demanda.solicitante, rubrica=rubrica).first()
+    limite = orcamento_service.limite_efetivo(solicitante_id=demanda.solicitante_id, rubrica_id=rubrica.pk)
     # Sem truncar em zero: um excedente autorizado antes do remanejamento pontual
     # deixou saldo negativo, e o aumento precisa cobrir isso também.
     saldo = limite.saldo_disponivel if limite else ZERO
@@ -242,21 +242,20 @@ def devolver_pedido(pedido, *, usuario, justificativa: str):
     return pedido
 
 
-def _travar_limite(pedido, usuario) -> DemandIndividualLimit:
-    # Sem limite, o FOR UPDATE não trava nada e duas decisões do mesmo solicitante e
-    # rubrica tentam criá-lo. O `get_or_create` cria num savepoint: a segunda espera a
-    # primeira no índice único e, no IntegrityError, relê a linha travada e já elevada.
-    limite, _ = DemandIndividualLimit.objects.select_for_update().get_or_create(
-        solicitante=pedido.user, rubrica=pedido.rubrica,
-        defaults={"valor_limite": ZERO, "criado_por": usuario},
+def _travar_limite(pedido, usuario) -> SpendingLimit:
+    return orcamento_service.travar_limite_para_elevar(
+        user_id=pedido.user_id, rubrica_id=pedido.rubrica_id,
+        justificativa=f"Recurso extra #{pedido.pk}: {pedido.justificativa}", usuario=usuario,
     )
-    return limite
 
 
-def _elevar_limite(pedido, limite: DemandIndividualLimit, valor: Decimal, usuario) -> None:
+def _elevar_limite(pedido, limite: SpendingLimit, valor: Decimal, usuario) -> None:
+    """Vale para o período vigente na data da decisão: `periodo_aplicacao` é texto livre."""
     antes = limite.valor_limite
-    limite.valor_limite = antes + valor
-    limite.save(update_fields=["valor_limite"])
+    orcamento_service.elevar_limite(
+        limite=limite, valor=valor, justificativa=f"Recurso extra #{pedido.pk}: {pedido.justificativa}",
+        usuario=usuario,
+    )
     auditoria_service.registrar_evento(
         acao="aumento_limite", entidade=ENTIDADE_LIMITE, entidade_id=limite.pk, usuario=usuario,
         anteriores={"valor_limite": str(antes)},

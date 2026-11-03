@@ -8,7 +8,6 @@ from django.db.models import Exists, OuterRef, Q
 from apps.core.models.user import User
 from apps.core.services.permissions import user_has_role, user_role_slugs, user_states
 from apps.sgd.models.approval_step import ApprovalStep
-from apps.sgd.models.individual_limit import DemandIndividualLimit
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
 from apps.sgd.services import orcamento as orcamento_service
@@ -121,7 +120,7 @@ def preview_impacto(demand_request, valor: Decimal, *, origem=None) -> dict:
             ).pool
             disponivel, trava_bloqueada = True, None
 
-    limite = DemandIndividualLimit.objects.filter(solicitante=solicitante, rubrica=rubrica).first()
+    limite = orcamento_service.limite_da_solicitacao(demand_request)
     acima_do_limite = remanejado = Decimal("0")
     if origem is not None:
         # O remanejamento vai para o pool da reserva, como na autorização.

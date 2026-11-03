@@ -7,6 +7,7 @@ from apps.core.tests.factories import (
     TerritoryFactory,
     UserFactory,
 )
+from apps.sgp.budget import limites
 from apps.sgp.models import (
     Activity,
     BudgetPool,
@@ -21,7 +22,7 @@ from apps.sgp.models import (
     Projeto,
     Tecnico,
     UPF,
-    UPFDocument,
+    UPFDocument,    SpendingLimit,
 )
 from apps.sgp.models.indicator import Indicator
 from apps.sgp.models.workplan import WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
@@ -295,6 +296,24 @@ class BudgetPoolFactory(factory.django.DjangoModelFactory):
     valor_comprometido = 0
     valor_executado = 0
     reserva_ugp = False
+    criado_por = factory.SubFactory(UserFactory)
+
+
+class SpendingLimitFactory(factory.django.DjangoModelFactory):
+    """Sobrescrita individual do período vigente."""
+
+    class Meta:
+        model = SpendingLimit
+
+    escopo = SpendingLimit.Escopo.INDIVIDUAL
+    user = factory.SubFactory(UserFactory)
+    rubrica = factory.SubFactory(BudgetRubricaFactory)
+    valor_limite = 10_000
+    valor_comprometido = 0
+    valor_executado = 0
+    justificativa = "Definido no teste."
+    periodo_inicio = factory.LazyFunction(lambda: limites.periodo_de(limites.hoje())[0])
+    periodo_fim = factory.LazyFunction(lambda: limites.periodo_de(limites.hoje())[1])
     criado_por = factory.SubFactory(UserFactory)
 
 

@@ -7,6 +7,7 @@ from apps.core.models.notifications import TipoNotificacao
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import workflow as workflow_service
+from apps.sgp.tests.factories import SpendingLimitFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -78,11 +79,11 @@ def test_atender_notifica_apenas_in_app(mocked_delay, demand_rascunho_rn, solici
 def test_reservar_notifica_quando_semaforo_individual_piora(
     mocked_delay, demand_request_rn, solicitante_rn, allocation_territorial_rn,
 ):
-    from apps.sgd.tests.factories import DemandIndividualLimitFactory
+    from apps.sgp.tests.factories import SpendingLimitFactory
 
     # limite apertado (1000/1100 ≈ 91%) — cruza de verde direto pra vermelho.
-    DemandIndividualLimitFactory(
-        solicitante=solicitante_rn, rubrica=demand_request_rn.rubrica, valor_limite=Decimal("1100"),
+    SpendingLimitFactory(
+        user=solicitante_rn, rubrica=demand_request_rn.rubrica, valor_limite=Decimal("1100"),
     )
 
     balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)

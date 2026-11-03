@@ -11,7 +11,7 @@ from apps.core.models.notifications import Notification
 from apps.core.models.user_profile import UserProfile
 from apps.core.tests.factories import RoleFactory, UserFactory
 from apps.sgd.exceptions import ErroDeDominio
-from apps.sgd.models import Demand, DemandIndividualLimit, DemandRequest, DemandTypeRubricaMapping
+from apps.sgd.models import Demand, DemandRequest, DemandTypeRubricaMapping
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import recurso_extra as recurso_extra_service
@@ -20,7 +20,6 @@ from apps.sgd.tests.concorrencia import intercalar
 from apps.sgd.tests.factories import (
     BudgetIncreaseRequestFactory,
     DemandFactory,
-    DemandIndividualLimitFactory,
     DemandRequestFactory,
     DemandTypeRubricaMappingFactory,
 )
@@ -32,6 +31,8 @@ from apps.sgp.tests.factories import (
     BudgetRubricaFactory,
     WorkPlanAcaoFactory,
 )
+from apps.sgp.tests.factories import SpendingLimitFactory
+from apps.sgp.models import SpendingLimit
 
 pytestmark = pytest.mark.django_db
 
@@ -50,7 +51,7 @@ def _cliente(user):
 @pytest.fixture
 def demanda(demand_request_rn, allocation_territorial_rn, limite_individual_rn):
     """Demanda em rascunho cujo pedido de R$ 1.000 só cabe depois de aumentar o limite."""
-    DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_limite=Decimal("300"))
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_limite=Decimal("300"))
     return demand_request_rn.demanda
 
 
@@ -78,7 +79,7 @@ def pedido_com_parecer(pedido, usuario_articulador_rn):
 
 
 def _limite(solicitante, rubrica):
-    return DemandIndividualLimit.objects.get(solicitante=solicitante, rubrica=rubrica).valor_limite
+    return SpendingLimit.objects.get(user=solicitante, rubrica=rubrica).valor_limite
 
 
 # ── Criação ──────────────────────────────────────────────────────────────────
@@ -150,7 +151,7 @@ def test_valor_acima_do_deficit_e_aceito_e_a_ugp_pode_conceder_menos(demanda, so
 
 
 def test_demanda_sem_deficit_nao_pede_recurso_extra(demanda, solicitante_rn, limite_individual_rn):
-    DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_limite=Decimal("1000"))
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_limite=Decimal("1000"))
 
     resposta = _solicitar(solicitante_rn, demanda)
 
@@ -442,7 +443,7 @@ def test_decisao_invalida_retorna_400(pedido_com_parecer, usuario_ugp, rubrica_d
 def test_aprovacao_cria_o_limite_quando_o_usuario_nao_tem(
     demanda, solicitante_rn, usuario_articulador_rn, usuario_ugp, rubrica_diarias,
 ):
-    DemandIndividualLimit.objects.filter(solicitante=solicitante_rn).delete()
+    SpendingLimit.objects.filter(user=solicitante_rn).delete()
     pedido = _pedido_com_parecer(demanda, solicitante_rn, usuario_articulador_rn, "1000")
 
     assert _acao(usuario_ugp, pedido.pk, "decidir", APROVAR).status_code == 200
@@ -507,7 +508,7 @@ def test_saldo_individual_negativo_entra_no_deficit(
     demanda, solicitante_rn, usuario_articulador_rn, usuario_ugp, rubrica_diarias, limite_individual_rn,
 ):
     # Saldo de −R$ 200, como ficou o excedente autorizado antes do remanejamento pontual.
-    DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_comprometido=Decimal("500"))
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_comprometido=Decimal("500"))
 
     assert _solicitar(solicitante_rn, demanda, valor_solicitado="1000").status_code == 400
     sem_valor = _cliente(solicitante_rn).post(
@@ -702,7 +703,7 @@ def test_decisao_trava_limite_alocacoes_demanda_e_solicitacoes_nessa_ordem(
 
     assert resposta.status_code == 200
     nomes = {
-        "sgd_demandindividuallimit": "limite", "sgd_demandrequest": "solicitacao",
+        "sgp_spendinglimit": "limite", "sgd_demandrequest": "solicitacao",
         "sgp_budgetpool": "alocacao", "sgd_demand": "demanda",
     }
     travas = [q["sql"] for q in consultas if "FOR UPDATE" in q["sql"]]
@@ -738,13 +739,13 @@ def _decisao_pausada(monkeypatch, pedido, usuario, *, antes_de):
     """Devolve o `segura` de `_intercalar` para uma aprovação que para logo antes de travar
     as alocações (`antes_de="alocacoes"`) ou a Demand (`antes_de="demanda"`), com o que
     vem antes já travado."""
-    nome = {"alocacoes": "_travar_alocacoes", "demanda": "_demanda_do_pedido"}[antes_de]
+    nome = {"alocacoes": "_travar_pools", "demanda": "_demanda_do_pedido"}[antes_de]
     original = getattr(recurso_extra_service, nome)
     pausa = None
 
     def pausando(*args, **kwargs):
         # `_demanda_do_pedido` também é chamada sem lock; só a chamada que trava pausa.
-        if nome == "_travar_alocacoes" or kwargs.get("travar"):
+        if nome == "_travar_pools" or kwargs.get("travar"):
             pausa()
         return original(*args, **kwargs)
 
@@ -793,8 +794,8 @@ def test_reserva_concorrente_do_solicitante_e_vista_pela_decisao_sem_deadlock(
 
     resultado, erros = _decidir_contra(
         pedido,
-        travar=lambda: DemandIndividualLimit.objects.select_for_update().get(
-            solicitante=solicitante_rn, rubrica=rubrica_diarias,
+        travar=lambda: SpendingLimit.objects.select_for_update(of=("self",)).get(
+            user=solicitante_rn, rubrica=rubrica_diarias,
         ),
         mexer=lambda: balance_service.reservar_duas_travas(demand_request=concorrente, usuario=solicitante_rn),
         usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.", origem_allocation=alocacao_estadual,
@@ -805,7 +806,7 @@ def test_reserva_concorrente_do_solicitante_e_vista_pela_decisao_sem_deadlock(
     # Pool: 200 − 100 reservados pela concorrente = 100; a demanda precisa de 1.000.
     assert transferencia.valor == Decimal("900")
     assert (transferencia.saldo_destino_antes, transferencia.saldo_destino_depois) == (Decimal("100"), Decimal("1000"))
-    limite = DemandIndividualLimit.objects.get(solicitante=solicitante_rn, rubrica=rubrica_diarias)
+    limite = SpendingLimit.objects.get(user=solicitante_rn, rubrica=rubrica_diarias)
     assert (limite.valor_limite, limite.valor_comprometido) == (Decimal("1200"), Decimal("100"))
     demand_service.submeter_demanda(demanda, usuario=solicitante_rn)
     assert demanda.status == "submetida"
@@ -930,7 +931,7 @@ def reserva_do_vizinho(demanda, rubrica_diarias, territory_rn):
     """Outro solicitante do mesmo território, com reserva na mesma alocação territorial e
     demanda na mesma atividade."""
     vizinho = UserFactory(profiles=[(RoleFactory(slug="adt-acr"), territory_rn)])
-    DemandIndividualLimitFactory(solicitante=vizinho, rubrica=rubrica_diarias, valor_limite=5_000)
+    SpendingLimitFactory(user=vizinho, rubrica=rubrica_diarias, valor_limite=5_000)
     solicitacao = DemandRequestFactory(
         demanda=DemandFactory(activity=demanda.activity, solicitante=vizinho, status="submetida"),
         tipo="diaria", rubrica=rubrica_diarias, valor_estimado=Decimal("100"),
@@ -1024,7 +1025,7 @@ def test_decisoes_simultaneas_sem_limite_criam_um_so_limite(
 ):
     """Sem limite, o FOR UPDATE não trava nada e as duas decisões tentam criá-lo. A segunda
     espera a primeira no índice único, relê o limite que ela criou e soma o seu aumento."""
-    DemandIndividualLimit.objects.filter(solicitante=solicitante_rn).delete()
+    SpendingLimit.objects.filter(user=solicitante_rn).delete()
     primeiro = _pedido_com_parecer(demanda, solicitante_rn, usuario_articulador_rn, "1000")
     outra = _solicitacao_em_outra_demanda(demanda, rubrica_diarias, Decimal("400")).demanda
     segundo = _pedido_com_parecer(outra, solicitante_rn, usuario_articulador_rn, "400")
@@ -1041,7 +1042,7 @@ def test_decisoes_simultaneas_sem_limite_criam_um_so_limite(
     assert resultado["pedido"].status == "aprovada"
     primeiro.refresh_from_db()
     assert primeiro.status == "aprovada"
-    assert DemandIndividualLimit.objects.filter(solicitante=solicitante_rn, rubrica=rubrica_diarias).count() == 1
+    assert SpendingLimit.objects.filter(user=solicitante_rn, rubrica=rubrica_diarias).count() == 1
     assert _limite(solicitante_rn, rubrica_diarias) == Decimal("1400")
 
 
@@ -1110,7 +1111,7 @@ def test_toda_decisao_gera_auditoria(pedido_com_parecer, usuario_ugp, solicitant
     assert decisao.ip == "198.51.100.9"
     assert decisao.valores_anteriores == {"status": "com_parecer"}
     assert decisao.valores_novos["status"] == "aprovada"
-    aumento = AuditLog.objects.get(entidade="DemandIndividualLimit", acao="aumento_limite")
+    aumento = AuditLog.objects.get(entidade="SpendingLimit", acao="aumento_limite")
     assert aumento.valores_anteriores == {"valor_limite": "300.00"}
     assert aumento.valores_novos["valor_limite"] == "1000.00"
     assert aumento.valores_novos["pedido"] == pedido_com_parecer.pk

@@ -2,6 +2,8 @@ from django.conf import settings
 from django.db import models
 from django.db.models import ProtectedError, Q
 
+from apps.core.utils import formatar_brl
+
 
 class BudgetRubrica(models.Model):
     """Catálogo estável das rubricas orçamentárias (§5.3.1)."""
@@ -119,6 +121,114 @@ class BudgetPool(models.Model):
         return f"{self.rubrica} · {self.get_nivel_display()}"
 
 
+class SpendingLimit(models.Model):
+    """Limite de gasto por rubrica e período: o padrão de um perfil ou a linha individual.
+
+    A linha individual guarda o que a pessoa comprometeu e executou no período. `herdado` indica
+    que ela nasceu do padrão do perfil, na primeira reserva; sem isso, é uma sobrescrita, que
+    exige justificativa.
+    """
+
+    class Escopo(models.TextChoices):
+        PERFIL = "perfil", "Padrão do perfil"
+        INDIVIDUAL = "individual", "Individual"
+
+    escopo = models.CharField(max_length=20, choices=Escopo.choices, verbose_name="Escopo")
+    perfil = models.ForeignKey(
+        "core.Role", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="limites_de_gasto", verbose_name="Perfil",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="limites_de_gasto", verbose_name="Usuário",
+    )
+    rubrica = models.ForeignKey(
+        BudgetRubrica, on_delete=models.PROTECT, related_name="limites_de_gasto", verbose_name="Rubrica",
+    )
+    territorio = models.ForeignKey(
+        "core.Territory", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="limites_de_gasto", verbose_name="Território",
+    )
+    valor_limite = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0, verbose_name="Valor Limite (R$)",
+    )
+    valor_comprometido = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0, verbose_name="Valor Comprometido (R$)",
+    )
+    valor_executado = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0, verbose_name="Valor Executado (R$)",
+    )
+    herdado = models.BooleanField(default=False, verbose_name="Herdado do perfil")
+    justificativa = models.TextField(blank=True, default="", verbose_name="Justificativa")
+    periodo_inicio = models.DateField(verbose_name="Início do período")
+    periodo_fim = models.DateField(verbose_name="Fim do período")
+    criado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="limites_de_gasto_criados", verbose_name="Criado por",
+    )
+    criado_em = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    atualizado_em = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
+
+    class Meta:
+        verbose_name = "Limite de Gasto"
+        verbose_name_plural = "Limites de Gasto"
+        ordering = ["-periodo_inicio", "pk"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    Q(escopo="perfil", perfil__isnull=False, user__isnull=True)
+                    | Q(escopo="individual", perfil__isnull=True, user__isnull=False)
+                ),
+                name="ck_spendinglimit_escopo_consistente",
+            ),
+            models.CheckConstraint(
+                condition=Q(escopo="perfil") | Q(herdado=True) | ~Q(justificativa=""),
+                name="ck_spendinglimit_sobrescrita_justificada",
+            ),
+            models.CheckConstraint(
+                condition=Q(herdado=False) | Q(escopo="individual"),
+                name="ck_spendinglimit_herdado_so_individual",
+            ),
+            models.CheckConstraint(
+                condition=Q(periodo_fim__gte=models.F("periodo_inicio")),
+                name="ck_spendinglimit_periodo_valido",
+            ),
+            models.CheckConstraint(condition=Q(valor_limite__gte=0), name="ck_spendinglimit_valor_nao_negativo"),
+            models.CheckConstraint(
+                condition=Q(valor_comprometido__gte=0), name="ck_spendinglimit_comprometido_nao_negativo",
+            ),
+            models.CheckConstraint(
+                condition=Q(valor_executado__gte=0), name="ck_spendinglimit_executado_nao_negativo",
+            ),
+            models.UniqueConstraint(
+                fields=["user", "rubrica", "periodo_inicio"],
+                condition=Q(escopo="individual"),
+                name="unique_spendinglimit_individual_periodo",
+            ),
+            models.UniqueConstraint(
+                fields=["perfil", "rubrica", "periodo_inicio"],
+                condition=Q(escopo="perfil"),
+                name="unique_spendinglimit_perfil_periodo",
+            ),
+        ]
+
+    def __str__(self):
+        dono = self.user if self.escopo == self.Escopo.INDIVIDUAL else self.perfil
+        return f"{dono} · {self.rubrica} — limite R$ {self.valor_limite}"
+
+    @property
+    def saldo_disponivel(self):
+        return self.valor_limite - self.valor_comprometido - self.valor_executado
+
+    def erro_de_reducao(self, novo_valor) -> str | None:
+        """Depois de um excedente o limite já pode estar abaixo do comprometido:
+        só a redução é barrada, o aumento ajuda. Confiável só com a linha travada."""
+        minimo = self.valor_comprometido + self.valor_executado
+        if novo_valor < minimo and novo_valor < self.valor_limite:
+            return f"Não pode ser reduzido abaixo do já comprometido e executado: {formatar_brl(minimo)}."
+        return None
+
+
 class BudgetTransaction(models.Model):
     """Trilha de auditoria imutável de movimentos sobre um pool (§5.5).
 
@@ -133,12 +243,23 @@ class BudgetTransaction(models.Model):
         EXECUCAO = "execucao", "Execução"
         REMANEJAMENTO = "remanejamento", "Remanejamento"
         AJUSTE = "ajuste", "Ajuste"
+        AUMENTO_LIMITE = "aumento_limite", "Alteração de limite"
 
     pool = models.ForeignKey(
         BudgetPool,
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="transactions",
         verbose_name="Pool",
+    )
+    spending_limit = models.ForeignKey(
+        SpendingLimit,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="transactions",
+        verbose_name="Limite de gasto",
     )
     activity = models.ForeignKey(
         "sgp.Activity",
@@ -184,6 +305,15 @@ class BudgetTransaction(models.Model):
         indexes = [
             models.Index(fields=["demanda_id", "tipo"], name="idx_budgettx_demanda_tipo"),
         ]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    Q(pool__isnull=False, spending_limit__isnull=True)
+                    | Q(pool__isnull=True, spending_limit__isnull=False)
+                ),
+                name="ck_budgettransaction_pool_ou_limite",
+            ),
+        ]
 
     def save(self, *args, **kwargs):
         if self.pk:
@@ -199,7 +329,7 @@ class BudgetTransaction(models.Model):
         )
 
     def __str__(self):
-        return f"[{self.tipo}] {self.pool} — R$ {self.valor}"
+        return f"[{self.tipo}] {self.pool or self.spending_limit} — R$ {self.valor}"
 
 
 class BudgetIncreaseRequest(models.Model):

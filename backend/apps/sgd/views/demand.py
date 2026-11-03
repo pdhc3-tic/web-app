@@ -28,7 +28,7 @@ from apps.sgd.serializers.demand_request import (
 from apps.sgd.services import consulta as consulta_service
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services.approval import demand_visibility_scope
-from apps.sgd.services.auditoria import ENTIDADE_DEMANDA, ENTIDADE_MOVIMENTACAO_SALDO
+from apps.sgd.services.auditoria import ENTIDADE_DEMANDA, ENTIDADE_LIMITE_ANTIGA, ENTIDADE_MOVIMENTACAO_SALDO
 from apps.sgd.services.recurso_extra import ENTIDADE_LIMITE, ENTIDADE_PEDIDO
 from apps.sgd.services.remanejamento import ENTIDADE_REMANEJAMENTO
 from apps.sgd.views.approval import DemandApprovalMixin
@@ -218,7 +218,7 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
             # Pelo pedido, não por `demanda`: a edição do pedido não grava a demanda,
             # e o aumento de limite e o remanejamento ficam em outras entidades.
             filtro |= Q(entidade=ENTIDADE_PEDIDO, entidade_id__in=[str(pk) for pk in pedidos]) | Q(
-                entidade__in=[ENTIDADE_LIMITE, ENTIDADE_REMANEJAMENTO],
+                entidade__in=[ENTIDADE_LIMITE, ENTIDADE_LIMITE_ANTIGA, ENTIDADE_REMANEJAMENTO],
                 acao__in=["aumento_limite", "remanejamento.efetivado"],
                 valores_novos__pedido__in=pedidos,
             )

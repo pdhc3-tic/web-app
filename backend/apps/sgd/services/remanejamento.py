@@ -4,7 +4,7 @@ Um serviço só para as duas formas que o SGD tem de cobrir saldo com outro nív
 decisão do recurso extra, que eleva o limite individual, e o excedente pontual que a
 UGP autoriza na própria demanda (remanejamento emergencial), que não eleva.
 
-Ordem de lock: `DemandIndividualLimit` → `BudgetPool` (em ordem de pk), a de
+Ordem de lock: `SpendingLimit` → `BudgetPool` (em ordem de pk), a de
 `backend/docs/orcamento.md`.
 """
 
@@ -115,8 +115,7 @@ def cobrir_excedente(solicitacao, novo_valor: Decimal, *, origem: BudgetPool, ju
 
     Sem nada acima do limite nem do pool, não remaneja: (zero, None)."""
     exigir_origem_da_solicitacao(origem, solicitacao)
-    solicitante = solicitacao.demanda.solicitante
-    limite = balance_service._travar_limite(solicitante_id=solicitante.pk, rubrica_id=solicitacao.rubrica_id)
+    limite = balance_service.travar_limite_da_solicitacao(solicitacao)
     balance_service.reler_reserva(solicitacao)
     aumento = novo_valor - solicitacao.valor_reservado
     if limite is None or not solicitacao.reserva_ativa or aumento <= ZERO:

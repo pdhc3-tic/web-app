@@ -7,8 +7,14 @@ from apps.core.tests.factories import (
     TerritoryFactory,
     UserFactory,
 )
-from apps.sgd.tests.factories import DemandFactory, DemandIndividualLimitFactory, DemandRequestFactory
-from apps.sgp.tests.factories import ActivityFactory, BudgetPoolFactory, BudgetRubricaFactory, WorkPlanAcaoFactory
+from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
+from apps.sgp.tests.factories import (
+    ActivityFactory,
+    BudgetPoolFactory,
+    BudgetRubricaFactory,
+    SpendingLimitFactory,
+    WorkPlanAcaoFactory,
+)
 
 
 @pytest.fixture
@@ -73,8 +79,8 @@ def allocation_territorial_rn(db, activity_rn, rubrica_diarias):
 
 @pytest.fixture
 def limite_individual_rn(db, solicitante_rn, rubrica_diarias):
-    return DemandIndividualLimitFactory(
-        solicitante=solicitante_rn, rubrica=rubrica_diarias, valor_limite=5_000,
+    return SpendingLimitFactory(
+        user=solicitante_rn, rubrica=rubrica_diarias, valor_limite=5_000,
     )
 
 

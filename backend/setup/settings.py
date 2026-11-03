@@ -276,6 +276,8 @@ SPECTACULAR_SETTINGS = {
     # alterado e quebra os tipos gerados no frontend.
     "ENUM_NAME_OVERRIDES": {
         "StatusAtividadeEnum": "apps.sgp.models.activity.STATUS_CHOICES",
+        "EscopoLimiteDeGastoEnum": "apps.sgp.budget.models.SpendingLimit.Escopo",
+        "EscopoRemanejamentoEnum": "apps.sgp.budget.models.BudgetTransfer.Escopo",
         "StatusFormResponseEnum": "apps.sgp.models.form_response.FormResponse.Status",
         "StatusConflitoEnum": "apps.sca.models.ConflictLog.Status",
         "TipoSyncEventEnum": "apps.sca.models.SyncEvent.Tipo",
