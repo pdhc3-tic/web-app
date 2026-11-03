@@ -114,7 +114,8 @@ class BudgetTransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = BudgetTransaction
         fields = [
-            "id", "pool", "spending_limit", "allocation", "activity", "tipo", "valor", "demanda_id",
+            "id", "pool", "spending_limit", "allocation", "activity", "tipo", "valor",
+            "saldo_anterior", "saldo_posterior", "demanda_id", "demand_request_id",
             "justificativa", "criado_por", "criado_em",
         ]
         read_only_fields = fields

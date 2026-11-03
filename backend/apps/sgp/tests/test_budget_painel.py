@@ -238,9 +238,9 @@ class TestPainelMetaComoRelatorio:
         acao = WorkPlanAcaoFactory(meta=meta)
         usuario = UserFactory()
         activity = ActivityFactory(acao=acao)
-        demanda_id = f"demanda-{meta.pk}-{pool.pk}"
-        budget_service.reservar(pool=pool, valor=valor, demanda_id=demanda_id, usuario=usuario, activity_id=activity.pk)
-        budget_service.executar(demanda_id=demanda_id, usuario=usuario)
+        chave = f"demanda-{meta.pk}-{pool.pk}"
+        budget_service.reservar(pool=pool, valor=valor, demand_request_id=chave, usuario=usuario, activity_id=activity.pk)
+        budget_service.executar(demand_request_id=chave, usuario=usuario)
 
     def test_meta_acrescenta_o_executado_sem_recortar_o_saldo(self, auth_client_super_admin):
         meta = WorkPlanMetaFactory(numero=1)

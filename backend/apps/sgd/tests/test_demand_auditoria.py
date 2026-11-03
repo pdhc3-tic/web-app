@@ -130,7 +130,7 @@ def test_saldo_sem_criado_por_herda_o_usuario_do_contexto(demanda, demand_reques
     def _movimentar():
         BudgetTransaction.objects.create(
             pool=allocation_territorial_rn, tipo=BudgetTransaction.Tipo.RESERVA, valor=Decimal("100"),
-            demanda_id=str(demand_request_rn.pk), criado_por=None,
+            demand_request_id=str(demand_request_rn.pk), criado_por=None,
         )
 
     set_audit_context(user=usuario_ugp, ip=IP_CLIENTE, user_agent="arlo-import")
@@ -207,7 +207,7 @@ def test_reserva_ajuste_execucao_e_liberacao_ligadas_a_transacao(
     )
 
     por_tipo = {
-        t.tipo: t for t in BudgetTransaction.objects.filter(demanda_id=str(demand_request_rn.pk), pool__isnull=False)
+        t.tipo: t for t in BudgetTransaction.objects.filter(demand_request_id=str(demand_request_rn.pk), pool__isnull=False)
     }
     assert set(por_tipo) == {"reserva", "ajuste", "execucao", "liberacao"}
 

@@ -16,6 +16,7 @@ from apps.core.utils import formatar_brl
 from apps.sgd.exceptions import TRAVA_TERRITORIAL, RegraDeNegocio, SaldoInsuficiente
 from apps.sgp.budget import limites as limites_service
 from apps.sgp.budget import services as budget_service
+from apps.sgp.budget.rls import com_visao_total
 from apps.sgp.budget.models import BudgetPool, BudgetTransaction, SpendingLimit
 
 ZERO = Decimal("0")
@@ -204,9 +205,9 @@ def reservar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuar
     comprometido_antes = pool.valor_comprometido
     try:
         budget_service.reservar(
-            pool=pool, valor=valor, demanda_id=str(demand_request.pk), usuario=usuario,
+            pool=pool, valor=valor, demand_request_id=str(demand_request.pk), usuario=usuario,
             justificativa=f"Reserva SGD — solicitação #{demand_request.pk}.",
-            activity_id=demand_request.demanda.activity_id,
+            demanda_id=str(demand_request.demanda_id), activity_id=demand_request.demanda.activity_id,
         )
     except budget_service.SaldoInsuficienteError as exc:
         pool.refresh_from_db()
@@ -222,16 +223,16 @@ def reservar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuar
 
 def pool_da_reserva(demand_request) -> BudgetPool | None:
     pool_id = BudgetTransaction.objects.filter(
-        demanda_id=str(demand_request.pk), tipo=BudgetTransaction.Tipo.RESERVA, pool__isnull=False,
+        demand_request_id=str(demand_request.pk), tipo=BudgetTransaction.Tipo.RESERVA, pool__isnull=False,
     ).values_list("pool_id", flat=True).first()
     if not pool_id:
         return None
     return BudgetPool.objects.select_related("estado", "territorio").get(pk=pool_id)
 
 
-def total_reservado(demanda_id: str) -> Decimal:
+def total_reservado(demand_request_id: str) -> Decimal:
     """Reserva original mais os ajustes, como o motor executa e libera."""
-    return budget_service._valor_total_reservado(demanda_id)
+    return budget_service._valor_total_reservado(demand_request_id)
 
 
 def ajustar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuario) -> MovimentoPool:
@@ -241,7 +242,7 @@ def ajustar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuari
     comprometido_antes = pool.valor_comprometido if pool else ZERO
     try:
         budget_service.ajustar_reserva(
-            demanda_id=entidade_id, novo_valor=valor, usuario=usuario,
+            demand_request_id=entidade_id, novo_valor=valor, usuario=usuario,
             justificativa=f"Ajuste SGD — solicitação #{demand_request.pk}.",
         )
     except budget_service.SaldoInsuficienteError as exc:
@@ -268,7 +269,7 @@ def liberar_pool(*, solicitante, rubrica, demand_request, usuario, motivo: str) 
     """Sem `valor`: o motor devolve o que a própria reserva registrou (reserva
     mais ajustes), que é o que tem de voltar ao pool."""
     try:
-        budget_service.liberar(demanda_id=str(demand_request.pk), usuario=usuario, motivo=motivo)
+        budget_service.liberar(demand_request_id=str(demand_request.pk), usuario=usuario, motivo=motivo)
     except budget_service.DemandaInvalidaError:
         # Nunca chegou a reservar (ex.: bloqueada antes da submissão) — nada a liberar.
         pass
@@ -277,7 +278,7 @@ def liberar_pool(*, solicitante, rubrica, demand_request, usuario, motivo: str) 
 def executar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuario) -> None:
     """`valor` é o valor pago; a diferença para o reservado volta ao pool."""
     try:
-        budget_service.executar(demanda_id=str(demand_request.pk), usuario=usuario, valor_executado=valor)
+        budget_service.executar(demand_request_id=str(demand_request.pk), usuario=usuario, valor_executado=valor)
     except (budget_service.DemandaInvalidaError, ValueError) as exc:
         raise RegraDeNegocio(str(exc)) from exc
 
@@ -290,7 +291,7 @@ def travar_pools_das_reservas(solicitacoes) -> None:
     """Trava, em ordem de pk, os pools em que as solicitações têm reserva."""
     _travar_em_ordem_de_pk(BudgetPool.objects.filter(
         pk__in=BudgetTransaction.objects.filter(
-            tipo=BudgetTransaction.Tipo.RESERVA, demanda_id__in=[str(s.pk) for s in solicitacoes],
+            tipo=BudgetTransaction.Tipo.RESERVA, demand_request_id__in=[str(s.pk) for s in solicitacoes],
             pool__isnull=False,
         ).values("pool_id"),
     ))
@@ -352,19 +353,25 @@ def limite_da_solicitacao(demand_request) -> SpendingLimit | None:
     )
 
 
-def travar_limites_do_lote(solicitacoes, *, rubrica_id) -> None:
-    """`solicitacoes` são todas da `rubrica_id`."""
+@com_visao_total
+def travar_limites_do_lote(solicitacoes, *, rubrica_id, criar: bool = False) -> None:
+    """`solicitacoes` são todas da `rubrica_id`. Com `criar`, gera antes de qualquer pool a linha do
+    período de quem vai reservar: criá-la depois deixaria o pool travado esperando outra criação."""
+    user_ids = {s.demanda.solicitante_id for s in solicitacoes}
     limites_service.travar_linhas_do_lote(
-        rubrica_id=rubrica_id, user_ids={s.demanda.solicitante_id for s in solicitacoes},
-        chaves_das_reservas=[str(s.pk) for s in solicitacoes],
+        rubrica_id=rubrica_id, user_ids=user_ids, chaves_das_reservas=[str(s.pk) for s in solicitacoes],
     )
+    if criar:
+        for user_id in sorted(user_ids):
+            limites_service.travar_limite_vigente(user_id=user_id, rubrica_id=rubrica_id, criar=True)
 
 
 def registrar_movimento_do_limite(*, limite, tipo: str, valor: Decimal, demand_request, usuario,
-                                  justificativa: str = "") -> None:
+                                  justificativa: str = "", saldo_posterior: Decimal | None = None) -> None:
     limites_service.registrar_movimento(
-        limite=limite, tipo=tipo, valor=valor, usuario=usuario, demanda_id=str(demand_request.pk),
-        activity_id=demand_request.demanda.activity_id, justificativa=justificativa,
+        limite=limite, tipo=tipo, valor=valor, usuario=usuario, demand_request_id=str(demand_request.pk),
+        demanda_id=str(demand_request.demanda_id), activity_id=demand_request.demanda.activity_id,
+        justificativa=justificativa, saldo_posterior=saldo_posterior,
     )
 
 

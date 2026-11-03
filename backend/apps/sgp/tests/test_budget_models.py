@@ -130,7 +130,7 @@ class TestValoresDecimal:
 
     def test_valores_comprometido_e_executado_sao_decimal(self):
         pool = BudgetPoolFactory(
-            valor_comprometido=Decimal("0.01"), valor_executado=Decimal("0.01"),
+            valor_alocado=Decimal("1"), valor_comprometido=Decimal("0.01"), valor_executado=Decimal("0.01"),
         )
         pool.refresh_from_db()
 

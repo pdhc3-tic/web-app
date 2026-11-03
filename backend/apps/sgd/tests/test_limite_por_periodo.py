@@ -4,6 +4,8 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from django.db import connection, transaction
+from django.test.utils import CaptureQueriesContext
 from freezegun import freeze_time
 
 from apps.sgd.services import balance as balance_service
@@ -52,7 +54,8 @@ def test_primeira_reserva_cria_a_linha_herdada_e_lanca_no_ledger(
     assert limite.valor_comprometido == Decimal("1000")
     assert _linhas(limite) == [("reserva", Decimal("1000"))]
     transacao = BudgetTransaction.objects.get(spending_limit=limite)
-    assert transacao.demanda_id == str(demand_request_rn.pk)
+    assert transacao.demand_request_id == str(demand_request_rn.pk)
+    assert transacao.demanda_id == str(demand_request_rn.demanda_id)
     assert transacao.activity_id == demand_request_rn.demanda.activity_id
 
 
@@ -207,3 +210,53 @@ def test_trilha_da_demanda_le_o_nome_antigo_e_o_novo_da_entidade(auth_client_ugp
     assert resposta.status_code == 200
     eventos = resposta.data["results"] if isinstance(resposta.data, dict) else resposta.data
     assert sum(1 for evento in eventos if evento["acao"] == "aumento_limite") == 2
+
+
+def _demanda_com_reservas_em_dois_periodos(activity_rn, solicitante_rn, rubrica_diarias, status="devolvida"):
+    """Uma solicitação reservada no trimestre passado e outra ainda sem reserva."""
+    demanda = DemandFactory(activity=activity_rn, solicitante=solicitante_rn, status=status)
+    antiga = DemandRequestFactory(demanda=demanda, tipo="diaria", rubrica=rubrica_diarias, valor_estimado=Decimal("100"))
+    nova = DemandRequestFactory(demanda=demanda, tipo="diaria", rubrica=rubrica_diarias, valor_estimado=Decimal("200"))
+    with freeze_time("2026-11-03"):
+        balance_service.reservar_duas_travas(demand_request=antiga, usuario=solicitante_rn)
+    return demanda, antiga, nova
+
+
+def test_submissao_trava_as_linhas_dos_dois_periodos_antes_do_pool(
+    activity_rn, solicitante_rn, rubrica_diarias, allocation_territorial_rn, padrao_do_perfil,
+):
+    demanda, antiga, nova = _demanda_com_reservas_em_dois_periodos(activity_rn, solicitante_rn, rubrica_diarias)
+
+    with freeze_time("2027-01-05"), CaptureQueriesContext(connection) as consultas, transaction.atomic():
+        for solicitacao in balance_service.na_ordem_de_lock([antiga, nova], criar=True):
+            balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=solicitante_rn, adiar_gravacao=True)
+
+    sqls = [q["sql"] for q in consultas]
+    primeira_trava_de_pool = next(i for i, sql in enumerate(sqls) if "FOR UPDATE" in sql and '"sgp_budgetpool"' in sql)
+    trava_do_lote = next(i for i, sql in enumerate(sqls) if "FOR UPDATE" in sql and '"sgp_spendinglimit"' in sql)
+    criacao_da_linha_nova = next(i for i, sql in enumerate(sqls) if sql.startswith('INSERT INTO "sgp_spendinglimit"'))
+    # A linha da reserva antiga e a do período novo ficam travadas antes de qualquer pool.
+    assert f"'{antiga.pk}'" in sqls[trava_do_lote]
+    assert trava_do_lote < primeira_trava_de_pool
+    assert criacao_da_linha_nova < primeira_trava_de_pool
+    assert SpendingLimit.objects.filter(user=solicitante_rn).count() == 2
+
+
+def test_na_ordem_de_lock_trava_rubrica_a_rubrica(
+    activity_rn, solicitante_rn, rubrica_diarias, allocation_territorial_rn, limite_individual_rn,
+):
+    from apps.sgp.tests.factories import BudgetRubricaFactory
+
+    outra = BudgetRubricaFactory()
+    demanda = DemandFactory(activity=activity_rn, solicitante=solicitante_rn)
+    primeira = DemandRequestFactory(demanda=demanda, tipo="diaria", rubrica=rubrica_diarias, valor_estimado=Decimal("1"))
+    segunda = DemandRequestFactory(demanda=demanda, tipo="diaria", rubrica=outra, valor_estimado=Decimal("1"))
+    solicitacoes = sorted([primeira, segunda], key=lambda s: s.rubrica_id)
+
+    travadas = []
+    with CaptureQueriesContext(connection) as consultas, transaction.atomic():
+        for solicitacao in balance_service.na_ordem_de_lock(solicitacoes):
+            travadas.append(sum(1 for q in consultas if "FOR UPDATE" in q["sql"] and '"sgp_spendinglimit"' in q["sql"]))
+
+    # Uma trava de limite ao entrar em cada rubrica: nunca as duas de uma vez, antes dos pools.
+    assert travadas == [1, 2]

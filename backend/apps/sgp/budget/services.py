@@ -13,6 +13,7 @@ from apps.core.models import Territory
 from apps.core.models.user_profile import UserProfile
 from apps.core.services.permissions import user_has_role, user_states, user_territories
 from apps.core.utils import get_config
+from apps.sgp.budget.ledger import lancar
 from apps.sgp.models import BudgetPool, BudgetRubrica, BudgetTransaction
 
 Nivel = BudgetPool.Nivel
@@ -293,10 +294,9 @@ def criar_pool(*, rubrica, nivel: str, valor_alocado: Decimal, usuario,
         raise DRFValidationError({
             "nivel": "Já existe um pool para esta rubrica neste nível. Altere o valor dele."
         }) from exc
-    BudgetTransaction.objects.create(
-        pool=pool, tipo=BudgetTransaction.Tipo.REMANEJAMENTO,
-        valor=valor_alocado, criado_por=usuario,
-        justificativa="Criação de pool.",
+    lancar(
+        pool=pool, tipo=BudgetTransaction.Tipo.REMANEJAMENTO, valor=valor_alocado, usuario=usuario,
+        saldo_anterior=ZERO, saldo_posterior=_saldo_disponivel(pool), justificativa="Criação de pool.",
     )
     return pool
 
@@ -327,12 +327,12 @@ def atualizar_valor_alocado(pool: BudgetPool, *, novo_valor: Decimal, usuario) -
     )
 
     valor_delta = novo_valor - pool.valor_alocado
+    saldo_anterior = _saldo_disponivel(pool)
     pool.valor_alocado = novo_valor
     pool.save(update_fields=["valor_alocado"])
-    BudgetTransaction.objects.create(
-        pool=pool, tipo=BudgetTransaction.Tipo.REMANEJAMENTO,
-        valor=valor_delta, criado_por=usuario,
-        justificativa="Ajuste de pool.",
+    lancar(
+        pool=pool, tipo=BudgetTransaction.Tipo.REMANEJAMENTO, valor=valor_delta, usuario=usuario,
+        saldo_anterior=saldo_anterior, saldo_posterior=_saldo_disponivel(pool), justificativa="Ajuste de pool.",
     )
     return pool
 
@@ -417,13 +417,13 @@ def verificar_saldo(*, rubrica, nivel: str, territorio=None, estado=None, valor:
     return _saldo_check_de_pool(pool, valor)
 
 
-def _transacoes_do_pool(demanda_id: str) -> QuerySet[BudgetTransaction]:
+def _transacoes_do_pool(demand_request_id: str) -> QuerySet[BudgetTransaction]:
     """O limite individual lança no mesmo ledger, com a mesma chave: aqui só interessa o pool."""
-    return BudgetTransaction.objects.filter(demanda_id=demanda_id, pool__isnull=False)
+    return BudgetTransaction.objects.filter(demand_request_id=demand_request_id, pool__isnull=False)
 
 
-def _transacao_existente(demanda_id: str, tipo: str) -> BudgetTransaction | None:
-    return _transacoes_do_pool(demanda_id).filter(tipo=tipo).first()
+def _transacao_existente(demand_request_id: str, tipo: str) -> BudgetTransaction | None:
+    return _transacoes_do_pool(demand_request_id).filter(tipo=tipo).first()
 
 
 _VERBO_PASSADO = {
@@ -432,41 +432,42 @@ _VERBO_PASSADO = {
 }
 
 
-def _rejeitar_se_finalizada(demanda_id: str, *, tipos_bloqueantes: list[str], acao: str) -> None:
+def _rejeitar_se_finalizada(demand_request_id: str, *, tipos_bloqueantes: list[str], acao: str) -> None:
     for tipo in tipos_bloqueantes:
-        if _transacao_existente(demanda_id, tipo) is not None:
+        if _transacao_existente(demand_request_id, tipo) is not None:
             raise DemandaInvalidaError(
-                f"Demanda {demanda_id!r} já foi {_VERBO_PASSADO[tipo]} — não pode ser {acao}."
+                f"Demanda {demand_request_id!r} já foi {_VERBO_PASSADO[tipo]} — não pode ser {acao}."
             )
 
 
-def _valor_total_reservado(demanda_id: str) -> Decimal:
+def _valor_total_reservado(demand_request_id: str) -> Decimal:
     """Reserva original + todo `ajustar_reserva` aplicado depois. `executar`/
     `liberar` usam isto, não `reserva.valor` puro, senão um ajuste ficaria
     fora da conta."""
-    reserva = _transacao_existente(demanda_id, BudgetTransaction.Tipo.RESERVA)
+    reserva = _transacao_existente(demand_request_id, BudgetTransaction.Tipo.RESERVA)
     if reserva is None:
         return ZERO
-    ajustes = _transacoes_do_pool(demanda_id).filter(
+    ajustes = _transacoes_do_pool(demand_request_id).filter(
         tipo=BudgetTransaction.Tipo.AJUSTE,
     ).aggregate(total=Coalesce(Sum("valor"), ZERO))["total"]
     return reserva.valor + ajustes
 
 
 @transaction.atomic
-def reservar(*, pool: BudgetPool, valor: Decimal, demanda_id: str, usuario,
-             justificativa: str = "", activity_id: int | None = None) -> BudgetTransaction:
-    """Idempotente por demanda_id — a checagem roda depois do lock no
-    pool, então duas chamadas concorrentes pro mesmo demanda_id
-    serializam ali; a segunda, ao acordar, já encontra a transaction da
-    primeira e não duplica o comprometimento."""
+def reservar(*, pool: BudgetPool, valor: Decimal, demand_request_id: str, usuario,
+             justificativa: str = "", demanda_id: str | None = None,
+             activity_id: int | None = None) -> BudgetTransaction:
+    """Idempotente por `demand_request_id` — a checagem roda depois do lock no
+    pool, então duas chamadas concorrentes pra mesma solicitação serializam ali;
+    a segunda, ao acordar, já encontra a transaction da primeira e não duplica o
+    comprometimento."""
     if valor <= ZERO:
         # chamado direto pelo motor, sem o min_value=0 da serializer HTTP —
         # sem essa guarda, um valor negativo "reservaria" liberando saldo.
         raise ValueError(f"valor precisa ser positivo, recebi {valor}.")
 
     pool = BudgetPool.objects.select_for_update().get(pk=pool.pk)
-    existente = _transacao_existente(demanda_id, BudgetTransaction.Tipo.RESERVA)
+    existente = _transacao_existente(demand_request_id, BudgetTransaction.Tipo.RESERVA)
     if existente is not None:
         return existente
 
@@ -478,100 +479,112 @@ def reservar(*, pool: BudgetPool, valor: Decimal, demanda_id: str, usuario,
 
     pool.valor_comprometido += valor
     pool.save(update_fields=["valor_comprometido"])
-    return BudgetTransaction.objects.create(
-        pool=pool, tipo=BudgetTransaction.Tipo.RESERVA, valor=valor,
-        demanda_id=demanda_id, activity_id=activity_id, justificativa=justificativa, criado_por=usuario,
+    return lancar(
+        pool=pool, tipo=BudgetTransaction.Tipo.RESERVA, valor=valor, usuario=usuario,
+        saldo_anterior=saldo, saldo_posterior=_saldo_disponivel(pool), demand_request_id=demand_request_id,
+        demanda_id=demanda_id, activity_id=activity_id, justificativa=justificativa,
     )
 
 
 @transaction.atomic
-def ajustar_reserva(*, demanda_id: str, novo_valor: Decimal, usuario, justificativa: str = "") -> BudgetTransaction:
+def ajustar_reserva(*, demand_request_id: str, novo_valor: Decimal, usuario, justificativa: str = "") -> BudgetTransaction:
     """Registra o delta como uma `BudgetTransaction` própria (`Tipo.AJUSTE`)
     em vez de reescrever a reserva original. Não é idempotente — ao
     contrário de reservar/executar/liberar, quem chama garante que só
     invoca isto uma vez por decisão."""
-    reserva = _transacao_existente(demanda_id, BudgetTransaction.Tipo.RESERVA)
+    reserva = _transacao_existente(demand_request_id, BudgetTransaction.Tipo.RESERVA)
     if reserva is None:
-        raise DemandaInvalidaError(f"Nenhuma reserva encontrada para a demanda {demanda_id!r}.")
+        raise DemandaInvalidaError(f"Nenhuma reserva encontrada para a demanda {demand_request_id!r}.")
     _rejeitar_se_finalizada(
-        demanda_id,
+        demand_request_id,
         tipos_bloqueantes=[BudgetTransaction.Tipo.EXECUCAO, BudgetTransaction.Tipo.LIBERACAO],
         acao="ajustada",
     )
 
     pool = BudgetPool.objects.select_for_update().get(pk=reserva.pool_id)
-    valor_atual = _valor_total_reservado(demanda_id)
+    valor_atual = _valor_total_reservado(demand_request_id)
     delta = novo_valor - valor_atual
-    if delta > ZERO and delta > _saldo_disponivel(pool):
+    saldo = _saldo_disponivel(pool)
+    if delta > ZERO and delta > saldo:
         raise SaldoInsuficienteError(
-            f"Saldo insuficiente para o ajuste: R$ {_saldo_disponivel(pool)} disponível, "
+            f"Saldo insuficiente para o ajuste: R$ {saldo} disponível, "
             f"R$ {delta} a mais solicitado."
         )
 
     pool.valor_comprometido += delta
     pool.save(update_fields=["valor_comprometido"])
-    return BudgetTransaction.objects.create(
-        pool=pool, tipo=BudgetTransaction.Tipo.AJUSTE, valor=delta,
-        demanda_id=demanda_id, activity_id=reserva.activity_id, criado_por=usuario, justificativa=justificativa or "Ajuste de valor autorizado.",
+    return lancar(
+        pool=pool, tipo=BudgetTransaction.Tipo.AJUSTE, valor=delta, usuario=usuario,
+        saldo_anterior=saldo, saldo_posterior=_saldo_disponivel(pool), demand_request_id=demand_request_id,
+        demanda_id=reserva.demanda_id, activity_id=reserva.activity_id,
+        justificativa=justificativa or "Ajuste de valor autorizado.",
     )
 
 
 @transaction.atomic
-def executar(*, demanda_id: str, usuario, valor_executado: Decimal | None = None) -> BudgetTransaction:
+def executar(*, demand_request_id: str, usuario, valor_executado: Decimal | None = None) -> BudgetTransaction:
     """`valor_executado=None` executa o valor reservado por inteiro. Um
     valor menor executa só essa parte e registra a diferença como uma
     `BudgetTransaction` de liberação própria."""
-    valor_reservado = _valor_total_reservado(demanda_id)
+    valor_reservado = _valor_total_reservado(demand_request_id)
     if valor_reservado <= ZERO:
-        raise DemandaInvalidaError(f"Nenhuma reserva encontrada para a demanda {demanda_id!r}.")
+        raise DemandaInvalidaError(f"Nenhuma reserva encontrada para a demanda {demand_request_id!r}.")
 
-    reserva = _transacao_existente(demanda_id, BudgetTransaction.Tipo.RESERVA)
+    reserva = _transacao_existente(demand_request_id, BudgetTransaction.Tipo.RESERVA)
     pool = BudgetPool.objects.select_for_update().get(pk=reserva.pool_id)
-    existente = _transacao_existente(demanda_id, BudgetTransaction.Tipo.EXECUCAO)
+    existente = _transacao_existente(demand_request_id, BudgetTransaction.Tipo.EXECUCAO)
     if existente is not None:
         return existente
-    _rejeitar_se_finalizada(demanda_id, tipos_bloqueantes=[BudgetTransaction.Tipo.LIBERACAO], acao="executada")
+    _rejeitar_se_finalizada(demand_request_id, tipos_bloqueantes=[BudgetTransaction.Tipo.LIBERACAO], acao="executada")
 
     valor_final = valor_reservado if valor_executado is None else valor_executado
     diferenca = valor_reservado - valor_final
 
+    saldo_anterior = _saldo_disponivel(pool)
     pool.valor_comprometido -= valor_reservado
     pool.valor_executado += valor_final
     pool.save(update_fields=["valor_comprometido", "valor_executado"])
-    execucao = BudgetTransaction.objects.create(
-        pool=pool, tipo=BudgetTransaction.Tipo.EXECUCAO, valor=valor_final,
-        demanda_id=demanda_id, activity_id=reserva.activity_id, criado_por=usuario, justificativa="Execução da demanda.",
+    saldo_posterior = _saldo_disponivel(pool)
+    referencias = {
+        "pool": pool, "usuario": usuario, "demand_request_id": demand_request_id,
+        "demanda_id": reserva.demanda_id, "activity_id": reserva.activity_id,
+    }
+    execucao = lancar(
+        tipo=BudgetTransaction.Tipo.EXECUCAO, valor=valor_final, saldo_anterior=saldo_anterior,
+        saldo_posterior=saldo_posterior - max(diferenca, ZERO), justificativa="Execução da demanda.", **referencias,
     )
     if diferenca > ZERO:
-        BudgetTransaction.objects.create(
-            pool=pool, tipo=BudgetTransaction.Tipo.LIBERACAO, valor=diferenca,
-            demanda_id=demanda_id, activity_id=reserva.activity_id, criado_por=usuario,
-            justificativa="Diferença entre valor reservado e valor efetivamente pago na execução.",
+        lancar(
+            tipo=BudgetTransaction.Tipo.LIBERACAO, valor=diferenca, saldo_anterior=saldo_posterior - diferenca,
+            saldo_posterior=saldo_posterior,
+            justificativa="Diferença entre valor reservado e valor efetivamente pago na execução.", **referencias,
         )
     return execucao
 
 
 @transaction.atomic
-def liberar(*, demanda_id: str, usuario, motivo: str) -> BudgetTransaction:
+def liberar(*, demand_request_id: str, usuario, motivo: str) -> BudgetTransaction:
     """Devolve o valor reservado (reserva original + ajustes, se houver) ao
     comprometido do mesmo pool — como nunca toca no pai, a devolução ao
     nível do solicitante já sai correta por construção."""
-    valor_reservado = _valor_total_reservado(demanda_id)
+    valor_reservado = _valor_total_reservado(demand_request_id)
     if valor_reservado <= ZERO:
-        raise DemandaInvalidaError(f"Nenhuma reserva encontrada para a demanda {demanda_id!r}.")
+        raise DemandaInvalidaError(f"Nenhuma reserva encontrada para a demanda {demand_request_id!r}.")
 
-    reserva = _transacao_existente(demanda_id, BudgetTransaction.Tipo.RESERVA)
+    reserva = _transacao_existente(demand_request_id, BudgetTransaction.Tipo.RESERVA)
     pool = BudgetPool.objects.select_for_update().get(pk=reserva.pool_id)
-    existente = _transacao_existente(demanda_id, BudgetTransaction.Tipo.LIBERACAO)
+    existente = _transacao_existente(demand_request_id, BudgetTransaction.Tipo.LIBERACAO)
     if existente is not None:
         return existente
-    _rejeitar_se_finalizada(demanda_id, tipos_bloqueantes=[BudgetTransaction.Tipo.EXECUCAO], acao="liberada")
+    _rejeitar_se_finalizada(demand_request_id, tipos_bloqueantes=[BudgetTransaction.Tipo.EXECUCAO], acao="liberada")
 
+    saldo_anterior = _saldo_disponivel(pool)
     pool.valor_comprometido -= valor_reservado
     pool.save(update_fields=["valor_comprometido"])
-    return BudgetTransaction.objects.create(
-        pool=pool, tipo=BudgetTransaction.Tipo.LIBERACAO, valor=valor_reservado,
-        demanda_id=demanda_id, activity_id=reserva.activity_id, justificativa=motivo, criado_por=usuario,
+    return lancar(
+        pool=pool, tipo=BudgetTransaction.Tipo.LIBERACAO, valor=valor_reservado, usuario=usuario,
+        saldo_anterior=saldo_anterior, saldo_posterior=_saldo_disponivel(pool), demand_request_id=demand_request_id,
+        demanda_id=reserva.demanda_id, activity_id=reserva.activity_id, justificativa=motivo,
     )
 
 
@@ -606,19 +619,20 @@ def remanejar(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal,
         raise DRFValidationError({
             "valor": f"Saldo insuficiente na origem: R$ {saldo_origem} disponível."
         })
+    saldo_destino = _saldo_disponivel(destino)
 
     origem.valor_alocado -= valor
     origem.save(update_fields=["valor_alocado"])
     destino.valor_alocado += valor
     destino.save(update_fields=["valor_alocado"])
 
-    debito = BudgetTransaction.objects.create(
-        pool=origem, tipo=BudgetTransaction.Tipo.REMANEJAMENTO, valor=-valor,
-        justificativa=justificativa, criado_por=usuario,
+    debito = lancar(
+        pool=origem, tipo=BudgetTransaction.Tipo.REMANEJAMENTO, valor=-valor, usuario=usuario,
+        saldo_anterior=saldo_origem, saldo_posterior=_saldo_disponivel(origem), justificativa=justificativa,
     )
-    credito = BudgetTransaction.objects.create(
-        pool=destino, tipo=BudgetTransaction.Tipo.REMANEJAMENTO, valor=valor,
-        justificativa=justificativa, criado_por=usuario,
+    credito = lancar(
+        pool=destino, tipo=BudgetTransaction.Tipo.REMANEJAMENTO, valor=valor, usuario=usuario,
+        saldo_anterior=saldo_destino, saldo_posterior=_saldo_disponivel(destino), justificativa=justificativa,
     )
     return debito, credito
 

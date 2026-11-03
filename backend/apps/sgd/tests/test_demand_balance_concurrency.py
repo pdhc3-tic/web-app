@@ -172,7 +172,7 @@ class TestVerificarDuasTravasPerformance(TransactionTestCase):
         BudgetTransaction.objects.bulk_create([
             BudgetTransaction(
                 pool=allocation, tipo=BudgetTransaction.Tipo.RESERVA,
-                valor=Decimal("10"), demanda_id=f"perf-{i}",
+                valor=Decimal("10"), demand_request_id=f"perf-{i}",
             )
             for i in range(1_000)
         ])

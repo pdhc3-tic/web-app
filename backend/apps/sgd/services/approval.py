@@ -92,6 +92,7 @@ def _faixa(comprometido: Decimal, total: Decimal, limiares) -> str:
     return orcamento_service.faixa_semaforo(orcamento_service.percentual_comprometido(comprometido, total), limiares)
 
 
+@orcamento_service.com_visao_total
 def preview_impacto(demand_request, valor: Decimal, *, origem=None) -> dict:
     """`valor` é o novo valor proposto pelo aprovador — a solicitação já está
     reservada (pré-autorizada/autorizada) pelo valor atual, então só o delta

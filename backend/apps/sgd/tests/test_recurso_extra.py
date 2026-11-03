@@ -622,11 +622,11 @@ def test_saldo_estadual_de_outro_estado_nao_cobre_o_pool(
     assert not BudgetTransfer.objects.exists()
 
 
-def test_pool_com_saldo_negativo_remaneja_o_deficit_inteiro(
+def test_pool_zerado_remaneja_o_necessario_inteiro(
     demanda, pedido_com_parecer, usuario_ugp, allocation_territorial_rn, alocacao_estadual, solicitante_rn,
 ):
     BudgetPool.objects.filter(pk=allocation_territorial_rn.pk).update(
-        valor_alocado=Decimal("200"), valor_comprometido=Decimal("400"),
+        valor_alocado=Decimal("400"), valor_comprometido=Decimal("400"),
     )
 
     resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {
@@ -635,8 +635,8 @@ def test_pool_com_saldo_negativo_remaneja_o_deficit_inteiro(
 
     assert resposta.status_code == 200, resposta.data
     transferencia = BudgetTransfer.objects.get()
-    assert transferencia.valor == Decimal("1200")
-    assert (transferencia.saldo_destino_antes, transferencia.saldo_destino_depois) == (Decimal("-200"), Decimal("1000"))
+    assert transferencia.valor == Decimal("1000")
+    assert (transferencia.saldo_destino_antes, transferencia.saldo_destino_depois) == (Decimal("0"), Decimal("1000"))
     demand_service.submeter_demanda(demanda, usuario=solicitante_rn)
     assert demanda.status == "submetida"
 
@@ -824,7 +824,7 @@ def test_pool_suficiente_na_consulta_e_consumido_antes_do_lock_exige_origem(
 
     def reservar_no_pool():
         budget_service.reservar(
-            pool=allocation_territorial_rn, valor=Decimal("100"), demanda_id="concorrente",
+            pool=allocation_territorial_rn, valor=Decimal("100"), demand_request_id="concorrente",
             usuario=usuario_ugp, justificativa="Reserva concorrente.",
         )
 

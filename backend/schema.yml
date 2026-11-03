@@ -9201,6 +9201,18 @@ components:
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
           title: Valor (R$)
+        saldo_anterior:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          title: Saldo anterior (R$)
+        saldo_posterior:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          title: Saldo posterior (R$)
         demanda_id:
           type: string
           readOnly: true
@@ -9208,6 +9220,13 @@ components:
           title: ID da Demanda
           description: Referência fraca a uma Demand do SGD (apps.sgd) — sem FK de
             propósito, o motor não importa apps.sgd.
+        demand_request_id:
+          type: string
+          readOnly: true
+          nullable: true
+          title: ID da Solicitação
+          description: 'Referência fraca à DemandRequest do SGD: é a chave de idempotência
+            da reserva.'
         justificativa:
           type: string
           readOnly: true
@@ -9224,10 +9243,13 @@ components:
       - allocation
       - criado_em
       - criado_por
+      - demand_request_id
       - demanda_id
       - id
       - justificativa
       - pool
+      - saldo_anterior
+      - saldo_posterior
       - spending_limit
       - tipo
       - valor

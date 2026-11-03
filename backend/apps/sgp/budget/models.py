@@ -112,6 +112,10 @@ class BudgetPool(models.Model):
                 condition=Q(reserva_ugp=False) | Q(nivel="nacional"),
                 name="ck_budget_pool_reserva_ugp_so_nacional",
             ),
+            models.CheckConstraint(
+                condition=Q(valor_alocado__gte=models.F("valor_comprometido") + models.F("valor_executado")),
+                name="ck_budget_pool_saldo_nao_negativo",
+            ),
         ]
         indexes = [
             models.Index(fields=["nivel", "territorio"], name="idx_budgetpool_nivel_territ"),
@@ -276,6 +280,12 @@ class BudgetTransaction(models.Model):
     valor = models.DecimalField(
         max_digits=14, decimal_places=2, verbose_name="Valor (R$)",
     )
+    saldo_anterior = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0, verbose_name="Saldo anterior (R$)",
+    )
+    saldo_posterior = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0, verbose_name="Saldo posterior (R$)",
+    )
     demanda_id = models.CharField(
         max_length=64,
         null=True,
@@ -284,12 +294,22 @@ class BudgetTransaction(models.Model):
         verbose_name="ID da Demanda",
         help_text="Referência fraca a uma Demand do SGD (apps.sgd) — sem FK de propósito, o motor não importa apps.sgd.",
     )
+    demand_request_id = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        default=None,
+        verbose_name="ID da Solicitação",
+        help_text="Referência fraca à DemandRequest do SGD: é a chave de idempotência da reserva.",
+    )
+    ip = models.GenericIPAddressField(null=True, blank=True, verbose_name="IP")
     justificativa = models.TextField(
         blank=True, default="", verbose_name="Justificativa",
     )
+    # PROTECT: o trigger recusa o UPDATE que um SET_NULL faria ao apagar o usuário.
     criado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
+        on_delete=models.PROTECT,
         null=True,
         blank=True,
         verbose_name="Criado por",
@@ -304,6 +324,9 @@ class BudgetTransaction(models.Model):
         ordering = ["-criado_em"]
         indexes = [
             models.Index(fields=["demanda_id", "tipo"], name="idx_budgettx_demanda_tipo"),
+            models.Index(fields=["demand_request_id", "tipo"], name="idx_budgettx_solicitacao_tipo"),
+            models.Index(fields=["pool", "-criado_em"], name="idx_budgettx_pool_criado"),
+            models.Index(fields=["spending_limit", "-criado_em"], name="idx_budgettx_limite_criado"),
         ]
         constraints = [
             models.CheckConstraint(
@@ -455,8 +478,9 @@ class BudgetTransfer(models.Model):
     saldo_origem_depois = models.DecimalField(max_digits=14, decimal_places=2, verbose_name="Saldo da origem depois")
     saldo_destino_antes = models.DecimalField(max_digits=14, decimal_places=2, verbose_name="Saldo do destino antes")
     saldo_destino_depois = models.DecimalField(max_digits=14, decimal_places=2, verbose_name="Saldo do destino depois")
+    # PROTECT: o trigger recusa o UPDATE que um SET_NULL faria ao apagar o usuário.
     aprovado_por = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
         related_name="remanejamentos_aprovados", verbose_name="Aprovado por",
     )
     ip = models.GenericIPAddressField(null=True, blank=True, verbose_name="IP")

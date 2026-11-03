@@ -274,7 +274,7 @@ def _reservar(demand, transicao, *, ator, **_) -> tuple[list, dict | None]:
         # como na checagem acima. Os locks tomados dentro dele também saem, mas a
         # transação é desfeita logo depois e o valor só informa o solicitante.
         with transaction.atomic():
-            for solicitacao in solicitacoes:
+            for solicitacao in balance_service.na_ordem_de_lock(solicitacoes, criar=True):
                 balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=ator, adiar_gravacao=True)
     except SaldoInsuficiente as exc:
         if exc.trava == TRAVA_INDIVIDUAL:
@@ -322,7 +322,7 @@ def _ajustar(demand, transicao, *, ator, ajustes: dict | None = None, excedente_
         key=lambda s: (s.rubrica_id, ajustes.get(s.pk, s.valor_estimado) - s.valor_reservado, s.pk),
     )
     cobriu_excedente = False
-    for solicitacao in ordem:
+    for solicitacao in balance_service.na_ordem_de_lock(ordem):
         novo_valor = ajustes.get(solicitacao.pk, solicitacao.valor_estimado)
         if novo_valor != solicitacao.valor_reservado:
             excedente = balance_service.ZERO
@@ -380,7 +380,7 @@ def _executar(demand, transicao, *, ator, valores_pagos: dict | None = None, **_
             )
     retrato = _retrato(solicitacoes)
 
-    for solicitacao in solicitacoes:
+    for solicitacao in balance_service.na_ordem_de_lock(solicitacoes):
         if solicitacao.valor_pago is None:
             registrar_pagamento(
                 solicitacao, valor_pago=valores_pagos[solicitacao.pk], origem=transicao.origem, usuario=ator,

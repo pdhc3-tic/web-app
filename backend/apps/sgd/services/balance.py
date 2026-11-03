@@ -10,8 +10,6 @@ from dataclasses import dataclass
 from decimal import Decimal
 from itertools import groupby
 
-from django.db import transaction
-
 from apps.core.models.audit_log import AuditLog
 from apps.core.signals.audit import get_audit_context
 from apps.core.utils import formatar_brl
@@ -281,6 +279,16 @@ def reler_reserva_travada(demand_request) -> None:
     reler_reserva(demand_request)
 
 
+def na_ordem_de_lock(solicitacoes, *, criar: bool = False):
+    """Percorre `solicitacoes`, já ordenadas por rubrica, travando ao entrar em cada rubrica todas as
+    linhas de limite dela. Depois da virada do período, uma demanda pode ter reservas em linhas
+    diferentes; travá-las uma a uma, intercaladas com o pool, seguraria o pool esperando um limite."""
+    for rubrica_id, grupo in groupby(solicitacoes, key=lambda s: s.rubrica_id):
+        grupo = list(grupo)
+        orcamento_service.travar_limites_do_lote(grupo, rubrica_id=rubrica_id, criar=criar)
+        yield from grupo
+
+
 def _mover_reserva(demand_request, *, adiar: bool, **campos) -> None:
     for campo, valor in campos.items():
         setattr(demand_request, campo, valor)
@@ -314,7 +322,7 @@ def _registrar_movimento_individual(
     )
 
 
-@transaction.atomic
+@orcamento_service.com_visao_total
 def reservar_duas_travas(*, demand_request, usuario, adiar_gravacao: bool = False) -> None:
     """Idempotente por `demand_request.pk`. Com `adiar_gravacao`, ver
     `gravar_estado_da_reserva`."""
@@ -367,7 +375,7 @@ def reservar_duas_travas(*, demand_request, usuario, adiar_gravacao: bool = Fals
         _mover_reserva(demand_request, adiar=adiar_gravacao, valor_reservado=valor, valor_excedente=ZERO)
 
 
-@transaction.atomic
+@orcamento_service.com_visao_total
 def ajustar_duas_travas(
     *, demand_request, novo_valor: Decimal, usuario, excedente: Decimal = ZERO, adiar_gravacao: bool = False,
 ) -> None:
@@ -444,7 +452,7 @@ def ajustar_duas_travas(
         )
 
 
-@transaction.atomic
+@orcamento_service.com_visao_total
 def liberar_duas_travas(*, demand_request, usuario, motivo: str, adiar_gravacao: bool = False) -> None:
     rubrica = demand_request.rubrica
     solicitante = demand_request.demanda.solicitante
@@ -481,7 +489,7 @@ def liberar_duas_travas(*, demand_request, usuario, motivo: str, adiar_gravacao:
         _mover_reserva(demand_request, adiar=adiar_gravacao, valor_reservado=ZERO, valor_excedente=ZERO)
 
 
-@transaction.atomic
+@orcamento_service.com_visao_total
 def liberar_duas_travas_em_lote(solicitacoes, *, usuario, motivo: str, adiar_gravacao: bool = False) -> None:
     """Libera as reservas de solicitações de várias demandas, de vários solicitantes.
     Liberar uma por uma travaria o pool de um solicitante antes do limite do
@@ -498,7 +506,7 @@ def liberar_duas_travas_em_lote(solicitacoes, *, usuario, motivo: str, adiar_gra
             )
 
 
-@transaction.atomic
+@orcamento_service.com_visao_total
 def executar_duas_travas(*, demand_request, valor_pago: Decimal, usuario, adiar_gravacao: bool = False) -> bool:
     """Devolve False quando a reserva já tinha sido executada: o saldo não muda."""
     rubrica = demand_request.rubrica
@@ -519,14 +527,16 @@ def executar_duas_travas(*, demand_request, valor_pago: Decimal, usuario, adiar_
         limite.valor_executado += executado_no_limite
         limite.save(update_fields=["valor_comprometido", "valor_executado"])
         Tipo = orcamento_service.TipoTransacao
+        diferenca_no_limite = no_limite - executado_no_limite
         if no_limite > ZERO:
             orcamento_service.registrar_movimento_do_limite(
                 limite=limite, tipo=Tipo.EXECUCAO, valor=executado_no_limite, demand_request=demand_request,
                 usuario=usuario, justificativa="Execução da demanda.",
+                saldo_posterior=limite.saldo_disponivel - diferenca_no_limite,
             )
-        if no_limite > executado_no_limite:
+        if diferenca_no_limite > ZERO:
             orcamento_service.registrar_movimento_do_limite(
-                limite=limite, tipo=Tipo.LIBERACAO, valor=no_limite - executado_no_limite,
+                limite=limite, tipo=Tipo.LIBERACAO, valor=diferenca_no_limite,
                 demand_request=demand_request, usuario=usuario,
                 justificativa="Diferença entre valor reservado e valor efetivamente pago na execução.",
             )

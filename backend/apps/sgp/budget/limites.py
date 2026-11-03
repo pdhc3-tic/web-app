@@ -20,6 +20,7 @@ from apps.core.models.user_profile import UserProfile
 from apps.core.services.audit import log_audit
 from apps.core.signals.audit import get_audit_context
 from apps.core.utils import formatar_brl, get_config
+from apps.sgp.budget.ledger import efeito_no_saldo, lancar
 from apps.sgp.budget.models import BudgetPool, BudgetTransaction, SpendingLimit
 
 ZERO = Decimal("0")
@@ -177,7 +178,7 @@ def linha_da_reserva(chave_da_reserva: str) -> int | None:
     ser refeita em outro período."""
     return (
         BudgetTransaction.objects
-        .filter(demanda_id=chave_da_reserva, tipo=Tipo.RESERVA, spending_limit__isnull=False)
+        .filter(demand_request_id=chave_da_reserva, tipo=Tipo.RESERVA, spending_limit__isnull=False)
         .order_by("-pk")
         .values_list("spending_limit_id", flat=True)
         .first()
@@ -197,7 +198,7 @@ def travar_linhas_do_lote(*, rubrica_id, user_ids, chaves_das_reservas, data: da
         SpendingLimit.objects.select_for_update(of=("self",))
         .filter(
             Q(pk__in=BudgetTransaction.objects.filter(
-                tipo=Tipo.RESERVA, demanda_id__in=list(chaves_das_reservas), spending_limit__isnull=False,
+                tipo=Tipo.RESERVA, demand_request_id__in=list(chaves_das_reservas), spending_limit__isnull=False,
             ).values("spending_limit_id"))
             | Q(
                 escopo=Escopo.INDIVIDUAL, rubrica_id=rubrica_id, user_id__in=list(user_ids),
@@ -210,12 +211,19 @@ def travar_linhas_do_lote(*, rubrica_id, user_ids, chaves_das_reservas, data: da
 
 
 def registrar_movimento(
-    *, limite: SpendingLimit, tipo: str, valor: Decimal, usuario, demanda_id: str | None = None,
-    activity_id: int | None = None, justificativa: str = "",
+    *, limite: SpendingLimit, tipo: str, valor: Decimal, usuario, demand_request_id: str | None = None,
+    demanda_id: str | None = None, activity_id: int | None = None, justificativa: str = "",
+    saldo_posterior: Decimal | None = None,
 ) -> BudgetTransaction:
-    return BudgetTransaction.objects.create(
-        spending_limit=limite, tipo=tipo, valor=valor, demanda_id=demanda_id, activity_id=activity_id,
-        justificativa=justificativa, criado_por=usuario,
+    """Chamado depois de mover o limite. `saldo_posterior` só precisa ser informado quando um
+    movimento vira mais de um lançamento (execução com diferença), porque o saldo em memória já
+    é o final."""
+    if saldo_posterior is None:
+        saldo_posterior = limite.saldo_disponivel
+    return lancar(
+        spending_limit=limite, tipo=tipo, valor=valor, usuario=usuario, saldo_posterior=saldo_posterior,
+        saldo_anterior=saldo_posterior - efeito_no_saldo(tipo, valor), demand_request_id=demand_request_id,
+        demanda_id=demanda_id, activity_id=activity_id, justificativa=justificativa,
     )
 
 

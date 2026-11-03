@@ -17,6 +17,7 @@ from setup.tasks import send_email_notification
 from apps.core.models.notifications import Notification, TipoNotificacao
 from apps.core.models.user import User
 from apps.sgp.services.workplan_dashboard import dashboard_actions, enrich_dashboard_action
+from apps.sgp.budget.rls import visao_total
 from apps.sgp.budget.services import limiares_semaforo, pools_em_vermelho
 from apps.sgp.cache import set_power_bi_snapshot
 from apps.sgp.services.workplan_export import workplan_export_rows
@@ -242,7 +243,11 @@ def check_budget_threshold_alert() -> int:
         notifications_sent = 0
         panel_url = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/sgp/orcamento"
 
-        for pool in pools_em_vermelho():
+        # A task não passa pelo middleware que define o papel da sessão: sem isso, o RLS
+        # esconderia todos os pools e o alerta nunca sairia, sem erro nenhum.
+        with visao_total():
+            vermelhos = pools_em_vermelho()
+        for pool in vermelhos:
             message = (
                 f"O pool de {pool.rubrica.nome} "
                 f"({pool.get_nivel_display()}) está em vermelho: "

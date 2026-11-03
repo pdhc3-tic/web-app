@@ -88,7 +88,7 @@ def test_reservar_pool_reserva_na_alocacao_da_meta_da_atividade(
     outro_pool.refresh_from_db()
     assert allocation_territorial_rn.valor_comprometido == Decimal("300")
     assert outro_pool.valor_comprometido == Decimal("0")
-    transacao = BudgetTransaction.objects.get(demanda_id=str(demand_request_rn.pk))
+    transacao = BudgetTransaction.objects.get(demand_request_id=str(demand_request_rn.pk))
     assert transacao.activity_id == demand_request_rn.demanda.activity_id
 
 

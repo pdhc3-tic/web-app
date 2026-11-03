@@ -22,13 +22,13 @@ def _efeito_na_alocacao(transacao) -> dict:
     if transacao.tipo in (Tipo.RESERVA, Tipo.AJUSTE):
         return {"comprometido": valor, "executado": ZERO, "alocado": ZERO}
     if transacao.tipo == Tipo.EXECUCAO:
-        reservado = orcamento_service.total_reservado(transacao.demanda_id)
+        reservado = orcamento_service.total_reservado(transacao.demand_request_id)
         return {"comprometido": -reservado, "executado": valor, "alocado": ZERO}
     if transacao.tipo == Tipo.LIBERACAO:
         # A liberação que acompanha uma execução só registra a diferença: o
         # comprometido já saiu por inteiro na execução.
         ja_executada = BudgetTransaction.objects.filter(
-            demanda_id=transacao.demanda_id, tipo=Tipo.EXECUCAO, pool__isnull=False,
+            demand_request_id=transacao.demand_request_id, tipo=Tipo.EXECUCAO, pool__isnull=False,
         ).exists()
         return {"comprometido": ZERO if ja_executada else -valor, "executado": ZERO, "alocado": ZERO}
     return {"comprometido": ZERO, "executado": ZERO, "alocado": valor}
@@ -36,11 +36,10 @@ def _efeito_na_alocacao(transacao) -> dict:
 
 @receiver(post_save, sender=BudgetTransaction)
 def auditar_movimentacao_de_saldo(sender, instance, created, **kwargs):
-    # A transação é INSERT-only: cada criação é uma movimentação. `demanda_id`
-    # guarda o pk da solicitação (DemandRequest), não o da demanda.
-    if not created or instance.pool_id is None or not (instance.demanda_id or "").isdigit():
+    # A transação é INSERT-only: cada criação é uma movimentação.
+    if not created or instance.pool_id is None or not (instance.demand_request_id or "").isdigit():
         return
-    solicitacao = DemandRequest.objects.filter(pk=int(instance.demanda_id)).first()
+    solicitacao = DemandRequest.objects.filter(pk=int(instance.demand_request_id)).first()
     if solicitacao is None:
         return
 

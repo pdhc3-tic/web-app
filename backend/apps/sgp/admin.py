@@ -214,9 +214,10 @@ class BudgetPoolAdmin(admin.ModelAdmin):
 class BudgetTransactionAdmin(admin.ModelAdmin):
     list_display = ["pool", "spending_limit", "tipo", "valor", "demanda_id", "criado_por", "criado_em"]
     list_filter = ["tipo"]
-    search_fields = ["demanda_id", "justificativa"]
+    search_fields = ["demanda_id", "demand_request_id", "justificativa"]
     readonly_fields = [
-        "pool", "spending_limit", "activity", "tipo", "valor", "demanda_id",
+        "pool", "spending_limit", "activity", "tipo", "valor", "saldo_anterior", "saldo_posterior",
+        "demanda_id", "demand_request_id", "ip",
         "justificativa", "criado_por", "criado_em",
     ]
 
