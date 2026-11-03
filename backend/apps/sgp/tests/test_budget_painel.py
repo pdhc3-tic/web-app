@@ -419,7 +419,7 @@ class TestPainelPerformance:
         from django.core.cache import cache
 
         from apps.core.models.system_config import SystemConfig, TipoConfiguracao
-        from apps.sgp.services.budget import limiares_semaforo
+        from apps.sgp.budget.services import limiares_semaforo
 
         for chave, valor in (("budget_alert_yellow_pct", "70"), ("budget_alert_red_pct", "90")):
             SystemConfig.objects.get_or_create(chave=chave, defaults={"valor": valor, "tipo": TipoConfiguracao.INTEGER})

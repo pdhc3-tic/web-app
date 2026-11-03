@@ -10,7 +10,7 @@ from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.core.services.permissions import user_has_role
 from apps.sgp.filters import BudgetRubricaFilter
 from apps.sgp.models import BudgetAllocation, BudgetRubrica, WorkPlanMeta
-from apps.sgp.serializers_budget import (
+from apps.sgp.budget.serializers import (
     BudgetAllocationCreateSerializer,
     BudgetAllocationSerializer,
     BudgetAllocationUpdateSerializer,
@@ -22,7 +22,7 @@ from apps.sgp.serializers_budget import (
     SaldoConsultaQuerySerializer,
     SaldoConsultaSerializer,
 )
-from apps.sgp.services import budget as budget_service
+from apps.sgp.budget import services as budget_service
 
 
 class BudgetAllocationViewSet(viewsets.ViewSet):
@@ -185,7 +185,7 @@ class BudgetPainelView(APIView):
 
     Nível exibido por linha (nacional/estadual/territorial) resolvido pelo perfil do
     usuário — `estado`/`territorio` fazem drill-down dentro do que o RBAC permite, ver
-    `services.budget.resolver_nivel_painel`.
+    `budget.services.resolver_nivel_painel`.
 
     Sem filtro: 5 queries (4 pro ADT/ACR — nível padrão territorial, sem "distribuído").
     Cada `meta`/`rubrica`/`estado`/`territorio` informado soma +1 query de validação de

@@ -411,7 +411,7 @@ def test_submeter_demanda_limite_zerado_pela_propria_demanda_mostra_valores_e_na
 def test_submeter_demanda_pool_zerado_pela_propria_demanda_mostra_valores_e_nao_diz_que_zerou(
     demand_rascunho_rn, solicitante_rn, activity_rn, rubrica_diarias, limite_individual_rn,
 ):
-    from apps.sgp.services.budget import BLOQUEIO_SALDO_ZERO
+    from apps.sgp.budget.services import BLOQUEIO_SALDO_ZERO
     from apps.sgp.tests.factories import BudgetAllocationFactory
 
     BudgetAllocationFactory(

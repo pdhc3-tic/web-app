@@ -11,7 +11,7 @@ from rest_framework.exceptions import PermissionDenied
 
 from apps.core.tests.factories import RoleFactory, UserFactory
 from apps.sgp.models import BudgetAllocation, BudgetTransaction
-from apps.sgp.services import budget as budget_service
+from apps.sgp.budget import services as budget_service
 from apps.sgp.services.access import resolver_escopo
 from apps.sgp.tests.factories import (
     BudgetAllocationFactory,

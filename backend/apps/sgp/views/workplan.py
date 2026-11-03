@@ -60,11 +60,11 @@ from apps.sgp.services.workplan_dashboard import (
     dashboard_tree,
     enrich_dashboard_action,
 )
-from apps.sgp.services import budget as budget_service
-from apps.sgp.services.budget import limiares_semaforo
+from apps.sgp.budget import services as budget_service
+from apps.sgp.budget.services import limiares_semaforo
 from apps.sgp.services.apuracao import RecorteAtividades
 from apps.sgp.services.visao_indicador import visao_por_indicador
-from apps.sgp.serializers_budget import BudgetRubricaOrcamentoSerializer
+from apps.sgp.budget.serializers import BudgetRubricaOrcamentoSerializer
 
 logger = logging.getLogger("apps.sgp.views.workplan")
 

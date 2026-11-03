@@ -5,7 +5,7 @@ import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
-from apps.sgp.models.budget import BudgetTransaction
+from apps.sgp.budget.models import BudgetTransaction
 
 pytestmark = pytest.mark.django_db
 

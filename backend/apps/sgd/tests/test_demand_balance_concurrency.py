@@ -145,7 +145,7 @@ class TestSubmissaoConcorrenteEstouraPoolTerritorial(TransactionTestCase):
 
 class TestVerificarDuasTravasPerformance(TransactionTestCase):
     def setUp(self):
-        from apps.sgp.models.budget import BudgetTransaction
+        from apps.sgp.budget.models import BudgetTransaction
 
         territory = TerritoryFactory(nome="Território Performance SGD", estados=["RN"])
         state = StateFactory(sigla="RN", nome="Rio Grande do Norte")

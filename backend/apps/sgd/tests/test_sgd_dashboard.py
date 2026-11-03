@@ -10,7 +10,7 @@ from django.utils import timezone
 from apps.sgd.models.demand import Demand
 from apps.sgd.services import business_days
 from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
-from apps.sgp.models.budget import BudgetAllocation
+from apps.sgp.budget.models import BudgetAllocation
 from apps.sgp.tests.factories import ActivityFactory, BudgetAllocationFactory, WorkPlanAcaoFactory
 
 pytestmark = pytest.mark.django_db

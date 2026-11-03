@@ -4908,7 +4908,7 @@ paths:
 
         Nível exibido por linha (nacional/estadual/territorial) resolvido pelo perfil do
         usuário — `estado`/`territorio` fazem drill-down dentro do que o RBAC permite, ver
-        `services.budget.resolver_nivel_painel`.
+        `budget.services.resolver_nivel_painel`.
 
         Sem filtro: 5 queries (4 pro ADT/ACR — nível padrão territorial, sem "distribuído").
         Cada `meta`/`rubrica`/`estado`/`territorio` informado soma +1 query de validação de
@@ -8765,7 +8765,7 @@ components:
       type: object
       description: |-
         Valida o payload de criação — a lógica de teto/concorrência fica no
-        service (`services.budget.criar_alocacao`), não aqui.
+        service (`budget.services.criar_alocacao`), não aqui.
       properties:
         rubrica_id:
           type: integer
@@ -8792,7 +8792,7 @@ components:
       type: object
       description: |-
         Uma célula da matriz Meta × Rubrica — espelha o dict devolvido por
-        `services.budget.painel_orcamento`.
+        `budget.services.painel_orcamento`.
       properties:
         meta:
           $ref: '#/components/schemas/WorkPlanMetaNested'
@@ -8880,7 +8880,7 @@ components:
       type: object
       description: |-
         Uma linha da resposta de `GET .../orcamento/` — espelha o dict
-        devolvido por `services.budget.orcamento_por_meta`.
+        devolvido por `budget.services.orcamento_por_meta`.
       properties:
         rubrica:
           $ref: '#/components/schemas/BudgetRubricaNested'

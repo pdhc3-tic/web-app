@@ -8,7 +8,7 @@ Este documento descreve o contrato que o SGP expõe ao SGD (Sistema de Gestão d
 - `BudgetAllocation`: a distribuição por Meta/Rubrica/Nível (`nacional`/`estadual`/`territorial`), com `valor_alocado`, `valor_comprometido` e `valor_executado`.
 - `BudgetTransaction`: trilha de auditoria imutável de cada movimento (`reserva`/`execucao`/`liberacao`/`remanejamento`).
 
-## O motor (`apps.sgp.services.budget`)
+## O motor (`apps.sgp.budget.services`)
 
 Seis funções públicas, chamadas em resposta ao ciclo de vida de uma demanda no SGD:
 

@@ -17,7 +17,7 @@ from apps.sgp.services.apuracao import (
     expressao_quantidade_realizada,
     filtro_de_atividades,
 )
-from apps.sgp.services.budget import LimiaresSemaforo, faixa_semaforo, limiares_semaforo
+from apps.sgp.budget.services import LimiaresSemaforo, faixa_semaforo, limiares_semaforo
 from apps.sgp.services.workplan_access import filter_workplan_actions_for_user
 
 

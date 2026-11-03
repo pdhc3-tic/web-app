@@ -3,7 +3,7 @@ from pathlib import Path
 
 RAIZ_SGD = Path(__file__).resolve().parent.parent
 PORTA_ORCAMENTO = RAIZ_SGD / "services" / "orcamento.py"
-MOTOR_DO_SGP = {"apps.sgp.services.budget", "apps.sgp.models.budget"}
+MOTOR_DO_SGP = {"apps.sgp.budget.services", "apps.sgp.budget.models"}
 
 
 def _modulos_importados(arquivo: Path) -> set[str]:
@@ -15,7 +15,7 @@ def _modulos_importados(arquivo: Path) -> set[str]:
             modulos.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
             modulos.add(node.module)
-            # `from apps.sgp.services import budget` importa o submódulo pelo nome.
+            # `from apps.sgp.budget import services` importa o submódulo pelo nome.
             modulos.update(f"{node.module}.{alias.name}" for alias in node.names)
     return modulos
 

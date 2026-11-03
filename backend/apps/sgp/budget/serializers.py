@@ -53,7 +53,7 @@ class BudgetAllocationSerializer(serializers.ModelSerializer):
 
 class BudgetRubricaOrcamentoSerializer(serializers.Serializer):
     """Uma linha da resposta de `GET .../orcamento/` — espelha o dict
-    devolvido por `services.budget.orcamento_por_meta`."""
+    devolvido por `budget.services.orcamento_por_meta`."""
 
     rubrica = BudgetRubricaNestedSerializer()
     valor_aprovado = serializers.DecimalField(max_digits=14, decimal_places=2)
@@ -66,7 +66,7 @@ class BudgetRubricaOrcamentoSerializer(serializers.Serializer):
 
 class BudgetAllocationCreateSerializer(serializers.Serializer):
     """Valida o payload de criação — a lógica de teto/concorrência fica no
-    service (`services.budget.criar_alocacao`), não aqui."""
+    service (`budget.services.criar_alocacao`), não aqui."""
 
     rubrica_id = serializers.PrimaryKeyRelatedField(
         queryset=BudgetRubrica.objects.filter(ativo=True), source="rubrica",
@@ -155,7 +155,7 @@ class LimiaresSemaforoSerializer(serializers.Serializer):
 
 class BudgetPainelLinhaSerializer(serializers.Serializer):
     """Uma célula da matriz Meta × Rubrica — espelha o dict devolvido por
-    `services.budget.painel_orcamento`."""
+    `budget.services.painel_orcamento`."""
 
     meta = WorkPlanMetaNestedSerializer()
     rubrica = BudgetRubricaNestedSerializer()

@@ -1,7 +1,7 @@
 """Porta do SGD para o motor de saldo do SGP.
 
-É o único módulo do SGD que importa `apps.sgp.services.budget` e
-`apps.sgp.models.budget`. O motor ainda localiza a alocação pela Meta; aqui ela
+É o único módulo do SGD que importa `apps.sgp.budget.services` e
+`apps.sgp.budget.models`. O motor ainda localiza a alocação pela Meta; aqui ela
 é resolvida a partir da atividade da demanda, e nenhuma assinatura do SGD a
 recebe. Erros do motor saem daqui como exceções de domínio do SGD.
 
@@ -18,8 +18,8 @@ from django.core.exceptions import PermissionDenied
 
 from apps.core.utils import formatar_brl
 from apps.sgd.exceptions import TRAVA_TERRITORIAL, RegraDeNegocio, SaldoInsuficiente
-from apps.sgp.models.budget import BudgetAllocation, BudgetTransaction
-from apps.sgp.services import budget as budget_service
+from apps.sgp.budget.models import BudgetAllocation, BudgetTransaction
+from apps.sgp.budget import services as budget_service
 
 ZERO = Decimal("0")
 

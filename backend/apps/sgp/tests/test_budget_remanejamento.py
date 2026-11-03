@@ -8,7 +8,7 @@ from django.test import TransactionTestCase
 
 from apps.core.tests.factories import StateFactory, UserFactory
 from apps.sgp.models import BudgetAllocation, BudgetTransaction
-from apps.sgp.services import budget as budget_service
+from apps.sgp.budget import services as budget_service
 from apps.sgp.tests.factories import BudgetAllocationFactory, BudgetRubricaFactory, WorkPlanMetaFactory
 
 pytestmark = pytest.mark.django_db

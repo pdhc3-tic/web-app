@@ -28,7 +28,7 @@ from django.utils import timezone
 
 from apps.core.tests.factories import UserFactory
 from apps.sgp.models import UPF, Activity, MembroFamilia, WorkPlanAcao
-from apps.sgp.services.budget import limiares_semaforo
+from apps.sgp.budget.services import limiares_semaforo
 from apps.sgp.tests.factories import (
     ActivityFactory,
     WorkPlanAcaoFactory,

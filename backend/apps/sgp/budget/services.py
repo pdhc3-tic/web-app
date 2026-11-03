@@ -632,7 +632,7 @@ def remanejar(*, origem: BudgetAllocation, destino: BudgetAllocation, valor: Dec
 # ---------------------------------------------------------------------------
 # Consulta de saldo pro endpoint HTTP — resolve nível pelo perfil do usuário
 # sem passar por instâncias de Meta/Rubrica/Estado separadas, pra caber em
-# poucas queries (ver views/budget.py).
+# poucas queries (ver budget/views.py).
 # ---------------------------------------------------------------------------
 
 def resolver_nivel_do_usuario(user) -> tuple[str, str | None, Territory | None]:

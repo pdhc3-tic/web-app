@@ -2,7 +2,7 @@ from django.conf import settings
 from django.db import models
 from django.db.models import ProtectedError, Q
 
-from .workplan import WorkPlanMeta
+from apps.sgp.models.workplan import WorkPlanMeta
 
 
 class BudgetRubrica(models.Model):

@@ -68,7 +68,7 @@ from apps.sgp.models import (
 )
 from apps.sgp.tasks import refresh_power_bi_snapshot
 from apps.sgp.models.activity import filtro_atrasada
-from apps.sgp.models.budget import BudgetAllocation, BudgetTransaction, BudgetTransfer
+from apps.sgp.budget.models import BudgetAllocation, BudgetTransaction, BudgetTransfer
 from apps.sgp.models.google_calendar_sync_event import GoogleCalendarSyncEvent
 from apps.sgp.services.workplan_dashboard import (
     dashboard_actions,
