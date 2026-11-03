@@ -1,8 +1,13 @@
 "use client";
 
+import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { Badge } from "@/app/components/ui/Badge/Badge";
 import { formatDate } from "@/app/lib/datetime";
-import { badgeStatusDaDemanda, type Demanda } from "@/app/lib/demandas";
+import {
+  badgeStatusDaDemanda,
+  type Demanda,
+  type OrdenacaoDemandas,
+} from "@/app/lib/demandas";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import { NomeDoSolicitante } from "./NomeDoSolicitante";
 
@@ -11,8 +16,21 @@ type DemandasTabelaProps = {
   selecionada: number | null;
   /** Painel aberto: só as colunas mantidas (tabela 6.3 do UX/UI). */
   compacta: boolean;
+  /** Ordenação atual pelo `?ordering=` do servidor (#364). */
+  ordenacao?: OrdenacaoDemandas;
+  /** `undefined` volta ao padrão do backend (`-criado_em`). */
+  onOrdenar?: (proxima: OrdenacaoDemandas | undefined) => void;
   onSelecionar: (id: number) => void;
 };
+
+/** Próximo passo do ciclo da coluna Valor: sem ordenação → asc → desc → sem. */
+function proximaOrdenacaoPorValor(
+  atual: OrdenacaoDemandas | undefined,
+): OrdenacaoDemandas | undefined {
+  if (atual === "valor_estimado_total") return "-valor_estimado_total";
+  if (atual === "-valor_estimado_total") return undefined;
+  return "valor_estimado_total";
+}
 
 const TH = "px-4 py-2.5 text-left text-2xs font-medium uppercase tracking-[0.06em] text-text-muted";
 const TD = "px-4 py-3 align-middle";
@@ -96,8 +114,22 @@ export function DemandasTabela({
   demandas,
   selecionada,
   compacta,
+  ordenacao,
+  onOrdenar,
   onSelecionar,
 }: DemandasTabelaProps) {
+  const direcaoValor =
+    ordenacao === "valor_estimado_total"
+      ? "ascending"
+      : ordenacao === "-valor_estimado_total"
+        ? "descending"
+        : "none";
+  const IconeOrdenacao =
+    ordenacao === "valor_estimado_total"
+      ? ArrowUp
+      : ordenacao === "-valor_estimado_total"
+        ? ArrowDown
+        : ArrowUpDown;
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-surface">
       <table className="w-full text-sm" data-testid="demandas-tabela">
@@ -111,7 +143,21 @@ export function DemandasTabela({
                 <th className={TH}>Território</th>
                 <th className={TH}>Meta PT</th>
                 <th className={TH}>Criada em</th>
-                <th className={`${TH} text-right`}>Valor estimado</th>
+                <th className={`${TH} text-right`} aria-sort={direcaoValor}>
+                  {onOrdenar ? (
+                    <button
+                      type="button"
+                      onClick={() => onOrdenar(proximaOrdenacaoPorValor(ordenacao))}
+                      className="ml-auto inline-flex items-center gap-1 text-2xs font-medium uppercase tracking-[0.06em] text-text-muted hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                      data-testid="demandas-ordenar-valor"
+                    >
+                      Valor estimado
+                      <IconeOrdenacao className="h-3 w-3" aria-hidden />
+                    </button>
+                  ) : (
+                    "Valor estimado"
+                  )}
+                </th>
               </>
             )}
           </tr>

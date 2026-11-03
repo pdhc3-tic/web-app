@@ -3,7 +3,12 @@
 import { useSession } from "next-auth/react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { perfisDecisoresSgd } from "@/app/lib/auth/roles";
-import { fetchContagemFila, listDemandas, type PaginaDemandas } from "@/app/lib/demandas";
+import {
+  fetchContagemFila,
+  listDemandas,
+  type OrdenacaoDemandas,
+  type PaginaDemandas,
+} from "@/app/lib/demandas";
 import { qk } from "@/app/lib/queryKeys";
 
 /**
@@ -32,12 +37,13 @@ export function useContagemFila() {
  * `?aguardando_minha_acao=true`, pela mesma regra da contagem, uma página por
  * vez (#323). A página anterior fica na tela enquanto a próxima carrega.
  */
-export function useFilaDemandas(pagina: PaginaDemandas) {
+export function useFilaDemandas(pagina: PaginaDemandas, ordenacao?: OrdenacaoDemandas) {
   const contagem = useContagemFila();
 
   const lista = useQuery({
-    queryKey: qk.demandas.filaPagina(pagina),
-    queryFn: ({ signal }) => listDemandas({ aguardandoMinhaAcao: true, pagina }, signal),
+    queryKey: qk.demandas.filaPagina(pagina, ordenacao),
+    queryFn: ({ signal }) =>
+      listDemandas({ aguardandoMinhaAcao: true, pagina, ordenacao }, signal),
     enabled: contagem.decide,
     staleTime: 30_000,
     placeholderData: keepPreviousData,

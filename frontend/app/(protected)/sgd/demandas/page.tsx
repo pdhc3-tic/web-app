@@ -13,7 +13,11 @@ import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { Pagination } from "@/app/components/ui/Pagination/Pagination";
 import { ApiError } from "@/app/lib/api";
 import { getAtividade, listAcoes } from "@/app/lib/atividades";
-import { DEMANDAS_POR_PAGINA, listDemandas } from "@/app/lib/demandas";
+import {
+  DEMANDAS_POR_PAGINA,
+  listDemandas,
+  type OrdenacaoDemandas,
+} from "@/app/lib/demandas";
 import {
   CHAVES_FILTRO,
   filtrosDaUrl,
@@ -125,7 +129,17 @@ function PainelDemandasView() {
     };
   }, [searchParams]);
 
-  const fila = useFilaDemandas(pagina);
+  // Ordenação por valor estimado da listagem master-detail (#364), passada ao
+  // backend como `?ordering=` (BE-10). Fica na URL para o deep link reproduzir
+  // a mesma ordem no retorno pelo histórico.
+  const ordenacao: OrdenacaoDemandas | undefined = useMemo(() => {
+    const bruto = searchParams.get("ordering");
+    return bruto === "valor_estimado_total" || bruto === "-valor_estimado_total"
+      ? bruto
+      : undefined;
+  }, [searchParams]);
+
+  const fila = useFilaDemandas(pagina, ordenacao);
   // Filtros do `DemandFilter` na URL vêm do drill-down do painel de execução
   // (#297): a tela deixa a fila/visão geral e pede ao backend só esse recorte.
   const recorte = useMemo(
@@ -144,15 +158,15 @@ function PainelDemandasView() {
   // `keepPreviousData`: ao trocar de página, a anterior fica na tela até a
   // próxima chegar, sem voltar ao skeleton nem "pular" o layout.
   const porRecorte = useQuery({
-    queryKey: qk.demandas.recorte(recorte, pagina),
-    queryFn: ({ signal }) => listDemandas({ filtros: recorte, pagina }, signal),
+    queryKey: qk.demandas.recorte(recorte, pagina, ordenacao),
+    queryFn: ({ signal }) => listDemandas({ filtros: recorte, pagina, ordenacao }, signal),
     enabled: temRecorte,
     staleTime: 30_000,
     placeholderData: keepPreviousData,
   });
   const todas = useQuery({
-    queryKey: qk.demandas.lista([], pagina),
-    queryFn: ({ signal }) => listDemandas({ pagina }, signal),
+    queryKey: qk.demandas.lista([], pagina, ordenacao),
+    queryFn: ({ signal }) => listDemandas({ pagina, ordenacao }, signal),
     enabled: visao === "todas" && !temRecorte,
     staleTime: 30_000,
     placeholderData: keepPreviousData,
@@ -302,6 +316,10 @@ function PainelDemandasView() {
                 demandas={demandas}
                 selecionada={selecionada}
                 compacta={selecionada !== null}
+                ordenacao={ordenacao}
+                onOrdenar={(proxima) =>
+                  navegar({ ordering: proxima ?? null, offset: null, demanda: null })
+                }
                 onSelecionar={(id) => navegar({ demanda: String(id) })}
               />
               {total > DEMANDAS_POR_PAGINA || pagina.offset > 0 || pagina.limit !== DEMANDAS_POR_PAGINA ? (

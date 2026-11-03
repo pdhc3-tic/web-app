@@ -286,6 +286,12 @@ export async function fetchContagemFila(signal?: AbortSignal): Promise<ContagemF
 }
 
 /**
+ * Campos aceitos pelo `ORDENACOES_DA_LISTAGEM` do `DemandViewSet` (BE-10).
+ * O `-` prefixa a ordem decrescente, no padrão do `ordering` do DRF.
+ */
+export type OrdenacaoDemandas = "valor_estimado_total" | "-valor_estimado_total";
+
+/**
  * GET /api/v1/sgd/demandas/ — listagem, já no escopo do perfil (o Articulador
  * só enxerga as Submetidas do próprio estado).
  *
@@ -296,6 +302,8 @@ export async function fetchContagemFila(signal?: AbortSignal): Promise<ContagemF
  * - `filtros`: os do `DemandFilter` do BE-5 (atividade, ação, território,
  *   período…) — o drill-down do painel de execução (#297) leva o recorte do
  *   painel para a lista mostrar as demandas que compõem o custo exibido.
+ * - `ordenacao`: por `valor_estimado_total` do servidor (BE-10). Sem ela, o
+ *   backend usa `-criado_em`.
  * - `pagina`: `offset`/`limit` do `DemandPagination`. Sem ela, vem a página
  *   cheia do backend (200).
  */
@@ -304,6 +312,7 @@ export async function listDemandas(
     status?: StatusDemanda[];
     aguardandoMinhaAcao?: boolean;
     filtros?: Record<string, string | undefined>;
+    ordenacao?: OrdenacaoDemandas;
     pagina?: PaginaDemandas;
   } = {},
   signal?: AbortSignal,
@@ -314,6 +323,7 @@ export async function listDemandas(
   for (const [chave, valor] of Object.entries(params.filtros ?? {})) {
     if (valor) qs.set(chave, valor);
   }
+  if (params.ordenacao) qs.set("ordering", params.ordenacao);
   return lerListaDemandas(qs, signal, params.pagina);
 }
 
