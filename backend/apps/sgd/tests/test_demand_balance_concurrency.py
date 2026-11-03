@@ -9,7 +9,7 @@ from apps.core.tests.factories import MunicipalityFactory, RoleFactory, StateFac
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
 from apps.sgd.tests.factories import DemandFactory, DemandIndividualLimitFactory, DemandRequestFactory
-from apps.sgp.tests.factories import ActivityFactory, BudgetAllocationFactory, BudgetRubricaFactory, WorkPlanAcaoFactory
+from apps.sgp.tests.factories import ActivityFactory, BudgetPoolFactory, BudgetRubricaFactory, WorkPlanAcaoFactory
 
 
 class TestReservarDuasTravasConcorrente(TransactionTestCase):
@@ -33,8 +33,8 @@ class TestReservarDuasTravasConcorrente(TransactionTestCase):
             municipio=municipio, tecnico_responsavel=self.solicitante, acao=WorkPlanAcaoFactory(),
         )
         rubrica = BudgetRubricaFactory(slug="rubrica-concorrencia-sgd")
-        BudgetAllocationFactory(
-            meta=activity.acao.meta, rubrica=rubrica, territorio=territory, valor_alocado=Decimal("1000"),
+        BudgetPoolFactory(
+            rubrica=rubrica, territorio=territory, valor_alocado=Decimal("1000"),
         )
         self.limite = DemandIndividualLimitFactory(
             solicitante=self.solicitante, rubrica=rubrica, valor_limite=Decimal("100"),
@@ -97,8 +97,8 @@ class TestSubmissaoConcorrenteEstouraPoolTerritorial(TransactionTestCase):
             municipio=municipio, tecnico_responsavel=self.solicitante_1, acao=WorkPlanAcaoFactory(),
         )
         rubrica = BudgetRubricaFactory(slug="rubrica-territorial-concorrencia-sgd")
-        BudgetAllocationFactory(
-            meta=activity.acao.meta, rubrica=rubrica, territorio=territory, valor_alocado=Decimal("100"),
+        BudgetPoolFactory(
+            rubrica=rubrica, territorio=territory, valor_alocado=Decimal("100"),
         )
         DemandIndividualLimitFactory(solicitante=self.solicitante_1, rubrica=rubrica, valor_limite=Decimal("1000"))
         DemandIndividualLimitFactory(solicitante=self.solicitante_2, rubrica=rubrica, valor_limite=Decimal("1000"))
@@ -159,8 +159,8 @@ class TestVerificarDuasTravasPerformance(TransactionTestCase):
         )
         self.activity = activity
         self.rubrica = BudgetRubricaFactory(slug="rubrica-performance-sgd")
-        allocation = BudgetAllocationFactory(
-            meta=activity.acao.meta, rubrica=self.rubrica, territorio=territory, valor_alocado=Decimal("1_000_000"),
+        allocation = BudgetPoolFactory(
+            rubrica=self.rubrica, territorio=territory, valor_alocado=Decimal("1_000_000"),
         )
         DemandIndividualLimitFactory(
             solicitante=self.solicitante, rubrica=self.rubrica, valor_limite=Decimal("1_000_000"),
@@ -170,7 +170,7 @@ class TestVerificarDuasTravasPerformance(TransactionTestCase):
         # o que não reflete a carga real que o índice precisa aguentar em produção.
         BudgetTransaction.objects.bulk_create([
             BudgetTransaction(
-                allocation=allocation, tipo=BudgetTransaction.Tipo.RESERVA,
+                pool=allocation, tipo=BudgetTransaction.Tipo.RESERVA,
                 valor=Decimal("10"), demanda_id=f"perf-{i}",
             )
             for i in range(1_000)
@@ -179,7 +179,7 @@ class TestVerificarDuasTravasPerformance(TransactionTestCase):
     def test_verificacao_das_duas_travas_responde_em_menos_de_300ms(self):
         inicio = monotonic()
         check = balance_service.verificar_duas_travas(
-            solicitante=self.solicitante, rubrica=self.rubrica, valor=Decimal("100"), activity=self.activity,
+            solicitante=self.solicitante, rubrica=self.rubrica, valor=Decimal("100")
         )
         duracao = monotonic() - inicio
 

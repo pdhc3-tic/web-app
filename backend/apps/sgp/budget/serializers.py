@@ -3,7 +3,7 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.core.models import State, Territory
-from apps.sgp.models import BudgetAllocation, BudgetRubrica, BudgetTransaction, WorkPlanMeta
+from apps.sgp.models import BudgetPool, BudgetRubrica, BudgetTransaction, WorkPlanMeta
 from apps.sgp.serializers.common import EstadoNestedSerializer
 
 
@@ -26,9 +26,9 @@ class BudgetRubricaSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class BudgetAllocationSerializer(serializers.ModelSerializer):
-    """Leitura de uma alocação — usada na resposta das rotas de escrita e
-    no `detalhamento` do orçamento por Meta."""
+class BudgetPoolSerializer(serializers.ModelSerializer):
+    """Leitura de um pool — usada na resposta das rotas de escrita e no
+    `detalhamento` do orçamento por rubrica."""
 
     rubrica = BudgetRubricaNestedSerializer(read_only=True)
     estado = EstadoNestedSerializer(read_only=True, allow_null=True)
@@ -36,9 +36,9 @@ class BudgetAllocationSerializer(serializers.ModelSerializer):
     saldo_disponivel = serializers.SerializerMethodField()
 
     class Meta:
-        model = BudgetAllocation
+        model = BudgetPool
         fields = [
-            "id", "meta", "rubrica", "nivel", "estado", "territorio",
+            "id", "rubrica", "nivel", "estado", "territorio",
             "valor_alocado", "valor_comprometido", "valor_executado",
             "reserva_ugp", "saldo_disponivel", "criado_por", "criado_em",
         ]
@@ -53,7 +53,7 @@ class BudgetAllocationSerializer(serializers.ModelSerializer):
 
 class BudgetRubricaOrcamentoSerializer(serializers.Serializer):
     """Uma linha da resposta de `GET .../orcamento/` — espelha o dict
-    devolvido por `budget.services.orcamento_por_meta`."""
+    devolvido por `budget.services.orcamento_por_rubrica`."""
 
     rubrica = BudgetRubricaNestedSerializer()
     valor_aprovado = serializers.DecimalField(max_digits=14, decimal_places=2)
@@ -61,17 +61,17 @@ class BudgetRubricaOrcamentoSerializer(serializers.Serializer):
     valor_comprometido = serializers.DecimalField(max_digits=14, decimal_places=2)
     valor_executado = serializers.DecimalField(max_digits=14, decimal_places=2)
     saldo_disponivel = serializers.DecimalField(max_digits=14, decimal_places=2)
-    detalhamento = BudgetAllocationSerializer(many=True)
+    detalhamento = BudgetPoolSerializer(many=True)
 
 
-class BudgetAllocationCreateSerializer(serializers.Serializer):
+class BudgetPoolCreateSerializer(serializers.Serializer):
     """Valida o payload de criação — a lógica de teto/concorrência fica no
-    service (`budget.services.criar_alocacao`), não aqui."""
+    service (`budget.services.criar_pool`), não aqui."""
 
     rubrica_id = serializers.PrimaryKeyRelatedField(
         queryset=BudgetRubrica.objects.filter(ativo=True), source="rubrica",
     )
-    nivel = serializers.ChoiceField(choices=BudgetAllocation.Nivel.choices)
+    nivel = serializers.ChoiceField(choices=BudgetPool.Nivel.choices)
     estado_id = serializers.PrimaryKeyRelatedField(
         queryset=State.objects.all(), source="estado",
         required=False, allow_null=True, default=None,
@@ -85,39 +85,42 @@ class BudgetAllocationCreateSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         nivel = attrs["nivel"]
-        if nivel == BudgetAllocation.Nivel.NACIONAL and (attrs.get("estado") or attrs.get("territorio")):
+        if nivel == BudgetPool.Nivel.NACIONAL and (attrs.get("estado") or attrs.get("territorio")):
             raise serializers.ValidationError(
                 "Nível nacional não aceita estado nem território."
             )
-        if nivel == BudgetAllocation.Nivel.ESTADUAL and not attrs.get("estado"):
+        if nivel == BudgetPool.Nivel.ESTADUAL and not attrs.get("estado"):
             raise serializers.ValidationError({"estado_id": "Obrigatório para nível estadual."})
-        if nivel == BudgetAllocation.Nivel.ESTADUAL and attrs.get("territorio"):
+        if nivel == BudgetPool.Nivel.ESTADUAL and attrs.get("territorio"):
             raise serializers.ValidationError({"territorio_id": "Deve ser nulo para nível estadual."})
-        if nivel == BudgetAllocation.Nivel.TERRITORIAL and not attrs.get("territorio"):
+        if nivel == BudgetPool.Nivel.TERRITORIAL and not attrs.get("territorio"):
             raise serializers.ValidationError({"territorio_id": "Obrigatório para nível territorial."})
-        if attrs.get("reserva_ugp") and nivel != BudgetAllocation.Nivel.NACIONAL:
+        if attrs.get("reserva_ugp") and nivel != BudgetPool.Nivel.NACIONAL:
             raise serializers.ValidationError({
                 "reserva_ugp": "Reserva própria da UGP só é aplicável ao nível nacional."
             })
         return attrs
 
 
-class BudgetAllocationUpdateSerializer(serializers.Serializer):
+class BudgetPoolUpdateSerializer(serializers.Serializer):
     valor_alocado = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
 
 
 class BudgetTransactionSerializer(serializers.ModelSerializer):
+    allocation = serializers.IntegerField(
+        source="pool_id", read_only=True, help_text="Mesmo valor de `pool`, enquanto o front migra.",
+    )
+
     class Meta:
         model = BudgetTransaction
         fields = [
-            "id", "allocation", "tipo", "valor", "demanda_id",
+            "id", "pool", "allocation", "activity", "tipo", "valor", "demanda_id",
             "justificativa", "criado_por", "criado_em",
         ]
         read_only_fields = fields
 
 
 class SaldoConsultaQuerySerializer(serializers.Serializer):
-    meta = serializers.IntegerField()
     rubrica = serializers.SlugField()
     valor = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
 
@@ -131,21 +134,18 @@ class SaldoConsultaSerializer(serializers.Serializer):
     nivel = serializers.CharField()
     estado = EstadoNestedSerializer(allow_null=True)
     territorio = TerritorioNestedSerializer(allow_null=True)
-    allocation_id = serializers.IntegerField(allow_null=True)
+    pool_id = serializers.IntegerField(allow_null=True)
+    allocation_id = serializers.IntegerField(
+        source="pool_id", allow_null=True, help_text="Mesmo valor de `pool_id`, enquanto o front migra.",
+    )
     motivo_bloqueio = serializers.CharField(allow_null=True)
 
 
 class RemanejamentoCreateSerializer(serializers.Serializer):
-    origem_allocation = serializers.PrimaryKeyRelatedField(queryset=BudgetAllocation.objects.all())
-    destino_allocation = serializers.PrimaryKeyRelatedField(queryset=BudgetAllocation.objects.all())
+    origem_allocation = serializers.PrimaryKeyRelatedField(queryset=BudgetPool.objects.all())
+    destino_allocation = serializers.PrimaryKeyRelatedField(queryset=BudgetPool.objects.all())
     valor = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
     justificativa = serializers.CharField()
-
-
-class WorkPlanMetaNestedSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = WorkPlanMeta
-        fields = ["id", "numero", "titulo"]
 
 
 class LimiaresSemaforoSerializer(serializers.Serializer):
@@ -154,17 +154,30 @@ class LimiaresSemaforoSerializer(serializers.Serializer):
 
 
 class BudgetPainelLinhaSerializer(serializers.Serializer):
-    """Uma célula da matriz Meta × Rubrica — espelha o dict devolvido por
-    `budget.services.painel_orcamento`."""
+    """Uma linha da matriz Rubrica × Nível: um pool, espelhando o dict devolvido por
+    `budget.services.matriz_orcamento_para_usuario`."""
 
-    meta = WorkPlanMetaNestedSerializer()
+    id = serializers.IntegerField(help_text="Id do pool, o que a origem do excedente e a do recurso extra enviam.")
     rubrica = BudgetRubricaNestedSerializer()
     nivel = serializers.CharField()
+    estado = EstadoNestedSerializer(allow_null=True)
+    territorio = TerritorioNestedSerializer(allow_null=True)
+    reserva_ugp = serializers.BooleanField()
     valor_aprovado = serializers.DecimalField(max_digits=14, decimal_places=2)
     valor_distribuido = serializers.DecimalField(max_digits=14, decimal_places=2)
     valor_comprometido = serializers.DecimalField(max_digits=14, decimal_places=2)
     valor_executado = serializers.DecimalField(max_digits=14, decimal_places=2)
-    saldo_disponivel = serializers.DecimalField(max_digits=14, decimal_places=2)
+    valor_executado_meta = serializers.DecimalField(
+        max_digits=14, decimal_places=2, required=False,
+        help_text="Só com `?meta=`: o executado deste pool nas atividades da Meta.",
+    )
+    saldo_disponivel = serializers.DecimalField(
+        max_digits=14, decimal_places=2, help_text="Aprovado menos distribuído, comprometido e executado.",
+    )
+    saldo_pool = serializers.DecimalField(
+        max_digits=14, decimal_places=2,
+        help_text="Alocado menos comprometido e executado: o que o remanejamento aceita sair deste pool.",
+    )
     semaforo = serializers.ChoiceField(choices=["verde", "amarelo", "vermelho"])
     alerta_80 = serializers.BooleanField()
     limiares_semaforo = LimiaresSemaforoSerializer()
@@ -172,7 +185,8 @@ class BudgetPainelLinhaSerializer(serializers.Serializer):
 
 class BudgetPainelQuerySerializer(serializers.Serializer):
     """Filtros de `GET .../orcamento/painel/` — `estado`/`territorio` fazem drill-down
-    de nível dentro do que o perfil do usuário permite (ver `resolver_nivel_painel`)."""
+    dentro do que o perfil do usuário permite (ver `resolver_nivel_painel`). `meta` não
+    recorta o saldo, só acrescenta o executado dela."""
 
     meta = serializers.PrimaryKeyRelatedField(
         queryset=WorkPlanMeta.objects.all(), required=False,
@@ -186,3 +200,4 @@ class BudgetPainelQuerySerializer(serializers.Serializer):
     territorio = serializers.PrimaryKeyRelatedField(
         queryset=Territory.objects.all(), required=False,
     )
+    nivel = serializers.ChoiceField(choices=BudgetPool.Nivel.choices, required=False)

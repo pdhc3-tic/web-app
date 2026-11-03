@@ -10,67 +10,66 @@ from django.test import TransactionTestCase
 from rest_framework.exceptions import PermissionDenied
 
 from apps.core.tests.factories import RoleFactory, UserFactory
-from apps.sgp.models import BudgetAllocation, BudgetTransaction
+from apps.sgp.models import BudgetPool, BudgetTransaction
 from apps.sgp.budget import services as budget_service
 from apps.sgp.services.access import resolver_escopo
 from apps.sgp.tests.factories import (
-    BudgetAllocationFactory,
+    BudgetPoolFactory,
     BudgetRubricaFactory,
-    WorkPlanMetaFactory,
 )
 
 pytestmark = pytest.mark.django_db
 
 Tipo = BudgetTransaction.Tipo
-Nivel = BudgetAllocation.Nivel
+Nivel = BudgetPool.Nivel
 
 
 class TestReservar:
     def test_reservar_incrementa_comprometido(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("1000"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("1000"))
         usuario = UserFactory()
 
         tx = budget_service.reservar(
-            allocation=allocation, valor=Decimal("300"), demanda_id="demanda-1", usuario=usuario,
+            pool=allocation, valor=Decimal("300"), demanda_id="demanda-1", usuario=usuario,
         )
 
         allocation.refresh_from_db()
         assert allocation.valor_comprometido == Decimal("300")
         assert tx.tipo == Tipo.RESERVA
-        assert BudgetTransaction.objects.filter(allocation=allocation, tipo=Tipo.RESERVA).count() == 1
+        assert BudgetTransaction.objects.filter(pool=allocation, tipo=Tipo.RESERVA).count() == 1
 
     def test_reservar_acima_do_saldo(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("100"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("100"))
         usuario = UserFactory()
 
         with pytest.raises(budget_service.SaldoInsuficienteError) as exc_info:
             budget_service.reservar(
-                allocation=allocation, valor=Decimal("150"), demanda_id="demanda-2", usuario=usuario,
+                pool=allocation, valor=Decimal("150"), demanda_id="demanda-2", usuario=usuario,
             )
         assert "100" in str(exc_info.value)
 
         allocation.refresh_from_db()
         assert allocation.valor_comprometido == Decimal("0")
-        assert not BudgetTransaction.objects.filter(allocation=allocation).exists()
+        assert not BudgetTransaction.objects.filter(pool=allocation).exists()
 
     def test_reservar_valor_negativo_rejeitado(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("1000"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("1000"))
         usuario = UserFactory()
 
         with pytest.raises(ValueError):
             budget_service.reservar(
-                allocation=allocation, valor=Decimal("-50"), demanda_id="demanda-2b", usuario=usuario,
+                pool=allocation, valor=Decimal("-50"), demanda_id="demanda-2b", usuario=usuario,
             )
 
         allocation.refresh_from_db()
         assert allocation.valor_comprometido == Decimal("0")
 
     def test_reservar_valor_exato_do_saldo(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("500"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("500"))
         usuario = UserFactory()
 
         budget_service.reservar(
-            allocation=allocation, valor=Decimal("500"), demanda_id="demanda-3", usuario=usuario,
+            pool=allocation, valor=Decimal("500"), demanda_id="demanda-3", usuario=usuario,
         )
 
         allocation.refresh_from_db()
@@ -79,10 +78,10 @@ class TestReservar:
 
 class TestExecutar:
     def test_executar_move_comprometido_para_executado(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("1000"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("1000"))
         usuario = UserFactory()
         budget_service.reservar(
-            allocation=allocation, valor=Decimal("400"), demanda_id="demanda-4", usuario=usuario,
+            pool=allocation, valor=Decimal("400"), demanda_id="demanda-4", usuario=usuario,
         )
 
         tx = budget_service.executar(demanda_id="demanda-4", usuario=usuario)
@@ -94,10 +93,10 @@ class TestExecutar:
         assert tx.valor == Decimal("400")
 
     def test_executar_apos_liberar_falha(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("1000"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("1000"))
         usuario = UserFactory()
         budget_service.reservar(
-            allocation=allocation, valor=Decimal("300"), demanda_id="demanda-4b", usuario=usuario,
+            pool=allocation, valor=Decimal("300"), demanda_id="demanda-4b", usuario=usuario,
         )
         budget_service.liberar(demanda_id="demanda-4b", usuario=usuario, motivo="cancelada")
 
@@ -105,10 +104,10 @@ class TestExecutar:
             budget_service.executar(demanda_id="demanda-4b", usuario=usuario)
 
     def test_executar_com_valor_pago_menor_libera_diferenca(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("1000"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("1000"))
         usuario = UserFactory()
         budget_service.reservar(
-            allocation=allocation, valor=Decimal("400"), demanda_id="demanda-4c", usuario=usuario,
+            pool=allocation, valor=Decimal("400"), demanda_id="demanda-4c", usuario=usuario,
         )
 
         tx = budget_service.executar(demanda_id="demanda-4c", usuario=usuario, valor_executado=Decimal("250"))
@@ -121,10 +120,10 @@ class TestExecutar:
 
 class TestAjustarReserva:
     def test_ajustar_para_valor_maior_incrementa_comprometido(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("1000"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("1000"))
         usuario = UserFactory()
         budget_service.reservar(
-            allocation=allocation, valor=Decimal("300"), demanda_id="demanda-ajuste-1", usuario=usuario,
+            pool=allocation, valor=Decimal("300"), demanda_id="demanda-ajuste-1", usuario=usuario,
         )
 
         tx = budget_service.ajustar_reserva(
@@ -137,10 +136,10 @@ class TestAjustarReserva:
         assert tx.valor == Decimal("200")
 
     def test_ajustar_para_valor_menor_libera_diferenca(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("1000"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("1000"))
         usuario = UserFactory()
         budget_service.reservar(
-            allocation=allocation, valor=Decimal("500"), demanda_id="demanda-ajuste-2", usuario=usuario,
+            pool=allocation, valor=Decimal("500"), demanda_id="demanda-ajuste-2", usuario=usuario,
         )
 
         budget_service.ajustar_reserva(demanda_id="demanda-ajuste-2", novo_valor=Decimal("200"), usuario=usuario)
@@ -149,10 +148,10 @@ class TestAjustarReserva:
         assert allocation.valor_comprometido == Decimal("200")
 
     def test_ajustar_acima_do_saldo_disponivel_falha(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("1000"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("1000"))
         usuario = UserFactory()
         budget_service.reservar(
-            allocation=allocation, valor=Decimal("300"), demanda_id="demanda-ajuste-3", usuario=usuario,
+            pool=allocation, valor=Decimal("300"), demanda_id="demanda-ajuste-3", usuario=usuario,
         )
 
         with pytest.raises(budget_service.SaldoInsuficienteError):
@@ -161,10 +160,10 @@ class TestAjustarReserva:
             )
 
     def test_ajustar_apos_executar_falha(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("1000"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("1000"))
         usuario = UserFactory()
         budget_service.reservar(
-            allocation=allocation, valor=Decimal("300"), demanda_id="demanda-ajuste-4", usuario=usuario,
+            pool=allocation, valor=Decimal("300"), demanda_id="demanda-ajuste-4", usuario=usuario,
         )
         budget_service.executar(demanda_id="demanda-ajuste-4", usuario=usuario)
 
@@ -175,10 +174,10 @@ class TestAjustarReserva:
         """`executar` some o comprometido pelo total reservado (reserva +
         ajustes) — não só o valor original da reserva, senão o comprometido
         da alocação divergiria da soma real das transactions."""
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("1000"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("1000"))
         usuario = UserFactory()
         budget_service.reservar(
-            allocation=allocation, valor=Decimal("300"), demanda_id="demanda-ajuste-5", usuario=usuario,
+            pool=allocation, valor=Decimal("300"), demanda_id="demanda-ajuste-5", usuario=usuario,
         )
         budget_service.ajustar_reserva(demanda_id="demanda-ajuste-5", novo_valor=Decimal("450"), usuario=usuario)
 
@@ -193,19 +192,18 @@ class TestLiberar:
     def test_liberar_devolve_ao_solicitante(self, territory_rn, state_rn):
         # estadual (o "pai") nunca deve ser tocado — nem pela reserva, nem
         # pela liberação. Só a territorial (o solicitante) se move.
-        meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
-        estadual = BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.ESTADUAL,
+        estadual = BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.ESTADUAL,
             estado=state_rn, territorio=None, valor_alocado=Decimal("1000"),
         )
-        territorial = BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.TERRITORIAL,
+        territorial = BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.TERRITORIAL,
             territorio=territory_rn, valor_alocado=Decimal("500"),
         )
         usuario = UserFactory()
         budget_service.reservar(
-            allocation=territorial, valor=Decimal("200"), demanda_id="demanda-5", usuario=usuario,
+            pool=territorial, valor=Decimal("200"), demanda_id="demanda-5", usuario=usuario,
         )
 
         budget_service.liberar(demanda_id="demanda-5", usuario=usuario, motivo="Demanda cancelada.")
@@ -216,10 +214,10 @@ class TestLiberar:
         assert estadual.valor_comprometido == Decimal("0")
 
     def test_liberar_depois_de_ajuste_libera_valor_total_reservado(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("1000"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("1000"))
         usuario = UserFactory()
         budget_service.reservar(
-            allocation=allocation, valor=Decimal("300"), demanda_id="demanda-ajuste-liberar", usuario=usuario,
+            pool=allocation, valor=Decimal("300"), demanda_id="demanda-ajuste-liberar", usuario=usuario,
         )
         budget_service.ajustar_reserva(
             demanda_id="demanda-ajuste-liberar", novo_valor=Decimal("450"), usuario=usuario,
@@ -231,10 +229,10 @@ class TestLiberar:
         assert allocation.valor_comprometido == Decimal("0")
 
     def test_liberar_apos_executar_falha(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("1000"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("1000"))
         usuario = UserFactory()
         budget_service.reservar(
-            allocation=allocation, valor=Decimal("300"), demanda_id="demanda-5b", usuario=usuario,
+            pool=allocation, valor=Decimal("300"), demanda_id="demanda-5b", usuario=usuario,
         )
         budget_service.executar(demanda_id="demanda-5b", usuario=usuario)
 
@@ -244,14 +242,14 @@ class TestLiberar:
 
 class TestIdempotencia:
     def test_reservar_e_idempotente(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("1000"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("1000"))
         usuario = UserFactory()
 
         tx1 = budget_service.reservar(
-            allocation=allocation, valor=Decimal("300"), demanda_id="demanda-6", usuario=usuario,
+            pool=allocation, valor=Decimal("300"), demanda_id="demanda-6", usuario=usuario,
         )
         tx2 = budget_service.reservar(
-            allocation=allocation, valor=Decimal("300"), demanda_id="demanda-6", usuario=usuario,
+            pool=allocation, valor=Decimal("300"), demanda_id="demanda-6", usuario=usuario,
         )
 
         assert tx1.pk == tx2.pk
@@ -260,10 +258,10 @@ class TestIdempotencia:
         assert allocation.valor_comprometido == Decimal("300")
 
     def test_executar_e_idempotente(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("1000"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("1000"))
         usuario = UserFactory()
         budget_service.reservar(
-            allocation=allocation, valor=Decimal("300"), demanda_id="demanda-7", usuario=usuario,
+            pool=allocation, valor=Decimal("300"), demanda_id="demanda-7", usuario=usuario,
         )
 
         tx1 = budget_service.executar(demanda_id="demanda-7", usuario=usuario)
@@ -274,10 +272,10 @@ class TestIdempotencia:
         assert allocation.valor_executado == Decimal("300")
 
     def test_liberar_e_idempotente(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("1000"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("1000"))
         usuario = UserFactory()
         budget_service.reservar(
-            allocation=allocation, valor=Decimal("300"), demanda_id="demanda-8", usuario=usuario,
+            pool=allocation, valor=Decimal("300"), demanda_id="demanda-8", usuario=usuario,
         )
 
         tx1 = budget_service.liberar(demanda_id="demanda-8", usuario=usuario, motivo="x")
@@ -290,32 +288,32 @@ class TestIdempotencia:
 
 class TestVerificarSaldosCommand:
     def test_comando_verificar_saldos_detecta_divergencia(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("1000"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("1000"))
         usuario = UserFactory()
         budget_service.reservar(
-            allocation=allocation, valor=Decimal("300"), demanda_id="demanda-9", usuario=usuario,
+            pool=allocation, valor=Decimal("300"), demanda_id="demanda-9", usuario=usuario,
         )
 
         # corrompe direto no banco, sem passar pelo motor.
-        BudgetAllocation.objects.filter(pk=allocation.pk).update(valor_comprometido=Decimal("999"))
+        BudgetPool.objects.filter(pk=allocation.pk).update(valor_comprometido=Decimal("999"))
 
         with pytest.raises(CommandError):
             call_command("verificar_saldos")
 
     def test_comando_verificar_saldos_passa_sem_divergencia(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("1000"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("1000"))
         usuario = UserFactory()
         budget_service.reservar(
-            allocation=allocation, valor=Decimal("300"), demanda_id="demanda-10", usuario=usuario,
+            pool=allocation, valor=Decimal("300"), demanda_id="demanda-10", usuario=usuario,
         )
 
         call_command("verificar_saldos")  # não levanta
 
     def test_comando_verificar_saldos_passa_com_ajuste_e_execucao_parcial(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("1000"))
+        allocation = BudgetPoolFactory(valor_alocado=Decimal("1000"))
         usuario = UserFactory()
         budget_service.reservar(
-            allocation=allocation, valor=Decimal("300"), demanda_id="demanda-11", usuario=usuario,
+            pool=allocation, valor=Decimal("300"), demanda_id="demanda-11", usuario=usuario,
         )
         budget_service.ajustar_reserva(demanda_id="demanda-11", novo_valor=Decimal("500"), usuario=usuario)
         budget_service.executar(demanda_id="demanda-11", usuario=usuario, valor_executado=Decimal("350"))
@@ -345,7 +343,7 @@ class TestReservaConcorrente(TransactionTestCase):
 
     def setUp(self):
         self.usuario = UserFactory()
-        self.allocation = BudgetAllocationFactory(valor_alocado=Decimal("100"))
+        self.pool = BudgetPoolFactory(valor_alocado=Decimal("100"))
 
     def test_reserva_concorrente_respeita_saldo(self):
         resultados = []
@@ -354,7 +352,7 @@ class TestReservaConcorrente(TransactionTestCase):
             connection.close()
             try:
                 budget_service.reservar(
-                    allocation=self.allocation, valor=Decimal("60"),
+                    pool=self.pool, valor=Decimal("60"),
                     demanda_id=demanda_id, usuario=self.usuario,
                 )
                 resultados.append("ok")
@@ -369,8 +367,8 @@ class TestReservaConcorrente(TransactionTestCase):
         t2.join()
 
         assert sorted(resultados) == ["falhou", "ok"]
-        self.allocation.refresh_from_db()
-        assert self.allocation.valor_comprometido <= Decimal("100")
+        self.pool.refresh_from_db()
+        assert self.pool.valor_comprometido <= Decimal("100")
 
 
 def test_adt_sem_territorio_nao_vaza_orcamento():

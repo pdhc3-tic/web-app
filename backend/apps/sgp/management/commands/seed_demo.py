@@ -68,7 +68,7 @@ from apps.sgp.models import (
 )
 from apps.sgp.tasks import refresh_power_bi_snapshot
 from apps.sgp.models.activity import filtro_atrasada
-from apps.sgp.budget.models import BudgetAllocation, BudgetTransaction, BudgetTransfer
+from apps.sgp.budget.models import BudgetPool, BudgetTransaction, BudgetTransfer
 from apps.sgp.models.google_calendar_sync_event import GoogleCalendarSyncEvent
 from apps.sgp.services.workplan_dashboard import (
     dashboard_actions,
@@ -723,8 +723,8 @@ class Command(BaseCommand):
                     caminho.unlink()
 
         with transaction.atomic():
-            # O SGD sai primeiro: Demand.activity e BudgetAllocation.rubrica são
-            # PROTECT, assim como as alocações do BudgetTransfer do excedente.
+            # O SGD sai primeiro: Demand.activity e BudgetPool.rubrica são
+            # PROTECT, assim como os pools do BudgetTransfer do excedente.
             # ApprovalStep, BudgetTransaction e BudgetTransfer não deixam apagar
             # por instância, mas o delete em massa passa. O AuditLog fica (trigger).
             with connection.cursor() as cursor:
@@ -736,7 +736,7 @@ class Command(BaseCommand):
             ArloImport.objects.all().delete()
             BudgetTransaction.objects.all().delete()
             BudgetTransfer.objects.all().delete()
-            BudgetAllocation.objects.all().delete()
+            BudgetPool.objects.all().delete()
             Notification.objects.filter(modulo_origem="sgd").delete()
             PowerBIToken.objects.all().delete()
             GoogleCalendarSyncEvent.objects.all().delete()

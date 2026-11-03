@@ -1,9 +1,9 @@
-"""Agregação e regras de teto do orçamento por Meta/Rubrica."""
+"""Pools de saldo por rubrica e nível: distribuição, motor de reserva e painel."""
 
 from dataclasses import dataclass
 from decimal import Decimal
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError, Q, QuerySet, Sum
 from django.db.models.functions import Coalesce
 from rest_framework.exceptions import PermissionDenied
@@ -13,9 +13,9 @@ from apps.core.models import Territory
 from apps.core.models.user_profile import UserProfile
 from apps.core.services.permissions import user_has_role, user_states, user_territories
 from apps.core.utils import get_config
-from apps.sgp.models import BudgetAllocation, BudgetRubrica, BudgetTransaction, WorkPlanMeta
+from apps.sgp.models import BudgetPool, BudgetRubrica, BudgetTransaction
 
-Nivel = BudgetAllocation.Nivel
+Nivel = BudgetPool.Nivel
 ZERO = Decimal("0")
 
 
@@ -110,12 +110,12 @@ def orcamento_detalhamento_scope(user) -> Q | None:
 def _saldo_disponivel_matriz(
     aprovado: Decimal, distribuido: Decimal, comprometido: Decimal, executado: Decimal,
 ) -> Decimal:
-    """`saldo_disponivel` das 5 colunas de §5.3.3. Compartilhado por `orcamento_por_meta`
-    e `painel_orcamento`."""
+    """`saldo_disponivel` das 5 colunas de §5.3.3. Compartilhado por `orcamento_por_rubrica`,
+    `painel_orcamento` e `matriz_orcamento`."""
     return aprovado - distribuido - comprometido - executado
 
 
-def orcamento_por_meta(meta: WorkPlanMeta, user) -> list[dict]:
+def orcamento_por_rubrica(user) -> list[dict]:
     """Uma entrada por rubrica ativa — valores nacionais/distribuídos agregados
     globalmente (não é dado sensível por território) e `detalhamento`
     (linhas estaduais/territoriais) recortado pelo escopo do usuário.
@@ -126,45 +126,29 @@ def orcamento_por_meta(meta: WorkPlanMeta, user) -> list[dict]:
         BudgetRubrica.objects.filter(ativo=True)
         .annotate(
             valor_aprovado=Coalesce(
-                Sum(
-                    "alocacoes__valor_alocado",
-                    filter=Q(alocacoes__meta=meta, alocacoes__nivel=Nivel.NACIONAL),
-                ),
-                ZERO,
+                Sum("pools__valor_alocado", filter=Q(pools__nivel=Nivel.NACIONAL)), ZERO,
             ),
             valor_distribuido=Coalesce(
-                Sum(
-                    "alocacoes__valor_alocado",
-                    filter=Q(alocacoes__meta=meta, alocacoes__nivel=Nivel.ESTADUAL),
-                ),
-                ZERO,
+                Sum("pools__valor_alocado", filter=Q(pools__nivel=Nivel.ESTADUAL)), ZERO,
             ),
             valor_comprometido=Coalesce(
-                Sum(
-                    "alocacoes__valor_comprometido",
-                    filter=Q(alocacoes__meta=meta, alocacoes__nivel=Nivel.NACIONAL),
-                ),
-                ZERO,
+                Sum("pools__valor_comprometido", filter=Q(pools__nivel=Nivel.NACIONAL)), ZERO,
             ),
             valor_executado=Coalesce(
-                Sum(
-                    "alocacoes__valor_executado",
-                    filter=Q(alocacoes__meta=meta, alocacoes__nivel=Nivel.NACIONAL),
-                ),
-                ZERO,
+                Sum("pools__valor_executado", filter=Q(pools__nivel=Nivel.NACIONAL)), ZERO,
             ),
         )
         .order_by("ordem")
     )
 
-    detalhamento_qs = BudgetAllocation.objects.filter(meta=meta).exclude(
+    detalhamento_qs = BudgetPool.objects.exclude(
         nivel=Nivel.NACIONAL
     ).select_related("rubrica", "estado", "territorio")
     if detalhamento_scope is not None:
         detalhamento_qs = detalhamento_qs.filter(detalhamento_scope)
-    detalhamento_por_rubrica: dict[int, list[BudgetAllocation]] = {}
-    for alocacao in detalhamento_qs:
-        detalhamento_por_rubrica.setdefault(alocacao.rubrica_id, []).append(alocacao)
+    detalhamento_por_rubrica: dict[int, list[BudgetPool]] = {}
+    for pool in detalhamento_qs:
+        detalhamento_por_rubrica.setdefault(pool.rubrica_id, []).append(pool)
 
     resultado = []
     for rubrica in rubricas:
@@ -191,15 +175,15 @@ def orcamento_por_meta(meta: WorkPlanMeta, user) -> list[dict]:
 # Distribuição — teto por nível, concorrência via select_for_update.
 # ---------------------------------------------------------------------------
 
-def _saldo_disponivel(allocation: BudgetAllocation) -> Decimal:
-    return allocation.valor_alocado - allocation.valor_comprometido - allocation.valor_executado
+def _saldo_disponivel(pool: BudgetPool) -> Decimal:
+    return pool.valor_alocado - pool.valor_comprometido - pool.valor_executado
 
 
-def _linha_pai(*, meta, rubrica, nivel: str, territorio=None, estado=None) -> BudgetAllocation | None:
-    """A alocação de nível imediatamente acima que 'financia' esta.
+def _linha_pai(*, rubrica, nivel: str, territorio=None, estado=None) -> BudgetPool | None:
+    """O pool de nível imediatamente acima que 'financia' este.
 
-    territorial → a estadual do mesmo (meta, rubrica, estado do território).
-    estadual → a nacional do mesmo (meta, rubrica).
+    territorial → o estadual da mesma rubrica, no estado do território.
+    estadual → o nacional da mesma rubrica.
     nacional → não tem pai (é o teto absoluto, o total aprovado no TED).
     """
     if nivel == Nivel.TERRITORIAL:
@@ -207,29 +191,27 @@ def _linha_pai(*, meta, rubrica, nivel: str, territorio=None, estado=None) -> Bu
         if not estados_do_territorio:
             return None
         # .first() com order_by explícito: só é ambíguo se o território
-        # cobrir >1 estado com alocação estadual própria — caso raro, mas
+        # cobrir >1 estado com pool estadual próprio — caso raro, mas
         # sem UniqueConstraint que garanta 1 só aqui (ao contrário do nacional).
-        return BudgetAllocation.objects.filter(
-            meta=meta, rubrica=rubrica, nivel=Nivel.ESTADUAL,
+        return BudgetPool.objects.filter(
+            rubrica=rubrica, nivel=Nivel.ESTADUAL,
             estado__sigla__in=estados_do_territorio,
         ).order_by("pk").first()
     if nivel == Nivel.ESTADUAL:
-        # A UniqueConstraint de BudgetAllocation garante no máximo 1 linha
-        # nacional por (meta, rubrica) — .first() aqui nunca é ambíguo.
-        return BudgetAllocation.objects.filter(
-            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL,
-        ).first()
+        # A UniqueConstraint de BudgetPool garante no máximo 1 linha nacional
+        # por rubrica — .first() aqui nunca é ambíguo.
+        return BudgetPool.objects.filter(rubrica=rubrica, nivel=Nivel.NACIONAL).first()
     return None
 
 
-def _peers_sob_mesmo_pai(*, meta, rubrica, nivel: str, pai: BudgetAllocation, exclude_pk=None) -> QuerySet:
-    """Outras alocações do mesmo nível que também consomem o saldo de `pai`.
+def _peers_sob_mesmo_pai(*, rubrica, nivel: str, pai: BudgetPool, exclude_pk=None) -> QuerySet:
+    """Outros pools do mesmo nível que também consomem o saldo de `pai`.
 
     Para territorial isso é só os territórios do mesmo estado do `pai`
     (um território pode, em tese, cobrir mais de um estado) — para
     estadual, todas compartilham o mesmo pai nacional, sem filtro extra.
     """
-    qs = BudgetAllocation.objects.filter(meta=meta, rubrica=rubrica, nivel=nivel)
+    qs = BudgetPool.objects.filter(rubrica=rubrica, nivel=nivel)
     if exclude_pk is not None:
         qs = qs.exclude(pk=exclude_pk)
     if nivel == Nivel.TERRITORIAL:
@@ -237,8 +219,8 @@ def _peers_sob_mesmo_pai(*, meta, rubrica, nivel: str, pai: BudgetAllocation, ex
     return qs
 
 
-def _checar_teto(*, meta, rubrica, nivel, pai, valor_total_pretendido: Decimal, exclude_pk=None) -> None:
-    peers = _peers_sob_mesmo_pai(meta=meta, rubrica=rubrica, nivel=nivel, pai=pai, exclude_pk=exclude_pk)
+def _checar_teto(*, rubrica, nivel, pai, valor_total_pretendido: Decimal, exclude_pk=None) -> None:
+    peers = _peers_sob_mesmo_pai(rubrica=rubrica, nivel=nivel, pai=pai, exclude_pk=exclude_pk)
     soma_peers = peers.aggregate(total=Coalesce(Sum("valor_alocado"), ZERO))["total"]
     disponivel_no_pai = _saldo_disponivel(pai)
     if soma_peers + valor_total_pretendido > disponivel_no_pai:
@@ -251,34 +233,37 @@ def _checar_teto(*, meta, rubrica, nivel, pai, valor_total_pretendido: Decimal, 
         })
 
 
-def _travar_pai_e_checar_teto(*, meta, rubrica, nivel, territorio, estado,
-                               valor_pretendido: Decimal, exclude_pk=None) -> BudgetAllocation | None:
-    pai = _linha_pai(meta=meta, rubrica=rubrica, nivel=nivel, territorio=territorio, estado=estado)
+def _travar_pai_e_checar_teto(*, rubrica, nivel, territorio, estado,
+                               valor_pretendido: Decimal, exclude_pk=None) -> BudgetPool | None:
+    pai = _linha_pai(rubrica=rubrica, nivel=nivel, territorio=territorio, estado=estado)
     if pai is None:
         return None
-    pai = BudgetAllocation.objects.select_for_update().get(pk=pai.pk)
+    pai = BudgetPool.objects.select_for_update().get(pk=pai.pk)
     if pai.reserva_ugp:
         raise DRFValidationError({
             "valor_alocado": "A reserva própria da UGP não pode receber alocações-filhas."
         })
     _checar_teto(
-        meta=meta, rubrica=rubrica, nivel=nivel, pai=pai,
+        rubrica=rubrica, nivel=nivel, pai=pai,
         valor_total_pretendido=valor_pretendido, exclude_pk=exclude_pk,
     )
     return pai
 
 
 @transaction.atomic
-def criar_alocacao(*, meta, rubrica, nivel: str, valor_alocado: Decimal, usuario,
-                    estado=None, territorio=None, reserva_ugp: bool = False) -> BudgetAllocation:
-    """Cria uma alocação validando o teto do nível pai.
+def criar_pool(*, rubrica, nivel: str, valor_alocado: Decimal, usuario,
+               estado=None, territorio=None, reserva_ugp: bool = False) -> BudgetPool:
+    """Cria um pool validando o teto do nível pai.
 
     Só o nacional não tem pai — é o topo da hierarquia, o total aprovado no
     TED. Estadual/territorial sem pai (nível de cima ainda não distribuído)
     é rejeitado: sem pai não há teto contra o que validar.
 
-    `reserva_ugp` só se aplica ao nível nacional — uma linha marcada assim
-    fica retida com a UGP e nunca pode receber alocação-filha.
+    `reserva_ugp` só se aplica ao nível nacional — um pool marcado assim
+    fica retido com a UGP e nunca pode receber pool-filho.
+
+    O território identifica o pool sozinho: o estado informado junto só serve para
+    achar o pai e não é gravado, senão o mesmo território poderia ter dois pools.
     """
     if reserva_ugp and nivel != Nivel.NACIONAL:
         raise DRFValidationError({
@@ -286,44 +271,49 @@ def criar_alocacao(*, meta, rubrica, nivel: str, valor_alocado: Decimal, usuario
         })
 
     pai = _travar_pai_e_checar_teto(
-        meta=meta, rubrica=rubrica, nivel=nivel, territorio=territorio, estado=estado,
+        rubrica=rubrica, nivel=nivel, territorio=territorio, estado=estado,
         valor_pretendido=valor_alocado,
     )
     if pai is None and nivel != Nivel.NACIONAL:
         raise DRFValidationError({
             "nivel": (
-                "Não existe alocação do nível superior para esta combinação "
-                "de Meta/Rubrica/Estado — distribua o nível acima primeiro."
+                "Não existe pool do nível superior para esta combinação "
+                "de Rubrica/Estado — distribua o nível acima primeiro."
             )
         })
 
-    allocation = BudgetAllocation.objects.create(
-        meta=meta, rubrica=rubrica, nivel=nivel,
-        estado=estado, territorio=territorio,
-        valor_alocado=valor_alocado, reserva_ugp=reserva_ugp, criado_por=usuario,
-    )
+    try:
+        with transaction.atomic():
+            pool = BudgetPool.objects.create(
+                rubrica=rubrica, nivel=nivel,
+                estado=None if nivel == Nivel.TERRITORIAL else estado, territorio=territorio,
+                valor_alocado=valor_alocado, reserva_ugp=reserva_ugp, criado_por=usuario,
+            )
+    except IntegrityError as exc:
+        raise DRFValidationError({
+            "nivel": "Já existe um pool para esta rubrica neste nível. Altere o valor dele."
+        }) from exc
     BudgetTransaction.objects.create(
-        allocation=allocation, tipo=BudgetTransaction.Tipo.REMANEJAMENTO,
+        pool=pool, tipo=BudgetTransaction.Tipo.REMANEJAMENTO,
         valor=valor_alocado, criado_por=usuario,
-        justificativa="Criação de alocação.",
+        justificativa="Criação de pool.",
     )
-    return allocation
+    return pool
 
 
 @transaction.atomic
-def atualizar_valor_alocado(allocation: BudgetAllocation, *, novo_valor: Decimal, usuario) -> BudgetAllocation:
+def atualizar_valor_alocado(pool: BudgetPool, *, novo_valor: Decimal, usuario) -> BudgetPool:
     """Reduzir abaixo do já comprometido+executado é rejeitado."""
     pai = _linha_pai(
-        meta=allocation.meta, rubrica=allocation.rubrica, nivel=allocation.nivel,
-        territorio=allocation.territorio, estado=allocation.estado,
+        rubrica=pool.rubrica, nivel=pool.nivel, territorio=pool.territorio, estado=pool.estado,
     )
-    # A alocação e o pai em ordem crescente de pk, como `remanejar`, que trava os dois
-    # quando move saldo entre níveis: travar a filha antes do pai inverteria essa ordem.
-    pks = sorted({allocation.pk} | ({pai.pk} if pai is not None else set()))
-    travadas = {pk: BudgetAllocation.objects.select_for_update().get(pk=pk) for pk in pks}
-    allocation = travadas[allocation.pk]
+    # O pool e o pai em ordem crescente de pk, como `remanejar`, que trava os dois
+    # quando move saldo entre níveis: travar o filho antes do pai inverteria essa ordem.
+    pks = sorted({pool.pk} | ({pai.pk} if pai is not None else set()))
+    travados = {pk: BudgetPool.objects.select_for_update().get(pk=pk) for pk in pks}
+    pool = travados[pool.pk]
 
-    minimo = allocation.valor_comprometido + allocation.valor_executado
+    minimo = pool.valor_comprometido + pool.valor_executado
     if novo_valor < minimo:
         raise DRFValidationError({
             "valor_alocado": (
@@ -332,34 +322,33 @@ def atualizar_valor_alocado(allocation: BudgetAllocation, *, novo_valor: Decimal
         })
 
     _travar_pai_e_checar_teto(
-        meta=allocation.meta, rubrica=allocation.rubrica, nivel=allocation.nivel,
-        territorio=allocation.territorio, estado=allocation.estado,
-        valor_pretendido=novo_valor, exclude_pk=allocation.pk,
+        rubrica=pool.rubrica, nivel=pool.nivel, territorio=pool.territorio, estado=pool.estado,
+        valor_pretendido=novo_valor, exclude_pk=pool.pk,
     )
 
-    valor_delta = novo_valor - allocation.valor_alocado
-    allocation.valor_alocado = novo_valor
-    allocation.save(update_fields=["valor_alocado"])
+    valor_delta = novo_valor - pool.valor_alocado
+    pool.valor_alocado = novo_valor
+    pool.save(update_fields=["valor_alocado"])
     BudgetTransaction.objects.create(
-        allocation=allocation, tipo=BudgetTransaction.Tipo.REMANEJAMENTO,
+        pool=pool, tipo=BudgetTransaction.Tipo.REMANEJAMENTO,
         valor=valor_delta, criado_por=usuario,
-        justificativa="Ajuste de alocação.",
+        justificativa="Ajuste de pool.",
     )
-    return allocation
+    return pool
 
 
-def remover_alocacao(allocation: BudgetAllocation) -> None:
-    """`BudgetTransaction.allocation` é PROTECT — toda alocação nasce com pelo
-    menos a transaction da criação, então .delete() sempre bateria em
-    ProtectedError. Traduz isso pra uma mensagem clara em vez de vazar 500.
+def remover_pool(pool: BudgetPool) -> None:
+    """`BudgetTransaction.pool` é PROTECT — todo pool nasce com pelo menos a
+    transaction da criação, então .delete() sempre bateria em ProtectedError.
+    Traduz isso pra uma mensagem clara em vez de vazar 500.
     """
     try:
-        allocation.delete()
+        pool.delete()
     except ProtectedError:
         raise DRFValidationError({
             "detail": (
                 "Não é possível excluir: existem transações registradas "
-                "para esta alocação."
+                "para este pool."
             )
         })
 
@@ -385,47 +374,47 @@ class DemandaInvalidaError(Exception):
 class SaldoCheck:
     disponivel: bool
     saldo: Decimal
-    allocation: BudgetAllocation | None
+    pool: BudgetPool | None
     motivo_bloqueio: str | None = None
 
 
-def _allocation_para(*, meta, rubrica, nivel: str, estado=None, territorio=None) -> BudgetAllocation | None:
-    filtros = {"meta": meta, "rubrica": rubrica, "nivel": nivel}
+def _pool_para(*, rubrica, nivel: str, estado=None, territorio=None) -> BudgetPool | None:
+    filtros = {"rubrica": rubrica, "nivel": nivel}
     if nivel == Nivel.ESTADUAL:
         filtros["estado"] = estado
     elif nivel == Nivel.TERRITORIAL:
         filtros["territorio"] = territorio
-    return BudgetAllocation.objects.filter(**filtros).first()
+    return BudgetPool.objects.filter(**filtros).first()
 
 
-def _saldo_check_de_allocation(
-    allocation: BudgetAllocation, valor: Decimal, consumo_previo: Decimal = ZERO,
+def _saldo_check_de_pool(
+    pool: BudgetPool, valor: Decimal, consumo_previo: Decimal = ZERO,
 ) -> SaldoCheck:
-    saldo = _saldo_disponivel(allocation) - consumo_previo
+    saldo = _saldo_disponivel(pool) - consumo_previo
     # Zerado só pelo consumo da própria operação, a rubrica ainda tem saldo:
     # cai no "insuficiente", que mostra disponível e solicitado.
     if saldo <= ZERO and consumo_previo <= ZERO:
-        return SaldoCheck(disponivel=False, saldo=saldo, allocation=allocation, motivo_bloqueio=BLOQUEIO_SALDO_ZERO)
+        return SaldoCheck(disponivel=False, saldo=saldo, pool=pool, motivo_bloqueio=BLOQUEIO_SALDO_ZERO)
     if valor > saldo:
         return SaldoCheck(
-            disponivel=False, saldo=saldo, allocation=allocation,
+            disponivel=False, saldo=saldo, pool=pool,
             motivo_bloqueio=f"Saldo insuficiente: R$ {saldo} disponível, R$ {valor} solicitado.",
         )
-    return SaldoCheck(disponivel=True, saldo=saldo, allocation=allocation, motivo_bloqueio=None)
+    return SaldoCheck(disponivel=True, saldo=saldo, pool=pool, motivo_bloqueio=None)
 
 
-def verificar_saldo(*, meta, rubrica, nivel: str, territorio=None, estado=None, valor: Decimal) -> SaldoCheck:
-    """API pública do motor — recebe instâncias já resolvidas (meta, rubrica,
+def verificar_saldo(*, rubrica, nivel: str, territorio=None, estado=None, valor: Decimal) -> SaldoCheck:
+    """API pública do motor — recebe instâncias já resolvidas (rubrica,
     estado/território). `saldo_para_consulta`, mais abaixo, resolve o mesmo
     SaldoCheck mas a partir de ids/slugs crus e numa query só, pro endpoint
     HTTP caber no orçamento de queries — por isso as duas coexistem."""
-    allocation = _allocation_para(meta=meta, rubrica=rubrica, nivel=nivel, estado=estado, territorio=territorio)
-    if allocation is None:
+    pool = _pool_para(rubrica=rubrica, nivel=nivel, estado=estado, territorio=territorio)
+    if pool is None:
         return SaldoCheck(
-            disponivel=False, saldo=ZERO, allocation=None,
+            disponivel=False, saldo=ZERO, pool=None,
             motivo_bloqueio="Nenhuma alocação encontrada para este nível.",
         )
-    return _saldo_check_de_allocation(allocation, valor)
+    return _saldo_check_de_pool(pool, valor)
 
 
 def _transacao_existente(demanda_id: str, tipo: str) -> BudgetTransaction | None:
@@ -460,10 +449,10 @@ def _valor_total_reservado(demanda_id: str) -> Decimal:
 
 
 @transaction.atomic
-def reservar(*, allocation: BudgetAllocation, valor: Decimal, demanda_id: str, usuario,
-             justificativa: str = "") -> BudgetTransaction:
-    """Idempotente por demanda_id — a checagem roda depois do lock na
-    alocação, então duas chamadas concorrentes pro mesmo demanda_id
+def reservar(*, pool: BudgetPool, valor: Decimal, demanda_id: str, usuario,
+             justificativa: str = "", activity_id: int | None = None) -> BudgetTransaction:
+    """Idempotente por demanda_id — a checagem roda depois do lock no
+    pool, então duas chamadas concorrentes pro mesmo demanda_id
     serializam ali; a segunda, ao acordar, já encontra a transaction da
     primeira e não duplica o comprometimento."""
     if valor <= ZERO:
@@ -471,22 +460,22 @@ def reservar(*, allocation: BudgetAllocation, valor: Decimal, demanda_id: str, u
         # sem essa guarda, um valor negativo "reservaria" liberando saldo.
         raise ValueError(f"valor precisa ser positivo, recebi {valor}.")
 
-    allocation = BudgetAllocation.objects.select_for_update().get(pk=allocation.pk)
+    pool = BudgetPool.objects.select_for_update().get(pk=pool.pk)
     existente = _transacao_existente(demanda_id, BudgetTransaction.Tipo.RESERVA)
     if existente is not None:
         return existente
 
-    saldo = _saldo_disponivel(allocation)
+    saldo = _saldo_disponivel(pool)
     if valor > saldo:
         raise SaldoInsuficienteError(
             f"Saldo insuficiente: R$ {saldo} disponível, R$ {valor} solicitado."
         )
 
-    allocation.valor_comprometido += valor
-    allocation.save(update_fields=["valor_comprometido"])
+    pool.valor_comprometido += valor
+    pool.save(update_fields=["valor_comprometido"])
     return BudgetTransaction.objects.create(
-        allocation=allocation, tipo=BudgetTransaction.Tipo.RESERVA, valor=valor,
-        demanda_id=demanda_id, justificativa=justificativa, criado_por=usuario,
+        pool=pool, tipo=BudgetTransaction.Tipo.RESERVA, valor=valor,
+        demanda_id=demanda_id, activity_id=activity_id, justificativa=justificativa, criado_por=usuario,
     )
 
 
@@ -505,20 +494,20 @@ def ajustar_reserva(*, demanda_id: str, novo_valor: Decimal, usuario, justificat
         acao="ajustada",
     )
 
-    allocation = BudgetAllocation.objects.select_for_update().get(pk=reserva.allocation_id)
+    pool = BudgetPool.objects.select_for_update().get(pk=reserva.pool_id)
     valor_atual = _valor_total_reservado(demanda_id)
     delta = novo_valor - valor_atual
-    if delta > ZERO and delta > _saldo_disponivel(allocation):
+    if delta > ZERO and delta > _saldo_disponivel(pool):
         raise SaldoInsuficienteError(
-            f"Saldo insuficiente para o ajuste: R$ {_saldo_disponivel(allocation)} disponível, "
+            f"Saldo insuficiente para o ajuste: R$ {_saldo_disponivel(pool)} disponível, "
             f"R$ {delta} a mais solicitado."
         )
 
-    allocation.valor_comprometido += delta
-    allocation.save(update_fields=["valor_comprometido"])
+    pool.valor_comprometido += delta
+    pool.save(update_fields=["valor_comprometido"])
     return BudgetTransaction.objects.create(
-        allocation=allocation, tipo=BudgetTransaction.Tipo.AJUSTE, valor=delta,
-        demanda_id=demanda_id, criado_por=usuario, justificativa=justificativa or "Ajuste de valor autorizado.",
+        pool=pool, tipo=BudgetTransaction.Tipo.AJUSTE, valor=delta,
+        demanda_id=demanda_id, activity_id=reserva.activity_id, criado_por=usuario, justificativa=justificativa or "Ajuste de valor autorizado.",
     )
 
 
@@ -532,7 +521,7 @@ def executar(*, demanda_id: str, usuario, valor_executado: Decimal | None = None
         raise DemandaInvalidaError(f"Nenhuma reserva encontrada para a demanda {demanda_id!r}.")
 
     reserva = BudgetTransaction.objects.filter(demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.RESERVA).first()
-    allocation = BudgetAllocation.objects.select_for_update().get(pk=reserva.allocation_id)
+    pool = BudgetPool.objects.select_for_update().get(pk=reserva.pool_id)
     existente = _transacao_existente(demanda_id, BudgetTransaction.Tipo.EXECUCAO)
     if existente is not None:
         return existente
@@ -541,17 +530,17 @@ def executar(*, demanda_id: str, usuario, valor_executado: Decimal | None = None
     valor_final = valor_reservado if valor_executado is None else valor_executado
     diferenca = valor_reservado - valor_final
 
-    allocation.valor_comprometido -= valor_reservado
-    allocation.valor_executado += valor_final
-    allocation.save(update_fields=["valor_comprometido", "valor_executado"])
+    pool.valor_comprometido -= valor_reservado
+    pool.valor_executado += valor_final
+    pool.save(update_fields=["valor_comprometido", "valor_executado"])
     execucao = BudgetTransaction.objects.create(
-        allocation=allocation, tipo=BudgetTransaction.Tipo.EXECUCAO, valor=valor_final,
-        demanda_id=demanda_id, criado_por=usuario, justificativa="Execução da demanda.",
+        pool=pool, tipo=BudgetTransaction.Tipo.EXECUCAO, valor=valor_final,
+        demanda_id=demanda_id, activity_id=reserva.activity_id, criado_por=usuario, justificativa="Execução da demanda.",
     )
     if diferenca > ZERO:
         BudgetTransaction.objects.create(
-            allocation=allocation, tipo=BudgetTransaction.Tipo.LIBERACAO, valor=diferenca,
-            demanda_id=demanda_id, criado_por=usuario,
+            pool=pool, tipo=BudgetTransaction.Tipo.LIBERACAO, valor=diferenca,
+            demanda_id=demanda_id, activity_id=reserva.activity_id, criado_por=usuario,
             justificativa="Diferença entre valor reservado e valor efetivamente pago na execução.",
         )
     return execucao
@@ -560,24 +549,24 @@ def executar(*, demanda_id: str, usuario, valor_executado: Decimal | None = None
 @transaction.atomic
 def liberar(*, demanda_id: str, usuario, motivo: str) -> BudgetTransaction:
     """Devolve o valor reservado (reserva original + ajustes, se houver) ao
-    comprometido da mesma alocação — como nunca toca no pai, a devolução ao
+    comprometido do mesmo pool — como nunca toca no pai, a devolução ao
     nível do solicitante já sai correta por construção."""
     valor_reservado = _valor_total_reservado(demanda_id)
     if valor_reservado <= ZERO:
         raise DemandaInvalidaError(f"Nenhuma reserva encontrada para a demanda {demanda_id!r}.")
 
     reserva = BudgetTransaction.objects.filter(demanda_id=demanda_id, tipo=BudgetTransaction.Tipo.RESERVA).first()
-    allocation = BudgetAllocation.objects.select_for_update().get(pk=reserva.allocation_id)
+    pool = BudgetPool.objects.select_for_update().get(pk=reserva.pool_id)
     existente = _transacao_existente(demanda_id, BudgetTransaction.Tipo.LIBERACAO)
     if existente is not None:
         return existente
     _rejeitar_se_finalizada(demanda_id, tipos_bloqueantes=[BudgetTransaction.Tipo.EXECUCAO], acao="liberada")
 
-    allocation.valor_comprometido -= valor_reservado
-    allocation.save(update_fields=["valor_comprometido"])
+    pool.valor_comprometido -= valor_reservado
+    pool.save(update_fields=["valor_comprometido"])
     return BudgetTransaction.objects.create(
-        allocation=allocation, tipo=BudgetTransaction.Tipo.LIBERACAO, valor=valor_reservado,
-        demanda_id=demanda_id, justificativa=motivo, criado_por=usuario,
+        pool=pool, tipo=BudgetTransaction.Tipo.LIBERACAO, valor=valor_reservado,
+        demanda_id=demanda_id, activity_id=reserva.activity_id, justificativa=motivo, criado_por=usuario,
     )
 
 
@@ -586,24 +575,24 @@ def liberar(*, demanda_id: str, usuario, motivo: str) -> BudgetTransaction:
 # ---------------------------------------------------------------------------
 
 @transaction.atomic
-def remanejar(*, origem: BudgetAllocation, destino: BudgetAllocation, valor: Decimal,
+def remanejar(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal,
               usuario, justificativa: str) -> tuple[BudgetTransaction, BudgetTransaction]:
-    """Move capacidade (valor_alocado) entre duas alocações da mesma Meta e
-    Rubrica — mecanismo de exceção da UGP, não passa pela checagem de teto
+    """Move capacidade (valor_alocado) entre dois pools da mesma rubrica —
+    mecanismo de exceção da UGP, não passa pela checagem de teto
     normal do nível pai (é o próprio propósito dele: furar a hierarquia)."""
     if origem.pk == destino.pk:
         raise DRFValidationError({"destino_allocation": "Origem e destino não podem ser a mesma alocação."})
-    if origem.meta_id != destino.meta_id or origem.rubrica_id != destino.rubrica_id:
+    if origem.rubrica_id != destino.rubrica_id:
         raise DRFValidationError({
-            "destino_allocation": "Origem e destino devem ser da mesma Meta e Rubrica."
+            "destino_allocation": "Origem e destino devem ser da mesma rubrica."
         })
 
     # trava sempre em ordem crescente de pk, não na ordem origem/destino do
     # payload — dois remanejamentos concorrentes com origem/destino trocados
     # (A→B e B→A) travariam em ordem invertida e um dos dois cairia em deadlock.
     primeiro_pk, segundo_pk = sorted([origem.pk, destino.pk])
-    primeiro = BudgetAllocation.objects.select_for_update().get(pk=primeiro_pk)
-    segundo = BudgetAllocation.objects.select_for_update().get(pk=segundo_pk)
+    primeiro = BudgetPool.objects.select_for_update().get(pk=primeiro_pk)
+    segundo = BudgetPool.objects.select_for_update().get(pk=segundo_pk)
     origem = primeiro if primeiro.pk == origem.pk else segundo
     destino = primeiro if primeiro.pk == destino.pk else segundo
 
@@ -619,11 +608,11 @@ def remanejar(*, origem: BudgetAllocation, destino: BudgetAllocation, valor: Dec
     destino.save(update_fields=["valor_alocado"])
 
     debito = BudgetTransaction.objects.create(
-        allocation=origem, tipo=BudgetTransaction.Tipo.REMANEJAMENTO, valor=-valor,
+        pool=origem, tipo=BudgetTransaction.Tipo.REMANEJAMENTO, valor=-valor,
         justificativa=justificativa, criado_por=usuario,
     )
     credito = BudgetTransaction.objects.create(
-        allocation=destino, tipo=BudgetTransaction.Tipo.REMANEJAMENTO, valor=valor,
+        pool=destino, tipo=BudgetTransaction.Tipo.REMANEJAMENTO, valor=valor,
         justificativa=justificativa, criado_por=usuario,
     )
     return debito, credito
@@ -631,13 +620,13 @@ def remanejar(*, origem: BudgetAllocation, destino: BudgetAllocation, valor: Dec
 
 # ---------------------------------------------------------------------------
 # Consulta de saldo pro endpoint HTTP — resolve nível pelo perfil do usuário
-# sem passar por instâncias de Meta/Rubrica/Estado separadas, pra caber em
+# sem passar por instâncias de Rubrica/Estado separadas, pra caber em
 # poucas queries (ver budget/views.py).
 # ---------------------------------------------------------------------------
 
 def resolver_nivel_do_usuario(user) -> tuple[str, str | None, Territory | None]:
     """(nivel, sigla_do_estado, território) a partir do perfil do usuário —
-    1 query. Não resolve um `State` (só a sigla): o lookup de alocação
+    1 query. Não resolve um `State` (só a sigla): o lookup de pool
     seguinte filtra `estado__sigla=` via join, sem precisar de outra query
     só pra ter a instância."""
     perfis, slugs = _perfis_e_slugs(user)
@@ -667,45 +656,42 @@ def resolver_nivel_do_usuario(user) -> tuple[str, str | None, Territory | None]:
     raise PermissionDenied("Você não tem acesso ao orçamento do SGP.")
 
 
-def saldo_para_consulta(*, meta_id: int, rubrica_slug: str, nivel: str,
+def saldo_para_consulta(*, rubrica_slug: str, nivel: str,
                          estado_sigla: str | None, territorio: Territory | None,
                          valor: Decimal, consumo_previo: Decimal = ZERO) -> SaldoCheck:
     """Mesma resposta de `verificar_saldo`, mas resolvendo tudo numa query só
-    via join — rubrica inválida/inativa e a alocação em si vêm do mesmo
+    via join — rubrica inválida/inativa e o pool em si vêm do mesmo
     `.filter()`. Só o caminho de erro (nada encontrado) paga uma 2ª query,
-    pra distinguir "rubrica não existe" de "rubrica ok, sem alocação".
+    pra distinguir "rubrica não existe" de "rubrica ok, sem pool".
 
-    `consumo_previo` é o que a mesma operação ainda vai reservar nesta
-    alocação antes de `valor` — sai do saldo antes da comparação."""
-    filtros = {
-        "meta_id": meta_id, "rubrica__slug": rubrica_slug, "rubrica__ativo": True,
-        "nivel": nivel,
-    }
+    `consumo_previo` é o que a mesma operação ainda vai reservar neste
+    pool antes de `valor` — sai do saldo antes da comparação."""
+    filtros = {"rubrica__slug": rubrica_slug, "rubrica__ativo": True, "nivel": nivel}
     if nivel == Nivel.ESTADUAL:
         filtros["estado__sigla"] = estado_sigla
     elif nivel == Nivel.TERRITORIAL:
         filtros["territorio"] = territorio
 
-    allocation = (
-        BudgetAllocation.objects
+    pool = (
+        BudgetPool.objects
         .select_related("rubrica", "estado", "territorio")
         .filter(**filtros)
         .first()
     )
-    if allocation is None:
+    if pool is None:
         if not BudgetRubrica.objects.filter(slug=rubrica_slug, ativo=True).exists():
             raise DRFValidationError({
                 "rubrica": f"Rubrica '{rubrica_slug}' não existe ou está inativa."
             })
         return SaldoCheck(
-            disponivel=False, saldo=ZERO, allocation=None,
+            disponivel=False, saldo=ZERO, pool=None,
             motivo_bloqueio="Nenhuma alocação encontrada para este nível.",
         )
-    return _saldo_check_de_allocation(allocation, valor, consumo_previo)
+    return _saldo_check_de_pool(pool, valor, consumo_previo)
 
 
 # ---------------------------------------------------------------------------
-# Painel de orçamento — matriz Meta × Rubrica com semáforo (§5.3.3).
+# Painel de orçamento — Rubrica × Nível, com semáforo.
 # ---------------------------------------------------------------------------
 
 LIMIAR_SEMAFORO_AMARELO_PADRAO = 70
@@ -760,7 +746,7 @@ def resolver_nivel_painel(
     escolha de qual nível é exibido (drill-down), não a uma lista de detalhamento.
 
     Devolve o id do território (não a instância — só é usado pra filtrar
-    `BudgetAllocation.territorio_id`).
+    `BudgetPool.territorio_id`).
 
     1 query base (perfil), +1 só quando um Articulador Estadual pede um `territorio_id`
     explícito (confirma que pertence ao próprio estado). Se `estado_sigla` e
@@ -816,44 +802,50 @@ def _semaforo_orcamento(percentual: Decimal, limiares: LimiaresSemaforo) -> tupl
     return semaforo, semaforo == "vermelho"
 
 
-def alocacoes_em_vermelho() -> list[BudgetAllocation]:
-    """Toda `BudgetAllocation` (qualquer nível) com semáforo vermelho — usada por
-    `tasks.check_budget_threshold_alert`. Não usa `painel_orcamento` (mostra 1 nível por
-    vez): nacional/estadual/territorial são linhas independentes, cada uma pode estar em
-    vermelho por si só."""
+def pools_em_vermelho() -> list[BudgetPool]:
+    """Todo `BudgetPool` (qualquer nível) com semáforo vermelho — usada por
+    `tasks.check_budget_threshold_alert`. Nacional, estadual e territorial são linhas
+    independentes, cada uma pode estar em vermelho por si só."""
     limiares = limiares_semaforo()
-    vermelhas = []
-    allocations = (
-        BudgetAllocation.objects
-        .select_related("meta", "rubrica")
+    vermelhos = []
+    pools = (
+        BudgetPool.objects
+        .select_related("rubrica", "estado", "territorio")
         .filter(valor_alocado__gt=ZERO)
     )
-    for allocation in allocations:
-        percentual = percentual_comprometido(allocation.valor_comprometido, allocation.valor_alocado)
+    for pool in pools:
+        percentual = percentual_comprometido(pool.valor_comprometido, pool.valor_alocado)
         if faixa_semaforo(percentual, limiares) == "vermelho":
-            vermelhas.append(allocation)
-    return vermelhas
+            vermelhos.append(pool)
+    return vermelhos
+
+
+def _executado_por_pool_na_meta(meta_id: int) -> dict[int, Decimal]:
+    """A Meta não tem saldo: o executado dela sai das execuções do ledger, pela cadeia
+    Atividade → Ação → Meta."""
+    return {
+        linha["pool_id"]: linha["total"]
+        for linha in BudgetTransaction.objects.filter(
+            tipo=BudgetTransaction.Tipo.EXECUCAO, activity__acao__meta_id=meta_id,
+        ).order_by().values("pool_id").annotate(total=Sum("valor"))
+    }
 
 
 def painel_orcamento(
     *, nivel: str, estado_sigla: str | None = None, territorio_id: int | None = None,
-    meta_id: int | None = None, rubrica_slug: str | None = None,
+    rubrica_slug: str | None = None, meta_id: int | None = None,
 ) -> list[dict]:
-    """Matriz Meta × Rubrica no `nivel` dado, com semáforo e alerta de vermelho.
+    """Uma linha por rubrica ativa no `nivel` dado, com semáforo e alerta de vermelho:
+    a soma que o painel do SGD e os alertas da home consomem. A matriz com o id de cada
+    pool, para a tela do orçamento, é `matriz_orcamento`.
 
     Motor sem RBAC — quem chama já resolveu o nível/localização (ver
-    `painel_orcamento_para_usuario`). Usada direto por
-    `tasks.check_budget_threshold_alert`, que roda sem usuário e sempre no nacional
-    (visão organização-inteira, mesmo padrão de `tasks.check_acao_progress_alert`).
+    `painel_orcamento_para_usuario`). `meta_id` não recorta o saldo: só acrescenta
+    `valor_executado_meta`.
 
-    4 queries (metas, rubricas, próprios, distribuído; 3 se `nivel` for territorial,
-    sem distribuído), +2 só com o cache dos limiares do semáforo frio.
+    3 queries (rubricas, próprios, distribuído; 2 se `nivel` for territorial, sem
+    distribuído), +1 com `meta_id` e +2 só com o cache dos limiares do semáforo frio.
     """
-    metas_qs = WorkPlanMeta.objects.order_by("numero")
-    if meta_id is not None:
-        metas_qs = metas_qs.filter(pk=meta_id)
-    metas = list(metas_qs)
-
     rubricas_qs = BudgetRubrica.objects.filter(ativo=True).order_by("ordem")
     if rubrica_slug is not None:
         rubricas_qs = rubricas_qs.filter(slug=rubrica_slug)
@@ -866,10 +858,11 @@ def painel_orcamento(
         filtros_proprios["territorio_id"] = territorio_id
 
     proprios = {
-        (linha["meta_id"], linha["rubrica_id"]): linha
+        linha["rubrica_id"]: linha
         for linha in (
-            BudgetAllocation.objects.filter(**filtros_proprios)
-            .values("meta_id", "rubrica_id")
+            BudgetPool.objects.filter(**filtros_proprios)
+            .order_by()
+            .values("rubrica_id")
             .annotate(
                 valor_alocado=Sum("valor_alocado"),
                 valor_comprometido=Sum("valor_comprometido"),
@@ -878,68 +871,181 @@ def painel_orcamento(
         )
     }
 
-    # "Distribuído" = soma do nível filho — generaliza o mesmo cálculo já feito em
-    # `orcamento_por_meta` pro nível resolvido. Territorial é folha: sem filhos, sem query.
+    # "Distribuído" = soma do nível filho. Territorial é folha: sem filhos, sem query.
     distribuido_qs = None
     if nivel == Nivel.NACIONAL:
-        distribuido_qs = BudgetAllocation.objects.filter(nivel=Nivel.ESTADUAL)
+        distribuido_qs = BudgetPool.objects.filter(nivel=Nivel.ESTADUAL)
     elif nivel == Nivel.ESTADUAL:
-        distribuido_qs = BudgetAllocation.objects.filter(
+        distribuido_qs = BudgetPool.objects.filter(
             nivel=Nivel.TERRITORIAL, territorio__estados__contains=[estado_sigla],
         )
 
     distribuido = {}
     if distribuido_qs is not None:
         distribuido = {
-            (linha["meta_id"], linha["rubrica_id"]): linha["total"]
-            for linha in (
-                distribuido_qs.values("meta_id", "rubrica_id")
-                .annotate(total=Sum("valor_alocado"))
-            )
+            linha["rubrica_id"]: linha["total"]
+            for linha in distribuido_qs.order_by().values("rubrica_id").annotate(total=Sum("valor_alocado"))
+        }
+
+    executado_meta = {}
+    if meta_id is not None:
+        executado_meta = {
+            linha["pool__rubrica_id"]: linha["total"]
+            for linha in BudgetTransaction.objects.filter(
+                tipo=BudgetTransaction.Tipo.EXECUCAO, activity__acao__meta_id=meta_id,
+                **{f"pool__{campo}": valor for campo, valor in filtros_proprios.items()},
+            ).order_by().values("pool__rubrica_id").annotate(total=Sum("valor"))
         }
 
     limiares = limiares_semaforo()
     resultado = []
-    for meta in metas:
-        for rubrica in rubricas:
-            chave = (meta.pk, rubrica.pk)
-            proprio = proprios.get(chave)
-            valor_aprovado = proprio["valor_alocado"] if proprio else ZERO
-            valor_comprometido = proprio["valor_comprometido"] if proprio else ZERO
-            valor_executado = proprio["valor_executado"] if proprio else ZERO
-            valor_distribuido = distribuido.get(chave, ZERO)
-            saldo_disponivel = _saldo_disponivel_matriz(
+    for rubrica in rubricas:
+        proprio = proprios.get(rubrica.pk)
+        valor_aprovado = proprio["valor_alocado"] if proprio else ZERO
+        valor_comprometido = proprio["valor_comprometido"] if proprio else ZERO
+        valor_executado = proprio["valor_executado"] if proprio else ZERO
+        valor_distribuido = distribuido.get(rubrica.pk, ZERO)
+        percentual = percentual_comprometido(valor_comprometido, valor_aprovado)
+        semaforo, alerta_80 = _semaforo_orcamento(percentual, limiares)
+        linha = {
+            "rubrica": rubrica,
+            "nivel": nivel,
+            "valor_aprovado": valor_aprovado,
+            "valor_distribuido": valor_distribuido,
+            "valor_comprometido": valor_comprometido,
+            "valor_executado": valor_executado,
+            "saldo_disponivel": _saldo_disponivel_matriz(
                 valor_aprovado, valor_distribuido, valor_comprometido, valor_executado,
-            )
-            percentual = percentual_comprometido(valor_comprometido, valor_aprovado)
-            semaforo, alerta_80 = _semaforo_orcamento(percentual, limiares)
-            resultado.append({
-                "meta": meta,
-                "rubrica": rubrica,
-                "nivel": nivel,
-                "valor_aprovado": valor_aprovado,
-                "valor_distribuido": valor_distribuido,
-                "valor_comprometido": valor_comprometido,
-                "valor_executado": valor_executado,
-                "saldo_disponivel": saldo_disponivel,
-                "semaforo": semaforo,
-                "alerta_80": alerta_80,
-                "limiares_semaforo": limiares,
-            })
+            ),
+            "semaforo": semaforo,
+            "alerta_80": alerta_80,
+            "limiares_semaforo": limiares,
+        }
+        if meta_id is not None:
+            linha["valor_executado_meta"] = executado_meta.get(rubrica.pk, ZERO)
+        resultado.append(linha)
     return resultado
 
 
 def painel_orcamento_para_usuario(
     user, *, estado_sigla: str | None = None, territorio_id: int | None = None,
-    meta_id: int | None = None, rubrica_slug: str | None = None,
+    rubrica_slug: str | None = None, meta_id: int | None = None,
 ) -> list[dict]:
     """Resolve o nível/localização pelo RBAC do usuário (`resolver_nivel_painel`) e
-    delega o cálculo da matriz a `painel_orcamento` — usada por `BudgetPainelView`
-    (contagem de queries documentada lá)."""
+    delega o cálculo a `painel_orcamento`."""
     nivel, estado_sigla, territorio_id = resolver_nivel_painel(
         user, estado_sigla=estado_sigla, territorio_id=territorio_id,
     )
     return painel_orcamento(
         nivel=nivel, estado_sigla=estado_sigla, territorio_id=territorio_id,
-        meta_id=meta_id, rubrica_slug=rubrica_slug,
+        rubrica_slug=rubrica_slug, meta_id=meta_id,
     )
+
+
+_ORDEM_DO_NIVEL = {Nivel.NACIONAL: 0, Nivel.ESTADUAL: 1, Nivel.TERRITORIAL: 2}
+
+
+def _pools_da_matriz(user, *, estado_sigla, territorio_id, rubrica_slug, nivel) -> QuerySet[BudgetPool]:
+    """Recorte de pools da matriz. `resolver_nivel_painel` já recusou o que o perfil não
+    pode pedir, então um `estado` ou `territorio` informado está dentro do escopo."""
+    pools = BudgetPool.objects.filter(rubrica__ativo=True).select_related("rubrica", "estado", "territorio")
+    if territorio_id is not None:
+        pools = pools.filter(nivel=Nivel.TERRITORIAL, territorio_id=territorio_id)
+    elif estado_sigla is not None:
+        pools = pools.filter(
+            Q(nivel=Nivel.ESTADUAL, estado__sigla=estado_sigla)
+            | Q(nivel=Nivel.TERRITORIAL, territorio__estados__contains=[estado_sigla])
+        )
+    else:
+        escopo = orcamento_detalhamento_scope(user)
+        if escopo is not None:
+            # Nacional não é dado sensível por território: o Articulador também vê.
+            if user_has_role(user, "articulador-estadual"):
+                escopo |= Q(nivel=Nivel.NACIONAL)
+            pools = pools.filter(escopo)
+    if rubrica_slug is not None:
+        pools = pools.filter(rubrica__slug=rubrica_slug)
+    if nivel is not None:
+        pools = pools.filter(nivel=nivel)
+    return pools
+
+
+def _distribuido_por_pool(pools: list[BudgetPool]) -> dict[int, Decimal]:
+    """O que já desceu para o nível filho de cada pool: os estaduais da rubrica, para o
+    nacional; os territoriais do estado na rubrica, para o estadual."""
+    rubricas = {pool.rubrica_id for pool in pools if pool.nivel != Nivel.TERRITORIAL}
+    if not rubricas:
+        return {}
+    filhos = list(
+        BudgetPool.objects.filter(rubrica_id__in=rubricas, nivel__in=[Nivel.ESTADUAL, Nivel.TERRITORIAL])
+        .order_by()
+        .values("rubrica_id", "nivel", "valor_alocado", "territorio__estados")
+    )
+    distribuido = {}
+    for pool in pools:
+        if pool.nivel == Nivel.NACIONAL:
+            distribuido[pool.pk] = sum(
+                (f["valor_alocado"] for f in filhos if f["rubrica_id"] == pool.rubrica_id and f["nivel"] == Nivel.ESTADUAL),
+                ZERO,
+            )
+        elif pool.nivel == Nivel.ESTADUAL:
+            distribuido[pool.pk] = sum(
+                (
+                    f["valor_alocado"] for f in filhos
+                    if f["rubrica_id"] == pool.rubrica_id and f["nivel"] == Nivel.TERRITORIAL
+                    and pool.estado.sigla in (f["territorio__estados"] or [])
+                ),
+                ZERO,
+            )
+    return distribuido
+
+
+def matriz_orcamento_para_usuario(
+    user, *, estado_sigla: str | None = None, territorio_id: int | None = None,
+    rubrica_slug: str | None = None, nivel: str | None = None, meta_id: int | None = None,
+) -> list[dict]:
+    """Matriz Rubrica × Nível: uma linha por pool no escopo do usuário, com o id que a
+    origem do excedente e a do recurso extra enviam. `meta_id` não recorta o saldo: só
+    acrescenta `valor_executado_meta`."""
+    resolver_nivel_painel(user, estado_sigla=estado_sigla, territorio_id=territorio_id)
+    pools = sorted(
+        _pools_da_matriz(
+            user, estado_sigla=estado_sigla, territorio_id=territorio_id, rubrica_slug=rubrica_slug, nivel=nivel,
+        ),
+        key=lambda pool: (
+            pool.rubrica.ordem, pool.rubrica_id, _ORDEM_DO_NIVEL[pool.nivel],
+            pool.estado.sigla if pool.estado else "", pool.territorio.nome if pool.territorio else "",
+        ),
+    )
+    distribuido = _distribuido_por_pool(pools)
+    executado_meta = _executado_por_pool_na_meta(meta_id) if meta_id is not None else {}
+    limiares = limiares_semaforo()
+
+    resultado = []
+    for pool in pools:
+        valor_distribuido = distribuido.get(pool.pk, ZERO)
+        percentual = percentual_comprometido(pool.valor_comprometido, pool.valor_alocado)
+        semaforo, alerta_80 = _semaforo_orcamento(percentual, limiares)
+        linha = {
+            "id": pool.pk,
+            "rubrica": pool.rubrica,
+            "nivel": pool.nivel,
+            "estado": pool.estado,
+            "territorio": pool.territorio,
+            "reserva_ugp": pool.reserva_ugp,
+            "valor_aprovado": pool.valor_alocado,
+            "valor_distribuido": valor_distribuido,
+            "valor_comprometido": pool.valor_comprometido,
+            "valor_executado": pool.valor_executado,
+            "saldo_disponivel": _saldo_disponivel_matriz(
+                pool.valor_alocado, valor_distribuido, pool.valor_comprometido, pool.valor_executado,
+            ),
+            "saldo_pool": _saldo_disponivel(pool),
+            "semaforo": semaforo,
+            "alerta_80": alerta_80,
+            "limiares_semaforo": limiares,
+        }
+        if meta_id is not None:
+            linha["valor_executado_meta"] = executado_meta.get(pool.pk, ZERO)
+        resultado.append(linha)
+    return resultado

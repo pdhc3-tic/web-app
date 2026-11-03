@@ -1,6 +1,6 @@
 """
 Ordem de lock fixa em todo o módulo — `DemandIndividualLimit` primeiro
-(`select_for_update` aqui), `BudgetAllocation` depois (travada dentro do motor
+(`select_for_update` aqui), `BudgetPool` depois (travada dentro do motor
 do SGP, via `apps.sgd.services.orcamento`) — nunca inverter, ou duas chamadas
 concorrentes podem deadlockar.
 """
@@ -131,11 +131,11 @@ def _semaforos_individual(*, limite, valor: Decimal, limiares) -> dict:
     )
 
 
-def _semaforos_allocation(allocation, *, valor: Decimal, limiares) -> dict:
-    if allocation is None:
+def _semaforos_pool(pool, *, valor: Decimal, limiares) -> dict:
+    if pool is None:
         return dict(_SEM_SEMAFORO)
     return _semaforos(
-        comprometido=allocation.valor_comprometido, total=allocation.valor_alocado, valor=valor, limiares=limiares,
+        comprometido=pool.valor_comprometido, total=pool.valor_alocado, valor=valor, limiares=limiares,
     )
 
 
@@ -154,7 +154,7 @@ def payload_saldo_consulta(check: "DuasTravasCheck", *, solicitante, rubrica, va
             "saldo": check.territorial.saldo,
             "motivo_bloqueio": check.territorial.motivo_bloqueio,
             "acao_sugerida": None if check.territorial.disponivel else ACAO_SUGERIDA[TRAVA_TERRITORIAL],
-            **_semaforos_allocation(check.territorial.allocation, valor=valor, limiares=limiares),
+            **_semaforos_pool(check.territorial.pool, valor=valor, limiares=limiares),
         },
         "disponivel": check.disponivel,
         "trava_bloqueada": check.trava_bloqueada,
@@ -192,7 +192,7 @@ def _notificar_se_piorou(*, usuarios, demand, rubrica_nome, trava, comprometido_
 
 
 def _notificar_pool_se_piorou(movimento: "orcamento_service.MovimentoPool", *, demand, rubrica_nome) -> None:
-    if movimento.allocation is None:
+    if movimento.pool is None:
         return
     _notificar_se_piorou(
         usuarios=_destinatarios_saldo_territorial(
@@ -200,7 +200,7 @@ def _notificar_pool_se_piorou(movimento: "orcamento_service.MovimentoPool", *, d
         ),
         demand=demand, rubrica_nome=rubrica_nome, trava=TRAVA_TERRITORIAL,
         comprometido_antes=movimento.comprometido_antes,
-        comprometido_depois=movimento.allocation.valor_comprometido, limite=movimento.allocation.valor_alocado,
+        comprometido_depois=movimento.pool.valor_comprometido, limite=movimento.pool.valor_alocado,
     )
 
 
@@ -221,20 +221,18 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal, consumo_previo: 
 
 
 def verificar_duas_travas(
-    *, solicitante, rubrica, valor: Decimal, demand_request=None, activity=None, consumo_previo: Decimal = ZERO,
+    *, solicitante, rubrica, valor: Decimal, consumo_previo: Decimal = ZERO,
 ) -> DuasTravasCheck:
-    """Somente leitura — não reserva nada. O pool é localizado pela atividade
-    de `demand_request` ou por `activity`, quando ainda não há solicitação.
+    """Somente leitura — não reserva nada.
 
     `consumo_previo`: quanto outras solicitações da mesma operação, na mesma
     rubrica, já vão reservar antes desta. Sai do saldo das duas travas — o
-    limite individual e a alocação territorial são os mesmos para todas."""
+    limite individual e o pool territorial são os mesmos para todas."""
     individual = _checar_individual(
         solicitante=solicitante, rubrica=rubrica, valor=valor, consumo_previo=consumo_previo,
     )
     territorial = orcamento_service.consultar_pool(
-        solicitante=solicitante, rubrica=rubrica, valor=valor, demand_request=demand_request,
-        activity=activity, consumo_previo=consumo_previo,
+        solicitante=solicitante, rubrica=rubrica, valor=valor, consumo_previo=consumo_previo,
     )
     return DuasTravasCheck(individual=individual, territorial=territorial, rubrica=rubrica, valor=valor)
 
@@ -469,9 +467,9 @@ def liberar_duas_travas(*, demand_request, usuario, motivo: str, adiar_gravacao:
 @transaction.atomic
 def liberar_duas_travas_em_lote(solicitacoes, *, usuario, motivo: str, adiar_gravacao: bool = False) -> None:
     """Libera as reservas de solicitações de várias demandas, de vários solicitantes.
-    Liberar uma por uma travaria a alocação de um solicitante antes do limite do
-    seguinte; por isso, rubrica a rubrica, trava antes todos os limites e depois todas
-    as alocações envolvidas (ordem de `backend/docs/orcamento.md`)."""
+    Liberar uma por uma travaria o pool de um solicitante antes do limite do
+    seguinte; por isso, rubrica a rubrica, trava antes todos os limites e depois todos
+    os pools envolvidos (ordem de `backend/docs/orcamento.md`)."""
     solicitacoes = sorted(solicitacoes, key=lambda s: (s.rubrica_id, s.pk))
     for rubrica_id, grupo in groupby(solicitacoes, key=lambda s: s.rubrica_id):
         grupo = list(grupo)

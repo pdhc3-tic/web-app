@@ -83,7 +83,7 @@ def test_task_trava_os_limites_antes_das_alocacoes_e_cancela_as_demandas_por_ult
 
     sqls = [q["sql"] for q in consultas]
     travas_de_limite = [i for i, sql in enumerate(sqls) if "FOR UPDATE" in sql and '"sgd_demandindividuallimit"' in sql]
-    travas_de_alocacao = [i for i, sql in enumerate(sqls) if "FOR UPDATE" in sql and '"sgp_budgetallocation"' in sql]
+    travas_de_alocacao = [i for i, sql in enumerate(sqls) if "FOR UPDATE" in sql and '"sgp_budgetpool"' in sql]
     cancelamentos = [i for i, sql in enumerate(sqls) if sql.startswith('UPDATE "sgd_demand" ')]
     primeira_trava_de_limite = sqls[travas_de_limite[0]]
     solicitantes = re.search(r'"solicitante_id" IN \(([^)]*)\)', primeira_trava_de_limite).group(1)

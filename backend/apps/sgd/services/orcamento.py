@@ -1,12 +1,8 @@
 """Porta do SGD para o motor de saldo do SGP.
 
 É o único módulo do SGD que importa `apps.sgp.budget.services` e
-`apps.sgp.budget.models`. O motor ainda localiza a alocação pela Meta; aqui ela
-é resolvida a partir da atividade da demanda, e nenhuma assinatura do SGD a
-recebe. Erros do motor saem daqui como exceções de domínio do SGD.
-
-As operações recebem solicitante e rubrica mesmo quando o motor de hoje só usa
-a solicitação: sem a Meta, é por eles que o pool vai ser localizado.
+`apps.sgp.budget.models`. O pool é localizado pelo nível do solicitante e pela
+rubrica. Erros do motor saem daqui como exceções de domínio do SGD.
 """
 from __future__ import annotations
 
@@ -18,7 +14,7 @@ from django.core.exceptions import PermissionDenied
 
 from apps.core.utils import formatar_brl
 from apps.sgd.exceptions import TRAVA_TERRITORIAL, RegraDeNegocio, SaldoInsuficiente
-from apps.sgp.budget.models import BudgetAllocation, BudgetTransaction
+from apps.sgp.budget.models import BudgetPool, BudgetTransaction
 from apps.sgp.budget import services as budget_service
 
 ZERO = Decimal("0")
@@ -35,21 +31,13 @@ painel_orcamento = budget_service.painel_orcamento
 
 @dataclass
 class MovimentoPool:
-    """Alocação movimentada e o comprometido antes do movimento, para o aviso de
+    """Pool movimentado e o comprometido antes do movimento, para o aviso de
     mudança de faixa do semáforo."""
-    allocation: BudgetAllocation | None
+    pool: BudgetPool | None
     comprometido_antes: Decimal
     nivel: str | None
     estado_sigla: str | None
     territorio: object | None
-
-
-def _meta_id(*, demand_request=None, activity=None) -> int:
-    if demand_request is not None:
-        activity = demand_request.demanda.activity
-    if activity is None:
-        raise RegraDeNegocio("Sem atividade vinculada, não há como localizar o pool territorial.")
-    return activity.acao.meta_id
 
 
 def _regra_do_motor(exc) -> RegraDeNegocio:
@@ -85,8 +73,8 @@ def pelo_solicitante():
         raise RegraDeNegocio(f"Não há como conferir o pool territorial do solicitante. {exc}") from exc
 
 
-def saldo_do_pool(allocation: BudgetAllocation) -> Decimal:
-    return allocation.valor_alocado - allocation.valor_comprometido - allocation.valor_executado
+def saldo_do_pool(pool: BudgetPool) -> Decimal:
+    return pool.valor_alocado - pool.valor_comprometido - pool.valor_executado
 
 
 def com_orientacao(motivo: str | None, orientacao: str) -> str | None:
@@ -106,25 +94,25 @@ def com_consumo_previo(motivo: str | None, consumo_previo: Decimal) -> str | Non
     )
 
 
-def orientacao_territorial(*, allocation, saldo: Decimal | None) -> str:
-    """Sem alocação nenhuma, afirmar que o território esgotou seria falso — só
-    orienta. Com alocação, "esgotado" puro quando o saldo zerou; com saldo
+def orientacao_territorial(*, pool, saldo: Decimal | None) -> str:
+    """Sem pool nenhum, afirmar que o território esgotou seria falso — só
+    orienta. Com pool, "esgotado" puro quando o saldo zerou; com saldo
     ainda positivo (ou desconhecido), o que esgotou foi a cobertura deste
     valor."""
-    if allocation is None:
+    if pool is None:
         return "Acione o Articulador Estadual para alocar saldo ao território."
     if saldo is not None and saldo <= ZERO:
         return "Território esgotado nesta rubrica. Acione o Articulador Estadual."
     return "Território esgotado nesta rubrica para este valor. Acione o Articulador Estadual."
 
 
-def mensagem_territorial(*, allocation, disponivel: Decimal, solicitado: Decimal,
+def mensagem_territorial(*, pool, disponivel: Decimal, solicitado: Decimal,
                          consumo_previo: Decimal = ZERO, ajuste: bool = False) -> str:
     valores = (
         f"{formatar_brl(disponivel)} disponível, {formatar_brl(solicitado)} "
         f"{'a mais solicitado' if ajuste else 'solicitado'}."
     )
-    if allocation is None:
+    if pool is None:
         motivo = f"Nenhuma alocação orçamentária territorial encontrada: {valores}"
     elif disponivel <= ZERO and consumo_previo <= ZERO:
         # Zerado só pelo consumo da própria demanda não é rubrica esgotada:
@@ -138,59 +126,52 @@ def mensagem_territorial(*, allocation, disponivel: Decimal, solicitado: Decimal
     # demanda, o território não está esgotado.
     return com_orientacao(
         com_consumo_previo(motivo, consumo_previo),
-        orientacao_territorial(allocation=allocation, saldo=disponivel + consumo_previo),
+        orientacao_territorial(pool=pool, saldo=disponivel + consumo_previo),
     )
 
 
-def bloqueio_territorial(*, rubrica, allocation, disponivel: Decimal, solicitado: Decimal,
+def bloqueio_territorial(*, rubrica, pool, disponivel: Decimal, solicitado: Decimal,
                          consumo_previo: Decimal = ZERO, ajuste: bool = False,
                          solicitacao_id: int | None = None) -> SaldoInsuficiente:
     return SaldoInsuficiente(
         trava=TRAVA_TERRITORIAL, rubrica=rubrica.slug, disponivel=disponivel, solicitado=solicitado,
         detail=mensagem_territorial(
-            allocation=allocation, disponivel=disponivel, solicitado=solicitado,
+            pool=pool, disponivel=disponivel, solicitado=solicitado,
             consumo_previo=consumo_previo, ajuste=ajuste,
         ),
         solicitacao_id=solicitacao_id,
     )
 
 
-def consultar_pool(*, solicitante, rubrica, valor: Decimal, demand_request=None, activity=None,
-                   consumo_previo: Decimal = ZERO) -> SaldoCheck:
-    """Somente leitura. `activity` atende quem ainda não tem solicitação: a
-    consulta de saldo do formulário e o recurso extra sem demanda.
-    `consumo_previo` é o que a mesma operação ainda vai reservar nesta
-    alocação antes de `valor`."""
+def consultar_pool(*, solicitante, rubrica, valor: Decimal, consumo_previo: Decimal = ZERO) -> SaldoCheck:
+    """Somente leitura. `consumo_previo` é o que a mesma operação ainda vai
+    reservar neste pool antes de `valor`."""
     nivel, estado_sigla, territorio = resolver_nivel_do_usuario(solicitante)
     try:
         check = budget_service.saldo_para_consulta(
-            meta_id=_meta_id(demand_request=demand_request, activity=activity), rubrica_slug=rubrica.slug,
-            nivel=nivel, estado_sigla=estado_sigla, territorio=territorio, valor=valor,
-            consumo_previo=consumo_previo,
+            rubrica_slug=rubrica.slug, nivel=nivel, estado_sigla=estado_sigla, territorio=territorio,
+            valor=valor, consumo_previo=consumo_previo,
         )
     except budget_service.DRFValidationError as exc:
         raise _regra_do_motor(exc) from exc
     if check.disponivel:
         return check
     return SaldoCheck(
-        disponivel=False, saldo=check.saldo, allocation=check.allocation,
+        disponivel=False, saldo=check.saldo, pool=check.pool,
         motivo_bloqueio=mensagem_territorial(
-            allocation=check.allocation, disponivel=check.saldo, solicitado=valor, consumo_previo=consumo_previo,
+            pool=check.pool, disponivel=check.saldo, solicitado=valor, consumo_previo=consumo_previo,
         ),
     )
 
 
-def localizar_pool(*, solicitante, rubrica, demand_request=None, activity=None) -> BudgetAllocation:
-    """Alocação territorial do solicitante, para quem decide por ele (a UGP no
+def localizar_pool(*, solicitante, rubrica) -> BudgetPool:
+    """Pool territorial do solicitante, para quem decide por ele (a UGP no
     recurso extra)."""
     with pelo_solicitante():
-        check = consultar_pool(
-            solicitante=solicitante, rubrica=rubrica, valor=ZERO,
-            demand_request=demand_request, activity=activity,
-        )
-    if check.allocation is None:
+        check = consultar_pool(solicitante=solicitante, rubrica=rubrica, valor=ZERO)
+    if check.pool is None:
         raise RegraDeNegocio("Nenhuma alocação territorial encontrada para o solicitante nesta rubrica.")
-    return check.allocation
+    return check.pool
 
 
 def reservar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuario) -> MovimentoPool:
@@ -199,41 +180,41 @@ def reservar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuar
     nivel, estado_sigla, territorio = resolver_nivel_do_usuario(solicitante)
     try:
         check = budget_service.saldo_para_consulta(
-            meta_id=_meta_id(demand_request=demand_request), rubrica_slug=rubrica.slug, nivel=nivel,
-            estado_sigla=estado_sigla, territorio=territorio, valor=valor,
+            rubrica_slug=rubrica.slug, nivel=nivel, estado_sigla=estado_sigla, territorio=territorio, valor=valor,
         )
     except budget_service.DRFValidationError as exc:
         raise _regra_do_motor(exc) from exc
-    allocation = check.allocation
-    if allocation is None:
+    pool = check.pool
+    if pool is None:
         raise bloqueio_territorial(
-            rubrica=rubrica, allocation=None, disponivel=ZERO, solicitado=valor, solicitacao_id=demand_request.pk,
+            rubrica=rubrica, pool=None, disponivel=ZERO, solicitado=valor, solicitacao_id=demand_request.pk,
         )
-    comprometido_antes = allocation.valor_comprometido
+    comprometido_antes = pool.valor_comprometido
     try:
         budget_service.reservar(
-            allocation=allocation, valor=valor, demanda_id=str(demand_request.pk), usuario=usuario,
+            pool=pool, valor=valor, demanda_id=str(demand_request.pk), usuario=usuario,
             justificativa=f"Reserva SGD — solicitação #{demand_request.pk}.",
+            activity_id=demand_request.demanda.activity_id,
         )
     except budget_service.SaldoInsuficienteError as exc:
-        allocation.refresh_from_db()
+        pool.refresh_from_db()
         raise bloqueio_territorial(
-            rubrica=rubrica, allocation=allocation, disponivel=saldo_do_pool(allocation), solicitado=valor,
+            rubrica=rubrica, pool=pool, disponivel=saldo_do_pool(pool), solicitado=valor,
             solicitacao_id=demand_request.pk,
         ) from exc
     except ValueError as exc:
         raise RegraDeNegocio(str(exc)) from exc
-    allocation.refresh_from_db(fields=["valor_comprometido"])
-    return MovimentoPool(allocation, comprometido_antes, nivel, estado_sigla, territorio)
+    pool.refresh_from_db(fields=["valor_comprometido"])
+    return MovimentoPool(pool, comprometido_antes, nivel, estado_sigla, territorio)
 
 
-def pool_da_reserva(demand_request) -> BudgetAllocation | None:
-    allocation_id = BudgetTransaction.objects.filter(
+def pool_da_reserva(demand_request) -> BudgetPool | None:
+    pool_id = BudgetTransaction.objects.filter(
         demanda_id=str(demand_request.pk), tipo=BudgetTransaction.Tipo.RESERVA,
-    ).values_list("allocation_id", flat=True).first()
-    if not allocation_id:
+    ).values_list("pool_id", flat=True).first()
+    if not pool_id:
         return None
-    return BudgetAllocation.objects.select_related("estado", "territorio").get(pk=allocation_id)
+    return BudgetPool.objects.select_related("estado", "territorio").get(pk=pool_id)
 
 
 def total_reservado(demanda_id: str) -> Decimal:
@@ -244,30 +225,30 @@ def total_reservado(demanda_id: str) -> Decimal:
 def ajustar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuario) -> MovimentoPool:
     """`valor` é o novo total reservado para a solicitação, não o delta."""
     entidade_id = str(demand_request.pk)
-    allocation = pool_da_reserva(demand_request)
-    comprometido_antes = allocation.valor_comprometido if allocation else ZERO
+    pool = pool_da_reserva(demand_request)
+    comprometido_antes = pool.valor_comprometido if pool else ZERO
     try:
         budget_service.ajustar_reserva(
             demanda_id=entidade_id, novo_valor=valor, usuario=usuario,
             justificativa=f"Ajuste SGD — solicitação #{demand_request.pk}.",
         )
     except budget_service.SaldoInsuficienteError as exc:
-        allocation.refresh_from_db()
+        pool.refresh_from_db()
         raise bloqueio_territorial(
-            rubrica=rubrica, allocation=allocation, disponivel=saldo_do_pool(allocation),
+            rubrica=rubrica, pool=pool, disponivel=saldo_do_pool(pool),
             solicitado=valor - total_reservado(entidade_id), ajuste=True, solicitacao_id=demand_request.pk,
         ) from exc
     except (budget_service.DemandaInvalidaError, ValueError) as exc:
         raise RegraDeNegocio(str(exc)) from exc
-    if allocation is None:
+    if pool is None:
         return MovimentoPool(None, comprometido_antes, None, None, None)
-    allocation.refresh_from_db(fields=["valor_comprometido", "valor_alocado"])
-    # Localização tirada da alocação reservada, não do perfil do solicitante:
+    pool.refresh_from_db(fields=["valor_comprometido", "valor_alocado"])
+    # Localização tirada do pool reservado, não do perfil do solicitante:
     # quem ajusta costuma ser quem decide, e o perfil pode ter mudado depois
     # da reserva.
     return MovimentoPool(
-        allocation, comprometido_antes, allocation.nivel,
-        allocation.estado.sigla if allocation.estado else None, allocation.territorio,
+        pool, comprometido_antes, pool.nivel,
+        pool.estado.sigla if pool.estado else None, pool.territorio,
     )
 
 
@@ -294,31 +275,30 @@ def _travar_em_ordem_de_pk(queryset) -> None:
 
 
 def travar_pools_das_reservas(solicitacoes) -> None:
-    """Trava, em ordem de pk, as alocações em que as solicitações têm reserva."""
-    _travar_em_ordem_de_pk(BudgetAllocation.objects.filter(
+    """Trava, em ordem de pk, os pools em que as solicitações têm reserva."""
+    _travar_em_ordem_de_pk(BudgetPool.objects.filter(
         pk__in=BudgetTransaction.objects.filter(
             tipo=BudgetTransaction.Tipo.RESERVA, demanda_id__in=[str(s.pk) for s in solicitacoes],
-        ).values("allocation_id"),
+        ).values("pool_id"),
     ))
 
 
-def travar_pools(pks) -> dict[int, BudgetAllocation]:
-    """Relê as alocações travadas, em ordem crescente de pk, como `remanejar`.
+def travar_pools(pks) -> dict[int, BudgetPool]:
+    """Relê os pools travados, em ordem crescente de pk, como `remanejar`.
     `of=("self",)`: estado e território vêm no join e o Postgres não aceita FOR
     UPDATE no lado anulável dele."""
     return {
-        pk: BudgetAllocation.objects.select_for_update(of=("self",)).select_related("estado", "territorio").get(pk=pk)
+        pk: BudgetPool.objects.select_for_update(of=("self",)).select_related("estado", "territorio").get(pk=pk)
         for pk in sorted(set(pks))
     }
 
 
-def remanejar(*, origem: BudgetAllocation, destino: BudgetAllocation, valor: Decimal, usuario,
+def remanejar(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal, usuario,
               justificativa: str) -> None:
     """Confere o saldo da origem já travada para a recusa sair em reais. O motor
     trava de novo, na mesma transação e na mesma ordem, e repete a conferência."""
     # Origem e destino incompatíveis ficam com a recusa do próprio motor.
-    compativeis = origem.meta_id == destino.meta_id and origem.rubrica_id == destino.rubrica_id
-    if origem.pk != destino.pk and compativeis:
+    if origem.pk != destino.pk and origem.rubrica_id == destino.rubrica_id:
         disponivel = saldo_do_pool(travar_pools({origem.pk, destino.pk})[origem.pk])
         if valor > disponivel:
             raise RegraDeNegocio(

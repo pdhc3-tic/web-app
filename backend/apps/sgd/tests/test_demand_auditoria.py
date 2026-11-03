@@ -129,7 +129,7 @@ def test_falha_na_auditoria_desfaz_o_cancelamento_automatico(demanda, demand_req
 def test_saldo_sem_criado_por_herda_o_usuario_do_contexto(demanda, demand_request_rn, allocation_territorial_rn, usuario_ugp):
     def _movimentar():
         BudgetTransaction.objects.create(
-            allocation=allocation_territorial_rn, tipo=BudgetTransaction.Tipo.RESERVA, valor=Decimal("100"),
+            pool=allocation_territorial_rn, tipo=BudgetTransaction.Tipo.RESERVA, valor=Decimal("100"),
             demanda_id=str(demand_request_rn.pk), criado_por=None,
         )
 

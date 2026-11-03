@@ -2,12 +2,12 @@
 
 O pedido percorre a máquina de estados de `BudgetIncreaseRequest`. Aprovar eleva o
 limite individual do solicitante na rubrica e só se conclui com o pool territorial
-cobrindo o que a demanda precisa reservar: se faltar saldo, a UGP informa uma
-alocação estadual ou nacional e o remanejamento acontece na própria decisão. A
+cobrindo o que a demanda precisa reservar: se faltar saldo, a UGP informa um
+pool estadual ou nacional e o remanejamento acontece na própria decisão. A
 demanda bloqueada não é submetida sozinha: o limite maior só a deixa passar nas
 duas travas quando o solicitante submeter de novo.
 
-Ordem de lock: pedido → `DemandIndividualLimit` → `BudgetAllocation` (em ordem de pk)
+Ordem de lock: pedido → `DemandIndividualLimit` → `BudgetPool` (em ordem de pk)
 → `Demand` → `DemandRequest` da demanda, a ordem de `backend/docs/orcamento.md`.
 """
 
@@ -26,7 +26,7 @@ from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import notifications as notifications_service
 from apps.sgd.services import orcamento as orcamento_service
 from apps.sgd.services import remanejamento as remanejamento_service
-from apps.sgp.models import BudgetAllocation, BudgetIncreaseRequest, BudgetTransfer
+from apps.sgp.models import BudgetIncreaseRequest, BudgetPool, BudgetTransfer
 
 Status = BudgetIncreaseRequest.Status
 ZERO = Decimal("0")
@@ -242,13 +242,6 @@ def devolver_pedido(pedido, *, usuario, justificativa: str):
     return pedido
 
 
-def _activity_do_pedido(pedido):
-    demanda = _demanda_do_pedido(pedido)
-    if demanda is not None:
-        return demanda.activity
-    return pedido.activity
-
-
 def _travar_limite(pedido, usuario) -> DemandIndividualLimit:
     # Sem limite, o FOR UPDATE não trava nada e duas decisões do mesmo solicitante e
     # rubrica tentam criá-lo. O `get_or_create` cria num savepoint: a segunda espera a
@@ -274,13 +267,11 @@ def _elevar_limite(pedido, limite: DemandIndividualLimit, valor: Decimal, usuari
     )
 
 
-def _travar_alocacoes(pedido, origem: BudgetAllocation | None):
-    """Trava a alocação territorial do solicitante e, se houver, a de origem do
+def _travar_pools(pedido, origem: BudgetPool | None):
+    """Trava o pool territorial do solicitante e, se houver, o de origem do
     remanejamento, em ordem crescente de pk, como `remanejar`. Devolve (destino, origem)."""
-    # Só localiza a alocação: o saldo é lido depois, com ela travada.
-    destino = orcamento_service.localizar_pool(
-        solicitante=pedido.user, rubrica=pedido.rubrica, activity=_activity_do_pedido(pedido),
-    )
+    # Só localiza o pool: o saldo é lido depois, com ele travado.
+    destino = orcamento_service.localizar_pool(solicitante=pedido.user, rubrica=pedido.rubrica)
     if origem is not None:
         remanejamento_service.exigir_origem_acima_do_territorio(origem, destino)
 
@@ -288,7 +279,7 @@ def _travar_alocacoes(pedido, origem: BudgetAllocation | None):
     return travadas[destino.pk], (travadas[origem.pk] if origem is not None else None)
 
 
-def _cobrir_pool(pedido, necessario: Decimal, destino: BudgetAllocation, origem: BudgetAllocation | None,
+def _cobrir_pool(pedido, necessario: Decimal, destino: BudgetPool, origem: BudgetPool | None,
                  usuario) -> BudgetTransfer | None:
     """Garante que o pool territorial, já travado, cobre o que a demanda precisa reservar.
     Sem cobrir, só passa com `origem`, que remaneja a diferença."""
@@ -321,7 +312,7 @@ def _exigir_demanda_editavel(demanda: Demand) -> None:
 
 @transaction.atomic
 def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = None,
-            justificativa: str = "", origem_allocation: BudgetAllocation | None = None) -> dict:
+            justificativa: str = "", origem_allocation: BudgetPool | None = None) -> dict:
     pedido = _travar_pedido(pedido)
     if decisao not in DECISOES:
         raise RegraDeNegocio(f"Valor inválido. Esperado um de: {sorted(DECISOES)}.", campo="decisao")
@@ -349,13 +340,13 @@ def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = N
         limite = _travar_limite(pedido, usuario)
         demanda = _demanda_do_pedido(pedido)
         if demanda is not None:
-            # Falha antes de travar as alocações; a checagem que vale é a de baixo, sob o lock.
+            # Falha antes de travar os pools; a checagem que vale é a de baixo, sob o lock.
             _exigir_demanda_editavel(demanda)
-        destino, origem = _travar_alocacoes(pedido, origem_allocation)
+        destino, origem = _travar_pools(pedido, origem_allocation)
         if demanda is None:
             necessario = valor_aprovado
         else:
-            # A Demand depois das alocações, como a submissão e os cancelamentos, que só a
+            # A Demand depois dos pools, como a submissão e os cancelamentos, que só a
             # atualizam depois de mexer no saldo. A segunda checagem pega a demanda
             # submetida enquanto a decisão esperava o lock.
             demanda = _demanda_do_pedido(pedido, travar=True)

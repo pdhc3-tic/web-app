@@ -252,8 +252,9 @@ class WorkPlanMetaViewSet(viewsets.ModelViewSet):
         filtra por visibilidade de Atividade, uma política diferente da de
         orçamento.
         """
-        meta = get_object_or_404(WorkPlanMeta, pk=pk)
-        dados = budget_service.orcamento_por_meta(meta, request.user)
+        # Alias enquanto o front migra: o saldo não depende mais da Meta.
+        get_object_or_404(WorkPlanMeta, pk=pk)
+        dados = budget_service.orcamento_por_rubrica(request.user)
         return Response(BudgetRubricaOrcamentoSerializer(dados, many=True).data)
 
     def perform_create(self, serializer):

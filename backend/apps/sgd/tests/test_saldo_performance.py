@@ -19,7 +19,7 @@ def test_verificacao_de_saldo_com_historico_representativo_em_menos_de_300ms(
 ):
     BudgetTransaction.objects.bulk_create([
         BudgetTransaction(
-            allocation=allocation_territorial_rn, tipo="reserva", valor=Decimal("10"), demanda_id=str(i % 500),
+            pool=allocation_territorial_rn, tipo="reserva", valor=Decimal("10"), demanda_id=str(i % 500),
         )
         for i in range(HISTORICO)
     ], batch_size=1000)

@@ -9,7 +9,7 @@ from apps.core.tests.factories import (
 )
 from apps.sgp.models import (
     Activity,
-    BudgetAllocation,
+    BudgetPool,
     BudgetRubrica,
     BudgetTransaction,
     Comunidade,
@@ -283,13 +283,12 @@ class BudgetRubricaFactory(factory.django.DjangoModelFactory):
     ordem = factory.Sequence(lambda n: n)
 
 
-class BudgetAllocationFactory(factory.django.DjangoModelFactory):
+class BudgetPoolFactory(factory.django.DjangoModelFactory):
     class Meta:
-        model = BudgetAllocation
+        model = BudgetPool
 
-    meta = factory.SubFactory(WorkPlanMetaFactory)
     rubrica = factory.SubFactory(BudgetRubricaFactory)
-    nivel = BudgetAllocation.Nivel.TERRITORIAL
+    nivel = BudgetPool.Nivel.TERRITORIAL
     estado = None
     territorio = factory.SubFactory(TerritoryFactory)
     valor_alocado = 0
@@ -303,7 +302,7 @@ class BudgetTransactionFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = BudgetTransaction
 
-    allocation = factory.SubFactory(BudgetAllocationFactory)
+    pool = factory.SubFactory(BudgetPoolFactory)
     tipo = BudgetTransaction.Tipo.RESERVA
     valor = 100
     demanda_id = None

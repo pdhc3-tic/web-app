@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from apps.sgd.models.approval_step import ApprovalStep
-from apps.sgp.models import BudgetAllocation
+from apps.sgp.models import BudgetPool
 
 
 class ApprovalStepSerializer(serializers.ModelSerializer):
@@ -43,9 +43,9 @@ class AutorizarSerializer(serializers.Serializer):
     )
     excedente_autorizado = serializers.BooleanField(required=False, default=False)
     origem_allocation = serializers.PrimaryKeyRelatedField(
-        queryset=BudgetAllocation.objects.all(), required=False, allow_null=True, default=None,
+        queryset=BudgetPool.objects.all(), required=False, allow_null=True, default=None,
         help_text=(
-            "Com `excedente_autorizado`: alocação estadual ou nacional, da rubrica que excede, de onde "
+            "Com `excedente_autorizado`: pool estadual ou nacional, da rubrica que excede, de onde "
             "sai o que passar do limite individual ou do pool territorial."
         ),
     )
@@ -89,8 +89,8 @@ class PreviewDecisaoSerializer(serializers.Serializer):
     demand_request_id = serializers.IntegerField()
     valor = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
     origem_allocation = serializers.PrimaryKeyRelatedField(
-        queryset=BudgetAllocation.objects.all(), required=False, allow_null=True, default=None,
-        help_text="Simula a autorização com excedente coberto por esta alocação estadual ou nacional.",
+        queryset=BudgetPool.objects.all(), required=False, allow_null=True, default=None,
+        help_text="Simula a autorização com excedente coberto por este pool estadual ou nacional.",
     )
 
 

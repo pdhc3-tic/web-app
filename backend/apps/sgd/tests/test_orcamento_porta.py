@@ -6,52 +6,30 @@ from django.core.exceptions import PermissionDenied
 from apps.core.tests.factories import UserFactory
 from apps.sgd.exceptions import RegraDeNegocio, SaldoInsuficiente
 from apps.sgd.services import orcamento as orcamento_service
-from apps.sgp.tests.factories import BudgetAllocationFactory, WorkPlanMetaFactory
+from apps.sgp.models import BudgetTransaction
+from apps.sgp.tests.factories import BudgetPoolFactory
 
 pytestmark = pytest.mark.django_db
 
 
-@pytest.fixture
-def alocacao_de_outra_meta(activity_rn, rubrica_diarias):
-    """Mesma rubrica e território, Meta diferente: só a Meta da atividade
-    distingue as duas alocações."""
-    return BudgetAllocationFactory(
-        meta=WorkPlanMetaFactory(), rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
-        valor_alocado=Decimal("1"),
-    )
-
-
-def test_consultar_pool_resolve_a_meta_pela_atividade_da_demanda(
-    demand_request_rn, solicitante_rn, rubrica_diarias, allocation_territorial_rn, alocacao_de_outra_meta,
+def test_consultar_pool_localiza_pelo_nivel_do_solicitante_e_pela_rubrica(
+    solicitante_rn, rubrica_diarias, allocation_territorial_rn,
 ):
+    BudgetPoolFactory(valor_alocado=Decimal("1"))  # outra rubrica, outro território
+
     check = orcamento_service.consultar_pool(
-        solicitante=solicitante_rn, rubrica=rubrica_diarias, valor=Decimal("100"), demand_request=demand_request_rn,
+        solicitante=solicitante_rn, rubrica=rubrica_diarias, valor=Decimal("100"),
     )
 
     assert check.disponivel is True
-    assert check.allocation == allocation_territorial_rn
-
-
-def test_consultar_pool_sem_solicitacao_resolve_a_meta_pela_atividade(
-    activity_rn, solicitante_rn, rubrica_diarias, allocation_territorial_rn, alocacao_de_outra_meta,
-):
-    check = orcamento_service.consultar_pool(
-        solicitante=solicitante_rn, rubrica=rubrica_diarias, valor=Decimal("100"), activity=activity_rn,
-    )
-
-    assert check.allocation == allocation_territorial_rn
-
-
-def test_consultar_pool_sem_atividade_e_regra_de_negocio(solicitante_rn, rubrica_diarias):
-    with pytest.raises(RegraDeNegocio):
-        orcamento_service.consultar_pool(solicitante=solicitante_rn, rubrica=rubrica_diarias, valor=Decimal("100"))
+    assert check.pool == allocation_territorial_rn
 
 
 def test_consultar_pool_insuficiente_traz_a_mensagem_em_reais(
     demand_request_rn, solicitante_rn, rubrica_diarias, allocation_territorial_rn,
 ):
     check = orcamento_service.consultar_pool(
-        solicitante=solicitante_rn, rubrica=rubrica_diarias, valor=Decimal("12000"), demand_request=demand_request_rn,
+        solicitante=solicitante_rn, rubrica=rubrica_diarias, valor=Decimal("12000")
     )
 
     assert check.disponivel is False
@@ -96,19 +74,22 @@ def test_reservar_pool_sem_alocacao_vira_saldo_insuficiente_territorial(
 
 
 def test_reservar_pool_reserva_na_alocacao_da_meta_da_atividade(
-    demand_request_rn, solicitante_rn, rubrica_diarias, allocation_territorial_rn, alocacao_de_outra_meta,
+    demand_request_rn, solicitante_rn, rubrica_diarias, allocation_territorial_rn,
 ):
+    outro_pool = BudgetPoolFactory(valor_alocado=Decimal("1"))
     movimento = orcamento_service.reservar_pool(
         solicitante=solicitante_rn, rubrica=rubrica_diarias, valor=Decimal("300"),
         demand_request=demand_request_rn, usuario=solicitante_rn,
     )
 
-    assert movimento.allocation == allocation_territorial_rn
+    assert movimento.pool == allocation_territorial_rn
     assert movimento.comprometido_antes == Decimal("0")
     allocation_territorial_rn.refresh_from_db()
-    alocacao_de_outra_meta.refresh_from_db()
+    outro_pool.refresh_from_db()
     assert allocation_territorial_rn.valor_comprometido == Decimal("300")
-    assert alocacao_de_outra_meta.valor_comprometido == Decimal("0")
+    assert outro_pool.valor_comprometido == Decimal("0")
+    transacao = BudgetTransaction.objects.get(demanda_id=str(demand_request_rn.pk))
+    assert transacao.activity_id == demand_request_rn.demanda.activity_id
 
 
 def test_executar_pool_sem_reserva_e_regra_de_negocio(demand_request_rn, solicitante_rn, rubrica_diarias):
@@ -134,17 +115,17 @@ def test_liberar_pool_sem_reserva_nao_faz_nada(
 def test_localizar_pool_sem_alocacao_e_regra_de_negocio(demand_request_rn, solicitante_rn, rubrica_diarias):
     with pytest.raises(RegraDeNegocio):
         orcamento_service.localizar_pool(
-            solicitante=solicitante_rn, rubrica=rubrica_diarias, demand_request=demand_request_rn,
+            solicitante=solicitante_rn, rubrica=rubrica_diarias
         )
 
 
 def test_remanejar_sem_saldo_na_origem_recusa_em_reais_sem_mover_nada(
     activity_rn, rubrica_diarias, allocation_territorial_rn, solicitante_rn,
 ):
-    from apps.sgp.models import BudgetAllocation, BudgetTransaction
+    from apps.sgp.models import BudgetPool, BudgetTransaction
 
-    origem = BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, nivel=BudgetAllocation.Nivel.ESTADUAL,
+    origem = BudgetPoolFactory(
+        rubrica=rubrica_diarias, nivel=BudgetPool.Nivel.ESTADUAL,
         territorio=None, estado=activity_rn.municipio.state,
         valor_alocado=Decimal("1500"), valor_comprometido=Decimal("200"),
     )
@@ -171,7 +152,6 @@ def test_consultar_pool_com_rubrica_desativada_usa_excecao_de_dominio(
     with pytest.raises(RegraDeNegocio) as excinfo:
         orcamento_service.consultar_pool(
             solicitante=solicitante_rn, rubrica=rubrica_diarias, valor=Decimal("100"),
-            demand_request=demand_request_rn,
         )
 
     assert excinfo.value.campo == "rubrica"
@@ -209,38 +189,17 @@ def test_remanejar_para_a_mesma_alocacao_e_regra_de_negocio(allocation_territori
     assert not BudgetTransaction.objects.filter(tipo=BudgetTransaction.Tipo.REMANEJAMENTO).exists()
 
 
-def test_remanejamento_com_meta_incompativel_devolve_business_rule(
-    auth_client_ugp, demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
-    rubrica_diarias,
-):
-    """Origem com saldo e a mesma rubrica, só a Meta difere: a recusa é a
-    incompatibilidade, não falta de saldo nem de permissão."""
-    from apps.sgd.services import balance as balance_service
+def test_remanejar_entre_rubricas_diferentes_e_regra_de_negocio_no_campo_do_destino(usuario_ugp):
+    origem = BudgetPoolFactory(nivel="nacional", territorio=None, valor_alocado=Decimal("1000"))
+    destino = BudgetPoolFactory(valor_alocado=Decimal("10"))
 
-    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
-    demand_request_rn.demanda.status = "pre_autorizada"
-    demand_request_rn.demanda.save(update_fields=["status"])
-    origem = BudgetAllocationFactory(
-        meta=WorkPlanMetaFactory(), rubrica=rubrica_diarias,
-        nivel="nacional", territorio=None, valor_alocado=Decimal("1000"),
-    )
+    with pytest.raises(RegraDeNegocio) as excinfo:
+        orcamento_service.remanejar(
+            origem=origem, destino=destino, valor=Decimal("100"), usuario=usuario_ugp, justificativa="x",
+        )
 
-    response = auth_client_ugp.post(
-        f"/api/v1/sgd/demandas/{demand_request_rn.demanda_id}/autorizar/",
-        {
-            "ajustes": {str(demand_request_rn.pk): "5100.00"},
-            "excedente_autorizado": True,
-            "origem_allocation": origem.pk,
-            "justificativa": "Teste do contrato da porta",
-        },
-        format="json",
-    )
-
-    assert response.status_code == 400
-    assert response.data == {
-        "destino_allocation": ["Origem e destino devem ser da mesma Meta e Rubrica."],
-        "code": "BUSINESS_RULE",
-    }
+    assert excinfo.value.campo == "destino_allocation"
+    assert "mesma rubrica" in str(excinfo.value)
 
 
 def test_consultar_pool_com_solicitante_sem_nivel_nega_com_a_excecao_do_django(
@@ -251,7 +210,6 @@ def test_consultar_pool_com_solicitante_sem_nivel_nega_com_a_excecao_do_django(
     with pytest.raises(PermissionDenied) as excinfo:
         orcamento_service.consultar_pool(
             solicitante=solicitante_rn, rubrica=rubrica_diarias, valor=Decimal("100"),
-            demand_request=demand_request_rn,
         )
 
     assert str(excinfo.value).startswith("Perfil sem estado/território específico")
@@ -264,7 +222,7 @@ def test_localizar_pool_com_solicitante_sem_nivel_e_regra_de_negocio(
 
     with pytest.raises(RegraDeNegocio) as excinfo:
         orcamento_service.localizar_pool(
-            solicitante=solicitante_rn, rubrica=rubrica_diarias, demand_request=demand_request_rn,
+            solicitante=solicitante_rn, rubrica=rubrica_diarias
         )
 
     assert excinfo.value.mensagem.startswith("Não há como conferir o pool territorial do solicitante.")

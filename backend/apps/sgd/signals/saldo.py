@@ -15,8 +15,8 @@ ZERO = Decimal("0")
 
 
 def _efeito_na_alocacao(transacao) -> dict:
-    """Quanto a transação moveu de cada saldo da alocação. As alocações já foram
-    salvas quando a transação nasce, então o saldo anterior é o posterior
+    """Quanto a transação moveu de cada saldo do pool. Os pools já foram
+    salvos quando a transação nasce, então o saldo anterior é o posterior
     desfeito esse efeito."""
     valor = transacao.valor
     if transacao.tipo in (Tipo.RESERVA, Tipo.AJUSTE):
@@ -44,12 +44,12 @@ def auditar_movimentacao_de_saldo(sender, instance, created, **kwargs):
     if solicitacao is None:
         return
 
-    alocacao = instance.allocation
+    pool = instance.pool
     efeito = _efeito_na_alocacao(instance)
     posterior = {
-        "comprometido": alocacao.valor_comprometido,
-        "executado": alocacao.valor_executado,
-        "alocado": alocacao.valor_alocado,
+        "comprometido": pool.valor_comprometido,
+        "executado": pool.valor_executado,
+        "alocado": pool.valor_alocado,
     }
     anterior = {campo: posterior[campo] - efeito[campo] for campo in posterior}
 
@@ -64,7 +64,7 @@ def auditar_movimentacao_de_saldo(sender, instance, created, **kwargs):
         valores_novos={
             "demanda": solicitacao.demanda_id,
             "solicitacao": solicitacao.pk,
-            "alocacao": alocacao.pk,
+            "alocacao": pool.pk,
             "tipo": instance.tipo,
             "valor": str(instance.valor),
             "justificativa": instance.justificativa,

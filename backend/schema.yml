@@ -4759,9 +4759,9 @@ paths:
     post:
       operationId: v1_sgp_metas_orcamento_alocacoes_create
       description: |-
-        `create` aninhada em `metas/{id}/orcamento/alocacoes/`,
-        `partial_update`/`destroy` em `orcamento/alocacoes/{id}/`. Wiring
-        manual em urls.py, sem router.
+        `create` em `orcamento/pools/`, `partial_update`/`destroy` em `orcamento/pools/{id}/`.
+        As rotas antigas, `metas/{id}/orcamento/alocacoes/` e `orcamento/alocacoes/{id}/`,
+        continuam como alias enquanto o front migra. Wiring manual em urls.py, sem router.
       parameters:
       - in: path
         name: meta_pk
@@ -4774,13 +4774,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/BudgetAllocationCreateRequest'
+              $ref: '#/components/schemas/BudgetPoolCreateRequest'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/BudgetAllocationCreateRequest'
+              $ref: '#/components/schemas/BudgetPoolCreateRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/BudgetAllocationCreateRequest'
+              $ref: '#/components/schemas/BudgetPoolCreateRequest'
         required: true
       security:
       - jwtAuth: []
@@ -4789,7 +4789,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BudgetAllocation'
+                $ref: '#/components/schemas/BudgetPool'
           description: ''
   /api/v1/sgp/metas/{id}/orcamento/:
     get:
@@ -4824,9 +4824,9 @@ paths:
     patch:
       operationId: v1_sgp_orcamento_alocacoes_partial_update
       description: |-
-        `create` aninhada em `metas/{id}/orcamento/alocacoes/`,
-        `partial_update`/`destroy` em `orcamento/alocacoes/{id}/`. Wiring
-        manual em urls.py, sem router.
+        `create` em `orcamento/pools/`, `partial_update`/`destroy` em `orcamento/pools/{id}/`.
+        As rotas antigas, `metas/{id}/orcamento/alocacoes/` e `orcamento/alocacoes/{id}/`,
+        continuam como alias enquanto o front migra. Wiring manual em urls.py, sem router.
       parameters:
       - in: path
         name: id
@@ -4839,13 +4839,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PatchedBudgetAllocationUpdateRequest'
+              $ref: '#/components/schemas/PatchedBudgetPoolUpdateRequest'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/PatchedBudgetAllocationUpdateRequest'
+              $ref: '#/components/schemas/PatchedBudgetPoolUpdateRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/PatchedBudgetAllocationUpdateRequest'
+              $ref: '#/components/schemas/PatchedBudgetPoolUpdateRequest'
       security:
       - jwtAuth: []
       responses:
@@ -4853,14 +4853,14 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BudgetAllocation'
+                $ref: '#/components/schemas/BudgetPool'
           description: ''
     delete:
       operationId: v1_sgp_orcamento_alocacoes_destroy
       description: |-
-        `create` aninhada em `metas/{id}/orcamento/alocacoes/`,
-        `partial_update`/`destroy` em `orcamento/alocacoes/{id}/`. Wiring
-        manual em urls.py, sem router.
+        `create` em `orcamento/pools/`, `partial_update`/`destroy` em `orcamento/pools/{id}/`.
+        As rotas antigas, `metas/{id}/orcamento/alocacoes/` e `orcamento/alocacoes/{id}/`,
+        continuam como alias enquanto o front migra. Wiring manual em urls.py, sem router.
       parameters:
       - in: path
         name: id
@@ -4878,9 +4878,9 @@ paths:
     get:
       operationId: v1_sgp_orcamento_alocacoes_transacoes_list
       description: |-
-        `create` aninhada em `metas/{id}/orcamento/alocacoes/`,
-        `partial_update`/`destroy` em `orcamento/alocacoes/{id}/`. Wiring
-        manual em urls.py, sem router.
+        `create` em `orcamento/pools/`, `partial_update`/`destroy` em `orcamento/pools/{id}/`.
+        As rotas antigas, `metas/{id}/orcamento/alocacoes/` e `orcamento/alocacoes/{id}/`,
+        continuam como alias enquanto o front migra. Wiring manual em urls.py, sem router.
       parameters:
       - in: path
         name: id
@@ -4904,17 +4904,12 @@ paths:
     get:
       operationId: v1_sgp_orcamento_painel_list
       description: |-
-        GET .../orcamento/painel/ — matriz Meta × Rubrica com semáforo (§5.3.3).
+        GET .../orcamento/painel/ — matriz Rubrica × Nível: uma linha por pool, com o
+        semáforo e o id dele.
 
-        Nível exibido por linha (nacional/estadual/territorial) resolvido pelo perfil do
-        usuário — `estado`/`territorio` fazem drill-down dentro do que o RBAC permite, ver
-        `budget.services.resolver_nivel_painel`.
-
-        Sem filtro: 5 queries (4 pro ADT/ACR — nível padrão territorial, sem "distribuído").
-        Cada `meta`/`rubrica`/`estado`/`territorio` informado soma +1 query de validação de
-        FK (`BudgetPainelQuerySerializer`); pior caso, 9 (Articulador Estadual com
-        `territorio`, que paga +1 confirmando posse em `resolver_nivel_painel` — 8 pros
-        demais perfis).
+        Sem filtro, devolve os pools do escopo do perfil. `estado`/`territorio` fazem
+        drill-down dentro do que o RBAC permite, ver `budget.services.resolver_nivel_painel`.
+        `meta` não recorta o saldo: só acrescenta `valor_executado_meta` em cada linha.
       parameters:
       - in: query
         name: estado
@@ -4924,6 +4919,14 @@ paths:
         name: meta
         schema:
           type: integer
+      - in: query
+        name: nivel
+        schema:
+          type: string
+          enum:
+          - estadual
+          - nacional
+          - territorial
       - in: query
         name: rubrica
         schema:
@@ -4944,6 +4947,116 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/BudgetPainelLinha'
+          description: ''
+  /api/v1/sgp/orcamento/pools/:
+    post:
+      operationId: v1_sgp_orcamento_pools_create
+      description: |-
+        `create` em `orcamento/pools/`, `partial_update`/`destroy` em `orcamento/pools/{id}/`.
+        As rotas antigas, `metas/{id}/orcamento/alocacoes/` e `orcamento/alocacoes/{id}/`,
+        continuam como alias enquanto o front migra. Wiring manual em urls.py, sem router.
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BudgetPoolCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BudgetPoolCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BudgetPoolCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetPool'
+          description: ''
+  /api/v1/sgp/orcamento/pools/{id}/:
+    patch:
+      operationId: v1_sgp_orcamento_pools_partial_update
+      description: |-
+        `create` em `orcamento/pools/`, `partial_update`/`destroy` em `orcamento/pools/{id}/`.
+        As rotas antigas, `metas/{id}/orcamento/alocacoes/` e `orcamento/alocacoes/{id}/`,
+        continuam como alias enquanto o front migra. Wiring manual em urls.py, sem router.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedBudgetPoolUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedBudgetPoolUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedBudgetPoolUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetPool'
+          description: ''
+    delete:
+      operationId: v1_sgp_orcamento_pools_destroy
+      description: |-
+        `create` em `orcamento/pools/`, `partial_update`/`destroy` em `orcamento/pools/{id}/`.
+        As rotas antigas, `metas/{id}/orcamento/alocacoes/` e `orcamento/alocacoes/{id}/`,
+        continuam como alias enquanto o front migra. Wiring manual em urls.py, sem router.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/sgp/orcamento/pools/{id}/transacoes/:
+    get:
+      operationId: v1_sgp_orcamento_pools_transacoes_list
+      description: |-
+        `create` em `orcamento/pools/`, `partial_update`/`destroy` em `orcamento/pools/{id}/`.
+        As rotas antigas, `metas/{id}/orcamento/alocacoes/` e `orcamento/alocacoes/{id}/`,
+        continuam como alias enquanto o front migra. Wiring manual em urls.py, sem router.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BudgetTransaction'
           description: ''
   /api/v1/sgp/orcamento/remanejamentos/:
     post:
@@ -4987,7 +5100,8 @@ paths:
         name: meta
         schema:
           type: integer
-        required: true
+        description: 'Ignorado: o saldo não depende da Meta.'
+        deprecated: true
       - in: query
         name: rubrica
         schema:
@@ -8260,30 +8374,6 @@ components:
         * `6` - Chuva
         * `7` - Outro
         * `8` - Não Informado
-    AlocacaoDoRemanejamento:
-      type: object
-      properties:
-        id:
-          type: integer
-          readOnly: true
-        nivel:
-          allOf:
-          - $ref: '#/components/schemas/NivelEnum'
-          readOnly: true
-          title: Nível
-        estado:
-          type: string
-          readOnly: true
-          nullable: true
-        territorio:
-          type: string
-          readOnly: true
-          nullable: true
-      required:
-      - estado
-      - id
-      - nivel
-      - territorio
     AmbitoEnum:
       enum:
       - municipal
@@ -8680,16 +8770,92 @@ components:
     BlankEnum:
       enum:
       - ''
-    BudgetAllocation:
+    BudgetPainelLinha:
       type: object
       description: |-
-        Leitura de uma alocação — usada na resposta das rotas de escrita e
-        no `detalhamento` do orçamento por Meta.
+        Uma linha da matriz Rubrica × Nível: um pool, espelhando o dict devolvido por
+        `budget.services.matriz_orcamento_para_usuario`.
       properties:
         id:
           type: integer
-          readOnly: true
-        meta:
+          description: Id do pool, o que a origem do excedente e a do recurso extra
+            enviam.
+        rubrica:
+          $ref: '#/components/schemas/BudgetRubricaNested'
+        nivel:
+          type: string
+        estado:
+          allOf:
+          - $ref: '#/components/schemas/EstadoNested'
+          nullable: true
+        territorio:
+          allOf:
+          - $ref: '#/components/schemas/TerritorioNested'
+          nullable: true
+        reserva_ugp:
+          type: boolean
+        valor_aprovado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        valor_distribuido:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        valor_comprometido:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        valor_executado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        valor_executado_meta:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          description: 'Só com `?meta=`: o executado deste pool nas atividades da
+            Meta.'
+        saldo_disponivel:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          description: Aprovado menos distribuído, comprometido e executado.
+        saldo_pool:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          description: 'Alocado menos comprometido e executado: o que o remanejamento
+            aceita sair deste pool.'
+        semaforo:
+          $ref: '#/components/schemas/SemaforoEnum'
+        alerta_80:
+          type: boolean
+        limiares_semaforo:
+          $ref: '#/components/schemas/LimiaresSemaforo'
+      required:
+      - alerta_80
+      - estado
+      - id
+      - limiares_semaforo
+      - nivel
+      - reserva_ugp
+      - rubrica
+      - saldo_disponivel
+      - saldo_pool
+      - semaforo
+      - territorio
+      - valor_aprovado
+      - valor_comprometido
+      - valor_distribuido
+      - valor_executado
+    BudgetPool:
+      type: object
+      description: |-
+        Leitura de um pool — usada na resposta das rotas de escrita e no
+        `detalhamento` do orçamento por rubrica.
+      properties:
+        id:
           type: integer
           readOnly: true
         rubrica:
@@ -8734,7 +8900,7 @@ components:
           readOnly: true
           title: Reserva Própria da UGP
           description: Só em nível nacional. Uma reserva própria da UGP nunca recebe
-            alocações-filhas.
+            pools-filhos.
         saldo_disponivel:
           type: number
           format: double
@@ -8752,7 +8918,6 @@ components:
       - criado_por
       - estado
       - id
-      - meta
       - nivel
       - reserva_ugp
       - rubrica
@@ -8761,11 +8926,11 @@ components:
       - valor_alocado
       - valor_comprometido
       - valor_executado
-    BudgetAllocationCreateRequest:
+    BudgetPoolCreateRequest:
       type: object
       description: |-
         Valida o payload de criação — a lógica de teto/concorrência fica no
-        service (`budget.services.criar_alocacao`), não aqui.
+        service (`budget.services.criar_pool`), não aqui.
       properties:
         rubrica_id:
           type: integer
@@ -8788,56 +8953,6 @@ components:
       - nivel
       - rubrica_id
       - valor_alocado
-    BudgetPainelLinha:
-      type: object
-      description: |-
-        Uma célula da matriz Meta × Rubrica — espelha o dict devolvido por
-        `budget.services.painel_orcamento`.
-      properties:
-        meta:
-          $ref: '#/components/schemas/WorkPlanMetaNested'
-        rubrica:
-          $ref: '#/components/schemas/BudgetRubricaNested'
-        nivel:
-          type: string
-        valor_aprovado:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        valor_distribuido:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        valor_comprometido:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        valor_executado:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        saldo_disponivel:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        semaforo:
-          $ref: '#/components/schemas/SemaforoEnum'
-        alerta_80:
-          type: boolean
-        limiares_semaforo:
-          $ref: '#/components/schemas/LimiaresSemaforo'
-      required:
-      - alerta_80
-      - limiares_semaforo
-      - meta
-      - nivel
-      - rubrica
-      - saldo_disponivel
-      - semaforo
-      - valor_aprovado
-      - valor_comprometido
-      - valor_distribuido
-      - valor_executado
     BudgetRubrica:
       type: object
       properties:
@@ -8880,7 +8995,7 @@ components:
       type: object
       description: |-
         Uma linha da resposta de `GET .../orcamento/` — espelha o dict
-        devolvido por `budget.services.orcamento_por_meta`.
+        devolvido por `budget.services.orcamento_por_rubrica`.
       properties:
         rubrica:
           $ref: '#/components/schemas/BudgetRubricaNested'
@@ -8907,7 +9022,7 @@ components:
         detalhamento:
           type: array
           items:
-            $ref: '#/components/schemas/BudgetAllocation'
+            $ref: '#/components/schemas/BudgetPool'
       required:
       - detalhamento
       - rubrica
@@ -8922,10 +9037,19 @@ components:
         id:
           type: integer
           readOnly: true
+        pool:
+          type: integer
+          readOnly: true
         allocation:
           type: integer
           readOnly: true
-          title: Alocação
+          description: Mesmo valor de `pool`, enquanto o front migra.
+        activity:
+          type: integer
+          readOnly: true
+          nullable: true
+          title: Atividade
+          description: Liga o executado à Meta, pela cadeia Atividade → Ação → Meta.
         tipo:
           allOf:
           - $ref: '#/components/schemas/BudgetTransactionTipoEnum'
@@ -8955,12 +9079,14 @@ components:
           format: date-time
           readOnly: true
       required:
+      - activity
       - allocation
       - criado_em
       - criado_por
       - demanda_id
       - id
       - justificativa
+      - pool
       - tipo
       - valor
     BudgetTransactionTipoEnum:
@@ -8995,7 +9121,7 @@ components:
           - $ref: '#/components/schemas/EscopoEnum'
           readOnly: true
           description: |-
-            Em branco no remanejamento feito direto entre alocações, sem demanda envolvida.
+            Em branco no remanejamento feito direto entre pools, sem demanda envolvida.
 
             * `pontual` - Pontual (excedente autorizado na demanda)
             * `elevacao_limite` - Elevação do limite individual (recurso extra)
@@ -9004,11 +9130,11 @@ components:
           readOnly: true
         origem:
           allOf:
-          - $ref: '#/components/schemas/AlocacaoDoRemanejamento'
+          - $ref: '#/components/schemas/PoolDoRemanejamento'
           readOnly: true
         destino:
           allOf:
-          - $ref: '#/components/schemas/AlocacaoDoRemanejamento'
+          - $ref: '#/components/schemas/PoolDoRemanejamento'
           readOnly: true
         rubrica:
           type: string
@@ -9721,8 +9847,10 @@ components:
       properties:
         meta_id:
           type: integer
+          nullable: true
         meta_numero:
           type: string
+          nullable: true
         rubrica_id:
           type: integer
         rubrica_slug:
@@ -12564,7 +12692,7 @@ components:
           minimum: 0
         ativo:
           type: boolean
-    PatchedBudgetAllocationUpdateRequest:
+    PatchedBudgetPoolUpdateRequest:
       type: object
       properties:
         valor_alocado:
@@ -13438,6 +13566,30 @@ components:
       - id
       - numero
       - titulo
+    PoolDoRemanejamento:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        nivel:
+          allOf:
+          - $ref: '#/components/schemas/NivelEnum'
+          readOnly: true
+          title: Nível
+        estado:
+          type: string
+          readOnly: true
+          nullable: true
+        territorio:
+          type: string
+          readOnly: true
+          nullable: true
+      required:
+      - estado
+      - id
+      - nivel
+      - territorio
     PosseTerraEnum:
       enum:
       - 1
@@ -13997,9 +14149,13 @@ components:
           allOf:
           - $ref: '#/components/schemas/TerritorioNested'
           nullable: true
+        pool_id:
+          type: integer
+          nullable: true
         allocation_id:
           type: integer
           nullable: true
+          description: Mesmo valor de `pool_id`, enquanto o front migra.
         motivo_bloqueio:
           type: string
           nullable: true
@@ -14009,6 +14165,7 @@ components:
       - estado
       - motivo_bloqueio
       - nivel
+      - pool_id
       - saldo
       - territorio
     SemaforoEnum:
@@ -16557,25 +16714,6 @@ components:
       - titulo
       - valor_executado
       - valor_total_planejado
-    WorkPlanMetaNested:
-      type: object
-      properties:
-        id:
-          type: integer
-          readOnly: true
-        numero:
-          type: integer
-          maximum: 7
-          minimum: 1
-          title: Número
-        titulo:
-          type: string
-          title: Título
-          maxLength: 255
-      required:
-      - id
-      - numero
-      - titulo
     WorkPlanPowerBISnapshot:
       type: object
       properties:

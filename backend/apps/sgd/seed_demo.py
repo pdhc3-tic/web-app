@@ -19,7 +19,7 @@ from apps.core.models import State, Territory, UserProfile
 from apps.sgd.models import ArloImport, Demand, DemandIndividualLimit, DemandRequest
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import workflow as workflow_service
-from apps.sgp.models import Activity, BudgetAllocation, BudgetRubrica
+from apps.sgp.models import Activity, BudgetPool, BudgetRubrica
 
 RUBRICA_ALIMENTACAO = "alimentacao-refeicoes"
 RUBRICA_GRAFICO = "material-grafico"
@@ -103,7 +103,7 @@ def _aprovadores(dominio_demo: str) -> dict:
 
 
 def _preparar_saldos(acao, solicitantes) -> None:
-    """Alocação territorial e limite individual folgados para todo cenário
+    """Pool territorial e limite individual folgados para todo cenário
     passar nas duas travas — o excedente é o único que estoura de propósito."""
     rubricas = {
         slug: BudgetRubrica.objects.get(slug=slug) for slug in (RUBRICA_ALIMENTACAO, RUBRICA_GRAFICO)
@@ -113,12 +113,12 @@ def _preparar_saldos(acao, solicitantes) -> None:
     for uf, solicitante in solicitantes.items():
         territorio = Territory.objects.filter(estados__contains=[uf]).first()
         for rubrica in rubricas.values():
-            BudgetAllocation.objects.get_or_create(
-                meta=acao.meta, rubrica=rubrica, nivel=BudgetAllocation.Nivel.TERRITORIAL,
+            BudgetPool.objects.get_or_create(
+                rubrica=rubrica, nivel=BudgetPool.Nivel.TERRITORIAL,
                 territorio=territorio, defaults={"valor_alocado": ALOCACAO_TERRITORIAL},
             )
-        BudgetAllocation.objects.get_or_create(
-            meta=acao.meta, rubrica=rubricas[RUBRICA_ALIMENTACAO], nivel=BudgetAllocation.Nivel.ESTADUAL,
+        BudgetPool.objects.get_or_create(
+            rubrica=rubricas[RUBRICA_ALIMENTACAO], nivel=BudgetPool.Nivel.ESTADUAL,
             estado=State.objects.get(sigla=uf), defaults={"valor_alocado": ALOCACAO_ESTADUAL},
         )
         DemandIndividualLimit.objects.update_or_create(
@@ -220,9 +220,8 @@ def _conduzir(demanda, cenario, solicitante, aprovadores) -> None:
 
     if cenario.excedente:
         solicitacao = demanda.solicitacoes.get()
-        origem = BudgetAllocation.objects.get(
-            meta_id=demanda.activity.acao.meta_id, rubrica=solicitacao.rubrica,
-            nivel=BudgetAllocation.Nivel.ESTADUAL, estado__sigla=cenario.uf,
+        origem = BudgetPool.objects.get(
+            rubrica=solicitacao.rubrica, nivel=BudgetPool.Nivel.ESTADUAL, estado__sigla=cenario.uf,
         )
         workflow_service.executar_transicao(
             demanda, "autorizada", ator=ugp, ajustes={solicitacao.pk: LIMITE_INDIVIDUAL[cenario.uf] + Decimal("1000")},

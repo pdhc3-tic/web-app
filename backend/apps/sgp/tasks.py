@@ -17,7 +17,7 @@ from setup.tasks import send_email_notification
 from apps.core.models.notifications import Notification, TipoNotificacao
 from apps.core.models.user import User
 from apps.sgp.services.workplan_dashboard import dashboard_actions, enrich_dashboard_action
-from apps.sgp.budget.services import alocacoes_em_vermelho, limiares_semaforo
+from apps.sgp.budget.services import limiares_semaforo, pools_em_vermelho
 from apps.sgp.cache import set_power_bi_snapshot
 from apps.sgp.services.workplan_export import workplan_export_rows
 from apps.sgp.services import exportacao as exportacao_service
@@ -242,21 +242,18 @@ def check_budget_threshold_alert() -> int:
         notifications_sent = 0
         panel_url = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/sgp/orcamento"
 
-        for allocation in alocacoes_em_vermelho():
+        for pool in pools_em_vermelho():
             message = (
-                f"A alocação de {allocation.meta.titulo} / {allocation.rubrica.nome} "
-                f"({allocation.get_nivel_display()}) está em vermelho: "
-                f"R$ {allocation.valor_comprometido} comprometido de "
-                f"R$ {allocation.valor_alocado} aprovado."
+                f"O pool de {pool.rubrica.nome} "
+                f"({pool.get_nivel_display()}) está em vermelho: "
+                f"R$ {pool.valor_comprometido} comprometido de "
+                f"R$ {pool.valor_alocado} aprovado."
             )
             for recipient in recipients:
                 Notification.objects.create(
                     user=recipient,
                     tipo=TipoNotificacao.EMAIL,
-                    titulo=(
-                        f"Alerta de orçamento: {allocation.meta.titulo} / "
-                        f"{allocation.rubrica.nome}"
-                    ),
+                    titulo=f"Alerta de orçamento: {pool.rubrica.nome} ({pool.get_nivel_display()})",
                     mensagem=message,
                     link=panel_url,
                     modulo_origem="sgp",

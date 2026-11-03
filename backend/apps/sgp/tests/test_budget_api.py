@@ -1,20 +1,21 @@
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
-from apps.sgp.models import BudgetAllocation, BudgetRubrica
 from apps.sgp.budget import services as budget_service
+from apps.sgp.models import BudgetPool, BudgetRubrica
 from apps.sgp.tests.factories import (
-    BudgetAllocationFactory,
+    BudgetPoolFactory,
     BudgetRubricaFactory,
     WorkPlanMetaFactory,
 )
 
 pytestmark = pytest.mark.django_db
 
-Nivel = BudgetAllocation.Nivel
+Nivel = BudgetPool.Nivel
 
 
 def orcamento_url(meta_id):
@@ -26,6 +27,24 @@ def linha_da_rubrica(response, rubrica):
 
 
 class TestOrcamentoLeitura:
+    """A rota da Meta segue como alias enquanto o front migra: a resposta não depende mais dela."""
+
+    def test_meta_inexistente_segue_em_404(self, auth_client):
+        assert auth_client.get(orcamento_url(999999)).status_code == 404
+
+    def test_resposta_e_a_mesma_para_qualquer_meta(self, auth_client_super_admin):
+        rubrica = BudgetRubricaFactory()
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.NACIONAL,
+            estado=None, territorio=None, valor_alocado=Decimal("10000"),
+        )
+
+        uma = auth_client_super_admin.get(orcamento_url(WorkPlanMetaFactory(numero=1).pk))
+        outra = auth_client_super_admin.get(orcamento_url(WorkPlanMetaFactory(numero=2).pk))
+
+        assert uma.data == outra.data
+        assert Decimal(linha_da_rubrica(uma, rubrica)["valor_aprovado"]) == Decimal("10000")
+
     def test_orcamento_lista_todas_rubricas(self, auth_client):
         meta = WorkPlanMetaFactory()
 
@@ -42,8 +61,8 @@ class TestOrcamentoLeitura:
     def test_saldo_disponivel_calculado(self, auth_client_super_admin):
         meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL,
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.NACIONAL,
             estado=None, territorio=None,
             valor_alocado=Decimal("10000"), valor_comprometido=Decimal("3000"),
             valor_executado=Decimal("2000"),
@@ -59,12 +78,12 @@ class TestOrcamentoLeitura:
     ):
         meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL,
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.NACIONAL,
             estado=None, territorio=None, valor_alocado=Decimal("10000"),
         )
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.ESTADUAL,
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.ESTADUAL,
             estado=state_rn, territorio=None,
             valor_alocado=Decimal("4000"), valor_comprometido=Decimal("1000"),
         )
@@ -82,16 +101,16 @@ class TestOrcamentoLeitura:
     ):
         meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL,
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.NACIONAL,
             estado=None, territorio=None, valor_alocado=Decimal("10000"),
         )
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.ESTADUAL,
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.ESTADUAL,
             estado=state_rn, territorio=None, valor_alocado=Decimal("4000"),
         )
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.TERRITORIAL,
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.TERRITORIAL,
             estado=None, territorio=territory_rn, valor_alocado=Decimal("1000"),
         )
 
@@ -108,8 +127,8 @@ class TestOrcamentoLeitura:
     ):
         meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.ESTADUAL,
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.ESTADUAL,
             estado=state_ce, territorio=None, valor_alocado=Decimal("1000"),
         )
 
@@ -123,12 +142,12 @@ class TestOrcamentoLeitura:
     ):
         meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.TERRITORIAL,
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.TERRITORIAL,
             territorio=territory_rn, valor_alocado=Decimal("500"),
         )
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.TERRITORIAL,
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.TERRITORIAL,
             territorio=outro_territorio, valor_alocado=Decimal("700"),
         )
 
@@ -151,8 +170,8 @@ class TestOrcamentoLeitura:
         # cada factory sem override de território cria um Territory novo —
         # não colide com o UniqueConstraint.
         for i in range(20):
-            BudgetAllocationFactory(
-                meta=meta, rubrica=rubricas[i % len(rubricas)],
+            BudgetPoolFactory(
+                rubrica=rubricas[i % len(rubricas)],
                 valor_alocado=Decimal("10"),
             )
 
@@ -161,53 +180,68 @@ class TestOrcamentoLeitura:
 
         assert response.status_code == 200
         # meta + escopo + agregação + detalhamento — fixo, não escala com
-        # rubricas nem alocações.
+        # rubricas nem pools.
         assert len(ctx.captured_queries) <= 4
 
 
-def saldo_url(meta_id, rubrica_slug, valor):
-    return f"/api/v1/sgp/orcamento/saldo/?meta={meta_id}&rubrica={rubrica_slug}&valor={valor}"
+def saldo_url(rubrica_slug, valor):
+    return f"/api/v1/sgp/orcamento/saldo/?rubrica={rubrica_slug}&valor={valor}"
 
 
 class TestSaldoConsulta:
     def test_saldo_suficiente(self, auth_client):
-        meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL,
+        pool = BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.NACIONAL,
             estado=None, territorio=None, valor_alocado=Decimal("1000"),
         )
 
-        response = auth_client.get(saldo_url(meta.pk, rubrica.slug, "500.00"))
+        response = auth_client.get(saldo_url(rubrica.slug, "500.00"))
 
         assert response.status_code == 200
         assert response.data["disponivel"] is True
         assert response.data["nivel"] == "nacional"
+        assert response.data["pool_id"] == pool.pk
+        assert response.data["allocation_id"] == pool.pk
 
-    def test_saldo_insuficiente(self, auth_client):
-        meta = WorkPlanMetaFactory()
+    def test_meta_e_ignorada_com_aviso_no_log(self, auth_client):
         rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL,
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.NACIONAL,
             estado=None, territorio=None, valor_alocado=Decimal("1000"),
         )
 
-        response = auth_client.get(saldo_url(meta.pk, rubrica.slug, "1500.00"))
+        with patch("apps.sgp.budget.views.logger") as logger:
+            sem_meta = auth_client.get(saldo_url(rubrica.slug, "500.00"))
+            logger.warning.assert_not_called()
+            com_meta = auth_client.get(f"{saldo_url(rubrica.slug, '500.00')}&meta=999999")
+
+        logger.warning.assert_called_once()
+        assert com_meta.status_code == 200
+        assert com_meta.data == sem_meta.data
+
+    def test_saldo_insuficiente(self, auth_client):
+        rubrica = BudgetRubricaFactory()
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.NACIONAL,
+            estado=None, territorio=None, valor_alocado=Decimal("1000"),
+        )
+
+        response = auth_client.get(saldo_url(rubrica.slug, "1500.00"))
 
         assert response.status_code == 200
         assert response.data["disponivel"] is False
         assert response.data["motivo_bloqueio"]
 
     def test_saldo_zerado_bloqueia(self, auth_client):
-        meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL,
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.NACIONAL,
             estado=None, territorio=None,
             valor_alocado=Decimal("1000"), valor_comprometido=Decimal("1000"),
         )
 
-        response = auth_client.get(saldo_url(meta.pk, rubrica.slug, "10.00"))
+        response = auth_client.get(saldo_url(rubrica.slug, "10.00"))
 
         assert response.status_code == 200
         assert response.data["disponivel"] is False
@@ -218,57 +252,51 @@ class TestSaldoConsulta:
     # num teste só faz o último force_authenticate() vencer pras outras
     # também. Por isso um teste por papel, não os três juntos.
     def test_nivel_resolvido_por_perfil_adt(self, auth_client_adt_rn):
-        meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
 
-        response = auth_client_adt_rn.get(saldo_url(meta.pk, rubrica.slug, "10.00"))
+        response = auth_client_adt_rn.get(saldo_url(rubrica.slug, "10.00"))
 
         assert response.data["nivel"] == "territorial"
 
     def test_nivel_resolvido_por_perfil_articulador(self, auth_client_articulador_rn):
-        meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
 
-        response = auth_client_articulador_rn.get(saldo_url(meta.pk, rubrica.slug, "10.00"))
+        response = auth_client_articulador_rn.get(saldo_url(rubrica.slug, "10.00"))
 
         assert response.data["nivel"] == "estadual"
 
     def test_nivel_resolvido_por_perfil_ugp(self, auth_client_super_admin):
-        meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
 
-        response = auth_client_super_admin.get(saldo_url(meta.pk, rubrica.slug, "10.00"))
+        response = auth_client_super_admin.get(saldo_url(rubrica.slug, "10.00"))
 
         assert response.data["nivel"] == "nacional"
 
     def test_rubrica_invalida(self, auth_client):
-        meta = WorkPlanMetaFactory()
 
-        response = auth_client.get(saldo_url(meta.pk, "rubrica-inexistente", "10.00"))
+        response = auth_client.get(saldo_url("rubrica-inexistente", "10.00"))
 
         assert response.status_code == 400
 
     def test_numero_de_queries(self, auth_client, django_assert_num_queries):
-        meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL,
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.NACIONAL,
             estado=None, territorio=None, valor_alocado=Decimal("1000"),
         )
 
         with django_assert_num_queries(2):
-            response = auth_client.get(saldo_url(meta.pk, rubrica.slug, "10.00"))
+            response = auth_client.get(saldo_url(rubrica.slug, "10.00"))
 
         assert response.status_code == 200
 
     def test_rubrica_valida_sem_alocacao(self, auth_client):
-        meta = WorkPlanMetaFactory()
-        rubrica = BudgetRubricaFactory()  # sem nenhuma BudgetAllocation
+        rubrica = BudgetRubricaFactory()  # sem nenhuma BudgetPool
 
-        response = auth_client.get(saldo_url(meta.pk, rubrica.slug, "10.00"))
+        response = auth_client.get(saldo_url(rubrica.slug, "10.00"))
 
-        # esse ramo (rubrica ok, nível resolvido, sem alocação) faz 1 query a
-        # mais que o caminho feliz — profile + allocation (miss) + rubrica
+        # esse ramo (rubrica ok, nível resolvido, sem pool) faz 1 query a
+        # mais que o caminho feliz — profile + pool (miss) + rubrica
         # (pra distinguir de rubrica inválida). Não escolhi otimizar pra 2
         # aqui porque isso empurraria a query extra pro caminho feliz, que é
         # o que o teste ≤2 da issue realmente cobre.
@@ -286,9 +314,8 @@ class TestSaldoConsulta:
         )
         client = APIClient()
         client.force_authenticate(user=usuario)
-        meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
 
-        response = client.get(saldo_url(meta.pk, rubrica.slug, "10.00"))
+        response = client.get(saldo_url(rubrica.slug, "10.00"))
 
         assert response.status_code == 403

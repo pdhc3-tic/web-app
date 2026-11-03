@@ -127,7 +127,7 @@ def test_campos_calculados_saem_com_o_tipo_real(schema):
     transicoes = _componente(schema, "ActivityDetailResposta")["properties"]["transicoes_permitidas"]
     assert _ref(transicoes["items"]) == "StatusAtividadeEnum"
 
-    assert _componente(schema, "BudgetAllocation")["properties"]["saldo_disponivel"]["type"] == "number"
+    assert _componente(schema, "BudgetPool")["properties"]["saldo_disponivel"]["type"] == "number"
     perfis = _componente(schema, "UserDetail")["properties"]["perfis"]
     assert _ref(perfis["items"]) == "PerfilDoUsuario"
 

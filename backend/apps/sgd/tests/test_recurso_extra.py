@@ -24,11 +24,11 @@ from apps.sgd.tests.factories import (
     DemandRequestFactory,
     DemandTypeRubricaMappingFactory,
 )
-from apps.sgp.models import Activity, BudgetAllocation, BudgetIncreaseRequest, BudgetTransfer
+from apps.sgp.models import Activity, BudgetPool, BudgetIncreaseRequest, BudgetTransfer
 from apps.sgp.budget import services as budget_service
 from apps.sgp.tests.factories import (
     ActivityFactory,
-    BudgetAllocationFactory,
+    BudgetPoolFactory,
     BudgetRubricaFactory,
     WorkPlanAcaoFactory,
 )
@@ -547,8 +547,8 @@ def test_demanda_que_saiu_da_edicao_nao_tem_pedido_aprovado(
 
 @pytest.fixture
 def alocacao_estadual(allocation_territorial_rn, activity_rn, rubrica_diarias):
-    return BudgetAllocationFactory(
-        meta=allocation_territorial_rn.meta, rubrica=rubrica_diarias, nivel=BudgetAllocation.Nivel.ESTADUAL,
+    return BudgetPoolFactory(
+        rubrica=rubrica_diarias, nivel=BudgetPool.Nivel.ESTADUAL,
         estado=activity_rn.municipio.state, territorio=None, valor_alocado=Decimal("50000"),
     )
 
@@ -564,7 +564,7 @@ def test_pool_com_saldo_nao_gera_remanejamento(pedido_com_parecer, usuario_ugp):
 def test_pool_sem_cobrir_o_necessario_exige_origem_e_nada_e_gravado(
     pedido_com_parecer, usuario_ugp, allocation_territorial_rn, solicitante_rn, rubrica_diarias,
 ):
-    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
+    BudgetPool.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
 
     resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", APROVAR)
 
@@ -579,7 +579,7 @@ def test_pool_sem_cobrir_o_necessario_exige_origem_e_nada_e_gravado(
 def test_remanejamento_de_pool_estadual_cobre_o_que_falta(
     demanda, pedido_com_parecer, usuario_ugp, allocation_territorial_rn, alocacao_estadual, solicitante_rn,
 ):
-    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
+    BudgetPool.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
 
     resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {
         **APROVAR, "origem_allocation": alocacao_estadual.pk,
@@ -607,9 +607,9 @@ def test_remanejamento_de_pool_estadual_cobre_o_que_falta(
 def test_saldo_estadual_de_outro_estado_nao_cobre_o_pool(
     pedido_com_parecer, usuario_ugp, allocation_territorial_rn, municipio_ce, rubrica_diarias, solicitante_rn,
 ):
-    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
-    estadual_ce = BudgetAllocationFactory(
-        meta=allocation_territorial_rn.meta, rubrica=rubrica_diarias, nivel=BudgetAllocation.Nivel.ESTADUAL,
+    BudgetPool.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
+    estadual_ce = BudgetPoolFactory(
+        rubrica=rubrica_diarias, nivel=BudgetPool.Nivel.ESTADUAL,
         estado=municipio_ce.state, territorio=None, valor_alocado=Decimal("50000"),
     )
 
@@ -624,7 +624,7 @@ def test_saldo_estadual_de_outro_estado_nao_cobre_o_pool(
 def test_pool_com_saldo_negativo_remaneja_o_deficit_inteiro(
     demanda, pedido_com_parecer, usuario_ugp, allocation_territorial_rn, alocacao_estadual, solicitante_rn,
 ):
-    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(
+    BudgetPool.objects.filter(pk=allocation_territorial_rn.pk).update(
         valor_alocado=Decimal("200"), valor_comprometido=Decimal("400"),
     )
 
@@ -651,7 +651,7 @@ def test_pedido_sem_territorio_resolvivel_nao_e_aprovado(pedido_com_parecer, usu
     assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")
 
 
-def test_pedido_sem_meta_nao_e_aprovado(usuario_ugp, solicitante_rn, rubrica_diarias):
+def test_pedido_sem_pool_territorial_nao_e_aprovado(usuario_ugp, solicitante_rn, rubrica_diarias):
     pedido = BudgetIncreaseRequestFactory(user=solicitante_rn, rubrica=rubrica_diarias, status="com_parecer")
 
     resposta = _acao(usuario_ugp, pedido.pk, "decidir", APROVAR)
@@ -664,18 +664,18 @@ def test_pedido_sem_meta_nao_e_aprovado(usuario_ugp, solicitante_rn, rubrica_dia
 def test_saldos_da_auditoria_sao_lidos_depois_do_lock(
     pedido_com_parecer, usuario_ugp, allocation_territorial_rn, alocacao_estadual, monkeypatch,
 ):
-    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
-    lock = BudgetAllocation.objects.select_for_update
+    BudgetPool.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
+    lock = BudgetPool.objects.select_for_update
     deslocado = []
 
     def travar_e_mexer_no_saldo(*args, **kwargs):
         # Um comprometimento que chega entre a consulta e o lock da origem.
         if not deslocado:
             deslocado.append(True)
-            BudgetAllocation.objects.filter(pk=alocacao_estadual.pk).update(valor_comprometido=Decimal("1000"))
+            BudgetPool.objects.filter(pk=alocacao_estadual.pk).update(valor_comprometido=Decimal("1000"))
         return lock(*args, **kwargs)
 
-    monkeypatch.setattr(BudgetAllocation.objects, "select_for_update", travar_e_mexer_no_saldo)
+    monkeypatch.setattr(BudgetPool.objects, "select_for_update", travar_e_mexer_no_saldo)
 
     resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {
         **APROVAR, "origem_allocation": alocacao_estadual.pk,
@@ -693,7 +693,7 @@ def test_decisao_trava_limite_alocacoes_demanda_e_solicitacoes_nessa_ordem(
     from django.db import connection
     from django.test.utils import CaptureQueriesContext
 
-    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
+    BudgetPool.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
 
     with CaptureQueriesContext(connection) as consultas:
         resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {
@@ -703,7 +703,7 @@ def test_decisao_trava_limite_alocacoes_demanda_e_solicitacoes_nessa_ordem(
     assert resposta.status_code == 200
     nomes = {
         "sgd_demandindividuallimit": "limite", "sgd_demandrequest": "solicitacao",
-        "sgp_budgetallocation": "alocacao", "sgd_demand": "demanda",
+        "sgp_budgetpool": "alocacao", "sgd_demand": "demanda",
     }
     travas = [q["sql"] for q in consultas if "FOR UPDATE" in q["sql"]]
     tabelas = [nome for sql in travas for tabela, nome in nomes.items() if f'"{tabela}"' in sql]
@@ -788,7 +788,7 @@ def test_reserva_concorrente_do_solicitante_e_vista_pela_decisao_sem_deadlock(
     segurar alocação (senão a reserva entraria em deadlock) e lê limite e pool já com
     a reserva concorrente."""
     pedido = _pedido_com_parecer(demanda, solicitante_rn, usuario_articulador_rn, "900")
-    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
+    BudgetPool.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
     concorrente = _solicitacao_em_outra_demanda(demanda, rubrica_diarias, Decimal("100"))
 
     resultado, erros = _decidir_contra(
@@ -819,17 +819,17 @@ def test_pool_suficiente_na_consulta_e_consumido_antes_do_lock_exige_origem(
     territorial: a decisão consulta o pool ainda suficiente, espera o lock e precisa
     reler o saldo, que a reserva deixou abaixo do necessário."""
     pedido = _pedido_com_parecer(demanda, solicitante_rn, usuario_articulador_rn, "700")
-    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("1050"))
+    BudgetPool.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("1050"))
 
     def reservar_no_pool():
         budget_service.reservar(
-            allocation=allocation_territorial_rn, valor=Decimal("100"), demanda_id="concorrente",
+            pool=allocation_territorial_rn, valor=Decimal("100"), demanda_id="concorrente",
             usuario=usuario_ugp, justificativa="Reserva concorrente.",
         )
 
     resultado, erros = _decidir_contra(
         pedido,
-        travar=lambda: BudgetAllocation.objects.select_for_update().get(pk=allocation_territorial_rn.pk),
+        travar=lambda: BudgetPool.objects.select_for_update().get(pk=allocation_territorial_rn.pk),
         mexer=reservar_no_pool,
         usuario=usuario_ugp, decisao="aprovar", justificativa="Procede.",
     )
@@ -1048,9 +1048,9 @@ def test_decisoes_simultaneas_sem_limite_criam_um_so_limite(
 def test_remanejamento_so_pode_vir_de_saldo_estadual_ou_nacional(
     pedido_com_parecer, usuario_ugp, allocation_territorial_rn, solicitante_rn, rubrica_diarias,
 ):
-    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
-    outra_territorial = BudgetAllocationFactory(
-        meta=allocation_territorial_rn.meta, rubrica=rubrica_diarias, valor_alocado=Decimal("9000"),
+    BudgetPool.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
+    outra_territorial = BudgetPoolFactory(
+        rubrica=rubrica_diarias, valor_alocado=Decimal("9000"),
     )
 
     resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {
@@ -1066,8 +1066,8 @@ def test_remanejamento_so_pode_vir_de_saldo_estadual_ou_nacional(
 def test_remanejamento_sem_saldo_na_origem_desfaz_a_decisao(
     pedido_com_parecer, usuario_ugp, allocation_territorial_rn, alocacao_estadual, solicitante_rn, rubrica_diarias,
 ):
-    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
-    BudgetAllocation.objects.filter(pk=alocacao_estadual.pk).update(valor_alocado=Decimal("100"))
+    BudgetPool.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
+    BudgetPool.objects.filter(pk=alocacao_estadual.pk).update(valor_alocado=Decimal("100"))
 
     resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {
         **APROVAR, "origem_allocation": alocacao_estadual.pk,
@@ -1084,7 +1084,7 @@ def test_remanejamento_sem_saldo_na_origem_desfaz_a_decisao(
 def test_remanejamento_registrado_e_imutavel(
     pedido_com_parecer, usuario_ugp, allocation_territorial_rn, alocacao_estadual,
 ):
-    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
+    BudgetPool.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("200"))
     _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {**APROVAR, "origem_allocation": alocacao_estadual.pk})
     transferencia = BudgetTransfer.objects.get()
 

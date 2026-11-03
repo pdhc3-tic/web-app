@@ -2,8 +2,6 @@ from django.conf import settings
 from django.db import models
 from django.db.models import ProtectedError, Q
 
-from apps.sgp.models.workplan import WorkPlanMeta
-
 
 class BudgetRubrica(models.Model):
     """Catálogo estável das rubricas orçamentárias (§5.3.1)."""
@@ -22,14 +20,12 @@ class BudgetRubrica(models.Model):
         return self.nome
 
 
-class BudgetAllocation(models.Model):
-    """A distribuição de uma Meta/Rubrica entre os três níveis (§5.5).
+class BudgetPool(models.Model):
+    """Saldo autônomo de uma rubrica num nível geográfico.
 
-    `valor_comprometido` e `valor_executado` são materializados, não
-    properties — atualizados exclusivamente por BudgetTransaction dentro de
-    transação atômica (decisão de projeto: evita o N+1 que
-    WorkPlanAcao.quantidade_realizada causa no painel do PT, ver R4 em
-    SPRINT_SGP_REFATORACAO.md).
+    `valor_comprometido` e `valor_executado` são materializados, não properties:
+    atualizados exclusivamente junto de uma BudgetTransaction, dentro de transação
+    atômica, para o painel não pagar uma soma por célula.
     """
 
     class Nivel(models.TextChoices):
@@ -37,16 +33,10 @@ class BudgetAllocation(models.Model):
         ESTADUAL = "estadual", "Estadual"
         TERRITORIAL = "territorial", "Territorial"
 
-    meta = models.ForeignKey(
-        WorkPlanMeta,
-        on_delete=models.CASCADE,
-        related_name="alocacoes_orcamento",
-        verbose_name="Meta",
-    )
     rubrica = models.ForeignKey(
         BudgetRubrica,
         on_delete=models.PROTECT,
-        related_name="alocacoes",
+        related_name="pools",
         verbose_name="Rubrica",
     )
     nivel = models.CharField(
@@ -57,7 +47,7 @@ class BudgetAllocation(models.Model):
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name="alocacoes_orcamento",
+        related_name="pools_orcamento",
         verbose_name="Estado",
     )
     territorio = models.ForeignKey(
@@ -65,7 +55,7 @@ class BudgetAllocation(models.Model):
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name="alocacoes_orcamento",
+        related_name="pools_orcamento",
         verbose_name="Território",
     )
     valor_alocado = models.DecimalField(
@@ -83,7 +73,7 @@ class BudgetAllocation(models.Model):
     reserva_ugp = models.BooleanField(
         default=False,
         verbose_name="Reserva Própria da UGP",
-        help_text="Só em nível nacional. Uma reserva própria da UGP nunca recebe alocações-filhas.",
+        help_text="Só em nível nacional. Uma reserva própria da UGP nunca recebe pools-filhos.",
     )
     criado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -97,41 +87,40 @@ class BudgetAllocation(models.Model):
     )
 
     class Meta:
-        verbose_name = "Alocação Orçamentária"
-        verbose_name_plural = "Alocações Orçamentárias"
-        ordering = ["meta", "rubrica", "nivel"]
+        verbose_name = "Pool Orçamentário"
+        verbose_name_plural = "Pools Orçamentários"
+        ordering = ["rubrica", "nivel"]
         constraints = [
             models.UniqueConstraint(
-                fields=["meta", "rubrica", "nivel", "estado", "territorio"],
-                name="unique_budget_allocation_combinacao",
+                fields=["rubrica", "nivel", "estado", "territorio"],
+                name="unique_budget_pool_combinacao",
                 # sem isso dois NULLs em estado/territorio (nacional/estadual) não colidem no Postgres.
                 nulls_distinct=False,
             ),
             models.CheckConstraint(
-                # literais, não Nivel.* — Meta não enxerga o namespace de BudgetAllocation.
+                # literais, não Nivel.* — Meta não enxerga o namespace de BudgetPool.
                 condition=(
                     Q(nivel="nacional", estado__isnull=True, territorio__isnull=True)
                     | Q(nivel="estadual", estado__isnull=False, territorio__isnull=True)
                     | Q(nivel="territorial", territorio__isnull=False)
                 ),
-                name="ck_budget_allocation_nivel_consistente",
+                name="ck_budget_pool_nivel_consistente",
             ),
             models.CheckConstraint(
                 condition=Q(reserva_ugp=False) | Q(nivel="nacional"),
-                name="ck_budget_allocation_reserva_ugp_so_nacional",
+                name="ck_budget_pool_reserva_ugp_so_nacional",
             ),
         ]
         indexes = [
-            models.Index(fields=["meta", "rubrica"], name="idx_budgetalloc_meta_rubrica"),
-            models.Index(fields=["nivel", "territorio"], name="idx_budgetalloc_nivel_territ"),
+            models.Index(fields=["nivel", "territorio"], name="idx_budgetpool_nivel_territ"),
         ]
 
     def __str__(self):
-        return f"{self.meta} · {self.rubrica} · {self.get_nivel_display()}"
+        return f"{self.rubrica} · {self.get_nivel_display()}"
 
 
 class BudgetTransaction(models.Model):
-    """Trilha de auditoria imutável de movimentos sobre uma alocação (§5.5).
+    """Trilha de auditoria imutável de movimentos sobre um pool (§5.5).
 
     Mesmo padrão de imutabilidade de apps.core.models.audit_log.AuditLog:
     save() bloqueia UPDATE, delete() é bloqueado — aqui com ProtectedError,
@@ -145,11 +134,20 @@ class BudgetTransaction(models.Model):
         REMANEJAMENTO = "remanejamento", "Remanejamento"
         AJUSTE = "ajuste", "Ajuste"
 
-    allocation = models.ForeignKey(
-        BudgetAllocation,
+    pool = models.ForeignKey(
+        BudgetPool,
         on_delete=models.PROTECT,
         related_name="transactions",
-        verbose_name="Alocação",
+        verbose_name="Pool",
+    )
+    activity = models.ForeignKey(
+        "sgp.Activity",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="transacoes_orcamento",
+        verbose_name="Atividade",
+        help_text="Liga o executado à Meta, pela cadeia Atividade → Ação → Meta.",
     )
     tipo = models.CharField(
         max_length=20, choices=Tipo.choices, verbose_name="Tipo",
@@ -201,7 +199,7 @@ class BudgetTransaction(models.Model):
         )
 
     def __str__(self):
-        return f"[{self.tipo}] {self.allocation} — R$ {self.valor}"
+        return f"[{self.tipo}] {self.pool} — R$ {self.valor}"
 
 
 class BudgetIncreaseRequest(models.Model):
@@ -295,7 +293,7 @@ class BudgetIncreaseRequest(models.Model):
 
 
 class BudgetTransfer(models.Model):
-    """Remanejamento de saldo entre alocações (SGP §6.7), imutável: correção só por
+    """Remanejamento de saldo entre pools (SGP §6.7), imutável: correção só por
     um novo remanejamento em sentido contrário."""
 
     class Tipo(models.TextChoices):
@@ -310,15 +308,15 @@ class BudgetTransfer(models.Model):
     tipo = models.CharField(max_length=20, choices=Tipo.choices, verbose_name="Tipo")
     escopo = models.CharField(
         max_length=20, choices=Escopo.choices, blank=True, default="", verbose_name="Escopo",
-        help_text="Em branco no remanejamento feito direto entre alocações, sem demanda envolvida.",
+        help_text="Em branco no remanejamento feito direto entre pools, sem demanda envolvida.",
     )
-    allocation_origem = models.ForeignKey(
-        BudgetAllocation, on_delete=models.PROTECT,
-        related_name="transferencias_de_saida", verbose_name="Alocação de origem",
+    pool_origem = models.ForeignKey(
+        BudgetPool, on_delete=models.PROTECT,
+        related_name="transferencias_de_saida", verbose_name="Pool de origem",
     )
-    allocation_destino = models.ForeignKey(
-        BudgetAllocation, on_delete=models.PROTECT,
-        related_name="transferencias_de_entrada", verbose_name="Alocação de destino",
+    pool_destino = models.ForeignKey(
+        BudgetPool, on_delete=models.PROTECT,
+        related_name="transferencias_de_entrada", verbose_name="Pool de destino",
     )
     valor = models.DecimalField(max_digits=14, decimal_places=2, verbose_name="Valor (R$)")
     motivo = models.TextField(verbose_name="Motivo")
@@ -360,4 +358,4 @@ class BudgetTransfer(models.Model):
         raise ProtectedError("BudgetTransfer é imutável: registros não podem ser removidos.", [self])
 
     def __str__(self):
-        return f"[{self.tipo}] {self.allocation_origem} → {self.allocation_destino} — R$ {self.valor}"
+        return f"[{self.tipo}] {self.pool_origem} → {self.pool_destino} — R$ {self.valor}"

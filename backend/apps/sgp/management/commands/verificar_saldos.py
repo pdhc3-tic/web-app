@@ -5,14 +5,14 @@ from django.db.models import Q, Sum
 from django.db.models.functions import Coalesce
 
 from apps.sgd.services.reconciliacao import divergencias_dos_limites, divergencias_dos_totais
-from apps.sgp.models import BudgetAllocation, BudgetTransaction
+from apps.sgp.models import BudgetPool, BudgetTransaction
 
 ZERO = Decimal("0")
 
 
 class Command(BaseCommand):
     help = (
-        "Reconcilia valor_comprometido/valor_executado de cada BudgetAllocation "
+        "Reconcilia valor_comprometido/valor_executado de cada BudgetPool "
         "contra a soma das suas BudgetTransaction, o comprometido de cada limite "
         "individual do SGD contra as reservas ativas das solicitações e os totais de "
         "cada demanda contra a soma das solicitações."
@@ -20,7 +20,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         Tipo = BudgetTransaction.Tipo
-        alocacoes = list(BudgetAllocation.objects.annotate(
+        pools = list(BudgetPool.objects.annotate(
             reserva=Coalesce(Sum("transactions__valor", filter=Q(transactions__tipo=Tipo.RESERVA)), ZERO),
             ajuste=Coalesce(Sum("transactions__valor", filter=Q(transactions__tipo=Tipo.AJUSTE)), ZERO),
             execucao=Coalesce(Sum("transactions__valor", filter=Q(transactions__tipo=Tipo.EXECUCAO)), ZERO),
@@ -28,20 +28,20 @@ class Command(BaseCommand):
         ))
 
         divergencias = []
-        for alocacao in alocacoes:
+        for pool in pools:
             # `ajuste` soma os deltas de `ajustar_reserva` (SGD) — sem somar
-            # aqui, uma alocação com ajuste aplicado sempre divergiria.
-            comprometido_esperado = alocacao.reserva + alocacao.ajuste - alocacao.execucao - alocacao.liberacao
-            executado_esperado = alocacao.execucao
+            # aqui, um pool com ajuste aplicado sempre divergiria.
+            comprometido_esperado = pool.reserva + pool.ajuste - pool.execucao - pool.liberacao
+            executado_esperado = pool.execucao
 
-            if alocacao.valor_comprometido != comprometido_esperado:
+            if pool.valor_comprometido != comprometido_esperado:
                 divergencias.append(
-                    f"Alocação #{alocacao.pk}: valor_comprometido={alocacao.valor_comprometido} "
+                    f"Pool #{pool.pk}: valor_comprometido={pool.valor_comprometido} "
                     f"mas reserva-execucao-liberacao soma {comprometido_esperado}"
                 )
-            if alocacao.valor_executado != executado_esperado:
+            if pool.valor_executado != executado_esperado:
                 divergencias.append(
-                    f"Alocação #{alocacao.pk}: valor_executado={alocacao.valor_executado} "
+                    f"Pool #{pool.pk}: valor_executado={pool.valor_executado} "
                     f"mas execucao soma {executado_esperado}"
                 )
 
@@ -55,6 +55,6 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"{len(alocacoes)} alocação(ões) reconciliada(s) sem divergência."
+                f"{len(pools)} pool(s) reconciliado(s) sem divergência."
             )
         )

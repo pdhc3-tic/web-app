@@ -1,8 +1,8 @@
 from django.urls import path
 
 from .views import (
-    BudgetAllocationViewSet,
     BudgetPainelView,
+    BudgetPoolViewSet,
     BudgetRubricaListView,
     RemanejamentoView,
     SaldoConsultaView,
@@ -10,18 +10,34 @@ from .views import (
 
 urlpatterns = [
     path(
+        "sgp/orcamento/pools/",
+        BudgetPoolViewSet.as_view({"post": "create"}),
+        name="budget-pools-create",
+    ),
+    path(
+        "sgp/orcamento/pools/<int:pk>/",
+        BudgetPoolViewSet.as_view({"patch": "partial_update", "delete": "destroy"}),
+        name="budget-pools-detail",
+    ),
+    path(
+        "sgp/orcamento/pools/<int:pk>/transacoes/",
+        BudgetPoolViewSet.as_view({"get": "transacoes"}),
+        name="budget-pools-transacoes",
+    ),
+    # Alias das três rotas acima, enquanto o front migra.
+    path(
         "sgp/metas/<int:meta_pk>/orcamento/alocacoes/",
-        BudgetAllocationViewSet.as_view({"post": "create"}),
+        BudgetPoolViewSet.as_view({"post": "create"}),
         name="budget-alocacoes-create",
     ),
     path(
         "sgp/orcamento/alocacoes/<int:pk>/",
-        BudgetAllocationViewSet.as_view({"patch": "partial_update", "delete": "destroy"}),
+        BudgetPoolViewSet.as_view({"patch": "partial_update", "delete": "destroy"}),
         name="budget-alocacoes-detail",
     ),
     path(
         "sgp/orcamento/alocacoes/<int:pk>/transacoes/",
-        BudgetAllocationViewSet.as_view({"get": "transacoes"}),
+        BudgetPoolViewSet.as_view({"get": "transacoes"}),
         name="budget-alocacoes-transacoes",
     ),
     path(

@@ -4,7 +4,9 @@ from apps.sgd.models.demand_request import TIPO_CHOICES
 
 
 class SaldoConsultaQuerySerializer(serializers.Serializer):
-    activity_id = serializers.IntegerField()
+    activity_id = serializers.IntegerField(
+        required=False, help_text="Ignorado: o saldo depende só do solicitante e da rubrica.",
+    )
     rubrica = serializers.CharField(required=False, help_text="slug de BudgetRubrica")
     tipo = serializers.ChoiceField(
         choices=TIPO_CHOICES, required=False,

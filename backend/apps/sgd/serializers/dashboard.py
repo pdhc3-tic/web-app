@@ -28,8 +28,8 @@ class DashboardStatusSerializer(serializers.Serializer):
 
 
 class DashboardAlertaSaldoSerializer(serializers.Serializer):
-    meta_id = serializers.IntegerField()
-    meta_numero = serializers.CharField()
+    meta_id = serializers.IntegerField(allow_null=True)
+    meta_numero = serializers.CharField(allow_null=True)
     rubrica_id = serializers.IntegerField()
     rubrica_slug = serializers.CharField()
     rubrica_nome = serializers.CharField()

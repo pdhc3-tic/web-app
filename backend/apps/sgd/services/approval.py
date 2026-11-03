@@ -110,27 +110,27 @@ def preview_impacto(demand_request, valor: Decimal, *, origem=None) -> dict:
     with orcamento_service.pelo_solicitante():
         if delta > Decimal("0"):
             check = balance_service.verificar_duas_travas(
-                solicitante=solicitante, rubrica=rubrica, valor=delta, demand_request=demand_request,
+                solicitante=solicitante, rubrica=rubrica, valor=delta,
             )
             disponivel, trava_bloqueada = check.disponivel, check.trava_bloqueada
-            allocation = check.territorial.allocation
+            pool = check.territorial.pool
         else:
             # Reduzir o valor autorizado nunca bloqueia — está liberando saldo.
-            allocation = orcamento_service.consultar_pool(
-                solicitante=solicitante, rubrica=rubrica, valor=Decimal("0"), demand_request=demand_request,
-            ).allocation
+            pool = orcamento_service.consultar_pool(
+                solicitante=solicitante, rubrica=rubrica, valor=Decimal("0"),
+            ).pool
             disponivel, trava_bloqueada = True, None
 
     limite = DemandIndividualLimit.objects.filter(solicitante=solicitante, rubrica=rubrica).first()
     acima_do_limite = remanejado = Decimal("0")
     if origem is not None:
         # O remanejamento vai para o pool da reserva, como na autorização.
-        allocation = orcamento_service.pool_da_reserva(demand_request) or allocation
-        remanejamento_service.exigir_origem_da_solicitacao(origem, demand_request, allocation)
+        pool = orcamento_service.pool_da_reserva(demand_request) or pool
+        remanejamento_service.exigir_origem_da_solicitacao(origem, demand_request, pool)
         acima_do_limite, remanejado = remanejamento_service.calcular_excedente(
             aumento=delta,
             saldo_limite=limite.saldo_disponivel if limite is not None else Decimal("0"),
-            saldo_pool=orcamento_service.saldo_do_pool(allocation) if allocation is not None else Decimal("0"),
+            saldo_pool=orcamento_service.saldo_do_pool(pool) if pool is not None else Decimal("0"),
         )
     no_limite = delta - acima_do_limite
 
@@ -143,11 +143,11 @@ def preview_impacto(demand_request, valor: Decimal, *, origem=None) -> dict:
         individual["saldo_apos"] = limite.saldo_disponivel - no_limite
 
     territorial = {"semaforo_antes": None, "semaforo_apos": None, "saldo_apos": None}
-    if allocation is not None:
-        alocado_apos = allocation.valor_alocado + remanejado
-        territorial["semaforo_antes"] = _faixa(allocation.valor_comprometido, allocation.valor_alocado, limiares)
-        territorial["semaforo_apos"] = _faixa(allocation.valor_comprometido + delta, alocado_apos, limiares)
-        territorial["saldo_apos"] = alocado_apos - allocation.valor_comprometido - delta
+    if pool is not None:
+        alocado_apos = pool.valor_alocado + remanejado
+        territorial["semaforo_antes"] = _faixa(pool.valor_comprometido, pool.valor_alocado, limiares)
+        territorial["semaforo_apos"] = _faixa(pool.valor_comprometido + delta, alocado_apos, limiares)
+        territorial["saldo_apos"] = alocado_apos - pool.valor_comprometido - delta
 
     impacto_origem = None
     if origem is not None:

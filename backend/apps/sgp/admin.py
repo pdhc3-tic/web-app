@@ -3,7 +3,7 @@ from django.contrib import admin
 
 from apps.sgp.models import (
     Activity,
-    BudgetAllocation,
+    BudgetPool,
     BudgetRubrica,
     BudgetTransaction,
     Comunidade,
@@ -197,14 +197,14 @@ class BudgetRubricaAdmin(admin.ModelAdmin):
     search_fields = ["nome", "slug"]
 
 
-@admin.register(BudgetAllocation)
-class BudgetAllocationAdmin(admin.ModelAdmin):
+@admin.register(BudgetPool)
+class BudgetPoolAdmin(admin.ModelAdmin):
     list_display = [
-        "meta", "rubrica", "nivel", "estado", "territorio",
+        "rubrica", "nivel", "estado", "territorio",
         "valor_alocado", "valor_comprometido", "valor_executado",
     ]
     list_filter = ["nivel", "rubrica", "estado"]
-    search_fields = ["meta__titulo"]
+    search_fields = ["rubrica__nome", "territorio__nome"]
     readonly_fields = [
         "valor_comprometido", "valor_executado", "criado_por", "criado_em",
     ]
@@ -212,11 +212,11 @@ class BudgetAllocationAdmin(admin.ModelAdmin):
 
 @admin.register(BudgetTransaction)
 class BudgetTransactionAdmin(admin.ModelAdmin):
-    list_display = ["allocation", "tipo", "valor", "demanda_id", "criado_por", "criado_em"]
+    list_display = ["pool", "tipo", "valor", "demanda_id", "criado_por", "criado_em"]
     list_filter = ["tipo"]
     search_fields = ["demanda_id", "justificativa"]
     readonly_fields = [
-        "allocation", "tipo", "valor", "demanda_id",
+        "pool", "activity", "tipo", "valor", "demanda_id",
         "justificativa", "criado_por", "criado_em",
     ]
 

@@ -137,7 +137,8 @@ def painel_por_rubrica(user, demandas, params) -> list[dict]:
         })
         acc["aprovado"] += linha["valor_aprovado"]
         acc["comprometido"] += linha["valor_comprometido"]
-        acc["executado"] += linha["valor_executado"]
+        # Com `?meta=`, o executado é o da Meta; aprovado e disponível seguem os do pool.
+        acc["executado"] += linha.get("valor_executado_meta", linha["valor_executado"])
         acc["disponivel"] += linha["saldo_disponivel"]
 
     limiares = orcamento_service.limiares_semaforo()

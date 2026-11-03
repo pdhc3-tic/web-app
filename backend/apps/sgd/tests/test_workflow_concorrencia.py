@@ -244,12 +244,12 @@ def test_cancelamento_pela_task_recusado_quando_a_solicitacao_muda_de_rubrica(
     r1 em silêncio. A releitura da reserva recusa a operação nos dois casos."""
     from apps.sgd.services import balance as balance_service
     from apps.sgd.tests.factories import DemandFactory, DemandIndividualLimitFactory, DemandRequestFactory
-    from apps.sgp.tests.factories import BudgetAllocationFactory, BudgetRubricaFactory
+    from apps.sgp.tests.factories import BudgetPoolFactory, BudgetRubricaFactory
 
     outra_rubrica = BudgetRubricaFactory(slug="rubrica-troca-durante-o-cancelamento")
     limite_r2 = DemandIndividualLimitFactory(solicitante=solicitante_rn, rubrica=outra_rubrica, valor_limite=5_000)
-    BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=outra_rubrica, territorio=activity_rn.municipio.territory,
+    BudgetPoolFactory(
+        rubrica=outra_rubrica, territorio=activity_rn.municipio.territory,
         valor_alocado=10_000,
     )
     if com_reserva_vizinha:

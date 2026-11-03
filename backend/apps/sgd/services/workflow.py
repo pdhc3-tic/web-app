@@ -249,7 +249,7 @@ def _reservar(demand, transicao, *, ator, **_) -> tuple[list, dict | None]:
         consumo_previo = consumo_por_rubrica.get(solicitacao.rubrica_id, balance_service.ZERO)
         check = balance_service.verificar_duas_travas(
             solicitante=demand.solicitante, rubrica=solicitacao.rubrica, valor=solicitacao.valor_estimado,
-            demand_request=solicitacao, consumo_previo=consumo_previo,
+            consumo_previo=consumo_previo,
         )
         if not check.disponivel:
             bloqueios[solicitacao.pk] = check.bloqueio(solicitacao_id=solicitacao.pk)

@@ -11,8 +11,8 @@ from apps.sgd.services import demand as demand_service
 from apps.sgd.services.reconciliacao import divergencias_dos_limites, divergencias_dos_totais
 from apps.sgd.services.workflow import executar_transicao
 from apps.sgd.tests.factories import DemandRequestFactory
-from apps.sgp.models import BudgetAllocation, BudgetTransfer
-from apps.sgp.tests.factories import BudgetAllocationFactory, BudgetRubricaFactory
+from apps.sgp.models import BudgetPool, BudgetTransfer
+from apps.sgp.tests.factories import BudgetPoolFactory, BudgetRubricaFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -37,8 +37,8 @@ def demanda(demand_request_rn, solicitante_rn, limite_individual_rn, allocation_
 
 @pytest.fixture
 def origem(allocation_territorial_rn, activity_rn, rubrica_diarias):
-    return BudgetAllocationFactory(
-        meta=allocation_territorial_rn.meta, rubrica=rubrica_diarias, nivel=BudgetAllocation.Nivel.ESTADUAL,
+    return BudgetPoolFactory(
+        rubrica=rubrica_diarias, nivel=BudgetPool.Nivel.ESTADUAL,
         estado=activity_rn.municipio.state, territorio=None, valor_alocado=Decimal("5000"),
     )
 
@@ -72,7 +72,7 @@ def test_excedente_remaneja_da_origem_sem_alterar_o_valor_limite(
     transferencia = BudgetTransfer.objects.get()
     assert transferencia.escopo == BudgetTransfer.Escopo.PONTUAL
     assert transferencia.valor == Decimal("300")
-    assert (transferencia.allocation_origem, transferencia.allocation_destino) == (origem, allocation_territorial_rn)
+    assert (transferencia.pool_origem, transferencia.pool_destino) == (origem, allocation_territorial_rn)
     assert (transferencia.saldo_origem_antes, transferencia.saldo_origem_depois) == (Decimal("5000"), Decimal("4700"))
     assert (transferencia.saldo_destino_antes, transferencia.saldo_destino_depois) == (Decimal("9000"), Decimal("9300"))
     assert (transferencia.demanda_id, transferencia.solicitacao_id) == (str(demanda.pk), str(demand_request_rn.pk))
@@ -124,7 +124,7 @@ def test_sem_saldo_no_pool_remaneja_o_que_falta_nele(
 ):
     """O limite cobre o aumento de 400, mas o pool só tem 100 livres: remaneja 300,
     e nada fica fora do limite."""
-    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("1100"))
+    BudgetPool.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("1100"))
 
     resposta = _autorizar(usuario_ugp, demanda, demand_request_rn, "1400", origem_allocation=origem.pk)
 
@@ -141,7 +141,7 @@ def test_acima_do_limite_e_do_pool_remaneja_o_maior_dos_dois(
     """Aumento de 500 com 200 livres no limite (300 acima) e 100 livres no pool (400
     acima): remaneja 400, e só os 300 acima do limite ficam fora dele."""
     DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_limite=Decimal("1200"))
-    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("1100"))
+    BudgetPool.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("1100"))
 
     resposta = _autorizar(usuario_ugp, demanda, demand_request_rn, "1500", origem_allocation=origem.pk)
 
@@ -185,25 +185,25 @@ def test_pedido_de_excedente_incompleto_e_400(demanda, demand_request_rn, usuari
 
 @pytest.fixture
 def origem_territorial(allocation_territorial_rn, rubrica_diarias):
-    return BudgetAllocationFactory(
-        meta=allocation_territorial_rn.meta, rubrica=rubrica_diarias, nivel=BudgetAllocation.Nivel.TERRITORIAL,
+    return BudgetPoolFactory(
+        rubrica=rubrica_diarias, nivel=BudgetPool.Nivel.TERRITORIAL,
         territorio=TerritoryFactory(nome="Outro território", estados=["RN"]), valor_alocado=Decimal("5000"),
     )
 
 
 @pytest.fixture
 def origem_de_outra_rubrica(allocation_territorial_rn, activity_rn):
-    return BudgetAllocationFactory(
-        meta=allocation_territorial_rn.meta, rubrica=BudgetRubricaFactory(slug="passagens-aereas"),
-        nivel=BudgetAllocation.Nivel.ESTADUAL, estado=activity_rn.municipio.state, territorio=None,
+    return BudgetPoolFactory(
+        rubrica=BudgetRubricaFactory(slug="passagens-aereas"),
+        nivel=BudgetPool.Nivel.ESTADUAL, estado=activity_rn.municipio.state, territorio=None,
         valor_alocado=Decimal("5000"),
     )
 
 
 @pytest.fixture
 def origem_de_outro_estado(allocation_territorial_rn, municipio_ce, rubrica_diarias):
-    return BudgetAllocationFactory(
-        meta=allocation_territorial_rn.meta, rubrica=rubrica_diarias, nivel=BudgetAllocation.Nivel.ESTADUAL,
+    return BudgetPoolFactory(
+        rubrica=rubrica_diarias, nivel=BudgetPool.Nivel.ESTADUAL,
         estado=municipio_ce.state, territorio=None, valor_alocado=Decimal("5000"),
     )
 
@@ -226,15 +226,15 @@ def test_origem_que_nao_pode_cobrir_o_excedente_e_400(
 
 
 def test_origem_nacional_cobre_qualquer_territorio(demanda, demand_request_rn, usuario_ugp, allocation_territorial_rn):
-    nacional = BudgetAllocationFactory(
-        meta=allocation_territorial_rn.meta, rubrica=allocation_territorial_rn.rubrica,
-        nivel=BudgetAllocation.Nivel.NACIONAL, estado=None, territorio=None, valor_alocado=Decimal("5000"),
+    nacional = BudgetPoolFactory(
+        rubrica=allocation_territorial_rn.rubrica,
+        nivel=BudgetPool.Nivel.NACIONAL, estado=None, territorio=None, valor_alocado=Decimal("5000"),
     )
 
     resposta = _autorizar(usuario_ugp, demanda, demand_request_rn, "5300", origem_allocation=nacional.pk)
 
     assert resposta.status_code == 200, resposta.data
-    assert BudgetTransfer.objects.get().allocation_origem == nacional
+    assert BudgetTransfer.objects.get().pool_origem == nacional
 
 
 @pytest.fixture
@@ -350,7 +350,7 @@ def test_previa_com_origem_bate_com_o_que_a_autorizacao_remaneja(
     demanda, demand_request_rn, usuario_ugp, origem, limite_individual_rn, allocation_territorial_rn,
 ):
     DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_limite=Decimal("1200"))
-    BudgetAllocation.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("1100"))
+    BudgetPool.objects.filter(pk=allocation_territorial_rn.pk).update(valor_alocado=Decimal("1100"))
     previa = _previa(usuario_ugp, demanda, demand_request_rn, "1500", origem_allocation=origem.pk).json()
 
     assert _autorizar(usuario_ugp, demanda, demand_request_rn, "1500", origem_allocation=origem.pk).status_code == 200
@@ -362,7 +362,7 @@ def test_previa_com_origem_bate_com_o_que_a_autorizacao_remaneja(
 
 
 def test_previa_com_origem_sem_saldo_bloqueia_na_origem(demanda, demand_request_rn, usuario_ugp, origem):
-    BudgetAllocation.objects.filter(pk=origem.pk).update(valor_alocado=Decimal("100"))
+    BudgetPool.objects.filter(pk=origem.pk).update(valor_alocado=Decimal("100"))
 
     corpo = _previa(usuario_ugp, demanda, demand_request_rn, "5300", origem_allocation=origem.pk).json()
 

@@ -11,7 +11,7 @@ from rest_framework.test import APIClient
 from apps.core.tests.factories import UserFactory
 from apps.sgd.models import Demand
 from apps.sgd.tests.factories import ApprovalStepFactory, DemandFactory, DemandRequestFactory
-from apps.sgp.tests.factories import ActivityFactory, BudgetAllocationFactory, BudgetRubricaFactory, WorkPlanAcaoFactory
+from apps.sgp.tests.factories import ActivityFactory, BudgetPoolFactory, BudgetRubricaFactory, WorkPlanAcaoFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -163,8 +163,8 @@ def test_painel_por_rubrica_bate_com_valores_agregados(
         demanda=DemandFactory(activity=activity_rn, status="recusada"),
         tipo="diaria", rubrica=rubrica_diarias, valor_estimado=7777,
     )
-    BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, nivel="nacional", territorio=None,
+    BudgetPoolFactory(
+        rubrica=rubrica_diarias, nivel="nacional", territorio=None,
         valor_alocado=10_000, valor_comprometido=1_000, valor_executado=500,
     )
 
@@ -186,8 +186,8 @@ def test_painel_por_rubrica_bate_com_valores_agregados(
 def test_painel_por_rubrica_traz_faixa_sobre_o_comprometido(
     auth_client_ugp, activity_rn, rubrica_diarias, comprometido, percentual, faixa,
 ):
-    BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, nivel="nacional", territorio=None,
+    BudgetPoolFactory(
+        rubrica=rubrica_diarias, nivel="nacional", territorio=None,
         valor_alocado=10_000, valor_comprometido=comprometido, valor_executado=0,
     )
 
@@ -204,8 +204,8 @@ def test_painel_por_rubrica_faixa_segue_limiares_do_core(auth_client_ugp, activi
 
     from apps.core.models.system_config import SystemConfig, TipoConfiguracao
 
-    BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, nivel="nacional", territorio=None,
+    BudgetPoolFactory(
+        rubrica=rubrica_diarias, nivel="nacional", territorio=None,
         valor_alocado=10_000, valor_comprometido=4_000, valor_executado=0,
     )
     SystemConfig.objects.update_or_create(

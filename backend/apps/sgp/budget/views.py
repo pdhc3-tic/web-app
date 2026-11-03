@@ -1,3 +1,5 @@
+import logging
+
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
@@ -9,13 +11,13 @@ from rest_framework.views import APIView
 from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.core.services.permissions import user_has_role
 from apps.sgp.filters import BudgetRubricaFilter
-from apps.sgp.models import BudgetAllocation, BudgetRubrica, WorkPlanMeta
+from apps.sgp.models import BudgetPool, BudgetRubrica, WorkPlanMeta
 from apps.sgp.budget.serializers import (
-    BudgetAllocationCreateSerializer,
-    BudgetAllocationSerializer,
-    BudgetAllocationUpdateSerializer,
     BudgetPainelLinhaSerializer,
     BudgetPainelQuerySerializer,
+    BudgetPoolCreateSerializer,
+    BudgetPoolSerializer,
+    BudgetPoolUpdateSerializer,
     BudgetRubricaSerializer,
     BudgetTransactionSerializer,
     RemanejamentoCreateSerializer,
@@ -25,10 +27,13 @@ from apps.sgp.budget.serializers import (
 from apps.sgp.budget import services as budget_service
 
 
-class BudgetAllocationViewSet(viewsets.ViewSet):
-    """`create` aninhada em `metas/{id}/orcamento/alocacoes/`,
-    `partial_update`/`destroy` em `orcamento/alocacoes/{id}/`. Wiring
-    manual em urls.py, sem router."""
+logger = logging.getLogger(__name__)
+
+
+class BudgetPoolViewSet(viewsets.ViewSet):
+    """`create` em `orcamento/pools/`, `partial_update`/`destroy` em `orcamento/pools/{id}/`.
+    As rotas antigas, `metas/{id}/orcamento/alocacoes/` e `orcamento/alocacoes/{id}/`,
+    continuam como alias enquanto o front migra. Wiring manual em urls.py, sem router."""
 
     permission_classes = [IsAuthenticatedActiveAccess]
 
@@ -37,7 +42,7 @@ class BudgetAllocationViewSet(viewsets.ViewSet):
         if budget_service.is_global_budget_user(user):
             return
 
-        if nivel != BudgetAllocation.Nivel.TERRITORIAL:
+        if nivel != BudgetPool.Nivel.TERRITORIAL:
             raise PermissionDenied(
                 "Só UGP/Super Admin criam ou alteram alocações nacionais/estaduais."
             )
@@ -49,12 +54,14 @@ class BudgetAllocationViewSet(viewsets.ViewSet):
             raise PermissionDenied("Este território não pertence ao seu estado.")
 
     @extend_schema(
-        request=BudgetAllocationCreateSerializer,
-        responses={201: BudgetAllocationSerializer},
+        request=BudgetPoolCreateSerializer,
+        responses={201: BudgetPoolSerializer},
     )
     def create(self, request, meta_pk=None):
-        meta = get_object_or_404(WorkPlanMeta, pk=meta_pk)
-        entrada = BudgetAllocationCreateSerializer(data=request.data)
+        if meta_pk is not None:
+            # O alias segue devolvendo 404 para a Meta inexistente; o saldo não depende dela.
+            get_object_or_404(WorkPlanMeta, pk=meta_pk)
+        entrada = BudgetPoolCreateSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
         dados = entrada.validated_data
 
@@ -63,55 +70,47 @@ class BudgetAllocationViewSet(viewsets.ViewSet):
             estado=dados.get("estado"), territorio=dados.get("territorio"),
         )
 
-        allocation = budget_service.criar_alocacao(
-            meta=meta, rubrica=dados["rubrica"], nivel=dados["nivel"],
+        pool = budget_service.criar_pool(
+            rubrica=dados["rubrica"], nivel=dados["nivel"],
             estado=dados.get("estado"), territorio=dados.get("territorio"),
             valor_alocado=dados["valor_alocado"], usuario=request.user,
             reserva_ugp=dados.get("reserva_ugp", False),
         )
-        return Response(
-            BudgetAllocationSerializer(allocation).data, status=status.HTTP_201_CREATED,
-        )
+        return Response(BudgetPoolSerializer(pool).data, status=status.HTTP_201_CREATED)
 
     @extend_schema(
-        request=BudgetAllocationUpdateSerializer,
-        responses={200: BudgetAllocationSerializer},
+        request=BudgetPoolUpdateSerializer,
+        responses={200: BudgetPoolSerializer},
     )
     def partial_update(self, request, pk=None):
-        allocation = get_object_or_404(BudgetAllocation, pk=pk)
-        self._autorizar(
-            request, nivel=allocation.nivel,
-            estado=allocation.estado, territorio=allocation.territorio,
-        )
+        pool = get_object_or_404(BudgetPool, pk=pk)
+        self._autorizar(request, nivel=pool.nivel, estado=pool.estado, territorio=pool.territorio)
 
-        entrada = BudgetAllocationUpdateSerializer(data=request.data)
+        entrada = BudgetPoolUpdateSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
 
-        allocation = budget_service.atualizar_valor_alocado(
-            allocation,
+        pool = budget_service.atualizar_valor_alocado(
+            pool,
             novo_valor=entrada.validated_data["valor_alocado"],
             usuario=request.user,
         )
-        return Response(BudgetAllocationSerializer(allocation).data)
+        return Response(BudgetPoolSerializer(pool).data)
 
     @extend_schema(responses={204: None})
     def destroy(self, request, pk=None):
-        allocation = get_object_or_404(BudgetAllocation, pk=pk)
-        self._autorizar(
-            request, nivel=allocation.nivel,
-            estado=allocation.estado, territorio=allocation.territorio,
-        )
-        budget_service.remover_alocacao(allocation)
+        pool = get_object_or_404(BudgetPool, pk=pk)
+        self._autorizar(request, nivel=pool.nivel, estado=pool.estado, territorio=pool.territorio)
+        budget_service.remover_pool(pool)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @extend_schema(responses=BudgetTransactionSerializer(many=True))
     def transacoes(self, request, pk=None):
-        allocation = get_object_or_404(BudgetAllocation, pk=pk)
+        pool = get_object_or_404(BudgetPool, pk=pk)
         escopo = budget_service.orcamento_detalhamento_scope(request.user)
-        if escopo is not None and not BudgetAllocation.objects.filter(pk=pk).filter(escopo).exists():
+        if escopo is not None and not BudgetPool.objects.filter(pk=pk).filter(escopo).exists():
             raise PermissionDenied("Você não tem acesso a esta alocação.")
         # BudgetTransaction.Meta.ordering já é -criado_em.
-        qs = allocation.transactions.all()
+        qs = pool.transactions.all()
         return Response(BudgetTransactionSerializer(qs, many=True).data)
 
 
@@ -123,20 +122,25 @@ class SaldoConsultaView(APIView):
 
     @extend_schema(
         parameters=[
-            OpenApiParameter("meta", OpenApiTypes.INT, OpenApiParameter.QUERY, required=True),
             OpenApiParameter("rubrica", OpenApiTypes.STR, OpenApiParameter.QUERY, required=True),
             OpenApiParameter("valor", OpenApiTypes.NUMBER, OpenApiParameter.QUERY, required=True),
+            OpenApiParameter(
+                "meta", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False, deprecated=True,
+                description="Ignorado: o saldo não depende da Meta.",
+            ),
         ],
         responses=SaldoConsultaSerializer,
     )
     def get(self, request):
+        if "meta" in request.query_params:
+            logger.warning("orcamento.saldo.meta_depreciado user_id=%s", request.user.pk)
         query = SaldoConsultaQuerySerializer(data=request.query_params)
         query.is_valid(raise_exception=True)
         dados = query.validated_data
 
         nivel, estado_sigla, territorio = budget_service.resolver_nivel_do_usuario(request.user)
         check = budget_service.saldo_para_consulta(
-            meta_id=dados["meta"], rubrica_slug=dados["rubrica"], nivel=nivel,
+            rubrica_slug=dados["rubrica"], nivel=nivel,
             estado_sigla=estado_sigla, territorio=territorio, valor=dados["valor"],
         )
 
@@ -144,9 +148,9 @@ class SaldoConsultaView(APIView):
             "disponivel": check.disponivel,
             "saldo": check.saldo,
             "nivel": nivel,
-            "estado": check.allocation.estado if check.allocation else None,
-            "territorio": check.allocation.territorio if check.allocation else None,
-            "allocation_id": check.allocation.pk if check.allocation else None,
+            "estado": check.pool.estado if check.pool else None,
+            "territorio": check.pool.territorio if check.pool else None,
+            "pool_id": check.pool.pk if check.pool else None,
             "motivo_bloqueio": check.motivo_bloqueio,
         }
         return Response(SaldoConsultaSerializer(payload).data)
@@ -181,17 +185,12 @@ class RemanejamentoView(APIView):
 
 
 class BudgetPainelView(APIView):
-    """GET .../orcamento/painel/ — matriz Meta × Rubrica com semáforo (§5.3.3).
+    """GET .../orcamento/painel/ — matriz Rubrica × Nível: uma linha por pool, com o
+    semáforo e o id dele.
 
-    Nível exibido por linha (nacional/estadual/territorial) resolvido pelo perfil do
-    usuário — `estado`/`territorio` fazem drill-down dentro do que o RBAC permite, ver
-    `budget.services.resolver_nivel_painel`.
-
-    Sem filtro: 5 queries (4 pro ADT/ACR — nível padrão territorial, sem "distribuído").
-    Cada `meta`/`rubrica`/`estado`/`territorio` informado soma +1 query de validação de
-    FK (`BudgetPainelQuerySerializer`); pior caso, 9 (Articulador Estadual com
-    `territorio`, que paga +1 confirmando posse em `resolver_nivel_painel` — 8 pros
-    demais perfis)."""
+    Sem filtro, devolve os pools do escopo do perfil. `estado`/`territorio` fazem
+    drill-down dentro do que o RBAC permite, ver `budget.services.resolver_nivel_painel`.
+    `meta` não recorta o saldo: só acrescenta `valor_executado_meta` em cada linha."""
 
     permission_classes = [IsAuthenticatedActiveAccess]
 
@@ -201,6 +200,10 @@ class BudgetPainelView(APIView):
             OpenApiParameter("rubrica", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
             OpenApiParameter("estado", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False),
             OpenApiParameter("territorio", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter(
+                "nivel", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False,
+                enum=BudgetPool.Nivel.values,
+            ),
         ],
         responses=BudgetPainelLinhaSerializer(many=True),
     )
@@ -213,12 +216,13 @@ class BudgetPainelView(APIView):
         estado = dados.get("estado")
         territorio = dados.get("territorio")
 
-        linhas = budget_service.painel_orcamento_para_usuario(
+        linhas = budget_service.matriz_orcamento_para_usuario(
             request.user,
             meta_id=meta.pk if meta else None,
             rubrica_slug=rubrica.slug if rubrica else None,
             estado_sigla=estado.sigla if estado else None,
             territorio_id=territorio.pk if territorio else None,
+            nivel=dados.get("nivel"),
         )
         return Response(BudgetPainelLinhaSerializer(linhas, many=True).data)
 
