@@ -2,7 +2,7 @@
 
 *Compilado em 01/11/2026, na branch `frontend/sprint-12`. Revisto em 03/11/2026, depois da abertura da série AJ (#384 a #407).*
 
-*Os itens deste documento vão para uma issue de backend nova, aberta no fim da sprint 12.*
+*Os itens deste documento foram abertos como a issue #408 no fim da sprint 12, em 03/11/2026.*
 
 *Os documentos das sprints anteriores continuam valendo para o que está lá.*
 
