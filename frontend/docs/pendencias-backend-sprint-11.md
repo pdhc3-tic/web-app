@@ -8,7 +8,7 @@
 
 ## 1. Não há rota que liste as rubricas do orçamento (#319)
 
-> **Ainda aberto em 27/10/2026.** A #373 foi fechada pelo PR #376 sem este item (o 14 de lá): `GET /api/v1/sgp/rubricas/` continua respondendo 404.
+> **Resolvido no backend em 30/10/2026 pelo PR #379** (item 14 da #373). Os fluxos de criar e trocar a rubrica saíram do `fixme` na `tipos-rubricas.spec`.
 
 *Compilado em 25/10/2026, ao planejar a issue #319 (configuração do mapeamento tipo de solicitação → rubrica).*
 
@@ -112,6 +112,8 @@ O NFR "paginação/scroll com volume alto, equivalente aos 10.000 registros" nã
 
 ## 4. Busca do mapa de UPFs ignorada pelo cache (B6 da #302) — aberta na #377
 
+> **Resolvido no backend em 30/10/2026 pelo PR #379.** A busca por texto saiu do `fixme` na `mapa.spec`.
+
 *Compilado em 27/10/2026, ao trocar as simulações da `mapa.spec` pelo backend real.*
 
 `GET /api/v1/upfs/mapa/` guarda a resposta por 60 s (`UPF_MAP_CACHE_TIMEOUT`), e `build_upf_map_cache_key` (`apps/sgp/cache.py`) só considera `bbox`, `municipio`, `territorio`, `projeto` e `ativo`. O `q` da busca por texto fica fora da chave. Conferido pela API em 27/10/2026: depois de `GET /upfs/mapa/` (37 UPFs), `GET /upfs/mapa/?q=texto-que-nao-existe` devolve as mesmas 37, e na ordem inversa a primeira resposta (0) volta para quem pede sem filtro.
@@ -125,6 +127,8 @@ Além do `q`, também ficam fora da chave `comunidade`, `cadastrado_de` e `cadas
 ---
 
 ## 5. Limiares do semáforo do orçamento fora do alcance da tela — na #373 (item 15)
+
+> **Resolvido no backend em 30/10/2026 pelo PR #379.** O painel devolve `limiares_semaforo` em cada linha.
 
 *Compilado em 28/10/2026, ao corrigir a `orcamento.spec` (o vermelho passou de 80% para `budget_alert_red_pct`, 90% por padrão, na migração `core/0021`).*
 

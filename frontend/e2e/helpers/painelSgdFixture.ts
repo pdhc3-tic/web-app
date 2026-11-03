@@ -77,6 +77,7 @@ hoje = timezone.localtime()
 def submetida(titulo, valor, dias, hora):
     d = Demand.objects.create(titulo=f"{P} {titulo}", activity=atividade, justificativa="", solicitante=adt, status="submetida")
     DemandRequest.objects.create(demanda=d, tipo="alimentacao", rubrica=alimentacao, campos_json={}, valor_estimado=Decimal(valor))
+    d.recalcular_totais()
     quando = (hoje - timedelta(days=dias)).replace(hour=hora, minute=0, second=0, microsecond=0)
     Demand.objects.filter(pk=d.pk).update(status_alterado_em=quando)
     return {"id": d.pk, "titulo": d.titulo}

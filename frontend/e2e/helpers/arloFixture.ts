@@ -68,7 +68,7 @@ from django.db.models import Max
 from django.utils import timezone
 from apps.core.models import Municipality
 from apps.sgp.models.workplan import WorkPlanAcao
-from apps.sgd.services import demand as ds, approval as ap
+from apps.sgd.services import demand as ds, workflow as wf
 
 limpar()
 articulador = U.objects.get(email="helio.fontenele@demo.pdhc.local")
@@ -99,8 +99,8 @@ def autorizada(titulo, valor):
     d = ds.criar_demanda(titulo=f"{P} {titulo}", activity=atividade, justificativa="", solicitante=adt)
     s = ds.adicionar_solicitacao(d, tipo="veiculo", campos_json=CAMPOS, valor_estimado=Decimal(valor))
     ds.submeter_demanda(d, usuario=adt)
-    ap.pre_autorizar(d, responsavel=articulador)
-    ap.autorizar(d, responsavel=ugp)
+    wf.executar_transicao(d, "pre_autorizada", ator=articulador)
+    wf.executar_transicao(d, "autorizada", ator=ugp)
     return {"id": d.pk, "titulo": d.titulo, "solicitacaoId": s.pk}
 
 paga = autorizada("Van da feira", "1200")

@@ -21,7 +21,9 @@ import {
 } from "@/app/lib/demandas";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import { qk } from "@/app/lib/queryKeys";
+import { ExcedenteAutorizacao, type OrigemExcedente } from "./ExcedenteAutorizacao";
 import { PreviewImpacto, usePreviewsDecisao } from "./PreviewImpacto";
+import { AvisoAcimaDoAutorizado } from "./AvisoAcimaDoAutorizado";
 
 export type Desfecho = { tipo: "sucesso" | "info"; texto: string };
 
@@ -70,6 +72,9 @@ export function AcoesDecisao({
   const [recusando, setRecusando] = useState(false);
   const [cancelando, setCancelando] = useState(false);
   const [valores, setValores] = useState<Record<number, string>>({});
+  const [excedente, setExcedente] = useState(false);
+  const [origem, setOrigem] = useState<OrigemExcedente | null>(null);
+  const [justificativaExcedente, setJustificativaExcedente] = useState("");
 
   const { status, solicitacoes } = demanda;
   const podeArticulador = perfis.includes("articulador-estadual") && status === "submetida";
@@ -84,7 +89,12 @@ export function AcoesDecisao({
     modo === "pre-autorizar" || modo === "autorizar"
       ? solicitacoes.map((s) => ({ solicitacao: s, valor: paraInput(s.valor_estimado) }))
       : modo === "ajustar"
-        ? solicitacoes.map((s) => ({ solicitacao: s, valor: valores[s.id] ?? "" }))
+        ? solicitacoes.map((s) => ({
+            solicitacao: s,
+            valor: valores[s.id] ?? "",
+            // O excedente só pesa na rubrica da alocação de origem.
+            origem: origem?.rubricaSlug === s.rubrica_slug ? origem.id : "",
+          }))
         : [];
   const previews = usePreviewsDecisao(demanda.id, itensPreview);
 
@@ -95,6 +105,9 @@ export function AcoesDecisao({
     setErro(null);
     setErroJustificativa(null);
     setJustificativa("");
+    setExcedente(false);
+    setOrigem(null);
+    setJustificativaExcedente("");
     if (novo === "ajustar") {
       setValores(Object.fromEntries(solicitacoes.map((s) => [s.id, paraInput(s.valor_estimado)])));
     } else if (novo === "concluir") {
@@ -278,13 +291,25 @@ export function AcoesDecisao({
             helperText={`Pedido: ${formatCurrencyBRL(s.valor_estimado)}`}
           />
         ))}
+        <ExcedenteAutorizacao
+          demanda={demanda}
+          ativo={excedente}
+          onAtivo={(ativo) => {
+            setExcedente(ativo);
+            if (!ativo) setOrigem(null);
+          }}
+          origem={origem}
+          onOrigem={setOrigem}
+          justificativa={justificativaExcedente}
+          onJustificativa={setJustificativaExcedente}
+        />
         {blocoPreview}
         {erroBox}
         <div className="flex justify-end gap-2">
           {voltar}
           <Button
             loading={enviando}
-            disabled={!previews.liberado}
+            disabled={!previews.liberado || (excedente && (!origem || !justificativaExcedente.trim()))}
             onClick={() => {
               // Só vai no `ajustes` o que mudou: o resto é autorizado como pedido.
               const ajustes: Record<number, string> = {};
@@ -292,7 +317,10 @@ export function AcoesDecisao({
                 const v = valores[s.id];
                 if (v !== "" && Number(v) !== Number(s.valor_estimado)) ajustes[s.id] = v;
               }
-              void executar(() => autorizarDemanda(demanda.id, ajustes), {
+              const dadosExcedente = origem
+                ? { origemAllocation: Number(origem.id), justificativa: justificativaExcedente.trim() }
+                : undefined;
+              void executar(() => autorizarDemanda(demanda.id, ajustes, dadosExcedente), {
                 tipo: "sucesso",
                 texto: "Demanda autorizada com o valor ajustado.",
               });
@@ -308,19 +336,25 @@ export function AcoesDecisao({
     conteudo = (
       <>
         {solicitacoes.map((s) => (
-          <Input
-            key={s.id}
-            id={`pago-${s.id}`}
-            label={`Valor pago — ${s.tipo_display}`}
-            type="number"
-            min={0}
-            step="0.01"
-            inputMode="decimal"
-            required
-            value={valores[s.id] ?? ""}
-            onChange={(e) => setValores((v) => ({ ...v, [s.id]: e.target.value }))}
-            helperText={`Autorizado: ${formatCurrencyBRL(s.valor_autorizado ?? s.valor_estimado)}`}
-          />
+          <div key={s.id} className="flex flex-col gap-1">
+            <Input
+              id={`pago-${s.id}`}
+              label={`Valor pago — ${s.tipo_display}`}
+              type="number"
+              min={0}
+              step="0.01"
+              inputMode="decimal"
+              required
+              value={valores[s.id] ?? ""}
+              onChange={(e) => setValores((v) => ({ ...v, [s.id]: e.target.value }))}
+              helperText={`Autorizado: ${formatCurrencyBRL(s.valor_autorizado ?? s.valor_estimado)}`}
+            />
+            <AvisoAcimaDoAutorizado
+              solicitacaoId={s.id}
+              pago={valores[s.id] ?? ""}
+              autorizado={s.valor_autorizado ?? s.valor_estimado}
+            />
+          </div>
         ))}
         {erroBox}
         <div className="flex justify-end gap-2">

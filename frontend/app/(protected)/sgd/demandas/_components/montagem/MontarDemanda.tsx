@@ -18,6 +18,7 @@ import { qk } from "@/app/lib/queryKeys";
 import { recursoExtraDoBloqueio, type BloqueioRecursoExtra } from "@/app/lib/remanejamentos";
 import {
   bloqueiosDaSubmissao,
+  COTACOES_SEM_DOCUMENTOS,
   pendenciaDeCotacoes,
   removerSolicitacao,
   submeterDemanda,
@@ -54,10 +55,15 @@ export function MontarDemanda({ demanda }: { demanda: Demanda }) {
   const [submetendo, setSubmetendo] = useState(false);
 
   const semSolicitacoes = demanda.solicitacoes.length === 0;
-  // Com equipamento, sem a lista de documentos não há como conferir as
-  // cotações: o botão e o handler ficam barrados até ela carregar.
-  const pendenciaCotacoes = pendenciaDeCotacoes(demanda, documentos.data, documentos.isError);
-  const documentosFalharam = pendenciaCotacoes !== null && documentos.isError && !documentos.data;
+  // Com equipamento, sem a lista atual de documentos não há como conferir as
+  // cotações: o botão e o handler ficam barrados até ela atualizar.
+  const pendenciaCotacoes = pendenciaDeCotacoes(demanda, documentos.data, {
+    atualizando: documentos.isFetching,
+    falhou: documentos.isError,
+  });
+  const documentosFalharam = pendenciaCotacoes === COTACOES_SEM_DOCUMENTOS;
+  // A falha da consulta vem antes de um erro anterior: é ela que oferece "Tentar de novo".
+  const avisoSubmissao = documentosFalharam ? pendenciaCotacoes : (erroSubmissao ?? pendenciaCotacoes);
   const totalBloqueadas = Object.keys(bloqueios).length;
 
   /** O bloqueio de uma solicitação que mudou já não vale: a próxima submissão confere de novo. */
@@ -199,14 +205,14 @@ export function MontarDemanda({ demanda }: { demanda: Demanda }) {
             saldo. As demais continuam salvas no rascunho. Veja o motivo em cada uma.
           </p>
         )}
-        {(erroSubmissao ?? pendenciaCotacoes) && (
+        {avisoSubmissao && (
           <p
             role="alert"
             className="flex items-start gap-2 rounded-md border border-warning-text bg-warning-bg px-3 py-2.5 text-sm text-warning-text"
             data-testid="submissao-erro"
           >
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            <span className="flex-1">{erroSubmissao ?? pendenciaCotacoes}</span>
+            <span className="flex-1">{avisoSubmissao}</span>
             {documentosFalharam && (
               <button
                 type="button"

@@ -92,7 +92,7 @@ from apps.core.models import Municipality
 from apps.sgp.models.workplan import WorkPlanAcao
 from apps.sgp.services import budget as budget_service
 from apps.sgd.models.individual_limit import DemandIndividualLimit
-from apps.sgd.services import demand as ds, approval as ap
+from apps.sgd.services import demand as ds, workflow as wf
 
 limpar()
 articulador = U.objects.get(email="helio.fontenele@demo.pdhc.local")
@@ -140,8 +140,8 @@ ds.adicionar_solicitacao(d, tipo="veiculo", campos_json={
     "numero_passageiros": 12,
 }, valor_estimado=Decimal("800"))
 ds.submeter_demanda(d, usuario=adt)
-ap.pre_autorizar(d, responsavel=articulador)
-ap.autorizar(d, responsavel=ugp)
+wf.executar_transicao(d, "pre_autorizada", ator=articulador)
+wf.executar_transicao(d, "autorizada", ator=ugp)
 
 print("${MARCADOR}_SETUP " + json.dumps({
     "territorioId": territorio_id,

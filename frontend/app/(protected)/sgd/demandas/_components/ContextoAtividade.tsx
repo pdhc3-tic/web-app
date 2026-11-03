@@ -23,8 +23,7 @@ function NaoDisponivel() {
  * município, comunidade, data, técnico e a cadeia Ação → Submeta → Meta →
  * Indicador do Plano de Trabalho.
  *
- * Território e cadeia ainda não vêm no detalhe da atividade (chegam com o PR
- * #328; docs/pendencias-backend-sprint-10.md, item 8) — até lá, "Não disponível".
+ * Sem território ou sem um elo da cadeia, mostra "Não disponível".
  */
 export function ContextoAtividade({ atividade }: { atividade: AtividadeDetail }) {
   const statusLabel = useRotuloChoice("status_atividade");

@@ -17,11 +17,12 @@ import {
   canDecidirRemanejamento,
   canEmitirParecerRemanejamento,
 } from "@/app/lib/auth/roles";
-import { listPedidos, type StatusPedido } from "@/app/lib/remanejamentos";
+import { listExcedentes, listPedidos, type StatusPedido } from "@/app/lib/remanejamentos";
 import { qk } from "@/app/lib/queryKeys";
+import { ExcedentesTabela } from "./_components/ExcedentesTabela";
 import { PedidosTabela } from "./_components/PedidosTabela";
 
-type Visao = "minha" | "todos";
+type Visao = "minha" | "todos" | "excedentes";
 
 function Carregando() {
   return (
@@ -42,7 +43,8 @@ function FilaRemanejamentosView() {
   const pathname = usePathname();
 
   const user = session?.user;
-  const visao: Visao = searchParams.get("visao") === "todos" ? "todos" : "minha";
+  const paramVisao = searchParams.get("visao");
+  const visao: Visao = paramVisao === "todos" || paramVisao === "excedentes" ? paramVisao : "minha";
 
   // A etapa de cada perfil: o Articulador emite parecer nos Submetidos; a UGP
   // decide os Com parecer. O Super Admin faz as duas.
@@ -55,7 +57,14 @@ function FilaRemanejamentosView() {
   const lista = useQuery({
     queryKey: qk.remanejamentos.lista(status),
     queryFn: ({ signal }) => listPedidos({ status: [...status] }, signal),
-    enabled: canAcessarFilaRemanejamentos(user),
+    enabled: canAcessarFilaRemanejamentos(user) && visao !== "excedentes",
+    staleTime: 30_000,
+  });
+
+  const excedentes = useQuery({
+    queryKey: qk.remanejamentos.excedentes,
+    queryFn: ({ signal }) => listExcedentes(signal),
+    enabled: canAcessarFilaRemanejamentos(user) && visao === "excedentes",
     staleTime: 30_000,
   });
 
@@ -66,10 +75,11 @@ function FilaRemanejamentosView() {
     );
   }
 
+  const consulta = visao === "excedentes" ? excedentes : lista;
   const erro =
-    lista.error instanceof ApiError
-      ? lista.error.message
-      : lista.error
+    consulta.error instanceof ApiError
+      ? consulta.error.message
+      : consulta.error
         ? "Não foi possível carregar os pedidos."
         : null;
   const pedidos = lista.data?.pedidos ?? [];
@@ -80,7 +90,8 @@ function FilaRemanejamentosView() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-text">Fila de Remanejamentos</h1>
           <p className="mt-1 text-sm text-text-muted">
-            Pedidos de recurso extra das demandas bloqueadas pelo limite individual.
+            Pedidos de recurso extra das demandas bloqueadas pelo limite individual e excedentes autorizados
+            nas demandas.
           </p>
         </div>
 
@@ -93,6 +104,7 @@ function FilaRemanejamentosView() {
             [
               ["minha", "Aguardando minha ação"],
               ["todos", "Todos"],
+              ["excedentes", "Excedentes pontuais"],
             ] as const
           ).map(([valor, rotulo]) => (
             <button
@@ -101,7 +113,7 @@ function FilaRemanejamentosView() {
               role="tab"
               aria-selected={visao === valor}
               onClick={() =>
-                router.push(valor === "todos" ? `${pathname}?visao=todos` : pathname, { scroll: false })
+                router.push(valor === "minha" ? pathname : `${pathname}?visao=${valor}`, { scroll: false })
               }
               className={`rounded px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
                 visao === valor ? "bg-primary text-surface" : "text-text-muted hover:text-text"
@@ -114,10 +126,12 @@ function FilaRemanejamentosView() {
         </div>
       </div>
 
-      {lista.isPending ? (
+      {consulta.isPending ? (
         <Carregando />
       ) : erro ? (
-        <TabErroSection message={erro} onRetry={() => void lista.refetch()} />
+        <TabErroSection message={erro} onRetry={() => void consulta.refetch()} />
+      ) : visao === "excedentes" ? (
+        <ExcedentesTabela excedentes={excedentes.data?.excedentes ?? []} total={excedentes.data?.total ?? 0} />
       ) : pedidos.length === 0 ? (
         <div className="rounded-lg border border-border bg-surface">
           <EmptyState

@@ -8,6 +8,7 @@ import { ApiError } from "@/app/lib/api";
 import {
   previewDecisao,
   type FaixaSemaforo,
+  type ImpactoOrigem,
   type PreviewDecisao,
   type SolicitacaoDemanda,
 } from "@/app/lib/demandas";
@@ -36,9 +37,9 @@ export type EstadoPreview = {
  */
 export function usePreviewsDecisao(
   demandaId: number,
-  itens: { solicitacao: SolicitacaoDemanda; valor: string }[],
+  itens: { solicitacao: SolicitacaoDemanda; valor: string; origem?: string }[],
 ) {
-  const chaveAtual = itens.map((i) => `${i.solicitacao.id}:${i.valor}`).join("|");
+  const chaveAtual = itens.map((i) => `${i.solicitacao.id}:${i.valor}:${i.origem ?? ""}`).join("|");
   const [chaveEstavel, setChaveEstavel] = useState(chaveAtual);
   useEffect(() => {
     const t = setTimeout(() => setChaveEstavel(chaveAtual), DEBOUNCE_MS);
@@ -49,18 +50,18 @@ export function usePreviewsDecisao(
       .split("|")
       .filter(Boolean)
       .map((par) => {
-        const [id, valor] = par.split(":");
-        return [Number(id), valor] as const;
+        const [id, valor, origem] = par.split(":");
+        return [Number(id), { valor, origem }] as const;
       }),
   );
 
   const resultados = useQueries({
     queries: itens.map(({ solicitacao }) => {
-      const valor = valoresEstaveis.get(solicitacao.id) ?? "";
+      const { valor, origem } = valoresEstaveis.get(solicitacao.id) ?? { valor: "", origem: "" };
       return {
-        queryKey: qk.demandas.preview(demandaId, solicitacao.id, valor),
+        queryKey: qk.demandas.preview(demandaId, solicitacao.id, valor, origem),
         queryFn: ({ signal }: { signal: AbortSignal }) =>
-          previewDecisao(demandaId, solicitacao.id, valor, signal),
+          previewDecisao(demandaId, solicitacao.id, valor, origem, signal),
         enabled: VALOR_VALIDO.test(valor),
         staleTime: 0,
         retry: false,
@@ -69,7 +70,7 @@ export function usePreviewsDecisao(
   });
 
   const estados: EstadoPreview[] = itens.map(({ solicitacao }, i) => {
-    const valor = valoresEstaveis.get(solicitacao.id) ?? "";
+    const valor = valoresEstaveis.get(solicitacao.id)?.valor ?? "";
     const r = resultados[i];
     return {
       solicitacao,
@@ -148,6 +149,34 @@ function LinhaTrava({ nome, trava }: { nome: string; trava: Trava }) {
   );
 }
 
+function LinhaOrigem({ origem }: { origem: ImpactoOrigem }) {
+  return (
+    <div className="flex flex-col gap-1 border-t border-border pt-2 text-xs" data-testid={`preview-origem-${origem.id}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-text-muted">Origem do excedente</span>
+        <span className="flex items-center gap-1.5">
+          <Faixa faixa={origem.semaforo_antes} />
+          <ArrowRight className="h-3 w-3 text-text-muted" aria-label="passa para" />
+          <Faixa faixa={origem.semaforo_apos} />
+        </span>
+      </div>
+      <span className="text-right tabular-nums text-text">
+        Saldo: {formatCurrencyBRL(origem.saldo_antes)} → {formatCurrencyBRL(origem.saldo_apos)}
+      </span>
+      <span className="text-right tabular-nums text-text-muted">
+        Remanejado ao pool: {formatCurrencyBRL(origem.valor_remanejado)} · fora do limite individual:{" "}
+        {formatCurrencyBRL(origem.fora_do_limite)}
+      </span>
+    </div>
+  );
+}
+
+const BLOQUEIO: Record<NonNullable<PreviewDecisao["trava_bloqueada"]>, string> = {
+  individual: "Este valor excede o limite individual do solicitante.",
+  territorial: "Este valor excede o saldo do pool territorial.",
+  origem: "A alocação de origem não tem saldo para cobrir o excedente.",
+};
+
 /**
  * Preview do impacto de uma decisão no saldo da rubrica, para UMA solicitação:
  * para as duas travas — limite individual e pool territorial —, a faixa do
@@ -178,11 +207,10 @@ export function PreviewImpacto({ estado }: { estado: EstadoPreview }) {
         <>
           <LinhaTrava nome="Limite individual" trava={dados.individual} />
           <LinhaTrava nome="Pool territorial" trava={dados.territorial} />
+          {dados.origem && <LinhaOrigem origem={dados.origem} />}
           {!dados.disponivel && (
             <p className="text-xs font-medium text-error-text" data-testid="preview-bloqueio">
-              {dados.trava_bloqueada === "individual"
-                ? "Este valor excede o limite individual do solicitante."
-                : "Este valor excede o saldo do pool territorial."}
+              {BLOQUEIO[dados.trava_bloqueada ?? "territorial"]}
             </p>
           )}
         </>

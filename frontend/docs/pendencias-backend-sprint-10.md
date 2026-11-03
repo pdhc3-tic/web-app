@@ -716,6 +716,8 @@ modelo; comparar com o id como string).
 
 ## 23. O bloqueio na submissão não informa o valor faltante (#321) — na #373 (item 16)
 
+> **Resolvido no backend em 30/10/2026 pelo PR #379.** O bloqueio individual traz `valor_faltante`, e o fluxo de recurso extra o mostra antes de enviar.
+
 > **Ainda aberto em 29/10/2026.** O `INSUFFICIENT_BALANCE` da #349 (PR #370)
 > trouxe `disponivel` e `solicitado`, mas os dois são da solicitação barrada,
 > não da rubrica: com mais de uma solicitação na mesma rubrica, ou em Devolvida

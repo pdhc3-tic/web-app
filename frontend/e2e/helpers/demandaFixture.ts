@@ -10,6 +10,7 @@ import path from "node:path";
  *
  * - `agendada`: atividade Agendada sem demandas — alvo da criação pela aba e
  *   pela busca do SGD;
+ * - `completa`: atividade com comunidade, para o contexto herdado completo;
  * - `comDemandas`: atividade com duas demandas em status diferentes;
  * - `outra`: atividade com uma demanda própria, para provar que a aba de uma
  *   atividade não lista a demanda da vizinha.
@@ -27,6 +28,7 @@ export const PREFIXO = "E2E-294";
 
 export type DemandaFixture = {
   agendada: { id: number; titulo: string };
+  completa: { id: number; titulo: string; comunidade: string };
   comDemandas: {
     id: number;
     demandas: { id: number; titulo: string; status_display: string }[];
@@ -36,6 +38,10 @@ export type DemandaFixture = {
   tecnico: string;
   tecnicoId: number;
   acao: { numero: string; descricao: string };
+  territorio: string;
+  meta: { numero: number; titulo: string };
+  submeta: { numero: string; titulo: string };
+  indicador: { codigo: string; nome: string; unidade_medida: string };
 };
 
 const SETUP_SCRIPT = `
@@ -45,7 +51,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from apps.core.models import Municipality
 from apps.sgd.models.demand import Demand
-from apps.sgp.models import Activity
+from apps.sgp.models import Activity, Comunidade
 from apps.sgp.models.workplan import WorkPlanAcao
 
 P = "${PREFIXO}"
@@ -55,15 +61,17 @@ municipio = Municipality.objects.filter(territory_id=perfil.territorio_id).order
 acao = WorkPlanAcao.objects.order_by("pk").first()
 quando = timezone.now() + timedelta(days=15)
 
-def atividade(titulo):
+def atividade(titulo, comunidade=None):
     return Activity.objects.create(
-        titulo=titulo, tipo_atividade="oficina", acao=acao, municipio=municipio,
+        titulo=titulo, tipo_atividade="oficina", acao=acao, municipio=municipio, comunidade=comunidade,
         forma_atuacao="realizacao", ambito="municipal", tecnico_responsavel=adt,
         data_inicio=quando, data_fim=quando, status="agendado", criado_por=adt,
         descricao_narrativa="Criada pela fixture E2E da issue 294.",
     )
 
 agendada = atividade(f"{P} Oficina agendada")
+comunidade = Comunidade.objects.create(nome=f"{P} Sítio Lajedo", municipio=municipio, criada_por=adt)
+completa = atividade(f"{P} Roda de conversa", comunidade)
 com = atividade(f"{P} Oficina com demandas")
 d1 = Demand.objects.create(titulo=f"{P} Transporte da equipe", activity=com, solicitante=adt)
 d2 = Demand.objects.create(titulo=f"{P} Material da oficina", activity=com, solicitante=adt, status="submetida")
@@ -72,6 +80,7 @@ Demand.objects.create(titulo=f"{P} Demanda da vizinha", activity=outra, solicita
 
 print("${MARCADOR}_SETUP " + json.dumps({
     "agendada": {"id": agendada.pk, "titulo": agendada.titulo},
+    "completa": {"id": completa.pk, "titulo": completa.titulo, "comunidade": comunidade.nome},
     "comDemandas": {"id": com.pk, "demandas": [
         {"id": d.pk, "titulo": d.titulo, "status_display": d.get_status_display()} for d in (d1, d2)
     ]},
@@ -80,12 +89,19 @@ print("${MARCADOR}_SETUP " + json.dumps({
     "tecnico": adt.nome,
     "tecnicoId": adt.pk,
     "acao": {"numero": acao.numero, "descricao": acao.descricao},
+    "territorio": municipio.territory.nome,
+    "meta": {"numero": acao.meta.numero, "titulo": acao.meta.titulo},
+    "submeta": {"numero": acao.submeta.numero, "titulo": acao.submeta.titulo},
+    "indicador": {
+        "codigo": acao.indicador.codigo, "nome": acao.indicador.nome,
+        "unidade_medida": acao.indicador.unidade_medida,
+    },
 }))
 `;
 
 const TEARDOWN_SCRIPT = `
 from apps.sgd.models.demand import Demand
-from apps.sgp.models import Activity
+from apps.sgp.models import Activity, Comunidade
 
 P = "${PREFIXO}"
 # Pelo PREFIXO, e nao por ids guardados: um run interrompido tambem sai limpo,
@@ -94,6 +110,7 @@ atividades = Activity.all_objects.filter(titulo__startswith=P) if hasattr(Activi
 Demand.objects.filter(activity__in=atividades).delete()
 Demand.objects.filter(titulo__startswith=P).delete()
 atividades.delete()
+Comunidade.objects.filter(nome__startswith=P).delete()
 print("${MARCADOR}_TEARDOWN_OK")
 `;
 

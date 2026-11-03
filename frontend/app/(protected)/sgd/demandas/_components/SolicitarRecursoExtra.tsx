@@ -31,8 +31,7 @@ type Etapa = "preencher" | "confirmar" | "enviado";
  * calculado na tela: sem `valor_solicitado`, o backend assume o que falta no
  * limite individual da rubrica inteira, e o valor registrado aparece no passo
  * final. O disponível e o solicitado do bloqueio são só da solicitação
- * barrada; o que falta na rubrica vem em `valor_faltante`, quando o backend
- * o expuser (pendencias-backend-sprint-10.md, item 23).
+ * barrada; o que falta na rubrica vem em `valor_faltante`.
  */
 export function SolicitarRecursoExtra({
   open,

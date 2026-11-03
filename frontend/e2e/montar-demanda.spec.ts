@@ -175,6 +175,8 @@ test.describe("SGD — montar e submeter a demanda (ADT)", () => {
     await expect(page.getByTestId("recurso-extra-bloqueio")).toHaveText(
       "Limite individual insuficiente: R$ 5.000,00 disponível, R$ 6.000,00 solicitado.",
     );
+    // O que falta na rubrica vem em `valor_faltante`, antes de enviar (#321, #359).
+    await expect(drawer).toContainText("R$ 1.000,00");
     await drawer.getByLabel("Justificativa").fill("A caravana precisa da passagem da facilitadora.");
     await page.getByTestId("recurso-extra-revisar").click();
     await page.getByTestId("recurso-extra-enviar").click();
@@ -268,6 +270,60 @@ test.describe("SGD — montar e submeter a demanda (ADT)", () => {
 
     expect((await submeter(page)).status()).toBe(200);
     await page.waitForURL(`**/sgd/demandas?demanda=${fx.equipamento.id}`);
+  });
+});
+
+test.describe("SGD — cotações em cache (#380)", () => {
+  test.use({ storageState: storageStatePath("adt") });
+
+  test("remover uma cotação não libera a submissão com a lista antiga do cache", async ({ page }) => {
+    const chamadas: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/submeter/")) chamadas.push(r.url());
+    });
+    const id = fx.equipamentoCompleto.id;
+    const listaDocumentos = (url: URL) => url.pathname === `/api/v1/sgd/demandas/${id}/documentos/`;
+    const botao = page.getByTestId("demanda-submeter");
+    const aviso = page.getByTestId("submissao-erro");
+
+    await abrirMontagem(page, id);
+    await expect(page.getByTestId("documentos-lista").locator("li")).toHaveCount(3);
+    await expect(botao).toBeEnabled();
+
+    // Removida a cotação, a lista não atualiza: a de 3 fica no cache.
+    await page.route(listaDocumentos, (route) =>
+      route.request().method() === "GET" ? route.abort() : route.fallback(),
+    );
+    await page.getByRole("button", { name: "Remover cotacao-Campo Verde.pdf" }).click();
+    await page.getByRole("button", { name: "Confirmar", exact: true }).click();
+    await expect(aviso).toContainText("Conferindo as cotações");
+    await expect(botao).toBeDisabled();
+    await expect(aviso).toContainText("Não foi possível conferir as cotações", { timeout: 20_000 });
+    await expect(botao).toBeDisabled();
+
+    // "Tentar de novo" traz a lista atual, com 2: continua barrado.
+    await page.unroute(listaDocumentos);
+    await page.getByTestId("submissao-recarregar-documentos").click();
+    await expect(aviso).toContainText("ao menos 3 cotações");
+    await expect(botao).toBeDisabled();
+
+    // Anexada a terceira, com o GET atrasado: fica barrado até a lista chegar.
+    await page.route(listaDocumentos, async (route) => {
+      if (route.request().method() === "GET") await new Promise((r) => setTimeout(r, 1_500));
+      await route.fallback();
+    });
+    await escolher(page, "documento-tipo", "Cotação");
+    await page.getByLabel("Fornecedor").fill("Campo Verde");
+    await page.locator("#documento-arquivo").setInputFiles({
+      name: "cotacao-campo-verde.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"),
+    });
+    await page.getByTestId("documento-anexar").click();
+    await expect(aviso).toContainText("Conferindo as cotações");
+    await expect(botao).toBeDisabled();
+    await expect(botao).toBeEnabled();
+    expect(chamadas).toHaveLength(0);
   });
 });
 

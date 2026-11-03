@@ -267,6 +267,40 @@ test.describe("UGP", () => {
     await expect(timeline).toContainText("Cancelamento: Cancelado");
     await expect(timeline).toContainText("A visita foi adiada para o próximo semestre.");
   });
+
+  test("autoriza com excedente: escolhe a origem, vê o efeito nela e o excedente vai para a fila como pontual (#363)", async ({
+    page,
+  }) => {
+    await page.goto(`/sgd/demandas?demanda=${fx.excedente.id}`);
+    await painel(page).getByTestId("acao-ajustar").click();
+    await painel(page).getByLabel(/Valor autorizado/).fill("15000");
+    await expect(painel(page).getByTestId("preview-bloqueio")).toContainText("limite individual");
+    const confirmar = painel(page).getByTestId("decisao-confirmar");
+    await expect(confirmar).toBeDisabled();
+
+    await painel(page).getByTestId("excedente-ativo").check();
+    await expect(painel(page).getByTestId("excedente-aviso")).toContainText("não aumenta o limite individual");
+    await painel(page).locator("button#excedente-origem").click();
+    await page.getByRole("option", { name: new RegExp(fx.excedente.estado) }).click();
+
+    const origem = painel(page).getByTestId(`preview-origem-${fx.excedente.estadualId}`);
+    await expect(origem).toContainText("Origem do excedente");
+    await expect(origem).toContainText("Remanejado ao pool");
+    // Sem justificativa, a origem sozinha não libera.
+    await expect(painel(page).getByTestId("preview-bloqueio")).toHaveCount(0);
+    await expect(confirmar).toBeDisabled();
+
+    await painel(page).getByLabel(/Justificativa do excedente/).fill("Mutirão estadual fora do previsto.");
+    await expect(confirmar).toBeEnabled();
+    await confirmar.click();
+    await expect(painel(page).getByTestId("painel-mensagem-sucesso")).toContainText("valor ajustado");
+    await expect(painel(page)).toContainText("Autorizada");
+
+    await page.goto("/sgd/remanejamentos?visao=excedentes");
+    const linha = page.getByTestId("excedentes-tabela").locator("tr", { hasText: `Demanda #${fx.excedente.id}` });
+    await expect(linha).toContainText("Pontual");
+    await expect(linha).toContainText("Beatriz");
+  });
 });
 
 test.describe("FGD", () => {
@@ -304,13 +338,20 @@ test.describe("FGD", () => {
     // recarregarem (a corrida que desfazia o formulário do Concluir sozinho).
     await painel(page).getByTestId("acao-concluir").click();
     await expect(painel(page).getByTestId("painel-mensagem-sucesso")).toHaveCount(0);
-    await painel(page).getByLabel(/Valor pago/).fill("1100");
+    const valorPago = painel(page).getByLabel(/Valor pago/);
+    await valorPago.fill("1100");
+    await expect(painel(page).getByTestId(/^aviso-acima-do-autorizado-/)).toHaveCount(0);
+    // Acima do autorizado (R$ 1.200): avisa e conclui normalmente (#360).
+    await valorPago.fill("1400");
+    await expect(painel(page).getByTestId(/^aviso-acima-do-autorizado-/)).toContainText(
+      "200,00 acima do autorizado; será registrado no relatório de risco de glosa.",
+    );
     await painel(page).getByTestId("decisao-confirmar").click();
     await expect(painel(page).getByTestId("painel-mensagem-sucesso")).toContainText(
       "Demanda concluída",
     );
     await expect(painel(page)).toContainText("Concluída");
-    await expect(painel(page)).toContainText("pago R$ 1.100,00");
+    await expect(painel(page)).toContainText("pago R$ 1.400,00");
   });
 
   test("a FGD vê a aba Auditoria da demanda que atende (#322)", async ({ page }) => {

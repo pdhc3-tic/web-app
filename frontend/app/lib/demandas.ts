@@ -81,6 +81,19 @@ export type EtapaDemanda = {
   criado_em: string;
 };
 
+/**
+ * Risco de glosa registrado num pagamento acima do autorizado. Pedido ao
+ * backend (pendencias-backend-sprint-12.md, item 1); ausente até lá.
+ */
+export type GlosaDemanda = {
+  id: number;
+  demand_request_id: number;
+  valor_autorizado: string;
+  valor_pago: string;
+  excedente: string;
+  criado_em: string;
+};
+
 /** `DemandSerializer` — leitura. Valores monetários vêm como string decimal. */
 export type Demanda = {
   id: number;
@@ -100,6 +113,7 @@ export type Demanda = {
   solicitante_nome: string;
   /** Decisões em ordem cronológica (pré-autorização, autorização, atendimento). */
   etapas: EtapaDemanda[];
+  glosas?: GlosaDemanda[];
   criado_em: string;
   atualizado_em: string;
 };
@@ -272,6 +286,12 @@ export async function fetchContagemFila(signal?: AbortSignal): Promise<ContagemF
 }
 
 /**
+ * Campos aceitos pelo `ORDENACOES_DA_LISTAGEM` do `DemandViewSet` (BE-10).
+ * O `-` prefixa a ordem decrescente, no padrão do `ordering` do DRF.
+ */
+export type OrdenacaoDemandas = "valor_estimado_total" | "-valor_estimado_total";
+
+/**
  * GET /api/v1/sgd/demandas/ — listagem, já no escopo do perfil (o Articulador
  * só enxerga as Submetidas do próprio estado).
  *
@@ -282,6 +302,8 @@ export async function fetchContagemFila(signal?: AbortSignal): Promise<ContagemF
  * - `filtros`: os do `DemandFilter` do BE-5 (atividade, ação, território,
  *   período…) — o drill-down do painel de execução (#297) leva o recorte do
  *   painel para a lista mostrar as demandas que compõem o custo exibido.
+ * - `ordenacao`: por `valor_estimado_total` do servidor (BE-10). Sem ela, o
+ *   backend usa `-criado_em`.
  * - `pagina`: `offset`/`limit` do `DemandPagination`. Sem ela, vem a página
  *   cheia do backend (200).
  */
@@ -290,6 +312,7 @@ export async function listDemandas(
     status?: StatusDemanda[];
     aguardandoMinhaAcao?: boolean;
     filtros?: Record<string, string | undefined>;
+    ordenacao?: OrdenacaoDemandas;
     pagina?: PaginaDemandas;
   } = {},
   signal?: AbortSignal,
@@ -300,6 +323,7 @@ export async function listDemandas(
   for (const [chave, valor] of Object.entries(params.filtros ?? {})) {
     if (valor) qs.set(chave, valor);
   }
+  if (params.ordenacao) qs.set("ordering", params.ordenacao);
   return lerListaDemandas(qs, signal, params.pagina);
 }
 
@@ -385,22 +409,38 @@ type ImpactoTrava = {
 /** Resposta de `preview-decisao` (BE-3): o saldo das duas travas depois da decisão. */
 export type PreviewDecisao = {
   disponivel: boolean;
-  trava_bloqueada: "individual" | "territorial" | null;
+  trava_bloqueada: "individual" | "territorial" | "origem" | null;
   individual: ImpactoTrava;
   territorial: ImpactoTrava;
+  /** Só com `origem_allocation`: o efeito do excedente na alocação de origem. */
+  origem?: ImpactoOrigem | null;
+};
+
+/** Efeito da autorização com excedente na alocação de origem (#363). */
+export type ImpactoOrigem = {
+  id: number;
+  valor_remanejado: number | string;
+  fora_do_limite: number | string;
+  saldo_antes: number | string;
+  saldo_apos: number | string;
+  semaforo_antes: FaixaSemaforo | null;
+  semaforo_apos: FaixaSemaforo | null;
 };
 
 /**
  * GET /api/v1/sgd/demandas/{id}/preview-decisao/?demand_request_id=&valor=
- * `valor` é o valor que a decisão vai reservar para a solicitação.
+ * `valor` é o valor que a decisão vai reservar para a solicitação. Com
+ * `origemAllocation`, simula a autorização com excedente coberto por ela.
  */
 export async function previewDecisao(
   demandaId: number,
   solicitacaoId: number,
   valor: string,
+  origemAllocation: string,
   signal?: AbortSignal,
 ): Promise<PreviewDecisao> {
   const qs = new URLSearchParams({ demand_request_id: String(solicitacaoId), valor });
+  if (origemAllocation) qs.set("origem_allocation", origemAllocation);
   const res = await apiClient(`${DEMANDAS_PATH}${demandaId}/preview-decisao/?${qs}`, { signal });
   return res.json();
 }
@@ -422,14 +462,35 @@ export const preAutorizarDemanda = (id: number) => decidir(id, "pre-autorizar");
 export const devolverDemanda = (id: number, justificativa: string) =>
   decidir(id, "devolver", { justificativa });
 
-/** UGP. `ajustes`: {id da solicitação: novo valor} — vazio autoriza como pedido. */
-export const autorizarDemanda = (id: number, ajustes: Record<number, string> = {}) =>
-  decidir(id, "autorizar", { ajustes });
+/**
+ * UGP. `ajustes`: {id da solicitação: novo valor} — vazio autoriza como pedido.
+ * `excedente`: o que passar do limite ou do pool sai da alocação de origem.
+ */
+export const autorizarDemanda = (
+  id: number,
+  ajustes: Record<number, string> = {},
+  excedente?: { origemAllocation: number; justificativa: string },
+) =>
+  decidir(id, "autorizar", {
+    ajustes,
+    ...(excedente && {
+      excedente_autorizado: true,
+      origem_allocation: excedente.origemAllocation,
+      justificativa: excedente.justificativa,
+    }),
+  });
 export const recusarDemanda = (id: number, justificativa: string) =>
   decidir(id, "recusar", { justificativa });
 
 /** FGD. `valoresPagos`: {id da solicitação: valor pago}. */
 export const atenderDemanda = (id: number) => decidir(id, "atender");
+/** Quanto o valor pago passa do autorizado; `null` se não passa ou se o campo está vazio. */
+export function excedenteDoPago(pago: string, autorizado: string): number | null {
+  const centavos = (valor: string) => Math.round(Number(valor) * 100);
+  const diferenca = centavos(pago) - centavos(autorizado);
+  return pago.trim() !== "" && diferenca > 0 ? diferenca / 100 : null;
+}
+
 export const concluirDemanda = (id: number, valoresPagos: Record<number, string>) =>
   decidir(id, "concluir", { valores_pagos: valoresPagos });
 

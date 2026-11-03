@@ -61,9 +61,9 @@ function Solicitacoes({ demanda }: { demanda: Demanda }) {
 
 /**
  * Linha do tempo: a criação, cada decisão (quem, quando, com que
- * justificativa) e o status atual.
+ * justificativa), os riscos de glosa e o status atual.
  */
-function LinhaDoTempo({ demanda }: { demanda: Demanda }) {
+export function LinhaDoTempo({ demanda }: { demanda: Demanda }) {
   return (
     <ol className="flex list-none flex-col gap-3 border-l border-border pl-4" data-testid="painel-timeline">
       <li className="relative">
@@ -85,6 +85,19 @@ function LinhaDoTempo({ demanda }: { demanda: Demanda }) {
           {e.justificativa && (
             <p className="mt-1 whitespace-pre-wrap text-xs text-text">{e.justificativa}</p>
           )}
+        </li>
+      ))}
+      {demanda.glosas?.map((g) => (
+        <li key={g.id} className="relative" data-testid={`glosa-${g.id}`}>
+          <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full bg-warning-text" aria-hidden />
+          <p className="text-sm text-warning-text">
+            Risco de glosa: {formatCurrencyBRL(g.excedente)} acima do autorizado
+          </p>
+          <p className="text-xs text-text-muted">
+            {demanda.solicitacoes.find((s) => s.id === g.demand_request_id)?.tipo_display} · pago{" "}
+            {formatCurrencyBRL(g.valor_pago)}, autorizado {formatCurrencyBRL(g.valor_autorizado)} ·{" "}
+            {absoluteDateTime(g.criado_em)}
+          </p>
         </li>
       ))}
       <li className="relative">
