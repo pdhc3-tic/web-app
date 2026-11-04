@@ -9,7 +9,7 @@ from django.db.models import Q
 from django.test import TransactionTestCase
 from rest_framework.exceptions import PermissionDenied
 
-from apps.core.tests.factories import RoleFactory, UserFactory
+from apps.core.tests.factories import RoleFactory, StateFactory, TerritoryFactory, UserFactory
 from apps.sgp.models import BudgetPool, BudgetTransaction
 from apps.sgp.budget import services as budget_service
 from apps.sgp.services.access import resolver_escopo
@@ -22,6 +22,75 @@ pytestmark = pytest.mark.django_db
 
 Tipo = BudgetTransaction.Tipo
 Nivel = BudgetPool.Nivel
+
+
+@pytest.fixture(params=[Nivel.NACIONAL, Nivel.ESTADUAL, Nivel.TERRITORIAL])
+def pool_do_nivel(request, db):
+    localizacao = {
+        Nivel.NACIONAL: {"estado": None, "territorio": None},
+        Nivel.ESTADUAL: {"estado": StateFactory(sigla="RN", nome="Rio Grande do Norte"), "territorio": None},
+        Nivel.TERRITORIAL: {"estado": None, "territorio": TerritoryFactory(estados=["RN"])},
+    }[request.param]
+    return BudgetPoolFactory(nivel=request.param, valor_alocado=Decimal("1000"), **localizacao)
+
+
+class TestOsTresNiveis:
+    def test_reserva_ajuste_e_execucao_movem_o_saldo(self, pool_do_nivel):
+        usuario = UserFactory()
+        chave = f"ciclo-{pool_do_nivel.nivel}"
+
+        budget_service.reservar(pool=pool_do_nivel, valor=Decimal("400"), demand_request_id=chave, usuario=usuario)
+        budget_service.ajustar_reserva(demand_request_id=chave, novo_valor=Decimal("300"), usuario=usuario)
+        budget_service.executar(demand_request_id=chave, usuario=usuario, valor_executado=Decimal("250"))
+
+        pool_do_nivel.refresh_from_db()
+        assert pool_do_nivel.valor_comprometido == Decimal("0")
+        assert pool_do_nivel.valor_executado == Decimal("250")
+        ultima = BudgetTransaction.objects.filter(pool=pool_do_nivel).order_by("-pk").first()
+        assert ultima.saldo_posterior == Decimal("750")
+
+    def test_liberar_devolve_o_saldo(self, pool_do_nivel):
+        usuario = UserFactory()
+        chave = f"liberar-{pool_do_nivel.nivel}"
+        budget_service.reservar(pool=pool_do_nivel, valor=Decimal("400"), demand_request_id=chave, usuario=usuario)
+
+        budget_service.liberar(demand_request_id=chave, usuario=usuario, motivo="cancelada")
+
+        pool_do_nivel.refresh_from_db()
+        assert pool_do_nivel.valor_comprometido == Decimal("0")
+        assert pool_do_nivel.valor_executado == Decimal("0")
+
+    def test_reserva_acima_do_saldo_e_recusada(self, pool_do_nivel):
+        with pytest.raises(budget_service.SaldoInsuficienteError):
+            budget_service.reservar(
+                pool=pool_do_nivel, valor=Decimal("1500"), demand_request_id=f"acima-{pool_do_nivel.nivel}",
+                usuario=UserFactory(),
+            )
+
+        pool_do_nivel.refresh_from_db()
+        assert pool_do_nivel.valor_comprometido == Decimal("0")
+
+    def test_consulta_encontra_o_pool_sem_meta(self, pool_do_nivel):
+        check = budget_service.saldo_para_consulta(
+            rubrica_slug=pool_do_nivel.rubrica.slug, nivel=pool_do_nivel.nivel,
+            estado_sigla=pool_do_nivel.estado.sigla if pool_do_nivel.estado else None,
+            territorio=pool_do_nivel.territorio, valor=Decimal("100"),
+        )
+
+        assert check.disponivel is True
+        assert check.pool.pk == pool_do_nivel.pk
+
+    @pytest.mark.parametrize(("slug", "nivel"), [
+        ("ugp", Nivel.NACIONAL),
+        ("super-admin", Nivel.NACIONAL),
+        ("articulador-estadual", Nivel.ESTADUAL),
+        ("adt-acr", Nivel.TERRITORIAL),
+    ])
+    def test_perfil_reserva_no_nivel_esperado(self, slug, nivel):
+        territorio = None if nivel == Nivel.NACIONAL else TerritoryFactory(estados=["RN"])
+        usuario = UserFactory(profiles=[(RoleFactory(slug=slug, nome=slug), territorio)])
+
+        assert budget_service.resolver_nivel_do_usuario(usuario)[0] == nivel
 
 
 class TestReservar:

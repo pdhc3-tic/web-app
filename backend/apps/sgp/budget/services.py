@@ -51,7 +51,7 @@ def _perfis_e_slugs(user) -> tuple[list[UserProfile], set[str]]:
     tem um teste dedicado a essa paridade.
     """
     perfis = list(
-        UserProfile.objects.filter(user=user).select_related("perfil", "territorio")
+        UserProfile.objects.filter(user=user).select_related("perfil", "territorio").order_by("pk")
     )
     return perfis, {p.perfil.slug for p in perfis}
 

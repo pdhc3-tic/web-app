@@ -228,7 +228,7 @@ podem mudar por configuração.
 - **Justificativa do alias:** `/sgd/limites-individuais/` não recebe justificativa no contrato antigo. Ela é preenchida com um texto fixo até o front migrar.
 - **`acao_sugerida` do remanejamento:** `informar_outra_origem`, além dos dois valores das travas da submissão.
 - **Testes da #387:** as asserções de redução de limite mudaram para seguir o documento: reduzir preserva o comprometido. `test_estado_da_reserva_migration.py` saiu porque rodava uma migration antiga contra o modelo removido.
-- **Campos do modelo de dados do SGP fora deste modelo:** `ted_versao_id` depende da entidade do TED; `transfer_id` não é preciso, porque o remanejamento já referencia os dois pools; `periodicidade` e `acumula_saldo` são parâmetros globais do Core; `valor_disponivel` é calculado.
+- **Campos do modelo de dados do SGP fora deste modelo:** `ted_versao_id` depende da entidade do TED; `transfer_id` não é preciso, porque o remanejamento já referencia os dois pools; `periodicidade` e `acumula_saldo` são parâmetros globais do Core; `valor_disponivel` é calculado. `BudgetPool.atualizado_em` não existe porque toda alteração de alocação já vai para o ledger, com usuário e data. Em `BudgetRubrica`, `descricao` não é usada, e `tipo_solicitacao_sgd` vive em `DemandTypeRubricaMapping`, porque o mapeamento é configuração. `demanda_id` é referência sem FK, para o SGP não depender do SGD. `BudgetAlert` fica para a #390.
 
 ### Divergências do documento mantidas, para a coordenação confirmar
 

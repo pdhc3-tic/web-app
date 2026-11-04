@@ -4,6 +4,8 @@ from unittest.mock import patch
 import pytest
 
 from apps.core.tests.factories import RoleFactory, UserFactory
+from apps.core.models.user_profile import UserProfile
+from apps.sgp.budget import limites
 from apps.sgp.budget import services as budget_service
 from apps.sgp.models import BudgetPool, BudgetRubrica
 from apps.sgp.tasks import check_budget_threshold_alert
@@ -385,6 +387,19 @@ class TestPainelEscopoTerritorial:
         ])
 
         assert budget_service.resolver_nivel_do_usuario(usuario) == (Nivel.TERRITORIAL, None, territory_rn)
+
+    def test_adt_de_dois_territorios_reserva_e_confere_no_mesmo_pool(self, territory_rn, territory_ce):
+        """Sem ordem na consulta dos perfis, a sobrealocação poderia conferir um pool e a reserva sair de outro."""
+        adt = RoleFactory(slug="adt-acr", nome="ADT / ACR")
+        usuario = UserFactory(profiles=[(adt, territory_rn), (adt, territory_ce)])
+        primeiro = UserProfile.objects.filter(user=usuario).order_by("pk").first()
+        # Regravar a linha a desloca na tabela: sem `order_by`, ela tende a voltar depois da outra.
+        UserProfile.objects.filter(pk=primeiro.pk).update(territorio=primeiro.territorio)
+
+        _, _, territorio = budget_service.resolver_nivel_do_usuario(usuario)
+
+        assert territorio.pk == primeiro.territorio_id
+        assert limites.territorio_do_pool(usuario.pk) == primeiro.territorio_id
 
     def test_celula_territorial_traz_o_estado_do_territorio(self, auth_client_super_admin, state_rn, territory_rn):
         territorial = BudgetPoolFactory(
