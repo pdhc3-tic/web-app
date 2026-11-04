@@ -193,6 +193,35 @@ necessário em listagens grandes.
 
 ---
 
+## 8. Orçamento — padrões do Relatório de Set/2026 adotados
+
+Registrado em 03/11/2026 por Adrian. O Relatório de Alterações lista os três
+primeiros pontos como decisões em aberto, mas já traz um padrão para cada um, e os
+documentos de requisitos o confirmam. Valem como decididos, sem depender de nova
+resposta da coordenação. Período, sobrealocação e acúmulo são parâmetros do Core e
+podem mudar por configuração.
+
+| Questão | Decisão | Fonte |
+|---|---|---|
+| Periodicidade dos limites | Global, trimestral (`budget_limit_period`) | SGP 6.4; Core; Relatório, seção 9 |
+| Sobrealocação | Permitida (`budget_overallocation_allowed = true`); o bloqueio efetivo continua sendo o pool | SGP 6.3; Core; Relatório, seção 9 |
+| Saldo não usado | Expira no fim do período (`budget_limit_carry_over = false`) | SGP 6.4; Core; Relatório, seção 9 |
+| Saldo por Meta | A Meta não tem saldo próprio: é dimensão do valor executado. Os relatórios previstos trazem saldo por rubrica, pool e território | Relatório 2.2; SGP, seção 6 |
+
+### Escolhas de implementação sem regra nos documentos
+
+- **Mais de um perfil:** vale o maior padrão.
+- **`vigencia`:** período único e fixo, até existir a entidade do TED.
+- **Padrão por perfil:** vale até ser alterado, sem precisar de novo cadastro a cada período.
+- **Recurso extra:** eleva o período vigente na data da decisão. `periodo_aplicacao` é texto livre e o front não o preenche.
+- **Campo do limite:** `valor_limite`, como no modelo de dados do SGP, em vez do `valor` da issue.
+- **RLS:** a FGD e o nível nacional para o Articulador vão além do texto da arquitetura. Ver `orcamento.md`.
+
+**Em aberto com a coordenação:** os valores iniciais dos limites por perfil e rubrica e se
+ADT e ACR precisam de valores diferentes. Hoje os dois são um só perfil no sistema.
+
+---
+
 ## Observação
 
 Achado da varredura que **não** tem justificativa técnica registrada em

@@ -616,8 +616,16 @@ def remanejar(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal,
 
     saldo_origem = _saldo_disponivel(origem)
     if valor > saldo_origem:
+        mensagem = f"Saldo insuficiente na origem: R$ {saldo_origem} disponível."
+        # `valor` primeiro: é por ele que o formulário e a porta do SGD acham o campo da recusa.
         raise DRFValidationError({
-            "valor": f"Saldo insuficiente na origem: R$ {saldo_origem} disponível."
+            "valor": [mensagem],
+            "code": "INSUFFICIENT_BALANCE",
+            "trava": "origem",
+            "rubrica": origem.rubrica.slug,
+            "disponivel": f"{saldo_origem:.2f}",
+            "solicitado": f"{valor:.2f}",
+            "detail": mensagem,
         })
     saldo_destino = _saldo_disponivel(destino)
 

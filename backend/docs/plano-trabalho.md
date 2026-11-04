@@ -12,8 +12,8 @@ matriz de permissões do Core §2.1.
 | Ação | `WorkPlanAcao` | `X.Y.Z`, com `X.Y` da Submeta | Submeta, Indicador, quantidade planejada (maior que zero), valor unitário e período obrigatórios (SGP §5.5); período contido no da Submeta. `meta` é derivada da Submeta no `save()` e só leitura na API; enviar uma `meta` diferente da da Submeta dá 400. |
 | Indicador | `Indicator` | código curto (`IND-OFI`) | Catálogo institucional, compartilhado entre Ações de Metas diferentes. |
 
-A Ação continua gravando `meta` porque o orçamento (`BudgetAllocation.meta`),
-o SGD e os filtros por Meta leem dela.
+A Ação continua gravando `meta` porque o executado por Meta, o SGD e os filtros
+por Meta leem dela.
 
 As regras da tabela ficam no `clean()` dos models (prefixo, períodos, filhos
 que ficariam fora do novo período, número de Meta e Submeta com filhos,

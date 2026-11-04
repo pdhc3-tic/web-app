@@ -200,6 +200,12 @@ class TestValidacaoDeCombinacao:
         )
 
         assert response.status_code == 400
+        assert response.data["code"] == "INSUFFICIENT_BALANCE"
+        assert response.data["trava"] == "origem"
+        assert response.data["rubrica"] == origem.rubrica.slug
+        assert response.data["disponivel"] == "100.00"
+        assert response.data["solicitado"] == "150.00"
+        assert "valor" in response.data
         origem.refresh_from_db()
         destino.refresh_from_db()
         assert origem.valor_alocado == Decimal("100")

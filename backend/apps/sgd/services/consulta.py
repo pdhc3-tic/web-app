@@ -105,13 +105,22 @@ def _painel_sgp(user, slugs: set[str], *, estado_sigla, territorio_id, meta_id):
     )
 
 
+def _estados_dos_limites(user, slugs: set[str], estado_sigla: str | None) -> set[str] | None:
+    """O orçamento nacional aparece para o Articulador, mas o limite de cada pessoa só no estado dele."""
+    if slugs & PERFIS_NACIONAIS:
+        return {estado_sigla} if estado_sigla else None
+    estados = user_states(user)
+    return estados & {estado_sigla} if estado_sigla else estados
+
+
 def painel_por_rubrica(user, demandas, params) -> list[dict]:
     """Solicitado / autorizado / executado / disponível por rubrica (RF28).
 
     `solicitado` e `autorizado` saem das solicitações das demandas visíveis e
     filtradas; `executado`, `disponivel` e a faixa do semáforo são os do controle
     financeiro do SGP (`painel_orcamento`), somados por rubrica, para o painel
-    nunca divergir do orçamento.
+    nunca divergir do orçamento. Os campos `limite_*` são os limites individuais
+    do período vigente, no mesmo recorte.
     """
     slugs = exigir_perfil_de_gestao(user)
     territorio_id = _inteiro_ou_none(params.get("territorio"))
@@ -141,11 +150,19 @@ def painel_por_rubrica(user, demandas, params) -> list[dict]:
         acc["executado"] += linha.get("valor_executado_meta", linha["valor_executado"])
         acc["disponivel"] += linha["saldo_disponivel"]
 
+    limites = orcamento_service.totais_de_limite_por_rubrica(
+        territorio_id=territorio_id, estados=_estados_dos_limites(user, slugs, estado_sigla),
+    )
+
     limiares = orcamento_service.limiares_semaforo()
     resultado = []
     for rubrica in BudgetRubrica.objects.filter(ativo=True).order_by("ordem"):
         demanda_linha = por_rubrica.get(rubrica.pk, {})
         fin = orcamento.get(rubrica.pk, {})
+        limite = limites.get(rubrica.pk, {})
+        limite_total = limite.get("total") or ZERO
+        limite_comprometido = limite.get("comprometido") or ZERO
+        limite_executado = limite.get("executado") or ZERO
         percentual = orcamento_service.percentual_comprometido(
             fin.get("comprometido", ZERO), fin.get("aprovado", ZERO),
         )
@@ -161,6 +178,10 @@ def painel_por_rubrica(user, demandas, params) -> list[dict]:
             # a mesma base do painel de orçamento do SGP.
             "percentual_execucao": percentual,
             "faixa": orcamento_service.faixa_semaforo(percentual, limiares),
+            "limite_total": limite_total,
+            "limite_comprometido": limite_comprometido,
+            "limite_executado": limite_executado,
+            "limite_disponivel": limite_total - limite_comprometido - limite_executado,
         })
     return resultado
 

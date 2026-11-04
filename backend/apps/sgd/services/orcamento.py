@@ -34,6 +34,7 @@ TipoTransacao = BudgetTransaction.Tipo
 travar_limite_vigente = limites_service.travar_limite_vigente
 travar_limite_para_elevar = limites_service.travar_limite_para_elevar
 hoje = limites_service.hoje
+totais_de_limite_por_rubrica = limites_service.totais_por_rubrica
 criar_sobrescrita = limites_service.criar_sobrescrita
 alterar_sobrescrita = limites_service.alterar_sobrescrita
 auditar_criacao_do_limite = limites_service.auditar_criacao

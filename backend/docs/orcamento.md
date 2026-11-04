@@ -1,98 +1,155 @@
-# Orçamento — contrato de integração para o SGD
+# Orçamento — modelo, motor de saldo e contrato com o SGD
 
-Este documento descreve o contrato que o SGP expõe ao SGD (Sistema de Gestão de Demandas) — o motor de saldo e os endpoints HTTP — e a ordem de lock que os dois seguem.
+Este documento descreve o controle financeiro do SGP: os modelos, o motor de saldo, os limites de gasto, o ledger, a ordem de lock e os endpoints. O código fica em `apps/sgp/budget/`, ainda no app `sgp`.
 
 ## Modelos
 
-- `BudgetRubrica`: catálogo das 6 rubricas (§5.3.1).
-- `BudgetAllocation`: a distribuição por Meta/Rubrica/Nível (`nacional`/`estadual`/`territorial`), com `valor_alocado`, `valor_comprometido` e `valor_executado`.
-- `BudgetTransaction`: trilha de auditoria imutável de cada movimento (`reserva`/`execucao`/`liberacao`/`remanejamento`).
+- `BudgetRubrica`: catálogo das rubricas.
+- `BudgetPool`: saldo autônomo de uma rubrica num nível (`nacional`, `estadual` ou `territorial`), com `valor_alocado`, `valor_comprometido` e `valor_executado`. Há um pool por rubrica, nível, estado e território. A Meta não faz parte do saldo.
+- `SpendingLimit`: limite de gasto por rubrica e período, que pode ser o padrão de um perfil ou a linha individual de um usuário.
+- `BudgetTransaction`: ledger único de pools e limites, só por INSERT.
+- `BudgetTransfer`: remanejamento entre pools da mesma rubrica, só por INSERT.
+- `BudgetIncreaseRequest`: pedido de recurso extra.
+
+## As duas travas
+
+Uma demanda só reserva se passar nas duas travas: primeiro o limite individual do solicitante, depois o pool territorial. O pool é localizado pelo nível do solicitante e pela rubrica.
+
+## Limites de gasto
+
+| Tipo de registro | Campos | Observação |
+|---|---|---|
+| Padrão por perfil | `perfil`, `rubrica`, `valor_limite` | Vale até ser alterado (`periodo_fim` em aberto) |
+| Linha individual herdada | `user`, `rubrica`, `herdado=true` | Nasce do padrão na primeira reserva do período |
+| Sobrescrita individual | `user`, `rubrica`, `justificativa` | Justificativa obrigatória |
+
+- **Limite efetivo:** a linha individual vigente; sem ela, o que o padrão do perfil geraria. A consulta não grava nada.
+- **Mais de um perfil:** vale o maior padrão.
+- **Sem limite nem padrão:** a demanda é bloqueada, com orientação para pedir recurso extra.
+- **Período:** vem de `budget_limit_period` (`mensal`, `trimestral`, `semestral` ou `vigencia`). A linha existente não muda se o parâmetro for alterado no meio do período.
+- **Virada do período:** com `budget_limit_carry_over`, a linha nova soma o saldo positivo da anterior.
+- **Reserva presa à linha:** ajuste, liberação e execução usam a linha em que a reserva foi feita, encontrada pelo ledger, mesmo depois da virada. Uma reserva nova usa o período novo.
+- **Alteração do padrão:** se já estiver em uso, vale a partir do período seguinte; sem uso, o próprio registro é corrigido.
+- **Redução:** nunca abaixo do já comprometido e executado.
+- **Sobrealocação:** com `budget_overallocation_allowed` desligado, criar ou alterar um limite é recusado se a soma do território passar do pool. O erro traz `soma_limites` e `valor_pool`.
+- **Recurso extra aprovado:** eleva a linha do período vigente na data da decisão, que vira sobrescrita. `periodo_aplicacao` é texto livre e não define o período.
+
+## Ledger
+
+`BudgetTransaction` aponta para um pool ou para um limite, nunca para os dois.
+
+| Campo | Conteúdo |
+|---|---|
+| `tipo` | `reserva`, `ajuste`, `execucao`, `liberacao`, `remanejamento` ou `aumento_limite` |
+| `valor` | Com sinal em `ajuste`, `remanejamento` e `aumento_limite` |
+| `saldo_anterior`, `saldo_posterior` | Saldo disponível (alocado ou limite, menos comprometido e executado) antes e depois |
+| `demand_request_id` | Solicitação: é a chave de idempotência da reserva |
+| `demanda_id` | Demanda |
+| `activity` | Liga o executado à Meta, pela cadeia Atividade → Ação → Meta |
+| `ip` | IP da requisição, quando houver |
+
+Um trigger recusa `UPDATE` e `DELETE` em `sgp_budgettransaction` e `sgp_budgettransfer`: correção é sempre um novo lançamento. Por isso `seed_demo --reset` esvazia as duas tabelas com `TRUNCATE`, que exige `DB_USER=postgres`.
 
 ## O motor (`apps.sgp.budget.services`)
 
-Seis funções públicas, chamadas em resposta ao ciclo de vida de uma demanda no SGD:
-
 ```python
-def verificar_saldo(*, meta, rubrica, nivel, territorio=None, estado=None, valor) -> SaldoCheck
-def saldo_para_consulta(*, meta_id, rubrica_slug, nivel, estado_sigla, territorio, valor) -> SaldoCheck
-def reservar(*, allocation, valor, demanda_id, usuario, justificativa="") -> BudgetTransaction
-def ajustar_reserva(*, demanda_id, novo_valor, usuario, justificativa="") -> BudgetTransaction
-def executar(*, demanda_id, usuario, valor_executado=None) -> BudgetTransaction
-def liberar(*, demanda_id, usuario, motivo) -> BudgetTransaction
+def verificar_saldo(*, rubrica, nivel, territorio=None, estado=None, valor) -> SaldoCheck
+def saldo_para_consulta(*, rubrica_slug, nivel, estado_sigla, territorio, valor, consumo_previo=0) -> SaldoCheck
+def reservar(*, pool, valor, demand_request_id, usuario, justificativa="", demanda_id=None, activity_id=None) -> BudgetTransaction
+def ajustar_reserva(*, demand_request_id, novo_valor, usuario, justificativa="") -> BudgetTransaction
+def executar(*, demand_request_id, usuario, valor_executado=None) -> BudgetTransaction
+def liberar(*, demand_request_id, usuario, motivo) -> BudgetTransaction
+def remanejar(*, origem, destino, valor, usuario, justificativa) -> tuple[BudgetTransaction, BudgetTransaction]
 ```
 
-`saldo_para_consulta` é a variante que resolve tudo a partir de ids/slugs crus
-(usada pelo `SaldoConsultaView` e pela porta de orçamento do SGD,
-`apps.sgd.services.orcamento`) — `verificar_saldo` espera instâncias já
-resolvidas. No SGD, só a porta importa o motor; ela resolve a Meta pela
-atividade da demanda e devolve os erros do motor como exceções de domínio
-(`apps.sgd.exceptions`). `ajustar_reserva` e o parâmetro `valor_executado` de `executar`
-foram adicionados para o SGD (`Pré-autorizada → Autorizada com valor
-ajustado` e conclusão com valor efetivamente pago menor que o autorizado,
-§4.2 do documento do SGD) — aditivos: nenhum código que só chama
-`reservar`/`executar()`/`liberar` sem passar por `ajustar_reserva` muda de
-comportamento.
+No SGD, só a porta `apps.sgd.services.orcamento` importa o motor e `apps.sgp.budget.limites`. Ela devolve os erros do motor como exceções de domínio (`apps.sgd.exceptions`).
 
 ### Estado da demanda → chamada esperada
 
 | Estado da demanda no SGD | Chamada |
 |---|---|
-| Formulário sendo preenchido (antes de criar) | `GET /api/v1/sgp/orcamento/saldo/` (ou `saldo_para_consulta`/`verificar_saldo` direto, se a chamada for interna) |
-| Demanda criada, saldo reservado | `reservar(allocation=..., valor=..., demanda_id=<id da demanda>, usuario=...)` |
-| Decisão final com valor diferente do estimado | `ajustar_reserva(demanda_id=..., novo_valor=..., usuario=...)` |
-| Demanda concluída pela FGD ou pelo retorno do Arlo (consumo definitivo) | `executar(demanda_id=..., usuario=..., valor_executado=<menor entre o pago e o autorizado>)`; o que for pago acima do autorizado vira `GlosaRisk`, não executado (`apps.sgd.services.workflow.registrar_pagamento`) |
-| Demanda recusada ou cancelada | `liberar(demanda_id=..., usuario=..., motivo=...)` |
+| Formulário sendo preenchido (antes de criar) | `GET /api/v1/sgd/saldo/` ou `GET /api/v1/sgp/orcamento/saldo/` |
+| Submissão | `reservar(pool=..., valor=..., demand_request_id=..., demanda_id=..., activity_id=..., usuario=...)` |
+| Decisão final com valor diferente do estimado | `ajustar_reserva(demand_request_id=..., novo_valor=..., usuario=...)` |
+| Concluída pela FGD ou pelo retorno do Arlo | `executar(demand_request_id=..., usuario=..., valor_executado=<menor entre o pago e o autorizado>)`; o que for pago acima do autorizado vira `GlosaRisk` (`apps.sgd.services.workflow.registrar_pagamento`) |
+| Recusada ou cancelada | `liberar(demand_request_id=..., usuario=..., motivo=...)` |
 
 ### Invariantes
 
-- Todas as operações rodam dentro de `transaction.atomic()` com `select_for_update()` na alocação.
-- **Idempotentes por `demanda_id`**: chamar `reservar`/`executar`/`liberar` duas vezes para o mesmo `demanda_id` não duplica o efeito — a segunda chamada devolve a `BudgetTransaction` já existente, sem alterar nada de novo.
-- `executar`/`liberar` recebem só `demanda_id` (não a alocação nem o valor) — eles localizam a `BudgetTransaction` de tipo `reserva` original para saber qual alocação e quanto mexer. Por isso `reservar` **precisa** ter sido chamado antes com o mesmo `demanda_id`.
-- `liberar` devolve o saldo à mesma alocação onde a reserva foi feita (o nível do solicitante) — nunca ao nível pai.
-- `reservar` levanta `SaldoInsuficienteError` (exceção Python simples, não amarrada a DRF) se o valor pedido exceder o saldo disponível.
-- Nenhuma função do motor importa `apps.sgd` — o motor não conhece quem o chama.
+- Todas as operações rodam em `transaction.atomic()`, com `select_for_update()` no pool.
+- **Idempotentes por `demand_request_id`:** chamar `reservar`, `executar` ou `liberar` duas vezes não duplica o efeito.
+- `executar` e `liberar` localizam o pool e o valor pela reserva original, que precisa existir.
+- `liberar` devolve o saldo ao mesmo pool da reserva, nunca ao nível acima.
+- `reservar` levanta `SaldoInsuficienteError`, uma exceção Python simples, se o valor passar do saldo.
+- O motor não importa `apps.sgd`.
 
-### Ordem de lock no SGD
+## RLS
 
-Toda transação que trava mais de uma destas linhas segue esta ordem, para que duas transações nunca esperem uma pela outra:
+`sgp_budgetpool`, `sgp_spendinglimit` e `sgp_budgettransaction` têm RLS. O usuário de runtime (`app_user`) não é dono das tabelas, e o papel vem das variáveis de sessão definidas por `SessionContextMiddleware`.
+
+| Perfil | Pools | Limites |
+|---|---|---|
+| UGP, FGD, Super Admin | Todos | Todos |
+| Articulador Estadual | Nacional, e estaduais e territoriais do próprio estado | Do próprio estado |
+| ADT/ACR e demais | Territorial do próprio território | O próprio |
+
+- Todo usuário lê os padrões por perfil.
+- `sgp_budgettransaction` segue o pool ou o limite referenciado.
+- A FGD entra entre os perfis globais porque conclui as demandas.
+- O Articulador vê o nacional porque o painel o mostra a ele.
+
+**O RLS protege o que as views leem. A autorização das operações fica nos serviços.** O motor age em nome de outra pessoa, e por isso `apps.sgp.budget.rls.visao_total` define o papel `super-admin` durante a operação e o restaura no fim. Usam a visão total as operações de saldo de `apps.sgd.services.balance`, a prévia da decisão, `verificar_saldos` e a task `check_budget_threshold_alert`. Fora de uma requisição, sem isso, as tabelas aparecem vazias e sem erro nenhum.
+
+## Ordem de lock
+
+Toda transação que trava mais de uma destas linhas segue esta ordem:
 
 1. `BudgetIncreaseRequest` (pedido de recurso extra).
-2. Saldo, rubrica por rubrica em ordem de `rubrica_id`: os `DemandIndividualLimit` da rubrica e depois as `BudgetAllocation` da rubrica, cada grupo em ordem crescente de pk.
+2. Saldo, rubrica por rubrica em ordem de `rubrica_id`: **primeiro todas as linhas de `SpendingLimit` da rubrica** e depois os `BudgetPool` da rubrica, cada grupo em ordem crescente de pk.
 3. `Demand`.
 4. `DemandRequest`.
 
-O `FOR UPDATE` trava só a linha da tabela da ordem: com JOIN na query (`select_related` ou um `ordering` por FK, como o do limite individual, que ordena por solicitante e rubrica), usar `select_for_update(of=("self",))`. Sem isso, a linha do usuário fica travada junto, e o commit de outra transação que gravou uma notificação, auditoria ou etapa para ele espera esse lock na checagem da FK, fechando um ciclo com a `Demand`.
+Dentro de uma rubrica, nenhuma transação trava um limite depois de um pool. Depois da virada do período, uma demanda pode ter reservas em duas linhas de limite: travá-las uma a uma, intercaladas com o pool, abriria um ciclo com o cancelamento em lote. Por isso `balance.na_ordem_de_lock` trava, ao entrar em cada rubrica, as linhas das reservas e as do período vigente de todos os solicitantes envolvidos.
+
+O `FOR UPDATE` trava só a linha da tabela da ordem: com JOIN na query (`select_related` ou um `ordering` por FK), usar `select_for_update(of=("self",))`. Sem isso, a linha do usuário fica travada junto, e o commit de outra transação que gravou uma notificação, auditoria ou etapa para ele espera esse lock na checagem da FK, fechando um ciclo com a `Demand`.
 
 As transições de status passam por `apps.sgd.services.workflow.executar_transicao` (o cancelamento automático, pela variante em lote `cancelar_pelo_sistema`): primeiro o efeito no saldo, depois a `Demand` travada com o status relido (e as solicitações conferidas, quando o saldo partiu delas) e, por último, a gravação das `DemandRequest`. Se a demanda mudou nesse meio, a transição é recusada com `INVALID_TRANSITION`.
 
 | Caminho | O que trava |
 |---|---|
-| Submissão; autorização; recusa; conclusão pela FGD; cancelamento pelo solicitante ou, de demanda autorizada, pela UGP/Super Admin | limite → alocação, rubrica a rubrica → `Demand` → `DemandRequest` (estado da reserva, `valor_autorizado` e `valor_pago`, em ordem de pk) |
-| Autorização com excedente (remanejamento emergencial) | por solicitação da rubrica da origem: limite → alocações (origem e a da reserva, em ordem de pk) → depois segue como a autorização |
-| Pré-autorização, devolução, início do atendimento | só a `Demand` |
-| Importação do Arlo, por linha | limite → alocação da solicitação paga → `Demand` (status relido) → `DemandRequest`. Cada linha numa transação própria: com o arquivo numa só, os locks de uma linha ficariam presos enquanto a seguinte trava o limite de outro solicitante |
-| Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todos os limites e depois todas as alocações; só então as `Demand`, em ordem de pk, e por fim as `DemandRequest`. Se uma demanda deixou de ser cancelável ou ganhou, perdeu ou trocou a rubrica de uma solicitação, a transação volta e a task é repetida (até 3 vezes) |
-| Edição da demanda; inclusão de solicitação | só a `Demand` |
-| Edição e remoção de solicitação | limite → alocação (se há reserva) → `Demand` → `DemandRequest`; a edição relê a reserva já com o limite travado |
-| Decisão de recurso extra | pedido → limite → alocações (territorial e origem) → `Demand` → todas as `DemandRequest` da demanda |
-| Parecer, devolução, submissão e edição do pedido | só o pedido |
-| Criação do pedido | a `Demand`, e depois o pedido novo, que nenhuma outra transação enxerga antes do commit |
-| Edição do limite individual (`PATCH /sgd/limites-individuais/{id}/` ou Django Admin); exclusão pelo Django Admin, só sem saldo | só o limite |
-| `remanejar`, `atualizar_valor_alocado` | alocações em ordem crescente de pk |
+| Submissão | Por rubrica: linhas de limite (a do período é criada aqui, se faltar) → pool → `Demand` → `DemandRequest` |
+| Autorização, recusa, cancelamento pelo solicitante ou pela UGP/Super Admin, conclusão pela FGD | Por rubrica: linhas de limite → pool → `Demand` → `DemandRequest` (estado da reserva, `valor_autorizado` e `valor_pago`, em ordem de pk) |
+| Autorização com excedente (remanejamento emergencial) | Por rubrica: linhas de limite → pools (origem e o da reserva, em ordem de pk) → depois segue como a autorização |
+| Pré-autorização, devolução, início do atendimento | Só a `Demand` |
+| Importação do Arlo, por linha | Limite → pool da solicitação paga → `Demand` (status relido) → `DemandRequest`. Cada linha numa transação própria |
+| Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todas as linhas de limite e depois todos os pools; só então as `Demand`, em ordem de pk, e por fim as `DemandRequest`. Se uma demanda mudou, a transação volta e a task é repetida (até 3 vezes) |
+| Edição da demanda; inclusão de solicitação | Só a `Demand` |
+| Edição e remoção de solicitação | Limite → pool (se há reserva) → `Demand` → `DemandRequest`; a edição relê a reserva já com o limite travado |
+| Decisão de recurso extra | Pedido → linha de limite do período → pools (territorial e origem, em ordem de pk) → `Demand` → todas as `DemandRequest` da demanda |
+| Parecer, devolução, submissão e edição do pedido | Só o pedido |
+| Criação do pedido | A `Demand`, e depois o pedido novo, que nenhuma outra transação enxerga antes do commit |
+| Cadastro de limite (`/sgp/orcamento/limites/`, alias e Django Admin) | Só o limite |
+| `remanejar`, `atualizar_valor_alocado` | Pools em ordem crescente de pk |
 
-### Reconciliação
+## Reconciliação
 
 ```
 python manage.py verificar_saldos
 ```
 
-Confere, para cada `BudgetAllocation`, se `valor_comprometido`/`valor_executado` batem com a soma das suas `BudgetTransaction` por tipo (`reserva`/`execucao`/`liberacao`). No SGD, confere também se o `valor_comprometido` de cada limite individual bate com a soma de `valor_reservado − valor_excedente` das solicitações com reserva ativa (`valor_reservado > 0` e `valor_executado` nulo) do mesmo solicitante e rubrica, e se os totais de cada demanda (`valor_estimado_total`, `valor_autorizado_total`, `valor_pago_total`) batem com a soma das suas solicitações; essa parte lê `sgd_demand` com visão total, já que o comando não passa pelo middleware que define o papel da sessão para o RLS. Sai com código de saída ≠ 0 (via `CommandError`) e lista as divergências encontradas, se houver.
+Para cada `BudgetPool` e cada linha individual de `SpendingLimit`, confere:
+
+- `valor_comprometido` contra `reserva + ajuste − execucao − liberacao` do ledger;
+- `valor_executado` contra a soma de `execucao`;
+- o saldo disponível contra o `saldo_posterior` da última transação.
+
+No SGD, confere também o comprometido dos limites contra as reservas ativas das solicitações, por solicitante e rubrica, e os totais de cada demanda contra a soma das solicitações. Sai com código diferente de 0 (via `CommandError`) e lista as divergências encontradas.
 
 ## Endpoints HTTP
 
-### `GET /api/v1/sgp/orcamento/saldo/?meta={id}&rubrica={slug}&valor={decimal}`
+### `GET /api/v1/sgp/orcamento/saldo/?rubrica={slug}&valor={decimal}`
 
-O endpoint que o formulário de demanda do SGD chama no `onChange` do campo de valor, antes de criar a demanda. Resolve o nível automaticamente pelo perfil do usuário autenticado — UGP/Super Admin → nacional, Articulador Estadual → seu estado, ADT/ACR → seu território.
+Resolve o nível pelo perfil do usuário: UGP/Super Admin → nacional, Articulador Estadual → seu estado, ADT/ACR → seu território. `meta` é ignorado, com aviso no log.
 
 ```json
 {
@@ -101,69 +158,94 @@ O endpoint que o formulário de demanda do SGD chama no `onChange` do campo de v
   "nivel": "territorial",
   "estado": null,
   "territorio": {"id": 7, "nome": "Território Central"},
+  "pool_id": 42,
   "allocation_id": 42,
   "motivo_bloqueio": null
 }
 ```
 
-`rubrica` é o **slug** (ex. `diarias`), não o id. Rubrica inexistente ou inativa retorna `400`. Saldo zero (ou insuficiente para o `valor` pedido) retorna `disponivel: false` com `motivo_bloqueio` preenchido — o bloqueio em si é responsabilidade de quem chama (o SGD), este endpoint só responde a pergunta.
+`allocation_id` repete `pool_id` enquanto o front migra. Rubrica inexistente ou inativa retorna `400`. Saldo zero ou insuficiente retorna `disponivel: false`: o bloqueio é de quem chama.
+
+### `POST /api/v1/sgp/orcamento/pools/`, `PATCH`/`DELETE .../pools/{id}/` e `GET .../pools/{id}/transacoes/`
+
+Distribuição do orçamento. Só o nível nacional não tem pai. Estadual e territorial são limitados pelo saldo do nível acima, e uma `reserva_ugp` não recebe filhos. Pool repetido retorna `400`. UGP e Super Admin alteram qualquer nível; o Articulador, só os territórios do próprio estado.
+
+As rotas antigas seguem como alias enquanto o front migra:
+
+| Alias | Rota nova |
+|---|---|
+| `POST /sgp/metas/{id}/orcamento/alocacoes/` | `POST /sgp/orcamento/pools/` (a Meta só é conferida, `404` se não existir) |
+| `PATCH`/`DELETE /sgp/orcamento/alocacoes/{id}/` | `PATCH`/`DELETE /sgp/orcamento/pools/{id}/` |
+| `GET /sgp/orcamento/alocacoes/{id}/transacoes/` | `GET /sgp/orcamento/pools/{id}/transacoes/` |
+| `GET /sgp/metas/{id}/orcamento/` | Sem substituta direta: a resposta é a mesma para qualquer Meta. Use o painel |
 
 ### `POST /api/v1/sgp/orcamento/remanejamentos/`
 
-Remanejamento emergencial — só UGP/Super Admin, com justificativa obrigatória. Move `valor_alocado` entre duas alocações da mesma Meta e Rubrica, gerando duas `BudgetTransaction` (`remanejamento`, débito na origem e crédito no destino).
+Só UGP e Super Admin, com justificativa obrigatória. Move `valor_alocado` entre dois pools da mesma rubrica e gera duas transações `remanejamento`.
 
 ```json
 {"origem_allocation": 12, "destino_allocation": 45, "valor": "3000.00", "justificativa": "..."}
 ```
 
-### `GET /api/v1/sgp/orcamento/alocacoes/{id}/transacoes/`
+Os campos mantêm o nome e recebem o id do pool. Sem saldo na origem, retorna `400` com o contrato `INSUFFICIENT_BALANCE`:
 
-Histórico completo de `BudgetTransaction` de uma alocação, mais recente primeiro.
+```json
+{
+  "valor": ["Saldo insuficiente na origem: R$ 100.00 disponível."],
+  "code": "INSUFFICIENT_BALANCE",
+  "trava": "origem",
+  "rubrica": "diarias",
+  "disponivel": "100.00",
+  "solicitado": "3000.00",
+  "detail": "Saldo insuficiente na origem: R$ 100.00 disponível."
+}
+```
+
+### `GET`/`POST /api/v1/sgp/orcamento/limites/` e `PATCH .../limites/{id}/`
+
+Só Super Admin e UGP. A lista traz os limites vigentes em `?data=` (hoje, se omitido), com os filtros `?escopo=`, `?rubrica=` (slug), `?user=` e `?perfil=` (slug).
+
+```json
+{"escopo": "perfil", "perfil": 2, "rubrica": 1, "valor_limite": "1000.00"}
+{"escopo": "individual", "user": 9, "rubrica": 1, "valor_limite": "2500.00", "justificativa": "Mutirão."}
+```
+
+O `PATCH` recebe `valor_limite` e `justificativa`, obrigatória quando o valor muda. `/sgd/limites-individuais/` segue como alias, com o contrato antigo, para as linhas individuais do período vigente.
 
 ### `GET /api/v1/sgp/rubricas/?ativo=`
 
-Catálogo de `BudgetRubrica`, sem paginação, ordenado por `nome`, para qualquer usuário
-autenticado. `?ativo=true` devolve só as ativas e `?ativo=false` só as inativas. Sem o
-parâmetro, devolve todas, porque uma rubrica inativa ainda pode estar num mapeamento antigo do
-SGD. Valor que não seja booleano em `ativo` retorna `400`.
+Catálogo de `BudgetRubrica`, sem paginação, ordenado por `nome`, para qualquer usuário autenticado. Sem o parâmetro, devolve também as inativas. Valor que não seja booleano retorna `400`.
 
-```json
-[
-  {"id": 4, "slug": "alimentacao-refeicoes", "nome": "Alimentação/Refeições", "ativo": true}
-]
-```
+### `GET /api/v1/sgp/orcamento/painel/?rubrica=&estado=&territorio=&nivel=&meta=`
 
-### `GET /api/v1/sgp/orcamento/painel/?meta=&rubrica=&estado=&territorio=`
+Matriz Rubrica × Nível: uma linha por pool no escopo do perfil, com o `id` que a origem do excedente e a do recurso extra enviam.
 
-Matriz Meta × Rubrica com semáforo (§5.3.3), pro painel executivo. Todos os parâmetros são
-opcionais: `meta` (id), `rubrica` (slug), `estado` (sigla) e `territorio` (id).
+| Perfil | Sem filtro | Drill-down |
+|---|---|---|
+| `super-admin`, `ugp` | Todos os pools | Qualquer estado ou território |
+| `articulador-estadual` | Nacional e os do próprio estado | Só o próprio estado (`403` fora dele) |
+| `adt-acr` | Os do próprio território | Só o próprio território; `estado=` retorna `403` |
 
-O **nível exibido por linha é dinâmico**, resolvido pelo perfil do usuário autenticado — mesma
-política de RBAC do endpoint acima: `super-admin`/`ugp` → nacional por padrão, drill-down
-livre pra qualquer estado/território; `articulador-estadual` → **nacional agregado por
-padrão** (nacional não é dado sensível por território), com `estado`/`territorio` descendo
-só dentro do seu próprio estado; `adt-acr` → sempre o próprio território, sem acesso a
-nacional/estadual (`estado=` devolve `403` pra esse perfil). Filtro fora do escopo do perfil
-retorna `403`; qualquer um dos 4 filtros com id/slug/sigla inexistente retorna `400`
-(todos validados contra a FK real). `estado`/`territorio` juntos: `territorio` vence pra
-`super-admin`/`ugp`/`articulador-estadual` — `adt-acr` rejeita `estado=` com `403` mesmo
-que o `territorio` enviado junto seja o seu próprio (esse perfil não tem nível estadual).
-
-Sem filtro, 5 queries (4 pro ADT/ACR — nível padrão territorial, sem "distribuído"). Cada
-filtro informado soma +1 query de validação — pior caso, 9 (Articulador Estadual com
-`territorio`, que confirma posse com 1 query a mais; 8 pros demais perfis).
+- `estado` traz o estadual e os territoriais do estado. `territorio` traz o pool dele e vence `estado` se os dois vierem.
+- `meta` não recorta o saldo: só acrescenta `valor_executado_meta`, calculado pela cadeia Atividade → Ação → Meta.
+- Filtro com id, slug ou sigla inexistente retorna `400`.
+- Perfil sem estado ou território vinculado recebe `403` com `code: "SEM_TERRITORIO"`.
 
 ```json
 [
   {
-    "meta": {"id": 3, "numero": 3, "titulo": "Meta 3"},
+    "id": 42,
     "rubrica": {"id": 1, "nome": "Diárias", "slug": "diarias"},
     "nivel": "nacional",
+    "estado": null,
+    "territorio": null,
+    "reserva_ugp": false,
     "valor_aprovado": "10000.00",
     "valor_distribuido": "4000.00",
-    "valor_comprometido": "6000.00",
-    "valor_executado": "2000.00",
-    "saldo_disponivel": "-2000.00",
+    "valor_comprometido": "1000.00",
+    "valor_executado": "500.00",
+    "saldo_disponivel": "4500.00",
+    "saldo_pool": "8500.00",
     "semaforo": "verde",
     "alerta_80": false,
     "limiares_semaforo": {"amarelo": 70, "vermelho": 90}
@@ -171,12 +253,11 @@ filtro informado soma +1 query de validação — pior caso, 9 (Articulador Esta
 ]
 ```
 
-`semaforo` segue o percentual comprometido sobre o alocado e os limiares globais do Core,
-`budget_alert_yellow_pct` e `budget_alert_red_pct` (70 e 90 por padrão): `verde` abaixo do
-amarelo, `amarelo` a partir dele e `vermelho` a partir do vermelho. `alerta_80` mantém o nome,
-mas é `true` no mesmo limiar de `vermelho`. `limiares_semaforo` devolve os dois limiares em
-vigor, como inteiros, em cada linha: a tela escreve esses números nos rótulos, e Articulador e
-ADT/ACR não leem o `/system-config/`. Alocação de valor 0 → `verde`, sem divisão por zero. A task diária `sgp.tasks.check_budget_threshold_alert` notifica UGP e
-Super Admin sobre toda `BudgetAllocation` em vermelho, em qualquer nível (nacional, estadual
-ou territorial), espelhando `sgp.tasks.check_acao_progress_alert` (que faz o mesmo para Ações
-do PT físico em vermelho).
+- `saldo_disponivel` é o aprovado menos distribuído, comprometido e executado.
+- `saldo_pool` é o alocado menos comprometido e executado: o que o remanejamento aceita sair do pool.
+- `semaforo` segue o percentual comprometido sobre o alocado e os limiares `budget_alert_yellow_pct` e `budget_alert_red_pct` do Core (70 e 90 por padrão). `alerta_80` mantém o nome, mas é `true` no mesmo limiar de `vermelho`.
+- A task diária `sgp.tasks.check_budget_threshold_alert` notifica UGP e Super Admin sobre todo `BudgetPool` em vermelho, em qualquer nível.
+
+## Painel por rubrica do SGD
+
+`GET /api/v1/sgd/painel/rubricas/` traz por rubrica o solicitado e o autorizado das demandas filtradas e os totais do orçamento no nível do usuário. Traz também os limites de gasto agregados no período vigente (`limite_total`, `limite_comprometido`, `limite_executado` e `limite_disponivel`). Esses totais somam só as linhas individuais já criadas: quem ainda não reservou no período não entra, mesmo tendo limite herdado do perfil.

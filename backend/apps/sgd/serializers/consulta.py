@@ -13,6 +13,10 @@ class PainelRubricaSerializer(serializers.Serializer):
     disponivel = serializers.DecimalField(**_DEC)
     percentual_execucao = serializers.DecimalField(max_digits=7, decimal_places=2)
     faixa = serializers.ChoiceField(choices=["verde", "amarelo", "vermelho"])
+    limite_total = serializers.DecimalField(**_DEC)
+    limite_comprometido = serializers.DecimalField(**_DEC)
+    limite_executado = serializers.DecimalField(**_DEC)
+    limite_disponivel = serializers.DecimalField(**_DEC)
 
 
 class CustoPorAtividadeSerializer(serializers.Serializer):

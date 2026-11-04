@@ -12,7 +12,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
@@ -120,6 +120,22 @@ def limite_efetivo(user_id, rubrica_id, data: date | None = None) -> SpendingLim
     """Somente leitura: a linha vigente ou, sem ela, a que o padrão do perfil geraria."""
     data = data or hoje()
     return _linha_vigente(user_id, rubrica_id, data) or _linha_herdada(user_id, rubrica_id, data)
+
+
+def totais_por_rubrica(*, territorio_id: int | None = None, estados: set[str] | None = None) -> dict[int, dict]:
+    """Limites individuais do período vigente, somados por rubrica. Só as linhas já criadas: quem
+    ainda não reservou no período não tem o que somar. `estados` recorta pelo território da linha."""
+    linhas = _vigentes_em(hoje()).filter(escopo=Escopo.INDIVIDUAL)
+    if territorio_id is not None:
+        linhas = linhas.filter(territorio_id=territorio_id)
+    if estados is not None:
+        linhas = linhas.filter(territorio__estados__overlap=sorted(estados))
+    return {
+        linha["rubrica_id"]: linha
+        for linha in linhas.order_by().values("rubrica_id").annotate(
+            total=Sum("valor_limite"), comprometido=Sum("valor_comprometido"), executado=Sum("valor_executado"),
+        )
+    }
 
 
 def _vigente_travada(user_id, rubrica_id, data: date) -> SpendingLimit | None:
