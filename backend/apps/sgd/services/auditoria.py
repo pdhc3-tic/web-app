@@ -1,4 +1,4 @@
-"""Trilha de auditoria da demanda (SGD §10): mudanças de status e movimentações de saldo."""
+"""Trilha de auditoria da demanda: mudanças de status e movimentações de saldo."""
 
 from apps.core.services.audit import log_audit
 from apps.core.signals.audit import get_audit_context

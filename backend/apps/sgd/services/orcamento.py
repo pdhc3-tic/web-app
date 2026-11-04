@@ -36,6 +36,7 @@ travar_limite_vigente = limites_service.travar_limite_vigente
 travar_limite_para_elevar = limites_service.travar_limite_para_elevar
 hoje = limites_service.hoje
 territorio_do_usuario = limites_service.territorio_do_usuario
+territorio_do_pool = limites_service.territorio_do_pool
 exigir_sem_sobreposicao = limites_service.exigir_sem_sobreposicao
 exigir_dentro_do_pool = limites_service.exigir_dentro_do_pool
 totais_de_limite_por_rubrica = limites_service.totais_por_rubrica
@@ -339,8 +340,8 @@ def remanejar(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal, usuari
 # Limite individual: a primeira trava.
 # ---------------------------------------------------------------------------
 
-def limite_efetivo(*, solicitante_id, rubrica_id) -> SpendingLimit | None:
-    return limites_service.limite_efetivo(solicitante_id, rubrica_id)
+def limite_efetivo(*, solicitante_id, rubrica_id, data=None) -> SpendingLimit | None:
+    return limites_service.limite_efetivo(solicitante_id, rubrica_id, data)
 
 
 def travar_limite_da_reserva(demand_request) -> SpendingLimit | None:
@@ -384,10 +385,11 @@ def registrar_movimento_do_limite(*, limite, tipo: str, valor: Decimal, demand_r
 
 def exigir_limite_dentro_do_pool(limite: SpendingLimit) -> None:
     """Depois de elevar e cobrir o pool: o remanejamento pode ter aberto o espaço do aumento."""
-    if limite.territorio_id is None:
+    territorio_id = limites_service.territorio_do_pool(limite.user_id)
+    if territorio_id is None:
         return
     try:
-        limites_service.exigir_dentro_do_pool(limite.rubrica_id, [limite.territorio_id], limite.periodo_inicio)
+        limites_service.exigir_dentro_do_pool(limite.rubrica_id, [territorio_id], limite.periodo_inicio)
     except budget_service.DRFValidationError as exc:
         raise _regra_do_motor(exc) from exc
 

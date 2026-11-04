@@ -150,7 +150,7 @@ class SaldoConsultaView(APIView):
         query.is_valid(raise_exception=True)
         dados = query.validated_data
 
-        nivel, estado_sigla, territorio = budget_service.resolver_nivel_do_usuario(request.user)
+        nivel, estado_sigla, territorio = budget_service.resolver_nivel_de_leitura(request.user)
         check = budget_service.saldo_para_consulta(
             rubrica_slug=dados["rubrica"], nivel=nivel,
             estado_sigla=estado_sigla, territorio=territorio, valor=dados["valor"],
@@ -257,7 +257,7 @@ class SpendingLimitViewSet(viewsets.ViewSet):
     """GET/POST .../orcamento/limites/ e PATCH .../orcamento/limites/{id}/: padrão por perfil e
     sobrescrita individual. A lista traz os vigentes em `?data=`, ou hoje."""
 
-    permission_classes = [IsSuperAdmin | IsUGP]
+    permission_classes = [IsAuthenticatedActiveAccess, IsSuperAdmin | IsUGP]
 
     @extend_schema(
         parameters=[SpendingLimitQuerySerializer],

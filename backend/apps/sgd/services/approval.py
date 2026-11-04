@@ -23,7 +23,7 @@ def demand_visibility_scope(user) -> Q | None:
         return None
 
     if user_has_role(user, "articulador-estadual"):
-        # RF18: só "Submetidas" do seu estado, além das próprias e das que
+        # Só "Submetidas" do seu estado, além das próprias e das que
         # ele já decidiu (para manter acesso ao que já pré-autorizou/devolveu).
         # `user_states` já devolve todos os estados pra um perfil global (sem
         # território específico) — não precisa de ramo especial pra isso, e

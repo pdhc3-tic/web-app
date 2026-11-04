@@ -4,7 +4,7 @@ from django.db.models import ProtectedError, Q
 
 
 class BudgetRubrica(models.Model):
-    """Catálogo estável das rubricas orçamentárias (§5.3.1)."""
+    """Catálogo estável das rubricas orçamentárias."""
 
     nome = models.CharField(max_length=100, verbose_name="Nome")
     slug = models.SlugField(unique=True, max_length=50, verbose_name="Slug")
@@ -224,7 +224,7 @@ class SpendingLimit(models.Model):
 
 
 class BudgetTransaction(models.Model):
-    """Trilha de auditoria imutável de movimentos sobre um pool (§5.5).
+    """Trilha de auditoria imutável de movimentos sobre um pool.
 
     Mesmo padrão de imutabilidade de apps.core.models.audit_log.AuditLog:
     save() bloqueia UPDATE, delete() é bloqueado — aqui com ProtectedError,
@@ -346,7 +346,7 @@ class BudgetTransaction(models.Model):
 
 
 class BudgetIncreaseRequest(models.Model):
-    """Solicitação de Recurso Extra (SGP §6.6): o usuário pede aumento do próprio
+    """Solicitação de Recurso Extra: o usuário pede aumento do próprio
     limite individual em uma rubrica. Fluxo próprio, distinto do da demanda."""
 
     class Status(models.TextChoices):
@@ -436,7 +436,7 @@ class BudgetIncreaseRequest(models.Model):
 
 
 class BudgetTransfer(models.Model):
-    """Remanejamento de saldo entre pools (SGP §6.7), imutável: correção só por
+    """Remanejamento de saldo entre pools, imutável: correção só por
     um novo remanejamento em sentido contrário."""
 
     class Tipo(models.TextChoices):

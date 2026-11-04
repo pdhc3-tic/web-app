@@ -1,4 +1,4 @@
-"""Consulta, painéis e relatórios do SGD (SGD-RF26 a RF30).
+"""Consulta, painéis e relatórios do SGD.
 
 Tudo aqui parte do queryset já restrito pelo RBAC (`demand_visibility_scope`,
 aplicado pelo `DemandViewSet.get_queryset`) — nenhuma função abre o universo
@@ -103,7 +103,7 @@ def _estados_dos_limites(user, slugs: set[str], estado_sigla: str | None) -> set
 
 
 def painel_por_rubrica(user, demandas, params) -> list[dict]:
-    """Solicitado / autorizado / executado / disponível por rubrica (RF28).
+    """Solicitado / autorizado / executado / disponível por rubrica.
 
     `solicitado` e `autorizado` saem das solicitações das demandas visíveis e
     filtradas; `executado`, `disponivel` e a faixa do semáforo são os do controle
@@ -163,7 +163,7 @@ def painel_por_rubrica(user, demandas, params) -> list[dict]:
             "autorizado": demanda_linha.get("autorizado") or ZERO,
             "executado": fin.get("executado", ZERO),
             "disponivel": fin.get("disponivel", ZERO),
-            # SGP §6.8: a faixa sai do percentual comprometido sobre o aprovado,
+            # A faixa sai do percentual comprometido sobre o aprovado,
             # a mesma base do painel de orçamento do SGP.
             "percentual_execucao": percentual,
             "faixa": orcamento_service.faixa_semaforo(percentual, limiares),
@@ -177,7 +177,7 @@ def painel_por_rubrica(user, demandas, params) -> list[dict]:
 
 def custo_por_atividade(user, demandas) -> list[dict]:
     """Custo por atividade, agrupado pela entrega (`WorkPlanAcao`) do Plano de
-    Trabalho a que a atividade pertence (RF29). Recusadas, canceladas e
+    Trabalho a que a atividade pertence. Recusadas, canceladas e
     demandas ainda em edição não entram no custo."""
     exigir_perfil_de_gestao(user)
     linhas = (

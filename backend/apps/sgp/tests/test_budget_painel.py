@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from apps.core.tests.factories import UserFactory
+from apps.core.tests.factories import RoleFactory, UserFactory
 from apps.sgp.budget import services as budget_service
 from apps.sgp.models import BudgetPool, BudgetRubrica
 from apps.sgp.tasks import check_budget_threshold_alert
@@ -367,6 +367,40 @@ class TestPainelEscopoTerritorial:
         assert response.status_code == 200
         assert {linha["id"] for linha in response.data} >= {nacional.pk, estadual.pk}
 
+    def test_fgd_consulta_o_saldo_nacional(self, auth_client_fgd):
+        nacional = _pool_nacional(valor_alocado=Decimal("100"))
+
+        response = auth_client_fgd.get(
+            "/api/v1/sgp/orcamento/saldo/", {"rubrica": nacional.rubrica.slug, "valor": "10.00"},
+        )
+
+        assert response.status_code == 200, response.data
+        assert response.data["disponivel"] is True
+
+    def test_fgd_que_tambem_e_adt_reserva_no_pool_do_territorio(self, territory_rn):
+        """O perfil de leitura não pode decidir de onde sai a reserva."""
+        usuario = UserFactory(profiles=[
+            (RoleFactory(slug="fgd", nome="FGD"), None),
+            (RoleFactory(slug="adt-acr", nome="ADT / ACR"), territory_rn),
+        ])
+
+        assert budget_service.resolver_nivel_do_usuario(usuario) == (Nivel.TERRITORIAL, None, territory_rn)
+
+    def test_celula_territorial_traz_o_estado_do_territorio(self, auth_client_super_admin, state_rn, territory_rn):
+        territorial = BudgetPoolFactory(
+            nivel=Nivel.TERRITORIAL, estado=None, territorio=territory_rn, valor_alocado=Decimal("100"),
+        )
+
+        linha = _linha(auth_client_super_admin.get(PAINEL_URL), territorial)
+
+        assert linha["estado"]["sigla"] == state_rn.sigla
+        assert linha["territorio"]["estados"] == ["RN"]
+
+    @pytest.mark.parametrize(("comprometido", "total", "percentual"), [("500", "0", "100"), ("0", "0", "0")])
+    def test_percentual_com_total_zero(self, comprometido, total, percentual):
+        """Limite reduzido a zero com reservas de pé está estourado, não verde."""
+        assert budget_service.percentual_comprometido(Decimal(comprometido), Decimal(total)) == Decimal(percentual)
+
     def test_ugp_recebe_o_id_do_pool_nacional_para_a_origem_do_excedente(self, auth_client_super_admin):
         nacional = _pool_nacional(valor_alocado=Decimal("100"))
 
@@ -500,8 +534,8 @@ class TestPainelPerformance:
                 valor_alocado=Decimal("200"),
             )
 
-        # 2 de perfil, pools e o distribuído, com os 5 da visão total em volta dele.
-        with django_assert_max_num_queries(9):
+        # 2 de perfil, pools, estados dos territórios e o distribuído, com os 5 da visão total em volta dele.
+        with django_assert_max_num_queries(10):
             response = auth_client_super_admin.get(PAINEL_URL)
 
         assert response.status_code == 200
@@ -517,8 +551,9 @@ class TestPainelPerformance:
             valor_alocado=Decimal("200"),
         )
 
-        # Validação dos 4 filtros, perfil, posse do território, pools, a visão total e o executado da Meta.
-        with django_assert_max_num_queries(13):
+        # Validação dos 4 filtros, perfil, posse do território, pools, estados dos territórios, a visão total
+        # e o executado da Meta.
+        with django_assert_max_num_queries(14):
             response = auth_client_articulador_rn.get(
                 f"{PAINEL_URL}?meta={meta.pk}&rubrica={rubrica.slug}"
                 f"&estado={state_rn.sigla}&territorio={territory_rn.pk}"

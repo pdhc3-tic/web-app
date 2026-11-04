@@ -29,13 +29,15 @@ Uma demanda só reserva se passar nas duas travas: primeiro o limite individual 
 - **Período:** vem de `budget_limit_period` (`mensal`, `trimestral`, `semestral` ou `vigencia`). A linha existente não muda se o parâmetro for alterado no meio do período.
 - **Virada do período:** com `budget_limit_carry_over`, a linha nova soma o saldo positivo da anterior, mesmo sem padrão no perfil.
 - **Reserva presa à linha:** ajuste, liberação e execução usam a linha em que a reserva foi feita, encontrada pelo ledger, mesmo depois da virada. Uma reserva nova usa o período novo.
-- **Alteração do padrão:** se já estiver em uso, vale a partir do período seguinte; sem uso, ou com período `vigencia`, o próprio registro é corrigido. Padrão encerrado não pode ser alterado.
+- **Alteração do padrão:** se já estiver em uso, vale a partir do período seguinte; sem uso, ou com período `vigencia`, o próprio registro é corrigido. Com um valor já agendado, a alteração vale sobre ele. Padrão encerrado não pode ser alterado, e um padrão novo não pode se sobrepor a um agendado.
 - **Redução:** não invalida o que já foi autorizado. O comprometido fica como está, e o novo teto vale para as próximas reservas, mesmo com saldo negativo.
-- **Sobrealocação:** com `budget_overallocation_allowed` desligado, um aumento de limite (cadastro, Django Admin ou recurso extra) é recusado se a soma do território passar do pool. O erro traz `soma_limites` e `valor_pool`. O pool fica travado até o commit, para dois aumentos simultâneos não passarem. Reduzir nunca é recusado.
-- **Sobreposição:** duas linhas individuais do mesmo usuário e rubrica não podem cobrir o mesmo dia. A única exceção é a linha herdada do mesmo período, que vira sobrescrita.
+- **Sobrealocação:** com `budget_overallocation_allowed` desligado, um aumento de limite (cadastro, Django Admin ou recurso extra) é recusado se a soma do território passar do pool. O erro traz `soma_limites` e `valor_pool`. O pool fica travado até o commit, para dois aumentos simultâneos não passarem. Reduzir nunca é recusado. A soma conta só quem reserva no pool do território: o Articulador reserva no estadual e fica de fora. Território sem pool também fica de fora.
+- **Sobreposição:** duas linhas individuais do mesmo usuário e rubrica não podem cobrir o mesmo dia. A linha herdada do mesmo período vira sobrescrita, mesmo com o valor igual, e a linha gerada do padrão é encurtada para não cobrir uma sobrescrita de datas próprias.
+- **Sobrescrita com acúmulo ligado:** vale exatamente o valor informado, sem somar o saldo anterior.
+- **Leitura e reserva:** a FGD lê o orçamento nacional, mas o perfil de leitura não decide de onde sai a reserva. Quem é FGD e ADT reserva no pool do território.
 - **Ledger da linha:** a linha criada do padrão abre o ledger com um `aumento_limite` do valor dela, que já inclui o saldo acumulado.
 - **Recurso extra aprovado:** eleva a linha do período vigente na data da decisão, que vira sobrescrita. `periodo_aplicacao` é texto livre e não define o período.
-- **Django Admin:** altera só linhas individuais. O padrão por perfil é cadastrado pela rota de limites.
+- **Django Admin:** altera só linhas individuais, e `herdado` e `territorio` são somente leitura. Mudar o valor exige justificativa, e a linha herdada vira sobrescrita. O padrão por perfil é cadastrado pela rota de limites.
 
 ## Ledger
 
@@ -133,7 +135,7 @@ As transições de status passam por `apps.sgd.services.workflow.executar_transi
 | Decisão de recurso extra | Pedido → linha de limite do período → pools (territorial e origem, em ordem de pk) → `Demand` → todas as `DemandRequest` da demanda. Com a sobrealocação desligada, relê o pool territorial, já travado |
 | Parecer, devolução, submissão e edição do pedido | Só o pedido |
 | Criação do pedido | A `Demand`, e depois o pedido novo, que nenhuma outra transação enxerga antes do commit |
-| Cadastro de limite (`/sgp/orcamento/limites/`, alias e Django Admin) | O limite. Com a sobrealocação desligada, depois os pools territoriais envolvidos, em ordem de território |
+| Cadastro de limite (`/sgp/orcamento/limites/`, alias e Django Admin) | O limite. Com a sobrealocação desligada, depois os pools territoriais envolvidos, em ordem de pk |
 | `remanejar`, `atualizar_valor_alocado` | Pools em ordem crescente de pk |
 
 ## Reconciliação
@@ -235,6 +237,7 @@ Matriz Rubrica × Nível: uma linha por pool no escopo do perfil, com o `id` que
 | `articulador-estadual` | Nacional e os do próprio estado | Só o próprio estado (`403` fora dele) |
 | `adt-acr` | Os do próprio território | Só o próprio território; `estado=` retorna `403` |
 
+- O pool territorial não grava estado: na matriz, `estado` vem do território (o primeiro, se ele cobrir dois), e `territorio.estados` traz todos. Só o nacional tem `estado` nulo.
 - `estado` traz o estadual e os territoriais do estado. `territorio` traz o pool dele e vence `estado` se os dois vierem.
 - `meta` não recorta o saldo: só acrescenta `valor_executado_meta`, calculado pela cadeia Atividade → Ação → Meta.
 - Filtro com id, slug ou sigla inexistente retorna `400`.

@@ -13,6 +13,7 @@ from apps.sgd.services import recurso_extra as recurso_extra_service
 from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
 from apps.sgp.budget import limites
 from apps.sgp.models import BudgetIncreaseRequest, BudgetTransaction, SpendingLimit
+from apps.sgp.tests.factories import BudgetRubricaFactory, SpendingLimitFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -186,6 +187,18 @@ def test_valor_faltante_usa_o_limite_efetivo(demand_rascunho_rn, demand_request_
     SpendingLimit.objects.filter(pk=padrao_do_perfil.pk).update(valor_limite=Decimal("600"))
 
     assert recurso_extra_service.deficit_individual(demand_rascunho_rn, rubrica_diarias) == Decimal("400")
+
+
+@freeze_time("2026-11-03")
+def test_sem_nada_a_submeter_nao_ha_deficit_mesmo_com_o_saldo_negativo(demand_rascunho_rn):
+    """Um limite reduzido abaixo do comprometido não abre pedido para uma demanda sem bloqueio."""
+    rubrica = BudgetRubricaFactory()
+    SpendingLimitFactory(
+        user=demand_rascunho_rn.solicitante, rubrica=rubrica,
+        valor_limite=Decimal("100"), valor_comprometido=Decimal("500"),
+    )
+
+    assert recurso_extra_service.deficit_individual(demand_rascunho_rn, rubrica) == Decimal("0")
 
 
 @freeze_time("2026-11-03")

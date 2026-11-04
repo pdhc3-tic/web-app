@@ -3,7 +3,8 @@ from decimal import Decimal
 
 import pytest
 from django.core.cache import cache
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
+from django.test.utils import CaptureQueriesContext
 from freezegun import freeze_time
 from rest_framework.exceptions import ValidationError
 
@@ -508,3 +509,220 @@ class TestApi:
         }, format="json")
 
         assert resposta.status_code == 201, resposta.data
+
+    def test_ugp_com_acesso_revogado_nao_altera_limite(self, api_client):
+        ugp = UserFactory(profiles=[(RoleFactory(slug="ugp", nome="UGP"), None)])
+        ugp.acesso_revogado = True
+        ugp.save(update_fields=["acesso_revogado"])
+        api_client.force_authenticate(user=ugp)
+
+        assert api_client.get(URL).status_code == 401
+
+
+def _pool_territorial(rubrica, territorio, valor="1000"):
+    return BudgetPoolFactory(
+        rubrica=rubrica, nivel=BudgetPool.Nivel.TERRITORIAL, territorio=territorio, valor_alocado=Decimal(valor),
+    )
+
+
+@freeze_time("2026-11-03")
+class TestPadraoAgendado:
+    def _em_uso(self, adt, role_adt, rubrica):
+        padrao = _padrao(role_adt, rubrica, "1000")
+        limites.travar_limite_vigente(user_id=adt.pk, rubrica_id=rubrica.pk, criar=True)
+        return padrao
+
+    def test_voltar_ao_valor_anterior_vale_sobre_o_agendado(self, adt, role_adt, rubrica, usuario):
+        padrao = self._em_uso(adt, role_adt, rubrica)
+        limites.alterar_padrao(padrao.pk, valor_limite=Decimal("1200"), justificativa="Revisão.", usuario=usuario)
+
+        limites.alterar_padrao(padrao.pk, valor_limite=Decimal("1000"), justificativa="Desfeita.", usuario=usuario)
+
+        with freeze_time("2027-01-05"):
+            assert limites.limite_efetivo(adt.pk, rubrica.pk).valor_limite == Decimal("1000")
+
+    def test_aumento_sobre_o_agendado_confere_o_pool(self, adt, role_adt, rubrica, territory_rn, usuario, configurar):
+        """Compara com o valor agendado: 390 é menor que os 1000 vigentes, mas é aumento sobre os 300."""
+        padrao = self._em_uso(adt, role_adt, rubrica)
+        _pool_territorial(rubrica, territory_rn, "350")
+        configurar("budget_overallocation_allowed", "False")
+        limites.alterar_padrao(padrao.pk, valor_limite=Decimal("300"), justificativa="Revisão.", usuario=usuario)
+
+        with pytest.raises(ValidationError):
+            limites.alterar_padrao(padrao.pk, valor_limite=Decimal("390"), justificativa="Revisão.", usuario=usuario)
+
+        with freeze_time("2027-01-05"):
+            assert limites.limite_efetivo(adt.pk, rubrica.pk).valor_limite == Decimal("300")
+
+    def test_padrao_novo_nao_cobre_um_ja_agendado(self, role_adt, rubrica, usuario):
+        _padrao(role_adt, rubrica, "1000", inicio=date(2027, 1, 1))
+
+        with pytest.raises(ValidationError):
+            limites.criar_padrao(perfil=role_adt, rubrica=rubrica, valor_limite=Decimal("5000"), usuario=usuario)
+
+
+@freeze_time("2026-11-03")
+class TestLinhaIndividual:
+    def test_sobrescrita_igual_a_linha_herdada_deixa_de_ser_herdada(self, adt, role_adt, rubrica, usuario):
+        _padrao(role_adt, rubrica, "1000")
+        linha = limites.travar_limite_vigente(user_id=adt.pk, rubrica_id=rubrica.pk, criar=True)
+        movimentos = BudgetTransaction.objects.filter(spending_limit=linha).count()
+
+        limite = limites.criar_sobrescrita(
+            user=adt, rubrica=rubrica, valor_limite=Decimal("1000"), justificativa="Mantido.", usuario=usuario,
+        )
+
+        assert limite.pk == linha.pk
+        assert limite.herdado is False
+        assert limite.justificativa == "Mantido."
+        assert BudgetTransaction.objects.filter(spending_limit=linha).count() == movimentos
+
+    def test_sobrescrita_menor_que_o_padrao_nao_confere_o_pool(self, adt, role_adt, rubrica, territory_rn, usuario, configurar):
+        _pool_territorial(rubrica, territory_rn, "1000")
+        _padrao(role_adt, rubrica, "500")
+        UserFactory.create_batch(2, profiles=[(role_adt, territory_rn)])
+        configurar("budget_overallocation_allowed", "False")
+
+        limite = limites.criar_sobrescrita(
+            user=adt, rubrica=rubrica, valor_limite=Decimal("200"), justificativa="Reduzido.", usuario=usuario,
+        )
+
+        assert limite.valor_limite == Decimal("200")
+
+    def test_sobrescrita_com_acumulo_vale_o_valor_informado(self, adt, role_adt, rubrica, usuario, configurar):
+        configurar("budget_limit_carry_over", "True")
+        _padrao(role_adt, rubrica, "1000")
+        SpendingLimitFactory(
+            user=adt, rubrica=rubrica, valor_limite=Decimal("300"),
+            periodo_inicio=date(2026, 7, 1), periodo_fim=date(2026, 9, 30),
+        )
+
+        limite = limites.criar_sobrescrita(
+            user=adt, rubrica=rubrica, valor_limite=Decimal("1000"), justificativa="Valor fechado.", usuario=usuario,
+        )
+
+        assert limite.valor_limite == Decimal("1000")
+        assert limites.limite_efetivo(adt.pk, rubrica.pk).valor_limite == Decimal("1000")
+
+    def test_aumento_confere_o_territorio_atual_e_nao_o_gravado_na_linha(self, adt, rubrica, territory_rn, usuario, configurar):
+        _pool_territorial(rubrica, territory_rn, "1000")
+        linha = SpendingLimitFactory(user=adt, rubrica=rubrica, territorio=None, valor_limite=Decimal("100"))
+        configurar("budget_overallocation_allowed", "False")
+
+        with pytest.raises(ValidationError):
+            limites.alterar_sobrescrita(linha.pk, valor_limite=Decimal("50000"), justificativa="x", usuario=usuario)
+
+    @freeze_time("2026-10-20")
+    def test_linha_do_padrao_comeca_depois_de_sobrescrita_encerrada(self, adt, role_adt, rubrica):
+        _padrao(role_adt, rubrica, "1000")
+        encerrada = SpendingLimitFactory(
+            user=adt, rubrica=rubrica, valor_limite=Decimal("100"),
+            periodo_inicio=date(2026, 10, 1), periodo_fim=date(2026, 10, 15),
+        )
+
+        linha = limites.travar_limite_vigente(user_id=adt.pk, rubrica_id=rubrica.pk, criar=True)
+
+        assert linha.pk != encerrada.pk
+        assert (linha.periodo_inicio, linha.periodo_fim) == (date(2026, 10, 16), date(2026, 12, 31))
+        assert linha.valor_limite == Decimal("1000")
+
+    def test_linha_do_padrao_termina_antes_da_proxima_sobrescrita(self, adt, role_adt, rubrica):
+        _padrao(role_adt, rubrica, "1000")
+        SpendingLimitFactory(
+            user=adt, rubrica=rubrica, periodo_inicio=date(2026, 12, 1), periodo_fim=date(2026, 12, 31),
+        )
+
+        linha = limites.travar_limite_vigente(user_id=adt.pk, rubrica_id=rubrica.pk, criar=True)
+
+        assert (linha.periodo_inicio, linha.periodo_fim) == (date(2026, 10, 1), date(2026, 11, 30))
+
+    @freeze_time("2026-10-20")
+    def test_elevar_sem_padrao_nao_cobre_sobrescrita_encerrada(self, adt, rubrica, usuario):
+        SpendingLimitFactory(
+            user=adt, rubrica=rubrica, valor_limite=Decimal("100"),
+            periodo_inicio=date(2026, 10, 1), periodo_fim=date(2026, 10, 15),
+        )
+
+        linha = limites.travar_limite_para_elevar(
+            user_id=adt.pk, rubrica_id=rubrica.pk, justificativa="Recurso extra.", usuario=usuario,
+        )
+
+        assert linha.periodo_inicio == date(2026, 10, 16)
+        assert linha.valor_limite == Decimal("0")
+
+    @freeze_time("2026-10-20")
+    def test_sobrescrita_sem_periodo_comeca_depois_de_outra_encerrada(self, adt, rubrica, usuario):
+        SpendingLimitFactory(
+            user=adt, rubrica=rubrica, valor_limite=Decimal("100"),
+            periodo_inicio=date(2026, 10, 1), periodo_fim=date(2026, 10, 15),
+        )
+
+        limite = limites.criar_sobrescrita(
+            user=adt, rubrica=rubrica, valor_limite=Decimal("500"), justificativa="Nova.", usuario=usuario,
+        )
+
+        assert limite.periodo_inicio == date(2026, 10, 16)
+
+
+@pytest.fixture
+def role_articulador(db):
+    return RoleFactory(slug="articulador-estadual", nome="Articulador Estadual")
+
+
+@pytest.fixture
+def articulador(role_articulador, territory_rn):
+    return UserFactory(profiles=[(role_articulador, territory_rn)])
+
+
+@freeze_time("2026-11-03")
+class TestSomaDoPoolDoTerritorio:
+    def test_articulador_fica_fora_da_soma(self, adt, articulador, rubrica, territory_rn, usuario, configurar):
+        _pool_territorial(rubrica, territory_rn, "8000")
+        SpendingLimitFactory(user=articulador, rubrica=rubrica, territorio=territory_rn, valor_limite=Decimal("5000"))
+        configurar("budget_overallocation_allowed", "False")
+
+        limite = limites.criar_sobrescrita(
+            user=adt, rubrica=rubrica, valor_limite=Decimal("4000"), justificativa="x", usuario=usuario,
+        )
+
+        assert limite.valor_limite == Decimal("4000")
+
+    def test_aumento_do_articulador_nao_confere_o_pool_do_territorio(self, adt, articulador, rubrica, territory_rn, usuario, configurar):
+        _pool_territorial(rubrica, territory_rn, "100")
+        SpendingLimitFactory(user=adt, rubrica=rubrica, territorio=territory_rn, valor_limite=Decimal("500"))
+        linha = SpendingLimitFactory(user=articulador, rubrica=rubrica, territorio=territory_rn, valor_limite=Decimal("5000"))
+        configurar("budget_overallocation_allowed", "False")
+
+        limite = limites.alterar_sobrescrita(linha.pk, valor_limite=Decimal("6000"), justificativa="x", usuario=usuario)
+
+        assert limite.valor_limite == Decimal("6000")
+
+    def test_padrao_do_articulador_nao_confere_o_pool_do_territorio(self, adt, articulador, role_articulador, rubrica, territory_rn, usuario, configurar):
+        _pool_territorial(rubrica, territory_rn, "100")
+        SpendingLimitFactory(user=adt, rubrica=rubrica, territorio=territory_rn, valor_limite=Decimal("500"))
+        configurar("budget_overallocation_allowed", "False")
+
+        padrao = limites.criar_padrao(perfil=role_articulador, rubrica=rubrica, valor_limite=Decimal("9000"), usuario=usuario)
+
+        assert padrao.valor_limite == Decimal("9000")
+
+    def test_territorio_sem_pool_nao_recusa_o_padrao_do_perfil(self, adt, role_adt, rubrica, usuario, configurar):
+        configurar("budget_overallocation_allowed", "False")
+
+        padrao = limites.criar_padrao(perfil=role_adt, rubrica=rubrica, valor_limite=Decimal("600"), usuario=usuario)
+
+        assert padrao.valor_limite == Decimal("600")
+
+    def test_pools_sao_travados_em_ordem_de_pk(self, rubrica, territory_rn, territory_ce, configurar):
+        """Em ordem de território, fecharia um ciclo com `remanejar`, que usa ordem de pk."""
+        primeiro, segundo = sorted([territory_rn, territory_ce], key=lambda territorio: territorio.pk)
+        _pool_territorial(rubrica, segundo)
+        _pool_territorial(rubrica, primeiro)
+        configurar("budget_overallocation_allowed", "False")
+
+        with CaptureQueriesContext(connection) as consultas:
+            limites.exigir_dentro_do_pool(rubrica.pk, [primeiro.pk, segundo.pk])
+
+        travas = [q["sql"] for q in consultas if "FOR UPDATE" in q["sql"] and '"sgp_budgetpool"' in q["sql"]]
+        assert len(travas) == 1
+        assert 'ORDER BY "sgp_budgetpool"."id" ASC' in travas[0]

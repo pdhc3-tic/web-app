@@ -86,13 +86,17 @@ class SpendingLimitAdminForm(forms.ModelForm):
 
     def clean(self):
         dados = super().clean()
-        # Na edição, `escopo` é somente leitura e não vem no formulário.
+        novo = self.instance.pk is None
+        # Na edição, estes campos são somente leitura e não vêm no formulário.
         escopo = dados.get("escopo") or self.instance.escopo
         if escopo == SpendingLimit.Escopo.PERFIL:
             self.add_error("escopo", "O padrão por perfil é cadastrado em /sgp/orcamento/limites/.")
             return dados
-        if not dados.get("herdado") and not (dados.get("justificativa") or "").strip():
-            self.add_error("justificativa", "Obrigatória em limite individual.")
+        if novo and not dados.get("user"):
+            self.add_error("user", "Obrigatório no limite individual.")
+        mudou_o_valor = "valor_limite" in self.changed_data
+        if (not self.instance.herdado or mudou_o_valor) and not (dados.get("justificativa") or "").strip():
+            self.add_error("justificativa", "Obrigatória em limite individual e em alteração de valor.")
         if not self.errors:
             self._conferir_saldo_e_periodo(dados)
         return dados
@@ -101,10 +105,14 @@ class SpendingLimitAdminForm(forms.ModelForm):
         novo = self.instance.pk is None
         user = dados["user"].pk if novo else self.instance.user_id
         rubrica = dados["rubrica"].pk if novo else self.instance.rubrica_id
-        territorio = dados.get("territorio") or (None if novo else self.instance.territorio)
-        territorio_id = territorio.pk if territorio else orcamento_service.territorio_do_usuario(user)
+        territorio_id = orcamento_service.territorio_do_pool(user)
         inicio = dados["periodo_inicio"] if novo else self.instance.periodo_inicio
-        aumento = dados["valor_limite"] - (ZERO if novo else self.instance.valor_limite)
+        if novo:
+            efetivo = orcamento_service.limite_efetivo(solicitante_id=user, rubrica_id=rubrica, data=inicio)
+            valor_atual = efetivo.valor_limite if efetivo else ZERO
+        else:
+            valor_atual = self.instance.valor_limite
+        aumento = dados["valor_limite"] - valor_atual
         try:
             if novo:
                 orcamento_service.exigir_sem_sobreposicao(user, rubrica, inicio, dados["periodo_fim"])
@@ -130,7 +138,7 @@ class SpendingLimitAdmin(SalvaSoOQueOFormularioAlterou, admin.ModelAdmin):
     ]
     list_filter = ["escopo", "rubrica"]
     search_fields = ["user__nome"]
-    readonly_fields = ["valor_comprometido", "valor_executado", "criado_por"]
+    readonly_fields = ["valor_comprometido", "valor_executado", "criado_por", "herdado", "territorio"]
 
     def get_readonly_fields(self, request, obj=None):
         # O comprometido é a soma das reservas desse solicitante nessa rubrica:
@@ -151,7 +159,11 @@ class SpendingLimitAdmin(SalvaSoOQueOFormularioAlterou, admin.ModelAdmin):
         valor_anterior = form.initial.get("valor_limite")
         if not change:
             obj.criado_por = request.user
-            obj.territorio_id = obj.territorio_id or orcamento_service.territorio_do_usuario(obj.user_id)
+            obj.territorio_id = orcamento_service.territorio_do_usuario(obj.user_id)
+        elif obj.herdado and obj.valor_limite != valor_anterior:
+            # O valor deixou de ser o do padrão do perfil: como na rota, vira sobrescrita.
+            obj.herdado = False
+            form.changed_data.append("herdado")
         super().save_model(request, obj, form, change)
         tipo = orcamento_service.TipoTransacao.AUMENTO_LIMITE
         if not change:

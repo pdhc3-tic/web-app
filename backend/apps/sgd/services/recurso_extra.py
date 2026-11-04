@@ -1,4 +1,4 @@
-"""Solicitação de Recurso Extra (SGP §6.6) e o remanejamento que a decisão da UGP pode disparar.
+"""Solicitação de Recurso Extra e o remanejamento que a decisão da UGP pode disparar.
 
 O pedido percorre a máquina de estados de `BudgetIncreaseRequest`. Aprovar eleva o
 limite individual do solicitante na rubrica e só se conclui com o pool territorial
@@ -112,18 +112,22 @@ def deficit_individual(demanda: Demand, rubrica) -> Decimal:
     """O que falta no limite individual para a próxima submissão passar na rubrica:
     é o valor que o pedido de recurso extra registra sem `valor_solicitado`."""
     limite = orcamento_service.limite_efetivo(solicitante_id=demanda.solicitante_id, rubrica_id=rubrica.pk)
+    necessario = _necessario(demanda.solicitacoes.filter(rubrica=rubrica))
+    # Tudo já reservado: nada a submeter na rubrica, mesmo com o saldo negativo por uma redução.
+    if necessario <= ZERO:
+        return ZERO
     # Sem truncar em zero: um excedente autorizado antes do remanejamento pontual
     # deixou saldo negativo, e o aumento precisa cobrir isso também.
     saldo = limite.saldo_disponivel if limite else ZERO
-    return _necessario(demanda.solicitacoes.filter(rubrica=rubrica)) - saldo
+    return necessario - saldo
 
 
 def _exigir_valor_cobre_o_deficit(demanda: Demand, rubrica, valor: Decimal) -> None:
     deficit = deficit_individual(demanda, rubrica)
     if deficit <= ZERO:
         raise RegraDeNegocio("A demanda não está bloqueada pelo limite individual nesta rubrica.", campo="demanda")
-    # SGP §6.6 deixa o valor livre para ajuste na devolução; o piso é o "valor faltante" do
-    # SGD §4.1, e a UGP pode conceder menos (aprovação parcial).
+    # O valor é livre para ajuste na devolução; o piso é o que falta no limite, e a UGP
+    # pode conceder menos (aprovação parcial).
     if valor < deficit:
         raise RegraDeNegocio(
             f"Não pode ser menor que o valor que falta no limite individual: {formatar_brl(deficit)}.",
@@ -269,6 +273,11 @@ def _elevar_limite(pedido, limite: SpendingLimit, valor: Decimal, usuario) -> No
 def _travar_pools(pedido, origem: BudgetPool | None):
     """Trava o pool territorial do solicitante e, se houver, o de origem do
     remanejamento, em ordem crescente de pk, como `remanejar`. Devolve (destino, origem)."""
+    if origem is not None and origem.rubrica_id != pedido.rubrica_id:
+        # Antes de travar: o pool de outra rubrica ficaria fora da ordem de lock.
+        raise RegraDeNegocio(
+            "A alocação de origem precisa ser da mesma rubrica do pedido.", campo="origem_allocation",
+        )
     # Só localiza o pool: o saldo é lido depois, com ele travado.
     destino = orcamento_service.localizar_pool(solicitante=pedido.user, rubrica=pedido.rubrica)
     if origem is not None:

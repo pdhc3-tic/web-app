@@ -3,7 +3,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
 from rest_framework.response import Response
 
-from apps.core.permissions import IsSuperAdmin
+from apps.core.permissions import IsAuthenticatedActiveAccess, IsSuperAdmin
 from apps.sgd.serializers.individual_limit import DemandIndividualLimitSerializer
 from apps.sgd.services import orcamento as orcamento_service
 from apps.sgp.models import SpendingLimit
@@ -15,7 +15,7 @@ class DemandIndividualLimitViewSet(viewsets.ViewSet):
     """Alias de `/sgp/orcamento/limites/` para as linhas individuais do período vigente,
     enquanto o front migra. A rota antiga não pede justificativa: ela é preenchida aqui."""
 
-    permission_classes = [IsSuperAdmin]
+    permission_classes = [IsAuthenticatedActiveAccess, IsSuperAdmin]
 
     def list(self, request):
         hoje = orcamento_service.hoje()

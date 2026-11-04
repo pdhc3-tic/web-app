@@ -15016,6 +15016,11 @@ components:
         nome:
           type: string
           maxLength: 255
+        estados:
+          type: array
+          items:
+            type: string
+            maxLength: 2
       required:
       - id
       - nome

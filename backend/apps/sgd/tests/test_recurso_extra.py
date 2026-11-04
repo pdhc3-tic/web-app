@@ -605,6 +605,21 @@ def test_remanejamento_de_pool_estadual_cobre_o_que_falta(
     assert demanda.status == "submetida"
 
 
+def test_origem_de_outra_rubrica_e_recusada_mesmo_sem_faltar_saldo(
+    pedido_com_parecer, usuario_ugp, allocation_territorial_rn, rubrica_diarias, solicitante_rn,
+):
+    outra_rubrica = BudgetPoolFactory(
+        rubrica=BudgetRubricaFactory(), nivel=BudgetPool.Nivel.NACIONAL,
+        estado=None, territorio=None, valor_alocado=Decimal("50000"),
+    )
+
+    resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", {**APROVAR, "origem_allocation": outra_rubrica.pk})
+
+    assert resposta.status_code == 400
+    assert "origem_allocation" in resposta.data
+    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")
+
+
 def test_saldo_estadual_de_outro_estado_nao_cobre_o_pool(
     pedido_com_parecer, usuario_ugp, allocation_territorial_rn, municipio_ce, rubrica_diarias, solicitante_rn,
 ):

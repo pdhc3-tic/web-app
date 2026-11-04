@@ -9,7 +9,7 @@ from django.db.models.functions import Coalesce
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
-from apps.core.models import Territory
+from apps.core.models import State, Territory
 from apps.core.models.user_profile import UserProfile
 from apps.core.services.permissions import user_has_role, user_states, user_territories
 from apps.core.utils import get_config
@@ -113,7 +113,7 @@ def orcamento_detalhamento_scope(user) -> Q | None:
 def _saldo_disponivel_matriz(
     aprovado: Decimal, distribuido: Decimal, comprometido: Decimal, executado: Decimal,
 ) -> Decimal:
-    """`saldo_disponivel` das 5 colunas de §5.3.3. Compartilhado por `orcamento_por_rubrica`,
+    """`saldo_disponivel` das 5 colunas do painel. Compartilhado por `orcamento_por_rubrica`,
     `painel_orcamento` e `matriz_orcamento`."""
     return aprovado - distribuido - comprometido - executado
 
@@ -662,9 +662,20 @@ def resolver_nivel_do_usuario(user) -> tuple[str, str | None, Territory | None]:
     1 query. Não resolve um `State` (só a sigla): o lookup de pool
     seguinte filtra `estado__sigla=` via join, sem precisar de outra query
     só pra ter a instância."""
-    perfis, slugs = _perfis_e_slugs(user)
+    return _nivel_da_reserva(*_perfis_e_slugs(user))
 
+
+def resolver_nivel_de_leitura(user) -> tuple[str, str | None, Territory | None]:
+    """Como `resolver_nivel_do_usuario`, para quem só consulta: a FGD lê o nível nacional, mas não
+    reserva nele."""
+    perfis, slugs = _perfis_e_slugs(user)
     if slugs & PERFIS_DE_LEITURA_NACIONAL:
+        return Nivel.NACIONAL, None, None
+    return _nivel_da_reserva(perfis, slugs)
+
+
+def _nivel_da_reserva(perfis, slugs) -> tuple[str, str | None, Territory | None]:
+    if "super-admin" in slugs or "ugp" in slugs:
         return Nivel.NACIONAL, None, None
 
     for p in perfis:
@@ -733,7 +744,8 @@ LIMIAR_SEMAFORO_VERMELHO_PADRAO = 90
 
 def percentual_comprometido(comprometido: Decimal, total: Decimal) -> Decimal:
     if total <= ZERO:
-        return ZERO
+        # Limite reduzido a zero com reservas de pé: está estourado, não verde.
+        return Decimal("100") if comprometido > ZERO else ZERO
     return (comprometido / total) * Decimal("100")
 
 
@@ -810,7 +822,7 @@ def resolver_nivel_painel(
             if estado_sigla not in states:
                 raise PermissionDenied("Este estado não pertence ao seu escopo.")
             return Nivel.ESTADUAL, estado_sigla, None
-        # Nacional não é dado sensível por território (§B2) — visível também sem filtro.
+        # Nacional não é dado sensível por território — visível também sem filtro.
         return Nivel.NACIONAL, None, None
 
     if "adt-acr" in slugs:
@@ -1036,6 +1048,16 @@ def _distribuido_por_pool(pools: list[BudgetPool]) -> dict[int, Decimal]:
     return distribuido
 
 
+def _estados_dos_territoriais(pools: list[BudgetPool]) -> dict[int, State]:
+    """O pool territorial não grava o estado: ele vem do território. Num território de dois estados,
+    o primeiro; `territorio.estados` traz todos."""
+    siglas = {pool.pk: pool.territorio.estados[0] for pool in pools if pool.territorio and pool.territorio.estados}
+    if not siglas:
+        return {}
+    por_sigla = {estado.sigla: estado for estado in State.objects.filter(sigla__in=set(siglas.values()))}
+    return {pool_id: por_sigla[sigla] for pool_id, sigla in siglas.items() if sigla in por_sigla}
+
+
 def matriz_orcamento_para_usuario(
     user, *, estado_sigla: str | None = None, territorio_id: int | None = None,
     rubrica_slug: str | None = None, nivel: str | None = None, meta_id: int | None = None,
@@ -1054,6 +1076,7 @@ def matriz_orcamento_para_usuario(
         ),
     )
     distribuido = _distribuido_por_pool(pools)
+    estados = _estados_dos_territoriais(pools)
     executado_meta = _executado_por_pool_na_meta(meta_id) if meta_id is not None else {}
     limiares = limiares_semaforo()
 
@@ -1066,7 +1089,7 @@ def matriz_orcamento_para_usuario(
             "id": pool.pk,
             "rubrica": pool.rubrica,
             "nivel": pool.nivel,
-            "estado": pool.estado,
+            "estado": pool.estado or estados.get(pool.pk),
             "territorio": pool.territorio,
             "reserva_ugp": pool.reserva_ugp,
             "valor_aprovado": pool.valor_alocado,

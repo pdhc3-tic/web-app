@@ -1,10 +1,12 @@
 """O Django Admin não desfaz o saldo gravado por outra operação nem passa por
 cima das regras que a API aplica ao limite individual, à demanda e à solicitação."""
 import json
+from datetime import date
 from decimal import Decimal
 
 import pytest
 from django.contrib.admin.sites import site
+from django.core.cache import cache
 from django.db import connection
 from django.forms.models import model_to_dict
 from django.test import RequestFactory
@@ -15,7 +17,10 @@ from apps.core.tests.factories import UserFactory
 from apps.sgd.models import Demand, DemandRequest
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services.reconciliacao import divergencias_dos_limites
+from apps.core.models.system_config import SystemConfig, TipoConfiguracao
+from apps.sgp.budget import limites
 from apps.sgp.models import SpendingLimit
+from apps.sgp.tests.factories import BudgetPoolFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -292,3 +297,83 @@ def test_criacao_e_alteracao_pelo_admin_ficam_na_auditoria(
     assert [e.acao for e in eventos] == ["limite_individual.criado", "limite_individual.alterado"]
     assert eventos.last().user == super_admin
     assert eventos.last().valores_anteriores == {"valor_limite": "1000.00"}
+
+
+def _corpo_do_novo_limite(user, rubrica, valor):
+    inicio, fim = limites.periodo_de(limites.hoje())
+    return {
+        "escopo": "individual", "user": user, "rubrica": rubrica.pk, "valor_limite": valor,
+        "justificativa": "Criado no Admin.", "periodo_inicio": inicio.isoformat(), "periodo_fim": fim.isoformat(),
+        "_save": "Salvar",
+    }
+
+
+def test_admin_sem_usuario_devolve_erro_no_formulario(client_super_admin, rubrica_diarias):
+    resposta = client_super_admin.post(
+        "/admin/sgp/spendinglimit/add/", _corpo_do_novo_limite("", rubrica_diarias, "1000"),
+    )
+
+    assert resposta.status_code == 200
+    assert "user" in resposta.context["adminform"].form.errors
+    assert not SpendingLimit.objects.exists()
+
+
+def test_admin_nao_soma_o_padrao_ao_valor_da_linha_nova(client_super_admin, solicitante_rn, rubrica_diarias, territory_rn):
+    SpendingLimit.objects.create(
+        escopo=SpendingLimit.Escopo.PERFIL, perfil=solicitante_rn.profiles.first().perfil, rubrica=rubrica_diarias,
+        valor_limite=Decimal("1000"), periodo_inicio=date(2026, 1, 1), periodo_fim=limites.FIM_EM_ABERTO,
+    )
+    BudgetPoolFactory(rubrica=rubrica_diarias, territorio=territory_rn, valor_alocado=Decimal("1500"))
+    SystemConfig.objects.update_or_create(
+        chave="budget_overallocation_allowed", defaults={"valor": "False", "tipo": TipoConfiguracao.BOOLEAN},
+    )
+    cache.delete("system_config:budget_overallocation_allowed")
+
+    try:
+        resposta = client_super_admin.post(
+            "/admin/sgp/spendinglimit/add/", _corpo_do_novo_limite(solicitante_rn.pk, rubrica_diarias, "1000"),
+        )
+    finally:
+        cache.delete("system_config:budget_overallocation_allowed")
+
+    assert resposta.status_code == 302
+    assert SpendingLimit.objects.get(user=solicitante_rn).valor_limite == Decimal("1000")
+
+
+def test_admin_exige_justificativa_ao_mudar_o_valor_da_linha_herdada(client_super_admin, limite_individual_rn):
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(herdado=True, justificativa="")
+
+    resposta = client_super_admin.post(_url_do_limite(limite_individual_rn), {
+        "valor_limite": "9000", "justificativa": "", "_save": "Salvar",
+    })
+
+    assert resposta.status_code == 200
+    assert "justificativa" in resposta.context["adminform"].form.errors
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_limite == Decimal("5000")
+
+
+def test_admin_transforma_em_sobrescrita_a_linha_herdada_com_valor_novo(client_super_admin, limite_individual_rn):
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(herdado=True, justificativa="")
+
+    resposta = client_super_admin.post(_url_do_limite(limite_individual_rn), {
+        "valor_limite": "9000", "justificativa": "Aumento pontual.", "_save": "Salvar",
+    })
+
+    assert resposta.status_code == 302
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_limite == Decimal("9000")
+    assert limite_individual_rn.herdado is False
+
+
+def test_admin_nao_edita_o_territorio_nem_o_herdado(client_super_admin, limite_individual_rn, territory_rn):
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(territorio=territory_rn)
+
+    resposta = client_super_admin.post(_url_do_limite(limite_individual_rn), {
+        "valor_limite": "5000", "justificativa": "Definido no teste.", "territorio": "", "herdado": "on", "_save": "Salvar",
+    })
+
+    assert resposta.status_code == 302
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.territorio_id == territory_rn.pk
+    assert limite_individual_rn.herdado is False

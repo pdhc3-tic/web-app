@@ -2,12 +2,17 @@
 from decimal import Decimal
 
 import pytest
+from django.core.cache import cache
+from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIClient
 
 from apps.core.models.audit_log import AuditLog
+from apps.core.models.system_config import SystemConfig, TipoConfiguracao
+from apps.core.tests.factories import UserFactory
 from apps.sgd.serializers.individual_limit import DemandIndividualLimitSerializer
 from apps.sgd.tests.concorrencia import intercalar
-from apps.sgp.tests.factories import BudgetRubricaFactory
+from apps.sgp.budget import limites
+from apps.sgp.tests.factories import BudgetPoolFactory, BudgetRubricaFactory, SpendingLimitFactory
 from apps.sgp.models import SpendingLimit
 
 pytestmark = pytest.mark.django_db
@@ -163,3 +168,36 @@ def test_patch_concorrente_com_reserva_nao_apaga_o_comprometido(limite_individua
     assert (limite_individual_rn.valor_limite, limite_individual_rn.valor_comprometido) == (
         Decimal("8000"), Decimal("700"),
     )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_aumentos_simultaneos_nao_passam_do_pool(solicitante_rn, rubrica_diarias, territory_rn, usuario_super_admin):
+    """O pool fica travado até o commit: o segundo aumento espera e já vê o primeiro na soma."""
+    outro = UserFactory(profiles=[(solicitante_rn.profiles.first().perfil, territory_rn)])
+    # 700 + 400 cabe; 700 + 700 não. Sem o lock, cada um somaria o outro ainda em 400 e os dois passariam.
+    BudgetPoolFactory(rubrica=rubrica_diarias, territorio=territory_rn, valor_alocado=Decimal("1200"))
+    linha = SpendingLimitFactory(user=solicitante_rn, rubrica=rubrica_diarias, valor_limite=Decimal("400"))
+    linha_do_outro = SpendingLimitFactory(user=outro, rubrica=rubrica_diarias, valor_limite=Decimal("400"))
+    SystemConfig.objects.update_or_create(
+        chave="budget_overallocation_allowed", defaults={"valor": "False", "tipo": TipoConfiguracao.BOOLEAN},
+    )
+    cache.delete("system_config:budget_overallocation_allowed")
+
+    def aumentar(limite):
+        return limites.alterar_sobrescrita(
+            limite.pk, valor_limite=Decimal("700"), justificativa="Aumento.", usuario=usuario_super_admin,
+        )
+
+    def segura(pausa):
+        aumentar(linha)
+        pausa()
+
+    try:
+        _, erros = intercalar(segura, lambda: aumentar(linha_do_outro))
+    finally:
+        cache.delete("system_config:budget_overallocation_allowed")
+
+    assert isinstance(erros["espera"], ValidationError)
+    linha.refresh_from_db()
+    linha_do_outro.refresh_from_db()
+    assert (linha.valor_limite, linha_do_outro.valor_limite) == (Decimal("700"), Decimal("400"))

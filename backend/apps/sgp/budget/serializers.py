@@ -13,7 +13,7 @@ from apps.sgp.serializers.common import EstadoNestedSerializer
 class TerritorioNestedSerializer(serializers.ModelSerializer):
     class Meta:
         model = Territory
-        fields = ["id", "nome"]
+        fields = ["id", "nome", "estados"]
 
 
 class BudgetRubricaNestedSerializer(serializers.ModelSerializer):

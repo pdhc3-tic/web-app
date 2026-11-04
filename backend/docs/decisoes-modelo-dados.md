@@ -222,6 +222,14 @@ podem mudar por configuração.
 - **Django Admin:** consulta de pools; nos limites, só linhas individuais. A distribuição e os padrões por perfil têm regras que o Admin não aplicaria.
 - **Diff da #387:** o critério de restringir o diff em `apps/sgd` a três arquivos não dá para cumprir, porque `balance.py`, `approval.py`, `remanejamento.py`, `reconciliacao.py`, o Admin, os seeds e a auditoria usavam os modelos removidos.
 
+- **Check de pool territorial:** além das regras de consistência de nível, exige `estado` nulo. Sem isso, o mesmo território poderia ter dois pools. Na matriz, o `estado` da célula territorial vem do território.
+- **Soma da sobrealocação:** conta só quem reserva no pool do território. O Articulador reserva no estadual e fica de fora, e território sem pool também.
+- **Sobrescrita com acúmulo ligado:** vale exatamente o valor informado, sem somar o saldo anterior.
+- **Justificativa do alias:** `/sgd/limites-individuais/` não recebe justificativa no contrato antigo. Ela é preenchida com um texto fixo até o front migrar.
+- **`acao_sugerida` do remanejamento:** `informar_outra_origem`, além dos dois valores das travas da submissão.
+- **Testes da #387:** as asserções de redução de limite mudaram para seguir o documento: reduzir preserva o comprometido. `test_estado_da_reserva_migration.py` saiu porque rodava uma migration antiga contra o modelo removido.
+- **Campos do modelo de dados do SGP fora deste modelo:** `ted_versao_id` depende da entidade do TED; `transfer_id` não é preciso, porque o remanejamento já referencia os dois pools; `periodicidade` e `acumula_saldo` são parâmetros globais do Core; `valor_disponivel` é calculado.
+
 ### Divergências do documento mantidas, para a coordenação confirmar
 
 - **Remanejamento entre rubricas:** o SGP 6.7 permite, e o motor só aceita a mesma rubrica, como já fazia. Os demais tipos dependem do simulador da #389.
