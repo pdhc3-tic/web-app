@@ -38,10 +38,12 @@ class DemandIndividualLimitViewSet(viewsets.ViewSet):
         return Response(DemandIndividualLimitSerializer(limite).data, status=status.HTTP_201_CREATED)
 
     def partial_update(self, request, pk=None):
-        # Travado antes de validar: a redução é conferida contra o comprometido em vigor,
-        # sem perder uma reserva concorrente.
+        # Travado antes de gravar, para não perder uma reserva concorrente.
         with transaction.atomic():
-            limite = get_object_or_404(SpendingLimit.objects.select_for_update(of=("self",)), pk=pk)
+            limite = get_object_or_404(
+                SpendingLimit.objects.select_for_update(of=("self",)).filter(escopo=SpendingLimit.Escopo.INDIVIDUAL),
+                pk=pk,
+            )
             serializer = DemandIndividualLimitSerializer(limite, data=request.data, partial=True)
             serializer.is_valid(raise_exception=True)
             novo = serializer.validated_data.get("valor_limite", limite.valor_limite)

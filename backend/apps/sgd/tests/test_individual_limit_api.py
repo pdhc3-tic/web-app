@@ -68,35 +68,34 @@ def _com_saldo(limite, *, comprometido, executado="0"):
     )
 
 
-def test_patch_nao_reduz_o_limite_abaixo_do_comprometido_e_executado(auth_client_super_admin, limite_individual_rn):
+def test_patch_reduz_abaixo_do_comprometido_preservando_o_saldo(auth_client_super_admin, limite_individual_rn):
+    """O rebaixamento não invalida o que já foi autorizado: o novo teto vale para as próximas reservas."""
     _com_saldo(limite_individual_rn, comprometido="3000", executado="500")
 
-    resposta = _patch(auth_client_super_admin, limite_individual_rn, {"valor_limite": "3499.99"})
+    resposta = _patch(auth_client_super_admin, limite_individual_rn, {"valor_limite": "1000"})
 
-    assert resposta.status_code == 400
-    assert resposta.data["valor_limite"] == [
-        "Não pode ser reduzido abaixo do já comprometido e executado: R$ 3.500,00."
-    ]
+    assert resposta.status_code == 200, resposta.data
     limite_individual_rn.refresh_from_db()
-    assert limite_individual_rn.valor_limite == Decimal("5000")
+    assert limite_individual_rn.valor_limite == Decimal("1000")
+    assert limite_individual_rn.valor_comprometido == Decimal("3000")
+    assert limite_individual_rn.saldo_disponivel == Decimal("-2500")
 
 
-def test_patch_reduz_ate_o_comprometido_e_executado(auth_client_super_admin, limite_individual_rn):
-    _com_saldo(limite_individual_rn, comprometido="3000", executado="500")
+def test_patch_nao_aceita_o_id_de_um_padrao_por_perfil(auth_client_super_admin, solicitante_rn, rubrica_diarias):
+    from datetime import date
 
-    resposta = _patch(auth_client_super_admin, limite_individual_rn, {"valor_limite": "3500"})
+    from apps.sgp.budget.limites import FIM_EM_ABERTO
 
-    assert resposta.status_code == 200, resposta.data
+    padrao = SpendingLimit.objects.create(
+        escopo=SpendingLimit.Escopo.PERFIL, perfil=solicitante_rn.profiles.get().perfil, rubrica=rubrica_diarias,
+        valor_limite=Decimal("1000"), periodo_inicio=date(2026, 1, 1), periodo_fim=FIM_EM_ABERTO,
+    )
 
+    resposta = _patch(auth_client_super_admin, padrao, {"valor_limite": "9000"})
 
-def test_patch_aumenta_limite_que_ja_estava_abaixo_do_comprometido(auth_client_super_admin, limite_individual_rn):
-    """Depois de um excedente autorizado, o comprometido passa do limite: aumentar
-    sem cobrir tudo ainda melhora o saldo."""
-    _com_saldo(limite_individual_rn, comprometido="6000")
-
-    resposta = _patch(auth_client_super_admin, limite_individual_rn, {"valor_limite": "5500"})
-
-    assert resposta.status_code == 200, resposta.data
+    assert resposta.status_code == 404
+    padrao.refresh_from_db()
+    assert padrao.valor_limite == Decimal("1000")
 
 
 def test_create_nao_aceita_limite_negativo(auth_client_super_admin, solicitante_rn, rubrica_diarias):

@@ -2,8 +2,6 @@ from django.conf import settings
 from django.db import models
 from django.db.models import ProtectedError, Q
 
-from apps.core.utils import formatar_brl
-
 
 class BudgetRubrica(models.Model):
     """Catálogo estável das rubricas orçamentárias (§5.3.1)."""
@@ -104,7 +102,7 @@ class BudgetPool(models.Model):
                 condition=(
                     Q(nivel="nacional", estado__isnull=True, territorio__isnull=True)
                     | Q(nivel="estadual", estado__isnull=False, territorio__isnull=True)
-                    | Q(nivel="territorial", territorio__isnull=False)
+                    | Q(nivel="territorial", estado__isnull=True, territorio__isnull=False)
                 ),
                 name="ck_budget_pool_nivel_consistente",
             ),
@@ -150,7 +148,7 @@ class SpendingLimit(models.Model):
         BudgetRubrica, on_delete=models.PROTECT, related_name="limites_de_gasto", verbose_name="Rubrica",
     )
     territorio = models.ForeignKey(
-        "core.Territory", on_delete=models.PROTECT, null=True, blank=True,
+        "core.Territory", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="limites_de_gasto", verbose_name="Território",
     )
     valor_limite = models.DecimalField(
@@ -223,14 +221,6 @@ class SpendingLimit(models.Model):
     @property
     def saldo_disponivel(self):
         return self.valor_limite - self.valor_comprometido - self.valor_executado
-
-    def erro_de_reducao(self, novo_valor) -> str | None:
-        """Depois de um excedente o limite já pode estar abaixo do comprometido:
-        só a redução é barrada, o aumento ajuda. Confiável só com a linha travada."""
-        minimo = self.valor_comprometido + self.valor_executado
-        if novo_valor < minimo and novo_valor < self.valor_limite:
-            return f"Não pode ser reduzido abaixo do já comprometido e executado: {formatar_brl(minimo)}."
-        return None
 
 
 class BudgetTransaction(models.Model):

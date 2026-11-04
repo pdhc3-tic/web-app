@@ -367,6 +367,7 @@ def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = N
                 )
         _elevar_limite(pedido, limite, valor_aprovado, usuario)
         transferencia = _cobrir_pool(pedido, necessario, destino, origem, usuario)
+        orcamento_service.exigir_limite_dentro_do_pool(limite)
 
     _mudar_status(
         pedido, destino_status, usuario, f"decidido_{decisao}",

@@ -1,8 +1,11 @@
+from decimal import Decimal
+
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.core.models import Role, State, Territory, User
+from apps.sgp.budget.limites import PERFIS_OPERACIONAIS
 from apps.sgp.models import BudgetPool, BudgetRubrica, BudgetTransaction, SpendingLimit, WorkPlanMeta
 from apps.sgp.serializers.common import EstadoNestedSerializer
 
@@ -145,7 +148,7 @@ class SaldoConsultaSerializer(serializers.Serializer):
 class RemanejamentoCreateSerializer(serializers.Serializer):
     origem_allocation = serializers.PrimaryKeyRelatedField(queryset=BudgetPool.objects.all())
     destino_allocation = serializers.PrimaryKeyRelatedField(queryset=BudgetPool.objects.all())
-    valor = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
+    valor = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"))
     justificativa = serializers.CharField()
 
 
@@ -228,7 +231,10 @@ class SpendingLimitCreateSerializer(serializers.Serializer):
     """Sem período, vale o período vigente. O padrão por perfil não tem fim: vale até ser alterado."""
 
     escopo = serializers.ChoiceField(choices=SpendingLimit.Escopo.choices)
-    perfil = serializers.PrimaryKeyRelatedField(queryset=Role.objects.all(), required=False, allow_null=True)
+    perfil = serializers.PrimaryKeyRelatedField(
+        queryset=Role.objects.filter(slug__in=PERFIS_OPERACIONAIS), required=False, allow_null=True,
+        help_text="Só os perfis operacionais, que criam demandas: ADT/ACR e Articulador Estadual.",
+    )
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)
     rubrica = serializers.PrimaryKeyRelatedField(queryset=BudgetRubrica.objects.filter(ativo=True))
     valor_limite = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)

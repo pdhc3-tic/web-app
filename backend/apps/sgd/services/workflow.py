@@ -322,7 +322,8 @@ def _ajustar(demand, transicao, *, ator, ajustes: dict | None = None, excedente_
         key=lambda s: (s.rubrica_id, ajustes.get(s.pk, s.valor_estimado) - s.valor_reservado, s.pk),
     )
     cobriu_excedente = False
-    for solicitacao in balance_service.na_ordem_de_lock(ordem):
+    origem_do_excedente = origem_allocation if excedente_autorizado else None
+    for solicitacao in balance_service.na_ordem_de_lock(ordem, travar_pools=True, origem=origem_do_excedente):
         novo_valor = ajustes.get(solicitacao.pk, solicitacao.valor_estimado)
         if novo_valor != solicitacao.valor_reservado:
             excedente = balance_service.ZERO
@@ -380,11 +381,13 @@ def _executar(demand, transicao, *, ator, valores_pagos: dict | None = None, **_
             )
     retrato = _retrato(solicitacoes)
 
-    for solicitacao in balance_service.na_ordem_de_lock(solicitacoes):
-        if solicitacao.valor_pago is None:
-            registrar_pagamento(
-                solicitacao, valor_pago=valores_pagos[solicitacao.pk], origem=transicao.origem, usuario=ator,
-            )
+    # Só as pendentes: a última linha do Arlo chega aqui com a `Demand` já travada e tudo pago, e travar
+    # os limites depois da `Demand` inverteria a ordem de lock.
+    pendentes = [s for s in solicitacoes if s.valor_pago is None]
+    for solicitacao in balance_service.na_ordem_de_lock(pendentes, travar_pools=True):
+        registrar_pagamento(
+            solicitacao, valor_pago=valores_pagos[solicitacao.pk], origem=transicao.origem, usuario=ator,
+        )
     return solicitacoes, retrato
 
 

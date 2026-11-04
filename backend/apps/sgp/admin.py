@@ -209,6 +209,17 @@ class BudgetPoolAdmin(admin.ModelAdmin):
         "valor_comprometido", "valor_executado", "criado_por", "criado_em",
     ]
 
+    # Só consulta: mudar o alocado aqui não travaria o pool, não lançaria no ledger nem
+    # conferiria o teto. A distribuição é feita por /sgp/orcamento/pools/.
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(BudgetTransaction)
 class BudgetTransactionAdmin(admin.ModelAdmin):

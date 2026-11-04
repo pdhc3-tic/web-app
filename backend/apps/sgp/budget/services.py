@@ -14,9 +14,11 @@ from apps.core.models.user_profile import UserProfile
 from apps.core.services.permissions import user_has_role, user_states, user_territories
 from apps.core.utils import get_config
 from apps.sgp.budget.ledger import lancar
+from apps.sgp.budget.rls import com_visao_total, visao_total
 from apps.sgp.models import BudgetPool, BudgetRubrica, BudgetTransaction
 
 Nivel = BudgetPool.Nivel
+PERFIS_DE_LEITURA_NACIONAL = {"super-admin", "ugp", "fgd"}
 ZERO = Decimal("0")
 
 
@@ -88,7 +90,7 @@ def orcamento_detalhamento_scope(user) -> Q | None:
     """
     perfis, slugs = _perfis_e_slugs(user)
 
-    if "super-admin" in slugs or "ugp" in slugs:
+    if slugs & PERFIS_DE_LEITURA_NACIONAL:
         return None
 
     if "articulador-estadual" in slugs:
@@ -123,24 +125,26 @@ def orcamento_por_rubrica(user) -> list[dict]:
     """
     detalhamento_scope = orcamento_detalhamento_scope(user)
 
-    rubricas = list(
-        BudgetRubrica.objects.filter(ativo=True)
-        .annotate(
-            valor_aprovado=Coalesce(
-                Sum("pools__valor_alocado", filter=Q(pools__nivel=Nivel.NACIONAL)), ZERO,
-            ),
-            valor_distribuido=Coalesce(
-                Sum("pools__valor_alocado", filter=Q(pools__nivel=Nivel.ESTADUAL)), ZERO,
-            ),
-            valor_comprometido=Coalesce(
-                Sum("pools__valor_comprometido", filter=Q(pools__nivel=Nivel.NACIONAL)), ZERO,
-            ),
-            valor_executado=Coalesce(
-                Sum("pools__valor_executado", filter=Q(pools__nivel=Nivel.NACIONAL)), ZERO,
-            ),
+    # Os agregados valem para todos os perfis: somados sob o RLS, cada um veria um total diferente.
+    with visao_total():
+        rubricas = list(
+            BudgetRubrica.objects.filter(ativo=True)
+            .annotate(
+                valor_aprovado=Coalesce(
+                    Sum("pools__valor_alocado", filter=Q(pools__nivel=Nivel.NACIONAL)), ZERO,
+                ),
+                valor_distribuido=Coalesce(
+                    Sum("pools__valor_alocado", filter=Q(pools__nivel=Nivel.ESTADUAL)), ZERO,
+                ),
+                valor_comprometido=Coalesce(
+                    Sum("pools__valor_comprometido", filter=Q(pools__nivel=Nivel.NACIONAL)), ZERO,
+                ),
+                valor_executado=Coalesce(
+                    Sum("pools__valor_executado", filter=Q(pools__nivel=Nivel.NACIONAL)), ZERO,
+                ),
+            )
+            .order_by("ordem")
         )
-        .order_by("ordem")
-    )
 
     detalhamento_qs = BudgetPool.objects.exclude(
         nivel=Nivel.NACIONAL
@@ -625,6 +629,8 @@ def remanejar(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal,
             "rubrica": origem.rubrica.slug,
             "disponivel": f"{saldo_origem:.2f}",
             "solicitado": f"{valor:.2f}",
+            "valor_faltante": f"{valor - saldo_origem:.2f}",
+            "acao_sugerida": "informar_outra_origem",
             "detail": mensagem,
         })
     saldo_destino = _saldo_disponivel(destino)
@@ -658,7 +664,7 @@ def resolver_nivel_do_usuario(user) -> tuple[str, str | None, Territory | None]:
     só pra ter a instância."""
     perfis, slugs = _perfis_e_slugs(user)
 
-    if "super-admin" in slugs or "ugp" in slugs:
+    if slugs & PERFIS_DE_LEITURA_NACIONAL:
         return Nivel.NACIONAL, None, None
 
     for p in perfis:
@@ -783,7 +789,7 @@ def resolver_nivel_painel(
     """
     perfis, slugs = _perfis_e_slugs(user)
 
-    if "super-admin" in slugs or "ugp" in slugs:
+    if slugs & PERFIS_DE_LEITURA_NACIONAL:
         if territorio_id is not None:
             return Nivel.TERRITORIAL, None, territorio_id
         if estado_sigla is not None:
@@ -858,6 +864,7 @@ def _executado_por_pool_na_meta(meta_id: int) -> dict[int, Decimal]:
     }
 
 
+@com_visao_total
 def painel_orcamento(
     *, nivel: str, estado_sigla: str | None = None, territorio_id: int | None = None,
     rubrica_slug: str | None = None, meta_id: int | None = None,
@@ -867,8 +874,9 @@ def painel_orcamento(
     pool, para a tela do orçamento, é `matriz_orcamento`.
 
     Motor sem RBAC — quem chama já resolveu o nível/localização (ver
-    `painel_orcamento_para_usuario`). `meta_id` não recorta o saldo: só acrescenta
-    `valor_executado_meta`.
+    `painel_orcamento_para_usuario`), e por isso roda com visão total: o RLS recortaria
+    o "distribuído" do Articulador aos estaduais do próprio estado. `meta_id` não recorta
+    o saldo: só acrescenta `valor_executado_meta`.
 
     3 queries (rubricas, próprios, distribuído; 2 se `nivel` for territorial, sem
     distribuído), +1 com `meta_id` e +2 só com o cache dos limiares do semáforo frio.
@@ -997,6 +1005,7 @@ def _pools_da_matriz(user, *, estado_sigla, territorio_id, rubrica_slug, nivel) 
     return pools
 
 
+@com_visao_total
 def _distribuido_por_pool(pools: list[BudgetPool]) -> dict[int, Decimal]:
     """O que já desceu para o nível filho de cada pool: os estaduais da rubrica, para o
     nacional; os territoriais do estado na rubrica, para o estadual."""

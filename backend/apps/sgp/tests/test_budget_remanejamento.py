@@ -187,6 +187,21 @@ class TestValidacaoDeCombinacao:
 
         assert response.status_code == 400
 
+    def test_valor_zerado_e_recusado(self, auth_client_super_admin):
+        origem, destino = dois_pools_da_mesma_rubrica()
+
+        response = auth_client_super_admin.post(
+            REMANEJAR_URL,
+            {
+                "origem_allocation": origem.pk, "destino_allocation": destino.pk,
+                "valor": "0.00", "justificativa": "x",
+            },
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert not BudgetTransaction.objects.filter(pool__in=[origem, destino]).exists()
+
     def test_acima_do_saldo_da_origem(self, auth_client_super_admin):
         origem, destino = dois_pools_da_mesma_rubrica(valor_origem=Decimal("100"))
 
@@ -205,6 +220,9 @@ class TestValidacaoDeCombinacao:
         assert response.data["rubrica"] == origem.rubrica.slug
         assert response.data["disponivel"] == "100.00"
         assert response.data["solicitado"] == "150.00"
+        assert response.data["valor_faltante"] == "50.00"
+        assert response.data["acao_sugerida"] == "informar_outra_origem"
+        assert response.data["detail"]
         assert "valor" in response.data
         origem.refresh_from_db()
         destino.refresh_from_db()

@@ -215,7 +215,18 @@ podem mudar por configuração.
 - **Padrão por perfil:** vale até ser alterado, sem precisar de novo cadastro a cada período.
 - **Recurso extra:** eleva o período vigente na data da decisão. `periodo_aplicacao` é texto livre e o front não o preenche.
 - **Campo do limite:** `valor_limite`, como no modelo de dados do SGP, em vez do `valor` da issue.
-- **RLS:** a FGD e o nível nacional para o Articulador vão além do texto da arquitetura. Ver `orcamento.md`.
+- **RLS:** a FGD, o nível nacional para o Articulador e a leitura dos padrões por todo usuário vão além do texto da arquitetura. Ver `orcamento.md`.
+- **Padrão sem uso:** a alteração corrige o próprio registro, em vez de esperar o período seguinte, para um valor errado no cadastro não valer um trimestre inteiro. O mesmo vale em `vigencia`, que não tem período seguinte.
+- **`trava: "origem"`:** o `INSUFFICIENT_BALANCE` dos remanejamentos usa esse valor, além de `individual` e `territorial`.
+- **Limite individual sem padrão:** na virada, só gera linha se houver saldo a acumular. Sem nenhum dos dois, o usuário fica sem limite no período novo.
+- **Django Admin:** consulta de pools; nos limites, só linhas individuais. A distribuição e os padrões por perfil têm regras que o Admin não aplicaria.
+- **Diff da #387:** o critério de restringir o diff em `apps/sgd` a três arquivos não dá para cumprir, porque `balance.py`, `approval.py`, `remanejamento.py`, `reconciliacao.py`, o Admin, os seeds e a auditoria usavam os modelos removidos.
+
+### Divergências do documento mantidas, para a coordenação confirmar
+
+- **Remanejamento entre rubricas:** o SGP 6.7 permite, e o motor só aceita a mesma rubrica, como já fazia. Os demais tipos dependem do simulador da #389.
+- **Exatos 90% de comprometimento:** o SGP 6.8 diz amarelo até 90%; o código, como a #373, trata 90% como vermelho.
+- **`reserva_ugp`:** com um pool por rubrica e nível, uma rubrica nacional não pode, ao mesmo tempo, ser reserva da UGP e distribuir aos estados.
 
 **Em aberto com a coordenação:** os valores iniciais dos limites por perfil e rubrica e se
 ADT e ACR precisam de valores diferentes. Hoje os dois são um só perfil no sistema.

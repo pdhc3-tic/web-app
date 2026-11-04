@@ -35,8 +35,4 @@ class DemandIndividualLimitSerializer(serializers.ModelSerializer):
         for campo, origem in (("solicitante", "user"), ("rubrica", "rubrica")):
             if origem in attrs and attrs[origem] != getattr(self.instance, origem):
                 raise serializers.ValidationError({campo: "Não pode ser alterado; crie um novo limite."})
-        novo = attrs.get("valor_limite")
-        erro = novo is not None and self.instance.erro_de_reducao(novo)
-        if erro:
-            raise serializers.ValidationError({"valor_limite": erro})
         return attrs

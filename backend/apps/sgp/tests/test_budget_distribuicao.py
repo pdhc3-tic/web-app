@@ -307,6 +307,13 @@ class TestPermissoes:
 
         assert response.status_code == 403
 
+    def test_articulador_alterando_pool_de_outro_estado_recebe_403(self, auth_client_articulador_rn, state_ce):
+        pool = BudgetPoolFactory(nivel=Nivel.ESTADUAL, estado=state_ce, territorio=None, valor_alocado=Decimal("10"))
+
+        response = auth_client_articulador_rn.patch(pool_url(pool.pk), {"valor_alocado": "20.00"}, format="json")
+
+        assert response.status_code == 403
+
     def test_adt_nao_aloca(self, auth_client_adt_rn, territory_rn):
         rubrica = BudgetRubricaFactory()
 

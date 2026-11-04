@@ -80,7 +80,7 @@ def _padrao_do_usuario(user_id, rubrica_id, data: date) -> SpendingLimit | None:
     )
 
 
-def _territorio_do_usuario(user_id) -> int | None:
+def territorio_do_usuario(user_id) -> int | None:
     return (
         UserProfile.objects
         .filter(user_id=user_id, perfil__slug__in=PERFIS_OPERACIONAIS, territorio__isnull=False)
@@ -103,15 +103,17 @@ def _saldo_a_acumular(user_id, rubrica_id, inicio: date) -> Decimal:
 
 
 def _linha_herdada(user_id, rubrica_id, data: date) -> SpendingLimit | None:
-    """A linha do período que o padrão do perfil geraria, sem gravar. None sem padrão."""
+    """A linha do período que o padrão do perfil e o saldo acumulado gerariam, sem gravar. None sem
+    nenhum dos dois: quem só tinha sobrescrita e nada a acumular fica sem limite no período novo."""
     padrao = _padrao_do_usuario(user_id, rubrica_id, data)
-    if padrao is None:
-        return None
     inicio, fim = periodo_de(data)
+    acumulado = _saldo_a_acumular(user_id, rubrica_id, inicio)
+    if padrao is None and acumulado <= ZERO:
+        return None
     return SpendingLimit(
         escopo=Escopo.INDIVIDUAL, user_id=user_id, rubrica_id=rubrica_id, herdado=True,
-        territorio_id=_territorio_do_usuario(user_id),
-        valor_limite=padrao.valor_limite + _saldo_a_acumular(user_id, rubrica_id, inicio),
+        territorio_id=territorio_do_usuario(user_id),
+        valor_limite=(padrao.valor_limite if padrao else ZERO) + acumulado,
         periodo_inicio=inicio, periodo_fim=fim,
     )
 
@@ -152,13 +154,19 @@ def _vigente_travada(user_id, rubrica_id, data: date) -> SpendingLimit | None:
     )
 
 
-def _criar_ou_travar(linha: SpendingLimit) -> SpendingLimit:
+def _criar_ou_travar(linha: SpendingLimit, *, justificativa: str) -> SpendingLimit:
     """Duas transações podem criar a mesma linha: o savepoint deixa a segunda esperar a primeira
-    no índice único e, no IntegrityError, reler a linha já travada."""
+    no índice único e, no IntegrityError, reler a linha já travada. Quem cria abre o ledger dela."""
     try:
         with transaction.atomic():
             linha.save()
-            return SpendingLimit.objects.select_for_update(of=("self",)).get(pk=linha.pk)
+            criada = SpendingLimit.objects.select_for_update(of=("self",)).get(pk=linha.pk)
+            if criada.valor_limite > ZERO:
+                registrar_movimento(
+                    limite=criada, tipo=Tipo.AUMENTO_LIMITE, valor=criada.valor_limite, usuario=criada.criado_por,
+                    justificativa=justificativa,
+                )
+            return criada
     except IntegrityError:
         return SpendingLimit.objects.select_for_update(of=("self",)).get(
             escopo=Escopo.INDIVIDUAL, user_id=linha.user_id, rubrica_id=linha.rubrica_id,
@@ -173,7 +181,7 @@ def travar_limite_vigente(*, user_id, rubrica_id, criar: bool = False, data: dat
     if linha is not None or not criar:
         return linha
     nova = _linha_herdada(user_id, rubrica_id, data)
-    return _criar_ou_travar(nova) if nova is not None else None
+    return _criar_ou_travar(nova, justificativa="Linha do período: padrão do perfil e saldo acumulado.") if nova else None
 
 
 def travar_limite_para_elevar(*, user_id, rubrica_id, justificativa: str, usuario) -> SpendingLimit:
@@ -184,9 +192,9 @@ def travar_limite_para_elevar(*, user_id, rubrica_id, justificativa: str, usuari
     inicio, fim = periodo_de(hoje())
     return _criar_ou_travar(SpendingLimit(
         escopo=Escopo.INDIVIDUAL, user_id=user_id, rubrica_id=rubrica_id, valor_limite=ZERO,
-        territorio_id=_territorio_do_usuario(user_id), justificativa=justificativa,
+        territorio_id=territorio_do_usuario(user_id), justificativa=justificativa,
         periodo_inicio=inicio, periodo_fim=fim, criado_por=usuario,
-    ))
+    ), justificativa=justificativa)
 
 
 def linha_da_reserva(chave_da_reserva: str) -> int | None:
@@ -295,7 +303,7 @@ def _soma_no_territorio(rubrica_id, territorio_id, data: date) -> Decimal:
     )
     soma = ZERO
     for user_id in usuarios:
-        if _territorio_do_usuario(user_id) != territorio_id:
+        if territorio_do_usuario(user_id) != territorio_id:
             continue
         limite = limite_efetivo(user_id, rubrica_id, data)
         if limite is not None:
@@ -303,17 +311,22 @@ def _soma_no_territorio(rubrica_id, territorio_id, data: date) -> Decimal:
     return soma
 
 
-def exigir_dentro_do_pool(rubrica_id, territorio_ids, data: date | None = None) -> None:
-    """Com a sobrealocação desligada, a soma dos limites do território não passa do pool."""
+def exigir_dentro_do_pool(rubrica_id, territorio_ids, data: date | None = None, *, ajuste: Decimal = ZERO) -> None:
+    """Com a sobrealocação desligada, a soma dos limites do território não passa do pool. O pool fica
+    travado até o commit: sem isso, dois aumentos simultâneos passariam, cada um sem ver o outro.
+    `ajuste` é o que ainda não foi gravado, para quem confere antes de salvar."""
     if get_config("budget_overallocation_allowed", True):
         return
     data = data or hoje()
-    for territorio_id in territorio_ids:
-        pool = BudgetPool.objects.filter(
-            rubrica_id=rubrica_id, nivel=BudgetPool.Nivel.TERRITORIAL, territorio_id=territorio_id,
-        ).first()
+    for territorio_id in sorted(set(territorio_ids)):
+        pool = (
+            BudgetPool.objects.select_for_update(of=("self",))
+            .filter(rubrica_id=rubrica_id, nivel=BudgetPool.Nivel.TERRITORIAL, territorio_id=territorio_id)
+            .order_by("pk")
+            .first()
+        )
         alocado = pool.valor_alocado if pool else ZERO
-        soma = _soma_no_territorio(rubrica_id, territorio_id, data)
+        soma = _soma_no_territorio(rubrica_id, territorio_id, data) + ajuste
         if soma > alocado:
             raise DRFValidationError({
                 "valor_limite": (
@@ -336,6 +349,16 @@ def _territorios_do_perfil(perfil_id) -> list[int]:
     )
 
 
+def exigir_sem_sobreposicao(user_id, rubrica_id, inicio: date, fim: date) -> None:
+    """Duas linhas no mesmo dia dariam ao usuário um limite novo sobre o que já esgotou."""
+    sobrepostas = SpendingLimit.objects.filter(
+        escopo=Escopo.INDIVIDUAL, user_id=user_id, rubrica_id=rubrica_id,
+        periodo_inicio__lte=fim, periodo_fim__gte=inicio,
+    )
+    if sobrepostas.exists():
+        raise DRFValidationError({"rubrica": "Já existe um limite individual deste solicitante nesta rubrica."})
+
+
 @transaction.atomic
 def criar_sobrescrita(*, user, rubrica, valor_limite: Decimal, justificativa: str, usuario,
                       periodo_inicio: date | None = None, periodo_fim: date | None = None) -> SpendingLimit:
@@ -345,16 +368,20 @@ def criar_sobrescrita(*, user, rubrica, valor_limite: Decimal, justificativa: st
     if periodo_inicio is None:
         periodo_inicio, periodo_fim = periodo_de(hoje())
     existente = _vigente_travada(user.pk, rubrica.pk, periodo_inicio)
-    if existente is not None and existente.herdado:
+    if (
+        existente is not None and existente.herdado
+        and (existente.periodo_inicio, existente.periodo_fim) == (periodo_inicio, periodo_fim)
+    ):
         # A linha herdada já guarda reservas: vira sobrescrita, em vez de abrir uma segunda.
         return alterar_sobrescrita(
             existente.pk, valor_limite=valor_limite, justificativa=justificativa, usuario=usuario,
         )
+    exigir_sem_sobreposicao(user.pk, rubrica.pk, periodo_inicio, periodo_fim)
     try:
         with transaction.atomic():
             limite = SpendingLimit.objects.create(
                 escopo=Escopo.INDIVIDUAL, user=user, rubrica=rubrica, valor_limite=valor_limite,
-                territorio_id=_territorio_do_usuario(user.pk), justificativa=justificativa,
+                territorio_id=territorio_do_usuario(user.pk), justificativa=justificativa,
                 periodo_inicio=periodo_inicio, periodo_fim=periodo_fim, criado_por=usuario,
             )
     except IntegrityError as exc:
@@ -372,11 +399,9 @@ def criar_sobrescrita(*, user, rubrica, valor_limite: Decimal, justificativa: st
 
 @transaction.atomic
 def alterar_sobrescrita(pk: int, *, valor_limite: Decimal, justificativa: str, usuario) -> SpendingLimit:
-    """Reduzir nunca invalida o que já foi autorizado: abaixo do comprometido e executado, é recusado."""
+    """Reduzir não invalida o que já foi autorizado: o comprometido fica como está, e o novo teto vale
+    para as próximas reservas, mesmo que o saldo fique negativo."""
     limite = travar_linha(pk)
-    erro = limite.erro_de_reducao(valor_limite)
-    if erro:
-        raise DRFValidationError({"valor_limite": erro})
     valor_anterior = limite.valor_limite
     if valor_limite == valor_anterior:
         return limite
@@ -390,7 +415,8 @@ def alterar_sobrescrita(pk: int, *, valor_limite: Decimal, justificativa: str, u
         justificativa=justificativa,
     )
     auditar_alteracao(limite, valor_anterior=valor_anterior, usuario=usuario)
-    if limite.territorio_id:
+    # Só o aumento: com a soma já acima do pool, reduzir um limite ajuda e não pode ser recusado.
+    if limite.territorio_id and valor_limite > valor_anterior:
         exigir_dentro_do_pool(limite.rubrica_id, [limite.territorio_id], limite.periodo_inicio)
     return limite
 
@@ -439,10 +465,13 @@ def alterar_padrao(pk: int, *, valor_limite: Decimal, justificativa: str, usuari
     if valor_limite == limite.valor_limite:
         return limite
     justificativa = _exigir_justificativa(justificativa)
+    if limite.periodo_fim < hoje():
+        raise DRFValidationError({"periodo_fim": "Este padrão já foi encerrado. Altere o vigente."})
     valor_anterior = limite.valor_limite
+    fim_do_periodo = periodo_de(hoje())[1]
 
-    if limite.periodo_inicio <= hoje() and _padrao_ja_foi_usado(limite):
-        fim_do_periodo = periodo_de(hoje())[1]
+    # Na vigência do TED, período único, não existe período seguinte: vale a correção no registro.
+    if limite.periodo_inicio <= hoje() and _padrao_ja_foi_usado(limite) and fim_do_periodo < FIM_EM_ABERTO:
         inicio_seguinte = date.fromordinal(fim_do_periodo.toordinal() + 1)
         limite.periodo_fim = fim_do_periodo
         limite.save(update_fields=["periodo_fim", "atualizado_em"])
@@ -462,7 +491,8 @@ def alterar_padrao(pk: int, *, valor_limite: Decimal, justificativa: str, usuari
         data_da_conferencia = max(limite.periodo_inicio, hoje())
 
     auditar_alteracao(limite, valor_anterior=valor_anterior, usuario=usuario)
-    exigir_dentro_do_pool(limite.rubrica_id, _territorios_do_perfil(limite.perfil_id), data_da_conferencia)
+    if valor_limite > valor_anterior:
+        exigir_dentro_do_pool(limite.rubrica_id, _territorios_do_perfil(limite.perfil_id), data_da_conferencia)
     return limite
 
 
@@ -473,7 +503,7 @@ def definir_limite_de_demonstracao(*, user, rubrica, valor_limite: Decimal) -> S
         escopo=Escopo.INDIVIDUAL, user=user, rubrica=rubrica, periodo_inicio=inicio,
         defaults={
             "valor_limite": valor_limite, "periodo_fim": fim, "justificativa": "Dados de demonstração.",
-            "herdado": False, "territorio_id": _territorio_do_usuario(user.pk),
+            "herdado": False, "territorio_id": territorio_do_usuario(user.pk),
         },
     )
     return limite

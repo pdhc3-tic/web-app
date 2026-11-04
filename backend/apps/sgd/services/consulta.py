@@ -88,18 +88,7 @@ def _inteiro_ou_none(valor):
         raise RegraDeNegocio(f"Valor numérico inválido: {valor!r}.")
 
 
-def _painel_sgp(user, slugs: set[str], *, estado_sigla, territorio_id, meta_id):
-    # FGD não tem nível próprio no `resolver_nivel_painel` do SGP; para o
-    # painel do SGD enxerga o nacional, como a UGP.
-    if "fgd" in slugs and not slugs & {"super-admin", "ugp", "articulador-estadual"}:
-        nivel = orcamento_service.Nivel.NACIONAL
-        if territorio_id is not None:
-            nivel = orcamento_service.Nivel.TERRITORIAL
-        elif estado_sigla is not None:
-            nivel = orcamento_service.Nivel.ESTADUAL
-        return orcamento_service.painel_orcamento(
-            nivel=nivel, estado_sigla=estado_sigla, territorio_id=territorio_id, meta_id=meta_id,
-        )
+def _painel_sgp(user, *, estado_sigla, territorio_id, meta_id):
     return orcamento_service.painel_orcamento_para_usuario(
         user, estado_sigla=estado_sigla, territorio_id=territorio_id, meta_id=meta_id,
     )
@@ -139,7 +128,7 @@ def painel_por_rubrica(user, demandas, params) -> list[dict]:
 
     orcamento: dict[int, dict] = {}
     for linha in _painel_sgp(
-        user, slugs, estado_sigla=estado_sigla, territorio_id=territorio_id, meta_id=meta_id,
+        user, estado_sigla=estado_sigla, territorio_id=territorio_id, meta_id=meta_id,
     ):
         acc = orcamento.setdefault(linha["rubrica"].pk, {
             "aprovado": ZERO, "comprometido": ZERO, "executado": ZERO, "disponivel": ZERO,

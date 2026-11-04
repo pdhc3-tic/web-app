@@ -179,9 +179,9 @@ class TestOrcamentoLeitura:
             response = auth_client_super_admin.get(orcamento_url(meta.pk))
 
         assert response.status_code == 200
-        # meta + escopo + agregação + detalhamento — fixo, não escala com
-        # rubricas nem pools.
-        assert len(ctx.captured_queries) <= 4
+        # meta + escopo + detalhamento + agregação, com os 5 da visão total em volta
+        # dela — fixo, não escala com rubricas nem pools.
+        assert len(ctx.captured_queries) <= 9
 
 
 def saldo_url(rubrica_slug, valor):

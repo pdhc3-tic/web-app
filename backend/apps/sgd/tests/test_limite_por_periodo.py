@@ -52,8 +52,8 @@ def test_primeira_reserva_cria_a_linha_herdada_e_lanca_no_ledger(
     limite = SpendingLimit.objects.get(user=solicitante_rn)
     assert limite.herdado is True
     assert limite.valor_comprometido == Decimal("1000")
-    assert _linhas(limite) == [("reserva", Decimal("1000"))]
-    transacao = BudgetTransaction.objects.get(spending_limit=limite)
+    assert _linhas(limite) == [("aumento_limite", Decimal("5000")), ("reserva", Decimal("1000"))]
+    transacao = BudgetTransaction.objects.get(spending_limit=limite, tipo="reserva")
     assert transacao.demand_request_id == str(demand_request_rn.pk)
     assert transacao.demanda_id == str(demand_request_rn.demanda_id)
     assert transacao.activity_id == demand_request_rn.demanda.activity_id
@@ -162,7 +162,7 @@ def test_recurso_extra_eleva_a_linha_herdada_e_ela_vira_sobrescrita(
     assert limite.valor_limite == Decimal("5800")
     assert limite.herdado is False
     assert limite.justificativa.startswith(f"Recurso extra #{pedido.pk}")
-    assert _linhas(limite) == [("aumento_limite", Decimal("800"))]
+    assert _linhas(limite) == [("aumento_limite", Decimal("5000")), ("aumento_limite", Decimal("800"))]
 
 
 @freeze_time("2026-11-03")
@@ -260,3 +260,76 @@ def test_na_ordem_de_lock_trava_rubrica_a_rubrica(
 
     # Uma trava de limite ao entrar em cada rubrica: nunca as duas de uma vez, antes dos pools.
     assert travadas == [1, 2]
+
+
+@freeze_time("2026-11-03")
+def test_recurso_extra_acima_do_pool_com_sobrealocacao_desligada_e_recusado(
+    usuario_ugp, solicitante_rn, rubrica_diarias, activity_rn, allocation_territorial_rn, limite_individual_rn, territory_rn,
+):
+    from django.core.cache import cache
+
+    from apps.core.models.system_config import SystemConfig, TipoConfiguracao
+    from apps.sgd.exceptions import RegraDeNegocio
+
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(territorio=territory_rn, valor_limite=Decimal("10000"))
+    pedido = BudgetIncreaseRequest.objects.create(
+        user=solicitante_rn, rubrica=rubrica_diarias, valor_solicitado=Decimal("500"), activity=activity_rn,
+        justificativa="Mutirão.", status="com_parecer",
+    )
+    SystemConfig.objects.update_or_create(
+        chave="budget_overallocation_allowed", defaults={"valor": "False", "tipo": TipoConfiguracao.BOOLEAN},
+    )
+    try:
+        with pytest.raises(RegraDeNegocio) as erro:
+            recurso_extra_service.decidir(pedido, usuario=usuario_ugp, decisao="aprovar", justificativa="Aprovado.")
+    finally:
+        cache.delete("system_config:budget_overallocation_allowed")
+
+    assert erro.value.campo == "valor_limite"
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_limite == Decimal("10000")
+
+
+def test_ultima_linha_do_arlo_nao_trava_limite_depois_da_demanda(
+    activity_rn, solicitante_rn, rubrica_diarias, allocation_territorial_rn, limite_individual_rn, usuario_fgd,
+):
+    """Tudo já pago: `_executar` não tem saldo a mover, e travar o limite aqui viria depois da `Demand`."""
+    from apps.sgd.services import workflow as workflow_service
+
+    demanda = DemandFactory(activity=activity_rn, solicitante=solicitante_rn, status="em_atendimento")
+    solicitacao = DemandRequestFactory(
+        demanda=demanda, tipo="diaria", rubrica=rubrica_diarias, valor_estimado=Decimal("100"),
+        valor_autorizado=Decimal("100"),
+    )
+    balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=solicitante_rn)
+    workflow_service.registrar_pagamento(
+        solicitacao, valor_pago=Decimal("100"), origem=workflow_service.ORIGEM_ARLO, usuario=usuario_fgd,
+    )
+    balance_service.gravar_estado_da_reserva([solicitacao], outros_campos=("valor_pago",))
+
+    with CaptureQueriesContext(connection) as consultas:
+        workflow_service.executar_transicao(demanda, "concluida", ator=usuario_fgd, origem=workflow_service.ORIGEM_ARLO)
+
+    assert not [q for q in consultas if "FOR UPDATE" in q["sql"] and '"sgp_spendinglimit"' in q["sql"]]
+
+
+def test_previa_da_decisao_confere_a_linha_da_reserva_depois_da_virada(
+    activity_rn, solicitante_rn, rubrica_diarias, allocation_territorial_rn, padrao_do_perfil,
+):
+    from apps.sgd.services import approval as approval_service
+
+    SpendingLimit.objects.filter(pk=padrao_do_perfil.pk).update(valor_limite=Decimal("100"))
+    solicitacao = DemandRequestFactory(
+        demanda=DemandFactory(activity=activity_rn, solicitante=solicitante_rn, status="pre_autorizada"),
+        tipo="diaria", rubrica=rubrica_diarias, valor_estimado=Decimal("100"),
+    )
+    with freeze_time("2026-11-03"):
+        balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=solicitante_rn)
+
+    with freeze_time("2027-01-05"):
+        solicitacao.refresh_from_db()
+        previa = approval_service.preview_impacto(solicitacao, Decimal("200"))
+
+    # A linha nova teria saldo; a da reserva, de onde o aumento sairia, está esgotada.
+    assert previa["disponivel"] is False
+    assert previa["trava_bloqueada"] == "individual"

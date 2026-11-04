@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied
+from django.db.models import Q
 
 from apps.core.utils import formatar_brl
 from apps.sgd.exceptions import TRAVA_TERRITORIAL, RegraDeNegocio, SaldoInsuficiente
@@ -34,6 +35,9 @@ TipoTransacao = BudgetTransaction.Tipo
 travar_limite_vigente = limites_service.travar_limite_vigente
 travar_limite_para_elevar = limites_service.travar_limite_para_elevar
 hoje = limites_service.hoje
+territorio_do_usuario = limites_service.territorio_do_usuario
+exigir_sem_sobreposicao = limites_service.exigir_sem_sobreposicao
+exigir_dentro_do_pool = limites_service.exigir_dentro_do_pool
 totais_de_limite_por_rubrica = limites_service.totais_por_rubrica
 criar_sobrescrita = limites_service.criar_sobrescrita
 alterar_sobrescrita = limites_service.alterar_sobrescrita
@@ -288,13 +292,15 @@ def _travar_em_ordem_de_pk(queryset) -> None:
     list(queryset.select_for_update().order_by("pk").values_list("pk", flat=True))
 
 
-def travar_pools_das_reservas(solicitacoes) -> None:
-    """Trava, em ordem de pk, os pools em que as solicitações têm reserva."""
+@com_visao_total
+def travar_pools_das_reservas(solicitacoes, *, origem_id: int | None = None) -> None:
+    """Trava, em ordem de pk, os pools em que as solicitações têm reserva e, se houver, o de origem do
+    remanejamento: juntos, para o movimento de uma solicitação não travar a origem depois de outro."""
     _travar_em_ordem_de_pk(BudgetPool.objects.filter(
-        pk__in=BudgetTransaction.objects.filter(
+        Q(pk__in=BudgetTransaction.objects.filter(
             tipo=BudgetTransaction.Tipo.RESERVA, demand_request_id__in=[str(s.pk) for s in solicitacoes],
             pool__isnull=False,
-        ).values("pool_id"),
+        ).values("pool_id")) | Q(pk=origem_id),
     ))
 
 
@@ -374,6 +380,16 @@ def registrar_movimento_do_limite(*, limite, tipo: str, valor: Decimal, demand_r
         demanda_id=str(demand_request.demanda_id), activity_id=demand_request.demanda.activity_id,
         justificativa=justificativa, saldo_posterior=saldo_posterior,
     )
+
+
+def exigir_limite_dentro_do_pool(limite: SpendingLimit) -> None:
+    """Depois de elevar e cobrir o pool: o remanejamento pode ter aberto o espaço do aumento."""
+    if limite.territorio_id is None:
+        return
+    try:
+        limites_service.exigir_dentro_do_pool(limite.rubrica_id, [limite.territorio_id], limite.periodo_inicio)
+    except budget_service.DRFValidationError as exc:
+        raise _regra_do_motor(exc) from exc
 
 
 def elevar_limite(*, limite: SpendingLimit, valor: Decimal, justificativa: str, usuario) -> None:

@@ -202,8 +202,8 @@ def _notificar_pool_se_piorou(movimento: "orcamento_service.MovimentoPool", *, d
     )
 
 
-def _checar_individual(*, solicitante, rubrica, valor: Decimal, consumo_previo: Decimal = ZERO) -> TravaCheck:
-    limite = orcamento_service.limite_efetivo(solicitante_id=solicitante.pk, rubrica_id=rubrica.pk)
+def _checar_individual(*, solicitante, rubrica, valor: Decimal, consumo_previo: Decimal = ZERO, limite=None) -> TravaCheck:
+    limite = limite or orcamento_service.limite_efetivo(solicitante_id=solicitante.pk, rubrica_id=rubrica.pk)
     if limite is None:
         saldo, bloqueado = ZERO, True
     else:
@@ -219,15 +219,16 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal, consumo_previo: 
 
 
 def verificar_duas_travas(
-    *, solicitante, rubrica, valor: Decimal, consumo_previo: Decimal = ZERO,
+    *, solicitante, rubrica, valor: Decimal, consumo_previo: Decimal = ZERO, limite=None,
 ) -> DuasTravasCheck:
-    """Somente leitura — não reserva nada.
+    """Somente leitura — não reserva nada. Sem `limite`, confere o limite efetivo do solicitante; quem
+    já tem reserva informa a linha dela, de onde o aumento vai sair.
 
     `consumo_previo`: quanto outras solicitações da mesma operação, na mesma
     rubrica, já vão reservar antes desta. Sai do saldo das duas travas — o
     limite individual e o pool territorial são os mesmos para todas."""
     individual = _checar_individual(
-        solicitante=solicitante, rubrica=rubrica, valor=valor, consumo_previo=consumo_previo,
+        solicitante=solicitante, rubrica=rubrica, valor=valor, consumo_previo=consumo_previo, limite=limite,
     )
     territorial = orcamento_service.consultar_pool(
         solicitante=solicitante, rubrica=rubrica, valor=valor, consumo_previo=consumo_previo,
@@ -279,13 +280,19 @@ def reler_reserva_travada(demand_request) -> None:
     reler_reserva(demand_request)
 
 
-def na_ordem_de_lock(solicitacoes, *, criar: bool = False):
+def na_ordem_de_lock(solicitacoes, *, criar: bool = False, travar_pools: bool = False, origem=None):
     """Percorre `solicitacoes`, já ordenadas por rubrica, travando ao entrar em cada rubrica todas as
     linhas de limite dela. Depois da virada do período, uma demanda pode ter reservas em linhas
-    diferentes; travá-las uma a uma, intercaladas com o pool, seguraria o pool esperando um limite."""
+    diferentes; travá-las uma a uma, intercaladas com o pool, seguraria o pool esperando um limite.
+
+    `travar_pools` trava também, em ordem de pk, os pools das reservas e a `origem` do remanejamento
+    da rubrica, para quem move várias solicitações e tocaria esses pools na ordem delas."""
     for rubrica_id, grupo in groupby(solicitacoes, key=lambda s: s.rubrica_id):
         grupo = list(grupo)
         orcamento_service.travar_limites_do_lote(grupo, rubrica_id=rubrica_id, criar=criar)
+        if travar_pools:
+            origem_id = origem.pk if origem is not None and origem.rubrica_id == rubrica_id else None
+            orcamento_service.travar_pools_das_reservas(grupo, origem_id=origem_id)
         yield from grupo
 
 

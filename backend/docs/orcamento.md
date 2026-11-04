@@ -27,12 +27,15 @@ Uma demanda só reserva se passar nas duas travas: primeiro o limite individual 
 - **Mais de um perfil:** vale o maior padrão.
 - **Sem limite nem padrão:** a demanda é bloqueada, com orientação para pedir recurso extra.
 - **Período:** vem de `budget_limit_period` (`mensal`, `trimestral`, `semestral` ou `vigencia`). A linha existente não muda se o parâmetro for alterado no meio do período.
-- **Virada do período:** com `budget_limit_carry_over`, a linha nova soma o saldo positivo da anterior.
+- **Virada do período:** com `budget_limit_carry_over`, a linha nova soma o saldo positivo da anterior, mesmo sem padrão no perfil.
 - **Reserva presa à linha:** ajuste, liberação e execução usam a linha em que a reserva foi feita, encontrada pelo ledger, mesmo depois da virada. Uma reserva nova usa o período novo.
-- **Alteração do padrão:** se já estiver em uso, vale a partir do período seguinte; sem uso, o próprio registro é corrigido.
-- **Redução:** nunca abaixo do já comprometido e executado.
-- **Sobrealocação:** com `budget_overallocation_allowed` desligado, criar ou alterar um limite é recusado se a soma do território passar do pool. O erro traz `soma_limites` e `valor_pool`.
+- **Alteração do padrão:** se já estiver em uso, vale a partir do período seguinte; sem uso, ou com período `vigencia`, o próprio registro é corrigido. Padrão encerrado não pode ser alterado.
+- **Redução:** não invalida o que já foi autorizado. O comprometido fica como está, e o novo teto vale para as próximas reservas, mesmo com saldo negativo.
+- **Sobrealocação:** com `budget_overallocation_allowed` desligado, um aumento de limite (cadastro, Django Admin ou recurso extra) é recusado se a soma do território passar do pool. O erro traz `soma_limites` e `valor_pool`. O pool fica travado até o commit, para dois aumentos simultâneos não passarem. Reduzir nunca é recusado.
+- **Sobreposição:** duas linhas individuais do mesmo usuário e rubrica não podem cobrir o mesmo dia. A única exceção é a linha herdada do mesmo período, que vira sobrescrita.
+- **Ledger da linha:** a linha criada do padrão abre o ledger com um `aumento_limite` do valor dela, que já inclui o saldo acumulado.
 - **Recurso extra aprovado:** eleva a linha do período vigente na data da decisão, que vira sobrescrita. `periodo_aplicacao` é texto livre e não define o período.
+- **Django Admin:** altera só linhas individuais. O padrão por perfil é cadastrado pela rota de limites.
 
 ## Ledger
 
@@ -89,7 +92,7 @@ No SGD, só a porta `apps.sgd.services.orcamento` importa o motor e `apps.sgp.bu
 
 | Perfil | Pools | Limites |
 |---|---|---|
-| UGP, FGD, Super Admin | Todos | Todos |
+| UGP, Super Admin, FGD | Todos | Todos |
 | Articulador Estadual | Nacional, e estaduais e territoriais do próprio estado | Do próprio estado |
 | ADT/ACR e demais | Territorial do próprio território | O próprio |
 
@@ -100,6 +103,8 @@ No SGD, só a porta `apps.sgd.services.orcamento` importa o motor e `apps.sgp.bu
 
 **O RLS protege o que as views leem. A autorização das operações fica nos serviços.** O motor age em nome de outra pessoa, e por isso `apps.sgp.budget.rls.visao_total` define o papel `super-admin` durante a operação e o restaura no fim. Usam a visão total as operações de saldo de `apps.sgd.services.balance`, a prévia da decisão, `verificar_saldos` e a task `check_budget_threshold_alert`. Fora de uma requisição, sem isso, as tabelas aparecem vazias e sem erro nenhum.
 
+Os agregados também usam visão total: o `valor_distribuido` do nacional e o aprovado da rota da Meta são os mesmos para todo perfil, e o recorte de quais linhas cada um vê fica nos serviços. A rota de pools busca o pool com visão total antes de autorizar, para o pool de outro estado dar `403`, e não `404`.
+
 ## Ordem de lock
 
 Toda transação que trava mais de uma destas linhas segue esta ordem:
@@ -109,7 +114,7 @@ Toda transação que trava mais de uma destas linhas segue esta ordem:
 3. `Demand`.
 4. `DemandRequest`.
 
-Dentro de uma rubrica, nenhuma transação trava um limite depois de um pool. Depois da virada do período, uma demanda pode ter reservas em duas linhas de limite: travá-las uma a uma, intercaladas com o pool, abriria um ciclo com o cancelamento em lote. Por isso `balance.na_ordem_de_lock` trava, ao entrar em cada rubrica, as linhas das reservas e as do período vigente de todos os solicitantes envolvidos.
+Dentro de uma rubrica, nenhuma transação trava um limite depois de um pool. Depois da virada do período, uma demanda pode ter reservas em duas linhas de limite: travá-las uma a uma, intercaladas com o pool, abriria um ciclo com o cancelamento em lote. Por isso `balance.na_ordem_de_lock` trava, ao entrar em cada rubrica, as linhas das reservas e as do período vigente de todos os solicitantes envolvidos. Na autorização e na conclusão, trava em seguida, em ordem de pk, os pools das reservas e a origem do excedente, antes de mover qualquer solicitação.
 
 O `FOR UPDATE` trava só a linha da tabela da ordem: com JOIN na query (`select_related` ou um `ordering` por FK), usar `select_for_update(of=("self",))`. Sem isso, a linha do usuário fica travada junto, e o commit de outra transação que gravou uma notificação, auditoria ou etapa para ele espera esse lock na checagem da FK, fechando um ciclo com a `Demand`.
 
@@ -118,17 +123,17 @@ As transições de status passam por `apps.sgd.services.workflow.executar_transi
 | Caminho | O que trava |
 |---|---|
 | Submissão | Por rubrica: linhas de limite (a do período é criada aqui, se faltar) → pool → `Demand` → `DemandRequest` |
-| Autorização, recusa, cancelamento pelo solicitante ou pela UGP/Super Admin, conclusão pela FGD | Por rubrica: linhas de limite → pool → `Demand` → `DemandRequest` (estado da reserva, `valor_autorizado` e `valor_pago`, em ordem de pk) |
-| Autorização com excedente (remanejamento emergencial) | Por rubrica: linhas de limite → pools (origem e o da reserva, em ordem de pk) → depois segue como a autorização |
+| Autorização, recusa, cancelamento pelo solicitante ou pela UGP/Super Admin, conclusão pela FGD | Por rubrica: linhas de limite → pools das reservas, em ordem de pk → `Demand` → `DemandRequest` (estado da reserva, `valor_autorizado` e `valor_pago`, em ordem de pk). Na conclusão, só as solicitações ainda sem pagamento |
+| Autorização com excedente (remanejamento emergencial) | Por rubrica: linhas de limite → pools (origem e os das reservas, em ordem de pk) → depois segue como a autorização |
 | Pré-autorização, devolução, início do atendimento | Só a `Demand` |
-| Importação do Arlo, por linha | Limite → pool da solicitação paga → `Demand` (status relido) → `DemandRequest`. Cada linha numa transação própria |
+| Importação do Arlo, por linha | Limite → pool da solicitação paga → `Demand` (status relido) → `DemandRequest`. Cada linha numa transação própria. A última linha conclui a demanda sem travar mais saldo, porque já está tudo pago |
 | Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todas as linhas de limite e depois todos os pools; só então as `Demand`, em ordem de pk, e por fim as `DemandRequest`. Se uma demanda mudou, a transação volta e a task é repetida (até 3 vezes) |
 | Edição da demanda; inclusão de solicitação | Só a `Demand` |
 | Edição e remoção de solicitação | Limite → pool (se há reserva) → `Demand` → `DemandRequest`; a edição relê a reserva já com o limite travado |
-| Decisão de recurso extra | Pedido → linha de limite do período → pools (territorial e origem, em ordem de pk) → `Demand` → todas as `DemandRequest` da demanda |
+| Decisão de recurso extra | Pedido → linha de limite do período → pools (territorial e origem, em ordem de pk) → `Demand` → todas as `DemandRequest` da demanda. Com a sobrealocação desligada, relê o pool territorial, já travado |
 | Parecer, devolução, submissão e edição do pedido | Só o pedido |
 | Criação do pedido | A `Demand`, e depois o pedido novo, que nenhuma outra transação enxerga antes do commit |
-| Cadastro de limite (`/sgp/orcamento/limites/`, alias e Django Admin) | Só o limite |
+| Cadastro de limite (`/sgp/orcamento/limites/`, alias e Django Admin) | O limite. Com a sobrealocação desligada, depois os pools territoriais envolvidos, em ordem de território |
 | `remanejar`, `atualizar_valor_alocado` | Pools em ordem crescente de pk |
 
 ## Reconciliação
@@ -168,7 +173,7 @@ Resolve o nível pelo perfil do usuário: UGP/Super Admin → nacional, Articula
 
 ### `POST /api/v1/sgp/orcamento/pools/`, `PATCH`/`DELETE .../pools/{id}/` e `GET .../pools/{id}/transacoes/`
 
-Distribuição do orçamento. Só o nível nacional não tem pai. Estadual e territorial são limitados pelo saldo do nível acima, e uma `reserva_ugp` não recebe filhos. Pool repetido retorna `400`. UGP e Super Admin alteram qualquer nível; o Articulador, só os territórios do próprio estado.
+Distribuição do orçamento, a única forma de alterar um pool: no Django Admin ele é só consulta. Só o nível nacional não tem pai. Estadual e territorial são limitados pelo saldo do nível acima, e uma `reserva_ugp` não recebe filhos. Pool repetido retorna `400`. UGP e Super Admin alteram qualquer nível; o Articulador, só os territórios do próprio estado.
 
 As rotas antigas seguem como alias enquanto o front migra:
 
@@ -197,13 +202,17 @@ Os campos mantêm o nome e recebem o id do pool. Sem saldo na origem, retorna `4
   "rubrica": "diarias",
   "disponivel": "100.00",
   "solicitado": "3000.00",
+  "valor_faltante": "2900.00",
+  "acao_sugerida": "informar_outra_origem",
   "detail": "Saldo insuficiente na origem: R$ 100.00 disponível."
 }
 ```
 
+`trava: "origem"` é um valor a mais em relação às duas travas da submissão: aqui o saldo em questão é o do pool de origem.
+
 ### `GET`/`POST /api/v1/sgp/orcamento/limites/` e `PATCH .../limites/{id}/`
 
-Só Super Admin e UGP. A lista traz os limites vigentes em `?data=` (hoje, se omitido), com os filtros `?escopo=`, `?rubrica=` (slug), `?user=` e `?perfil=` (slug).
+Só Super Admin e UGP. O padrão por perfil aceita só os perfis operacionais (ADT/ACR e Articulador Estadual). A lista traz os limites vigentes em `?data=` (hoje, se omitido), com os filtros `?escopo=`, `?rubrica=` (slug), `?user=` e `?perfil=` (slug).
 
 ```json
 {"escopo": "perfil", "perfil": 2, "rubrica": 1, "valor_limite": "1000.00"}
@@ -222,7 +231,7 @@ Matriz Rubrica × Nível: uma linha por pool no escopo do perfil, com o `id` que
 
 | Perfil | Sem filtro | Drill-down |
 |---|---|---|
-| `super-admin`, `ugp` | Todos os pools | Qualquer estado ou território |
+| `super-admin`, `ugp`, `fgd` | Todos os pools | Qualquer estado ou território |
 | `articulador-estadual` | Nacional e os do próprio estado | Só o próprio estado (`403` fora dele) |
 | `adt-acr` | Os do próprio território | Só o próprio território; `estado=` retorna `403` |
 

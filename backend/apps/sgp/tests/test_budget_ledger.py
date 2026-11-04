@@ -123,6 +123,10 @@ class TestConstraints:
         with pytest.raises(IntegrityError), transaction.atomic():
             BudgetPoolFactory(valor_alocado=Decimal("100"), valor_comprometido=Decimal("80"), valor_executado=Decimal("30"))
 
+    def test_territorial_nao_aceita_estado(self, state_rn, territory_rn):
+        with pytest.raises(IntegrityError), transaction.atomic():
+            BudgetPoolFactory(nivel=Nivel.TERRITORIAL, estado=state_rn, territorio=territory_rn)
+
     def test_pool_aceita_saldo_zero(self):
         pool = BudgetPoolFactory(valor_alocado=Decimal("100"), valor_comprometido=Decimal("70"), valor_executado=Decimal("30"))
 
@@ -340,3 +344,66 @@ class TestRlsPorPerfil:
 
     def test_ugp_ve_todas_as_transacoes(self, cenario):
         assert _visiveis("sgp_budgettransaction", role="ugp") == {t.pk for t in cenario["transacoes"].values()}
+
+
+class TestAgregadosIgnoramOFiltroDoRls:
+    """Sob o papel de runtime: os totais são os mesmos para todo perfil. A suíte roda como superusuário,
+    que passa por cima do RLS, e não pegaria o recorte sem isto."""
+
+    @pytest.fixture
+    def como_runtime(self):
+        with connection.cursor() as cursor:
+            cursor.execute("CREATE ROLE runtime_orcamento_teste NOLOGIN NOBYPASSRLS;")
+            cursor.execute("GRANT USAGE ON SCHEMA public TO runtime_orcamento_teste;")
+            cursor.execute("GRANT SELECT ON ALL TABLES IN SCHEMA public TO runtime_orcamento_teste;")
+
+        def entrar(*, role, territorios):
+            with connection.cursor() as cursor:
+                cursor.execute("SET LOCAL ROLE runtime_orcamento_teste;")
+                cursor.execute("SELECT set_config('app.user_role', %s, true)", [role])
+                cursor.execute("SELECT set_config('app.user_territorios', %s, true)", [territorios])
+                cursor.execute("SELECT set_config('app.current_user_id', '', true)")
+
+        yield entrar
+        with connection.cursor() as cursor:
+            cursor.execute("RESET ROLE;")
+
+    @pytest.fixture
+    def rubrica_distribuida(self, state_rn, state_ce):
+        rubrica = BudgetRubricaFactory()
+        BudgetPoolFactory(rubrica=rubrica, nivel=Nivel.NACIONAL, estado=None, territorio=None, valor_alocado=Decimal("10000"))
+        BudgetPoolFactory(rubrica=rubrica, nivel=Nivel.ESTADUAL, estado=state_rn, territorio=None, valor_alocado=Decimal("4000"))
+        BudgetPoolFactory(rubrica=rubrica, nivel=Nivel.ESTADUAL, estado=state_ce, territorio=None, valor_alocado=Decimal("3000"))
+        return rubrica
+
+    def test_articulador_ve_o_distribuido_de_todos_os_estados_na_matriz(
+        self, como_runtime, rubrica_distribuida, usuario_articulador_rn, territory_rn,
+    ):
+        como_runtime(role="articulador-estadual", territorios=str(territory_rn.pk))
+
+        linhas = budget_service.matriz_orcamento_para_usuario(usuario_articulador_rn, rubrica_slug=rubrica_distribuida.slug)
+
+        nacional = next(linha for linha in linhas if linha["nivel"] == "nacional")
+        assert nacional["valor_distribuido"] == Decimal("7000")
+        assert nacional["saldo_disponivel"] == Decimal("3000")
+        assert {linha["nivel"] for linha in linhas} == {"nacional", "estadual"}
+        assert len(linhas) == 2
+
+    def test_articulador_ve_o_distribuido_de_todos_os_estados_no_painel_de_um_nivel(
+        self, como_runtime, rubrica_distribuida, territory_rn,
+    ):
+        como_runtime(role="articulador-estadual", territorios=str(territory_rn.pk))
+
+        linha = budget_service.painel_orcamento(nivel=Nivel.NACIONAL, rubrica_slug=rubrica_distribuida.slug)[0]
+
+        assert linha["valor_distribuido"] == Decimal("7000")
+
+    def test_adt_ve_o_aprovado_nacional_na_rota_da_meta(self, como_runtime, rubrica_distribuida, usuario_adt_rn, territory_rn):
+        como_runtime(role="", territorios=str(territory_rn.pk))
+
+        linhas = budget_service.orcamento_por_rubrica(usuario_adt_rn)
+
+        linha = next(linha for linha in linhas if linha["rubrica"].pk == rubrica_distribuida.pk)
+        assert linha["valor_aprovado"] == Decimal("10000")
+        assert linha["valor_distribuido"] == Decimal("7000")
+        assert linha["detalhamento"] == []

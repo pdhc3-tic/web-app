@@ -107,10 +107,12 @@ def preview_impacto(demand_request, valor: Decimal, *, origem=None) -> dict:
     valor_reservado = demand_request.valor_autorizado or demand_request.valor_estimado
     delta = valor - valor_reservado
 
+    # A linha da reserva, que pode ser de um período encerrado: é dela que o aumento vai sair.
+    limite = orcamento_service.limite_da_solicitacao(demand_request)
     with orcamento_service.pelo_solicitante():
         if delta > Decimal("0"):
             check = balance_service.verificar_duas_travas(
-                solicitante=solicitante, rubrica=rubrica, valor=delta,
+                solicitante=solicitante, rubrica=rubrica, valor=delta, limite=limite,
             )
             disponivel, trava_bloqueada = check.disponivel, check.trava_bloqueada
             pool = check.territorial.pool
@@ -121,7 +123,6 @@ def preview_impacto(demand_request, valor: Decimal, *, origem=None) -> dict:
             ).pool
             disponivel, trava_bloqueada = True, None
 
-    limite = orcamento_service.limite_da_solicitacao(demand_request)
     acima_do_limite = remanejado = Decimal("0")
     if origem is not None:
         # O remanejamento vai para o pool da reserva, como na autorização.

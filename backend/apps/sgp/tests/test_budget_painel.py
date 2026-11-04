@@ -356,6 +356,17 @@ class TestPainelEscopoTerritorial:
         assert auth_client_articulador_rn.get(f"{PAINEL_URL}?estado={state_ce.sigla}").status_code == 403
         assert auth_client_articulador_rn.get(f"{PAINEL_URL}?territorio={territory_ce.pk}").status_code == 403
 
+    def test_fgd_le_a_matriz_como_a_ugp(self, auth_client_fgd, state_rn):
+        nacional = _pool_nacional(valor_alocado=Decimal("100"))
+        estadual = BudgetPoolFactory(
+            rubrica=nacional.rubrica, nivel=Nivel.ESTADUAL, estado=state_rn, territorio=None, valor_alocado=Decimal("10"),
+        )
+
+        response = auth_client_fgd.get(PAINEL_URL)
+
+        assert response.status_code == 200
+        assert {linha["id"] for linha in response.data} >= {nacional.pk, estadual.pk}
+
     def test_ugp_recebe_o_id_do_pool_nacional_para_a_origem_do_excedente(self, auth_client_super_admin):
         nacional = _pool_nacional(valor_alocado=Decimal("100"))
 
@@ -489,7 +500,8 @@ class TestPainelPerformance:
                 valor_alocado=Decimal("200"),
             )
 
-        with django_assert_max_num_queries(4):
+        # 2 de perfil, pools e o distribuído, com os 5 da visão total em volta dele.
+        with django_assert_max_num_queries(9):
             response = auth_client_super_admin.get(PAINEL_URL)
 
         assert response.status_code == 200
@@ -505,8 +517,8 @@ class TestPainelPerformance:
             valor_alocado=Decimal("200"),
         )
 
-        # Validação dos 4 filtros, perfil, posse do território, pools e executado da Meta.
-        with django_assert_max_num_queries(8):
+        # Validação dos 4 filtros, perfil, posse do território, pools, a visão total e o executado da Meta.
+        with django_assert_max_num_queries(13):
             response = auth_client_articulador_rn.get(
                 f"{PAINEL_URL}?meta={meta.pk}&rubrica={rubrica.slug}"
                 f"&estado={state_rn.sigla}&territorio={territory_rn.pk}"

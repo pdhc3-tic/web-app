@@ -430,3 +430,34 @@ def test_escopo_invalido_na_listagem_de_remanejamentos_e_400(usuario_ugp):
 @pytest.mark.parametrize("perfil", ["solicitante_rn", "usuario_articulador_rn"])
 def test_quem_nao_e_da_coordenacao_nao_lista_remanejamentos(request, perfil):
     assert _cliente(request.getfixturevalue(perfil)).get(TRANSFERENCIAS).status_code == 403
+
+
+def test_autorizacao_trava_a_origem_junto_dos_pools_das_reservas(
+    demanda, demand_request_rn, solicitante_rn, usuario_ugp, origem, allocation_territorial_rn, limite_individual_rn,
+):
+    """A redução de uma solicitação não pode travar o pool territorial antes de o aumento de outra travar a
+    origem: um remanejamento em sentido contrário fecharia o ciclo."""
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    from apps.sgd.services import balance as balance_service
+
+    segunda = DemandRequestFactory(
+        demanda=demand_request_rn.demanda, tipo="diaria", rubrica=demand_request_rn.rubrica, valor_estimado=Decimal("500"),
+    )
+    for solicitacao in (demand_request_rn, segunda):
+        balance_service.reservar_duas_travas(demand_request=solicitacao, usuario=solicitante_rn)
+    demanda_atual = demand_request_rn.demanda
+    demanda_atual.status = "pre_autorizada"
+    demanda_atual.save(update_fields=["status"])
+
+    with CaptureQueriesContext(connection) as consultas:
+        executar_transicao(
+            demanda_atual, "autorizada", ator=usuario_ugp,
+            ajustes={demand_request_rn.pk: Decimal("900"), segunda.pk: Decimal("9000")},
+            excedente_autorizado=True, origem_allocation=origem, justificativa="Emergência.",
+        )
+
+    primeira_trava_de_pool = next(q["sql"] for q in consultas if "FOR UPDATE" in q["sql"] and '"sgp_budgetpool"' in q["sql"])
+    assert f'"sgp_budgetpool"."id" = {origem.pk}' in primeira_trava_de_pool
+    assert '"demand_request_id" IN' in primeira_trava_de_pool

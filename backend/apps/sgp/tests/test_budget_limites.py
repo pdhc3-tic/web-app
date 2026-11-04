@@ -169,6 +169,29 @@ class TestViradaDePeriodo:
 
         assert limite.valor_limite == Decimal("1800")
 
+    def test_acumulo_sem_padrao_gera_a_linha_so_com_o_saldo(self, adt, rubrica, configurar):
+        configurar("budget_limit_carry_over", "True")
+        self._linha_do_trimestre_anterior(adt, rubrica, executado="200")
+
+        with freeze_time("2027-01-05"):
+            limite = limites.travar_limite_vigente(user_id=adt.pk, rubrica_id=rubrica.pk, criar=True)
+
+        assert limite.valor_limite == Decimal("800")
+        assert limite.herdado is True
+
+    def test_linha_criada_abre_o_ledger_com_o_valor_e_o_acumulado(self, adt, role_adt, rubrica, configurar):
+        configurar("budget_limit_carry_over", "True")
+        _padrao(role_adt, rubrica, "1000")
+        self._linha_do_trimestre_anterior(adt, rubrica, executado="200")
+
+        with freeze_time("2027-01-05"):
+            limite = limites.travar_limite_vigente(user_id=adt.pk, rubrica_id=rubrica.pk, criar=True)
+
+        transacao = BudgetTransaction.objects.get(spending_limit=limite)
+        assert transacao.tipo == "aumento_limite"
+        assert transacao.valor == Decimal("1800")
+        assert (transacao.saldo_anterior, transacao.saldo_posterior) == (Decimal("0"), Decimal("1800"))
+
     def test_acumulo_nao_desconta_saldo_negativo(self, adt, role_adt, rubrica, configurar):
         configurar("budget_limit_carry_over", "True")
         _padrao(role_adt, rubrica, "1000")
@@ -241,6 +264,24 @@ class TestCadastroDoPadrao:
         assert novo.pk == padrao.pk
         assert limites.limite_efetivo(adt.pk, rubrica.pk).valor_limite == Decimal("2000")
 
+    def test_na_vigencia_do_ted_corrige_o_proprio_registro(self, adt, role_adt, rubrica, usuario, configurar):
+        """Com período único não há período seguinte: sem isso, o início viraria 2100-01-01."""
+        configurar("budget_limit_period", "vigencia", TipoConfiguracao.STRING)
+        padrao = _padrao(role_adt, rubrica, "1000")
+        limites.travar_limite_vigente(user_id=adt.pk, rubrica_id=rubrica.pk, criar=True)
+
+        novo = limites.alterar_padrao(padrao.pk, valor_limite=Decimal("2000"), justificativa="Revisão.", usuario=usuario)
+
+        assert novo.pk == padrao.pk
+        assert novo.valor_limite == Decimal("2000")
+        assert novo.periodo_fim == limites.FIM_EM_ABERTO
+
+    def test_padrao_encerrado_nao_pode_ser_alterado(self, role_adt, rubrica, usuario):
+        padrao = _padrao(role_adt, rubrica, "1000", fim=date(2026, 9, 30))
+
+        with pytest.raises(ValidationError):
+            limites.alterar_padrao(padrao.pk, valor_limite=Decimal("2000"), justificativa="x", usuario=usuario)
+
     def test_alteracao_de_valor_exige_justificativa(self, role_adt, rubrica, usuario):
         padrao = _padrao(role_adt, rubrica, "1000")
 
@@ -281,12 +322,31 @@ class TestSobrescrita:
             user=adt, rubrica=rubrica, valor_limite=Decimal("1000"), valor_comprometido=Decimal("800"),
         )
 
-        with pytest.raises(ValidationError):
-            limites.alterar_sobrescrita(limite.pk, valor_limite=Decimal("700"), justificativa="x", usuario=usuario)
+        limites.alterar_sobrescrita(limite.pk, valor_limite=Decimal("500"), justificativa="x", usuario=usuario)
 
-        limites.alterar_sobrescrita(limite.pk, valor_limite=Decimal("800"), justificativa="x", usuario=usuario)
         limite.refresh_from_db()
-        assert limite.valor_limite == Decimal("800")
+        assert limite.valor_limite == Decimal("500")
+        assert limite.valor_comprometido == Decimal("800")
+        assert limite.saldo_disponivel == Decimal("-300")
+
+    def test_periodo_no_meio_de_uma_linha_existente_e_recusado(self, adt, rubrica, usuario):
+        SpendingLimitFactory(user=adt, rubrica=rubrica, valor_limite=Decimal("1000"), valor_comprometido=Decimal("1000"))
+
+        with pytest.raises(ValidationError):
+            limites.criar_sobrescrita(
+                user=adt, rubrica=rubrica, valor_limite=Decimal("1000"), justificativa="x", usuario=usuario,
+                periodo_inicio=date(2026, 11, 15), periodo_fim=date(2026, 12, 31),
+            )
+
+    def test_periodo_diferente_do_da_linha_herdada_e_recusado(self, adt, role_adt, rubrica, usuario):
+        _padrao(role_adt, rubrica, "1000")
+        limites.travar_limite_vigente(user_id=adt.pk, rubrica_id=rubrica.pk, criar=True)
+
+        with pytest.raises(ValidationError):
+            limites.criar_sobrescrita(
+                user=adt, rubrica=rubrica, valor_limite=Decimal("2000"), justificativa="x", usuario=usuario,
+                periodo_inicio=date(2026, 11, 15), periodo_fim=date(2026, 12, 31),
+            )
 
 
 @freeze_time("2026-11-03")
@@ -315,6 +375,30 @@ class TestSobrealocacao:
 
         with pytest.raises(ValidationError):
             limites.criar_padrao(perfil=role_adt, rubrica=rubrica, valor_limite=Decimal("600"), usuario=usuario)
+
+    def test_desligada_nao_recusa_reducao_com_a_soma_ja_acima_do_pool(self, adt, rubrica, territory_rn, usuario, configurar):
+        self._pool(rubrica, territory_rn, "100")
+        limite = SpendingLimitFactory(user=adt, rubrica=rubrica, territorio=territory_rn, valor_limite=Decimal("800"))
+        configurar("budget_overallocation_allowed", "False")
+
+        limites.alterar_sobrescrita(limite.pk, valor_limite=Decimal("700"), justificativa="x", usuario=usuario)
+
+        limite.refresh_from_db()
+        assert limite.valor_limite == Decimal("700")
+
+    def test_desligada_trava_o_pool_para_serializar_os_aumentos(self, adt, rubrica, territory_rn, usuario, configurar):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        configurar("budget_overallocation_allowed", "False")
+        self._pool(rubrica, territory_rn, "1000")
+
+        with CaptureQueriesContext(connection) as consultas:
+            limites.criar_sobrescrita(
+                user=adt, rubrica=rubrica, valor_limite=Decimal("500"), justificativa="x", usuario=usuario,
+            )
+
+        assert any("FOR UPDATE" in q["sql"] and '"sgp_budgetpool"' in q["sql"] for q in consultas)
 
     def test_ligada_aceita_soma_acima_do_pool(self, adt, rubrica, territory_rn, usuario, configurar):
         configurar("budget_overallocation_allowed", "True")
@@ -395,6 +479,25 @@ class TestApi:
 
         assert resposta.status_code == 200, resposta.data
         assert Decimal(resposta.data["valor_limite"]) == Decimal("1500")
+
+    def test_padrao_so_para_perfil_operacional(self, auth_client_super_admin, rubrica):
+        fgd = RoleFactory(slug="fgd", nome="FGD")
+
+        resposta = auth_client_super_admin.post(URL, {
+            "escopo": "perfil", "perfil": fgd.pk, "rubrica": rubrica.pk, "valor_limite": "1000",
+        }, format="json")
+
+        assert resposta.status_code == 400
+        assert "perfil" in resposta.data
+
+    def test_apagar_territorio_com_limite_nao_e_barrado_pelo_limite(self, adt, rubrica, territory_rn):
+        limite = SpendingLimitFactory(user=adt, rubrica=rubrica, territorio=territory_rn)
+        adt.profiles.all().delete()
+
+        territory_rn.delete()
+
+        limite.refresh_from_db()
+        assert limite.territorio_id is None
 
     def test_ugp_cadastra(self, api_client, role_adt, rubrica):
         ugp = UserFactory(profiles=[(RoleFactory(slug="ugp", nome="UGP"), None)])

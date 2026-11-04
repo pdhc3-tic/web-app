@@ -14564,6 +14564,8 @@ components:
         perfil:
           type: integer
           nullable: true
+          description: 'Só os perfis operacionais, que criam demandas: ADT/ACR e Articulador
+            Estadual.'
         user:
           type: integer
           nullable: true

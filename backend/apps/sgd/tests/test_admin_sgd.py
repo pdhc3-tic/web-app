@@ -100,28 +100,14 @@ def test_admin_nao_move_o_limite_para_outro_solicitante_ou_rubrica(limite_indivi
     assert not {"user", "rubrica"} & set(na_criacao)
 
 
-def test_admin_recusa_reduzir_o_limite_abaixo_do_comprometido_e_executado(limite_individual_rn):
+def test_admin_aceita_reduzir_abaixo_do_comprometido(limite_individual_rn):
+    # O rebaixamento preserva o comprometido; o novo teto vale para as próximas reservas.
     SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(
         valor_comprometido=Decimal("3000"), valor_executado=Decimal("1000"),
     )
     limite_individual_rn.refresh_from_db()
 
-    form = _formulario_de_edicao(limite_individual_rn, valor_limite="3999.99")
-
-    assert not form.is_valid()
-    assert form.errors["valor_limite"] == [
-        "Não pode ser reduzido abaixo do já comprometido e executado: R$ 4.000,00."
-    ]
-    assert _formulario_de_edicao(limite_individual_rn, valor_limite="4000").is_valid()
-
-
-def test_admin_aceita_aumentar_limite_que_ja_esta_abaixo_do_comprometido(limite_individual_rn):
-    # Depois de um excedente autorizado o comprometido passa do limite.
-    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_comprometido=Decimal("7000"))
-    limite_individual_rn.refresh_from_db()
-
-    assert _formulario_de_edicao(limite_individual_rn, valor_limite="6000").is_valid()
-    assert not _formulario_de_edicao(limite_individual_rn, valor_limite="4000").is_valid()
+    assert _formulario_de_edicao(limite_individual_rn, valor_limite="3999.99").is_valid()
 
 
 def test_admin_recusa_limite_negativo(limite_individual_rn):
@@ -192,17 +178,73 @@ def test_post_do_admin_altera_so_o_valor_limite(client_super_admin, limite_indiv
     assert limite_individual_rn.user_id != outro_solicitante.pk
 
 
-def test_post_do_admin_recusa_reduzir_abaixo_do_comprometido(client_super_admin, limite_individual_rn):
+def test_post_do_admin_reduz_abaixo_do_comprometido_sem_mexer_no_saldo(client_super_admin, limite_individual_rn):
     SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(valor_comprometido=Decimal("3000"))
 
     resposta = client_super_admin.post(_url_do_limite(limite_individual_rn), {
-        "valor_limite": "2000", "_save": "Salvar",
+        "valor_limite": "2000", "justificativa": "Revisão.", "_save": "Salvar",
     })
 
+    assert resposta.status_code == 302
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_limite == Decimal("2000")
+    assert limite_individual_rn.valor_comprometido == Decimal("3000")
+
+
+def test_admin_recusa_aumento_acima_do_pool_com_sobrealocacao_desligada(
+    client_super_admin, limite_individual_rn, allocation_territorial_rn, territory_rn,
+):
+    from django.core.cache import cache
+
+    from apps.core.models.system_config import SystemConfig, TipoConfiguracao
+
+    SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(territorio=territory_rn)
+    SystemConfig.objects.update_or_create(
+        chave="budget_overallocation_allowed", defaults={"valor": "False", "tipo": TipoConfiguracao.BOOLEAN},
+    )
+    try:
+        resposta = client_super_admin.post(_url_do_limite(limite_individual_rn), {
+            "valor_limite": "99999", "justificativa": "Aumento.", "territorio": territory_rn.pk, "_save": "Salvar",
+        })
+    finally:
+        cache.delete("system_config:budget_overallocation_allowed")
+
     assert resposta.status_code == 200
-    assert "Não pode ser reduzido abaixo do já comprometido e executado: R$ 3.000,00." in resposta.content.decode()
+    assert "passa do pool" in resposta.content.decode()
     limite_individual_rn.refresh_from_db()
     assert limite_individual_rn.valor_limite == Decimal("5000")
+
+
+def test_admin_nao_altera_padrao_por_perfil(client_super_admin, solicitante_rn, rubrica_diarias):
+    from datetime import date
+
+    from apps.sgp.budget.limites import FIM_EM_ABERTO
+
+    padrao = SpendingLimit.objects.create(
+        escopo=SpendingLimit.Escopo.PERFIL, perfil=solicitante_rn.profiles.get().perfil, rubrica=rubrica_diarias,
+        valor_limite=Decimal("1000"), periodo_inicio=date(2026, 1, 1), periodo_fim=FIM_EM_ABERTO,
+    )
+
+    resposta = client_super_admin.post(_url_do_limite(padrao), {"valor_limite": "9000", "_save": "Salvar"})
+
+    assert resposta.status_code == 403
+    padrao.refresh_from_db()
+    assert padrao.valor_limite == Decimal("1000")
+
+
+def test_admin_do_pool_e_so_consulta(client_super_admin, allocation_territorial_rn):
+    url = f"/admin/sgp/budgetpool/{allocation_territorial_rn.pk}/change/"
+    valor = allocation_territorial_rn.valor_alocado
+
+    leitura = client_super_admin.get(url)
+    edicao = client_super_admin.post(url, {"valor_alocado": "1", "_save": "Salvar"})
+    exclusao = client_super_admin.post(f"/admin/sgp/budgetpool/{allocation_territorial_rn.pk}/delete/", {"post": "yes"})
+    criacao = client_super_admin.get("/admin/sgp/budgetpool/add/")
+
+    assert leitura.status_code == 200
+    assert (edicao.status_code, exclusao.status_code, criacao.status_code) == (403, 403, 403)
+    allocation_territorial_rn.refresh_from_db()
+    assert allocation_territorial_rn.valor_alocado == valor
 
 
 def test_post_do_admin_nao_exclui_limite_com_saldo(client_super_admin, limite_individual_rn):

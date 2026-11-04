@@ -1,5 +1,8 @@
+from decimal import Decimal
+
 from django import forms
 from django.contrib import admin
+from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from apps.sgd.models import (
     ApprovalStep,
@@ -12,6 +15,8 @@ from apps.sgd.models import (
 )
 from apps.sgd.services import orcamento as orcamento_service
 from apps.sgp.models import SpendingLimit
+
+ZERO = Decimal("0")
 
 
 class SalvaSoOQueOFormularioAlterou:
@@ -83,18 +88,36 @@ class SpendingLimitAdminForm(forms.ModelForm):
         dados = super().clean()
         # Na edição, `escopo` é somente leitura e não vem no formulário.
         escopo = dados.get("escopo") or self.instance.escopo
-        if escopo == SpendingLimit.Escopo.INDIVIDUAL and not dados.get("herdado") \
-                and not (dados.get("justificativa") or "").strip():
+        if escopo == SpendingLimit.Escopo.PERFIL:
+            self.add_error("escopo", "O padrão por perfil é cadastrado em /sgp/orcamento/limites/.")
+            return dados
+        if not dados.get("herdado") and not (dados.get("justificativa") or "").strip():
             self.add_error("justificativa", "Obrigatória em limite individual.")
+        if not self.errors:
+            self._conferir_saldo_e_periodo(dados)
         return dados
+
+    def _conferir_saldo_e_periodo(self, dados) -> None:
+        novo = self.instance.pk is None
+        user = dados["user"].pk if novo else self.instance.user_id
+        rubrica = dados["rubrica"].pk if novo else self.instance.rubrica_id
+        territorio = dados.get("territorio") or (None if novo else self.instance.territorio)
+        territorio_id = territorio.pk if territorio else orcamento_service.territorio_do_usuario(user)
+        inicio = dados["periodo_inicio"] if novo else self.instance.periodo_inicio
+        aumento = dados["valor_limite"] - (ZERO if novo else self.instance.valor_limite)
+        try:
+            if novo:
+                orcamento_service.exigir_sem_sobreposicao(user, rubrica, inicio, dados["periodo_fim"])
+            if territorio_id and aumento > ZERO:
+                orcamento_service.exigir_dentro_do_pool(rubrica, [territorio_id], inicio, ajuste=aumento)
+        except DRFValidationError as exc:
+            campo, mensagem = next(iter(exc.detail.items()))
+            self.add_error("valor_limite" if campo == "valor_limite" else None, str(mensagem[0] if isinstance(mensagem, list) else mensagem))
 
     def clean_valor_limite(self):
         valor = self.cleaned_data["valor_limite"]
         if valor < 0:
             raise forms.ValidationError("Não pode ser negativo.")
-        erro = self.instance.pk and self.instance.erro_de_reducao(valor)
-        if erro:
-            raise forms.ValidationError(erro)
         return valor
 
 
@@ -128,6 +151,7 @@ class SpendingLimitAdmin(SalvaSoOQueOFormularioAlterou, admin.ModelAdmin):
         valor_anterior = form.initial.get("valor_limite")
         if not change:
             obj.criado_por = request.user
+            obj.territorio_id = obj.territorio_id or orcamento_service.territorio_do_usuario(obj.user_id)
         super().save_model(request, obj, form, change)
         tipo = orcamento_service.TipoTransacao.AUMENTO_LIMITE
         if not change:
@@ -144,6 +168,12 @@ class SpendingLimitAdmin(SalvaSoOQueOFormularioAlterou, admin.ModelAdmin):
                     limite=obj, tipo=tipo, valor=obj.valor_limite - valor_anterior,
                     usuario=request.user, justificativa=obj.justificativa,
                 )
+
+    def has_change_permission(self, request, obj=None):
+        # O padrão por perfil tem regra própria de vigência: só pela rota de limites.
+        if obj is not None and obj.escopo == SpendingLimit.Escopo.PERFIL:
+            return False
+        return super().has_change_permission(request, obj)
 
     def has_delete_permission(self, request, obj=None):
         # Com saldo, as reservas e execuções ficariam sem limite. O `obj` do POST

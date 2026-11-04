@@ -11,6 +11,7 @@ from rest_framework.views import APIView
 from apps.core.permissions import IsAuthenticatedActiveAccess, IsSuperAdmin, IsUGP
 from apps.core.services.permissions import user_has_role
 from apps.sgp.budget import limites as limites_service
+from apps.sgp.budget.rls import visao_total
 from apps.sgp.filters import BudgetRubricaFilter
 from apps.sgp.models import BudgetPool, BudgetRubrica, SpendingLimit, WorkPlanMeta
 from apps.sgp.budget.serializers import (
@@ -41,6 +42,12 @@ class BudgetPoolViewSet(viewsets.ViewSet):
     continuam como alias enquanto o front migra. Wiring manual em urls.py, sem router."""
 
     permission_classes = [IsAuthenticatedActiveAccess]
+
+    def _pool(self, pk) -> BudgetPool:
+        """Com visão total: quem decide o acesso é `_autorizar`. Sob o RLS, o pool de outro estado
+        pareceria inexistente, com 404 em vez do 403 que explica a recusa."""
+        with visao_total():
+            return get_object_or_404(BudgetPool.objects.select_related("rubrica", "estado", "territorio"), pk=pk)
 
     def _autorizar(self, request, *, nivel, estado, territorio):
         user = request.user
@@ -88,7 +95,7 @@ class BudgetPoolViewSet(viewsets.ViewSet):
         responses={200: BudgetPoolSerializer},
     )
     def partial_update(self, request, pk=None):
-        pool = get_object_or_404(BudgetPool, pk=pk)
+        pool = self._pool(pk)
         self._autorizar(request, nivel=pool.nivel, estado=pool.estado, territorio=pool.territorio)
 
         entrada = BudgetPoolUpdateSerializer(data=request.data)
@@ -103,14 +110,14 @@ class BudgetPoolViewSet(viewsets.ViewSet):
 
     @extend_schema(responses={204: None})
     def destroy(self, request, pk=None):
-        pool = get_object_or_404(BudgetPool, pk=pk)
+        pool = self._pool(pk)
         self._autorizar(request, nivel=pool.nivel, estado=pool.estado, territorio=pool.territorio)
         budget_service.remover_pool(pool)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @extend_schema(responses=BudgetTransactionSerializer(many=True))
     def transacoes(self, request, pk=None):
-        pool = get_object_or_404(BudgetPool, pk=pk)
+        pool = self._pool(pk)
         escopo = budget_service.orcamento_detalhamento_scope(request.user)
         if escopo is not None and not BudgetPool.objects.filter(pk=pk).filter(escopo).exists():
             raise PermissionDenied("Você não tem acesso a esta alocação.")
