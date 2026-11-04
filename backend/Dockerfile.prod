@@ -20,4 +20,5 @@ RUN chmod +x /app/entrypoint.prod.sh
 EXPOSE 8000
 
 ENTRYPOINT ["/app/entrypoint.prod.sh"]
-CMD ["gunicorn", "setup.wsgi:application", "--bind", "0.0.0.0:8000"]
+# O navegador envia o cookie de sessão do Auth.js também nas chamadas à API.
+CMD ["gunicorn", "setup.wsgi:application", "--bind", "0.0.0.0:8000", "--limit-request-field_size", "32768"]
