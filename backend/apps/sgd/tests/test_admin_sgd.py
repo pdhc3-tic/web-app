@@ -377,3 +377,15 @@ def test_admin_nao_edita_o_territorio_nem_o_herdado(client_super_admin, limite_i
     limite_individual_rn.refresh_from_db()
     assert limite_individual_rn.territorio_id == territory_rn.pk
     assert limite_individual_rn.herdado is False
+
+
+def test_admin_nao_exclui_padrao_por_perfil(client_super_admin, solicitante_rn, rubrica_diarias):
+    padrao = SpendingLimit.objects.create(
+        escopo=SpendingLimit.Escopo.PERFIL, perfil=solicitante_rn.profiles.first().perfil, rubrica=rubrica_diarias,
+        valor_limite=Decimal("1000"), periodo_inicio=date(2026, 1, 1), periodo_fim=limites.FIM_EM_ABERTO,
+    )
+
+    resposta = client_super_admin.post(_url_do_limite(padrao, "delete"), {"post": "yes"})
+
+    assert resposta.status_code == 403
+    assert SpendingLimit.objects.filter(pk=padrao.pk).exists()

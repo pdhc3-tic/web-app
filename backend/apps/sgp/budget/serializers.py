@@ -248,6 +248,8 @@ class SpendingLimitCreateSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"perfil": "Obrigatório no padrão por perfil."})
             if attrs.get("user") is not None:
                 raise serializers.ValidationError({"user": "Só se aplica ao limite individual."})
+            if attrs.get("periodo_fim") is not None:
+                raise serializers.ValidationError({"periodo_fim": "O padrão por perfil vale até ser alterado."})
         else:
             if attrs.get("user") is None:
                 raise serializers.ValidationError({"user": "Obrigatório no limite individual."})

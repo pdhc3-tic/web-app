@@ -192,6 +192,9 @@ class SpendingLimitAdmin(SalvaSoOQueOFormularioAlterou, admin.ModelAdmin):
         # da exclusão vem travado por `get_object`.
         if obj is not None and (obj.valor_comprometido or obj.valor_executado):
             return False
+        # Sem o padrão, o perfil inteiro fica sem limite: só pela rota de limites.
+        if obj is not None and obj.escopo == SpendingLimit.Escopo.PERFIL:
+            return False
         return super().has_delete_permission(request, obj)
 
     def get_actions(self, request):

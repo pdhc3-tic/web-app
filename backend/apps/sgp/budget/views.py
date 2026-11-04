@@ -186,7 +186,7 @@ class RemanejamentoView(APIView):
         entrada.is_valid(raise_exception=True)
         dados = entrada.validated_data
 
-        debito, credito = budget_service.remanejar(
+        debito, credito = budget_service.remanejar_com_registro(
             origem=dados["origem_allocation"], destino=dados["destino_allocation"],
             valor=dados["valor"], usuario=request.user, justificativa=dados["justificativa"],
         )

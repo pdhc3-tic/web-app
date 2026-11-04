@@ -112,19 +112,32 @@ def deficit_individual(demanda: Demand, rubrica) -> Decimal:
     """O que falta no limite individual para a próxima submissão passar na rubrica:
     é o valor que o pedido de recurso extra registra sem `valor_solicitado`."""
     limite = orcamento_service.limite_efetivo(solicitante_id=demanda.solicitante_id, rubrica_id=rubrica.pk)
-    necessario = _necessario(demanda.solicitacoes.filter(rubrica=rubrica))
+    saldo = limite.saldo_disponivel if limite else ZERO
+    return _deficit(_necessario(demanda.solicitacoes.filter(rubrica=rubrica)), saldo)
+
+
+def _deficit(necessario: Decimal, saldo: Decimal) -> Decimal:
     # Tudo já reservado: nada a submeter na rubrica, mesmo com o saldo negativo por uma redução.
     if necessario <= ZERO:
         return ZERO
     # Sem truncar em zero: um excedente autorizado antes do remanejamento pontual
     # deixou saldo negativo, e o aumento precisa cobrir isso também.
-    saldo = limite.saldo_disponivel if limite else ZERO
     return necessario - saldo
+
+
+def _pode_pedir_para_aumentar_reserva(demanda: Demand, rubrica) -> bool:
+    """Em Devolvida com a reserva de pé, a edição para um valor maior é recusada pelo limite, com a
+    orientação de pedir recurso extra, e não fica gravada: o déficit não aparece nas solicitações."""
+    return demanda.status == "devolvida" and any(
+        solicitacao.reserva_ativa for solicitacao in demanda.solicitacoes.filter(rubrica=rubrica)
+    )
 
 
 def _exigir_valor_cobre_o_deficit(demanda: Demand, rubrica, valor: Decimal) -> None:
     deficit = deficit_individual(demanda, rubrica)
     if deficit <= ZERO:
+        if valor > ZERO and _pode_pedir_para_aumentar_reserva(demanda, rubrica):
+            return
         raise RegraDeNegocio("A demanda não está bloqueada pelo limite individual nesta rubrica.", campo="demanda")
     # O valor é livre para ajuste na devolução; o piso é o que falta no limite, e a UGP
     # pode conceder menos (aprovação parcial).
@@ -366,7 +379,7 @@ def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = N
                 if s.rubrica_id == pedido.rubrica_id
             ]
             necessario = _necessario(solicitacoes)
-            deficit = necessario - limite.saldo_disponivel
+            deficit = _deficit(necessario, limite.saldo_disponivel)
             if decisao == "aprovar" and valor_aprovado < deficit:
                 raise RegraDeNegocio(
                     f"A demanda precisa agora de {formatar_brl(deficit)} a mais no limite individual, acima dos "

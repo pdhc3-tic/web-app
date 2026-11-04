@@ -484,6 +484,18 @@ class TestBudgetThresholdAlertTask:
         assert rubrica.nome in notifications.first().titulo
 
     @patch("apps.core.tasks.notifications.send_email_notification.delay")
+    def test_alerta_diz_qual_e_o_territorio(self, mocked_delay, usuario_super_admin, territory_rn):
+        BudgetPoolFactory(
+            nivel=Nivel.TERRITORIAL, estado=None, territorio=territory_rn,
+            valor_alocado=Decimal("10000"), valor_comprometido=Decimal("9500"),
+        )
+
+        check_budget_threshold_alert()
+
+        notificacao = usuario_super_admin.notifications.get(evento="budget_allocation_red")
+        assert territory_rn.nome in notificacao.titulo
+
+    @patch("apps.core.tasks.notifications.send_email_notification.delay")
     def test_task_notifica_vermelhos_em_qualquer_nivel(
         self, mocked_delay, usuario, usuario_super_admin, state_rn, territory_rn,
     ):

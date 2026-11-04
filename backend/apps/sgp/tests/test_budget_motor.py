@@ -93,6 +93,21 @@ class TestOsTresNiveis:
         assert budget_service.resolver_nivel_do_usuario(usuario)[0] == nivel
 
 
+class TestReducaoDoPoolPai:
+    def test_nao_reduz_abaixo_do_distribuido(self):
+        nacional = BudgetPoolFactory(nivel=Nivel.NACIONAL, estado=None, territorio=None, valor_alocado=Decimal("1000"))
+        BudgetPoolFactory(
+            rubrica=nacional.rubrica, nivel=Nivel.ESTADUAL, territorio=None,
+            estado=StateFactory(sigla="RN", nome="Rio Grande do Norte"), valor_alocado=Decimal("800"),
+        )
+
+        with pytest.raises(budget_service.DRFValidationError):
+            budget_service.atualizar_valor_alocado(nacional, novo_valor=Decimal("100"), usuario=UserFactory())
+
+        reduzido = budget_service.atualizar_valor_alocado(nacional, novo_valor=Decimal("800"), usuario=UserFactory())
+        assert reduzido.valor_alocado == Decimal("800")
+
+
 class TestReservar:
     def test_reservar_incrementa_comprometido(self):
         allocation = BudgetPoolFactory(valor_alocado=Decimal("1000"))

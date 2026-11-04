@@ -15,7 +15,7 @@ from apps.core.services.permissions import user_has_role, user_states, user_terr
 from apps.core.utils import get_config
 from apps.sgp.budget.ledger import lancar
 from apps.sgp.budget.rls import com_visao_total, visao_total
-from apps.sgp.models import BudgetPool, BudgetRubrica, BudgetTransaction
+from apps.sgp.models import BudgetPool, BudgetRubrica, BudgetTransaction, BudgetTransfer
 
 Nivel = BudgetPool.Nivel
 PERFIS_DE_LEITURA_NACIONAL = {"super-admin", "ugp", "fgd"}
@@ -325,6 +325,12 @@ def atualizar_valor_alocado(pool: BudgetPool, *, novo_valor: Decimal, usuario) -
             )
         })
 
+    distribuido = _distribuido_por_pool([pool]).get(pool.pk, ZERO)
+    if novo_valor < distribuido + minimo:
+        raise DRFValidationError({
+            "valor_alocado": f"Não é possível reduzir abaixo do que já desceu ao nível inferior (R$ {distribuido})."
+        })
+
     _travar_pai_e_checar_teto(
         rubrica=pool.rubrica, nivel=pool.nivel, territorio=pool.territorio, estado=pool.estado,
         valor_pretendido=novo_valor, exclude_pk=pool.pk,
@@ -359,7 +365,7 @@ def remover_pool(pool: BudgetPool) -> None:
 
 # ---------------------------------------------------------------------------
 # Motor de saldo — reserva, execução, liberação. API pública consumida pelo
-# SGD (que ainda não existe); nenhuma dependência de apps.sgd aqui.
+# SGD; nenhuma dependência de apps.sgd aqui.
 # ---------------------------------------------------------------------------
 
 BLOQUEIO_SALDO_ZERO = "Bloqueado para novas solicitações quando saldo da rubrica é zero."
@@ -647,6 +653,27 @@ def remanejar(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal,
     credito = lancar(
         pool=destino, tipo=BudgetTransaction.Tipo.REMANEJAMENTO, valor=valor, usuario=usuario,
         saldo_anterior=saldo_destino, saldo_posterior=_saldo_disponivel(destino), justificativa=justificativa,
+    )
+    return debito, credito
+
+
+@transaction.atomic
+def remanejar_com_registro(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal,
+                           usuario, justificativa: str) -> tuple[BudgetTransaction, BudgetTransaction]:
+    """O remanejamento feito direto pela coordenação, sem demanda envolvida: além do ledger, fica no
+    histórico de remanejamentos, com motivo, saldos, aprovador e IP."""
+    debito, credito = remanejar(
+        origem=origem, destino=destino, valor=valor, usuario=usuario, justificativa=justificativa,
+    )
+    BudgetTransfer.objects.create(
+        tipo=(
+            BudgetTransfer.Tipo.ENTRE_NIVEIS if origem.nivel != destino.nivel
+            else BudgetTransfer.Tipo.ENTRE_TERRITORIOS
+        ),
+        pool_origem=origem, pool_destino=destino, valor=valor, motivo=justificativa,
+        saldo_origem_antes=debito.saldo_anterior, saldo_origem_depois=debito.saldo_posterior,
+        saldo_destino_antes=credito.saldo_anterior, saldo_destino_depois=credito.saldo_posterior,
+        aprovado_por=usuario, ip=debito.ip,
     )
     return debito, credito
 

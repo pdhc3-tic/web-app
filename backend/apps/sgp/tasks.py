@@ -248,9 +248,11 @@ def check_budget_threshold_alert() -> int:
         with visao_total():
             vermelhos = pools_em_vermelho()
         for pool in vermelhos:
+            local = pool.territorio or pool.estado
+            nivel = f"{pool.get_nivel_display()} — {local.nome}" if local else pool.get_nivel_display()
             message = (
                 f"O pool de {pool.rubrica.nome} "
-                f"({pool.get_nivel_display()}) está em vermelho: "
+                f"({nivel}) está em vermelho: "
                 f"R$ {pool.valor_comprometido} comprometido de "
                 f"R$ {pool.valor_alocado} aprovado."
             )
@@ -258,7 +260,7 @@ def check_budget_threshold_alert() -> int:
                 Notification.objects.create(
                     user=recipient,
                     tipo=TipoNotificacao.EMAIL,
-                    titulo=f"Alerta de orçamento: {pool.rubrica.nome} ({pool.get_nivel_display()})",
+                    titulo=f"Alerta de orçamento: {pool.rubrica.nome} ({nivel})",
                     mensagem=message,
                     link=panel_url,
                     modulo_origem="sgp",

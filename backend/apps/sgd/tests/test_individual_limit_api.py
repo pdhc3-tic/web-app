@@ -201,3 +201,10 @@ def test_aumentos_simultaneos_nao_passam_do_pool(solicitante_rn, rubrica_diarias
     linha.refresh_from_db()
     linha_do_outro.refresh_from_db()
     assert (linha.valor_limite, linha_do_outro.valor_limite) == (Decimal("700"), Decimal("400"))
+
+
+def test_post_sem_valor_limite_responde_400(auth_client_super_admin, solicitante_rn, rubrica_diarias):
+    resposta = auth_client_super_admin.post(URL, {"solicitante": solicitante_rn.pk, "rubrica": rubrica_diarias.pk}, format="json")
+
+    assert resposta.status_code == 400
+    assert "valor_limite" in resposta.data

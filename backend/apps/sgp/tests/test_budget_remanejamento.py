@@ -8,7 +8,7 @@ from django.test import TransactionTestCase
 
 from apps.core.tests.factories import StateFactory, UserFactory
 from apps.sgp.budget import services as budget_service
-from apps.sgp.models import BudgetPool, BudgetTransaction
+from apps.sgp.models import BudgetPool, BudgetTransaction, BudgetTransfer
 from apps.sgp.tests.factories import BudgetPoolFactory, BudgetRubricaFactory
 
 pytestmark = pytest.mark.django_db
@@ -39,6 +39,28 @@ def dois_pools_da_mesma_rubrica(*, valor_origem=Decimal("1000"), valor_destino=D
 
 
 class TestRemanejamentoValido:
+    def test_fica_no_historico_com_saldos_e_aprovador(self, auth_client_super_admin, usuario_super_admin):
+        origem, destino = dois_pools_da_mesma_rubrica()
+
+        response = auth_client_super_admin.post(
+            REMANEJAR_URL,
+            {
+                "origem_allocation": origem.pk, "destino_allocation": destino.pk,
+                "valor": "300.00", "justificativa": "Demanda emergencial na CE.",
+            },
+            format="json",
+        )
+
+        assert response.status_code == 201
+        registro = BudgetTransfer.objects.get()
+        assert (registro.pool_origem_id, registro.pool_destino_id) == (origem.pk, destino.pk)
+        assert registro.tipo == BudgetTransfer.Tipo.ENTRE_TERRITORIOS
+        assert registro.escopo == ""
+        assert registro.motivo == "Demanda emergencial na CE."
+        assert (registro.saldo_origem_antes, registro.saldo_origem_depois) == (Decimal("1000"), Decimal("700"))
+        assert (registro.saldo_destino_antes, registro.saldo_destino_depois) == (Decimal("500"), Decimal("800"))
+        assert registro.aprovado_por == usuario_super_admin
+
     def test_remanejamento_valido(self, auth_client_super_admin):
         origem, destino = dois_pools_da_mesma_rubrica()
 

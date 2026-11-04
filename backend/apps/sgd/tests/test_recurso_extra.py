@@ -160,6 +160,32 @@ def test_demanda_sem_deficit_nao_pede_recurso_extra(demanda, solicitante_rn, lim
     assert not BudgetIncreaseRequest.objects.exists()
 
 
+def _devolvida_com_reserva(demanda):
+    demanda.solicitacoes.update(valor_reservado=Decimal("1000"))
+    Demand.objects.filter(pk=demanda.pk).update(status="devolvida")
+    demanda.refresh_from_db()
+    return demanda
+
+
+def test_devolvida_com_reserva_pede_recurso_extra_para_aumentar_o_valor(demanda, solicitante_rn):
+    resposta = _solicitar(solicitante_rn, _devolvida_com_reserva(demanda), valor_solicitado="200")
+
+    assert resposta.status_code == 201, resposta.data
+    assert BudgetIncreaseRequest.objects.get().valor_solicitado == Decimal("200")
+
+
+def test_devolvida_com_reserva_precisa_informar_o_valor(demanda, solicitante_rn):
+    demanda = _devolvida_com_reserva(demanda)
+
+    resposta = _cliente(solicitante_rn).post(
+        f"{DEMANDAS}{demanda.pk}/solicitar-recurso-extra/",
+        {"rubrica": "diarias", "justificativa": JUSTIFICATIVA}, format="json",
+    )
+
+    assert resposta.status_code == 400
+    assert not BudgetIncreaseRequest.objects.exists()
+
+
 def test_so_um_pedido_em_andamento_por_demanda_e_rubrica(demanda, pedido, solicitante_rn):
     resposta = _solicitar(solicitante_rn, demanda)
 

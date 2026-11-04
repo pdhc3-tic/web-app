@@ -726,3 +726,73 @@ class TestSomaDoPoolDoTerritorio:
         travas = [q["sql"] for q in consultas if "FOR UPDATE" in q["sql"] and '"sgp_budgetpool"' in q["sql"]]
         assert len(travas) == 1
         assert 'ORDER BY "sgp_budgetpool"."id" ASC' in travas[0]
+
+
+def test_padrao_por_perfil_recusa_periodo_fim(auth_client_super_admin, role_adt, rubrica):
+    resposta = auth_client_super_admin.post(URL, {
+        "escopo": "perfil", "perfil": role_adt.pk, "rubrica": rubrica.pk, "valor_limite": "100",
+        "periodo_fim": "2026-12-31",
+    }, format="json")
+
+    assert resposta.status_code == 400
+    assert "periodo_fim" in resposta.data
+
+
+def test_articulador_em_territorio_sem_estados_nao_tira_o_adt_do_pool(role_adt, role_articulador, territory_rn):
+    from apps.core.tests.factories import TerritoryFactory
+
+    usuario = UserFactory(profiles=[(role_articulador, TerritoryFactory(estados=[])), (role_adt, territory_rn)])
+
+    assert limites.territorio_do_pool(usuario.pk) == territory_rn.pk
+
+
+@freeze_time("2027-01-05")
+class TestAcumuloNaVirada:
+    def _linha(self, adt, rubrica, inicio, fim, **valores):
+        return SpendingLimitFactory(
+            user=adt, rubrica=rubrica, valor_limite=Decimal("100"), periodo_inicio=inicio, periodo_fim=fim, **valores,
+        )
+
+    def test_saldo_acumulado_sai_da_linha_antiga(self, adt, rubrica, configurar):
+        configurar("budget_limit_carry_over", "True")
+        antiga = self._linha(adt, rubrica, date(2026, 10, 1), date(2026, 12, 31), valor_comprometido=Decimal("60"))
+
+        nova = limites.travar_limite_vigente(user_id=adt.pk, rubrica_id=rubrica.pk, criar=True)
+
+        antiga.refresh_from_db()
+        assert nova.valor_limite == Decimal("40")
+        assert antiga.saldo_disponivel == Decimal("0")
+        assert antiga.valor_comprometido == Decimal("60")
+        debito = BudgetTransaction.objects.get(spending_limit=antiga)
+        assert (debito.valor, debito.saldo_anterior, debito.saldo_posterior) == (Decimal("-40"), Decimal("40"), Decimal("0"))
+
+    def test_segunda_reserva_nao_debita_de_novo(self, adt, rubrica, configurar):
+        configurar("budget_limit_carry_over", "True")
+        self._linha(adt, rubrica, date(2026, 10, 1), date(2026, 12, 31))
+
+        primeira = limites.travar_limite_vigente(user_id=adt.pk, rubrica_id=rubrica.pk, criar=True)
+        segunda = limites.travar_limite_vigente(user_id=adt.pk, rubrica_id=rubrica.pk, criar=True)
+
+        assert segunda.pk == primeira.pk
+        assert segunda.valor_limite == Decimal("100")
+
+    def test_pular_um_periodo_nao_traz_saldo_de_dois_atras(self, adt, role_adt, rubrica, configurar):
+        configurar("budget_limit_carry_over", "True")
+        _padrao(role_adt, rubrica, "1000")
+        antiga = self._linha(adt, rubrica, date(2026, 7, 1), date(2026, 9, 30))
+
+        nova = limites.travar_limite_vigente(user_id=adt.pk, rubrica_id=rubrica.pk, criar=True)
+
+        antiga.refresh_from_db()
+        assert nova.valor_limite == Decimal("1000")
+        assert antiga.valor_limite == Decimal("100")
+
+    def test_sem_acumulo_a_linha_antiga_fica_como_esta(self, adt, role_adt, rubrica, configurar):
+        configurar("budget_limit_carry_over", "False")
+        _padrao(role_adt, rubrica, "1000")
+        antiga = self._linha(adt, rubrica, date(2026, 10, 1), date(2026, 12, 31))
+
+        limites.travar_limite_vigente(user_id=adt.pk, rubrica_id=rubrica.pk, criar=True)
+
+        antiga.refresh_from_db()
+        assert antiga.valor_limite == Decimal("100")

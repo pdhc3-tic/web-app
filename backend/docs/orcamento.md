@@ -27,11 +27,11 @@ Uma demanda só reserva se passar nas duas travas: primeiro o limite individual 
 - **Mais de um perfil:** vale o maior padrão.
 - **Sem limite nem padrão:** a demanda é bloqueada, com orientação para pedir recurso extra.
 - **Período:** vem de `budget_limit_period` (`mensal`, `trimestral`, `semestral` ou `vigencia`). A linha existente não muda se o parâmetro for alterado no meio do período.
-- **Virada do período:** com `budget_limit_carry_over`, a linha nova soma o saldo positivo da anterior, mesmo sem padrão no perfil.
+- **Virada do período:** com `budget_limit_carry_over`, a linha nova soma o saldo positivo da linha que termina na véspera, mesmo sem padrão no perfil, e esse saldo é debitado da linha antiga no ledger. O que for liberado depois na linha antiga fica nela e expira. Quem não teve linha no período anterior não acumula.
 - **Reserva presa à linha:** ajuste, liberação e execução usam a linha em que a reserva foi feita, encontrada pelo ledger, mesmo depois da virada. Uma reserva nova usa o período novo.
 - **Alteração do padrão:** se já estiver em uso, vale a partir do período seguinte; sem uso, ou com período `vigencia`, o próprio registro é corrigido. Com um valor já agendado, a alteração vale sobre ele. Padrão encerrado não pode ser alterado, e um padrão novo não pode se sobrepor a um agendado.
 - **Redução:** não invalida o que já foi autorizado. O comprometido fica como está, e o novo teto vale para as próximas reservas, mesmo com saldo negativo.
-- **Sobrealocação:** com `budget_overallocation_allowed` desligado, um aumento de limite (cadastro, Django Admin ou recurso extra) é recusado se a soma do território passar do pool. O erro traz `soma_limites` e `valor_pool`. O pool fica travado até o commit, para dois aumentos simultâneos não passarem. Reduzir nunca é recusado. A soma conta só quem reserva no pool do território: o Articulador reserva no estadual e fica de fora. Território sem pool também fica de fora.
+- **Sobrealocação:** com `budget_overallocation_allowed` desligado, um aumento de limite (cadastro, Django Admin ou recurso extra) é recusado se a soma do território passar do pool. Na rota de limites, o erro traz `soma_limites` e `valor_pool`. O pool fica travado até o commit, para dois aumentos simultâneos não passarem. Reduzir nunca é recusado. A soma conta só quem reserva no pool do território: o Articulador reserva no estadual e fica de fora. Território sem pool também fica de fora.
 - **Sobreposição:** duas linhas individuais do mesmo usuário e rubrica não podem cobrir o mesmo dia. A linha herdada do mesmo período vira sobrescrita, mesmo com o valor igual, e a linha gerada do padrão é encurtada para não cobrir uma sobrescrita de datas próprias.
 - **Sobrescrita com acúmulo ligado:** vale exatamente o valor informado, sem somar o saldo anterior.
 - **Leitura e reserva:** a FGD lê o orçamento nacional, mas o perfil de leitura não decide de onde sai a reserva. Quem é FGD e ADT reserva no pool do território.
@@ -156,7 +156,7 @@ No SGD, confere também o comprometido dos limites contra as reservas ativas das
 
 ### `GET /api/v1/sgp/orcamento/saldo/?rubrica={slug}&valor={decimal}`
 
-Resolve o nível pelo perfil do usuário: UGP/Super Admin → nacional, Articulador Estadual → seu estado, ADT/ACR → seu território. `meta` é ignorado, com aviso no log.
+Resolve o nível pelo perfil do usuário: UGP/Super Admin/FGD → nacional, Articulador Estadual → seu estado, ADT/ACR → seu território. `meta` é ignorado, com aviso no log.
 
 ```json
 {
@@ -187,6 +187,8 @@ As rotas antigas seguem como alias enquanto o front migra:
 | `GET /sgp/metas/{id}/orcamento/` | Sem substituta direta: a resposta é a mesma para qualquer Meta. Use o painel |
 
 ### `POST /api/v1/sgp/orcamento/remanejamentos/`
+
+Além dos lançamentos no ledger, grava um `BudgetTransfer`, com motivo, saldos, aprovador e IP, e sem `escopo`.
 
 Só UGP e Super Admin, com justificativa obrigatória. Move `valor_alocado` entre dois pools da mesma rubrica e gera duas transações `remanejamento`.
 

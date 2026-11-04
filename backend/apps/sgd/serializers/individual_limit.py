@@ -23,7 +23,7 @@ class DemandIndividualLimitSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id", "valor_comprometido", "valor_executado", "criado_por", "criado_em", "atualizado_em",
         ]
-        extra_kwargs = {"valor_limite": {"min_value": 0}}
+        extra_kwargs = {"valor_limite": {"min_value": 0, "required": True}}
         # A unicidade é por período e fica com o serviço, que responde a corrida no mesmo formato.
         validators = []
 

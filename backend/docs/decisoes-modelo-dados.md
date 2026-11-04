@@ -230,11 +230,21 @@ podem mudar por configuração.
 - **Testes da #387:** as asserções de redução de limite mudaram para seguir o documento: reduzir preserva o comprometido. `test_estado_da_reserva_migration.py` saiu porque rodava uma migration antiga contra o modelo removido.
 - **Campos do modelo de dados do SGP fora deste modelo:** `ted_versao_id` depende da entidade do TED; `transfer_id` não é preciso, porque o remanejamento já referencia os dois pools; `periodicidade` e `acumula_saldo` são parâmetros globais do Core; `valor_disponivel` é calculado. `BudgetPool.atualizado_em` não existe porque toda alteração de alocação já vai para o ledger, com usuário e data. Em `BudgetRubrica`, `descricao` não é usada, e `tipo_solicitacao_sgd` vive em `DemandTypeRubricaMapping`, porque o mapeamento é configuração. `demanda_id` é referência sem FK, para o SGP não depender do SGD. `BudgetAlert` fica para a #390.
 
+- **Acúmulo:** o saldo acumulado é debitado da linha antiga, para não existir nas duas. O que for liberado nela depois da virada expira. Só acumula a linha que termina na véspera do novo período.
+- **Recurso extra em Devolvida:** com a reserva da rubrica de pé, o pedido é aceito com o valor informado, mesmo sem déficit calculado. A edição para mais é recusada e não fica gravada, e a mensagem orienta a pedir recurso extra, como manda o SGD §4.1.
+
 ### Divergências do documento mantidas, para a coordenação confirmar
 
 - **Remanejamento entre rubricas:** o SGP 6.7 permite, e o motor só aceita a mesma rubrica, como já fazia. Os demais tipos dependem do simulador da #389.
 - **Exatos 90% de comprometimento:** o SGP 6.8 diz amarelo até 90%; o código, como a #373, trata 90% como vermelho.
 - **`reserva_ugp`:** com um pool por rubrica e nível, uma rubrica nacional não pode, ao mesmo tempo, ser reserva da UGP e distribuir aos estados.
+
+Sem resposta nos documentos, com o comportamento atual:
+
+- **Recurso extra na virada:** a elevação vale para o período da decisão. Aprovado em 30/12 e submetido em 2/1, a linha nova vem do padrão, e a demanda volta a ser barrada.
+- **Sobrescrita com datas próprias:** o padrão vale inteiro no restante do período. Uma sobrescrita de 200 no início do trimestre, com padrão de 1.000, dá 1.200 no trimestre.
+- **Acúmulo com a sobrealocação desligada:** a linha gerada não confere o pool, e a soma dos limites pode passar dele. O bloqueio efetivo continua sendo o pool.
+- **Quem não reservou no período:** não tem linha e não acumula, embora o padrão não tenha sido usado.
 
 **Em aberto com a coordenação:** os valores iniciais dos limites por perfil e rubrica e se
 ADT e ACR precisam de valores diferentes. Hoje os dois são um só perfil no sistema.

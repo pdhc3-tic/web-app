@@ -95,7 +95,8 @@ def territorio_do_pool(user_id) -> int | None:
     Super Admin e UGP no nacional, Articulador no estadual."""
     perfis = UserProfile.objects.filter(user_id=user_id)
     if perfis.filter(
-        Q(perfil__slug__in=("super-admin", "ugp")) | Q(perfil__slug="articulador-estadual", territorio__isnull=False)
+        Q(perfil__slug__in=("super-admin", "ugp"))
+        | Q(perfil__slug="articulador-estadual", territorio__estados__len__gt=0)
     ).exists():
         return None
     return (
@@ -106,15 +107,17 @@ def territorio_do_pool(user_id) -> int | None:
     )
 
 
+def _linha_que_termina_antes(user_id, rubrica_id, inicio: date):
+    """Só o período imediatamente anterior acumula: pular um período não traz saldo de dois atrás."""
+    return SpendingLimit.objects.filter(
+        escopo=Escopo.INDIVIDUAL, user_id=user_id, rubrica_id=rubrica_id, periodo_fim=inicio - timedelta(days=1),
+    )
+
+
 def _saldo_a_acumular(user_id, rubrica_id, inicio: date) -> Decimal:
     if not get_config("budget_limit_carry_over", False):
         return ZERO
-    anterior = (
-        SpendingLimit.objects
-        .filter(escopo=Escopo.INDIVIDUAL, user_id=user_id, rubrica_id=rubrica_id, periodo_fim__lt=inicio)
-        .order_by("-periodo_fim")
-        .first()
-    )
+    anterior = _linha_que_termina_antes(user_id, rubrica_id, inicio).first()
     return max(anterior.saldo_disponivel, ZERO) if anterior else ZERO
 
 
@@ -210,8 +213,40 @@ def travar_limite_vigente(*, user_id, rubrica_id, criar: bool = False, data: dat
     linha = _vigente_travada(user_id, rubrica_id, data)
     if linha is not None or not criar:
         return linha
+    anterior = _travar_linha_a_acumular(user_id, rubrica_id, data)
+    if anterior is not None:
+        # Quem esperou este lock pode encontrar a linha já criada por quem o segurava.
+        linha = _vigente_travada(user_id, rubrica_id, data)
+        if linha is not None:
+            return linha
     nova = _linha_herdada(user_id, rubrica_id, data)
-    return _criar_ou_travar(nova, justificativa="Linha do período: padrão do perfil e saldo acumulado.") if nova else None
+    if nova is None:
+        return None
+    criada = _criar_ou_travar(nova, justificativa="Linha do período: padrão do perfil e saldo acumulado.")
+    if anterior is not None and criada.pk == nova.pk:
+        _debitar_o_acumulado(anterior)
+    return criada
+
+
+def _travar_linha_a_acumular(user_id, rubrica_id, data: date) -> SpendingLimit | None:
+    if not get_config("budget_limit_carry_over", False):
+        return None
+    inicio = _periodo_livre(user_id, rubrica_id, data)[0]
+    return _linha_que_termina_antes(user_id, rubrica_id, inicio).select_for_update(of=("self",)).first()
+
+
+def _debitar_o_acumulado(anterior: SpendingLimit) -> None:
+    """O saldo passa para a linha nova: sem o débito, existiria nas duas, e um ajuste na reserva presa
+    à linha antiga gastaria de novo o que já foi acumulado."""
+    acumulado = anterior.saldo_disponivel
+    if acumulado <= ZERO:
+        return
+    anterior.valor_limite -= acumulado
+    anterior.save(update_fields=["valor_limite", "atualizado_em"])
+    registrar_movimento(
+        limite=anterior, tipo=Tipo.AUMENTO_LIMITE, valor=-acumulado, usuario=None,
+        justificativa="Saldo acumulado para o período seguinte.",
+    )
 
 
 def travar_limite_para_elevar(*, user_id, rubrica_id, justificativa: str, usuario) -> SpendingLimit:
@@ -501,7 +536,7 @@ def _sucessor_do_padrao(limite: SpendingLimit) -> SpendingLimit | None:
     """A linha já agendada para o período seguinte a este padrão, que é o valor em vigor depois dele."""
     if limite.periodo_fim >= FIM_EM_ABERTO:
         return None
-    return SpendingLimit.objects.filter(
+    return SpendingLimit.objects.select_for_update(of=("self",)).filter(
         escopo=Escopo.PERFIL, perfil_id=limite.perfil_id, rubrica_id=limite.rubrica_id,
         periodo_inicio=limite.periodo_fim + timedelta(days=1),
     ).first()
