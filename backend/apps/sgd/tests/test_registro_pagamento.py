@@ -17,6 +17,7 @@ from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
 # Fixtures e helpers compartilhados com a suíte de integração Arlo.
 from apps.sgd.tests.test_arlo_integration import _importar, _linha, storage_local  # noqa: F401
 from apps.sgp.models import GlosaRisk
+from apps.sgp.models import SpendingLimit
 
 pytestmark = pytest.mark.django_db
 
@@ -120,7 +121,7 @@ def _trilha(demand):
             for e in auditoria.filter(entidade="Demand", entidade_id=str(demand.pk))
         ],
         "solicitacao": list(
-            auditoria.filter(entidade__in=["DemandRequest", "DemandIndividualLimit"], entidade_id__in=solicitacoes)
+            auditoria.filter(entidade__in=["DemandRequest", "SpendingLimit"], entidade_id__in=solicitacoes)
             .values_list("entidade", "acao", "user_id")
         ),
         "saldo": list(

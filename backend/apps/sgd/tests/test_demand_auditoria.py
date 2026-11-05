@@ -129,8 +129,8 @@ def test_falha_na_auditoria_desfaz_o_cancelamento_automatico(demanda, demand_req
 def test_saldo_sem_criado_por_herda_o_usuario_do_contexto(demanda, demand_request_rn, allocation_territorial_rn, usuario_ugp):
     def _movimentar():
         BudgetTransaction.objects.create(
-            allocation=allocation_territorial_rn, tipo=BudgetTransaction.Tipo.RESERVA, valor=Decimal("100"),
-            demanda_id=str(demand_request_rn.pk), criado_por=None,
+            pool=allocation_territorial_rn, tipo=BudgetTransaction.Tipo.RESERVA, valor=Decimal("100"),
+            demand_request_id=str(demand_request_rn.pk), criado_por=None,
         )
 
     set_audit_context(user=usuario_ugp, ip=IP_CLIENTE, user_agent="arlo-import")
@@ -206,7 +206,9 @@ def test_reserva_ajuste_execucao_e_liberacao_ligadas_a_transacao(
         demanda, "concluida", ator=usuario_fgd, valores_pagos={demand_request_rn.pk: Decimal("1100")},
     )
 
-    por_tipo = {t.tipo: t for t in BudgetTransaction.objects.filter(demanda_id=str(demand_request_rn.pk))}
+    por_tipo = {
+        t.tipo: t for t in BudgetTransaction.objects.filter(demand_request_id=str(demand_request_rn.pk), pool__isnull=False)
+    }
     assert set(por_tipo) == {"reserva", "ajuste", "execucao", "liberacao"}
 
     esperados = {

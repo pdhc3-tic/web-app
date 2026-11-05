@@ -4,7 +4,7 @@ Um serviço só para as duas formas que o SGD tem de cobrir saldo com outro nív
 decisão do recurso extra, que eleva o limite individual, e o excedente pontual que a
 UGP autoriza na própria demanda (remanejamento emergencial), que não eleva.
 
-Ordem de lock: `DemandIndividualLimit` → `BudgetAllocation` (em ordem de pk), a de
+Ordem de lock: `SpendingLimit` → `BudgetPool` (em ordem de pk), a de
 `backend/docs/orcamento.md`.
 """
 
@@ -18,7 +18,7 @@ from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
 from apps.sgd.services import orcamento as orcamento_service
-from apps.sgp.models import BudgetAllocation, BudgetTransfer
+from apps.sgp.models import BudgetPool, BudgetTransfer
 
 ZERO = Decimal("0")
 
@@ -27,7 +27,7 @@ ENTIDADE_REMANEJAMENTO = "BudgetTransfer"
 Escopo = BudgetTransfer.Escopo
 
 
-def exigir_origem_acima_do_territorio(origem: BudgetAllocation, destino: BudgetAllocation | None = None) -> None:
+def exigir_origem_acima_do_territorio(origem: BudgetPool, destino: BudgetPool | None = None) -> None:
     """Com `destino`, confere também a hierarquia dos pools: o saldo estadual só
     cobre territórios do próprio estado; o nacional cobre qualquer um."""
     if origem.nivel not in (orcamento_service.Nivel.ESTADUAL, orcamento_service.Nivel.NACIONAL):
@@ -43,7 +43,7 @@ def exigir_origem_acima_do_territorio(origem: BudgetAllocation, destino: BudgetA
         )
 
 
-def remanejar_para_pool(*, origem: BudgetAllocation, destino: BudgetAllocation, valor: Decimal, motivo: str,
+def remanejar_para_pool(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal, motivo: str,
                         usuario, escopo: str, increase_request=None, demanda_id: str | None = None,
                         solicitacao_id: str | None = None) -> BudgetTransfer:
     """`origem` e `destino` já travados por quem chama, que também já decidiu `valor`."""
@@ -53,7 +53,7 @@ def remanejar_para_pool(*, origem: BudgetAllocation, destino: BudgetAllocation, 
     destino.refresh_from_db()
 
     transferencia = BudgetTransfer.objects.create(
-        tipo=BudgetTransfer.Tipo.ENTRE_NIVEIS, escopo=escopo, allocation_origem=origem, allocation_destino=destino,
+        tipo=BudgetTransfer.Tipo.ENTRE_NIVEIS, escopo=escopo, pool_origem=origem, pool_destino=destino,
         valor=valor, motivo=motivo,
         saldo_origem_antes=origem_antes, saldo_origem_depois=orcamento_service.saldo_do_pool(origem),
         saldo_destino_antes=destino_antes, saldo_destino_depois=orcamento_service.saldo_do_pool(destino),
@@ -74,10 +74,10 @@ def remanejar_para_pool(*, origem: BudgetAllocation, destino: BudgetAllocation, 
         },
     )
     destinatarios = {
-        u.pk: u for alocacao in (origem, destino)
+        u.pk: u for pool in (origem, destino)
         for u in balance_service._destinatarios_saldo_territorial(
-            nivel=alocacao.nivel, estado_sigla=alocacao.estado.sigla if alocacao.estado else None,
-            territorio=alocacao.territorio,
+            nivel=pool.nivel, estado_sigla=pool.estado.sigla if pool.estado else None,
+            territorio=pool.territorio,
         )
     }
     notifications_service.notificar_remanejamento_efetivado(transferencia, list(destinatarios.values()))
@@ -96,7 +96,7 @@ def calcular_excedente(*, aumento: Decimal, saldo_limite: Decimal, saldo_pool: D
 
 
 def exigir_origem_da_solicitacao(
-    origem: BudgetAllocation, solicitacao, destino: BudgetAllocation | None = None,
+    origem: BudgetPool, solicitacao, destino: BudgetPool | None = None,
 ) -> None:
     exigir_origem_acima_do_territorio(origem, destino)
     if origem.rubrica_id != solicitacao.rubrica_id:
@@ -106,7 +106,7 @@ def exigir_origem_da_solicitacao(
         )
 
 
-def cobrir_excedente(solicitacao, novo_valor: Decimal, *, origem: BudgetAllocation, justificativa: str,
+def cobrir_excedente(solicitacao, novo_valor: Decimal, *, origem: BudgetPool, justificativa: str,
                      usuario) -> tuple[Decimal, BudgetTransfer | None]:
     """Remaneja de `origem` o que o aumento da reserva para `novo_valor` passa do limite
     individual ou do pool territorial (o maior dos dois). Devolve a parte acima do
@@ -115,8 +115,7 @@ def cobrir_excedente(solicitacao, novo_valor: Decimal, *, origem: BudgetAllocati
 
     Sem nada acima do limite nem do pool, não remaneja: (zero, None)."""
     exigir_origem_da_solicitacao(origem, solicitacao)
-    solicitante = solicitacao.demanda.solicitante
-    limite = balance_service._travar_limite(solicitante_id=solicitante.pk, rubrica_id=solicitacao.rubrica_id)
+    limite = balance_service.travar_limite_da_solicitacao(solicitacao)
     balance_service.reler_reserva(solicitacao)
     aumento = novo_valor - solicitacao.valor_reservado
     if limite is None or not solicitacao.reserva_ativa or aumento <= ZERO:

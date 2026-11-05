@@ -11,7 +11,8 @@ from rest_framework.test import APIClient
 from apps.core.tests.factories import UserFactory
 from apps.sgd.models import Demand
 from apps.sgd.tests.factories import ApprovalStepFactory, DemandFactory, DemandRequestFactory
-from apps.sgp.tests.factories import ActivityFactory, BudgetAllocationFactory, BudgetRubricaFactory, WorkPlanAcaoFactory
+from apps.sgp.tests.factories import ActivityFactory, BudgetPoolFactory, BudgetRubricaFactory, WorkPlanAcaoFactory
+from apps.sgp.tests.factories import SpendingLimitFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -163,8 +164,8 @@ def test_painel_por_rubrica_bate_com_valores_agregados(
         demanda=DemandFactory(activity=activity_rn, status="recusada"),
         tipo="diaria", rubrica=rubrica_diarias, valor_estimado=7777,
     )
-    BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, nivel="nacional", territorio=None,
+    BudgetPoolFactory(
+        rubrica=rubrica_diarias, nivel="nacional", territorio=None,
         valor_alocado=10_000, valor_comprometido=1_000, valor_executado=500,
     )
 
@@ -186,8 +187,8 @@ def test_painel_por_rubrica_bate_com_valores_agregados(
 def test_painel_por_rubrica_traz_faixa_sobre_o_comprometido(
     auth_client_ugp, activity_rn, rubrica_diarias, comprometido, percentual, faixa,
 ):
-    BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, nivel="nacional", territorio=None,
+    BudgetPoolFactory(
+        rubrica=rubrica_diarias, nivel="nacional", territorio=None,
         valor_alocado=10_000, valor_comprometido=comprometido, valor_executado=0,
     )
 
@@ -204,8 +205,8 @@ def test_painel_por_rubrica_faixa_segue_limiares_do_core(auth_client_ugp, activi
 
     from apps.core.models.system_config import SystemConfig, TipoConfiguracao
 
-    BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, nivel="nacional", territorio=None,
+    BudgetPoolFactory(
+        rubrica=rubrica_diarias, nivel="nacional", territorio=None,
         valor_alocado=10_000, valor_comprometido=4_000, valor_executado=0,
     )
     SystemConfig.objects.update_or_create(
@@ -302,3 +303,56 @@ def test_exportacao_sem_filtro_traz_tudo_e_filtro_invalido_falha(auth_client_ugp
     assert len(response.content.decode("utf-8-sig").strip().splitlines()) == 4
     assert auth_client_ugp.get(EXPORTAR, {"status": "xyz"}).status_code == 400
     assert auth_client_ugp.get(EXPORTAR, {"formato": "pdf"}).status_code == 400
+
+
+def _linha_da_rubrica(response, slug):
+    return next(r for r in response.json() if r["rubrica_slug"] == slug)
+
+
+def test_painel_por_rubrica_soma_os_limites_individuais_do_periodo(
+    auth_client_ugp, solicitante_rn, rubrica_diarias, territory_rn, territory_ce,
+):
+    SpendingLimitFactory(
+        user=solicitante_rn, rubrica=rubrica_diarias, territorio=territory_rn,
+        valor_limite=Decimal("1000"), valor_comprometido=Decimal("200"), valor_executado=Decimal("100"),
+    )
+    SpendingLimitFactory(
+        user=UserFactory(), rubrica=rubrica_diarias, territorio=territory_ce, valor_limite=Decimal("500"),
+    )
+
+    linha = _linha_da_rubrica(auth_client_ugp.get(PAINEL), "diarias")
+
+    assert Decimal(linha["limite_total"]) == Decimal("1500")
+    assert Decimal(linha["limite_comprometido"]) == Decimal("200")
+    assert Decimal(linha["limite_executado"]) == Decimal("100")
+    assert Decimal(linha["limite_disponivel"]) == Decimal("1200")
+
+
+def test_painel_por_rubrica_filtra_os_limites_pelo_territorio(
+    auth_client_ugp, solicitante_rn, rubrica_diarias, territory_rn, territory_ce,
+):
+    SpendingLimitFactory(user=solicitante_rn, rubrica=rubrica_diarias, territorio=territory_rn, valor_limite=Decimal("1000"))
+    SpendingLimitFactory(user=UserFactory(), rubrica=rubrica_diarias, territorio=territory_ce, valor_limite=Decimal("500"))
+
+    linha = _linha_da_rubrica(auth_client_ugp.get(PAINEL, {"territorio": territory_rn.pk}), "diarias")
+
+    assert Decimal(linha["limite_total"]) == Decimal("1000")
+
+
+def test_articulador_so_ve_os_limites_do_proprio_estado(
+    api_client, usuario_articulador_rn, solicitante_rn, rubrica_diarias, territory_rn, territory_ce,
+):
+    SpendingLimitFactory(user=solicitante_rn, rubrica=rubrica_diarias, territorio=territory_rn, valor_limite=Decimal("1000"))
+    SpendingLimitFactory(user=UserFactory(), rubrica=rubrica_diarias, territorio=territory_ce, valor_limite=Decimal("500"))
+    api_client.force_authenticate(user=usuario_articulador_rn)
+
+    linha = _linha_da_rubrica(api_client.get(PAINEL), "diarias")
+
+    assert Decimal(linha["limite_total"]) == Decimal("1000")
+
+
+def test_painel_por_rubrica_sem_limite_traz_zero(auth_client_ugp, rubrica_diarias):
+    linha = _linha_da_rubrica(auth_client_ugp.get(PAINEL), "diarias")
+
+    assert Decimal(linha["limite_total"]) == Decimal("0")
+    assert Decimal(linha["limite_disponivel"]) == Decimal("0")

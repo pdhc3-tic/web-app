@@ -1,4 +1,4 @@
-"""Consulta, painéis e relatórios do SGD (SGD-RF26 a RF30).
+"""Consulta, painéis e relatórios do SGD.
 
 Tudo aqui parte do queryset já restrito pelo RBAC (`demand_visibility_scope`,
 aplicado pelo `DemandViewSet.get_queryset`) — nenhuma função abre o universo
@@ -88,30 +88,28 @@ def _inteiro_ou_none(valor):
         raise RegraDeNegocio(f"Valor numérico inválido: {valor!r}.")
 
 
-def _painel_sgp(user, slugs: set[str], *, estado_sigla, territorio_id, meta_id):
-    # FGD não tem nível próprio no `resolver_nivel_painel` do SGP; para o
-    # painel do SGD enxerga o nacional, como a UGP.
-    if "fgd" in slugs and not slugs & {"super-admin", "ugp", "articulador-estadual"}:
-        nivel = orcamento_service.Nivel.NACIONAL
-        if territorio_id is not None:
-            nivel = orcamento_service.Nivel.TERRITORIAL
-        elif estado_sigla is not None:
-            nivel = orcamento_service.Nivel.ESTADUAL
-        return orcamento_service.painel_orcamento(
-            nivel=nivel, estado_sigla=estado_sigla, territorio_id=territorio_id, meta_id=meta_id,
-        )
+def _painel_sgp(user, *, estado_sigla, territorio_id, meta_id):
     return orcamento_service.painel_orcamento_para_usuario(
         user, estado_sigla=estado_sigla, territorio_id=territorio_id, meta_id=meta_id,
     )
 
 
+def _estados_dos_limites(user, slugs: set[str], estado_sigla: str | None) -> set[str] | None:
+    """O orçamento nacional aparece para o Articulador, mas o limite de cada pessoa só no estado dele."""
+    if slugs & PERFIS_NACIONAIS:
+        return {estado_sigla} if estado_sigla else None
+    estados = user_states(user)
+    return estados & {estado_sigla} if estado_sigla else estados
+
+
 def painel_por_rubrica(user, demandas, params) -> list[dict]:
-    """Solicitado / autorizado / executado / disponível por rubrica (RF28).
+    """Solicitado / autorizado / executado / disponível por rubrica.
 
     `solicitado` e `autorizado` saem das solicitações das demandas visíveis e
     filtradas; `executado`, `disponivel` e a faixa do semáforo são os do controle
     financeiro do SGP (`painel_orcamento`), somados por rubrica, para o painel
-    nunca divergir do orçamento.
+    nunca divergir do orçamento. Os campos `limite_*` são os limites individuais
+    do período vigente, no mesmo recorte.
     """
     slugs = exigir_perfil_de_gestao(user)
     territorio_id = _inteiro_ou_none(params.get("territorio"))
@@ -130,21 +128,30 @@ def painel_por_rubrica(user, demandas, params) -> list[dict]:
 
     orcamento: dict[int, dict] = {}
     for linha in _painel_sgp(
-        user, slugs, estado_sigla=estado_sigla, territorio_id=territorio_id, meta_id=meta_id,
+        user, estado_sigla=estado_sigla, territorio_id=territorio_id, meta_id=meta_id,
     ):
         acc = orcamento.setdefault(linha["rubrica"].pk, {
             "aprovado": ZERO, "comprometido": ZERO, "executado": ZERO, "disponivel": ZERO,
         })
         acc["aprovado"] += linha["valor_aprovado"]
         acc["comprometido"] += linha["valor_comprometido"]
-        acc["executado"] += linha["valor_executado"]
+        # Com `?meta=`, o executado é o da Meta; aprovado e disponível seguem os do pool.
+        acc["executado"] += linha.get("valor_executado_meta", linha["valor_executado"])
         acc["disponivel"] += linha["saldo_disponivel"]
+
+    limites = orcamento_service.totais_de_limite_por_rubrica(
+        territorio_id=territorio_id, estados=_estados_dos_limites(user, slugs, estado_sigla),
+    )
 
     limiares = orcamento_service.limiares_semaforo()
     resultado = []
     for rubrica in BudgetRubrica.objects.filter(ativo=True).order_by("ordem"):
         demanda_linha = por_rubrica.get(rubrica.pk, {})
         fin = orcamento.get(rubrica.pk, {})
+        limite = limites.get(rubrica.pk, {})
+        limite_total = limite.get("total") or ZERO
+        limite_comprometido = limite.get("comprometido") or ZERO
+        limite_executado = limite.get("executado") or ZERO
         percentual = orcamento_service.percentual_comprometido(
             fin.get("comprometido", ZERO), fin.get("aprovado", ZERO),
         )
@@ -156,17 +163,21 @@ def painel_por_rubrica(user, demandas, params) -> list[dict]:
             "autorizado": demanda_linha.get("autorizado") or ZERO,
             "executado": fin.get("executado", ZERO),
             "disponivel": fin.get("disponivel", ZERO),
-            # SGP §6.8: a faixa sai do percentual comprometido sobre o aprovado,
+            # A faixa sai do percentual comprometido sobre o aprovado,
             # a mesma base do painel de orçamento do SGP.
             "percentual_execucao": percentual,
             "faixa": orcamento_service.faixa_semaforo(percentual, limiares),
+            "limite_total": limite_total,
+            "limite_comprometido": limite_comprometido,
+            "limite_executado": limite_executado,
+            "limite_disponivel": limite_total - limite_comprometido - limite_executado,
         })
     return resultado
 
 
 def custo_por_atividade(user, demandas) -> list[dict]:
     """Custo por atividade, agrupado pela entrega (`WorkPlanAcao`) do Plano de
-    Trabalho a que a atividade pertence (RF29). Recusadas, canceladas e
+    Trabalho a que a atividade pertence. Recusadas, canceladas e
     demandas ainda em edição não entram no custo."""
     exigir_perfil_de_gestao(user)
     linhas = (

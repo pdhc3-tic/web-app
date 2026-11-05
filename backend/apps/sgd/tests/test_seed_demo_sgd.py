@@ -53,7 +53,7 @@ def test_existe_remanejamento_emergencial_com_excedente_autorizado(seed):
     assert etapa.demanda.status == "autorizada"
     remanejamento = BudgetTransfer.objects.get(escopo=BudgetTransfer.Escopo.PONTUAL)
     assert remanejamento.demanda_id == str(etapa.demanda_id)
-    assert remanejamento.allocation_origem.nivel == "estadual"
+    assert remanejamento.pool_origem.nivel == "estadual"
 
 
 def test_existe_solicitacao_com_rubrica_fora_das_previstas_da_acao(seed):

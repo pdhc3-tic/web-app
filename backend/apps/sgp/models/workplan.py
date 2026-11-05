@@ -300,8 +300,8 @@ class WorkPlanAcao(models.Model):
         related_name="acoes",
         verbose_name="Submeta",
     )
-    # Derivada da Submeta no save(). Continua gravada porque o orçamento
-    # (BudgetAllocation.meta), o SGD e os filtros por Meta leem dela.
+    # Derivada da Submeta no save(). Continua gravada porque o executado por Meta,
+    # o SGD e os filtros por Meta leem dela.
     meta = models.ForeignKey(
         WorkPlanMeta,
         on_delete=models.CASCADE,

@@ -10,8 +10,8 @@ from django.utils import timezone
 from apps.sgd.models.demand import Demand
 from apps.sgd.services import business_days
 from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
-from apps.sgp.models.budget import BudgetAllocation
-from apps.sgp.tests.factories import ActivityFactory, BudgetAllocationFactory, WorkPlanAcaoFactory
+from apps.sgp.budget.models import BudgetPool
+from apps.sgp.tests.factories import ActivityFactory, BudgetPoolFactory, WorkPlanAcaoFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -154,8 +154,8 @@ def test_adt_so_ve_as_proprias_demandas(auth_client_solicitante, activity_rn, so
 # --- alertas de saldo --------------------------------------------------------
 
 def _alocacao_nacional(activity, rubrica, *, alocado, comprometido):
-    return BudgetAllocationFactory(
-        meta=activity.acao.meta, rubrica=rubrica, nivel=BudgetAllocation.Nivel.NACIONAL,
+    return BudgetPoolFactory(
+        rubrica=rubrica, nivel=BudgetPool.Nivel.NACIONAL,
         territorio=None, estado=None, valor_alocado=alocado, valor_comprometido=comprometido,
     )
 
@@ -163,17 +163,17 @@ def _alocacao_nacional(activity, rubrica, *, alocado, comprometido):
 def test_alertas_refletem_faixa_amarela_e_vermelha_e_omitem_verde(
     auth_client_ugp, activity_rn, rubrica_diarias,
 ):
-    from apps.sgp.tests.factories import BudgetRubricaFactory, WorkPlanMetaFactory
+    from apps.sgp.tests.factories import BudgetRubricaFactory
 
     _alocacao_nacional(activity_rn, rubrica_diarias, alocado=1_000, comprometido=950)  # vermelho (≥ 90%)
     amarela = BudgetRubricaFactory(slug="passagens", nome="Passagens")
-    BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=amarela, nivel=BudgetAllocation.Nivel.NACIONAL,
+    BudgetPoolFactory(
+        rubrica=amarela, nivel=BudgetPool.Nivel.NACIONAL,
         territorio=None, estado=None, valor_alocado=1_000, valor_comprometido=750,  # amarelo (≥ 70%)
     )
     verde = BudgetRubricaFactory(slug="material", nome="Material")
-    BudgetAllocationFactory(
-        meta=WorkPlanMetaFactory(), rubrica=verde, nivel=BudgetAllocation.Nivel.NACIONAL,
+    BudgetPoolFactory(
+        rubrica=verde, nivel=BudgetPool.Nivel.NACIONAL,
         territorio=None, estado=None, valor_alocado=1_000, valor_comprometido=100,
     )
 
@@ -182,17 +182,18 @@ def test_alertas_refletem_faixa_amarela_e_vermelha_e_omitem_verde(
     assert [(a["rubrica_slug"], a["faixa"]) for a in alertas] == [("diarias", "vermelho"), ("passagens", "amarelo")]
     assert all(a["nivel"] == "nacional" for a in alertas)
     assert all(a["estado_sigla"] is None and a["territorio_id"] is None for a in alertas)
+    assert all(a["meta_id"] is None and a["meta_numero"] is None for a in alertas)
 
 
 def test_alertas_do_articulador_ficam_no_escopo_do_estado(
     auth_client_articulador_rn, activity_rn, rubrica_diarias, municipio_rn, municipio_ce,
 ):
-    BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, nivel=BudgetAllocation.Nivel.ESTADUAL,
+    BudgetPoolFactory(
+        rubrica=rubrica_diarias, nivel=BudgetPool.Nivel.ESTADUAL,
         estado=municipio_rn.state, territorio=None, valor_alocado=1_000, valor_comprometido=950,
     )
-    BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, nivel=BudgetAllocation.Nivel.ESTADUAL,
+    BudgetPoolFactory(
+        rubrica=rubrica_diarias, nivel=BudgetPool.Nivel.ESTADUAL,
         estado=municipio_ce.state, territorio=None, valor_alocado=1_000, valor_comprometido=950,
     )
 
@@ -216,15 +217,15 @@ def test_alertas_do_articulador_de_varios_estados_trazem_a_uf_de_cada_um(
         profiles=[(role, territory_rn), (role, territory_ce)],
     )
     for estado in (municipio_rn.state, municipio_ce.state):
-        BudgetAllocationFactory(
-            meta=activity_rn.acao.meta, rubrica=rubrica_diarias, nivel=BudgetAllocation.Nivel.ESTADUAL,
+        BudgetPoolFactory(
+            rubrica=rubrica_diarias, nivel=BudgetPool.Nivel.ESTADUAL,
             estado=estado, territorio=None, valor_alocado=1_000, valor_comprometido=950,
         )
     api_client.force_authenticate(user=articulador)
 
     alertas = api_client.get(URL).json()["alertas_saldo"]
 
-    # mesma meta e rubrica nos dois estados: só a UF distingue os alertas
+    # mesma rubrica nos dois estados: só a UF distingue os alertas
     assert [(a["rubrica_slug"], a["estado_sigla"], a["territorio_id"]) for a in alertas] == [
         ("diarias", "CE", None), ("diarias", "RN", None),
     ]
@@ -241,8 +242,8 @@ def test_alertas_do_adt_cobrem_todos_os_territorios_do_perfil(
     )
     nao_vinculado = TerritoryFactory(nome="Território PE", estados=["PE"])
     for territorio in (territory_rn, territory_ce, nao_vinculado):
-        BudgetAllocationFactory(
-            meta=activity_rn.acao.meta, rubrica=rubrica_diarias, nivel=BudgetAllocation.Nivel.TERRITORIAL,
+        BudgetPoolFactory(
+            rubrica=rubrica_diarias, nivel=BudgetPool.Nivel.TERRITORIAL,
             territorio=territorio, valor_alocado=1_000, valor_comprometido=950,
         )
     api_client.force_authenticate(user=adt)

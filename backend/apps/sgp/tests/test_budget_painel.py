@@ -3,125 +3,126 @@ from unittest.mock import patch
 
 import pytest
 
-from apps.sgp.models import BudgetAllocation, BudgetRubrica
+from apps.core.tests.factories import RoleFactory, UserFactory
+from apps.core.models.user_profile import UserProfile
+from apps.sgp.budget import limites
+from apps.sgp.budget import services as budget_service
+from apps.sgp.models import BudgetPool, BudgetRubrica
 from apps.sgp.tasks import check_budget_threshold_alert
 from apps.sgp.tests.factories import (
-    BudgetAllocationFactory,
+    ActivityFactory,
+    BudgetPoolFactory,
     BudgetRubricaFactory,
+    WorkPlanAcaoFactory,
     WorkPlanMetaFactory,
 )
 
 pytestmark = pytest.mark.django_db
 
-Nivel = BudgetAllocation.Nivel
+Nivel = BudgetPool.Nivel
 
 PAINEL_URL = "/api/v1/sgp/orcamento/painel/"
 
 
-def _linha(response, meta, rubrica):
-    return next(
-        linha for linha in response.data
-        if linha["meta"]["id"] == meta.pk and linha["rubrica"]["id"] == rubrica.pk
+def _pool_nacional(rubrica=None, **valores):
+    return BudgetPoolFactory(
+        rubrica=rubrica or BudgetRubricaFactory(), nivel=Nivel.NACIONAL, estado=None, territorio=None, **valores,
     )
 
 
-class TestPainelMatriz:
-    def test_matriz_completa(self, auth_client_super_admin):
-        for numero in range(1, 8):
-            WorkPlanMetaFactory(numero=numero)
+def _linha(response, pool):
+    return next(linha for linha in response.data if linha["id"] == pool.pk)
+
+
+class TestMatrizRubricaPorNivel:
+    def test_uma_linha_por_pool_com_id_nivel_e_localizacao(
+        self, auth_client_super_admin, state_rn, territory_rn,
+    ):
+        rubrica = BudgetRubricaFactory()
+        nacional = _pool_nacional(rubrica, valor_alocado=Decimal("10000"))
+        estadual = BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.ESTADUAL, estado=state_rn, territorio=None, valor_alocado=Decimal("4000"),
+        )
+        territorial = BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.TERRITORIAL, estado=None, territorio=territory_rn,
+            valor_alocado=Decimal("1000"),
+        )
+
+        response = auth_client_super_admin.get(f"{PAINEL_URL}?rubrica={rubrica.slug}")
+
+        assert response.status_code == 200
+        assert [linha["id"] for linha in response.data] == [nacional.pk, estadual.pk, territorial.pk]
+        assert "meta" not in response.data[0]
+        assert _linha(response, nacional)["estado"] is None
+        assert _linha(response, nacional)["territorio"] is None
+        assert _linha(response, estadual)["estado"]["sigla"] == state_rn.sigla
+        assert _linha(response, territorial)["territorio"]["id"] == territory_rn.pk
+
+    def test_distribuido_e_saldos_por_nivel(self, auth_client_super_admin, state_rn, territory_rn):
+        rubrica = BudgetRubricaFactory()
+        nacional = _pool_nacional(rubrica, valor_alocado=Decimal("10000"), valor_comprometido=Decimal("1000"))
+        estadual = BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.ESTADUAL, estado=state_rn, territorio=None, valor_alocado=Decimal("4000"),
+        )
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.TERRITORIAL, estado=None, territorio=territory_rn,
+            valor_alocado=Decimal("1500"),
+        )
+
+        response = auth_client_super_admin.get(f"{PAINEL_URL}?rubrica={rubrica.slug}")
+
+        linha_nacional = _linha(response, nacional)
+        assert Decimal(linha_nacional["valor_distribuido"]) == Decimal("4000")
+        assert Decimal(linha_nacional["saldo_disponivel"]) == Decimal("5000")
+        # O remanejamento aceita sair o que não está comprometido nem executado, mesmo já distribuído.
+        assert Decimal(linha_nacional["saldo_pool"]) == Decimal("9000")
+        linha_estadual = _linha(response, estadual)
+        assert Decimal(linha_estadual["valor_distribuido"]) == Decimal("1500")
+        assert Decimal(linha_estadual["saldo_disponivel"]) == Decimal("2500")
+
+    def test_rubrica_inativa_nao_aparece(self, auth_client_super_admin):
+        ativa = _pool_nacional(valor_alocado=Decimal("10"))
+        inativa = _pool_nacional(BudgetRubricaFactory(ativo=False), valor_alocado=Decimal("10"))
 
         response = auth_client_super_admin.get(PAINEL_URL)
 
-        assert response.status_code == 200
-        assert BudgetRubrica.objects.filter(ativo=True).count() == 6
-        assert len(response.data) == 42
+        ids = {linha["id"] for linha in response.data}
+        assert ativa.pk in ids
+        assert inativa.pk not in ids
 
 
 class TestPainelSemaforo:
-    def test_semaforo_verde(self, auth_client_super_admin):
-        meta = WorkPlanMetaFactory()
-        rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL, estado=None, territorio=None,
-            valor_alocado=Decimal("10000"), valor_comprometido=Decimal("5000"),
-        )
+    @pytest.mark.parametrize(
+        ("comprometido", "semaforo", "alerta"),
+        [
+            ("5000", "verde", False),
+            ("7000", "amarelo", False),
+            ("8000", "amarelo", False),
+            ("9000", "vermelho", True),
+        ],
+    )
+    def test_faixas(self, auth_client_super_admin, comprometido, semaforo, alerta):
+        pool = _pool_nacional(valor_alocado=Decimal("10000"), valor_comprometido=Decimal(comprometido))
 
-        response = auth_client_super_admin.get(
-            f"{PAINEL_URL}?meta={meta.pk}&rubrica={rubrica.slug}"
-        )
+        response = auth_client_super_admin.get(PAINEL_URL)
 
-        linha = _linha(response, meta, rubrica)
-        assert linha["semaforo"] == "verde"
-        assert linha["alerta_80"] is False
-
-    def test_semaforo_amarelo(self, auth_client_super_admin):
-        meta = WorkPlanMetaFactory()
-        rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL, estado=None, territorio=None,
-            valor_alocado=Decimal("10000"), valor_comprometido=Decimal("7000"),
-        )
-
-        response = auth_client_super_admin.get(
-            f"{PAINEL_URL}?meta={meta.pk}&rubrica={rubrica.slug}"
-        )
-
-        linha = _linha(response, meta, rubrica)
-        assert linha["semaforo"] == "amarelo"
-        assert linha["alerta_80"] is False
-
-    def test_semaforo_amarelo_em_80(self, auth_client_super_admin):
-        meta = WorkPlanMetaFactory()
-        rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL, estado=None, territorio=None,
-            valor_alocado=Decimal("10000"), valor_comprometido=Decimal("8000"),
-        )
-
-        response = auth_client_super_admin.get(
-            f"{PAINEL_URL}?meta={meta.pk}&rubrica={rubrica.slug}"
-        )
-
-        linha = _linha(response, meta, rubrica)
-        assert linha["semaforo"] == "amarelo"
-        assert linha["alerta_80"] is False
-
-    def test_semaforo_vermelho_em_90(self, auth_client_super_admin):
-        meta = WorkPlanMetaFactory()
-        rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL, estado=None, territorio=None,
-            valor_alocado=Decimal("10000"), valor_comprometido=Decimal("9000"),
-        )
-
-        response = auth_client_super_admin.get(
-            f"{PAINEL_URL}?meta={meta.pk}&rubrica={rubrica.slug}"
-        )
-
-        linha = _linha(response, meta, rubrica)
-        assert linha["semaforo"] == "vermelho"
-        assert linha["alerta_80"] is True
+        linha = _linha(response, pool)
+        assert linha["semaforo"] == semaforo
+        assert linha["alerta_80"] is alerta
 
     def test_semaforo_segue_limiares_configurados_no_core(self, auth_client_super_admin):
         from django.core.cache import cache
 
         from apps.core.models.system_config import SystemConfig, TipoConfiguracao
 
-        meta = WorkPlanMetaFactory()
-        rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL, estado=None, territorio=None,
-            valor_alocado=Decimal("10000"), valor_comprometido=Decimal("8000"),
-        )
+        pool = _pool_nacional(valor_alocado=Decimal("10000"), valor_comprometido=Decimal("8000"))
         SystemConfig.objects.update_or_create(
             chave="budget_alert_red_pct", defaults={"valor": "75", "tipo": TipoConfiguracao.INTEGER},
         )
         try:
-            response = auth_client_super_admin.get(
-                f"{PAINEL_URL}?meta={meta.pk}&rubrica={rubrica.slug}"
-            )
+            response = auth_client_super_admin.get(PAINEL_URL)
 
-            linha = _linha(response, meta, rubrica)
+            linha = _linha(response, pool)
             assert linha["semaforo"] == "vermelho"
             assert linha["alerta_80"] is True
         finally:
@@ -129,27 +130,20 @@ class TestPainelSemaforo:
             # o limiar de 75% pros testes seguintes.
             cache.delete("system_config:budget_alert_red_pct")
 
-    def test_alocacao_zerada_nao_quebra(self, auth_client_super_admin):
-        meta = WorkPlanMetaFactory()
-        rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL, estado=None, territorio=None,
-            valor_alocado=Decimal("0"), valor_comprometido=Decimal("0"),
-        )
+    def test_pool_zerado_nao_quebra(self, auth_client_super_admin):
+        pool = _pool_nacional(valor_alocado=Decimal("0"), valor_comprometido=Decimal("0"))
 
-        response = auth_client_super_admin.get(
-            f"{PAINEL_URL}?meta={meta.pk}&rubrica={rubrica.slug}"
-        )
+        response = auth_client_super_admin.get(PAINEL_URL)
 
         assert response.status_code == 200
-        linha = _linha(response, meta, rubrica)
+        linha = _linha(response, pool)
         assert linha["semaforo"] == "verde"
         assert Decimal(linha["valor_aprovado"]) == Decimal("0")
 
 
 class TestPainelLimiares:
     def test_cada_linha_traz_os_limiares_padrao_como_inteiros(self, auth_client_super_admin):
-        WorkPlanMetaFactory()
+        _pool_nacional(valor_alocado=Decimal("10"))
 
         response = auth_client_super_admin.get(PAINEL_URL)
 
@@ -166,7 +160,7 @@ class TestPainelLimiares:
 
         from apps.core.models.system_config import SystemConfig, TipoConfiguracao
 
-        WorkPlanMetaFactory()
+        _pool_nacional(valor_alocado=Decimal("10"))
         SystemConfig.objects.update_or_create(
             chave="budget_alert_yellow_pct", defaults={"valor": "60", "tipo": TipoConfiguracao.INTEGER},
         )
@@ -188,10 +182,8 @@ class TestPainelLimiares:
             cache.delete("system_config:budget_alert_red_pct")
 
     @pytest.mark.parametrize("cliente", ["auth_client_adt_rn", "auth_client_articulador_rn"])
-    def test_perfis_sem_acesso_ao_system_config_recebem_os_limiares(
-        self, request, cliente, territory_rn,
-    ):
-        WorkPlanMetaFactory()
+    def test_perfis_sem_acesso_ao_system_config_recebem_os_limiares(self, request, cliente, territory_rn):
+        BudgetPoolFactory(nivel=Nivel.TERRITORIAL, estado=None, territorio=territory_rn, valor_alocado=Decimal("10"))
 
         response = request.getfixturevalue(cliente).get(PAINEL_URL)
 
@@ -202,44 +194,34 @@ class TestPainelLimiares:
 
 class TestPainelFiltros:
     def test_filtros(self, auth_client_super_admin, state_rn, territory_rn):
-        meta = WorkPlanMetaFactory(numero=1)
-        WorkPlanMetaFactory(numero=2)
         rubrica = BudgetRubricaFactory()
-        BudgetRubricaFactory()  # outra rubrica, só pra garantir que o filtro restringe
-
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.ESTADUAL,
-            estado=state_rn, territorio=None, valor_alocado=Decimal("3000"),
+        outra = BudgetRubricaFactory()
+        _pool_nacional(rubrica, valor_alocado=Decimal("9000"))
+        _pool_nacional(outra, valor_alocado=Decimal("9000"))
+        estadual = BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.ESTADUAL, estado=state_rn, territorio=None, valor_alocado=Decimal("3000"),
         )
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.TERRITORIAL,
-            estado=None, territorio=territory_rn, valor_alocado=Decimal("1000"),
+        territorial = BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.TERRITORIAL, estado=None, territorio=territory_rn,
+            valor_alocado=Decimal("1000"),
         )
-
-        por_meta = auth_client_super_admin.get(f"{PAINEL_URL}?meta={meta.pk}")
-        assert {linha["meta"]["id"] for linha in por_meta.data} == {meta.pk}
 
         por_rubrica = auth_client_super_admin.get(f"{PAINEL_URL}?rubrica={rubrica.slug}")
         assert {linha["rubrica"]["id"] for linha in por_rubrica.data} == {rubrica.pk}
 
-        por_estado = auth_client_super_admin.get(
-            f"{PAINEL_URL}?meta={meta.pk}&rubrica={rubrica.slug}&estado={state_rn.sigla}"
-        )
-        linha_estado = por_estado.data[0]
-        assert linha_estado["nivel"] == "estadual"
-        assert Decimal(linha_estado["valor_aprovado"]) == Decimal("3000")
+        por_nivel = auth_client_super_admin.get(f"{PAINEL_URL}?rubrica={rubrica.slug}&nivel=estadual")
+        assert [linha["id"] for linha in por_nivel.data] == [estadual.pk]
 
-        por_territorio = auth_client_super_admin.get(
-            f"{PAINEL_URL}?meta={meta.pk}&rubrica={rubrica.slug}&territorio={territory_rn.pk}"
-        )
-        linha_territorio = por_territorio.data[0]
-        assert linha_territorio["nivel"] == "territorial"
-        assert Decimal(linha_territorio["valor_aprovado"]) == Decimal("1000")
+        por_estado = auth_client_super_admin.get(f"{PAINEL_URL}?rubrica={rubrica.slug}&estado={state_rn.sigla}")
+        assert [linha["id"] for linha in por_estado.data] == [estadual.pk, territorial.pk]
+
+        por_territorio = auth_client_super_admin.get(f"{PAINEL_URL}?rubrica={rubrica.slug}&territorio={territory_rn.pk}")
+        assert [linha["id"] for linha in por_territorio.data] == [territorial.pk]
 
     def test_territorio_tem_precedencia_sobre_estado_quando_os_dois_vem(
         self, auth_client_super_admin, state_rn, territory_rn,
     ):
-        WorkPlanMetaFactory()
+        BudgetPoolFactory(nivel=Nivel.TERRITORIAL, estado=None, territorio=territory_rn, valor_alocado=Decimal("10"))
 
         response = auth_client_super_admin.get(
             f"{PAINEL_URL}?estado={state_rn.sigla}&territorio={territory_rn.pk}"
@@ -248,6 +230,58 @@ class TestPainelFiltros:
         assert response.status_code == 200
         assert len(response.data) > 0
         assert all(linha["nivel"] == "territorial" for linha in response.data)
+
+    def test_nivel_invalido_e_400(self, auth_client_super_admin):
+        assert auth_client_super_admin.get(f"{PAINEL_URL}?nivel=municipal").status_code == 400
+
+
+class TestPainelMetaComoRelatorio:
+    def _executar_na_meta(self, pool, meta, valor):
+        acao = WorkPlanAcaoFactory(meta=meta)
+        usuario = UserFactory()
+        activity = ActivityFactory(acao=acao)
+        chave = f"demanda-{meta.pk}-{pool.pk}"
+        budget_service.reservar(pool=pool, valor=valor, demand_request_id=chave, usuario=usuario, activity_id=activity.pk)
+        budget_service.executar(demand_request_id=chave, usuario=usuario)
+
+    def test_meta_acrescenta_o_executado_sem_recortar_o_saldo(self, auth_client_super_admin):
+        meta = WorkPlanMetaFactory(numero=1)
+        outra_meta = WorkPlanMetaFactory(numero=2)
+        pool = _pool_nacional(valor_alocado=Decimal("1000"))
+        self._executar_na_meta(pool, meta, Decimal("100"))
+        self._executar_na_meta(pool, outra_meta, Decimal("300"))
+
+        response = auth_client_super_admin.get(f"{PAINEL_URL}?meta={meta.pk}")
+
+        linha = _linha(response, pool)
+        assert Decimal(linha["valor_executado_meta"]) == Decimal("100")
+        assert Decimal(linha["valor_executado"]) == Decimal("400")
+        assert Decimal(linha["valor_aprovado"]) == Decimal("1000")
+
+    def test_sem_meta_nao_traz_o_campo(self, auth_client_super_admin):
+        pool = _pool_nacional(valor_alocado=Decimal("1000"))
+
+        response = auth_client_super_admin.get(PAINEL_URL)
+
+        assert "valor_executado_meta" not in _linha(response, pool)
+
+    def test_meta_sem_execucao_traz_zero(self, auth_client_super_admin):
+        pool = _pool_nacional(valor_alocado=Decimal("1000"))
+
+        response = auth_client_super_admin.get(f"{PAINEL_URL}?meta={WorkPlanMetaFactory().pk}")
+
+        assert Decimal(_linha(response, pool)["valor_executado_meta"]) == Decimal("0")
+
+    def test_painel_de_um_nivel_acrescenta_o_executado_da_meta(self):
+        meta = WorkPlanMetaFactory(numero=1)
+        rubrica = BudgetRubricaFactory()
+        pool = _pool_nacional(rubrica, valor_alocado=Decimal("1000"))
+        self._executar_na_meta(pool, meta, Decimal("100"))
+
+        linhas = budget_service.painel_orcamento(nivel=Nivel.NACIONAL, rubrica_slug=rubrica.slug, meta_id=meta.pk)
+
+        assert linhas[0]["valor_executado_meta"] == Decimal("100")
+        assert linhas[0]["valor_executado"] == Decimal("100")
 
 
 class TestPainelEscopoTerritorial:
@@ -263,7 +297,7 @@ class TestPainelEscopoTerritorial:
 
     @pytest.mark.parametrize("slug", ["adt-acr", "articulador-estadual"])
     def test_perfil_sem_territorio_vinculado_recebe_code_proprio(self, api_client, slug):
-        from apps.core.tests.factories import RoleFactory, TerritoryFactory, UserFactory
+        from apps.core.tests.factories import RoleFactory, TerritoryFactory
 
         territorio_vazio = TerritoryFactory(nome=f"Território sem estado {slug}", estados=[])
         territorio = None if slug == "adt-acr" else territorio_vazio
@@ -276,17 +310,21 @@ class TestPainelEscopoTerritorial:
         assert response.data["code"] == "SEM_TERRITORIO"
         assert response.data["detail"]
 
-    def test_escopo_territorial(
-        self, auth_client_adt_rn, state_rn, territory_ce, territory_rn,
-    ):
+    def test_escopo_do_adt(self, auth_client_adt_rn, state_rn, territory_ce, territory_rn):
+        rubrica = BudgetRubricaFactory()
+        _pool_nacional(rubrica, valor_alocado=Decimal("10"))
+        BudgetPoolFactory(rubrica=rubrica, nivel=Nivel.ESTADUAL, estado=state_rn, territorio=None)
+        proprio = BudgetPoolFactory(rubrica=rubrica, nivel=Nivel.TERRITORIAL, estado=None, territorio=territory_rn)
+        BudgetPoolFactory(rubrica=rubrica, nivel=Nivel.TERRITORIAL, estado=None, territorio=territory_ce)
+
         outro_territorio = auth_client_adt_rn.get(f"{PAINEL_URL}?territorio={territory_ce.pk}")
         assert outro_territorio.status_code == 403
 
         proprio_territorio = auth_client_adt_rn.get(f"{PAINEL_URL}?territorio={territory_rn.pk}")
-        assert proprio_territorio.status_code == 200
+        assert [linha["id"] for linha in proprio_territorio.data] == [proprio.pk]
 
         sem_filtro = auth_client_adt_rn.get(PAINEL_URL)
-        assert sem_filtro.status_code == 200
+        assert [linha["id"] for linha in sem_filtro.data] == [proprio.pk]
 
         sem_acesso_estadual = auth_client_adt_rn.get(f"{PAINEL_URL}?estado={state_rn.sigla}")
         assert sem_acesso_estadual.status_code == 403
@@ -298,35 +336,92 @@ class TestPainelEscopoTerritorial:
         )
         assert estado_com_proprio_territorio.status_code == 403
 
-    def test_articulador_ve_nacional_por_padrao_e_pode_descer_no_proprio_estado(
+    def test_articulador_ve_nacional_e_o_proprio_estado(
         self, auth_client_articulador_rn, state_rn, state_ce, territory_rn, territory_ce,
     ):
-        WorkPlanMetaFactory()
+        rubrica = BudgetRubricaFactory()
+        nacional = _pool_nacional(rubrica, valor_alocado=Decimal("10"))
+        estadual = BudgetPoolFactory(rubrica=rubrica, nivel=Nivel.ESTADUAL, estado=state_rn, territorio=None)
+        territorial = BudgetPoolFactory(rubrica=rubrica, nivel=Nivel.TERRITORIAL, estado=None, territorio=territory_rn)
+        BudgetPoolFactory(rubrica=rubrica, nivel=Nivel.ESTADUAL, estado=state_ce, territorio=None)
+        BudgetPoolFactory(rubrica=rubrica, nivel=Nivel.TERRITORIAL, estado=None, territorio=territory_ce)
 
         sem_filtro = auth_client_articulador_rn.get(PAINEL_URL)
-        assert sem_filtro.status_code == 200
-        assert len(sem_filtro.data) > 0
-        assert all(linha["nivel"] == "nacional" for linha in sem_filtro.data)
+        assert [linha["id"] for linha in sem_filtro.data] == [nacional.pk, estadual.pk, territorial.pk]
 
         proprio_estado = auth_client_articulador_rn.get(f"{PAINEL_URL}?estado={state_rn.sigla}")
-        assert proprio_estado.status_code == 200
-        assert len(proprio_estado.data) > 0
-        assert all(linha["nivel"] == "estadual" for linha in proprio_estado.data)
+        assert [linha["id"] for linha in proprio_estado.data] == [estadual.pk, territorial.pk]
 
-        proprio_territorio = auth_client_articulador_rn.get(
-            f"{PAINEL_URL}?territorio={territory_rn.pk}"
+        proprio_territorio = auth_client_articulador_rn.get(f"{PAINEL_URL}?territorio={territory_rn.pk}")
+        assert [linha["id"] for linha in proprio_territorio.data] == [territorial.pk]
+
+        assert auth_client_articulador_rn.get(f"{PAINEL_URL}?estado={state_ce.sigla}").status_code == 403
+        assert auth_client_articulador_rn.get(f"{PAINEL_URL}?territorio={territory_ce.pk}").status_code == 403
+
+    def test_fgd_le_a_matriz_como_a_ugp(self, auth_client_fgd, state_rn):
+        nacional = _pool_nacional(valor_alocado=Decimal("100"))
+        estadual = BudgetPoolFactory(
+            rubrica=nacional.rubrica, nivel=Nivel.ESTADUAL, estado=state_rn, territorio=None, valor_alocado=Decimal("10"),
         )
-        assert proprio_territorio.status_code == 200
-        assert len(proprio_territorio.data) > 0
-        assert all(linha["nivel"] == "territorial" for linha in proprio_territorio.data)
 
-        outro_estado = auth_client_articulador_rn.get(f"{PAINEL_URL}?estado={state_ce.sigla}")
-        assert outro_estado.status_code == 403
+        response = auth_client_fgd.get(PAINEL_URL)
 
-        outro_territorio = auth_client_articulador_rn.get(
-            f"{PAINEL_URL}?territorio={territory_ce.pk}"
+        assert response.status_code == 200
+        assert {linha["id"] for linha in response.data} >= {nacional.pk, estadual.pk}
+
+    def test_fgd_consulta_o_saldo_nacional(self, auth_client_fgd):
+        nacional = _pool_nacional(valor_alocado=Decimal("100"))
+
+        response = auth_client_fgd.get(
+            "/api/v1/sgp/orcamento/saldo/", {"rubrica": nacional.rubrica.slug, "valor": "10.00"},
         )
-        assert outro_territorio.status_code == 403
+
+        assert response.status_code == 200, response.data
+        assert response.data["disponivel"] is True
+
+    def test_fgd_que_tambem_e_adt_reserva_no_pool_do_territorio(self, territory_rn):
+        """O perfil de leitura não pode decidir de onde sai a reserva."""
+        usuario = UserFactory(profiles=[
+            (RoleFactory(slug="fgd", nome="FGD"), None),
+            (RoleFactory(slug="adt-acr", nome="ADT / ACR"), territory_rn),
+        ])
+
+        assert budget_service.resolver_nivel_do_usuario(usuario) == (Nivel.TERRITORIAL, None, territory_rn)
+
+    def test_adt_de_dois_territorios_reserva_e_confere_no_mesmo_pool(self, territory_rn, territory_ce):
+        """Sem ordem na consulta dos perfis, a sobrealocação poderia conferir um pool e a reserva sair de outro."""
+        adt = RoleFactory(slug="adt-acr", nome="ADT / ACR")
+        usuario = UserFactory(profiles=[(adt, territory_rn), (adt, territory_ce)])
+        primeiro = UserProfile.objects.filter(user=usuario).order_by("pk").first()
+        # Regravar a linha a desloca na tabela: sem `order_by`, ela tende a voltar depois da outra.
+        UserProfile.objects.filter(pk=primeiro.pk).update(territorio=primeiro.territorio)
+
+        _, _, territorio = budget_service.resolver_nivel_do_usuario(usuario)
+
+        assert territorio.pk == primeiro.territorio_id
+        assert limites.territorio_do_pool(usuario.pk) == primeiro.territorio_id
+
+    def test_celula_territorial_traz_o_estado_do_territorio(self, auth_client_super_admin, state_rn, territory_rn):
+        territorial = BudgetPoolFactory(
+            nivel=Nivel.TERRITORIAL, estado=None, territorio=territory_rn, valor_alocado=Decimal("100"),
+        )
+
+        linha = _linha(auth_client_super_admin.get(PAINEL_URL), territorial)
+
+        assert linha["estado"]["sigla"] == state_rn.sigla
+        assert linha["territorio"]["estados"] == ["RN"]
+
+    @pytest.mark.parametrize(("comprometido", "total", "percentual"), [("500", "0", "100"), ("0", "0", "0")])
+    def test_percentual_com_total_zero(self, comprometido, total, percentual):
+        """Limite reduzido a zero com reservas de pé está estourado, não verde."""
+        assert budget_service.percentual_comprometido(Decimal(comprometido), Decimal(total)) == Decimal(percentual)
+
+    def test_ugp_recebe_o_id_do_pool_nacional_para_a_origem_do_excedente(self, auth_client_super_admin):
+        nacional = _pool_nacional(valor_alocado=Decimal("100"))
+
+        response = auth_client_super_admin.get(f"{PAINEL_URL}?nivel=nacional")
+
+        assert [linha["id"] for linha in response.data] == [nacional.pk]
 
     def test_filtro_com_id_inexistente_e_400_pra_qualquer_perfil(
         self, auth_client_super_admin, auth_client_articulador_rn,
@@ -344,17 +439,38 @@ class TestPainelEscopoTerritorial:
         assert response_rubrica.status_code == 400
 
 
+class TestPainelDeUmNivel:
+    def test_uma_linha_por_rubrica_ativa_mesmo_sem_pool(self):
+        linhas = budget_service.painel_orcamento(nivel=Nivel.NACIONAL)
+
+        assert len(linhas) == BudgetRubrica.objects.filter(ativo=True).count()
+        assert all(linha["valor_aprovado"] == Decimal("0") for linha in linhas)
+
+    def test_soma_os_pools_do_nivel_pedido(self, state_rn, territory_rn):
+        rubrica = BudgetRubricaFactory()
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.ESTADUAL, estado=state_rn, territorio=None, valor_alocado=Decimal("3000"),
+        )
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.TERRITORIAL, estado=None, territorio=territory_rn,
+            valor_alocado=Decimal("1000"),
+        )
+
+        linhas = budget_service.painel_orcamento(
+            nivel=Nivel.ESTADUAL, estado_sigla=state_rn.sigla, rubrica_slug=rubrica.slug,
+        )
+
+        assert linhas[0]["valor_aprovado"] == Decimal("3000")
+        assert linhas[0]["valor_distribuido"] == Decimal("1000")
+
+
 class TestBudgetThresholdAlertTask:
     @patch("apps.core.tasks.notifications.send_email_notification.delay")
     def test_task_notifica_vermelhos(
         self, mocked_delay, usuario, usuario_super_admin, django_capture_on_commit_callbacks,
     ):
-        meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL, estado=None, territorio=None,
-            valor_alocado=Decimal("10000"), valor_comprometido=Decimal("9000"),
-        )
+        _pool_nacional(rubrica, valor_alocado=Decimal("10000"), valor_comprometido=Decimal("9000"))
 
         # Notification.save() só enfileira o e-mail via transaction.on_commit
         # — captura os callbacks pra executá-los aqui.
@@ -365,21 +481,32 @@ class TestBudgetThresholdAlertTask:
         assert mocked_delay.call_count == 2
         notifications = usuario.notifications.filter(evento="budget_allocation_red")
         assert notifications.count() == 1
-        assert meta.titulo in notifications.first().titulo
+        assert rubrica.nome in notifications.first().titulo
+
+    @patch("apps.core.tasks.notifications.send_email_notification.delay")
+    def test_alerta_diz_qual_e_o_territorio(self, mocked_delay, usuario_super_admin, territory_rn):
+        BudgetPoolFactory(
+            nivel=Nivel.TERRITORIAL, estado=None, territorio=territory_rn,
+            valor_alocado=Decimal("10000"), valor_comprometido=Decimal("9500"),
+        )
+
+        check_budget_threshold_alert()
+
+        notificacao = usuario_super_admin.notifications.get(evento="budget_allocation_red")
+        assert territory_rn.nome in notificacao.titulo
 
     @patch("apps.core.tasks.notifications.send_email_notification.delay")
     def test_task_notifica_vermelhos_em_qualquer_nivel(
         self, mocked_delay, usuario, usuario_super_admin, state_rn, territory_rn,
     ):
-        meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.ESTADUAL,
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.ESTADUAL,
             estado=state_rn, territorio=None,
             valor_alocado=Decimal("10000"), valor_comprometido=Decimal("9000"),
         )
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.TERRITORIAL,
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.TERRITORIAL,
             estado=None, territorio=territory_rn,
             valor_alocado=Decimal("1000"), valor_comprometido=Decimal("100"),
         )
@@ -392,12 +519,7 @@ class TestBudgetThresholdAlertTask:
 
     @patch("apps.core.tasks.notifications.send_email_notification.delay")
     def test_does_not_notify_when_nothing_is_red(self, mocked_delay, usuario):
-        meta = WorkPlanMetaFactory()
-        rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL, estado=None, territorio=None,
-            valor_alocado=Decimal("10000"), valor_comprometido=Decimal("5000"),
-        )
+        _pool_nacional(valor_alocado=Decimal("10000"), valor_comprometido=Decimal("5000"))
 
         assert check_budget_threshold_alert() == 0
         assert mocked_delay.call_count == 0
@@ -419,86 +541,46 @@ class TestPainelPerformance:
         from django.core.cache import cache
 
         from apps.core.models.system_config import SystemConfig, TipoConfiguracao
-        from apps.sgp.services.budget import limiares_semaforo
 
         for chave, valor in (("budget_alert_yellow_pct", "70"), ("budget_alert_red_pct", "90")):
             SystemConfig.objects.get_or_create(chave=chave, defaults={"valor": valor, "tipo": TipoConfiguracao.INTEGER})
             cache.delete(f"system_config:{chave}")
-        limiares_semaforo()
+        budget_service.limiares_semaforo()
 
     @pytest.mark.performance
-    def test_numero_de_queries(
-        self, auth_client_super_admin, django_assert_num_queries, state_rn, territory_rn,
+    def test_queries_nao_crescem_com_os_pools(
+        self, auth_client_super_admin, django_assert_max_num_queries, state_rn, territory_rn,
     ):
-        rubricas = list(BudgetRubrica.objects.filter(ativo=True))
-        for numero in range(1, 8):
-            meta = WorkPlanMetaFactory(numero=numero)
-            for rubrica in rubricas:
-                BudgetAllocationFactory(
-                    meta=meta, rubrica=rubrica, nivel=Nivel.NACIONAL,
-                    estado=None, territorio=None, valor_alocado=Decimal("1000"),
-                )
-                BudgetAllocationFactory(
-                    meta=meta, rubrica=rubrica, nivel=Nivel.ESTADUAL,
-                    estado=state_rn, territorio=None, valor_alocado=Decimal("500"),
-                )
-                BudgetAllocationFactory(
-                    meta=meta, rubrica=rubrica, nivel=Nivel.TERRITORIAL,
-                    estado=None, territorio=territory_rn, valor_alocado=Decimal("200"),
-                )
+        for rubrica in BudgetRubrica.objects.filter(ativo=True):
+            _pool_nacional(rubrica, valor_alocado=Decimal("1000"))
+            BudgetPoolFactory(
+                rubrica=rubrica, nivel=Nivel.ESTADUAL, estado=state_rn, territorio=None, valor_alocado=Decimal("500"),
+            )
+            BudgetPoolFactory(
+                rubrica=rubrica, nivel=Nivel.TERRITORIAL, estado=None, territorio=territory_rn,
+                valor_alocado=Decimal("200"),
+            )
 
-        with django_assert_num_queries(5):
+        # 2 de perfil, pools, estados dos territórios e o distribuído, com os 5 da visão total em volta dele.
+        with django_assert_max_num_queries(10):
             response = auth_client_super_admin.get(PAINEL_URL)
 
         assert response.status_code == 200
-        assert len(response.data) == 42
+        assert len(response.data) == 18
 
-    def test_numero_de_queries_adt_sem_filtro(
-        self, auth_client_adt_rn, django_assert_num_queries,
-    ):
-        # ADT/ACR tem nível padrão territorial (folha, sem "distribuído") — 1 query a
-        # menos que o caminho nacional/estadual dos outros perfis.
-        WorkPlanMetaFactory()
-
-        with django_assert_num_queries(4):
-            response = auth_client_adt_rn.get(PAINEL_URL)
-
-        assert response.status_code == 200
-
-    def test_numero_de_queries_com_filtros(
-        self, auth_client_super_admin, django_assert_num_queries, state_rn, territory_rn,
+    def test_queries_com_todos_os_filtros_do_articulador(
+        self, auth_client_articulador_rn, django_assert_max_num_queries, state_rn, territory_rn,
     ):
         meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.ESTADUAL,
-            estado=state_rn, territorio=None, valor_alocado=Decimal("1000"),
-        )
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.TERRITORIAL,
-            estado=None, territorio=territory_rn, valor_alocado=Decimal("200"),
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.TERRITORIAL, estado=None, territorio=territory_rn,
+            valor_alocado=Decimal("200"),
         )
 
-        with django_assert_num_queries(8):
-            response = auth_client_super_admin.get(
-                f"{PAINEL_URL}?meta={meta.pk}&rubrica={rubrica.slug}&estado={state_rn.sigla}"
-            )
-
-        assert response.status_code == 200
-
-    def test_numero_de_queries_com_filtros_articulador(
-        self, auth_client_articulador_rn, django_assert_num_queries, state_rn, territory_rn,
-    ):
-        # Articulador Estadual paga +1 query em resolver_nivel_painel (confirma posse
-        # do território) sobre o caminho de super-admin/ugp — pior caso real, 9.
-        meta = WorkPlanMetaFactory()
-        rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica, nivel=Nivel.TERRITORIAL,
-            estado=None, territorio=territory_rn, valor_alocado=Decimal("200"),
-        )
-
-        with django_assert_num_queries(9):
+        # Validação dos 4 filtros, perfil, posse do território, pools, estados dos territórios, a visão total
+        # e o executado da Meta.
+        with django_assert_max_num_queries(14):
             response = auth_client_articulador_rn.get(
                 f"{PAINEL_URL}?meta={meta.pk}&rubrica={rubrica.slug}"
                 f"&estado={state_rn.sigla}&territorio={territory_rn.pk}"

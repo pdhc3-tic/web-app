@@ -2,11 +2,9 @@ from django.conf import settings
 from django.db import models
 from django.db.models import ProtectedError, Q
 
-from .workplan import WorkPlanMeta
-
 
 class BudgetRubrica(models.Model):
-    """Catálogo estável das rubricas orçamentárias (§5.3.1)."""
+    """Catálogo estável das rubricas orçamentárias."""
 
     nome = models.CharField(max_length=100, verbose_name="Nome")
     slug = models.SlugField(unique=True, max_length=50, verbose_name="Slug")
@@ -22,14 +20,12 @@ class BudgetRubrica(models.Model):
         return self.nome
 
 
-class BudgetAllocation(models.Model):
-    """A distribuição de uma Meta/Rubrica entre os três níveis (§5.5).
+class BudgetPool(models.Model):
+    """Saldo autônomo de uma rubrica num nível geográfico.
 
-    `valor_comprometido` e `valor_executado` são materializados, não
-    properties — atualizados exclusivamente por BudgetTransaction dentro de
-    transação atômica (decisão de projeto: evita o N+1 que
-    WorkPlanAcao.quantidade_realizada causa no painel do PT, ver R4 em
-    SPRINT_SGP_REFATORACAO.md).
+    `valor_comprometido` e `valor_executado` são materializados, não properties:
+    atualizados exclusivamente junto de uma BudgetTransaction, dentro de transação
+    atômica, para o painel não pagar uma soma por célula.
     """
 
     class Nivel(models.TextChoices):
@@ -37,16 +33,10 @@ class BudgetAllocation(models.Model):
         ESTADUAL = "estadual", "Estadual"
         TERRITORIAL = "territorial", "Territorial"
 
-    meta = models.ForeignKey(
-        WorkPlanMeta,
-        on_delete=models.CASCADE,
-        related_name="alocacoes_orcamento",
-        verbose_name="Meta",
-    )
     rubrica = models.ForeignKey(
         BudgetRubrica,
         on_delete=models.PROTECT,
-        related_name="alocacoes",
+        related_name="pools",
         verbose_name="Rubrica",
     )
     nivel = models.CharField(
@@ -57,7 +47,7 @@ class BudgetAllocation(models.Model):
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name="alocacoes_orcamento",
+        related_name="pools_orcamento",
         verbose_name="Estado",
     )
     territorio = models.ForeignKey(
@@ -65,7 +55,7 @@ class BudgetAllocation(models.Model):
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name="alocacoes_orcamento",
+        related_name="pools_orcamento",
         verbose_name="Território",
     )
     valor_alocado = models.DecimalField(
@@ -83,7 +73,7 @@ class BudgetAllocation(models.Model):
     reserva_ugp = models.BooleanField(
         default=False,
         verbose_name="Reserva Própria da UGP",
-        help_text="Só em nível nacional. Uma reserva própria da UGP nunca recebe alocações-filhas.",
+        help_text="Só em nível nacional. Uma reserva própria da UGP nunca recebe pools-filhos.",
     )
     criado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -97,41 +87,144 @@ class BudgetAllocation(models.Model):
     )
 
     class Meta:
-        verbose_name = "Alocação Orçamentária"
-        verbose_name_plural = "Alocações Orçamentárias"
-        ordering = ["meta", "rubrica", "nivel"]
+        verbose_name = "Pool Orçamentário"
+        verbose_name_plural = "Pools Orçamentários"
+        ordering = ["rubrica", "nivel"]
         constraints = [
             models.UniqueConstraint(
-                fields=["meta", "rubrica", "nivel", "estado", "territorio"],
-                name="unique_budget_allocation_combinacao",
+                fields=["rubrica", "nivel", "estado", "territorio"],
+                name="unique_budget_pool_combinacao",
                 # sem isso dois NULLs em estado/territorio (nacional/estadual) não colidem no Postgres.
                 nulls_distinct=False,
             ),
             models.CheckConstraint(
-                # literais, não Nivel.* — Meta não enxerga o namespace de BudgetAllocation.
+                # literais, não Nivel.* — Meta não enxerga o namespace de BudgetPool.
                 condition=(
                     Q(nivel="nacional", estado__isnull=True, territorio__isnull=True)
                     | Q(nivel="estadual", estado__isnull=False, territorio__isnull=True)
-                    | Q(nivel="territorial", territorio__isnull=False)
+                    | Q(nivel="territorial", estado__isnull=True, territorio__isnull=False)
                 ),
-                name="ck_budget_allocation_nivel_consistente",
+                name="ck_budget_pool_nivel_consistente",
             ),
             models.CheckConstraint(
                 condition=Q(reserva_ugp=False) | Q(nivel="nacional"),
-                name="ck_budget_allocation_reserva_ugp_so_nacional",
+                name="ck_budget_pool_reserva_ugp_so_nacional",
+            ),
+            models.CheckConstraint(
+                condition=Q(valor_alocado__gte=models.F("valor_comprometido") + models.F("valor_executado")),
+                name="ck_budget_pool_saldo_nao_negativo",
             ),
         ]
         indexes = [
-            models.Index(fields=["meta", "rubrica"], name="idx_budgetalloc_meta_rubrica"),
-            models.Index(fields=["nivel", "territorio"], name="idx_budgetalloc_nivel_territ"),
+            models.Index(fields=["nivel", "territorio"], name="idx_budgetpool_nivel_territ"),
         ]
 
     def __str__(self):
-        return f"{self.meta} · {self.rubrica} · {self.get_nivel_display()}"
+        return f"{self.rubrica} · {self.get_nivel_display()}"
+
+
+class SpendingLimit(models.Model):
+    """Limite de gasto por rubrica e período: o padrão de um perfil ou a linha individual.
+
+    A linha individual guarda o que a pessoa comprometeu e executou no período. `herdado` indica
+    que ela nasceu do padrão do perfil, na primeira reserva; sem isso, é uma sobrescrita, que
+    exige justificativa.
+    """
+
+    class Escopo(models.TextChoices):
+        PERFIL = "perfil", "Padrão do perfil"
+        INDIVIDUAL = "individual", "Individual"
+
+    escopo = models.CharField(max_length=20, choices=Escopo.choices, verbose_name="Escopo")
+    perfil = models.ForeignKey(
+        "core.Role", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="limites_de_gasto", verbose_name="Perfil",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="limites_de_gasto", verbose_name="Usuário",
+    )
+    rubrica = models.ForeignKey(
+        BudgetRubrica, on_delete=models.PROTECT, related_name="limites_de_gasto", verbose_name="Rubrica",
+    )
+    territorio = models.ForeignKey(
+        "core.Territory", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="limites_de_gasto", verbose_name="Território",
+    )
+    valor_limite = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0, verbose_name="Valor Limite (R$)",
+    )
+    valor_comprometido = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0, verbose_name="Valor Comprometido (R$)",
+    )
+    valor_executado = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0, verbose_name="Valor Executado (R$)",
+    )
+    herdado = models.BooleanField(default=False, verbose_name="Herdado do perfil")
+    justificativa = models.TextField(blank=True, default="", verbose_name="Justificativa")
+    periodo_inicio = models.DateField(verbose_name="Início do período")
+    periodo_fim = models.DateField(verbose_name="Fim do período")
+    criado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="limites_de_gasto_criados", verbose_name="Criado por",
+    )
+    criado_em = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    atualizado_em = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
+
+    class Meta:
+        verbose_name = "Limite de Gasto"
+        verbose_name_plural = "Limites de Gasto"
+        ordering = ["-periodo_inicio", "pk"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    Q(escopo="perfil", perfil__isnull=False, user__isnull=True)
+                    | Q(escopo="individual", perfil__isnull=True, user__isnull=False)
+                ),
+                name="ck_spendinglimit_escopo_consistente",
+            ),
+            models.CheckConstraint(
+                condition=Q(escopo="perfil") | Q(herdado=True) | ~Q(justificativa=""),
+                name="ck_spendinglimit_sobrescrita_justificada",
+            ),
+            models.CheckConstraint(
+                condition=Q(herdado=False) | Q(escopo="individual"),
+                name="ck_spendinglimit_herdado_so_individual",
+            ),
+            models.CheckConstraint(
+                condition=Q(periodo_fim__gte=models.F("periodo_inicio")),
+                name="ck_spendinglimit_periodo_valido",
+            ),
+            models.CheckConstraint(condition=Q(valor_limite__gte=0), name="ck_spendinglimit_valor_nao_negativo"),
+            models.CheckConstraint(
+                condition=Q(valor_comprometido__gte=0), name="ck_spendinglimit_comprometido_nao_negativo",
+            ),
+            models.CheckConstraint(
+                condition=Q(valor_executado__gte=0), name="ck_spendinglimit_executado_nao_negativo",
+            ),
+            models.UniqueConstraint(
+                fields=["user", "rubrica", "periodo_inicio"],
+                condition=Q(escopo="individual"),
+                name="unique_spendinglimit_individual_periodo",
+            ),
+            models.UniqueConstraint(
+                fields=["perfil", "rubrica", "periodo_inicio"],
+                condition=Q(escopo="perfil"),
+                name="unique_spendinglimit_perfil_periodo",
+            ),
+        ]
+
+    def __str__(self):
+        dono = self.user if self.escopo == self.Escopo.INDIVIDUAL else self.perfil
+        return f"{dono} · {self.rubrica} — limite R$ {self.valor_limite}"
+
+    @property
+    def saldo_disponivel(self):
+        return self.valor_limite - self.valor_comprometido - self.valor_executado
 
 
 class BudgetTransaction(models.Model):
-    """Trilha de auditoria imutável de movimentos sobre uma alocação (§5.5).
+    """Trilha de auditoria imutável de movimentos sobre um pool.
 
     Mesmo padrão de imutabilidade de apps.core.models.audit_log.AuditLog:
     save() bloqueia UPDATE, delete() é bloqueado — aqui com ProtectedError,
@@ -144,18 +237,44 @@ class BudgetTransaction(models.Model):
         EXECUCAO = "execucao", "Execução"
         REMANEJAMENTO = "remanejamento", "Remanejamento"
         AJUSTE = "ajuste", "Ajuste"
+        AUMENTO_LIMITE = "aumento_limite", "Alteração de limite"
 
-    allocation = models.ForeignKey(
-        BudgetAllocation,
+    pool = models.ForeignKey(
+        BudgetPool,
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="transactions",
-        verbose_name="Alocação",
+        verbose_name="Pool",
+    )
+    spending_limit = models.ForeignKey(
+        SpendingLimit,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="transactions",
+        verbose_name="Limite de gasto",
+    )
+    activity = models.ForeignKey(
+        "sgp.Activity",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="transacoes_orcamento",
+        verbose_name="Atividade",
+        help_text="Liga o executado à Meta, pela cadeia Atividade → Ação → Meta.",
     )
     tipo = models.CharField(
         max_length=20, choices=Tipo.choices, verbose_name="Tipo",
     )
     valor = models.DecimalField(
         max_digits=14, decimal_places=2, verbose_name="Valor (R$)",
+    )
+    saldo_anterior = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0, verbose_name="Saldo anterior (R$)",
+    )
+    saldo_posterior = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0, verbose_name="Saldo posterior (R$)",
     )
     demanda_id = models.CharField(
         max_length=64,
@@ -165,12 +284,22 @@ class BudgetTransaction(models.Model):
         verbose_name="ID da Demanda",
         help_text="Referência fraca a uma Demand do SGD (apps.sgd) — sem FK de propósito, o motor não importa apps.sgd.",
     )
+    demand_request_id = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        default=None,
+        verbose_name="ID da Solicitação",
+        help_text="Referência fraca à DemandRequest do SGD: é a chave de idempotência da reserva.",
+    )
+    ip = models.GenericIPAddressField(null=True, blank=True, verbose_name="IP")
     justificativa = models.TextField(
         blank=True, default="", verbose_name="Justificativa",
     )
+    # PROTECT: o trigger recusa o UPDATE que um SET_NULL faria ao apagar o usuário.
     criado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
+        on_delete=models.PROTECT,
         null=True,
         blank=True,
         verbose_name="Criado por",
@@ -185,6 +314,18 @@ class BudgetTransaction(models.Model):
         ordering = ["-criado_em"]
         indexes = [
             models.Index(fields=["demanda_id", "tipo"], name="idx_budgettx_demanda_tipo"),
+            models.Index(fields=["demand_request_id", "tipo"], name="idx_budgettx_solicitacao_tipo"),
+            models.Index(fields=["pool", "-criado_em"], name="idx_budgettx_pool_criado"),
+            models.Index(fields=["spending_limit", "-criado_em"], name="idx_budgettx_limite_criado"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    Q(pool__isnull=False, spending_limit__isnull=True)
+                    | Q(pool__isnull=True, spending_limit__isnull=False)
+                ),
+                name="ck_budgettransaction_pool_ou_limite",
+            ),
         ]
 
     def save(self, *args, **kwargs):
@@ -201,11 +342,11 @@ class BudgetTransaction(models.Model):
         )
 
     def __str__(self):
-        return f"[{self.tipo}] {self.allocation} — R$ {self.valor}"
+        return f"[{self.tipo}] {self.pool or self.spending_limit} — R$ {self.valor}"
 
 
 class BudgetIncreaseRequest(models.Model):
-    """Solicitação de Recurso Extra (SGP §6.6): o usuário pede aumento do próprio
+    """Solicitação de Recurso Extra: o usuário pede aumento do próprio
     limite individual em uma rubrica. Fluxo próprio, distinto do da demanda."""
 
     class Status(models.TextChoices):
@@ -295,7 +436,7 @@ class BudgetIncreaseRequest(models.Model):
 
 
 class BudgetTransfer(models.Model):
-    """Remanejamento de saldo entre alocações (SGP §6.7), imutável: correção só por
+    """Remanejamento de saldo entre pools, imutável: correção só por
     um novo remanejamento em sentido contrário."""
 
     class Tipo(models.TextChoices):
@@ -310,15 +451,15 @@ class BudgetTransfer(models.Model):
     tipo = models.CharField(max_length=20, choices=Tipo.choices, verbose_name="Tipo")
     escopo = models.CharField(
         max_length=20, choices=Escopo.choices, blank=True, default="", verbose_name="Escopo",
-        help_text="Em branco no remanejamento feito direto entre alocações, sem demanda envolvida.",
+        help_text="Em branco no remanejamento feito direto entre pools, sem demanda envolvida.",
     )
-    allocation_origem = models.ForeignKey(
-        BudgetAllocation, on_delete=models.PROTECT,
-        related_name="transferencias_de_saida", verbose_name="Alocação de origem",
+    pool_origem = models.ForeignKey(
+        BudgetPool, on_delete=models.PROTECT,
+        related_name="transferencias_de_saida", verbose_name="Pool de origem",
     )
-    allocation_destino = models.ForeignKey(
-        BudgetAllocation, on_delete=models.PROTECT,
-        related_name="transferencias_de_entrada", verbose_name="Alocação de destino",
+    pool_destino = models.ForeignKey(
+        BudgetPool, on_delete=models.PROTECT,
+        related_name="transferencias_de_entrada", verbose_name="Pool de destino",
     )
     valor = models.DecimalField(max_digits=14, decimal_places=2, verbose_name="Valor (R$)")
     motivo = models.TextField(verbose_name="Motivo")
@@ -327,8 +468,9 @@ class BudgetTransfer(models.Model):
     saldo_origem_depois = models.DecimalField(max_digits=14, decimal_places=2, verbose_name="Saldo da origem depois")
     saldo_destino_antes = models.DecimalField(max_digits=14, decimal_places=2, verbose_name="Saldo do destino antes")
     saldo_destino_depois = models.DecimalField(max_digits=14, decimal_places=2, verbose_name="Saldo do destino depois")
+    # PROTECT: o trigger recusa o UPDATE que um SET_NULL faria ao apagar o usuário.
     aprovado_por = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
         related_name="remanejamentos_aprovados", verbose_name="Aprovado por",
     )
     ip = models.GenericIPAddressField(null=True, blank=True, verbose_name="IP")
@@ -360,4 +502,4 @@ class BudgetTransfer(models.Model):
         raise ProtectedError("BudgetTransfer é imutável: registros não podem ser removidos.", [self])
 
     def __str__(self):
-        return f"[{self.tipo}] {self.allocation_origem} → {self.allocation_destino} — R$ {self.valor}"
+        return f"[{self.tipo}] {self.pool_origem} → {self.pool_destino} — R$ {self.valor}"

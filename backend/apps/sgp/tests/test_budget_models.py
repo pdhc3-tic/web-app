@@ -6,12 +6,11 @@ from django.apps import apps as django_apps
 from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 
-from apps.sgp.models import BudgetAllocation, BudgetRubrica, BudgetTransaction
+from apps.sgp.models import BudgetPool, BudgetRubrica
 from apps.sgp.tests.factories import (
-    BudgetAllocationFactory,
+    BudgetPoolFactory,
     BudgetRubricaFactory,
     BudgetTransactionFactory,
-    WorkPlanMetaFactory,
 )
 
 pytestmark = pytest.mark.django_db
@@ -38,72 +37,70 @@ class TestSeedRubricas:
         assert set(BudgetRubrica.objects.values_list("slug", "ordem")) == antes
 
 
-class TestAllocationConstraints:
-    def test_allocation_unica_por_combinacao(self, territory_rn):
-        meta = WorkPlanMetaFactory()
+class TestPoolConstraints:
+    def test_pool_unico_por_combinacao(self, territory_rn):
         rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica,
-            nivel=BudgetAllocation.Nivel.TERRITORIAL,
+        BudgetPoolFactory(
+            rubrica=rubrica,
+            nivel=BudgetPool.Nivel.TERRITORIAL,
             estado=None, territorio=territory_rn,
         )
 
         with pytest.raises(IntegrityError):
             with transaction.atomic():
-                BudgetAllocationFactory(
-                    meta=meta, rubrica=rubrica,
-                    nivel=BudgetAllocation.Nivel.TERRITORIAL,
+                BudgetPoolFactory(
+                    rubrica=rubrica,
+                    nivel=BudgetPool.Nivel.TERRITORIAL,
                     estado=None, territorio=territory_rn,
                 )
 
-    def test_allocation_nacional_unica_mesmo_com_estado_e_territorio_nulos(self):
+    def test_pool_nacional_unico_mesmo_com_estado_e_territorio_nulos(self):
         # nacional tem estado e território NULL nos dois lados — sem
         # nulls_distinct=False no UniqueConstraint, o Postgres deixaria passar.
-        meta = WorkPlanMetaFactory()
         rubrica = BudgetRubricaFactory()
-        BudgetAllocationFactory(
-            meta=meta, rubrica=rubrica,
-            nivel=BudgetAllocation.Nivel.NACIONAL,
+        BudgetPoolFactory(
+            rubrica=rubrica,
+            nivel=BudgetPool.Nivel.NACIONAL,
             estado=None, territorio=None,
         )
 
         with pytest.raises(IntegrityError):
             with transaction.atomic():
-                BudgetAllocationFactory(
-                    meta=meta, rubrica=rubrica,
-                    nivel=BudgetAllocation.Nivel.NACIONAL,
+                BudgetPoolFactory(
+                    rubrica=rubrica,
+                    nivel=BudgetPool.Nivel.NACIONAL,
                     estado=None, territorio=None,
                 )
 
     def test_nivel_nacional_rejeita_estado(self, state_rn):
         with pytest.raises(IntegrityError):
             with transaction.atomic():
-                BudgetAllocationFactory(
-                    nivel=BudgetAllocation.Nivel.NACIONAL,
+                BudgetPoolFactory(
+                    nivel=BudgetPool.Nivel.NACIONAL,
                     estado=state_rn, territorio=None,
                 )
 
     def test_nivel_estadual_exige_estado(self):
         with pytest.raises(IntegrityError):
             with transaction.atomic():
-                BudgetAllocationFactory(
-                    nivel=BudgetAllocation.Nivel.ESTADUAL,
+                BudgetPoolFactory(
+                    nivel=BudgetPool.Nivel.ESTADUAL,
                     estado=None, territorio=None,
                 )
 
     def test_nivel_territorial_exige_territorio(self):
         with pytest.raises(IntegrityError):
             with transaction.atomic():
-                BudgetAllocationFactory(
-                    nivel=BudgetAllocation.Nivel.TERRITORIAL,
+                BudgetPoolFactory(
+                    nivel=BudgetPool.Nivel.TERRITORIAL,
                     estado=None, territorio=None,
                 )
 
     def test_reserva_ugp_so_pode_ser_nacional(self, state_rn):
         with pytest.raises(IntegrityError):
             with transaction.atomic():
-                BudgetAllocationFactory(
-                    nivel=BudgetAllocation.Nivel.ESTADUAL,
+                BudgetPoolFactory(
+                    nivel=BudgetPool.Nivel.ESTADUAL,
                     estado=state_rn, territorio=None, reserva_ugp=True,
                 )
 
@@ -125,20 +122,20 @@ class TestTransactionImutavel:
 
 class TestValoresDecimal:
     def test_valores_sao_decimal(self):
-        allocation = BudgetAllocationFactory(valor_alocado=Decimal("0.01"))
-        allocation.refresh_from_db()
+        pool = BudgetPoolFactory(valor_alocado=Decimal("0.01"))
+        pool.refresh_from_db()
 
-        assert type(allocation.valor_alocado) is Decimal
-        assert allocation.valor_alocado == Decimal("0.01")
+        assert type(pool.valor_alocado) is Decimal
+        assert pool.valor_alocado == Decimal("0.01")
 
     def test_valores_comprometido_e_executado_sao_decimal(self):
-        allocation = BudgetAllocationFactory(
-            valor_comprometido=Decimal("0.01"), valor_executado=Decimal("0.01"),
+        pool = BudgetPoolFactory(
+            valor_alocado=Decimal("1"), valor_comprometido=Decimal("0.01"), valor_executado=Decimal("0.01"),
         )
-        allocation.refresh_from_db()
+        pool.refresh_from_db()
 
-        assert type(allocation.valor_comprometido) is Decimal
-        assert type(allocation.valor_executado) is Decimal
+        assert type(pool.valor_comprometido) is Decimal
+        assert type(pool.valor_executado) is Decimal
 
     def test_transaction_valor_e_decimal(self):
         transacao = BudgetTransactionFactory(valor=Decimal("0.01"))

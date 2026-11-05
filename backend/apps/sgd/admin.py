@@ -1,5 +1,8 @@
+from decimal import Decimal
+
 from django import forms
 from django.contrib import admin
+from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from apps.sgd.models import (
     ApprovalStep,
@@ -7,11 +10,13 @@ from apps.sgd.models import (
     ArloImport,
     Demand,
     DemandDocument,
-    DemandIndividualLimit,
     DemandRequest,
     DemandTypeRubricaMapping,
 )
-from apps.sgd.services import auditoria as auditoria_service
+from apps.sgd.services import orcamento as orcamento_service
+from apps.sgp.models import SpendingLimit
+
+ZERO = Decimal("0")
 
 
 class SalvaSoOQueOFormularioAlterou:
@@ -74,35 +79,73 @@ class ApprovalStepAdmin(admin.ModelAdmin):
     list_filter = ["etapa", "acao"]
 
 
-class DemandIndividualLimitAdminForm(forms.ModelForm):
+class SpendingLimitAdminForm(forms.ModelForm):
     class Meta:
-        model = DemandIndividualLimit
+        model = SpendingLimit
         fields = "__all__"
+
+    def clean(self):
+        dados = super().clean()
+        novo = self.instance.pk is None
+        # Na edição, estes campos são somente leitura e não vêm no formulário.
+        escopo = dados.get("escopo") or self.instance.escopo
+        if escopo == SpendingLimit.Escopo.PERFIL:
+            self.add_error("escopo", "O padrão por perfil é cadastrado em /sgp/orcamento/limites/.")
+            return dados
+        if novo and not dados.get("user"):
+            self.add_error("user", "Obrigatório no limite individual.")
+        mudou_o_valor = "valor_limite" in self.changed_data
+        if (not self.instance.herdado or mudou_o_valor) and not (dados.get("justificativa") or "").strip():
+            self.add_error("justificativa", "Obrigatória em limite individual e em alteração de valor.")
+        if not self.errors:
+            self._conferir_saldo_e_periodo(dados)
+        return dados
+
+    def _conferir_saldo_e_periodo(self, dados) -> None:
+        novo = self.instance.pk is None
+        user = dados["user"].pk if novo else self.instance.user_id
+        rubrica = dados["rubrica"].pk if novo else self.instance.rubrica_id
+        territorio_id = orcamento_service.territorio_do_pool(user)
+        inicio = dados["periodo_inicio"] if novo else self.instance.periodo_inicio
+        if novo:
+            efetivo = orcamento_service.limite_efetivo(solicitante_id=user, rubrica_id=rubrica, data=inicio)
+            valor_atual = efetivo.valor_limite if efetivo else ZERO
+        else:
+            valor_atual = self.instance.valor_limite
+        aumento = dados["valor_limite"] - valor_atual
+        try:
+            if novo:
+                orcamento_service.exigir_sem_sobreposicao(user, rubrica, inicio, dados["periodo_fim"])
+            if territorio_id and aumento > ZERO:
+                orcamento_service.exigir_dentro_do_pool(rubrica, [territorio_id], inicio, ajuste=aumento)
+        except DRFValidationError as exc:
+            campo, mensagem = next(iter(exc.detail.items()))
+            self.add_error("valor_limite" if campo == "valor_limite" else None, str(mensagem[0] if isinstance(mensagem, list) else mensagem))
 
     def clean_valor_limite(self):
         valor = self.cleaned_data["valor_limite"]
         if valor < 0:
             raise forms.ValidationError("Não pode ser negativo.")
-        erro = self.instance.pk and self.instance.erro_de_reducao(valor)
-        if erro:
-            raise forms.ValidationError(erro)
         return valor
 
 
-@admin.register(DemandIndividualLimit)
-class DemandIndividualLimitAdmin(SalvaSoOQueOFormularioAlterou, admin.ModelAdmin):
-    form = DemandIndividualLimitAdminForm
-    list_display = ["solicitante", "rubrica", "valor_limite", "valor_comprometido", "valor_executado"]
-    list_filter = ["rubrica"]
-    search_fields = ["solicitante__nome"]
-    readonly_fields = ["valor_comprometido", "valor_executado", "criado_por"]
+@admin.register(SpendingLimit)
+class SpendingLimitAdmin(SalvaSoOQueOFormularioAlterou, admin.ModelAdmin):
+    form = SpendingLimitAdminForm
+    list_display = [
+        "escopo", "user", "perfil", "rubrica", "periodo_inicio", "periodo_fim",
+        "valor_limite", "valor_comprometido", "valor_executado",
+    ]
+    list_filter = ["escopo", "rubrica"]
+    search_fields = ["user__nome"]
+    readonly_fields = ["valor_comprometido", "valor_executado", "criado_por", "herdado", "territorio"]
 
     def get_readonly_fields(self, request, obj=None):
         # O comprometido é a soma das reservas desse solicitante nessa rubrica:
         # mover o limite para outro par deixaria as reservas sem limite.
         if obj is None:
             return self.readonly_fields
-        return [*self.readonly_fields, "solicitante", "rubrica"]
+        return [*self.readonly_fields, "escopo", "user", "perfil", "rubrica", "periodo_inicio", "periodo_fim"]
 
     def get_object(self, request, object_id, from_field=None):
         # O Admin roda o POST da edição e da exclusão numa transação: travado
@@ -110,22 +153,47 @@ class DemandIndividualLimitAdmin(SalvaSoOQueOFormularioAlterou, admin.ModelAdmin
         obj = super().get_object(request, object_id, from_field)
         if obj is None or request.method != "POST":
             return obj
-        return DemandIndividualLimit.objects.select_for_update().get(pk=obj.pk)
+        return SpendingLimit.objects.select_for_update(of=("self",)).get(pk=obj.pk)
 
     def save_model(self, request, obj, form, change):
         valor_anterior = form.initial.get("valor_limite")
         if not change:
             obj.criado_por = request.user
+            obj.territorio_id = orcamento_service.territorio_do_usuario(obj.user_id)
+        elif obj.herdado and obj.valor_limite != valor_anterior:
+            # O valor deixou de ser o do padrão do perfil: como na rota, vira sobrescrita.
+            obj.herdado = False
+            form.changed_data.append("herdado")
         super().save_model(request, obj, form, change)
+        tipo = orcamento_service.TipoTransacao.AUMENTO_LIMITE
         if not change:
-            auditoria_service.registrar_limite_criado(obj, usuario=request.user)
+            orcamento_service.auditar_criacao_do_limite(obj, request.user)
+            if obj.escopo == SpendingLimit.Escopo.INDIVIDUAL:
+                orcamento_service.registrar_alteracao_do_limite(
+                    limite=obj, tipo=tipo, valor=obj.valor_limite, usuario=request.user,
+                    justificativa=obj.justificativa,
+                )
         elif obj.valor_limite != valor_anterior:
-            auditoria_service.registrar_limite_alterado(obj, valor_anterior=valor_anterior, usuario=request.user)
+            orcamento_service.auditar_alteracao_do_limite(obj, valor_anterior=valor_anterior, usuario=request.user)
+            if obj.escopo == SpendingLimit.Escopo.INDIVIDUAL:
+                orcamento_service.registrar_alteracao_do_limite(
+                    limite=obj, tipo=tipo, valor=obj.valor_limite - valor_anterior,
+                    usuario=request.user, justificativa=obj.justificativa,
+                )
+
+    def has_change_permission(self, request, obj=None):
+        # O padrão por perfil tem regra própria de vigência: só pela rota de limites.
+        if obj is not None and obj.escopo == SpendingLimit.Escopo.PERFIL:
+            return False
+        return super().has_change_permission(request, obj)
 
     def has_delete_permission(self, request, obj=None):
         # Com saldo, as reservas e execuções ficariam sem limite. O `obj` do POST
         # da exclusão vem travado por `get_object`.
         if obj is not None and (obj.valor_comprometido or obj.valor_executado):
+            return False
+        # Sem o padrão, o perfil inteiro fica sem limite: só pela rota de limites.
+        if obj is not None and obj.escopo == SpendingLimit.Escopo.PERFIL:
             return False
         return super().has_delete_permission(request, obj)
 

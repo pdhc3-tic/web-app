@@ -36,7 +36,7 @@ from uuid import uuid4
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
-from django.db import connection, transaction
+from django.db import ProgrammingError, connection, transaction
 from django.db.models import F
 from django.utils import timezone
 
@@ -45,7 +45,7 @@ from apps.core.models import (
 )
 from apps.core.models.notifications import Notification
 from apps.sca.models import ConflictLog, SyncDevice, SyncEvent
-from apps.sgd.models import ApprovalStep, ArloImport, Demand, DemandIndividualLimit, DemandRequest
+from apps.sgd.models import ApprovalStep, ArloImport, Demand, DemandRequest
 from apps.sgd.models.demand_type_rubrica_mapping import DemandTypeRubricaMapping
 from apps.sgd.seed_demo import popular_arlo, popular_demandas
 from apps.sgp.models import (
@@ -68,7 +68,8 @@ from apps.sgp.models import (
 )
 from apps.sgp.tasks import refresh_power_bi_snapshot
 from apps.sgp.models.activity import filtro_atrasada
-from apps.sgp.models.budget import BudgetAllocation, BudgetTransaction, BudgetTransfer
+from apps.sgp.budget import limites as limites_service
+from apps.sgp.budget.models import BudgetPool, BudgetTransaction, BudgetTransfer, SpendingLimit
 from apps.sgp.models.google_calendar_sync_event import GoogleCalendarSyncEvent
 from apps.sgp.services.workplan_dashboard import (
     dashboard_actions,
@@ -530,13 +531,26 @@ class Command(BaseCommand):
         )
         adt = User.objects.get(email=email_de_demo(*SGD_ADT_MONTAGEM))
         for mapeamento in DemandTypeRubricaMapping.objects.filter(ativo=True).select_related("rubrica"):
-            DemandIndividualLimit.objects.update_or_create(
-                solicitante=adt, rubrica=mapeamento.rubrica,
-                defaults={"valor_limite": SGD_LIMITES_ADT_MONTAGEM.get(mapeamento.rubrica.slug, Decimal("5000"))},
+            limites_service.definir_limite_de_demonstracao(
+                user=adt, rubrica=mapeamento.rubrica,
+                valor_limite=SGD_LIMITES_ADT_MONTAGEM.get(mapeamento.rubrica.slug, Decimal("5000")),
             )
         self.stdout.write(
             f"Montagem de demanda: diária a R$ {SGD_VALOR_DIARIA_DEMO}; limites de {adt.email} nas rubricas do SGD"
         )
+
+    def _esvaziar_ledger(self) -> None:
+        tabelas = f"{BudgetTransaction._meta.db_table}, {BudgetTransfer._meta.db_table}"
+        try:
+            with connection.cursor() as cursor:
+                # O TRUNCATE é recusado com FK adiada ainda pendente na mesma transação.
+                cursor.execute("SET CONSTRAINTS ALL IMMEDIATE;")
+                cursor.execute(f"TRUNCATE {tabelas};")
+        except ProgrammingError as exc:
+            raise CommandError(
+                "O --reset esvazia o ledger com TRUNCATE, que o usuário de runtime não pode fazer. "
+                "Rode com -e DB_USER=postgres -e DB_PASSWORD=postgres, como o migrate."
+            ) from exc
 
     def _solicitantes_sgd(self) -> dict:
         role = Role.objects.get(slug="adt-acr")
@@ -723,20 +737,20 @@ class Command(BaseCommand):
                     caminho.unlink()
 
         with transaction.atomic():
-            # O SGD sai primeiro: Demand.activity e BudgetAllocation.rubrica são
-            # PROTECT, assim como as alocações do BudgetTransfer do excedente.
-            # ApprovalStep, BudgetTransaction e BudgetTransfer não deixam apagar
-            # por instância, mas o delete em massa passa. O AuditLog fica (trigger).
+            # O SGD sai primeiro: Demand.activity e BudgetPool.rubrica são
+            # PROTECT, assim como os pools do BudgetTransfer do excedente.
+            # ApprovalStep não deixa apagar por instância, mas o delete em massa passa.
+            # O AuditLog fica (trigger). O ledger também tem trigger, mas prende as FKs
+            # dos pools e limites: sai por TRUNCATE, que o trigger não vê.
             with connection.cursor() as cursor:
                 cursor.execute("SET LOCAL app.user_role = %s;", ["super-admin"])
             ApprovalStep.objects.all().delete()
             DemandRequest.objects.all().delete()
             Demand.objects.all().delete()
-            DemandIndividualLimit.objects.all().delete()
             ArloImport.objects.all().delete()
-            BudgetTransaction.objects.all().delete()
-            BudgetTransfer.objects.all().delete()
-            BudgetAllocation.objects.all().delete()
+            self._esvaziar_ledger()
+            SpendingLimit.objects.all().delete()
+            BudgetPool.objects.all().delete()
             Notification.objects.filter(modulo_origem="sgd").delete()
             PowerBIToken.objects.all().delete()
             GoogleCalendarSyncEvent.objects.all().delete()

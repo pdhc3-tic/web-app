@@ -8,7 +8,6 @@ from django.db.models import Exists, OuterRef, Q
 from apps.core.models.user import User
 from apps.core.services.permissions import user_has_role, user_role_slugs, user_states
 from apps.sgd.models.approval_step import ApprovalStep
-from apps.sgd.models.individual_limit import DemandIndividualLimit
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
 from apps.sgd.services import orcamento as orcamento_service
@@ -24,7 +23,7 @@ def demand_visibility_scope(user) -> Q | None:
         return None
 
     if user_has_role(user, "articulador-estadual"):
-        # RF18: só "Submetidas" do seu estado, além das próprias e das que
+        # Só "Submetidas" do seu estado, além das próprias e das que
         # ele já decidiu (para manter acesso ao que já pré-autorizou/devolveu).
         # `user_states` já devolve todos os estados pra um perfil global (sem
         # território específico) — não precisa de ramo especial pra isso, e
@@ -93,6 +92,7 @@ def _faixa(comprometido: Decimal, total: Decimal, limiares) -> str:
     return orcamento_service.faixa_semaforo(orcamento_service.percentual_comprometido(comprometido, total), limiares)
 
 
+@orcamento_service.com_visao_total
 def preview_impacto(demand_request, valor: Decimal, *, origem=None) -> dict:
     """`valor` é o novo valor proposto pelo aprovador — a solicitação já está
     reservada (pré-autorizada/autorizada) pelo valor atual, então só o delta
@@ -107,30 +107,31 @@ def preview_impacto(demand_request, valor: Decimal, *, origem=None) -> dict:
     valor_reservado = demand_request.valor_autorizado or demand_request.valor_estimado
     delta = valor - valor_reservado
 
+    # A linha da reserva, que pode ser de um período encerrado: é dela que o aumento vai sair.
+    limite = orcamento_service.limite_da_solicitacao(demand_request)
     with orcamento_service.pelo_solicitante():
         if delta > Decimal("0"):
             check = balance_service.verificar_duas_travas(
-                solicitante=solicitante, rubrica=rubrica, valor=delta, demand_request=demand_request,
+                solicitante=solicitante, rubrica=rubrica, valor=delta, limite=limite,
             )
             disponivel, trava_bloqueada = check.disponivel, check.trava_bloqueada
-            allocation = check.territorial.allocation
+            pool = check.territorial.pool
         else:
             # Reduzir o valor autorizado nunca bloqueia — está liberando saldo.
-            allocation = orcamento_service.consultar_pool(
-                solicitante=solicitante, rubrica=rubrica, valor=Decimal("0"), demand_request=demand_request,
-            ).allocation
+            pool = orcamento_service.consultar_pool(
+                solicitante=solicitante, rubrica=rubrica, valor=Decimal("0"),
+            ).pool
             disponivel, trava_bloqueada = True, None
 
-    limite = DemandIndividualLimit.objects.filter(solicitante=solicitante, rubrica=rubrica).first()
     acima_do_limite = remanejado = Decimal("0")
     if origem is not None:
         # O remanejamento vai para o pool da reserva, como na autorização.
-        allocation = orcamento_service.pool_da_reserva(demand_request) or allocation
-        remanejamento_service.exigir_origem_da_solicitacao(origem, demand_request, allocation)
+        pool = orcamento_service.pool_da_reserva(demand_request) or pool
+        remanejamento_service.exigir_origem_da_solicitacao(origem, demand_request, pool)
         acima_do_limite, remanejado = remanejamento_service.calcular_excedente(
             aumento=delta,
             saldo_limite=limite.saldo_disponivel if limite is not None else Decimal("0"),
-            saldo_pool=orcamento_service.saldo_do_pool(allocation) if allocation is not None else Decimal("0"),
+            saldo_pool=orcamento_service.saldo_do_pool(pool) if pool is not None else Decimal("0"),
         )
     no_limite = delta - acima_do_limite
 
@@ -143,11 +144,11 @@ def preview_impacto(demand_request, valor: Decimal, *, origem=None) -> dict:
         individual["saldo_apos"] = limite.saldo_disponivel - no_limite
 
     territorial = {"semaforo_antes": None, "semaforo_apos": None, "saldo_apos": None}
-    if allocation is not None:
-        alocado_apos = allocation.valor_alocado + remanejado
-        territorial["semaforo_antes"] = _faixa(allocation.valor_comprometido, allocation.valor_alocado, limiares)
-        territorial["semaforo_apos"] = _faixa(allocation.valor_comprometido + delta, alocado_apos, limiares)
-        territorial["saldo_apos"] = alocado_apos - allocation.valor_comprometido - delta
+    if pool is not None:
+        alocado_apos = pool.valor_alocado + remanejado
+        territorial["semaforo_antes"] = _faixa(pool.valor_comprometido, pool.valor_alocado, limiares)
+        territorial["semaforo_apos"] = _faixa(pool.valor_comprometido + delta, alocado_apos, limiares)
+        territorial["saldo_apos"] = alocado_apos - pool.valor_comprometido - delta
 
     impacto_origem = None
     if origem is not None:

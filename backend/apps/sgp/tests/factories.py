@@ -7,9 +7,10 @@ from apps.core.tests.factories import (
     TerritoryFactory,
     UserFactory,
 )
+from apps.sgp.budget import limites
 from apps.sgp.models import (
     Activity,
-    BudgetAllocation,
+    BudgetPool,
     BudgetRubrica,
     BudgetTransaction,
     Comunidade,
@@ -21,7 +22,7 @@ from apps.sgp.models import (
     Projeto,
     Tecnico,
     UPF,
-    UPFDocument,
+    UPFDocument,    SpendingLimit,
 )
 from apps.sgp.models.indicator import Indicator
 from apps.sgp.models.workplan import WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
@@ -283,13 +284,12 @@ class BudgetRubricaFactory(factory.django.DjangoModelFactory):
     ordem = factory.Sequence(lambda n: n)
 
 
-class BudgetAllocationFactory(factory.django.DjangoModelFactory):
+class BudgetPoolFactory(factory.django.DjangoModelFactory):
     class Meta:
-        model = BudgetAllocation
+        model = BudgetPool
 
-    meta = factory.SubFactory(WorkPlanMetaFactory)
     rubrica = factory.SubFactory(BudgetRubricaFactory)
-    nivel = BudgetAllocation.Nivel.TERRITORIAL
+    nivel = BudgetPool.Nivel.TERRITORIAL
     estado = None
     territorio = factory.SubFactory(TerritoryFactory)
     valor_alocado = 0
@@ -299,11 +299,29 @@ class BudgetAllocationFactory(factory.django.DjangoModelFactory):
     criado_por = factory.SubFactory(UserFactory)
 
 
+class SpendingLimitFactory(factory.django.DjangoModelFactory):
+    """Sobrescrita individual do período vigente."""
+
+    class Meta:
+        model = SpendingLimit
+
+    escopo = SpendingLimit.Escopo.INDIVIDUAL
+    user = factory.SubFactory(UserFactory)
+    rubrica = factory.SubFactory(BudgetRubricaFactory)
+    valor_limite = 10_000
+    valor_comprometido = 0
+    valor_executado = 0
+    justificativa = "Definido no teste."
+    periodo_inicio = factory.LazyFunction(lambda: limites.periodo_de(limites.hoje())[0])
+    periodo_fim = factory.LazyFunction(lambda: limites.periodo_de(limites.hoje())[1])
+    criado_por = factory.SubFactory(UserFactory)
+
+
 class BudgetTransactionFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = BudgetTransaction
 
-    allocation = factory.SubFactory(BudgetAllocationFactory)
+    pool = factory.SubFactory(BudgetPoolFactory)
     tipo = BudgetTransaction.Tipo.RESERVA
     valor = 100
     demanda_id = None

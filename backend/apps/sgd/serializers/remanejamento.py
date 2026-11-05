@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.sgp.models import BudgetAllocation, BudgetIncreaseRequest, BudgetRubrica, BudgetTransfer
+from apps.sgp.models import BudgetIncreaseRequest, BudgetPool, BudgetRubrica, BudgetTransfer
 from apps.sgd.services.recurso_extra import DECISOES
 
 
@@ -62,17 +62,17 @@ class DecidirRemanejamentoSerializer(serializers.Serializer):
     )
     justificativa = serializers.CharField()
     origem_allocation = serializers.PrimaryKeyRelatedField(
-        queryset=BudgetAllocation.objects.all(), required=False, allow_null=True, default=None,
-        help_text="Alocação estadual ou nacional que cobre o que faltar no pool territorial.",
+        queryset=BudgetPool.objects.all(), required=False, allow_null=True, default=None,
+        help_text="Pool estadual ou nacional que cobre o que faltar no pool territorial.",
     )
 
 
-class AlocacaoDoRemanejamentoSerializer(serializers.ModelSerializer):
+class PoolDoRemanejamentoSerializer(serializers.ModelSerializer):
     estado = serializers.CharField(source="estado.sigla", read_only=True, allow_null=True)
     territorio = serializers.CharField(source="territorio.nome", read_only=True, allow_null=True)
 
     class Meta:
-        model = BudgetAllocation
+        model = BudgetPool
         fields = ["id", "nivel", "estado", "territorio"]
         read_only_fields = fields
 
@@ -81,9 +81,9 @@ class BudgetTransferSerializer(serializers.ModelSerializer):
     """Remanejamento efetivado. Sem o IP de quem aprovou: é dado pessoal,
     e a trilha de auditoria só o mostra ao Super Admin."""
 
-    origem = AlocacaoDoRemanejamentoSerializer(source="allocation_origem", read_only=True)
-    destino = AlocacaoDoRemanejamentoSerializer(source="allocation_destino", read_only=True)
-    rubrica = serializers.SlugRelatedField(source="allocation_destino.rubrica", slug_field="slug", read_only=True)
+    origem = PoolDoRemanejamentoSerializer(source="pool_origem", read_only=True)
+    destino = PoolDoRemanejamentoSerializer(source="pool_destino", read_only=True)
+    rubrica = serializers.SlugRelatedField(source="pool_destino.rubrica", slug_field="slug", read_only=True)
     escopo_display = serializers.CharField(source="get_escopo_display", read_only=True)
     aprovado_por_nome = serializers.CharField(source="aprovado_por.nome", read_only=True, allow_null=True)
     pedido = serializers.IntegerField(source="increase_request_id", read_only=True, allow_null=True)

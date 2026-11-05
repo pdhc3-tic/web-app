@@ -5,11 +5,12 @@ from contextlib import contextmanager
 from decimal import Decimal
 
 from django.db import connection, transaction
-from django.db.models import DecimalField, Exists, F, OuterRef, Q, Subquery, Sum, Value
+from django.db.models import DecimalField, Exists, F, OuterRef, Q, Sum, Value
 from django.db.models.functions import Coalesce
 
-from apps.sgd.models import Demand, DemandIndividualLimit, DemandRequest
+from apps.sgd.models import Demand, DemandRequest
 from apps.sgd.models.demand_request import RESERVA_ATIVA
+from apps.sgp.models import SpendingLimit
 
 ZERO = Decimal("0")
 
@@ -38,31 +39,31 @@ def divergencias_dos_limites() -> list[str]:
 
 
 def _divergencias_dos_limites() -> list[str]:
-    reservado = (
-        DemandRequest.objects.filter(
-            RESERVA_ATIVA, demanda__solicitante=OuterRef("solicitante"), rubrica=OuterRef("rubrica"),
-        )
+    reservado = {
+        (linha["demanda__solicitante_id"], linha["rubrica_id"]): linha["total"]
+        for linha in DemandRequest.objects.filter(RESERVA_ATIVA)
         .order_by()
-        .values("rubrica")
+        .values("demanda__solicitante_id", "rubrica_id")
         .annotate(total=Sum(F("valor_reservado") - F("valor_excedente")))
-        .values("total")
+    }
+    # Por solicitante e rubrica, somando os períodos: uma reserva fica na linha em que foi feita.
+    limites = (
+        SpendingLimit.objects.filter(escopo=SpendingLimit.Escopo.INDIVIDUAL)
+        .order_by("user_id", "rubrica_id")
+        .values("user_id", "rubrica_id")
+        .annotate(comprometido=Sum("valor_comprometido"))
     )
-    limites = DemandIndividualLimit.objects.annotate(
-        reservado=Coalesce(
-            Subquery(reservado, output_field=DecimalField(max_digits=14, decimal_places=2)),
-            Value(ZERO, output_field=DecimalField(max_digits=14, decimal_places=2)),
-        ),
-    ).order_by("pk")
-
     divergencias = [
-        f"Limite individual #{limite.pk}: valor_comprometido={limite.valor_comprometido} "
-        f"mas as reservas ativas somam {limite.reservado}"
+        f"Limite individual do usuário #{limite['user_id']} na rubrica #{limite['rubrica_id']}: "
+        f"valor_comprometido={limite['comprometido']} mas as reservas ativas somam "
+        f"{reservado.get((limite['user_id'], limite['rubrica_id']), ZERO)}"
         for limite in limites
-        if limite.valor_comprometido != limite.reservado
+        if limite["comprometido"] != reservado.get((limite["user_id"], limite["rubrica_id"]), ZERO)
     ]
 
-    tem_limite = DemandIndividualLimit.objects.filter(
-        solicitante=OuterRef("demanda__solicitante"), rubrica=OuterRef("rubrica"),
+    tem_limite = SpendingLimit.objects.filter(
+        escopo=SpendingLimit.Escopo.INDIVIDUAL,
+        user=OuterRef("demanda__solicitante"), rubrica=OuterRef("rubrica"),
     )
     sem_limite = DemandRequest.objects.filter(RESERVA_ATIVA).exclude(Exists(tem_limite))
     divergencias += [

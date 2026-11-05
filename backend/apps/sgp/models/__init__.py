@@ -1,6 +1,13 @@
 from .comunidade import Comunidade
 from .catalogos import Cultura, EspecieAnimal
-from .budget import BudgetAllocation, BudgetIncreaseRequest, BudgetRubrica, BudgetTransaction, BudgetTransfer
+from apps.sgp.budget.models import (
+    BudgetIncreaseRequest,
+    BudgetPool,
+    BudgetRubrica,
+    BudgetTransaction,
+    BudgetTransfer,
+    SpendingLimit,
+)
 from .export_job import ExportJob
 from .form_response import FormResponse
 from .glosa_risk import GlosaRisk
@@ -21,11 +28,12 @@ __all__ = [
     "Activity",
     "ActivityDocument",
     "ActivityPhoto",
-    "BudgetAllocation",
+    "BudgetPool",
     "BudgetIncreaseRequest",
     "BudgetRubrica",
     "BudgetTransaction",
     "BudgetTransfer",
+    "SpendingLimit",
     "Comunidade",
     "Cultura",
     "EspecieAnimal",

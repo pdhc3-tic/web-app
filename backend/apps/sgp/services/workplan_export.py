@@ -17,7 +17,7 @@ from django.utils import timezone
 from apps.sgp.models import Activity, WorkPlanAcao, WorkPlanMeta
 from apps.sgp.models.workplan import arredondar, custo_unitario
 from apps.sgp.services.apuracao import RecorteAtividades, filtro_de_atividades
-from apps.sgp.services.budget import LimiaresSemaforo, limiares_semaforo
+from apps.sgp.budget.services import LimiaresSemaforo, limiares_semaforo
 from apps.sgp.services.workplan_access import is_global_workplan_user
 from apps.sgp.services.workplan_dashboard import (
     NodeSummary,

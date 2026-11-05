@@ -5,7 +5,6 @@ from .demand import Demand
 from .demand_document import DemandDocument
 from .demand_request import DemandRequest
 from .demand_type_rubrica_mapping import DemandTypeRubricaMapping
-from .individual_limit import DemandIndividualLimit
 
 __all__ = [
     "ApprovalStep",
@@ -13,7 +12,6 @@ __all__ = [
     "ArloImport",
     "Demand",
     "DemandDocument",
-    "DemandIndividualLimit",
     "DemandRequest",
     "DemandTypeRubricaMapping",
 ]

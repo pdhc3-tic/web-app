@@ -1,13 +1,13 @@
-"""Solicitação de Recurso Extra (SGP §6.6) e o remanejamento que a decisão da UGP pode disparar.
+"""Solicitação de Recurso Extra e o remanejamento que a decisão da UGP pode disparar.
 
 O pedido percorre a máquina de estados de `BudgetIncreaseRequest`. Aprovar eleva o
 limite individual do solicitante na rubrica e só se conclui com o pool territorial
-cobrindo o que a demanda precisa reservar: se faltar saldo, a UGP informa uma
-alocação estadual ou nacional e o remanejamento acontece na própria decisão. A
+cobrindo o que a demanda precisa reservar: se faltar saldo, a UGP informa um
+pool estadual ou nacional e o remanejamento acontece na própria decisão. A
 demanda bloqueada não é submetida sozinha: o limite maior só a deixa passar nas
 duas travas quando o solicitante submeter de novo.
 
-Ordem de lock: pedido → `DemandIndividualLimit` → `BudgetAllocation` (em ordem de pk)
+Ordem de lock: pedido → `SpendingLimit` → `BudgetPool` (em ordem de pk)
 → `Demand` → `DemandRequest` da demanda, a ordem de `backend/docs/orcamento.md`.
 """
 
@@ -20,19 +20,19 @@ from django.utils import timezone
 
 from apps.core.utils import formatar_brl
 from apps.sgd.exceptions import JustificativaObrigatoria, RegraDeNegocio, TransicaoInvalida
-from apps.sgd.models import Demand, DemandIndividualLimit
+from apps.sgd.models import Demand
 from apps.sgd.models.demand import STATUS_EDITAVEIS
 from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import notifications as notifications_service
 from apps.sgd.services import orcamento as orcamento_service
 from apps.sgd.services import remanejamento as remanejamento_service
-from apps.sgp.models import BudgetAllocation, BudgetIncreaseRequest, BudgetTransfer
+from apps.sgp.models import BudgetIncreaseRequest, BudgetPool, BudgetTransfer, SpendingLimit
 
 Status = BudgetIncreaseRequest.Status
 ZERO = Decimal("0")
 
 ENTIDADE_PEDIDO = "BudgetIncreaseRequest"
-ENTIDADE_LIMITE = "DemandIndividualLimit"
+ENTIDADE_LIMITE = auditoria_service.ENTIDADE_LIMITE
 
 DECISOES = {
     "aprovar": Status.APROVADA,
@@ -111,19 +111,36 @@ def _necessario(solicitacoes) -> Decimal:
 def deficit_individual(demanda: Demand, rubrica) -> Decimal:
     """O que falta no limite individual para a próxima submissão passar na rubrica:
     é o valor que o pedido de recurso extra registra sem `valor_solicitado`."""
-    limite = DemandIndividualLimit.objects.filter(solicitante=demanda.solicitante, rubrica=rubrica).first()
+    limite = orcamento_service.limite_efetivo(solicitante_id=demanda.solicitante_id, rubrica_id=rubrica.pk)
+    saldo = limite.saldo_disponivel if limite else ZERO
+    return _deficit(_necessario(demanda.solicitacoes.filter(rubrica=rubrica)), saldo)
+
+
+def _deficit(necessario: Decimal, saldo: Decimal) -> Decimal:
+    # Tudo já reservado: nada a submeter na rubrica, mesmo com o saldo negativo por uma redução.
+    if necessario <= ZERO:
+        return ZERO
     # Sem truncar em zero: um excedente autorizado antes do remanejamento pontual
     # deixou saldo negativo, e o aumento precisa cobrir isso também.
-    saldo = limite.saldo_disponivel if limite else ZERO
-    return _necessario(demanda.solicitacoes.filter(rubrica=rubrica)) - saldo
+    return necessario - saldo
+
+
+def _pode_pedir_para_aumentar_reserva(demanda: Demand, rubrica) -> bool:
+    """Em Devolvida com a reserva de pé, a edição para um valor maior é recusada pelo limite, com a
+    orientação de pedir recurso extra, e não fica gravada: o déficit não aparece nas solicitações."""
+    return demanda.status == "devolvida" and any(
+        solicitacao.reserva_ativa for solicitacao in demanda.solicitacoes.filter(rubrica=rubrica)
+    )
 
 
 def _exigir_valor_cobre_o_deficit(demanda: Demand, rubrica, valor: Decimal) -> None:
     deficit = deficit_individual(demanda, rubrica)
     if deficit <= ZERO:
+        if valor > ZERO and _pode_pedir_para_aumentar_reserva(demanda, rubrica):
+            return
         raise RegraDeNegocio("A demanda não está bloqueada pelo limite individual nesta rubrica.", campo="demanda")
-    # SGP §6.6 deixa o valor livre para ajuste na devolução; o piso é o "valor faltante" do
-    # SGD §4.1, e a UGP pode conceder menos (aprovação parcial).
+    # O valor é livre para ajuste na devolução; o piso é o que falta no limite, e a UGP
+    # pode conceder menos (aprovação parcial).
     if valor < deficit:
         raise RegraDeNegocio(
             f"Não pode ser menor que o valor que falta no limite individual: {formatar_brl(deficit)}.",
@@ -242,28 +259,20 @@ def devolver_pedido(pedido, *, usuario, justificativa: str):
     return pedido
 
 
-def _activity_do_pedido(pedido):
-    demanda = _demanda_do_pedido(pedido)
-    if demanda is not None:
-        return demanda.activity
-    return pedido.activity
-
-
-def _travar_limite(pedido, usuario) -> DemandIndividualLimit:
-    # Sem limite, o FOR UPDATE não trava nada e duas decisões do mesmo solicitante e
-    # rubrica tentam criá-lo. O `get_or_create` cria num savepoint: a segunda espera a
-    # primeira no índice único e, no IntegrityError, relê a linha travada e já elevada.
-    limite, _ = DemandIndividualLimit.objects.select_for_update().get_or_create(
-        solicitante=pedido.user, rubrica=pedido.rubrica,
-        defaults={"valor_limite": ZERO, "criado_por": usuario},
+def _travar_limite(pedido, usuario) -> SpendingLimit:
+    return orcamento_service.travar_limite_para_elevar(
+        user_id=pedido.user_id, rubrica_id=pedido.rubrica_id,
+        justificativa=f"Recurso extra #{pedido.pk}: {pedido.justificativa}", usuario=usuario,
     )
-    return limite
 
 
-def _elevar_limite(pedido, limite: DemandIndividualLimit, valor: Decimal, usuario) -> None:
+def _elevar_limite(pedido, limite: SpendingLimit, valor: Decimal, usuario) -> None:
+    """Vale para o período vigente na data da decisão: `periodo_aplicacao` é texto livre."""
     antes = limite.valor_limite
-    limite.valor_limite = antes + valor
-    limite.save(update_fields=["valor_limite"])
+    orcamento_service.elevar_limite(
+        limite=limite, valor=valor, justificativa=f"Recurso extra #{pedido.pk}: {pedido.justificativa}",
+        usuario=usuario,
+    )
     auditoria_service.registrar_evento(
         acao="aumento_limite", entidade=ENTIDADE_LIMITE, entidade_id=limite.pk, usuario=usuario,
         anteriores={"valor_limite": str(antes)},
@@ -274,13 +283,16 @@ def _elevar_limite(pedido, limite: DemandIndividualLimit, valor: Decimal, usuari
     )
 
 
-def _travar_alocacoes(pedido, origem: BudgetAllocation | None):
-    """Trava a alocação territorial do solicitante e, se houver, a de origem do
+def _travar_pools(pedido, origem: BudgetPool | None):
+    """Trava o pool territorial do solicitante e, se houver, o de origem do
     remanejamento, em ordem crescente de pk, como `remanejar`. Devolve (destino, origem)."""
-    # Só localiza a alocação: o saldo é lido depois, com ela travada.
-    destino = orcamento_service.localizar_pool(
-        solicitante=pedido.user, rubrica=pedido.rubrica, activity=_activity_do_pedido(pedido),
-    )
+    if origem is not None and origem.rubrica_id != pedido.rubrica_id:
+        # Antes de travar: o pool de outra rubrica ficaria fora da ordem de lock.
+        raise RegraDeNegocio(
+            "A alocação de origem precisa ser da mesma rubrica do pedido.", campo="origem_allocation",
+        )
+    # Só localiza o pool: o saldo é lido depois, com ele travado.
+    destino = orcamento_service.localizar_pool(solicitante=pedido.user, rubrica=pedido.rubrica)
     if origem is not None:
         remanejamento_service.exigir_origem_acima_do_territorio(origem, destino)
 
@@ -288,7 +300,7 @@ def _travar_alocacoes(pedido, origem: BudgetAllocation | None):
     return travadas[destino.pk], (travadas[origem.pk] if origem is not None else None)
 
 
-def _cobrir_pool(pedido, necessario: Decimal, destino: BudgetAllocation, origem: BudgetAllocation | None,
+def _cobrir_pool(pedido, necessario: Decimal, destino: BudgetPool, origem: BudgetPool | None,
                  usuario) -> BudgetTransfer | None:
     """Garante que o pool territorial, já travado, cobre o que a demanda precisa reservar.
     Sem cobrir, só passa com `origem`, que remaneja a diferença."""
@@ -321,7 +333,7 @@ def _exigir_demanda_editavel(demanda: Demand) -> None:
 
 @transaction.atomic
 def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = None,
-            justificativa: str = "", origem_allocation: BudgetAllocation | None = None) -> dict:
+            justificativa: str = "", origem_allocation: BudgetPool | None = None) -> dict:
     pedido = _travar_pedido(pedido)
     if decisao not in DECISOES:
         raise RegraDeNegocio(f"Valor inválido. Esperado um de: {sorted(DECISOES)}.", campo="decisao")
@@ -349,13 +361,13 @@ def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = N
         limite = _travar_limite(pedido, usuario)
         demanda = _demanda_do_pedido(pedido)
         if demanda is not None:
-            # Falha antes de travar as alocações; a checagem que vale é a de baixo, sob o lock.
+            # Falha antes de travar os pools; a checagem que vale é a de baixo, sob o lock.
             _exigir_demanda_editavel(demanda)
-        destino, origem = _travar_alocacoes(pedido, origem_allocation)
+        destino, origem = _travar_pools(pedido, origem_allocation)
         if demanda is None:
             necessario = valor_aprovado
         else:
-            # A Demand depois das alocações, como a submissão e os cancelamentos, que só a
+            # A Demand depois dos pools, como a submissão e os cancelamentos, que só a
             # atualizam depois de mexer no saldo. A segunda checagem pega a demanda
             # submetida enquanto a decisão esperava o lock.
             demanda = _demanda_do_pedido(pedido, travar=True)
@@ -367,7 +379,7 @@ def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = N
                 if s.rubrica_id == pedido.rubrica_id
             ]
             necessario = _necessario(solicitacoes)
-            deficit = necessario - limite.saldo_disponivel
+            deficit = _deficit(necessario, limite.saldo_disponivel)
             if decisao == "aprovar" and valor_aprovado < deficit:
                 raise RegraDeNegocio(
                     f"A demanda precisa agora de {formatar_brl(deficit)} a mais no limite individual, acima dos "
@@ -377,6 +389,7 @@ def decidir(pedido, *, usuario, decisao: str, valor_aprovado: Decimal | None = N
                 )
         _elevar_limite(pedido, limite, valor_aprovado, usuario)
         transferencia = _cobrir_pool(pedido, necessario, destino, origem, usuario)
+        orcamento_service.exigir_limite_dentro_do_pool(limite)
 
     _mudar_status(
         pedido, destino_status, usuario, f"decidido_{decisao}",

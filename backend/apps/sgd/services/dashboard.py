@@ -101,7 +101,7 @@ def _territorios_do_adt(user) -> list[int]:
 
 
 def _linhas_orcamento_do_escopo(user) -> list[tuple[dict, str | None, int | None]]:
-    """Matriz meta × rubrica no nível do usuário, como `(linha, estado_sigla,
+    """Linhas por rubrica no nível do usuário, como `(linha, estado_sigla,
     territorio_id)` — o local acompanha cada linha, senão linhas iguais de
     estados/territórios diferentes ficam indistinguíveis: nacional
     (UGP/FGD/super-admin), estadual (Articulador, um bloco por estado) ou
@@ -111,7 +111,7 @@ def _linhas_orcamento_do_escopo(user) -> list[tuple[dict, str | None, int | None
         return [
             (linha, None, None)
             for linha in orcamento_service.painel_orcamento(
-                nivel=orcamento_service.Nivel.NACIONAL, estado_sigla=None, territorio_id=None, meta_id=None,
+                nivel=orcamento_service.Nivel.NACIONAL, estado_sigla=None, territorio_id=None,
             )
         ]
     if "articulador-estadual" in slugs:
@@ -119,7 +119,7 @@ def _linhas_orcamento_do_escopo(user) -> list[tuple[dict, str | None, int | None
             (linha, sigla, None)
             for sigla in sorted(user_states(user))
             for linha in orcamento_service.painel_orcamento(
-                nivel=orcamento_service.Nivel.ESTADUAL, estado_sigla=sigla, territorio_id=None, meta_id=None,
+                nivel=orcamento_service.Nivel.ESTADUAL, estado_sigla=sigla, territorio_id=None,
             )
         ]
     if "adt-acr" in slugs:
@@ -129,22 +129,22 @@ def _linhas_orcamento_do_escopo(user) -> list[tuple[dict, str | None, int | None
             (linha, None, territorio_id)
             for territorio_id in _territorios_do_adt(user)
             for linha in orcamento_service.painel_orcamento(
-                nivel=orcamento_service.Nivel.TERRITORIAL, estado_sigla=None,
-                territorio_id=territorio_id, meta_id=None,
+                nivel=orcamento_service.Nivel.TERRITORIAL, estado_sigla=None, territorio_id=territorio_id,
             )
         ]
     return []
 
 
 def alertas_de_saldo(user) -> list[dict]:
-    """Células meta × rubrica em faixa amarela/vermelha; vermelho primeiro."""
+    """Rubricas em faixa amarela/vermelha; vermelho primeiro."""
     alertas = []
     for linha, estado_sigla, territorio_id in _linhas_orcamento_do_escopo(user):
         if linha["semaforo"] not in {"amarelo", "vermelho"}:
             continue
         alertas.append({
-            "meta_id": linha["meta"].pk,
-            "meta_numero": linha["meta"].numero,
+            # Mantidos nulos enquanto o front migra: o saldo não depende mais da Meta.
+            "meta_id": None,
+            "meta_numero": None,
             "rubrica_id": linha["rubrica"].pk,
             "rubrica_slug": linha["rubrica"].slug,
             "rubrica_nome": linha["rubrica"].nome,

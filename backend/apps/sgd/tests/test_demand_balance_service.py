@@ -6,20 +6,22 @@ from django.db.models import Sum
 from django.test.utils import CaptureQueriesContext
 
 from apps.sgd.exceptions import TRAVA_INDIVIDUAL, ErroDeDominio, RegraDeNegocio, SaldoInsuficiente, TransicaoInvalida
-from apps.sgd.models import DemandIndividualLimit, DemandRequest
+from apps.sgd.models import DemandRequest
 from apps.sgd.models.demand_request import RESERVA_ATIVA
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import orcamento as orcamento_service
 from apps.sgd.services import workflow as workflow_service
-from apps.sgd.tests.factories import DemandFactory, DemandIndividualLimitFactory, DemandRequestFactory
+from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
+from apps.sgp.tests.factories import SpendingLimitFactory
+from apps.sgp.models import SpendingLimit
 
 pytestmark = pytest.mark.django_db
 
 
 def test_bloqueio_trava_individual_sem_limite_configurado(solicitante_rn, rubrica_diarias, activity_rn, allocation_territorial_rn):
     check = balance_service.verificar_duas_travas(
-        solicitante=solicitante_rn, rubrica=rubrica_diarias, activity=activity_rn, valor=Decimal("100"),
+        solicitante=solicitante_rn, rubrica=rubrica_diarias, valor=Decimal("100"),
     )
     assert check.disponivel is False
     assert check.trava_bloqueada == "individual"
@@ -27,7 +29,7 @@ def test_bloqueio_trava_individual_sem_limite_configurado(solicitante_rn, rubric
 
 def test_bloqueio_trava_individual_insuficiente(solicitante_rn, rubrica_diarias, activity_rn, allocation_territorial_rn, limite_individual_rn):
     check = balance_service.verificar_duas_travas(
-        solicitante=solicitante_rn, rubrica=rubrica_diarias, activity=activity_rn,
+        solicitante=solicitante_rn, rubrica=rubrica_diarias, 
         valor=Decimal("999999"),
     )
     assert check.disponivel is False
@@ -35,14 +37,14 @@ def test_bloqueio_trava_individual_insuficiente(solicitante_rn, rubrica_diarias,
 
 
 def test_bloqueio_trava_territorial_esgotada(solicitante_rn, rubrica_diarias, activity_rn, limite_individual_rn):
-    from apps.sgp.tests.factories import BudgetAllocationFactory
+    from apps.sgp.tests.factories import BudgetPoolFactory
 
-    BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
+    BudgetPoolFactory(
+        rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
         valor_alocado=100, valor_comprometido=100,
     )
     check = balance_service.verificar_duas_travas(
-        solicitante=solicitante_rn, rubrica=rubrica_diarias, activity=activity_rn, valor=Decimal("50"),
+        solicitante=solicitante_rn, rubrica=rubrica_diarias, valor=Decimal("50"),
     )
     assert check.disponivel is False
     assert check.trava_bloqueada == "territorial"
@@ -285,10 +287,10 @@ def test_submeter_demanda_bloqueio_de_uma_solicitacao_identifica_so_a_bloqueada(
 def test_submeter_demanda_bloqueio_territorial_orienta_acionar_articulador(
     demand_request_rn, solicitante_rn, activity_rn, rubrica_diarias, limite_individual_rn,
 ):
-    from apps.sgp.tests.factories import BudgetAllocationFactory
+    from apps.sgp.tests.factories import BudgetPoolFactory
 
-    BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
+    BudgetPoolFactory(
+        rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
         valor_alocado=Decimal("500"), valor_comprometido=Decimal("0"),
     )
 
@@ -356,10 +358,10 @@ def test_submeter_demanda_pre_checagem_soma_solicitacoes_da_mesma_rubrica_no_lim
 def test_submeter_demanda_pre_checagem_soma_solicitacoes_da_mesma_rubrica_no_pool_territorial(
     demand_rascunho_rn, solicitante_rn, activity_rn, rubrica_diarias, limite_individual_rn,
 ):
-    from apps.sgp.tests.factories import BudgetAllocationFactory
+    from apps.sgp.tests.factories import BudgetPoolFactory
 
-    allocation = BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
+    allocation = BudgetPoolFactory(
+        rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
         valor_alocado=Decimal("100"), valor_comprometido=Decimal("0"),
     )
     _, segunda, terceira = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "60", "60", "60")
@@ -411,11 +413,11 @@ def test_submeter_demanda_limite_zerado_pela_propria_demanda_mostra_valores_e_na
 def test_submeter_demanda_pool_zerado_pela_propria_demanda_mostra_valores_e_nao_diz_que_zerou(
     demand_rascunho_rn, solicitante_rn, activity_rn, rubrica_diarias, limite_individual_rn,
 ):
-    from apps.sgp.services.budget import BLOQUEIO_SALDO_ZERO
-    from apps.sgp.tests.factories import BudgetAllocationFactory
+    from apps.sgp.budget.services import BLOQUEIO_SALDO_ZERO
+    from apps.sgp.tests.factories import BudgetPoolFactory
 
-    BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
+    BudgetPoolFactory(
+        rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
         valor_alocado=Decimal("100"), valor_comprometido=Decimal("0"),
     )
     *_, terceira = _solicitacoes_diaria(demand_rascunho_rn, rubrica_diarias, "50", "50", "10")
@@ -449,12 +451,12 @@ def test_submeter_demanda_sem_outras_solicitacoes_nao_menciona_desconto(
 def test_submeter_demanda_rubricas_diferentes_nao_somam_consumo(
     demand_rascunho_rn, solicitante_rn, activity_rn, rubrica_diarias, allocation_territorial_rn, limite_individual_rn,
 ):
-    from apps.sgp.tests.factories import BudgetAllocationFactory, BudgetRubricaFactory
+    from apps.sgp.tests.factories import BudgetPoolFactory, BudgetRubricaFactory
 
     outra = BudgetRubricaFactory(slug="outra-rubrica-sgd")
-    DemandIndividualLimitFactory(solicitante=solicitante_rn, rubrica=outra, valor_limite=100)
-    BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=outra, territorio=activity_rn.municipio.territory,
+    SpendingLimitFactory(user=solicitante_rn, rubrica=outra, valor_limite=100)
+    BudgetPoolFactory(
+        rubrica=outra, territorio=activity_rn.municipio.territory,
         valor_alocado=Decimal("100"), valor_comprometido=Decimal("0"),
     )
     limite_individual_rn.valor_limite = Decimal("100")
@@ -506,10 +508,10 @@ def test_submeter_demanda_bloqueio_individual_na_reserva_identifica_trava_e_soli
 def test_submeter_demanda_bloqueio_territorial_na_reserva_identifica_trava_e_solicitacao(
     monkeypatch, demand_request_rn, solicitante_rn, activity_rn, rubrica_diarias, limite_individual_rn,
 ):
-    from apps.sgp.tests.factories import BudgetAllocationFactory
+    from apps.sgp.tests.factories import BudgetPoolFactory
 
-    BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
+    BudgetPoolFactory(
+        rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
         valor_alocado=Decimal("500"), valor_comprometido=Decimal("0"),
     )
     _pre_checagem_aprova_tudo(monkeypatch)
@@ -559,10 +561,10 @@ def test_bloqueio_individual_na_pre_checagem_e_na_reserva_tem_o_mesmo_contrato(
 def test_bloqueio_territorial_na_pre_checagem_e_na_reserva_tem_o_mesmo_contrato(
     monkeypatch, demand_request_rn, activity_rn, rubrica_diarias, limite_individual_rn,
 ):
-    from apps.sgp.tests.factories import BudgetAllocationFactory
+    from apps.sgp.tests.factories import BudgetPoolFactory
 
-    BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
+    BudgetPoolFactory(
+        rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
         valor_alocado=Decimal("500"), valor_comprometido=Decimal("0"),
     )
 
@@ -648,10 +650,10 @@ def test_bloqueio_individual_traz_o_que_falta_na_rubrica_inteira(
 def test_bloqueio_territorial_vem_sem_valor_faltante(
     demand_request_rn, solicitante_rn, activity_rn, rubrica_diarias, limite_individual_rn,
 ):
-    from apps.sgp.tests.factories import BudgetAllocationFactory
+    from apps.sgp.tests.factories import BudgetPoolFactory
 
-    BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
+    BudgetPoolFactory(
+        rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
         valor_alocado=Decimal("500"), valor_comprometido=Decimal("0"),
     )
 
@@ -823,7 +825,7 @@ def test_liberar_apos_ajuste_libera_o_valor_ajustado_nao_o_congelado(
     ],
 )
 def test_orientacao_territorial_por_situacao_do_pool(allocation, saldo, esperado):
-    assert orcamento_service.orientacao_territorial(allocation=allocation, saldo=saldo) == esperado
+    assert orcamento_service.orientacao_territorial(pool=allocation, saldo=saldo) == esperado
 
 
 # ── Estado da reserva materializado na solicitação ───────────────────────────
@@ -832,7 +834,7 @@ def _confere_comprometido(limite) -> None:
     """O invariante do limite individual: o comprometido é a soma das reservas ativas."""
     limite.refresh_from_db()
     reservado = DemandRequest.objects.filter(
-        RESERVA_ATIVA, demanda__solicitante=limite.solicitante, rubrica=limite.rubrica,
+        RESERVA_ATIVA, demanda__solicitante=limite.user, rubrica=limite.rubrica,
     ).aggregate(total=Sum("valor_reservado"))["total"] or Decimal("0")
     assert limite.valor_comprometido == reservado
 
@@ -972,19 +974,19 @@ def test_estado_da_reserva_nao_aceita_valor_negativo(demand_request_rn, campo, v
 @pytest.mark.parametrize("campo", ["valor_comprometido", "valor_executado"])
 def test_limite_individual_nao_aceita_saldo_negativo(limite_individual_rn, campo):
     with pytest.raises(IntegrityError), transaction.atomic():
-        DemandIndividualLimit.objects.filter(pk=limite_individual_rn.pk).update(**{campo: Decimal("-1")})
+        SpendingLimit.objects.filter(pk=limite_individual_rn.pk).update(**{campo: Decimal("-1")})
 
 
 @pytest.fixture
 def demanda_com_duas_rubricas(demand_request_rn, solicitante_rn, activity_rn, allocation_territorial_rn, limite_individual_rn):
-    from apps.sgp.tests.factories import BudgetAllocationFactory, BudgetRubricaFactory
+    from apps.sgp.tests.factories import BudgetPoolFactory, BudgetRubricaFactory
 
     outra = BudgetRubricaFactory(slug="rubrica-ordem-de-lock")
-    BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=outra, territorio=activity_rn.municipio.territory,
+    BudgetPoolFactory(
+        rubrica=outra, territorio=activity_rn.municipio.territory,
         valor_alocado=Decimal("10000"),
     )
-    DemandIndividualLimitFactory(solicitante=solicitante_rn, rubrica=outra, valor_limite=Decimal("5000"))
+    SpendingLimitFactory(user=solicitante_rn, rubrica=outra, valor_limite=Decimal("5000"))
     DemandRequestFactory(demanda=demand_request_rn.demanda, rubrica=outra, valor_estimado=Decimal("200"))
     return demand_request_rn.demanda
 
@@ -993,7 +995,7 @@ def _ordem(consultas):
     sqls = [q["sql"] for q in consultas]
     travas_de_saldo = [
         i for i, sql in enumerate(sqls)
-        if "FOR UPDATE" in sql and ('"sgd_demandindividuallimit"' in sql or '"sgp_budgetallocation"' in sql)
+        if "FOR UPDATE" in sql and ('"sgp_spendinglimit"' in sql or '"sgp_budgetpool"' in sql)
     ]
     demanda = [
         i for i, sql in enumerate(sqls)
@@ -1014,7 +1016,7 @@ def test_submissao_grava_o_estado_da_reserva_depois_do_saldo_e_da_demand(demanda
     assert len(gravacoes_da_reserva) == 2
     assert max(travas_de_saldo) < min(demanda) < min(gravacoes_da_reserva)
     assert all(s.reserva_ativa for s in demanda_com_duas_rubricas.solicitacoes.all())
-    _confere_comprometido(DemandIndividualLimit.objects.get(solicitante=solicitante_rn, rubrica__slug="diarias"))
+    _confere_comprometido(SpendingLimit.objects.get(user=solicitante_rn, rubrica__slug="diarias"))
 
 
 def test_cancelamento_grava_o_estado_da_reserva_depois_do_saldo_e_da_demand(demanda_com_duas_rubricas, solicitante_rn):
@@ -1027,7 +1029,7 @@ def test_cancelamento_grava_o_estado_da_reserva_depois_do_saldo_e_da_demand(dema
     assert len(gravacoes_da_reserva) == 2
     assert max(travas_de_saldo) < min(demanda) < min(gravacoes_da_reserva)
     assert not any(s.reserva_ativa for s in demanda_com_duas_rubricas.solicitacoes.all())
-    for limite in DemandIndividualLimit.objects.filter(solicitante=solicitante_rn):
+    for limite in SpendingLimit.objects.filter(user=solicitante_rn):
         assert limite.valor_comprometido == Decimal("0")
 
 

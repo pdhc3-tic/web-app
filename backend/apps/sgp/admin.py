@@ -3,7 +3,7 @@ from django.contrib import admin
 
 from apps.sgp.models import (
     Activity,
-    BudgetAllocation,
+    BudgetPool,
     BudgetRubrica,
     BudgetTransaction,
     Comunidade,
@@ -197,26 +197,38 @@ class BudgetRubricaAdmin(admin.ModelAdmin):
     search_fields = ["nome", "slug"]
 
 
-@admin.register(BudgetAllocation)
-class BudgetAllocationAdmin(admin.ModelAdmin):
+@admin.register(BudgetPool)
+class BudgetPoolAdmin(admin.ModelAdmin):
     list_display = [
-        "meta", "rubrica", "nivel", "estado", "territorio",
+        "rubrica", "nivel", "estado", "territorio",
         "valor_alocado", "valor_comprometido", "valor_executado",
     ]
     list_filter = ["nivel", "rubrica", "estado"]
-    search_fields = ["meta__titulo"]
+    search_fields = ["rubrica__nome", "territorio__nome"]
     readonly_fields = [
         "valor_comprometido", "valor_executado", "criado_por", "criado_em",
     ]
 
+    # Só consulta: mudar o alocado aqui não travaria o pool, não lançaria no ledger nem
+    # conferiria o teto. A distribuição é feita por /sgp/orcamento/pools/.
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(BudgetTransaction)
 class BudgetTransactionAdmin(admin.ModelAdmin):
-    list_display = ["allocation", "tipo", "valor", "demanda_id", "criado_por", "criado_em"]
+    list_display = ["pool", "spending_limit", "tipo", "valor", "demanda_id", "criado_por", "criado_em"]
     list_filter = ["tipo"]
-    search_fields = ["demanda_id", "justificativa"]
+    search_fields = ["demanda_id", "demand_request_id", "justificativa"]
     readonly_fields = [
-        "allocation", "tipo", "valor", "demanda_id",
+        "pool", "spending_limit", "activity", "tipo", "valor", "saldo_anterior", "saldo_posterior",
+        "demanda_id", "demand_request_id", "ip",
         "justificativa", "criado_por", "criado_em",
     ]
 

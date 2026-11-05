@@ -5,7 +5,7 @@ import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
-from apps.sgp.models.budget import BudgetTransaction
+from apps.sgp.budget.models import BudgetTransaction
 
 pytestmark = pytest.mark.django_db
 
@@ -19,7 +19,7 @@ def test_verificacao_de_saldo_com_historico_representativo_em_menos_de_300ms(
 ):
     BudgetTransaction.objects.bulk_create([
         BudgetTransaction(
-            allocation=allocation_territorial_rn, tipo="reserva", valor=Decimal("10"), demanda_id=str(i % 500),
+            pool=allocation_territorial_rn, tipo="reserva", valor=Decimal("10"), demand_request_id=str(i % 500),
         )
         for i in range(HISTORICO)
     ], batch_size=1000)
@@ -44,5 +44,5 @@ def test_verificacao_de_saldo_nao_consulta_o_limite_individual_duas_vezes(
         response = auth_client_solicitante.get("/api/v1/sgd/saldo/", params)
 
     assert response.status_code == 200
-    limites = [q for q in consultas.captured_queries if 'FROM "sgd_demandindividuallimit"' in q["sql"]]
+    limites = [q for q in consultas.captured_queries if 'FROM "sgp_spendinglimit"' in q["sql"]]
     assert len(limites) == 1

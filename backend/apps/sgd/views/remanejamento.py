@@ -128,8 +128,8 @@ class RemanejamentoViewSet(viewsets.ViewSet):
         """Remanejamentos efetivados: o excedente autorizado na demanda (`pontual`) e o
         que cobriu o pool na decisão de recurso extra (`elevacao_limite`)."""
         qs = BudgetTransfer.objects.select_related(
-            "allocation_origem__estado", "allocation_origem__territorio",
-            "allocation_destino__estado", "allocation_destino__territorio", "allocation_destino__rubrica",
+            "pool_origem__estado", "pool_origem__territorio",
+            "pool_destino__estado", "pool_destino__territorio", "pool_destino__rubrica",
             "aprovado_por",
         )
         demanda = request.query_params.get("demanda")
@@ -146,7 +146,7 @@ class RemanejamentoViewSet(viewsets.ViewSet):
             qs = qs.filter(escopo=escopo)
         rubrica = request.query_params.get("rubrica")
         if rubrica:
-            qs = qs.filter(allocation_destino__rubrica__slug=rubrica)
+            qs = qs.filter(pool_destino__rubrica__slug=rubrica)
         paginador = RemanejamentoPagination()
         pagina = paginador.paginate_queryset(qs.order_by("-criado_em", "-id"), request)
         return paginador.get_paginated_response(BudgetTransferSerializer(pagina, many=True).data)

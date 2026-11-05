@@ -198,7 +198,7 @@ def test_valor_pago_menor_libera_diferenca_ao_limite_individual_e_ao_pool(
     )
     assert limite_individual_rn.saldo_disponivel == limite_individual_rn.valor_limite - Decimal("800")
     assert BudgetTransaction.objects.filter(
-        demanda_id=str(demanda_autorizada.pk), tipo="liberacao", valor=Decimal("200"),
+        demand_request_id=str(demanda_autorizada.pk), tipo="liberacao", valor=Decimal("200"),
     ).exists()
 
 

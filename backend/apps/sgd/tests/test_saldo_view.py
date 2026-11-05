@@ -23,10 +23,10 @@ def test_saldo_bloqueio_individual_traz_acao_sugerida(
 def test_saldo_bloqueio_territorial_traz_acao_sugerida(
     auth_client_solicitante, activity_rn, rubrica_diarias, limite_individual_rn,
 ):
-    from apps.sgp.tests.factories import BudgetAllocationFactory
+    from apps.sgp.tests.factories import BudgetPoolFactory
 
-    BudgetAllocationFactory(
-        meta=activity_rn.acao.meta, rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
+    BudgetPoolFactory(
+        rubrica=rubrica_diarias, territorio=activity_rn.municipio.territory,
         valor_alocado=Decimal("100"), valor_comprometido=Decimal("100"),
     )
     response = auth_client_solicitante.get(

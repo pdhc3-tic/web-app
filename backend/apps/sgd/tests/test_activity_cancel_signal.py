@@ -1,4 +1,3 @@
-import re
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -10,7 +9,8 @@ from apps.core.models.notifications import Notification
 from apps.core.tests.factories import RoleFactory, UserFactory
 from apps.sgd.services import balance as balance_service
 from apps.sgd.tasks import cancelar_demandas_da_atividade
-from apps.sgd.tests.factories import DemandFactory, DemandIndividualLimitFactory, DemandRequestFactory
+from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
+from apps.sgp.tests.factories import SpendingLimitFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -67,7 +67,7 @@ def test_task_trava_os_limites_antes_das_alocacoes_e_cancela_as_demandas_por_ult
     estado da reserva nas solicitações vem por último (ordem de lock de
     backend/docs/orcamento.md)."""
     vizinho = UserFactory(profiles=[(RoleFactory(slug="adt-acr"), territory_rn)])
-    DemandIndividualLimitFactory(solicitante=vizinho, rubrica=rubrica_diarias, valor_limite=5_000)
+    SpendingLimitFactory(user=vizinho, rubrica=rubrica_diarias, valor_limite=5_000)
     da_vizinha = DemandRequestFactory(
         demanda=DemandFactory(activity=activity_rn, solicitante=vizinho, status="submetida"),
         tipo="diaria", rubrica=rubrica_diarias, valor_estimado=Decimal("100"),
@@ -82,12 +82,13 @@ def test_task_trava_os_limites_antes_das_alocacoes_e_cancela_as_demandas_por_ult
         assert cancelar_demandas_da_atividade(activity_rn.pk) == 2
 
     sqls = [q["sql"] for q in consultas]
-    travas_de_limite = [i for i, sql in enumerate(sqls) if "FOR UPDATE" in sql and '"sgd_demandindividuallimit"' in sql]
-    travas_de_alocacao = [i for i, sql in enumerate(sqls) if "FOR UPDATE" in sql and '"sgp_budgetallocation"' in sql]
+    travas_de_limite = [i for i, sql in enumerate(sqls) if "FOR UPDATE" in sql and '"sgp_spendinglimit"' in sql]
+    travas_de_alocacao = [i for i, sql in enumerate(sqls) if "FOR UPDATE" in sql and '"sgp_budgetpool"' in sql]
     cancelamentos = [i for i, sql in enumerate(sqls) if sql.startswith('UPDATE "sgd_demand" ')]
     primeira_trava_de_limite = sqls[travas_de_limite[0]]
-    solicitantes = re.search(r'"solicitante_id" IN \(([^)]*)\)', primeira_trava_de_limite).group(1)
-    assert {int(pk) for pk in solicitantes.split(",")} == {solicitante_rn.pk, vizinho.pk}
+    # A mesma trava cobre as linhas das duas reservas, de solicitantes diferentes.
+    assert f"'{demand_request_rn.pk}'" in primeira_trava_de_limite
+    assert f"'{da_vizinha.pk}'" in primeira_trava_de_limite
     assert travas_de_limite[0] < travas_de_alocacao[0]
     assert len(cancelamentos) == 2
     assert min(cancelamentos) > max(travas_de_limite + travas_de_alocacao)
