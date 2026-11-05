@@ -163,9 +163,9 @@ def test_saldo_tipo_invalido_retorna_400(auth_client_solicitante, activity_rn):
 
 
 def test_saldo_tipo_sem_rubrica_mapeada_retorna_400_em_tipo(auth_client_solicitante, activity_rn, rubrica_diarias):
-    from apps.sgd.models import DemandTypeRubricaMapping
+    from apps.sgd.models import TipoSolicitacao
 
-    DemandTypeRubricaMapping.objects.filter(tipo="veiculo").delete()
+    TipoSolicitacao.objects.filter(slug="veiculo").update(ativo=False)
 
     response = auth_client_solicitante.get(
         "/api/v1/sgd/saldo/", {"activity_id": activity_rn.pk, "tipo": "veiculo", "valor": "10"},

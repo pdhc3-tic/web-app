@@ -2394,9 +2394,10 @@ paths:
   /api/v1/sgd/config/tipo-rubrica/:
     get:
       operationId: v1_sgd_config_tipo_rubrica_list
-      description: Painel de configuração do mapeamento tipo de solicitação → rubrica
-        (SGD §3). Só Super Admin.
-      summary: Lista os mapeamentos tipo → rubrica
+      description: |-
+        Alias da tela de mapeamento sobre o catálogo, só para o Super Admin. Não há mais
+        histórico: cada tipo tem uma linha, e desativá-la desativa o tipo.
+      summary: Lista os tipos com a rubrica de cada um
       tags:
       - SGD - Configuração
       security:
@@ -2408,26 +2409,27 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/DemandTypeRubricaMapping'
+                  $ref: '#/components/schemas/TipoRubrica'
           description: ''
     post:
       operationId: v1_sgd_config_tipo_rubrica_create
-      description: Painel de configuração do mapeamento tipo de solicitação → rubrica
-        (SGD §3). Só Super Admin.
-      summary: Cria um mapeamento tipo → rubrica
+      description: |-
+        Alias da tela de mapeamento sobre o catálogo, só para o Super Admin. Não há mais
+        histórico: cada tipo tem uma linha, e desativá-la desativa o tipo.
+      summary: Reativa um tipo inativo com a rubrica informada
       tags:
       - SGD - Configuração
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/DemandTypeRubricaMappingRequest'
+              $ref: '#/components/schemas/TipoRubricaRequest'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/DemandTypeRubricaMappingRequest'
+              $ref: '#/components/schemas/TipoRubricaRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/DemandTypeRubricaMappingRequest'
+              $ref: '#/components/schemas/TipoRubricaRequest'
         required: true
       security:
       - jwtAuth: []
@@ -2436,21 +2438,21 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DemandTypeRubricaMapping'
+                $ref: '#/components/schemas/TipoRubrica'
           description: ''
   /api/v1/sgd/config/tipo-rubrica/{id}/:
     get:
       operationId: v1_sgd_config_tipo_rubrica_retrieve
-      description: Painel de configuração do mapeamento tipo de solicitação → rubrica
-        (SGD §3). Só Super Admin.
-      summary: Detalha um mapeamento tipo → rubrica
+      description: |-
+        Alias da tela de mapeamento sobre o catálogo, só para o Super Admin. Não há mais
+        histórico: cada tipo tem uma linha, e desativá-la desativa o tipo.
+      summary: Detalha um tipo com a sua rubrica
       parameters:
       - in: path
         name: id
         schema:
           type: integer
-        description: Um valor inteiro único que identifica este Mapeamento tipo →
-          rubrica.
+        description: Um valor inteiro único que identifica este Tipo de solicitação.
         required: true
       tags:
       - SGD - Configuração
@@ -2461,20 +2463,20 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DemandTypeRubricaMapping'
+                $ref: '#/components/schemas/TipoRubrica'
           description: ''
     patch:
       operationId: v1_sgd_config_tipo_rubrica_partial_update
-      description: Painel de configuração do mapeamento tipo de solicitação → rubrica
-        (SGD §3). Só Super Admin.
-      summary: Altera um mapeamento tipo → rubrica
+      description: |-
+        Alias da tela de mapeamento sobre o catálogo, só para o Super Admin. Não há mais
+        histórico: cada tipo tem uma linha, e desativá-la desativa o tipo.
+      summary: Altera a rubrica ou a situação de um tipo
       parameters:
       - in: path
         name: id
         schema:
           type: integer
-        description: Um valor inteiro único que identifica este Mapeamento tipo →
-          rubrica.
+        description: Um valor inteiro único que identifica este Tipo de solicitação.
         required: true
       tags:
       - SGD - Configuração
@@ -2482,13 +2484,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PatchedDemandTypeRubricaMappingRequest'
+              $ref: '#/components/schemas/PatchedTipoRubricaRequest'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/PatchedDemandTypeRubricaMappingRequest'
+              $ref: '#/components/schemas/PatchedTipoRubricaRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/PatchedDemandTypeRubricaMappingRequest'
+              $ref: '#/components/schemas/PatchedTipoRubricaRequest'
       security:
       - jwtAuth: []
       responses:
@@ -2496,20 +2498,144 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DemandTypeRubricaMapping'
+                $ref: '#/components/schemas/TipoRubrica'
           description: ''
     delete:
       operationId: v1_sgd_config_tipo_rubrica_destroy
-      description: Painel de configuração do mapeamento tipo de solicitação → rubrica
-        (SGD §3). Só Super Admin.
-      summary: Remove um mapeamento tipo → rubrica
+      description: |-
+        Alias da tela de mapeamento sobre o catálogo, só para o Super Admin. Não há mais
+        histórico: cada tipo tem uma linha, e desativá-la desativa o tipo.
+      summary: Desativa um tipo
       parameters:
       - in: path
         name: id
         schema:
           type: integer
-        description: Um valor inteiro único que identifica este Mapeamento tipo →
-          rubrica.
+        description: Um valor inteiro único que identifica este Tipo de solicitação.
+        required: true
+      tags:
+      - SGD - Configuração
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/sgd/config/tipos-solicitacao/:
+    get:
+      operationId: v1_sgd_config_tipos_solicitacao_list
+      description: Leitura para qualquer usuário autenticado; alterações só pelo Super
+        Admin.
+      summary: Lista os tipos de solicitação
+      tags:
+      - SGD - Configuração
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TipoSolicitacao'
+          description: ''
+    post:
+      operationId: v1_sgd_config_tipos_solicitacao_create
+      description: Leitura para qualquer usuário autenticado; alterações só pelo Super
+        Admin.
+      summary: Cria um tipo de solicitação
+      tags:
+      - SGD - Configuração
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TipoSolicitacaoRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TipoSolicitacaoRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TipoSolicitacaoRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TipoSolicitacao'
+          description: ''
+  /api/v1/sgd/config/tipos-solicitacao/{id}/:
+    get:
+      operationId: v1_sgd_config_tipos_solicitacao_retrieve
+      description: Leitura para qualquer usuário autenticado; alterações só pelo Super
+        Admin.
+      summary: Detalha um tipo de solicitação
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este Tipo de solicitação.
+        required: true
+      tags:
+      - SGD - Configuração
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TipoSolicitacao'
+          description: ''
+    patch:
+      operationId: v1_sgd_config_tipos_solicitacao_partial_update
+      description: Leitura para qualquer usuário autenticado; alterações só pelo Super
+        Admin.
+      summary: Altera um tipo de solicitação
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este Tipo de solicitação.
+        required: true
+      tags:
+      - SGD - Configuração
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTipoSolicitacaoRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTipoSolicitacaoRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTipoSolicitacaoRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TipoSolicitacao'
+          description: ''
+    delete:
+      operationId: v1_sgd_config_tipos_solicitacao_destroy
+      description: Leitura para qualquer usuário autenticado; alterações só pelo Super
+        Admin.
+      summary: Remove um tipo de solicitação sem solicitações
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este Tipo de solicitação.
         required: true
       tags:
       - SGD - Configuração
@@ -2639,20 +2765,6 @@ paths:
         name: tipo
         schema:
           type: string
-          enum:
-          - alimentacao
-          - diaria
-          - equipamento
-          - grafico
-          - passagem
-          - veiculo
-        description: |-
-          * `diaria` - Diárias
-          * `passagem` - Passagens Aéreas
-          * `veiculo` - Locação de Veículo
-          * `grafico` - Material Gráfico
-          * `alimentacao` - Alimentação
-          * `equipamento` - Aquisição de Equipamentos
       tags:
       - v1
       security:
@@ -9565,10 +9677,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OpcaoTexto'
-        solicitacao_tipo:
-          type: array
-          items:
-            $ref: '#/components/schemas/OpcaoTexto'
         demanda_status:
           type: array
           items:
@@ -9602,6 +9710,10 @@ components:
           items:
             $ref: '#/components/schemas/OpcaoTexto'
         tipo_refeicao:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
+        solicitacao_tipo:
           type: array
           items:
             $ref: '#/components/schemas/OpcaoTexto'
@@ -10266,7 +10378,8 @@ components:
           type: integer
           readOnly: true
         tipo:
-          $ref: '#/components/schemas/TipoSolicitacaoEnum'
+          type: string
+          readOnly: true
         tipo_display:
           type: string
           readOnly: true
@@ -10350,52 +10463,6 @@ components:
         * `concluida` - Concluída
         * `recusada` - Recusada
         * `cancelada` - Cancelada
-    DemandTypeRubricaMapping:
-      type: object
-      properties:
-        id:
-          type: integer
-          readOnly: true
-        tipo:
-          allOf:
-          - $ref: '#/components/schemas/TipoSolicitacaoEnum'
-          title: Tipo de solicitação
-        rubrica:
-          type: integer
-        rubrica_nome:
-          type: string
-          readOnly: true
-        ativo:
-          type: boolean
-        criado_em:
-          type: string
-          format: date-time
-          readOnly: true
-        atualizado_em:
-          type: string
-          format: date-time
-          readOnly: true
-      required:
-      - atualizado_em
-      - criado_em
-      - id
-      - rubrica
-      - rubrica_nome
-      - tipo
-    DemandTypeRubricaMappingRequest:
-      type: object
-      properties:
-        tipo:
-          allOf:
-          - $ref: '#/components/schemas/TipoSolicitacaoEnum'
-          title: Tipo de solicitação
-        rubrica:
-          type: integer
-        ativo:
-          type: boolean
-      required:
-      - rubrica
-      - tipo
     DirecaoEnum:
       enum:
       - exportacao
@@ -12894,17 +12961,6 @@ components:
           nullable: true
         ativa:
           type: boolean
-    PatchedDemandTypeRubricaMappingRequest:
-      type: object
-      properties:
-        tipo:
-          allOf:
-          - $ref: '#/components/schemas/TipoSolicitacaoEnum'
-          title: Tipo de solicitação
-        rubrica:
-          type: integer
-        ativo:
-          type: boolean
     PatchedGoogleCalendarConfigRequest:
       type: object
       properties:
@@ -13311,6 +13367,44 @@ components:
           nullable: true
         ativo:
           type: boolean
+    PatchedTipoRubricaRequest:
+      type: object
+      description: 'Contrato de `/sgd/config/tipo-rubrica/`: uma linha por tipo do
+        catálogo.'
+      properties:
+        tipo:
+          type: string
+          minLength: 1
+        rubrica:
+          type: integer
+        ativo:
+          type: boolean
+    PatchedTipoSolicitacaoRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          minLength: 1
+          title: Identificador
+          maxLength: 50
+          pattern: ^[-a-zA-Z0-9_]+$
+        nome:
+          type: string
+          minLength: 1
+          maxLength: 100
+        rubrica:
+          type: integer
+        schema_campos:
+          title: Campos do formulário (JSON Schema)
+        validador:
+          type: string
+          maxLength: 50
+        ativo:
+          type: boolean
+        ordem:
+          type: integer
+          maximum: 32767
+          minimum: 0
     PatchedUPFDetailRequest:
       type: object
       description: |-
@@ -15190,22 +15284,129 @@ components:
         * `agricola` - Agrícola
         * `pecuaria` - Pecuária
         * `outra` - Outra
-    TipoSolicitacaoEnum:
-      enum:
-      - diaria
-      - passagem
-      - veiculo
-      - grafico
-      - alimentacao
-      - equipamento
-      type: string
-      description: |-
-        * `diaria` - Diárias
-        * `passagem` - Passagens Aéreas
-        * `veiculo` - Locação de Veículo
-        * `grafico` - Material Gráfico
-        * `alimentacao` - Alimentação
-        * `equipamento` - Aquisição de Equipamentos
+    TipoRubrica:
+      type: object
+      description: 'Contrato de `/sgd/config/tipo-rubrica/`: uma linha por tipo do
+        catálogo.'
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        tipo:
+          type: string
+        rubrica:
+          type: integer
+        rubrica_nome:
+          type: string
+          readOnly: true
+        ativo:
+          type: boolean
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        atualizado_em:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - atualizado_em
+      - criado_em
+      - id
+      - rubrica
+      - rubrica_nome
+      - tipo
+    TipoRubricaRequest:
+      type: object
+      description: 'Contrato de `/sgd/config/tipo-rubrica/`: uma linha por tipo do
+        catálogo.'
+      properties:
+        tipo:
+          type: string
+          minLength: 1
+        rubrica:
+          type: integer
+        ativo:
+          type: boolean
+      required:
+      - rubrica
+      - tipo
+    TipoSolicitacao:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        slug:
+          type: string
+          title: Identificador
+          maxLength: 50
+          pattern: ^[-a-zA-Z0-9_]+$
+        nome:
+          type: string
+          maxLength: 100
+        rubrica:
+          type: integer
+        rubrica_nome:
+          type: string
+          readOnly: true
+        schema_campos:
+          title: Campos do formulário (JSON Schema)
+        validador:
+          type: string
+          maxLength: 50
+        ativo:
+          type: boolean
+        ordem:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        atualizado_em:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - atualizado_em
+      - criado_em
+      - id
+      - nome
+      - rubrica
+      - rubrica_nome
+      - slug
+    TipoSolicitacaoRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          minLength: 1
+          title: Identificador
+          maxLength: 50
+          pattern: ^[-a-zA-Z0-9_]+$
+        nome:
+          type: string
+          minLength: 1
+          maxLength: 100
+        rubrica:
+          type: integer
+        schema_campos:
+          title: Campos do formulário (JSON Schema)
+        validador:
+          type: string
+          maxLength: 50
+        ativo:
+          type: boolean
+        ordem:
+          type: integer
+          maximum: 32767
+          minimum: 0
+      required:
+      - nome
+      - rubrica
+      - slug
     TipoSyncEventEnum:
       enum:
       - push

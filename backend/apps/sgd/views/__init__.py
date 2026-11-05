@@ -3,7 +3,7 @@ from .arlo import ArloViewSet
 from .arlo_mapping import ArloFieldMappingViewSet
 from .dashboard import SgdDashboardView
 from .demand import DemandViewSet
-from .demand_type_rubrica_mapping import DemandTypeRubricaMappingViewSet
+from .tipo_solicitacao import TipoRubricaViewSet, TipoSolicitacaoViewSet
 from .diarias import SimularDiariasView
 from .individual_limit import DemandIndividualLimitViewSet
 from .remanejamento import RemanejamentoViewSet
@@ -14,7 +14,7 @@ __all__ = [
     "ArloFieldMappingViewSet",
     "ArloViewSet",
     "DemandIndividualLimitViewSet",
-    "DemandTypeRubricaMappingViewSet",
+    "TipoRubricaViewSet", "TipoSolicitacaoViewSet",
     "DemandViewSet",
     "OpcoesUsuariosView",
     "PainelRubricasView",

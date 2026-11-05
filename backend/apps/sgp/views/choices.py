@@ -15,7 +15,7 @@ from apps.sgd.constants import (
 )
 from apps.sgd.models.demand import STATUS_CHOICES as DEMANDA_STATUS_CHOICES
 from apps.sgd.models.demand_document import TIPO_CHOICES as DEMANDA_DOCUMENTO_TIPO_CHOICES
-from apps.sgd.models.demand_request import TIPO_CHOICES as SOLICITACAO_TIPO_CHOICES
+from apps.sgd.models.tipo_solicitacao import TipoSolicitacao
 from apps.sgp.constants import (
     AGUA_CHOICES,
     COR_RACA_CHOICES,
@@ -72,7 +72,6 @@ CHOICES_PUBLICADOS = {
     "especie_categoria": EspecieAnimal.CATEGORIA_CHOICES,
     "upf_documento_tipo": UPFDocument.TIPO_CHOICES,
     "atividade_documento_tipo": ActivityDocument.TIPO_CHOICES,
-    "solicitacao_tipo": SOLICITACAO_TIPO_CHOICES,
     "demanda_status": DEMANDA_STATUS_CHOICES,
     "demanda_documento_tipo": DEMANDA_DOCUMENTO_TIPO_CHOICES,
     "beneficiario_vinculo": Vinculo.choices,
@@ -107,11 +106,18 @@ class SGPChoicesView(APIView):
     @extend_schema(
         responses=inline_serializer(
             "ChoicesResposta",
-            fields={chave: _opcoes_serializer(opcoes) for chave, opcoes in CHOICES_PUBLICADOS.items()},
+            fields={
+                **{chave: _opcoes_serializer(opcoes) for chave, opcoes in CHOICES_PUBLICADOS.items()},
+                "solicitacao_tipo": OpcaoTextoSerializer(many=True),
+            },
         ),
     )
     def get(self, request):
         return Response({
             chave: [{"value": valor, "label": rotulo} for valor, rotulo in opcoes]
             for chave, opcoes in CHOICES_PUBLICADOS.items()
+        } | {
+            "solicitacao_tipo": [
+                {"value": slug, "label": nome} for slug, nome in TipoSolicitacao.objects.values_list("slug", "nome")
+            ],
         })

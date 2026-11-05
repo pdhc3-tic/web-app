@@ -5,7 +5,8 @@ from .views import (
     ArloFieldMappingViewSet,
     ArloViewSet,
     DemandIndividualLimitViewSet,
-    DemandTypeRubricaMappingViewSet,
+    TipoRubricaViewSet,
+    TipoSolicitacaoViewSet,
     DemandViewSet,
     CustoPorAtividadeView,
     OpcoesUsuariosView,
@@ -21,7 +22,8 @@ router.register("demandas", DemandViewSet, basename="demanda")
 router.register("arlo", ArloViewSet, basename="arlo")
 router.register("remanejamentos", RemanejamentoViewSet, basename="remanejamento")
 router.register("config/arlo-mapping", ArloFieldMappingViewSet, basename="arlo-mapping")
-router.register("config/tipo-rubrica", DemandTypeRubricaMappingViewSet, basename="tipo-rubrica")
+router.register("config/tipo-rubrica", TipoRubricaViewSet, basename="tipo-rubrica")
+router.register("config/tipos-solicitacao", TipoSolicitacaoViewSet, basename="tipo-solicitacao")
 router.register("limites-individuais", DemandIndividualLimitViewSet, basename="demanda-limite-individual")
 
 urlpatterns = [

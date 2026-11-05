@@ -6,7 +6,7 @@ from apps.sgd.models import (
     Demand,
     DemandDocument,
     DemandRequest,
-    DemandTypeRubricaMapping,
+    TipoSolicitacao,
 )
 from apps.sgp.models import BudgetIncreaseRequest
 from apps.sgp.tests.factories import ActivityFactory, BudgetRubricaFactory
@@ -24,10 +24,37 @@ class DemandFactory(factory.django.DjangoModelFactory):
     despesa_posterior = False
 
 
+class TipoSolicitacaoFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = TipoSolicitacao
+        django_get_or_create = ("slug",)
+
+    slug = factory.Sequence(lambda n: f"tipo-{n}")
+    nome = factory.Sequence(lambda n: f"Tipo {n}")
+    rubrica = factory.SubFactory(BudgetRubricaFactory)
+    schema_campos = factory.LazyFunction(lambda: {"type": "object"})
+    ativo = True
+
+
+def mapear_tipo(slug: str, rubrica, *, ativo: bool = True) -> TipoSolicitacao:
+    """O tipo do catálogo passa a debitar `rubrica`."""
+    TipoSolicitacao.objects.filter(slug=slug).update(rubrica=rubrica, ativo=ativo)
+    return TipoSolicitacao.objects.get(slug=slug)
+
+
 class DemandRequestFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = DemandRequest
         skip_postgeneration_save = True
+
+    @classmethod
+    def _adjust_kwargs(cls, **kwargs):
+        # Os testes dizem o tipo pelo slug; a rubrica informada não entra no catálogo.
+        if isinstance(kwargs.get("tipo"), str):
+            kwargs["tipo"] = TipoSolicitacao.objects.filter(slug=kwargs["tipo"]).first() or TipoSolicitacaoFactory(
+                slug=kwargs["tipo"], rubrica=kwargs["rubrica"],
+            )
+        return kwargs
 
     demanda = factory.SubFactory(DemandFactory)
     tipo = "grafico"
@@ -101,12 +128,3 @@ class BudgetIncreaseRequestFactory(factory.django.DjangoModelFactory):
     valor_solicitado = 500
     justificativa = "Limite individual esgotado antes do fim do período."
     status = "submetida"
-
-
-class DemandTypeRubricaMappingFactory(factory.django.DjangoModelFactory):
-    class Meta:
-        model = DemandTypeRubricaMapping
-
-    tipo = "diaria"
-    rubrica = factory.SubFactory(BudgetRubricaFactory)
-    ativo = True

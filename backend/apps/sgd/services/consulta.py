@@ -247,7 +247,7 @@ def linhas_exportacao(demandas):
     qs = (
         demandas.order_by("-criado_em", "-pk")
         .select_related("solicitante", *contexto.CAMINHOS_CADEIA, contexto.CAMINHO_TERRITORIO)
-        .prefetch_related("solicitacoes__rubrica")
+        .prefetch_related("solicitacoes__rubrica", "solicitacoes__tipo")
     )
     for demanda in qs.iterator(chunk_size=500):
         solicitacoes = list(demanda.solicitacoes.all())

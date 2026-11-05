@@ -4,16 +4,6 @@ from django.db.models import Q
 from apps.core.fields import EncryptedCharField
 
 
-TIPO_CHOICES = [
-    ("diaria", "Diárias"),
-    ("passagem", "Passagens Aéreas"),
-    ("veiculo", "Locação de Veículo"),
-    ("grafico", "Material Gráfico"),
-    ("alimentacao", "Alimentação"),
-    ("equipamento", "Aquisição de Equipamentos"),
-]
-
-
 class DemandRequest(models.Model):
     demanda = models.ForeignKey(
         "sgd.Demand",
@@ -22,7 +12,14 @@ class DemandRequest(models.Model):
         verbose_name="Demanda",
     )
 
-    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, verbose_name="Tipo")
+    tipo = models.ForeignKey(
+        "sgd.TipoSolicitacao",
+        to_field="slug",
+        db_column="tipo",
+        on_delete=models.PROTECT,
+        related_name="solicitacoes",
+        verbose_name="Tipo",
+    )
 
     rubrica = models.ForeignKey(
         "sgp.BudgetRubrica",
@@ -98,6 +95,9 @@ class DemandRequest(models.Model):
 
     def __str__(self):
         return f"{self.get_tipo_display()} — {self.demanda_id}"
+
+    def get_tipo_display(self) -> str:
+        return self.tipo.nome
 
     @property
     def reserva_ativa(self) -> bool:

@@ -77,7 +77,7 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
             "activity__comunidade", "activity__tecnico_responsavel",
             *contexto.CAMINHOS_CADEIA,
             "solicitante",
-        ).prefetch_related("solicitacoes__rubrica", "activity__acao__rubricas_previstas")
+        ).prefetch_related("solicitacoes__rubrica", "solicitacoes__tipo", "activity__acao__rubricas_previstas")
         # Só na leitura: nas ações de decisão o prefetch deixaria `etapas` em
         # cache, e a resposta sairia sem a etapa que a própria ação acabou de criar.
         if self.action in ("list", "retrieve"):
