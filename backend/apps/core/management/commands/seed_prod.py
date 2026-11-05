@@ -388,7 +388,6 @@ class Command(BaseCommand):
                 {
                     "nome": data["nome"],
                     "telefone": data.get("telefone", ""),
-                    "ativo": True,
                 },
             )
             if created:

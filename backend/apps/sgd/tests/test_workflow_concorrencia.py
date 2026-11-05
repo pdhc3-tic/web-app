@@ -9,12 +9,13 @@ from rest_framework.test import APIClient
 
 from apps.core.models import User
 from apps.core.services.usuarios import desativar
-from apps.sgd.exceptions import ErroDeDominio, TransicaoInvalida
+from apps.sgd.exceptions import ErroDeDominio, RegraDeNegocio, TransicaoInvalida
 from apps.sgd.models import Demand, DemandRequest
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import workflow as workflow_service
 from apps.sgd.services.arlo_import import processar_importacao
 from apps.sgd.tests.concorrencia import intercalar
+from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
 
 # Fixtures e helpers compartilhados com a suíte de integração Arlo.
 from apps.sgd.tests.test_arlo_integration import (  # noqa: F401
@@ -221,6 +222,50 @@ def test_desativacao_desfeita_quando_a_ugp_autoriza_a_demanda_no_meio(
     assert demand.status == "autorizada"
     assert User.objects.get(pk=solicitante_rn.pk).ativo is True
     assert _saldo(limite_individual_rn, allocation_territorial_rn) == (Decimal("1000"), 0, Decimal("1000"), 0)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_demanda_criada_e_submetida_durante_a_desativacao_e_recusada(
+    activity_rn, solicitante_rn, rubrica_diarias, usuario_super_admin,
+    limite_individual_rn, allocation_territorial_rn,
+):
+    """A desativação já leu as demandas e ainda não commitou. A submissão espera a linha
+    do solicitante, relê o `ativo` e não deixa reserva presa em usuário inativo."""
+    def desativar_e_segurar(pausa):
+        desativar(User.objects.get(pk=solicitante_rn.pk), por=usuario_super_admin)
+        pausa()
+
+    def criar_e_submeter():
+        nova = DemandFactory(activity=activity_rn, solicitante=solicitante_rn, status="rascunho")
+        DemandRequestFactory(demanda=nova, tipo="diaria", rubrica=rubrica_diarias, valor_estimado=1_000)
+        demand_service.submeter_demanda(Demand.objects.get(pk=nova.pk), usuario=solicitante_rn)
+
+    _, erros = intercalar(desativar_e_segurar, criar_e_submeter)
+
+    assert set(erros) == {"espera"}
+    assert isinstance(erros["espera"], RegraDeNegocio)
+    assert Demand.objects.get(solicitante=solicitante_rn).status == "rascunho"
+    assert _saldo(limite_individual_rn, allocation_territorial_rn) == (0, 0, 0, 0)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_desativacao_espera_a_submissao_em_curso_e_cancela_a_demanda(
+    demand_request_rn, solicitante_rn, usuario_super_admin, limite_individual_rn, allocation_territorial_rn,
+):
+    demand = demand_request_rn.demanda
+
+    def submeter_e_segurar(pausa):
+        demand_service.submeter_demanda(Demand.objects.get(pk=demand.pk), usuario=solicitante_rn)
+        pausa()
+
+    _, erros = intercalar(
+        submeter_e_segurar, lambda: desativar(User.objects.get(pk=solicitante_rn.pk), por=usuario_super_admin),
+    )
+
+    assert erros == {}
+    demand.refresh_from_db()
+    assert demand.status == "cancelada"
+    assert _saldo(limite_individual_rn, allocation_territorial_rn) == (0, 0, 0, 0)
 
 
 @pytest.mark.django_db(transaction=True)

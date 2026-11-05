@@ -3,6 +3,7 @@ import json
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from drf_spectacular.utils import extend_schema_field
 from .models import Role, State, Territory, Municipality, Organization
 from .models.notifications import Notification
@@ -396,17 +397,20 @@ class UserDetailSerializer(serializers.ModelSerializer):
         perfis_data = validated_data.pop("perfis_input", None)
         password = validated_data.pop("password", None)
 
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
+        with transaction.atomic():
+            # Relê com lock: com dados lidos antes de uma desativação concorrente, a auditoria
+            # e a resposta diriam `ativo: true`, e regravar a linha inteira a desfaria.
+            instance.refresh_from_db(from_queryset=User.objects.select_for_update(no_key=True))
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
 
-        if password:
-            instance.set_password(password)
+            if password:
+                instance.set_password(password)
 
-        # Só o que veio: regravar a linha inteira desfaria uma desativação concorrente.
-        instance.save(update_fields=[*validated_data, *(["password"] if password else [])])
+            instance.save(update_fields=[*validated_data, *(["password"] if password else [])])
 
-        if perfis_data is not None:
-            self._sync_profiles(instance, perfis_data)
+            if perfis_data is not None:
+                self._sync_profiles(instance, perfis_data)
 
         return instance
 

@@ -15,7 +15,7 @@ from apps.core.models import AuditLog, User
 from apps.core.models.notifications import Notification
 from apps.core.serializers import UserDetailSerializer
 from apps.core.services.usuarios import desativar
-from apps.sgd.exceptions import TransicaoInvalida
+from apps.sgd.exceptions import RegraDeNegocio, TransicaoInvalida
 from apps.sgd.models import Demand
 from apps.sgd.services import workflow as workflow_service
 from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
@@ -249,6 +249,20 @@ def test_cancela_sem_contexto_de_sessao_com_o_papel_de_runtime(
     assert limite_individual_rn.valor_comprometido == 0
 
 
+def test_submissao_de_solicitante_inativo_e_recusada_sem_reservar(
+    nova_demanda, solicitante_rn, atores, limite_individual_rn,
+):
+    demand = nova_demanda("rascunho")
+    User.objects.filter(pk=solicitante_rn.pk).update(ativo=False)
+
+    with pytest.raises(RegraDeNegocio):
+        workflow_service.executar_transicao(demand, "submetida", ator=atores["solicitante"])
+
+    assert Demand.objects.get(pk=demand.pk).status == "rascunho"
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == 0
+
+
 def test_usuario_ja_inativo_nao_faz_nada(nova_demanda, solicitante_rn, usuario_super_admin):
     demand = nova_demanda("submetida")
     solicitante_rn.ativo = False
@@ -274,6 +288,7 @@ def test_notifica_so_o_articulador_do_estado_com_o_motivo_da_desativacao(
     assert {n.user_id for n in notificacoes} == {usuario_articulador_rn.pk}
     assert {n.evento for n in notificacoes} == {"demand_cancelada_automatico"}
     assert all("solicitante foi desativado" in n.mensagem for n in notificacoes)
+    assert {n.link for n in notificacoes} == {""}
 
 
 def test_articulador_desativado_nao_notifica_a_si_mesmo(
@@ -352,10 +367,13 @@ def test_edicao_com_dados_lidos_antes_nao_desfaz_a_desativacao(solicitante_rn):
 
     serializer = UserDetailSerializer(lido_antes, data={"telefone": "84999990000"}, partial=True)
     serializer.is_valid(raise_exception=True)
-    serializer.save()
+    salvo = serializer.save()
 
+    assert salvo.ativo is False
     solicitante_rn.refresh_from_db()
     assert (solicitante_rn.ativo, solicitante_rn.telefone) == (False, "84999990000")
+    log = AuditLog.objects.filter(entidade="User", entidade_id=str(solicitante_rn.pk), acao="UPDATE").latest("id")
+    assert (log.valores_anteriores["ativo"], log.valores_novos["ativo"]) == (False, False)
 
 
 def test_patch_que_nao_desativa_nao_cancela(auth_client_super_admin, nova_demanda, solicitante_rn):

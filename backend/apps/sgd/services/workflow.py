@@ -4,9 +4,9 @@
 justificativa, o que acontece com o saldo, que etapa entra na timeline e quem é
 notificado. `executar_transicao` é o único lugar que aplica uma linha dela.
 
-Ordem de lock (`backend/docs/orcamento.md`): o efeito no saldo trava limite e
-alocação; só então a `Demand` é travada e relida, e as solicitações são gravadas
-por último. A decisão sobre a transição é tomada com o objeto que quem chama
+Ordem de lock (`backend/docs/orcamento.md`): a submissão trava antes a linha do
+solicitante; o efeito no saldo trava limite e alocação; só então a `Demand` é travada
+e relida, e as solicitações são gravadas por último. A decisão sobre a transição é tomada com o objeto que quem chama
 leu; a releitura sob o lock recusa a transição se a demanda mudou nesse meio.
 """
 from __future__ import annotations
@@ -20,6 +20,7 @@ from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.utils import timezone
 
+from apps.core.models import User
 from apps.core.services.permissions import user_role_slugs
 from apps.core.utils import formatar_brl
 from apps.sgd.exceptions import (
@@ -229,7 +230,19 @@ def _manter(demand, transicao, **_) -> tuple[list, dict | None]:
     return [], None
 
 
+def _exigir_solicitante_ativo(demand) -> None:
+    """A desativação cancela só as demandas que encontra. Sem esta trava, uma demanda
+    criada e submetida enquanto ela espera o limite ficaria fora da lista, com a reserva
+    presa em usuário inativo. `no_key` não barra a checagem de FK de outras transações."""
+    ativo = (
+        User.objects.select_for_update(no_key=True).values_list("ativo", flat=True).get(pk=demand.solicitante_id)
+    )
+    if not ativo:
+        raise RegraDeNegocio("O solicitante foi desativado.", campo="solicitante")
+
+
 def _reservar(demand, transicao, *, ator, **_) -> tuple[list, dict | None]:
+    _exigir_solicitante_ativo(demand)
     solicitacoes = _solicitacoes(demand)
     if not solicitacoes:
         raise RegraDeNegocio("A demanda precisa ter ao menos uma solicitação de recurso.", campo="solicitacoes")
