@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import pytest
 from django.db import connection
+from rest_framework.test import APIClient
 
 from apps.core.models import User
 from apps.core.services.usuarios import desativar
@@ -220,6 +221,41 @@ def test_desativacao_desfeita_quando_a_ugp_autoriza_a_demanda_no_meio(
     assert demand.status == "autorizada"
     assert User.objects.get(pk=solicitante_rn.pk).ativo is True
     assert _saldo(limite_individual_rn, allocation_territorial_rn) == (Decimal("1000"), 0, Decimal("1000"), 0)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_patch_que_troca_o_email_e_desativa_nao_fecha_ciclo_com_a_autorizacao(
+    demand_request_rn, solicitante_rn, usuario_articulador_rn, usuario_ugp, usuario_super_admin,
+    limite_individual_rn, allocation_territorial_rn,
+):
+    """A autorização segura o limite e, no commit, confere a FK da notificação ao
+    solicitante. Se o PATCH gravasse o e-mail antes de esperar esse limite, essa
+    conferência esperaria a linha do usuário, e as duas transações, uma à outra."""
+    demand = demand_request_rn.demanda
+    email_original = solicitante_rn.email
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    workflow_service.executar_transicao(demand, "pre_autorizada", ator=usuario_articulador_rn)
+    cliente = APIClient()
+    cliente.force_authenticate(user=usuario_super_admin)
+
+    def autorizar(pausa):
+        workflow_service.executar_transicao(Demand.objects.get(pk=demand.pk), "autorizada", ator=usuario_ugp)
+        pausa()
+
+    resultados, erros = intercalar(
+        autorizar,
+        lambda: cliente.patch(
+            f"/api/v1/users/{solicitante_rn.pk}/", {"ativo": False, "email": "novo.adt@test.com"}, format="json",
+        ),
+    )
+
+    assert erros == {}
+    assert resultados["espera"].status_code == 400
+    assert resultados["espera"].data["code"] == "INVALID_TRANSITION"
+    salvo = User.objects.get(pk=solicitante_rn.pk)
+    assert (salvo.ativo, salvo.email) == (True, email_original)
+    demand.refresh_from_db()
+    assert demand.status == "autorizada"
 
 
 @pytest.mark.django_db(transaction=True)

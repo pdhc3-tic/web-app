@@ -6,12 +6,14 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib import admin
+from django.db import connection
 from django.test import RequestFactory
 from freezegun import freeze_time
 
 from apps.core.admin import UserAdmin
 from apps.core.models import AuditLog, User
 from apps.core.models.notifications import Notification
+from apps.core.serializers import UserDetailSerializer
 from apps.core.services.usuarios import desativar
 from apps.sgd.exceptions import TransicaoInvalida
 from apps.sgd.models import Demand
@@ -221,6 +223,32 @@ def test_demanda_que_mudou_durante_a_operacao_desfaz_tudo(
     assert limite_individual_rn.valor_comprometido == Decimal("1000")
 
 
+def test_cancela_sem_contexto_de_sessao_com_o_papel_de_runtime(
+    nova_demanda, solicitante_rn, usuario_super_admin, limite_individual_rn,
+):
+    """A suíte conecta como superusuário, que ignora o RLS: o teste troca para um papel
+    sem BYPASSRLS, como um comando rodando fora de uma requisição."""
+    demand = nova_demanda("submetida")
+    with connection.cursor() as cursor:
+        cursor.execute("CREATE ROLE sgd_desativacao_runtime NOLOGIN NOBYPASSRLS;")
+        cursor.execute("GRANT USAGE ON SCHEMA public TO sgd_desativacao_runtime;")
+        cursor.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO sgd_desativacao_runtime;")
+        cursor.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO sgd_desativacao_runtime;")
+        cursor.execute("SET LOCAL ROLE sgd_desativacao_runtime;")
+        cursor.execute("SELECT set_config('app.user_role', '', true)")
+        cursor.execute("SELECT set_config('app.current_user_id', '', true)")
+    try:
+        desativar(solicitante_rn, por=usuario_super_admin)
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("RESET ROLE;")
+
+    demand.refresh_from_db()
+    assert demand.status == "cancelada"
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == 0
+
+
 def test_usuario_ja_inativo_nao_faz_nada(nova_demanda, solicitante_rn, usuario_super_admin):
     demand = nova_demanda("submetida")
     solicitante_rn.ativo = False
@@ -304,15 +332,30 @@ def test_patch_que_desativa_cancela_e_grava_os_outros_campos(
     demand = nova_demanda("submetida")
 
     resposta = auth_client_super_admin.patch(
-        f"/api/v1/users/{solicitante_rn.pk}/", {"ativo": False, "telefone": "84999990000"}, format="json",
+        f"/api/v1/users/{solicitante_rn.pk}/",
+        {"ativo": False, "telefone": "84999990000", "email": "novo.adt@test.com"}, format="json",
     )
 
     assert resposta.status_code == 200
     assert resposta.data["ativo"] is False
     solicitante_rn.refresh_from_db()
-    assert (solicitante_rn.ativo, solicitante_rn.telefone) == (False, "84999990000")
+    assert (solicitante_rn.ativo, solicitante_rn.telefone, solicitante_rn.email) == (
+        False, "84999990000", "novo.adt@test.com",
+    )
     demand.refresh_from_db()
     assert demand.status == "cancelada"
+
+
+def test_edicao_com_dados_lidos_antes_nao_desfaz_a_desativacao(solicitante_rn):
+    lido_antes = User.objects.get(pk=solicitante_rn.pk)
+    User.objects.filter(pk=solicitante_rn.pk).update(ativo=False)
+
+    serializer = UserDetailSerializer(lido_antes, data={"telefone": "84999990000"}, partial=True)
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+
+    solicitante_rn.refresh_from_db()
+    assert (solicitante_rn.ativo, solicitante_rn.telefone) == (False, "84999990000")
 
 
 def test_patch_que_nao_desativa_nao_cancela(auth_client_super_admin, nova_demanda, solicitante_rn):
@@ -371,13 +414,14 @@ def test_admin_com_demanda_que_mudou_avisa_e_mantem_o_usuario_ativo(
 ):
     nova_demanda("submetida")
     solicitante_rn.ativo = False
+    solicitante_rn.nome = "Outro nome"
 
     with patch(FALHA_NO_CANCELAMENTO, side_effect=TransicaoInvalida("Mudou.")):
         mensagem = _salvar_no_admin(solicitante_rn, por=usuario_super_admin, changed_data=["ativo"])
 
     mensagem.assert_called_once()
-    assert solicitante_rn.ativo is True
-    assert User.objects.get(pk=solicitante_rn.pk).ativo is True
+    salvo = User.objects.get(pk=solicitante_rn.pk)
+    assert (salvo.ativo, salvo.nome) == (True, "Outro nome")
 
 
 def test_admin_que_edita_outro_campo_nao_cancela(nova_demanda, solicitante_rn, usuario_super_admin):
@@ -403,7 +447,7 @@ def test_impacto_lista_o_que_a_desativacao_faria_sem_mudar_nada(
     pre_autorizada = nova_demanda("pre_autorizada", valor=300, rubrica=outra)
     nova_demanda("autorizada", valor=400)
 
-    resposta = auth_client_super_admin.get(f"/api/v1/users/{solicitante_rn.pk}/impacto-desativacao/")
+    resposta = auth_client_super_admin.get(f"/api/v1/core/usuarios/{solicitante_rn.pk}/impacto-desativacao/")
 
     assert resposta.status_code == 200
     assert resposta.json() == {
@@ -438,7 +482,7 @@ def test_impacto_bate_com_o_que_a_desativacao_libera(
     limite_individual_rn.refresh_from_db()
     antes = limite_individual_rn.valor_comprometido
 
-    impacto = auth_client_super_admin.get(f"/api/v1/users/{solicitante_rn.pk}/impacto-desativacao/").json()
+    impacto = auth_client_super_admin.get(f"/api/v1/core/usuarios/{solicitante_rn.pk}/impacto-desativacao/").json()
     auth_client_super_admin.delete(f"/api/v1/users/{solicitante_rn.pk}/")
 
     limite_individual_rn.refresh_from_db()
@@ -449,13 +493,13 @@ def test_impacto_bate_com_o_que_a_desativacao_libera(
 
 
 def test_impacto_de_usuario_sem_demandas_vem_vazio(auth_client_super_admin, solicitante_rn):
-    resposta = auth_client_super_admin.get(f"/api/v1/users/{solicitante_rn.pk}/impacto-desativacao/")
+    resposta = auth_client_super_admin.get(f"/api/v1/core/usuarios/{solicitante_rn.pk}/impacto-desativacao/")
 
     assert resposta.status_code == 200
     assert resposta.json() == {"demandas": [], "saldo_por_rubrica": [], "saldo_liberado": "0.00"}
 
 
 def test_impacto_e_so_do_super_admin(auth_client_ugp, solicitante_rn):
-    resposta = auth_client_ugp.get(f"/api/v1/users/{solicitante_rn.pk}/impacto-desativacao/")
+    resposta = auth_client_ugp.get(f"/api/v1/core/usuarios/{solicitante_rn.pk}/impacto-desativacao/")
 
     assert resposta.status_code == 403

@@ -133,12 +133,11 @@ class UserViewSet(viewsets.ModelViewSet):
         old_snapshot = _user_access_snapshot(serializer.instance)
         desativando = serializer.instance.ativo and serializer.validated_data.get("ativo") is False
         with transaction.atomic():
+            # Depois da desativação: trocar o e-mail, coluna única, barra a checagem de FK de
+            # quem segura o limite que o cancelamento precisa, e as duas transações se esperariam.
             if desativando:
-                # `desativar` só age em usuário ainda ativo, e é ele que grava o `ativo`.
-                user = serializer.save(ativo=True)
-                desativar(user, por=self.request.user)
-            else:
-                user = serializer.save()
+                desativar(serializer.instance, por=self.request.user)
+            user = serializer.save()
         new_snapshot = _user_access_snapshot(user)
         if old_snapshot != new_snapshot:
             log_audit(
@@ -166,7 +165,6 @@ class UserViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @extend_schema(responses=ImpactoDesativacaoSerializer)
-    @action(detail=True, methods=["get"], url_path="impacto-desativacao")
     def impacto_desativacao(self, request, pk=None):
         from apps.sgd.services.desativacao import impacto_da_desativacao
 

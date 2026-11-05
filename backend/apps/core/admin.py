@@ -81,14 +81,15 @@ class UserAdmin(DjangoUserAdmin):
         if not (change and "ativo" in form.changed_data and not obj.ativo):
             super().save_model(request, obj, form, change)
             return
-        # `desativar` só age em usuário ainda ativo, e é ele que grava o `ativo`.
+        # `desativar` só age em usuário ainda ativo. Os outros campos vão depois: trocar o e-mail,
+        # coluna única, barra a checagem de FK de quem segura o limite que o cancelamento precisa.
         obj.ativo = True
-        super().save_model(request, obj, form, change)
         try:
             desativar(obj, por=request.user)
         except TransicaoInvalida as exc:
             obj.ativo = True
             self.message_user(request, f"Usuário não desativado: {exc.mensagem}", level=messages.ERROR)
+        super().save_model(request, obj, form, change)
 
     def perfis_resumo(self, obj):
         profiles = obj.profiles.select_related("perfil", "territorio").all()

@@ -47,6 +47,11 @@ urlpatterns = router.urls + [
         GoogleCalendarStatusView.as_view(),
         name="google-calendar-status",
     ),
+    path(
+        "core/usuarios/<int:pk>/impacto-desativacao/",
+        UserViewSet.as_view({"get": "impacto_desativacao"}),
+        name="user-impacto-desativacao",
+    ),
     path("system-config/", SystemConfigListView.as_view(), name="system-config-list"),
     path("system-config/<str:chave>/", SystemConfigDetailView.as_view(), name="system-config-detail"),
     path("admin/power-bi-token/", PowerBITokenView.as_view(), name="power-bi-token"),

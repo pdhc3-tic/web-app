@@ -402,7 +402,8 @@ class UserDetailSerializer(serializers.ModelSerializer):
         if password:
             instance.set_password(password)
 
-        instance.save()
+        # Só o que veio: regravar a linha inteira desfaria uma desativação concorrente.
+        instance.save(update_fields=[*validated_data, *(["password"] if password else [])])
 
         if perfis_data is not None:
             self._sync_profiles(instance, perfis_data)
