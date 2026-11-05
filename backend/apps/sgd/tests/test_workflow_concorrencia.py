@@ -6,6 +6,8 @@ from decimal import Decimal
 import pytest
 from django.db import connection
 
+from apps.core.models import User
+from apps.core.services.usuarios import desativar
 from apps.sgd.exceptions import ErroDeDominio, TransicaoInvalida
 from apps.sgd.models import Demand, DemandRequest
 from apps.sgd.services import demand as demand_service
@@ -190,6 +192,33 @@ def test_cancelamento_pela_task_desfeito_quando_a_fgd_inicia_o_atendimento(
     assert isinstance(erros["espera"], TransicaoInvalida)
     autorizada.refresh_from_db()
     assert autorizada.status == "em_atendimento"
+    assert _saldo(limite_individual_rn, allocation_territorial_rn) == (Decimal("1000"), 0, Decimal("1000"), 0)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_desativacao_desfeita_quando_a_ugp_autoriza_a_demanda_no_meio(
+    demand_request_rn, solicitante_rn, usuario_articulador_rn, usuario_ugp, usuario_super_admin,
+    limite_individual_rn, allocation_territorial_rn,
+):
+    """A desativação leu a demanda como pré-autorizada e esperou o limite. Depois do
+    commit da autorização, a demanda não pode ser cancelada nem o usuário desativado."""
+    demand = demand_request_rn.demanda
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    workflow_service.executar_transicao(demand, "pre_autorizada", ator=usuario_articulador_rn)
+
+    def autorizar(pausa):
+        workflow_service.executar_transicao(Demand.objects.get(pk=demand.pk), "autorizada", ator=usuario_ugp)
+        pausa()
+
+    _, erros = intercalar(
+        autorizar, lambda: desativar(User.objects.get(pk=solicitante_rn.pk), por=usuario_super_admin),
+    )
+
+    assert set(erros) == {"espera"}
+    assert isinstance(erros["espera"], TransicaoInvalida)
+    demand.refresh_from_db()
+    assert demand.status == "autorizada"
+    assert User.objects.get(pk=solicitante_rn.pk).ativo is True
     assert _saldo(limite_individual_rn, allocation_territorial_rn) == (Decimal("1000"), 0, Decimal("1000"), 0)
 
 

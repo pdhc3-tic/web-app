@@ -1,12 +1,15 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.utils.html import format_html_join
 from django.urls import reverse
+
+from apps.sgd.exceptions import TransicaoInvalida
 
 from .models import State, Territory, Municipality, User, Role, UserProfile, Organization
 from .models.notifications import Notification, NotificationPreference
 from .models.system_config import SystemConfig
 from .models import AuditLog
+from .services.usuarios import desativar
 
 
 class UserProfileInline(admin.TabularInline):
@@ -73,6 +76,19 @@ class UserAdmin(DjangoUserAdmin):
         ),
     )
     filter_horizontal = ("groups", "user_permissions")
+
+    def save_model(self, request, obj, form, change):
+        if not (change and "ativo" in form.changed_data and not obj.ativo):
+            super().save_model(request, obj, form, change)
+            return
+        # `desativar` só age em usuário ainda ativo, e é ele que grava o `ativo`.
+        obj.ativo = True
+        super().save_model(request, obj, form, change)
+        try:
+            desativar(obj, por=request.user)
+        except TransicaoInvalida as exc:
+            obj.ativo = True
+            self.message_user(request, f"Usuário não desativado: {exc.mensagem}", level=messages.ERROR)
 
     def perfis_resumo(self, obj):
         profiles = obj.profiles.select_related("perfil", "territorio").all()

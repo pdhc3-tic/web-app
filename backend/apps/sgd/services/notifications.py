@@ -114,6 +114,15 @@ def notificar_cancelamento_automatico(demand, articuladores) -> None:
     )
 
 
+def notificar_cancelamento_por_desativacao(demand, articuladores) -> None:
+    _notificar(
+        usuarios=articuladores,
+        titulo=f"Demanda cancelada automaticamente: {demand.titulo}",
+        mensagem=f"A demanda '{demand.titulo}' foi cancelada automaticamente porque o solicitante foi desativado.",
+        link=_link_demanda(demand), evento="demand_cancelada_automatico", canais=_EMAIL_E_IN_APP,
+    )
+
+
 def notificar_mudanca_semaforo(*, usuarios, demand, rubrica_nome: str, trava: str, semaforo: str) -> None:
     _notificar(
         usuarios=usuarios,

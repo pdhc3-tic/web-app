@@ -251,6 +251,25 @@ class PerfilInputSerializer(serializers.Serializer):
     territorio_id = serializers.IntegerField(allow_null=True, required=False, default=None)
 
 
+class DemandaCanceladaNaDesativacaoSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    titulo = serializers.CharField()
+    status = serializers.CharField()
+    saldo_liberado = serializers.DecimalField(max_digits=14, decimal_places=2)
+
+
+class SaldoLiberadoPorRubricaSerializer(serializers.Serializer):
+    rubrica_id = serializers.IntegerField()
+    rubrica_nome = serializers.CharField()
+    valor = serializers.DecimalField(max_digits=14, decimal_places=2)
+
+
+class ImpactoDesativacaoSerializer(serializers.Serializer):
+    demandas = DemandaCanceladaNaDesativacaoSerializer(many=True)
+    saldo_por_rubrica = SaldoLiberadoPorRubricaSerializer(many=True)
+    saldo_liberado = serializers.DecimalField(max_digits=14, decimal_places=2)
+
+
 class UserDetailSerializer(serializers.ModelSerializer):
     email = serializers.EmailField()
     nome_completo = serializers.CharField(source="nome")

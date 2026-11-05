@@ -7657,6 +7657,27 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/users/{id}/impacto-desativacao/:
+    get:
+      operationId: v1_users_impacto_desativacao_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este Usuario.
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImpactoDesativacao'
+          description: ''
   /api/v1/users/{id}/reativar-acesso/:
     patch:
       operationId: v1_users_reativar_acesso_partial_update
@@ -10396,6 +10417,24 @@ components:
       required:
       - rubrica
       - tipo
+    DemandaCanceladaNaDesativacao:
+      type: object
+      properties:
+        id:
+          type: integer
+        titulo:
+          type: string
+        status:
+          type: string
+        saldo_liberado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+      required:
+      - id
+      - saldo_liberado
+      - status
+      - titulo
     DirecaoEnum:
       enum:
       - exportacao
@@ -11029,6 +11068,25 @@ components:
       - usuario
       - valor_anterior
       - valor_novo
+    ImpactoDesativacao:
+      type: object
+      properties:
+        demandas:
+          type: array
+          items:
+            $ref: '#/components/schemas/DemandaCanceladaNaDesativacao'
+        saldo_por_rubrica:
+          type: array
+          items:
+            $ref: '#/components/schemas/SaldoLiberadoPorRubrica'
+        saldo_liberado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+      required:
+      - demandas
+      - saldo_liberado
+      - saldo_por_rubrica
     Indicator:
       type: object
       properties:
@@ -14352,6 +14410,21 @@ components:
       - pool_id
       - saldo
       - territorio
+    SaldoLiberadoPorRubrica:
+      type: object
+      properties:
+        rubrica_id:
+          type: integer
+        rubrica_nome:
+          type: string
+        valor:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+      required:
+      - rubrica_id
+      - rubrica_nome
+      - valor
     SemaforoEnum:
       enum:
       - verde

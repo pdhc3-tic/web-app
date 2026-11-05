@@ -130,6 +130,7 @@ As transições de status passam por `apps.sgd.services.workflow.executar_transi
 | Pré-autorização, devolução, início do atendimento | Só a `Demand` |
 | Importação do Arlo, por linha | Limite → pool da solicitação paga → `Demand` (status relido) → `DemandRequest`. Cada linha numa transação própria. A última linha conclui a demanda sem travar mais saldo, porque já está tudo pago |
 | Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todas as linhas de limite e depois todos os pools; só então as `Demand`, em ordem de pk, e por fim as `DemandRequest`. Se uma demanda mudou, a transação volta e a task é repetida (até 3 vezes) |
+| Desativação de usuário (`core.services.usuarios.desativar`) | Grava `ativo` na linha do usuário, sem conflito com a checagem de FK, e segue como o cancelamento em lote, só para demandas não autorizadas. Se uma delas mudou para fora desses status, a transação inteira volta com `INVALID_TRANSITION`, sem repetição automática |
 | Edição da demanda; inclusão de solicitação | Só a `Demand` |
 | Edição e remoção de solicitação | Limite → pool (se há reserva) → `Demand` → `DemandRequest`; a edição relê a reserva já com o limite travado |
 | Decisão de recurso extra | Pedido → linha de limite do período → pools (territorial e origem, em ordem de pk) → `Demand` → todas as `DemandRequest` da demanda. Com a sobrealocação desligada, relê o pool territorial, já travado |
