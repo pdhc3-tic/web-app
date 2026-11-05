@@ -94,12 +94,12 @@ O check falha quando:
 | Situação | Mensagem do teste | Como resolver |
 |---|---|---|
 | `schema.yml` commitado difere do gerado pelo código | `schema.yml desatualizado` | Regenerar com o comando acima e commitar |
-| A geração emite warning ou erro em código fora do débito conhecido de SGD e SCA | Lista dos warnings novos | Corrigir a view ou o serializer (ver [Como manter](#como-manter)) |
+| A geração emite warning ou erro em código fora do débito conhecido do SGD | Lista dos warnings novos | Corrigir a view ou o serializer (ver [Como manter](#como-manter)) |
 | Um tipo que o frontend depende saiu errado (ex.: município sem `estado`) | `assert` do teste específico | Corrigir o schema da rota, não o teste |
 
 O workflow é separado do `deploy.yml` de propósito. O pytest do deploy só roda no push para a `main`, ou seja, depois do merge, e um schema desatualizado travaria o deploy de produção. Aqui ele barra o PR antes do merge, com um nome próprio que deixa claro o que falhou.
 
-O débito de SGD e SCA está listado em `FONTES_COM_DEBITO`, no teste. Ao zerar os warnings de um desses apps, tire-o da lista para que ele passe a ser cobrado também.
+O débito do SGD está listado em `FONTES_COM_DEBITO`, no teste. Ao zerar os warnings do app, tire-o da lista para que ele passe a ser cobrado também.
 
 ## Banco de Dados
 

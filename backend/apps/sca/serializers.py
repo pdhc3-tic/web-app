@@ -3,8 +3,10 @@ Serializers do módulo SCA — validação de payloads de sync e refresh,
 além dos endpoints administrativos (#156, #157, #158).
 """
 
+from drf_spectacular.utils import PolymorphicProxySerializer, extend_schema_field
 from rest_framework import serializers
 
+from apps.core.serializers import TerritorySerializer, UsuarioRefComEmailSerializer
 from apps.sca.models import ConflictLog, SyncDevice, SyncEvent
 
 
@@ -129,6 +131,77 @@ class PushBatchSerializer(serializers.Serializer):
     device_id = serializers.CharField(max_length=100, required=False, allow_blank=True)
 
 
+class SyncPushResultadoSerializer(serializers.Serializer):
+    uuid_local = serializers.UUIDField()
+    status = serializers.ChoiceField(choices=("ok", "erro", "conflito"))
+    id_servidor = serializers.IntegerField(required=False)
+    erro = serializers.CharField(required=False)
+
+
+class SyncPushRespostaSerializer(serializers.Serializer):
+    resultados = SyncPushResultadoSerializer(many=True)
+    processados = serializers.IntegerField()
+    sucesso = serializers.IntegerField()
+    erros = serializers.IntegerField()
+
+
+# ---------------------------------------------------------------------------
+# Pull, forms e status: só descrevem a resposta no schema. Os campos são os
+# que o push aceita, mais o envelope de `SyncEntity.base_envelope`.
+# ---------------------------------------------------------------------------
+
+class _EnvelopePullSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    uuid_local = serializers.UUIDField()
+    atualizado_em = serializers.DateTimeField()
+
+
+class SyncPullUPFSerializer(_EnvelopePullSerializer, UPFSyncSerializer):
+    pass
+
+
+class SyncPullMemberSerializer(_EnvelopePullSerializer, MemberSyncSerializer):
+    upf_uuid_local = None
+    ativo = serializers.BooleanField(required=False)
+
+
+class SyncPullActivitySerializer(_EnvelopePullSerializer, ActivitySyncSerializer):
+    upfs_participantes = serializers.ListField(child=serializers.IntegerField())
+    membros_participantes = serializers.ListField(child=serializers.IntegerField())
+
+
+class SyncPullRespostaSerializer(serializers.Serializer):
+    upfs = SyncPullUPFSerializer(many=True)
+    members = SyncPullMemberSerializer(many=True)
+    activities = SyncPullActivitySerializer(many=True)
+    server_time = serializers.DateTimeField()
+
+
+class SyncFormularioSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    nome = serializers.CharField()
+    versao = serializers.CharField()
+    tipo_entidade_alvo = serializers.CharField()
+    schema_json = serializers.JSONField()
+    atualizado_em = serializers.DateTimeField()
+
+
+class SyncFormsRespostaSerializer(serializers.Serializer):
+    formularios = SyncFormularioSerializer(many=True)
+    server_time = serializers.DateTimeField()
+
+
+class SyncStatusRespostaSerializer(serializers.Serializer):
+    ultimo_sync_servidor = serializers.DateTimeField(allow_null=True)
+    registros_pendentes_servidor = serializers.IntegerField()
+    acesso_revogado = serializers.BooleanField()
+
+
+class ScaErroSerializer(serializers.Serializer):
+    code = serializers.CharField()
+    message = serializers.CharField()
+
+
 # ---------------------------------------------------------------------------
 # Auth refresh SCA
 # ---------------------------------------------------------------------------
@@ -136,6 +209,11 @@ class PushBatchSerializer(serializers.Serializer):
 class ScaRefreshSerializer(serializers.Serializer):
     refresh_token = serializers.CharField()
     device_id = serializers.CharField(max_length=100, required=False, allow_blank=True)
+
+
+class ScaTokensSerializer(serializers.Serializer):
+    access_token = serializers.CharField()
+    refresh_token = serializers.CharField()
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +228,17 @@ class TecnicoOptionSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     nome = serializers.CharField()
     email = serializers.EmailField()
+
+
+class DispositivoRefSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    device_id = serializers.CharField()
+    nome = serializers.CharField()
+
+
+class TerritorioRefSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    nome = serializers.CharField()
 
 
 class SyncDeviceListSerializer(serializers.ModelSerializer):
@@ -174,6 +263,7 @@ class SyncDeviceListSerializer(serializers.ModelSerializer):
             "ativo",
         ]
 
+    @extend_schema_field(UsuarioRefComEmailSerializer)
     def get_tecnico(self, obj):
         return {
             "id": obj.user_id,
@@ -181,9 +271,8 @@ class SyncDeviceListSerializer(serializers.ModelSerializer):
             "email": obj.user.email,
         }
 
+    @extend_schema_field(TerritorySerializer(many=True))
     def get_territorios(self, obj):
-        from apps.core.serializers import TerritorySerializer
-
         mapa = self.context.get("territorios_por_usuario")
         territorios = mapa.get(obj.user_id) if mapa is not None else None
         if territorios is None:
@@ -192,11 +281,12 @@ class SyncDeviceListSerializer(serializers.ModelSerializer):
             territorios = list(user_territories(obj.user))
         return TerritorySerializer(territorios, many=True).data
 
+    @extend_schema_field(serializers.DateTimeField(allow_null=True))
     def get_ultimo_sync_servidor(self, obj):
         dt = getattr(obj, "ultimo_sync_servidor", None) or obj.ultimo_sync_em
         return dt.isoformat() if dt else None
 
-    def get_registros_pendentes(self, obj):
+    def get_registros_pendentes(self, obj) -> int:
         mapa = self.context.get("registros_pendentes")
         if mapa is not None:
             return mapa.get(obj.pk, 0)
@@ -230,6 +320,7 @@ class SyncDeviceDetailSerializer(serializers.ModelSerializer):
             "criado_em",
         ]
 
+    @extend_schema_field(UsuarioRefComEmailSerializer)
     def get_tecnico(self, obj):
         return {
             "id": obj.user_id,
@@ -237,23 +328,25 @@ class SyncDeviceDetailSerializer(serializers.ModelSerializer):
             "email": obj.user.email,
         }
 
+    @extend_schema_field(TerritorySerializer(many=True))
     def get_territorios(self, obj):
-        from apps.core.serializers import TerritorySerializer
         from apps.core.services.permissions import user_territories
 
         return TerritorySerializer(list(user_territories(obj.user)), many=True).data
 
+    @extend_schema_field(serializers.DateTimeField(allow_null=True))
     def get_ultimo_sync_servidor(self, obj):
         dt = getattr(obj, "ultimo_sync_servidor", None) or obj.ultimo_sync_em
         return dt.isoformat() if dt else None
 
-    def get_registros_pendentes(self, obj):
+    def get_registros_pendentes(self, obj) -> int:
         mapa = self.context.get("registros_por_entidade")
         if mapa is not None:
             return sum(mapa.values())
         from apps.sca import services
         return services.count_pending_records(obj.user, obj)
 
+    @extend_schema_field(serializers.DictField(child=serializers.IntegerField()))
     def get_registros_por_entidade(self, obj):
         mapa = self.context.get("registros_por_entidade")
         if mapa is not None:
@@ -285,6 +378,7 @@ class SyncEventListSerializer(serializers.ModelSerializer):
             "dispositivo",
         ]
 
+    @extend_schema_field(UsuarioRefComEmailSerializer)
     def get_tecnico(self, obj):
         return {
             "id": obj.user_id,
@@ -292,6 +386,7 @@ class SyncEventListSerializer(serializers.ModelSerializer):
             "email": obj.user.email,
         }
 
+    @extend_schema_field(DispositivoRefSerializer(allow_null=True))
     def get_dispositivo(self, obj):
         if not obj.device:
             return None
@@ -334,6 +429,7 @@ class ConflictLogListSerializer(serializers.ModelSerializer):
             "criado_em",
         ]
 
+    @extend_schema_field(UsuarioRefComEmailSerializer)
     def get_tecnico(self, obj):
         return {
             "id": obj.user_id,
@@ -341,6 +437,7 @@ class ConflictLogListSerializer(serializers.ModelSerializer):
             "email": obj.user.email,
         }
 
+    @extend_schema_field(DispositivoRefSerializer(allow_null=True))
     def get_dispositivo(self, obj):
         if not obj.device:
             return None
@@ -350,6 +447,7 @@ class ConflictLogListSerializer(serializers.ModelSerializer):
             "nome": obj.device.nome,
         }
 
+    @extend_schema_field(TerritorioRefSerializer(allow_null=True))
     def get_territorio(self, obj):
         if not obj.territorio:
             return None
@@ -358,6 +456,7 @@ class ConflictLogListSerializer(serializers.ModelSerializer):
             "nome": obj.territorio.nome,
         }
 
+    @extend_schema_field(UsuarioRefComEmailSerializer(allow_null=True))
     def get_resolvido_por(self, obj):
         if not obj.resolvido_por:
             return None
@@ -368,12 +467,28 @@ class ConflictLogListSerializer(serializers.ModelSerializer):
         }
 
 
+def _serializers_do_registro_atual():
+    from apps.sgp.serializers import MembroDetailSerializer
+    from apps.sgp.serializers.activity import ActivityDetailRespostaSerializer
+    from apps.sgp.serializers.upf import UPFDetailRespostaSerializer
+
+    return [UPFDetailRespostaSerializer, MembroDetailSerializer, ActivityDetailRespostaSerializer]
+
+
+_REGISTRO_ATUAL = PolymorphicProxySerializer(
+    component_name="RegistroAtualDoConflito",
+    serializers=_serializers_do_registro_atual,
+    resource_type_field_name=None,
+)
+
+
 class ConflictLogDetailSerializer(ConflictLogListSerializer):
-    registro_atual = serializers.SerializerMethodField()
+    registro_atual = serializers.SerializerMethodField(allow_null=True)
 
     class Meta(ConflictLogListSerializer.Meta):
         fields = ConflictLogListSerializer.Meta.fields + ["registro_atual"]
 
+    @extend_schema_field(_REGISTRO_ATUAL)
     def get_registro_atual(self, obj):
         from apps.sgp.models import Activity, MembroFamilia, UPF
         from apps.sgp.serializers import (

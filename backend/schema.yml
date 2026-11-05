@@ -1672,14 +1672,41 @@ paths:
   /api/v1/sca/auth/refresh/:
     post:
       operationId: v1_sca_auth_refresh_create
+      parameters:
+      - in: header
+        name: X-Device-Id
+        schema:
+          type: string
       tags:
       - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScaRefreshRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ScaRefreshRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ScaRefreshRequest'
+        required: true
       security:
       - jwtAuth: []
       - {}
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScaTokens'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScaErro'
+          description: ''
   /api/v1/sca/conflicts/:
     get:
       operationId: v1_sca_conflicts_list
@@ -1965,43 +1992,154 @@ paths:
   /api/v1/sca/sync/forms/:
     get:
       operationId: v1_sca_sync_forms_retrieve
+      parameters:
+      - in: query
+        name: since
+        schema:
+          type: string
+        description: 'Data e hora em ISO 8601: só o que mudou depois dela.'
       tags:
       - v1
       security:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncFormsResposta'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScaErro'
+          description: ''
   /api/v1/sca/sync/pull/:
     get:
       operationId: v1_sca_sync_pull_retrieve
+      parameters:
+      - in: header
+        name: X-Connection-Type
+        schema:
+          type: string
+          enum:
+          - 2g
+          - 3g
+          - 4g
+          - 5g
+          - offline
+          - wifi
+        description: Fora dessas opções, é registrado como nulo.
+      - in: header
+        name: X-Device-Id
+        schema:
+          type: string
+      - in: query
+        name: device_id
+        schema:
+          type: string
+        description: Alternativa ao header X-Device-Id.
+      - in: query
+        name: since
+        schema:
+          type: string
+        description: 'Data e hora em ISO 8601: só o que mudou depois dela.'
       tags:
       - v1
       security:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncPullResposta'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScaErro'
+          description: ''
   /api/v1/sca/sync/push/:
     post:
       operationId: v1_sca_sync_push_create
+      parameters:
+      - in: header
+        name: X-Connection-Type
+        schema:
+          type: string
+          enum:
+          - 2g
+          - 3g
+          - 4g
+          - 5g
+          - offline
+          - wifi
+        description: Fora dessas opções, é registrado como nulo.
+      - in: header
+        name: X-Device-Id
+        schema:
+          type: string
+      - in: query
+        name: device_id
+        schema:
+          type: string
+        description: Alternativa ao header X-Device-Id.
       tags:
       - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PushBatchRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PushBatchRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PushBatchRequest'
+        required: true
       security:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncPushResposta'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScaErro'
+          description: ''
   /api/v1/sca/sync/status/:
     get:
       operationId: v1_sca_sync_status_retrieve
+      parameters:
+      - in: header
+        name: X-Device-Id
+        schema:
+          type: string
+      - in: query
+        name: device_id
+        schema:
+          type: string
+        description: Alternativa ao header X-Device-Id.
       tags:
       - v1
       security:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncStatusResposta'
+          description: ''
   /api/v1/sca/tecnicos/:
     get:
       operationId: v1_sca_tecnicos_list
@@ -9783,28 +9921,37 @@ components:
           description: Armazenado criptografado em repouso (AES-256-GCM) — pode conter
             campo sensível (saúde, cor/raça). Leitura restrita por perfil — ver apps.core.sensitive_fields.
         resolvido_por:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/UsuarioRefComEmail'
+          nullable: true
           readOnly: true
         resolvido_em:
           type: string
           format: date-time
           nullable: true
         territorio:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/TerritorioRef'
+          nullable: true
           readOnly: true
         tecnico:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/UsuarioRefComEmail'
           readOnly: true
         dispositivo:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/DispositivoRef'
+          nullable: true
           readOnly: true
         criado_em:
           type: string
           format: date-time
           readOnly: true
         registro_atual:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/RegistroAtualDoConflito'
           readOnly: true
+          nullable: true
       required:
       - campo
       - criado_em
@@ -9904,20 +10051,27 @@ components:
           description: Armazenado criptografado em repouso (AES-256-GCM) — pode conter
             campo sensível (saúde, cor/raça). Leitura restrita por perfil — ver apps.core.sensitive_fields.
         resolvido_por:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/UsuarioRefComEmail'
+          nullable: true
           readOnly: true
         resolvido_em:
           type: string
           format: date-time
           nullable: true
         territorio:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/TerritorioRef'
+          nullable: true
           readOnly: true
         tecnico:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/UsuarioRefComEmail'
           readOnly: true
         dispositivo:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/DispositivoRef'
+          nullable: true
           readOnly: true
         criado_em:
           type: string
@@ -10459,6 +10613,19 @@ components:
         * `4` - Smartphone
         * `5` - Não possui
         * `6` - Outro
+    DispositivoRef:
+      type: object
+      properties:
+        id:
+          type: integer
+        device_id:
+          type: string
+        nome:
+          type: string
+      required:
+      - device_id
+      - id
+      - nome
     DownloadURLResposta:
       type: object
       properties:
@@ -10469,6 +10636,18 @@ components:
       required:
       - expires_in
       - url
+    EntidadeEnum:
+      enum:
+      - upf
+      - member
+      - activity
+      - form_response
+      type: string
+      description: |-
+        * `upf` - upf
+        * `member` - member
+        * `activity` - activity
+        * `form_response` - form_response
     EscolaridadeEnum:
       enum:
       - 1
@@ -11963,6 +12142,14 @@ components:
       required:
       - id
       - nome
+    OperacaoEnum:
+      enum:
+      - create
+      - update
+      type: string
+      description: |-
+        * `create` - create
+        * `update` - update
     Organization:
       type: object
       properties:
@@ -14298,6 +14485,46 @@ components:
           type: boolean
       required:
       - nome
+    PushBatchRequest:
+      type: object
+      properties:
+        registros:
+          type: array
+          items:
+            $ref: '#/components/schemas/PushItemRequest'
+        device_id:
+          type: string
+          maxLength: 100
+      required:
+      - registros
+    PushItemRequest:
+      type: object
+      properties:
+        entidade:
+          $ref: '#/components/schemas/EntidadeEnum'
+        uuid_local:
+          type: string
+          format: uuid
+        operacao:
+          $ref: '#/components/schemas/OperacaoEnum'
+        payload_json:
+          type: object
+          additionalProperties: {}
+        base_json:
+          type: object
+          additionalProperties: {}
+        updated_at:
+          type: string
+          format: date-time
+        device_id:
+          type: string
+          maxLength: 100
+      required:
+      - entidade
+      - operacao
+      - payload_json
+      - updated_at
+      - uuid_local
     RefreshRequest:
       type: object
       properties:
@@ -14306,6 +14533,11 @@ components:
           minLength: 1
       required:
       - refresh_token
+    RegistroAtualDoConflito:
+      oneOf:
+      - $ref: '#/components/schemas/UPFDetailResposta'
+      - $ref: '#/components/schemas/MembroDetail'
+      - $ref: '#/components/schemas/ActivityDetailResposta'
     RemanejamentoCreateRequest:
       type: object
       properties:
@@ -14425,6 +14657,37 @@ components:
       - rubrica_id
       - rubrica_nome
       - valor
+    ScaErro:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      required:
+      - code
+      - message
+    ScaRefreshRequest:
+      type: object
+      properties:
+        refresh_token:
+          type: string
+          minLength: 1
+        device_id:
+          type: string
+          maxLength: 100
+      required:
+      - refresh_token
+    ScaTokens:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+      required:
+      - access_token
+      - refresh_token
     SemaforoEnum:
       enum:
       - verde
@@ -14763,19 +15026,26 @@ components:
           title: Versão do app
           maxLength: 20
         tecnico:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/UsuarioRefComEmail'
           readOnly: true
         territorios:
-          type: string
+          type: array
+          items:
+            $ref: '#/components/schemas/Territory'
           readOnly: true
         ultimo_sync_servidor:
           type: string
+          format: date-time
+          nullable: true
           readOnly: true
         registros_pendentes:
-          type: string
+          type: integer
           readOnly: true
         registros_por_entidade:
-          type: string
+          type: object
+          additionalProperties:
+            type: integer
           readOnly: true
         ativo:
           type: boolean
@@ -14816,16 +15086,21 @@ components:
           title: Versão do app
           maxLength: 20
         tecnico:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/UsuarioRefComEmail'
           readOnly: true
         territorios:
-          type: string
+          type: array
+          items:
+            $ref: '#/components/schemas/Territory'
           readOnly: true
         ultimo_sync_servidor:
           type: string
+          format: date-time
+          nullable: true
           readOnly: true
         registros_pendentes:
-          type: string
+          type: integer
           readOnly: true
         ativo:
           type: boolean
@@ -14885,10 +15160,13 @@ components:
           - $ref: '#/components/schemas/BlankEnum'
           - $ref: '#/components/schemas/NullEnum'
         tecnico:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/UsuarioRefComEmail'
           readOnly: true
         dispositivo:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/DispositivoRef'
+          nullable: true
           readOnly: true
         erros_detalhes:
           title: Detalhes dos erros
@@ -14948,10 +15226,13 @@ components:
           - $ref: '#/components/schemas/BlankEnum'
           - $ref: '#/components/schemas/NullEnum'
         tecnico:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/UsuarioRefComEmail'
           readOnly: true
         dispositivo:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/DispositivoRef'
+          nullable: true
           readOnly: true
       required:
       - dispositivo
@@ -14960,6 +15241,351 @@ components:
       - id
       - tecnico
       - tipo
+    SyncFormsResposta:
+      type: object
+      properties:
+        formularios:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncFormulario'
+        server_time:
+          type: string
+          format: date-time
+      required:
+      - formularios
+      - server_time
+    SyncFormulario:
+      type: object
+      properties:
+        id:
+          type: integer
+        nome:
+          type: string
+        versao:
+          type: string
+        tipo_entidade_alvo:
+          type: string
+        schema_json: {}
+        atualizado_em:
+          type: string
+          format: date-time
+      required:
+      - atualizado_em
+      - id
+      - nome
+      - schema_json
+      - tipo_entidade_alvo
+      - versao
+    SyncPullActivity:
+      type: object
+      properties:
+        id:
+          type: integer
+        uuid_local:
+          type: string
+          format: uuid
+        atualizado_em:
+          type: string
+          format: date-time
+        titulo:
+          type: string
+        tipo_atividade:
+          type: string
+        acao:
+          type: integer
+          nullable: true
+        forma_atuacao:
+          type: string
+        municipio:
+          type: integer
+          nullable: true
+        comunidade:
+          type: integer
+          nullable: true
+        tecnico_responsavel:
+          type: integer
+          nullable: true
+        ambito:
+          type: string
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,7})?$
+          nullable: true
+        data_inicio:
+          type: string
+          format: date
+          nullable: true
+        data_fim:
+          type: string
+          format: date
+          nullable: true
+        parceiros_livres:
+          type: string
+        descricao_narrativa:
+          type: string
+        resultados_alcancados:
+          type: string
+        status:
+          type: string
+        justificativa:
+          type: string
+        upfs_participantes:
+          type: array
+          items:
+            type: integer
+        membros_participantes:
+          type: array
+          items:
+            type: integer
+        ativo:
+          type: boolean
+      required:
+      - atualizado_em
+      - id
+      - membros_participantes
+      - upfs_participantes
+      - uuid_local
+    SyncPullMember:
+      type: object
+      properties:
+        id:
+          type: integer
+        uuid_local:
+          type: string
+          format: uuid
+        atualizado_em:
+          type: string
+          format: date-time
+        upf:
+          type: integer
+          nullable: true
+        nome_completo:
+          type: string
+        data_nascimento:
+          type: string
+          format: date
+          nullable: true
+        genero:
+          type: integer
+          nullable: true
+        cor_raca:
+          type: integer
+          nullable: true
+        cpf:
+          type: string
+        rg:
+          type: string
+        nis:
+          type: string
+        caf:
+          type: string
+        grau_parentesco:
+          type: string
+        escola:
+          type: string
+        seguridade_social:
+          type: array
+          items: {}
+        saude:
+          type: array
+          items: {}
+        escolaridade:
+          type: integer
+          nullable: true
+        ativo:
+          type: boolean
+      required:
+      - atualizado_em
+      - id
+      - uuid_local
+    SyncPullResposta:
+      type: object
+      properties:
+        upfs:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncPullUPF'
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncPullMember'
+        activities:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncPullActivity'
+        server_time:
+          type: string
+          format: date-time
+      required:
+      - activities
+      - members
+      - server_time
+      - upfs
+    SyncPullUPF:
+      type: object
+      properties:
+        id:
+          type: integer
+        uuid_local:
+          type: string
+          format: uuid
+        atualizado_em:
+          type: string
+          format: date-time
+        projeto:
+          type: integer
+          nullable: true
+        comunidade:
+          type: integer
+          nullable: true
+        municipio:
+          type: integer
+          nullable: true
+        territorio:
+          type: integer
+          nullable: true
+        apelido:
+          type: string
+        whatsapp:
+          type: string
+        celular:
+          type: string
+        internet:
+          type: boolean
+        dispositivo:
+          type: integer
+          nullable: true
+        cep:
+          type: string
+        logradouro:
+          type: string
+        numero:
+          type: string
+        complemento:
+          type: string
+        bairro:
+          type: string
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        pct:
+          type: integer
+          nullable: true
+        posse_terra:
+          type: integer
+          nullable: true
+        area_terra_ha:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          nullable: true
+        situacao_moradia:
+          type: integer
+          nullable: true
+        tipo_moradia:
+          type: integer
+          nullable: true
+        material_construcao:
+          type: integer
+          nullable: true
+        num_comodos:
+          type: integer
+          nullable: true
+        energia:
+          type: integer
+          nullable: true
+        agua:
+          type: integer
+          nullable: true
+        numero_dap:
+          type: string
+        nis:
+          type: string
+        seguridade_social:
+          type: array
+          items: {}
+        foto_url:
+          type: string
+          format: uri
+        ativo:
+          type: boolean
+        titular:
+          $ref: '#/components/schemas/TitularSync'
+      required:
+      - atualizado_em
+      - id
+      - uuid_local
+    SyncPushResposta:
+      type: object
+      properties:
+        resultados:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncPushResultado'
+        processados:
+          type: integer
+        sucesso:
+          type: integer
+        erros:
+          type: integer
+      required:
+      - erros
+      - processados
+      - resultados
+      - sucesso
+    SyncPushResultado:
+      type: object
+      properties:
+        uuid_local:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/SyncPushResultadoStatusEnum'
+        id_servidor:
+          type: integer
+        erro:
+          type: string
+      required:
+      - status
+      - uuid_local
+    SyncPushResultadoStatusEnum:
+      enum:
+      - ok
+      - erro
+      - conflito
+      type: string
+      description: |-
+        * `ok` - ok
+        * `erro` - erro
+        * `conflito` - conflito
+    SyncStatusResposta:
+      type: object
+      properties:
+        ultimo_sync_servidor:
+          type: string
+          format: date-time
+          nullable: true
+        registros_pendentes_servidor:
+          type: integer
+        acesso_revogado:
+          type: boolean
+      required:
+      - acesso_revogado
+      - registros_pendentes_servidor
+      - ultimo_sync_servidor
     SystemConfig:
       type: object
       properties:
@@ -15094,6 +15720,16 @@ components:
           items:
             type: string
             maxLength: 2
+      required:
+      - id
+      - nome
+    TerritorioRef:
+      type: object
+      properties:
+        id:
+          type: integer
+        nome:
+          type: string
       required:
       - id
       - nome
@@ -15446,6 +16082,40 @@ components:
           maxLength: 11
       required:
       - nome_completo
+    TitularSync:
+      type: object
+      properties:
+        nome_completo:
+          type: string
+        cpf:
+          type: string
+        data_nascimento:
+          type: string
+          format: date
+          nullable: true
+        genero:
+          type: integer
+          nullable: true
+        cor_raca:
+          type: integer
+          nullable: true
+        rg:
+          type: string
+        nis:
+          type: string
+        caf:
+          type: string
+        escola:
+          type: string
+        seguridade_social:
+          type: array
+          items: {}
+        saude:
+          type: array
+          items: {}
+        escolaridade:
+          type: integer
+          nullable: true
     TokensResposta:
       type: object
       description: 'Resposta do login e do refresh: as views renomeiam `access`/`refresh`.'
