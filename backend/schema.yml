@@ -696,6 +696,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/GoogleCalendarStatusResposta'
           description: ''
+  /api/v1/core/usuarios/{id}/impacto-desativacao/:
+    get:
+      operationId: v1_core_usuarios_impacto_desativacao_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImpactoDesativacao'
+          description: ''
   /api/v1/metas/:
     get:
       operationId: v1_metas_list
@@ -1701,6 +1721,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ScaTokens'
           description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
         '401':
           content:
             application/json:
@@ -1818,13 +1845,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ConflictLogDetailRequest'
+              $ref: '#/components/schemas/ConflictResolveRequest'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/ConflictLogDetailRequest'
+              $ref: '#/components/schemas/ConflictResolveRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/ConflictLogDetailRequest'
+              $ref: '#/components/schemas/ConflictResolveRequest'
         required: true
       security:
       - jwtAuth: []
@@ -1834,6 +1861,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ConflictLogDetail'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScaErro'
           description: ''
   /api/v1/sca/devices/:
     get:
@@ -2114,7 +2154,10 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ScaErro'
+                oneOf:
+                - $ref: '#/components/schemas/ScaErro'
+                - type: object
+                  additionalProperties: {}
           description: ''
   /api/v1/sca/sync/status/:
     get:
@@ -7795,27 +7838,6 @@ paths:
       responses:
         '204':
           description: No response body
-  /api/v1/users/{id}/impacto-desativacao/:
-    get:
-      operationId: v1_users_impacto_desativacao_retrieve
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: Um valor inteiro único que identifica este Usuario.
-        required: true
-      tags:
-      - v1
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ImpactoDesativacao'
-          description: ''
   /api/v1/users/{id}/reativar-acesso/:
     patch:
       operationId: v1_users_reativar_acesso_partial_update
@@ -9963,53 +9985,6 @@ components:
       - tecnico
       - territorio
       - uuid_local
-    ConflictLogDetailRequest:
-      type: object
-      properties:
-        entidade:
-          type: string
-          minLength: 1
-          maxLength: 50
-        uuid_local:
-          type: string
-          format: uuid
-        campo:
-          type: string
-          minLength: 1
-          title: Campo em conflito
-          maxLength: 255
-        valor_local:
-          title: Valor local (offline)
-          description: Armazenado criptografado em repouso (AES-256-GCM) — pode conter
-            campo sensível (saúde, cor/raça). Leitura restrita por perfil — ver apps.core.sensitive_fields.
-        valor_servidor:
-          title: Valor no servidor
-          description: Armazenado criptografado em repouso (AES-256-GCM) — pode conter
-            campo sensível (saúde, cor/raça). Leitura restrita por perfil — ver apps.core.sensitive_fields.
-        estrategia:
-          allOf:
-          - $ref: '#/components/schemas/EstrategiaEnum'
-          title: Estratégia aplicada
-        campo_sensivel:
-          type: boolean
-          title: Campo sensível
-        status:
-          allOf:
-          - $ref: '#/components/schemas/StatusConflitoEnum'
-          title: Status de resolução
-        valor_final:
-          nullable: true
-          title: Valor final aplicado
-          description: Armazenado criptografado em repouso (AES-256-GCM) — pode conter
-            campo sensível (saúde, cor/raça). Leitura restrita por perfil — ver apps.core.sensitive_fields.
-        resolvido_em:
-          type: string
-          format: date-time
-          nullable: true
-      required:
-      - campo
-      - entidade
-      - uuid_local
     ConflictLogList:
       type: object
       properties:
@@ -10087,6 +10062,15 @@ components:
       - tecnico
       - territorio
       - uuid_local
+    ConflictResolveRequest:
+      type: object
+      properties:
+        decisao:
+          $ref: '#/components/schemas/DecisaoEnum'
+        valor_manual:
+          nullable: true
+      required:
+      - decisao
     ContentTypeEnum:
       enum:
       - text/csv
@@ -10336,6 +10320,16 @@ components:
       - rotulo
       - status
       - total
+    DecisaoEnum:
+      enum:
+      - local
+      - servidor
+      - manual
+      type: string
+      description: |-
+        * `local` - local
+        * `servidor` - servidor
+        * `manual` - manual
     Demand:
       type: object
       properties:
@@ -12687,6 +12681,7 @@ components:
       required:
       - count
       - results
+      - limiar_alerta_dias
       properties:
         count:
           type: integer
@@ -12705,6 +12700,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SyncDeviceList'
+        limiar_alerta_dias:
+          type: integer
     PaginatedSyncEventListList:
       type: object
       required:
@@ -15319,11 +15316,11 @@ components:
           nullable: true
         data_inicio:
           type: string
-          format: date
+          format: date-time
           nullable: true
         data_fim:
           type: string
-          format: date
+          format: date-time
           nullable: true
         parceiros_livres:
           type: string
@@ -15398,8 +15395,6 @@ components:
         escolaridade:
           type: integer
           nullable: true
-        ativo:
-          type: boolean
       required:
       - atualizado_em
       - id

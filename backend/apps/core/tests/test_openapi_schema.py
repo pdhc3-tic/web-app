@@ -206,3 +206,41 @@ def test_conflito_do_sca_le_o_tecnico_e_o_registro_atual_com_o_tipo_real(schema)
     assert {_ref(opcao) for opcao in _resolver(schema, conflito["registro_atual"])["oneOf"]} == {
         "UPFDetailResposta", "MembroDetail", "ActivityDetailResposta",
     }
+
+
+def test_resolver_conflito_descreve_a_decisao_e_o_conflito_ja_resolvido(schema):
+    operacao = schema["paths"]["/api/v1/sca/conflicts/{id}/resolver/"]["post"]
+
+    assert _ref(operacao["requestBody"]["content"]["application/json"]["schema"]) == "ConflictResolveRequest"
+    assert _ref(operacao["responses"]["409"]["content"]["application/json"]["schema"]) == "ScaErro"
+
+
+def test_lista_de_dispositivos_traz_o_limiar_de_alerta(schema):
+    pagina = _resolver(schema, _resposta(schema, "/api/v1/sca/devices/"))
+
+    assert pagina["properties"]["limiar_alerta_dias"]["type"] == "integer"
+    assert "limiar_alerta_dias" in pagina["required"]
+
+
+def test_pull_do_sca_descreve_as_datas_da_atividade_e_o_membro_sem_ativo(schema):
+    atividade = _componente(schema, "SyncPullActivity")["properties"]
+
+    assert atividade["data_inicio"]["format"] == "date-time"
+    assert atividade["data_fim"]["format"] == "date-time"
+    assert "ativo" not in _componente(schema, "SyncPullMember")["properties"]
+
+
+def _resposta_400(schema, rota):
+    return schema["paths"][rota]["post"]["responses"]["400"]["content"]["application/json"]["schema"]
+
+
+def test_400_do_push_cobre_o_erro_proprio_e_o_de_campo_aninhado(schema):
+    erro_proprio, erro_de_campo = _resposta_400(schema, "/api/v1/sca/sync/push/")["oneOf"]
+
+    assert _ref(erro_proprio) == "ScaErro"
+    assert erro_de_campo == {"type": "object", "additionalProperties": {}}
+
+
+@pytest.mark.parametrize("rota", ["/api/v1/sca/conflicts/{id}/resolver/", "/api/v1/sca/auth/refresh/"])
+def test_400_das_rotas_sem_erro_proprio_e_so_o_de_campo(schema, rota):
+    assert _resposta_400(schema, rota) == {"type": "object", "additionalProperties": {}}

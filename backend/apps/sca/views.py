@@ -64,6 +64,10 @@ from apps.sca.sync_entities import get_sync_entity
 logger = logging.getLogger(__name__)
 security_logger = logging.getLogger("security")
 
+# Erro de campo do `is_valid`. Livre porque, em serializer aninhado, o valor pode ser lista de objetos.
+_ERRO_DE_CAMPO = {"type": "object", "additionalProperties": {}}
+_ERRO_OU_CAMPO = {"oneOf": [{"$ref": "#/components/schemas/ScaErro"}, _ERRO_DE_CAMPO]}
+
 _PARAM_SINCE = OpenApiParameter("since", str, description="Data e hora em ISO 8601: só o que mudou depois dela.")
 _PARAM_DEVICE_QUERY = OpenApiParameter("device_id", str, description="Alternativa ao header X-Device-Id.")
 _PARAM_DEVICE_HEADER = OpenApiParameter("X-Device-Id", str, OpenApiParameter.HEADER)
@@ -76,6 +80,14 @@ _PARAM_CONEXAO = OpenApiParameter(
 class SCAPagination(LimitOffsetPagination):
     default_limit = 20
     max_limit = 100
+
+
+class SyncDevicePagination(SCAPagination):
+    def get_paginated_response_schema(self, schema):
+        resposta = super().get_paginated_response_schema(schema)
+        resposta["properties"]["limiar_alerta_dias"] = {"type": "integer"}
+        resposta["required"] = [*resposta.get("required", []), "limiar_alerta_dias"]
+        return resposta
 
 
 def _tipo_conexao_from_request(request) -> str | None:
@@ -235,7 +247,7 @@ class TecnicoListView(generics.ListAPIView):
 
 class SyncDeviceListView(generics.ListAPIView):
     permission_classes = [IsAuthenticatedActiveAccess, IsSuperAdminOrUGPReadOnly]
-    pagination_class = SCAPagination
+    pagination_class = SyncDevicePagination
     serializer_class = SyncDeviceListSerializer
     filter_backends = [django_filters.DjangoFilterBackend, filters.SearchFilter, SyncOrderingFilter]
     filterset_class = SyncDeviceFilter
@@ -388,6 +400,10 @@ class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
             return qs.filter(territorio_id__in=territory_ids)
         return qs.none()
 
+    @extend_schema(
+        request=ConflictResolveSerializer,
+        responses={200: ConflictLogDetailSerializer, 400: _ERRO_DE_CAMPO, 409: ScaErroSerializer},
+    )
     @action(detail=True, methods=["post"], url_path="resolver")
     def resolver(self, request, pk=None):
         # `get_object()` já aplica `check_object_permissions` (via
@@ -502,7 +518,7 @@ class SyncPushView(APIView):
     @extend_schema(
         request=PushBatchSerializer,
         parameters=[_PARAM_DEVICE_QUERY, _PARAM_DEVICE_HEADER, _PARAM_CONEXAO],
-        responses={200: SyncPushRespostaSerializer, 400: ScaErroSerializer},
+        responses={200: SyncPushRespostaSerializer, 400: _ERRO_OU_CAMPO},
     )
     def post(self, request):
         serializer = PushBatchSerializer(data=request.data)
@@ -626,7 +642,7 @@ class ScaAuthRefreshView(APIView):
     @extend_schema(
         request=ScaRefreshSerializer,
         parameters=[_PARAM_DEVICE_HEADER],
-        responses={200: ScaTokensSerializer, 401: ScaErroSerializer},
+        responses={200: ScaTokensSerializer, 400: _ERRO_DE_CAMPO, 401: ScaErroSerializer},
     )
     def post(self, request):
         serializer = ScaRefreshSerializer(data=request.data)

@@ -162,10 +162,11 @@ class SyncPullUPFSerializer(_EnvelopePullSerializer, UPFSyncSerializer):
 
 class SyncPullMemberSerializer(_EnvelopePullSerializer, MemberSyncSerializer):
     upf_uuid_local = None
-    ativo = serializers.BooleanField(required=False)
 
 
 class SyncPullActivitySerializer(_EnvelopePullSerializer, ActivitySyncSerializer):
+    data_inicio = serializers.DateTimeField(required=False, allow_null=True)
+    data_fim = serializers.DateTimeField(required=False, allow_null=True)
     upfs_participantes = serializers.ListField(child=serializers.IntegerField())
     membros_participantes = serializers.ListField(child=serializers.IntegerField())
 
