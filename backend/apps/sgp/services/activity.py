@@ -18,8 +18,6 @@ class CadastroInvalidoError(ActivityRuleError):
 
 @transaction.atomic
 def criar_planejada(*, titulo, tipo_atividade, acao, municipio, data_prevista, usuario) -> Activity:
-    """Só os campos que o SGD §2.2 exige. Os demais, obrigatórios no cadastro, recebem
-    um valor padrão editável depois, e quem cria fica como técnico responsável."""
     atividade = Activity(
         titulo=titulo, tipo_atividade=tipo_atividade, acao=acao, municipio=municipio,
         forma_atuacao="realizacao", ambito="municipal", tecnico_responsavel=usuario,
