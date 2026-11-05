@@ -10,10 +10,20 @@ from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import workflow as workflow_service
 from apps.sgd.services.demand_request import rubrica_para_tipo, validar_campos_json
-from apps.sgp.models import Activity
+from apps.sgp.services.activity import criar_planejada
+from apps.sgp.services.activity_status import ActivityRuleError
 
 ACTIVITY_STATUS_BLOQUEIAM_NOVA_DEMANDA = {"cancelada", "nao_realizada"}
 ACTIVITY_STATUS_EXIGEM_JUSTIFICATIVA = {"em_andamento", "concluido", "concluido_sem_evidencia"}
+# Campo do cadastro da atividade → campo que o cliente envia na criação inline.
+_CAMPO_DA_ATIVIDADE_INLINE = {
+    "titulo": "activity_titulo",
+    "tipo_atividade": "activity_tipo_atividade",
+    "acao": "activity_acao_id",
+    "municipio": "activity_municipio_id",
+    "data_inicio": "activity_data_prevista",
+    "data_fim": "activity_data_prevista",
+}
 
 
 def _despesa_posterior_e_valida(activity) -> bool:
@@ -24,18 +34,14 @@ def _despesa_posterior_e_valida(activity) -> bool:
     return activity.status in ACTIVITY_STATUS_EXIGEM_JUSTIFICATIVA
 
 
-@transaction.atomic
 def criar_activity_inline(*, titulo, tipo_atividade, acao, municipio, data_prevista, usuario):
-    # Activity tem outros campos NOT NULL sem default (técnico, forma de
-    # atuação, âmbito, data_fim, descrição narrativa) que este formulário
-    # mínimo não coleta — preenchidos com um valor editável depois.
-    return Activity.objects.create(
-        titulo=titulo, tipo_atividade=tipo_atividade, acao=acao, municipio=municipio,
-        forma_atuacao="realizacao", ambito="municipal",
-        tecnico_responsavel=usuario, data_inicio=data_prevista, data_fim=data_prevista,
-        descricao_narrativa=f"Atividade criada a partir da demanda '{titulo}'.",
-        status="planejado", criado_por=usuario,
-    )
+    try:
+        return criar_planejada(
+            titulo=titulo, tipo_atividade=tipo_atividade, acao=acao, municipio=municipio,
+            data_prevista=data_prevista, usuario=usuario,
+        )
+    except ActivityRuleError as exc:
+        raise RegraDeNegocio(exc.message, campo=_CAMPO_DA_ATIVIDADE_INLINE.get(exc.field, "activity")) from exc
 
 
 @transaction.atomic

@@ -22,6 +22,8 @@ def _capturar_status_anterior(sender, instance, **kwargs):
 def _cancelar_demandas_nao_atendidas(sender, instance, **kwargs):
     if instance.status not in ACTIVITY_STATUS_CANCELAM_DEMANDAS:
         return
+    if getattr(instance, "_status_anterior", None) in ACTIVITY_STATUS_CANCELAM_DEMANDAS:
+        return
 
     # Despachada via Celery depois do commit, não executada direto aqui: a
     # query de Demand vinculadas passa pela política RLS de sgd_demand, que

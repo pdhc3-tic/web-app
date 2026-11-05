@@ -3,7 +3,7 @@ from datetime import datetime
 import pytest
 from django.utils import timezone
 
-from apps.sgd.exceptions import ErroDeDominio
+from apps.sgd.exceptions import ErroDeDominio, RegraDeNegocio
 from apps.sgd.services import demand as demand_service
 from apps.sgp.tests.factories import ActivityFactory
 
@@ -31,6 +31,39 @@ def test_criar_activity_inline(solicitante_rn, municipio_rn):
     )
     assert activity.status == "planejado"
     assert activity.tecnico_responsavel_id == solicitante_rn.pk
+
+
+def test_criar_activity_inline_usa_os_padroes_do_sgp(solicitante_rn, municipio_rn):
+    from apps.sgp.tests.factories import WorkPlanAcaoFactory
+
+    activity = demand_service.criar_activity_inline(
+        titulo="Seminário Regional", tipo_atividade="seminario", acao=WorkPlanAcaoFactory(),
+        municipio=municipio_rn, data_prevista=timezone.make_aware(datetime(2026, 8, 1, 9, 0)), usuario=solicitante_rn,
+    )
+
+    assert (activity.forma_atuacao, activity.ambito, activity.criado_por_id) == (
+        "realizacao", "municipal", solicitante_rn.pk,
+    )
+    assert activity.data_fim == activity.data_inicio
+
+
+@pytest.mark.parametrize("kwargs,campo_do_cliente", [
+    ({"titulo": "x" * 256}, "activity_titulo"),
+    ({"tipo_atividade": "inexistente"}, "activity_tipo_atividade"),
+])
+def test_erro_do_cadastro_chega_no_campo_que_o_cliente_enviou(kwargs, campo_do_cliente, solicitante_rn, municipio_rn):
+    from apps.sgp.tests.factories import WorkPlanAcaoFactory
+
+    dados = {
+        "titulo": "Seminário", "tipo_atividade": "seminario", "acao": WorkPlanAcaoFactory(),
+        "municipio": municipio_rn, "data_prevista": timezone.make_aware(datetime(2026, 8, 1, 9, 0)),
+        "usuario": solicitante_rn, **kwargs,
+    }
+
+    with pytest.raises(RegraDeNegocio) as excinfo:
+        demand_service.criar_activity_inline(**dados)
+
+    assert excinfo.value.campo == campo_do_cliente
 
 
 def test_criar_demanda_bloqueada_para_activity_cancelada(solicitante_rn, municipio_rn):

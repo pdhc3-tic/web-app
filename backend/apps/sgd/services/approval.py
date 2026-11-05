@@ -9,6 +9,7 @@ from apps.core.models.user import User
 from apps.core.services.permissions import user_has_role, user_role_slugs, user_states
 from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.services import balance as balance_service
+from apps.sgd.services import contexto
 from apps.sgd.services import notifications as notifications_service
 from apps.sgd.services import orcamento as orcamento_service
 from apps.sgd.services import remanejamento as remanejamento_service
@@ -36,7 +37,7 @@ def demand_visibility_scope(user) -> Q | None:
         return (
             Q(solicitante=user)
             | Q(decidiu)
-            | Q(status="submetida", activity__municipio__state__sigla__in=states)
+            | (Q(status="submetida") & contexto.filtro_por_estado(states))
         )
 
     return Q(solicitante=user)
@@ -65,7 +66,7 @@ def demandas_aguardando_acao(user, queryset):
 
     filtro = Q()
     if "articulador-estadual" in perfis:
-        filtro |= Q(status="submetida", activity__municipio__state__sigla__in=user_states(user))
+        filtro |= Q(status="submetida") & contexto.filtro_por_estado(user_states(user))
     status_globais = [
         s for perfil in perfis if perfil != "articulador-estadual"
         for s in STATUS_AGUARDANDO_POR_PERFIL[perfil]
@@ -79,8 +80,7 @@ def responsaveis_pela_etapa_atual(demand):
     if demand.status in {"rascunho", "devolvida"}:
         return User.objects.filter(pk=demand.solicitante_id)
     if demand.status == "submetida":
-        sigla = demand.activity.municipio.state.sigla
-        return notifications_service.usuarios_articuladores_do_estado(sigla)
+        return notifications_service.usuarios_articuladores_do_estado(contexto.estado_da_demanda(demand))
     if demand.status == "pre_autorizada":
         return notifications_service.usuarios_por_perfil("ugp")
     if demand.status in {"autorizada", "em_atendimento"}:
@@ -177,15 +177,9 @@ def preview_impacto(demand_request, valor: Decimal, *, origem=None) -> dict:
 
 
 def alerta_rubrica_fora_do_previsto(demand_request) -> bool:
-    previstas = demand_request.demanda.activity.acao.rubricas_previstas
-    if "rubricas_previstas" in getattr(demand_request.demanda.activity.acao, "_prefetched_objects_cache", {}):
-        # Listagem: M2M prefetchado, decide em memória em vez de 2 `exists()` por solicitação.
-        ids_previstos = {r.pk for r in previstas.all()}
-        return bool(ids_previstos) and demand_request.rubrica_id not in ids_previstos
-    if not previstas.exists():
-        # Sem previsão cadastrada na Ação — não é falso positivo, é "sem opinião".
-        return False
-    return not previstas.filter(pk=demand_request.rubrica_id).exists()
+    # Sem previsão cadastrada na Ação não é falso positivo, é "sem opinião".
+    ids_previstos = {r.pk for r in contexto.rubricas_previstas(demand_request.demanda)}
+    return bool(ids_previstos) and demand_request.rubrica_id not in ids_previstos
 
 
 def exigir_pode_decidir_articulador(demand, responsavel) -> None:
@@ -195,6 +189,5 @@ def exigir_pode_decidir_articulador(demand, responsavel) -> None:
     inclui as próprias demandas, para ele continuar vendo o que já decidiu)."""
     if demand.solicitante_id == responsavel.pk:
         raise PermissionDenied("Você não pode decidir sobre a própria demanda.")
-    estado_sigla = demand.activity.municipio.state.sigla
-    if estado_sigla not in user_states(responsavel):
+    if contexto.estado_da_demanda(demand) not in user_states(responsavel):
         raise PermissionDenied("Demanda fora do seu estado de atuação.")

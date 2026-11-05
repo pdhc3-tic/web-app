@@ -25,6 +25,7 @@ from apps.sgd.serializers.remanejamento import (
     ParecerSerializer,
     SolicitarRecursoExtraSerializer,
 )
+from apps.sgd.services import contexto
 from apps.sgd.services import recurso_extra as recurso_extra_service
 from apps.sgp.models import BudgetIncreaseRequest, BudgetTransfer
 
@@ -40,13 +41,13 @@ def pedidos_visiveis(user):
     """UGP, FGD (leitura) e Super Admin veem tudo; o Articulador, os pedidos dos seus
     estados; os demais, só os próprios."""
     qs = BudgetIncreaseRequest.objects.select_related(
-        "user", "rubrica", "parecer_por", "decidido_por", "activity__municipio__state",
+        "user", "rubrica", "parecer_por", "decidido_por", contexto.CAMINHO_ESTADO,
     )
     perfis = user_role_slugs(user, ("super-admin", "ugp", "fgd", "articulador-estadual"))
     if perfis & PERFIS_NACIONAIS:
         return qs
     if "articulador-estadual" in perfis:
-        return qs.filter(activity__municipio__state__sigla__in=user_states(user))
+        return qs.filter(contexto.filtro_de_pedido_por_estado(user_states(user)))
     return qs.filter(user=user)
 
 

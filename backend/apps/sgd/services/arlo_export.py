@@ -8,6 +8,7 @@ from apps.core.storage import get_storage
 from apps.sgd.models.arlo_import import ArloImport
 from apps.sgd.models.demand import Demand
 from apps.sgd.models.demand_request import DemandRequest
+from apps.sgd.services import contexto
 from apps.sgd.services.arlo_mapping import formatar_valor, obter_mapeamento
 from apps.sgp.models import ExportJob
 from apps.sgp.services.exportacao import gerar_arquivo
@@ -36,15 +37,15 @@ def _rotulo(numero, titulo) -> str:
 
 
 def _linha(demand, solicitacao) -> dict:
-    acao = demand.activity.acao
+    cadeia = contexto.cadeia_pt(demand)
     return {
         "demanda_id": demand.pk,
         "solicitacao_id": solicitacao.pk,
         "titulo": demand.titulo,
-        "meta": _rotulo(acao.meta.numero, acao.meta.titulo),
-        "submeta": _rotulo(acao.submeta.numero, acao.submeta.titulo),
-        "acao": _rotulo(acao.numero, acao.descricao),
-        "indicador": _rotulo(acao.indicador.codigo, acao.indicador.nome),
+        "meta": _rotulo(cadeia.meta.numero, cadeia.meta.titulo),
+        "submeta": _rotulo(cadeia.submeta.numero, cadeia.submeta.titulo),
+        "acao": _rotulo(cadeia.acao.numero, cadeia.acao.descricao),
+        "indicador": _rotulo(cadeia.indicador.codigo, cadeia.indicador.nome),
         "atividade": demand.activity.titulo,
         "rubrica": solicitacao.rubrica.nome,
         "solicitante": demand.solicitante.nome,
@@ -57,9 +58,7 @@ def _linha(demand, solicitacao) -> dict:
 def demandas_autorizadas():
     return (
         Demand.objects.filter(status="autorizada")
-        .select_related(
-            "solicitante", "activity__acao__meta", "activity__acao__submeta", "activity__acao__indicador",
-        )
+        .select_related("solicitante", *contexto.CAMINHOS_CADEIA)
         .prefetch_related("solicitacoes__rubrica")
         .order_by("pk")
     )
@@ -85,10 +84,7 @@ def preview() -> dict:
     colunas = obter_mapeamento()["exportacao"]
     solicitacao = (
         DemandRequest.objects.filter(demanda__status="autorizada")
-        .select_related(
-            "rubrica", "demanda__solicitante", "demanda__activity__acao__meta",
-            "demanda__activity__acao__submeta", "demanda__activity__acao__indicador",
-        )
+        .select_related("rubrica", "demanda__solicitante", *contexto.da_solicitacao(*contexto.CAMINHOS_CADEIA))
         .order_by("demanda_id", "rubrica_id", "pk")
         .first()
     )

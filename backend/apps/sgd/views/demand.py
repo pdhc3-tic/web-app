@@ -26,6 +26,7 @@ from apps.sgd.serializers.demand_request import (
     DemandRequestUpdateSerializer,
 )
 from apps.sgd.services import consulta as consulta_service
+from apps.sgd.services import contexto
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services.approval import demand_visibility_scope
 from apps.sgd.services.auditoria import ENTIDADE_DEMANDA, ENTIDADE_LIMITE_ANTIGA, ENTIDADE_MOVIMENTACAO_SALDO
@@ -72,9 +73,9 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
 
     def get_queryset(self):
         qs = Demand.objects.select_related(
-            "activity__municipio__territory", "activity__municipio__state",
+            contexto.CAMINHO_TERRITORIO, contexto.CAMINHO_ESTADO,
             "activity__comunidade", "activity__tecnico_responsavel",
-            "activity__acao__meta", "activity__acao__submeta", "activity__acao__indicador",
+            *contexto.CAMINHOS_CADEIA,
             "solicitante",
         ).prefetch_related("solicitacoes__rubrica", "activity__acao__rubricas_previstas")
         # Só na leitura: nas ações de decisão o prefetch deixaria `etapas` em
