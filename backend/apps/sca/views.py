@@ -17,6 +17,7 @@ from django.db import transaction
 from django.db.models import Exists, F, OuterRef, Q
 from django.db.models.functions import Greatest
 from django_filters import rest_framework as django_filters
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import filters, generics, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import LimitOffsetPagination
@@ -44,6 +45,7 @@ from apps.sca.serializers import (
     ConflictLogDetailSerializer,
     ConflictLogListSerializer,
     ConflictResolveSerializer,
+    EspelhoSaldoSerializer,
     PushBatchSerializer,
     ScaRefreshSerializer,
     SyncDeviceDetailSerializer,
@@ -587,6 +589,35 @@ class SyncStatusView(APIView):
                 "acesso_revogado": bool(request.user.acesso_revogado),
             }
         )
+
+
+# ---------------------------------------------------------------------------
+# Espelho de saldo
+# ---------------------------------------------------------------------------
+
+class EspelhoSaldoView(APIView):
+    """A fotografia gravada no último pull, não o saldo de agora: é o que o técnico vê
+    offline. Sem `device_id`, vale o pull mais recente do usuário."""
+
+    permission_classes = [IsAuthenticatedActiveAccess]
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("X-Device-Id", str, OpenApiParameter.HEADER, required=False),
+            OpenApiParameter("device_id", str, OpenApiParameter.QUERY, required=False),
+        ],
+        responses=EspelhoSaldoSerializer,
+    )
+    def get(self, request):
+        dispositivos = SyncDevice.objects.filter(user=request.user, ultimo_pull_em__isnull=False)
+        device_id = _resolve_device_id(request)
+        if device_id:
+            dispositivos = dispositivos.filter(device_id=device_id)
+        dispositivo = dispositivos.order_by("-ultimo_pull_em").first()
+        return Response({
+            "saldos": dispositivo.espelho_saldo if dispositivo else [],
+            "ultimo_sync": dispositivo.ultimo_pull_em.isoformat() if dispositivo else None,
+        })
 
 
 # ---------------------------------------------------------------------------

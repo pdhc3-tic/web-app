@@ -1875,6 +1875,32 @@ paths:
               schema:
                 $ref: '#/components/schemas/SyncDeviceDetail'
           description: ''
+  /api/v1/sca/saldo/:
+    get:
+      operationId: v1_sca_saldo_retrieve
+      description: |-
+        A fotografia gravada no último pull, não o saldo de agora: é o que o técnico vê
+        offline. Sem `device_id`, vale o pull mais recente do usuário.
+      parameters:
+      - in: header
+        name: X-Device-Id
+        schema:
+          type: string
+      - in: query
+        name: device_id
+        schema:
+          type: string
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EspelhoSaldo'
+          description: ''
   /api/v1/sca/sync-events/:
     get:
       operationId: v1_sca_sync_events_list
@@ -10583,6 +10609,20 @@ components:
         * `piscicultura` - Piscicultura
         * `apicultura` - Apicultura
         * `outros` - Outros
+    EspelhoSaldo:
+      type: object
+      properties:
+        saldos:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeuSaldo'
+        ultimo_sync:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - saldos
+      - ultimo_sync
     EstadoEnum:
       enum:
       - pendente

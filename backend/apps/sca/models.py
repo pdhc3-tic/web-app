@@ -25,6 +25,8 @@ class SyncDevice(models.Model):
 
     ultimo_push_em = models.DateTimeField(null=True, blank=True, verbose_name="Último push")
     ultimo_pull_em = models.DateTimeField(null=True, blank=True, verbose_name="Último pull")
+    # Fotografia do saldo por rubrica no último pull, para consulta offline.
+    espelho_saldo = models.JSONField(default=list, blank=True, verbose_name="Espelho do saldo")
     ultimo_refresh_em = models.DateTimeField(null=True, blank=True, verbose_name="Último refresh")
 
     ativo = models.BooleanField(default=True, verbose_name="Ativo")

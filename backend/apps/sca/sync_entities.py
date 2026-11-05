@@ -663,5 +663,13 @@ ENTITY_REGISTRY: dict[str, SyncEntity] = {
 }
 
 
+def espelho_de_saldo(user) -> list[dict]:
+    """Os cartões de "meu saldo" no momento do sync, em formato que vai direto para o JSON."""
+    from apps.sgp.budget.meu_saldo import saldo_por_rubrica
+    from apps.sgp.budget.serializers import MeuSaldoSerializer
+
+    return [dict(linha) for linha in MeuSaldoSerializer(saldo_por_rubrica(user), many=True).data]
+
+
 def get_sync_entity(name: str) -> SyncEntity | None:
     return ENTITY_REGISTRY.get(name)

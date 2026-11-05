@@ -623,6 +623,15 @@ class PushProcessor:
 # Pull
 # ---------------------------------------------------------------------------
 
+def _registrar_pull(user, device, server_time) -> None:
+    from apps.sca.sync_entities import espelho_de_saldo
+
+    if device:
+        SyncDevice.objects.filter(pk=device.pk).update(
+            ultimo_pull_em=server_time, espelho_saldo=espelho_de_saldo(user),
+        )
+
+
 def build_pull(user, device, since, tipo_conexao: str | None = None) -> dict:
     from apps.sca.sync_entities import ENTITY_REGISTRY
 
@@ -632,8 +641,7 @@ def build_pull(user, device, since, tipo_conexao: str | None = None) -> dict:
     payload = {"upfs": [], "members": [], "activities": [], "server_time": server_time.isoformat()}
 
     if not territory_ids:
-        if device:
-            SyncDevice.objects.filter(pk=device.pk).update(ultimo_pull_em=server_time)
+        _registrar_pull(user, device, server_time)
         SyncEvent.objects.create(
             user=user,
             device=device,
@@ -663,8 +671,7 @@ def build_pull(user, device, since, tipo_conexao: str | None = None) -> dict:
             for obj in qs
         ]
 
-    if device:
-        SyncDevice.objects.filter(pk=device.pk).update(ultimo_pull_em=server_time)
+    _registrar_pull(user, device, server_time)
     total = sum(len(v) for v in payload.values() if isinstance(v, list))
     finalizado_em = timezone.now()
     SyncEvent.objects.create(
