@@ -1,6 +1,7 @@
 from .comunidade import Comunidade
 from .catalogos import Cultura, EspecieAnimal
 from apps.sgp.budget.models import (
+    BudgetAlert,
     BudgetIncreaseRequest,
     BudgetPool,
     BudgetRubrica,
@@ -28,6 +29,7 @@ __all__ = [
     "Activity",
     "ActivityDocument",
     "ActivityPhoto",
+    "BudgetAlert",
     "BudgetPool",
     "BudgetIncreaseRequest",
     "BudgetRubrica",

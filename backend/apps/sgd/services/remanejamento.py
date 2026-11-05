@@ -74,11 +74,7 @@ def remanejar_para_pool(*, origem: BudgetPool, destino: BudgetPool, valor: Decim
         },
     )
     destinatarios = {
-        u.pk: u for pool in (origem, destino)
-        for u in balance_service._destinatarios_saldo_territorial(
-            nivel=pool.nivel, estado_sigla=pool.estado.sigla if pool.estado else None,
-            territorio=pool.territorio,
-        )
+        u.pk: u for pool in (origem, destino) for u in orcamento_service.responsaveis_do_pool(pool)
     }
     notifications_service.notificar_remanejamento_efetivado(transferencia, list(destinatarios.values()))
     return transferencia

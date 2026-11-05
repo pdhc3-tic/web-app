@@ -233,6 +233,9 @@ podem mudar por configuração.
 - **Acúmulo:** o saldo acumulado é debitado da linha antiga, para não existir nas duas. O que for liberado nela depois da virada expira. Só acumula a linha que termina na véspera do novo período.
 - **Recurso extra em Devolvida:** com a reserva da rubrica de pé, o pedido é aceito com o valor informado, mesmo sem déficit calculado. A edição para mais é recusada e não fica gravada, e a mensagem orienta a pedir recurso extra, como manda o SGD §4.1.
 
+- **`BudgetAlert`:** segue o modelo de dados do SGP v1.3, e não os nomes da #390 (`percentual_atingido` e `alertado_em`, em vez de `percentual` e `criado_em`; `escopo` e `referencia_id`, em vez de FKs para pool e limite). Acrescenta `tipo` e `resolvido_em`, que o documento não tem e o critério de um alerta aberto por alvo exige. `faixa` fica vazia no remanejamento excessivo, que o documento não lista. Alertas por rubrica usam o pool nacional como alvo, porque o documento não tem escopo de rubrica.
+- **Fim da vigência para a subexecução:** maior `data_fim` das Metas, até existir `TED.vigencia_fim`.
+
 ### Divergências do documento mantidas, para a coordenação confirmar
 
 - **Remanejamento entre rubricas:** o SGP 6.7 permite, e o motor só aceita a mesma rubrica, como já fazia. Os demais tipos dependem do simulador da #389.

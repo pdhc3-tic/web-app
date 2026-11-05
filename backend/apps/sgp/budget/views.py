@@ -11,12 +11,15 @@ from rest_framework.views import APIView
 
 from apps.core.permissions import IsAuthenticatedActiveAccess, IsSuperAdmin, IsUGP
 from apps.core.services.permissions import user_has_role
+from apps.sgp.budget import alertas as alertas_service
 from apps.sgp.budget import limites as limites_service
 from apps.sgp.budget import meu_saldo as meu_saldo_service
 from apps.sgp.budget.rls import visao_total
 from apps.sgp.filters import BudgetRubricaFilter
-from apps.sgp.models import BudgetPool, BudgetRubrica, BudgetTransaction, SpendingLimit, WorkPlanMeta
+from apps.sgp.models import BudgetAlert, BudgetPool, BudgetRubrica, BudgetTransaction, SpendingLimit, WorkPlanMeta
 from apps.sgp.budget.serializers import (
+    BudgetAlertQuerySerializer,
+    BudgetAlertSerializer,
     BudgetPainelLinhaSerializer,
     BudgetPainelQuerySerializer,
     BudgetPoolCreateSerializer,
@@ -231,7 +234,7 @@ class MeuSaldoView(APIView):
         return Response(MeuSaldoSerializer(meu_saldo_service.saldo_por_rubrica(request.user), many=True).data)
 
 
-class ExtratoPagination(LimitOffsetPagination):
+class OrcamentoPagination(LimitOffsetPagination):
     default_limit = 20
     max_limit = 100
 
@@ -242,7 +245,7 @@ class MeuExtratoView(generics.ListAPIView):
 
     permission_classes = [IsAuthenticatedActiveAccess]
     serializer_class = LinhaDoExtratoSerializer
-    pagination_class = ExtratoPagination
+    pagination_class = OrcamentoPagination
     queryset = BudgetTransaction.objects.none()
 
     def get_queryset(self):
@@ -250,6 +253,31 @@ class MeuExtratoView(generics.ListAPIView):
             return self.queryset
         rubrica = get_object_or_404(BudgetRubrica, slug=self.kwargs["rubrica"])
         return meu_saldo_service.extrato(self.request.user, rubrica)
+
+
+@extend_schema(parameters=[BudgetAlertQuerySerializer])
+class BudgetAlertListView(generics.ListAPIView):
+    """GET .../orcamento/alertas/ — alertas no escopo do perfil."""
+
+    permission_classes = [IsAuthenticatedActiveAccess]
+    serializer_class = BudgetAlertSerializer
+    pagination_class = OrcamentoPagination
+    queryset = BudgetAlert.objects.none()
+
+    def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return self.queryset
+        filtros = BudgetAlertQuerySerializer(data=self.request.query_params)
+        filtros.is_valid(raise_exception=True)
+        dados = filtros.validated_data
+        alertas = alertas_service.alertas_visiveis(self.request.user)
+        if "tipo" in dados:
+            alertas = alertas.filter(tipo=dados["tipo"])
+        if "faixa" in dados:
+            alertas = alertas.filter(faixa=dados["faixa"])
+        if dados["abertos"] is not None:
+            alertas = alertas.filter(resolvido_em__isnull=dados["abertos"])
+        return alertas
 
 
 class BudgetPainelView(APIView):

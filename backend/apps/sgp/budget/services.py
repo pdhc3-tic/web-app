@@ -15,7 +15,7 @@ from apps.core.services.permissions import user_has_role, user_states, user_terr
 from apps.core.utils import get_config
 from apps.sgp.budget.ledger import lancar
 from apps.sgp.budget.rls import com_visao_total, visao_total
-from apps.sgp.models import BudgetPool, BudgetRubrica, BudgetTransaction, BudgetTransfer
+from apps.sgp.models import BudgetAlert, BudgetPool, BudgetRubrica, BudgetTransaction, BudgetTransfer
 
 Nivel = BudgetPool.Nivel
 PERFIS_DE_LEITURA_NACIONAL = {"super-admin", "ugp", "fgd"}
@@ -353,7 +353,9 @@ def remover_pool(pool: BudgetPool) -> None:
     Traduz isso pra uma mensagem clara em vez de vazar 500.
     """
     try:
-        pool.delete()
+        with transaction.atomic():
+            BudgetAlert.objects.filter(escopo=BudgetAlert.Escopo.POOL, referencia_id=pool.pk).delete()
+            pool.delete()
     except ProtectedError:
         raise DRFValidationError({
             "detail": (
@@ -699,7 +701,7 @@ def remanejar_com_registro(*, origem: BudgetPool, destino: BudgetPool, valor: De
     debito, credito = remanejar(
         origem=origem, destino=destino, valor=valor, usuario=usuario, justificativa=justificativa,
     )
-    BudgetTransfer.objects.create(
+    transferencia = BudgetTransfer.objects.create(
         tipo=(
             BudgetTransfer.Tipo.ENTRE_NIVEIS if origem.nivel != destino.nivel
             else BudgetTransfer.Tipo.ENTRE_TERRITORIOS
@@ -709,6 +711,9 @@ def remanejar_com_registro(*, origem: BudgetPool, destino: BudgetPool, valor: De
         saldo_destino_antes=credito.saldo_anterior, saldo_destino_depois=credito.saldo_posterior,
         aprovado_por=usuario, ip=debito.ip,
     )
+    from apps.sgp.budget.alertas import notificar_remanejamento_efetivado
+
+    notificar_remanejamento_efetivado(transferencia)
     return debito, credito
 
 
@@ -906,24 +911,6 @@ def _semaforo_orcamento(percentual: Decimal, limiares: LimiaresSemaforo) -> tupl
     front, mas segue o limiar configurado, não 80 fixo."""
     semaforo = faixa_semaforo(percentual, limiares)
     return semaforo, semaforo == "vermelho"
-
-
-def pools_em_vermelho() -> list[BudgetPool]:
-    """Todo `BudgetPool` (qualquer nível) com semáforo vermelho — usada por
-    `tasks.check_budget_threshold_alert`. Nacional, estadual e territorial são linhas
-    independentes, cada uma pode estar em vermelho por si só."""
-    limiares = limiares_semaforo()
-    vermelhos = []
-    pools = (
-        BudgetPool.objects
-        .select_related("rubrica", "estado", "territorio")
-        .filter(valor_alocado__gt=ZERO)
-    )
-    for pool in pools:
-        percentual = percentual_comprometido(pool.valor_comprometido, pool.valor_alocado)
-        if faixa_semaforo(percentual, limiares) == "vermelho":
-            vermelhos.append(pool)
-    return vermelhos
 
 
 def _executado_por_pool_na_meta(meta_id: int) -> dict[int, Decimal]:

@@ -7,7 +7,6 @@ rubrica. Erros do motor saem daqui como exceções de domínio do SGD.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass
 from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied
@@ -15,6 +14,7 @@ from django.db.models import Q
 
 from apps.core.utils import formatar_brl
 from apps.sgd.exceptions import TRAVA_TERRITORIAL, RegraDeNegocio, SaldoInsuficiente
+from apps.sgp.budget import alertas as alertas_service
 from apps.sgp.budget import limites as limites_service
 from apps.sgp.budget import services as budget_service
 from apps.sgp.budget.rls import com_visao_total
@@ -48,15 +48,19 @@ registrar_alteracao_do_limite = limites_service.registrar_movimento
 definir_limite_de_demonstracao = limites_service.definir_limite_de_demonstracao
 
 
-@dataclass
-class MovimentoPool:
-    """Pool movimentado e o comprometido antes do movimento, para o aviso de
-    mudança de faixa do semáforo."""
-    pool: BudgetPool | None
-    comprometido_antes: Decimal
-    nivel: str | None
-    estado_sigla: str | None
-    territorio: object | None
+sincronizar_semaforo = alertas_service.sincronizar_semaforo
+destinatarios_do_alerta = alertas_service.destinatarios
+canais_da_faixa = alertas_service.canais_da_faixa
+registrar_alertados = alertas_service.registrar_alertados
+saldo_do_alvo = alertas_service.saldo_do_alvo
+responsaveis_do_pool = alertas_service.responsaveis_do_pool
+renderizar_evento = alertas_service.renderizar
+
+
+@com_visao_total
+def saldo_do_limite(*, user_id, rubrica_id) -> Decimal:
+    limite = limites_service.limite_efetivo(user_id, rubrica_id)
+    return limite.saldo_disponivel if limite else ZERO
 
 
 def _regra_do_motor(exc) -> RegraDeNegocio:
@@ -193,7 +197,7 @@ def localizar_pool(*, solicitante, rubrica) -> BudgetPool:
     return check.pool
 
 
-def reservar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuario) -> MovimentoPool:
+def reservar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuario) -> BudgetPool:
     """Idempotente por `demand_request.pk` (o motor confere a reserva já feita
     depois de travar a alocação)."""
     nivel, estado_sigla, territorio = resolver_nivel_do_usuario(solicitante)
@@ -208,7 +212,6 @@ def reservar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuar
         raise bloqueio_territorial(
             rubrica=rubrica, pool=None, disponivel=ZERO, solicitado=valor, solicitacao_id=demand_request.pk,
         )
-    comprometido_antes = pool.valor_comprometido
     try:
         budget_service.reservar(
             pool=pool, valor=valor, demand_request_id=str(demand_request.pk), usuario=usuario,
@@ -223,8 +226,8 @@ def reservar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuar
         ) from exc
     except ValueError as exc:
         raise RegraDeNegocio(str(exc)) from exc
-    pool.refresh_from_db(fields=["valor_comprometido"])
-    return MovimentoPool(pool, comprometido_antes, nivel, estado_sigla, territorio)
+    pool.refresh_from_db(fields=["valor_comprometido", "valor_alocado"])
+    return pool
 
 
 def pool_da_reserva(demand_request) -> BudgetPool | None:
@@ -241,11 +244,10 @@ def total_reservado(demand_request_id: str) -> Decimal:
     return budget_service._valor_total_reservado(demand_request_id)
 
 
-def ajustar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuario) -> MovimentoPool:
+def ajustar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuario) -> BudgetPool | None:
     """`valor` é o novo total reservado para a solicitação, não o delta."""
     entidade_id = str(demand_request.pk)
     pool = pool_da_reserva(demand_request)
-    comprometido_antes = pool.valor_comprometido if pool else ZERO
     try:
         budget_service.ajustar_reserva(
             demand_request_id=entidade_id, novo_valor=valor, usuario=usuario,
@@ -259,16 +261,9 @@ def ajustar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuari
         ) from exc
     except (budget_service.DemandaInvalidaError, ValueError) as exc:
         raise RegraDeNegocio(str(exc)) from exc
-    if pool is None:
-        return MovimentoPool(None, comprometido_antes, None, None, None)
-    pool.refresh_from_db(fields=["valor_comprometido", "valor_alocado"])
-    # Localização tirada do pool reservado, não do perfil do solicitante:
-    # quem ajusta costuma ser quem decide, e o perfil pode ter mudado depois
-    # da reserva.
-    return MovimentoPool(
-        pool, comprometido_antes, pool.nivel,
-        pool.estado.sigla if pool.estado else None, pool.territorio,
-    )
+    if pool is not None:
+        pool.refresh_from_db(fields=["valor_comprometido", "valor_alocado"])
+    return pool
 
 
 def liberar_pool(*, solicitante, rubrica, demand_request, usuario, motivo: str) -> None:

@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    BudgetAlertListView,
     BudgetPainelView,
     BudgetPoolViewSet,
     BudgetRubricaListView,
@@ -78,6 +79,11 @@ urlpatterns = [
         "sgp/orcamento/meu-saldo/<slug:rubrica>/extrato/",
         MeuExtratoView.as_view(),
         name="budget-meu-extrato",
+    ),
+    path(
+        "sgp/orcamento/alertas/",
+        BudgetAlertListView.as_view(),
+        name="budget-alertas",
     ),
     path(
         "sgp/orcamento/painel/",

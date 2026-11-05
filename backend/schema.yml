@@ -4855,6 +4855,67 @@ paths:
                 items:
                   $ref: '#/components/schemas/BudgetRubricaOrcamento'
           description: ''
+  /api/v1/sgp/orcamento/alertas/:
+    get:
+      operationId: v1_sgp_orcamento_alertas_list
+      description: GET .../orcamento/alertas/ — alertas no escopo do perfil.
+      parameters:
+      - in: query
+        name: abertos
+        schema:
+          type: boolean
+          nullable: true
+      - in: query
+        name: faixa
+        schema:
+          enum:
+          - amarelo
+          - vermelho
+          - subexecucao
+          - devolucao
+          type: string
+          minLength: 1
+        description: |-
+          * `amarelo` - Amarelo
+          * `vermelho` - Vermelho
+          * `subexecucao` - Subexecução
+          * `devolucao` - Devolução
+      - name: limit
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: O índice inicial a partir do qual retornar os resultados.
+        schema:
+          type: integer
+      - in: query
+        name: tipo
+        schema:
+          enum:
+          - semaforo
+          - subexecucao
+          - remanejamento_excessivo
+          type: string
+          minLength: 1
+        description: |-
+          * `semaforo` - Semáforo
+          * `subexecucao` - Subexecução
+          * `remanejamento_excessivo` - Remanejamento excessivo
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBudgetAlertList'
+          description: ''
   /api/v1/sgp/orcamento/alocacoes/{id}/:
     patch:
       operationId: v1_sgp_orcamento_alocacoes_partial_update
@@ -9011,6 +9072,71 @@ components:
     BlankEnum:
       enum:
       - ''
+    BudgetAlert:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        tipo:
+          allOf:
+          - $ref: '#/components/schemas/TipoAlertaOrcamentoEnum'
+          readOnly: true
+        escopo:
+          allOf:
+          - $ref: '#/components/schemas/EscopoAlertaOrcamentoEnum'
+          readOnly: true
+        referencia_id:
+          type: integer
+          readOnly: true
+          title: ID do alvo
+        rubrica:
+          type: integer
+          readOnly: true
+          nullable: true
+        rubrica_nome:
+          type: string
+          readOnly: true
+          nullable: true
+        faixa:
+          allOf:
+          - $ref: '#/components/schemas/FaixaAlertaOrcamentoEnum'
+          readOnly: true
+        percentual_atingido:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,6}(?:\.\d{0,2})?$
+          readOnly: true
+        alertado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        resolvido_em:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        usuarios_alertados_ids:
+          type: array
+          items:
+            type: integer
+            maximum: 9223372036854775807
+            minimum: -9223372036854775808
+            format: int64
+          readOnly: true
+          title: Usuários alertados
+      required:
+      - alertado_em
+      - escopo
+      - faixa
+      - id
+      - percentual_atingido
+      - referencia_id
+      - resolvido_em
+      - rubrica
+      - rubrica_nome
+      - tipo
+      - usuarios_alertados_ids
     BudgetPainelLinha:
       type: object
       description: |-
@@ -10554,6 +10680,20 @@ components:
         * `5` - Médio completo
         * `6` - Superior incompleto
         * `7` - Superior completo
+    EscopoAlertaOrcamentoEnum:
+      enum:
+      - limite
+      - pool
+      - meta
+      - submeta
+      - acao
+      type: string
+      description: |-
+        * `limite` - Limite
+        * `pool` - Pool
+        * `meta` - Meta
+        * `submeta` - Submeta
+        * `acao` - Ação
     EscopoLimiteDeGastoEnum:
       enum:
       - perfil
@@ -10769,6 +10909,18 @@ components:
         * `processando` - Processando
         * `concluida` - Concluída
         * `erro` - Erro
+    FaixaAlertaOrcamentoEnum:
+      enum:
+      - amarelo
+      - vermelho
+      - subexecucao
+      - devolucao
+      type: string
+      description: |-
+        * `amarelo` - Amarelo
+        * `vermelho` - Vermelho
+        * `subexecucao` - Subexecução
+        * `devolucao` - Devolução
     FaixaDestino:
       type: object
       properties:
@@ -12353,6 +12505,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AuditLog'
+    PaginatedBudgetAlertList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/BudgetAlert'
     PaginatedComunidadeList:
       type: object
       required:
@@ -15406,6 +15581,16 @@ components:
           type: boolean
       required:
       - nome
+    TipoAlertaOrcamentoEnum:
+      enum:
+      - semaforo
+      - subexecucao
+      - remanejamento_excessivo
+      type: string
+      description: |-
+        * `semaforo` - Semáforo
+        * `subexecucao` - Subexecução
+        * `remanejamento_excessivo` - Remanejamento excessivo
     TipoAtividadeEnum:
       enum:
       - visita_tecnica

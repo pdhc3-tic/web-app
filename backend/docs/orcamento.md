@@ -137,6 +137,7 @@ As transições de status passam por `apps.sgd.services.workflow.executar_transi
 | Criação do pedido | A `Demand`, e depois o pedido novo, que nenhuma outra transação enxerga antes do commit |
 | Cadastro de limite (`/sgp/orcamento/limites/`, alias e Django Admin) | O limite. Com a sobrealocação desligada, depois os pools territoriais envolvidos, em ordem de pk |
 | `remanejar`, `atualizar_valor_alocado` | Pools em ordem crescente de pk |
+| Avaliação de alerta (`alertas.py`) | Um alvo por transação, pool ou limite, e depois a linha do alerta. Quem move saldo grava o alerta com o alvo já travado, depois do saldo |
 
 ## Reconciliação
 
@@ -151,6 +152,12 @@ Para cada `BudgetPool` e cada linha individual de `SpendingLimit`, confere:
 - o saldo disponível contra o `saldo_posterior` da última transação.
 
 No SGD, confere também o comprometido dos limites contra as reservas ativas das solicitações, por solicitante e rubrica, e os totais de cada demanda contra a soma das solicitações. Sai com código diferente de 0 (via `CommandError`) e lista as divergências encontradas.
+
+A tarefa `reconcile_budget_balances` roda a mesma checagem toda noite e notifica o Super Admin quando há divergência.
+
+## Alertas
+
+`BudgetAlert` segue o modelo de dados do SGP (`escopo`, `referencia_id`, `rubrica`, `faixa`, `percentual_atingido`, `alertado_em`, `usuarios_alertados_ids`), mais `tipo` e `resolvido_em`. Cada alvo tem no máximo um alerta aberto por tipo. Os alertas por rubrica, de subexecução e de remanejamento excessivo, usam o pool nacional dela como alvo.
 
 ## Endpoints HTTP
 
@@ -270,7 +277,17 @@ Matriz Rubrica × Nível: uma linha por pool no escopo do perfil, com o `id` que
 - `saldo_disponivel` é o aprovado menos distribuído, comprometido e executado.
 - `saldo_pool` é o alocado menos comprometido e executado: o que o remanejamento aceita sair do pool.
 - `semaforo` segue o percentual comprometido sobre o alocado e os limiares `budget_alert_yellow_pct` e `budget_alert_red_pct` do Core (70 e 90 por padrão). `alerta_80` mantém o nome, mas é `true` no mesmo limiar de `vermelho`.
-- A task diária `sgp.tasks.check_budget_threshold_alert` notifica UGP e Super Admin sobre todo `BudgetPool` em vermelho, em qualquer nível.
+- `sgp.tasks.check_budget_thresholds` grava em `BudgetAlert` a faixa de pools e limites vigentes e notifica quando o alerta abre ou a faixa piora. Roda depois de cada movimentação, só para o alvo movido, e uma vez por dia para todos. O amarelo avisa o responsável só no app; o vermelho avisa também o nível superior e vai por e-mail.
+- `sgp.tasks.check_budget_underexecution`, semanal, e `sgp.tasks.reconcile_budget_balances`, às 2h30.
+
+### Meu saldo, simulador e alertas
+
+| Rota | Quem | O que faz |
+|---|---|---|
+| `GET /api/v1/sgp/orcamento/meu-saldo/` | Autenticado | Limite, comprometido, executado, disponível e semáforo por rubrica, com o período e o saldo do pool do território |
+| `GET /api/v1/sgp/orcamento/meu-saldo/{rubrica}/extrato/` | Autenticado | Linhas do ledger do próprio usuário, com `efeito` no saldo; paginado |
+| `POST /api/v1/sgp/orcamento/remanejamentos/simular/` | UGP e Super Admin | Saldo, percentual e faixa antes e depois, sem gravar nada |
+| `GET /api/v1/sgp/orcamento/alertas/` | Perfis do orçamento, no próprio escopo | Filtros `?tipo=`, `?faixa=` e `?abertos=`; paginado |
 
 ## Painel por rubrica do SGD
 

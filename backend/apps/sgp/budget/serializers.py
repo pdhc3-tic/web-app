@@ -7,7 +7,7 @@ from rest_framework import serializers
 from apps.core.models import Role, State, Territory, User
 from apps.sgp.budget.ledger import efeito_no_saldo
 from apps.sgp.budget.limites import PERFIS_OPERACIONAIS
-from apps.sgp.models import BudgetPool, BudgetRubrica, BudgetTransaction, SpendingLimit, WorkPlanMeta
+from apps.sgp.models import BudgetAlert, BudgetPool, BudgetRubrica, BudgetTransaction, SpendingLimit, WorkPlanMeta
 from apps.sgp.serializers.common import EstadoNestedSerializer
 
 
@@ -194,6 +194,24 @@ class LinhaDoExtratoSerializer(BudgetTransactionSerializer):
     @extend_schema_field(serializers.DecimalField(max_digits=14, decimal_places=2))
     def get_efeito(self, transacao):
         return f"{efeito_no_saldo(transacao.tipo, transacao.valor):.2f}"
+
+
+class BudgetAlertSerializer(serializers.ModelSerializer):
+    rubrica_nome = serializers.CharField(source="rubrica.nome", read_only=True, allow_null=True)
+
+    class Meta:
+        model = BudgetAlert
+        fields = [
+            "id", "tipo", "escopo", "referencia_id", "rubrica", "rubrica_nome", "faixa", "percentual_atingido",
+            "alertado_em", "resolvido_em", "usuarios_alertados_ids",
+        ]
+        read_only_fields = fields
+
+
+class BudgetAlertQuerySerializer(serializers.Serializer):
+    tipo = serializers.ChoiceField(choices=BudgetAlert.Tipo.choices, required=False)
+    faixa = serializers.ChoiceField(choices=BudgetAlert.Faixa.choices, required=False)
+    abertos = serializers.BooleanField(required=False, allow_null=True, default=None)
 
 
 class LimiaresSemaforoSerializer(serializers.Serializer):
