@@ -5,6 +5,7 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.core.models import Role, State, Territory, User
+from apps.sgp.budget.ledger import efeito_no_saldo
 from apps.sgp.budget.limites import PERFIS_OPERACIONAIS
 from apps.sgp.models import BudgetPool, BudgetRubrica, BudgetTransaction, SpendingLimit, WorkPlanMeta
 from apps.sgp.serializers.common import EstadoNestedSerializer
@@ -150,6 +151,49 @@ class RemanejamentoCreateSerializer(serializers.Serializer):
     destino_allocation = serializers.PrimaryKeyRelatedField(queryset=BudgetPool.objects.all())
     valor = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"))
     justificativa = serializers.CharField()
+
+
+class ImpactoNoPoolSerializer(serializers.Serializer):
+    saldo_antes = serializers.DecimalField(max_digits=14, decimal_places=2)
+    saldo_depois = serializers.DecimalField(max_digits=14, decimal_places=2)
+    percentual_antes = serializers.DecimalField(max_digits=8, decimal_places=2)
+    percentual_depois = serializers.DecimalField(max_digits=8, decimal_places=2)
+    faixa_antes = serializers.CharField()
+    faixa_depois = serializers.CharField()
+
+
+class SimulacaoRemanejamentoSerializer(serializers.Serializer):
+    origem = ImpactoNoPoolSerializer()
+    destino = ImpactoNoPoolSerializer()
+
+
+class MeuSaldoSerializer(serializers.Serializer):
+    rubrica = serializers.SlugField()
+    rubrica_nome = serializers.CharField()
+    limite = serializers.DecimalField(max_digits=14, decimal_places=2)
+    comprometido = serializers.DecimalField(max_digits=14, decimal_places=2)
+    executado = serializers.DecimalField(max_digits=14, decimal_places=2)
+    disponivel = serializers.DecimalField(max_digits=14, decimal_places=2)
+    semaforo = serializers.CharField()
+    periodo_inicio = serializers.DateField()
+    periodo_fim = serializers.DateField()
+    dias_restantes = serializers.IntegerField()
+    acumula_saldo = serializers.BooleanField()
+    saldo_territorio = serializers.DecimalField(max_digits=14, decimal_places=2, allow_null=True)
+
+
+class LinhaDoExtratoSerializer(BudgetTransactionSerializer):
+    efeito = serializers.SerializerMethodField()
+    periodo_inicio = serializers.DateField(source="spending_limit.periodo_inicio", read_only=True)
+    periodo_fim = serializers.DateField(source="spending_limit.periodo_fim", read_only=True)
+
+    class Meta(BudgetTransactionSerializer.Meta):
+        fields = [*BudgetTransactionSerializer.Meta.fields, "efeito", "periodo_inicio", "periodo_fim"]
+        read_only_fields = fields
+
+    @extend_schema_field(serializers.DecimalField(max_digits=14, decimal_places=2))
+    def get_efeito(self, transacao):
+        return f"{efeito_no_saldo(transacao.tipo, transacao.valor):.2f}"
 
 
 class LimiaresSemaforoSerializer(serializers.Serializer):

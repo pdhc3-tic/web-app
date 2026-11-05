@@ -4,6 +4,9 @@ from .views import (
     BudgetPainelView,
     BudgetPoolViewSet,
     BudgetRubricaListView,
+    MeuExtratoView,
+    MeuSaldoView,
+    RemanejamentoSimulacaoView,
     RemanejamentoView,
     SaldoConsultaView,
     SpendingLimitViewSet,
@@ -60,6 +63,21 @@ urlpatterns = [
         "sgp/orcamento/remanejamentos/",
         RemanejamentoView.as_view(),
         name="budget-remanejamentos",
+    ),
+    path(
+        "sgp/orcamento/remanejamentos/simular/",
+        RemanejamentoSimulacaoView.as_view(),
+        name="budget-remanejamentos-simular",
+    ),
+    path(
+        "sgp/orcamento/meu-saldo/",
+        MeuSaldoView.as_view(),
+        name="budget-meu-saldo",
+    ),
+    path(
+        "sgp/orcamento/meu-saldo/<slug:rubrica>/extrato/",
+        MeuExtratoView.as_view(),
+        name="budget-meu-extrato",
     ),
     path(
         "sgp/orcamento/painel/",

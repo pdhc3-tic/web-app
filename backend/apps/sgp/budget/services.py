@@ -602,12 +602,7 @@ def liberar(*, demand_request_id: str, usuario, motivo: str) -> BudgetTransactio
 # Remanejamento emergencial da UGP.
 # ---------------------------------------------------------------------------
 
-@transaction.atomic
-def remanejar(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal,
-              usuario, justificativa: str) -> tuple[BudgetTransaction, BudgetTransaction]:
-    """Move capacidade (valor_alocado) entre dois pools da mesma rubrica —
-    mecanismo de exceção da UGP, não passa pela checagem de teto
-    normal do nível pai (é o próprio propósito dele: furar a hierarquia)."""
+def _exigir_origem_e_destino_validos(origem: BudgetPool, destino: BudgetPool) -> None:
     if origem.pk == destino.pk:
         raise DRFValidationError({"destino_allocation": "Origem e destino não podem ser a mesma alocação."})
     if origem.rubrica_id != destino.rubrica_id:
@@ -615,15 +610,8 @@ def remanejar(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal,
             "destino_allocation": "Origem e destino devem ser da mesma rubrica."
         })
 
-    # trava sempre em ordem crescente de pk, não na ordem origem/destino do
-    # payload — dois remanejamentos concorrentes com origem/destino trocados
-    # (A→B e B→A) travariam em ordem invertida e um dos dois cairia em deadlock.
-    primeiro_pk, segundo_pk = sorted([origem.pk, destino.pk])
-    primeiro = BudgetPool.objects.select_for_update().get(pk=primeiro_pk)
-    segundo = BudgetPool.objects.select_for_update().get(pk=segundo_pk)
-    origem = primeiro if primeiro.pk == origem.pk else segundo
-    destino = primeiro if primeiro.pk == destino.pk else segundo
 
+def _exigir_saldo_na_origem(origem: BudgetPool, valor: Decimal) -> Decimal:
     saldo_origem = _saldo_disponivel(origem)
     if valor > saldo_origem:
         mensagem = f"Saldo insuficiente na origem: R$ {saldo_origem} disponível."
@@ -639,6 +627,52 @@ def remanejar(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal,
             "acao_sugerida": "informar_outra_origem",
             "detail": mensagem,
         })
+    return saldo_origem
+
+
+def _impacto_no_pool(pool: BudgetPool, variacao: Decimal, limiares: "LimiaresSemaforo") -> dict:
+    percentual_antes = percentual_comprometido(pool.valor_comprometido, pool.valor_alocado)
+    percentual_depois = percentual_comprometido(pool.valor_comprometido, pool.valor_alocado + variacao)
+    saldo_antes = _saldo_disponivel(pool)
+    return {
+        "saldo_antes": saldo_antes,
+        "saldo_depois": saldo_antes + variacao,
+        "percentual_antes": percentual_antes,
+        "percentual_depois": percentual_depois,
+        "faixa_antes": faixa_semaforo(percentual_antes, limiares),
+        "faixa_depois": faixa_semaforo(percentual_depois, limiares),
+    }
+
+
+def simular_remanejamento(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal) -> dict:
+    """As mesmas recusas e os mesmos números de `remanejar`, sem travar nem gravar nada."""
+    _exigir_origem_e_destino_validos(origem, destino)
+    _exigir_saldo_na_origem(origem, valor)
+    limiares = limiares_semaforo()
+    return {
+        "origem": _impacto_no_pool(origem, -valor, limiares),
+        "destino": _impacto_no_pool(destino, valor, limiares),
+    }
+
+
+@transaction.atomic
+def remanejar(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal,
+              usuario, justificativa: str) -> tuple[BudgetTransaction, BudgetTransaction]:
+    """Move capacidade (valor_alocado) entre dois pools da mesma rubrica —
+    mecanismo de exceção da UGP, não passa pela checagem de teto
+    normal do nível pai (é o próprio propósito dele: furar a hierarquia)."""
+    _exigir_origem_e_destino_validos(origem, destino)
+
+    # trava sempre em ordem crescente de pk, não na ordem origem/destino do
+    # payload — dois remanejamentos concorrentes com origem/destino trocados
+    # (A→B e B→A) travariam em ordem invertida e um dos dois cairia em deadlock.
+    primeiro_pk, segundo_pk = sorted([origem.pk, destino.pk])
+    primeiro = BudgetPool.objects.select_for_update().get(pk=primeiro_pk)
+    segundo = BudgetPool.objects.select_for_update().get(pk=segundo_pk)
+    origem = primeiro if primeiro.pk == origem.pk else segundo
+    destino = primeiro if primeiro.pk == destino.pk else segundo
+
+    saldo_origem = _exigir_saldo_na_origem(origem, valor)
     saldo_destino = _saldo_disponivel(destino)
 
     origem.valor_alocado -= valor
