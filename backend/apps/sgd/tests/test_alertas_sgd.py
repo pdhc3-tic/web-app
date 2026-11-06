@@ -9,12 +9,13 @@ from apps.core.models.notifications import TipoNotificacao
 from apps.core.tests.factories import RoleFactory, TerritoryFactory, UserFactory
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import notifications as notifications_service
+from apps.sgd.services import remanejamento as remanejamento_service
 from apps.sgd.tests.concorrencia import intercalar
 from apps.sgd.tests.factories import BudgetIncreaseRequestFactory
 from apps.sgp.budget import alertas
-from apps.sgp.models import BudgetAlert, BudgetPool, SpendingLimit
+from apps.sgp.models import BudgetAlert, BudgetPool, BudgetTransfer, SpendingLimit
 from apps.sgp.tasks import check_budget_thresholds
-from apps.sgp.tests.factories import SpendingLimitFactory
+from apps.sgp.tests.factories import BudgetPoolFactory, SpendingLimitFactory
 
 EVENTO_SGD = "demand_semaforo_mudou"
 
@@ -165,3 +166,20 @@ def test_tarefa_espera_a_movimentacao_e_nao_duplica_o_alerta(
     assert BudgetAlert.objects.filter(escopo=BudgetAlert.Escopo.LIMITE, referencia_id=limite.pk).count() == 1
     assert not solicitante_rn.notifications.filter(evento=alertas.EVENTO_SEMAFORO).exists()
     assert BudgetPool.objects.get(pk=allocation_territorial_rn.pk).valor_comprometido == Decimal("1000")
+
+
+@pytest.mark.django_db
+def test_remanejamento_em_estado_sem_articulador_avisa_a_ugp(
+    activity_rn, rubrica_diarias, allocation_territorial_rn, usuario_ugp,
+):
+    origem = BudgetPoolFactory(
+        rubrica=rubrica_diarias, nivel=BudgetPool.Nivel.ESTADUAL, territorio=None,
+        estado=activity_rn.municipio.state, valor_alocado=Decimal("1500"),
+    )
+
+    remanejamento_service.remanejar_para_pool(
+        origem=origem, destino=allocation_territorial_rn, valor=Decimal("100"), motivo="Excedente.",
+        usuario=usuario_ugp, escopo=BudgetTransfer.Escopo.ELEVACAO_LIMITE,
+    )
+
+    assert _canais(usuario_ugp, "remanejamento_efetivado") == {TipoNotificacao.EMAIL, TipoNotificacao.IN_APP}

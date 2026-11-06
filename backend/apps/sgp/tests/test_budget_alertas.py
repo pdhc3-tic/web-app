@@ -617,6 +617,13 @@ class TestRemanejamento:
             assert _canais(articulador, alertas.EVENTO_REMANEJAMENTO_EFETIVADO) == EMAIL_E_IN_APP
         assert "400,00" in usuario_articulador_rn.notifications.first().mensagem
 
+    def test_efetivado_em_estado_sem_articulador_avisa_a_ugp(self, pools, usuario):
+        _, origem, destino = pools
+
+        self._remanejar(origem, destino, "100", usuario)
+
+        assert _canais(usuario, alertas.EVENTO_REMANEJAMENTO_EFETIVADO) == EMAIL_E_IN_APP
+
 
 # ---------- Reconciliação ----------
 

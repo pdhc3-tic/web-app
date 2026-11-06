@@ -125,9 +125,12 @@ def _estados_do_pool(pool: BudgetPool) -> list[str]:
 
 
 def responsaveis_do_pool(pool: BudgetPool) -> list:
+    """Sem ninguém no cargo, responde o nível superior: sem isso, o aviso não teria destinatário."""
     if pool.nivel == Nivel.NACIONAL:
-        return list(usuarios_do_perfil("ugp"))
-    return list(articuladores_dos_estados(_estados_do_pool(pool)))
+        responsaveis = list(usuarios_do_perfil("ugp"))
+    else:
+        responsaveis = list(articuladores_dos_estados(_estados_do_pool(pool)))
+    return responsaveis or _superiores_do_pool(pool)
 
 
 def _superiores_do_pool(pool: BudgetPool) -> list:
@@ -166,8 +169,7 @@ def destinatarios(alvo, faixa: str) -> list:
         superiores = _superiores_do_limite(alvo)
     else:
         superiores = _superiores_do_pool(alvo)
-        # Estado sem Articulador: sem isso, o amarelo não avisaria ninguém.
-        responsaveis = responsaveis_do_pool(alvo) or superiores
+        responsaveis = responsaveis_do_pool(alvo)
     selecionados = responsaveis + (superiores if faixa == Faixa.VERMELHO else [])
     return list({usuario.pk: usuario for usuario in selecionados}.values())
 
