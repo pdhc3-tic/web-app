@@ -28,6 +28,32 @@ def test_activity_cancelada_agenda_task_de_cancelamento(django_capture_on_commit
     mocked_delay.assert_called_once_with(activity_rn.pk)
 
 
+def test_salvar_de_novo_activity_ja_cancelada_nao_agenda_a_task(django_capture_on_commit_callbacks, activity_rn):
+    activity_rn.status = "cancelada"
+    activity_rn.justificativa = "Evento suspenso."
+    activity_rn.save()
+
+    with patch("apps.sgd.tasks.cancelar_demandas_da_atividade.delay") as delay:
+        with django_capture_on_commit_callbacks(execute=True):
+            activity_rn.titulo = "Outro título"
+            activity_rn.save()
+
+    delay.assert_not_called()
+
+
+@pytest.mark.parametrize("status", ["cancelada", "nao_realizada"])
+def test_cada_transicao_para_status_que_cancela_agenda_a_task(
+    status, django_capture_on_commit_callbacks, activity_rn,
+):
+    with patch("apps.sgd.tasks.cancelar_demandas_da_atividade.delay") as delay:
+        with django_capture_on_commit_callbacks(execute=True):
+            activity_rn.status = status
+            activity_rn.justificativa = "Evento suspenso."
+            activity_rn.save()
+
+    delay.assert_called_once_with(activity_rn.pk)
+
+
 def test_task_cancela_demandas_nao_atendidas_e_libera_saldo(
     activity_rn, solicitante_rn, demand_request_rn, allocation_territorial_rn, limite_individual_rn, usuario_articulador_rn,
 ):

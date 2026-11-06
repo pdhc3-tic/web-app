@@ -35,6 +35,7 @@ from apps.sgd.models.demand import STATUS_CANCELAVEIS_PELO_SOLICITANTE, STATUS_C
 from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import balance as balance_service
+from apps.sgd.services import contexto
 from apps.sgd.services import notifications as notifications_service
 from apps.sgd.services import recurso_extra as recurso_extra_service
 from apps.sgd.services import remanejamento as remanejamento_service
@@ -416,7 +417,7 @@ _EFEITOS = {
 def _articuladores(demand, destinatarios: dict):
     """`destinatarios` guarda a consulta por estado: o cancelamento em lote notifica
     várias demandas da mesma atividade."""
-    sigla = demand.activity.municipio.state.sigla
+    sigla = contexto.estado_da_demanda(demand)
     if sigla not in destinatarios:
         destinatarios[sigla] = list(notifications_service.usuarios_articuladores_do_estado(sigla))
     return destinatarios[sigla]

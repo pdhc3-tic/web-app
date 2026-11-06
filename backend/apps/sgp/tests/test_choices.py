@@ -33,7 +33,7 @@ class TestSGPChoicesEndpoint:
         response = auth_client.get(self.CHOICES_URL)
         assert response.status_code == 200
 
-        assert set(response.data.keys()) == set(CHOICES_PUBLICADOS)
+        assert set(response.data.keys()) == set(CHOICES_PUBLICADOS) | {"solicitacao_tipo"}
 
     def test_genero_choices_structure(self, auth_client):
         response = auth_client.get(self.CHOICES_URL)

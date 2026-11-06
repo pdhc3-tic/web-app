@@ -4,16 +4,30 @@ from django.db import transaction
 
 from apps.sgd.exceptions import JustificativaObrigatoria, RegraDeNegocio
 from apps.sgd.models.demand import STATUS_EDITAVEIS, Demand
-from apps.sgd.models.demand_document import DemandDocument
 from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import workflow as workflow_service
-from apps.sgd.services.demand_request import rubrica_para_tipo, validar_campos_json
-from apps.sgp.models import Activity
+from apps.sgd.services.demand_request import (
+    _exigir_minimo_cotacoes_equipamento,  # noqa: F401
+    exigir_regras_de_submissao,
+    rubrica_para_tipo,
+    validar_campos_json,
+)
+from apps.sgp.services.activity import criar_planejada
+from apps.sgp.services.activity_status import ActivityRuleError
 
 ACTIVITY_STATUS_BLOQUEIAM_NOVA_DEMANDA = {"cancelada", "nao_realizada"}
 ACTIVITY_STATUS_EXIGEM_JUSTIFICATIVA = {"em_andamento", "concluido", "concluido_sem_evidencia"}
+# Campo do cadastro da atividade → campo que o cliente envia na criação inline.
+_CAMPO_DA_ATIVIDADE_INLINE = {
+    "titulo": "activity_titulo",
+    "tipo_atividade": "activity_tipo_atividade",
+    "acao": "activity_acao_id",
+    "municipio": "activity_municipio_id",
+    "data_inicio": "activity_data_prevista",
+    "data_fim": "activity_data_prevista",
+}
 
 
 def _despesa_posterior_e_valida(activity) -> bool:
@@ -24,18 +38,14 @@ def _despesa_posterior_e_valida(activity) -> bool:
     return activity.status in ACTIVITY_STATUS_EXIGEM_JUSTIFICATIVA
 
 
-@transaction.atomic
 def criar_activity_inline(*, titulo, tipo_atividade, acao, municipio, data_prevista, usuario):
-    # Activity tem outros campos NOT NULL sem default (técnico, forma de
-    # atuação, âmbito, data_fim, descrição narrativa) que este formulário
-    # mínimo não coleta — preenchidos com um valor editável depois.
-    return Activity.objects.create(
-        titulo=titulo, tipo_atividade=tipo_atividade, acao=acao, municipio=municipio,
-        forma_atuacao="realizacao", ambito="municipal",
-        tecnico_responsavel=usuario, data_inicio=data_prevista, data_fim=data_prevista,
-        descricao_narrativa=f"Atividade criada a partir da demanda '{titulo}'.",
-        status="planejado", criado_por=usuario,
-    )
+    try:
+        return criar_planejada(
+            titulo=titulo, tipo_atividade=tipo_atividade, acao=acao, municipio=municipio,
+            data_prevista=data_prevista, usuario=usuario,
+        )
+    except ActivityRuleError as exc:
+        raise RegraDeNegocio(exc.message, campo=_CAMPO_DA_ATIVIDADE_INLINE.get(exc.field, "activity")) from exc
 
 
 @transaction.atomic
@@ -99,7 +109,7 @@ def adicionar_solicitacao(demand, *, tipo, campos_json, valor_estimado=None, ord
         raise RegraDeNegocio("Deve ser maior que zero.", campo="valor_estimado")
 
     solicitacao = DemandRequest.objects.create(
-        demanda=demand, tipo=tipo, rubrica=rubrica, campos_json=validado.campos_json,
+        demanda=demand, tipo_id=tipo, rubrica=rubrica, campos_json=validado.campos_json,
         beneficiario_cpf=validado.beneficiario_cpf, valor_estimado=valor_final, ordem=ordem,
     )
     demand.recalcular_totais()
@@ -119,11 +129,11 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
     # Com o limite travado: a reserva lida decide se há ajuste e é gravada abaixo.
     balance_service.reler_reserva_travada(solicitacao)
 
-    tipo_final = tipo or solicitacao.tipo
+    tipo_final = tipo or solicitacao.tipo_id
     campos_final = campos_json if campos_json is not None else solicitacao.campos_json
     validado = validar_campos_json(tipo_final, campos_final, demand.activity)
-    # Não retroativo: só consulta o mapeamento vigente se o tipo mudou.
-    rubrica = rubrica_para_tipo(tipo_final) if tipo_final != solicitacao.tipo else solicitacao.rubrica
+    # Não retroativo: só consulta o catálogo se o tipo mudou.
+    rubrica = rubrica_para_tipo(tipo_final) if tipo_final != solicitacao.tipo_id else solicitacao.rubrica
 
     valor_final = validado.valor_estimado_auto
     if valor_final is None:
@@ -144,7 +154,7 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
         )
     _travar_editavel(demand)
 
-    solicitacao.tipo = tipo_final
+    solicitacao.tipo_id = tipo_final
     solicitacao.rubrica = rubrica
     solicitacao.campos_json = validado.campos_json
     solicitacao.beneficiario_cpf = validado.beneficiario_cpf
@@ -171,23 +181,8 @@ def remover_solicitacao(solicitacao, *, usuario) -> None:
     solicitacao.demanda.recalcular_totais()
 
 
-def _exigir_minimo_cotacoes_equipamento(demand) -> None:
-    if not demand.solicitacoes.filter(tipo="equipamento").exists():
-        return
-    fornecedores = list(
-        DemandDocument.objects.filter(demanda=demand, tipo="cotacao", ativo=True)
-        .values_list("fornecedor", flat=True)
-    )
-    if len(fornecedores) < 3:
-        raise RegraDeNegocio(
-            "Solicitação de Aquisição de Equipamentos exige no mínimo 3 cotações em PDF.", campo="documentos",
-        )
-    if len(set(fornecedores)) < len(fornecedores):
-        raise RegraDeNegocio("As cotações precisam ser de fornecedores distintos.", campo="documentos")
-
-
 def submeter_demanda(demand, *, usuario) -> Demand:
-    _exigir_minimo_cotacoes_equipamento(demand)
+    exigir_regras_de_submissao(demand)
     return workflow_service.executar_transicao(demand, "submetida", ator=usuario)
 
 

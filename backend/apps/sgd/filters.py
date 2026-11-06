@@ -9,7 +9,9 @@ from drf_spectacular.utils import extend_schema_field
 from apps.core.models.user import User
 from apps.core.models.user_profile import UserProfile
 from apps.sgd.models.demand import STATUS_CHOICES, Demand
-from apps.sgd.models.demand_request import TIPO_CHOICES, DemandRequest
+from apps.sgd.models.demand_request import DemandRequest
+from apps.sgd.models.tipo_solicitacao import TipoSolicitacao
+from apps.sgd.services import contexto
 from apps.sgd.services.approval import demandas_aguardando_acao
 
 
@@ -36,7 +38,7 @@ def _q_etapa_atual_do_usuario(user: User) -> Q:
                 for p in perfis if p.perfil.slug == "articulador-estadual"
                 for sigla in (p.territorio.estados or [])
             }
-            q |= Q(status="submetida", activity__municipio__state__sigla__in=siglas)
+            q |= Q(status="submetida") & contexto.filtro_por_estado(siglas)
     if "ugp" in slugs:
         q |= Q(status="pre_autorizada")
     if "fgd" in slugs:
@@ -50,15 +52,17 @@ class DemandFilter(django_filters.FilterSet):
 
     status = django_filters.MultipleChoiceFilter(choices=STATUS_CHOICES)
     # `Exists` em vez de join: não duplica linhas, então não precisa de `.distinct()`.
-    tipo = django_filters.ChoiceFilter(choices=TIPO_CHOICES, method="filtrar_tipo")
+    tipo = django_filters.ModelChoiceFilter(
+        queryset=TipoSolicitacao.objects.all(), to_field_name="slug", method="filtrar_tipo",
+    )
     rubrica = django_filters.CharFilter(method="filtrar_rubrica")
     solicitante = django_filters.NumberFilter(field_name="solicitante_id")
     activity = django_filters.NumberFilter(field_name="activity_id")
     atividade = django_filters.NumberFilter(field_name="activity_id")
     acao = django_filters.NumberFilter(field_name="activity__acao_id")
-    submeta = django_filters.NumberFilter(field_name="activity__acao__submeta_id")
-    meta = django_filters.NumberFilter(field_name="activity__acao__meta_id")
-    territorio = django_filters.NumberFilter(field_name="activity__municipio__territory_id")
+    submeta = django_filters.NumberFilter(field_name=contexto.CAMPO_SUBMETA)
+    meta = django_filters.NumberFilter(field_name=contexto.CAMPO_META)
+    territorio = django_filters.NumberFilter(field_name=contexto.CAMPO_TERRITORIO)
     periodo_inicio = django_filters.DateFilter(method="filtrar_periodo_inicio")
     periodo_fim = django_filters.DateFilter(method="filtrar_periodo_fim")
     responsavel_etapa_atual = django_filters.NumberFilter(method="filtrar_responsavel_etapa_atual")
@@ -76,6 +80,7 @@ class DemandFilter(django_filters.FilterSet):
     def _solicitacoes_com(queryset, **filtros):
         return queryset.filter(Exists(DemandRequest.objects.filter(demanda=OuterRef("pk"), **filtros)))
 
+    @extend_schema_field(OpenApiTypes.STR)
     def filtrar_tipo(self, queryset, name, value):
         return self._solicitacoes_com(queryset, tipo=value)
 

@@ -50,7 +50,7 @@ def _criar_massa_com_relacionamentos(activity, solicitante, rubrica, responsavel
     ], batch_size=1000)
     demandas = list(Demand.objects.values_list("pk", flat=True))
     DemandRequest.objects.bulk_create([
-        DemandRequest(demanda_id=pk, tipo="diaria", rubrica=rubrica, campos_json={}, valor_estimado=100, ordem=n)
+        DemandRequest(demanda_id=pk, tipo_id="diaria", rubrica=rubrica, campos_json={}, valor_estimado=100, ordem=n)
         for pk in demandas for n in range(2)
     ], batch_size=1000)
     ApprovalStep.objects.bulk_create([

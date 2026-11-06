@@ -8,7 +8,7 @@ from django.utils import timezone
 from apps.core.models.notifications import Notification
 from apps.sgd.exceptions import TransicaoInvalida
 from apps.sgd.models.demand import STATUS_TERMINAIS, Demand
-from apps.sgd.services import business_days
+from apps.sgd.services import business_days, contexto
 from apps.sgd.services.approval import responsaveis_pela_etapa_atual
 from apps.sgd.services.notifications import EVENTO_INATIVIDADE, link_inatividade, notificar_inatividade
 
@@ -67,10 +67,10 @@ def _verificar_inatividade() -> int:
     # ninguém, não faz sentido de inatividade.
     demandas = Demand.objects.exclude(
         status__in=STATUS_TERMINAIS | {"rascunho"},
-    ).select_related("activity__municipio__state", "solicitante")
+    ).select_related(contexto.CAMINHO_ESTADO, "solicitante")
     for demand in demandas:
         referencia = timezone.localdate(demand.status_alterado_em)
-        uf = demand.activity.municipio.state.sigla
+        uf = contexto.estado_da_demanda(demand)
         if _dias_uteis_entre(referencia, hoje, uf=uf) < DIAS_UTEIS_LIMITE:
             continue
         link = link_inatividade(demand, referencia=referencia)
@@ -121,7 +121,7 @@ def _cancelar_demandas_da_atividade(activity_id: int) -> int:
 
     demandas = list(Demand.objects.filter(
         activity=activity, status__in=workflow_service.CANCELAVEIS_PELO_SISTEMA,
-    ).select_related("activity__municipio__state", "solicitante"))
+    ).select_related(contexto.CAMINHO_ESTADO, "solicitante"))
     workflow_service.cancelar_pelo_sistema(
         demandas, motivo=f"Atividade vinculada em status '{activity.get_status_display()}'.",
     )

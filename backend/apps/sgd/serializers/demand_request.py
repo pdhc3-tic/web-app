@@ -3,14 +3,13 @@ from decimal import Decimal
 from rest_framework import serializers
 
 from apps.sgd.models.demand_request import DemandRequest
+from apps.sgd.serializers.tipo_solicitacao import SlugDeTipoField
 from apps.sgd.services.approval import alerta_rubrica_fora_do_previsto
-
-# Só diaria/passagem carregam CPF — a chave de campos_json que recebe o
-# valor decriptado de volta na leitura varia entre elas.
-_CHAVE_CPF_POR_TIPO = {"diaria": "beneficiario_cpf", "passagem": "passageiro_cpf"}
+from apps.sgd.services.tipos_solicitacao import obter_validador
 
 
 class DemandRequestSerializer(serializers.ModelSerializer):
+    tipo = serializers.CharField(source="tipo_id", read_only=True)
     tipo_display = serializers.CharField(source="get_tipo_display", read_only=True)
     rubrica_slug = serializers.CharField(source="rubrica.slug", read_only=True)
     rubrica_nome = serializers.CharField(source="rubrica.nome", read_only=True)
@@ -30,14 +29,14 @@ class DemandRequestSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        chave = _CHAVE_CPF_POR_TIPO.get(instance.tipo)
-        if chave and instance.beneficiario_cpf:
-            data["campos_json"] = {**data["campos_json"], chave: instance.beneficiario_cpf}
+        validador = obter_validador(instance.tipo.validador)
+        if validador and validador.chave_cpf and instance.beneficiario_cpf:
+            data["campos_json"] = {**data["campos_json"], validador.chave_cpf: instance.beneficiario_cpf}
         return data
 
 
 class DemandRequestCreateSerializer(serializers.Serializer):
-    tipo = serializers.ChoiceField(choices=DemandRequest._meta.get_field("tipo").choices)
+    tipo = SlugDeTipoField()
     campos_json = serializers.JSONField()
     valor_estimado = serializers.DecimalField(
         max_digits=14, decimal_places=2, required=False, min_value=Decimal("0.01"),
@@ -46,7 +45,7 @@ class DemandRequestCreateSerializer(serializers.Serializer):
 
 
 class DemandRequestUpdateSerializer(serializers.Serializer):
-    tipo = serializers.ChoiceField(choices=DemandRequest._meta.get_field("tipo").choices, required=False)
+    tipo = SlugDeTipoField(required=False)
     campos_json = serializers.JSONField(required=False)
     valor_estimado = serializers.DecimalField(
         max_digits=14, decimal_places=2, required=False, min_value=Decimal("0.01"),

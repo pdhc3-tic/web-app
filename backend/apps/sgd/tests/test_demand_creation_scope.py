@@ -1,8 +1,11 @@
 """Escopo territorial na criação de demanda: atividade existente e criação inline."""
+from unittest.mock import patch
+
 import pytest
 
 from apps.sgd.models.demand import Demand
 from apps.sgp.models import Activity
+from apps.sgp.services.activity import CadastroInvalidoError
 from apps.sgp.tests.factories import ActivityFactory, WorkPlanAcaoFactory
 
 pytestmark = pytest.mark.django_db
@@ -52,6 +55,17 @@ def test_adt_cria_atividade_inline_em_municipio_do_proprio_territorio(auth_clien
 
     assert response.status_code == 201
     assert Demand.objects.filter(activity__municipio=municipio_rn).count() == 1
+
+
+def test_erro_do_cadastro_da_atividade_chega_ao_cliente_no_campo_enviado(auth_client_solicitante, municipio_rn):
+    erro = CadastroInvalidoError("Título inválido.", field="titulo")
+
+    with patch("apps.sgd.services.demand.criar_planejada", side_effect=erro):
+        response = auth_client_solicitante.post(URL, _payload_inline(municipio_rn), format="json")
+
+    assert response.status_code == 400
+    assert response.data["activity_titulo"] == ["Título inválido."]
+    assert not Demand.objects.exists()
 
 
 def test_adt_nao_cria_atividade_inline_em_municipio_de_outro_territorio(auth_client_solicitante, municipio_ce):

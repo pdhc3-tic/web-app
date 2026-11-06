@@ -11,7 +11,7 @@ from apps.core.models.notifications import Notification
 from apps.core.models.user_profile import UserProfile
 from apps.core.tests.factories import RoleFactory, UserFactory
 from apps.sgd.exceptions import ErroDeDominio
-from apps.sgd.models import Demand, DemandRequest, DemandTypeRubricaMapping
+from apps.sgd.models import Demand, DemandRequest
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import recurso_extra as recurso_extra_service
@@ -21,7 +21,7 @@ from apps.sgd.tests.factories import (
     BudgetIncreaseRequestFactory,
     DemandFactory,
     DemandRequestFactory,
-    DemandTypeRubricaMappingFactory,
+    mapear_tipo,
 )
 from apps.sgp.models import Activity, BudgetPool, BudgetIncreaseRequest, BudgetTransfer
 from apps.sgp.budget import services as budget_service
@@ -895,8 +895,7 @@ CAMPOS_GRAFICO = {
 
 @pytest.fixture
 def grafico_em_diarias(rubrica_diarias):
-    DemandTypeRubricaMapping.objects.filter(tipo="grafico").delete()
-    return DemandTypeRubricaMappingFactory(tipo="grafico", rubrica=rubrica_diarias)
+    return mapear_tipo("grafico", rubrica_diarias)
 
 
 def _conferir_barrada_pelo_deficit(resultado, erros, pedido, solicitante, rubrica):

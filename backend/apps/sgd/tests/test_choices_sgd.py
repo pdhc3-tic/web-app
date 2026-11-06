@@ -5,7 +5,7 @@ from apps.sgd import constants
 from apps.sgd.constants import Urgencia
 from apps.sgd.models.demand import STATUS_CHOICES
 from apps.sgd.models.demand_document import TIPO_CHOICES as DOCUMENTO_TIPO_CHOICES
-from apps.sgd.models.demand_request import TIPO_CHOICES as SOLICITACAO_TIPO_CHOICES
+from apps.sgd.tests.factories import TipoSolicitacaoFactory
 from apps.sgp.views.choices import CHOICES_PUBLICADOS
 
 pytestmark = pytest.mark.django_db
@@ -15,7 +15,6 @@ CHOICES_URL = "/api/v1/choices/"
 
 @pytest.mark.parametrize("chave, opcoes", [
     ("urgencia", Urgencia.choices),
-    ("solicitacao_tipo", SOLICITACAO_TIPO_CHOICES),
     ("demanda_status", STATUS_CHOICES),
     ("demanda_documento_tipo", DOCUMENTO_TIPO_CHOICES),
 ])
@@ -24,6 +23,17 @@ def test_choices_do_sgd_publicados_com_valor_e_rotulo(auth_client_solicitante, c
 
     assert response.status_code == 200
     assert response.data[chave] == [{"value": valor, "label": rotulo} for valor, rotulo in opcoes]
+
+
+def test_tipos_de_solicitacao_vem_do_catalogo_inclusive_os_inativos(auth_client_solicitante):
+    TipoSolicitacaoFactory(slug="hospedagem", nome="Hospedagem", ordem=1)
+    TipoSolicitacaoFactory(slug="antigo", nome="Tipo antigo", ativo=False, ordem=1)
+
+    opcoes = auth_client_solicitante.get(CHOICES_URL).data["solicitacao_tipo"]
+
+    assert {"value": "hospedagem", "label": "Hospedagem"} in opcoes
+    assert {"value": "antigo", "label": "Tipo antigo"} in opcoes
+    assert {"value": "diaria", "label": "Diárias"} in opcoes
 
 
 def test_urgencia_publicada_no_formato_do_contrato(auth_client_solicitante):
@@ -60,5 +70,5 @@ def test_todo_textchoices_do_sgd_esta_publicado():
 
 def test_listas_dos_modelos_do_sgd_estao_publicadas():
     publicadas = [id(opcoes) for opcoes in CHOICES_PUBLICADOS.values()]
-    for opcoes in (STATUS_CHOICES, DOCUMENTO_TIPO_CHOICES, SOLICITACAO_TIPO_CHOICES):
+    for opcoes in (STATUS_CHOICES, DOCUMENTO_TIPO_CHOICES):
         assert id(opcoes) in publicadas

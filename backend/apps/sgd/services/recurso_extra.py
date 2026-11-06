@@ -23,6 +23,7 @@ from apps.sgd.exceptions import JustificativaObrigatoria, RegraDeNegocio, Transi
 from apps.sgd.models import Demand
 from apps.sgd.models.demand import STATUS_EDITAVEIS
 from apps.sgd.services import auditoria as auditoria_service
+from apps.sgd.services import contexto
 from apps.sgd.services import notifications as notifications_service
 from apps.sgd.services import orcamento as orcamento_service
 from apps.sgd.services import remanejamento as remanejamento_service
@@ -69,7 +70,7 @@ def _travar_pedido(pedido) -> BudgetIncreaseRequest:
     `of=("self",)`: a Atividade é opcional (join externo), e o Postgres não aceita FOR
     UPDATE no lado anulável de um join."""
     return BudgetIncreaseRequest.objects.select_for_update(of=("self",)).select_related(
-        "rubrica", "user", "activity__municipio__state", "activity__acao",
+        "rubrica", "user", contexto.CAMINHO_ESTADO, "activity__acao",
     ).get(pk=pedido.pk)
 
 
@@ -89,7 +90,7 @@ def _mudar_status(pedido, para, usuario, acao: str, **campos) -> None:
 def _sigla_do_pedido(pedido) -> str | None:
     if pedido.activity_id is None:
         return None
-    return pedido.activity.municipio.state.sigla
+    return contexto.estado_da_atividade(pedido.activity)
 
 
 def _demanda_do_pedido(pedido, *, travar: bool = False) -> Demand | None:
