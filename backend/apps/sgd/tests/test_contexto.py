@@ -12,7 +12,7 @@ from apps.sgp.tests.factories import BudgetRubricaFactory, WorkPlanAcaoFactory
 
 APP_SGD = Path(settings.BASE_DIR) / "apps" / "sgd"
 EXCETOS = {APP_SGD / "services" / "contexto.py", APP_SGD / "serializers" / "demand.py"}
-PROIBIDO = re.compile(r"acao__meta|municipio__state|activity\.acao\.")
+PROIBIDO = re.compile(r"acao__meta|acao__rubricas_previstas|municipio__state|activity\.acao\.")
 
 
 def test_sgd_so_le_o_contexto_da_atividade_por_contexto():

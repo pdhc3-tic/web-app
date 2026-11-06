@@ -5,6 +5,7 @@ from collections import defaultdict
 from decimal import Decimal
 
 from apps.sgd.models.demand import STATUS_CANCELAVEIS_PELO_SOLICITANTE, Demand
+from apps.sgd.services import contexto
 from apps.sgd.services import orcamento as orcamento_service
 from apps.sgd.services import workflow as workflow_service
 
@@ -48,7 +49,7 @@ def cancelar_demandas_do_usuario(user, *, por) -> list[Demand]:
     transação voltar com `TransicaoInvalida`, em vez de ser cancelada. Com visão
     total porque, sem o contexto de quem desativou, o RLS esconderia as demandas e
     o usuário ficaria inativo sem nada cancelado."""
-    demandas = list(_demandas_nao_autorizadas(user).select_related("activity__municipio__state", "solicitante"))
+    demandas = list(_demandas_nao_autorizadas(user).select_related(contexto.CAMINHO_ESTADO, "solicitante"))
     workflow_service.cancelar_pelo_sistema(
         demandas, motivo=MOTIVO_DESATIVACAO, ator=por, status_aceitos=STATUS_CANCELAVEIS_PELO_SOLICITANTE,
         notificacao="cancelamento_por_desativacao",

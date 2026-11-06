@@ -10,6 +10,7 @@ from django.db.models import Q
 CAMINHO_ESTADO = "activity__municipio__state"
 CAMINHO_TERRITORIO = "activity__municipio__territory"
 CAMINHOS_CADEIA = ("activity__acao__meta", "activity__acao__submeta", "activity__acao__indicador")
+CAMINHO_RUBRICAS_PREVISTAS = "activity__acao__rubricas_previstas"
 CAMPO_META = "activity__acao__meta_id"
 CAMPO_SUBMETA = "activity__acao__submeta_id"
 CAMPO_TERRITORIO = "activity__municipio__territory_id"
