@@ -54,6 +54,8 @@ canais_da_faixa = alertas_service.canais_da_faixa
 registrar_alertados = alertas_service.registrar_alertados
 saldo_do_alvo = alertas_service.saldo_do_alvo
 responsaveis_do_pool = alertas_service.responsaveis_do_pool
+articuladores_dos_estados = alertas_service.articuladores_dos_estados
+usuarios_do_perfil = alertas_service.usuarios_do_perfil
 renderizar_evento = alertas_service.renderizar
 
 

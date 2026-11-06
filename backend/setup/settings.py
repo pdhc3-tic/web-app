@@ -283,6 +283,7 @@ SPECTACULAR_SETTINGS = {
         "TipoSyncEventEnum": "apps.sca.models.SyncEvent.Tipo",
         "BudgetTransactionTipoEnum": "apps.sgp.budget.models.BudgetTransaction.Tipo",
         "FaixaEnum": "apps.sgd.serializers.dashboard.FAIXAS_DO_ALERTA",
+        "SemaforoEnum": "apps.sgp.budget.serializers.FAIXAS_DO_SEMAFORO",
         "TipoAlertaOrcamentoEnum": "apps.sgp.budget.models.BudgetAlert.Tipo",
         "EscopoAlertaOrcamentoEnum": "apps.sgp.budget.models.BudgetAlert.Escopo",
         "FaixaAlertaOrcamentoEnum": "apps.sgp.budget.models.BudgetAlert.Faixa",

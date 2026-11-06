@@ -1,12 +1,16 @@
 """A notificação de semáforo do SGD segue o alerta orçamentário do SGP."""
+from datetime import date
 from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
 
 from apps.core.models.notifications import TipoNotificacao
+from apps.core.tests.factories import RoleFactory, TerritoryFactory, UserFactory
 from apps.sgd.services import balance as balance_service
+from apps.sgd.services import notifications as notifications_service
 from apps.sgd.tests.concorrencia import intercalar
+from apps.sgd.tests.factories import BudgetIncreaseRequestFactory
 from apps.sgp.budget import alertas
 from apps.sgp.models import BudgetAlert, BudgetPool, SpendingLimit
 from apps.sgp.tasks import check_budget_thresholds
@@ -85,6 +89,64 @@ def test_liberar_a_reserva_resolve_o_alerta_na_avaliacao_da_tarefa(
     check_budget_thresholds(limite_id=limite.pk)
 
     assert BudgetAlert.objects.get(escopo=BudgetAlert.Escopo.LIMITE, referencia_id=limite.pk).resolvido_em is not None
+
+
+@pytest.mark.django_db
+def test_voltar_de_vermelho_para_amarelo_e_nova_entrada_na_faixa(
+    demand_request_rn, solicitante_rn, allocation_territorial_rn, rubrica_diarias,
+):
+    limite = _limite(solicitante_rn, rubrica_diarias, "1100")
+    balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)
+    solicitante_rn.notifications.all().delete()
+    SpendingLimit.objects.filter(pk=limite.pk).update(valor_comprometido=Decimal("800"))
+
+    check_budget_thresholds(limite_id=limite.pk)
+
+    assert BudgetAlert.objects.get(escopo=BudgetAlert.Escopo.LIMITE, referencia_id=limite.pk).faixa == "amarelo"
+    assert set(solicitante_rn.notifications.values_list("tipo", flat=True)) == {TipoNotificacao.IN_APP}
+
+
+@pytest.mark.django_db
+def test_ajuste_em_linha_encerrada_resolve_o_alerta_sem_notificar(demand_request_rn, solicitante_rn):
+    limite = SpendingLimitFactory(
+        user=solicitante_rn, periodo_inicio=date(2020, 1, 1), periodo_fim=date(2020, 3, 31),
+        valor_limite=Decimal("1000"), valor_comprometido=Decimal("950"),
+    )
+    alerta = BudgetAlert.objects.create(
+        tipo=BudgetAlert.Tipo.SEMAFORO, escopo=BudgetAlert.Escopo.LIMITE, referencia_id=limite.pk,
+        faixa="vermelho", percentual_atingido=Decimal("95"),
+    )
+
+    balance_service._notificar_nova_faixa(
+        limite, demand=demand_request_rn.demanda, rubrica_nome=limite.rubrica.nome, trava="individual",
+    )
+
+    alerta.refresh_from_db()
+    assert alerta.resolvido_em is not None
+    assert not solicitante_rn.notifications.exists()
+
+
+@pytest.mark.django_db
+def test_articulador_de_outro_estado_nao_e_avisado_por_ter_outro_perfil_no_estado(territory_rn):
+    do_ce = TerritoryFactory(nome="Território CE", estados=["CE"])
+    usuario = UserFactory(profiles=[
+        (RoleFactory(slug="articulador-estadual"), do_ce), (RoleFactory(slug="adt-acr"), territory_rn),
+    ])
+
+    assert usuario not in notifications_service.usuarios_articuladores_do_estado("RN")
+    assert usuario in notifications_service.usuarios_articuladores_do_estado("CE")
+
+
+@pytest.mark.django_db
+def test_recurso_extra_avisa_com_a_rubrica_e_o_saldo(solicitante_rn, rubrica_diarias, usuario_articulador_rn):
+    _limite(solicitante_rn, rubrica_diarias, "1100")
+    pedido = BudgetIncreaseRequestFactory(user=solicitante_rn, rubrica=rubrica_diarias, valor_solicitado=Decimal("50"))
+
+    notifications_service.notificar_recurso_extra_submetido(pedido, [usuario_articulador_rn])
+
+    notificacao = usuario_articulador_rn.notifications.get(tipo=TipoNotificacao.IN_APP)
+    assert rubrica_diarias.nome in notificacao.titulo
+    assert "1.100,00" in notificacao.mensagem
 
 
 @pytest.mark.django_db(transaction=True)

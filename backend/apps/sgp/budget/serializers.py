@@ -153,13 +153,18 @@ class RemanejamentoCreateSerializer(serializers.Serializer):
     justificativa = serializers.CharField()
 
 
+FAIXAS_DO_SEMAFORO = ["verde", "amarelo", "vermelho"]
+
+
 class ImpactoNoPoolSerializer(serializers.Serializer):
     saldo_antes = serializers.DecimalField(max_digits=14, decimal_places=2)
     saldo_depois = serializers.DecimalField(max_digits=14, decimal_places=2)
     percentual_antes = serializers.DecimalField(max_digits=8, decimal_places=2)
     percentual_depois = serializers.DecimalField(max_digits=8, decimal_places=2)
-    faixa_antes = serializers.CharField()
-    faixa_depois = serializers.CharField()
+    percentual_execucao_antes = serializers.DecimalField(max_digits=8, decimal_places=2)
+    percentual_execucao_depois = serializers.DecimalField(max_digits=8, decimal_places=2)
+    faixa_antes = serializers.ChoiceField(choices=FAIXAS_DO_SEMAFORO)
+    faixa_depois = serializers.ChoiceField(choices=FAIXAS_DO_SEMAFORO)
 
 
 class SimulacaoRemanejamentoSerializer(serializers.Serializer):
@@ -174,10 +179,10 @@ class MeuSaldoSerializer(serializers.Serializer):
     comprometido = serializers.DecimalField(max_digits=14, decimal_places=2)
     executado = serializers.DecimalField(max_digits=14, decimal_places=2)
     disponivel = serializers.DecimalField(max_digits=14, decimal_places=2)
-    semaforo = serializers.CharField()
+    semaforo = serializers.ChoiceField(choices=FAIXAS_DO_SEMAFORO)
     periodo_inicio = serializers.DateField()
-    periodo_fim = serializers.DateField()
-    dias_restantes = serializers.IntegerField()
+    periodo_fim = serializers.DateField(allow_null=True)
+    dias_restantes = serializers.IntegerField(allow_null=True)
     acumula_saldo = serializers.BooleanField()
     saldo_territorio = serializers.DecimalField(max_digits=14, decimal_places=2, allow_null=True)
 
@@ -203,7 +208,7 @@ class BudgetAlertSerializer(serializers.ModelSerializer):
         model = BudgetAlert
         fields = [
             "id", "tipo", "escopo", "referencia_id", "rubrica", "rubrica_nome", "faixa", "percentual_atingido",
-            "alertado_em", "resolvido_em", "usuarios_alertados_ids",
+            "alertado_em", "resolvido_em",
         ]
         read_only_fields = fields
 
@@ -244,7 +249,7 @@ class BudgetPainelLinhaSerializer(serializers.Serializer):
         max_digits=14, decimal_places=2,
         help_text="Alocado menos comprometido e executado: o que o remanejamento aceita sair deste pool.",
     )
-    semaforo = serializers.ChoiceField(choices=["verde", "amarelo", "vermelho"])
+    semaforo = serializers.ChoiceField(choices=FAIXAS_DO_SEMAFORO)
     alerta_80 = serializers.BooleanField()
     limiares_semaforo = LimiaresSemaforoSerializer()
 

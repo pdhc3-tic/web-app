@@ -1879,8 +1879,8 @@ paths:
     get:
       operationId: v1_sca_saldo_retrieve
       description: |-
-        A fotografia gravada no último pull, não o saldo de agora: é o que o técnico vê
-        offline. Sem `device_id`, vale o pull mais recente do usuário.
+        A fotografia gravada num pull, não o saldo de agora: é o que o técnico vê offline.
+        Sem `device_id`, vale a fotografia mais recente do usuário.
       parameters:
       - in: header
         name: X-Device-Id
@@ -5146,6 +5146,11 @@ paths:
       description: GET .../orcamento/meu-saldo/{rubrica}/extrato/ — as linhas do ledger
         do próprio usuário.
       parameters:
+      - in: query
+        name: historico
+        schema:
+          type: boolean
+        description: Inclui os períodos encerrados. Sem ele, só o período vigente.
       - name: limit
         required: false
         in: query
@@ -9116,15 +9121,6 @@ components:
           format: date-time
           readOnly: true
           nullable: true
-        usuarios_alertados_ids:
-          type: array
-          items:
-            type: integer
-            maximum: 9223372036854775807
-            minimum: -9223372036854775808
-            format: int64
-          readOnly: true
-          title: Usuários alertados
       required:
       - alertado_em
       - escopo
@@ -9136,7 +9132,6 @@ components:
       - rubrica
       - rubrica_nome
       - tipo
-      - usuarios_alertados_ids
     BudgetPainelLinha:
       type: object
       description: |-
@@ -11320,15 +11315,25 @@ components:
           type: string
           format: decimal
           pattern: ^-?\d{0,6}(?:\.\d{0,2})?$
+        percentual_execucao_antes:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,6}(?:\.\d{0,2})?$
+        percentual_execucao_depois:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,6}(?:\.\d{0,2})?$
         faixa_antes:
-          type: string
+          $ref: '#/components/schemas/SemaforoEnum'
         faixa_depois:
-          type: string
+          $ref: '#/components/schemas/SemaforoEnum'
       required:
       - faixa_antes
       - faixa_depois
       - percentual_antes
       - percentual_depois
+      - percentual_execucao_antes
+      - percentual_execucao_depois
       - saldo_antes
       - saldo_depois
     Indicator:
@@ -12053,15 +12058,17 @@ components:
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
         semaforo:
-          type: string
+          $ref: '#/components/schemas/SemaforoEnum'
         periodo_inicio:
           type: string
           format: date
         periodo_fim:
           type: string
           format: date
+          nullable: true
         dias_restantes:
           type: integer
+          nullable: true
         acumula_saldo:
           type: boolean
         saldo_territorio:

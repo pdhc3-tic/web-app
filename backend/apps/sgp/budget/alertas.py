@@ -1,7 +1,7 @@
 """Alertas orçamentários: semáforo de pools e limites, subexecução e remanejamento excessivo.
 
 Cada alvo tem no máximo um alerta aberto por tipo. A notificação sai só quando o alerta abre
-ou a faixa piora, então a movimentação e a tarefa periódica podem avaliar o mesmo alvo sem
+ou entra em outra faixa, então a movimentação e a tarefa periódica podem avaliar o mesmo alvo sem
 notificar duas vezes."""
 from __future__ import annotations
 
@@ -25,7 +25,6 @@ from apps.sgp.budget.rls import visao_total
 from apps.sgp.models import (
     BudgetAlert,
     BudgetPool,
-    BudgetRubrica,
     BudgetTransfer,
     SpendingLimit,
     WorkPlanMeta,
@@ -39,7 +38,6 @@ ZERO = Decimal("0")
 # O comprometido pode passar muito do total depois que um limite é reduzido.
 _MAIOR_PERCENTUAL = Decimal("999999.99")
 
-_ORDEM_DA_FAIXA = {Faixa.AMARELO: 1, Faixa.VERMELHO: 2}
 EMAIL_E_IN_APP = (TipoNotificacao.EMAIL, TipoNotificacao.IN_APP)
 SO_IN_APP = (TipoNotificacao.IN_APP,)
 
@@ -107,19 +105,17 @@ def renderizar(modelo: str, **variaveis) -> tuple[str, str]:
 # Destinatários
 # ---------------------------------------------------------------------------
 
-def _do_perfil(slug: str):
+def usuarios_do_perfil(slug: str):
     return User.objects.filter(ativo=True, profiles__perfil__slug=slug).distinct()
 
 
-def _articuladores_dos_estados(siglas) -> list:
+def articuladores_dos_estados(siglas):
     if not siglas:
-        return []
-    return list(
-        User.objects.filter(
-            Q(profiles__territorio__isnull=True) | Q(profiles__territorio__estados__overlap=list(siglas)),
-            ativo=True, profiles__perfil__slug="articulador-estadual",
-        ).distinct()
-    )
+        return User.objects.none()
+    return User.objects.filter(
+        Q(profiles__territorio__isnull=True) | Q(profiles__territorio__estados__overlap=list(siglas)),
+        ativo=True, profiles__perfil__slug="articulador-estadual",
+    ).distinct()
 
 
 def _estados_do_pool(pool: BudgetPool) -> list[str]:
@@ -130,12 +126,12 @@ def _estados_do_pool(pool: BudgetPool) -> list[str]:
 
 def responsaveis_do_pool(pool: BudgetPool) -> list:
     if pool.nivel == Nivel.NACIONAL:
-        return list(_do_perfil("ugp"))
-    return _articuladores_dos_estados(_estados_do_pool(pool))
+        return list(usuarios_do_perfil("ugp"))
+    return list(articuladores_dos_estados(_estados_do_pool(pool)))
 
 
 def _superiores_do_pool(pool: BudgetPool) -> list:
-    return list(_do_perfil("super-admin" if pool.nivel == Nivel.NACIONAL else "ugp"))
+    return list(usuarios_do_perfil("super-admin" if pool.nivel == Nivel.NACIONAL else "ugp"))
 
 
 def _estados_do_usuario(user_id) -> list[str]:
@@ -145,14 +141,33 @@ def _estados_do_usuario(user_id) -> list[str]:
     return sorted({sigla for estados in por_territorio for sigla in estados or []})
 
 
+def _estados_do_limite(limite: SpendingLimit) -> list[str]:
+    """O território da linha, que é o critério do RLS e da listagem; sem ele, os perfis do usuário."""
+    if limite.territorio_id:
+        return list(limite.territorio.estados or [])
+    return _estados_do_usuario(limite.user_id)
+
+
+def _superiores_do_limite(limite: SpendingLimit) -> list:
+    """Técnico → Articulador do estado → UGP → Super Admin."""
+    slugs = set(UserProfile.objects.filter(user_id=limite.user_id).values_list("perfil__slug", flat=True))
+    if slugs & {"ugp", "super-admin"}:
+        return list(usuarios_do_perfil("super-admin"))
+    articuladores = [] if "articulador-estadual" in slugs else list(
+        articuladores_dos_estados(_estados_do_limite(limite)),
+    )
+    return articuladores or list(usuarios_do_perfil("ugp"))
+
+
 def destinatarios(alvo, faixa: str) -> list:
     """O responsável pelo saldo e, no vermelho, também o nível superior."""
     if isinstance(alvo, SpendingLimit):
         responsaveis = [alvo.user] if alvo.user.ativo else []
-        superiores = _articuladores_dos_estados(_estados_do_usuario(alvo.user_id))
+        superiores = _superiores_do_limite(alvo)
     else:
-        responsaveis = responsaveis_do_pool(alvo)
         superiores = _superiores_do_pool(alvo)
+        # Estado sem Articulador: sem isso, o amarelo não avisaria ninguém.
+        responsaveis = responsaveis_do_pool(alvo) or superiores
     selecionados = responsaveis + (superiores if faixa == Faixa.VERMELHO else [])
     return list({usuario.pk: usuario for usuario in selecionados}.values())
 
@@ -193,13 +208,19 @@ class MudancaDeFaixa:
 
 def sincronizar_semaforo(alvo) -> MudancaDeFaixa | None:
     """Abre, atualiza ou resolve o alerta de semáforo. Quem chama já travou o alvo. Devolve a
-    mudança só quando o alerta abriu ou a faixa piorou, que é quando se notifica."""
+    mudança a cada nova entrada numa faixa, que é quando se notifica. Limite de período encerrado
+    não alerta: o limite que vale agora é o da linha nova."""
+    aberto = _aberto(alvo, Tipo.SEMAFORO)
+    if isinstance(alvo, SpendingLimit) and alvo.periodo_fim < limites.hoje():
+        if aberto is not None:
+            aberto.resolvido_em = timezone.now()
+            aberto.save(update_fields=["resolvido_em"])
+        return None
     if isinstance(alvo, SpendingLimit):
         percentual = budget_service.percentual_comprometido(alvo.valor_comprometido, alvo.valor_limite)
     else:
         percentual = budget_service.percentual_comprometido(alvo.valor_comprometido, alvo.valor_alocado)
     faixa = budget_service.faixa_semaforo(percentual, budget_service.limiares_semaforo())
-    aberto = _aberto(alvo, Tipo.SEMAFORO)
 
     if faixa == "verde":
         if aberto is not None:
@@ -213,13 +234,13 @@ def sincronizar_semaforo(alvo) -> MudancaDeFaixa | None:
         )
         return MudancaDeFaixa(alerta, faixa)
 
-    piorou = _ORDEM_DA_FAIXA[faixa] > _ORDEM_DA_FAIXA[aberto.faixa]
+    entrou_em_outra = faixa != aberto.faixa
     aberto.faixa = faixa
     aberto.percentual_atingido = _no_campo(percentual)
-    if piorou:
+    if entrou_em_outra:
         aberto.alertado_em = timezone.now()
     aberto.save(update_fields=["faixa", "percentual_atingido", "alertado_em"])
-    return MudancaDeFaixa(aberto, faixa) if piorou else None
+    return MudancaDeFaixa(aberto, faixa) if entrou_em_outra else None
 
 
 def registrar_alertados(alerta: BudgetAlert, usuarios) -> None:
@@ -251,7 +272,7 @@ def _trava_do_alvo(alvo) -> str:
 
 
 def _travar(modelo, pk):
-    relacionados = ("rubrica", "user") if modelo is SpendingLimit else ("rubrica", "estado", "territorio")
+    relacionados = ("rubrica", "user", "territorio") if modelo is SpendingLimit else ("rubrica", "estado", "territorio")
     return modelo.objects.select_for_update(of=("self",)).select_related(*relacionados).filter(pk=pk).first()
 
 
@@ -301,8 +322,15 @@ def avaliar_todos_os_semaforos() -> int:
 # Alertas por rubrica: o alvo é o pool nacional, que guarda o valor aprovado
 # ---------------------------------------------------------------------------
 
-def _pools_nacionais():
-    return BudgetPool.objects.filter(nivel=Nivel.NACIONAL, rubrica__ativo=True)
+def _pools_a_avaliar(tipo: str) -> list[int]:
+    """Os nacionais de rubrica ativa e os que têm alerta aberto, que precisam ser resolvidos mesmo
+    depois de a rubrica sair da rodada."""
+    with visao_total():
+        ativos = BudgetPool.objects.filter(nivel=Nivel.NACIONAL, rubrica__ativo=True).values_list("pk", flat=True)
+        abertos = BudgetAlert.objects.filter(
+            escopo=Escopo.POOL, tipo=tipo, resolvido_em__isnull=True,
+        ).values_list("referencia_id", flat=True)
+        return sorted({*ativos, *abertos})
 
 
 def _abrir_ou_resolver(pool: BudgetPool, tipo: str, *, faixa: str, percentual: Decimal, abrir: bool) -> BudgetAlert | None:
@@ -334,35 +362,38 @@ def _meses_antes(data: date, meses: int) -> date:
     return date(ano, mes, min(data.day, calendar.monthrange(ano, mes)[1]))
 
 
+def _valor_aprovado_original(pool: BudgetPool) -> Decimal:
+    """O alocado no pool nacional, desfeitos os remanejamentos que entraram nele e saíram dele."""
+    entrou = BudgetTransfer.objects.filter(pool_destino=pool).aggregate(total=Sum("valor"))["total"] or ZERO
+    saiu = BudgetTransfer.objects.filter(pool_origem=pool).aggregate(total=Sum("valor"))["total"] or ZERO
+    return pool.valor_alocado - entrou + saiu
+
+
 def avaliar_subexecucao() -> int:
     fim = fim_da_vigencia()
-    if fim is None:
-        return 0
     meses = int(get_config("budget_subexec_alert_months", 6))
     minimo = Decimal(str(get_config("budget_subexec_min_pct", 60)))
-    na_janela = limites.hoje() >= _meses_antes(fim, meses)
-
-    with visao_total():
-        pools = list(_pools_nacionais().filter(valor_alocado__gt=ZERO).values_list("pk", flat=True))
+    na_janela = fim is not None and limites.hoje() >= _meses_antes(fim, meses)
 
     enviadas = 0
-    for pk in pools:
+    for pk in _pools_a_avaliar(Tipo.SUBEXECUCAO):
         with visao_total():
             pool = _travar(BudgetPool, pk)
-            if pool is None or pool.valor_alocado <= ZERO:
+            if pool is None:
                 continue
+            aprovado = _valor_aprovado_original(pool)
             executado = (
                 BudgetPool.objects.filter(rubrica_id=pool.rubrica_id).aggregate(total=Sum("valor_executado"))["total"]
                 or ZERO
             )
-            percentual = executado / pool.valor_alocado * Decimal("100")
+            percentual = executado / aprovado * Decimal("100") if aprovado > ZERO else ZERO
             aberto = _abrir_ou_resolver(
                 pool, Tipo.SUBEXECUCAO, faixa=Faixa.SUBEXECUCAO, percentual=percentual,
-                abrir=na_janela and percentual < minimo,
+                abrir=pool.rubrica.ativo and aprovado > ZERO and na_janela and percentual < minimo,
             )
             if aberto is None:
                 continue
-            usuarios = list(_do_perfil("ugp"))
+            usuarios = list(usuarios_do_perfil("ugp"))
             enviadas += _notificar(
                 usuarios, modelo="subexecucao", evento=EVENTO_SUBEXECUCAO, canais=EMAIL_E_IN_APP,
                 rubrica=pool.rubrica.nome, percentual=f"{percentual:.1f}", minimo=minimo,
@@ -372,34 +403,25 @@ def avaliar_subexecucao() -> int:
     return enviadas
 
 
-def _valor_aprovado_original(pool: BudgetPool) -> Decimal:
-    """O alocado no pool nacional, desfeitos os remanejamentos que entraram nele e saíram dele."""
-    entrou = BudgetTransfer.objects.filter(pool_destino=pool).aggregate(total=Sum("valor"))["total"] or ZERO
-    saiu = BudgetTransfer.objects.filter(pool_origem=pool).aggregate(total=Sum("valor"))["total"] or ZERO
-    return pool.valor_alocado - entrou + saiu
-
-
-def avaliar_remanejamento_excessivo(rubrica_id) -> int:
+def _avaliar_remanejamento_do_pool(pk: int) -> int:
     maximo = Decimal(str(get_config("budget_transfer_alert_pct", 25)))
     with visao_total():
-        pk = _pools_nacionais().filter(rubrica_id=rubrica_id).values_list("pk", flat=True).first()
-        pool = _travar(BudgetPool, pk) if pk else None
+        pool = _travar(BudgetPool, pk)
         if pool is None:
             return 0
         original = _valor_aprovado_original(pool)
-        if original <= ZERO:
-            return 0
         volume = (
-            BudgetTransfer.objects.filter(pool_origem__rubrica_id=rubrica_id).aggregate(total=Sum("valor"))["total"]
+            BudgetTransfer.objects.filter(pool_origem__rubrica_id=pool.rubrica_id).aggregate(total=Sum("valor"))["total"]
             or ZERO
         )
-        percentual = volume / original * Decimal("100")
+        percentual = volume / original * Decimal("100") if original > ZERO else ZERO
         aberto = _abrir_ou_resolver(
-            pool, Tipo.REMANEJAMENTO_EXCESSIVO, faixa="", percentual=percentual, abrir=percentual > maximo,
+            pool, Tipo.REMANEJAMENTO_EXCESSIVO, faixa="", percentual=percentual,
+            abrir=pool.rubrica.ativo and percentual > maximo,
         )
         if aberto is None:
             return 0
-        usuarios = list(_do_perfil("ugp"))
+        usuarios = list(usuarios_do_perfil("ugp"))
         enviadas = _notificar(
             usuarios, modelo="remanejamento_excessivo", evento=EVENTO_REMANEJAMENTO_EXCESSIVO, canais=EMAIL_E_IN_APP,
             rubrica=pool.rubrica.nome, percentual=f"{percentual:.1f}", maximo=maximo,
@@ -409,9 +431,17 @@ def avaliar_remanejamento_excessivo(rubrica_id) -> int:
         return enviadas
 
 
+def avaliar_remanejamento_excessivo(rubrica_id) -> int:
+    with visao_total():
+        pk = (
+            BudgetPool.objects.filter(nivel=Nivel.NACIONAL, rubrica_id=rubrica_id)
+            .order_by("pk").values_list("pk", flat=True).first()
+        )
+    return _avaliar_remanejamento_do_pool(pk) if pk else 0
+
+
 def avaliar_todos_os_remanejamentos() -> int:
-    rubricas = BudgetRubrica.objects.filter(ativo=True).values_list("pk", flat=True)
-    return sum(avaliar_remanejamento_excessivo(pk) for pk in list(rubricas))
+    return sum(_avaliar_remanejamento_do_pool(pk) for pk in _pools_a_avaliar(Tipo.REMANEJAMENTO_EXCESSIVO))
 
 
 def notificar_remanejamento_efetivado(transferencia: BudgetTransfer) -> int:
@@ -431,7 +461,7 @@ def notificar_remanejamento_efetivado(transferencia: BudgetTransfer) -> int:
 # ---------------------------------------------------------------------------
 
 def notificar_divergencias(divergencias: list[str]) -> int:
-    usuarios = list(_do_perfil("super-admin"))
+    usuarios = list(usuarios_do_perfil("super-admin"))
     for usuario in usuarios:
         for canal in EMAIL_E_IN_APP:
             Notification.objects.create(
@@ -446,28 +476,34 @@ def notificar_divergencias(divergencias: list[str]) -> int:
 # Consulta
 # ---------------------------------------------------------------------------
 
+_LEEM_TODOS_OS_LIMITES = {"ugp", "super-admin"}
+
+
 def _limites_do_escopo(user) -> Q:
+    """O mesmo critério do RLS do limite: o próprio e, para o Articulador, o território da linha."""
     perfis, slugs = budget_service._perfis_e_slugs(user)
     filtro = Q(user=user)
     if "articulador-estadual" in slugs:
         estados = budget_service._estados_do_articulador(perfis, user)
         if estados:
-            filtro |= Q(user__profiles__territorio__estados__overlap=list(estados))
+            filtro |= Q(territorio__estados__overlap=list(estados))
     return filtro
 
 
 def alertas_visiveis(user):
-    """Sem RLS na tabela: o recorte é o mesmo do detalhamento do orçamento. Perfil sem acesso ao
+    """Sem RLS na tabela: o recorte dos pools é o do detalhamento do orçamento, e o dos limites segue
+    a matriz de perfis, em que a FGD lê os pools mas não os limites de gasto. Perfil sem acesso ao
     orçamento recebe `PermissionDenied`."""
     escopo = budget_service.orcamento_detalhamento_scope(user)
     alertas = BudgetAlert.objects.select_related("rubrica")
-    if escopo is None:
+    _, slugs = budget_service._perfis_e_slugs(user)
+    if escopo is None and slugs & _LEEM_TODOS_OS_LIMITES:
         return alertas
     with visao_total():
-        pools = list(BudgetPool.objects.filter(escopo).values_list("pk", flat=True))
+        pools = Q(escopo=Escopo.POOL)
+        if escopo is not None:
+            pools &= Q(referencia_id__in=list(BudgetPool.objects.filter(escopo).values_list("pk", flat=True)))
         individuais = list(
-            SpendingLimit.objects.filter(_limites_do_escopo(user)).distinct().values_list("pk", flat=True)
+            SpendingLimit.objects.filter(_limites_do_escopo(user)).values_list("pk", flat=True)
         )
-    return alertas.filter(
-        Q(escopo=Escopo.POOL, referencia_id__in=pools) | Q(escopo=Escopo.LIMITE, referencia_id__in=individuais)
-    )
+    return alertas.filter(pools | Q(escopo=Escopo.LIMITE, referencia_id__in=individuais))

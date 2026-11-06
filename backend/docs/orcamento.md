@@ -103,7 +103,7 @@ No SGD, só a porta `apps.sgd.services.orcamento` importa o motor e `apps.sgp.bu
 - A FGD entra entre os perfis globais porque conclui as demandas.
 - O Articulador vê o nacional porque o painel o mostra a ele.
 
-**O RLS protege o que as views leem. A autorização das operações fica nos serviços.** O motor age em nome de outra pessoa, e por isso `apps.sgp.budget.rls.visao_total` define o papel `super-admin` durante a operação e o restaura no fim. Usam a visão total as operações de saldo de `apps.sgd.services.balance`, a prévia da decisão, `verificar_saldos` e a task `check_budget_threshold_alert`. Fora de uma requisição, sem isso, as tabelas aparecem vazias e sem erro nenhum.
+**O RLS protege o que as views leem. A autorização das operações fica nos serviços.** O motor age em nome de outra pessoa, e por isso `apps.sgp.budget.rls.visao_total` define o papel `super-admin` durante a operação e o restaura no fim. Usam a visão total as operações de saldo de `apps.sgd.services.balance`, a prévia da decisão, `verificar_saldos` e a task `check_budget_thresholds`. Fora de uma requisição, sem isso, as tabelas aparecem vazias e sem erro nenhum.
 
 Os agregados também usam visão total: o `valor_distribuido` do nacional e o aprovado da rota da Meta são os mesmos para todo perfil, e o recorte de quais linhas cada um vê fica nos serviços. A rota de pools busca o pool com visão total antes de autorizar, para o pool de outro estado dar `403`, e não `404`.
 
@@ -277,7 +277,7 @@ Matriz Rubrica × Nível: uma linha por pool no escopo do perfil, com o `id` que
 - `saldo_disponivel` é o aprovado menos distribuído, comprometido e executado.
 - `saldo_pool` é o alocado menos comprometido e executado: o que o remanejamento aceita sair do pool.
 - `semaforo` segue o percentual comprometido sobre o alocado e os limiares `budget_alert_yellow_pct` e `budget_alert_red_pct` do Core (70 e 90 por padrão). `alerta_80` mantém o nome, mas é `true` no mesmo limiar de `vermelho`.
-- `sgp.tasks.check_budget_thresholds` grava em `BudgetAlert` a faixa de pools e limites vigentes e notifica quando o alerta abre ou a faixa piora. Roda depois de cada movimentação, só para o alvo movido, e uma vez por dia para todos. O amarelo avisa o responsável só no app; o vermelho avisa também o nível superior e vai por e-mail.
+- `sgp.tasks.check_budget_thresholds` grava em `BudgetAlert` a faixa de pools e limites vigentes e notifica a cada nova entrada numa faixa. Roda depois de cada movimentação, só para o alvo movido, e uma vez por dia para todos. O amarelo avisa o responsável só no app; o vermelho avisa também o nível superior e vai por e-mail.
 - `sgp.tasks.check_budget_underexecution`, semanal, e `sgp.tasks.reconcile_budget_balances`, às 2h30.
 
 ### Meu saldo, simulador e alertas
@@ -285,8 +285,8 @@ Matriz Rubrica × Nível: uma linha por pool no escopo do perfil, com o `id` que
 | Rota | Quem | O que faz |
 |---|---|---|
 | `GET /api/v1/sgp/orcamento/meu-saldo/` | Autenticado | Limite, comprometido, executado, disponível e semáforo por rubrica, com o período e o saldo do pool do território |
-| `GET /api/v1/sgp/orcamento/meu-saldo/{rubrica}/extrato/` | Autenticado | Linhas do ledger do próprio usuário, com `efeito` no saldo; paginado |
-| `POST /api/v1/sgp/orcamento/remanejamentos/simular/` | UGP e Super Admin | Saldo, percentual e faixa antes e depois, sem gravar nada |
+| `GET /api/v1/sgp/orcamento/meu-saldo/{rubrica}/extrato/` | Autenticado | Linhas do ledger do próprio usuário no período vigente, com `efeito` no saldo; `?historico=true` traz os encerrados; paginado |
+| `POST /api/v1/sgp/orcamento/remanejamentos/simular/` | UGP e Super Admin | Saldo, percentuais de comprometimento e de execução e faixa antes e depois, sem gravar nada |
 | `GET /api/v1/sgp/orcamento/alertas/` | Perfis do orçamento, no próprio escopo | Filtros `?tipo=`, `?faixa=` e `?abertos=`; paginado |
 
 ## Painel por rubrica do SGD

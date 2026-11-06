@@ -159,7 +159,7 @@ def payload_saldo_consulta(check: "DuasTravasCheck", *, solicitante, rubrica, va
     }
 
 
-def _notificar_se_piorou(alvo, *, demand, rubrica_nome, trava) -> None:
+def _notificar_nova_faixa(alvo, *, demand, rubrica_nome, trava) -> None:
     """O alerta aberto decide: a tarefa que avalia o mesmo alvo depois não notifica de novo."""
     if alvo is None:
         return
@@ -339,12 +339,12 @@ def reservar_duas_travas(*, demand_request, usuario, adiar_gravacao: bool = Fals
             acao="reserva", entidade_id=entidade_id, usuario=usuario,
             valores_novos={"limite_id": limite.pk, "valor": str(valor)},
         )
-        _notificar_se_piorou(limite, demand=demand_request.demanda, rubrica_nome=rubrica.nome, trava=TRAVA_INDIVIDUAL)
+        _notificar_nova_faixa(limite, demand=demand_request.demanda, rubrica_nome=rubrica.nome, trava=TRAVA_INDIVIDUAL)
 
     pool = orcamento_service.reservar_pool(
         solicitante=solicitante, rubrica=rubrica, valor=valor, demand_request=demand_request, usuario=usuario,
     )
-    _notificar_se_piorou(pool, demand=demand_request.demanda, rubrica_nome=rubrica.nome, trava=TRAVA_TERRITORIAL)
+    _notificar_nova_faixa(pool, demand=demand_request.demanda, rubrica_nome=rubrica.nome, trava=TRAVA_TERRITORIAL)
     if reservou:
         _mover_reserva(demand_request, adiar=adiar_gravacao, valor_reservado=valor, valor_excedente=ZERO)
 
@@ -409,12 +409,12 @@ def ajustar_duas_travas(
             valores_anteriores={"valor": str(valor_anterior), "excedente": str(excedente_anterior)},
             valores_novos={"valor": str(novo_valor), "excedente": str(excedente_novo)},
         )
-        _notificar_se_piorou(limite, demand=demand_request.demanda, rubrica_nome=rubrica.nome, trava=TRAVA_INDIVIDUAL)
+        _notificar_nova_faixa(limite, demand=demand_request.demanda, rubrica_nome=rubrica.nome, trava=TRAVA_INDIVIDUAL)
 
     pool = orcamento_service.ajustar_pool(
         solicitante=solicitante, rubrica=rubrica, valor=novo_valor, demand_request=demand_request, usuario=usuario,
     )
-    _notificar_se_piorou(pool, demand=demand_request.demanda, rubrica_nome=rubrica.nome, trava=TRAVA_TERRITORIAL)
+    _notificar_nova_faixa(pool, demand=demand_request.demanda, rubrica_nome=rubrica.nome, trava=TRAVA_TERRITORIAL)
     if diferenca != ZERO:
         _mover_reserva(
             demand_request, adiar=adiar_gravacao, valor_reservado=novo_valor, valor_excedente=excedente_novo,

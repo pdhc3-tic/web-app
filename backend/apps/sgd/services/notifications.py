@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 from django.conf import settings
-from django.db.models import Q
 
 from apps.core.models.notifications import Notification, TipoNotificacao
-from apps.core.models.user import User
 from apps.core.utils import formatar_brl
 from apps.sgd.services import orcamento as orcamento_service
 
@@ -14,15 +12,11 @@ def _link_demanda(demand) -> str:
 
 
 def usuarios_articuladores_do_estado(sigla: str):
-    return User.objects.filter(
-        ativo=True, profiles__perfil__slug="articulador-estadual",
-    ).filter(
-        Q(profiles__territorio__isnull=True) | Q(profiles__territorio__estados__contains=[sigla])
-    ).distinct()
+    return orcamento_service.articuladores_dos_estados([sigla])
 
 
 def usuarios_por_perfil(slug: str):
-    return User.objects.filter(ativo=True, profiles__perfil__slug=slug).distinct()
+    return orcamento_service.usuarios_do_perfil(slug)
 
 
 def _notificar(*, usuarios, titulo: str, mensagem: str, link: str, evento: str, canais):
