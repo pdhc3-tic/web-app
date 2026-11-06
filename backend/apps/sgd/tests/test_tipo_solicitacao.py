@@ -1,5 +1,6 @@
 """Catálogo de tipos de solicitação: CRUD, validação por schema e estratégias."""
 from importlib import import_module
+from unittest.mock import patch
 
 import pytest
 from django.db import connection
@@ -11,6 +12,7 @@ from apps.sgd.exceptions import RegraDeNegocio
 from apps.sgd.models import DemandRequest, TipoSolicitacao
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services.demand_request import validar_campos_json
+from apps.sgd.services.tipos_solicitacao import validar_por_schema
 from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory, TipoSolicitacaoFactory
 from apps.sgp.tests.factories import BudgetRubricaFactory
 
@@ -35,7 +37,7 @@ CONDICIONAIS_DA_PASSAGEM = [
     ({"ida_e_volta": True}, "data_hora_volta"),
     ({"classe": "executiva"}, "justificativa_executiva"),
 ]
-NAO_PREENCHIDOS = [False, 0, [], {}]
+NAO_PREENCHIDOS = [None, "", False, 0, [], {}]
 
 
 def _url_solicitacoes(demand):
@@ -100,7 +102,6 @@ def test_tipo_novo_com_validador_registrado_usa_a_estrategia(demand_rascunho_rn,
     ({"$ref": "#/x", "x": {"type": "tipo-que-nao-existe"}}, {"a": 1}, "tipo"),
     ({"$ref": "#/x", "x": {"patternProperties": {"(": {}}}}, {"a": 1}, "tipo"),
     ({"properties": {"a": {"$ref": "#/x"}}, "x": {"multipleOf": 0}}, {"a": 1}, "tipo"),
-    ({"properties": {"a": {"type": "integer", "mensagem": {"x": 1}}}}, {"a": "b"}, "a"),
     ({"properties": {"proibido": False}}, {"proibido": 1}, "campos_json"),
     ({"properties": {"opcao": {"enum": [1, "a"]}}}, {"opcao": "b"}, "opcao"),
     ({"properties": {"noites": {"type": "integer"}}}, {"noites": ""}, "noites"),
@@ -126,6 +127,41 @@ def test_schema_configuravel_rejeita_campos_sem_erro_interno(
     assert resposta.status_code == 400
     assert resposta.data["code"] == "BUSINESS_RULE"
     assert campo in resposta.data
+
+
+@pytest.mark.parametrize("ref", ["http://servidor.invalid/x", "file:///etc/passwd"])
+@pytest.mark.parametrize("montar", [
+    lambda ref: {"$ref": ref},
+    lambda ref: {"properties": {"a": {"$ref": ref}}},
+], ids=["raiz", "aninhado"])
+def test_ref_externo_e_recusado_sem_buscar_o_endereco(montar, ref):
+    with patch("urllib.request.urlopen") as urlopen, pytest.raises(RegraDeNegocio) as excinfo:
+        validar_por_schema(montar(ref), {"a": 1})
+
+    urlopen.assert_not_called()
+    assert excinfo.value.campo == "tipo"
+
+
+def test_ref_interno_continua_valendo():
+    schema = {"properties": {"a": {"$ref": "#/$defs/inteiro"}}, "$defs": {"inteiro": {"type": "integer"}}}
+
+    validar_por_schema(schema, {"a": 1})
+    with pytest.raises(RegraDeNegocio) as excinfo:
+        validar_por_schema(schema, {"a": "b"})
+
+    assert excinfo.value.campo == "a"
+
+
+@pytest.mark.parametrize("schema,campos,campo,mensagem", [
+    ({"properties": {"a": {"type": "integer", "mensagem": {"x": 1}}}}, {"a": "b"}, "a", "Valor inválido."),
+    ({"properties": {"b": {"type": "object", "required": ["c"], "mensagem": 1}}}, {"b": {}}, "b.c", "Obrigatório."),
+])
+def test_mensagem_do_schema_que_nao_e_texto_da_lugar_a_padrao(schema, campos, campo, mensagem):
+    with pytest.raises(RegraDeNegocio) as excinfo:
+        validar_por_schema(schema, campos)
+
+    assert excinfo.value.campo == campo
+    assert excinfo.value.mensagem == mensagem
 
 
 @pytest.mark.parametrize("validador,campo", [

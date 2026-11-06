@@ -2,13 +2,17 @@
 regras que um JSON Schema não expressa, uma estratégia registrada."""
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 
 from jsonschema import Draft202012Validator, FormatChecker
+from referencing import Registry
 
 from apps.sgd.exceptions import RegraDeNegocio
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -66,7 +70,8 @@ def validar_por_schema(schema: dict, campos: dict) -> None:
     if faltando:
         raise RegraDeNegocio(f"Campos obrigatórios ausentes: {', '.join(faltando)}.", campo="campos_json")
 
-    validador = Draft202012Validator(schema, format_checker=FormatChecker())
+    # Sem `registry`, o jsonschema busca `$ref` remoto com urlopen, sem timeout e com a demanda travada.
+    validador = Draft202012Validator(schema, registry=Registry(), format_checker=FormatChecker())
     try:
         erro = next(validador.iter_errors(preenchidos), None)
         if erro is None:
@@ -75,6 +80,7 @@ def validar_por_schema(schema: dict, campos: dict) -> None:
     # `check_schema` não segue `$ref`, e as exceções de um alvo inválido ou circular variam
     # com a palavra-chave: qualquer falha ao aplicar o schema é defeito dele, não dos campos.
     except Exception as exc:
+        logger.warning("Falha ao aplicar o schema de um tipo de solicitação.", exc_info=True)
         raise RegraDeNegocio("O schema deste tipo é inválido. Contate o Super Admin.", campo="tipo") from exc
     if erro is None:
         return
