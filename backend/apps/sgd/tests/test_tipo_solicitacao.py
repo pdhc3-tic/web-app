@@ -93,6 +93,14 @@ def test_tipo_novo_com_validador_registrado_usa_a_estrategia(demand_rascunho_rn,
 
 @pytest.mark.parametrize("schema,campos,campo", [
     ({"$ref": "#/$defs/ausente"}, {}, "tipo"),
+    ({"$ref": "#"}, {"a": 1}, "tipo"),
+    ({"properties": {"a": {"$ref": "#/properties/a"}}}, {"a": 1}, "tipo"),
+    ({"$ref": "#/x", "x": "texto"}, {"a": 1}, "tipo"),
+    ({"$ref": "#/required", "required": ["a"]}, {"a": 1}, "tipo"),
+    ({"$ref": "#/x", "x": {"type": "tipo-que-nao-existe"}}, {"a": 1}, "tipo"),
+    ({"$ref": "#/x", "x": {"patternProperties": {"(": {}}}}, {"a": 1}, "tipo"),
+    ({"properties": {"a": {"$ref": "#/x"}}, "x": {"multipleOf": 0}}, {"a": 1}, "tipo"),
+    ({"properties": {"a": {"type": "integer", "mensagem": {"x": 1}}}}, {"a": "b"}, "a"),
     ({"properties": {"proibido": False}}, {"proibido": 1}, "campos_json"),
     ({"properties": {"opcao": {"enum": [1, "a"]}}}, {"opcao": "b"}, "opcao"),
     ({"properties": {"noites": {"type": "integer"}}}, {"noites": ""}, "noites"),
@@ -193,6 +201,43 @@ def test_cadastro_invalido_retorna_400_no_campo(auth_client_super_admin, rubrica
 
     assert resp.status_code == 400
     assert campo in resp.data
+
+
+def test_estrategia_nao_muda_depois_do_cadastro(auth_client_super_admin, demand_rascunho_rn):
+    tipo = TipoSolicitacao.objects.get(slug="passagem")
+    DemandRequestFactory(
+        demanda=demand_rascunho_rn, tipo=tipo, campos_json={"passageiro_nome": "Fulano"},
+        beneficiario_cpf="52998224725",
+    )
+
+    resp = auth_client_super_admin.patch(f"{URL}{tipo.pk}/", {"validador": ""}, format="json")
+
+    assert resp.status_code == 400
+    assert "validador" in resp.data
+    tipo.refresh_from_db()
+    assert tipo.validador == "passagem"
+    resp = auth_client_super_admin.get(_url_solicitacoes(demand_rascunho_rn))
+    assert resp.data[0]["campos_json"]["passageiro_cpf"] == "52998224725"
+
+
+def test_estrategia_de_tipo_sem_solicitacoes_tambem_nao_muda(auth_client_super_admin):
+    tipo = TipoSolicitacao.objects.get(slug="passagem")
+
+    resp = auth_client_super_admin.patch(f"{URL}{tipo.pk}/", {"validador": ""}, format="json")
+
+    assert resp.status_code == 400
+    assert "validador" in resp.data
+
+
+def test_patch_com_a_mesma_estrategia_e_aceito(auth_client_super_admin):
+    tipo = TipoSolicitacao.objects.get(slug="passagem")
+
+    resp = auth_client_super_admin.patch(
+        f"{URL}{tipo.pk}/", {"validador": "passagem", "nome": "Passagens"}, format="json",
+    )
+
+    assert resp.status_code == 200, resp.data
+    assert resp.data["nome"] == "Passagens"
 
 
 def test_rubrica_inativa_retorna_400(auth_client_super_admin):
@@ -304,11 +349,24 @@ def test_enumeracao_invalida_aponta_o_campo_e_as_opcoes(activity_rn):
     assert "banner" in excinfo.value.mensagem
 
 
-def test_prazo_com_data_invalida_aponta_o_campo(activity_rn):
+@pytest.mark.parametrize("prazo", ["amanhã", "20261201"])
+def test_prazo_com_data_invalida_aponta_o_campo(activity_rn, prazo):
     with pytest.raises(RegraDeNegocio) as excinfo:
-        validar_campos_json("grafico", {**CAMPOS_GRAFICO, "prazo_entrega": "amanhã"}, activity_rn)
+        validar_campos_json("grafico", {**CAMPOS_GRAFICO, "prazo_entrega": prazo}, activity_rn)
 
     assert excinfo.value.campo == "prazo_entrega"
+
+
+@pytest.mark.parametrize("slug,campo", [
+    ("grafico", "fornecedor_sugerido"),
+    ("alimentacao", "restricoes_alimentares"),
+    ("equipamento", "fornecedor_preferencial"),
+])
+def test_campos_opcionais_do_formulario_constam_do_schema(slug, campo):
+    schema = TipoSolicitacao.objects.get(slug=slug).schema_campos
+
+    assert campo in schema["properties"]
+    assert campo not in schema["required"]
 
 
 @pytest.mark.parametrize("campos,campo", CONDICIONAIS_DA_PASSAGEM)
@@ -330,11 +388,14 @@ def test_condicional_da_passagem_recusa_valor_nao_preenchido(activity_rn, campos
     assert "Obrigatório quando" in excinfo.value.mensagem
 
 
-@pytest.mark.parametrize("campos,campo", CONDICIONAIS_DA_PASSAGEM)
-def test_condicional_da_passagem_aceita_valor_preenchido(activity_rn, campos, campo):
-    validado = validar_campos_json("passagem", {**CAMPOS_PASSAGEM, **campos, campo: "preenchido"}, activity_rn)
+@pytest.mark.parametrize("campos,campo,valor", [
+    ({"ida_e_volta": True}, "data_hora_volta", "2026-06-05T20:00:00Z"),
+    ({"classe": "executiva"}, "justificativa_executiva", "Único voo disponível."),
+])
+def test_condicional_da_passagem_aceita_valor_preenchido(activity_rn, campos, campo, valor):
+    validado = validar_campos_json("passagem", {**CAMPOS_PASSAGEM, **campos, campo: valor}, activity_rn)
 
-    assert validado.campos_json[campo] == "preenchido"
+    assert validado.campos_json[campo] == valor
 
 
 @pytest.mark.parametrize("valor", NAO_PREENCHIDOS, ids=repr)

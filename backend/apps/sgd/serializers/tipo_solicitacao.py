@@ -56,6 +56,10 @@ class TipoSolicitacaoSerializer(serializers.ModelSerializer):
     def validate_validador(self, validador):
         if validador and validador not in validadores_registrados():
             raise serializers.ValidationError(f"Esperado um de: {validadores_registrados()}.")
+        if self.instance is not None and validador != self.instance.validador:
+            raise serializers.ValidationError(
+                "A estratégia não pode ser alterada: ela decide onde o CPF é gravado e como é lido.",
+            )
         return validador
 
 

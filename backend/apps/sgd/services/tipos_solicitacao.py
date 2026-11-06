@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from jsonschema import Draft202012Validator, FormatChecker
-from referencing.exceptions import Unresolvable
 
 from apps.sgd.exceptions import RegraDeNegocio
 
@@ -46,9 +45,14 @@ def validadores_registrados() -> list[str]:
     return sorted(_VALIDADORES)
 
 
+def _mensagem_do_schema(schema) -> str | None:
+    mensagem = schema.get("mensagem") if isinstance(schema, dict) else None
+    return mensagem if isinstance(mensagem, str) else None
+
+
 def _mensagem(erro) -> str:
-    if isinstance(erro.schema, dict) and "mensagem" in erro.schema:
-        return erro.schema["mensagem"]
+    if (mensagem := _mensagem_do_schema(erro.schema)) is not None:
+        return mensagem
     if erro.validator == "enum":
         return f"Valor inválido. Esperado um de: {sorted(erro.validator_value, key=str)}."
     return "Valor inválido."
@@ -68,16 +72,16 @@ def validar_por_schema(schema: dict, campos: dict) -> None:
         if erro is None:
             # Valores opcionais enviados também precisam obedecer ao schema antes de persistir.
             erro = next(validador.iter_errors(campos), None)
-    except Unresolvable as exc:
-        raise RegraDeNegocio(
-            "O schema deste tipo contém uma referência inválida. Contate o Super Admin.", campo="tipo",
-        ) from exc
+    # `check_schema` não segue `$ref`, e as exceções de um alvo inválido ou circular variam
+    # com a palavra-chave: qualquer falha ao aplicar o schema é defeito dele, não dos campos.
+    except Exception as exc:
+        raise RegraDeNegocio("O schema deste tipo é inválido. Contate o Super Admin.", campo="tipo") from exc
     if erro is None:
         return
     if erro.validator == "required":
         campo = next(nome for nome in erro.validator_value if nome not in erro.instance)
         caminho = [*erro.absolute_path, campo]
         raise RegraDeNegocio(
-            erro.schema.get("mensagem", "Obrigatório."), campo=".".join(map(str, caminho)),
+            _mensagem_do_schema(erro.schema) or "Obrigatório.", campo=".".join(map(str, caminho)),
         )
     raise RegraDeNegocio(_mensagem(erro), campo=str(erro.absolute_path[0]) if erro.absolute_path else "campos_json")

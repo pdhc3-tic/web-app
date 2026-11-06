@@ -107,6 +107,7 @@ _GRAFICO = {
         "prazo_entrega": _campo(
             "Prazo de entrega necessário", type="string", format="date", mensagem="Data inválida.",
         ),
+        "fornecedor_sugerido": _campo("Fornecedor sugerido"),
         "finalidade_evento": _campo("Finalidade ou evento"),
     },
 }
@@ -120,6 +121,7 @@ _ALIMENTACAO = {
         "data_horario_servico": _campo("Data e horário do serviço"),
         "numero_pessoas": _campo("Número de pessoas", **_INTEIRO_POSITIVO),
         "local_entrega": _campo("Local de entrega ou endereço"),
+        "restricoes_alimentares": _campo("Restrições alimentares"),
     },
 }
 _EQUIPAMENTO = {
@@ -133,6 +135,7 @@ _EQUIPAMENTO = {
         "especificacao_tecnica_detalhada": _campo("Especificação técnica detalhada"),
         "quantidade": _campo("Quantidade", **_INTEIRO_POSITIVO),
         "finalidade_justificativa": _campo("Finalidade e justificativa"),
+        "fornecedor_preferencial": _campo("Fornecedor preferencial"),
         "urgencia": _campo("Urgência", enum=_URGENCIA),
     },
 }
