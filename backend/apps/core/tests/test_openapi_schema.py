@@ -192,7 +192,7 @@ def test_rotas_do_sca_descrevem_a_resposta(schema):
 def test_pull_do_sca_traz_cada_entidade_com_o_envelope(schema):
     resposta = _resolver(schema, _resposta(schema, "/api/v1/sca/sync/pull/"))
 
-    assert set(resposta["properties"]) == {"upfs", "members", "activities", "server_time"}
+    assert set(resposta["properties"]) == {"upfs", "members", "activities", "saldos", "server_time"}
     for grupo in ("upfs", "members", "activities"):
         entidade = _resolver(schema, resposta["properties"][grupo]["items"])
         assert {"id", "uuid_local", "atualizado_em"} <= set(entidade["required"])
