@@ -5,13 +5,17 @@ from decimal import Decimal
 
 import pytest
 from django.db import connection
+from rest_framework.test import APIClient
 
-from apps.sgd.exceptions import ErroDeDominio, TransicaoInvalida
+from apps.core.models import User
+from apps.core.services.usuarios import desativar
+from apps.sgd.exceptions import ErroDeDominio, RegraDeNegocio, TransicaoInvalida
 from apps.sgd.models import Demand, DemandRequest
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import workflow as workflow_service
 from apps.sgd.services.arlo_import import processar_importacao
 from apps.sgd.tests.concorrencia import intercalar
+from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
 
 # Fixtures e helpers compartilhados com a suíte de integração Arlo.
 from apps.sgd.tests.test_arlo_integration import (  # noqa: F401
@@ -191,6 +195,112 @@ def test_cancelamento_pela_task_desfeito_quando_a_fgd_inicia_o_atendimento(
     autorizada.refresh_from_db()
     assert autorizada.status == "em_atendimento"
     assert _saldo(limite_individual_rn, allocation_territorial_rn) == (Decimal("1000"), 0, Decimal("1000"), 0)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_desativacao_desfeita_quando_a_ugp_autoriza_a_demanda_no_meio(
+    demand_request_rn, solicitante_rn, usuario_articulador_rn, usuario_ugp, usuario_super_admin,
+    limite_individual_rn, allocation_territorial_rn,
+):
+    """A desativação leu a demanda como pré-autorizada e esperou o limite. Depois do
+    commit da autorização, a demanda não pode ser cancelada nem o usuário desativado."""
+    demand = demand_request_rn.demanda
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    workflow_service.executar_transicao(demand, "pre_autorizada", ator=usuario_articulador_rn)
+
+    def autorizar(pausa):
+        workflow_service.executar_transicao(Demand.objects.get(pk=demand.pk), "autorizada", ator=usuario_ugp)
+        pausa()
+
+    _, erros = intercalar(
+        autorizar, lambda: desativar(User.objects.get(pk=solicitante_rn.pk), por=usuario_super_admin),
+    )
+
+    assert set(erros) == {"espera"}
+    assert isinstance(erros["espera"], TransicaoInvalida)
+    demand.refresh_from_db()
+    assert demand.status == "autorizada"
+    assert User.objects.get(pk=solicitante_rn.pk).ativo is True
+    assert _saldo(limite_individual_rn, allocation_territorial_rn) == (Decimal("1000"), 0, Decimal("1000"), 0)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_demanda_criada_e_submetida_durante_a_desativacao_e_recusada(
+    activity_rn, solicitante_rn, rubrica_diarias, usuario_super_admin,
+    limite_individual_rn, allocation_territorial_rn,
+):
+    """A desativação já leu as demandas e ainda não commitou. A submissão espera a linha
+    do solicitante, relê o `ativo` e não deixa reserva presa em usuário inativo."""
+    def desativar_e_segurar(pausa):
+        desativar(User.objects.get(pk=solicitante_rn.pk), por=usuario_super_admin)
+        pausa()
+
+    def criar_e_submeter():
+        nova = DemandFactory(activity=activity_rn, solicitante=solicitante_rn, status="rascunho")
+        DemandRequestFactory(demanda=nova, tipo="diaria", rubrica=rubrica_diarias, valor_estimado=1_000)
+        demand_service.submeter_demanda(Demand.objects.get(pk=nova.pk), usuario=solicitante_rn)
+
+    _, erros = intercalar(desativar_e_segurar, criar_e_submeter)
+
+    assert set(erros) == {"espera"}
+    assert isinstance(erros["espera"], RegraDeNegocio)
+    assert Demand.objects.get(solicitante=solicitante_rn).status == "rascunho"
+    assert _saldo(limite_individual_rn, allocation_territorial_rn) == (0, 0, 0, 0)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_desativacao_espera_a_submissao_em_curso_e_cancela_a_demanda(
+    demand_request_rn, solicitante_rn, usuario_super_admin, limite_individual_rn, allocation_territorial_rn,
+):
+    demand = demand_request_rn.demanda
+
+    def submeter_e_segurar(pausa):
+        demand_service.submeter_demanda(Demand.objects.get(pk=demand.pk), usuario=solicitante_rn)
+        pausa()
+
+    _, erros = intercalar(
+        submeter_e_segurar, lambda: desativar(User.objects.get(pk=solicitante_rn.pk), por=usuario_super_admin),
+    )
+
+    assert erros == {}
+    demand.refresh_from_db()
+    assert demand.status == "cancelada"
+    assert _saldo(limite_individual_rn, allocation_territorial_rn) == (0, 0, 0, 0)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_patch_que_troca_o_email_e_desativa_nao_fecha_ciclo_com_a_autorizacao(
+    demand_request_rn, solicitante_rn, usuario_articulador_rn, usuario_ugp, usuario_super_admin,
+    limite_individual_rn, allocation_territorial_rn,
+):
+    """A autorização segura o limite e, no commit, confere a FK da notificação ao
+    solicitante. Se o PATCH gravasse o e-mail antes de esperar esse limite, essa
+    conferência esperaria a linha do usuário, e as duas transações, uma à outra."""
+    demand = demand_request_rn.demanda
+    email_original = solicitante_rn.email
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    workflow_service.executar_transicao(demand, "pre_autorizada", ator=usuario_articulador_rn)
+    cliente = APIClient()
+    cliente.force_authenticate(user=usuario_super_admin)
+
+    def autorizar(pausa):
+        workflow_service.executar_transicao(Demand.objects.get(pk=demand.pk), "autorizada", ator=usuario_ugp)
+        pausa()
+
+    resultados, erros = intercalar(
+        autorizar,
+        lambda: cliente.patch(
+            f"/api/v1/users/{solicitante_rn.pk}/", {"ativo": False, "email": "novo.adt@test.com"}, format="json",
+        ),
+    )
+
+    assert erros == {}
+    assert resultados["espera"].status_code == 400
+    assert resultados["espera"].data["code"] == "INVALID_TRANSITION"
+    salvo = User.objects.get(pk=solicitante_rn.pk)
+    assert (salvo.ativo, salvo.email) == (True, email_original)
+    demand.refresh_from_db()
+    assert demand.status == "autorizada"
 
 
 @pytest.mark.django_db(transaction=True)

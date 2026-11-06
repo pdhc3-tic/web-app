@@ -1,5 +1,6 @@
 import logging
 
+from django.db import transaction
 from django.db.models import Count, Max
 from django.utils import timezone
 from django_filters import rest_framework as django_filters
@@ -12,8 +13,9 @@ from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, Ou
 
 from apps.core.models import User
 from apps.core.permissions import IsSuperAdmin
-from apps.core.serializers import UserDetailSerializer, UserListSerializer
+from apps.core.serializers import ImpactoDesativacaoSerializer, UserDetailSerializer, UserListSerializer
 from apps.core.services.audit import log_audit
+from apps.core.services.usuarios import desativar
 
 
 logger = logging.getLogger(__name__)
@@ -129,7 +131,13 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         old_snapshot = _user_access_snapshot(serializer.instance)
-        user = serializer.save()
+        desativando = serializer.instance.ativo and serializer.validated_data.get("ativo") is False
+        with transaction.atomic():
+            # Depois da desativação: trocar o e-mail, coluna única, barra a checagem de FK de
+            # quem segura o limite que o cancelamento precisa, e as duas transações se esperariam.
+            if desativando:
+                desativar(serializer.instance, por=self.request.user)
+            user = serializer.save()
         new_snapshot = _user_access_snapshot(user)
         if old_snapshot != new_snapshot:
             log_audit(
@@ -149,18 +157,18 @@ class UserViewSet(viewsets.ModelViewSet):
         )
 
     def perform_destroy(self, instance):
-        instance.ativo = False
-        instance.save(update_fields=["ativo"])
-        audit_event_logger.info(
-            "user.deactivated actor_user_id=%s target_user_id=%s",
-            getattr(self.request.user, "pk", None),
-            instance.pk,
-        )
+        desativar(instance, por=self.request.user)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         self.perform_destroy(instance)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @extend_schema(responses=ImpactoDesativacaoSerializer)
+    def impacto_desativacao(self, request, pk=None):
+        from apps.sgd.services.desativacao import impacto_da_desativacao
+
+        return Response(ImpactoDesativacaoSerializer(impacto_da_desativacao(self.get_object())).data)
 
     # ------------------------------------------------------------------
     # Acesso do SCA — revogar / reativar
