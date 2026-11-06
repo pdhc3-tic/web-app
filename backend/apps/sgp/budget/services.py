@@ -635,12 +635,16 @@ def _exigir_saldo_na_origem(origem: BudgetPool, valor: Decimal) -> Decimal:
 def _impacto_no_pool(pool: BudgetPool, variacao: Decimal, limiares: "LimiaresSemaforo") -> dict:
     percentual_antes = percentual_comprometido(pool.valor_comprometido, pool.valor_alocado)
     percentual_depois = percentual_comprometido(pool.valor_comprometido, pool.valor_alocado + variacao)
+    execucao_antes = percentual_comprometido(pool.valor_executado, pool.valor_alocado)
+    execucao_depois = percentual_comprometido(pool.valor_executado, pool.valor_alocado + variacao)
     saldo_antes = _saldo_disponivel(pool)
     return {
         "saldo_antes": saldo_antes,
         "saldo_depois": saldo_antes + variacao,
         "percentual_antes": percentual_antes,
         "percentual_depois": percentual_depois,
+        "percentual_execucao_antes": execucao_antes,
+        "percentual_execucao_depois": execucao_depois,
         "faixa_antes": faixa_semaforo(percentual_antes, limiares),
         "faixa_depois": faixa_semaforo(percentual_depois, limiares),
     }

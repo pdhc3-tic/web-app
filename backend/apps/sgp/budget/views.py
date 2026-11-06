@@ -239,7 +239,13 @@ class OrcamentoPagination(LimitOffsetPagination):
     max_limit = 100
 
 
-@extend_schema(parameters=[OpenApiParameter("rubrica", OpenApiTypes.STR, OpenApiParameter.PATH)])
+@extend_schema(parameters=[
+    OpenApiParameter("rubrica", OpenApiTypes.STR, OpenApiParameter.PATH),
+    OpenApiParameter(
+        "historico", OpenApiTypes.BOOL, OpenApiParameter.QUERY, required=False,
+        description="Inclui os períodos encerrados. Sem ele, só o período vigente.",
+    ),
+])
 class MeuExtratoView(generics.ListAPIView):
     """GET .../orcamento/meu-saldo/{rubrica}/extrato/ — as linhas do ledger do próprio usuário."""
 
@@ -252,7 +258,8 @@ class MeuExtratoView(generics.ListAPIView):
         if getattr(self, "swagger_fake_view", False):
             return self.queryset
         rubrica = get_object_or_404(BudgetRubrica, slug=self.kwargs["rubrica"])
-        return meu_saldo_service.extrato(self.request.user, rubrica)
+        historico = self.request.query_params.get("historico", "").lower() in ("true", "1")
+        return meu_saldo_service.extrato(self.request.user, rubrica, historico=historico)
 
 
 @extend_schema(parameters=[BudgetAlertQuerySerializer])

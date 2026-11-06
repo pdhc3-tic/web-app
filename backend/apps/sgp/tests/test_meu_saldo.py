@@ -3,13 +3,23 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from django.core.cache import cache
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from freezegun import freeze_time
 
-from apps.core.tests.factories import UserFactory
+from apps.core.models.system_config import SystemConfig
+from apps.core.tests.factories import RoleFactory, UserFactory, UserProfileFactory
 from apps.sgp.budget import limites
+from apps.sgp.budget import meu_saldo
 from apps.sgp.budget import services as budget_service
-from apps.sgp.models import BudgetPool, BudgetTransaction, BudgetTransfer
-from apps.sgp.tests.factories import BudgetPoolFactory, BudgetRubricaFactory, SpendingLimitFactory
+from apps.sgp.models import BudgetPool, BudgetTransaction, BudgetTransfer, SpendingLimit
+from apps.sgp.tests.factories import (
+    BudgetPoolFactory,
+    BudgetRubricaFactory,
+    SpendingLimitFactory,
+    WorkPlanMetaFactory,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -41,6 +51,21 @@ def _linha(resposta, rubrica):
 # ---------- Meu saldo ----------
 
 class TestMeuSaldo:
+    @pytest.mark.parametrize("com_meta,fim,dias", [(True, "2026-12-31", 56), (False, None, None)])
+    @freeze_time("2026-11-05 12:00")
+    def test_periodo_em_aberto_usa_o_fim_da_vigencia(self, com_meta, fim, dias, auth_client_adt_rn, usuario_adt_rn):
+        rubrica = BudgetRubricaFactory()
+        SpendingLimitFactory(
+            user=usuario_adt_rn, rubrica=rubrica, periodo_inicio=limites.INICIO_DA_VIGENCIA,
+            periodo_fim=limites.FIM_EM_ABERTO,
+        )
+        if com_meta:
+            WorkPlanMetaFactory(data_inicio=date(2026, 1, 1), data_fim=date(2026, 12, 31))
+
+        linha = _linha(auth_client_adt_rn.get(URL), rubrica)
+
+        assert (linha["periodo_fim"], linha["dias_restantes"]) == (fim, dias)
+
     def test_traz_os_valores_e_o_semaforo_por_rubrica(self, auth_client_adt_rn, usuario_adt_rn):
         rubrica = BudgetRubricaFactory(nome="Diárias")
         _limite(usuario_adt_rn, rubrica, limite=1000, comprometido=750, executado=100)
@@ -53,7 +78,7 @@ class TestMeuSaldo:
         )
         assert linha["semaforo"] == "amarelo"
 
-    @freeze_time("2026-11-05")
+    @freeze_time("2026-11-05 12:00")
     def test_traz_o_periodo_e_os_dias_restantes(self, auth_client_adt_rn, usuario_adt_rn):
         rubrica = BudgetRubricaFactory()
         _limite(usuario_adt_rn, rubrica)
@@ -111,6 +136,123 @@ class TestMeuSaldo:
         assert api_client.get(URL).status_code == 401
 
 
+class TestLimitesEmLote:
+    """`limites_efetivos` lê em lote o que `limite_efetivo` lê por rubrica: os dois têm de concordar."""
+
+    @pytest.fixture(autouse=True)
+    def acumulo_sem_cache(self):
+        cache.delete("system_config:budget_limit_carry_over")
+        yield
+        cache.delete("system_config:budget_limit_carry_over")
+
+    def _campos(self, limite):
+        return limite and (
+            limite.pk, limite.valor_limite, limite.herdado, limite.periodo_inicio, limite.periodo_fim,
+        )
+
+    @pytest.mark.parametrize("acumula", [False, True])
+    @freeze_time("2026-11-05 12:00")
+    def test_concorda_com_a_leitura_por_rubrica(self, acumula, usuario_adt_rn):
+        perfil = usuario_adt_rn.profiles.get().perfil
+        criador = UserFactory()
+        vigente, herdada, sem_nada, com_saldo_antigo, curta, pulou = BudgetRubricaFactory.create_batch(6)
+        _limite(usuario_adt_rn, vigente, limite=700)
+        limites.criar_padrao(perfil=perfil, rubrica=herdada, valor_limite=Decimal("800"), usuario=criador)
+        outro_perfil = RoleFactory(slug="articulador-estadual")
+        UserProfileFactory(user=usuario_adt_rn, perfil=outro_perfil, territorio=None)
+        limites.criar_padrao(perfil=outro_perfil, rubrica=herdada, valor_limite=Decimal("950"), usuario=criador)
+        SpendingLimitFactory(
+            user=usuario_adt_rn, rubrica=com_saldo_antigo, valor_limite=500, periodo_inicio=date(2026, 7, 1),
+            periodo_fim=date(2026, 9, 30),
+        )
+        SpendingLimitFactory(
+            user=usuario_adt_rn, rubrica=pulou, valor_limite=500, periodo_inicio=date(2026, 1, 1),
+            periodo_fim=date(2026, 3, 31),
+        )
+        limites.criar_padrao(perfil=perfil, rubrica=curta, valor_limite=Decimal("900"), usuario=criador)
+        SpendingLimitFactory(
+            user=usuario_adt_rn, rubrica=curta, valor_limite=100, periodo_inicio=date(2026, 10, 1),
+            periodo_fim=date(2026, 10, 15),
+        )
+        SystemConfig.objects.update_or_create(
+            chave="budget_limit_carry_over", defaults={"valor": str(acumula), "tipo": "boolean"},
+        )
+
+        ids = [vigente.pk, herdada.pk, sem_nada.pk, com_saldo_antigo.pk, curta.pk, pulou.pk]
+        lote = limites.limites_efetivos(usuario_adt_rn.pk, ids)
+
+        assert pulou.pk not in lote
+        assert lote[herdada.pk].valor_limite == Decimal("950")
+        for rubrica_id in ids:
+            assert self._campos(lote.get(rubrica_id)) == self._campos(limites.limite_efetivo(usuario_adt_rn.pk, rubrica_id))
+
+    def test_meu_saldo_nao_consulta_o_banco_por_rubrica(self, auth_client_adt_rn, usuario_adt_rn):
+        perfil = usuario_adt_rn.profiles.get().perfil
+        criador = UserFactory()
+        for rubrica in BudgetRubricaFactory.create_batch(2):
+            limites.criar_padrao(perfil=perfil, rubrica=rubrica, valor_limite=Decimal("800"), usuario=criador)
+        auth_client_adt_rn.get(URL)
+        with CaptureQueriesContext(connection) as com_duas:
+            auth_client_adt_rn.get(URL)
+
+        for rubrica in BudgetRubricaFactory.create_batch(5):
+            limites.criar_padrao(perfil=perfil, rubrica=rubrica, valor_limite=Decimal("800"), usuario=criador)
+        with CaptureQueriesContext(connection) as com_sete:
+            auth_client_adt_rn.get(URL)
+
+        assert len(com_sete) == len(com_duas)
+
+
+class TestLeituraComOPapelDeRuntime:
+    """A suíte conecta como superusuário, que ignora o RLS: aqui o papel não tem BYPASSRLS."""
+
+    def _como(self, *, user, role, territorios):
+        with connection.cursor() as cursor:
+            cursor.execute("CREATE ROLE sgp_meu_saldo_runtime NOLOGIN NOBYPASSRLS;")
+            cursor.execute("GRANT USAGE ON SCHEMA public TO sgp_meu_saldo_runtime;")
+            cursor.execute("GRANT SELECT ON ALL TABLES IN SCHEMA public TO sgp_meu_saldo_runtime;")
+            cursor.execute("SET LOCAL ROLE sgp_meu_saldo_runtime;")
+            cursor.execute("SELECT set_config('app.current_user_id', %s, true)", [str(user.pk)])
+            cursor.execute("SELECT set_config('app.user_role', %s, true)", [role])
+            cursor.execute("SELECT set_config('app.user_territorios', %s, true)", [territorios])
+
+    def _voltar(self):
+        with connection.cursor() as cursor:
+            cursor.execute("RESET ROLE;")
+
+    def test_adt_le_o_proprio_saldo_o_territorio_e_o_extrato(self, usuario_adt_rn, territory_rn):
+        rubrica = BudgetRubricaFactory()
+        limite = _limite(usuario_adt_rn, rubrica, limite=1000)
+        transacao = _mover(limite, Tipo.RESERVA, "100", comprometido=100)
+        BudgetPoolFactory(
+            rubrica=rubrica, nivel=Nivel.TERRITORIAL, territorio=territory_rn, valor_alocado=Decimal("5000"),
+        )
+        herdada = BudgetRubricaFactory()
+        limites.criar_padrao(
+            perfil=usuario_adt_rn.profiles.get().perfil, rubrica=herdada, valor_limite=Decimal("800"),
+            usuario=UserFactory(),
+        )
+        alheio = BudgetRubricaFactory()
+        _mover(_limite(UserFactory(), alheio), Tipo.RESERVA, "10", comprometido=10)
+
+        self._como(user=usuario_adt_rn, role="adt-acr", territorios=str(territory_rn.pk))
+        try:
+            saldos = meu_saldo.saldo_por_rubrica(usuario_adt_rn)
+            linhas = list(meu_saldo.extrato(usuario_adt_rn, rubrica))
+            alheias = list(meu_saldo.extrato(usuario_adt_rn, alheio))
+            limite_alheio_visivel = SpendingLimit.objects.filter(rubrica=alheio).exists()
+        finally:
+            self._voltar()
+
+        linha = next(item for item in saldos if item["rubrica"] == rubrica.slug)
+        assert (linha["disponivel"], linha["saldo_territorio"]) == (Decimal("900"), Decimal("5000"))
+        assert alheio.slug not in {item["rubrica"] for item in saldos}
+        assert [item.pk for item in linhas] == [transacao.pk]
+        assert alheias == []
+        assert limite_alheio_visivel is False
+        assert next(item for item in saldos if item["rubrica"] == herdada.slug)["disponivel"] == Decimal("800")
+
+
 # ---------- Extrato ----------
 
 class TestExtrato:
@@ -148,6 +290,27 @@ class TestExtrato:
         assert linhas[0]["tipo"] == "liberacao"
         assert linhas[0]["saldo_posterior"] == "1000.00"
         assert linhas[0]["periodo_inicio"] == limite.periodo_inicio.isoformat()
+
+    def test_por_padrao_so_o_periodo_vigente_cuja_soma_e_o_disponivel(self, auth_client_adt_rn, usuario_adt_rn):
+        rubrica = BudgetRubricaFactory()
+        encerrada = SpendingLimitFactory(
+            user=usuario_adt_rn, rubrica=rubrica, valor_limite=1000,
+            periodo_inicio=date(2020, 1, 1), periodo_fim=date(2020, 3, 31),
+        )
+        limites.registrar_movimento(
+            limite=encerrada, tipo=Tipo.AUMENTO_LIMITE, valor=Decimal("1000"), usuario=usuario_adt_rn,
+        )
+        vigente = _limite(usuario_adt_rn, rubrica, limite=800)
+        limites.registrar_movimento(
+            limite=vigente, tipo=Tipo.AUMENTO_LIMITE, valor=Decimal("800"), usuario=usuario_adt_rn,
+        )
+
+        padrao = auth_client_adt_rn.get(self._url(rubrica)).json()["results"]
+        historico = auth_client_adt_rn.get(self._url(rubrica), {"historico": "true"}).json()["results"]
+
+        assert sum(Decimal(linha["efeito"]) for linha in padrao) == vigente.saldo_disponivel
+        assert _linha(auth_client_adt_rn.get(URL), rubrica)["disponivel"] == "800.00"
+        assert len(historico) == 2
 
     def test_pagina_as_linhas(self, auth_client_adt_rn, usuario_adt_rn):
         rubrica = BudgetRubricaFactory()
@@ -220,17 +383,30 @@ class TestSimulador:
         assert (simulado["destino"]["saldo_antes"], simulado["destino"]["saldo_depois"]) == (
             credito["saldo_anterior"], credito["saldo_posterior"],
         )
-        origem.refresh_from_db()
-        assert simulado["origem"]["percentual_depois"] == (
-            f"{budget_service.percentual_comprometido(origem.valor_comprometido, origem.valor_alocado):.2f}"
+        limiares = budget_service.limiares_semaforo()
+        for lado, pool in (("origem", origem), ("destino", destino)):
+            pool.refresh_from_db()
+            percentual = budget_service.percentual_comprometido(pool.valor_comprometido, pool.valor_alocado)
+            assert simulado[lado]["percentual_depois"] == f"{percentual:.2f}"
+            assert simulado[lado]["faixa_depois"] == budget_service.faixa_semaforo(percentual, limiares)
+
+    def test_traz_o_percentual_de_execucao(self, auth_client_super_admin, pools):
+        origem, destino = pools
+        BudgetPool.objects.filter(pk=origem.pk).update(valor_executado=Decimal("100"))
+
+        corpo = auth_client_super_admin.post(SIMULAR_URL, _payload(origem, destino), format="json").json()
+
+        assert (corpo["origem"]["percentual_execucao_antes"], corpo["origem"]["percentual_execucao_depois"]) == (
+            "10.00", "12.50",
         )
 
     def test_nao_grava_nenhuma_linha(self, auth_client_super_admin, pools):
         origem, destino = pools
         antes = (BudgetTransaction.objects.count(), BudgetTransfer.objects.count())
 
-        auth_client_super_admin.post(SIMULAR_URL, _payload(origem, destino), format="json")
+        resposta = auth_client_super_admin.post(SIMULAR_URL, _payload(origem, destino), format="json")
 
+        assert resposta.status_code == 200
         assert (BudgetTransaction.objects.count(), BudgetTransfer.objects.count()) == antes
         origem.refresh_from_db()
         destino.refresh_from_db()
