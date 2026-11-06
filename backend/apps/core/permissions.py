@@ -13,6 +13,7 @@ from rest_framework.permissions import BasePermission, IsAuthenticated
 
 from apps.core.services.permissions import (
     user_has_role,
+    user_has_role_on_object,
     user_states,
     user_territories,
 )
@@ -175,6 +176,38 @@ class IsFGD(BasePermission):
 
     def has_object_permission(self, request: Request, view: APIView, obj: Any) -> bool:
         return self.has_permission(request, view)
+
+
+class _PerfilOperacionalNoObjeto(BasePermission):
+    """O perfil operacional só vale para o objeto designado: `has_permission` confere o perfil, e
+    `has_object_permission`, o perfil naquele objeto."""
+
+    perfil_slug: str
+    objeto_tipo: str
+
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        if user_has_role(request.user, self.perfil_slug):
+            return True
+        _log_denial(request.user, view, reason=f"role != {self.perfil_slug}")
+        return False
+
+    def has_object_permission(self, request: Request, view: APIView, obj: Any) -> bool:
+        if user_has_role_on_object(
+            request.user, self.perfil_slug, objeto_tipo=self.objeto_tipo, objeto_id=obj.pk,
+        ):
+            return True
+        _log_denial(request.user, view, obj, reason=f"{self.objeto_tipo} fora da abrangência de {self.perfil_slug}")
+        return False
+
+
+class IsEventCoordinator(_PerfilOperacionalNoObjeto):
+    perfil_slug = "coordenador-evento"
+    objeto_tipo = "evento"
+
+
+class IsSelectionEvaluator(_PerfilOperacionalNoObjeto):
+    perfil_slug = "avaliador-selecao"
+    objeto_tipo = "candidatura"
 
 
 class IsOwnerOrReadOnly(BasePermission):

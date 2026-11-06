@@ -283,6 +283,8 @@ SPECTACULAR_SETTINGS = {
         "TipoSyncEventEnum": "apps.sca.models.SyncEvent.Tipo",
         "TipoRiscoDeGlosaEnum": "apps.sgp.models.glosa_risk.GlosaRisk.Tipo",
         "SeveridadeRiscoDeGlosaEnum": "apps.sgp.models.glosa_risk.GlosaRisk.Severidade",
+        "CategoriaDoPerfilEnum": "apps.core.models.role.Role.Categoria",
+        "TipoDoObjetoDoPerfilEnum": "apps.core.models.user_profile.ObjetoTipo",
         "TipoProducaoEnum": "apps.sgp.models.production.Production.TIPO_CHOICES",
         "SimNaoInformadoEnum": "apps.sgp.constants.ENERGIA_CHOICES",
         "FormatoExportacaoEnum": "apps.sgp.models.export_job.ExportJob.Formato",

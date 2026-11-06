@@ -265,6 +265,17 @@ ADT e ACR precisam de valores diferentes. Hoje os dois são um só perfil no sis
 
 ---
 
+## 10. Perfis operacionais — regras além da #393
+
+- **Trigger em vez de `CheckConstraint` para a categoria:** um CHECK não enxerga `core_role`. O CHECK garante que `objeto_tipo` e `objeto_id` vêm juntos, e a trigger, que objeto só existe em perfil operacional, que todo operacional tem objeto e que ele não tem território.
+- **Sem território:** a abrangência é o objeto, como o Core define. Com território, o perfil operacional ampliaria o escopo territorial de quem o recebe, porque as regras de escopo somam os territórios de todos os perfis do usuário.
+- **Sempre com um perfil principal:** o Core diz "nunca isolados". `perfis_input` recusa operacional sozinho. Pelo Admin ainda é possível apagar o principal, e por isso `user_territories` não conta perfil operacional como acesso global.
+- **Objeto de cada perfil:** Coordenador de Evento e Credenciador em `evento`, Avaliador de Seleção em `candidatura` e Gestor de Edital em `edital`. O Credenciador também abrange sessões no Core, mas sessão ainda não existe como objeto.
+- **`objeto_id` sem FK:** `apps/sge` e `apps/sgs` ainda não têm modelos.
+- **`categoria` só de leitura:** na API e no Admin, porque mudar a categoria de um perfil em uso deixaria os vínculos dele inconsistentes.
+
+---
+
 ## Observação
 
 Achado da varredura que **não** tem justificativa técnica registrada em

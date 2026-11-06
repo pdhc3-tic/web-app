@@ -17,7 +17,7 @@ class RoleViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedActiveAccess]
     filter_backends = [filters.SearchFilter, django_filters.DjangoFilterBackend]
     search_fields = ["nome", "slug"]
-    filterset_fields = ["ativo"]
+    filterset_fields = ["ativo", "categoria"]
 
 
 class StateViewSet(viewsets.ModelViewSet):

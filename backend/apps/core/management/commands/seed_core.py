@@ -24,7 +24,14 @@ ROLES = [
     ("super-admin", "Super Admin"),
 ]
 
-STATES = ["PE", "PB", "AL", "RN", "MA", "BA", "MG"]
+ROLES_OPERACIONAIS = [
+    ("coordenador-evento", "Coordenador de Evento"),
+    ("credenciador", "Credenciador"),
+    ("avaliador-selecao", "Avaliador de Seleção"),
+    ("gestor-edital", "Gestor de Edital"),
+]
+
+STATES =["PE", "PB", "AL", "RN", "MA", "BA", "MG"]
 
 NOMES_DOS_ESTADOS = {
     "AC": "Acre", "AL": "Alagoas", "AP": "Amapá", "AM": "Amazonas", "BA": "Bahia", "CE": "Ceará",
@@ -48,8 +55,12 @@ def ensure_state(sigla):
 
 
 def ensure_roles(stdout):
-    for slug, nome in ROLES:
-        role, created = Role.objects.get_or_create(slug=slug, defaults={"nome": nome, "ativo": True})
+    operacionais = {slug for slug, _ in ROLES_OPERACIONAIS}
+    for slug, nome in [*ROLES, *ROLES_OPERACIONAIS]:
+        categoria = Role.Categoria.OPERACIONAL if slug in operacionais else Role.Categoria.PRINCIPAL
+        role, created = Role.objects.get_or_create(
+            slug=slug, defaults={"nome": nome, "ativo": True, "categoria": categoria},
+        )
         if not created:
             if role.nome != nome:
                 role.nome = nome

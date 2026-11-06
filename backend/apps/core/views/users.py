@@ -33,13 +33,8 @@ _ACESSO_RESPOSTA = inline_serializer(
 
 def _user_access_snapshot(user):
     from apps.core.models.user_profile import UserProfile
-    profiles = UserProfile.objects.filter(user=user).values("perfil_id", "territorio_id")
-    return {
-        "perfis": [
-            {"perfil_id": p["perfil_id"], "territorio_id": p["territorio_id"]}
-            for p in profiles
-        ],
-    }
+    profiles = UserProfile.objects.filter(user=user).values("perfil_id", "territorio_id", "objeto_tipo", "objeto_id")
+    return {"perfis": list(profiles)}
 
 
 class UserFilter(django_filters.FilterSet):

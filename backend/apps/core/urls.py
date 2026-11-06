@@ -47,6 +47,7 @@ urlpatterns = router.urls + [
         GoogleCalendarStatusView.as_view(),
         name="google-calendar-status",
     ),
+    path("core/roles/", RoleViewSet.as_view({"get": "list"}), name="core-role-list"),
     path(
         "core/usuarios/<int:pk>/impacto-desativacao/",
         UserViewSet.as_view({"get": "impacto_desativacao"}),

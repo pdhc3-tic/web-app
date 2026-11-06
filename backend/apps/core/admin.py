@@ -17,14 +17,15 @@ class UserProfileInline(admin.TabularInline):
     verbose_name = "Perfil"
     verbose_name_plural = "Perfis"
     extra = 1
-    fields = ("perfil", "territorio")
+    fields = ("perfil", "territorio", "objeto_tipo", "objeto_id")
 
 
 @admin.register(Role)
 class RoleAdmin(admin.ModelAdmin):
-    list_display = ("nome", "slug", "ativo", "criado_em")
+    list_display = ("nome", "slug", "categoria", "ativo", "criado_em")
     search_fields = ("nome", "slug")
-    list_filter = ("ativo",)
+    list_filter = ("ativo", "categoria")
+    readonly_fields = ("categoria",)
 
 
 @admin.register(User)

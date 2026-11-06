@@ -696,6 +696,53 @@ paths:
               schema:
                 $ref: '#/components/schemas/GoogleCalendarStatusResposta'
           description: ''
+  /api/v1/core/roles/:
+    get:
+      operationId: v1_core_roles_list
+      parameters:
+      - in: query
+        name: ativo
+        schema:
+          type: boolean
+      - in: query
+        name: categoria
+        schema:
+          type: string
+          enum:
+          - operacional
+          - principal
+        description: |-
+          * `principal` - Principal
+          * `operacional` - Operacional
+      - name: limit
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: O índice inicial a partir do qual retornar os resultados.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: Um termo de busca.
+        schema:
+          type: string
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedRoleList'
+          description: ''
   /api/v1/core/usuarios/{id}/impacto-desativacao/:
     get:
       operationId: v1_core_usuarios_impacto_desativacao_retrieve
@@ -1535,6 +1582,16 @@ paths:
         name: ativo
         schema:
           type: boolean
+      - in: query
+        name: categoria
+        schema:
+          type: string
+          enum:
+          - operacional
+          - principal
+        description: |-
+          * `principal` - Principal
+          * `operacional` - Operacional
       - name: limit
         required: false
         in: query
@@ -5297,6 +5354,10 @@ paths:
           - ugp
           - fgd
           - super-admin
+          - coordenador-evento
+          - credenciador
+          - avaliador-selecao
+          - gestor-edital
           type: string
         description: |-
           * `agricultor` - Agricultor / Beneficiário
@@ -5305,6 +5366,10 @@ paths:
           * `ugp` - UGP — Coordenação
           * `fgd` - FGD — Administrativo
           * `super-admin` - Super Admin
+          * `coordenador-evento` - Coordenador de Evento
+          * `credenciador` - Credenciador
+          * `avaliador-selecao` - Avaliador de Seleção
+          * `gestor-edital` - Gestor de Edital
       - in: query
         name: rubrica
         schema:
@@ -9820,6 +9885,14 @@ components:
       - categoria
       - id
       - nome
+    CategoriaDoPerfilEnum:
+      enum:
+      - principal
+      - operacional
+      type: string
+      description: |-
+        * `principal` - Principal
+        * `operacional` - Operacional
     ChoicesResposta:
       type: object
       properties:
@@ -14151,9 +14224,19 @@ components:
         territorio_id:
           type: integer
           nullable: true
+        objeto_tipo:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/TipoDoObjetoDoPerfilEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        objeto_id:
+          type: integer
+          nullable: true
       required:
       - id
       - nome
+      - objeto_id
+      - objeto_tipo
       - slug
       - territorio_id
     PerfilInput:
@@ -14164,6 +14247,15 @@ components:
         territorio_id:
           type: integer
           nullable: true
+        objeto_tipo:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/TipoDoObjetoDoPerfilEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        objeto_id:
+          type: integer
+          minimum: 1
+          nullable: true
       required:
       - perfil_id
     PerfilInputRequest:
@@ -14173,6 +14265,15 @@ components:
           type: integer
         territorio_id:
           type: integer
+          nullable: true
+        objeto_tipo:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/TipoDoObjetoDoPerfilEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        objeto_id:
+          type: integer
+          minimum: 1
           nullable: true
       required:
       - perfil_id
@@ -14825,6 +14926,10 @@ components:
           pattern: ^[-a-zA-Z0-9_]+$
         descricao:
           type: string
+        categoria:
+          allOf:
+          - $ref: '#/components/schemas/CategoriaDoPerfilEnum'
+          readOnly: true
         ativo:
           type: boolean
         criado_em:
@@ -14832,6 +14937,7 @@ components:
           format: date-time
           readOnly: true
       required:
+      - categoria
       - criado_em
       - id
       - nome
@@ -15027,6 +15133,10 @@ components:
       - ugp
       - fgd
       - super-admin
+      - coordenador-evento
+      - credenciador
+      - avaliador-selecao
+      - gestor-edital
       type: string
       description: |-
         * `agricultor` - Agricultor / Beneficiário
@@ -15035,6 +15145,10 @@ components:
         * `ugp` - UGP — Coordenação
         * `fgd` - FGD — Administrativo
         * `super-admin` - Super Admin
+        * `coordenador-evento` - Coordenador de Evento
+        * `credenciador` - Credenciador
+        * `avaliador-selecao` - Avaliador de Seleção
+        * `gestor-edital` - Gestor de Edital
     SpendingLimit:
       type: object
       description: |-
@@ -16082,6 +16196,16 @@ components:
         * `2g` - 2G
         * `5g` - 5G
         * `offline` - Offline
+    TipoDoObjetoDoPerfilEnum:
+      enum:
+      - evento
+      - edital
+      - candidatura
+      type: string
+      description: |-
+        * `evento` - Evento
+        * `edital` - Edital
+        * `candidatura` - Candidatura
     TipoDocumentoAtividadeEnum:
       enum:
       - lista_presenca
