@@ -1,11 +1,12 @@
 """Espelho de saldo: a fotografia de "meu saldo" gravada no último pull."""
 from datetime import timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 from django.utils import timezone
 
-from apps.sca.models import SyncDevice
+from apps.sca.models import SyncDevice, SyncEvent
 from apps.sgp.models import SpendingLimit
 from apps.sgp.tests.factories import BudgetRubricaFactory, SpendingLimitFactory
 
@@ -37,6 +38,38 @@ def test_espelho_bate_com_meu_saldo_no_momento_do_sync(auth_client, limite):
     assert resposta.status_code == 200
     assert resposta.json()["saldos"] == auth_client.get(MEU_SALDO_URL).json()
     assert resposta.json()["saldos"][0]["disponivel"] == "800.00"
+
+
+def test_pull_traz_os_saldos_para_a_consulta_offline(auth_client, limite):
+    resposta = _pull(auth_client)
+
+    assert resposta.data["saldos"] == auth_client.get(MEU_SALDO_URL).json()
+
+
+def test_pull_sem_device_id_tambem_traz_os_saldos(auth_client, limite):
+    resposta = auth_client.get(PULL_URL)
+
+    assert resposta.status_code == 200
+    assert resposta.data["saldos"][0]["rubrica"] == limite.rubrica.slug
+
+
+def test_saldos_nao_entram_na_contagem_do_evento_de_sync(auth_client, usuario, limite):
+    _pull(auth_client)
+
+    assert SyncEvent.objects.get(user=usuario, tipo=SyncEvent.Tipo.PULL).contagem == 0
+
+
+def test_falha_no_espelho_nao_derruba_o_pull_e_mantem_a_fotografia_e_a_data_dela(auth_client, usuario, limite):
+    _pull(auth_client)
+    anterior = auth_client.get(URL, HTTP_X_DEVICE_ID="dev-001").json()
+
+    with patch("apps.sca.sync_entities.espelho_de_saldo", side_effect=RuntimeError):
+        resposta = _pull(auth_client)
+
+    assert resposta.data["saldos"] is None
+    assert auth_client.get(URL, HTTP_X_DEVICE_ID="dev-001").json() == anterior
+    dispositivo = SyncDevice.objects.get(user=usuario, device_id="dev-001")
+    assert dispositivo.ultimo_pull_em > dispositivo.espelho_saldo_em
 
 
 def test_ultimo_sync_e_o_ultimo_pull_do_dispositivo(auth_client, usuario, limite):
@@ -71,8 +104,9 @@ def test_pull_de_usuario_sem_territorio_tambem_grava_o_espelho(auth_client, usua
 
 def test_sem_device_id_vale_o_pull_mais_recente_do_usuario(auth_client, usuario, limite):
     _pull(auth_client, "dev-antigo")
+    antes = timezone.now() - timedelta(days=2)
     SyncDevice.objects.filter(user=usuario, device_id="dev-antigo").update(
-        ultimo_pull_em=timezone.now() - timedelta(days=2), espelho_saldo=[{"rubrica": "antiga"}],
+        ultimo_pull_em=antes, espelho_saldo_em=antes, espelho_saldo=[{"rubrica": "antiga"}],
     )
     _pull(auth_client, "dev-novo")
 

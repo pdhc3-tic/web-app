@@ -596,8 +596,8 @@ class SyncStatusView(APIView):
 # ---------------------------------------------------------------------------
 
 class EspelhoSaldoView(APIView):
-    """A fotografia gravada no último pull, não o saldo de agora: é o que o técnico vê
-    offline. Sem `device_id`, vale o pull mais recente do usuário."""
+    """A fotografia gravada num pull, não o saldo de agora: é o que o técnico vê offline.
+    Sem `device_id`, vale a fotografia mais recente do usuário."""
 
     permission_classes = [IsAuthenticatedActiveAccess]
 
@@ -609,14 +609,14 @@ class EspelhoSaldoView(APIView):
         responses=EspelhoSaldoSerializer,
     )
     def get(self, request):
-        dispositivos = SyncDevice.objects.filter(user=request.user, ultimo_pull_em__isnull=False)
+        dispositivos = SyncDevice.objects.filter(user=request.user, espelho_saldo_em__isnull=False)
         device_id = _resolve_device_id(request)
         if device_id:
             dispositivos = dispositivos.filter(device_id=device_id)
-        dispositivo = dispositivos.order_by("-ultimo_pull_em").first()
+        dispositivo = dispositivos.order_by("-espelho_saldo_em").first()
         return Response({
             "saldos": dispositivo.espelho_saldo if dispositivo else [],
-            "ultimo_sync": dispositivo.ultimo_pull_em.isoformat() if dispositivo else None,
+            "ultimo_sync": dispositivo.espelho_saldo_em.isoformat() if dispositivo else None,
         })
 
 

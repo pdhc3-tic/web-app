@@ -623,13 +623,27 @@ class PushProcessor:
 # Pull
 # ---------------------------------------------------------------------------
 
-def _registrar_pull(user, device, server_time) -> None:
+def _espelho_do_pull(user) -> list[dict] | None:
+    """Falhar aqui não pode impedir o técnico de baixar os registros: o espelho fica para o próximo
+    sync. `None` diz ao app para manter o que tem: lista vazia significaria "sem limite"."""
     from apps.sca.sync_entities import espelho_de_saldo
 
+    try:
+        with transaction.atomic():
+            return espelho_de_saldo(user)
+    except Exception:
+        logger.exception("sca.pull.espelho_de_saldo_falhou user_id=%s", user.pk)
+        return None
+
+
+def _registrar_pull(user, device, server_time, payload) -> None:
+    espelho = _espelho_do_pull(user)
+    payload["saldos"] = espelho
     if device:
-        SyncDevice.objects.filter(pk=device.pk).update(
-            ultimo_pull_em=server_time, espelho_saldo=espelho_de_saldo(user),
-        )
+        campos = {"ultimo_pull_em": server_time}
+        if espelho is not None:
+            campos.update(espelho_saldo=espelho, espelho_saldo_em=server_time)
+        SyncDevice.objects.filter(pk=device.pk).update(**campos)
 
 
 def build_pull(user, device, since, tipo_conexao: str | None = None) -> dict:
@@ -641,7 +655,7 @@ def build_pull(user, device, since, tipo_conexao: str | None = None) -> dict:
     payload = {"upfs": [], "members": [], "activities": [], "server_time": server_time.isoformat()}
 
     if not territory_ids:
-        _registrar_pull(user, device, server_time)
+        _registrar_pull(user, device, server_time, payload)
         SyncEvent.objects.create(
             user=user,
             device=device,
@@ -671,8 +685,8 @@ def build_pull(user, device, since, tipo_conexao: str | None = None) -> dict:
             for obj in qs
         ]
 
-    _registrar_pull(user, device, server_time)
-    total = sum(len(v) for v in payload.values() if isinstance(v, list))
+    _registrar_pull(user, device, server_time, payload)
+    total = sum(len(payload[grupo]) for grupo in group_key.values())
     finalizado_em = timezone.now()
     SyncEvent.objects.create(
         user=user,

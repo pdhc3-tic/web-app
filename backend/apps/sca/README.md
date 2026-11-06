@@ -8,7 +8,7 @@ acompanhamento (issues #156–#160). API sob `/api/v1/sca/` com JWT.
 | Método | Rota | Descrição |
 | --- | --- | --- |
 | POST | `/api/v1/sca/sync/push/` | Envia criações/alterações offline em lote |
-| GET | `/api/v1/sca/sync/pull/` | Baixa registros alterados desde o último pull |
+| GET | `/api/v1/sca/sync/pull/` | Baixa registros alterados desde o último pull, e `saldos` para consulta offline (`null` quando a fotografia falhou: o app mantém a que tem) |
 | GET | `/api/v1/sca/sync/forms/` | Formulários dinâmicos para preenchimento offline |
 | GET | `/api/v1/sca/sync/status/` | Estado da sessão de sync do dispositivo |
 | GET | `/api/v1/sca/saldo/` | Saldo por rubrica gravado no último pull do dispositivo, com `ultimo_sync` |
