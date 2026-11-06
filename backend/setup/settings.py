@@ -281,6 +281,8 @@ SPECTACULAR_SETTINGS = {
         "StatusFormResponseEnum": "apps.sgp.models.form_response.FormResponse.Status",
         "StatusConflitoEnum": "apps.sca.models.ConflictLog.Status",
         "TipoSyncEventEnum": "apps.sca.models.SyncEvent.Tipo",
+        "TipoRiscoDeGlosaEnum": "apps.sgp.models.glosa_risk.GlosaRisk.Tipo",
+        "SeveridadeRiscoDeGlosaEnum": "apps.sgp.models.glosa_risk.GlosaRisk.Severidade",
         "TipoProducaoEnum": "apps.sgp.models.production.Production.TIPO_CHOICES",
         "SimNaoInformadoEnum": "apps.sgp.constants.ENERGIA_CHOICES",
         "FormatoExportacaoEnum": "apps.sgp.models.export_job.ExportJob.Formato",

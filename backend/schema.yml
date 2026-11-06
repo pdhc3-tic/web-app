@@ -4809,6 +4809,67 @@ paths:
               schema:
                 $ref: '#/components/schemas/FormResponseDetail'
           description: ''
+  /api/v1/sgp/glosa-riscos/:
+    get:
+      operationId: v1_sgp_glosa_riscos_list
+      description: GET /api/v1/sgp/glosa-riscos/ — por valor exposto; com `?demanda=`,
+        em ordem cronológica.
+      parameters:
+      - in: query
+        name: activity
+        schema:
+          type: integer
+      - in: query
+        name: demanda
+        schema:
+          type: integer
+      - name: limit
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: O índice inicial a partir do qual retornar os resultados.
+        schema:
+          type: integer
+      - in: query
+        name: severidade
+        schema:
+          enum:
+          - alta
+          - media
+          - baixa
+          type: string
+          minLength: 1
+        description: |-
+          * `alta` - Alta
+          * `media` - Média
+          * `baixa` - Baixa
+      - in: query
+        name: tipo
+        schema:
+          enum:
+          - pago_acima_autorizado
+          - demanda_sem_evidencia
+          type: string
+          minLength: 1
+        description: |-
+          * `pago_acima_autorizado` - Pago acima do autorizado
+          * `demanda_sem_evidencia` - Demanda executada sem evidência
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedGlosaRiskList'
+          description: ''
   /api/v1/sgp/indicadores/:
     get:
       operationId: v1_sgp_indicadores_list
@@ -8351,6 +8412,16 @@ components:
           items:
             $ref: '#/components/schemas/StatusAtividadeEnum'
           readOnly: true
+        custo_previsto:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        custo_realizado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
         ativo:
           type: boolean
         criado_por:
@@ -8430,6 +8501,8 @@ components:
       - comunidade
       - criado_em
       - criado_por
+      - custo_previsto
+      - custo_realizado
       - data_fim
       - data_inicio
       - descricao_narrativa
@@ -11196,6 +11269,72 @@ components:
         * `2` - Feminino
         * `3` - Não binário
         * `4` - Não informado
+    GlosaRisk:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        tipo:
+          allOf:
+          - $ref: '#/components/schemas/TipoRiscoDeGlosaEnum'
+          readOnly: true
+        severidade:
+          allOf:
+          - $ref: '#/components/schemas/SeveridadeRiscoDeGlosaEnum'
+          readOnly: true
+        valor_exposto:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          title: Valor exposto (R$)
+        activity_id:
+          type: integer
+          readOnly: true
+          nullable: true
+        demanda_id:
+          type: integer
+          readOnly: true
+        demand_request_id:
+          type: integer
+          nullable: true
+          readOnly: true
+        valor_autorizado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          nullable: true
+          title: Valor autorizado (R$)
+        valor_pago:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          nullable: true
+          title: Valor pago (R$)
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        resolvido_em:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+      required:
+      - activity_id
+      - criado_em
+      - demand_request_id
+      - demanda_id
+      - id
+      - resolvido_em
+      - severidade
+      - tipo
+      - valor_autorizado
+      - valor_exposto
+      - valor_pago
     GoogleCalendarConfigResposta:
       type: object
       properties:
@@ -12490,6 +12629,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FormResponseList'
+    PaginatedGlosaRiskList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/GlosaRisk'
     PaginatedHistoricoEntryList:
       type: object
       required:
@@ -14789,6 +14951,16 @@ components:
         * `verde` - verde
         * `amarelo` - amarelo
         * `vermelho` - vermelho
+    SeveridadeRiscoDeGlosaEnum:
+      enum:
+      - alta
+      - media
+      - baixa
+      type: string
+      description: |-
+        * `alta` - Alta
+        * `media` - Média
+        * `baixa` - Baixa
     SimNaoInformadoEnum:
       enum:
       - 1
@@ -15988,6 +16160,14 @@ components:
         * `agricola` - Agrícola
         * `pecuaria` - Pecuária
         * `outra` - Outra
+    TipoRiscoDeGlosaEnum:
+      enum:
+      - pago_acima_autorizado
+      - demanda_sem_evidencia
+      type: string
+      description: |-
+        * `pago_acima_autorizado` - Pago acima do autorizado
+        * `demanda_sem_evidencia` - Demanda executada sem evidência
     TipoRubrica:
       type: object
       description: 'Contrato de `/sgd/config/tipo-rubrica/`: uma linha por tipo do

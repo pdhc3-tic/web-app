@@ -1,11 +1,33 @@
-"""Criação de atividade por outro módulo, com as regras do cadastro."""
+"""Criação de atividade por outro módulo, com as regras do cadastro, e custo da atividade."""
 from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
 from django.db import transaction
+from django.db.models import Q, Sum
+from django.db.models.functions import Coalesce, Least
 
+from apps.sgp.budget.rls import com_visao_total
 from apps.sgp.models.activity import Activity
 from apps.sgp.services.activity_status import ActivityRuleError, validar_datas, validar_transicao
 
 STATUS_PLANEJADO = "planejado"
+DEMANDA_CONCLUIDA = "concluida"
+DEMANDA_SEM_CUSTO_PREVISTO = (DEMANDA_CONCLUIDA, "cancelada", "recusada")
+
+
+@com_visao_total
+def custos_da_atividade(activity) -> dict:
+    """Custo previsto e realizado. Sem visão total, o RLS das demandas faria cada pessoa ver um
+    total diferente da mesma atividade. O realizado é o executado: pago acima do autorizado fica
+    no risco de glosa, não no custo."""
+    return activity.demandas.aggregate(
+        previsto=Sum("solicitacoes__valor_estimado", filter=~Q(status__in=DEMANDA_SEM_CUSTO_PREVISTO)),
+        realizado=Sum(
+            Least(
+                "solicitacoes__valor_pago",
+                Coalesce("solicitacoes__valor_autorizado", "solicitacoes__valor_estimado"),
+            ),
+            filter=Q(status=DEMANDA_CONCLUIDA, solicitacoes__valor_pago__isnull=False),
+        ),
+    )
 
 
 class CadastroInvalidoError(ActivityRuleError):

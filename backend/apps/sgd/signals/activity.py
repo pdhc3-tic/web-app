@@ -5,6 +5,7 @@ from django.dispatch import receiver
 from apps.sgp.models.activity import Activity
 
 ACTIVITY_STATUS_CANCELAM_DEMANDAS = {"cancelada", "nao_realizada"}
+ACTIVITY_STATUS_SEM_EVIDENCIA = "concluido_sem_evidencia"
 
 
 @receiver(pre_save, sender=Activity)
@@ -44,3 +45,15 @@ def _notificar_demandas_atividade_adiada(sender, instance, **kwargs):
 
     from apps.sgd.tasks import notificar_demandas_atividade_adiada
     transaction.on_commit(lambda: notificar_demandas_atividade_adiada.delay(instance.pk))
+
+
+@receiver(post_save, sender=Activity)
+def _registrar_riscos_da_atividade_sem_evidencia(sender, instance, **kwargs):
+    if instance.status != ACTIVITY_STATUS_SEM_EVIDENCIA:
+        return
+    if getattr(instance, "_status_anterior", None) == ACTIVITY_STATUS_SEM_EVIDENCIA:
+        return
+
+    from apps.sgd.tasks import registrar_riscos_da_atividade_sem_evidencia
+    # `robust`: a falha no broker não pode derrubar o salvamento da atividade, que já foi gravado.
+    transaction.on_commit(lambda: registrar_riscos_da_atividade_sem_evidencia.delay(instance.pk), robust=True)

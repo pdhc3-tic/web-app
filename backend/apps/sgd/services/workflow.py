@@ -458,6 +458,8 @@ def _aplicar(demand, transicao: Transicao, solicitacoes, *, ator, destinatarios:
         demand.recalcular_totais()
     if transicao.efeito_saldo == EXECUTAR:
         recalcular_valor_executado([demand.activity.acao_id])
+        if demand.activity.status == "concluido_sem_evidencia":
+            registrar_demanda_sem_evidencia(demand, usuario=ator)
     if transicao.etapa is not None:
         ApprovalStep.objects.create(
             demanda=demand, etapa=transicao.etapa, responsavel=ator, acao=transicao.acao,
@@ -550,9 +552,12 @@ def registrar_pagamento(solicitacao, *, valor_pago: Decimal, origem: str, usuari
         raise RegraDeNegocio(f"Solicitação #{solicitacao.pk} já tem pagamento registrado.", campo="valores_pagos")
     if valor_pago > autorizado:
         GlosaRisk.objects.create(
+            tipo_situacao=GlosaRisk.Tipo.PAGO_ACIMA_AUTORIZADO, severidade=GlosaRisk.Severidade.ALTA,
+            entidade=GlosaRisk.ENTIDADE_DEMANDA, entidade_id=str(solicitacao.demanda_id),
+            activity_id=solicitacao.demanda.activity_id,
             demanda_id=str(solicitacao.demanda_id), demand_request_id=str(solicitacao.pk),
             arlo_import_id=str(importacao.pk) if importacao is not None else "",
-            valor_autorizado=autorizado, valor_pago=valor_pago, excedente=valor_pago - autorizado,
+            valor_autorizado=autorizado, valor_pago=valor_pago, valor_exposto=valor_pago - autorizado,
             criado_por=usuario,
         )
     solicitacao.valor_pago = valor_pago
@@ -562,4 +567,17 @@ def registrar_pagamento(solicitacao, *, valor_pago: Decimal, origem: str, usuari
         novos["arlo_import_id"] = importacao.pk
     auditoria_service.registrar_evento(
         acao="pagamento", entidade="DemandRequest", entidade_id=solicitacao.pk, usuario=usuario, novos=novos,
+    )
+
+
+def registrar_demanda_sem_evidencia(demand, *, usuario=None) -> None:
+    """Demanda concluída em atividade sem evidência. Vale nas duas ordens: a demanda conclui com
+    a atividade já nesse status, ou a atividade chega a ele com a demanda já concluída."""
+    GlosaRisk.objects.get_or_create(
+        tipo_situacao=GlosaRisk.Tipo.DEMANDA_SEM_EVIDENCIA,
+        entidade=GlosaRisk.ENTIDADE_DEMANDA, entidade_id=str(demand.pk),
+        defaults={
+            "severidade": GlosaRisk.Severidade.ALTA, "activity_id": demand.activity_id,
+            "demanda_id": str(demand.pk), "valor_exposto": demand.valor_pago_total, "criado_por": usuario,
+        },
     )

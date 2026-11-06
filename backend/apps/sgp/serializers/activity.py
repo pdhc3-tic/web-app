@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
@@ -20,6 +22,7 @@ from apps.sgp.serializers.common import (
 from apps.sgp.serializers.membro import MembroListSerializer
 from apps.sgp.serializers.upf import UPFListSerializer
 from apps.sgp.services.access import upfs_acessiveis_ao_usuario
+from apps.sgp.services.activity import custos_da_atividade
 from apps.sgp.services.activity_status import (
     ActivityStatusError,
     DataFimInvalidaError,
@@ -98,6 +101,8 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
     total_participantes = serializers.SerializerMethodField()
     transicoes_permitidas = serializers.SerializerMethodField()
     territorio_id = serializers.SerializerMethodField()
+    custo_previsto = serializers.SerializerMethodField()
+    custo_realizado = serializers.SerializerMethodField()
 
     # ── FKs writeables ───────────────────────────────────────────────────────
     acao = serializers.PrimaryKeyRelatedField(
@@ -182,6 +187,8 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             "status", "status_display",
             "justificativa",
             "atrasada", "transicoes_permitidas",
+            # Custo
+            "custo_previsto", "custo_realizado",
             # Soft-delete
             "ativo",
             # Auditoria
@@ -196,6 +203,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             "tipo_atividade_display", "forma_atuacao_display",
             "ambito_display", "status_display",
             "atrasada", "total_participantes", "transicoes_permitidas",
+            "custo_previsto", "custo_realizado",
             "territorio_id", "google_calendar_event_id",
             "google_calendar_sync_status",
             "device_id", "uuid_local", "ultima_origem", "ultimo_sync_em",
@@ -215,6 +223,19 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
 
     def get_territorio_id(self, obj) -> int | None:
         return obj.territorio_id
+
+    def _custo(self, obj, chave: str) -> str:
+        if not hasattr(obj, "_custos"):
+            obj._custos = custos_da_atividade(obj)
+        return f"{obj._custos[chave] or Decimal('0'):.2f}"
+
+    @extend_schema_field(serializers.DecimalField(max_digits=14, decimal_places=2))
+    def get_custo_previsto(self, obj):
+        return self._custo(obj, "previsto")
+
+    @extend_schema_field(serializers.DecimalField(max_digits=14, decimal_places=2))
+    def get_custo_realizado(self, obj):
+        return self._custo(obj, "realizado")
 
     # ── Validação cruzada (validate) ──────────────────────────────────────────
 

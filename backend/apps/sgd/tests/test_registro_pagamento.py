@@ -81,9 +81,12 @@ def test_pago_acima_do_autorizado_conclui_executa_o_autorizado_e_registra_glosa(
         Decimal("0"), Decimal("1000.00"),
     )
     glosa = GlosaRisk.objects.get()
-    assert (glosa.valor_autorizado, glosa.valor_pago, glosa.excedente) == (
+    assert (glosa.valor_autorizado, glosa.valor_pago, glosa.valor_exposto) == (
         Decimal("1000.00"), Decimal("1200.00"), Decimal("200.00"),
     )
+    assert (glosa.tipo_situacao, glosa.severidade) == (GlosaRisk.Tipo.PAGO_ACIMA_AUTORIZADO, GlosaRisk.Severidade.ALTA)
+    assert (glosa.entidade, glosa.entidade_id) == (GlosaRisk.ENTIDADE_DEMANDA, str(autorizada.pk))
+    assert glosa.activity_id == autorizada.activity_id
     assert glosa.demand_request_id == str(solicitacao.pk) and glosa.criado_por == usuario_fgd
     assert bool(glosa.arlo_import_id) == (caminho == "arlo")
 
@@ -194,7 +197,7 @@ def test_api_concluir_aceita_pago_acima_do_autorizado(auth_client_fgd, autorizad
 
     assert resposta.status_code == 200, resposta.data
     assert resposta.data["status"] == "concluida"
-    assert GlosaRisk.objects.get().excedente == Decimal("200.00")
+    assert GlosaRisk.objects.get().valor_exposto == Decimal("200.00")
 
 
 def test_api_de_decisao_devolve_as_solicitacoes_ja_gravadas(auth_client_ugp, autorizada, usuario_ugp):

@@ -23,6 +23,7 @@ from .views.form_responses import (
     FormResponseReceiveView,
     FormResponseViewSet,
 )
+from .views.glosa_risk import GlosaRiskListView
 from .views.workplan import (
     IndicatorViewSet,
     WorkPlanAcaoViewSet,
@@ -101,6 +102,7 @@ urlpatterns = router.urls + [
         WorkPlanPowerBIView.as_view(),
         name="workplan-power-bi",
     ),
+    path("sgp/glosa-riscos/", GlosaRiskListView.as_view(), name="glosa-risco-list"),
     path("sgp/", include(sgp_router.urls)),
     path(
         "sgp/formularios-disponiveis/",
