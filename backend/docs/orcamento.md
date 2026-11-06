@@ -160,7 +160,7 @@ A tarefa `reconcile_budget_balances` roda a mesma checagem toda noite e notifica
 
 ## Alertas
 
-`BudgetAlert` segue o modelo de dados do SGP (`escopo`, `referencia_id`, `rubrica`, `faixa`, `percentual_atingido`, `alertado_em`, `usuarios_alertados_ids`), mais `tipo` e `resolvido_em`. Cada alvo tem no máximo um alerta aberto por tipo. Os alertas por rubrica, de subexecução e de remanejamento excessivo, usam o pool nacional dela como alvo.
+`BudgetAlert` segue o modelo de dados do SGP (`escopo`, `referencia_id`, `rubrica`, `faixa`, `percentual_atingido`, `alertado_em`, `usuarios_alertados_ids`), mais `tipo`, `criado_em` e `resolvido_em`. `criado_em` não muda depois da criação; `alertado_em` guarda a última entrada numa faixa. Cada alvo tem no máximo um alerta aberto por tipo. Os alertas por rubrica, de subexecução e de remanejamento excessivo, usam o pool nacional dela como alvo.
 
 ## Endpoints HTTP
 

@@ -179,6 +179,30 @@ class TestSemaforo:
         assert _avaliar(pool) > 0
         assert BudgetAlert.objects.count() == 2
 
+    def test_criado_em_e_imutavel_e_alertado_em_marca_a_ultima_entrada_na_faixa(
+        self, territory_rn, usuario_articulador_rn,
+    ):
+        pool = _territorial(territory_rn, comprometido=750)
+
+        with freeze_time("2026-03-01 12:00") as relogio:
+            _avaliar(pool)
+            criacao = timezone.now()
+
+            relogio.move_to("2026-03-02 12:00")
+            _mudar(pool, 950)
+            _avaliar(pool)
+            entrada_no_vermelho = timezone.now()
+
+            relogio.move_to("2026-03-03 12:00")
+            _mudar(pool, 960)
+            _avaliar(pool)
+
+        alerta = BudgetAlert.objects.get()
+        assert alerta.faixa == "vermelho"
+        assert alerta.percentual_atingido == Decimal("96.00")
+        assert alerta.criado_em == criacao
+        assert alerta.alertado_em == entrada_no_vermelho
+
     @pytest.mark.parametrize("nivel,responsavel,superior", [
         (Nivel.ESTADUAL, "articulador", "ugp"),
         (Nivel.NACIONAL, "ugp", "super_admin"),

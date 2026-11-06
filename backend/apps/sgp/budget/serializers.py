@@ -208,7 +208,7 @@ class BudgetAlertSerializer(serializers.ModelSerializer):
         model = BudgetAlert
         fields = [
             "id", "tipo", "escopo", "referencia_id", "rubrica", "rubrica_nome", "faixa", "percentual_atingido",
-            "alertado_em", "resolvido_em",
+            "criado_em", "alertado_em", "resolvido_em",
         ]
         read_only_fields = fields
 

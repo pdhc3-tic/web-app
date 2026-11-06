@@ -538,6 +538,7 @@ class BudgetAlert(models.Model):
     )
     faixa = models.CharField(max_length=15, choices=Faixa.choices, blank=True, default="", verbose_name="Faixa")
     percentual_atingido = models.DecimalField(max_digits=8, decimal_places=2, verbose_name="Percentual atingido")
+    criado_em = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
     alertado_em = models.DateTimeField(default=timezone.now, verbose_name="Alertado em")
     usuarios_alertados_ids = ArrayField(
         models.BigIntegerField(), default=list, blank=True, verbose_name="Usuários alertados",

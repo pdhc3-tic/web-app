@@ -22,6 +22,7 @@ class Migration(migrations.Migration):
                 ('referencia_id', models.PositiveBigIntegerField(verbose_name='ID do alvo')),
                 ('faixa', models.CharField(blank=True, choices=[('amarelo', 'Amarelo'), ('vermelho', 'Vermelho'), ('subexecucao', 'Subexecução'), ('devolucao', 'Devolução')], default='', max_length=15, verbose_name='Faixa')),
                 ('percentual_atingido', models.DecimalField(decimal_places=2, max_digits=8, verbose_name='Percentual atingido')),
+                ('criado_em', models.DateTimeField(auto_now_add=True, verbose_name='Criado em')),
                 ('alertado_em', models.DateTimeField(default=django.utils.timezone.now, verbose_name='Alertado em')),
                 ('usuarios_alertados_ids', django.contrib.postgres.fields.ArrayField(base_field=models.BigIntegerField(), blank=True, default=list, verbose_name='Usuários alertados')),
                 ('resolvido_em', models.DateTimeField(blank=True, null=True, verbose_name='Resolvido em')),
