@@ -218,6 +218,20 @@ def test_seed_prod_keeps_identity_when_source_data_changes(legacy_seed_dir):
 
 
 @pytest.mark.django_db
+def test_seed_prod_nao_reativa_usuario_desativado(legacy_seed_dir):
+    package_dir = legacy_seed_dir / "package"
+    prepare_package(legacy_seed_dir, package_dir)
+    call_command("seed_prod", "--package-dir", str(package_dir))
+    usuarios = get_user_model().objects.filter(email="pessoa@exemplo.test")
+    assert usuarios.get().ativo is True
+    usuarios.update(ativo=False)
+
+    call_command("seed_prod", "--package-dir", str(package_dir))
+
+    assert usuarios.get().ativo is False
+
+
+@pytest.mark.django_db
 def test_ensure_superuser_is_idempotent_without_resetting_password():
     call_command(
         "ensure_superuser",

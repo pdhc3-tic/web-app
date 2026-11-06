@@ -16,7 +16,7 @@ from apps.core.models.user_profile import UserProfile
 from apps.core.services.permissions import user_role_slugs, user_states
 from apps.sgd.constants import PERFIS_NACIONAIS
 from apps.sgd.models.demand import STATUS_CHOICES, STATUS_TERMINAIS, Demand
-from apps.sgd.services import business_days
+from apps.sgd.services import business_days, contexto
 from apps.sgd.services.approval import demand_visibility_scope, demandas_aguardando_acao
 from apps.sgd.services import orcamento as orcamento_service
 
@@ -51,14 +51,14 @@ def fila_aguardando_acao(user, base_qs, *, limite: int = LIMITE_FILA) -> dict:
     qs = (
         demandas_aguardando_acao(user, base_qs)
         .annotate(dia_da_espera=TruncDate("status_alterado_em"))
-        .select_related("activity__municipio__state", "activity__municipio__territory")
+        .select_related(contexto.CAMINHO_ESTADO, contexto.CAMINHO_TERRITORIO)
         .order_by("dia_da_espera", "-valor_estimado_total", "status_alterado_em", "pk")
     )
     total = qs.count()
     hoje = timezone.localdate()
     itens = []
     for demanda in qs[:limite]:
-        municipio = demanda.activity.municipio
+        territorio = contexto.territorio_da_demanda(demanda)
         itens.append({
             "id": demanda.pk,
             "titulo": demanda.titulo,
@@ -68,8 +68,8 @@ def fila_aguardando_acao(user, base_qs, *, limite: int = LIMITE_FILA) -> dict:
             "valor_estimado": demanda.valor_estimado_total,
             "atividade_id": demanda.activity_id,
             "atividade_titulo": demanda.activity.titulo,
-            "estado": municipio.state.sigla,
-            "territorio": municipio.territory.nome if municipio.territory else None,
+            "estado": contexto.estado_da_demanda(demanda),
+            "territorio": territorio.nome if territorio else None,
         })
     return {"total": total, "itens": itens}
 
@@ -184,7 +184,7 @@ def sem_movimentacao(user, base_qs, *, limite: int = LIMITE_SEM_MOVIMENTACAO) ->
     qs = base_qs.exclude(status__in=STATUS_TERMINAIS | {"rascunho"}).filter(status_alterado_em__lt=corte)
     sob_responsabilidade = demandas_aguardando_acao(user, qs) | qs.filter(solicitante=user, status="devolvida")
     candidatas = list(
-        sob_responsabilidade.select_related("activity__municipio__state").order_by("status_alterado_em", "pk")
+        sob_responsabilidade.select_related(contexto.CAMINHO_ESTADO).order_by("status_alterado_em", "pk")
     )
 
     calendarios: dict[str | None, object] = {}
@@ -192,7 +192,7 @@ def sem_movimentacao(user, base_qs, *, limite: int = LIMITE_SEM_MOVIMENTACAO) ->
     if candidatas:
         mais_antiga = min(timezone.localdate(d.status_alterado_em) for d in candidatas)
         for demanda in candidatas:
-            uf = demanda.activity.municipio.state.sigla
+            uf = contexto.estado_da_demanda(demanda)
             if uf not in calendarios:
                 calendarios[uf] = business_days.feriados(uf, mais_antiga, hoje)
             referencia = timezone.localdate(demanda.status_alterado_em)

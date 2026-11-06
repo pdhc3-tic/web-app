@@ -46,7 +46,7 @@ from apps.core.models import (
 from apps.core.models.notifications import Notification
 from apps.sca.models import ConflictLog, SyncDevice, SyncEvent
 from apps.sgd.models import ApprovalStep, ArloImport, Demand, DemandRequest
-from apps.sgd.models.demand_type_rubrica_mapping import DemandTypeRubricaMapping
+from apps.sgd.models.tipo_solicitacao import TipoSolicitacao
 from apps.sgd.seed_demo import popular_arlo, popular_demandas
 from apps.sgp.models import (
     Activity,
@@ -530,10 +530,10 @@ class Command(BaseCommand):
             defaults={"valor": SGD_VALOR_DIARIA_DEMO, "tipo": "string"},
         )
         adt = User.objects.get(email=email_de_demo(*SGD_ADT_MONTAGEM))
-        for mapeamento in DemandTypeRubricaMapping.objects.filter(ativo=True).select_related("rubrica"):
+        for tipo in TipoSolicitacao.objects.filter(ativo=True).select_related("rubrica"):
             limites_service.definir_limite_de_demonstracao(
-                user=adt, rubrica=mapeamento.rubrica,
-                valor_limite=SGD_LIMITES_ADT_MONTAGEM.get(mapeamento.rubrica.slug, Decimal("5000")),
+                user=adt, rubrica=tipo.rubrica,
+                valor_limite=SGD_LIMITES_ADT_MONTAGEM.get(tipo.rubrica.slug, Decimal("5000")),
             )
         self.stdout.write(
             f"Montagem de demanda: diária a R$ {SGD_VALOR_DIARIA_DEMO}; limites de {adt.email} nas rubricas do SGD"

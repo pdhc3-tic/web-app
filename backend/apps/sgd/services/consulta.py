@@ -19,6 +19,7 @@ from apps.sgd.constants import PERFIS_NACIONAIS
 from apps.sgd.exceptions import RegraDeNegocio
 from apps.sgd.filters import DemandFilter
 from apps.sgd.models.demand_request import DemandRequest
+from apps.sgd.services import contexto
 from apps.sgd.services import orcamento as orcamento_service
 from apps.sgp.models import BudgetRubrica
 
@@ -245,25 +246,22 @@ def linhas_exportacao(demandas):
     carregar as solicitações em memória."""
     qs = (
         demandas.order_by("-criado_em", "-pk")
-        .select_related(
-            "solicitante", "activity__acao__meta", "activity__acao__submeta",
-            "activity__municipio__territory",
-        )
-        .prefetch_related("solicitacoes__rubrica")
+        .select_related("solicitante", *contexto.CAMINHOS_CADEIA, contexto.CAMINHO_TERRITORIO)
+        .prefetch_related("solicitacoes__rubrica", "solicitacoes__tipo")
     )
     for demanda in qs.iterator(chunk_size=500):
         solicitacoes = list(demanda.solicitacoes.all())
-        acao = demanda.activity.acao
-        territorio = demanda.activity.municipio.territory
+        cadeia = contexto.cadeia_pt(demanda)
+        territorio = contexto.territorio_da_demanda(demanda)
         yield {
             "id": demanda.pk,
             "titulo": demanda.titulo,
             "status": demanda.get_status_display(),
             "solicitante": demanda.solicitante.nome,
             "atividade": demanda.activity.titulo,
-            "meta": f"{acao.meta.numero} — {acao.meta.titulo}",
-            "submeta": f"{acao.submeta.numero} — {acao.submeta.titulo}",
-            "acao": f"{acao.numero} — {acao.descricao}",
+            "meta": f"{cadeia.meta.numero} — {cadeia.meta.titulo}",
+            "submeta": f"{cadeia.submeta.numero} — {cadeia.submeta.titulo}",
+            "acao": f"{cadeia.acao.numero} — {cadeia.acao.descricao}",
             "territorio": territorio.nome if territorio else "",
             "tipos": "; ".join(sorted({s.get_tipo_display() for s in solicitacoes})),
             "rubricas": "; ".join(sorted({s.rubrica.nome for s in solicitacoes})),

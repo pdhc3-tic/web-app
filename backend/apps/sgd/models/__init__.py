@@ -4,7 +4,7 @@ from .arlo_import import ArloImport
 from .demand import Demand
 from .demand_document import DemandDocument
 from .demand_request import DemandRequest
-from .demand_type_rubrica_mapping import DemandTypeRubricaMapping
+from .tipo_solicitacao import TipoSolicitacao
 
 __all__ = [
     "ApprovalStep",
@@ -13,5 +13,5 @@ __all__ = [
     "Demand",
     "DemandDocument",
     "DemandRequest",
-    "DemandTypeRubricaMapping",
+    "TipoSolicitacao",
 ]

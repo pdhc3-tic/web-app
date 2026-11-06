@@ -14,9 +14,9 @@ from apps.sgp.services.upf_export import FILTROS_ACEITOS
 SCHEMA_VERSIONADO = Path(settings.BASE_DIR) / "schema.yml"
 REGENERAR = "rode `python manage.py spectacular --file schema.yml` no backend e commite o schema.yml"
 
-# Débito conhecido, fora do recorte de SGP + core: SGD e SCA ainda geram
-# warnings. Qualquer warning novo fora daqui quebra o teste.
-FONTES_COM_DEBITO = ("/apps/sgd/", "/apps/sca/")
+# Débito conhecido: o SGD ainda gera warnings. Qualquer warning novo fora
+# daqui quebra o teste.
+FONTES_COM_DEBITO = ("/apps/sgd/",)
 GLOBAIS_COM_DEBITO = ("v1_sgd_",)
 
 
@@ -65,7 +65,7 @@ def test_schema_versionado_e_o_mesmo_gerado_pelo_codigo(geracao):
     assert SCHEMA_VERSIONADO.read_bytes() == gerado, f"schema.yml desatualizado: {REGENERAR}."
 
 
-def test_sgp_e_core_geram_o_schema_sem_warnings(geracao):
+def test_sgp_core_e_sca_geram_o_schema_sem_warnings(geracao):
     _, avisos = geracao
 
     def tem_debito(aviso):
@@ -177,3 +177,70 @@ def test_enums_homonimos_tem_nome_fixo(schema):
         "StatusAtividadeEnum", "TipoProducaoEnum", "FormatoExportacaoEnum",
         "TipoDocumentoUPFEnum", "TipoDocumentoAtividadeEnum",
     } <= nomes
+
+
+def test_rotas_do_sca_descrevem_a_resposta(schema):
+    sem_corpo = [
+        f"{metodo.upper()} {rota}"
+        for rota, operacoes in schema["paths"].items() if rota.startswith("/api/v1/sca/")
+        for metodo, operacao in operacoes.items()
+        if "content" not in operacao["responses"].get("200", {})
+    ]
+    assert sem_corpo == []
+
+
+def test_pull_do_sca_traz_cada_entidade_com_o_envelope(schema):
+    resposta = _resolver(schema, _resposta(schema, "/api/v1/sca/sync/pull/"))
+
+    assert set(resposta["properties"]) == {"upfs", "members", "activities", "server_time"}
+    for grupo in ("upfs", "members", "activities"):
+        entidade = _resolver(schema, resposta["properties"][grupo]["items"])
+        assert {"id", "uuid_local", "atualizado_em"} <= set(entidade["required"])
+
+
+def test_conflito_do_sca_le_o_tecnico_e_o_registro_atual_com_o_tipo_real(schema):
+    conflito = _componente(schema, "ConflictLogDetail")["properties"]
+
+    assert _ref(conflito["tecnico"]) == "UsuarioRefComEmail"
+    assert conflito["registro_atual"]["nullable"] is True
+    assert {_ref(opcao) for opcao in _resolver(schema, conflito["registro_atual"])["oneOf"]} == {
+        "UPFDetailResposta", "MembroDetail", "ActivityDetailResposta",
+    }
+
+
+def test_resolver_conflito_descreve_a_decisao_e_o_conflito_ja_resolvido(schema):
+    operacao = schema["paths"]["/api/v1/sca/conflicts/{id}/resolver/"]["post"]
+
+    assert _ref(operacao["requestBody"]["content"]["application/json"]["schema"]) == "ConflictResolveRequest"
+    assert _ref(operacao["responses"]["409"]["content"]["application/json"]["schema"]) == "ScaErro"
+
+
+def test_lista_de_dispositivos_traz_o_limiar_de_alerta(schema):
+    pagina = _resolver(schema, _resposta(schema, "/api/v1/sca/devices/"))
+
+    assert pagina["properties"]["limiar_alerta_dias"]["type"] == "integer"
+    assert "limiar_alerta_dias" in pagina["required"]
+
+
+def test_pull_do_sca_descreve_as_datas_da_atividade_e_o_membro_sem_ativo(schema):
+    atividade = _componente(schema, "SyncPullActivity")["properties"]
+
+    assert atividade["data_inicio"]["format"] == "date-time"
+    assert atividade["data_fim"]["format"] == "date-time"
+    assert "ativo" not in _componente(schema, "SyncPullMember")["properties"]
+
+
+def _resposta_400(schema, rota):
+    return schema["paths"][rota]["post"]["responses"]["400"]["content"]["application/json"]["schema"]
+
+
+def test_400_do_push_cobre_o_erro_proprio_e_o_de_campo_aninhado(schema):
+    erro_proprio, erro_de_campo = _resposta_400(schema, "/api/v1/sca/sync/push/")["oneOf"]
+
+    assert _ref(erro_proprio) == "ScaErro"
+    assert erro_de_campo == {"type": "object", "additionalProperties": {}}
+
+
+@pytest.mark.parametrize("rota", ["/api/v1/sca/conflicts/{id}/resolver/", "/api/v1/sca/auth/refresh/"])
+def test_400_das_rotas_sem_erro_proprio_e_so_o_de_campo(schema, rota):
+    assert _resposta_400(schema, rota) == {"type": "object", "additionalProperties": {}}

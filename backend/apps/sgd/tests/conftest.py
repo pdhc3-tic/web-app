@@ -1,3 +1,5 @@
+from importlib import import_module
+
 import pytest
 from rest_framework.test import APIClient
 
@@ -7,7 +9,8 @@ from apps.core.tests.factories import (
     TerritoryFactory,
     UserFactory,
 )
-from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
+from apps.sgd.models import TipoSolicitacao
+from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory, TipoSolicitacaoFactory
 from apps.sgp.tests.factories import (
     ActivityFactory,
     BudgetPoolFactory,
@@ -15,6 +18,22 @@ from apps.sgp.tests.factories import (
     SpendingLimitFactory,
     WorkPlanAcaoFactory,
 )
+
+
+@pytest.fixture(autouse=True)
+def catalogo_de_tipos(request):
+    """Os testes com `transaction=True` apagam o que as migrations semearam."""
+    if not request.node.get_closest_marker("django_db"):
+        return
+    request.getfixturevalue("db")
+    if TipoSolicitacao.objects.exists():
+        return
+    semeadura = import_module("apps.sgd.migrations.0020_tipo_solicitacao")
+    for ordem, (slug, nome, rubrica, schema) in enumerate(semeadura.TIPOS, start=1):
+        TipoSolicitacaoFactory(
+            slug=slug, nome=nome, rubrica=BudgetRubricaFactory(slug=rubrica), schema_campos=schema,
+            validador=slug, ordem=ordem,
+        )
 
 
 @pytest.fixture

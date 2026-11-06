@@ -11,7 +11,7 @@ from apps.sgd.models import (
     Demand,
     DemandDocument,
     DemandRequest,
-    DemandTypeRubricaMapping,
+    TipoSolicitacao,
 )
 from apps.sgd.services import orcamento as orcamento_service
 from apps.sgp.models import SpendingLimit
@@ -51,6 +51,7 @@ class DemandAdmin(admin.ModelAdmin):
 
 @admin.register(DemandRequest)
 class DemandRequestAdmin(SalvaSoOQueOFormularioAlterou, admin.ModelAdmin):
+    list_select_related = ["demanda", "tipo", "rubrica"]
     list_display = ["demanda", "tipo", "rubrica", "valor_estimado", "valor_autorizado", "valor_pago"]
     list_filter = ["tipo", "rubrica"]
 
@@ -216,7 +217,18 @@ class ArloImportAdmin(admin.ModelAdmin):
     list_filter = ["tipo", "status"]
 
 
-@admin.register(DemandTypeRubricaMapping)
-class DemandTypeRubricaMappingAdmin(admin.ModelAdmin):
-    list_display = ["tipo", "rubrica", "ativo", "atualizado_em"]
-    list_filter = ["tipo", "ativo"]
+@admin.register(TipoSolicitacao)
+class TipoSolicitacaoAdmin(admin.ModelAdmin):
+    list_display = ["nome", "slug", "rubrica", "validador", "ativo", "ordem", "atualizado_em"]
+    list_filter = ["ativo", "rubrica"]
+    list_select_related = ["rubrica"]
+
+    # O catálogo é alterado pela API, que valida o schema e audita a operação.
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

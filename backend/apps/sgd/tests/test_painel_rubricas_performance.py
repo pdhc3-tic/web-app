@@ -24,7 +24,7 @@ def test_painel_por_rubrica_com_muitas_solicitacoes_em_menos_de_2s_e_queries_fix
     ], batch_size=1000)
     DemandRequest.objects.bulk_create([
         DemandRequest(
-            demanda_id=pk, tipo="diaria", rubrica=rubrica_diarias, campos_json={},
+            demanda_id=pk, tipo_id="diaria", rubrica=rubrica_diarias, campos_json={},
             valor_estimado=100, valor_autorizado=80, ordem=0,
         )
         for pk in Demand.objects.values_list("pk", flat=True)

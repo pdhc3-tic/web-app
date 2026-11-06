@@ -287,7 +287,6 @@ SPECTACULAR_SETTINGS = {
         "TipoAlertaOrcamentoEnum": "apps.sgp.budget.models.BudgetAlert.Tipo",
         "EscopoAlertaOrcamentoEnum": "apps.sgp.budget.models.BudgetAlert.Escopo",
         "FaixaAlertaOrcamentoEnum": "apps.sgp.budget.models.BudgetAlert.Faixa",
-        "TipoSolicitacaoEnum": "apps.sgd.models.demand_request.TIPO_CHOICES",
         "TipoProducaoEnum": "apps.sgp.models.production.Production.TIPO_CHOICES",
         "SimNaoInformadoEnum": "apps.sgp.constants.ENERGIA_CHOICES",
         "FormatoExportacaoEnum": "apps.sgp.models.export_job.ExportJob.Formato",

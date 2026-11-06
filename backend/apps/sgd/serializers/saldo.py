@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.sgd.models.demand_request import TIPO_CHOICES
+from apps.sgd.serializers.tipo_solicitacao import SlugDeTipoField
 
 
 class SaldoConsultaQuerySerializer(serializers.Serializer):
@@ -8,9 +8,8 @@ class SaldoConsultaQuerySerializer(serializers.Serializer):
         required=False, help_text="Ignorado: o saldo depende só do solicitante e da rubrica.",
     )
     rubrica = serializers.CharField(required=False, help_text="slug de BudgetRubrica")
-    tipo = serializers.ChoiceField(
-        choices=TIPO_CHOICES, required=False,
-        help_text="tipo de solicitação; a rubrica sai do mapeamento tipo → rubrica vigente",
+    tipo = SlugDeTipoField(
+        required=False, help_text="tipo de solicitação; a rubrica sai do catálogo de tipos",
     )
     valor = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
 

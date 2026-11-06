@@ -111,10 +111,11 @@ Os agregados também usam visão total: o `valor_distribuido` do nacional e o ap
 
 Toda transação que trava mais de uma destas linhas segue esta ordem:
 
-1. `BudgetIncreaseRequest` (pedido de recurso extra).
-2. Saldo, rubrica por rubrica em ordem de `rubrica_id`: **primeiro todas as linhas de `SpendingLimit` da rubrica** e depois os `BudgetPool` da rubrica, cada grupo em ordem crescente de pk.
-3. `Demand`.
-4. `DemandRequest`.
+1. Linha do `User` solicitante, em `FOR NO KEY UPDATE`: a submissão e a desativação a travam antes de tudo, e assim uma não passa pela outra. A edição do cadastro também a trava, mas não toca em saldo depois. Esse modo não barra a checagem de FK de outras transações.
+2. `BudgetIncreaseRequest` (pedido de recurso extra).
+3. Saldo, rubrica por rubrica em ordem de `rubrica_id`: **primeiro todas as linhas de `SpendingLimit` da rubrica** e depois os `BudgetPool` da rubrica, cada grupo em ordem crescente de pk.
+4. `Demand`.
+5. `DemandRequest`.
 
 Dentro de uma rubrica, nenhuma transação trava um limite depois de um pool. Depois da virada do período, uma demanda pode ter reservas em duas linhas de limite: travá-las uma a uma, intercaladas com o pool, abriria um ciclo com o cancelamento em lote. Por isso `balance.na_ordem_de_lock` trava, ao entrar em cada rubrica, as linhas das reservas e as do período vigente de todos os solicitantes envolvidos. Na autorização e na conclusão, trava em seguida, em ordem de pk, os pools das reservas e a origem do excedente, antes de mover qualquer solicitação.
 
@@ -124,12 +125,14 @@ As transições de status passam por `apps.sgd.services.workflow.executar_transi
 
 | Caminho | O que trava |
 |---|---|
-| Submissão | Por rubrica: linhas de limite (a do período é criada aqui, se faltar) → pool → `Demand` → `DemandRequest` |
+| Submissão | Linha do solicitante, recusando se ele estiver inativo → por rubrica: linhas de limite (a do período é criada aqui, se faltar) → pool → `Demand` → `DemandRequest` |
 | Autorização, recusa, cancelamento pelo solicitante ou pela UGP/Super Admin, conclusão pela FGD | Por rubrica: linhas de limite → pools das reservas, em ordem de pk → `Demand` → `DemandRequest` (estado da reserva, `valor_autorizado` e `valor_pago`, em ordem de pk). Na conclusão, só as solicitações ainda sem pagamento |
 | Autorização com excedente (remanejamento emergencial) | Por rubrica: linhas de limite → pools (origem e os das reservas, em ordem de pk) → depois segue como a autorização |
 | Pré-autorização, devolução, início do atendimento | Só a `Demand` |
 | Importação do Arlo, por linha | Limite → pool da solicitação paga → `Demand` (status relido) → `DemandRequest`. Cada linha numa transação própria. A última linha conclui a demanda sem travar mais saldo, porque já está tudo pago |
 | Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todas as linhas de limite e depois todos os pools; só então as `Demand`, em ordem de pk, e por fim as `DemandRequest`. Se uma demanda mudou, a transação volta e a task é repetida (até 3 vezes) |
+| Desativação de usuário (`core.services.usuarios.desativar`) | Grava `ativo` na linha do usuário, sem conflito com a checagem de FK, e segue como o cancelamento em lote, só para demandas não autorizadas. Os outros campos do usuário são gravados por último: trocar o e-mail, coluna única, conflita com essa checagem. Se uma demanda mudou para fora desses status, a transação inteira volta com `INVALID_TRANSITION`, sem repetição automática |
+| Edição do cadastro do usuário (`PATCH /users/{id}/`) | Só a linha do usuário. Trocar o e-mail sobe esse lock para `FOR UPDATE`, sem esperar nenhuma linha de saldo depois |
 | Edição da demanda; inclusão de solicitação | Só a `Demand` |
 | Edição e remoção de solicitação | Limite → pool (se há reserva) → `Demand` → `DemandRequest`; a edição relê a reserva já com o limite travado |
 | Decisão de recurso extra | Pedido → linha de limite do período → pools (territorial e origem, em ordem de pk) → `Demand` → todas as `DemandRequest` da demanda. Com a sobrealocação desligada, relê o pool territorial, já travado |

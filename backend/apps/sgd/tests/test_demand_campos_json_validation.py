@@ -164,12 +164,12 @@ def test_equipamento_3_cotacoes_do_mesmo_fornecedor_bloqueia(demand_rascunho_rn)
 
 
 def test_rubrica_para_tipo_corresponde_ao_mapeamento_configurado():
-    from apps.sgd.models import DemandTypeRubricaMapping
+    from apps.sgd.models import TipoSolicitacao
     from apps.sgd.services.demand_request import rubrica_para_tipo
     from apps.sgp.tests.factories import BudgetRubricaFactory
 
     rubrica = BudgetRubricaFactory(slug="diarias-teste")
-    DemandTypeRubricaMapping.objects.filter(tipo="diaria", ativo=True).update(rubrica=rubrica)
+    TipoSolicitacao.objects.filter(slug="diaria").update(rubrica=rubrica)
 
     assert rubrica_para_tipo("diaria") == rubrica
 
@@ -209,10 +209,10 @@ def test_atualizar_solicitacao_bloqueada_fora_de_rascunho_devolvida(demand_rascu
 
 
 def test_rubrica_para_tipo_sem_mapeamento_ativo_levanta_validacao():
-    from apps.sgd.models import DemandTypeRubricaMapping
+    from apps.sgd.models import TipoSolicitacao
     from apps.sgd.services.demand_request import rubrica_para_tipo
 
-    DemandTypeRubricaMapping.objects.filter(tipo="diaria").delete()
+    TipoSolicitacao.objects.filter(slug="diaria").update(ativo=False)
 
     with pytest.raises(ErroDeDominio):
         rubrica_para_tipo("diaria")

@@ -366,6 +366,28 @@ def test_cancelamento_pela_task_aceita_status_que_mudou_dentro_dos_cancelaveis(a
     assert ultima.valores_anteriores == {"status": "pre_autorizada"}
 
 
+def test_cancelamento_recusa_status_relido_fora_dos_aceitos_sem_mexer_no_saldo(
+    demand_request_rn, atores, allocation_territorial_rn, limite_individual_rn,
+):
+    demand = demand_request_rn.demanda
+    for destino in ("submetida", "pre_autorizada"):
+        _levar(demand, destino, atores)
+    lida_antes = Demand.objects.get(pk=demand.pk)
+    _levar(demand, "autorizada", atores)
+
+    with pytest.raises(TransicaoInvalida):
+        workflow_service.cancelar_pelo_sistema(
+            [lida_antes], motivo="Solicitante desativado.", status_aceitos=CANCELAVEIS_PELO_SOLICITANTE,
+        )
+
+    demand.refresh_from_db()
+    assert demand.status == "autorizada"
+    limite_individual_rn.refresh_from_db()
+    allocation_territorial_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == Decimal("1000")
+    assert allocation_territorial_rn.valor_comprometido == Decimal("1000")
+
+
 def test_task_registra_a_falha_quando_as_tentativas_acabam(monkeypatch, activity_rn):
     from apps.sgd import tasks as sgd_tasks
 

@@ -5,10 +5,9 @@ import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
-from apps.sgd.models import DemandTypeRubricaMapping
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services.workflow import executar_transicao
-from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory, DemandTypeRubricaMappingFactory
+from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory, mapear_tipo
 
 pytestmark = pytest.mark.django_db
 
@@ -22,8 +21,7 @@ CAMPOS_GRAFICO = {
 
 @pytest.fixture
 def grafico_em_diarias(rubrica_diarias):
-    DemandTypeRubricaMapping.objects.filter(tipo="grafico").delete()
-    return DemandTypeRubricaMappingFactory(tipo="grafico", rubrica=rubrica_diarias)
+    return mapear_tipo("grafico", rubrica_diarias)
 
 
 def _totais(demanda):
