@@ -4,22 +4,23 @@
 justificativa, o que acontece com o saldo, que etapa entra na timeline e quem é
 notificado. `executar_transicao` é o único lugar que aplica uma linha dela.
 
-Ordem de lock (`backend/docs/orcamento.md`): o efeito no saldo trava limite e
-alocação; só então a `Demand` é travada e relida, e as solicitações são gravadas
-por último. A decisão sobre a transição é tomada com o objeto que quem chama
+Ordem de lock (`backend/docs/orcamento.md`): a submissão trava antes a linha do
+solicitante; o efeito no saldo trava limite e alocação; só então a `Demand` é travada
+e relida, e as solicitações são gravadas por último. A decisão sobre a transição é tomada com o objeto que quem chama
 leu; a releitura sob o lock recusa a transição se a demanda mudou nesse meio.
 """
 from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.utils import timezone
 
+from apps.core.models import User
 from apps.core.services.permissions import user_role_slugs
 from apps.core.utils import formatar_brl
 from apps.sgd.exceptions import (
@@ -229,7 +230,19 @@ def _manter(demand, transicao, **_) -> tuple[list, dict | None]:
     return [], None
 
 
+def _exigir_solicitante_ativo(demand) -> None:
+    """A desativação cancela só as demandas que encontra. Sem esta trava, uma demanda
+    criada e submetida enquanto ela espera o limite ficaria fora da lista, com a reserva
+    presa em usuário inativo. `no_key` não barra a checagem de FK de outras transações."""
+    ativo = (
+        User.objects.select_for_update(no_key=True).values_list("ativo", flat=True).get(pk=demand.solicitante_id)
+    )
+    if not ativo:
+        raise RegraDeNegocio("O solicitante foi desativado.", campo="solicitante")
+
+
 def _reservar(demand, transicao, *, ator, **_) -> tuple[list, dict | None]:
+    _exigir_solicitante_ativo(demand)
     solicitacoes = _solicitacoes(demand)
     if not solicitacoes:
         raise RegraDeNegocio("A demanda precisa ter ao menos uma solicitação de recurso.", campo="solicitacoes")
@@ -424,6 +437,9 @@ _NOTIFICACOES = {
     "cancelamento_automatico": lambda d, cache: notifications_service.notificar_cancelamento_automatico(
         d, _articuladores(d, cache),
     ),
+    "cancelamento_por_desativacao": lambda d, cache: notifications_service.notificar_cancelamento_por_desativacao(
+        d, _articuladores(d, cache),
+    ),
 }
 
 
@@ -472,17 +488,19 @@ def executar_transicao(demand, destino: str, *, ator=None, origem: str = ORIGEM_
 
 
 @transaction.atomic
-def cancelar_pelo_sistema(demandas, *, motivo: str) -> None:
+def cancelar_pelo_sistema(demandas, *, motivo: str, ator=None, status_aceitos=CANCELAVEIS_PELO_SISTEMA,
+                          notificacao: str = "cancelamento_automatico") -> None:
     """Variante em lote de `executar_transicao` para a linha de origem `sistema`,
-    usada quando a atividade é cancelada. Cancelar uma a uma travaria a alocação,
-    que os solicitantes compartilham, antes do limite do solicitante seguinte: o
-    saldo de todas sai antes (`liberar_duas_travas_em_lote`), e só então cada
-    `Demand` é travada, em ordem de pk.
+    usada quando a atividade é cancelada ou o solicitante é desativado. Cancelar
+    uma a uma travaria a alocação, que os solicitantes compartilham, antes do
+    limite do solicitante seguinte: o saldo de todas sai antes
+    (`liberar_duas_travas_em_lote`), e só então cada `Demand` é travada, em ordem
+    de pk.
 
     A liberação relê cada reserva sob o lock do limite, mas trava o limite pela
-    rubrica lida antes: na linha travada, confere que a demanda continua
-    cancelável e que nenhuma solicitação entrou, saiu ou mudou de rubrica. Se não,
-    a transação inteira volta com `TransicaoInvalida`."""
+    rubrica lida antes: na linha travada, confere que a demanda continua em
+    `status_aceitos` e que nenhuma solicitação entrou, saiu ou mudou de rubrica. Se
+    não, a transação inteira volta com `TransicaoInvalida`."""
     demandas = sorted(demandas, key=lambda d: d.pk)
     solicitacoes = list(
         DemandRequest.objects.filter(demanda__in=demandas).select_related("rubrica", "demanda__solicitante")
@@ -491,17 +509,19 @@ def cancelar_pelo_sistema(demandas, *, motivo: str) -> None:
     for solicitacao in solicitacoes:
         rubricas[solicitacao.demanda_id][solicitacao.pk] = solicitacao.rubrica_id
 
-    balance_service.liberar_duas_travas_em_lote(solicitacoes, usuario=None, motivo=motivo, adiar_gravacao=True)
+    balance_service.liberar_duas_travas_em_lote(solicitacoes, usuario=ator, motivo=motivo, adiar_gravacao=True)
     transicoes = {}
     for demand in demandas:
         demand.status = travar_e_ler_status(demand)
         atuais = dict(DemandRequest.objects.filter(demanda_id=demand.pk).values_list("pk", "rubrica_id"))
-        if atuais != rubricas[demand.pk]:
+        if demand.status not in status_aceitos or atuais != rubricas[demand.pk]:
             raise TransicaoInvalida(MENSAGEM_DEMANDA_MUDOU)
-        transicoes[demand.pk] = buscar_transicao(demand.status, "cancelada", ORIGEM_SISTEMA)
+        transicoes[demand.pk] = replace(
+            buscar_transicao(demand.status, "cancelada", ORIGEM_SISTEMA), notificacao=notificacao,
+        )
     destinatarios = {}
     for demand in demandas:
-        _aplicar(demand, transicoes[demand.pk], [], ator=None, destinatarios=destinatarios)
+        _aplicar(demand, transicoes[demand.pk], [], ator=ator, destinatarios=destinatarios)
     balance_service.gravar_estado_da_reserva(solicitacoes)
 
 
