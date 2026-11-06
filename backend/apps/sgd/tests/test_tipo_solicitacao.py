@@ -26,6 +26,16 @@ CAMPOS_GRAFICO = {
     "tipo_material": "banner", "quantidade": 1,
     "especificacoes_tecnicas": "1x1m", "prazo_entrega": "2026-12-01",
 }
+CAMPOS_PASSAGEM = {
+    "passageiro_nome": "Fulano", "passageiro_cpf": "52998224725", "passageiro_data_nascimento": "1990-01-01",
+    "aeroporto_origem": "NAT", "aeroporto_destino": "GRU", "data_hora_ida": "2026-06-01T08:00:00Z",
+    "ida_e_volta": False, "bagagem_despachada": True, "classe": "economica", "urgencia": "normal",
+}
+CONDICIONAIS_DA_PASSAGEM = [
+    ({"ida_e_volta": True}, "data_hora_volta"),
+    ({"classe": "executiva"}, "justificativa_executiva"),
+]
+NAO_PREENCHIDOS = [False, 0, [], {}]
 
 
 def _url_solicitacoes(demand):
@@ -301,22 +311,38 @@ def test_prazo_com_data_invalida_aponta_o_campo(activity_rn):
     assert excinfo.value.campo == "prazo_entrega"
 
 
-@pytest.mark.parametrize("campos,campo", [
-    ({"ida_e_volta": True}, "data_hora_volta"),
-    ({"classe": "executiva"}, "justificativa_executiva"),
-])
+@pytest.mark.parametrize("campos,campo", CONDICIONAIS_DA_PASSAGEM)
 def test_regras_condicionais_da_passagem_apontam_o_campo(activity_rn, campos, campo):
-    base = {
-        "passageiro_nome": "Fulano", "passageiro_cpf": "52998224725", "passageiro_data_nascimento": "1990-01-01",
-        "aeroporto_origem": "NAT", "aeroporto_destino": "GRU", "data_hora_ida": "2026-06-01T08:00:00Z",
-        "ida_e_volta": False, "bagagem_despachada": True, "classe": "economica", "urgencia": "normal",
-    }
-
     with pytest.raises(RegraDeNegocio) as excinfo:
-        validar_campos_json("passagem", {**base, **campos}, activity_rn)
+        validar_campos_json("passagem", {**CAMPOS_PASSAGEM, **campos}, activity_rn)
 
     assert excinfo.value.campo == campo
     assert "Obrigatório quando" in excinfo.value.mensagem
+
+
+@pytest.mark.parametrize("valor", NAO_PREENCHIDOS, ids=repr)
+@pytest.mark.parametrize("campos,campo", CONDICIONAIS_DA_PASSAGEM)
+def test_condicional_da_passagem_recusa_valor_nao_preenchido(activity_rn, campos, campo, valor):
+    with pytest.raises(RegraDeNegocio) as excinfo:
+        validar_campos_json("passagem", {**CAMPOS_PASSAGEM, **campos, campo: valor}, activity_rn)
+
+    assert excinfo.value.campo == campo
+    assert "Obrigatório quando" in excinfo.value.mensagem
+
+
+@pytest.mark.parametrize("campos,campo", CONDICIONAIS_DA_PASSAGEM)
+def test_condicional_da_passagem_aceita_valor_preenchido(activity_rn, campos, campo):
+    validado = validar_campos_json("passagem", {**CAMPOS_PASSAGEM, **campos, campo: "preenchido"}, activity_rn)
+
+    assert validado.campos_json[campo] == "preenchido"
+
+
+@pytest.mark.parametrize("valor", NAO_PREENCHIDOS, ids=repr)
+@pytest.mark.parametrize("campo", ["data_hora_volta", "justificativa_executiva"])
+def test_campo_condicional_nao_obrigatorio_aceita_valor_nao_preenchido(activity_rn, campo, valor):
+    validado = validar_campos_json("passagem", {**CAMPOS_PASSAGEM, campo: valor}, activity_rn)
+
+    assert validado.campos_json[campo] == valor
 
 
 def test_cotacoes_seguem_a_estrategia_na_submissao(demand_rascunho_rn, solicitante_rn):

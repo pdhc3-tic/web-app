@@ -9,10 +9,20 @@ _INTEIRO_POSITIVO = {
     "mensagem": "Deve ser um número inteiro maior que zero.",
 }
 _URGENCIA = ["normal", "urgente", "emergencial"]
+# None e "" já saem em validar_por_schema.
+_NAO_PREENCHIDO = [False, 0, [], {}]
 
 
 def _campo(titulo, **regras):
     return {"title": titulo, **regras}
+
+
+def _obrigatorio_se(campo, mensagem):
+    return {
+        "required": [campo],
+        "properties": {campo: {"not": {"enum": _NAO_PREENCHIDO}, "mensagem": mensagem}},
+        "mensagem": mensagem,
+    }
 
 
 _DIARIA = {
@@ -58,14 +68,11 @@ _PASSAGEM = {
     "allOf": [
         {
             "if": {"required": ["ida_e_volta"], "properties": {"ida_e_volta": {"const": True}}},
-            "then": {
-                "required": ["data_hora_volta"],
-                "mensagem": "Obrigatório quando 'Viagem de ida e volta' é verdadeiro.",
-            },
+            "then": _obrigatorio_se("data_hora_volta", "Obrigatório quando 'Viagem de ida e volta' é verdadeiro."),
         },
         {
             "if": {"required": ["classe"], "properties": {"classe": {"const": "executiva"}}},
-            "then": {"required": ["justificativa_executiva"], "mensagem": "Obrigatório quando a classe é Executiva."},
+            "then": _obrigatorio_se("justificativa_executiva", "Obrigatório quando a classe é Executiva."),
         },
     ],
 }
