@@ -176,6 +176,7 @@ class SyncPullRespostaSerializer(serializers.Serializer):
     upfs = SyncPullUPFSerializer(many=True)
     members = SyncPullMemberSerializer(many=True)
     activities = SyncPullActivitySerializer(many=True)
+    saldos = MeuSaldoSerializer(many=True, allow_null=True)
     server_time = serializers.DateTimeField()
 
 

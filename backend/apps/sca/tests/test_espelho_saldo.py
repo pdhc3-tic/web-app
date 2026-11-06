@@ -7,6 +7,8 @@ import pytest
 from django.utils import timezone
 
 from apps.sca.models import SyncDevice, SyncEvent
+from apps.sca.serializers import SyncPullRespostaSerializer
+from apps.sgp.budget.serializers import MeuSaldoSerializer
 from apps.sgp.models import SpendingLimit
 from apps.sgp.tests.factories import BudgetRubricaFactory, SpendingLimitFactory
 
@@ -44,6 +46,13 @@ def test_pull_traz_os_saldos_para_a_consulta_offline(auth_client, limite):
     resposta = _pull(auth_client)
 
     assert resposta.data["saldos"] == auth_client.get(MEU_SALDO_URL).json()
+
+
+def test_saldos_constam_no_contrato_do_pull_e_aceitam_nulo():
+    campo = SyncPullRespostaSerializer().fields["saldos"]
+
+    assert isinstance(campo.child, MeuSaldoSerializer)
+    assert campo.allow_null is True
 
 
 def test_pull_sem_device_id_tambem_traz_os_saldos(auth_client, limite):

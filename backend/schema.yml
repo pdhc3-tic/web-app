@@ -16030,12 +16030,18 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SyncPullActivity'
+        saldos:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeuSaldo'
+          nullable: true
         server_time:
           type: string
           format: date-time
       required:
       - activities
       - members
+      - saldos
       - server_time
       - upfs
     SyncPullUPF:
