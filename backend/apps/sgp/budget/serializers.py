@@ -175,6 +175,7 @@ class SimulacaoRemanejamentoSerializer(serializers.Serializer):
 class MeuSaldoSerializer(serializers.Serializer):
     rubrica = serializers.SlugField()
     rubrica_nome = serializers.CharField()
+    rubrica_ativa = serializers.BooleanField(help_text="Falso: rubrica inativa, que não recebe novas demandas.")
     limite = serializers.DecimalField(max_digits=14, decimal_places=2)
     comprometido = serializers.DecimalField(max_digits=14, decimal_places=2)
     executado = serializers.DecimalField(max_digits=14, decimal_places=2)

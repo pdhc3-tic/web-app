@@ -287,7 +287,7 @@ Matriz Rubrica × Nível: uma linha por pool no escopo do perfil, com o `id` que
 
 | Rota | Quem | O que faz |
 |---|---|---|
-| `GET /api/v1/sgp/orcamento/meu-saldo/` | Autenticado | Limite, comprometido, executado, disponível e semáforo por rubrica, com o período e o saldo do pool do território |
+| `GET /api/v1/sgp/orcamento/meu-saldo/` | Autenticado | Limite, comprometido, executado, disponível e semáforo por rubrica, com o período e o saldo do pool do território. Rubrica inativa só aparece para quem já movimentou nela, com `rubrica_ativa: false` |
 | `GET /api/v1/sgp/orcamento/meu-saldo/{rubrica}/extrato/` | Autenticado | Linhas do ledger do próprio usuário no período vigente, com `efeito` no saldo; `?historico=true` traz os encerrados; paginado |
 | `POST /api/v1/sgp/orcamento/remanejamentos/simular/` | UGP e Super Admin | Saldo, percentuais de comprometimento e de execução e faixa antes e depois, sem gravar nada |
 | `GET /api/v1/sgp/orcamento/alertas/` | Perfis do orçamento, no próprio escopo | Filtros `?tipo=`, `?faixa=` e `?abertos=`; paginado |

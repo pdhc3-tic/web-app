@@ -12344,6 +12344,9 @@ components:
           pattern: ^[-a-zA-Z0-9_]+$
         rubrica_nome:
           type: string
+        rubrica_ativa:
+          type: boolean
+          description: 'Falso: rubrica inativa, que não recebe novas demandas.'
         limite:
           type: string
           format: decimal
@@ -12389,6 +12392,7 @@ components:
       - periodo_fim
       - periodo_inicio
       - rubrica
+      - rubrica_ativa
       - rubrica_nome
       - saldo_territorio
       - semaforo

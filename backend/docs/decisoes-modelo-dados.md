@@ -239,6 +239,7 @@ podem mudar por configuração.
 - **Falha ao gerar o espelho:** o pull não cai. Devolve `saldos: null`, para o app manter o que tem, e `GET /sca/saldo/` segue com a fotografia anterior e a data dela (`espelho_saldo_em`).
 - **Aviso de semáforo:** a cada nova entrada numa faixa, como o SGP §6.8 pede, inclusive de vermelho para amarelo. Voltar ao verde resolve o alerta sem notificar. Limite de período encerrado não alerta.
 - **Pool em estado sem Articulador:** o aviso vai à UGP, tanto o de semáforo quanto o de remanejamento efetivado, para não ficar sem destinatário.
+- **Rubrica inativa em "meu saldo" e no espelho do SCA:** aparece só para quem tem limite vigente e já movimentou nela, porque o SGP §6.2 mantém o saldo executado e o histórico. `rubrica_ativa: false` avisa que o `disponivel` não pode ser usado em nova demanda.
 - **Extrato de "meu saldo":** por padrão, o período vigente, cuja soma é o `disponivel`; `?historico=true` traz os encerrados. Limite só herdado do padrão ainda não tem lançamento, então o extrato vem vazio com o `disponivel` igual ao padrão.
 - **Periodicidade "vigência" em "meu saldo":** `periodo_fim` e `dias_restantes` usam o fim da vigência, e vêm nulos sem Metas.
 - **Alertas para a FGD:** a matriz de perfis do Core dá à FGD leitura de pools e nada em limites de gasto, então `/orcamento/alertas/` mostra os pools e só o limite dela. O RLS segue listando a FGD como global porque ela conclui demandas.

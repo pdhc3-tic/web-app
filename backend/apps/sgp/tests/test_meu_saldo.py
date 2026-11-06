@@ -73,6 +73,7 @@ class TestMeuSaldo:
         linha = _linha(auth_client_adt_rn.get(URL), rubrica)
 
         assert linha["rubrica_nome"] == "Diárias"
+        assert linha["rubrica_ativa"] is True
         assert (linha["limite"], linha["comprometido"], linha["executado"], linha["disponivel"]) == (
             "1000.00", "750.00", "100.00", "150.00",
         )
@@ -105,7 +106,7 @@ class TestMeuSaldo:
 
         assert _linha(auth_client_adt_rn.get(URL), rubrica)["saldo_territorio"] is None
 
-    def test_rubrica_sem_limite_nem_inativa_nao_aparece(self, auth_client_adt_rn, usuario_adt_rn):
+    def test_rubrica_sem_limite_ou_inativa_sem_movimento_nao_aparece(self, auth_client_adt_rn, usuario_adt_rn):
         BudgetRubricaFactory(slug="sem-limite")
         inativa = BudgetRubricaFactory(slug="inativa", ativo=False)
         _limite(usuario_adt_rn, inativa)
@@ -113,6 +114,25 @@ class TestMeuSaldo:
         slugs = {item["rubrica"] for item in auth_client_adt_rn.get(URL).json()}
 
         assert not {"sem-limite", "inativa"} & slugs
+
+    def test_rubrica_inativada_com_movimento_mantem_o_saldo_e_o_extrato(self, auth_client_adt_rn, usuario_adt_rn):
+        rubrica = BudgetRubricaFactory()
+        _mover(_limite(usuario_adt_rn, rubrica), Tipo.RESERVA, "500", comprometido=500)
+        rubrica.ativo = False
+        rubrica.save(update_fields=["ativo"])
+
+        linha = _linha(auth_client_adt_rn.get(URL), rubrica)
+
+        assert linha["rubrica_ativa"] is False
+        assert (linha["comprometido"], linha["disponivel"]) == ("500.00", "500.00")
+        assert auth_client_adt_rn.get(f"{URL}{rubrica.slug}/extrato/").json()["count"] == 1
+
+    def test_rubrica_inativa_movimentada_so_por_outro_usuario_nao_aparece(self, auth_client_adt_rn, usuario_adt_rn):
+        rubrica = BudgetRubricaFactory(ativo=False)
+        _limite(usuario_adt_rn, rubrica)
+        _mover(_limite(UserFactory(), rubrica), Tipo.RESERVA, "10", comprometido=10)
+
+        assert rubrica.slug not in {item["rubrica"] for item in auth_client_adt_rn.get(URL).json()}
 
     def test_so_traz_os_limites_do_proprio_usuario(self, auth_client_adt_rn):
         rubrica = BudgetRubricaFactory()

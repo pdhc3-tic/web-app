@@ -1,6 +1,8 @@
 """Quanto o usuário ainda pode solicitar: a leitura dos próprios limites, por rubrica."""
 from __future__ import annotations
 
+from django.db.models import Q
+
 from apps.core.utils import get_config
 from apps.sgp.budget import limites
 from apps.sgp.budget.alertas import fim_da_vigencia
@@ -15,15 +17,21 @@ def _saldos_do_territorio(territorio_id: int | None) -> dict:
     return {pool.rubrica_id: _saldo_disponivel(pool) for pool in pools}
 
 
+def _rubricas_visiveis(user) -> list[BudgetRubrica]:
+    """Rubrica inativa não recebe demanda nova, mas segue visível para quem já movimentou nela."""
+    movimentadas = BudgetTransaction.objects.filter(spending_limit__user=user).values("spending_limit__rubrica")
+    return list(BudgetRubrica.objects.filter(Q(ativo=True) | Q(pk__in=movimentadas)).order_by("ordem", "pk"))
+
+
 def saldo_por_rubrica(user) -> list[dict]:
-    """Uma entrada por rubrica ativa em que o usuário tem limite. Não grava nada: sem linha
+    """Uma entrada por rubrica visível em que o usuário tem limite. Não grava nada: sem linha
     no período, vale a que o padrão do perfil geraria."""
     limiares = limiares_semaforo()
     hoje = limites.hoje()
     acumula = bool(get_config("budget_limit_carry_over", False))
     do_territorio = _saldos_do_territorio(limites.territorio_do_pool(user.pk))
 
-    rubricas = list(BudgetRubrica.objects.filter(ativo=True).order_by("ordem", "pk"))
+    rubricas = _rubricas_visiveis(user)
     efetivos = limites.limites_efetivos(user.pk, [rubrica.pk for rubrica in rubricas], hoje)
     # Na periodicidade "vigência" a linha não tem fim próprio.
     em_aberto = any(limite.periodo_fim == limites.FIM_EM_ABERTO for limite in efetivos.values())
@@ -39,6 +47,7 @@ def saldo_por_rubrica(user) -> list[dict]:
         saldos.append({
             "rubrica": rubrica.slug,
             "rubrica_nome": rubrica.nome,
+            "rubrica_ativa": rubrica.ativo,
             "limite": limite.valor_limite,
             "comprometido": limite.valor_comprometido,
             "executado": limite.valor_executado,
