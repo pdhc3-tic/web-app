@@ -13,10 +13,10 @@ def _link_demanda(demand) -> str:
 
 
 def usuarios_articuladores_do_estado(sigla: str):
+    # Num único `filter`: o território tem de ser o do perfil de Articulador, não o de outro perfil do usuário.
     return User.objects.filter(
+        Q(profiles__territorio__isnull=True) | Q(profiles__territorio__estados__contains=[sigla]),
         ativo=True, profiles__perfil__slug="articulador-estadual",
-    ).filter(
-        Q(profiles__territorio__isnull=True) | Q(profiles__territorio__estados__contains=[sigla])
     ).distinct()
 
 

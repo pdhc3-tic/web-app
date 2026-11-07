@@ -4,10 +4,42 @@ from unittest.mock import patch
 import pytest
 
 from apps.core.models.notifications import TipoNotificacao
+from apps.core.models.role import Role
+from apps.core.models.user_profile import UserProfile
+from apps.core.tests.factories import RoleFactory, UserFactory
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import workflow as workflow_service
+from apps.sgd.services.notifications import usuarios_articuladores_do_estado
 from apps.sgp.tests.factories import SpendingLimitFactory
+
+
+@pytest.mark.django_db
+def test_perfil_operacional_nao_leva_o_articulador_a_outro_estado(usuario_articulador_rn):
+    operacional = Role.objects.update_or_create(
+        slug="coordenador-evento", defaults={"nome": "Coordenador de Evento", "categoria": Role.Categoria.OPERACIONAL},
+    )[0]
+    UserProfile.objects.create(user=usuario_articulador_rn, perfil=operacional, objeto_tipo="evento", objeto_id=10)
+
+    assert list(usuarios_articuladores_do_estado("CE")) == []
+    assert list(usuarios_articuladores_do_estado("RN")) == [usuario_articulador_rn]
+
+
+@pytest.mark.django_db
+def test_territorio_de_outro_perfil_nao_conta_como_estado_do_articulador(territory_rn, territory_ce):
+    articulador = RoleFactory(slug="articulador-estadual")
+    adt = RoleFactory(slug="adt-acr")
+    usuario = UserFactory(profiles=[(articulador, territory_ce), (adt, territory_rn)])
+
+    assert list(usuarios_articuladores_do_estado("RN")) == []
+    assert list(usuarios_articuladores_do_estado("CE")) == [usuario]
+
+
+@pytest.mark.django_db
+def test_articulador_sem_territorio_continua_com_alcance_global():
+    usuario = UserFactory(profiles=[(RoleFactory(slug="articulador-estadual"), None)])
+
+    assert list(usuarios_articuladores_do_estado("CE")) == [usuario]
 
 pytestmark = pytest.mark.django_db
 
