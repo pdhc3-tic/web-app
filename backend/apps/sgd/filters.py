@@ -31,7 +31,7 @@ def _q_etapa_atual_do_usuario(user: User) -> Q:
         # Perfil sem território = alcance global (mesma regra de
         # notifications.usuarios_articuladores_do_estado).
         if any(p.territorio_id is None for p in perfis if p.perfil.slug == "articulador-estadual"):
-            q |= Q(status="submetida")
+            q |= Q(status="submetida", estado_sigla__isnull=False)
         else:
             siglas = {
                 sigla
@@ -62,6 +62,7 @@ class DemandFilter(django_filters.FilterSet):
     acao = django_filters.NumberFilter(field_name="activity__acao_id")
     submeta = django_filters.NumberFilter(field_name=contexto.CAMPO_SUBMETA)
     meta = django_filters.NumberFilter(field_name=contexto.CAMPO_META)
+    # Território da demanda (do solicitante, congelado na criação), não o da atividade.
     territorio = django_filters.NumberFilter(field_name=contexto.CAMPO_TERRITORIO)
     periodo_inicio = django_filters.DateFilter(method="filtrar_periodo_inicio")
     periodo_fim = django_filters.DateFilter(method="filtrar_periodo_fim")

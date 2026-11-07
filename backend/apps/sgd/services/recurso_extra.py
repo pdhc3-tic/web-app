@@ -88,9 +88,9 @@ def _mudar_status(pedido, para, usuario, acao: str, **campos) -> None:
 
 
 def _sigla_do_pedido(pedido) -> str | None:
-    if pedido.activity_id is None:
-        return None
-    return contexto.estado_da_atividade(pedido.activity)
+    """Com demanda vinculada, o estado congelado nela (território do
+    solicitante, Issue #352); sem demanda, o da atividade do pedido."""
+    return contexto.estado_do_pedido(pedido, _demanda_do_pedido(pedido))
 
 
 def _demanda_do_pedido(pedido, *, travar: bool = False) -> Demand | None:
@@ -292,8 +292,12 @@ def _travar_pools(pedido, origem: BudgetPool | None):
         raise RegraDeNegocio(
             "A alocação de origem precisa ser da mesma rubrica do pedido.", campo="origem_allocation",
         )
-    # Só localiza o pool: o saldo é lido depois, com ele travado.
-    destino = orcamento_service.localizar_pool(solicitante=pedido.user, rubrica=pedido.rubrica)
+    # Só localiza o pool: o saldo é lido depois, com ele travado. Com demanda
+    # vinculada, é o pool do território congelado nela — o mesmo de onde a
+    # demanda reserva —, não o do perfil atual do solicitante.
+    destino = orcamento_service.localizar_pool(
+        solicitante=pedido.user, rubrica=pedido.rubrica, demanda=_demanda_do_pedido(pedido),
+    )
     if origem is not None:
         remanejamento_service.exigir_origem_acima_do_territorio(origem, destino)
 

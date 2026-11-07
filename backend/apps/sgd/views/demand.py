@@ -39,7 +39,8 @@ from apps.sgp.models import BudgetIncreaseRequest
 from apps.sgp.services.exportacao import CONTENT_TYPES, Arquivo, gerar_arquivo
 from apps.sgp.views.exportacao import arquivo_response
 from apps.sgp.models.workplan import WorkPlanAcao
-from apps.sgp.services.access import atividades_acessiveis_ao_usuario, municipios_acessiveis_ao_usuario
+from apps.sgp.models import Activity
+from apps.sgp.services.access import municipios_acessiveis_ao_usuario
 
 
 ORDENACOES_DA_LISTAGEM = {
@@ -64,9 +65,10 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
     filterset_class = DemandFilter
 
     def get_permissions(self):
-        # Criar demanda é do ADT/ACR (e Super Admin): Articulador, UGP e FGD
-        # só decidem sobre ela (SGD §1, matriz do Core §2.1). Sem objeto em
-        # jogo no create, IsADTInTerritory checa só o perfil.
+        # Criar demanda é do ADT/ACR (e Super Admin, que cria no nível nacional,
+        # Issue #352): Articulador, UGP e FGD só decidem sobre ela (SGD §1,
+        # matriz do Core §2.1). Sem objeto em jogo no create, IsADTInTerritory
+        # checa só o perfil.
         if self.action == "create":
             return [IsAuthenticatedActiveAccess(), (IsADTInTerritory | IsSuperAdmin)()]
         return super().get_permissions()
@@ -168,9 +170,10 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
         # órfã no banco.
         with transaction.atomic():
             if dados.get("activity_id"):
-                activity = get_object_or_404(
-                    atividades_acessiveis_ao_usuario(request.user), pk=dados["activity_id"],
-                )
+                # Qualquer atividade pode ser vinculada, inclusive de outro
+                # estado/território (Issue #352): a abrangência da demanda vem
+                # do solicitante, e a resposta sinaliza `atividade_fora_do_territorio`.
+                activity = get_object_or_404(Activity, pk=dados["activity_id"])
             else:
                 activity = demand_service.criar_activity_inline(
                     titulo=dados["activity_titulo"],

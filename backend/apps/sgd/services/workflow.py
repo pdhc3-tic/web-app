@@ -264,7 +264,7 @@ def _reservar(demand, transicao, *, ator, **_) -> tuple[list, dict | None]:
         consumo_previo = consumo_por_rubrica.get(solicitacao.rubrica_id, balance_service.ZERO)
         check = balance_service.verificar_duas_travas(
             solicitante=demand.solicitante, rubrica=solicitacao.rubrica, valor=solicitacao.valor_estimado,
-            consumo_previo=consumo_previo,
+            consumo_previo=consumo_previo, demanda=demand,
         )
         if not check.disponivel:
             bloqueios[solicitacao.pk] = check.bloqueio(solicitacao_id=solicitacao.pk)
@@ -419,6 +419,9 @@ def _articuladores(demand, destinatarios: dict):
     """`destinatarios` guarda a consulta por estado: o cancelamento em lote notifica
     várias demandas da mesma atividade."""
     sigla = contexto.estado_da_demanda(demand)
+    if sigla is None:
+        # Demanda nacional: nenhum Articulador é notificado.
+        return []
     if sigla not in destinatarios:
         destinatarios[sigla] = list(notifications_service.usuarios_articuladores_do_estado(sigla))
     return destinatarios[sigla]

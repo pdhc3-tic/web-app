@@ -26,6 +26,8 @@ def demand_visibility_scope(user) -> Q | None:
     if user_has_role(user, "articulador-estadual"):
         # Só "Submetidas" do seu estado, além das próprias e das que
         # ele já decidiu (para manter acesso ao que já pré-autorizou/devolveu).
+        # O estado é o da demanda (território do solicitante, Issue #352),
+        # não o da atividade. Demanda nacional (estado nulo) não entra.
         # `user_states` já devolve todos os estados pra um perfil global (sem
         # território específico) — não precisa de ramo especial pra isso, e
         # com states vazio (nenhum território cadastrado) o `sigla__in` some
@@ -80,7 +82,11 @@ def responsaveis_pela_etapa_atual(demand):
     if demand.status in {"rascunho", "devolvida"}:
         return User.objects.filter(pk=demand.solicitante_id)
     if demand.status == "submetida":
-        return notifications_service.usuarios_articuladores_do_estado(contexto.estado_da_demanda(demand))
+        sigla = contexto.estado_da_demanda(demand)
+        if sigla is None:
+            # Demanda nacional: nenhum Articulador responde por ela.
+            return User.objects.none()
+        return notifications_service.usuarios_articuladores_do_estado(sigla)
     if demand.status == "pre_autorizada":
         return notifications_service.usuarios_por_perfil("ugp")
     if demand.status in {"autorizada", "em_atendimento"}:
@@ -113,13 +119,14 @@ def preview_impacto(demand_request, valor: Decimal, *, origem=None) -> dict:
         if delta > Decimal("0"):
             check = balance_service.verificar_duas_travas(
                 solicitante=solicitante, rubrica=rubrica, valor=delta, limite=limite,
+                demanda=demand_request.demanda,
             )
             disponivel, trava_bloqueada = check.disponivel, check.trava_bloqueada
             pool = check.territorial.pool
         else:
             # Reduzir o valor autorizado nunca bloqueia — está liberando saldo.
             pool = orcamento_service.consultar_pool(
-                solicitante=solicitante, rubrica=rubrica, valor=Decimal("0"),
+                solicitante=solicitante, rubrica=rubrica, valor=Decimal("0"), demanda=demand_request.demanda,
             ).pool
             disponivel, trava_bloqueada = True, None
 
@@ -189,5 +196,11 @@ def exigir_pode_decidir_articulador(demand, responsavel) -> None:
     inclui as próprias demandas, para ele continuar vendo o que já decidiu)."""
     if demand.solicitante_id == responsavel.pk:
         raise PermissionDenied("Você não pode decidir sobre a própria demanda.")
-    if contexto.estado_da_demanda(demand) not in user_states(responsavel):
+    estado_sigla = contexto.estado_da_demanda(demand)
+    if estado_sigla is None:
+        # Demanda nacional: sem Articulador responsável, só o super-admin decide.
+        if not user_has_role(responsavel, "super-admin"):
+            raise PermissionDenied("Demanda de nível nacional: não há Articulador Estadual responsável.")
+        return
+    if estado_sigla not in user_states(responsavel):
         raise PermissionDenied("Demanda fora do seu estado de atuação.")

@@ -27,12 +27,24 @@ def test_sgd_so_le_o_contexto_da_atividade_por_contexto():
 
 
 @pytest.mark.django_db
-def test_estado_e_territorio_vem_da_atividade(activity_rn, territory_rn):
-    demand = DemandFactory(activity=activity_rn)
+def test_estado_e_territorio_vem_da_demanda_e_nao_da_atividade(activity_rn, territory_ce):
+    """Issue #352: o que vale é o gravado na demanda (território do solicitante)."""
+    demand = DemandFactory(activity=activity_rn, estado_sigla="CE", territorio=territory_ce)
 
-    assert contexto.estado_da_demanda(demand) == "RN"
+    assert contexto.estado_da_demanda(demand) == "CE"
     assert contexto.estado_da_atividade(activity_rn) == "RN"
-    assert contexto.territorio_da_demanda(demand) == territory_rn
+    assert contexto.territorio_da_demanda(demand) == territory_ce
+    assert contexto.atividade_fora_do_territorio(demand) is True
+
+
+@pytest.mark.django_db
+def test_demanda_nacional_nao_tem_estado_nem_territorio(activity_rn):
+    demand = DemandFactory(activity=activity_rn, estado_sigla=None, territorio=None)
+
+    assert contexto.estado_da_demanda(demand) is None
+    assert contexto.territorio_da_demanda(demand) is None
+    assert contexto.atividade_fora_do_territorio(demand) is False
+    assert contexto.calendario_da_demanda(demand) == "RN"
 
 
 @pytest.mark.django_db
