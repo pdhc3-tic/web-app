@@ -54,7 +54,7 @@ def _registrar_riscos_da_atividade_sem_evidencia(sender, instance, **kwargs):
     if getattr(instance, "_status_anterior", None) == ACTIVITY_STATUS_SEM_EVIDENCIA:
         return
 
-    # Na mesma transação, e não em tarefa: o status é terminal e não há outra chance de registrar
+    # No próprio salvamento, e não em tarefa: o status é terminal e não há outra chance de registrar
     # se o broker estiver fora. A visão total devolve o papel da sessão ao terminar.
     from apps.sgd.services import workflow as workflow_service
     workflow_service.registrar_riscos_da_atividade_sem_evidencia(instance.pk)

@@ -78,6 +78,14 @@ class TestDemandaConcluiEmAtividadeSemEvidencia:
             (GlosaRisk.Tipo.DEMANDA_SEM_EVIDENCIA, Decimal("1200.00")),
         }
 
+    def test_le_o_status_atual_da_atividade_e_nao_o_ja_carregado(self, autorizada, usuario_fgd):  # noqa: F811
+        assert autorizada.activity.status != SEM_EVIDENCIA
+        Activity.objects.filter(pk=autorizada.activity_id).update(status=SEM_EVIDENCIA)
+
+        _pagar("tela", autorizada, Decimal("800.00"), usuario_fgd)
+
+        assert RISCOS.count() == 1
+
     def test_atividade_ainda_em_andamento_nao_registra(self, autorizada, usuario_fgd):  # noqa: F811
         Activity.objects.filter(pk=autorizada.activity_id).update(status="em_andamento")
         autorizada.activity.refresh_from_db()

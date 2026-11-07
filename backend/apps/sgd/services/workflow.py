@@ -41,7 +41,7 @@ from apps.sgd.services import orcamento as orcamento_service
 from apps.sgd.services import recurso_extra as recurso_extra_service
 from apps.sgd.services import remanejamento as remanejamento_service
 from apps.sgd.services.approval import PERFIS_QUE_CANCELAM_AUTORIZADA, exigir_pode_decidir_articulador
-from apps.sgp.models import GlosaRisk
+from apps.sgp.models import Activity, GlosaRisk
 from apps.sgp.services.apuracao import recalcular_valor_executado
 
 ORIGEM_USUARIO = "usuario"
@@ -445,6 +445,14 @@ _NOTIFICACOES = {
 }
 
 
+def _status_travado_da_atividade(demand) -> str:
+    """Trava a atividade depois da `Demand`. Sem isso, se ela fechasse sem evidência enquanto a
+    demanda conclui, nenhuma das transações veria a outra, e o risco de glosa se perderia."""
+    return Activity.all_objects.select_for_update(no_key=True).values_list("status", flat=True).get(
+        pk=demand.activity_id,
+    )
+
+
 def _aplicar(demand, transicao: Transicao, solicitacoes, *, ator, destinatarios: dict, justificativa: str = "",
              excedente_autorizado: bool = False, **_) -> None:
     status_anterior = demand.status
@@ -458,8 +466,9 @@ def _aplicar(demand, transicao: Transicao, solicitacoes, *, ator, destinatarios:
     if transicao.efeito_saldo in _OUTROS_CAMPOS:
         demand.recalcular_totais()
     if transicao.efeito_saldo == EXECUTAR:
+        status_da_atividade = _status_travado_da_atividade(demand)
         recalcular_valor_executado([demand.activity.acao_id])
-        if demand.activity.status == "concluido_sem_evidencia":
+        if status_da_atividade == "concluido_sem_evidencia":
             registrar_demanda_sem_evidencia(demand, usuario=ator)
     if transicao.etapa is not None:
         ApprovalStep.objects.create(

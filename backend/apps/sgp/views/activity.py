@@ -1,5 +1,6 @@
 import logging
 
+from django.db import transaction
 from django.db.models import Prefetch
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import (
@@ -117,7 +118,9 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
         old = self.get_object()
         valores_anteriores = self._snapshot(old)
         google_calendar_anteriores = self._google_calendar_sync_snapshot(old)
-        instance = serializer.save(ultima_origem="web")
+        # O status e o risco de glosa que ele gera são gravados juntos.
+        with transaction.atomic():
+            instance = serializer.save(ultima_origem="web")
         self._log_audit("activity.update", instance, valores_anteriores)
         self._enqueue_google_calendar_sync_if_needed(
             instance,

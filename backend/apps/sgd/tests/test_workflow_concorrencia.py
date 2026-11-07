@@ -21,7 +21,7 @@ from apps.sgd.tests.factories import DemandFactory, DemandRequestFactory
 from apps.sgd.tests.test_arlo_integration import (  # noqa: F401
     _importar, _linha, _nova_demanda_autorizada, storage_local,
 )
-from apps.sgp.models import GlosaRisk
+from apps.sgp.models import Activity, GlosaRisk
 from apps.sgp.tests.factories import SpendingLimitFactory
 from apps.sgp.models import SpendingLimit
 
@@ -125,6 +125,51 @@ def test_decisoes_simultaneas_so_a_primeira_vale(usuario_articulador_rn, activit
     demand.refresh_from_db()
     assert demand.status == "pre_autorizada"
     assert list(demand.etapas.values_list("acao", flat=True)) == ["aprovado"]
+
+
+def _concluir(demand_id, usuario_fgd):
+    demand = Demand.objects.get(pk=demand_id)
+    workflow_service.executar_transicao(
+        demand, "concluida", ator=usuario_fgd, valores_pagos={demand.solicitacoes.get().pk: Decimal("800.00")},
+    )
+
+
+def _fechar_atividade_sem_evidencia(activity_id):
+    atividade = Activity.objects.get(pk=activity_id)
+    atividade.status = "concluido_sem_evidencia"
+    atividade.save(update_fields=["status"])
+
+
+@pytest.mark.django_db(transaction=True)
+def test_demanda_que_conclui_enquanto_a_atividade_fecha_registra_o_risco(autorizada, usuario_fgd):
+    workflow_service.executar_transicao(autorizada, "em_atendimento", ator=usuario_fgd)
+
+    def fechar(pausa):
+        _fechar_atividade_sem_evidencia(autorizada.activity_id)
+        pausa()
+
+    _, erros = intercalar(fechar, lambda: _concluir(autorizada.pk, usuario_fgd))
+
+    assert erros == {}
+    assert GlosaRisk.objects.filter(
+        tipo_situacao=GlosaRisk.Tipo.DEMANDA_SEM_EVIDENCIA, demanda_id=str(autorizada.pk),
+    ).count() == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_atividade_que_fecha_enquanto_a_demanda_conclui_registra_o_risco(autorizada, usuario_fgd):
+    workflow_service.executar_transicao(autorizada, "em_atendimento", ator=usuario_fgd)
+
+    def concluir(pausa):
+        _concluir(autorizada.pk, usuario_fgd)
+        pausa()
+
+    _, erros = intercalar(concluir, lambda: _fechar_atividade_sem_evidencia(autorizada.activity_id))
+
+    assert erros == {}
+    assert GlosaRisk.objects.filter(
+        tipo_situacao=GlosaRisk.Tipo.DEMANDA_SEM_EVIDENCIA, demanda_id=str(autorizada.pk),
+    ).count() == 1
 
 
 @pytest.mark.django_db(transaction=True)
