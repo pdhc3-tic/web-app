@@ -28,7 +28,7 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.settings import api_settings as jwt_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.core.models import SystemConfig, Territory
+from apps.core.models import Role, SystemConfig, Territory
 from apps.core.permissions import (
     IsArticuladorEstadual,
     IsAuthenticatedActiveAccess,
@@ -123,7 +123,7 @@ class SyncDeviceFilter(django_filters.FilterSet):
             user=OuterRef("user"), territorio__isnull=False
         )
         tem_global = UserProfile.objects.filter(
-            user=OuterRef("user"), territorio__isnull=True
+            user=OuterRef("user"), territorio__isnull=True, perfil__categoria=Role.Categoria.PRINCIPAL,
         )
         return qs.annotate(
             tem_territorio_especifico=Exists(tem_especifico),
@@ -180,7 +180,7 @@ def _territorio_ids_do_usuario(user) -> list[int]:
     for profile in user.profiles.all():
         if profile.territorio_id:
             especificos.append(profile.territorio_id)
-        else:
+        elif profile.perfil.categoria == Role.Categoria.PRINCIPAL:
             tem_global = True
     if especificos or not tem_global:
         return sorted(set(especificos))

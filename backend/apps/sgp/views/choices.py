@@ -3,6 +3,8 @@ from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core.models.role import Role
+from apps.core.models.user_profile import ObjetoTipo
 from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.sgd.constants import (
     Classe,
@@ -34,7 +36,7 @@ from apps.sgp.constants import (
     STATUS_WORKPLAN,
     TIPO_MORADIA_CHOICES,
 )
-from apps.sgp.models import ActivityDocument, Cultura, EspecieAnimal, Production, UPFDocument
+from apps.sgp.models import ActivityDocument, Cultura, EspecieAnimal, GlosaRisk, Production, UPFDocument
 from apps.sgp.models.activity import (
     AMBITO_CHOICES,
     FORMA_ATUACAO_CHOICES,
@@ -72,6 +74,10 @@ CHOICES_PUBLICADOS = {
     "especie_categoria": EspecieAnimal.CATEGORIA_CHOICES,
     "upf_documento_tipo": UPFDocument.TIPO_CHOICES,
     "atividade_documento_tipo": ActivityDocument.TIPO_CHOICES,
+    "risco_glosa_tipo": GlosaRisk.Tipo.choices,
+    "risco_glosa_severidade": GlosaRisk.Severidade.choices,
+    "perfil_categoria": Role.Categoria.choices,
+    "perfil_objeto_tipo": ObjetoTipo.choices,
     "demanda_status": DEMANDA_STATUS_CHOICES,
     "demanda_documento_tipo": DEMANDA_DOCUMENTO_TIPO_CHOICES,
     "beneficiario_vinculo": Vinculo.choices,

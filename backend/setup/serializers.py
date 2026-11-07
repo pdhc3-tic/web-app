@@ -3,12 +3,15 @@ from rest_framework_simplejwt.exceptions import InvalidToken
 
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
+from apps.core.models.role import Role
 from apps.core.models.user import User
 from apps.core.serializers import (
-    RoleSerializer,
+    RoleComObjetoSerializer,
     RoleSummarySerializer,
     TerritorySerializer,
     TerritorySummarySerializer,
+    com_o_principal_primeiro,
+    role_com_objeto,
 )
 
 import hashlib
@@ -86,10 +89,9 @@ class UserMeSerializer(serializers.ModelSerializer):
             "permissoes_resumo",
         ]
 
-    @extend_schema_field(RoleSerializer(many=True))
+    @extend_schema_field(RoleComObjetoSerializer(many=True))
     def get_perfis(self, obj):
-        profiles = obj.profiles.select_related("perfil").all()
-        return [RoleSerializer(p.perfil).data for p in profiles]
+        return [role_com_objeto(p) for p in com_o_principal_primeiro(obj.profiles.select_related("perfil").all())]
 
     @extend_schema_field(TerritorySerializer(many=True))
     def get_territorios(self, obj):
@@ -102,7 +104,7 @@ class UserMeSerializer(serializers.ModelSerializer):
             return TerritorySerializer(
                 Territory.objects.filter(pk__in=profile_territory_ids), many=True
             ).data
-        has_global = obj.profiles.filter(territorio__isnull=True).exists()
+        has_global = obj.profiles.filter(territorio__isnull=True, perfil__categoria=Role.Categoria.PRINCIPAL).exists()
         if has_global:
             return TerritorySerializer(Territory.objects.all(), many=True).data
         return []

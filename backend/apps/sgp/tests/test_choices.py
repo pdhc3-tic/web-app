@@ -143,6 +143,7 @@ class TestSGPChoicesEndpoint:
         "status_atividade", "producao_tipo", "producao_sistema_criacao",
         "producao_tipo_outra", "upf_documento_tipo", "atividade_documento_tipo",
         "cultura_categoria", "especie_categoria",
+        "risco_glosa_tipo", "risco_glosa_severidade", "perfil_categoria", "perfil_objeto_tipo",
     ])
     def test_listas_de_atividade_producao_ods_e_documentos(self, auth_client, chave):
         response = auth_client.get(self.CHOICES_URL)

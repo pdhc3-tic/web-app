@@ -15,6 +15,8 @@ from apps.core.models.user_profile import ObjetoTipo, UserProfile
 from apps.core.permissions import IsEventCoordinator, IsSelectionEvaluator
 from apps.core.services.permissions import user_states, user_territories
 from apps.core.tests.factories import RoleFactory, TerritoryFactory, UserFactory
+from apps.sca.models import SyncDevice
+from apps.sca.views import _territorio_ids_do_usuario
 
 pytestmark = pytest.mark.django_db
 
@@ -367,6 +369,93 @@ class TestPermissoes:
         )
 
         assert permitido is False
+
+
+class TestListagens:
+    def _credenciador_com_principal(self):
+        """A designação é gravada antes, para a ordem de criação não pôr o principal na frente."""
+        usuario = UserFactory()
+        _designar(usuario, "credenciador", objeto_id=10)
+        UserProfile.objects.create(user=usuario, perfil=_principal(), territorio=TerritoryFactory())
+        return usuario
+
+    def _na_listagem(self, cliente, usuario):
+        resposta = cliente.get(USERS_URL, {"limit": 100})
+        return next(item for item in resposta.data["results"] if item["id"] == usuario.pk)
+
+    def _assert_principal_primeiro_e_objeto(self, perfis):
+        assert [p["slug"] for p in perfis] == ["adt-acr", "credenciador"]
+        assert (perfis[0]["objeto_tipo"], perfis[0]["objeto_id"]) == (None, None)
+        assert (perfis[1]["objeto_tipo"], perfis[1]["objeto_id"]) == ("evento", 10)
+
+    def test_listagem_traz_o_objeto_e_o_principal_primeiro(self, cliente):
+        usuario = self._credenciador_com_principal()
+
+        self._assert_principal_primeiro_e_objeto(self._na_listagem(cliente, usuario)["perfis"])
+
+    def test_detalhe_traz_o_principal_primeiro(self, cliente):
+        usuario = self._credenciador_com_principal()
+
+        perfis = cliente.get(f"{USERS_URL}{usuario.pk}/").data["perfis"]
+
+        assert [p["slug"] for p in perfis] == ["adt-acr", "credenciador"]
+
+    def test_me_traz_o_objeto_e_o_principal_primeiro(self, api_client):
+        usuario = self._credenciador_com_principal()
+        api_client.force_authenticate(user=usuario)
+
+        self._assert_principal_primeiro_e_objeto(api_client.get("/api/v1/auth/me/").data["perfis"])
+
+    def test_a_mesma_pessoa_em_dois_eventos_aparece_com_os_dois_objetos(self, cliente):
+        usuario = UserFactory(profiles=[(_principal(), TerritoryFactory())])
+        _designar(usuario, "credenciador", objeto_id=10)
+        _designar(usuario, "credenciador", objeto_id=11)
+
+        perfis = self._na_listagem(cliente, usuario)["perfis"]
+
+        assert [p["objeto_id"] for p in perfis] == [None, 10, 11]
+
+
+class TestSoComPerfilOperacional:
+    """Só acontece se apagarem o perfil principal pelo Admin: o usuário não pode virar global."""
+
+    @pytest.fixture
+    def usuario(self):
+        TerritoryFactory()
+        usuario = UserFactory()
+        _designar(usuario, "credenciador")
+        return usuario
+
+    def test_listagem_e_detalhe_sem_territorios(self, cliente, usuario):
+        listagem = cliente.get(USERS_URL, {"limit": 100}).data["results"]
+
+        assert next(item for item in listagem if item["id"] == usuario.pk)["territorios"] == []
+        assert cliente.get(f"{USERS_URL}{usuario.pk}/").data["territorios"] == []
+
+    def test_me_sem_territorios(self, api_client, usuario):
+        api_client.force_authenticate(user=usuario)
+
+        assert api_client.get("/api/v1/auth/me/").data["territorios"] == []
+
+    def test_dispositivo_nao_casa_com_nenhum_territorio(self, cliente, usuario):
+        territorio = TerritoryFactory()
+        SyncDevice.objects.create(user=usuario, device_id="so-operacional")
+
+        resposta = cliente.get("/api/v1/sca/devices/", {"territorio": territorio.pk})
+
+        assert resposta.status_code == 200
+        assert resposta.data["results"] == []
+        assert _territorio_ids_do_usuario(usuario) == []
+
+    def test_perfil_principal_sem_territorio_continua_casando_com_todos(self, cliente):
+        territorio = TerritoryFactory()
+        usuario = UserFactory(profiles=[(_principal("ugp"), None)])
+        dispositivo = SyncDevice.objects.create(user=usuario, device_id="global")
+
+        resposta = cliente.get("/api/v1/sca/devices/", {"territorio": territorio.pk})
+
+        assert [item["id"] for item in resposta.data["results"]] == [dispositivo.pk]
+        assert territorio.pk in _territorio_ids_do_usuario(usuario)
 
 
 class TestNaoAmpliaOAcesso:

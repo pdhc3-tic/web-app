@@ -10236,6 +10236,22 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OpcaoTexto'
+        risco_glosa_tipo:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
+        risco_glosa_severidade:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
+        perfil_categoria:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
+        perfil_objeto_tipo:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
         demanda_status:
           type: array
           items:
@@ -10297,10 +10313,14 @@ components:
       - meio_transporte
       - ods
       - pct
+      - perfil_categoria
+      - perfil_objeto_tipo
       - posse_terra
       - producao_sistema_criacao
       - producao_tipo
       - producao_tipo_outra
+      - risco_glosa_severidade
+      - risco_glosa_tipo
       - saude
       - seguridade_social
       - situacao_moradia
@@ -15467,6 +15487,51 @@ components:
       - id
       - nome
       - slug
+    RoleComObjeto:
+      type: object
+      description: 'O perfil e, se for operacional, o objeto designado: a mesma pessoa
+        pode ter o perfil em vários.'
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        nome:
+          type: string
+          maxLength: 100
+        slug:
+          allOf:
+          - $ref: '#/components/schemas/SlugEnum'
+          pattern: ^[-a-zA-Z0-9_]+$
+        descricao:
+          type: string
+        categoria:
+          allOf:
+          - $ref: '#/components/schemas/CategoriaDoPerfilEnum'
+          readOnly: true
+        ativo:
+          type: boolean
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        objeto_tipo:
+          readOnly: true
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/TipoDoObjetoDoPerfilEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        objeto_id:
+          type: integer
+          readOnly: true
+          nullable: true
+      required:
+      - categoria
+      - criado_em
+      - id
+      - nome
+      - objeto_id
+      - objeto_tipo
+      - slug
     RoleRequest:
       type: object
       properties:
@@ -17945,7 +18010,7 @@ components:
         perfis:
           type: array
           items:
-            $ref: '#/components/schemas/Role'
+            $ref: '#/components/schemas/RoleComObjeto'
           readOnly: true
         territorios:
           type: array
@@ -18018,7 +18083,7 @@ components:
         perfis:
           type: array
           items:
-            $ref: '#/components/schemas/Role'
+            $ref: '#/components/schemas/RoleComObjeto'
           readOnly: true
         territorios:
           type: array

@@ -119,6 +119,25 @@ class RoleSerializer(serializers.ModelSerializer):
         return value
 
 
+class RoleComObjetoSerializer(RoleSerializer):
+    """O perfil e, se for operacional, o objeto designado: a mesma pessoa pode ter o perfil em vários."""
+
+    objeto_tipo = serializers.ChoiceField(choices=ObjetoTipo.choices, allow_null=True, read_only=True)
+    objeto_id = serializers.IntegerField(allow_null=True, read_only=True)
+
+    class Meta(RoleSerializer.Meta):
+        fields = [*RoleSerializer.Meta.fields, "objeto_tipo", "objeto_id"]
+
+
+def com_o_principal_primeiro(perfis) -> list:
+    """O front mostra `perfis[0]` como o perfil do usuário, e isso não pode ser uma designação."""
+    return sorted(perfis, key=lambda p: (p.perfil.categoria != Role.Categoria.PRINCIPAL, p.pk))
+
+
+def role_com_objeto(vinculo) -> dict:
+    return {**RoleSerializer(vinculo.perfil).data, "objeto_tipo": vinculo.objeto_tipo, "objeto_id": vinculo.objeto_id}
+
+
 class RoleSummarySerializer(serializers.ModelSerializer):
     """Versão resumida de Role para uso em endpoints de auth (me, etc.)."""
 
@@ -222,11 +241,10 @@ class UserListSerializer(serializers.ModelSerializer):
         value = max(candidates) if candidates else None
         return value.isoformat() if value else None
 
-    @extend_schema_field(RoleSerializer(many=True))
+    @extend_schema_field(RoleComObjetoSerializer(many=True))
     def get_perfis(self, obj):
         # consome o prefetch_related("profiles__perfil") sem reconsultar
-        profiles = obj.profiles.all()
-        return [RoleSerializer(p.perfil).data for p in profiles]
+        return [role_com_objeto(p) for p in com_o_principal_primeiro(obj.profiles.all())]
 
     def _todos_territorios(self):
         cache = getattr(self, "_territorios_todos", None)
@@ -240,7 +258,7 @@ class UserListSerializer(serializers.ModelSerializer):
         for p in obj.profiles.all():
             if p.territorio_id:
                 especificos.setdefault(p.territorio_id, p.territorio)
-            else:
+            elif p.perfil.categoria == Role.Categoria.PRINCIPAL:
                 tem_global = True
         if especificos:
             territorios = list(especificos.values())
@@ -341,7 +359,7 @@ class UserDetailSerializer(serializers.ModelSerializer):
     @extend_schema_field(PerfilDoUsuarioSerializer(many=True))
     def get_perfis(self, obj):
         # consome o prefetch_related("profiles__perfil") sem reconsultar
-        profiles = obj.profiles.all()
+        profiles = com_o_principal_primeiro(obj.profiles.all())
         return [
             {
                 "id": p.perfil_id,
@@ -366,7 +384,7 @@ class UserDetailSerializer(serializers.ModelSerializer):
         for p in obj.profiles.all():
             if p.territorio_id:
                 especificos.setdefault(p.territorio_id, p.territorio)
-            else:
+            elif p.perfil.categoria == Role.Categoria.PRINCIPAL:
                 tem_global = True
         if especificos:
             territorios = list(especificos.values())
