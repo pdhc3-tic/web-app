@@ -14,7 +14,7 @@ from apps.sgp.views.membro import (
     _membros_csv_response,
     data_limite_aniversario,
 )
-from apps.sgp.tasks import sync_activity_to_google_calendar
+from apps.sgp.tasks import sync_google_calendar_event
 from apps.sgp.views.production import ProducaoConsolidadaViewSet, ProductionViewSet
 from apps.sgp.views.projeto import ProjetoViewSet
 from apps.sgp.views.tecnico import TecnicoViewSet
@@ -46,5 +46,5 @@ __all__ = [
     "UPF_ACCESS_ROLES",
     "_membros_csv_response",
     "data_limite_aniversario",
-    "sync_activity_to_google_calendar",
+    "sync_google_calendar_event",
 ]

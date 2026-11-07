@@ -334,7 +334,7 @@ class WorkPlanAcao(models.Model):
         verbose_name="Quantidade Planejada",
     )
     valor_unitario = models.DecimalField(
-        max_digits=12,
+        max_digits=14,
         decimal_places=2,
         default=0,
         validators=[MinValueValidator(0, message="O valor unitário não pode ser negativo.")],

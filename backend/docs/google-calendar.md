@@ -2,7 +2,7 @@
 
 ## Visão Geral
 
-A integração sincroniza o ciclo de vida das atividades do SGP com o Google Calendar por meio de uma task Celery chamada `sync_activity_to_google_calendar(activity_id)`.
+A integração sincroniza o ciclo de vida das atividades do SGP com o Google Calendar por meio de uma task Celery chamada `sync_google_calendar_event(activity_id)`.
 
 O fluxo HTTP de criação/edição da atividade não chama a API do Google diretamente. A API apenas decide se deve enfileirar a task e marca a atividade como `google_calendar_sync_status="pendente"`. A execução assíncrona faz a chamada ao Google Calendar e atualiza a atividade com `ok` ou `erro`.
 
@@ -241,7 +241,7 @@ Mesmas permissões da view de config (`IsAuthenticatedActiveAccess` + `IsSuperAd
 }
 ```
 
-A persistência que alimenta este endpoint é o model append-only `GoogleCalendarSyncEvent` (`apps/sgp/models/google_calendar_sync_event.py`): uma linha por tentativa de sincronização (sucesso ou falha), gravada em `_set_sync_success()` e no bloco `except` de `sync_activity_to_google_calendar` (`apps/sgp/tasks.py`). Não usa `Activity.atualizado_em` como proxy de data de sincronização — esse campo muda em qualquer edição da atividade.
+A persistência que alimenta este endpoint é o model append-only `GoogleCalendarSyncEvent` (`apps/sgp/models/google_calendar_sync_event.py`): uma linha por tentativa de sincronização (sucesso ou falha), gravada em `_set_sync_success()` e no bloco `except` de `sync_google_calendar_event` (`apps/sgp/tasks.py`). Não usa `Activity.atualizado_em` como proxy de data de sincronização — esse campo muda em qualquer edição da atividade.
 
 **Decisões (issue #210, Pendência 3):**
 
@@ -271,15 +271,15 @@ nova sincronização.
 Em shell Django:
 
 ```python
-from apps.sgp.tasks import sync_activity_to_google_calendar
+from apps.sgp.tasks import sync_google_calendar_event
 
-sync_activity_to_google_calendar.delay(activity_id)
+sync_google_calendar_event.delay(activity_id)
 ```
 
 Para execução síncrona em diagnóstico:
 
 ```python
-sync_activity_to_google_calendar(activity_id)
+sync_google_calendar_event(activity_id)
 ```
 
 ## Validação De Go-Live

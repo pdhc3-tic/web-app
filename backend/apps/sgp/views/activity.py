@@ -30,7 +30,7 @@ from apps.sgp.serializers.activity import ActivityDetailRespostaSerializer
 from apps.sgp.serializers.exportacao import AtividadesExportQuerySerializer
 from apps.sgp.services.access import atividades_acessiveis_ao_usuario
 from apps.sgp.services.exportacao import exportar_sincrono
-from apps.sgp.tasks import sync_activity_to_google_calendar
+from apps.sgp.tasks import sync_google_calendar_event
 from apps.sgp.views.activity_documentos import ActivityDocumentMixin
 from apps.sgp.views.activity_foto import ActivityPhotoMixin
 from apps.sgp.views.exportacao import RESPOSTA_ARQUIVO, arquivo_response
@@ -205,7 +205,7 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
         )
         instance.google_calendar_sync_status = "pendente"
         try:
-            sync_activity_to_google_calendar.delay(instance.pk)
+            sync_google_calendar_event.delay(instance.pk)
         except Exception:
             logger.exception(
                 "Falha ao enfileirar sync Google Calendar activity_id=%s.",

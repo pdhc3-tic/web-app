@@ -137,7 +137,7 @@ class Production(models.Model):
         verbose_name="Quantidade Produzida",
     )
     renda_estimada_mensal = models.DecimalField(
-        max_digits=12,
+        max_digits=14,
         decimal_places=2,
         null=True,
         blank=True,
@@ -145,7 +145,7 @@ class Production(models.Model):
     )
 
     custo_anual = models.DecimalField(
-        max_digits=12,
+        max_digits=14,
         decimal_places=2,
         null=True,
         blank=True,

@@ -14279,12 +14279,12 @@ components:
         renda_estimada_mensal:
           type: string
           format: decimal
-          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           nullable: true
         custo_anual:
           type: string
           format: decimal
-          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           nullable: true
         observacoes:
           type: string
@@ -14673,7 +14673,7 @@ components:
         valor_unitario:
           type: string
           format: decimal
-          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           title: Valor Unitário (R$)
         rubricas_previstas:
           type: array
@@ -15067,12 +15067,12 @@ components:
         renda_estimada_mensal:
           type: string
           format: decimal
-          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           nullable: true
         custo_anual:
           type: string
           format: decimal
-          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           nullable: true
         observacoes:
           type: string
@@ -15225,12 +15225,12 @@ components:
         renda_estimada_mensal:
           type: string
           format: decimal
-          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           nullable: true
         custo_anual:
           type: string
           format: decimal
-          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           nullable: true
         observacoes:
           type: string
@@ -15333,12 +15333,12 @@ components:
         renda_estimada_mensal:
           type: string
           format: decimal
-          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           nullable: true
         custo_anual:
           type: string
           format: decimal
-          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           nullable: true
         observacoes:
           type: string
@@ -18244,7 +18244,7 @@ components:
         valor_unitario:
           type: string
           format: decimal
-          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           title: Valor Unitário (R$)
         valor_total:
           type: string
@@ -18357,7 +18357,7 @@ components:
         valor_unitario:
           type: string
           format: decimal
-          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           title: Valor Unitário (R$)
         valor_total:
           type: string
@@ -18451,7 +18451,7 @@ components:
         valor_unitario:
           type: string
           format: decimal
-          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           title: Valor Unitário (R$)
         rubricas_previstas:
           type: array
