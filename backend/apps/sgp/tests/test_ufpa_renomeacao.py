@@ -5,7 +5,7 @@ import pytest
 from django.apps import apps
 from django.urls import reverse
 
-from apps.core.tests.factories import AuditLogFactory
+from apps.core.tests.factories import AuditLogFactory, MunicipalityFactory, TerritoryFactory
 from apps.sca.models import ConflictLog
 from apps.sca.tests.factories import ConflictLogFactory
 from apps.sgp.models import ExportJob
@@ -20,9 +20,13 @@ migration_sgp = importlib.import_module("apps.sgp.migrations.0021_renomeia_upf_p
 migration_sca = importlib.import_module("apps.sca.migrations.0007_conflitos_com_a_entidade_ufpa")
 
 
+def _ufpa():
+    return UFPAFactory(municipio=MunicipalityFactory(territory=TerritoryFactory()))
+
+
 class TestRotas:
     def test_canonica_responde_sem_aviso_de_depreciacao(self, auth_client):
-        UFPAFactory()
+        _ufpa()
 
         resposta = auth_client.get(CANONICA)
 
@@ -32,7 +36,7 @@ class TestRotas:
 
     @pytest.mark.parametrize("prefixo", ALIASES)
     def test_alias_responde_o_mesmo_e_avisa_a_depreciacao(self, auth_client, prefixo):
-        UFPAFactory()
+        _ufpa()
 
         resposta = auth_client.get(prefixo)
 
@@ -44,7 +48,7 @@ class TestRotas:
     @pytest.mark.parametrize("prefixo", [CANONICA, *ALIASES])
     @pytest.mark.parametrize("sufixo", ["membros/", "documentos/", "producao/", "formularios/", "historico/"])
     def test_rotas_aninhadas_existem_nos_tres_prefixos(self, auth_client, prefixo, sufixo):
-        ufpa = UFPAFactory()
+        ufpa = _ufpa()
 
         status_canonico = auth_client.get(f"{CANONICA}{ufpa.pk}/{sufixo}").status_code
 
@@ -53,7 +57,7 @@ class TestRotas:
 
     @pytest.mark.parametrize("prefixo", ALIASES)
     def test_link_do_alias_aponta_para_a_mesma_rota_aninhada(self, auth_client, prefixo):
-        ufpa = UFPAFactory()
+        ufpa = _ufpa()
 
         resposta = auth_client.get(f"{prefixo}{ufpa.pk}/membros/")
 
@@ -64,7 +68,7 @@ class TestRotas:
         assert auth_client.get(f"{CANONICA}{sufixo}").status_code != 404
 
     def test_alias_tambem_escreve(self, auth_client_super_admin):
-        ufpa = UFPAFactory()
+        ufpa = _ufpa()
 
         resposta = auth_client_super_admin.delete(f"/api/v1/upfs/{ufpa.pk}/")
 
@@ -79,7 +83,7 @@ class TestRotas:
         assert reverse("ufpa-membros-list", args=[ufpa_pk]) == f"{CANONICA}{ufpa_pk}/membros/"
 
     def test_resposta_usa_os_nomes_novos(self, auth_client):
-        ufpa = UFPAFactory()
+        ufpa = _ufpa()
         membro = MembroFactory(ufpa=ufpa)
 
         dados = auth_client.get(f"{CANONICA}{ufpa.pk}/membros/{membro.pk}/").json()
@@ -90,7 +94,7 @@ class TestRotas:
 
 class TestDadosComONomeAntigo:
     def test_historico_le_a_auditoria_gravada_como_upf(self, auth_client):
-        ufpa = UFPAFactory()
+        ufpa = _ufpa()
         AuditLogFactory(
             entidade="UPF", entidade_id=str(ufpa.pk), acao="UPF.update",
             valores_anteriores={"num_comodos": 1}, valores_novos={"num_comodos": 2},
@@ -103,7 +107,7 @@ class TestDadosComONomeAntigo:
         assert (entrada["campo"], entrada["valor_anterior"], entrada["valor_novo"]) == ("num_comodos", 1, 2)
 
     def test_historico_nao_mistura_auditoria_de_outra_ufpa(self, auth_client):
-        ufpa, outra = UFPAFactory(), UFPAFactory()
+        ufpa, outra = _ufpa(), _ufpa()
         AuditLogFactory(entidade="UPF", entidade_id=str(outra.pk), acao="UPF.update")
 
         assert auth_client.get(f"{CANONICA}{ufpa.pk}/historico/").data["results"] == []
@@ -170,7 +174,7 @@ class TestNomesAntigosNaEscrita:
         assert "ufpas_participantes" in str(resposta.data["upfs_participantes"])
 
     def test_atividade_aceita_a_chave_nova(self, auth_client_super_admin):
-        atividade, ufpa = ActivityFactory(), UFPAFactory()
+        atividade, ufpa = ActivityFactory(), _ufpa()
 
         resposta = auth_client_super_admin.patch(
             f"/api/v1/sgp/atividades/{atividade.pk}/", {"ufpas_participantes": [ufpa.pk]}, format="json",
@@ -180,7 +184,7 @@ class TestNomesAntigosNaEscrita:
         assert list(atividade.ufpas_participantes.values_list("pk", flat=True)) == [ufpa.pk]
 
     def test_ufpa_recusa_daf_caf(self, auth_client_super_admin):
-        ufpa = UFPAFactory()
+        ufpa = _ufpa()
 
         resposta = auth_client_super_admin.patch(f"{CANONICA}{ufpa.pk}/", {"daf_caf": "123"}, format="json")
 
@@ -188,7 +192,7 @@ class TestNomesAntigosNaEscrita:
         assert "dap_caf" in str(resposta.data["daf_caf"])
 
     def test_ufpa_grava_e_devolve_dap_caf(self, auth_client_super_admin):
-        ufpa = UFPAFactory()
+        ufpa = _ufpa()
 
         resposta = auth_client_super_admin.patch(f"{CANONICA}{ufpa.pk}/", {"dap_caf": "123"}, format="json")
 

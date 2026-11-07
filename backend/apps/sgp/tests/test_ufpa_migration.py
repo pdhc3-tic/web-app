@@ -3,6 +3,7 @@ import pytest
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 
+from apps.core.tests.factories import MunicipalityFactory, TerritoryFactory
 from apps.sgp.models import UFPA, Activity, MembroFamilia
 from apps.sgp.tests.factories import ActivityFactory, MembroFactory, UFPAFactory
 
@@ -34,7 +35,7 @@ def volta_ao_fim():
 
 
 def test_dados_sobrevivem_a_voltar_e_reaplicar(volta_ao_fim):
-    ufpa = UFPAFactory()
+    ufpa = UFPAFactory(municipio=MunicipalityFactory(territory=TerritoryFactory()))
     membro = MembroFactory(ufpa=ufpa)
     atividade = ActivityFactory()
     atividade.ufpas_participantes.add(ufpa)
