@@ -1,5 +1,6 @@
 from django.db.models import QuerySet
 
+from apps.core.models.role import Role
 from apps.core.models.territory import Territory
 from apps.core.models.user_profile import UserProfile
 
@@ -8,6 +9,14 @@ def user_has_role(user, slug: str) -> bool:
     if not user.is_authenticated:
         return False
     return UserProfile.objects.filter(user=user, perfil__slug=slug).exists()
+
+
+def user_has_role_on_object(user, slug: str, *, objeto_tipo: str, objeto_id) -> bool:
+    if not user.is_authenticated:
+        return False
+    return UserProfile.objects.filter(
+        user=user, perfil__slug=slug, objeto_tipo=objeto_tipo, objeto_id=objeto_id,
+    ).exists()
 
 
 def user_role_slugs(user, slugs=None) -> set[str]:
@@ -32,8 +41,9 @@ def user_territories(user) -> QuerySet[Territory]:
         ).values_list("territorio_id", flat=True)
     )
     if not profile_territory_ids:
+        # Perfil operacional nunca tem território: isso não é acesso global.
         has_global = UserProfile.objects.filter(
-            user=user, territorio__isnull=True
+            user=user, territorio__isnull=True, perfil__categoria=Role.Categoria.PRINCIPAL,
         ).exists()
         if has_global:
             return Territory.objects.all()

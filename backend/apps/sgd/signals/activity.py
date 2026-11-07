@@ -5,6 +5,7 @@ from django.dispatch import receiver
 from apps.sgp.models.activity import Activity
 
 ACTIVITY_STATUS_CANCELAM_DEMANDAS = {"cancelada", "nao_realizada"}
+ACTIVITY_STATUS_SEM_EVIDENCIA = "concluido_sem_evidencia"
 
 
 @receiver(pre_save, sender=Activity)
@@ -44,3 +45,16 @@ def _notificar_demandas_atividade_adiada(sender, instance, **kwargs):
 
     from apps.sgd.tasks import notificar_demandas_atividade_adiada
     transaction.on_commit(lambda: notificar_demandas_atividade_adiada.delay(instance.pk))
+
+
+@receiver(post_save, sender=Activity)
+def _registrar_riscos_da_atividade_sem_evidencia(sender, instance, **kwargs):
+    if instance.status != ACTIVITY_STATUS_SEM_EVIDENCIA:
+        return
+    if getattr(instance, "_status_anterior", None) == ACTIVITY_STATUS_SEM_EVIDENCIA:
+        return
+
+    # No próprio salvamento, e não em tarefa: o status é terminal e não há outra chance de registrar
+    # se o broker estiver fora. A visão total devolve o papel da sessão ao terminar.
+    from apps.sgd.services import workflow as workflow_service
+    workflow_service.registrar_riscos_da_atividade_sem_evidencia(instance.pk)

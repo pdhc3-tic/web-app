@@ -140,6 +140,8 @@ As transições de status passam por `apps.sgd.services.workflow.executar_transi
 | Criação do pedido | A `Demand`, e depois o pedido novo, que nenhuma outra transação enxerga antes do commit |
 | Cadastro de limite (`/sgp/orcamento/limites/`, alias e Django Admin) | O limite. Com a sobrealocação desligada, depois os pools territoriais envolvidos, em ordem de pk |
 | `remanejar`, `atualizar_valor_alocado` | Pools em ordem crescente de pk |
+| Conclusão de demanda (FGD ou Arlo), depois da `DemandRequest` | `Activity` (`FOR NO KEY UPDATE`) → `WorkPlanAcao`. Faz quem fecha a atividade sem evidência e quem conclui a demanda enxergarem um ao outro |
+| Salvamento da atividade | Só a `Activity`, e depois a `WorkPlanAcao`; não trava saldo nem `Demand` |
 | Avaliação de alerta (`alertas.py`) | Um alvo por transação, pool ou limite, e depois a linha do alerta. Quem move saldo grava o alerta com o alvo já travado, depois do saldo |
 
 ## Reconciliação

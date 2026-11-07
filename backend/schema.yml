@@ -696,6 +696,53 @@ paths:
               schema:
                 $ref: '#/components/schemas/GoogleCalendarStatusResposta'
           description: ''
+  /api/v1/core/roles/:
+    get:
+      operationId: v1_core_roles_list
+      parameters:
+      - in: query
+        name: ativo
+        schema:
+          type: boolean
+      - in: query
+        name: categoria
+        schema:
+          type: string
+          enum:
+          - operacional
+          - principal
+        description: |-
+          * `principal` - Principal
+          * `operacional` - Operacional
+      - name: limit
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: O índice inicial a partir do qual retornar os resultados.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: Um termo de busca.
+        schema:
+          type: string
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedRoleList'
+          description: ''
   /api/v1/core/usuarios/{id}/impacto-desativacao/:
     get:
       operationId: v1_core_usuarios_impacto_desativacao_retrieve
@@ -1535,6 +1582,16 @@ paths:
         name: ativo
         schema:
           type: boolean
+      - in: query
+        name: categoria
+        schema:
+          type: string
+          enum:
+          - operacional
+          - principal
+        description: |-
+          * `principal` - Principal
+          * `operacional` - Operacional
       - name: limit
         required: false
         in: query
@@ -4835,6 +4892,67 @@ paths:
               schema:
                 $ref: '#/components/schemas/FormResponseDetail'
           description: ''
+  /api/v1/sgp/glosa-riscos/:
+    get:
+      operationId: v1_sgp_glosa_riscos_list
+      description: GET /api/v1/sgp/glosa-riscos/ — por valor exposto; com `?demanda=`,
+        em ordem cronológica.
+      parameters:
+      - in: query
+        name: activity
+        schema:
+          type: integer
+      - in: query
+        name: demanda
+        schema:
+          type: integer
+      - name: limit
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: O índice inicial a partir do qual retornar os resultados.
+        schema:
+          type: integer
+      - in: query
+        name: severidade
+        schema:
+          enum:
+          - alta
+          - media
+          - baixa
+          type: string
+          minLength: 1
+        description: |-
+          * `alta` - Alta
+          * `media` - Média
+          * `baixa` - Baixa
+      - in: query
+        name: tipo
+        schema:
+          enum:
+          - pago_acima_autorizado
+          - demanda_sem_evidencia
+          type: string
+          minLength: 1
+        description: |-
+          * `pago_acima_autorizado` - Pago acima do autorizado
+          * `demanda_sem_evidencia` - Demanda executada sem evidência
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedGlosaRiskList'
+          description: ''
   /api/v1/sgp/indicadores/:
     get:
       operationId: v1_sgp_indicadores_list
@@ -5323,6 +5441,10 @@ paths:
           - ugp
           - fgd
           - super-admin
+          - coordenador-evento
+          - credenciador
+          - avaliador-selecao
+          - gestor-edital
           type: string
         description: |-
           * `agricultor` - Agricultor / Beneficiário
@@ -5331,6 +5453,10 @@ paths:
           * `ugp` - UGP — Coordenação
           * `fgd` - FGD — Administrativo
           * `super-admin` - Super Admin
+          * `coordenador-evento` - Coordenador de Evento
+          * `credenciador` - Credenciador
+          * `avaliador-selecao` - Avaliador de Seleção
+          * `gestor-edital` - Gestor de Edital
       - in: query
         name: rubrica
         schema:
@@ -8523,6 +8649,16 @@ components:
           items:
             $ref: '#/components/schemas/StatusAtividadeEnum'
           readOnly: true
+        custo_previsto:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        custo_realizado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
         ativo:
           type: boolean
         criado_por:
@@ -8602,6 +8738,8 @@ components:
       - comunidade
       - criado_em
       - criado_por
+      - custo_previsto
+      - custo_realizado
       - data_fim
       - data_inicio
       - descricao_narrativa
@@ -9979,6 +10117,14 @@ components:
       - categoria
       - id
       - nome
+    CategoriaDoPerfilEnum:
+      enum:
+      - principal
+      - operacional
+      type: string
+      description: |-
+        * `principal` - Principal
+        * `operacional` - Operacional
     ChoicesResposta:
       type: object
       properties:
@@ -10090,6 +10236,22 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OpcaoTexto'
+        risco_glosa_tipo:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
+        risco_glosa_severidade:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
+        perfil_categoria:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
+        perfil_objeto_tipo:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
         demanda_status:
           type: array
           items:
@@ -10151,10 +10313,14 @@ components:
       - meio_transporte
       - ods
       - pct
+      - perfil_categoria
+      - perfil_objeto_tipo
       - posse_terra
       - producao_sistema_criacao
       - producao_tipo
       - producao_tipo_outra
+      - risco_glosa_severidade
+      - risco_glosa_tipo
       - saude
       - seguridade_social
       - situacao_moradia
@@ -11468,6 +11634,72 @@ components:
         * `2` - Feminino
         * `3` - Não binário
         * `4` - Não informado
+    GlosaRisk:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        tipo:
+          allOf:
+          - $ref: '#/components/schemas/TipoRiscoDeGlosaEnum'
+          readOnly: true
+        severidade:
+          allOf:
+          - $ref: '#/components/schemas/SeveridadeRiscoDeGlosaEnum'
+          readOnly: true
+        valor_exposto:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          title: Valor exposto (R$)
+        activity_id:
+          type: integer
+          readOnly: true
+          nullable: true
+        demanda_id:
+          type: integer
+          readOnly: true
+        demand_request_id:
+          type: integer
+          nullable: true
+          readOnly: true
+        valor_autorizado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          nullable: true
+          title: Valor autorizado (R$)
+        valor_pago:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          nullable: true
+          title: Valor pago (R$)
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        resolvido_em:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+      required:
+      - activity_id
+      - criado_em
+      - demand_request_id
+      - demanda_id
+      - id
+      - resolvido_em
+      - severidade
+      - tipo
+      - valor_autorizado
+      - valor_exposto
+      - valor_pago
     GoogleCalendarConfigResposta:
       type: object
       properties:
@@ -12988,6 +13220,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FormResponseList'
+    PaginatedGlosaRiskList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/GlosaRisk'
     PaginatedHistoricoEntryList:
       type: object
       required:
@@ -14510,9 +14765,19 @@ components:
         territorio_id:
           type: integer
           nullable: true
+        objeto_tipo:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/TipoDoObjetoDoPerfilEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        objeto_id:
+          type: integer
+          nullable: true
       required:
       - id
       - nome
+      - objeto_id
+      - objeto_tipo
       - slug
       - territorio_id
     PerfilInput:
@@ -14523,6 +14788,17 @@ components:
         territorio_id:
           type: integer
           nullable: true
+        objeto_tipo:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/TipoDoObjetoDoPerfilEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        objeto_id:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 1
+          format: int64
+          nullable: true
       required:
       - perfil_id
     PerfilInputRequest:
@@ -14532,6 +14808,17 @@ components:
           type: integer
         territorio_id:
           type: integer
+          nullable: true
+        objeto_tipo:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/TipoDoObjetoDoPerfilEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        objeto_id:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 1
+          format: int64
           nullable: true
       required:
       - perfil_id
@@ -15184,6 +15471,10 @@ components:
           pattern: ^[-a-zA-Z0-9_]+$
         descricao:
           type: string
+        categoria:
+          allOf:
+          - $ref: '#/components/schemas/CategoriaDoPerfilEnum'
+          readOnly: true
         ativo:
           type: boolean
         criado_em:
@@ -15191,9 +15482,55 @@ components:
           format: date-time
           readOnly: true
       required:
+      - categoria
       - criado_em
       - id
       - nome
+      - slug
+    RoleComObjeto:
+      type: object
+      description: 'O perfil e, se for operacional, o objeto designado: a mesma pessoa
+        pode ter o perfil em vários.'
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        nome:
+          type: string
+          maxLength: 100
+        slug:
+          allOf:
+          - $ref: '#/components/schemas/SlugEnum'
+          pattern: ^[-a-zA-Z0-9_]+$
+        descricao:
+          type: string
+        categoria:
+          allOf:
+          - $ref: '#/components/schemas/CategoriaDoPerfilEnum'
+          readOnly: true
+        ativo:
+          type: boolean
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        objeto_tipo:
+          readOnly: true
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/TipoDoObjetoDoPerfilEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        objeto_id:
+          type: integer
+          readOnly: true
+          nullable: true
+      required:
+      - categoria
+      - criado_em
+      - id
+      - nome
+      - objeto_id
+      - objeto_tipo
       - slug
     RoleRequest:
       type: object
@@ -15310,6 +15647,16 @@ components:
         * `verde` - verde
         * `amarelo` - amarelo
         * `vermelho` - vermelho
+    SeveridadeRiscoDeGlosaEnum:
+      enum:
+      - alta
+      - media
+      - baixa
+      type: string
+      description: |-
+        * `alta` - Alta
+        * `media` - Média
+        * `baixa` - Baixa
     SimNaoInformadoEnum:
       enum:
       - 1
@@ -15386,6 +15733,10 @@ components:
       - ugp
       - fgd
       - super-admin
+      - coordenador-evento
+      - credenciador
+      - avaliador-selecao
+      - gestor-edital
       type: string
       description: |-
         * `agricultor` - Agricultor / Beneficiário
@@ -15394,6 +15745,10 @@ components:
         * `ugp` - UGP — Coordenação
         * `fgd` - FGD — Administrativo
         * `super-admin` - Super Admin
+        * `coordenador-evento` - Coordenador de Evento
+        * `credenciador` - Credenciador
+        * `avaliador-selecao` - Avaliador de Seleção
+        * `gestor-edital` - Gestor de Edital
     SpendingLimit:
       type: object
       description: |-
@@ -16457,6 +16812,16 @@ components:
         * `2g` - 2G
         * `5g` - 5G
         * `offline` - Offline
+    TipoDoObjetoDoPerfilEnum:
+      enum:
+      - evento
+      - edital
+      - candidatura
+      type: string
+      description: |-
+        * `evento` - Evento
+        * `edital` - Edital
+        * `candidatura` - Candidatura
     TipoDocumentoAtividadeEnum:
       enum:
       - lista_presenca
@@ -16535,6 +16900,14 @@ components:
         * `agricola` - Agrícola
         * `pecuaria` - Pecuária
         * `outra` - Outra
+    TipoRiscoDeGlosaEnum:
+      enum:
+      - pago_acima_autorizado
+      - demanda_sem_evidencia
+      type: string
+      description: |-
+        * `pago_acima_autorizado` - Pago acima do autorizado
+        * `demanda_sem_evidencia` - Demanda executada sem evidência
     TipoRubrica:
       type: object
       description: 'Contrato de `/sgd/config/tipo-rubrica/`: uma linha por tipo do
@@ -17637,7 +18010,7 @@ components:
         perfis:
           type: array
           items:
-            $ref: '#/components/schemas/Role'
+            $ref: '#/components/schemas/RoleComObjeto'
           readOnly: true
         territorios:
           type: array
@@ -17710,7 +18083,7 @@ components:
         perfis:
           type: array
           items:
-            $ref: '#/components/schemas/Role'
+            $ref: '#/components/schemas/RoleComObjeto'
           readOnly: true
         territorios:
           type: array

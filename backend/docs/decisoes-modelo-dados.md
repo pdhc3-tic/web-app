@@ -270,6 +270,35 @@ ADT e ACR precisam de valores diferentes. Hoje os dois são um só perfil no sis
 
 ---
 
+## 9. Custo da atividade e risco de glosa — o documento prevalece sobre a #391
+
+- **`custo_previsto`:** soma o estimado das demandas ainda não concluídas, como o SGP 3.1 define, e também exclui canceladas e recusadas, como a #391 pede. A #391 incluía as concluídas.
+- **`custo_realizado`:** soma o valor executado das demandas concluídas, como o SGP 3.1 define, e não o pago. Pago acima do autorizado executa só o autorizado, e a diferença fica no risco de glosa.
+- **Cálculo:** feito na leitura, com visão total. O RLS de `sgd_demand` mostra ao ADT só as próprias demandas, e o custo da mesma atividade mudaria conforme quem lê. Não há colunas materializadas em `Activity`, porque recalcular a soma exigiria travar a atividade a cada mudança de solicitação.
+- **Severidade de `pago_acima_autorizado`:** alta, como o SGP 7.5 define para a divergência entre autorizado e pago, inclusive nos registros migrados. A #391 pedia média.
+- **Nomes no modelo:** seguem o SGP 10.3 (`tipo_situacao`, `entidade`, `entidade_id`, `detectado_em`, `resolvido_em`, `resolvido_por`). `activity`, `demanda_id`, `demand_request_id`, `valor_autorizado` e `valor_pago` são acréscimos para a #391 e a #408.
+- **Nomes na API:** o documento não define a rota, então ela segue a #391 e a #408: `tipo`, `activity_id` e `criado_em`.
+- **Quando registra `demanda_sem_evidencia`:** com a demanda concluída e a atividade em `concluido_sem_evidencia`, em qualquer ordem. Demanda concluída com a atividade ainda em andamento não é risco até a atividade fechar sem evidência. O registro acontece no próprio salvamento, sem tarefa, porque o status é terminal e não haveria outra chance se o broker estivesse fora. A conclusão trava a atividade, para que as duas ordens se enxerguem mesmo quando acontecem juntas.
+- **Situações detectadas:** só 2 das 8 do SGP 7.5; as demais e o relatório semanal ficam para a sprint do TED.
+- **Quem lê `/sgp/glosa-riscos/`:** UGP, Super Admin, FGD e Articulador, como o SGP 7.5 define para o relatório. O ADT recebe 403. O Articulador continua vendo o risco de atividade inativa, porque inativar não desfaz a despesa.
+
+---
+
+## 10. Perfis operacionais — regras além da #393
+
+- **Trigger em vez de `CheckConstraint` para a categoria:** um CHECK não enxerga `core_role`. O CHECK garante que `objeto_tipo` e `objeto_id` vêm juntos, e a trigger, que objeto só existe em perfil operacional, que todo operacional tem objeto e que ele não tem território.
+- **Sem território:** a abrangência é o objeto, como o Core define. Com território, o perfil operacional ampliaria o escopo territorial de quem o recebe, porque as regras de escopo somam os territórios de todos os perfis do usuário.
+- **Sempre com um perfil principal:** o Core diz "nunca isolados". `perfis_input` recusa operacional sozinho. Pelo Admin ainda é possível apagar o principal, e por isso `user_territories`, `/users/`, `/auth/me/` e o filtro de dispositivos do SCA não contam perfil operacional como acesso global.
+- **Objeto de cada perfil:** Coordenador de Evento e Credenciador em `evento`, Avaliador de Seleção em `candidatura` e Gestor de Edital em `edital`. O Credenciador também abrange sessões no Core, mas sessão ainda não existe como objeto.
+- **`objeto_id` sem FK:** `apps/sge` e `apps/sgs` ainda não têm modelos.
+- **Listagens:** `/users/` e `/auth/me/` trazem o objeto de cada perfil e o perfil principal primeiro, porque a barra lateral do front usa `perfis[0]`.
+- **Sem designação repetida:** cada usuário tem no máximo uma linha por perfil e objeto. O mesmo perfil pode valer para vários objetos, uma linha para cada.
+- **`categoria` só de leitura:** na API e no Admin, porque mudar a categoria de um perfil em uso deixaria os vínculos dele inconsistentes.
+- **Escrita em `/roles/` só para o Super Admin, com `slug` imutável:** a matriz do Core dá a configuração ao Super Admin. Antes, qualquer autenticado podia alterar perfis; com perfis sem vínculo, dava para apagar um deles e trocar os slugs até virar Super Admin.
+- **Busca de Articulador por estado:** o território precisa ser o do próprio perfil de Articulador. Sem isso, o perfil operacional, que não tem território, valeria como alcance global.
+
+---
+
 ## Observação
 
 Achado da varredura que **não** tem justificativa técnica registrada em

@@ -7,7 +7,7 @@ from django.db import transaction
 from drf_spectacular.utils import extend_schema_field
 from .models import Role, State, Territory, Municipality, Organization
 from .models.notifications import Notification
-from .models.user_profile import UserProfile
+from .models.user_profile import ObjetoTipo, UserProfile, abrangencia_invalida
 from apps.core.models.audit_log import AuditLog
 from .models.system_config import SystemConfig, TipoConfiguracao
 
@@ -109,8 +109,33 @@ class GoogleCalendarConfigSerializer(serializers.Serializer):
 class RoleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Role
-        fields = ['id', 'nome', 'slug', 'descricao', 'ativo', 'criado_em']
-        read_only_fields = ['criado_em']
+        fields = ['id', 'nome', 'slug', 'descricao', 'categoria', 'ativo', 'criado_em']
+        read_only_fields = ['categoria', 'criado_em']
+
+    def validate_slug(self, value):
+        # O slug é a identidade do perfil para as regras de acesso e para o RLS.
+        if self.instance is not None and value != self.instance.slug:
+            raise serializers.ValidationError("O slug de um perfil não pode ser alterado.")
+        return value
+
+
+class RoleComObjetoSerializer(RoleSerializer):
+    """O perfil e, se for operacional, o objeto designado: a mesma pessoa pode ter o perfil em vários."""
+
+    objeto_tipo = serializers.ChoiceField(choices=ObjetoTipo.choices, allow_null=True, read_only=True)
+    objeto_id = serializers.IntegerField(allow_null=True, read_only=True)
+
+    class Meta(RoleSerializer.Meta):
+        fields = [*RoleSerializer.Meta.fields, "objeto_tipo", "objeto_id"]
+
+
+def com_o_principal_primeiro(perfis) -> list:
+    """O front mostra `perfis[0]` como o perfil do usuário, e isso não pode ser uma designação."""
+    return sorted(perfis, key=lambda p: (p.perfil.categoria != Role.Categoria.PRINCIPAL, p.pk))
+
+
+def role_com_objeto(vinculo) -> dict:
+    return {**RoleSerializer(vinculo.perfil).data, "objeto_tipo": vinculo.objeto_tipo, "objeto_id": vinculo.objeto_id}
 
 
 class RoleSummarySerializer(serializers.ModelSerializer):
@@ -174,6 +199,8 @@ class PerfilDoUsuarioSerializer(serializers.Serializer):
     slug = serializers.CharField()
     nome = serializers.CharField()
     territorio_id = serializers.IntegerField(allow_null=True)
+    objeto_tipo = serializers.ChoiceField(choices=ObjetoTipo.choices, allow_null=True)
+    objeto_id = serializers.IntegerField(allow_null=True)
 
 
 class UserListSerializer(serializers.ModelSerializer):
@@ -214,11 +241,10 @@ class UserListSerializer(serializers.ModelSerializer):
         value = max(candidates) if candidates else None
         return value.isoformat() if value else None
 
-    @extend_schema_field(RoleSerializer(many=True))
+    @extend_schema_field(RoleComObjetoSerializer(many=True))
     def get_perfis(self, obj):
         # consome o prefetch_related("profiles__perfil") sem reconsultar
-        profiles = obj.profiles.all()
-        return [RoleSerializer(p.perfil).data for p in profiles]
+        return [role_com_objeto(p) for p in com_o_principal_primeiro(obj.profiles.all())]
 
     def _todos_territorios(self):
         cache = getattr(self, "_territorios_todos", None)
@@ -232,7 +258,7 @@ class UserListSerializer(serializers.ModelSerializer):
         for p in obj.profiles.all():
             if p.territorio_id:
                 especificos.setdefault(p.territorio_id, p.territorio)
-            else:
+            elif p.perfil.categoria == Role.Categoria.PRINCIPAL:
                 tem_global = True
         if especificos:
             territorios = list(especificos.values())
@@ -247,9 +273,16 @@ class UserListSerializer(serializers.ModelSerializer):
         return TerritorySerializer(self._territorios_do_usuario(obj), many=True).data
 
 
+MAIOR_OBJETO_ID = 2**63 - 1  # Limite do `PositiveBigIntegerField` no PostgreSQL.
+
+
 class PerfilInputSerializer(serializers.Serializer):
     perfil_id = serializers.IntegerField()
     territorio_id = serializers.IntegerField(allow_null=True, required=False, default=None)
+    objeto_tipo = serializers.ChoiceField(choices=ObjetoTipo.choices, allow_null=True, required=False, default=None)
+    objeto_id = serializers.IntegerField(
+        min_value=1, max_value=MAIOR_OBJETO_ID, allow_null=True, required=False, default=None,
+    )
 
 
 class DemandaCanceladaNaDesativacaoSerializer(serializers.Serializer):
@@ -326,13 +359,15 @@ class UserDetailSerializer(serializers.ModelSerializer):
     @extend_schema_field(PerfilDoUsuarioSerializer(many=True))
     def get_perfis(self, obj):
         # consome o prefetch_related("profiles__perfil") sem reconsultar
-        profiles = obj.profiles.all()
+        profiles = com_o_principal_primeiro(obj.profiles.all())
         return [
             {
                 "id": p.perfil_id,
                 "slug": p.perfil.slug,
                 "nome": p.perfil.nome,
                 "territorio_id": p.territorio_id,
+                "objeto_tipo": p.objeto_tipo,
+                "objeto_id": p.objeto_id,
             }
             for p in profiles
         ]
@@ -349,7 +384,7 @@ class UserDetailSerializer(serializers.ModelSerializer):
         for p in obj.profiles.all():
             if p.territorio_id:
                 especificos.setdefault(p.territorio_id, p.territorio)
-            else:
+            elif p.perfil.categoria == Role.Categoria.PRINCIPAL:
                 tem_global = True
         if especificos:
             territorios = list(especificos.values())
@@ -373,6 +408,30 @@ class UserDetailSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Já existe um usuário com este e-mail.")
         return value
 
+    def validate_perfis_input(self, value):
+        perfis = Role.objects.in_bulk({item["perfil_id"] for item in value})
+        designacoes = [
+            (item["perfil_id"], item["objeto_tipo"], item.get("objeto_id"))
+            for item in value if item.get("objeto_tipo") is not None
+        ]
+        if len(designacoes) != len(set(designacoes)):
+            raise serializers.ValidationError("O mesmo perfil está designado duas vezes ao mesmo objeto.")
+        for item in value:
+            perfil = perfis.get(item["perfil_id"])
+            if perfil is None:
+                raise serializers.ValidationError(f"Perfil {item['perfil_id']} não encontrado.")
+            # `.get`: no PATCH, o DRF não aplica os `default` do serializer aninhado.
+            erro = abrangencia_invalida(
+                perfil, territorio_id=item.get("territorio_id"),
+                objeto_tipo=item.get("objeto_tipo"), objeto_id=item.get("objeto_id"),
+            )
+            if erro:
+                raise serializers.ValidationError(erro)
+        categorias = {perfil.categoria for perfil in perfis.values()}
+        if Role.Categoria.OPERACIONAL in categorias and Role.Categoria.PRINCIPAL not in categorias:
+            raise serializers.ValidationError("Perfil operacional precisa acompanhar um perfil principal.")
+        return value
+
     def _sync_profiles(self, user, perfis_data):
         user.profiles.all().delete()
         for item in perfis_data:
@@ -380,6 +439,8 @@ class UserDetailSerializer(serializers.ModelSerializer):
                 user=user,
                 perfil_id=item["perfil_id"],
                 territorio_id=item.get("territorio_id"),
+                objeto_tipo=item.get("objeto_tipo"),
+                objeto_id=item.get("objeto_id"),
             )
 
     def create(self, validated_data):

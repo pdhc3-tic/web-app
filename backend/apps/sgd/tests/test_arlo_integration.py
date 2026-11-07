@@ -159,7 +159,7 @@ def test_valor_pago_maior_registra_risco_de_glosa(demanda_autorizada, usuario_fg
 
     assert importacao.registros_ok == 1
     glosa = GlosaRisk.objects.get()
-    assert (glosa.valor_autorizado, glosa.valor_pago, glosa.excedente) == (
+    assert (glosa.valor_autorizado, glosa.valor_pago, glosa.valor_exposto) == (
         Decimal("1000.00"), Decimal("1200.00"), Decimal("200.00"),
     )
     assert glosa.demanda_id == str(demanda_autorizada.demanda_id) and glosa.criado_por == usuario_fgd

@@ -99,7 +99,7 @@ def test_audit_logged_on_user_access_change(superadmin_client):
     assert log.valores_anteriores == {"perfis": []}
     assert log.valores_novos == {
         "perfis": [
-            {"perfil_id": role.pk, "territorio_id": territorio.pk},
+            {"perfil_id": role.pk, "territorio_id": territorio.pk, "objeto_tipo": None, "objeto_id": None},
         ],
     }
 
