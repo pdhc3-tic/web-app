@@ -9,7 +9,7 @@ from apps.sgp.tests.factories import (
     ActivityFactory,
     IndicatorFactory,
     MembroFactory,
-    UPFFactory,
+    UFPAFactory,
     WorkPlanAcaoFactory,
 )
 
@@ -21,14 +21,14 @@ def _acao(forma, **kwargs):
 
 
 @pytest.fixture
-def nova_upf(municipio_rn):
-    """UFPA com território: a UPFFactory sozinha cria município sem território."""
-    return lambda: UPFFactory(municipio=municipio_rn)
+def nova_ufpa(municipio_rn):
+    """UFPA com território: a UFPAFactory sozinha cria município sem território."""
+    return lambda: UFPAFactory(municipio=municipio_rn)
 
 
 @pytest.fixture
-def novo_membro(nova_upf):
-    return lambda: MembroFactory(upf=nova_upf())
+def novo_membro(nova_ufpa):
+    return lambda: MembroFactory(ufpa=nova_ufpa())
 
 
 def _realizado(acao):
@@ -70,20 +70,20 @@ class TestContagemDeAtividades:
 
 
 class TestSomaDeUfpas:
-    def test_ufpa_em_varias_atividades_conta_uma_vez(self, nova_upf):
+    def test_ufpa_em_varias_atividades_conta_uma_vez(self, nova_ufpa):
         acao = _acao("soma_ufpas")
-        repetida, outra = nova_upf(), nova_upf()
+        repetida, outra = nova_ufpa(), nova_ufpa()
         primeira = ActivityFactory(acao=acao, status="concluido")
         segunda = ActivityFactory(acao=acao, status="concluido")
-        primeira.upfs_participantes.add(repetida, outra)
-        segunda.upfs_participantes.add(repetida)
+        primeira.ufpas_participantes.add(repetida, outra)
+        segunda.ufpas_participantes.add(repetida)
 
         assert _realizado(acao) == 2
 
-    def test_so_atividades_concluidas_contam(self, nova_upf):
+    def test_so_atividades_concluidas_contam(self, nova_ufpa):
         acao = _acao("soma_ufpas")
         pendente = ActivityFactory(acao=acao, status="em_andamento")
-        pendente.upfs_participantes.add(nova_upf())
+        pendente.ufpas_participantes.add(nova_ufpa())
 
         assert _realizado(acao) == 0
 
@@ -91,27 +91,27 @@ class TestSomaDeUfpas:
         pendente.save()
         assert _realizado(acao) == 1
 
-    def test_remover_e_limpar_vinculos_pela_atividade(self, nova_upf):
+    def test_remover_e_limpar_vinculos_pela_atividade(self, nova_ufpa):
         acao = _acao("soma_ufpas")
-        upf_a, upf_b = nova_upf(), nova_upf()
+        ufpa_a, ufpa_b = nova_ufpa(), nova_ufpa()
         atividade = ActivityFactory(acao=acao, status="concluido")
-        atividade.upfs_participantes.add(upf_a, upf_b)
+        atividade.ufpas_participantes.add(ufpa_a, ufpa_b)
 
-        atividade.upfs_participantes.remove(upf_a)
+        atividade.ufpas_participantes.remove(ufpa_a)
         assert _realizado(acao) == 1
 
-        atividade.upfs_participantes.clear()
+        atividade.ufpas_participantes.clear()
         assert _realizado(acao) == 0
 
-    def test_alterar_vinculos_pelo_lado_da_ufpa(self, nova_upf):
+    def test_alterar_vinculos_pelo_lado_da_ufpa(self, nova_ufpa):
         acao = _acao("soma_ufpas")
-        upf = nova_upf()
+        ufpa = nova_ufpa()
         atividade = ActivityFactory(acao=acao, status="concluido")
 
-        upf.atividades.add(atividade)
+        ufpa.atividades.add(atividade)
         assert _realizado(acao) == 1
 
-        upf.atividades.clear()
+        ufpa.atividades.clear()
         assert _realizado(acao) == 0
 
 
@@ -188,11 +188,11 @@ class TestManual:
 
 
 class TestTrocaDeIndicadorDaAcao:
-    def test_reapura_pela_forma_do_novo_indicador(self, auth_client, nova_upf):
+    def test_reapura_pela_forma_do_novo_indicador(self, auth_client, nova_ufpa):
         acao = _acao("contagem_atividades")
-        upf = nova_upf()
+        ufpa = nova_ufpa()
         for _ in range(3):
-            ActivityFactory(acao=acao, status="concluido").upfs_participantes.add(upf)
+            ActivityFactory(acao=acao, status="concluido").ufpas_participantes.add(ufpa)
         assert _realizado(acao) == 3
 
         response = auth_client.patch(
@@ -219,9 +219,9 @@ class TestTrocaDeIndicadorDaAcao:
 
 
 class TestTrocaDeIndicadorForaDaApi:
-    def test_salvar_a_acao_com_outro_indicador_reapura(self, nova_upf):
+    def test_salvar_a_acao_com_outro_indicador_reapura(self, nova_ufpa):
         acao = _acao("contagem_atividades")
-        ActivityFactory(acao=acao, status="concluido").upfs_participantes.add(nova_upf(), nova_upf())
+        ActivityFactory(acao=acao, status="concluido").ufpas_participantes.add(nova_ufpa(), nova_ufpa())
         assert _realizado(acao) == 1
 
         acao.indicador = IndicatorFactory(forma_apuracao="soma_ufpas")
@@ -244,10 +244,10 @@ class TestExclusaoDeParticipantes:
 
 
 class TestReconciliacao:
-    def test_check_only_detecta_e_correcao_ajusta(self, nova_upf):
+    def test_check_only_detecta_e_correcao_ajusta(self, nova_ufpa):
         acao = _acao("soma_ufpas")
         atividade = ActivityFactory(acao=acao, status="concluido")
-        atividade.upfs_participantes.add(nova_upf(), nova_upf())
+        atividade.ufpas_participantes.add(nova_ufpa(), nova_ufpa())
         WorkPlanAcao.objects.filter(pk=acao.pk).update(quantidade_realizada=9)
 
         with pytest.raises(CommandError, match="apuração dá 2"):

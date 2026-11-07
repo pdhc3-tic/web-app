@@ -1,6 +1,6 @@
 """
 AuditLog centralizado para alterações em MembroFamilia (titular ou membro
-comum), usado por SGP, UPF e SCA. Nunca registra o valor de saude/cor_raca —
+comum), usado por SGP, UFPA e SCA. Nunca registra o valor de saude/cor_raca —
 só `campos_alterados`, os nomes que mudaram.
 """
 
@@ -44,7 +44,7 @@ def log_membro_change(
         "membro_id": membro.pk,
         "nome_completo": membro.nome_completo,
         "grau_parentesco": membro.grau_parentesco,
-        "upf_id": membro.upf_id,
+        "ufpa_id": membro.ufpa_id,
         "origem": origem,
         "campos_alterados": campos_alterados,
     }

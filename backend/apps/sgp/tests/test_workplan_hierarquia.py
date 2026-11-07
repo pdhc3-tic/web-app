@@ -19,7 +19,7 @@ from apps.sgp.services.workplan_export import EXPORT_COLUMNS, workplan_export_ro
 from apps.sgp.tests.factories import (
     ActivityFactory,
     IndicatorFactory,
-    UPFFactory,
+    UFPAFactory,
     WorkPlanAcaoFactory,
     WorkPlanMetaFactory,
     WorkPlanSubmetaFactory,
@@ -256,9 +256,9 @@ class TestVisaoPorIndicador:
     def test_ufpas_distintas_por_territorio(self, auth_client, meta, municipio_rn):
         indicador = IndicatorFactory(forma_apuracao="soma_ufpas")
         acao = WorkPlanAcaoFactory(meta=meta, indicador=indicador)
-        upf = UPFFactory(municipio=municipio_rn)
+        ufpa = UFPAFactory(municipio=municipio_rn)
         for _ in range(2):
-            ActivityFactory(acao=acao, status="concluido", municipio=municipio_rn).upfs_participantes.add(upf)
+            ActivityFactory(acao=acao, status="concluido", municipio=municipio_rn).ufpas_participantes.add(ufpa)
 
         response = auth_client.get(VISAO_URL, {"indicador_id": indicador.pk})
 
@@ -330,10 +330,10 @@ class TestVisaoPorPeriodo:
     def test_ufpa_distinta_dentro_de_cada_periodo(self, auth_client, meta, municipio_rn):
         indicador = IndicatorFactory(forma_apuracao="soma_ufpas")
         acao = WorkPlanAcaoFactory(meta=meta, indicador=indicador)
-        upf = UPFFactory(municipio=municipio_rn)
+        ufpa = UFPAFactory(municipio=municipio_rn)
         for mes in (3, 3, 5):
             atividade = ActivityFactory(acao=acao, status="concluido", municipio=municipio_rn)
-            _no_mes(atividade, mes).upfs_participantes.add(upf)
+            _no_mes(atividade, mes).ufpas_participantes.add(ufpa)
 
         response = auth_client.get(VISAO_URL, {"indicador_id": indicador.pk})
 

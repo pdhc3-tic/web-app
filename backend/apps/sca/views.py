@@ -155,7 +155,7 @@ class SyncEventFilter(django_filters.FilterSet):
 class ConflictLogFilter(django_filters.FilterSet):
     status = django_filters.ChoiceFilter(choices=ConflictLog.Status.choices)
     campo_sensivel = django_filters.BooleanFilter()
-    entidade = django_filters.ChoiceFilter(choices=[("upf", "UPF"), ("member", "Membro"), ("activity", "Atividade")])
+    entidade = django_filters.ChoiceFilter(choices=[("ufpa", "UFPA"), ("member", "Membro"), ("activity", "Atividade")])
     user = django_filters.NumberFilter()
     criado_em_gte = django_filters.DateTimeFilter(field_name="criado_em", lookup_expr="gte")
     criado_em_lte = django_filters.DateTimeFilter(field_name="criado_em", lookup_expr="lte")
@@ -440,7 +440,7 @@ class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
                 if instance:
                     membro = (
                         instance if entity.name == "member"
-                        else instance.titular if entity.name == "upf"
+                        else instance.titular if entity.name == "ufpa"
                         else None
                     )
                     if membro is not None:

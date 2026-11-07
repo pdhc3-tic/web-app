@@ -12,8 +12,8 @@ import pytest
 from django.utils import timezone
 
 from apps.sca.models import SyncDevice, SyncEvent
-from apps.sgp.models import Activity, MembroFamilia, UPF
-from apps.sgp.tests.factories import MembroFactory, UPFFactory
+from apps.sgp.models import Activity, MembroFamilia, UFPA
+from apps.sgp.tests.factories import MembroFactory, UFPAFactory
 
 
 def get_pull(auth_client, device_id="dev-001", since=None):
@@ -38,17 +38,17 @@ def _set_updated_at(queryset, dt):
 
 @pytest.mark.django_db
 def test_pull_com_since_retorna_apenas_alterados(auth_client, usuario, municipio, projeto):
-    antiga = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="11144477735")
-    recente = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725")
+    antiga = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="11144477735")
+    recente = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725")
 
-    _set_updated_at(UPF.objects.filter(pk=antiga.pk), timezone.now() - timedelta(hours=3))
-    _set_updated_at(UPF.objects.filter(pk=recente.pk), timezone.now() - timedelta(minutes=30))
+    _set_updated_at(UFPA.objects.filter(pk=antiga.pk), timezone.now() - timedelta(hours=3))
+    _set_updated_at(UFPA.objects.filter(pk=recente.pk), timezone.now() - timedelta(minutes=30))
 
     since = timezone.now() - timedelta(hours=1)
     response = get_pull(auth_client, since=since)
 
     assert response.status_code == 200
-    ids = [r["id"] for r in response.data["upfs"]]
+    ids = [r["id"] for r in response.data["ufpas"]]
     assert recente.pk in ids
     assert antiga.pk not in ids
     assert response.data["server_time"]
@@ -60,14 +60,14 @@ def test_pull_com_since_retorna_apenas_alterados(auth_client, usuario, municipio
 
 @pytest.mark.django_db
 def test_pull_sem_since_retorna_conjunto_completo(auth_client, usuario, municipio, projeto):
-    a = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="11144477735")
-    b = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725")
-    _set_updated_at(UPF.objects.filter(pk__in=[a.pk, b.pk]), timezone.now() - timedelta(days=10))
+    a = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="11144477735")
+    b = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725")
+    _set_updated_at(UFPA.objects.filter(pk__in=[a.pk, b.pk]), timezone.now() - timedelta(days=10))
 
     response = get_pull(auth_client)
 
     assert response.status_code == 200
-    ids = {r["id"] for r in response.data["upfs"]}
+    ids = {r["id"] for r in response.data["ufpas"]}
     assert ids == {a.pk, b.pk}
     assert len(response.data["members"]) == 2  # titulares (MembroFamilia) também sincronizam
     assert response.data["activities"] == []
@@ -79,14 +79,14 @@ def test_pull_sem_since_retorna_conjunto_completo(auth_client, usuario, municipi
 
 @pytest.mark.django_db
 def test_pull_soft_delete_vem_com_ativo_false(auth_client, usuario, municipio, projeto):
-    inativa = UPFFactory(municipio=municipio, projeto=projeto, ativo=False, titular_cpf="11144477735")
-    _set_updated_at(UPF.all_objects.filter(pk=inativa.pk), timezone.now() - timedelta(minutes=5))
+    inativa = UFPAFactory(municipio=municipio, projeto=projeto, ativo=False, titular_cpf="11144477735")
+    _set_updated_at(UFPA.all_objects.filter(pk=inativa.pk), timezone.now() - timedelta(minutes=5))
 
     response = get_pull(auth_client, since=timezone.now() - timedelta(days=1))
 
     assert response.status_code == 200
-    encontrada = [r for r in response.data["upfs"] if r["id"] == inativa.pk]
-    assert encontrada, "UPF inativa deveria aparecer no delta"
+    encontrada = [r for r in response.data["ufpas"] if r["id"] == inativa.pk]
+    assert encontrada, "UFPA inativa deveria aparecer no delta"
     assert encontrada[0]["ativo"] is False
 
 
@@ -95,8 +95,8 @@ def test_pull_soft_delete_vem_com_ativo_false(auth_client, usuario, municipio, p
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_pull_inclui_membros_e_atividades(auth_client, usuario, municipio, projeto, upf, acao):
-    membro = MembroFactory(upf=upf, cpf="12345678901")
+def test_pull_inclui_membros_e_atividades(auth_client, usuario, municipio, projeto, ufpa, acao):
+    membro = MembroFactory(ufpa=ufpa, cpf="12345678901")
     atividade = Activity.objects.create(
         titulo="Visita técnica",
         tipo_atividade="visita_tecnica",
@@ -127,13 +127,13 @@ def test_pull_inclui_membros_e_atividades(auth_client, usuario, municipio, proje
 
 @pytest.mark.django_db
 def test_pull_isolamento_territorial(auth_client, usuario, municipio, municipio_outro, projeto):
-    UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="11144477735")
-    fora = UPFFactory(municipio=municipio_outro, projeto=projeto, titular_cpf="52998224725")
+    UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="11144477735")
+    fora = UFPAFactory(municipio=municipio_outro, projeto=projeto, titular_cpf="52998224725")
 
     response = get_pull(auth_client)
 
     assert response.status_code == 200
-    ids = {r["id"] for r in response.data["upfs"]}
+    ids = {r["id"] for r in response.data["ufpas"]}
     assert fora.pk not in ids
     assert len(ids) == 1
 
@@ -159,7 +159,7 @@ def test_pull_registra_device_e_evento(auth_client, usuario, municipio, projeto)
 @pytest.mark.performance
 def test_pull_performance_500_registros(auth_client, usuario, municipio, projeto):
     for i in range(500):
-        UPFFactory(
+        UFPAFactory(
             municipio=municipio,
             projeto=projeto,
             titular_cpf=f"{i:011d}",
@@ -170,13 +170,13 @@ def test_pull_performance_500_registros(auth_client, usuario, municipio, projeto
     duracao = time.perf_counter() - inicio
 
     assert response.status_code == 200
-    assert len(response.data["upfs"]) == 500
+    assert len(response.data["ufpas"]) == 500
     assert duracao < 3.0, f"Pull demorou {duracao:.2f}s (limite: 3s)"
 
 
 @pytest.fixture
-def upf(db, municipio, projeto):
-    return UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
+def ufpa(db, municipio, projeto):
+    return UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
 
 
 @pytest.fixture

@@ -18,9 +18,9 @@ from apps.sgp.tasks import sync_google_calendar_event
 from apps.sgp.views.production import ProducaoConsolidadaViewSet, ProductionViewSet
 from apps.sgp.views.projeto import ProjetoViewSet
 from apps.sgp.views.tecnico import TecnicoViewSet
-from apps.sgp.views.upf import UPF_ACCESS_ROLES, UPFViewSet
-from apps.sgp.views.upf_documentos import UPFDocumentViewSet
-from apps.sgp.views.upf_foto import UPFPhotoMixin
+from apps.sgp.views.ufpa import UFPA_ACCESS_ROLES, UFPAViewSet
+from apps.sgp.views.ufpa_documentos import UFPADocumentViewSet
+from apps.sgp.views.ufpa_foto import UFPAPhotoMixin
 
 __all__ = [
     "ActivityDocumentMixin",
@@ -40,10 +40,10 @@ __all__ = [
     "QSearchFilter",
     "SGPChoicesView",
     "TecnicoViewSet",
-    "UPFDocumentViewSet",
-    "UPFPhotoMixin",
-    "UPFViewSet",
-    "UPF_ACCESS_ROLES",
+    "UFPADocumentViewSet",
+    "UFPAPhotoMixin",
+    "UFPAViewSet",
+    "UFPA_ACCESS_ROLES",
     "_membros_csv_response",
     "data_limite_aniversario",
     "sync_google_calendar_event",

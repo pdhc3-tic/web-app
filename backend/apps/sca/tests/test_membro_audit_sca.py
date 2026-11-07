@@ -19,17 +19,17 @@ from apps.sca.models import ConflictLog
 from apps.sca.tests.factories import ConflictLogFactory
 from apps.sca.tests.test_sync_push import build_item, post_batch
 from apps.sgp.models import MembroFamilia
-from apps.sgp.tests.factories import MembroFactory, UPFFactory
+from apps.sgp.tests.factories import MembroFactory, UFPAFactory
 
 pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def upf_existente(db, municipio, projeto):
-    upf = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
-    upf.uuid_local = uuid4()
-    upf.save(update_fields=["uuid_local"])
-    return upf
+def ufpa_existente(db, municipio, projeto):
+    ufpa = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
+    ufpa.uuid_local = uuid4()
+    ufpa.save(update_fields=["uuid_local"])
+    return ufpa
 
 
 # ──────────────────────────────────────────────────────────────
@@ -38,12 +38,12 @@ def upf_existente(db, municipio, projeto):
 
 class TestAuditLogPushCriaEEditaMembro:
     def test_criacao_de_membro_via_push_gera_auditlog_sem_expor_valor(
-        self, auth_client, upf_existente
+        self, auth_client, ufpa_existente
     ):
         item = build_item(
             entidade="member",
             payload={
-                "upf": upf_existente.pk,
+                "ufpa": ufpa_existente.pk,
                 "nome_completo": "Filho via SCA",
                 "grau_parentesco": "filho",
                 "cor_raca": 2,
@@ -65,12 +65,12 @@ class TestAuditLogPushCriaEEditaMembro:
         assert "cor_raca" not in log.valores_novos
 
     def test_criacao_sem_campos_sensiveis_registra_campos_alterados_vazio(
-        self, auth_client, upf_existente
+        self, auth_client, ufpa_existente
     ):
         item = build_item(
             entidade="member",
             payload={
-                "upf": upf_existente.pk,
+                "ufpa": ufpa_existente.pk,
                 "nome_completo": "Filho Sem Sensivel SCA",
                 "grau_parentesco": "filho",
             },
@@ -85,13 +85,13 @@ class TestAuditLogPushCriaEEditaMembro:
         assert log.valores_novos["campos_alterados"] == []
 
     def test_edicao_de_saude_via_push_gera_auditlog_com_campo_alterado_sem_valor(
-        self, auth_client, upf_existente
+        self, auth_client, ufpa_existente
     ):
         membro = MembroFactory(
-            upf=upf_existente, grau_parentesco="filho", saude=[], uuid_local=uuid4(),
+            ufpa=ufpa_existente, grau_parentesco="filho", saude=[], uuid_local=uuid4(),
         )
         base = {
-            "upf": upf_existente.pk,
+            "ufpa": ufpa_existente.pk,
             "nome_completo": membro.nome_completo,
             "grau_parentesco": "filho",
             "saude": [],
@@ -116,23 +116,23 @@ class TestAuditLogPushCriaEEditaMembro:
         assert "hipertensao" not in str(log.valores_novos)
         assert "hipertensao" not in str(log.valores_anteriores)
 
-    def test_criacao_de_upf_via_push_audita_titular_como_membrofamilia(
+    def test_criacao_de_ufpa_via_push_audita_titular_como_membrofamilia(
         self, auth_client, municipio, projeto
     ):
-        from apps.sca.tests.conftest import payload_upf
+        from apps.sca.tests.conftest import payload_ufpa
 
-        payload = payload_upf(projeto, municipio)
+        payload = payload_ufpa(projeto, municipio)
         payload["titular"] = dict(payload["titular"], cor_raca=1)
-        item = build_item(entidade="upf", payload=payload)
+        item = build_item(entidade="ufpa", payload=payload)
 
         response = post_batch(auth_client, [item])
         assert response.data["resultados"][0]["status"] == "ok"
 
-        from apps.sgp.models import UPF
+        from apps.sgp.models import UFPA
 
-        upf = UPF.objects.get(pk=response.data["resultados"][0]["id_servidor"])
+        ufpa = UFPA.objects.get(pk=response.data["resultados"][0]["id_servidor"])
         log = AuditLog.objects.filter(
-            acao="MEMBRO.create", entidade="MembroFamilia", entidade_id=str(upf.titular_id)
+            acao="MEMBRO.create", entidade="MembroFamilia", entidade_id=str(ufpa.titular_id)
         ).latest("timestamp")
         assert log.valores_novos["campos_alterados"] == ["cor_raca"]
         assert "cor_raca" not in log.valores_novos  # não é chave própria com o valor 1
@@ -157,10 +157,10 @@ class TestAuditLogResolucaoDeConflito:
         )
 
     def test_resolucao_de_conflito_sensivel_nao_grava_valor_final_no_auditlog(
-        self, auth_client_super_admin, super_admin_user, upf_existente, territory
+        self, auth_client_super_admin, super_admin_user, ufpa_existente, territory
     ):
         membro = MembroFactory(
-            upf=upf_existente, grau_parentesco="filho", cor_raca=3, uuid_local=uuid4(),
+            ufpa=ufpa_existente, grau_parentesco="filho", cor_raca=3, uuid_local=uuid4(),
         )
         conflito = self._conflito_sensivel_pendente(membro, territory, valor_local=1, valor_servidor=3)
 
@@ -179,10 +179,10 @@ class TestAuditLogResolucaoDeConflito:
         assert "1" not in str(log_conflito.valores_novos)
 
     def test_resolucao_de_conflito_sensivel_audita_membrofamilia_sem_valor(
-        self, auth_client_super_admin, super_admin_user, upf_existente, territory
+        self, auth_client_super_admin, super_admin_user, ufpa_existente, territory
     ):
         membro = MembroFactory(
-            upf=upf_existente, grau_parentesco="filho", cor_raca=3, uuid_local=uuid4(),
+            ufpa=ufpa_existente, grau_parentesco="filho", cor_raca=3, uuid_local=uuid4(),
         )
         conflito = self._conflito_sensivel_pendente(membro, territory, valor_local=1, valor_servidor=3)
 
@@ -204,13 +204,13 @@ class TestAuditLogResolucaoDeConflito:
         assert log_membro.valores_anteriores == {}
 
     def test_resolucao_de_conflito_nao_sensivel_continua_gravando_valor_final(
-        self, auth_client_super_admin, super_admin_user, upf_existente, territory
+        self, auth_client_super_admin, super_admin_user, ufpa_existente, territory
     ):
         """Regressão: a omissão é só para campo sensível — conflitos comuns
         (ex.: whatsapp) continuam com o valor final no log, como antes."""
         conflito = ConflictLogFactory(
-            entidade="upf",
-            uuid_local=str(upf_existente.uuid_local),
+            entidade="ufpa",
+            uuid_local=str(ufpa_existente.uuid_local),
             campo="whatsapp",
             valor_local="9999",
             valor_servidor="1111",

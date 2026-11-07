@@ -2,27 +2,27 @@ import hashlib
 
 from django.core.cache import cache
 
-from apps.sgp.filters import UPFFilter
+from apps.sgp.filters import UFPAFilter
 
 
-UPF_MAP_CACHE_TIMEOUT = 60
-UPF_MAP_CACHE_VERSION_KEY = "sgp:upfs:mapa:version"
+UFPA_MAP_CACHE_TIMEOUT = 60
+UFPA_MAP_CACHE_VERSION_KEY = "sgp:ufpas:mapa:version"
 POWER_BI_SNAPSHOT_CACHE_KEY = "sgp:workplan:power-bi:snapshot"
 
 
-def get_upf_map_cache_version():
-    version = cache.get(UPF_MAP_CACHE_VERSION_KEY)
+def get_ufpa_map_cache_version():
+    version = cache.get(UFPA_MAP_CACHE_VERSION_KEY)
     if version is None:
         version = 1
-        cache.set(UPF_MAP_CACHE_VERSION_KEY, version, None)
+        cache.set(UFPA_MAP_CACHE_VERSION_KEY, version, None)
     return version
 
 
-def build_upf_map_cache_key(user_id, query_params):
-    # Derivada do FilterSet que o mapa aplica: um filtro novo no UPFFilter
+def build_ufpa_map_cache_key(user_id, query_params):
+    # Derivada do FilterSet que o mapa aplica: um filtro novo no UFPAFilter
     # entra na chave sem precisar lembrar daqui.
-    params_da_chave = {"bbox", *UPFFilter.base_filters}
-    version = get_upf_map_cache_version()
+    params_da_chave = {"bbox", *UFPAFilter.base_filters}
+    version = get_ufpa_map_cache_version()
     normalized_params = sorted(
         (key, tuple(query_params.getlist(key)))
         for key in query_params.keys()
@@ -31,12 +31,12 @@ def build_upf_map_cache_key(user_id, query_params):
     # Hash em vez dos valores: o `q` traz nome ou CPF do titular, e a chave
     # aparece no log quando o Django avisa de caractere inválido ou tamanho.
     params_hash = hashlib.sha256(repr(normalized_params).encode()).hexdigest()
-    return f"sgp:upfs:mapa:v{version}:user:{user_id}:params:{params_hash}"
+    return f"sgp:ufpas:mapa:v{version}:user:{user_id}:params:{params_hash}"
 
 
-def invalidate_upf_map_cache():
-    version = get_upf_map_cache_version()
-    cache.set(UPF_MAP_CACHE_VERSION_KEY, version + 1, None)
+def invalidate_ufpa_map_cache():
+    version = get_ufpa_map_cache_version()
+    cache.set(UFPA_MAP_CACHE_VERSION_KEY, version + 1, None)
 
 
 def get_power_bi_snapshot():

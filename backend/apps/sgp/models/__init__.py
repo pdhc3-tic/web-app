@@ -17,8 +17,8 @@ from .membro import MembroFamilia
 from .production import Production
 from .projeto import Projeto
 from .tecnico import Tecnico
-from .upf import UPF
-from .upf_document import UPFDocument
+from .ufpa import UFPA
+from .ufpa_document import UFPADocument
 from .workplan import WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
 from .activity import Activity
 from .activity_photo import ActivityPhoto
@@ -48,8 +48,8 @@ __all__ = [
     "Production",
     "Projeto",
     "Tecnico",
-    "UPF",
-    "UPFDocument",
+    "UFPA",
+    "UFPADocument",
     "WorkPlanAcao",
     "WorkPlanMeta",
     "WorkPlanSubmeta",

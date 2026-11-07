@@ -2,7 +2,7 @@
 Exportação CSV de membros — Issue #186.
 
 Fonte única do dataset exportável, compartilhada pelas duas rotas:
-  - export por UPF específica (`MembroViewSet.exportar`)
+  - export por UFPA específica (`MembroViewSet.exportar`)
   - export territorial agregado (`MembroExportView`)
 
 As colunas sensíveis (`cor_raca`, `saude`) só entram no dataset quando o
@@ -17,16 +17,16 @@ from datetime import date
 from apps.core.sensitive_fields import sensitive_fields_visible_to
 from apps.sgp.constants import COR_RACA_CHOICES, GENERO_CHOICES
 from apps.sgp.models import MembroFamilia
-from apps.sgp.services.access import upfs_acessiveis_ao_usuario
+from apps.sgp.services.access import ufpas_acessiveis_ao_usuario
 
-# Limite de UPFs por exportação territorial agregada — protege contra
+# Limite de UFPAs por exportação territorial agregada — protege contra
 # arquivos excessivamente grandes. Acima disso, o chamador deve restringir
 # por território, município ou projeto.
-MEMBROS_EXPORT_UPF_LIMIT = 500
+MEMBROS_EXPORT_UFPA_LIMIT = 500
 
 BASE_EXPORT_COLUMNS = (
     ("id", "ID"),
-    ("upf_id", "UPF"),
+    ("ufpa_id", "UFPA"),
     ("nome_completo", "Nome completo"),
     ("grau_parentesco", "Parentesco"),
     ("data_nascimento", "Data de nascimento"),
@@ -49,13 +49,13 @@ _GENERO_LABELS = dict(GENERO_CHOICES)
 
 
 class ExportLimitExceeded(Exception):
-    """Levantada quando o escopo territorial excede `MEMBROS_EXPORT_UPF_LIMIT` UPFs."""
+    """Levantada quando o escopo territorial excede `MEMBROS_EXPORT_UFPA_LIMIT` UFPAs."""
 
-    def __init__(self, upf_count: int, limit: int):
-        self.upf_count = upf_count
+    def __init__(self, ufpa_count: int, limit: int):
+        self.ufpa_count = ufpa_count
         self.limit = limit
         super().__init__(
-            f"Exportação abrange {upf_count} UPFs, acima do limite de {limit}."
+            f"Exportação abrange {ufpa_count} UFPAs, acima do limite de {limit}."
         )
 
 
@@ -81,10 +81,10 @@ def _idade(data_nascimento) -> str:
 
 
 def _row_for(membro: MembroFamilia, column_keys: set[str]) -> dict[str, str]:
-    upf = membro.upf
+    ufpa = membro.ufpa
     row = {
         "id": str(membro.pk),
-        "upf_id": str(membro.upf_id) if membro.upf_id else "",
+        "ufpa_id": str(membro.ufpa_id) if membro.ufpa_id else "",
         "nome_completo": membro.nome_completo,
         "grau_parentesco": membro.get_grau_parentesco_display(),
         "data_nascimento": (
@@ -93,9 +93,9 @@ def _row_for(membro: MembroFamilia, column_keys: set[str]) -> dict[str, str]:
         "idade": _idade(membro.data_nascimento),
         "genero": _GENERO_LABELS.get(membro.genero, ""),
         "cpf": membro.cpf,
-        "municipio": upf.municipio.nome if upf and upf.municipio_id else "",
-        "territorio": upf.territorio.nome if upf and upf.territorio_id else "",
-        "projeto": upf.projeto.nome if upf and upf.projeto_id else "",
+        "municipio": ufpa.municipio.nome if ufpa and ufpa.municipio_id else "",
+        "territorio": ufpa.territorio.nome if ufpa and ufpa.territorio_id else "",
+        "projeto": ufpa.projeto.nome if ufpa and ufpa.projeto_id else "",
     }
     if "cor_raca" in column_keys:
         row["cor_raca"] = _COR_RACA_LABELS.get(membro.cor_raca, "")
@@ -104,20 +104,20 @@ def _row_for(membro: MembroFamilia, column_keys: set[str]) -> dict[str, str]:
     return row
 
 
-def _membros_queryset(filtro_upf):
+def _membros_queryset(filtro_ufpa):
     return (
-        MembroFamilia.objects.filter(filtro_upf)
-        .select_related("upf", "upf__municipio", "upf__territorio", "upf__projeto")
+        MembroFamilia.objects.filter(filtro_ufpa)
+        .select_related("ufpa", "ufpa__municipio", "ufpa__territorio", "ufpa__projeto")
     )
 
 
-def membro_export_rows_for_upf(upf, *, user):
-    """Dataset de exportação para uma única UPF (já resolvida e autorizada)."""
+def membro_export_rows_for_ufpa(ufpa, *, user):
+    """Dataset de exportação para uma única UFPA (já resolvida e autorizada)."""
     from django.db.models import Q
 
     columns = export_columns_for(user)
     column_keys = {key for key, _ in columns}
-    membros = _membros_queryset(Q(upf=upf)).order_by("nome_completo")
+    membros = _membros_queryset(Q(ufpa=ufpa)).order_by("nome_completo")
     rows = [_row_for(m, column_keys) for m in membros]
     return columns, rows
 
@@ -131,26 +131,26 @@ def membro_export_rows_for_scope(
 ):
     """
     Dataset de exportação agregado, restrito ao escopo territorial do
-    usuário (mesma regra de `upfs_acessiveis_ao_usuario`) e aos filtros
-    informados. Levanta `ExportLimitExceeded` se o número de UPFs no escopo
-    filtrado exceder `MEMBROS_EXPORT_UPF_LIMIT`.
+    usuário (mesma regra de `ufpas_acessiveis_ao_usuario`) e aos filtros
+    informados. Levanta `ExportLimitExceeded` se o número de UFPAs no escopo
+    filtrado exceder `MEMBROS_EXPORT_UFPA_LIMIT`.
     """
     from django.db.models import Q
 
-    upfs = upfs_acessiveis_ao_usuario(user)
+    ufpas = ufpas_acessiveis_ao_usuario(user)
     if territorio_id is not None:
-        upfs = upfs.filter(territorio_id=territorio_id)
+        ufpas = ufpas.filter(territorio_id=territorio_id)
     if municipio_id is not None:
-        upfs = upfs.filter(municipio_id=municipio_id)
+        ufpas = ufpas.filter(municipio_id=municipio_id)
     if projeto_id is not None:
-        upfs = upfs.filter(projeto_id=projeto_id)
+        ufpas = ufpas.filter(projeto_id=projeto_id)
 
-    upf_count = upfs.count()
-    if upf_count > MEMBROS_EXPORT_UPF_LIMIT:
-        raise ExportLimitExceeded(upf_count, MEMBROS_EXPORT_UPF_LIMIT)
+    ufpa_count = ufpas.count()
+    if ufpa_count > MEMBROS_EXPORT_UFPA_LIMIT:
+        raise ExportLimitExceeded(ufpa_count, MEMBROS_EXPORT_UFPA_LIMIT)
 
     columns = export_columns_for(user)
     column_keys = {key for key, _ in columns}
-    membros = _membros_queryset(Q(upf__in=upfs)).order_by("upf_id", "nome_completo")
+    membros = _membros_queryset(Q(ufpa__in=ufpas)).order_by("ufpa_id", "nome_completo")
     rows = [_row_for(m, column_keys) for m in membros]
     return columns, rows

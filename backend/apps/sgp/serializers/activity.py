@@ -5,7 +5,7 @@ from rest_framework import serializers
 
 from apps.core.models import Municipality, Organization
 from apps.core.serializers import UsuarioRefComEmailSerializer, UsuarioRefSerializer
-from apps.sgp.models import Activity, Comunidade, MembroFamilia, UPF, WorkPlanAcao
+from apps.sgp.models import Activity, Comunidade, MembroFamilia, UFPA, WorkPlanAcao
 from apps.sgp.models.activity import STATUS_CHOICES
 from apps.sgp.serializers.activity_documentos import ActivityDocumentSerializer
 from apps.sgp.serializers.activity_foto import ActivityPhotoSerializer
@@ -20,13 +20,13 @@ from apps.sgp.serializers.common import (
     plano_trabalho_da_acao,
 )
 from apps.sgp.serializers.membro import MembroListSerializer
-from apps.sgp.serializers.upf import UPFListSerializer
-from apps.sgp.services.access import upfs_acessiveis_ao_usuario
+from apps.sgp.serializers.ufpa import UFPAListSerializer
+from apps.sgp.services.access import ufpas_acessiveis_ao_usuario
 from apps.sgp.services.activity import custos_da_atividade
 from apps.sgp.services.activity_status import (
     ActivityStatusError,
     DataFimInvalidaError,
-    MembroForaUPFError,
+    MembroForaUFPAError,
     validar_datas,
     validar_membros_participantes,
     validar_transicao,
@@ -121,8 +121,8 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         queryset=Activity.equipe_adicional.field.related_model.objects.all(),
         many=True, required=False,
     )
-    upfs_participantes = serializers.PrimaryKeyRelatedField(
-        queryset=UPF.objects.all(),
+    ufpas_participantes = serializers.PrimaryKeyRelatedField(
+        queryset=UFPA.objects.all(),
         many=True, required=False,
     )
     membros_participantes = serializers.PrimaryKeyRelatedField(
@@ -134,27 +134,27 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         many=True, required=False,
     )
 
-    def _get_upfs_visiveis(self):
-        return upfs_acessiveis_ao_usuario(self.context["request"].user)
+    def _get_ufpas_visiveis(self):
+        return ufpas_acessiveis_ao_usuario(self.context["request"].user)
 
-    def validate_upfs_participantes(self, value):
-        upfs_visiveis_pks = set(self._get_upfs_visiveis().values_list("pk", flat=True))
-        invalidas = [upf.pk for upf in value if upf.pk not in upfs_visiveis_pks]
+    def validate_ufpas_participantes(self, value):
+        ufpas_visiveis_pks = set(self._get_ufpas_visiveis().values_list("pk", flat=True))
+        invalidas = [ufpa.pk for ufpa in value if ufpa.pk not in ufpas_visiveis_pks]
         if invalidas:
             raise serializers.ValidationError(
-                f"UPFs {invalidas} não são acessíveis ao seu perfil."
+                f"UFPAs {invalidas} não são acessíveis ao seu perfil."
             )
         return value
 
     def validate_membros_participantes(self, value):
-        upfs_visiveis_pks = set(self._get_upfs_visiveis().values_list("pk", flat=True))
+        ufpas_visiveis_pks = set(self._get_ufpas_visiveis().values_list("pk", flat=True))
         invalidos = [
             m.pk for m in value
-            if not m.upf_id or m.upf_id not in upfs_visiveis_pks
+            if not m.ufpa_id or m.ufpa_id not in ufpas_visiveis_pks
         ]
         if invalidos:
             raise serializers.ValidationError(
-                f"Membros {invalidos} não pertencem a UPFs acessíveis ao seu perfil."
+                f"Membros {invalidos} não pertencem a UFPAs acessíveis ao seu perfil."
             )
         return value
 
@@ -177,7 +177,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             # Datas
             "data_inicio", "data_fim",
             # Participantes
-            "upfs_participantes", "membros_participantes",
+            "ufpas_participantes", "membros_participantes",
             "total_participantes",
             # Parceiros
             "parceiros_organizacoes", "parceiros_livres",
@@ -276,18 +276,18 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         except DataFimInvalidaError as exc:
             raise serializers.ValidationError({exc.field: exc.message})
 
-        # Validação cruzada: membros devem pertencer às UPFs selecionadas
-        upfs_ids = set()
-        if "upfs_participantes" in attrs:
-            upfs_ids = {upf.pk for upf in attrs["upfs_participantes"]}
+        # Validação cruzada: membros devem pertencer às UFPAs selecionadas
+        ufpas_ids = set()
+        if "ufpas_participantes" in attrs:
+            ufpas_ids = {ufpa.pk for ufpa in attrs["ufpas_participantes"]}
         elif self.instance:
-            upfs_ids = set(self.instance.upfs_participantes.values_list("pk", flat=True))
+            ufpas_ids = set(self.instance.ufpas_participantes.values_list("pk", flat=True))
 
         membros = attrs.get("membros_participantes")
         if membros is not None:
             try:
-                validar_membros_participantes(upfs_ids, [m.pk for m in membros])
-            except MembroForaUPFError as exc:
+                validar_membros_participantes(ufpas_ids, [m.pk for m in membros])
+            except MembroForaUFPAError as exc:
                 raise serializers.ValidationError({exc.field: exc.message})
 
         return attrs
@@ -296,7 +296,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         equipe = validated_data.pop("equipe_adicional", [])
-        upfs = validated_data.pop("upfs_participantes", [])
+        ufpas = validated_data.pop("ufpas_participantes", [])
         membros = validated_data.pop("membros_participantes", [])
         parceiros = validated_data.pop("parceiros_organizacoes", [])
 
@@ -304,8 +304,8 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
 
         if equipe:
             activity.equipe_adicional.set(equipe)
-        if upfs:
-            activity.upfs_participantes.set(upfs)
+        if ufpas:
+            activity.ufpas_participantes.set(ufpas)
         if membros:
             activity.membros_participantes.set(membros)
         if parceiros:
@@ -315,7 +315,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         equipe = validated_data.pop("equipe_adicional", None)
-        upfs = validated_data.pop("upfs_participantes", None)
+        ufpas = validated_data.pop("ufpas_participantes", None)
         membros = validated_data.pop("membros_participantes", None)
         parceiros = validated_data.pop("parceiros_organizacoes", None)
 
@@ -325,8 +325,8 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
 
         if equipe is not None:
             instance.equipe_adicional.set(equipe)
-        if upfs is not None:
-            instance.upfs_participantes.set(upfs)
+        if ufpas is not None:
+            instance.ufpas_participantes.set(ufpas)
         if membros is not None:
             instance.membros_participantes.set(membros)
         if parceiros is not None:
@@ -367,8 +367,8 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             {"id": u.pk, "nome": u.nome, "email": u.email}
             for u in instance.equipe_adicional.all()
         ]
-        data["upfs_participantes"] = UPFListSerializer(
-            instance.upfs_participantes.all(), many=True, context=self.context
+        data["ufpas_participantes"] = UFPAListSerializer(
+            instance.ufpas_participantes.all(), many=True, context=self.context
         ).data
         data["membros_participantes"] = MembroListSerializer(
             instance.membros_participantes.all(), many=True, context=self.context
@@ -401,7 +401,7 @@ class ActivityDetailRespostaSerializer(ActivityDetailSerializer):
     tecnico_responsavel = UsuarioRefComEmailSerializer(read_only=True)
     equipe_adicional = UsuarioRefComEmailSerializer(many=True, read_only=True)
     parceiros_organizacoes = NestedSerializer(many=True, read_only=True)
-    upfs_participantes = UPFListSerializer(many=True, read_only=True)
+    ufpas_participantes = UFPAListSerializer(many=True, read_only=True)
     membros_participantes = MembroListSerializer(many=True, read_only=True)
     fotos = ActivityPhotoSerializer(many=True, read_only=True)
     documentos = ActivityDocumentSerializer(many=True, read_only=True)

@@ -12,13 +12,13 @@ from apps.sgp.models.mixins import ScaSyncableModel
 
 
 class MembroFamilia(ScaSyncableModel):
-    upf = models.ForeignKey(
-        "sgp.UPF",
+    ufpa = models.ForeignKey(
+        "sgp.UFPA",
         on_delete=models.CASCADE,
         related_name="membros",
         null=True,
         blank=True,
-        verbose_name="UPF",
+        verbose_name="UFPA",
     )
 
     nome_completo = models.CharField(
@@ -118,9 +118,9 @@ class MembroFamilia(ScaSyncableModel):
         ordering = ["-criado_em"]
         constraints = [
             models.UniqueConstraint(
-                fields=["upf"],
+                fields=["ufpa"],
                 condition=models.Q(grau_parentesco="titular"),
-                name="unique_titular_por_upf",
+                name="unique_titular_por_ufpa",
             ),
             models.UniqueConstraint(
                 fields=["cpf"],
@@ -129,7 +129,7 @@ class MembroFamilia(ScaSyncableModel):
             ),
         ]
         indexes = [
-            models.Index(fields=["upf"], name="idx_membro_upf"),
+            models.Index(fields=["ufpa"], name="idx_membro_ufpa"),
             models.Index(fields=["cpf"], name="idx_membro_cpf"),
         ]
 

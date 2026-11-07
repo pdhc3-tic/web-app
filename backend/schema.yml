@@ -1816,9 +1816,9 @@ paths:
           enum:
           - activity
           - member
-          - upf
+          - ufpa
         description: |-
-          * `upf` - UPF
+          * `ufpa` - UFPA
           * `member` - Membro
           * `activity` - Atividade
       - name: limit
@@ -4858,7 +4858,7 @@ paths:
             examples:
               RespostaSubmetidaPeloSCA:
                 value:
-                  upf_id: 1
+                  ufpa_id: 1
                   formulario_id: 10
                   formulario_nome: Diagnóstico produtivo
                   formulario_versao: '1.0'
@@ -5171,8 +5171,8 @@ paths:
   /api/v1/sgp/membros/exportar/:
     get:
       operationId: v1_sgp_membros_exportar_retrieve
-      description: Exportação territorial agregada de membros, restrita às UPFs acessíveis
-        ao usuário autenticado. Limitada a 500 UPFs por exportação — acima disso,
+      description: Exportação territorial agregada de membros, restrita às UFPAs acessíveis
+        ao usuário autenticado. Limitada a 500 UFPAs por exportação — acima disso,
         restrinja por territorio_id, municipio ou projeto.
       parameters:
       - in: query
@@ -5200,7 +5200,7 @@ paths:
                 format: binary
           description: ''
         '400':
-          description: Filtro inválido ou acima do limite de UPFs.
+          description: Filtro inválido ou acima do limite de UFPAs.
   /api/v1/sgp/metas/{meta_pk}/orcamento/alocacoes/:
     post:
       operationId: v1_sgp_metas_orcamento_alocacoes_create
@@ -6023,7 +6023,7 @@ paths:
   /api/v1/sgp/producao/:
     get:
       operationId: v1_sgp_producao_list
-      description: Produção de todas as UPFs ativas no escopo territorial do usuário.
+      description: Produção de todas as UFPAs ativas no escopo territorial do usuário.
       parameters:
       - in: query
         name: cultura
@@ -6079,7 +6079,7 @@ paths:
   /api/v1/sgp/producao/indicadores/:
     get:
       operationId: v1_sgp_producao_indicadores_retrieve
-      description: Produção de todas as UPFs ativas no escopo territorial do usuário.
+      description: Produção de todas as UFPAs ativas no escopo territorial do usuário.
       parameters:
       - in: query
         name: cultura
@@ -6508,9 +6508,450 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedUsuarioElegivelList'
           description: ''
-  /api/v1/sgp/upfs/{upf_pk}/formularios/:
+  /api/v1/sgp/ufpas/:
     get:
-      operationId: v1_sgp_upfs_formularios_list
+      operationId: v1_sgp_ufpas_list
+      parameters:
+      - in: query
+        name: ativo
+        schema:
+          type: boolean
+      - in: query
+        name: cadastrado_ate
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: cadastrado_de
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: comunidade
+        schema:
+          type: number
+      - in: query
+        name: municipio
+        schema:
+          type: number
+      - name: ordering
+        required: false
+        in: query
+        description: Qual campo usar ao ordenar os resultados.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Um número de página dentro do conjunto de resultados paginado.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - in: query
+        name: projeto
+        schema:
+          type: number
+      - in: query
+        name: q
+        schema:
+          type: string
+      - in: query
+        name: territorio
+        schema:
+          type: number
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedUFPAListList'
+          description: ''
+    post:
+      operationId: v1_sgp_ufpas_create
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UFPADetailRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UFPADetailRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UFPADetailRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UFPADetailResposta'
+          description: ''
+  /api/v1/sgp/ufpas/{id}/:
+    get:
+      operationId: v1_sgp_ufpas_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este UFPA.
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UFPADetailResposta'
+          description: ''
+    patch:
+      operationId: v1_sgp_ufpas_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este UFPA.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedUFPADetailRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedUFPADetailRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedUFPADetailRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UFPADetailResposta'
+          description: ''
+    delete:
+      operationId: v1_sgp_ufpas_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este UFPA.
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/sgp/ufpas/{id}/foto/:
+    delete:
+      operationId: v1_sgp_ufpas_foto_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este UFPA.
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: Foto removida.
+  /api/v1/sgp/ufpas/{id}/foto/confirm/:
+    post:
+      operationId: v1_sgp_ufpas_foto_confirm_create
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este UFPA.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmUploadRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ConfirmUploadRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ConfirmUploadRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UFPAFotoConfirmResposta'
+          description: ''
+  /api/v1/sgp/ufpas/{id}/foto/upload-url/:
+    post:
+      operationId: v1_sgp_ufpas_foto_upload_url_create
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este UFPA.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadURLRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UploadURLRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadURLRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadURLResposta'
+          description: ''
+  /api/v1/sgp/ufpas/{id}/historico/:
+    get:
+      operationId: v1_sgp_ufpas_historico_list
+      parameters:
+      - in: query
+        name: ate
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: campo
+        schema:
+          type: string
+      - in: query
+        name: desde
+        schema:
+          type: string
+          format: date-time
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este UFPA.
+        required: true
+      - in: query
+        name: incluir_membros
+        schema:
+          type: boolean
+        description: Inclui o histórico dos membros.
+      - name: page
+        required: false
+        in: query
+        description: Um número de página dentro do conjunto de resultados paginado.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - in: query
+        name: usuario
+        schema:
+          type: integer
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedHistoricoEntryList'
+          description: ''
+  /api/v1/sgp/ufpas/{ufpa_pk}/documentos/:
+    get:
+      operationId: v1_sgp_ufpas_documentos_list
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: O índice inicial a partir do qual retornar os resultados.
+        schema:
+          type: integer
+      - in: path
+        name: ufpa_pk
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedUFPADocumentList'
+          description: ''
+    post:
+      operationId: v1_sgp_ufpas_documentos_create
+      parameters:
+      - in: path
+        name: ufpa_pk
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UFPADocumentCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UFPADocumentCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UFPADocumentCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UFPADocument'
+          description: ''
+  /api/v1/sgp/ufpas/{ufpa_pk}/documentos/{id}/:
+    delete:
+      operationId: v1_sgp_ufpas_documentos_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: ufpa_pk
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/sgp/ufpas/{ufpa_pk}/documentos/{id}/download/:
+    get:
+      operationId: v1_sgp_ufpas_documentos_download_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: ufpa_pk
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadURLResposta'
+          description: ''
+  /api/v1/sgp/ufpas/{ufpa_pk}/documentos/upload-url/:
+    post:
+      operationId: v1_sgp_ufpas_documentos_upload_url_create
+      parameters:
+      - in: path
+        name: ufpa_pk
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UFPADocumentUploadURLRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UFPADocumentUploadURLRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UFPADocumentUploadURLRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadURLResposta'
+          description: ''
+  /api/v1/sgp/ufpas/{ufpa_pk}/formularios/:
+    get:
+      operationId: v1_sgp_ufpas_formularios_list
       parameters:
       - in: query
         name: data_fim
@@ -6549,7 +6990,7 @@ paths:
         description: '`true` retorna somente respostas sem respondente identificado
           (anônimas); `false` retorna somente as com respondente.'
       - in: path
-        name: upf_pk
+        name: ufpa_pk
         schema:
           type: integer
         required: true
@@ -6564,9 +7005,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedFormResponseListList'
           description: ''
-  /api/v1/sgp/upfs/{upf_pk}/formularios/{id}/:
+  /api/v1/sgp/ufpas/{ufpa_pk}/formularios/{id}/:
     get:
-      operationId: v1_sgp_upfs_formularios_retrieve
+      operationId: v1_sgp_ufpas_formularios_retrieve
       parameters:
       - in: path
         name: id
@@ -6574,7 +7015,7 @@ paths:
           type: integer
         required: true
       - in: path
-        name: upf_pk
+        name: ufpa_pk
         schema:
           type: integer
         required: true
@@ -6589,9 +7030,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/FormResponseDetail'
           description: ''
-  /api/v1/sgp/upfs/{upf_pk}/formularios/exportar/:
+  /api/v1/sgp/ufpas/{ufpa_pk}/formularios/exportar/:
     get:
-      operationId: v1_sgp_upfs_formularios_exportar_retrieve
+      operationId: v1_sgp_ufpas_formularios_exportar_retrieve
       parameters:
       - in: query
         name: data_fim
@@ -6626,7 +7067,7 @@ paths:
         description: '`true` retorna somente respostas sem respondente identificado
           (anônimas); `false` retorna somente as com respondente.'
       - in: path
-        name: upf_pk
+        name: ufpa_pk
         schema:
           type: integer
         required: true
@@ -6642,18 +7083,18 @@ paths:
                 type: string
                 format: binary
           description: ''
-  /api/v1/sgp/upfs/{upf_pk}/formularios/opcoes/:
+  /api/v1/sgp/ufpas/{ufpa_pk}/formularios/opcoes/:
     get:
-      operationId: v1_sgp_upfs_formularios_opcoes_list
+      operationId: v1_sgp_ufpas_formularios_opcoes_list
       description: |-
-        Metadado não paginado com os formulários já respondidos na UPF.
+        Metadado não paginado com os formulários já respondidos na UFPA.
 
         Alimenta o filtro por formulário do histórico (BE-16): diferente da
         listagem paginada, não é afetado pela página corrente nem pelos demais
         filtros (período/respondente) — sempre reflete o conjunto completo.
       parameters:
       - in: path
-        name: upf_pk
+        name: ufpa_pk
         schema:
           type: integer
         required: true
@@ -6670,9 +7111,9 @@ paths:
                 items:
                   $ref: '#/components/schemas/FormResponseFormularioOption'
           description: ''
-  /api/v1/sgp/upfs/{upf_pk}/membros/:
+  /api/v1/sgp/ufpas/{ufpa_pk}/membros/:
     get:
-      operationId: v1_sgp_upfs_membros_list
+      operationId: v1_sgp_ufpas_membros_list
       parameters:
       - name: limit
         required: false
@@ -6687,7 +7128,7 @@ paths:
         schema:
           type: integer
       - in: path
-        name: upf_pk
+        name: ufpa_pk
         schema:
           type: integer
         required: true
@@ -6703,10 +7144,10 @@ paths:
                 $ref: '#/components/schemas/PaginatedMembroListList'
           description: ''
     post:
-      operationId: v1_sgp_upfs_membros_create
+      operationId: v1_sgp_ufpas_membros_create
       parameters:
       - in: path
-        name: upf_pk
+        name: ufpa_pk
         schema:
           type: integer
         required: true
@@ -6733,9 +7174,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/MembroDetail'
           description: ''
-  /api/v1/sgp/upfs/{upf_pk}/membros/{id}/:
+  /api/v1/sgp/ufpas/{ufpa_pk}/membros/{id}/:
     get:
-      operationId: v1_sgp_upfs_membros_retrieve
+      operationId: v1_sgp_ufpas_membros_retrieve
       parameters:
       - in: path
         name: id
@@ -6743,7 +7184,7 @@ paths:
           type: integer
         required: true
       - in: path
-        name: upf_pk
+        name: ufpa_pk
         schema:
           type: integer
         required: true
@@ -6759,7 +7200,7 @@ paths:
                 $ref: '#/components/schemas/MembroDetail'
           description: ''
     put:
-      operationId: v1_sgp_upfs_membros_update
+      operationId: v1_sgp_ufpas_membros_update
       parameters:
       - in: path
         name: id
@@ -6767,7 +7208,7 @@ paths:
           type: integer
         required: true
       - in: path
-        name: upf_pk
+        name: ufpa_pk
         schema:
           type: integer
         required: true
@@ -6795,7 +7236,7 @@ paths:
                 $ref: '#/components/schemas/MembroDetail'
           description: ''
     patch:
-      operationId: v1_sgp_upfs_membros_partial_update
+      operationId: v1_sgp_ufpas_membros_partial_update
       parameters:
       - in: path
         name: id
@@ -6803,7 +7244,7 @@ paths:
           type: integer
         required: true
       - in: path
-        name: upf_pk
+        name: ufpa_pk
         schema:
           type: integer
         required: true
@@ -6831,7 +7272,7 @@ paths:
                 $ref: '#/components/schemas/MembroDetail'
           description: ''
     delete:
-      operationId: v1_sgp_upfs_membros_destroy
+      operationId: v1_sgp_ufpas_membros_destroy
       parameters:
       - in: path
         name: id
@@ -6839,7 +7280,7 @@ paths:
           type: integer
         required: true
       - in: path
-        name: upf_pk
+        name: ufpa_pk
         schema:
           type: integer
         required: true
@@ -6850,13 +7291,13 @@ paths:
       responses:
         '204':
           description: No response body
-  /api/v1/sgp/upfs/{upf_pk}/membros/exportar/:
+  /api/v1/sgp/ufpas/{ufpa_pk}/membros/exportar/:
     get:
-      operationId: v1_sgp_upfs_membros_exportar_retrieve
-      description: 'Exporta em CSV os membros de uma UPF específica (Issue #186).'
+      operationId: v1_sgp_ufpas_membros_exportar_retrieve
+      description: 'Exporta em CSV os membros de uma UFPA específica (Issue #186).'
       parameters:
       - in: path
-        name: upf_pk
+        name: ufpa_pk
         schema:
           type: integer
         required: true
@@ -6872,12 +7313,12 @@ paths:
                 type: string
                 format: binary
           description: ''
-  /api/v1/sgp/upfs/{upf_pk}/membros/resumo/:
+  /api/v1/sgp/ufpas/{ufpa_pk}/membros/resumo/:
     get:
-      operationId: v1_sgp_upfs_membros_resumo_retrieve
+      operationId: v1_sgp_ufpas_membros_resumo_retrieve
       parameters:
       - in: path
-        name: upf_pk
+        name: ufpa_pk
         schema:
           type: integer
         required: true
@@ -6892,12 +7333,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/MembroResumo'
           description: ''
-  /api/v1/sgp/upfs/{upf_pk}/membros/transferir-titularidade/:
+  /api/v1/sgp/ufpas/{ufpa_pk}/membros/transferir-titularidade/:
     post:
-      operationId: v1_sgp_upfs_membros_transferir_titularidade_create
+      operationId: v1_sgp_ufpas_membros_transferir_titularidade_create
       parameters:
       - in: path
-        name: upf_pk
+        name: ufpa_pk
         schema:
           type: integer
         required: true
@@ -6923,6 +7364,281 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TransferirTitularidadeResposta'
+          description: ''
+  /api/v1/sgp/ufpas/{ufpa_pk}/producao/:
+    get:
+      operationId: v1_sgp_ufpas_producao_list
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: O índice inicial a partir do qual retornar os resultados.
+        schema:
+          type: integer
+      - in: path
+        name: ufpa_pk
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedProductionList'
+          description: ''
+    post:
+      operationId: v1_sgp_ufpas_producao_create
+      parameters:
+      - in: path
+        name: ufpa_pk
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProductionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProductionRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Production'
+          description: ''
+  /api/v1/sgp/ufpas/{ufpa_pk}/producao/{id}/:
+    get:
+      operationId: v1_sgp_ufpas_producao_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: ufpa_pk
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Production'
+          description: ''
+    patch:
+      operationId: v1_sgp_ufpas_producao_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: ufpa_pk
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedProductionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedProductionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedProductionRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Production'
+          description: ''
+    delete:
+      operationId: v1_sgp_ufpas_producao_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: ufpa_pk
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/sgp/ufpas/exportar/:
+    get:
+      operationId: v1_sgp_ufpas_exportar_retrieve
+      description: |-
+        GET /api/v1/sgp/ufpas/exportar/?formato=csv|xlsx&<filtros da listagem>
+
+        Até `settings.UFPA_EXPORT_ASYNC_THRESHOLD` registros devolve o arquivo; acima
+        disso responde 202 com a exportação criada, acompanhada em
+        `/api/v1/sgp/exportacoes/{id}/`.
+      parameters:
+      - in: query
+        name: ativo
+        schema:
+          type: boolean
+      - in: query
+        name: cadastrado_ate
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: cadastrado_de
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: comunidade
+        schema:
+          type: integer
+      - in: query
+        name: formato
+        schema:
+          type: string
+          enum:
+          - csv
+          - xlsx
+      - in: query
+        name: municipio
+        schema:
+          type: integer
+      - in: query
+        name: projeto
+        schema:
+          type: integer
+      - in: query
+        name: q
+        schema:
+          type: string
+        description: Nome do titular ou início do CPF.
+      - in: query
+        name: territorio
+        schema:
+          type: integer
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+          description: ''
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportJob'
+          description: ''
+  /api/v1/sgp/ufpas/mapa/:
+    get:
+      operationId: v1_sgp_ufpas_mapa_retrieve
+      description: 'Retorna UFPAs georreferenciadas em GeoJSON FeatureCollection.
+        Cada feature possui geometry.coordinates na ordem [lng, lat] e properties
+        mínimo: id, nome_titular, municipio, territorio e ativo.'
+      parameters:
+      - in: query
+        name: ativo
+        schema:
+          type: boolean
+      - in: query
+        name: bbox
+        schema:
+          type: string
+        description: Bounding box no formato lng_sw,lat_sw,lng_ne,lat_ne.
+      - in: query
+        name: cadastrado_ate
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: cadastrado_de
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: comunidade
+        schema:
+          type: integer
+      - in: query
+        name: municipio
+        schema:
+          type: integer
+      - in: query
+        name: projeto
+        schema:
+          type: integer
+      - in: query
+        name: q
+        schema:
+          type: string
+        description: Nome do titular ou início do CPF.
+      - in: query
+        name: territorio
+        schema:
+          type: integer
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UFPAMapFeatureCollection'
           description: ''
   /api/v1/states/:
     get:
@@ -7374,722 +8090,6 @@ paths:
       responses:
         '204':
           description: No response body
-  /api/v1/upfs/:
-    get:
-      operationId: v1_upfs_list
-      parameters:
-      - in: query
-        name: ativo
-        schema:
-          type: boolean
-      - in: query
-        name: cadastrado_ate
-        schema:
-          type: string
-          format: date
-      - in: query
-        name: cadastrado_de
-        schema:
-          type: string
-          format: date
-      - in: query
-        name: comunidade
-        schema:
-          type: number
-      - in: query
-        name: municipio
-        schema:
-          type: number
-      - name: ordering
-        required: false
-        in: query
-        description: Qual campo usar ao ordenar os resultados.
-        schema:
-          type: string
-      - name: page
-        required: false
-        in: query
-        description: Um número de página dentro do conjunto de resultados paginado.
-        schema:
-          type: integer
-      - name: page_size
-        required: false
-        in: query
-        description: Número de resultados a serem retornados por página.
-        schema:
-          type: integer
-      - in: query
-        name: projeto
-        schema:
-          type: number
-      - in: query
-        name: q
-        schema:
-          type: string
-      - in: query
-        name: territorio
-        schema:
-          type: number
-      tags:
-      - v1
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedUPFListList'
-          description: ''
-    post:
-      operationId: v1_upfs_create
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UPFDetailRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/UPFDetailRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/UPFDetailRequest'
-        required: true
-      security:
-      - jwtAuth: []
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UPFDetailResposta'
-          description: ''
-  /api/v1/upfs/{id}/:
-    get:
-      operationId: v1_upfs_retrieve
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: Um valor inteiro único que identifica este UPF.
-        required: true
-      tags:
-      - v1
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UPFDetailResposta'
-          description: ''
-    patch:
-      operationId: v1_upfs_partial_update
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: Um valor inteiro único que identifica este UPF.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedUPFDetailRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedUPFDetailRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedUPFDetailRequest'
-        required: true
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UPFDetailResposta'
-          description: ''
-    delete:
-      operationId: v1_upfs_destroy
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: Um valor inteiro único que identifica este UPF.
-        required: true
-      tags:
-      - v1
-      security:
-      - jwtAuth: []
-      responses:
-        '204':
-          description: No response body
-  /api/v1/upfs/{id}/foto/:
-    delete:
-      operationId: v1_upfs_foto_destroy
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: Um valor inteiro único que identifica este UPF.
-        required: true
-      tags:
-      - v1
-      security:
-      - jwtAuth: []
-      responses:
-        '204':
-          description: Foto removida.
-  /api/v1/upfs/{id}/foto/confirm/:
-    post:
-      operationId: v1_upfs_foto_confirm_create
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: Um valor inteiro único que identifica este UPF.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ConfirmUploadRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/ConfirmUploadRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/ConfirmUploadRequest'
-        required: true
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UPFFotoConfirmResposta'
-          description: ''
-  /api/v1/upfs/{id}/foto/upload-url/:
-    post:
-      operationId: v1_upfs_foto_upload_url_create
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: Um valor inteiro único que identifica este UPF.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UploadURLRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/UploadURLRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/UploadURLRequest'
-        required: true
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UploadURLResposta'
-          description: ''
-  /api/v1/upfs/{id}/historico/:
-    get:
-      operationId: v1_upfs_historico_list
-      parameters:
-      - in: query
-        name: ate
-        schema:
-          type: string
-          format: date-time
-      - in: query
-        name: campo
-        schema:
-          type: string
-      - in: query
-        name: desde
-        schema:
-          type: string
-          format: date-time
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: Um valor inteiro único que identifica este UPF.
-        required: true
-      - in: query
-        name: incluir_membros
-        schema:
-          type: boolean
-        description: Inclui o histórico dos membros.
-      - name: page
-        required: false
-        in: query
-        description: Um número de página dentro do conjunto de resultados paginado.
-        schema:
-          type: integer
-      - name: page_size
-        required: false
-        in: query
-        description: Número de resultados a serem retornados por página.
-        schema:
-          type: integer
-      - in: query
-        name: usuario
-        schema:
-          type: integer
-      tags:
-      - v1
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedHistoricoEntryList'
-          description: ''
-  /api/v1/upfs/{upf_pk}/documentos/:
-    get:
-      operationId: v1_upfs_documentos_list
-      parameters:
-      - name: limit
-        required: false
-        in: query
-        description: Número de resultados a serem retornados por página.
-        schema:
-          type: integer
-      - name: offset
-        required: false
-        in: query
-        description: O índice inicial a partir do qual retornar os resultados.
-        schema:
-          type: integer
-      - in: path
-        name: upf_pk
-        schema:
-          type: integer
-        required: true
-      tags:
-      - v1
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedUPFDocumentList'
-          description: ''
-    post:
-      operationId: v1_upfs_documentos_create
-      parameters:
-      - in: path
-        name: upf_pk
-        schema:
-          type: integer
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UPFDocumentCreateRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/UPFDocumentCreateRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/UPFDocumentCreateRequest'
-        required: true
-      security:
-      - jwtAuth: []
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UPFDocument'
-          description: ''
-  /api/v1/upfs/{upf_pk}/documentos/{id}/:
-    delete:
-      operationId: v1_upfs_documentos_destroy
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        required: true
-      - in: path
-        name: upf_pk
-        schema:
-          type: integer
-        required: true
-      tags:
-      - v1
-      security:
-      - jwtAuth: []
-      responses:
-        '204':
-          description: No response body
-  /api/v1/upfs/{upf_pk}/documentos/{id}/download/:
-    get:
-      operationId: v1_upfs_documentos_download_retrieve
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        required: true
-      - in: path
-        name: upf_pk
-        schema:
-          type: integer
-        required: true
-      tags:
-      - v1
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DownloadURLResposta'
-          description: ''
-  /api/v1/upfs/{upf_pk}/documentos/upload-url/:
-    post:
-      operationId: v1_upfs_documentos_upload_url_create
-      parameters:
-      - in: path
-        name: upf_pk
-        schema:
-          type: integer
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UPFDocumentUploadURLRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/UPFDocumentUploadURLRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/UPFDocumentUploadURLRequest'
-        required: true
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UploadURLResposta'
-          description: ''
-  /api/v1/upfs/{upf_pk}/producao/:
-    get:
-      operationId: v1_upfs_producao_list
-      parameters:
-      - name: limit
-        required: false
-        in: query
-        description: Número de resultados a serem retornados por página.
-        schema:
-          type: integer
-      - name: offset
-        required: false
-        in: query
-        description: O índice inicial a partir do qual retornar os resultados.
-        schema:
-          type: integer
-      - in: path
-        name: upf_pk
-        schema:
-          type: integer
-        required: true
-      tags:
-      - v1
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedProductionList'
-          description: ''
-    post:
-      operationId: v1_upfs_producao_create
-      parameters:
-      - in: path
-        name: upf_pk
-        schema:
-          type: integer
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ProductionRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/ProductionRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/ProductionRequest'
-        required: true
-      security:
-      - jwtAuth: []
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Production'
-          description: ''
-  /api/v1/upfs/{upf_pk}/producao/{id}/:
-    get:
-      operationId: v1_upfs_producao_retrieve
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        required: true
-      - in: path
-        name: upf_pk
-        schema:
-          type: integer
-        required: true
-      tags:
-      - v1
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Production'
-          description: ''
-    patch:
-      operationId: v1_upfs_producao_partial_update
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        required: true
-      - in: path
-        name: upf_pk
-        schema:
-          type: integer
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedProductionRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedProductionRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedProductionRequest'
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Production'
-          description: ''
-    delete:
-      operationId: v1_upfs_producao_destroy
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        required: true
-      - in: path
-        name: upf_pk
-        schema:
-          type: integer
-        required: true
-      tags:
-      - v1
-      security:
-      - jwtAuth: []
-      responses:
-        '204':
-          description: No response body
-  /api/v1/upfs/exportar/:
-    get:
-      operationId: v1_upfs_exportar_retrieve
-      description: |-
-        GET /api/v1/upfs/exportar/?formato=csv|xlsx&<filtros da listagem>
-
-        Até `settings.UPF_EXPORT_ASYNC_THRESHOLD` registros devolve o arquivo; acima
-        disso responde 202 com a exportação criada, acompanhada em
-        `/api/v1/sgp/exportacoes/{id}/`.
-      parameters:
-      - in: query
-        name: ativo
-        schema:
-          type: boolean
-      - in: query
-        name: cadastrado_ate
-        schema:
-          type: string
-          format: date
-      - in: query
-        name: cadastrado_de
-        schema:
-          type: string
-          format: date
-      - in: query
-        name: comunidade
-        schema:
-          type: integer
-      - in: query
-        name: formato
-        schema:
-          type: string
-          enum:
-          - csv
-          - xlsx
-      - in: query
-        name: municipio
-        schema:
-          type: integer
-      - in: query
-        name: projeto
-        schema:
-          type: integer
-      - in: query
-        name: q
-        schema:
-          type: string
-        description: Nome do titular ou início do CPF.
-      - in: query
-        name: territorio
-        schema:
-          type: integer
-      tags:
-      - v1
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            text/csv:
-              schema:
-                type: string
-                format: binary
-            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
-              schema:
-                type: string
-                format: binary
-          description: ''
-        '202':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExportJob'
-          description: ''
-  /api/v1/upfs/mapa/:
-    get:
-      operationId: v1_upfs_mapa_retrieve
-      description: 'Retorna UPFs georreferenciadas em GeoJSON FeatureCollection. Cada
-        feature possui geometry.coordinates na ordem [lng, lat] e properties mínimo:
-        id, nome_titular, municipio, territorio e ativo.'
-      parameters:
-      - in: query
-        name: ativo
-        schema:
-          type: boolean
-      - in: query
-        name: bbox
-        schema:
-          type: string
-        description: Bounding box no formato lng_sw,lat_sw,lng_ne,lat_ne.
-      - in: query
-        name: cadastrado_ate
-        schema:
-          type: string
-          format: date
-      - in: query
-        name: cadastrado_de
-        schema:
-          type: string
-          format: date
-      - in: query
-        name: comunidade
-        schema:
-          type: integer
-      - in: query
-        name: municipio
-        schema:
-          type: integer
-      - in: query
-        name: projeto
-        schema:
-          type: integer
-      - in: query
-        name: q
-        schema:
-          type: string
-        description: Nome do titular ou início do CPF.
-      - in: query
-        name: territorio
-        schema:
-          type: integer
-      tags:
-      - v1
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UPFMapFeatureCollection'
-          description: ''
   /api/v1/users/:
     get:
       operationId: v1_users_list
@@ -8484,7 +8484,7 @@ components:
           type: string
           format: date-time
           title: Data de Fim
-        upfs_participantes:
+        ufpas_participantes:
           type: array
           items:
             type: integer
@@ -8604,10 +8604,10 @@ components:
           type: string
           format: date-time
           title: Data de Fim
-        upfs_participantes:
+        ufpas_participantes:
           type: array
           items:
-            $ref: '#/components/schemas/UPFList'
+            $ref: '#/components/schemas/UFPAList'
           readOnly: true
         membros_participantes:
           type: array
@@ -8765,9 +8765,9 @@ components:
       - titulo
       - total_participantes
       - transicoes_permitidas
+      - ufpas_participantes
       - ultima_origem
       - ultimo_sync_em
-      - upfs_participantes
       - uuid_local
     ActivityDocument:
       type: object
@@ -10228,7 +10228,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OpcaoTexto'
-        upf_documento_tipo:
+        ufpa_documento_tipo:
           type: array
           items:
             $ref: '#/components/schemas/OpcaoTexto'
@@ -10332,7 +10332,7 @@ components:
       - tipo_moradia
       - tipo_refeicao
       - tipo_veiculo
-      - upf_documento_tipo
+      - ufpa_documento_tipo
       - urgencia
     CicloEnum:
       enum:
@@ -11097,13 +11097,13 @@ components:
       - url
     EntidadeEnum:
       enum:
-      - upf
+      - ufpa
       - member
       - activity
       - form_response
       type: string
       description: |-
-        * `upf` - upf
+        * `ufpa` - ufpa
         * `member` - member
         * `activity` - activity
         * `form_response` - form_response
@@ -11391,7 +11391,7 @@ components:
         id:
           type: integer
           readOnly: true
-        upf:
+        ufpa:
           type: integer
           readOnly: true
         formulario_id:
@@ -11451,14 +11451,14 @@ components:
       - respondente
       - resposta_id_origem
       - status
-      - upf
+      - ufpa
     FormResponseFormularioOption:
       type: object
       description: |-
-        Opção do filtro de formulário: um formulário com resposta na UPF.
+        Opção do filtro de formulário: um formulário com resposta na UFPA.
 
         Distinto de `AvailableFormSerializer` — este cobre formulários já
-        respondidos na UPF corrente (para o filtro do histórico), não os
+        respondidos na UFPA corrente (para o filtro do histórico), não os
         formulários publicados disponíveis para novo preenchimento.
       properties:
         formulario_id:
@@ -11477,7 +11477,7 @@ components:
         id:
           type: integer
           readOnly: true
-        upf:
+        ufpa:
           type: integer
           readOnly: true
         formulario_id:
@@ -11535,11 +11535,11 @@ components:
       - respondente
       - resposta_id_origem
       - status
-      - upf
+      - ufpa
     FormResponseReceiveRequest:
       type: object
       properties:
-        upf_id:
+        ufpa_id:
           type: integer
           minimum: 1
         formulario_id:
@@ -11579,7 +11579,7 @@ components:
       - resposta_id_origem
       - respostas_json
       - status
-      - upf_id
+      - ufpa_id
     FormaApuracaoEnum:
       enum:
       - contagem_atividades
@@ -12192,7 +12192,7 @@ components:
         id:
           type: integer
           readOnly: true
-        upf:
+        ufpa:
           type: integer
           readOnly: true
           nullable: true
@@ -12326,9 +12326,9 @@ components:
       - id
       - idade
       - nome_completo
+      - ufpa
       - ultima_origem
       - ultimo_sync_em
-      - upf
       - uuid_local
     MembroDetailRequest:
       type: object
@@ -12436,7 +12436,7 @@ components:
         id:
           type: integer
           readOnly: true
-        upf:
+        ufpa:
           type: integer
           nullable: true
         nome_completo:
@@ -13637,7 +13637,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Territory'
-    PaginatedUPFDocumentList:
+    PaginatedUFPADocumentList:
       type: object
       required:
       - count
@@ -13659,8 +13659,8 @@ components:
         results:
           type: array
           items:
-            $ref: '#/components/schemas/UPFDocument'
-    PaginatedUPFListList:
+            $ref: '#/components/schemas/UFPADocument'
+    PaginatedUFPAListList:
       type: object
       required:
       - count
@@ -13682,7 +13682,7 @@ components:
         results:
           type: array
           items:
-            $ref: '#/components/schemas/UPFList'
+            $ref: '#/components/schemas/UFPAList'
     PaginatedUserListList:
       type: object
       required:
@@ -13886,7 +13886,7 @@ components:
           type: string
           format: date-time
           title: Data de Fim
-        upfs_participantes:
+        ufpas_participantes:
           type: array
           items:
             type: integer
@@ -14423,7 +14423,7 @@ components:
           type: integer
           maximum: 32767
           minimum: 0
-    PatchedUPFDetailRequest:
+    PatchedUFPADetailRequest:
       type: object
       description: |-
         Remove do payload de saída os campos declarados em `sensitive_fields`
@@ -14986,7 +14986,7 @@ components:
         id:
           type: integer
           readOnly: true
-        upf:
+        ufpa:
           type: integer
           readOnly: true
         tipo:
@@ -15086,10 +15086,10 @@ components:
           type: string
           format: date-time
           readOnly: true
-        upf_id:
+        ufpa_id:
           type: integer
           readOnly: true
-        upf_nome_titular:
+        ufpa_nome_titular:
           type: string
           readOnly: true
         municipio:
@@ -15108,9 +15108,9 @@ components:
       - municipio
       - territorio
       - tipo
-      - upf
-      - upf_id
-      - upf_nome_titular
+      - ufpa
+      - ufpa_id
+      - ufpa_nome_titular
     ProducaoCulturaContagem:
       type: object
       properties:
@@ -15124,7 +15124,7 @@ components:
     ProducaoIndicadores:
       type: object
       properties:
-        total_upfs_produtoras:
+        total_ufpas_produtoras:
           type: integer
         area_total_ha:
           type: string
@@ -15137,14 +15137,14 @@ components:
       required:
       - area_total_ha
       - principais_culturas
-      - total_upfs_produtoras
+      - total_ufpas_produtoras
     Production:
       type: object
       properties:
         id:
           type: integer
           readOnly: true
-        upf:
+        ufpa:
           type: integer
           readOnly: true
         tipo:
@@ -15251,7 +15251,7 @@ components:
       - especie
       - id
       - tipo
-      - upf
+      - ufpa
     ProductionRequest:
       type: object
       properties:
@@ -15434,7 +15434,7 @@ components:
       - refresh_token
     RegistroAtualDoConflito:
       oneOf:
-      - $ref: '#/components/schemas/UPFDetailResposta'
+      - $ref: '#/components/schemas/UFPADetailResposta'
       - $ref: '#/components/schemas/MembroDetail'
       - $ref: '#/components/schemas/ActivityDetailResposta'
     RemanejamentoCreateRequest:
@@ -16312,7 +16312,7 @@ components:
           type: string
         justificativa:
           type: string
-        upfs_participantes:
+        ufpas_participantes:
           type: array
           items:
             type: integer
@@ -16326,7 +16326,7 @@ components:
       - atualizado_em
       - id
       - membros_participantes
-      - upfs_participantes
+      - ufpas_participantes
       - uuid_local
     SyncPullMember:
       type: object
@@ -16339,7 +16339,7 @@ components:
         atualizado_em:
           type: string
           format: date-time
-        upf:
+        ufpa:
           type: integer
           nullable: true
         nome_completo:
@@ -16382,10 +16382,10 @@ components:
     SyncPullResposta:
       type: object
       properties:
-        upfs:
+        ufpas:
           type: array
           items:
-            $ref: '#/components/schemas/SyncPullUPF'
+            $ref: '#/components/schemas/SyncPullUFPA'
         members:
           type: array
           items:
@@ -16407,8 +16407,8 @@ components:
       - members
       - saldos
       - server_time
-      - upfs
-    SyncPullUPF:
+      - ufpas
+    SyncPullUFPA:
       type: object
       properties:
         id:
@@ -16838,7 +16838,7 @@ components:
         * `declaracao` - Declaração
         * `contrato` - Contrato
         * `outro` - Outro
-    TipoDocumentoUPFEnum:
+    TipoDocumentoUFPAEnum:
       enum:
       - dap_caf
       - contrato
@@ -16856,12 +16856,12 @@ components:
       enum:
       - plano_trabalho
       - atividades
-      - upfs
+      - ufpas
       type: string
       description: |-
         * `plano_trabalho` - Plano de Trabalho
         * `atividades` - Atividades
-        * `upfs` - UPFs
+        * `ufpas` - UFPAs
     TipoMoradiaEnum:
       enum:
       - 1
@@ -17265,7 +17265,7 @@ components:
       - antigo_titular
       - detail
       - novo_titular
-    UPFDetailRequest:
+    UFPADetailRequest:
       type: object
       description: |-
         Remove do payload de saída os campos declarados em `sensitive_fields`
@@ -17449,10 +17449,10 @@ components:
       - municipio
       - nome
       - projeto
-    UPFDetailResposta:
+    UFPADetailResposta:
       type: object
       description: |-
-        Resposta de `UPFDetailSerializer` no schema: o `to_representation`
+        Resposta de `UFPADetailSerializer` no schema: o `to_representation`
         troca os PKs de escrita pelos objetos aninhados.
       properties:
         id:
@@ -17659,17 +17659,17 @@ components:
       - ultima_origem
       - ultimo_sync_em
       - uuid_local
-    UPFDocument:
+    UFPADocument:
       type: object
       properties:
         id:
           type: integer
           readOnly: true
-        upf:
+        ufpa:
           type: integer
           readOnly: true
         tipo:
-          $ref: '#/components/schemas/TipoDocumentoUPFEnum'
+          $ref: '#/components/schemas/TipoDocumentoUFPAEnum'
         descricao:
           type: string
           title: Descrição
@@ -17708,8 +17708,8 @@ components:
       - nome_original
       - tamanho_bytes
       - tipo
-      - upf
-    UPFDocumentCreateRequest:
+      - ufpa
+    UFPADocumentCreateRequest:
       type: object
       properties:
         key:
@@ -17720,7 +17720,7 @@ components:
           minLength: 1
           maxLength: 255
         tipo:
-          $ref: '#/components/schemas/TipoDocumentoUPFEnum'
+          $ref: '#/components/schemas/TipoDocumentoUFPAEnum'
         descricao:
           type: string
           default: ''
@@ -17732,7 +17732,7 @@ components:
       - key
       - nome_original
       - tipo
-    UPFDocumentUploadURLRequest:
+    UFPADocumentUploadURLRequest:
       type: object
       properties:
         filename:
@@ -17748,14 +17748,14 @@ components:
       - content_type
       - filename
       - size
-    UPFFotoConfirmResposta:
+    UFPAFotoConfirmResposta:
       type: object
       properties:
         foto_url:
           type: string
       required:
       - foto_url
-    UPFList:
+    UFPAList:
       type: object
       properties:
         id:
@@ -17792,7 +17792,7 @@ components:
       - municipio
       - nome_titular
       - territorio
-    UPFMapFeatureCollection:
+    UFPAMapFeatureCollection:
       type: object
       properties:
         type:
@@ -17801,7 +17801,7 @@ components:
         features:
           type: array
           items:
-            $ref: '#/components/schemas/_UPFMapFeature'
+            $ref: '#/components/schemas/_UFPAMapFeature'
         truncated:
           type: boolean
         message:
@@ -19191,20 +19191,20 @@ components:
       - id
       - nome
       - quantidade_realizada
-    _UPFMapFeature:
+    _UFPAMapFeature:
       type: object
       properties:
         type:
           type: string
           default: Feature
         geometry:
-          $ref: '#/components/schemas/_UPFMapGeometry'
+          $ref: '#/components/schemas/_UFPAMapGeometry'
         properties:
-          $ref: '#/components/schemas/_UPFMapProperties'
+          $ref: '#/components/schemas/_UFPAMapProperties'
       required:
       - geometry
       - properties
-    _UPFMapGeometry:
+    _UFPAMapGeometry:
       type: object
       properties:
         type:
@@ -19217,7 +19217,7 @@ components:
             format: double
       required:
       - coordinates
-    _UPFMapProperties:
+    _UFPAMapProperties:
       type: object
       properties:
         id:

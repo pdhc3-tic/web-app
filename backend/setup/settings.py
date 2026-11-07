@@ -94,6 +94,7 @@ MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "apps.core.middleware.ContentSecurityPolicyMiddleware",
+    "apps.core.middleware.RotaDepreciadaMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -274,6 +275,7 @@ SPECTACULAR_SETTINGS = {
     # Campos homônimos (`status`, `tipo`) com choices diferentes ganhariam um
     # sufixo de hash (`Status8eaEnum`), que muda sempre que outro choice é
     # alterado e quebra os tipos gerados no frontend.
+    "PREPROCESSING_HOOKS": ["apps.core.openapi.sem_rotas_depreciadas"],
     "ENUM_NAME_OVERRIDES": {
         "StatusAtividadeEnum": "apps.sgp.models.activity.STATUS_CHOICES",
         "EscopoLimiteDeGastoEnum": "apps.sgp.budget.models.SpendingLimit.Escopo",
@@ -295,7 +297,7 @@ SPECTACULAR_SETTINGS = {
         "SimNaoInformadoEnum": "apps.sgp.constants.ENERGIA_CHOICES",
         "FormatoExportacaoEnum": "apps.sgp.models.export_job.ExportJob.Formato",
         "TipoExportacaoEnum": "apps.sgp.models.export_job.ExportJob.Tipo",
-        "TipoDocumentoUPFEnum": "apps.sgp.models.upf_document.UPFDocument.TIPO_CHOICES",
+        "TipoDocumentoUFPAEnum": "apps.sgp.models.ufpa_document.UFPADocument.TIPO_CHOICES",
         "TipoDocumentoAtividadeEnum": "apps.sgp.models.activity_document.ActivityDocument.TIPO_CHOICES",
     },
     "SWAGGER_UI_SETTINGS": {
@@ -313,9 +315,9 @@ CORS_ALLOWED_ORIGINS = [
 # quando o frontend está em outra origem.
 CORS_EXPOSE_HEADERS = ["Content-Disposition"]
 
-# Exportação de UPFs: até este total o arquivo sai na própria requisição; acima,
+# Exportação de UFPAs: até este total o arquivo sai na própria requisição; acima,
 # vira ExportJob processado pelo worker.
-UPF_EXPORT_ASYNC_THRESHOLD = int(os.getenv("UPF_EXPORT_ASYNC_THRESHOLD", "1000"))
+UFPA_EXPORT_ASYNC_THRESHOLD = int(os.getenv("UFPA_EXPORT_ASYNC_THRESHOLD", "1000"))
 
 # CONFIGURAÇÕES DO CELERY
 CELERY_BROKER_URL = f"redis://{os.getenv('REDIS_HOST', 'redis')}:{os.getenv('REDIS_PORT', '6379')}/0"

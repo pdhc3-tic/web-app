@@ -9,26 +9,29 @@ from rest_framework.exceptions import PermissionDenied
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.services.permissions import user_role_slugs
-from apps.sgp.models import UPF
+from apps.sgp.models import UFPA
 from apps.sgp.pagination import HistoricoPagination
 from apps.sgp.serializers import HistoricoEntrySerializer
-from apps.sgp.services.access import ROLES_COM_ESCOPO, upfs_acessiveis_ao_usuario
+from apps.sgp.services.access import ROLES_COM_ESCOPO, ufpas_acessiveis_ao_usuario
 
-# Mesmo padrão de mixin de UPFPhotoMixin/UPFDocumentMixin.
+# O AuditLog é imutável: o que foi gravado antes da renomeação continua com o nome antigo.
+ENTIDADES_DA_UFPA = ("UFPA", "UPF")
+
+# Mesmo padrão de mixin de UFPAPhotoMixin/UFPADocumentMixin.
 
 
-class UPFHistoricoMixin:
-    def _get_upf_including_inativas(self, pk):
-        """Resolve a UPF via all_objects — histórico precisa enxergar
+class UFPAHistoricoMixin:
+    def _get_ufpa_including_inativas(self, pk):
+        """Resolve a UFPA via all_objects — histórico precisa enxergar
         inativas (Issue #267) —, mantendo o mesmo RLS territorial de
-        `UPFViewSet.get_queryset()`.
+        `UFPAViewSet.get_queryset()`.
         """
         user = self.request.user
         role_slugs = user_role_slugs(user, ROLES_COM_ESCOPO)
         if not role_slugs:
             raise PermissionDenied("Você não tem acesso ao módulo SGP.")
-        pks = upfs_acessiveis_ao_usuario(user, role_slugs=role_slugs).values_list("pk", flat=True)
-        return get_object_or_404(UPF.all_objects.filter(pk__in=pks), pk=pk)
+        pks = ufpas_acessiveis_ao_usuario(user, role_slugs=role_slugs).values_list("pk", flat=True)
+        return get_object_or_404(UFPA.all_objects.filter(pk__in=pks), pk=pk)
 
     @extend_schema(
         filters=False,
@@ -43,15 +46,15 @@ class UPFHistoricoMixin:
     )
     @action(detail=True, methods=["get"], url_path="historico", pagination_class=HistoricoPagination)
     def historico(self, request, pk=None):
-        upf = self._get_upf_including_inativas(pk)
-        q = Q(entidade="UPF", entidade_id=str(upf.pk))
+        ufpa = self._get_ufpa_including_inativas(pk)
+        q = Q(entidade__in=ENTIDADES_DA_UFPA, entidade_id=str(ufpa.pk))
 
         incluir_membros = request.query_params.get("incluir_membros") == "true"
         if incluir_membros:
             MembroFamilia = apps.get_model("sgp", "MembroFamilia")
             if MembroFamilia is not None:
                 member_ids = list(
-                    MembroFamilia.objects.filter(upf_id=upf.pk).values_list(
+                    MembroFamilia.objects.filter(ufpa_id=ufpa.pk).values_list(
                         "pk", flat=True
                     )
                 )

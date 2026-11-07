@@ -35,11 +35,11 @@ class Production(models.Model):
         (TIPO_OUTRA_OUTRO, "Outro"),
     ]
 
-    upf = models.ForeignKey(
-        "sgp.UPF",
+    ufpa = models.ForeignKey(
+        "sgp.UFPA",
         on_delete=models.CASCADE,
         related_name="producoes",
-        verbose_name="UPF",
+        verbose_name="UFPA",
     )
     tipo = models.CharField(
         max_length=20,
@@ -164,7 +164,7 @@ class Production(models.Model):
         verbose_name_plural = "Produções"
         ordering = ["-criado_em"]
         indexes = [
-            models.Index(fields=["upf"], name="idx_production_upf"),
+            models.Index(fields=["ufpa"], name="idx_production_ufpa"),
         ]
 
     def clean(self):
@@ -195,4 +195,4 @@ class Production(models.Model):
             raise ValidationError(errors)
 
     def __str__(self):
-        return f"{self.get_tipo_display()} - UPF {self.upf_id}"
+        return f"{self.get_tipo_display()} - UFPA {self.ufpa_id}"

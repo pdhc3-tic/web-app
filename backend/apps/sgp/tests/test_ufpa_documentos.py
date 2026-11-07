@@ -4,8 +4,8 @@ import pytest
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.storage import StorageObjectNotFound
-from apps.sgp.models import UPFDocument
-from apps.sgp.tests.factories import UPFDocumentFactory, UPFFactory
+from apps.sgp.models import UFPADocument
+from apps.sgp.tests.factories import UFPADocumentFactory, UFPAFactory
 
 
 pytestmark = pytest.mark.django_db
@@ -59,8 +59,8 @@ def valid_create_payload(key, **overrides):
     return payload
 
 
-def document_key(upf, ext="pdf"):
-    return f"upfs/{upf.pk}/documentos/123e4567-e89b-12d3-a456-426614174000.{ext}"
+def document_key(ufpa, ext="pdf"):
+    return f"ufpas/{ufpa.pk}/documentos/123e4567-e89b-12d3-a456-426614174000.{ext}"
 
 
 def response_results(response):
@@ -70,13 +70,13 @@ def response_results(response):
 
 
 def test_request_upload_url_for_document_returns_presigned(
-    auth_client, upf, monkeypatch
+    auth_client, ufpa, monkeypatch
 ):
     storage = FakeStorage()
-    monkeypatch.setattr("apps.sgp.views.upf_documentos.get_storage", lambda: storage)
+    monkeypatch.setattr("apps.sgp.views.ufpa_documentos.get_storage", lambda: storage)
 
     response = auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/documentos/upload-url/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/documentos/upload-url/",
         valid_upload_payload(),
         format="json",
     )
@@ -86,7 +86,7 @@ def test_request_upload_url_for_document_returns_presigned(
     assert response.data["url"] == "https://upload.example.com/presigned"
     assert response.data["expires_in"] == 300
     assert re.match(
-        rf"^upfs/{upf.pk}/documentos/[0-9a-f-]{{36}}\.pdf$",
+        rf"^ufpas/{ufpa.pk}/documentos/[0-9a-f-]{{36}}\.pdf$",
         response.data["key"],
     )
     assert storage.presigned_put_calls == [
@@ -94,9 +94,9 @@ def test_request_upload_url_for_document_returns_presigned(
     ]
 
 
-def test_request_upload_url_rejects_invalid_content_type(auth_client, upf):
+def test_request_upload_url_rejects_invalid_content_type(auth_client, ufpa):
     response = auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/documentos/upload-url/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/documentos/upload-url/",
         valid_upload_payload(content_type="application/zip"),
         format="json",
     )
@@ -105,9 +105,9 @@ def test_request_upload_url_rejects_invalid_content_type(auth_client, upf):
     assert "Tipo de arquivo inválido" in str(response.data)
 
 
-def test_request_upload_url_rejects_oversized(auth_client, upf):
+def test_request_upload_url_rejects_oversized(auth_client, ufpa):
     response = auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/documentos/upload-url/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/documentos/upload-url/",
         valid_upload_payload(size=15_728_640),
         format="json",
     )
@@ -117,82 +117,82 @@ def test_request_upload_url_rejects_oversized(auth_client, upf):
 
 
 def test_create_document_with_valid_key_persists_record(
-    auth_client, upf, monkeypatch
+    auth_client, ufpa, monkeypatch
 ):
-    key = document_key(upf)
+    key = document_key(ufpa)
     storage = FakeStorage(
         objects={key: {"ContentLength": 2048, "ContentType": "application/pdf"}}
     )
-    monkeypatch.setattr("apps.sgp.views.upf_documentos.get_storage", lambda: storage)
+    monkeypatch.setattr("apps.sgp.views.ufpa_documentos.get_storage", lambda: storage)
 
     response = auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/documentos/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/documentos/",
         valid_create_payload(key),
         format="json",
     )
 
     assert response.status_code == 201
-    document = UPFDocument.objects.get(pk=response.data["id"])
-    assert document.upf == upf
+    document = UFPADocument.objects.get(pk=response.data["id"])
+    assert document.ufpa == ufpa
     assert document.arquivo_key == key
     assert document.content_type == "application/pdf"
     assert document.tamanho_bytes == 2048
     assert storage.head_calls == [key]
 
 
-def test_create_document_with_invalid_key_returns_400(auth_client, upf, monkeypatch):
-    key = document_key(upf)
+def test_create_document_with_invalid_key_returns_400(auth_client, ufpa, monkeypatch):
+    key = document_key(ufpa)
     storage = FakeStorage()
-    monkeypatch.setattr("apps.sgp.views.upf_documentos.get_storage", lambda: storage)
+    monkeypatch.setattr("apps.sgp.views.ufpa_documentos.get_storage", lambda: storage)
 
     response = auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/documentos/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/documentos/",
         valid_create_payload(key),
         format="json",
     )
 
     assert response.status_code == 400
     assert response.data["detail"] == "Upload não confirmado — tente novamente"
-    assert not UPFDocument.objects.filter(arquivo_key=key).exists()
+    assert not UFPADocument.objects.filter(arquivo_key=key).exists()
 
 
-def test_list_documents_only_for_own_upf(auth_client, upf, outra_upf):
-    own_document = UPFDocumentFactory(
-        upf=upf,
-        arquivo_key=document_key(upf),
+def test_list_documents_only_for_own_ufpa(auth_client, ufpa, outra_ufpa):
+    own_document = UFPADocumentFactory(
+        ufpa=ufpa,
+        arquivo_key=document_key(ufpa),
     )
-    UPFDocumentFactory(
-        upf=outra_upf,
-        arquivo_key=document_key(outra_upf),
+    UFPADocumentFactory(
+        ufpa=outra_ufpa,
+        arquivo_key=document_key(outra_ufpa),
     )
 
-    response = auth_client.get(f"/api/v1/upfs/{upf.pk}/documentos/")
+    response = auth_client.get(f"/api/v1/sgp/ufpas/{ufpa.pk}/documentos/")
 
     assert response.status_code == 200
     ids = {item["id"] for item in response_results(response)}
     assert ids == {own_document.pk}
 
 
-def test_cross_upf_document_returns_404(auth_client, upf, outra_upf):
-    other_document = UPFDocumentFactory(
-        upf=outra_upf,
-        arquivo_key=document_key(outra_upf),
+def test_cross_ufpa_document_returns_404(auth_client, ufpa, outra_ufpa):
+    other_document = UFPADocumentFactory(
+        ufpa=outra_ufpa,
+        arquivo_key=document_key(outra_ufpa),
     )
 
     response = auth_client.get(
-        f"/api/v1/upfs/{upf.pk}/documentos/{other_document.pk}/download/"
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/documentos/{other_document.pk}/download/"
     )
 
     assert response.status_code == 404
 
 
-def test_download_returns_presigned_get_url(auth_client, upf, monkeypatch):
-    document = UPFDocumentFactory(upf=upf, arquivo_key=document_key(upf))
+def test_download_returns_presigned_get_url(auth_client, ufpa, monkeypatch):
+    document = UFPADocumentFactory(ufpa=ufpa, arquivo_key=document_key(ufpa))
     storage = FakeStorage()
-    monkeypatch.setattr("apps.sgp.views.upf_documentos.get_storage", lambda: storage)
+    monkeypatch.setattr("apps.sgp.views.ufpa_documentos.get_storage", lambda: storage)
 
     response = auth_client.get(
-        f"/api/v1/upfs/{upf.pk}/documentos/{document.pk}/download/"
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/documentos/{document.pk}/download/"
     )
 
     assert response.status_code == 200
@@ -200,13 +200,13 @@ def test_download_returns_presigned_get_url(auth_client, upf, monkeypatch):
     assert storage.presigned_get_calls == [(document.arquivo_key, 300)]
 
 
-def test_download_url_expires_in_300_seconds(auth_client, upf, monkeypatch):
-    document = UPFDocumentFactory(upf=upf, arquivo_key=document_key(upf))
+def test_download_url_expires_in_300_seconds(auth_client, ufpa, monkeypatch):
+    document = UFPADocumentFactory(ufpa=ufpa, arquivo_key=document_key(ufpa))
     storage = FakeStorage()
-    monkeypatch.setattr("apps.sgp.views.upf_documentos.get_storage", lambda: storage)
+    monkeypatch.setattr("apps.sgp.views.ufpa_documentos.get_storage", lambda: storage)
 
     response = auth_client.get(
-        f"/api/v1/upfs/{upf.pk}/documentos/{document.pk}/download/"
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/documentos/{document.pk}/download/"
     )
 
     assert response.status_code == 200
@@ -214,56 +214,56 @@ def test_download_url_expires_in_300_seconds(auth_client, upf, monkeypatch):
     assert storage.presigned_get_calls[0][1] == 300
 
 
-def test_delete_document_calls_r2_and_removes_record(auth_client, upf, monkeypatch):
-    document = UPFDocumentFactory(upf=upf, arquivo_key=document_key(upf))
+def test_delete_document_calls_r2_and_removes_record(auth_client, ufpa, monkeypatch):
+    document = UFPADocumentFactory(ufpa=ufpa, arquivo_key=document_key(ufpa))
     storage = FakeStorage()
-    monkeypatch.setattr("apps.sgp.views.upf_documentos.get_storage", lambda: storage)
+    monkeypatch.setattr("apps.sgp.views.ufpa_documentos.get_storage", lambda: storage)
 
     response = auth_client.delete(
-        f"/api/v1/upfs/{upf.pk}/documentos/{document.pk}/"
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/documentos/{document.pk}/"
     )
 
     assert response.status_code == 204
     assert storage.deleted_keys == [document.arquivo_key]
-    assert not UPFDocument.objects.filter(pk=document.pk).exists()
+    assert not UFPADocument.objects.filter(pk=document.pk).exists()
 
 
 def test_adt_other_territory_cannot_access_documents(
     auth_client_adt_rn, projeto, municipio_ce, territory_ce
 ):
-    upf_ce = UPFFactory(
+    ufpa_ce = UFPAFactory(
         projeto=projeto,
         municipio=municipio_ce,
         territorio=territory_ce,
         cpf="52998224725",
     )
-    UPFDocumentFactory(upf=upf_ce, arquivo_key=document_key(upf_ce))
+    UFPADocumentFactory(ufpa=ufpa_ce, arquivo_key=document_key(ufpa_ce))
 
-    response = auth_client_adt_rn.get(f"/api/v1/upfs/{upf_ce.pk}/documentos/")
+    response = auth_client_adt_rn.get(f"/api/v1/sgp/ufpas/{ufpa_ce.pk}/documentos/")
 
     assert response.status_code == 404
 
 
-def test_audit_log_on_document_operations(auth_client, upf, monkeypatch):
-    key = document_key(upf)
+def test_audit_log_on_document_operations(auth_client, ufpa, monkeypatch):
+    key = document_key(ufpa)
     storage = FakeStorage(
         objects={key: {"ContentLength": 2048, "ContentType": "application/pdf"}}
     )
-    monkeypatch.setattr("apps.sgp.views.upf_documentos.get_storage", lambda: storage)
+    monkeypatch.setattr("apps.sgp.views.ufpa_documentos.get_storage", lambda: storage)
 
     auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/documentos/upload-url/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/documentos/upload-url/",
         valid_upload_payload(),
         format="json",
     )
     create_response = auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/documentos/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/documentos/",
         valid_create_payload(key),
         format="json",
     )
     document_id = create_response.data["id"]
-    auth_client.get(f"/api/v1/upfs/{upf.pk}/documentos/{document_id}/download/")
-    auth_client.delete(f"/api/v1/upfs/{upf.pk}/documentos/{document_id}/")
+    auth_client.get(f"/api/v1/sgp/ufpas/{ufpa.pk}/documentos/{document_id}/download/")
+    auth_client.delete(f"/api/v1/sgp/ufpas/{ufpa.pk}/documentos/{document_id}/")
 
     for action in [
         "upload_document",

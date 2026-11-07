@@ -11,11 +11,11 @@ class FormResponse(models.Model):
         WEB = "web", "Web"
         SCA = "sca", "SCA"
 
-    upf = models.ForeignKey(
-        "sgp.UPF",
+    ufpa = models.ForeignKey(
+        "sgp.UFPA",
         on_delete=models.CASCADE,
         related_name="form_responses",
-        verbose_name="UPF",
+        verbose_name="UFPA",
     )
     formulario_id = models.PositiveIntegerField(verbose_name="ID do formulário")
     formulario_nome = models.CharField(max_length=255, verbose_name="Nome do formulário")
@@ -59,8 +59,8 @@ class FormResponse(models.Model):
         ordering = ["-data_preenchimento", "-pk"]
         indexes = [
             models.Index(
-                fields=["upf", "-data_preenchimento"],
-                name="idx_form_response_upf_data",
+                fields=["ufpa", "-data_preenchimento"],
+                name="idx_form_response_ufpa_data",
             ),
         ]
         constraints = [
@@ -72,4 +72,4 @@ class FormResponse(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.formulario_nome} - UPF {self.upf_id}"
+        return f"{self.formulario_nome} - UFPA {self.ufpa_id}"

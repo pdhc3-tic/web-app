@@ -8,8 +8,8 @@ from django.test import override_settings
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.storage import StorageObjectNotFound
-from apps.sgp.models import UPF
-from apps.sgp.tests.factories import UPFFactory
+from apps.sgp.models import UFPA
+from apps.sgp.tests.factories import UFPAFactory
 
 
 pytestmark = pytest.mark.django_db
@@ -57,8 +57,8 @@ def valid_upload_payload(**overrides):
     return payload
 
 
-def photo_key(upf, ext="png"):
-    return f"upfs/{upf.pk}/foto/123e4567-e89b-12d3-a456-426614174000.{ext}"
+def photo_key(ufpa, ext="png"):
+    return f"ufpas/{ufpa.pk}/foto/123e4567-e89b-12d3-a456-426614174000.{ext}"
 
 
 @override_settings(
@@ -70,7 +70,7 @@ def photo_key(upf, ext="png"):
     R2_PUBLIC_URL="https://media.pdhc-iii.org",
 )
 def test_request_upload_url_returns_presigned_with_correct_fields(
-    auth_client, upf, monkeypatch
+    auth_client, ufpa, monkeypatch
 ):
     calls = {}
 
@@ -84,7 +84,7 @@ def test_request_upload_url_returns_presigned_with_correct_fields(
     monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
 
     response = auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/foto/upload-url/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/foto/upload-url/",
         valid_upload_payload(),
         format="json",
     )
@@ -102,9 +102,9 @@ def test_request_upload_url_returns_presigned_with_correct_fields(
     assert calls["Params"]["ContentLength"] == 1024
 
 
-def test_request_upload_url_rejects_invalid_content_type(auth_client, upf):
+def test_request_upload_url_rejects_invalid_content_type(auth_client, ufpa):
     response = auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/foto/upload-url/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/foto/upload-url/",
         valid_upload_payload(content_type="image/gif"),
         format="json",
     )
@@ -113,9 +113,9 @@ def test_request_upload_url_rejects_invalid_content_type(auth_client, upf):
     assert "Tipo de arquivo inválido" in str(response.data)
 
 
-def test_request_upload_url_rejects_oversized(auth_client, upf):
+def test_request_upload_url_rejects_oversized(auth_client, ufpa):
     response = auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/foto/upload-url/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/foto/upload-url/",
         valid_upload_payload(size=10_485_760),
         format="json",
     )
@@ -124,17 +124,17 @@ def test_request_upload_url_rejects_oversized(auth_client, upf):
     assert "tamanho máximo de 5 MB" in str(response.data)
 
 
-def test_request_upload_url_generates_unique_key(auth_client, upf, monkeypatch):
+def test_request_upload_url_generates_unique_key(auth_client, ufpa, monkeypatch):
     storage = FakeStorage()
-    monkeypatch.setattr("apps.sgp.views.upf_foto.get_storage", lambda: storage)
+    monkeypatch.setattr("apps.sgp.views.ufpa_foto.get_storage", lambda: storage)
 
     first = auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/foto/upload-url/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/foto/upload-url/",
         valid_upload_payload(),
         format="json",
     )
     second = auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/foto/upload-url/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/foto/upload-url/",
         valid_upload_payload(),
         format="json",
     )
@@ -144,19 +144,19 @@ def test_request_upload_url_generates_unique_key(auth_client, upf, monkeypatch):
     assert first.data["key"] != second.data["key"]
 
 
-def test_request_upload_url_key_format_matches_pattern(auth_client, upf, monkeypatch):
+def test_request_upload_url_key_format_matches_pattern(auth_client, ufpa, monkeypatch):
     storage = FakeStorage()
-    monkeypatch.setattr("apps.sgp.views.upf_foto.get_storage", lambda: storage)
+    monkeypatch.setattr("apps.sgp.views.ufpa_foto.get_storage", lambda: storage)
 
     response = auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/foto/upload-url/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/foto/upload-url/",
         valid_upload_payload(content_type="image/jpeg"),
         format="json",
     )
 
     assert response.status_code == 200
     assert re.match(
-        rf"^upfs/{upf.pk}/foto/[0-9a-f-]{{36}}\.jpg$",
+        rf"^ufpas/{ufpa.pk}/foto/[0-9a-f-]{{36}}\.jpg$",
         response.data["key"],
     )
 
@@ -164,7 +164,7 @@ def test_request_upload_url_key_format_matches_pattern(auth_client, upf, monkeyp
 def test_request_upload_url_requires_permission(
     auth_client_adt_rn, projeto, municipio_ce, territory_ce
 ):
-    upf_ce = UPFFactory(
+    ufpa_ce = UFPAFactory(
         projeto=projeto,
         municipio=municipio_ce,
         territorio=territory_ce,
@@ -172,7 +172,7 @@ def test_request_upload_url_requires_permission(
     )
 
     response = auth_client_adt_rn.post(
-        f"/api/v1/upfs/{upf_ce.pk}/foto/upload-url/",
+        f"/api/v1/sgp/ufpas/{ufpa_ce.pk}/foto/upload-url/",
         valid_upload_payload(),
         format="json",
     )
@@ -180,13 +180,13 @@ def test_request_upload_url_requires_permission(
     assert response.status_code == 404
 
 
-def test_confirm_upload_calls_head_object(auth_client, upf, monkeypatch):
-    key = photo_key(upf)
+def test_confirm_upload_calls_head_object(auth_client, ufpa, monkeypatch):
+    key = photo_key(ufpa)
     storage = FakeStorage(existing_keys={key})
-    monkeypatch.setattr("apps.sgp.views.upf_foto.get_storage", lambda: storage)
+    monkeypatch.setattr("apps.sgp.views.ufpa_foto.get_storage", lambda: storage)
 
     response = auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/foto/confirm/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/foto/confirm/",
         {"key": key},
         format="json",
     )
@@ -195,29 +195,29 @@ def test_confirm_upload_calls_head_object(auth_client, upf, monkeypatch):
     assert storage.head_calls == [key]
 
 
-def test_confirm_upload_updates_foto_url(auth_client, upf, monkeypatch):
-    key = photo_key(upf)
+def test_confirm_upload_updates_foto_url(auth_client, ufpa, monkeypatch):
+    key = photo_key(ufpa)
     storage = FakeStorage(existing_keys={key})
-    monkeypatch.setattr("apps.sgp.views.upf_foto.get_storage", lambda: storage)
+    monkeypatch.setattr("apps.sgp.views.ufpa_foto.get_storage", lambda: storage)
 
     response = auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/foto/confirm/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/foto/confirm/",
         {"key": key},
         format="json",
     )
 
     assert response.status_code == 200
-    upf.refresh_from_db()
-    assert upf.foto_url == f"https://media.example.com/{key}"
+    ufpa.refresh_from_db()
+    assert ufpa.foto_url == f"https://media.example.com/{key}"
 
 
-def test_confirm_upload_fails_if_object_not_found(auth_client, upf, monkeypatch):
-    key = photo_key(upf)
+def test_confirm_upload_fails_if_object_not_found(auth_client, ufpa, monkeypatch):
+    key = photo_key(ufpa)
     storage = FakeStorage()
-    monkeypatch.setattr("apps.sgp.views.upf_foto.get_storage", lambda: storage)
+    monkeypatch.setattr("apps.sgp.views.ufpa_foto.get_storage", lambda: storage)
 
     response = auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/foto/confirm/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/foto/confirm/",
         {"key": key},
         format="json",
     )
@@ -226,16 +226,16 @@ def test_confirm_upload_fails_if_object_not_found(auth_client, upf, monkeypatch)
     assert response.data["detail"] == "Upload não confirmado — tente novamente"
 
 
-def test_confirm_upload_deletes_previous_photo(auth_client, upf, monkeypatch):
-    old_key = photo_key(upf, ext="jpg")
-    new_key = photo_key(upf, ext="png")
-    upf.foto_url = f"https://media.example.com/{old_key}"
-    upf.save(update_fields=["foto_url"])
+def test_confirm_upload_deletes_previous_photo(auth_client, ufpa, monkeypatch):
+    old_key = photo_key(ufpa, ext="jpg")
+    new_key = photo_key(ufpa, ext="png")
+    ufpa.foto_url = f"https://media.example.com/{old_key}"
+    ufpa.save(update_fields=["foto_url"])
     storage = FakeStorage(existing_keys={new_key})
-    monkeypatch.setattr("apps.sgp.views.upf_foto.get_storage", lambda: storage)
+    monkeypatch.setattr("apps.sgp.views.ufpa_foto.get_storage", lambda: storage)
 
     response = auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/foto/confirm/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/foto/confirm/",
         {"key": new_key},
         format="json",
     )
@@ -245,57 +245,57 @@ def test_confirm_upload_deletes_previous_photo(auth_client, upf, monkeypatch):
 
 
 def test_delete_photo_calls_delete_object_and_clears_field(
-    auth_client, upf, monkeypatch
+    auth_client, ufpa, monkeypatch
 ):
-    key = photo_key(upf)
-    upf.foto_url = f"https://media.example.com/{key}"
-    upf.save(update_fields=["foto_url"])
+    key = photo_key(ufpa)
+    ufpa.foto_url = f"https://media.example.com/{key}"
+    ufpa.save(update_fields=["foto_url"])
     storage = FakeStorage(existing_keys={key})
-    monkeypatch.setattr("apps.sgp.views.upf_foto.get_storage", lambda: storage)
+    monkeypatch.setattr("apps.sgp.views.ufpa_foto.get_storage", lambda: storage)
 
-    response = auth_client.delete(f"/api/v1/upfs/{upf.pk}/foto/")
+    response = auth_client.delete(f"/api/v1/sgp/ufpas/{ufpa.pk}/foto/")
 
     assert response.status_code == 204
     assert storage.deleted_keys == [key]
-    upf.refresh_from_db()
-    assert upf.foto_url == ""
+    ufpa.refresh_from_db()
+    assert ufpa.foto_url == ""
 
 
 def test_audit_log_entries_created_for_photo_operations(
-    auth_client, upf, monkeypatch
+    auth_client, ufpa, monkeypatch
 ):
-    key = photo_key(upf)
+    key = photo_key(ufpa)
     storage = FakeStorage(existing_keys={key})
-    monkeypatch.setattr("apps.sgp.views.upf_foto.get_storage", lambda: storage)
+    monkeypatch.setattr("apps.sgp.views.ufpa_foto.get_storage", lambda: storage)
 
     auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/foto/upload-url/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/foto/upload-url/",
         valid_upload_payload(),
         format="json",
     )
     auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/foto/confirm/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/foto/confirm/",
         {"key": key},
         format="json",
     )
-    auth_client.delete(f"/api/v1/upfs/{upf.pk}/foto/")
+    auth_client.delete(f"/api/v1/sgp/ufpas/{ufpa.pk}/foto/")
 
     for action in ["upload_photo", "confirm_photo", "delete_photo"]:
         assert AuditLog.objects.filter(
-            entidade="UPF",
-            entidade_id=str(upf.pk),
+            entidade="UFPA",
+            entidade_id=str(ufpa.pk),
             acao=action,
         ).exists()
 
 
-def test_local_backend_path_storage(auth_client, upf, settings, tmp_path):
+def test_local_backend_path_storage(auth_client, ufpa, settings, tmp_path):
     settings.STORAGE_BACKEND = "local"
     settings.MEDIA_ROOT = tmp_path
     settings.MEDIA_URL = "/media/"
     content = b"fake-image"
 
     upload_response = auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/foto/upload-url/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/foto/upload-url/",
         valid_upload_payload(size=len(content)),
         format="json",
     )
@@ -313,16 +313,16 @@ def test_local_backend_path_storage(auth_client, upf, settings, tmp_path):
     assert (tmp_path / key).read_bytes() == content
 
     confirm_response = auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/foto/confirm/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/foto/confirm/",
         {"key": key},
         format="json",
     )
     assert confirm_response.status_code == 200
-    assert UPF.objects.get(pk=upf.pk).foto_url == f"/media/{key}"
+    assert UFPA.objects.get(pk=ufpa.pk).foto_url == f"/media/{key}"
 
 
 def test_local_upload_rejects_body_larger_than_signed_size(
-    auth_client, upf, settings, tmp_path
+    auth_client, ufpa, settings, tmp_path
 ):
     settings.STORAGE_BACKEND = "local"
     settings.MEDIA_ROOT = tmp_path
@@ -330,7 +330,7 @@ def test_local_upload_rejects_body_larger_than_signed_size(
     content = b"fake-image"
 
     upload_response = auth_client.post(
-        f"/api/v1/upfs/{upf.pk}/foto/upload-url/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/foto/upload-url/",
         valid_upload_payload(size=len(content) - 1),
         format="json",
     )

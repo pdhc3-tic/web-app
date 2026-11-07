@@ -3,7 +3,7 @@ Seed de dados de DEMONSTRAÇÃO do SGP.
 
 Diferente de `seed_core` / `seed_sgp` (dados de referência reais), este comando
 popula o banco com um volume realista de dados fictícios para exercitar as telas
-do frontend: municípios, comunidades, UPFs com famílias, produções, plano de
+do frontend: municípios, comunidades, UFPAs com famílias, produções, plano de
 trabalho, atividades e evidências (fotos/documentos). Inclui também o cenário
 do SCA (#193): técnicos com dispositivos nas faixas verde/laranja/vermelha,
 histórico de eventos de sincronização, conflitos (pendente sensível e resolvido)
@@ -60,8 +60,8 @@ from apps.sgp.models import (
     MembroFamilia,
     Production,
     Projeto,
-    UPF,
-    UPFDocument,
+    UFPA,
+    UFPADocument,
     WorkPlanAcao,
     WorkPlanMeta,
     WorkPlanSubmeta,
@@ -174,8 +174,8 @@ METAS = [
         ]),
     ]),
     (2, "Assistência técnica e extensão rural continuada", [2, 8], [
-        ("2.1", "Acompanhamento técnico das UPFs", [
-            ("2.1.1", "Realizar visitas técnicas às UPFs", "IND-VIS", 600, 320),
+        ("2.1", "Acompanhamento técnico das UFPAs", [
+            ("2.1.1", "Realizar visitas técnicas às UFPAs", "IND-VIS", 600, 320),
             ("2.1.2", "Elaborar planos de desenvolvimento familiar", "IND-PLA", 300, 450),
         ]),
         ("2.2", "ATER continuada", [
@@ -243,7 +243,7 @@ TIPOS_ATIVIDADE = [
 ]
 
 TITULOS_ATIVIDADE = {
-    "visita_tecnica": "Visita técnica à UPF — acompanhamento produtivo",
+    "visita_tecnica": "Visita técnica à UFPA — acompanhamento produtivo",
     "reuniao_comunitaria": "Reunião comunitária de mobilização",
     "oficina": "Oficina de manejo agroecológico do solo",
     "intercambio": "Intercâmbio entre famílias agricultoras",
@@ -311,7 +311,7 @@ SGD_LIMITES_ADT_MONTAGEM = {"locacao-veiculo": Decimal("1000")}
 #
 # Fica FORA de TECNICOS de propósito. A lista é consumida como dado posicional
 # (`tecnicos[-2]` define o dono do Plano de Trabalho) e como universo do
-# `self.rnd.choice`/`rnd.sample` que sorteia responsáveis de UPFs e atividades:
+# `self.rnd.choice`/`rnd.sample` que sorteia responsáveis de UFPAs e atividades:
 # acrescentar um nono elemento desloca a sequência inteira do random semeado e
 # muda dados que as specs E2E já assumem. Um Super Admin também não é técnico
 # de campo — o bloco próprio é o lugar correto.
@@ -429,7 +429,7 @@ def _esc(texto: str) -> str:
 # ───────────────────────────────────────────────────────────────────────────────
 
 class Command(BaseCommand):
-    help = "Popula o banco com dados de demonstração do SGP (UPFs, famílias, atividades…)."
+    help = "Popula o banco com dados de demonstração do SGP (UFPAs, famílias, atividades…)."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -441,7 +441,7 @@ class Command(BaseCommand):
             help="Não gera os arquivos de evidência (fotos/documentos) em MEDIA_ROOT.",
         )
         parser.add_argument(
-            "--upfs", type=int, default=40, help="Quantidade de UPFs (padrão: 40).",
+            "--ufpas", type=int, default=40, help="Quantidade de UFPAs (padrão: 40).",
         )
         parser.add_argument(
             "--atividades", type=int, default=45,
@@ -467,9 +467,9 @@ class Command(BaseCommand):
         if options["reset"]:
             self._reset()
 
-        if UPF.objects.exists():
+        if UFPA.objects.exists():
             self.stdout.write(self.style.WARNING(
-                "Já existem UPFs no banco. Rode com --reset para recriar do zero."
+                "Já existem UFPAs no banco. Rode com --reset para recriar do zero."
             ))
             return
 
@@ -488,12 +488,12 @@ class Command(BaseCommand):
             municipios = self._municipios()
             self._organizacoes(municipios)
             comunidades = self._comunidades(municipios, tecnicos[0])
-            upfs = self._upfs(projeto, comunidades, tecnicos, options["upfs"])
-            self._form_responses(upfs)
-            self._producoes(upfs)
+            ufpas = self._ufpas(projeto, comunidades, tecnicos, options["ufpas"])
+            self._form_responses(ufpas)
+            self._producoes(ufpas)
             acoes = self._plano_trabalho(tecnicos[-2])
-            self._atividades(acoes, comunidades, upfs, tecnicos, options["atividades"])
-            self._sca(tecnicos, upfs)
+            self._atividades(acoes, comunidades, ufpas, tecnicos, options["atividades"])
+            self._sca(tecnicos, ufpas)
             self._cenarios_e2e(projeto, acoes, comunidades, tecnicos)
             self._demandas_sgd(acoes)
             self._montagem_de_demanda_sgd()
@@ -614,29 +614,29 @@ class Command(BaseCommand):
             raise CommandError(f"{adt.email} está sem território de ADT.")
         territorio = perfil.territorio
 
-        upf = UPF.objects.filter(
+        ufpa = UFPA.objects.filter(
             territorio=territorio, ativo=True, comunidade__isnull=False
         ).first()
-        if upf is None:
+        if ufpa is None:
             comunidade = next(
                 (c for c in comunidades if c.municipio.territory_id == territorio.pk), None
             )
             if comunidade is None:
                 raise CommandError(f"Nenhuma comunidade no território {territorio.nome}.")
-            upf = self._upfs(projeto, [comunidade], tecnicos, 1)[0]
-            if not upf.ativo:
-                UPF.all_objects.filter(pk=upf.pk).update(ativo=True)
-                upf.ativo = True
+            ufpa = self._ufpas(projeto, [comunidade], tecnicos, 1)[0]
+            if not ufpa.ativo:
+                UFPA.all_objects.filter(pk=ufpa.pk).update(ativo=True)
+                ufpa.ativo = True
 
         atividades_do_adt = Activity.objects.filter(municipio__territory=territorio)
         if not atividades_do_adt.filter(status="concluido_sem_evidencia").exists():
             self._atividade_cenario(
-                "Visita técnica sem registro de evidência", acoes[0], upf, adt,
+                "Visita técnica sem registro de evidência", acoes[0], ufpa, adt,
                 inicio=agora - timedelta(days=10), status="concluido_sem_evidencia",
             )
         if not atividades_do_adt.filter(filtro_atrasada(agora)).exists():
             self._atividade_cenario(
-                "Oficina com encerramento pendente", acoes[0], upf, adt,
+                "Oficina com encerramento pendente", acoes[0], ufpa, adt,
                 inicio=agora - timedelta(days=5), status="em_andamento",
             )
 
@@ -661,25 +661,25 @@ class Command(BaseCommand):
 
         self.stdout.write(f"Cenários do E2E conferidos no território {territorio.nome}.")
 
-    def _atividade_cenario(self, titulo, acao, upf, tecnico, *, inicio, status):
+    def _atividade_cenario(self, titulo, acao, ufpa, tecnico, *, inicio, status):
         atividade = Activity.objects.create(
-            titulo=f"{titulo} — {upf.comunidade.nome}",
+            titulo=f"{titulo} — {ufpa.comunidade.nome}",
             tipo_atividade="visita_tecnica",
             acao=acao,
             forma_atuacao="realizacao",
             tecnico_responsavel=tecnico,
-            municipio=upf.municipio,
-            comunidade=upf.comunidade,
+            municipio=ufpa.municipio,
+            comunidade=ufpa.comunidade,
             ambito="municipal",
-            latitude=upf.comunidade.lat,
-            longitude=upf.comunidade.lng,
+            latitude=ufpa.comunidade.lat,
+            longitude=ufpa.comunidade.lng,
             data_inicio=inicio,
             data_fim=inicio + timedelta(hours=4),
             descricao_narrativa="Cenário fixo da demonstração, usado pelos testes E2E.",
             status=status,
             criado_por=tecnico,
         )
-        atividade.upfs_participantes.set([upf])
+        atividade.ufpas_participantes.set([ufpa])
         return atividade
 
     # ── Reset ──────────────────────────────────────────────────────────────────
@@ -689,12 +689,12 @@ class Command(BaseCommand):
 
         Existe para os E2E de conflitos: resolver um conflito é irreversível pela
         API, então cada execução da suíte consome os pendentes e precisa de novos.
-        Refazer o seed inteiro para isso custaria as 40 UPFs e as atividades.
+        Refazer o seed inteiro para isso custaria as 40 UFPAs e as atividades.
         """
-        upfs = list(UPF.objects.order_by("pk")[:2])
-        if not upfs:
+        ufpas = list(UFPA.objects.order_by("pk")[:2])
+        if not ufpas:
             self.stdout.write(self.style.WARNING(
-                "Não há UPFs no banco — rode o seed completo antes de --sca-only."
+                "Não há UFPAs no banco — rode o seed completo antes de --sca-only."
             ))
             return
 
@@ -722,7 +722,7 @@ class Command(BaseCommand):
             Notification.objects.filter(
                 evento="sca.sync.conflict_sensitive"
             ).delete()
-            self._sca(tecnicos, upfs)
+            self._sca(tecnicos, ufpas)
 
     def _reset(self):
         self.stdout.write("Removendo dados de demonstração anteriores...")
@@ -730,7 +730,7 @@ class Command(BaseCommand):
         if self.gerar_arquivos:
             chaves = list(ActivityPhoto.all_objects.values_list("arquivo_key", flat=True))
             chaves += list(ActivityDocument.all_objects.values_list("arquivo_key", flat=True))
-            chaves += list(UPFDocument.objects.values_list("arquivo_key", flat=True))
+            chaves += list(UFPADocument.objects.values_list("arquivo_key", flat=True))
             for chave in chaves:
                 caminho = self.media_root / chave
                 if caminho.is_file():
@@ -760,11 +760,11 @@ class Command(BaseCommand):
             WorkPlanAcao.objects.all().delete()
             WorkPlanMeta.objects.all().delete()
             Production.objects.all().delete()
-            UPFDocument.objects.all().delete()
-            # ciclo de exclusão: UPF.titular é PROTECT e Membro.upf é CASCADE —
-            # desligar os membros das UPFs antes de apagar destrava as duas pontas
-            MembroFamilia.objects.update(upf=None)
-            UPF.all_objects.all().delete()
+            UFPADocument.objects.all().delete()
+            # ciclo de exclusão: UFPA.titular é PROTECT e Membro.ufpa é CASCADE —
+            # desligar os membros das UFPAs antes de apagar destrava as duas pontas
+            MembroFamilia.objects.update(ufpa=None)
+            UFPA.all_objects.all().delete()
             MembroFamilia.objects.all().delete()
             Comunidade.objects.all().delete()
             Organization.objects.all().delete()
@@ -951,15 +951,15 @@ class Command(BaseCommand):
         self.stdout.write(f"Comunidades: {len(comunidades)}")
         return comunidades
 
-    def _upfs(self, projeto, comunidades, tecnicos, quantidade) -> list:
-        upfs = []
+    def _ufpas(self, projeto, comunidades, tecnicos, quantidade) -> list:
+        ufpas = []
         for i in range(quantidade):
             comunidade = comunidades[i % len(comunidades)]
             municipio = comunidade.municipio
             criador = self.rnd.choice(tecnicos)
 
             titular = self._membro(grau_parentesco="titular", criador=criador, idade=(30, 68))
-            upf = UPF.objects.create(
+            ufpa = UFPA.objects.create(
                 projeto=projeto,
                 comunidade=comunidade,
                 titular=titular,
@@ -992,8 +992,8 @@ class Command(BaseCommand):
                 ativo=self.rnd.random() < 0.94,
             )
 
-            titular.upf = upf
-            titular.save(update_fields=["upf"])
+            titular.ufpa = ufpa
+            titular.save(update_fields=["ufpa"])
 
             # cônjuge + filhos + eventual agregado
             composicao = ["conjuge"] if self.rnd.random() < 0.75 else []
@@ -1002,17 +1002,17 @@ class Command(BaseCommand):
                 composicao.append(self.rnd.choice(["mae", "pai", "neto", "irmao"]))
             for parentesco in composicao:
                 faixa = (0, 21) if parentesco in ("filho", "neto") else (25, 82)
-                self._membro(grau_parentesco=parentesco, criador=criador, idade=faixa, upf=upf)
+                self._membro(grau_parentesco=parentesco, criador=criador, idade=faixa, ufpa=ufpa)
 
-            upfs.append(upf)
+            ufpas.append(ufpa)
 
         self.stdout.write(
-            f"UPFs: {len(upfs)} | Membros: {MembroFamilia.objects.count()}"
+            f"UFPAs: {len(ufpas)} | Membros: {MembroFamilia.objects.count()}"
         )
-        self._documentos_upf(upfs)
-        return upfs
+        self._documentos_ufpa(ufpas)
+        return ufpas
 
-    def _membro(self, grau_parentesco, criador, idade, upf=None) -> MembroFamilia:
+    def _membro(self, grau_parentesco, criador, idade, ufpa=None) -> MembroFamilia:
         genero = self.rnd.choice([1, 2])
         primeiro = self.rnd.choice(NOMES_M if genero == 1 else NOMES_F)
         nome = f"{primeiro} {self.rnd.choice(SOBRENOMES)} {self.rnd.choice(SOBRENOMES)}"
@@ -1020,7 +1020,7 @@ class Command(BaseCommand):
         nascimento = date.today() - timedelta(days=anos * 365 + self.rnd.randint(0, 364))
         menor = anos < 18
         return MembroFamilia.objects.create(
-            upf=upf,
+            ufpa=ufpa,
             nome_completo=nome,
             data_nascimento=nascimento,
             genero=genero,
@@ -1037,27 +1037,27 @@ class Command(BaseCommand):
             criado_por=criador,
         )
 
-    def _documentos_upf(self, upfs: list):
+    def _documentos_ufpa(self, ufpas: list):
         total = 0
-        for upf in upfs:
+        for ufpa in ufpas:
             if self.rnd.random() > 0.4:
                 continue
             tipo = self.rnd.choice(["dap_caf", "contrato", "laudo", "identidade"])
-            nome_original = f"{tipo}_{upf.titular.nome_completo.split()[0].lower()}.pdf"
-            chave = f"upfs/{upf.pk}/documentos/{uuid4()}.pdf"
+            nome_original = f"{tipo}_{ufpa.titular.nome_completo.split()[0].lower()}.pdf"
+            chave = f"ufpas/{ufpa.pk}/documentos/{uuid4()}.pdf"
             conteudo = _pdf(
                 f"Documento — {tipo.upper()}",
                 [
-                    f"UPF #{upf.pk} — titular: {upf.titular.nome_completo}",
-                    f"Municipio: {upf.municipio.nome}/{upf.municipio.state.sigla}",
-                    f"Comunidade: {upf.comunidade.nome if upf.comunidade else '-'}",
+                    f"UFPA #{ufpa.pk} — titular: {ufpa.titular.nome_completo}",
+                    f"Municipio: {ufpa.municipio.nome}/{ufpa.municipio.state.sigla}",
+                    f"Comunidade: {ufpa.comunidade.nome if ufpa.comunidade else '-'}",
                     "",
                     "Documento ficticio gerado por seed_demo para testes de interface.",
                 ],
             )
             tamanho = self._escrever(chave, conteudo)
-            UPFDocument.objects.create(
-                upf=upf,
+            UFPADocument.objects.create(
+                ufpa=ufpa,
                 tipo=tipo,
                 descricao=f"{tipo.replace('_', '/').upper()} do titular",
                 arquivo_key=chave,
@@ -1065,24 +1065,24 @@ class Command(BaseCommand):
                 content_type="application/pdf",
                 tamanho_bytes=tamanho,
                 data_documento=date.today() - timedelta(days=self.rnd.randint(30, 900)),
-                criado_por=upf.criado_por,
+                criado_por=ufpa.criado_por,
             )
             total += 1
-        self.stdout.write(f"Documentos de UPF: {total}")
+        self.stdout.write(f"Documentos de UFPA: {total}")
 
-    def _form_responses(self, upfs: list):
-        """Respostas de formulário (#180/#190) na primeira UPF do seed.
+    def _form_responses(self, ufpas: list):
+        """Respostas de formulário (#180/#190) na primeira UFPA do seed.
 
-        `frontend/e2e/formularios.spec.ts` ancora os cenários na UPF de menor
-        id (`primeiroUpfId()`), por isso o volume e a variação (formulário,
+        `frontend/e2e/formularios.spec.ts` ancora os cenários na UFPA de menor
+        id (`primeiroUfpaId()`), por isso o volume e a variação (formulário,
         versão, período, respondente e status) ficam concentrados em
-        `upfs[0]`. As datas são embaralhadas para não deixar a ordenação
+        `ufpas[0]`. As datas são embaralhadas para não deixar a ordenação
         cronológica coincidir com a ordem de criação dos registros.
         """
-        if not upfs:
+        if not ufpas:
             return
 
-        upf_principal = upfs[0]
+        ufpa_principal = ufpas[0]
         hoje = timezone.localdate()
         tz = timezone.get_current_timezone()
         total = 0
@@ -1095,7 +1095,7 @@ class Command(BaseCommand):
                 datetime.combine(hoje - timedelta(days=dias), time(9, 0)), tz
             )
             FormResponse.objects.create(
-                upf=upf_principal,
+                ufpa=ufpa_principal,
                 formulario_id=formulario_id,
                 formulario_nome=nome,
                 formulario_versao=versao,
@@ -1126,7 +1126,7 @@ class Command(BaseCommand):
                 datetime.combine(hoje - timedelta(days=90 + i * 10), time(9, 0)), tz
             )
             FormResponse.objects.create(
-                upf=upf_principal,
+                ufpa=ufpa_principal,
                 formulario_id=formulario_id,
                 formulario_nome=nome,
                 formulario_versao=versao,
@@ -1138,19 +1138,19 @@ class Command(BaseCommand):
             )
             total += 1
 
-        self.stdout.write(f"Respostas de formulário: {total} (UPF #{upf_principal.pk})")
+        self.stdout.write(f"Respostas de formulário: {total} (UFPA #{ufpa_principal.pk})")
 
-    def _producoes(self, upfs: list):
+    def _producoes(self, ufpas: list):
         culturas = list(Cultura.objects.filter(ativa=True))
         especies = list(EspecieAnimal.objects.all())
         total = 0
-        for upf in upfs:
+        for ufpa in ufpas:
             for _ in range(self.rnd.randint(1, 3)):
                 tipo = self.rnd.choices(
                     ["agricola", "pecuaria", "outra"], weights=[5, 4, 2]
                 )[0]
                 campos = dict(
-                    upf=upf,
+                    ufpa=ufpa,
                     tipo=tipo,
                     custo_anual=Decimal(str(round(self.rnd.uniform(400, 9000), 2))),
                     observacoes="",
@@ -1256,7 +1256,7 @@ class Command(BaseCommand):
         )
         return acoes
 
-    def _atividades(self, acoes, comunidades, upfs, tecnicos, quantidade):
+    def _atividades(self, acoes, comunidades, ufpas, tecnicos, quantidade):
         hoje = timezone.localdate()
         tz = timezone.get_current_timezone()
         # distribuição de status coerente com a linha do tempo
@@ -1335,15 +1335,15 @@ class Command(BaseCommand):
                 [u for u in equipe if u != atividade.tecnico_responsavel]
             )
 
-            upfs_municipio = [u for u in upfs if u.municipio_id == municipio.pk] or upfs
+            ufpas_municipio = [u for u in ufpas if u.municipio_id == municipio.pk] or ufpas
             participantes = self.rnd.sample(
-                upfs_municipio, min(len(upfs_municipio), self.rnd.randint(1, 6))
+                ufpas_municipio, min(len(ufpas_municipio), self.rnd.randint(1, 6))
             )
-            atividade.upfs_participantes.set(participantes)
+            atividade.ufpas_participantes.set(participantes)
             membros = [
                 m
-                for upf in participantes
-                for m in upf.membros.all()
+                for ufpa in participantes
+                for m in ufpa.membros.all()
                 if self.rnd.random() < 0.5
             ]
             atividade.membros_participantes.set(membros)
@@ -1443,7 +1443,7 @@ class Command(BaseCommand):
 
     CONEXOES_SCA = ["wifi", "4g", "3g", "2g", "5g", "offline"]
 
-    def _sca(self, tecnicos, upfs):
+    def _sca(self, tecnicos, ufpas):
         agora = timezone.now()
         limiar = self._limiar_sync_dias()
         territorios = list(Territory.objects.order_by("pk"))
@@ -1494,7 +1494,7 @@ class Command(BaseCommand):
                 plano_eventos.append(("push", 3, {
                     "enviados": 6,
                     "erros": [
-                        {"uuid_local": str(uuid4()), "entidade": "upf",
+                        {"uuid_local": str(uuid4()), "entidade": "ufpa",
                          "codigo": "PAYLOAD_INVALIDO",
                          "mensagem": "CPF inválido no payload."},
                         {"uuid_local": str(uuid4()), "entidade": "activity",
@@ -1519,47 +1519,47 @@ class Command(BaseCommand):
         territorio_b = self._territorio_de_estado_distinto(territorio_a, territorios)
         tecnico_verde, tecnico_vermelho = sca_tecnicos[0][0], sca_tecnicos[-1][0]
 
-        # Os conflitos sensíveis apontam para UPFs REAIS: sem um `uuid_local`
+        # Os conflitos sensíveis apontam para UFPAs REAIS: sem um `uuid_local`
         # que exista, a resolução manual não encontra o registro e não aplica o
         # valor escolhido — a tela pareceria funcionar sem alterar nada.
-        upf_a = upfs[0] if upfs else None
-        upf_b = upfs[1] if len(upfs) > 1 else None
+        ufpa_a = ufpas[0] if ufpas else None
+        ufpa_b = ufpas[1] if len(ufpas) > 1 else None
         uuid_a, uuid_b = uuid4(), uuid4()
 
-        if upf_a:
-            UPF.objects.filter(pk=upf_a.pk).update(
+        if ufpa_a:
+            UFPA.objects.filter(pk=ufpa_a.pk).update(
                 device_id="dev-mock-001",
                 uuid_local=uuid_a,
                 ultima_origem="sca",
                 ultimo_sync_em=agora - timedelta(hours=2),
             )
-            MembroFamilia.objects.filter(pk=upf_a.titular_id).update(
+            MembroFamilia.objects.filter(pk=ufpa_a.titular_id).update(
                 device_id="dev-mock-001",
                 uuid_local=uuid4(),
                 ultima_origem="sca",
                 ultimo_sync_em=agora - timedelta(hours=2),
             )
-        if upf_b:
-            UPF.objects.filter(pk=upf_b.pk).update(uuid_local=uuid_b)
+        if ufpa_b:
+            UFPA.objects.filter(pk=ufpa_b.pk).update(uuid_local=uuid_b)
 
         cpf_servidor = "529.982.247-25"
         nome_servidor = "Maria das Graças Silva"
-        if upf_a:
+        if ufpa_a:
             cpf_servidor = MembroFamilia.objects.filter(
-                pk=upf_a.titular_id
+                pk=ufpa_a.titular_id
             ).values_list("cpf", flat=True).first() or cpf_servidor
-        if upf_b:
+        if ufpa_b:
             nome_servidor = MembroFamilia.objects.filter(
-                pk=upf_b.titular_id
+                pk=ufpa_b.titular_id
             ).values_list("nome_completo", flat=True).first() or nome_servidor
 
         # `titular.cpf` e `titular.nome_completo` são os caminhos que o motor de
-        # sincronização produz (UPFSyncEntity.sensitive_paths). "cpf" sozinho não
-        # existe na UPF — mora no titular — e não seria aplicável na resolução.
+        # sincronização produz (UFPASyncEntity.sensitive_paths). "cpf" sozinho não
+        # existe na UFPA — mora no titular — e não seria aplicável na resolução.
         conflito_a = ConflictLog.objects.create(
             user=tecnico_verde,
             device=dispositivos["dev-seed-verde"],
-            entidade="upf",
+            entidade="ufpa",
             uuid_local=uuid_a,
             campo="titular.cpf",
             valor_local="333.555.888-00",
@@ -1574,7 +1574,7 @@ class Command(BaseCommand):
         conflito_b = ConflictLog.objects.create(
             user=tecnico_vermelho,
             device=dispositivos["dev-seed-vermelho"],
-            entidade="upf",
+            entidade="ufpa",
             uuid_local=uuid_b,
             campo="titular.nome_completo",
             valor_local="Maria da Conceição Silva",
@@ -1587,7 +1587,7 @@ class Command(BaseCommand):
         ConflictLog.objects.create(
             user=tecnico_vermelho,
             device=dispositivos["dev-seed-vermelho"],
-            entidade="upf",
+            entidade="ufpa",
             uuid_local=uuid4(),
             campo="whatsapp",
             valor_local="(84) 99999-1111",
@@ -1724,8 +1724,8 @@ class Command(BaseCommand):
         self.stdout.write("")
         self.stdout.write(self.style.SUCCESS("Seed de demonstração concluído."))
         for modelo in (
-            Municipality, Organization, Comunidade, UPF, MembroFamilia, Production,
-            UPFDocument, FormResponse, Indicator, WorkPlanMeta, WorkPlanSubmeta, WorkPlanAcao, Activity,
+            Municipality, Organization, Comunidade, UFPA, MembroFamilia, Production,
+            UFPADocument, FormResponse, Indicator, WorkPlanMeta, WorkPlanSubmeta, WorkPlanAcao, Activity,
             ActivityPhoto, ActivityDocument, Demand,
         ):
             self.stdout.write(

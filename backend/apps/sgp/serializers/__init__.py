@@ -37,15 +37,15 @@ from apps.sgp.serializers.production import (
     ProductionSerializer,
 )
 from apps.sgp.serializers.tecnico import TecnicoSerializer
-from apps.sgp.serializers.upf import (
+from apps.sgp.serializers.ufpa import (
     HistoricoEntrySerializer,
     TitularNestedSerializer,
-    UPFDetailSerializer,
-    UPFListSerializer,
+    UFPADetailSerializer,
+    UFPAListSerializer,
 )
-from apps.sgp.serializers.upf_documentos import (
-    UPFDocumentCreateSerializer,
-    UPFDocumentSerializer,
+from apps.sgp.serializers.ufpa_documentos import (
+    UFPADocumentCreateSerializer,
+    UFPADocumentSerializer,
 )
 
 __all__ = [
@@ -76,8 +76,8 @@ __all__ = [
     "STATUS_COR_MAP",
     "TecnicoSerializer",
     "TitularNestedSerializer",
-    "UPFDetailSerializer",
-    "UPFDocumentCreateSerializer",
-    "UPFDocumentSerializer",
-    "UPFListSerializer",
+    "UFPADetailSerializer",
+    "UFPADocumentCreateSerializer",
+    "UFPADocumentSerializer",
+    "UFPAListSerializer",
 ]

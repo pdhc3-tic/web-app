@@ -18,7 +18,7 @@ from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.core.utils import get_config
 from apps.sgp.filters import ActivityFilter
-from apps.sgp.models import Activity, ActivityDocument, ActivityPhoto, ExportJob, UPF
+from apps.sgp.models import Activity, ActivityDocument, ActivityPhoto, ExportJob, UFPA
 from apps.sgp.models.activity import STATUS_CHOICES, TIPO_ATIVIDADE_CHOICES
 from apps.sgp.pagination import ActivityPagination
 from apps.sgp.serializers import (
@@ -85,8 +85,8 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
         ).prefetch_related(
             "equipe_adicional",
             Prefetch(
-                "upfs_participantes",
-                queryset=UPF.objects.select_related(
+                "ufpas_participantes",
+                queryset=UFPA.objects.select_related(
                     "municipio", "municipio__state", "territorio", "titular"
                 ),
             ),

@@ -43,25 +43,25 @@ class ConfirmUploadSerializer(serializers.Serializer):
     key = serializers.CharField()
 
     def validate_key(self, value):
-        upf = self.context["upf"]
-        pattern = rf"^upfs/{upf.pk}/foto/[0-9a-f-]{{36}}\.(jpg|png|webp)$"
+        ufpa = self.context["ufpa"]
+        pattern = rf"^ufpas/{ufpa.pk}/foto/[0-9a-f-]{{36}}\.(jpg|png|webp)$"
         if not re.match(pattern, value):
             raise serializers.ValidationError("Key de upload inválida.")
         return value
 
 
-class UPFPhotoMixin:
+class UFPAPhotoMixin:
     @extend_schema(request=UploadURLSerializer, responses=UploadURLRespostaSerializer)
     @action(detail=True, methods=["post"], url_path="foto/upload-url")
     def foto_upload_url(self, request, pk=None):
-        upf = self.get_object()
+        ufpa = self.get_object()
         serializer = UploadURLSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         content_type = serializer.validated_data["content_type"]
         size = serializer.validated_data["size"]
         ext = ALLOWED_CONTENT_TYPES[content_type]
-        key = f"upfs/{upf.pk}/foto/{uuid4()}.{ext}"
+        key = f"ufpas/{ufpa.pk}/foto/{uuid4()}.{ext}"
         expires_in = 300
 
         storage = get_storage()
@@ -71,9 +71,9 @@ class UPFPhotoMixin:
 
         self._log_photo_audit(
             "upload_photo",
-            upf,
+            ufpa,
             valores_novos={
-                "upf_id": upf.pk,
+                "ufpa_id": ufpa.pk,
                 "key": key,
                 "content_type": content_type,
                 "size": size,
@@ -86,14 +86,14 @@ class UPFPhotoMixin:
 
     @extend_schema(
         request=ConfirmUploadSerializer,
-        responses=inline_serializer("UPFFotoConfirmResposta", fields={"foto_url": serializers.CharField()}),
+        responses=inline_serializer("UFPAFotoConfirmResposta", fields={"foto_url": serializers.CharField()}),
     )
     @action(detail=True, methods=["post"], url_path="foto/confirm")
     def foto_confirm(self, request, pk=None):
-        upf = self.get_object()
+        ufpa = self.get_object()
         serializer = ConfirmUploadSerializer(
             data=request.data,
-            context={"upf": upf},
+            context={"ufpa": ufpa},
         )
         serializer.is_valid(raise_exception=True)
         key = serializer.validated_data["key"]
@@ -107,18 +107,18 @@ class UPFPhotoMixin:
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        old_url = upf.foto_url
+        old_url = ufpa.foto_url
         new_url = storage.get_public_url(key)
         old_key = storage.get_key_from_url(old_url)
         if old_key and old_key != key:
             storage.delete_object(old_key)
 
-        upf.foto_url = new_url
-        upf.save(update_fields=["foto_url", "atualizado_em"])
+        ufpa.foto_url = new_url
+        ufpa.save(update_fields=["foto_url", "atualizado_em"])
 
         self._log_photo_audit(
             "confirm_photo",
-            upf,
+            ufpa,
             valores_anteriores={"foto_url": old_url, "key": old_key},
             valores_novos={"foto_url": new_url, "key": key},
         )
@@ -127,19 +127,19 @@ class UPFPhotoMixin:
     @extend_schema(responses={204: OpenApiResponse(description="Foto removida.")})
     @action(detail=True, methods=["delete"], url_path="foto")
     def foto_delete(self, request, pk=None):
-        upf = self.get_object()
+        ufpa = self.get_object()
         storage = get_storage()
-        old_url = upf.foto_url
+        old_url = ufpa.foto_url
         old_key = storage.get_key_from_url(old_url)
         if old_key:
             storage.delete_object(old_key)
 
-        upf.foto_url = ""
-        upf.save(update_fields=["foto_url", "atualizado_em"])
+        ufpa.foto_url = ""
+        ufpa.save(update_fields=["foto_url", "atualizado_em"])
 
         self._log_photo_audit(
             "delete_photo",
-            upf,
+            ufpa,
             valores_anteriores={"foto_url": old_url, "key": old_key},
             valores_novos={"foto_url": ""},
         )
@@ -148,7 +148,7 @@ class UPFPhotoMixin:
     def _log_photo_audit(
         self,
         acao,
-        upf,
+        ufpa,
         valores_anteriores=None,
         valores_novos=None,
     ):
@@ -156,8 +156,8 @@ class UPFPhotoMixin:
             user=self.request.user,
             acao=acao,
             modulo="sgp",
-            entidade="UPF",
-            entidade_id=str(upf.pk),
+            entidade="UFPA",
+            entidade_id=str(ufpa.pk),
             valores_anteriores=valores_anteriores or {},
             valores_novos=valores_novos or {},
             ip=self.request.META.get("REMOTE_ADDR"),

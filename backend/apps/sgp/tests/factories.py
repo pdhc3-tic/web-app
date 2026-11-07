@@ -21,8 +21,8 @@ from apps.sgp.models import (
     Production,
     Projeto,
     Tecnico,
-    UPF,
-    UPFDocument,    SpendingLimit,
+    UFPA,
+    UFPADocument,    SpendingLimit,
 )
 from apps.sgp.models.indicator import Indicator
 from apps.sgp.models.workplan import WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
@@ -37,9 +37,9 @@ class ProjetoFactory(factory.django.DjangoModelFactory):
     ativo = True
 
 
-class UPFFactory(factory.django.DjangoModelFactory):
+class UFPAFactory(factory.django.DjangoModelFactory):
     class Meta:
-        model = UPF
+        model = UFPA
 
     _titular_nome = factory.Sequence(lambda n: f"Titular {n}")
     _titular_cpf = factory.Sequence(lambda n: f"{n:011d}")
@@ -53,7 +53,7 @@ class UPFFactory(factory.django.DjangoModelFactory):
         titular_nome = kwargs.pop("_titular_nome")
         titular_cpf = kwargs.pop("cpf", kwargs.pop("titular_cpf", kwargs.pop("_titular_cpf")))
         titular = MembroFamilia(
-            upf=None,
+            ufpa=None,
             grau_parentesco="titular",
             nome_completo=titular_nome,
             cpf=titular_cpf,
@@ -61,17 +61,17 @@ class UPFFactory(factory.django.DjangoModelFactory):
         )
         titular.save()
         kwargs["titular"] = titular
-        upf = super()._create(model_class, *args, **kwargs)
-        titular.upf = upf
-        titular.save(update_fields=["upf"])
-        return upf
+        ufpa = super()._create(model_class, *args, **kwargs)
+        titular.ufpa = ufpa
+        titular.save(update_fields=["ufpa"])
+        return ufpa
 
 
 class MembroFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = MembroFamilia
 
-    upf = factory.SubFactory("apps.sgp.tests.factories.UPFFactory")
+    ufpa = factory.SubFactory("apps.sgp.tests.factories.UFPAFactory")
     nome_completo = factory.Sequence(lambda n: f"Membro {n}")
     grau_parentesco = "filho"
     data_nascimento = factory.LazyFunction(
@@ -90,16 +90,16 @@ class ComunidadeFactory(factory.django.DjangoModelFactory):
     criada_por = factory.SubFactory(UserFactory)
 
 
-class UPFDocumentFactory(factory.django.DjangoModelFactory):
+class UFPADocumentFactory(factory.django.DjangoModelFactory):
     class Meta:
-        model = UPFDocument
+        model = UFPADocument
 
-    upf = factory.SubFactory(UPFFactory)
-    tipo = UPFDocument.TIPO_DAP_CAF
-    descricao = "Documento da UPF"
+    ufpa = factory.SubFactory(UFPAFactory)
+    tipo = UFPADocument.TIPO_DAP_CAF
+    descricao = "Documento da UFPA"
     arquivo_key = factory.LazyAttributeSequence(
         lambda obj, n: (
-            f"upfs/{obj.upf.pk}/documentos/"
+            f"ufpas/{obj.ufpa.pk}/documentos/"
             f"123e4567-e89b-12d3-a456-42661417{n:04d}.pdf"
         )
     )
@@ -116,7 +116,7 @@ class FormResponseFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = FormResponse
 
-    upf = factory.SubFactory(UPFFactory)
+    ufpa = factory.SubFactory(UFPAFactory)
     formulario_id = factory.Sequence(lambda n: n + 1)
     formulario_nome = factory.Sequence(lambda n: f"Formulário {n}")
     formulario_versao = "1.0"
@@ -150,7 +150,7 @@ class ProductionFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = Production
 
-    upf = factory.SubFactory(UPFFactory)
+    ufpa = factory.SubFactory(UFPAFactory)
     tipo = Production.TIPO_AGRICOLA
     cultura = factory.SubFactory(CulturaFactory)
     area_ha = "1.50"

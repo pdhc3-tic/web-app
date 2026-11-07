@@ -28,7 +28,7 @@ acompanhamento (issues #156–#160). API sob `/api/v1/sca/` com JWT.
 Cada item rejeitado no push gera um objeto:
 
 ```json
-{"uuid_local": "...", "entidade": "upf", "codigo": "PAYLOAD_INVALIDO", "mensagem": "..."}
+{"uuid_local": "...", "entidade": "ufpa", "codigo": "PAYLOAD_INVALIDO", "mensagem": "..."}
 ```
 
 Códigos possíveis: `PAYLOAD_INVALIDO`, `ENTIDADE_NAO_SUPORTADA`, `DUPLICATA`,
@@ -36,29 +36,29 @@ Códigos possíveis: `PAYLOAD_INVALIDO`, `ENTIDADE_NAO_SUPORTADA`, `DUPLICATA`,
 `CAMPO_SENSIVEL_NAO_AUTORIZADO`, e os códigos de regra de negócio (ver seção
 abaixo): `TRANSICAO_INVALIDA`, `EVIDENCIA_OBRIGATORIA`,
 `JUSTIFICATIVA_OBRIGATORIA`, `NOVA_DATA_OBRIGATORIA`, `DATA_FIM_INVALIDA`,
-`MEMBRO_FORA_UPF`, `CPF_INVALIDO`, `CPF_DUPLICADO`, `TITULAR_DUPLICADO`,
+`MEMBRO_FORA_UFPA`, `CPF_INVALIDO`, `CPF_DUPLICADO`, `TITULAR_DUPLICADO`,
 `DATA_NASCIMENTO_INVALIDA`, `SAUDE_INVALIDA`, `SEGURIDADE_SOCIAL_INVALIDA`.
 
 ## Conflitos de regra de negócio (`estrategia=regra_negocio_rejeitada`)
 
-UPF, Membro e Atividade são gravados tanto pela API web quanto pelo sync do
+UFPA, Membro e Atividade são gravados tanto pela API web quanto pelo sync do
 SCA — as duas portas de entrada aplicam exatamente as mesmas regras de
 negócio, consumindo os mesmos serviços de domínio do app `sgp`:
 
 - `apps.sgp.services.activity_status` — transição de status, evidência
   obrigatória para concluir, justificativa obrigatória, nova data obrigatória
   ao reagendar, `data_fim` não anterior a `data_inicio`, membros
-  participantes pertencentes às UPFs participantes selecionadas (Activity).
+  participantes pertencentes às UFPAs participantes selecionadas (Activity).
   A validação de status/justificativa/`data_fim` roda em toda atualização,
   mesmo quando o campo em questão não vem no payload — com fallback pro
   valor atual da atividade, igual à API web (senão um update que só toca
   outro campo escaparia da regra).
 - `apps.sgp.services.membro_rules` — CPF normalizado (só dígitos) e validado
   (dígito verificador, mesma checagem de `apps.sgp.validators.validate_cpf`)
-  antes de checar unicidade global; titular único por UPF; data de
+  antes de checar unicidade global; titular único por UFPA; data de
   nascimento não pode ser futura; saúde e seguridade social restritas ao
   catálogo, sem duplicidade e sem combinar "nenhuma(m)" com outras opções
-  (Membro, e titular da UPF).
+  (Membro, e titular da UFPA).
 
 Quando um item do push viola uma dessas regras, o sync **nunca grava
 silenciosamente em estado inválido**: o item é rejeitado normalmente (erro
@@ -78,7 +78,7 @@ do banco barra o segundo. Esse caso também vira `CPF_DUPLICADO`/
 `TITULAR_DUPLICADO` com entrada em `conflict_log` — nunca um `ERRO_INTERNO`
 genérico — porque `PushProcessor._process_item` reconhece a
 `IntegrityError` pelo nome da constraint (`unique_cpf_global`/
-`unique_titular_por_upf`) e a reclassifica antes de responder ao item; o log
+`unique_titular_por_ufpa`) e a reclassifica antes de responder ao item; o log
 é gravado fora da transação que sofreu rollback, senão seria descartado
 junto.
 
@@ -95,10 +95,10 @@ usado por outro — é que a checagem nova desta issue entra em ação, com
 `estrategia=regra_negocio_rejeitada`, `status=pendente`.
 
 **Mudança de comportamento na API web:** a unicidade de CPF no cadastro de
-UPF (`POST/PATCH /api/v1/upfs/`) passou a ser **global**, no mesmo escopo da
-constraint do banco — antes era só "por projeto" (`upf__projeto_id`), o que
+UFPA (`POST/PATCH /api/v1/sgp/ufpas/`) passou a ser **global**, no mesmo escopo da
+constraint do banco — antes era só "por projeto" (`ufpa__projeto_id`), o que
 deixava passar um CPF já usado por um membro não-titular ou por titular de
-UPF em outro projeto, e que acabava batendo na constraint do banco como
+UFPA em outro projeto, e que acabava batendo na constraint do banco como
 `IntegrityError` não tratado. A mensagem de erro também mudou (não cita mais
 "neste projeto"). Times de frontend que dependem dessa mensagem devem
 revisar.

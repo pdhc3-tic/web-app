@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 
 from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.sgp.filters import FormResponseFilter
-from apps.sgp.models import FormResponse, UPF
+from apps.sgp.models import FormResponse, UFPA
 from apps.sgp.pagination import HistoricoPagination
 from apps.sgp.serializers import (
     AvailableFormSerializer,
@@ -28,13 +28,13 @@ from apps.sgp.services.form_response_render import (
     build_field_styles,
     build_respostas_flowables,
 )
-from apps.sgp.services.forms import get_available_upf_forms
+from apps.sgp.services.forms import get_available_ufpa_forms
 
 
-def accessible_upf_queryset(user):
-    # all_objects: acessar formulários de uma UPF inativa continua
+def accessible_ufpa_queryset(user):
+    # all_objects: acessar formulários de uma UFPA inativa continua
     # funcionando (soft-delete não deve se misturar com RLS) — Issue #267.
-    queryset = UPF.all_objects.select_related("municipio", "municipio__state", "territorio")
+    queryset = UFPA.all_objects.select_related("municipio", "municipio__state", "territorio")
     return scope_queryset(
         queryset,
         user,
@@ -43,8 +43,8 @@ def accessible_upf_queryset(user):
     )
 
 
-def get_scoped_upf(user, upf_pk):
-    return get_object_or_404(accessible_upf_queryset(user), pk=upf_pk)
+def get_scoped_ufpa(user, ufpa_pk):
+    return get_object_or_404(accessible_ufpa_queryset(user), pk=ufpa_pk)
 
 
 class FormResponseExportQuerySerializer(serializers.Serializer):
@@ -84,16 +84,16 @@ class FormResponseViewSet(
             return FormResponseDetailSerializer
         return FormResponseListSerializer
 
-    def get_upf(self):
-        if not hasattr(self, "_upf"):
-            self._upf = get_scoped_upf(self.request.user, self.kwargs["upf_pk"])
-        return self._upf
+    def get_ufpa(self):
+        if not hasattr(self, "_ufpa"):
+            self._ufpa = get_scoped_ufpa(self.request.user, self.kwargs["ufpa_pk"])
+        return self._ufpa
 
     def get_queryset(self):
         # Na geração do schema não há usuário real para o recorte por perfil.
         if getattr(self, "swagger_fake_view", False):
             return FormResponse.objects.none()
-        return FormResponse.objects.filter(upf=self.get_upf()).order_by(
+        return FormResponse.objects.filter(ufpa=self.get_ufpa()).order_by(
             "-data_preenchimento", "-pk"
         )
 
@@ -128,7 +128,7 @@ class FormResponseViewSet(
         responses = self.filter_queryset(self.get_queryset())
         formato = query_serializer.validated_data["formato"]
         timestamp = timezone.localtime().strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f"respostas_formularios_upf_{self.get_upf().pk}_{timestamp}.{formato}"
+        filename = f"respostas_formularios_ufpa_{self.get_ufpa().pk}_{timestamp}.{formato}"
 
         if formato == "csv":
             return self._csv_response(responses, filename)
@@ -185,7 +185,7 @@ class FormResponseViewSet(
             rightMargin=2 * cm,
             topMargin=2 * cm,
             bottomMargin=2 * cm,
-            title="Respostas de formulários da UPF",
+            title="Respostas de formulários da UFPA",
         )
         styles = getSampleStyleSheet()
         metadata_style = ParagraphStyle(
@@ -238,12 +238,12 @@ class AvailableFormListView(APIView):
 
     @extend_schema(responses=AvailableFormSerializer(many=True))
     def get(self, request):
-        forms = get_available_upf_forms(request.user)
+        forms = get_available_ufpa_forms(request.user)
         return Response(AvailableFormSerializer(forms, many=True).data)
 
 
 class FormResponseFormularioOptionsView(APIView):
-    """Metadado não paginado com os formulários já respondidos na UPF.
+    """Metadado não paginado com os formulários já respondidos na UFPA.
 
     Alimenta o filtro por formulário do histórico (BE-16): diferente da
     listagem paginada, não é afetado pela página corrente nem pelos demais
@@ -253,13 +253,13 @@ class FormResponseFormularioOptionsView(APIView):
     permission_classes = [IsAuthenticatedActiveAccess]
 
     @extend_schema(responses=FormResponseFormularioOptionSerializer(many=True))
-    def get(self, request, upf_pk):
-        upf = get_scoped_upf(request.user, upf_pk)
+    def get(self, request, ufpa_pk):
+        ufpa = get_scoped_ufpa(request.user, ufpa_pk)
 
         # distinct(campo) exige postgres e que o order_by comece pelo mesmo
         # campo — por isso a ordenação por nome/versão é feita em memória.
         opcoes = list(
-            FormResponse.objects.filter(upf=upf)
+            FormResponse.objects.filter(ufpa=ufpa)
             .order_by("formulario_id", "-data_preenchimento")
             .distinct("formulario_id")
             .values("formulario_id", "formulario_nome", "formulario_versao")
@@ -287,7 +287,7 @@ class FormResponseReceiveView(APIView):
             OpenApiExample(
                 "Resposta submetida pelo SCA",
                 value={
-                    "upf_id": 1,
+                    "ufpa_id": 1,
                     "formulario_id": 10,
                     "formulario_nome": "Diagnóstico produtivo",
                     "formulario_versao": "1.0",
@@ -305,7 +305,7 @@ class FormResponseReceiveView(APIView):
     def post(self, request):
         serializer = FormResponseReceiveSerializer(
             data=request.data,
-            context={"upf_queryset": accessible_upf_queryset(request.user)},
+            context={"ufpa_queryset": accessible_ufpa_queryset(request.user)},
         )
         serializer.is_valid(raise_exception=True)
         form_response = serializer.save()

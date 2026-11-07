@@ -24,7 +24,7 @@ from apps.sgp.filters_workplan import (
     WorkPlanSubmetaFilter,
 )
 from apps.sgp.models import ExportJob, Indicator, WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
-from apps.sgp.pagination import UPFPagination
+from apps.sgp.pagination import UFPAPagination
 from apps.sgp.serializers_workplan import (
     IndicatorSerializer,
     WorkPlanAcaoListSerializer,
@@ -208,7 +208,7 @@ class WorkPlanDashboardView(APIView):
 # ---------------------------------------------------------------------------
 
 class WorkPlanMetaViewSet(viewsets.ModelViewSet):
-    pagination_class = UPFPagination
+    pagination_class = UFPAPagination
     filter_backends = [DjangoFilterBackend]
     filterset_class = WorkPlanMetaFilter
     ordering_fields = ["numero", "criado_em"]
@@ -340,7 +340,7 @@ class WorkPlanMetaViewSet(viewsets.ModelViewSet):
 # ---------------------------------------------------------------------------
 
 class WorkPlanAcaoViewSet(viewsets.ModelViewSet):
-    pagination_class = UPFPagination
+    pagination_class = UFPAPagination
     filter_backends = [DjangoFilterBackend]
     filterset_class = WorkPlanAcaoFilter
     ordering_fields = ["numero", "criado_em"]
@@ -413,7 +413,7 @@ class WorkPlanAcaoViewSet(viewsets.ModelViewSet):
 # ---------------------------------------------------------------------------
 
 class WorkPlanSubmetaViewSet(viewsets.ModelViewSet):
-    pagination_class = UPFPagination
+    pagination_class = UFPAPagination
     filter_backends = [DjangoFilterBackend]
     filterset_class = WorkPlanSubmetaFilter
     http_method_names = ["get", "post", "patch", "put", "delete", "head", "options"]
@@ -459,7 +459,7 @@ class IndicatorViewSet(viewsets.ModelViewSet):
     permissões do Core §2.1); o Agricultor não lê."""
 
     serializer_class = IndicatorSerializer
-    pagination_class = UPFPagination
+    pagination_class = UFPAPagination
     filter_backends = [DjangoFilterBackend]
     filterset_class = IndicatorFilter
     http_method_names = ["get", "post", "patch", "put", "delete", "head", "options"]

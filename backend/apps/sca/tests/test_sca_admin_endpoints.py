@@ -18,7 +18,7 @@ from django.utils import timezone
 from apps.core.models import AuditLog
 from apps.core.tests.factories import RoleFactory, UserFactory
 from apps.sca.models import ConflictLog, SyncDevice, SyncEvent
-from apps.sca.tests.conftest import payload_upf
+from apps.sca.tests.conftest import payload_ufpa
 from apps.sca.tests.factories import (
     ConflictLogFactory,
     SyncDeviceFactory,
@@ -68,13 +68,13 @@ def articulador_ce(db, outro_territory):
 
 
 @pytest.fixture
-def upf_existente(db, municipio, projeto):
-    from apps.sgp.tests.factories import UPFFactory
+def ufpa_existente(db, municipio, projeto):
+    from apps.sgp.tests.factories import UFPAFactory
 
-    upf = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
-    upf.uuid_local = uuid4()
-    upf.save(update_fields=["uuid_local"])
-    return upf
+    ufpa = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
+    ufpa.uuid_local = uuid4()
+    ufpa.save(update_fields=["uuid_local"])
+    return ufpa
 
 
 def _device(user, device_id):
@@ -241,8 +241,8 @@ class TestDevicesEndpoint:
 @pytest.mark.django_db
 class TestSyncEventFieldsFromPush:
     def test_push_preenche_contagens_e_erros_detalhes(self, auth_client, municipio, projeto):
-        valido = build_item(payload=payload_upf(projeto, municipio))
-        invalido = build_item(entidade="upf", payload={"num_comodos": "muitos"})
+        valido = build_item(payload=payload_ufpa(projeto, municipio))
+        invalido = build_item(entidade="ufpa", payload={"num_comodos": "muitos"})
 
         response = auth_client.post(
             "/api/v1/sca/sync/push/",
@@ -262,11 +262,11 @@ class TestSyncEventFieldsFromPush:
         assert evento.finalizado_em is not None
         (erro,) = evento.erros_detalhes
         assert set(erro.keys()) == {"uuid_local", "entidade", "mensagem", "codigo"}
-        assert erro["entidade"] == "upf"
+        assert erro["entidade"] == "ufpa"
         assert erro["codigo"] == "PAYLOAD_INVALIDO"
 
     def test_sem_header_tipo_conexao_fica_null(self, auth_client, municipio, projeto):
-        post_batch(auth_client, [build_item(payload=payload_upf(projeto, municipio))])
+        post_batch(auth_client, [build_item(payload=payload_ufpa(projeto, municipio))])
         evento = SyncEvent.objects.order_by("-finalizado_em").first()
         assert evento.tipo_conexao is None
 
@@ -309,7 +309,7 @@ class TestSyncEventsEndpoint:
             user=usuario,
             contagem_erros=2,
             erros_detalhes=[
-                {"uuid_local": "u1", "entidade": "upf", "mensagem": "boom", "codigo": "ERRO"},
+                {"uuid_local": "u1", "entidade": "ufpa", "mensagem": "boom", "codigo": "ERRO"},
             ],
             iniciado_em=timezone.now(),
         )
@@ -349,8 +349,8 @@ class TestSyncEventsEndpoint:
             user=usuario,
             contagem_erros=2,
             erros_detalhes=[
-                {"uuid_local": "u1", "entidade": "upf", "mensagem": "boom", "codigo": "ERRO"},
-                {"uuid_local": "u2", "entidade": "upf", "mensagem": "pow", "codigo": "ERRO"},
+                {"uuid_local": "u1", "entidade": "ufpa", "mensagem": "boom", "codigo": "ERRO"},
+                {"uuid_local": "u2", "entidade": "ufpa", "mensagem": "pow", "codigo": "ERRO"},
             ],
             iniciado_em=timezone.now(),
         )
@@ -377,10 +377,10 @@ class TestSyncEventsEndpoint:
 
 @pytest.mark.django_db
 class TestConflictResolution:
-    def _conflito_pendente(self, upf, territorio, **overrides):
+    def _conflito_pendente(self, ufpa, territorio, **overrides):
         defaults = dict(
-            entidade="upf",
-            uuid_local=str(upf.uuid_local),
+            entidade="ufpa",
+            uuid_local=str(ufpa.uuid_local),
             campo="whatsapp",
             valor_local="9999",
             valor_servidor="1111",
@@ -393,21 +393,21 @@ class TestConflictResolution:
         return ConflictLogFactory(**defaults)
 
     def test_conflito_sensivel_fica_pendente_e_nao_aplica_valor(
-        self, auth_client, articulador, upf_existente, municipio, projeto
+        self, auth_client, articulador, ufpa_existente, municipio, projeto
     ):
         from apps.sgp.models import MembroFamilia
 
-        upf = upf_existente
-        MembroFamilia.objects.filter(pk=upf.titular.pk).update(cpf="52998224725")
+        ufpa = ufpa_existente
+        MembroFamilia.objects.filter(pk=ufpa.titular.pk).update(cpf="52998224725")
 
-        base = payload_upf(projeto, municipio)
-        base["titular"] = {"nome_completo": upf.titular.nome_completo, "cpf": "86288366757"}
+        base = payload_ufpa(projeto, municipio)
+        base["titular"] = {"nome_completo": ufpa.titular.nome_completo, "cpf": "86288366757"}
         payload = dict(base)
-        payload["titular"] = {"nome_completo": upf.titular.nome_completo, "cpf": "33355588800"}
+        payload["titular"] = {"nome_completo": ufpa.titular.nome_completo, "cpf": "33355588800"}
 
         item = build_item(
             operacao="update",
-            uuid_local=upf.uuid_local,
+            uuid_local=ufpa.uuid_local,
             payload=payload,
             base=base,
             updated_at=timezone.now() + timedelta(minutes=1),
@@ -419,13 +419,13 @@ class TestConflictResolution:
         assert response.data["resultados"][0]["status"] == "conflito"
         conflito = ConflictLog.objects.get(campo="titular.cpf")
         assert conflito.status == ConflictLog.Status.PENDENTE
-        upf.titular.refresh_from_db()
-        assert upf.titular.cpf == "52998224725"  # estratégia automática não aplicada
+        ufpa.titular.refresh_from_db()
+        assert ufpa.titular.cpf == "52998224725"  # estratégia automática não aplicada
 
     def test_resolver_decisao_local_aplica_valor_grava_metadata(
-        self, auth_client_super_admin, super_admin_user, upf_existente, territory
+        self, auth_client_super_admin, super_admin_user, ufpa_existente, territory
     ):
-        conflito = self._conflito_pendente(upf_existente, territory)
+        conflito = self._conflito_pendente(ufpa_existente, territory)
 
         response = auth_client_super_admin.post(
             f"/api/v1/sca/conflicts/{conflito.pk}/resolver/",
@@ -434,8 +434,8 @@ class TestConflictResolution:
         )
 
         assert response.status_code == 200
-        upf_existente.refresh_from_db()
-        assert upf_existente.whatsapp == "9999"
+        ufpa_existente.refresh_from_db()
+        assert ufpa_existente.whatsapp == "9999"
 
         conflito.refresh_from_db()
         assert conflito.status == ConflictLog.Status.RESOLVIDO_MANUAL
@@ -445,9 +445,9 @@ class TestConflictResolution:
         assert AuditLog.objects.filter(acao="sca.conflict_resolved").exists()
 
     def test_resolver_decisao_manual_aplica_valor_manual(
-        self, auth_client_super_admin, super_admin_user, upf_existente, territory
+        self, auth_client_super_admin, super_admin_user, ufpa_existente, territory
     ):
-        conflito = self._conflito_pendente(upf_existente, territory)
+        conflito = self._conflito_pendente(ufpa_existente, territory)
 
         response = auth_client_super_admin.post(
             f"/api/v1/sca/conflicts/{conflito.pk}/resolver/",
@@ -456,17 +456,17 @@ class TestConflictResolution:
         )
 
         assert response.status_code == 200
-        upf_existente.refresh_from_db()
-        assert upf_existente.whatsapp == "7777"
+        ufpa_existente.refresh_from_db()
+        assert ufpa_existente.whatsapp == "7777"
         conflito.refresh_from_db()
         assert conflito.valor_final == "7777"
         assert conflito.resolvido_por == super_admin_user
 
     def test_resolver_ja_resolvido_retorna_409(
-        self, auth_client_super_admin, upf_existente, territory
+        self, auth_client_super_admin, ufpa_existente, territory
     ):
         conflito = self._conflito_pendente(
-            upf_existente, territory, status=ConflictLog.Status.RESOLVIDO_MANUAL
+            ufpa_existente, territory, status=ConflictLog.Status.RESOLVIDO_MANUAL
         )
 
         response = auth_client_super_admin.post(
@@ -480,10 +480,10 @@ class TestConflictResolution:
 
     def test_isolamento_estadual_listagem_e_resolucao(
         self, api_client, auth_client_super_admin, articulador, articulador_ce,
-        upf_existente, territory, outro_territory,
+        ufpa_existente, territory, outro_territory,
     ):
-        conflito_rn = self._conflito_pendente(upf_existente, territory)
-        conflito_ce = self._conflito_pendente(upf_existente, outro_territory)
+        conflito_rn = self._conflito_pendente(ufpa_existente, territory)
+        conflito_ce = self._conflito_pendente(ufpa_existente, outro_territory)
 
         api_client.force_authenticate(user=articulador)
         ids_rn = {c["id"] for c in api_client.get("/api/v1/sca/conflicts/").data["results"]}
@@ -506,12 +506,12 @@ class TestConflictResolution:
         assert {c["id"] for c in todos.data["results"]} == {conflito_rn.pk, conflito_ce.pk}
 
     def test_articulador_de_outro_estado_recebe_403_no_detalhe(
-        self, api_client, articulador_ce, upf_existente, territory
+        self, api_client, articulador_ce, ufpa_existente, territory
     ):
         """Mesmo antipadrão do teste acima, mas para GET de detalhe: sem
         filtrar o queryset por estado em retrieve, `has_object_permission`
         é quem decide — 403 real, não 404 por queryset vazio."""
-        conflito = self._conflito_pendente(upf_existente, territory)
+        conflito = self._conflito_pendente(ufpa_existente, territory)
 
         api_client.force_authenticate(user=articulador_ce)
         response = api_client.get(f"/api/v1/sca/conflicts/{conflito.pk}/")
@@ -519,12 +519,12 @@ class TestConflictResolution:
         assert response.status_code == 403
 
     def test_ugp_nao_lista_nem_detalha_nem_resolve_conflitos(
-        self, auth_client_ugp, upf_existente, territory
+        self, auth_client_ugp, ufpa_existente, territory
     ):
         """Correção de auditoria: UGP tinha acesso total a conflitos, o que
         contraria o critério de aceite da Issue #158 (acesso restrito a
         Articulador Estadual e Super Admin)."""
-        conflito = self._conflito_pendente(upf_existente, territory)
+        conflito = self._conflito_pendente(ufpa_existente, territory)
 
         assert auth_client_ugp.get("/api/v1/sca/conflicts/").status_code == 403
         assert (
@@ -550,7 +550,7 @@ class TestConflictResolution:
         assert response.status_code == 403
 
     def test_registro_atual_de_conflito_de_membro_expoe_sensiveis_para_super_admin(
-        self, auth_client_super_admin, upf_existente, territory
+        self, auth_client_super_admin, ufpa_existente, territory
     ):
         """Corrige efeito colateral da Issue #187: `get_registro_atual` não
         propagava `context`, então saude/cor_raca ficavam sempre ocultos no
@@ -558,14 +558,14 @@ class TestConflictResolution:
         from apps.sgp.tests.factories import MembroFactory
 
         membro = MembroFactory(
-            upf=upf_existente,
+            ufpa=ufpa_existente,
             grau_parentesco="filho",
             cor_raca=2,
             saude=["hipertensao"],
             uuid_local=uuid4(),
         )
         conflito = self._conflito_pendente(
-            upf_existente, territory,
+            ufpa_existente, territory,
             entidade="member", uuid_local=membro.uuid_local, campo="saude",
         )
 
@@ -576,19 +576,19 @@ class TestConflictResolution:
         assert response.data["registro_atual"]["saude"] == ["hipertensao"]
 
     def test_registro_atual_de_conflito_de_membro_expoe_sensiveis_para_articulador(
-        self, api_client, articulador, upf_existente, territory
+        self, api_client, articulador, ufpa_existente, territory
     ):
         from apps.sgp.tests.factories import MembroFactory
 
         membro = MembroFactory(
-            upf=upf_existente,
+            ufpa=ufpa_existente,
             grau_parentesco="filho",
             cor_raca=1,
             saude=["diabetes"],
             uuid_local=uuid4(),
         )
         conflito = self._conflito_pendente(
-            upf_existente, territory,
+            ufpa_existente, territory,
             entidade="member", uuid_local=membro.uuid_local, campo="cor_raca",
         )
 
@@ -600,22 +600,22 @@ class TestConflictResolution:
         assert response.data["registro_atual"]["saude"] == ["diabetes"]
 
     def test_detalhe_trae_snapshot_registro_atual(
-        self, auth_client_super_admin, upf_existente, territory
+        self, auth_client_super_admin, ufpa_existente, territory
     ):
-        conflito = self._conflito_pendente(upf_existente, territory)
+        conflito = self._conflito_pendente(ufpa_existente, territory)
 
         response = auth_client_super_admin.get(f"/api/v1/sca/conflicts/{conflito.pk}/")
 
         assert response.status_code == 200
         assert response.data["registro_atual"] is not None
-        assert response.data["registro_atual"]["id"] == upf_existente.pk
+        assert response.data["registro_atual"]["id"] == ufpa_existente.pk
 
     def test_filtro_status_na_listagem(
-        self, auth_client_super_admin, upf_existente, territory, outro_territory
+        self, auth_client_super_admin, ufpa_existente, territory, outro_territory
     ):
-        pendente = self._conflito_pendente(upf_existente, territory)
+        pendente = self._conflito_pendente(ufpa_existente, territory)
         self._conflito_pendente(
-            upf_existente, outro_territory, status=ConflictLog.Status.RESOLVIDO_AUTO
+            ufpa_existente, outro_territory, status=ConflictLog.Status.RESOLVIDO_AUTO
         )
 
         ids = {
@@ -634,19 +634,19 @@ class TestConflictResolution:
 @pytest.mark.django_db
 class TestBadgeUltimaOrigem:
     def test_web_entao_sca_entao_web(self, auth_client, auth_client_super_admin,
-                                     upf_existente, municipio, projeto):
-        upf = upf_existente
-        assert upf.ultima_origem == "web"
-        assert upf.ultimo_sync_em is None
+                                     ufpa_existente, municipio, projeto):
+        ufpa = ufpa_existente
+        assert ufpa.ultima_origem == "web"
+        assert ufpa.ultimo_sync_em is None
 
         # edição via app SCA (push LWW cliente vence)
-        base = payload_upf(projeto, municipio)
-        base["titular"] = {"nome_completo": upf.titular.nome_completo, "cpf": upf.titular.cpf}
+        base = payload_ufpa(projeto, municipio)
+        base["titular"] = {"nome_completo": ufpa.titular.nome_completo, "cpf": ufpa.titular.cpf}
         payload = dict(base)
         payload["whatsapp"] = "9999"
         item = build_item(
             operacao="update",
-            uuid_local=upf.uuid_local,
+            uuid_local=ufpa.uuid_local,
             payload=payload,
             base=base,
             updated_at=timezone.now() + timedelta(minutes=1),
@@ -654,27 +654,27 @@ class TestBadgeUltimaOrigem:
         response = post_batch(auth_client, [item])
         assert response.data["resultados"][0]["status"] == "ok"
 
-        upf.refresh_from_db()
-        assert upf.ultima_origem == "sca"
-        assert upf.ultimo_sync_em is not None
-        ultimo_sync_sca = upf.ultimo_sync_em
+        ufpa.refresh_from_db()
+        assert ufpa.ultima_origem == "sca"
+        assert ufpa.ultimo_sync_em is not None
+        ultimo_sync_sca = ufpa.ultimo_sync_em
 
         # edição via plataforma Web vira a badge, preservando o histórico de sync
         patch_response = auth_client_super_admin.patch(
-            f"/api/v1/upfs/{upf.pk}/", data={"apelido": "Editada Web"}, format="json"
+            f"/api/v1/sgp/ufpas/{ufpa.pk}/", data={"apelido": "Editada Web"}, format="json"
         )
         assert patch_response.status_code == 200
-        upf.refresh_from_db()
-        assert upf.ultima_origem == "web"
-        assert upf.ultimo_sync_em == ultimo_sync_sca
+        ufpa.refresh_from_db()
+        assert ufpa.ultima_origem == "web"
+        assert ufpa.ultimo_sync_em == ultimo_sync_sca
 
-    def test_serializer_detail_expoe_campos_badge(self, auth_client_super_admin, upf_existente):
-        response = auth_client_super_admin.get(f"/api/v1/upfs/{upf_existente.pk}/")
+    def test_serializer_detail_expoe_campos_badge(self, auth_client_super_admin, ufpa_existente):
+        response = auth_client_super_admin.get(f"/api/v1/sgp/ufpas/{ufpa_existente.pk}/")
         assert response.status_code == 200
         assert response.data["ultima_origem"] == "web"
         assert response.data["ultimo_sync_em"] is None
         assert not response.data["device_id"]
-        assert response.data["uuid_local"] == str(upf_existente.uuid_local)
+        assert response.data["uuid_local"] == str(ufpa_existente.uuid_local)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -783,8 +783,8 @@ class TestDevicesPerformanceIssue195:
         self, auth_client_super_admin, usuario, municipio, municipio_outro, projeto
     ):
         from apps.sca import services
-        from apps.sgp.models import UPF
-        from apps.sgp.tests.factories import UPFFactory
+        from apps.sgp.models import UFPA
+        from apps.sgp.tests.factories import UFPAFactory
 
         agora = timezone.now()
         device_recente = SyncDeviceFactory(
@@ -796,19 +796,19 @@ class TestDevicesPerformanceIssue195:
             ultimo_pull_em=agora - timedelta(days=10),
         )
 
-        upf_nova = UPFFactory(municipio=municipio, projeto=projeto)
-        UPF.objects.filter(pk=upf_nova.pk).update(atualizado_em=agora - timedelta(hours=12))
-        upf_velha = UPFFactory(municipio=municipio, projeto=projeto)
-        UPF.objects.filter(pk=upf_velha.pk).update(atualizado_em=agora - timedelta(days=30))
-        upf_fora = UPFFactory(municipio=municipio_outro, projeto=projeto)
-        UPF.objects.filter(pk=upf_fora.pk).update(atualizado_em=agora)
+        ufpa_nova = UFPAFactory(municipio=municipio, projeto=projeto)
+        UFPA.objects.filter(pk=ufpa_nova.pk).update(atualizado_em=agora - timedelta(hours=12))
+        ufpa_velha = UFPAFactory(municipio=municipio, projeto=projeto)
+        UFPA.objects.filter(pk=ufpa_velha.pk).update(atualizado_em=agora - timedelta(days=30))
+        ufpa_fora = UFPAFactory(municipio=municipio_outro, projeto=projeto)
+        UFPA.objects.filter(pk=ufpa_fora.pk).update(atualizado_em=agora)
 
         response = self._lista(auth_client_super_admin)
         itens = {i["device_id"]: i for i in response.data["results"]}
 
         esperado_recente = services.count_pending_records(usuario, device_recente)
         esperado_antigo = services.count_pending_records(usuario, device_antigo)
-        assert esperado_recente >= 1  # upf_nova está no escopo e após o pull
+        assert esperado_recente >= 1  # ufpa_nova está no escopo e após o pull
         assert itens["dev-pull-hoje"]["registros_pendentes"] == esperado_recente
         assert itens["dev-pull-antigo"]["registros_pendentes"] == esperado_antigo
         assert esperado_antigo >= esperado_recente
@@ -907,7 +907,7 @@ class TestDeviceDetailEndpoint:
         data = self._detail(auth_client_super_admin, device.pk).data
         por_entidade = data["registros_por_entidade"]
         assert isinstance(por_entidade, dict)
-        assert set(por_entidade.keys()) == {"upf", "member", "activity"}
+        assert set(por_entidade.keys()) == {"ufpa", "member", "activity"}
 
     def test_registros_pendentes_e_soma_das_entidades(
         self, auth_client_super_admin, super_admin_user

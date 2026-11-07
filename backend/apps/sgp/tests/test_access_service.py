@@ -1,9 +1,9 @@
 import pytest
 
 from apps.core.tests.factories import RoleFactory, UserFactory
-from apps.sgp.models import UPF
+from apps.sgp.models import UFPA
 from apps.sgp.services.access import resolver_escopo, scope_queryset
-from apps.sgp.tests.factories import UPFFactory
+from apps.sgp.tests.factories import UFPAFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -106,7 +106,7 @@ def test_role_slugs_pre_computado_evita_query(role_super_admin, django_assert_nu
 # scope_queryset()
 # ===========================================================================
 
-UPF_LOOKUPS = dict(
+UFPA_LOOKUPS = dict(
     state_lookup="municipio__state__sigla__in",
     territory_lookup="territorio__in",
 )
@@ -114,25 +114,25 @@ UPF_LOOKUPS = dict(
 
 def test_scope_queryset_global_retorna_tudo(role_super_admin, municipio_rn, projeto):
     user = UserFactory(profiles=[(role_super_admin, None)])
-    upf = UPFFactory(municipio=municipio_rn, projeto=projeto)
-    result = scope_queryset(UPF.objects.all(), user, **UPF_LOOKUPS)
-    assert list(result) == [upf]
+    ufpa = UFPAFactory(municipio=municipio_rn, projeto=projeto)
+    result = scope_queryset(UFPA.objects.all(), user, **UFPA_LOOKUPS)
+    assert list(result) == [ufpa]
 
 
 def test_scope_queryset_filtra_por_estado(role_articulador, territory_rn, municipio_rn, municipio_ce, projeto):
     user = UserFactory(profiles=[(role_articulador, territory_rn)])
-    upf_rn = UPFFactory(municipio=municipio_rn, projeto=projeto)
-    UPFFactory(municipio=municipio_ce, projeto=projeto)
-    result = scope_queryset(UPF.objects.all(), user, **UPF_LOOKUPS)
-    assert list(result) == [upf_rn]
+    ufpa_rn = UFPAFactory(municipio=municipio_rn, projeto=projeto)
+    UFPAFactory(municipio=municipio_ce, projeto=projeto)
+    result = scope_queryset(UFPA.objects.all(), user, **UFPA_LOOKUPS)
+    assert list(result) == [ufpa_rn]
 
 
 def test_scope_queryset_filtra_por_territorio(role_adt, territory_rn, territory_ce, municipio_rn, municipio_ce, projeto):
     user = UserFactory(profiles=[(role_adt, territory_rn)])
-    upf_rn = UPFFactory(municipio=municipio_rn, projeto=projeto)
-    UPFFactory(municipio=municipio_ce, projeto=projeto)
-    result = scope_queryset(UPF.objects.all(), user, **UPF_LOOKUPS)
-    assert list(result) == [upf_rn]
+    ufpa_rn = UFPAFactory(municipio=municipio_rn, projeto=projeto)
+    UFPAFactory(municipio=municipio_ce, projeto=projeto)
+    result = scope_queryset(UFPA.objects.all(), user, **UFPA_LOOKUPS)
+    assert list(result) == [ufpa_rn]
 
 
 def test_scope_queryset_sem_papel_levanta_permission_denied_por_padrao(role_sem_escopo):
@@ -140,22 +140,22 @@ def test_scope_queryset_sem_papel_levanta_permission_denied_por_padrao(role_sem_
 
     user = UserFactory(profiles=[(role_sem_escopo, None)])
     with pytest.raises(PermissionDenied):
-        scope_queryset(UPF.objects.all(), user, **UPF_LOOKUPS)
+        scope_queryset(UFPA.objects.all(), user, **UFPA_LOOKUPS)
 
 
 def test_scope_queryset_sem_papel_retorna_vazio_quando_raise_desligado(role_sem_escopo):
     user = UserFactory(profiles=[(role_sem_escopo, None)])
     result = scope_queryset(
-        UPF.objects.all(), user, raise_on_no_role=False, **UPF_LOOKUPS,
+        UFPA.objects.all(), user, raise_on_no_role=False, **UFPA_LOOKUPS,
     )
     assert list(result) == []
 
 
 def test_scope_queryset_adt_sem_territorio_nao_vaza_via_queryset(role_adt, territory_rn, municipio_rn, projeto):
     user = UserFactory(profiles=[(role_adt, None)])
-    UPFFactory(municipio=municipio_rn, projeto=projeto)
+    UFPAFactory(municipio=municipio_rn, projeto=projeto)
     result = scope_queryset(
-        UPF.objects.all(), user, raise_on_no_role=False, **UPF_LOOKUPS,
+        UFPA.objects.all(), user, raise_on_no_role=False, **UFPA_LOOKUPS,
     )
     assert list(result) == []
 
@@ -165,8 +165,8 @@ def test_scope_queryset_papel_reconhecido_com_escopo_vazio_nunca_levanta(role_ad
     raise_on_no_role=True (padrão), a resposta é lista vazia, nunca
     PermissionDenied. Só a ausência completa de papel levanta."""
     user = UserFactory(profiles=[(role_adt, None)])
-    UPFFactory(municipio=municipio_rn, projeto=projeto)
-    result = scope_queryset(UPF.objects.all(), user, **UPF_LOOKUPS)
+    UFPAFactory(municipio=municipio_rn, projeto=projeto)
+    result = scope_queryset(UFPA.objects.all(), user, **UFPA_LOOKUPS)
     assert list(result) == []
 
 

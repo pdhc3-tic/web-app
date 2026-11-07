@@ -7,7 +7,7 @@ from rest_framework import serializers
 from apps.core.models import Municipality
 from apps.core.serializers import UsuarioRefSerializer
 from apps.core.sensitive_fields import SensitiveFieldsSerializerMixin, mascarar_cpf
-from apps.sgp.models import Comunidade, MembroFamilia, Projeto, UPF
+from apps.sgp.models import Comunidade, MembroFamilia, Projeto, UFPA
 from apps.sgp.serializers.common import MunicipioNestedSerializer, NestedSerializer
 from apps.sgp.serializers.membro import MembroListSerializer
 from apps.sgp.services.membro_rules import CPFDuplicadoError, CPFInvalidoError, validar_cpf
@@ -51,14 +51,14 @@ class TitularNestedSerializer(SensitiveFieldsSerializerMixin, serializers.ModelS
         return None
 
 
-class UPFListSerializer(serializers.ModelSerializer):
+class UFPAListSerializer(serializers.ModelSerializer):
     municipio = MunicipioNestedSerializer(read_only=True)
     territorio = serializers.CharField(source="territorio.nome", read_only=True)
     nome_titular = serializers.CharField(source="titular.nome_completo", read_only=True)
     cpf = serializers.SerializerMethodField()
 
     class Meta:
-        model = UPF
+        model = UFPA
         fields = [
             "id", "nome_titular", "cpf",
             "municipio", "territorio", "criado_em", "ativo",
@@ -69,7 +69,7 @@ class UPFListSerializer(serializers.ModelSerializer):
         return mascarar_cpf(obj.titular.cpf)
 
 
-class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSerializer):
+class UFPADetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSerializer):
     sensitive_fields = {"cor_raca": ("cor_raca",)}
 
     # ── Titular (escrita) — nomes originais do formulário ──
@@ -107,7 +107,7 @@ class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeria
     # ── Leitura (read_only) ──
     titular = TitularNestedSerializer(read_only=True)
 
-    # ── UPF campos ──
+    # ── UFPA campos ──
     daf_caf = serializers.CharField(
         source="numero_dap", required=False, allow_blank=True,
     )
@@ -121,7 +121,7 @@ class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeria
     membros = serializers.SerializerMethodField()
 
     class Meta:
-        model = UPF
+        model = UFPA
         fields = [
             "id", "projeto",
             "nome", "cpf", "rg", "data_nascimento",
@@ -161,7 +161,7 @@ class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeria
             raise serializers.ValidationError(exc.message)
         except CPFDuplicadoError:
             raise serializers.ValidationError(
-                "Já existe uma UPF ativa cadastrada com este CPF"
+                "Já existe uma UFPA ativa cadastrada com este CPF"
             )
 
     def _extract_titular_data(self, attrs):
@@ -182,9 +182,9 @@ class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeria
         return data
 
     @transaction.atomic
-    def _update_titular(self, upf):
+    def _update_titular(self, ufpa):
         titular_data = self._extract_titular_data(self.validated_data)
-        titular = upf.titular
+        titular = ufpa.titular
         alterado = any(
             getattr(titular, key) != value for key, value in titular_data.items()
         )
@@ -195,9 +195,9 @@ class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeria
         titular.save()
         return titular
 
-    def _upf_fields(self, attrs):
-        upf_fields = {}
-        upf_field_names = {
+    def _ufpa_fields(self, attrs):
+        ufpa_fields = {}
+        ufpa_field_names = {
             "projeto", "apelido", "celular", "whatsapp", "internet",
             "dispositivo", "cep", "logradouro", "numero", "complemento",
             "bairro", "municipio", "territorio", "comunidade",
@@ -208,25 +208,25 @@ class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeria
         }
         daf_caf = attrs.pop("numero_dap", None)
         if daf_caf is not None:
-            upf_fields["numero_dap"] = daf_caf
-        for key in upf_field_names:
+            ufpa_fields["numero_dap"] = daf_caf
+        for key in ufpa_field_names:
             if key in attrs:
-                upf_fields[key] = attrs[key]
-        return upf_fields
+                ufpa_fields[key] = attrs[key]
+        return ufpa_fields
 
     def create(self, validated_data):
-        upf_fields = self._upf_fields(validated_data)
+        ufpa_fields = self._ufpa_fields(validated_data)
         titular_data = self._extract_titular_data(validated_data)
         titular = MembroFamilia.objects.create(grau_parentesco="titular", **titular_data)
-        upf = UPF.objects.create(titular=titular, **upf_fields)
-        titular.upf = upf
-        titular.save(update_fields=["upf"])
-        upf.refresh_from_db()
-        return upf
+        ufpa = UFPA.objects.create(titular=titular, **ufpa_fields)
+        titular.ufpa = ufpa
+        titular.save(update_fields=["ufpa"])
+        ufpa.refresh_from_db()
+        return ufpa
 
     def update(self, instance, validated_data):
-        upf_fields = self._upf_fields(validated_data)
-        for key, value in upf_fields.items():
+        ufpa_fields = self._ufpa_fields(validated_data)
+        for key, value in ufpa_fields.items():
             setattr(instance, key, value)
         instance.save()
         self._update_titular(instance)
@@ -248,8 +248,8 @@ class UPFDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeria
         return data
 
 
-class UPFDetailRespostaSerializer(UPFDetailSerializer):
-    """Resposta de `UPFDetailSerializer` no schema: o `to_representation`
+class UFPADetailRespostaSerializer(UFPADetailSerializer):
+    """Resposta de `UFPADetailSerializer` no schema: o `to_representation`
     troca os PKs de escrita pelos objetos aninhados."""
 
     projeto = NestedSerializer(read_only=True)

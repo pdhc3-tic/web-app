@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.sgp.models import Activity, BudgetRubrica, FormResponse, Production, Tecnico, UPF
+from apps.sgp.models import Activity, BudgetRubrica, FormResponse, Production, Tecnico, UFPA
 from apps.sgp.models.activity import GOOGLE_CALENDAR_SYNC_STATUS_CHOICES, STATUS_CHOICES, filtro_atrasada
 
 
@@ -49,7 +49,7 @@ class StrictBooleanFilter(django_filters.BooleanFilter):
     field_class = StrictBooleanField
 
 
-class UPFFilter(django_filters.FilterSet):
+class UFPAFilter(django_filters.FilterSet):
     municipio = django_filters.NumberFilter(field_name="municipio_id")
     territorio = django_filters.NumberFilter(field_name="territorio_id")
     projeto = django_filters.NumberFilter(field_name="projeto_id")
@@ -67,7 +67,7 @@ class UPFFilter(django_filters.FilterSet):
     q = django_filters.CharFilter(method="filter_q")
 
     class Meta:
-        model = UPF
+        model = UFPA
         fields = [
             "municipio",
             "territorio",
@@ -88,7 +88,7 @@ class UPFFilter(django_filters.FilterSet):
 
 
 def somente_ativas_sem_filtro_ativo(queryset, params):
-    """Sem `ativo` na query, a listagem de UPFs traz só as ativas; `?ativo=`
+    """Sem `ativo` na query, a listagem de UFPAs traz só as ativas; `?ativo=`
     vazio desliga esse padrão."""
     if "ativo" not in params:
         return queryset.filter(ativo=True)
@@ -175,8 +175,8 @@ class ProducaoConsolidadaFilter(django_filters.FilterSet):
     tipo = django_filters.ChoiceFilter(choices=Production.TIPO_CHOICES)
     cultura = django_filters.NumberFilter(field_name="cultura_id")
     especie = django_filters.NumberFilter(field_name="especie_id")
-    municipio = django_filters.NumberFilter(field_name="upf__municipio_id")
-    territorio = django_filters.NumberFilter(field_name="upf__territorio_id")
+    municipio = django_filters.NumberFilter(field_name="ufpa__municipio_id")
+    territorio = django_filters.NumberFilter(field_name="ufpa__territorio_id")
 
     class Meta:
         model = Production

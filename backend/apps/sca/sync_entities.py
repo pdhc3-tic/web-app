@@ -1,5 +1,5 @@
 """
-Registro de entidades sincronizáveis do SCA (UPF, membro, atividade).
+Registro de entidades sincronizáveis do SCA (UFPA, membro, atividade).
 
 Cada entidade define:
 - como localizar registros por uuid_local / identificador natural (Estratégia 1);
@@ -16,7 +16,7 @@ from uuid import uuid4
 from django.db import models
 from django.utils import timezone
 
-from apps.sgp.models import Activity, MembroFamilia, UPF
+from apps.sgp.models import Activity, MembroFamilia, UFPA
 from apps.sgp.services.activity_status import (
     ActivityRuleError,
     transition,
@@ -153,7 +153,7 @@ class SyncEntity:
 
         Precisa enxergar registros soft-deletados para propagar a exclusão
         aos dispositivos — usa `all_objects` quando o model o expõe (Issue
-        #267: UPF/Activity), com fallback para `objects` nos demais (ex.:
+        #267: UFPA/Activity), com fallback para `objects` nos demais (ex.:
         MembroFamilia, que não tem soft-delete).
         """
         manager = getattr(self.model, "all_objects", self.model.objects)
@@ -206,7 +206,7 @@ class SyncEntity:
 
         `uuid_map` resolve referências a entidades criadas no mesmo batch
         (mesmo padrão de `create`) — só `ActivitySyncEntity` usa, para
-        `upfs_participantes`/`membros_participantes`.
+        `ufpas_participantes`/`membros_participantes`.
         """
         raise NotImplementedError
 
@@ -231,9 +231,9 @@ class SyncEntity:
         return data
 
 
-class UPFSyncEntity(SyncEntity):
-    name = "upf"
-    model = UPF
+class UFPASyncEntity(SyncEntity):
+    name = "ufpa"
+    model = UFPA
     soft_delete_field = "ativo"
     id_fields = frozenset({"projeto", "comunidade", "municipio", "territorio"})
     sensitive_paths = (
@@ -257,23 +257,23 @@ class UPFSyncEntity(SyncEntity):
         if not cpf:
             return None
         membro = (
-            MembroFamilia.objects.filter(cpf=cpf, upf__isnull=False)
-            .select_related("upf")
+            MembroFamilia.objects.filter(cpf=cpf, ufpa__isnull=False)
+            .select_related("ufpa")
             .first()
         )
-        return membro.upf if membro else None
+        return membro.ufpa if membro else None
 
     def get_deleted_by_natural(self, data):
-        upf = self.get_by_natural(data)
-        if upf is not None and not upf.ativo:
-            return upf
+        ufpa = self.get_by_natural(data)
+        if ufpa is not None and not ufpa.ativo:
+            return ufpa
         return None
 
     # ------------------------------------------------------------------
     def create(self, data, *, user, device_id, uuid_local, uuid_map):
         titular_data = dict(data.pop("titular", {}) or {})
         if not titular_data.get("nome_completo"):
-            raise SyncEntityError("nome_completo do titular é obrigatório para criar UPF.")
+            raise SyncEntityError("nome_completo do titular é obrigatório para criar UFPA.")
 
         try:
             titular_data["cpf"] = validar_cpf(titular_data.get("cpf"))
@@ -289,7 +289,7 @@ class UPFSyncEntity(SyncEntity):
             ) from exc
 
         titular = MembroFamilia.objects.create(
-            upf=None,
+            ufpa=None,
             grau_parentesco="titular",
             criado_por=user,
             device_id=device_id,
@@ -297,32 +297,32 @@ class UPFSyncEntity(SyncEntity):
             **titular_data,
         )
         try:
-            upf = UPF.objects.create(
+            ufpa = UFPA.objects.create(
                 titular=titular,
                 criado_por=user,
                 device_id=device_id,
                 uuid_local=uuid_local,
                 ultima_origem="sca",
                 ultimo_sync_em=timezone.now(),
-                **_resolve_fk_ids(UPF, data),
+                **_resolve_fk_ids(UFPA, data),
             )
         except Exception:
             titular.delete()
             raise
-        titular.upf = upf
+        titular.ufpa = ufpa
         titular.ultima_origem = "sca"
         titular.ultimo_sync_em = timezone.now()
-        titular.save(update_fields=["upf", "ultima_origem", "ultimo_sync_em"])
-        return upf
+        titular.save(update_fields=["ufpa", "ultima_origem", "ultimo_sync_em"])
+        return ufpa
 
     def apply_changes(self, instance, changes: dict, *, uuid_map=None):
         titular_changes = {}
-        upf_changes = {}
+        ufpa_changes = {}
         for path, value in changes.items():
             if path.startswith("titular."):
                 titular_changes[path.split(".", 1)[1]] = value
             else:
-                upf_changes[path] = value
+                ufpa_changes[path] = value
 
         try:
             if titular_changes.get("cpf"):
@@ -340,8 +340,8 @@ class UPFSyncEntity(SyncEntity):
                 f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
             ) from exc
 
-        upf_changes = _resolve_fk_ids(UPF, upf_changes)
-        for field, value in upf_changes.items():
+        ufpa_changes = _resolve_fk_ids(UFPA, ufpa_changes)
+        for field, value in ufpa_changes.items():
             setattr(instance, field, value)
         instance.ultima_origem = "sca"
         instance.ultimo_sync_em = timezone.now()
@@ -407,46 +407,46 @@ class UPFSyncEntity(SyncEntity):
 class MemberSyncEntity(SyncEntity):
     name = "member"
     model = MembroFamilia
-    id_fields = frozenset({"upf"})
+    id_fields = frozenset({"ufpa"})
     sensitive_paths = ("nome_completo", "cpf", "cor_raca", "saude")
     restricted_paths = {"cor_raca": "cor_raca", "saude": "saude"}
     natural_key_paths = ("cpf",)
-    territory_lookup = "upf__territorio_id"
+    territory_lookup = "ufpa__territorio_id"
 
     def territorio_id_from_payload(self, data, uuid_map=None):
-        upf_id = data.get("upf")
-        if upf_id:
-            upf_obj = UPF.objects.filter(pk=upf_id).only("territorio_id").first()
-            return upf_obj.territorio_id if upf_obj else None
-        upf_uuid = data.get("upf_uuid_local")
-        if upf_uuid and uuid_map:
-            upf_id = uuid_map.get(str(upf_uuid))
-            if upf_id:
-                upf_obj = UPF.objects.filter(pk=upf_id).only("territorio_id").first()
-                return upf_obj.territorio_id if upf_obj else None
+        ufpa_id = data.get("ufpa")
+        if ufpa_id:
+            ufpa_obj = UFPA.objects.filter(pk=ufpa_id).only("territorio_id").first()
+            return ufpa_obj.territorio_id if ufpa_obj else None
+        ufpa_uuid = data.get("ufpa_uuid_local")
+        if ufpa_uuid and uuid_map:
+            ufpa_id = uuid_map.get(str(ufpa_uuid))
+            if ufpa_id:
+                ufpa_obj = UFPA.objects.filter(pk=ufpa_id).only("territorio_id").first()
+                return ufpa_obj.territorio_id if ufpa_obj else None
         return None
 
     def territorio_of(self, instance):
-        return instance.upf.territorio_id if instance.upf_id else None
+        return instance.ufpa.territorio_id if instance.ufpa_id else None
 
     def get_by_natural(self, data):
         cpf = normalizar_cpf(data.get("cpf"))
         if not cpf:
             return None
-        return MembroFamilia.objects.filter(cpf=cpf).exclude(upf=None).first()
+        return MembroFamilia.objects.filter(cpf=cpf).exclude(ufpa=None).first()
 
     def create(self, data, *, user, device_id, uuid_local, uuid_map):
-        upf_id = data.pop("upf", None)
-        upf_uuid_local = data.pop("upf_uuid_local", None)
-        if upf_uuid_local and upf_id is None:
-            upf_id = uuid_map.get(str(upf_uuid_local))
-        if upf_id is None:
-            raise SyncEntityError("Campo 'upf' (ou 'upf_uuid_local') é obrigatório para criar membro.")
-        data["upf_id"] = upf_id
+        ufpa_id = data.pop("ufpa", None)
+        ufpa_uuid_local = data.pop("ufpa_uuid_local", None)
+        if ufpa_uuid_local and ufpa_id is None:
+            ufpa_id = uuid_map.get(str(ufpa_uuid_local))
+        if ufpa_id is None:
+            raise SyncEntityError("Campo 'ufpa' (ou 'ufpa_uuid_local') é obrigatório para criar membro.")
+        data["ufpa_id"] = ufpa_id
         try:
             data["cpf"] = validar_cpf(data.get("cpf"))
             if data.get("grau_parentesco") == "titular":
-                validar_titular_unico(upf_id)
+                validar_titular_unico(ufpa_id)
             if "data_nascimento" in data:
                 validar_data_nascimento(data["data_nascimento"])
             if "saude" in data:
@@ -468,12 +468,12 @@ class MemberSyncEntity(SyncEntity):
 
     def apply_changes(self, instance, changes: dict, *, uuid_map=None):
         novo_grau = changes.get("grau_parentesco", instance.grau_parentesco)
-        novo_upf_id = changes.get("upf", instance.upf_id)
+        novo_ufpa_id = changes.get("ufpa", instance.ufpa_id)
         try:
             if changes.get("cpf"):
                 changes["cpf"] = validar_cpf(changes["cpf"], membro_atual=instance)
             if novo_grau == "titular":
-                validar_titular_unico(novo_upf_id, membro_atual=instance)
+                validar_titular_unico(novo_ufpa_id, membro_atual=instance)
             if "data_nascimento" in changes:
                 validar_data_nascimento(changes["data_nascimento"])
             if "saude" in changes:
@@ -492,7 +492,7 @@ class MemberSyncEntity(SyncEntity):
 
     def serialize(self, instance):
         data = {
-            "upf": instance.upf_id,
+            "ufpa": instance.ufpa_id,
             "nome_completo": instance.nome_completo,
             "data_nascimento": instance.data_nascimento.isoformat() if instance.data_nascimento else None,
             "genero": instance.genero,
@@ -531,14 +531,14 @@ class ActivitySyncEntity(SyncEntity):
         return instance.municipio.territory_id if instance.municipio_id else None
 
     def create(self, data, *, user, device_id, uuid_local, uuid_map):
-        upfs = [self._resolve_participante(item, uuid_map, UPF) for item in data.pop("upfs_participantes", [])]
+        ufpas = [self._resolve_participante(item, uuid_map, UFPA) for item in data.pop("ufpas_participantes", [])]
         membros = [self._resolve_participante(item, uuid_map, MembroFamilia) for item in data.pop("membros_participantes", [])]
         novo_status = data.pop("status", None)
         justificativa = data.pop("justificativa", "")
 
         try:
             validar_datas(data.get("data_inicio"), data.get("data_fim"))
-            validar_membros_participantes(upfs, membros)
+            validar_membros_participantes(ufpas, membros)
         except ActivityRuleError as exc:
             raise SyncEntityError(
                 f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
@@ -560,8 +560,8 @@ class ActivitySyncEntity(SyncEntity):
                     f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
                 ) from exc
         instance.save()
-        if upfs:
-            instance.upfs_participantes.set(upfs)
+        if ufpas:
+            instance.ufpas_participantes.set(ufpas)
         if membros:
             instance.membros_participantes.set(membros)
         return instance
@@ -580,17 +580,17 @@ class ActivitySyncEntity(SyncEntity):
         # many-to-many set is prohibited") — tirados de `changes` aqui,
         # resolvidos via uuid_map (igual ao `create`) e gravados com `.set()`
         # depois do save, não pelo loop genérico abaixo.
-        upfs_payload = changes.pop("upfs_participantes", None)
+        ufpas_payload = changes.pop("ufpas_participantes", None)
         membros_payload = changes.pop("membros_participantes", None)
 
-        upfs_resolvidos = None
-        if upfs_payload is not None:
-            upfs_resolvidos = [
-                self._resolve_participante(item, uuid_map, UPF) for item in upfs_payload
+        ufpas_resolvidos = None
+        if ufpas_payload is not None:
+            ufpas_resolvidos = [
+                self._resolve_participante(item, uuid_map, UFPA) for item in ufpas_payload
             ]
-            upfs_ids = set(upfs_resolvidos)
+            ufpas_ids = set(ufpas_resolvidos)
         else:
-            upfs_ids = set(instance.upfs_participantes.values_list("pk", flat=True))
+            ufpas_ids = set(instance.ufpas_participantes.values_list("pk", flat=True))
 
         membros_resolvidos = None
         if membros_payload is not None:
@@ -613,7 +613,7 @@ class ActivitySyncEntity(SyncEntity):
             )
             validar_datas(data_inicio, data_fim)
             if membros_resolvidos is not None:
-                validar_membros_participantes(upfs_ids, membros_resolvidos)
+                validar_membros_participantes(ufpas_ids, membros_resolvidos)
         except ActivityRuleError as exc:
             raise SyncEntityError(
                 f"{exc.sync_code}: {exc.message}", sync_code=exc.sync_code, campo=exc.field
@@ -625,8 +625,8 @@ class ActivitySyncEntity(SyncEntity):
         instance.ultimo_sync_em = timezone.now()
         instance.save()
 
-        if upfs_resolvidos is not None:
-            instance.upfs_participantes.set(upfs_resolvidos)
+        if ufpas_resolvidos is not None:
+            instance.ufpas_participantes.set(ufpas_resolvidos)
         if membros_resolvidos is not None:
             instance.membros_participantes.set(membros_resolvidos)
 
@@ -649,7 +649,7 @@ class ActivitySyncEntity(SyncEntity):
             "resultados_alcancados": instance.resultados_alcancados,
             "status": instance.status,
             "justificativa": instance.justificativa,
-            "upfs_participantes": [upf.pk for upf in instance.upfs_participantes.all()],
+            "ufpas_participantes": [ufpa.pk for ufpa in instance.ufpas_participantes.all()],
             "membros_participantes": [membro.pk for membro in instance.membros_participantes.all()],
             "ativo": instance.ativo,
         }
@@ -657,7 +657,7 @@ class ActivitySyncEntity(SyncEntity):
 
 
 ENTITY_REGISTRY: dict[str, SyncEntity] = {
-    "upf": UPFSyncEntity(),
+    "ufpa": UFPASyncEntity(),
     "member": MemberSyncEntity(),
     "activity": ActivitySyncEntity(),
 }
