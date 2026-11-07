@@ -31,7 +31,7 @@ ROLES_OPERACIONAIS = [
     ("gestor-edital", "Gestor de Edital"),
 ]
 
-STATES =["PE", "PB", "AL", "RN", "MA", "BA", "MG"]
+STATES = ["PE", "PB", "AL", "RN", "MA", "BA", "MG"]
 
 NOMES_DOS_ESTADOS = {
     "AC": "Acre", "AL": "Alagoas", "AP": "Amapá", "AM": "Amazonas", "BA": "Bahia", "CE": "Ceará",

@@ -98,6 +98,55 @@ class TestCatalogo:
         assert perfil.categoria == Role.Categoria.PRINCIPAL
 
 
+class TestEscritaDePerfis:
+    @pytest.mark.parametrize("rota", ["/api/v1/roles/", "/api/v1/core/roles/"])
+    def test_qualquer_autenticado_le(self, api_client, adt_user, rota):
+        api_client.force_authenticate(user=adt_user)
+
+        assert api_client.get(rota).status_code == 200
+
+    def test_quem_nao_e_super_admin_nao_escreve(self, api_client, ugp_user):
+        perfil = _operacional()
+        api_client.force_authenticate(user=ugp_user)
+
+        assert api_client.post("/api/v1/roles/", {"nome": "X", "slug": "credenciador"}, format="json").status_code == 403
+        assert api_client.patch(f"/api/v1/roles/{perfil.pk}/", {"nome": "X"}, format="json").status_code == 403
+        assert api_client.delete(f"/api/v1/roles/{perfil.pk}/").status_code == 403
+        perfil.refresh_from_db()
+        assert perfil.nome != "X"
+
+    def test_nao_ha_como_trocar_os_slugs_para_virar_super_admin(self, api_client, adt_user):
+        livre = _operacional("gestor-edital")
+        super_admin = RoleFactory(slug="super-admin")
+        adt = RoleFactory(slug="adt-acr")
+        api_client.force_authenticate(user=adt_user)
+
+        assert api_client.delete(f"/api/v1/roles/{livre.pk}/").status_code == 403
+        assert api_client.patch(
+            f"/api/v1/roles/{super_admin.pk}/", {"slug": "gestor-edital"}, format="json",
+        ).status_code == 403
+        assert api_client.patch(f"/api/v1/roles/{adt.pk}/", {"slug": "super-admin"}, format="json").status_code == 403
+        assert not adt_user.profiles.filter(perfil__slug="super-admin").exists()
+
+    def test_super_admin_altera_o_nome_mas_nao_o_slug(self, cliente):
+        perfil = _operacional("gestor-edital")
+
+        assert cliente.patch(f"/api/v1/roles/{perfil.pk}/", {"nome": "Gestão"}, format="json").status_code == 200
+        resposta = cliente.patch(f"/api/v1/roles/{perfil.pk}/", {"slug": "credenciador"}, format="json")
+
+        assert resposta.status_code == 400
+        assert "slug" in resposta.data
+        perfil.refresh_from_db()
+        assert (perfil.nome, perfil.slug) == ("Gestão", "gestor-edital")
+
+    def test_reenviar_o_mesmo_slug_e_aceito(self, cliente):
+        perfil = _operacional("gestor-edital")
+
+        resposta = cliente.patch(f"/api/v1/roles/{perfil.pk}/", {"slug": "gestor-edital"}, format="json")
+
+        assert resposta.status_code == 200, resposta.data
+
+
 class TestAtribuicaoPelaApi:
     def test_operacional_com_objeto_junto_de_um_principal(self, cliente):
         principal, operacional = _principal(), _operacional()

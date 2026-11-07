@@ -112,6 +112,12 @@ class RoleSerializer(serializers.ModelSerializer):
         fields = ['id', 'nome', 'slug', 'descricao', 'categoria', 'ativo', 'criado_em']
         read_only_fields = ['categoria', 'criado_em']
 
+    def validate_slug(self, value):
+        # O slug é a identidade do perfil para as regras de acesso e para o RLS.
+        if self.instance is not None and value != self.instance.slug:
+            raise serializers.ValidationError("O slug de um perfil não pode ser alterado.")
+        return value
+
 
 class RoleSummarySerializer(serializers.ModelSerializer):
     """Versão resumida de Role para uso em endpoints de auth (me, etc.)."""

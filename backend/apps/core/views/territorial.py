@@ -2,7 +2,7 @@ from django_filters import rest_framework as django_filters
 from rest_framework import filters, viewsets
 
 from apps.core.models import Municipality, Role, State, Territory
-from apps.core.permissions import IsAuthenticatedActiveAccess
+from apps.core.permissions import IsAuthenticatedActiveAccess, IsSuperAdmin
 from apps.core.serializers import (
     MunicipalitySerializer,
     RoleSerializer,
@@ -18,6 +18,11 @@ class RoleViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, django_filters.DjangoFilterBackend]
     search_fields = ["nome", "slug"]
     filterset_fields = ["ativo", "categoria"]
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return [IsAuthenticatedActiveAccess()]
+        return [IsAuthenticatedActiveAccess(), IsSuperAdmin()]
 
 
 class StateViewSet(viewsets.ModelViewSet):

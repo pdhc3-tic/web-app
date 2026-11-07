@@ -257,7 +257,7 @@ ADT e ACR precisam de valores diferentes. Hoje os dois são um só perfil no sis
 - **`custo_realizado`:** soma o valor executado das demandas concluídas, como o SGP 3.1 define, e não o pago. Pago acima do autorizado executa só o autorizado, e a diferença fica no risco de glosa.
 - **Cálculo:** feito na leitura, com visão total. O RLS de `sgd_demand` mostra ao ADT só as próprias demandas, e o custo da mesma atividade mudaria conforme quem lê. Não há colunas materializadas em `Activity`, porque recalcular a soma exigiria travar a atividade a cada mudança de solicitação.
 - **Severidade de `pago_acima_autorizado`:** alta, como o SGP 7.5 define para a divergência entre autorizado e pago, inclusive nos registros migrados. A #391 pedia média.
-- **Nomes no modelo:** seguem o SGP 10.2 (`tipo_situacao`, `entidade`, `entidade_id`, `detectado_em`, `resolvido_em`, `resolvido_por`). `activity`, `demanda_id`, `demand_request_id`, `valor_autorizado` e `valor_pago` são acréscimos para a #391 e a #408.
+- **Nomes no modelo:** seguem o SGP 10.3 (`tipo_situacao`, `entidade`, `entidade_id`, `detectado_em`, `resolvido_em`, `resolvido_por`). `activity`, `demanda_id`, `demand_request_id`, `valor_autorizado` e `valor_pago` são acréscimos para a #391 e a #408.
 - **Nomes na API:** o documento não define a rota, então ela segue a #391 e a #408: `tipo`, `activity_id` e `criado_em`.
 - **Quando registra `demanda_sem_evidencia`:** com a demanda concluída e a atividade em `concluido_sem_evidencia`, em qualquer ordem. Demanda concluída com a atividade ainda em andamento não é risco até a atividade fechar sem evidência.
 - **Situações detectadas:** só 2 das 8 do SGP 7.5; as demais e o relatório semanal ficam para a sprint do TED.
@@ -273,6 +273,8 @@ ADT e ACR precisam de valores diferentes. Hoje os dois são um só perfil no sis
 - **Objeto de cada perfil:** Coordenador de Evento e Credenciador em `evento`, Avaliador de Seleção em `candidatura` e Gestor de Edital em `edital`. O Credenciador também abrange sessões no Core, mas sessão ainda não existe como objeto.
 - **`objeto_id` sem FK:** `apps/sge` e `apps/sgs` ainda não têm modelos.
 - **`categoria` só de leitura:** na API e no Admin, porque mudar a categoria de um perfil em uso deixaria os vínculos dele inconsistentes.
+- **Escrita em `/roles/` só para o Super Admin, com `slug` imutável:** a matriz do Core dá a configuração ao Super Admin. Antes, qualquer autenticado podia alterar perfis; com perfis sem vínculo, dava para apagar um deles e trocar os slugs até virar Super Admin.
+- **Busca de Articulador por estado:** o território precisa ser o do próprio perfil de Articulador. Sem isso, o perfil operacional, que não tem território, valeria como alcance global.
 
 ---
 
