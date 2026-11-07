@@ -1,5 +1,4 @@
 from decimal import Decimal
-from unittest.mock import patch
 
 import pytest
 
@@ -8,7 +7,6 @@ from apps.core.models.user_profile import UserProfile
 from apps.sgp.budget import limites
 from apps.sgp.budget import services as budget_service
 from apps.sgp.models import BudgetPool, BudgetRubrica
-from apps.sgp.tasks import check_budget_threshold_alert
 from apps.sgp.tests.factories import (
     ActivityFactory,
     BudgetPoolFactory,
@@ -462,72 +460,6 @@ class TestPainelDeUmNivel:
 
         assert linhas[0]["valor_aprovado"] == Decimal("3000")
         assert linhas[0]["valor_distribuido"] == Decimal("1000")
-
-
-class TestBudgetThresholdAlertTask:
-    @patch("apps.core.tasks.notifications.send_email_notification.delay")
-    def test_task_notifica_vermelhos(
-        self, mocked_delay, usuario, usuario_super_admin, django_capture_on_commit_callbacks,
-    ):
-        rubrica = BudgetRubricaFactory()
-        _pool_nacional(rubrica, valor_alocado=Decimal("10000"), valor_comprometido=Decimal("9000"))
-
-        # Notification.save() só enfileira o e-mail via transaction.on_commit
-        # — captura os callbacks pra executá-los aqui.
-        with django_capture_on_commit_callbacks(execute=True):
-            total = check_budget_threshold_alert()
-
-        assert total == 2
-        assert mocked_delay.call_count == 2
-        notifications = usuario.notifications.filter(evento="budget_allocation_red")
-        assert notifications.count() == 1
-        assert rubrica.nome in notifications.first().titulo
-
-    @patch("apps.core.tasks.notifications.send_email_notification.delay")
-    def test_alerta_diz_qual_e_o_territorio(self, mocked_delay, usuario_super_admin, territory_rn):
-        BudgetPoolFactory(
-            nivel=Nivel.TERRITORIAL, estado=None, territorio=territory_rn,
-            valor_alocado=Decimal("10000"), valor_comprometido=Decimal("9500"),
-        )
-
-        check_budget_threshold_alert()
-
-        notificacao = usuario_super_admin.notifications.get(evento="budget_allocation_red")
-        assert territory_rn.nome in notificacao.titulo
-
-    @patch("apps.core.tasks.notifications.send_email_notification.delay")
-    def test_task_notifica_vermelhos_em_qualquer_nivel(
-        self, mocked_delay, usuario, usuario_super_admin, state_rn, territory_rn,
-    ):
-        rubrica = BudgetRubricaFactory()
-        BudgetPoolFactory(
-            rubrica=rubrica, nivel=Nivel.ESTADUAL,
-            estado=state_rn, territorio=None,
-            valor_alocado=Decimal("10000"), valor_comprometido=Decimal("9000"),
-        )
-        BudgetPoolFactory(
-            rubrica=rubrica, nivel=Nivel.TERRITORIAL,
-            estado=None, territorio=territory_rn,
-            valor_alocado=Decimal("1000"), valor_comprometido=Decimal("100"),
-        )
-
-        total = check_budget_threshold_alert()
-
-        assert total == 2
-        notifications = usuario.notifications.filter(evento="budget_allocation_red")
-        assert notifications.count() == 1
-
-    @patch("apps.core.tasks.notifications.send_email_notification.delay")
-    def test_does_not_notify_when_nothing_is_red(self, mocked_delay, usuario):
-        _pool_nacional(valor_alocado=Decimal("10000"), valor_comprometido=Decimal("5000"))
-
-        assert check_budget_threshold_alert() == 0
-        assert mocked_delay.call_count == 0
-
-    def test_schedule_runs_daily(self, settings):
-        schedule = settings.CELERY_BEAT_SCHEDULE["check_budget_threshold_alert"]
-
-        assert schedule["task"] == "sgp.tasks.check_budget_threshold_alert"
 
 
 class TestPainelPerformance:

@@ -5,8 +5,9 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.core.models import Role, State, Territory, User
+from apps.sgp.budget.ledger import efeito_no_saldo
 from apps.sgp.budget.limites import PERFIS_OPERACIONAIS
-from apps.sgp.models import BudgetPool, BudgetRubrica, BudgetTransaction, SpendingLimit, WorkPlanMeta
+from apps.sgp.models import BudgetAlert, BudgetPool, BudgetRubrica, BudgetTransaction, SpendingLimit, WorkPlanMeta
 from apps.sgp.serializers.common import EstadoNestedSerializer
 
 
@@ -152,6 +153,73 @@ class RemanejamentoCreateSerializer(serializers.Serializer):
     justificativa = serializers.CharField()
 
 
+FAIXAS_DO_SEMAFORO = ["verde", "amarelo", "vermelho"]
+
+
+class ImpactoNoPoolSerializer(serializers.Serializer):
+    saldo_antes = serializers.DecimalField(max_digits=14, decimal_places=2)
+    saldo_depois = serializers.DecimalField(max_digits=14, decimal_places=2)
+    percentual_antes = serializers.DecimalField(max_digits=8, decimal_places=2)
+    percentual_depois = serializers.DecimalField(max_digits=8, decimal_places=2)
+    percentual_execucao_antes = serializers.DecimalField(max_digits=8, decimal_places=2)
+    percentual_execucao_depois = serializers.DecimalField(max_digits=8, decimal_places=2)
+    faixa_antes = serializers.ChoiceField(choices=FAIXAS_DO_SEMAFORO)
+    faixa_depois = serializers.ChoiceField(choices=FAIXAS_DO_SEMAFORO)
+
+
+class SimulacaoRemanejamentoSerializer(serializers.Serializer):
+    origem = ImpactoNoPoolSerializer()
+    destino = ImpactoNoPoolSerializer()
+
+
+class MeuSaldoSerializer(serializers.Serializer):
+    rubrica = serializers.SlugField()
+    rubrica_nome = serializers.CharField()
+    rubrica_ativa = serializers.BooleanField(help_text="Falso: rubrica inativa, que não recebe novas demandas.")
+    limite = serializers.DecimalField(max_digits=14, decimal_places=2)
+    comprometido = serializers.DecimalField(max_digits=14, decimal_places=2)
+    executado = serializers.DecimalField(max_digits=14, decimal_places=2)
+    disponivel = serializers.DecimalField(max_digits=14, decimal_places=2)
+    semaforo = serializers.ChoiceField(choices=FAIXAS_DO_SEMAFORO)
+    periodo_inicio = serializers.DateField()
+    periodo_fim = serializers.DateField(allow_null=True)
+    dias_restantes = serializers.IntegerField(allow_null=True)
+    acumula_saldo = serializers.BooleanField()
+    saldo_territorio = serializers.DecimalField(max_digits=14, decimal_places=2, allow_null=True)
+
+
+class LinhaDoExtratoSerializer(BudgetTransactionSerializer):
+    efeito = serializers.SerializerMethodField()
+    periodo_inicio = serializers.DateField(source="spending_limit.periodo_inicio", read_only=True)
+    periodo_fim = serializers.DateField(source="spending_limit.periodo_fim", read_only=True)
+
+    class Meta(BudgetTransactionSerializer.Meta):
+        fields = [*BudgetTransactionSerializer.Meta.fields, "efeito", "periodo_inicio", "periodo_fim"]
+        read_only_fields = fields
+
+    @extend_schema_field(serializers.DecimalField(max_digits=14, decimal_places=2))
+    def get_efeito(self, transacao):
+        return f"{efeito_no_saldo(transacao.tipo, transacao.valor):.2f}"
+
+
+class BudgetAlertSerializer(serializers.ModelSerializer):
+    rubrica_nome = serializers.CharField(source="rubrica.nome", read_only=True, allow_null=True)
+
+    class Meta:
+        model = BudgetAlert
+        fields = [
+            "id", "tipo", "escopo", "referencia_id", "rubrica", "rubrica_nome", "faixa", "percentual_atingido",
+            "criado_em", "alertado_em", "resolvido_em",
+        ]
+        read_only_fields = fields
+
+
+class BudgetAlertQuerySerializer(serializers.Serializer):
+    tipo = serializers.ChoiceField(choices=BudgetAlert.Tipo.choices, required=False)
+    faixa = serializers.ChoiceField(choices=BudgetAlert.Faixa.choices, required=False)
+    abertos = serializers.BooleanField(required=False, allow_null=True, default=None)
+
+
 class LimiaresSemaforoSerializer(serializers.Serializer):
     amarelo = serializers.IntegerField()
     vermelho = serializers.IntegerField()
@@ -182,7 +250,7 @@ class BudgetPainelLinhaSerializer(serializers.Serializer):
         max_digits=14, decimal_places=2,
         help_text="Alocado menos comprometido e executado: o que o remanejamento aceita sair deste pool.",
     )
-    semaforo = serializers.ChoiceField(choices=["verde", "amarelo", "vermelho"])
+    semaforo = serializers.ChoiceField(choices=FAIXAS_DO_SEMAFORO)
     alerta_80 = serializers.BooleanField()
     limiares_semaforo = LimiaresSemaforoSerializer()
 

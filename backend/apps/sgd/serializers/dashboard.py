@@ -3,6 +3,9 @@ from rest_framework import serializers
 _DEC = dict(max_digits=14, decimal_places=2)
 
 
+FAIXAS_DO_ALERTA = ["amarelo", "vermelho"]
+
+
 class DashboardFilaItemSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     titulo = serializers.CharField()
@@ -36,7 +39,7 @@ class DashboardAlertaSaldoSerializer(serializers.Serializer):
     nivel = serializers.CharField()
     estado_sigla = serializers.CharField(allow_null=True)
     territorio_id = serializers.IntegerField(allow_null=True)
-    faixa = serializers.ChoiceField(choices=["amarelo", "vermelho"])
+    faixa = serializers.ChoiceField(choices=FAIXAS_DO_ALERTA)
     percentual_comprometido = serializers.DecimalField(max_digits=7, decimal_places=2)
     valor_aprovado = serializers.DecimalField(**_DEC)
     valor_comprometido = serializers.DecimalField(**_DEC)

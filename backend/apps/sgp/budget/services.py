@@ -15,7 +15,7 @@ from apps.core.services.permissions import user_has_role, user_states, user_terr
 from apps.core.utils import get_config
 from apps.sgp.budget.ledger import lancar
 from apps.sgp.budget.rls import com_visao_total, visao_total
-from apps.sgp.models import BudgetPool, BudgetRubrica, BudgetTransaction, BudgetTransfer
+from apps.sgp.models import BudgetAlert, BudgetPool, BudgetRubrica, BudgetTransaction, BudgetTransfer
 
 Nivel = BudgetPool.Nivel
 PERFIS_DE_LEITURA_NACIONAL = {"super-admin", "ugp", "fgd"}
@@ -353,7 +353,9 @@ def remover_pool(pool: BudgetPool) -> None:
     Traduz isso pra uma mensagem clara em vez de vazar 500.
     """
     try:
-        pool.delete()
+        with transaction.atomic():
+            BudgetAlert.objects.filter(escopo=BudgetAlert.Escopo.POOL, referencia_id=pool.pk).delete()
+            pool.delete()
     except ProtectedError:
         raise DRFValidationError({
             "detail": (
@@ -602,12 +604,7 @@ def liberar(*, demand_request_id: str, usuario, motivo: str) -> BudgetTransactio
 # Remanejamento emergencial da UGP.
 # ---------------------------------------------------------------------------
 
-@transaction.atomic
-def remanejar(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal,
-              usuario, justificativa: str) -> tuple[BudgetTransaction, BudgetTransaction]:
-    """Move capacidade (valor_alocado) entre dois pools da mesma rubrica —
-    mecanismo de exceção da UGP, não passa pela checagem de teto
-    normal do nível pai (é o próprio propósito dele: furar a hierarquia)."""
+def _exigir_origem_e_destino_validos(origem: BudgetPool, destino: BudgetPool) -> None:
     if origem.pk == destino.pk:
         raise DRFValidationError({"destino_allocation": "Origem e destino não podem ser a mesma alocação."})
     if origem.rubrica_id != destino.rubrica_id:
@@ -615,15 +612,8 @@ def remanejar(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal,
             "destino_allocation": "Origem e destino devem ser da mesma rubrica."
         })
 
-    # trava sempre em ordem crescente de pk, não na ordem origem/destino do
-    # payload — dois remanejamentos concorrentes com origem/destino trocados
-    # (A→B e B→A) travariam em ordem invertida e um dos dois cairia em deadlock.
-    primeiro_pk, segundo_pk = sorted([origem.pk, destino.pk])
-    primeiro = BudgetPool.objects.select_for_update().get(pk=primeiro_pk)
-    segundo = BudgetPool.objects.select_for_update().get(pk=segundo_pk)
-    origem = primeiro if primeiro.pk == origem.pk else segundo
-    destino = primeiro if primeiro.pk == destino.pk else segundo
 
+def _exigir_saldo_na_origem(origem: BudgetPool, valor: Decimal) -> Decimal:
     saldo_origem = _saldo_disponivel(origem)
     if valor > saldo_origem:
         mensagem = f"Saldo insuficiente na origem: R$ {saldo_origem} disponível."
@@ -639,6 +629,56 @@ def remanejar(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal,
             "acao_sugerida": "informar_outra_origem",
             "detail": mensagem,
         })
+    return saldo_origem
+
+
+def _impacto_no_pool(pool: BudgetPool, variacao: Decimal, limiares: "LimiaresSemaforo") -> dict:
+    percentual_antes = percentual_comprometido(pool.valor_comprometido, pool.valor_alocado)
+    percentual_depois = percentual_comprometido(pool.valor_comprometido, pool.valor_alocado + variacao)
+    execucao_antes = percentual_comprometido(pool.valor_executado, pool.valor_alocado)
+    execucao_depois = percentual_comprometido(pool.valor_executado, pool.valor_alocado + variacao)
+    saldo_antes = _saldo_disponivel(pool)
+    return {
+        "saldo_antes": saldo_antes,
+        "saldo_depois": saldo_antes + variacao,
+        "percentual_antes": percentual_antes,
+        "percentual_depois": percentual_depois,
+        "percentual_execucao_antes": execucao_antes,
+        "percentual_execucao_depois": execucao_depois,
+        "faixa_antes": faixa_semaforo(percentual_antes, limiares),
+        "faixa_depois": faixa_semaforo(percentual_depois, limiares),
+    }
+
+
+def simular_remanejamento(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal) -> dict:
+    """As mesmas recusas e os mesmos números de `remanejar`, sem travar nem gravar nada."""
+    _exigir_origem_e_destino_validos(origem, destino)
+    _exigir_saldo_na_origem(origem, valor)
+    limiares = limiares_semaforo()
+    return {
+        "origem": _impacto_no_pool(origem, -valor, limiares),
+        "destino": _impacto_no_pool(destino, valor, limiares),
+    }
+
+
+@transaction.atomic
+def remanejar(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal,
+              usuario, justificativa: str) -> tuple[BudgetTransaction, BudgetTransaction]:
+    """Move capacidade (valor_alocado) entre dois pools da mesma rubrica —
+    mecanismo de exceção da UGP, não passa pela checagem de teto
+    normal do nível pai (é o próprio propósito dele: furar a hierarquia)."""
+    _exigir_origem_e_destino_validos(origem, destino)
+
+    # trava sempre em ordem crescente de pk, não na ordem origem/destino do
+    # payload — dois remanejamentos concorrentes com origem/destino trocados
+    # (A→B e B→A) travariam em ordem invertida e um dos dois cairia em deadlock.
+    primeiro_pk, segundo_pk = sorted([origem.pk, destino.pk])
+    primeiro = BudgetPool.objects.select_for_update().get(pk=primeiro_pk)
+    segundo = BudgetPool.objects.select_for_update().get(pk=segundo_pk)
+    origem = primeiro if primeiro.pk == origem.pk else segundo
+    destino = primeiro if primeiro.pk == destino.pk else segundo
+
+    saldo_origem = _exigir_saldo_na_origem(origem, valor)
     saldo_destino = _saldo_disponivel(destino)
 
     origem.valor_alocado -= valor
@@ -665,7 +705,7 @@ def remanejar_com_registro(*, origem: BudgetPool, destino: BudgetPool, valor: De
     debito, credito = remanejar(
         origem=origem, destino=destino, valor=valor, usuario=usuario, justificativa=justificativa,
     )
-    BudgetTransfer.objects.create(
+    transferencia = BudgetTransfer.objects.create(
         tipo=(
             BudgetTransfer.Tipo.ENTRE_NIVEIS if origem.nivel != destino.nivel
             else BudgetTransfer.Tipo.ENTRE_TERRITORIOS
@@ -675,6 +715,9 @@ def remanejar_com_registro(*, origem: BudgetPool, destino: BudgetPool, valor: De
         saldo_destino_antes=credito.saldo_anterior, saldo_destino_depois=credito.saldo_posterior,
         aprovado_por=usuario, ip=debito.ip,
     )
+    from apps.sgp.budget.alertas import notificar_remanejamento_efetivado
+
+    notificar_remanejamento_efetivado(transferencia)
     return debito, credito
 
 
@@ -872,24 +915,6 @@ def _semaforo_orcamento(percentual: Decimal, limiares: LimiaresSemaforo) -> tupl
     front, mas segue o limiar configurado, não 80 fixo."""
     semaforo = faixa_semaforo(percentual, limiares)
     return semaforo, semaforo == "vermelho"
-
-
-def pools_em_vermelho() -> list[BudgetPool]:
-    """Todo `BudgetPool` (qualquer nível) com semáforo vermelho — usada por
-    `tasks.check_budget_threshold_alert`. Nacional, estadual e territorial são linhas
-    independentes, cada uma pode estar em vermelho por si só."""
-    limiares = limiares_semaforo()
-    vermelhos = []
-    pools = (
-        BudgetPool.objects
-        .select_related("rubrica", "estado", "territorio")
-        .filter(valor_alocado__gt=ZERO)
-    )
-    for pool in pools:
-        percentual = percentual_comprometido(pool.valor_comprometido, pool.valor_alocado)
-        if faixa_semaforo(percentual, limiares) == "vermelho":
-            vermelhos.append(pool)
-    return vermelhos
 
 
 def _executado_por_pool_na_meta(meta_id: int) -> dict[int, Decimal]:

@@ -233,9 +233,28 @@ podem mudar por configuração.
 - **Acúmulo:** o saldo acumulado é debitado da linha antiga, para não existir nas duas. O que for liberado nela depois da virada expira. Só acumula a linha que termina na véspera do novo período.
 - **Recurso extra em Devolvida:** com a reserva da rubrica de pé, o pedido é aceito com o valor informado, mesmo sem déficit calculado. A edição para mais é recusada e não fica gravada, e a mensagem orienta a pedir recurso extra, como manda o SGD §4.1.
 
+- **`BudgetAlert`:** segue o modelo de dados do SGP v1.3, e não os nomes da #390 (`percentual_atingido`, em vez de `percentual`; `escopo` e `referencia_id`, em vez de FKs para pool e limite). Acrescenta `tipo` e `resolvido_em`, que o documento não tem e o critério de um alerta aberto por alvo exige, e `criado_em`, que a #390 pede: é a data imutável de criação, enquanto `alertado_em`, do documento, muda a cada nova entrada numa faixa. `faixa` fica vazia no remanejamento excessivo, que o documento não lista. Alertas por rubrica usam o pool nacional como alvo, porque o documento não tem escopo de rubrica.
+- **Fim da vigência para a subexecução:** maior `data_fim` das Metas, até existir `TED.vigencia_fim`.
+- **Espelho de saldo no SCA:** fotografia dos cartões de "meu saldo" gravada em `SyncDevice.espelho_saldo` a cada pull, por dispositivo. O pull devolve a mesma fotografia em `saldos`, para a consulta offline, e `GET /sca/saldo/` a devolve com `ultimo_sync`. Uma movimentação depois do sync só aparece no pull seguinte.
+- **Falha ao gerar o espelho:** o pull não cai. Devolve `saldos: null`, para o app manter o que tem, e `GET /sca/saldo/` segue com a fotografia anterior e a data dela (`espelho_saldo_em`).
+- **Aviso de semáforo:** a cada nova entrada numa faixa, como o SGP §6.8 pede, inclusive de vermelho para amarelo. Voltar ao verde resolve o alerta sem notificar. Limite de período encerrado não alerta.
+- **Pool em estado sem Articulador:** o aviso vai à UGP, tanto o de semáforo quanto o de remanejamento efetivado, para não ficar sem destinatário.
+- **Rubrica inativa em "meu saldo" e no espelho do SCA:** aparece só para quem tem limite vigente e já movimentou nela, porque o SGP §6.2 mantém o saldo executado e o histórico. `rubrica_ativa: false` avisa que o `disponivel` não pode ser usado em nova demanda.
+- **Extrato de "meu saldo":** por padrão, o período vigente, cuja soma é o `disponivel`; `?historico=true` traz os encerrados. Limite só herdado do padrão ainda não tem lançamento, então o extrato vem vazio com o `disponivel` igual ao padrão.
+- **Periodicidade "vigência" em "meu saldo":** `periodo_fim` e `dias_restantes` usam o fim da vigência, e vêm nulos sem Metas.
+- **Alertas para a FGD:** a matriz de perfis do Core dá à FGD leitura de pools e nada em limites de gasto, então `/orcamento/alertas/` mostra os pools e só o limite dela. O RLS segue listando a FGD como global porque ela conclui demandas.
+- **Simulador obrigatório:** o SGP RF39 pede a simulação antes de confirmar. O backend oferece a rota e não a exige; a confirmação em duas etapas fica na tela.
+- **Remanejamento excessivo:** o evento não está na tabela do Core. Vai à UGP por e-mail e in-app, como a subexecução.
+- **Semáforo em Meta, Submeta e Ação:** o SGP §6.8 os inclui, mas a #390 cobre pool e limite. Os valores `meta`, `submeta` e `acao` de `escopo` e `devolucao` de `faixa` existem no modelo e ainda não são gerados.
+- **Pools de nível superior no semáforo:** a reserva territorial não sobe para os pools estadual e nacional, então eles só refletem o que foi reservado neles. É o mesmo cálculo do painel.
+- **Faixa do semáforo:** segue o percentual comprometido, como o SGP §6.8 define, sem somar o executado. Um limite de 1000 com 950 executados fica verde com 50 disponíveis.
+- **Fora de "meu saldo":** "demandas em trânsito" e "ações rápidas" do SGP §6.5. A tela compõe com `GET /sgd/demandas/`, porque o motor não importa `apps.sgd`.
+- **Templates de notificação:** o catálogo com `{{rubrica}}` e `{{saldo_disponivel}}` fica em `alertas.py`. Os templates editáveis pelo Super Admin do Core §4.2 ainda não existem.
+- **Rodada diária de `check_budget_thresholds`:** além de rodar após cada movimentação, como a Arquitetura pede, roda uma vez por dia para cobrir mudança de parâmetro e fim de período.
+
 ### Divergências do documento mantidas, para a coordenação confirmar
 
-- **Remanejamento entre rubricas:** o SGP 6.7 permite, e o motor só aceita a mesma rubrica, como já fazia. Os demais tipos dependem do simulador da #389.
+- **Remanejamento entre rubricas:** o SGP 6.7 permite, e o motor só aceita a mesma rubrica, como já fazia, e o simulador segue a mesma regra. Os demais tipos do SGP 6.7 não existem no motor.
 - **Exatos 90% de comprometimento:** o SGP 6.8 diz amarelo até 90%; o código, como a #373, trata 90% como vermelho.
 - **`reserva_ugp`:** com um pool por rubrica e nível, uma rubrica nacional não pode, ao mesmo tempo, ser reserva da UGP e distribuir aos estados.
 

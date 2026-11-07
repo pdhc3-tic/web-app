@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from django.conf import settings
-from django.db.models import Q
 
 from apps.core.models.notifications import Notification, TipoNotificacao
-from apps.core.models.user import User
 from apps.core.utils import formatar_brl
+from apps.sgd.services import orcamento as orcamento_service
 
 
 def _link_demanda(demand) -> str:
@@ -13,15 +12,11 @@ def _link_demanda(demand) -> str:
 
 
 def usuarios_articuladores_do_estado(sigla: str):
-    # Num único `filter`: o território tem de ser o do perfil de Articulador, não o de outro perfil do usuário.
-    return User.objects.filter(
-        Q(profiles__territorio__isnull=True) | Q(profiles__territorio__estados__contains=[sigla]),
-        ativo=True, profiles__perfil__slug="articulador-estadual",
-    ).distinct()
+    return orcamento_service.articuladores_dos_estados([sigla])
 
 
 def usuarios_por_perfil(slug: str):
-    return User.objects.filter(ativo=True, profiles__perfil__slug=slug).distinct()
+    return orcamento_service.usuarios_do_perfil(slug)
 
 
 def _notificar(*, usuarios, titulo: str, mensagem: str, link: str, evento: str, canais):
@@ -124,12 +119,14 @@ def notificar_cancelamento_por_desativacao(demand, articuladores) -> None:
     )
 
 
-def notificar_mudanca_semaforo(*, usuarios, demand, rubrica_nome: str, trava: str, semaforo: str) -> None:
+def notificar_mudanca_semaforo(*, usuarios, demand, rubrica_nome: str, trava: str, semaforo: str,
+                               saldo_disponivel, canais) -> None:
+    titulo, mensagem = orcamento_service.renderizar_evento(
+        "semaforo", rubrica=rubrica_nome, faixa=semaforo, trava=trava, saldo_disponivel=formatar_brl(saldo_disponivel),
+    )
     _notificar(
-        usuarios=usuarios,
-        titulo=f"Saldo de {rubrica_nome} entrou na faixa {semaforo}",
-        mensagem=f"O saldo da trava {trava} para a rubrica {rubrica_nome} entrou na faixa {semaforo}.",
-        link=_link_demanda(demand), evento="demand_semaforo_mudou", canais=_EMAIL_E_IN_APP,
+        usuarios=usuarios, titulo=titulo, mensagem=mensagem,
+        link=_link_demanda(demand), evento="demand_semaforo_mudou", canais=canais,
     )
 
 
@@ -171,54 +168,51 @@ def _link_pedido(pedido) -> str:
     return f"{settings.FRONTEND_BASE_URL.rstrip('/')}/sgd/remanejamentos/{pedido.pk}"
 
 
-def _descricao_pedido(pedido) -> str:
-    return f"{formatar_brl(pedido.valor_solicitado)} em {pedido.rubrica.nome}"
+def _texto_do_pedido(modelo: str, pedido, **variaveis) -> dict:
+    titulo, mensagem = orcamento_service.renderizar_evento(
+        modelo, valor=formatar_brl(pedido.valor_solicitado), rubrica=pedido.rubrica.nome, solicitante=pedido.user.nome,
+        saldo_disponivel=formatar_brl(orcamento_service.saldo_do_limite(user_id=pedido.user_id, rubrica_id=pedido.rubrica_id)),
+        **variaveis,
+    )
+    return {"titulo": titulo, "mensagem": mensagem}
 
 
 def notificar_recurso_extra_submetido(pedido, articuladores) -> None:
     _notificar(
-        usuarios=articuladores,
-        titulo=f"Recurso extra aguardando parecer: {_descricao_pedido(pedido)}",
-        mensagem=f"{pedido.user.nome} pediu {_descricao_pedido(pedido)} e aguarda o seu parecer.",
+        usuarios=articuladores, **_texto_do_pedido("recurso_extra_submetido", pedido),
         link=_link_pedido(pedido), evento="recurso_extra_submetido", canais=_EMAIL_E_IN_APP,
     )
 
 
 def notificar_recurso_extra_devolvido(pedido) -> None:
     _notificar(
-        usuarios=[pedido.user],
-        titulo=f"Recurso extra devolvido: {_descricao_pedido(pedido)}",
-        mensagem="Seu pedido de recurso extra foi devolvido para ajuste da justificativa ou do valor.",
+        usuarios=[pedido.user], **_texto_do_pedido("recurso_extra_devolvido", pedido),
         link=_link_pedido(pedido), evento="recurso_extra_devolvido", canais=_EMAIL_E_IN_APP,
     )
 
 
 def notificar_recurso_extra_com_parecer(pedido, usuarios_ugp) -> None:
     _notificar(
-        usuarios=usuarios_ugp,
-        titulo=f"Recurso extra aguardando decisão: {_descricao_pedido(pedido)}",
-        mensagem=f"O pedido de {pedido.user.nome} recebeu parecer do Articulador e aguarda a decisão da UGP.",
+        usuarios=usuarios_ugp, **_texto_do_pedido("recurso_extra_com_parecer", pedido),
         link=_link_pedido(pedido), evento="recurso_extra_com_parecer", canais=_EMAIL_E_IN_APP,
     )
 
 
 def notificar_recurso_extra_decidido(pedido) -> None:
     _notificar(
-        usuarios=[pedido.user],
-        titulo=f"Recurso extra {pedido.get_status_display().lower()}: {_descricao_pedido(pedido)}",
-        mensagem=f"Seu pedido de recurso extra foi {pedido.get_status_display().lower()}.",
+        usuarios=[pedido.user], **_texto_do_pedido("recurso_extra_decidido", pedido, decisao=pedido.get_status_display().lower()),
         link=_link_pedido(pedido), evento="recurso_extra_decidido", canais=_EMAIL_E_IN_APP,
     )
 
 
 def notificar_remanejamento_efetivado(transferencia, usuarios) -> None:
+    origem = transferencia.pool_origem
+    titulo, mensagem = orcamento_service.renderizar_evento(
+        "remanejamento_efetivado", valor=formatar_brl(transferencia.valor), rubrica=origem.rubrica.nome,
+        motivo=transferencia.motivo, saldo_disponivel=formatar_brl(transferencia.saldo_origem_depois),
+    )
     _notificar(
-        usuarios=usuarios,
-        titulo=f"Remanejamento efetivado: {formatar_brl(transferencia.valor)}",
-        mensagem=(
-            f"{formatar_brl(transferencia.valor)} foram remanejados entre alocações. "
-            f"Motivo: {transferencia.motivo}"
-        ),
+        usuarios=usuarios, titulo=titulo, mensagem=mensagem,
         link=f"{settings.FRONTEND_BASE_URL.rstrip('/')}/sgd/remanejamentos",
         evento="remanejamento_efetivado", canais=_EMAIL_E_IN_APP,
     )

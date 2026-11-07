@@ -124,7 +124,7 @@ def test_reservar_notifica_quando_semaforo_individual_piora(
 
 
 @patch("apps.core.tasks.notifications.send_email_notification.delay")
-def test_reservar_nao_notifica_quando_semaforo_nao_piora(
+def test_reservar_nao_notifica_quando_a_faixa_nao_muda(
     mocked_delay, demand_request_rn, solicitante_rn, allocation_territorial_rn, limite_individual_rn,
 ):
     balance_service.reservar_duas_travas(demand_request=demand_request_rn, usuario=solicitante_rn)

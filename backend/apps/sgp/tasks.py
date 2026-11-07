@@ -18,7 +18,9 @@ from apps.core.models.notifications import Notification, TipoNotificacao
 from apps.core.models.user import User
 from apps.sgp.services.workplan_dashboard import dashboard_actions, enrich_dashboard_action
 from apps.sgp.budget.rls import visao_total
-from apps.sgp.budget.services import limiares_semaforo, pools_em_vermelho
+from apps.sgp.budget import alertas
+from apps.sgp.budget.services import limiares_semaforo
+from apps.sgp.models import BudgetPool, SpendingLimit
 from apps.sgp.cache import set_power_bi_snapshot
 from apps.sgp.services.workplan_export import workplan_export_rows
 from apps.sgp.services import exportacao as exportacao_service
@@ -223,55 +225,60 @@ def check_acao_progress_alert() -> int:
         raise
 
 
-@shared_task(name="sgp.tasks.check_budget_threshold_alert")
-def check_budget_threshold_alert() -> int:
-    """Notifica UGP e Super Admin sobre alocações em vermelho no semáforo do
-    orçamento (comprometido ≥ `budget_alert_red_pct` do alocado, 90% por padrão),
-    em qualquer nível.
-
-    Mesmo padrão de `check_acao_progress_alert`: execução diária, uma notificação
-    por destinatário e alocação vermelha.
-    """
+@shared_task(name="sgp.tasks.check_budget_thresholds")
+def check_budget_thresholds(pool_id=None, limite_id=None, remanejamento=False) -> int:
+    """Com um alvo, avalia só a movimentação que acabou de entrar; sem alvo, a rodada diária
+    avalia todos. Rodar de novo não duplica alerta nem notificação."""
     try:
-        recipients = User.objects.filter(
-            ativo=True,
-            profiles__perfil__slug__in=["ugp", "super-admin"],
-        ).distinct()
-        if not recipients.exists():
-            return 0
-
-        notifications_sent = 0
-        panel_url = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/sgp/orcamento"
-
-        # A task não passa pelo middleware que define o papel da sessão: sem isso, o RLS
-        # esconderia todos os pools e o alerta nunca sairia, sem erro nenhum.
-        with visao_total():
-            vermelhos = pools_em_vermelho()
-        for pool in vermelhos:
-            local = pool.territorio or pool.estado
-            nivel = f"{pool.get_nivel_display()} — {local.nome}" if local else pool.get_nivel_display()
-            message = (
-                f"O pool de {pool.rubrica.nome} "
-                f"({nivel}) está em vermelho: "
-                f"R$ {pool.valor_comprometido} comprometido de "
-                f"R$ {pool.valor_alocado} aprovado."
-            )
-            for recipient in recipients:
-                Notification.objects.create(
-                    user=recipient,
-                    tipo=TipoNotificacao.EMAIL,
-                    titulo=f"Alerta de orçamento: {pool.rubrica.nome} ({nivel})",
-                    mensagem=message,
-                    link=panel_url,
-                    modulo_origem="sgp",
-                    evento="budget_allocation_red",
-                )
-                notifications_sent += 1
-
-        return notifications_sent
+        if pool_id is None and limite_id is None:
+            return alertas.avaliar_todos_os_semaforos() + alertas.avaliar_todos_os_remanejamentos()
+        enviadas = 0
+        if pool_id is not None:
+            enviadas += alertas.avaliar_semaforo(BudgetPool, pool_id)
+        if limite_id is not None:
+            enviadas += alertas.avaliar_semaforo(SpendingLimit, limite_id)
+        if remanejamento and pool_id is not None:
+            with visao_total():
+                rubrica_id = BudgetPool.objects.filter(pk=pool_id).values_list("rubrica_id", flat=True).first()
+            if rubrica_id is not None:
+                enviadas += alertas.avaliar_remanejamento_excessivo(rubrica_id)
+        return enviadas
     except Exception as exc:
         sentry_sdk.capture_exception(exc)
         logger.exception("Falha ao verificar alertas de orçamento.")
+        raise
+
+
+@shared_task(name="sgp.tasks.check_budget_threshold_alert")
+def check_budget_threshold_alert() -> int:
+    """Nome antigo, para o que já estava na fila quando a tarefa mudou de nome."""
+    return check_budget_thresholds()
+
+
+@shared_task(name="sgp.tasks.check_budget_underexecution")
+def check_budget_underexecution() -> int:
+    try:
+        return alertas.avaliar_subexecucao()
+    except Exception as exc:
+        sentry_sdk.capture_exception(exc)
+        logger.exception("Falha ao verificar a subexecução do orçamento.")
+        raise
+
+
+@shared_task(name="sgp.tasks.reconcile_budget_balances")
+def reconcile_budget_balances() -> int:
+    from apps.sgp.management.commands.verificar_saldos import coletar_divergencias
+
+    try:
+        divergencias, _, _ = coletar_divergencias()
+        if not divergencias:
+            return 0
+        logger.error("Reconciliação do orçamento: %s divergência(s).", len(divergencias))
+        alertas.notificar_divergencias(divergencias)
+        return len(divergencias)
+    except Exception as exc:
+        sentry_sdk.capture_exception(exc)
+        logger.exception("Falha na reconciliação do orçamento.")
         raise
 
 

@@ -26,7 +26,7 @@ class Migration(migrations.Migration):
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
         ("sgd", "0021_tipo_vira_fk_do_catalogo"),
-        ("sgp", "0017_ajustes_de_pool_e_limite"),
+        ("sgp", "0018_budgetalert"),
     ]
 
     operations = [

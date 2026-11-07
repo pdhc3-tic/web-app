@@ -18,7 +18,7 @@ from apps.core.tests.factories import RoleFactory, TerritoryFactory, UserFactory
 
 pytestmark = pytest.mark.django_db
 
-migration = importlib.import_module("apps.core.migrations.0024_perfis_operacionais")
+migration = importlib.import_module("apps.core.migrations.0025_perfis_operacionais")
 
 USERS_URL = "/api/v1/users/"
 OPERACIONAIS = {"coordenador-evento", "credenciador", "avaliador-selecao", "gestor-edital"}

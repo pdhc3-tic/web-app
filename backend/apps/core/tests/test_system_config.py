@@ -14,6 +14,9 @@ from apps.sgp.tests.factories import ActivityFactory
 pytestmark = pytest.mark.django_db
 
 SEED_KEYS = [
+    "budget_subexec_alert_months",
+    "budget_subexec_min_pct",
+    "budget_transfer_alert_pct",
     "session_timeout_hours",
     "max_login_attempts",
     "lockout_minutes",

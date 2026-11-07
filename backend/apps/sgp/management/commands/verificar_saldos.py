@@ -48,6 +48,23 @@ def _divergencias(rotulo: str, linhas, saldo_de) -> list[str]:
     return divergencias
 
 
+def coletar_divergencias() -> tuple[list[str], int, int]:
+    """(divergências, pools conferidos, limites conferidos)."""
+    # Quem chama não passa pelo middleware que define o papel da sessão para o RLS.
+    with visao_total():
+        pools = list(_com_somas_do_ledger(BudgetPool.objects.all(), "pool"))
+        limites = list(_com_somas_do_ledger(
+            SpendingLimit.objects.filter(escopo=SpendingLimit.Escopo.INDIVIDUAL), "spending_limit",
+        ))
+        divergencias = _divergencias(
+            "Pool", pools, lambda p: p.valor_alocado - p.valor_comprometido - p.valor_executado,
+        )
+        divergencias += _divergencias("Limite", limites, lambda limite: limite.saldo_disponivel)
+        divergencias += divergencias_dos_limites()
+        divergencias += divergencias_dos_totais()
+    return divergencias, len(pools), len(limites)
+
+
 class Command(BaseCommand):
     help = (
         "Reconcilia cada BudgetPool e cada SpendingLimit contra o ledger (somas por tipo e "
@@ -56,18 +73,7 @@ class Command(BaseCommand):
     )
 
     def handle(self, *args, **options):
-        # O comando não passa pelo middleware que define o papel da sessão para o RLS.
-        with visao_total():
-            pools = list(_com_somas_do_ledger(BudgetPool.objects.all(), "pool"))
-            limites = list(_com_somas_do_ledger(
-                SpendingLimit.objects.filter(escopo=SpendingLimit.Escopo.INDIVIDUAL), "spending_limit",
-            ))
-            divergencias = _divergencias(
-                "Pool", pools, lambda p: p.valor_alocado - p.valor_comprometido - p.valor_executado,
-            )
-            divergencias += _divergencias("Limite", limites, lambda limite: limite.saldo_disponivel)
-            divergencias += divergencias_dos_limites()
-            divergencias += divergencias_dos_totais()
+        divergencias, total_de_pools, total_de_limites = coletar_divergencias()
 
         if divergencias:
             raise CommandError(
@@ -76,6 +82,6 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"{len(pools)} pool(s) e {len(limites)} limite(s) reconciliado(s) sem divergência."
+                f"{total_de_pools} pool(s) e {total_de_limites} limite(s) reconciliado(s) sem divergência."
             )
         )

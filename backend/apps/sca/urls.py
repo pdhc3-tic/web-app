@@ -2,6 +2,7 @@ from django.urls import path
 
 from apps.sca.views import (
     ConflictLogViewSet,
+    EspelhoSaldoView,
     ScaAuthRefreshView,
     SyncDeviceDetailView,
     SyncDeviceListView,
@@ -18,6 +19,7 @@ urlpatterns = [
     path("sca/sync/pull/", SyncPullView.as_view(), name="sca-sync-pull"),
     path("sca/sync/forms/", SyncFormsView.as_view(), name="sca-sync-forms"),
     path("sca/sync/status/", SyncStatusView.as_view(), name="sca-sync-status"),
+    path("sca/saldo/", EspelhoSaldoView.as_view(), name="sca-espelho-saldo"),
     path("sca/auth/refresh/", ScaAuthRefreshView.as_view(), name="sca-auth-refresh"),
     # Endpoints administrativos (#156, #157, #158)
     path("sca/tecnicos/", TecnicoListView.as_view(), name="sca-tecnicos-list"),

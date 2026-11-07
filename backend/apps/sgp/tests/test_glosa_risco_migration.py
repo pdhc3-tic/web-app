@@ -8,7 +8,7 @@ from django.db.migrations.executor import MigrationExecutor
 from apps.sgd.tests.factories import DemandFactory
 from apps.sgp.models import GlosaRisk
 
-ANTES = [("sgp", "0017_ajustes_de_pool_e_limite")]
+ANTES = [("sgp", "0018_budgetalert")]
 
 pytestmark = pytest.mark.django_db(transaction=True)
 

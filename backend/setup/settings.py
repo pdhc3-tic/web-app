@@ -281,6 +281,12 @@ SPECTACULAR_SETTINGS = {
         "StatusFormResponseEnum": "apps.sgp.models.form_response.FormResponse.Status",
         "StatusConflitoEnum": "apps.sca.models.ConflictLog.Status",
         "TipoSyncEventEnum": "apps.sca.models.SyncEvent.Tipo",
+        "BudgetTransactionTipoEnum": "apps.sgp.budget.models.BudgetTransaction.Tipo",
+        "FaixaEnum": "apps.sgd.serializers.dashboard.FAIXAS_DO_ALERTA",
+        "SemaforoEnum": "apps.sgp.budget.serializers.FAIXAS_DO_SEMAFORO",
+        "TipoAlertaOrcamentoEnum": "apps.sgp.budget.models.BudgetAlert.Tipo",
+        "EscopoAlertaOrcamentoEnum": "apps.sgp.budget.models.BudgetAlert.Escopo",
+        "FaixaAlertaOrcamentoEnum": "apps.sgp.budget.models.BudgetAlert.Faixa",
         "TipoRiscoDeGlosaEnum": "apps.sgp.models.glosa_risk.GlosaRisk.Tipo",
         "SeveridadeRiscoDeGlosaEnum": "apps.sgp.models.glosa_risk.GlosaRisk.Severidade",
         "CategoriaDoPerfilEnum": "apps.core.models.role.Role.Categoria",
@@ -325,8 +331,16 @@ CELERY_BEAT_SCHEDULE = {
         "task": "sgp.tasks.check_acao_progress_alert",
         "schedule": crontab(hour=12, minute=0),  # diariamente ao meio-dia
     },
-    "check_budget_threshold_alert": {
-        "task": "sgp.tasks.check_budget_threshold_alert",
+    "reconcile_budget_balances": {
+        "task": "sgp.tasks.reconcile_budget_balances",
+        "schedule": crontab(hour=2, minute=30),  # todo dia às 2h30
+    },
+    "check_budget_underexecution": {
+        "task": "sgp.tasks.check_budget_underexecution",
+        "schedule": crontab(day_of_week=1, hour=3, minute=0),  # toda segunda-feira às 3h
+    },
+    "check_budget_thresholds": {
+        "task": "sgp.tasks.check_budget_thresholds",
         "schedule": crontab(hour=12, minute=30),  # diariamente, 30min depois do alerta do PT físico
     },
     "export_to_power_bi": {

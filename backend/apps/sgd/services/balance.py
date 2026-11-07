@@ -159,47 +159,19 @@ def payload_saldo_consulta(check: "DuasTravasCheck", *, solicitante, rubrica, va
     }
 
 
-_ORDEM_SEMAFORO = {"verde": 0, "amarelo": 1, "vermelho": 2}
-
-
-def _destinatarios_saldo_territorial(*, nivel, estado_sigla, territorio):
-    if nivel == orcamento_service.Nivel.NACIONAL:
-        return list(notifications_service.usuarios_por_perfil("ugp"))
-    if nivel == orcamento_service.Nivel.ESTADUAL:
-        return list(notifications_service.usuarios_articuladores_do_estado(estado_sigla))
-    siglas = (territorio.estados if territorio else []) or []
-    vistos = set()
-    destinatarios = []
-    for sigla in siglas:
-        for usuario in notifications_service.usuarios_articuladores_do_estado(sigla):
-            if usuario.pk not in vistos:
-                vistos.add(usuario.pk)
-                destinatarios.append(usuario)
-    return destinatarios
-
-
-def _notificar_se_piorou(*, usuarios, demand, rubrica_nome, trava, comprometido_antes, comprometido_depois, limite) -> None:
-    antes, depois = faixas_antes_e_depois(
-        comprometido=comprometido_antes, total=limite, delta=comprometido_depois - comprometido_antes,
-        limiares=orcamento_service.limiares_semaforo(),
-    )
-    if _ORDEM_SEMAFORO[depois] > _ORDEM_SEMAFORO[antes]:
-        notifications_service.notificar_mudanca_semaforo(
-            usuarios=usuarios, demand=demand, rubrica_nome=rubrica_nome, trava=trava, semaforo=depois,
-        )
-
-
-def _notificar_pool_se_piorou(movimento: "orcamento_service.MovimentoPool", *, demand, rubrica_nome) -> None:
-    if movimento.pool is None:
+def _notificar_nova_faixa(alvo, *, demand, rubrica_nome, trava) -> None:
+    """O alerta aberto decide: a tarefa que avalia o mesmo alvo depois não notifica de novo."""
+    if alvo is None:
         return
-    _notificar_se_piorou(
-        usuarios=_destinatarios_saldo_territorial(
-            nivel=movimento.nivel, estado_sigla=movimento.estado_sigla, territorio=movimento.territorio,
-        ),
-        demand=demand, rubrica_nome=rubrica_nome, trava=TRAVA_TERRITORIAL,
-        comprometido_antes=movimento.comprometido_antes,
-        comprometido_depois=movimento.pool.valor_comprometido, limite=movimento.pool.valor_alocado,
+    mudanca = orcamento_service.sincronizar_semaforo(alvo)
+    if mudanca is None:
+        return
+    usuarios = orcamento_service.destinatarios_do_alerta(alvo, mudanca.faixa)
+    notifications_service.notificar_mudanca_semaforo(
+        usuarios=usuarios, demand=demand, rubrica_nome=rubrica_nome, trava=trava, semaforo=mudanca.faixa,
+        saldo_disponivel=orcamento_service.saldo_do_alvo(alvo), canais=orcamento_service.canais_da_faixa(mudanca.faixa),
     )
+    orcamento_service.registrar_alertados(mudanca.alerta, usuarios)
 
 
 def _checar_individual(*, solicitante, rubrica, valor: Decimal, consumo_previo: Decimal = ZERO, limite=None) -> TravaCheck:
@@ -344,7 +316,6 @@ def reservar_duas_travas(*, demand_request, usuario, adiar_gravacao: bool = Fals
         raise _bloqueio_individual(
             rubrica=rubrica, limite=None, saldo=ZERO, valor=valor, solicitacao_id=demand_request.pk,
         )
-    comprometido_individual_antes = limite.valor_comprometido
     reler_reserva(demand_request)
     # Executada, a reserva já foi convertida: submeter de novo não a refaz.
     reservou = demand_request.valor_executado is None and not demand_request.reserva_ativa
@@ -368,16 +339,12 @@ def reservar_duas_travas(*, demand_request, usuario, adiar_gravacao: bool = Fals
             acao="reserva", entidade_id=entidade_id, usuario=usuario,
             valores_novos={"limite_id": limite.pk, "valor": str(valor)},
         )
-        _notificar_se_piorou(
-            usuarios=[solicitante], demand=demand_request.demanda, rubrica_nome=rubrica.nome,
-            trava=TRAVA_INDIVIDUAL, comprometido_antes=comprometido_individual_antes,
-            comprometido_depois=limite.valor_comprometido, limite=limite.valor_limite,
-        )
+        _notificar_nova_faixa(limite, demand=demand_request.demanda, rubrica_nome=rubrica.nome, trava=TRAVA_INDIVIDUAL)
 
-    movimento = orcamento_service.reservar_pool(
+    pool = orcamento_service.reservar_pool(
         solicitante=solicitante, rubrica=rubrica, valor=valor, demand_request=demand_request, usuario=usuario,
     )
-    _notificar_pool_se_piorou(movimento, demand=demand_request.demanda, rubrica_nome=rubrica.nome)
+    _notificar_nova_faixa(pool, demand=demand_request.demanda, rubrica_nome=rubrica.nome, trava=TRAVA_TERRITORIAL)
     if reservou:
         _mover_reserva(demand_request, adiar=adiar_gravacao, valor_reservado=valor, valor_excedente=ZERO)
 
@@ -418,7 +385,6 @@ def ajustar_duas_travas(
         no_limite = diferenca + sai_do_excedente
         excedente_novo = excedente_anterior - sai_do_excedente
 
-    comprometido_individual_antes = limite.valor_comprometido
     if no_limite > ZERO and no_limite > limite.saldo_disponivel:
         raise SaldoInsuficiente(
             trava=TRAVA_INDIVIDUAL, rubrica=rubrica.slug, disponivel=limite.saldo_disponivel,
@@ -443,16 +409,12 @@ def ajustar_duas_travas(
             valores_anteriores={"valor": str(valor_anterior), "excedente": str(excedente_anterior)},
             valores_novos={"valor": str(novo_valor), "excedente": str(excedente_novo)},
         )
-        _notificar_se_piorou(
-            usuarios=[solicitante], demand=demand_request.demanda, rubrica_nome=rubrica.nome,
-            trava=TRAVA_INDIVIDUAL, comprometido_antes=comprometido_individual_antes,
-            comprometido_depois=limite.valor_comprometido, limite=limite.valor_limite,
-        )
+        _notificar_nova_faixa(limite, demand=demand_request.demanda, rubrica_nome=rubrica.nome, trava=TRAVA_INDIVIDUAL)
 
-    movimento = orcamento_service.ajustar_pool(
+    pool = orcamento_service.ajustar_pool(
         solicitante=solicitante, rubrica=rubrica, valor=novo_valor, demand_request=demand_request, usuario=usuario,
     )
-    _notificar_pool_se_piorou(movimento, demand=demand_request.demanda, rubrica_nome=rubrica.nome)
+    _notificar_nova_faixa(pool, demand=demand_request.demanda, rubrica_nome=rubrica.nome, trava=TRAVA_TERRITORIAL)
     if diferenca != ZERO:
         _mover_reserva(
             demand_request, adiar=adiar_gravacao, valor_reservado=novo_valor, valor_excedente=excedente_novo,

@@ -8,6 +8,7 @@ from rest_framework import serializers
 
 from apps.core.serializers import TerritorySerializer, UsuarioRefComEmailSerializer
 from apps.sca.models import ConflictLog, SyncDevice, SyncEvent
+from apps.sgp.budget.serializers import MeuSaldoSerializer
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +176,7 @@ class SyncPullRespostaSerializer(serializers.Serializer):
     upfs = SyncPullUPFSerializer(many=True)
     members = SyncPullMemberSerializer(many=True)
     activities = SyncPullActivitySerializer(many=True)
+    saldos = MeuSaldoSerializer(many=True, allow_null=True)
     server_time = serializers.DateTimeField()
 
 
@@ -220,6 +222,11 @@ class ScaTokensSerializer(serializers.Serializer):
 # ---------------------------------------------------------------------------
 # Endpoints Administrativos SCA (#156, #157, #158)
 # ---------------------------------------------------------------------------
+
+class EspelhoSaldoSerializer(serializers.Serializer):
+    saldos = MeuSaldoSerializer(many=True)
+    ultimo_sync = serializers.DateTimeField(allow_null=True)
+
 
 class TecnicoOptionSerializer(serializers.Serializer):
     """Opção do filtro por técnico (#157) — mesmo formato de `get_tecnico()`

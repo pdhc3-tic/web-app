@@ -46,7 +46,7 @@ def semear_perfis_operacionais(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("core", "0023_seed_budget_limites"),
+        ("core", "0024_seed_alertas_orcamentarios"),
     ]
 
     operations = [

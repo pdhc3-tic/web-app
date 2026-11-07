@@ -1999,6 +1999,32 @@ paths:
               schema:
                 $ref: '#/components/schemas/SyncDeviceDetail'
           description: ''
+  /api/v1/sca/saldo/:
+    get:
+      operationId: v1_sca_saldo_retrieve
+      description: |-
+        A fotografia gravada num pull, não o saldo de agora: é o que o técnico vê offline.
+        Sem `device_id`, vale a fotografia mais recente do usuário.
+      parameters:
+      - in: header
+        name: X-Device-Id
+        schema:
+          type: string
+      - in: query
+        name: device_id
+        schema:
+          type: string
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EspelhoSaldo'
+          description: ''
   /api/v1/sca/sync-events/:
     get:
       operationId: v1_sca_sync_events_list
@@ -5240,6 +5266,67 @@ paths:
                 items:
                   $ref: '#/components/schemas/BudgetRubricaOrcamento'
           description: ''
+  /api/v1/sgp/orcamento/alertas/:
+    get:
+      operationId: v1_sgp_orcamento_alertas_list
+      description: GET .../orcamento/alertas/ — alertas no escopo do perfil.
+      parameters:
+      - in: query
+        name: abertos
+        schema:
+          type: boolean
+          nullable: true
+      - in: query
+        name: faixa
+        schema:
+          enum:
+          - amarelo
+          - vermelho
+          - subexecucao
+          - devolucao
+          type: string
+          minLength: 1
+        description: |-
+          * `amarelo` - Amarelo
+          * `vermelho` - Vermelho
+          * `subexecucao` - Subexecução
+          * `devolucao` - Devolução
+      - name: limit
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: O índice inicial a partir do qual retornar os resultados.
+        schema:
+          type: integer
+      - in: query
+        name: tipo
+        schema:
+          enum:
+          - semaforo
+          - subexecucao
+          - remanejamento_excessivo
+          type: string
+          minLength: 1
+        description: |-
+          * `semaforo` - Semáforo
+          * `subexecucao` - Subexecução
+          * `remanejamento_excessivo` - Remanejamento excessivo
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBudgetAlertList'
+          description: ''
   /api/v1/sgp/orcamento/alocacoes/{id}/:
     patch:
       operationId: v1_sgp_orcamento_alocacoes_partial_update
@@ -5454,6 +5541,63 @@ paths:
               schema:
                 $ref: '#/components/schemas/SpendingLimit'
           description: ''
+  /api/v1/sgp/orcamento/meu-saldo/:
+    get:
+      operationId: v1_sgp_orcamento_meu_saldo_list
+      description: GET .../orcamento/meu-saldo/ — quanto o próprio usuário ainda pode
+        solicitar, por rubrica.
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MeuSaldo'
+          description: ''
+  /api/v1/sgp/orcamento/meu-saldo/{rubrica}/extrato/:
+    get:
+      operationId: v1_sgp_orcamento_meu_saldo_extrato_list
+      description: GET .../orcamento/meu-saldo/{rubrica}/extrato/ — as linhas do ledger
+        do próprio usuário.
+      parameters:
+      - in: query
+        name: historico
+        schema:
+          type: boolean
+        description: Inclui os períodos encerrados. Sem ele, só o período vigente.
+      - name: limit
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: O índice inicial a partir do qual retornar os resultados.
+        schema:
+          type: integer
+      - in: path
+        name: rubrica
+        schema:
+          type: string
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedLinhaDoExtratoList'
+          description: ''
   /api/v1/sgp/orcamento/painel/:
     get:
       operationId: v1_sgp_orcamento_painel_list
@@ -5642,6 +5786,34 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/BudgetTransaction'
+          description: ''
+  /api/v1/sgp/orcamento/remanejamentos/simular/:
+    post:
+      operationId: v1_sgp_orcamento_remanejamentos_simular_create
+      description: POST .../orcamento/remanejamentos/simular/ — o impacto antes de
+        confirmar. Não grava nada.
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RemanejamentoCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RemanejamentoCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RemanejamentoCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulacaoRemanejamento'
           description: ''
   /api/v1/sgp/orcamento/saldo/:
     get:
@@ -9336,6 +9508,66 @@ components:
     BlankEnum:
       enum:
       - ''
+    BudgetAlert:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        tipo:
+          allOf:
+          - $ref: '#/components/schemas/TipoAlertaOrcamentoEnum'
+          readOnly: true
+        escopo:
+          allOf:
+          - $ref: '#/components/schemas/EscopoAlertaOrcamentoEnum'
+          readOnly: true
+        referencia_id:
+          type: integer
+          readOnly: true
+          title: ID do alvo
+        rubrica:
+          type: integer
+          readOnly: true
+          nullable: true
+        rubrica_nome:
+          type: string
+          readOnly: true
+          nullable: true
+        faixa:
+          allOf:
+          - $ref: '#/components/schemas/FaixaAlertaOrcamentoEnum'
+          readOnly: true
+        percentual_atingido:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,6}(?:\.\d{0,2})?$
+          readOnly: true
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        alertado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        resolvido_em:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+      required:
+      - alertado_em
+      - criado_em
+      - escopo
+      - faixa
+      - id
+      - percentual_atingido
+      - referencia_id
+      - resolvido_em
+      - rubrica
+      - rubrica_nome
+      - tipo
     BudgetPainelLinha:
       type: object
       description: |-
@@ -10873,6 +11105,20 @@ components:
         * `5` - Médio completo
         * `6` - Superior incompleto
         * `7` - Superior completo
+    EscopoAlertaOrcamentoEnum:
+      enum:
+      - limite
+      - pool
+      - meta
+      - submeta
+      - acao
+      type: string
+      description: |-
+        * `limite` - Limite
+        * `pool` - Pool
+        * `meta` - Meta
+        * `submeta` - Submeta
+        * `acao` - Ação
     EscopoLimiteDeGastoEnum:
       enum:
       - perfil
@@ -10928,6 +11174,20 @@ components:
         * `piscicultura` - Piscicultura
         * `apicultura` - Apicultura
         * `outros` - Outros
+    EspelhoSaldo:
+      type: object
+      properties:
+        saldos:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeuSaldo'
+        ultimo_sync:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - saldos
+      - ultimo_sync
     EstadoEnum:
       enum:
       - pendente
@@ -11074,6 +11334,18 @@ components:
         * `processando` - Processando
         * `concluida` - Concluída
         * `erro` - Erro
+    FaixaAlertaOrcamentoEnum:
+      enum:
+      - amarelo
+      - vermelho
+      - subexecucao
+      - devolucao
+      type: string
+      description: |-
+        * `amarelo` - Amarelo
+        * `vermelho` - Vermelho
+        * `subexecucao` - Subexecução
+        * `devolucao` - Devolução
     FaixaDestino:
       type: object
       properties:
@@ -11539,6 +11811,46 @@ components:
       - demandas
       - saldo_liberado
       - saldo_por_rubrica
+    ImpactoNoPool:
+      type: object
+      properties:
+        saldo_antes:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        saldo_depois:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        percentual_antes:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,6}(?:\.\d{0,2})?$
+        percentual_depois:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,6}(?:\.\d{0,2})?$
+        percentual_execucao_antes:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,6}(?:\.\d{0,2})?$
+        percentual_execucao_depois:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,6}(?:\.\d{0,2})?$
+        faixa_antes:
+          $ref: '#/components/schemas/SemaforoEnum'
+        faixa_depois:
+          $ref: '#/components/schemas/SemaforoEnum'
+      required:
+      - faixa_antes
+      - faixa_depois
+      - percentual_antes
+      - percentual_depois
+      - percentual_execucao_antes
+      - percentual_execucao_depois
+      - saldo_antes
+      - saldo_depois
     Indicator:
       type: object
       properties:
@@ -11696,6 +12008,109 @@ components:
       required:
       - amarelo
       - vermelho
+    LinhaDoExtrato:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        pool:
+          type: integer
+          readOnly: true
+          nullable: true
+        spending_limit:
+          type: integer
+          readOnly: true
+          nullable: true
+          title: Limite de gasto
+        allocation:
+          type: integer
+          readOnly: true
+          description: Mesmo valor de `pool`, enquanto o front migra.
+        activity:
+          type: integer
+          readOnly: true
+          nullable: true
+          title: Atividade
+          description: Liga o executado à Meta, pela cadeia Atividade → Ação → Meta.
+        tipo:
+          allOf:
+          - $ref: '#/components/schemas/BudgetTransactionTipoEnum'
+          readOnly: true
+        valor:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          title: Valor (R$)
+        saldo_anterior:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          title: Saldo anterior (R$)
+        saldo_posterior:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          title: Saldo posterior (R$)
+        demanda_id:
+          type: string
+          readOnly: true
+          nullable: true
+          title: ID da Demanda
+          description: Referência fraca a uma Demand do SGD (apps.sgd) — sem FK de
+            propósito, o motor não importa apps.sgd.
+        demand_request_id:
+          type: string
+          readOnly: true
+          nullable: true
+          title: ID da Solicitação
+          description: 'Referência fraca à DemandRequest do SGD: é a chave de idempotência
+            da reserva.'
+        justificativa:
+          type: string
+          readOnly: true
+        criado_por:
+          type: integer
+          readOnly: true
+          nullable: true
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        efeito:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+        periodo_inicio:
+          type: string
+          format: date
+          readOnly: true
+        periodo_fim:
+          type: string
+          format: date
+          readOnly: true
+      required:
+      - activity
+      - allocation
+      - criado_em
+      - criado_por
+      - demand_request_id
+      - demanda_id
+      - efeito
+      - id
+      - justificativa
+      - periodo_fim
+      - periodo_inicio
+      - pool
+      - saldo_anterior
+      - saldo_posterior
+      - spending_limit
+      - tipo
+      - valor
     LoginRequest:
       type: object
       properties:
@@ -12133,6 +12548,66 @@ components:
       required:
       - id
       - nome_completo
+    MeuSaldo:
+      type: object
+      properties:
+        rubrica:
+          type: string
+          pattern: ^[-a-zA-Z0-9_]+$
+        rubrica_nome:
+          type: string
+        rubrica_ativa:
+          type: boolean
+          description: 'Falso: rubrica inativa, que não recebe novas demandas.'
+        limite:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        comprometido:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        executado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        disponivel:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        semaforo:
+          $ref: '#/components/schemas/SemaforoEnum'
+        periodo_inicio:
+          type: string
+          format: date
+        periodo_fim:
+          type: string
+          format: date
+          nullable: true
+        dias_restantes:
+          type: integer
+          nullable: true
+        acumula_saldo:
+          type: boolean
+        saldo_territorio:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          nullable: true
+      required:
+      - acumula_saldo
+      - comprometido
+      - dias_restantes
+      - disponivel
+      - executado
+      - limite
+      - periodo_fim
+      - periodo_inicio
+      - rubrica
+      - rubrica_ativa
+      - rubrica_nome
+      - saldo_territorio
+      - semaforo
     Municipality:
       type: object
       properties:
@@ -12564,6 +13039,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AuditLog'
+    PaginatedBudgetAlertList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/BudgetAlert'
     PaginatedComunidadeList:
       type: object
       required:
@@ -12771,6 +13269,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Indicator'
+    PaginatedLinhaDoExtratoList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/LinhaDoExtrato'
     PaginatedMembroListList:
       type: object
       required:
@@ -15103,6 +15624,16 @@ components:
       - numero_diarias
       - valor_por_diaria
       - valor_total
+    SimulacaoRemanejamento:
+      type: object
+      properties:
+        origem:
+          $ref: '#/components/schemas/ImpactoNoPool'
+        destino:
+          $ref: '#/components/schemas/ImpactoNoPool'
+      required:
+      - destino
+      - origem
     SistemaCriacaoEnum:
       enum:
       - extensivo
@@ -15798,12 +16329,18 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SyncPullActivity'
+        saldos:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeuSaldo'
+          nullable: true
         server_time:
           type: string
           format: date-time
       required:
       - activities
       - members
+      - saldos
       - server_time
       - upfs
     SyncPullUPF:
@@ -16154,6 +16691,16 @@ components:
           type: boolean
       required:
       - nome
+    TipoAlertaOrcamentoEnum:
+      enum:
+      - semaforo
+      - subexecucao
+      - remanejamento_excessivo
+      type: string
+      description: |-
+        * `semaforo` - Semáforo
+        * `subexecucao` - Subexecução
+        * `remanejamento_excessivo` - Remanejamento excessivo
     TipoAtividadeEnum:
       enum:
       - visita_tecnica

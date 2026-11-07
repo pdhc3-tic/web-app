@@ -5,16 +5,21 @@ from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from rest_framework import generics, status, viewsets
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.permissions import IsAuthenticatedActiveAccess, IsSuperAdmin, IsUGP
 from apps.core.services.permissions import user_has_role
+from apps.sgp.budget import alertas as alertas_service
 from apps.sgp.budget import limites as limites_service
+from apps.sgp.budget import meu_saldo as meu_saldo_service
 from apps.sgp.budget.rls import visao_total
 from apps.sgp.filters import BudgetRubricaFilter
-from apps.sgp.models import BudgetPool, BudgetRubrica, SpendingLimit, WorkPlanMeta
+from apps.sgp.models import BudgetAlert, BudgetPool, BudgetRubrica, BudgetTransaction, SpendingLimit, WorkPlanMeta
 from apps.sgp.budget.serializers import (
+    BudgetAlertQuerySerializer,
+    BudgetAlertSerializer,
     BudgetPainelLinhaSerializer,
     BudgetPainelQuerySerializer,
     BudgetPoolCreateSerializer,
@@ -22,9 +27,12 @@ from apps.sgp.budget.serializers import (
     BudgetPoolUpdateSerializer,
     BudgetRubricaSerializer,
     BudgetTransactionSerializer,
+    LinhaDoExtratoSerializer,
+    MeuSaldoSerializer,
     RemanejamentoCreateSerializer,
     SaldoConsultaQuerySerializer,
     SaldoConsultaSerializer,
+    SimulacaoRemanejamentoSerializer,
     SpendingLimitCreateSerializer,
     SpendingLimitQuerySerializer,
     SpendingLimitSerializer,
@@ -194,6 +202,89 @@ class RemanejamentoView(APIView):
             BudgetTransactionSerializer([debito, credito], many=True).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+class RemanejamentoSimulacaoView(APIView):
+    """POST .../orcamento/remanejamentos/simular/ — o impacto antes de confirmar. Não grava nada."""
+
+    permission_classes = [IsAuthenticatedActiveAccess]
+
+    @extend_schema(request=RemanejamentoCreateSerializer, responses=SimulacaoRemanejamentoSerializer)
+    def post(self, request):
+        if not budget_service.is_global_budget_user(request.user):
+            raise PermissionDenied("Só UGP/Super Admin executam remanejamento.")
+
+        entrada = RemanejamentoCreateSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        dados = entrada.validated_data
+
+        simulacao = budget_service.simular_remanejamento(
+            origem=dados["origem_allocation"], destino=dados["destino_allocation"], valor=dados["valor"],
+        )
+        return Response(SimulacaoRemanejamentoSerializer(simulacao).data)
+
+
+class MeuSaldoView(APIView):
+    """GET .../orcamento/meu-saldo/ — quanto o próprio usuário ainda pode solicitar, por rubrica."""
+
+    permission_classes = [IsAuthenticatedActiveAccess]
+
+    @extend_schema(responses=MeuSaldoSerializer(many=True))
+    def get(self, request):
+        return Response(MeuSaldoSerializer(meu_saldo_service.saldo_por_rubrica(request.user), many=True).data)
+
+
+class OrcamentoPagination(LimitOffsetPagination):
+    default_limit = 20
+    max_limit = 100
+
+
+@extend_schema(parameters=[
+    OpenApiParameter("rubrica", OpenApiTypes.STR, OpenApiParameter.PATH),
+    OpenApiParameter(
+        "historico", OpenApiTypes.BOOL, OpenApiParameter.QUERY, required=False,
+        description="Inclui os períodos encerrados. Sem ele, só o período vigente.",
+    ),
+])
+class MeuExtratoView(generics.ListAPIView):
+    """GET .../orcamento/meu-saldo/{rubrica}/extrato/ — as linhas do ledger do próprio usuário."""
+
+    permission_classes = [IsAuthenticatedActiveAccess]
+    serializer_class = LinhaDoExtratoSerializer
+    pagination_class = OrcamentoPagination
+    queryset = BudgetTransaction.objects.none()
+
+    def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return self.queryset
+        rubrica = get_object_or_404(BudgetRubrica, slug=self.kwargs["rubrica"])
+        historico = self.request.query_params.get("historico", "").lower() in ("true", "1")
+        return meu_saldo_service.extrato(self.request.user, rubrica, historico=historico)
+
+
+@extend_schema(parameters=[BudgetAlertQuerySerializer])
+class BudgetAlertListView(generics.ListAPIView):
+    """GET .../orcamento/alertas/ — alertas no escopo do perfil."""
+
+    permission_classes = [IsAuthenticatedActiveAccess]
+    serializer_class = BudgetAlertSerializer
+    pagination_class = OrcamentoPagination
+    queryset = BudgetAlert.objects.none()
+
+    def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return self.queryset
+        filtros = BudgetAlertQuerySerializer(data=self.request.query_params)
+        filtros.is_valid(raise_exception=True)
+        dados = filtros.validated_data
+        alertas = alertas_service.alertas_visiveis(self.request.user)
+        if "tipo" in dados:
+            alertas = alertas.filter(tipo=dados["tipo"])
+        if "faixa" in dados:
+            alertas = alertas.filter(faixa=dados["faixa"])
+        if dados["abertos"] is not None:
+            alertas = alertas.filter(resolvido_em__isnull=dados["abertos"])
+        return alertas
 
 
 class BudgetPainelView(APIView):
