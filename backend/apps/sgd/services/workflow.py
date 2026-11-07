@@ -37,6 +37,7 @@ from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import contexto
 from apps.sgd.services import notifications as notifications_service
+from apps.sgd.services import orcamento as orcamento_service
 from apps.sgd.services import recurso_extra as recurso_extra_service
 from apps.sgd.services import remanejamento as remanejamento_service
 from apps.sgd.services.approval import PERFIS_QUE_CANCELAM_AUTORIZADA, exigir_pode_decidir_articulador
@@ -581,3 +582,12 @@ def registrar_demanda_sem_evidencia(demand, *, usuario=None) -> None:
             "demanda_id": str(demand.pk), "valor_exposto": demand.valor_pago_total, "criado_por": usuario,
         },
     )
+
+
+@orcamento_service.com_visao_total
+def registrar_riscos_da_atividade_sem_evidencia(activity_id: int) -> int:
+    """Com visão total: quem fecha a atividade é o técnico, e o RLS esconderia dele as demandas dos outros."""
+    demandas = Demand.objects.filter(activity_id=activity_id, status="concluida")
+    for demand in demandas:
+        registrar_demanda_sem_evidencia(demand)
+    return len(demandas)

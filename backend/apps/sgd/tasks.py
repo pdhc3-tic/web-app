@@ -161,27 +161,6 @@ def _notificar_demandas_atividade_adiada(activity_id: int) -> int:
     return notificadas
 
 
-@shared_task(name="sgd.tasks.registrar_riscos_da_atividade_sem_evidencia")
-def registrar_riscos_da_atividade_sem_evidencia(activity_id: int) -> int:
-    """Mesmo motivo de `cancelar_demandas_da_atividade`: despachada via
-    `transaction.on_commit` pelo signal, não rodada direto nele."""
-    try:
-        return _sem_contexto_de_sessao_rls(lambda: _registrar_riscos_da_atividade_sem_evidencia(activity_id))
-    except Exception as exc:
-        sentry_sdk.capture_exception(exc)
-        logger.exception("Falha ao registrar os riscos de glosa da atividade %s.", activity_id)
-        raise
-
-
-def _registrar_riscos_da_atividade_sem_evidencia(activity_id: int) -> int:
-    from apps.sgd.services import workflow as workflow_service
-
-    demandas = Demand.objects.filter(activity_id=activity_id, status="concluida")
-    for demand in demandas:
-        workflow_service.registrar_demanda_sem_evidencia(demand)
-    return len(demandas)
-
-
 @shared_task(name="sgd.tasks.process_arlo_import", queue="normal")
 def process_arlo_import(importacao_id: int) -> int:
     """Processa a planilha de retorno do Arlo (SGD-RF32). Fila Normal

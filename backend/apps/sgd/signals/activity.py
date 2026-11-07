@@ -54,6 +54,7 @@ def _registrar_riscos_da_atividade_sem_evidencia(sender, instance, **kwargs):
     if getattr(instance, "_status_anterior", None) == ACTIVITY_STATUS_SEM_EVIDENCIA:
         return
 
-    from apps.sgd.tasks import registrar_riscos_da_atividade_sem_evidencia
-    # `robust`: a falha no broker não pode derrubar o salvamento da atividade, que já foi gravado.
-    transaction.on_commit(lambda: registrar_riscos_da_atividade_sem_evidencia.delay(instance.pk), robust=True)
+    # Na mesma transação, e não em tarefa: o status é terminal e não há outra chance de registrar
+    # se o broker estiver fora. A visão total devolve o papel da sessão ao terminar.
+    from apps.sgd.services import workflow as workflow_service
+    workflow_service.registrar_riscos_da_atividade_sem_evidencia(instance.pk)
