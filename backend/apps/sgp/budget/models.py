@@ -1,6 +1,8 @@
 from django.conf import settings
+from django.contrib.postgres.fields import ArrayField
 from django.db import models
 from django.db.models import ProtectedError, Q
+from django.utils import timezone
 
 
 class BudgetRubrica(models.Model):
@@ -503,3 +505,56 @@ class BudgetTransfer(models.Model):
 
     def __str__(self):
         return f"[{self.tipo}] {self.pool_origem} → {self.pool_destino} — R$ {self.valor}"
+
+
+class BudgetAlert(models.Model):
+    """Alerta orçamentário. `escopo` e `referencia_id` apontam para o alvo; sem FK, o serviço
+    de remoção de pool apaga os alertas dele."""
+
+    class Tipo(models.TextChoices):
+        SEMAFORO = "semaforo", "Semáforo"
+        SUBEXECUCAO = "subexecucao", "Subexecução"
+        REMANEJAMENTO_EXCESSIVO = "remanejamento_excessivo", "Remanejamento excessivo"
+
+    class Escopo(models.TextChoices):
+        LIMITE = "limite", "Limite"
+        POOL = "pool", "Pool"
+        META = "meta", "Meta"
+        SUBMETA = "submeta", "Submeta"
+        ACAO = "acao", "Ação"
+
+    class Faixa(models.TextChoices):
+        AMARELO = "amarelo", "Amarelo"
+        VERMELHO = "vermelho", "Vermelho"
+        SUBEXECUCAO = "subexecucao", "Subexecução"
+        DEVOLUCAO = "devolucao", "Devolução"
+
+    tipo = models.CharField(max_length=30, choices=Tipo.choices, verbose_name="Tipo")
+    escopo = models.CharField(max_length=10, choices=Escopo.choices, verbose_name="Escopo")
+    referencia_id = models.PositiveBigIntegerField(verbose_name="ID do alvo")
+    rubrica = models.ForeignKey(
+        BudgetRubrica, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="alertas", verbose_name="Rubrica",
+    )
+    faixa = models.CharField(max_length=15, choices=Faixa.choices, blank=True, default="", verbose_name="Faixa")
+    percentual_atingido = models.DecimalField(max_digits=8, decimal_places=2, verbose_name="Percentual atingido")
+    criado_em = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    alertado_em = models.DateTimeField(default=timezone.now, verbose_name="Alertado em")
+    usuarios_alertados_ids = ArrayField(
+        models.BigIntegerField(), default=list, blank=True, verbose_name="Usuários alertados",
+    )
+    resolvido_em = models.DateTimeField(null=True, blank=True, verbose_name="Resolvido em")
+
+    class Meta:
+        verbose_name = "Alerta orçamentário"
+        verbose_name_plural = "Alertas orçamentários"
+        ordering = ["-alertado_em", "-pk"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["escopo", "referencia_id", "tipo"], condition=Q(resolvido_em__isnull=True),
+                name="uniq_budgetalert_aberto_por_alvo_e_tipo",
+            ),
+        ]
+
+    def __str__(self):
+        return f"[{self.tipo}] {self.escopo} #{self.referencia_id} — {self.faixa or self.percentual_atingido}"

@@ -121,18 +121,30 @@ def _saldo_a_acumular(user_id, rubrica_id, inicio: date) -> Decimal:
     return max(anterior.saldo_disponivel, ZERO) if anterior else ZERO
 
 
-def _periodo_livre(user_id, rubrica_id, data: date) -> tuple[date, date]:
+def _periodo_livre_entre(linhas, data: date) -> tuple[date, date]:
     """O período de `data`, encurtado para não cobrir uma sobrescrita de datas próprias que já terminou
     ou que ainda vai começar: duas linhas no mesmo dia dariam dois limites à mesma pessoa."""
     inicio, fim = periodo_de(data)
-    linhas = SpendingLimit.objects.filter(escopo=Escopo.INDIVIDUAL, user_id=user_id, rubrica_id=rubrica_id)
-    anterior = linhas.filter(periodo_fim__gte=inicio, periodo_fim__lt=data).order_by("-periodo_fim").first()
-    if anterior is not None:
-        inicio = anterior.periodo_fim + timedelta(days=1)
-    seguinte = linhas.filter(periodo_inicio__gt=data, periodo_inicio__lte=fim).order_by("periodo_inicio").first()
-    if seguinte is not None:
-        fim = seguinte.periodo_inicio - timedelta(days=1)
+    antes = [linha.periodo_fim for linha in linhas if inicio <= linha.periodo_fim < data]
+    depois = [linha.periodo_inicio for linha in linhas if data < linha.periodo_inicio <= fim]
+    if antes:
+        inicio = max(antes) + timedelta(days=1)
+    if depois:
+        fim = min(depois) - timedelta(days=1)
     return inicio, fim
+
+
+def _periodo_livre(user_id, rubrica_id, data: date) -> tuple[date, date]:
+    linhas = SpendingLimit.objects.filter(escopo=Escopo.INDIVIDUAL, user_id=user_id, rubrica_id=rubrica_id)
+    return _periodo_livre_entre(list(linhas), data)
+
+
+def _montar_herdada(user_id, rubrica_id, *, padrao, acumulado, inicio, fim, territorio_id) -> SpendingLimit:
+    return SpendingLimit(
+        escopo=Escopo.INDIVIDUAL, user_id=user_id, rubrica_id=rubrica_id, herdado=True,
+        territorio_id=territorio_id, valor_limite=(padrao.valor_limite if padrao else ZERO) + acumulado,
+        periodo_inicio=inicio, periodo_fim=fim,
+    )
 
 
 def _linha_herdada(user_id, rubrica_id, data: date) -> SpendingLimit | None:
@@ -143,11 +155,9 @@ def _linha_herdada(user_id, rubrica_id, data: date) -> SpendingLimit | None:
     acumulado = _saldo_a_acumular(user_id, rubrica_id, inicio)
     if padrao is None and acumulado <= ZERO:
         return None
-    return SpendingLimit(
-        escopo=Escopo.INDIVIDUAL, user_id=user_id, rubrica_id=rubrica_id, herdado=True,
+    return _montar_herdada(
+        user_id, rubrica_id, padrao=padrao, acumulado=acumulado, inicio=inicio, fim=fim,
         territorio_id=territorio_do_usuario(user_id),
-        valor_limite=(padrao.valor_limite if padrao else ZERO) + acumulado,
-        periodo_inicio=inicio, periodo_fim=fim,
     )
 
 
@@ -155,6 +165,46 @@ def limite_efetivo(user_id, rubrica_id, data: date | None = None) -> SpendingLim
     """Somente leitura: a linha vigente ou, sem ela, a que o padrão do perfil geraria."""
     data = data or hoje()
     return _linha_vigente(user_id, rubrica_id, data) or _linha_herdada(user_id, rubrica_id, data)
+
+
+def limites_efetivos(user_id, rubrica_ids, data: date | None = None) -> dict:
+    """`limite_efetivo` de várias rubricas, sem consultar o banco por rubrica."""
+    data = data or hoje()
+    rubrica_ids = list(rubrica_ids)
+    linhas_por_rubrica: dict = {}
+    for linha in SpendingLimit.objects.filter(escopo=Escopo.INDIVIDUAL, user_id=user_id, rubrica_id__in=rubrica_ids):
+        linhas_por_rubrica.setdefault(linha.rubrica_id, []).append(linha)
+    padroes: dict = {}
+    for padrao in (
+        _vigentes_em(data)
+        .filter(
+            escopo=Escopo.PERFIL, rubrica_id__in=rubrica_ids,
+            perfil__in=UserProfile.objects.filter(user_id=user_id).values("perfil"),
+        )
+        .order_by("-valor_limite", "pk")
+    ):
+        padroes.setdefault(padrao.rubrica_id, padrao)
+    acumula = get_config("budget_limit_carry_over", False)
+    territorio_id = territorio_do_usuario(user_id)
+
+    efetivos = {}
+    for rubrica_id in rubrica_ids:
+        linhas = linhas_por_rubrica.get(rubrica_id, [])
+        vigentes = [linha for linha in linhas if linha.periodo_inicio <= data <= linha.periodo_fim]
+        if vigentes:
+            efetivos[rubrica_id] = max(vigentes, key=lambda linha: linha.periodo_inicio)
+            continue
+        padrao = padroes.get(rubrica_id)
+        inicio, fim = _periodo_livre_entre(linhas, data)
+        anterior = next((linha for linha in linhas if linha.periodo_fim == inicio - timedelta(days=1)), None)
+        acumulado = max(anterior.saldo_disponivel, ZERO) if acumula and anterior else ZERO
+        if padrao is None and acumulado <= ZERO:
+            continue
+        efetivos[rubrica_id] = _montar_herdada(
+            user_id, rubrica_id, padrao=padrao, acumulado=acumulado, inicio=inicio, fim=fim,
+            territorio_id=territorio_id,
+        )
+    return efetivos
 
 
 def totais_por_rubrica(*, territorio_id: int | None = None, estados: set[str] | None = None) -> dict[int, dict]:

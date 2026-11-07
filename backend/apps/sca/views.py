@@ -45,6 +45,7 @@ from apps.sca.serializers import (
     ConflictLogDetailSerializer,
     ConflictLogListSerializer,
     ConflictResolveSerializer,
+    EspelhoSaldoSerializer,
     PushBatchSerializer,
     ScaErroSerializer,
     ScaRefreshSerializer,
@@ -629,6 +630,35 @@ class SyncStatusView(APIView):
                 "acesso_revogado": bool(request.user.acesso_revogado),
             }
         )
+
+
+# ---------------------------------------------------------------------------
+# Espelho de saldo
+# ---------------------------------------------------------------------------
+
+class EspelhoSaldoView(APIView):
+    """A fotografia gravada num pull, não o saldo de agora: é o que o técnico vê offline.
+    Sem `device_id`, vale a fotografia mais recente do usuário."""
+
+    permission_classes = [IsAuthenticatedActiveAccess]
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("X-Device-Id", str, OpenApiParameter.HEADER, required=False),
+            OpenApiParameter("device_id", str, OpenApiParameter.QUERY, required=False),
+        ],
+        responses=EspelhoSaldoSerializer,
+    )
+    def get(self, request):
+        dispositivos = SyncDevice.objects.filter(user=request.user, espelho_saldo_em__isnull=False)
+        device_id = _resolve_device_id(request)
+        if device_id:
+            dispositivos = dispositivos.filter(device_id=device_id)
+        dispositivo = dispositivos.order_by("-espelho_saldo_em").first()
+        return Response({
+            "saldos": dispositivo.espelho_saldo if dispositivo else [],
+            "ultimo_sync": dispositivo.espelho_saldo_em.isoformat() if dispositivo else None,
+        })
 
 
 # ---------------------------------------------------------------------------

@@ -77,13 +77,12 @@ def test_reservar_pool_reserva_na_alocacao_da_meta_da_atividade(
     demand_request_rn, solicitante_rn, rubrica_diarias, allocation_territorial_rn,
 ):
     outro_pool = BudgetPoolFactory(valor_alocado=Decimal("1"))
-    movimento = orcamento_service.reservar_pool(
+    pool = orcamento_service.reservar_pool(
         solicitante=solicitante_rn, rubrica=rubrica_diarias, valor=Decimal("300"),
         demand_request=demand_request_rn, usuario=solicitante_rn,
     )
 
-    assert movimento.pool == allocation_territorial_rn
-    assert movimento.comprometido_antes == Decimal("0")
+    assert pool == allocation_territorial_rn
     allocation_territorial_rn.refresh_from_db()
     outro_pool.refresh_from_db()
     assert allocation_territorial_rn.valor_comprometido == Decimal("300")

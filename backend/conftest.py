@@ -1,4 +1,5 @@
 import os
+from unittest.mock import patch
 
 import pytest
 from django.conf import settings
@@ -12,6 +13,14 @@ def pytest_configure(config):
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         }
     }
+
+
+@pytest.fixture(autouse=True)
+def sem_tarefa_de_alerta_no_broker():
+    """Com `transaction=True` o `on_commit` roda de verdade, e um worker de desenvolvimento
+    consumiria ids do banco de teste."""
+    with patch("apps.sgp.tasks.check_budget_thresholds.delay"):
+        yield
 
 
 def pytest_collection_modifyitems(config, items):
