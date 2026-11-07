@@ -142,6 +142,11 @@ class TestPerfis:
 
         assert _ids(auth_client_articulador_rn.get(URL)) == [do_rn.pk]
 
+    def test_articulador_continua_vendo_o_risco_de_atividade_inativa(self, auth_client_articulador_rn, municipio_rn):
+        risco = _risco(1, activity=ActivityFactory(municipio=municipio_rn, ativo=False))
+
+        assert _ids(auth_client_articulador_rn.get(URL)) == [risco.pk]
+
     @pytest.mark.parametrize("cliente", ["auth_client_adt_rn", "auth_client_sem_acesso"])
     def test_demais_perfis_recebem_403(self, request, cliente, atividade_rn):
         _risco(1, activity=atividade_rn)

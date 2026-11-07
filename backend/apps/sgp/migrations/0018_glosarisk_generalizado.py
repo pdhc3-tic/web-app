@@ -16,6 +16,11 @@ def preencher_origem_e_atividade(apps, schema_editor):
     GlosaRisk.objects.bulk_update(riscos, ["entidade_id", "activity"], batch_size=500)
 
 
+def apagar_riscos_sem_evidencia(apps, schema_editor):
+    """O esquema antigo só comporta pago acima do autorizado: valores obrigatórios e uma linha por solicitação."""
+    apps.get_model("sgp", "GlosaRisk").objects.filter(tipo_situacao="demanda_sem_evidencia").delete()
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -138,5 +143,5 @@ class Migration(migrations.Migration):
                 name="uniq_glosarisk_sem_evidencia_por_entidade",
             ),
         ),
-        migrations.RunPython(preencher_origem_e_atividade, migrations.RunPython.noop),
+        migrations.RunPython(preencher_origem_e_atividade, apagar_riscos_sem_evidencia),
     ]

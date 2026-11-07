@@ -8,10 +8,9 @@ from apps.core.permissions import (
     IsSuperAdmin,
     IsUGP,
 )
-from apps.core.services.permissions import user_role_slugs
+from apps.core.services.permissions import user_role_slugs, user_states
 from apps.sgp.models import GlosaRisk
 from apps.sgp.serializers.glosa_risk import GlosaRiskQuerySerializer, GlosaRiskSerializer
-from apps.sgp.services.workplan_access import activity_scope_for_user
 
 PERFIS_COM_VISAO_TOTAL = ("super-admin", "ugp", "fgd")
 
@@ -35,7 +34,8 @@ class GlosaRiskListView(generics.ListAPIView):
 
         riscos = GlosaRisk.objects.all()
         if not user_role_slugs(self.request.user, PERFIS_COM_VISAO_TOTAL):
-            riscos = riscos.filter(activity_scope_for_user(self.request.user, prefix="activity__"))
+            # Sem filtrar `ativo`: inativar a atividade não apaga o risco da despesa já feita.
+            riscos = riscos.filter(activity__municipio__state__sigla__in=user_states(self.request.user))
         if "activity" in filtros:
             riscos = riscos.filter(activity_id=filtros["activity"])
         if "tipo" in filtros:
