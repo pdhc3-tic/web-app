@@ -1,6 +1,14 @@
 from rest_framework import serializers
 
 
+def recusar_nomes_antigos(dados, nomes: dict) -> None:
+    """O DRF ignora chave desconhecida: sem isto, quem ainda envia o nome antigo receberia sucesso
+    e o dado se perderia sem nenhum erro."""
+    erros = {antigo: f"Use `{novo}`." for antigo, novo in nomes.items() if antigo in dados}
+    if erros:
+        raise serializers.ValidationError(erros)
+
+
 class NestedSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
     nome = serializers.CharField(read_only=True)

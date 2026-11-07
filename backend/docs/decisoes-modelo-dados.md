@@ -69,7 +69,7 @@ apenas para `User`.
 ## 3. `UFPA` — dados pessoais do titular normalizados em `MembroFamilia`
 
 **Especificação:** `UFPA` tem, diretamente, os campos de identificação do
-titular: `nome_titular, cpf, rg, data_nasc, genero, cor_raca, nis, daf_caf,
+titular: `nome_titular, cpf, rg, data_nasc, genero, cor_raca, nis, dap_caf,
 estado_civil, escolaridade, telefone, email, ...`.
 
 **Implementação:** `apps/sgp/models/ufpa.py` não tem nenhum desses campos.
@@ -87,8 +87,8 @@ pessoa ser titular ou dependente.
 **Consequências:** qualquer código que precise de dados pessoais do titular
 de uma `UFPA` precisa navegar por `ufpa.titular.<campo>`, não `ufpa.<campo>`
 diretamente. Campos que a especificação lista para `UFPA` mas que não existem
-nem em `UFPA` nem em `MembroFamilia` — `daf_caf` (existe como `caf`, sem o
-prefixo "da"), `estado_civil`, `telefone`, `email` — estão listados na seção
+nem em `UFPA` nem em `MembroFamilia` — `dap_caf` (existe como `caf`, sem o
+prefixo), `estado_civil`, `telefone`, `email` — estão listados na seção
 "Pontos a validar" abaixo, pois não há justificativa técnica registrada para
 a ausência deles.
 
@@ -308,6 +308,12 @@ ADT e ACR precisam de valores diferentes. Hoje os dois são um só perfil no sis
 - **Índices automáticos do Django:** os criados por FK e `unique` (`sgp_upf_municipio_id_...`) mantêm o nome de origem, sem efeito no funcionamento. Os nomeados no modelo (`idx_ufpa_*`) foram recriados.
 - **Auditoria gravada:** o `AuditLog` é imutável, então o histórico lê `UFPA` e `UPF`. As chaves dentro de registros antigos, como `upf_id`, ficam como foram gravadas.
 - **Arquivos já enviados:** a chave gravada continua válida; só upload novo usa `ufpas/`.
+- **Chaves antigas na escrita:** `upfs_participantes` e `daf_caf` respondem 400 durante o ciclo. Como o DRF ignora chave desconhecida, sem isso o front ainda não migrado receberia sucesso e perderia o dado.
+- **`dap_caf`:** o campo `daf_caf` da API passa a se chamar como no SGP 10.1 e no Relatório. O nome do modelo continua `numero_dap`.
+- **Critério do `grep` da #392:** além das migrations antigas e dos aliases, ele acha o que trata o nome antigo de propósito: `NOMES_DA_ENTIDADE`, a recusa das chaves antigas, `ROTAS_DEPRECIADAS` e os testes disso.
+- **`AlterModelTable`:** não foi preciso: `RenameModel` já move as tabelas, e `AlterField(db_table=...)` leva a M2M a `sgp_activityufpa`.
+- **Conflitos do SCA:** a migration troca `entidade` e `campo`, porque o `campo` volta ao objeto na resolução. Os valores dentro de `valor_local` e `valor_servidor` e os detalhes de erro de `SyncEvent` ficam como foram gravados.
+- **Limite do valor total da Ação:** `valor_unitario` em (14,2) não basta: quantidade × valor também precisa caber nesse limite, e a API recusa com 400. As saídas agregadas de Ação, Submeta, Meta e painel não têm limite de dígitos, para um total alto nunca derrubar a leitura.
 - **Ensaio da migration:** não há produção. Medido numa cópia com o seed de demonstração (300 UFPAs, 1.140 membros, 692 participantes): 9,5 s no total, contando a inicialização do Django, sem perda ao reverter e reaplicar.
 
 ---
@@ -321,6 +327,6 @@ Fica aqui como nota para a coordenação técnica confirmar se é decisão
 implícita (e então deve virar uma entrada numerada acima) ou lacuna real:
 
 - **`UFPA`/`MembroFamilia` não têm `estado_civil`, `telefone` nem `email`**,
-  campos que a especificação lista para `UFPA`. `daf_caf` da especificação
-  existe como `MembroFamilia.caf` (sem o prefixo "DA"), o que pode ser só uma
+  campos que a especificação lista para `UFPA`. `dap_caf` da especificação
+  existe como `MembroFamilia.caf` (sem o prefixo), o que pode ser só uma
   simplificação de nome, não uma lacuna.

@@ -277,7 +277,7 @@ def ufpa_payload_completo(projeto, municipio):
         "longitude": "-37.123456",
         "situacao_moradia": 1,
         "tipo_moradia": 1,
-        "daf_caf": "DAP123456",
+        "dap_caf": "DAP123456",
         "foto_url": "https://example.com/foto.jpg",
     }
 

@@ -1,15 +1,20 @@
 from django.db import migrations
+from django.db.models import Value
+from django.db.models.functions import Replace
 
 
 def _conflitos(apps, de, para):
-    apps.get_model("sca", "ConflictLog").objects.filter(entidade=de).update(entidade=para)
+    """`campo` volta ao objeto na resolução do conflito, então precisa do nome novo do campo."""
+    conflitos = apps.get_model("sca", "ConflictLog").objects
+    conflitos.filter(entidade=de).update(entidade=para)
+    conflitos.filter(campo__contains=de).update(campo=Replace("campo", Value(de), Value(para)))
 
 
-def entidade_nova(apps, schema_editor):
+def nomes_novos(apps, schema_editor):
     _conflitos(apps, "upf", "ufpa")
 
 
-def entidade_antiga(apps, schema_editor):
+def nomes_antigos(apps, schema_editor):
     _conflitos(apps, "ufpa", "upf")
 
 
@@ -20,5 +25,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(entidade_nova, entidade_antiga),
+        migrations.RunPython(nomes_novos, nomes_antigos),
     ]

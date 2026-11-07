@@ -9,7 +9,7 @@ from apps.core.tests.factories import AuditLogFactory
 from apps.sca.models import ConflictLog
 from apps.sca.tests.factories import ConflictLogFactory
 from apps.sgp.models import ExportJob
-from apps.sgp.tests.factories import MembroFactory, UFPAFactory
+from apps.sgp.tests.factories import ActivityFactory, MembroFactory, UFPAFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -46,7 +46,18 @@ class TestRotas:
     def test_rotas_aninhadas_existem_nos_tres_prefixos(self, auth_client, prefixo, sufixo):
         ufpa = UFPAFactory()
 
-        assert auth_client.get(f"{prefixo}{ufpa.pk}/{sufixo}").status_code != 404
+        status_canonico = auth_client.get(f"{CANONICA}{ufpa.pk}/{sufixo}").status_code
+
+        assert status_canonico == 200
+        assert auth_client.get(f"{prefixo}{ufpa.pk}/{sufixo}").status_code == status_canonico
+
+    @pytest.mark.parametrize("prefixo", ALIASES)
+    def test_link_do_alias_aponta_para_a_mesma_rota_aninhada(self, auth_client, prefixo):
+        ufpa = UFPAFactory()
+
+        resposta = auth_client.get(f"{prefixo}{ufpa.pk}/membros/")
+
+        assert resposta["Link"] == f'<{CANONICA}{ufpa.pk}/membros/>; rel="successor-version"'
 
     @pytest.mark.parametrize("sufixo", ["exportar/", "mapa/"])
     def test_acoes_da_lista_nao_viram_detalhe(self, auth_client, sufixo):
@@ -81,18 +92,19 @@ class TestDadosComONomeAntigo:
     def test_historico_le_a_auditoria_gravada_como_upf(self, auth_client):
         ufpa = UFPAFactory()
         AuditLogFactory(
-            entidade="UPF", entidade_id=str(ufpa.pk), acao="UPDATE",
+            entidade="UPF", entidade_id=str(ufpa.pk), acao="UPF.update",
             valores_anteriores={"num_comodos": 1}, valores_novos={"num_comodos": 2},
         )
 
         resposta = auth_client.get(f"{CANONICA}{ufpa.pk}/historico/")
 
         assert resposta.status_code == 200
-        assert resposta.data["results"]
+        entrada = resposta.data["results"][0]
+        assert (entrada["campo"], entrada["valor_anterior"], entrada["valor_novo"]) == ("num_comodos", 1, 2)
 
     def test_historico_nao_mistura_auditoria_de_outra_ufpa(self, auth_client):
         ufpa, outra = UFPAFactory(), UFPAFactory()
-        AuditLogFactory(entidade="UPF", entidade_id=str(outra.pk), acao="UPDATE")
+        AuditLogFactory(entidade="UPF", entidade_id=str(outra.pk), acao="UPF.update")
 
         assert auth_client.get(f"{CANONICA}{ufpa.pk}/historico/").data["results"] == []
 
@@ -109,15 +121,78 @@ class TestDadosComONomeAntigo:
         outro.refresh_from_db()
         assert (job.tipo, outro.tipo) == ("upfs", "atividades")
 
-    def test_migration_troca_a_entidade_dos_conflitos_nos_dois_sentidos(self):
-        conflito = ConflictLogFactory(entidade="upf")
-        outro = ConflictLogFactory(entidade="member")
+    def test_filtro_da_auditoria_traz_as_linhas_com_o_nome_antigo(self, auth_client_super_admin):
+        antiga = AuditLogFactory(entidade="UPF", acao="UPF.update")
+        nova = AuditLogFactory(entidade="UFPA", acao="UFPA.update")
+        AuditLogFactory(entidade="MembroFamilia", acao="MembroFamilia.update")
 
-        migration_sca.entidade_nova(apps, None)
-        conflito.refresh_from_db()
-        assert conflito.entidade == "ufpa"
+        resposta = auth_client_super_admin.get("/api/v1/audit-logs/", {"entidade": "UFPA"})
 
-        migration_sca.entidade_antiga(apps, None)
-        conflito.refresh_from_db()
-        assert conflito.entidade == "upf"
-        assert ConflictLog.objects.get(pk=outro.pk).entidade == "member"
+        assert {item["id"] for item in resposta.data["results"]} == {antiga.pk, nova.pk}
+
+    def test_filtro_da_auditoria_de_outra_entidade_continua_exato(self, auth_client_super_admin):
+        AuditLogFactory(entidade="UPF", acao="UPF.update")
+        membro = AuditLogFactory(entidade="MembroFamilia", acao="MembroFamilia.update")
+
+        resposta = auth_client_super_admin.get("/api/v1/audit-logs/", {"entidade": "MembroFamilia"})
+
+        assert [item["id"] for item in resposta.data["results"]] == [membro.pk]
+
+    def test_migration_troca_entidade_e_campo_dos_conflitos_nos_dois_sentidos(self):
+        da_ufpa = ConflictLogFactory(entidade="upf", campo="whatsapp")
+        do_membro = ConflictLogFactory(entidade="member", campo="upf")
+        da_atividade = ConflictLogFactory(entidade="activity", campo="upfs_participantes")
+        sem_mudanca = ConflictLogFactory(entidade="member", campo="whatsapp")
+
+        migration_sca.nomes_novos(apps, None)
+
+        assert ConflictLog.objects.get(pk=da_ufpa.pk).entidade == "ufpa"
+        assert ConflictLog.objects.get(pk=do_membro.pk).campo == "ufpa"
+        assert ConflictLog.objects.get(pk=da_atividade.pk).campo == "ufpas_participantes"
+
+        migration_sca.nomes_antigos(apps, None)
+
+        assert ConflictLog.objects.get(pk=da_ufpa.pk).entidade == "upf"
+        assert ConflictLog.objects.get(pk=do_membro.pk).campo == "upf"
+        assert ConflictLog.objects.get(pk=da_atividade.pk).campo == "upfs_participantes"
+        assert (sem_mudanca.entidade, ConflictLog.objects.get(pk=sem_mudanca.pk).campo) == ("member", "whatsapp")
+
+
+class TestNomesAntigosNaEscrita:
+    def test_atividade_recusa_a_chave_antiga_de_participantes(self, auth_client_super_admin):
+        atividade = ActivityFactory()
+
+        resposta = auth_client_super_admin.patch(
+            f"/api/v1/sgp/atividades/{atividade.pk}/", {"upfs_participantes": []}, format="json",
+        )
+
+        assert resposta.status_code == 400
+        assert "ufpas_participantes" in str(resposta.data["upfs_participantes"])
+
+    def test_atividade_aceita_a_chave_nova(self, auth_client_super_admin):
+        atividade, ufpa = ActivityFactory(), UFPAFactory()
+
+        resposta = auth_client_super_admin.patch(
+            f"/api/v1/sgp/atividades/{atividade.pk}/", {"ufpas_participantes": [ufpa.pk]}, format="json",
+        )
+
+        assert resposta.status_code == 200, resposta.data
+        assert list(atividade.ufpas_participantes.values_list("pk", flat=True)) == [ufpa.pk]
+
+    def test_ufpa_recusa_daf_caf(self, auth_client_super_admin):
+        ufpa = UFPAFactory()
+
+        resposta = auth_client_super_admin.patch(f"{CANONICA}{ufpa.pk}/", {"daf_caf": "123"}, format="json")
+
+        assert resposta.status_code == 400
+        assert "dap_caf" in str(resposta.data["daf_caf"])
+
+    def test_ufpa_grava_e_devolve_dap_caf(self, auth_client_super_admin):
+        ufpa = UFPAFactory()
+
+        resposta = auth_client_super_admin.patch(f"{CANONICA}{ufpa.pk}/", {"dap_caf": "123"}, format="json")
+
+        assert resposta.status_code == 200, resposta.data
+        assert resposta.data["dap_caf"] == "123"
+        ufpa.refresh_from_db()
+        assert ufpa.numero_dap == "123"

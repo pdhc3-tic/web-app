@@ -272,10 +272,10 @@ SPECTACULAR_SETTINGS = {
     # Componentes separados para leitura e escrita (`XRequest`), para os tipos
     # gerados no frontend não exigirem campos read-only no payload.
     "COMPONENT_SPLIT_REQUEST": True,
+    "PREPROCESSING_HOOKS": ["apps.core.openapi.sem_rotas_depreciadas"],
     # Campos homônimos (`status`, `tipo`) com choices diferentes ganhariam um
     # sufixo de hash (`Status8eaEnum`), que muda sempre que outro choice é
     # alterado e quebra os tipos gerados no frontend.
-    "PREPROCESSING_HOOKS": ["apps.core.openapi.sem_rotas_depreciadas"],
     "ENUM_NAME_OVERRIDES": {
         "StatusAtividadeEnum": "apps.sgp.models.activity.STATUS_CHOICES",
         "EscopoLimiteDeGastoEnum": "apps.sgp.budget.models.SpendingLimit.Escopo",
@@ -313,7 +313,7 @@ CORS_ALLOWED_ORIGINS = [
 ]
 # Sem isso o navegador esconde do `fetch` o nome do arquivo das exportações
 # quando o frontend está em outra origem.
-CORS_EXPOSE_HEADERS = ["Content-Disposition"]
+CORS_EXPOSE_HEADERS = ["Content-Disposition", "Deprecation", "Link"]
 
 # Exportação de UFPAs: até este total o arquivo sai na própria requisição; acima,
 # vira ExportJob processado pelo worker.

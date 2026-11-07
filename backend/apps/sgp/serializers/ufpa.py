@@ -8,7 +8,7 @@ from apps.core.models import Municipality
 from apps.core.serializers import UsuarioRefSerializer
 from apps.core.sensitive_fields import SensitiveFieldsSerializerMixin, mascarar_cpf
 from apps.sgp.models import Comunidade, MembroFamilia, Projeto, UFPA
-from apps.sgp.serializers.common import MunicipioNestedSerializer, NestedSerializer
+from apps.sgp.serializers.common import MunicipioNestedSerializer, NestedSerializer, recusar_nomes_antigos
 from apps.sgp.serializers.membro import MembroListSerializer
 from apps.sgp.services.membro_rules import CPFDuplicadoError, CPFInvalidoError, validar_cpf
 
@@ -108,7 +108,7 @@ class UFPADetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeri
     titular = TitularNestedSerializer(read_only=True)
 
     # ── UFPA campos ──
-    daf_caf = serializers.CharField(
+    dap_caf = serializers.CharField(
         source="numero_dap", required=False, allow_blank=True,
     )
     projeto = serializers.PrimaryKeyRelatedField(queryset=Projeto.objects.all())
@@ -135,7 +135,7 @@ class UFPADetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeri
             "pct", "posse_terra", "area_terra_ha",
             "situacao_moradia", "tipo_moradia", "material_construcao",
             "num_comodos", "energia", "agua",
-            "daf_caf", "seguridade_social",
+            "dap_caf", "seguridade_social",
             "foto_url", "criado_por", "ativo", "criado_em",
             "atualizado_em", "membros",
             # Sync SCA
@@ -152,6 +152,10 @@ class UFPADetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeri
     def get_membros(self, obj):
         membros = obj.membros.all()
         return MembroListSerializer(membros, many=True, context=self.context).data
+
+    def validate(self, attrs):
+        recusar_nomes_antigos(self.initial_data, {"daf_caf": "dap_caf"})
+        return super().validate(attrs)
 
     def validate_cpf(self, value):
         membro_atual = self.instance.titular if self.instance else None
@@ -206,9 +210,9 @@ class UFPADetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeri
             "num_comodos", "energia", "agua", "seguridade_social",
             "foto_url", "ativo", "ultima_origem",
         }
-        daf_caf = attrs.pop("numero_dap", None)
-        if daf_caf is not None:
-            ufpa_fields["numero_dap"] = daf_caf
+        dap_caf = attrs.pop("numero_dap", None)
+        if dap_caf is not None:
+            ufpa_fields["numero_dap"] = dap_caf
         for key in ufpa_field_names:
             if key in attrs:
                 ufpa_fields[key] = attrs[key]

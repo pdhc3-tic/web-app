@@ -14592,7 +14592,7 @@ components:
           oneOf:
           - $ref: '#/components/schemas/AguaEnum'
           - $ref: '#/components/schemas/NullEnum'
-        daf_caf:
+        dap_caf:
           type: string
         seguridade_social: {}
         foto_url:
@@ -17434,7 +17434,7 @@ components:
           oneOf:
           - $ref: '#/components/schemas/AguaEnum'
           - $ref: '#/components/schemas/NullEnum'
-        daf_caf:
+        dap_caf:
           type: string
         seguridade_social: {}
         foto_url:
@@ -17591,7 +17591,7 @@ components:
           oneOf:
           - $ref: '#/components/schemas/AguaEnum'
           - $ref: '#/components/schemas/NullEnum'
-        daf_caf:
+        dap_caf:
           type: string
         seguridade_social: {}
         foto_url:
@@ -18157,7 +18157,6 @@ components:
         quantidade_planejada:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
         quantidade_realizada:
           type: string
           format: decimal
@@ -18249,7 +18248,6 @@ components:
         valor_total:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         rubricas_previstas:
           type: array
@@ -18270,7 +18268,6 @@ components:
         valor_executado:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         custo_unitario_realizado:
           type: string
@@ -18362,7 +18359,6 @@ components:
         valor_total:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         rubricas_previstas:
           type: array
@@ -18383,7 +18379,6 @@ components:
         valor_executado:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         custo_unitario_realizado:
           type: string
@@ -18540,12 +18535,10 @@ components:
         valor_total:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         valor_executado:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         percentual_financeiro:
           type: string
@@ -18634,7 +18627,6 @@ components:
         quantidade_planejada:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
         quantidade_realizada:
           type: string
           format: decimal
@@ -18655,11 +18647,9 @@ components:
         valor_total:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
         valor_executado:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
         percentual_financeiro:
           type: string
           format: decimal
@@ -18770,17 +18760,14 @@ components:
         quantidade_planejada:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         valor_total_planejado:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         valor_executado:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         status_calculado:
           type: string
@@ -18880,17 +18867,14 @@ components:
         quantidade_planejada:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         valor_total_planejado:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         valor_executado:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         status_calculado:
           type: string
@@ -18965,7 +18949,6 @@ components:
         quantidade_planejada:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         quantidade_realizada:
           type: integer
@@ -18973,12 +18956,10 @@ components:
         valor_total:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         valor_executado:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         status_execucao:
           type: string
@@ -19045,7 +19026,6 @@ components:
         quantidade_planejada:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         quantidade_realizada:
           type: integer
@@ -19053,12 +19033,10 @@ components:
         valor_total:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         valor_executado:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         status_execucao:
           type: string
@@ -19145,7 +19123,6 @@ components:
         quantidade_planejada:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
         quantidade_realizada:
           type: string
           format: decimal

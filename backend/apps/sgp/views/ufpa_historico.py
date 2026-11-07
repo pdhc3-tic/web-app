@@ -7,15 +7,12 @@ from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 
-from apps.core.models.audit_log import AuditLog
+from apps.core.models.audit_log import NOMES_DA_ENTIDADE, AuditLog
 from apps.core.services.permissions import user_role_slugs
 from apps.sgp.models import UFPA
 from apps.sgp.pagination import HistoricoPagination
 from apps.sgp.serializers import HistoricoEntrySerializer
 from apps.sgp.services.access import ROLES_COM_ESCOPO, ufpas_acessiveis_ao_usuario
-
-# O AuditLog é imutável: o que foi gravado antes da renomeação continua com o nome antigo.
-ENTIDADES_DA_UFPA = ("UFPA", "UPF")
 
 # Mesmo padrão de mixin de UFPAPhotoMixin/UFPADocumentMixin.
 
@@ -47,7 +44,7 @@ class UFPAHistoricoMixin:
     @action(detail=True, methods=["get"], url_path="historico", pagination_class=HistoricoPagination)
     def historico(self, request, pk=None):
         ufpa = self._get_ufpa_including_inativas(pk)
-        q = Q(entidade__in=ENTIDADES_DA_UFPA, entidade_id=str(ufpa.pk))
+        q = Q(entidade__in=NOMES_DA_ENTIDADE["UFPA"], entidade_id=str(ufpa.pk))
 
         incluir_membros = request.query_params.get("incluir_membros") == "true"
         if incluir_membros:

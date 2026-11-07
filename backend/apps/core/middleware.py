@@ -28,7 +28,7 @@ class RotaDepreciadaMiddleware:
         for prefixo, canonica in ROTAS_DEPRECIADAS.items():
             if request.path.startswith(prefixo):
                 response["Deprecation"] = "true"
-                response["Link"] = f'<{canonica}>; rel="successor-version"'
+                response["Link"] = f'<{canonica}{request.path[len(prefixo):]}>; rel="successor-version"'
                 break
         return response
 

@@ -18,6 +18,7 @@ from apps.sgp.serializers.common import (
     PlanoTrabalhoSerializer,
     PlanoTrabalhoSubmetaRefSerializer,
     plano_trabalho_da_acao,
+    recusar_nomes_antigos,
 )
 from apps.sgp.serializers.membro import MembroListSerializer
 from apps.sgp.serializers.ufpa import UFPAListSerializer
@@ -240,6 +241,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
     # ── Validação cruzada (validate) ──────────────────────────────────────────
 
     def validate(self, attrs):
+        recusar_nomes_antigos(self.initial_data, {"upfs_participantes": "ufpas_participantes"})
         novo_status = attrs.get("status")
         if novo_status is None:
             novo_status = self.instance.status if self.instance else "planejado"

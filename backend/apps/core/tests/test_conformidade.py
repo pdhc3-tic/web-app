@@ -5,6 +5,10 @@ from django.db import connection, models
 PREFIXOS_MONETARIOS = ("valor_", "custo_", "saldo_", "renda_")
 
 
+def _e_monetario(campo) -> bool:
+    return campo.name == "valor" or campo.name.startswith(PREFIXOS_MONETARIOS)
+
+
 def _modelos(*rotulos):
     return [modelo for rotulo in rotulos for modelo in apps.get_app_config(rotulo).get_models()]
 
@@ -30,14 +34,14 @@ def test_orcamento_e_sgd_nao_tem_float_field():
 
 def test_campos_monetarios_sao_decimal_de_14_com_2_casas():
     decimais = _campos(_modelos("sgp", "sgd"), models.DecimalField)
-    monetarios = [(modelo, campo) for modelo, campo in decimais if campo.name.startswith(PREFIXOS_MONETARIOS)]
+    monetarios = [(modelo, campo) for modelo, campo in decimais if _e_monetario(campo)]
     fora_do_padrao = [
         f"{modelo.__name__}.{campo.name} ({campo.max_digits},{campo.decimal_places})"
         for modelo, campo in monetarios
         if (campo.max_digits, campo.decimal_places) != (14, 2)
     ]
 
-    assert monetarios
+    assert ("BudgetTransaction", "valor") in {(modelo.__name__, campo.name) for modelo, campo in monetarios}
     assert fora_do_padrao == []
 
 
@@ -47,7 +51,7 @@ def test_nenhum_campo_monetario_e_float_ou_inteiro():
     assert [
         f"{modelo.__name__}.{campo.name}"
         for modelo, campo in numericos
-        if campo.name.startswith(PREFIXOS_MONETARIOS)
+        if _e_monetario(campo)
     ] == []
 
 
