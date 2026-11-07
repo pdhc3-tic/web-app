@@ -105,6 +105,14 @@ class Migration(migrations.Migration):
                 name="ck_userprofile_objeto_tipo_e_id_juntos",
             ),
         ),
+        migrations.AddConstraint(
+            model_name="userprofile",
+            constraint=models.UniqueConstraint(
+                condition=Q(objeto_tipo__isnull=False),
+                fields=("user", "perfil", "objeto_tipo", "objeto_id"),
+                name="uniq_userprofile_designacao_por_objeto",
+            ),
+        ),
         migrations.RunPython(semear_perfis_operacionais, migrations.RunPython.noop),
         migrations.RunSQL(TRIGGER_DA_ABRANGENCIA, REMOVER_TRIGGER),
     ]

@@ -78,6 +78,11 @@ class UserProfile(models.Model):
                 ),
                 name="ck_userprofile_objeto_tipo_e_id_juntos",
             ),
+            models.UniqueConstraint(
+                fields=["user", "perfil", "objeto_tipo", "objeto_id"],
+                condition=Q(objeto_tipo__isnull=False),
+                name="uniq_userprofile_designacao_por_objeto",
+            ),
         ]
 
     def clean(self):

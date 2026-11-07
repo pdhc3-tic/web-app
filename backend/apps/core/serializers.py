@@ -255,11 +255,16 @@ class UserListSerializer(serializers.ModelSerializer):
         return TerritorySerializer(self._territorios_do_usuario(obj), many=True).data
 
 
+MAIOR_OBJETO_ID = 2**63 - 1  # Limite do `PositiveBigIntegerField` no PostgreSQL.
+
+
 class PerfilInputSerializer(serializers.Serializer):
     perfil_id = serializers.IntegerField()
     territorio_id = serializers.IntegerField(allow_null=True, required=False, default=None)
     objeto_tipo = serializers.ChoiceField(choices=ObjetoTipo.choices, allow_null=True, required=False, default=None)
-    objeto_id = serializers.IntegerField(min_value=1, allow_null=True, required=False, default=None)
+    objeto_id = serializers.IntegerField(
+        min_value=1, max_value=MAIOR_OBJETO_ID, allow_null=True, required=False, default=None,
+    )
 
 
 class DemandaCanceladaNaDesativacaoSerializer(serializers.Serializer):
@@ -387,6 +392,12 @@ class UserDetailSerializer(serializers.ModelSerializer):
 
     def validate_perfis_input(self, value):
         perfis = Role.objects.in_bulk({item["perfil_id"] for item in value})
+        designacoes = [
+            (item["perfil_id"], item["objeto_tipo"], item.get("objeto_id"))
+            for item in value if item.get("objeto_tipo") is not None
+        ]
+        if len(designacoes) != len(set(designacoes)):
+            raise serializers.ValidationError("O mesmo perfil está designado duas vezes ao mesmo objeto.")
         for item in value:
             perfil = perfis.get(item["perfil_id"])
             if perfil is None:

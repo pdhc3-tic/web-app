@@ -14254,7 +14254,9 @@ components:
           - $ref: '#/components/schemas/NullEnum'
         objeto_id:
           type: integer
+          maximum: 9223372036854775807
           minimum: 1
+          format: int64
           nullable: true
       required:
       - perfil_id
@@ -14273,7 +14275,9 @@ components:
           - $ref: '#/components/schemas/NullEnum'
         objeto_id:
           type: integer
+          maximum: 9223372036854775807
           minimum: 1
+          format: int64
           nullable: true
       required:
       - perfil_id

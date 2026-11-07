@@ -215,6 +215,43 @@ class TestAtribuicaoPelaApi:
     def test_perfil_inexistente_e_400(self, cliente):
         assert cliente.post(USERS_URL, _payload({"perfil_id": 999999}), format="json").status_code == 400
 
+    @pytest.mark.parametrize("objeto_id", [0, -1, 2**63])
+    def test_objeto_id_fora_da_coluna_e_400(self, cliente, objeto_id):
+        resposta = cliente.post(USERS_URL, _payload(
+            {"perfil_id": _principal().pk},
+            {"perfil_id": _operacional().pk, "objeto_tipo": "evento", "objeto_id": objeto_id},
+        ), format="json")
+
+        assert resposta.status_code == 400
+
+    def test_maior_objeto_id_da_coluna_e_aceito(self, cliente):
+        resposta = cliente.post(USERS_URL, _payload(
+            {"perfil_id": _principal().pk},
+            {"perfil_id": _operacional().pk, "objeto_tipo": "evento", "objeto_id": 2**63 - 1},
+        ), format="json")
+
+        assert resposta.status_code == 201, resposta.data
+
+    def test_mesma_designacao_repetida_e_400(self, cliente):
+        operacional = {"perfil_id": _operacional().pk, "objeto_tipo": "evento", "objeto_id": 10}
+
+        resposta = cliente.post(USERS_URL, _payload(
+            {"perfil_id": _principal().pk}, operacional, operacional,
+        ), format="json")
+
+        assert resposta.status_code == 400
+
+    def test_mesmo_perfil_em_objetos_diferentes_e_aceito(self, cliente):
+        operacional = _operacional().pk
+
+        resposta = cliente.post(USERS_URL, _payload(
+            {"perfil_id": _principal().pk},
+            {"perfil_id": operacional, "objeto_tipo": "evento", "objeto_id": 10},
+            {"perfil_id": operacional, "objeto_tipo": "evento", "objeto_id": 11},
+        ), format="json")
+
+        assert resposta.status_code == 201, resposta.data
+
     def test_patch_valida_e_grava_o_objeto(self, cliente):
         usuario = UserFactory()
         principal, operacional = _principal(), _operacional()
@@ -227,6 +264,14 @@ class TestAtribuicaoPelaApi:
         assert resposta.status_code == 200, resposta.data
         vinculo = usuario.profiles.get(perfil=operacional)
         assert (vinculo.objeto_tipo, vinculo.objeto_id) == ("evento", 10)
+
+    def test_patch_com_tipo_sem_id_e_400(self, cliente):
+        resposta = cliente.patch(f"{USERS_URL}{UserFactory().pk}/", {"perfis_input": [
+            {"perfil_id": _principal().pk},
+            {"perfil_id": _operacional().pk, "objeto_tipo": "evento"},
+        ]}, format="json")
+
+        assert resposta.status_code == 400
 
     def test_patch_de_principal_sem_os_campos_opcionais_continua_valido(self, cliente):
         usuario = UserFactory()
@@ -257,6 +302,13 @@ class TestNoBanco:
 
     def test_id_sem_tipo_e_recusado(self):
         self._inserir(_principal(), objeto_id=1)
+
+    def test_designacao_repetida_e_recusada(self):
+        usuario = UserFactory()
+        _designar(usuario, "credenciador", objeto_id=10)
+
+        with pytest.raises(IntegrityError), transaction.atomic():
+            _designar(usuario, "credenciador", objeto_id=10)
 
     def test_vinculos_validos_sao_aceitos(self):
         usuario = UserFactory()
