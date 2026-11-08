@@ -9,8 +9,8 @@ import {
 } from "@/app/lib/sgdDashboard";
 
 const alerta = (extra: Partial<AlertaSaldo> = {}): AlertaSaldo => ({
-  meta_id: 9,
-  meta_numero: "2",
+  meta_id: null,
+  meta_numero: null,
   rubrica_id: 4,
   rubrica_slug: "alimentacao-refeicoes",
   rubrica_nome: "Alimentação",
@@ -51,19 +51,19 @@ describe("links do painel", () => {
   });
 
   it("alerta leva à Execução por Rubrica filtrada pela célula", () => {
-    expect(linkDoAlerta(alerta(), true)).toBe("/sgd/execucao?rubrica=alimentacao-refeicoes&meta=9");
+    expect(linkDoAlerta(alerta(), true)).toBe("/sgd/execucao?rubrica=alimentacao-refeicoes");
     expect(linkDoAlerta(alerta({ nivel: "territorial", estado_sigla: null, territorio_id: 4 }), true)).toBe(
-      "/sgd/execucao?rubrica=alimentacao-refeicoes&meta=9&territorio=4",
+      "/sgd/execucao?rubrica=alimentacao-refeicoes&territorio=4",
     );
   });
 
-  it("alerta nacional preserva rubrica e meta, sem recorte de território (#383)", () => {
+  it("alerta nacional leva a rubrica, sem recorte de território (#383, #399)", () => {
     expect(
       linkDoAlerta(alerta({ nivel: "nacional", estado_sigla: null, territorio_id: null }), true),
-    ).toBe("/sgd/execucao?rubrica=alimentacao-refeicoes&meta=9");
+    ).toBe("/sgd/execucao?rubrica=alimentacao-refeicoes");
   });
 
   it("sem acesso à Execução (ADT), vai ao saldo do Painel de Orçamento", () => {
-    expect(linkDoAlerta(alerta({ territorio_id: 4 }), false)).toBe("/sgp/orcamento/?meta=9");
+    expect(linkDoAlerta(alerta({ territorio_id: 4 }), false)).toBe("/sgp/orcamento/");
   });
 });

@@ -140,19 +140,17 @@ export type SaldoConsulta = {
 };
 
 /**
- * GET /api/v1/sgd/saldo/?activity_id=&tipo=&valor= — as duas travas do
- * solicitante logado para o valor informado, na rubrica que o mapeamento
- * tipo → rubrica dá ao tipo.
+ * GET /api/v1/sgd/saldo/?tipo=&valor= — as duas travas do solicitante logado
+ * para o valor informado, na rubrica que o catálogo de tipos dá ao tipo.
+ *
+ * Depois da #387 o saldo depende só do solicitante e da rubrica: o backend
+ * ignora `activity_id`, e o front deixou de mandar (#399).
  */
 export async function consultarSaldo(
-  params: { atividadeId: number; tipo: TipoSolicitacao; valor: string },
+  params: { tipo: TipoSolicitacao; valor: string },
   signal?: AbortSignal,
 ): Promise<SaldoConsulta> {
-  const qs = new URLSearchParams({
-    activity_id: String(params.atividadeId),
-    tipo: params.tipo,
-    valor: params.valor,
-  });
+  const qs = new URLSearchParams({ tipo: params.tipo, valor: params.valor });
   const res = await apiClient(`/api/v1/sgd/saldo/?${qs}`, { signal });
   return res.json();
 }

@@ -47,6 +47,20 @@ O cancelamento automático depende do `celery_worker`. Sem ele, a demanda não m
 
 Em 01/11/2026, as 11 specs do SGD e a `orcamento-saldo` rodaram juntas contra a `main` com os PRs #378, #379 e #382: 100 testes passando em 4,9 minutos, sem `fixme` nem simulação de resposta. O `page.route` dessas specs só atrasa ou derruba requisições.
 
+## Orçamento por pool (#399)
+
+Depois da #384 a #386, o saldo fica no `BudgetPool` (um por rubrica e local), o limite no `SpendingLimit` (por pessoa, rubrica e período) e cada movimento no ledger, imutável por trigger. As fixtures do SGD usam o prelúdio de `e2e/helpers/orcamentoE2E.ts`:
+
+- `fotografar(chave)` no setup guarda pools, limites e o último id do ledger, das transferências e dos alertas num arquivo do container;
+- `definir_pool` e `definir_limite` ajustam o que o teste precisa;
+- `restaurar(chave)` no teardown, antes de apagar demandas e atividades (o ledger referencia a atividade), apaga só o que o teste lançou, com `session_replication_role = replica` na sessão do `postgres`, e devolve os valores da foto.
+
+Os specs rodam em série num único worker, então uma restauração nunca apaga lançamento de outro spec. Não rodar E2E com teste manual em andamento.
+
+Em 08/11/2026, contra a `main` com os PRs #410 a #415: 95 testes do SGD passando. Ficam para a issue de cada tela:
+- `tipos-rubricas`: a tela da #319 virou alias do catálogo de tipos (#357) e será refeita na #365;
+- `orcamento`, `orcamento-saldo` e `orcamento-distribuicao`: a matriz do SGP ainda é Meta × Rubrica e será refeita na #398.
+
 ## Situação do CI
 
 O workflow `Playwright E2E` (`.github/workflows/playwright.yml`) roda a suíte completa em cada PR para a `main`. Hoje ele não chega ao fim:

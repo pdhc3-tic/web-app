@@ -122,6 +122,49 @@ export async function fetchPainelOrcamento(
   return res.json();
 }
 
+// ─── Pools do orçamento por pool (#384) ─────────────────────────────────────
+
+/**
+ * Uma linha da matriz Rubrica × Nível do orçamento por pool — espelha
+ * `BudgetPainelLinhaSerializer` depois da #384: um `BudgetPool`, com o id que
+ * a origem do excedente (#363) e a do recurso extra (#321) enviam.
+ *
+ * A tela da matriz do SGP ainda lê o contrato antigo (`PainelOrcamentoLinhaApi`)
+ * e passa para este na #398.
+ */
+export type PoolOrcamentoApi = {
+  id: number;
+  rubrica: RubricaApi;
+  nivel: NivelOrcamento;
+  /** Nulo no nacional. */
+  estado: EstadoApi | null;
+  territorio: TerritorioApi | null;
+  reserva_ugp: boolean;
+  valor_aprovado: string;
+  valor_distribuido: string;
+  valor_comprometido: string;
+  valor_executado: string;
+  saldo_disponivel: string;
+  /** Alocado menos comprometido e executado: o que o remanejamento aceita tirar deste pool. */
+  saldo_pool: string;
+  semaforo: SemaforoOrcamentoApi;
+  alerta_80: boolean;
+  limiares_semaforo: LimiaresSemaforo;
+};
+
+/**
+ * GET /api/v1/sgp/orcamento/painel/?rubrica=&nivel= — os pools de uma rubrica
+ * num nível, no escopo do perfil (a UGP vê o nacional e todos os estaduais).
+ */
+export async function fetchPoolsDaRubrica(
+  params: { rubrica: string; nivel: NivelOrcamento },
+  signal?: AbortSignal,
+): Promise<PoolOrcamentoApi[]> {
+  const qs = new URLSearchParams({ rubrica: params.rubrica, nivel: params.nivel });
+  const res = await apiClient(`${PAINEL_PATH}?${qs}`, { signal });
+  return res.json();
+}
+
 // ─── Detalhamento por nível (drill-down) ────────────────────────────────────
 
 /** Uma alocação concreta — espelha `BudgetAllocationSerializer`. */

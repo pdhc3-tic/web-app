@@ -5,14 +5,14 @@ import { Select } from "@/app/components/ui/Select/Select";
 import { Textarea } from "@/app/components/ui/Textarea/Textarea";
 import type { Demanda } from "@/app/lib/demandas";
 import { formatCurrencyBRL } from "@/app/lib/format";
-import { useAlocacoesDeOrigem } from "@/app/lib/hooks/useAlocacoesDeOrigem";
+import { usePoolsDeOrigem } from "@/app/lib/hooks/usePoolsDeOrigem";
 
-/** A alocação escolhida e a rubrica dela: o excedente só pesa nessa rubrica. */
+/** O pool escolhido e a rubrica dele: o excedente só pesa nessa rubrica. */
 export type OrigemExcedente = { id: string; rubricaSlug: string };
 
 /**
  * Autorização com excedente (#363): a UGP marca o excedente e escolhe a
- * alocação estadual ou nacional que o cobre, com justificativa. O backend
+ * pool estadual ou nacional que o cobre, com justificativa. O backend
  * remaneja dela na própria decisão, sem elevar o limite individual.
  */
 export function ExcedenteAutorizacao({
@@ -33,7 +33,7 @@ export function ExcedenteAutorizacao({
   onJustificativa: (justificativa: string) => void;
 }) {
   const rubricas = [...new Set(demanda.solicitacoes.map((s) => s.rubrica_slug))];
-  const { alocacoes, carregando } = useAlocacoesDeOrigem(ativo ? demanda.activity : null, rubricas);
+  const { pools, carregando, falhou } = usePoolsDeOrigem(rubricas, ativo);
 
   return (
     <div className="flex flex-col gap-3 rounded-md border border-border px-3 py-2.5" data-testid="excedente">
@@ -60,21 +60,23 @@ export function ExcedenteAutorizacao({
             id="excedente-origem"
             label="Origem do excedente"
             required
-            disabled={carregando || alocacoes.length === 0}
-            placeholder={carregando ? "Carregando alocações…" : "Selecione a alocação"}
-            options={alocacoes.map((a) => ({
-              value: String(a.id),
-              label: `${a.rubrica.nome} · ${a.estado?.nome ?? "Nacional"} — saldo ${formatCurrencyBRL(a.saldo_disponivel)}`,
+            disabled={carregando || pools.length === 0}
+            placeholder={carregando ? "Carregando origens…" : "Selecione a origem"}
+            options={pools.map((p) => ({
+              value: String(p.id),
+              label: `${p.rubrica.nome} · ${p.estado?.nome ?? "Nacional"} — saldo ${formatCurrencyBRL(p.saldo_pool)}`,
             }))}
             value={origem?.id ?? ""}
             onChange={(id) => {
-              const alocacao = alocacoes.find((a) => String(a.id) === id);
-              onOrigem(alocacao ? { id, rubricaSlug: alocacao.rubrica.slug } : null);
+              const pool = pools.find((p) => String(p.id) === id);
+              onOrigem(pool ? { id, rubricaSlug: pool.rubrica.slug } : null);
             }}
             helperText={
-              !carregando && alocacoes.length === 0
-                ? "Nenhuma alocação estadual ou nacional destas rubricas na Meta da atividade."
-                : undefined
+              falhou
+                ? "Não foi possível carregar as origens. Tente de novo."
+                : !carregando && pools.length === 0
+                  ? "Nenhum pool estadual ou nacional destas rubricas."
+                  : undefined
             }
           />
           <Textarea

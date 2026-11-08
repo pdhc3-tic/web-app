@@ -1,11 +1,12 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
+import { ORCAMENTO_E2E_PY } from "./orcamentoE2E";
 
 /**
  * Fixture da montagem e submissão de demanda (Issue #295), no Território RN do
  * ADT Ewerton, montada pelos services do SGD.
  *
- * Verbas territoriais de R$ 10.295,00 (valor-marcador da limpeza) em diárias,
+ * Pools territoriais de RN em R$ 10.295,00 em diárias,
  * passagens, locação e equipamentos. A de diárias tem R$ 10.000 já reservados:
  * sobram R$ 295, e a diária de 2 dias (R$ 600) esbarra na trava territorial.
  *
@@ -19,9 +20,10 @@ import path from "node:path";
  * - `recusada`: veículo de R$ 1.200 (limite de R$ 1.000) com o pedido de
  *   recurso extra já recusado pela UGP.
  *
- * Os limites do Ewerton são os do seed (R$ 5.000; locação, R$ 1.000). A
- * aprovação de recurso extra eleva o limite e a submissão reserva: o teardown
- * devolve cada limite à foto tirada no setup.
+ * Os limites do Ewerton ficam nos valores do seed (R$ 5.000; locação,
+ * R$ 1.000), sem nada usado no período. A aprovação de recurso extra eleva o
+ * limite e a submissão reserva: o orçamento é fotografado no setup e
+ * restaurado no teardown (`orcamentoE2E.ts`, #399).
  *
  * Roda como `postgres` por causa da row-level security de `sgd_demand`.
  */
@@ -43,19 +45,18 @@ export type MontarDemandaFixture = {
   equipamento: Ref;
   equipamentoCompleto: Ref;
   recusada: Ref & { veiculoId: number };
-  limites: Record<string, { limite: string; comprometido: string; executado: string }>;
 };
 
-const COMUM = `
+const COMUM = `${ORCAMENTO_E2E_PY}
 from decimal import Decimal
 from django.contrib.auth import get_user_model
 from apps.sgp.models import Activity, BudgetIncreaseRequest
-from apps.sgp.models.budget import BudgetAllocation, BudgetRubrica, BudgetTransaction
+from apps.sgp.budget.models import BudgetRubrica
 from apps.sgd.models.demand import Demand
 from apps.sgd.models.approval_step import ApprovalStep
-from apps.sgd.models.individual_limit import DemandIndividualLimit
 
 P = "${PREFIXO_295}"
+FOTO = "montar-demanda"
 VERBA = Decimal("10295.00")
 U = get_user_model()
 adt = U.objects.get(email="ewerton.bandeira@demo.pdhc.local")
@@ -66,14 +67,12 @@ territorio_id = adt.profiles.get(perfil__slug="adt-acr").territorio_id
 def limpar():
     demandas = Demand.objects.filter(titulo__startswith=P)
     ids = [str(pk) for pk in demandas.values_list("pk", flat=True)]
-    BudgetIncreaseRequest.objects.filter(demanda_id__in=ids).delete()
     ApprovalStep.objects.filter(demanda__in=demandas).delete()
-    verbas = BudgetAllocation.objects.filter(nivel="territorial", territorio_id=territorio_id, valor_alocado=VERBA)
-    BudgetTransaction.objects.filter(allocation__in=verbas).delete()
-    BudgetTransaction.objects.filter(demanda_id__startswith=P).delete()
+    # Antes de apagar: o ledger referencia a atividade e o pedido.
+    restaurar(FOTO)
+    BudgetIncreaseRequest.objects.filter(demanda_id__in=ids).delete()
     demandas.delete()
     Activity.objects.filter(titulo__startswith=P).delete()
-    verbas.delete()
 
 def decidir(demanda_id, decisao):
     from apps.sgd.services import recurso_extra as rs
@@ -90,24 +89,19 @@ from uuid import uuid4
 from django.utils import timezone
 from apps.core.models import Municipality
 from apps.sgp.models.workplan import WorkPlanAcao
-from apps.sgp.services import budget as budget_service
 from apps.sgd.models.demand_document import DemandDocument
 from apps.sgd.services import demand as ds, recurso_extra as rs
 
 limpar()
-foto = {
-    l.rubrica.slug: {"limite": str(l.valor_limite), "comprometido": str(l.valor_comprometido), "executado": str(l.valor_executado)}
-    for l in DemandIndividualLimit.objects.filter(solicitante=adt).select_related("rubrica")
-}
+fotografar(FOTO)
+for slug, valor in (("diarias", "5000"), ("passagens-aereas", "5000"), ("locacao-veiculo", "1000"), ("equipamentos-capital", "5000")):
+    definir_limite(adt, BudgetRubrica.objects.get(slug=slug), valor)
 
 acao = WorkPlanAcao.objects.order_by("pk").first()
-verba = {}
-for slug in ("diarias", "passagens-aereas", "locacao-veiculo", "equipamentos-capital"):
-    verba[slug] = BudgetAllocation.objects.create(
-        meta_id=acao.meta_id, rubrica=BudgetRubrica.objects.get(slug=slug),
-        nivel="territorial", territorio_id=territorio_id, valor_alocado=VERBA,
+for slug, comprometido in (("diarias", "10000"), ("passagens-aereas", "0"), ("locacao-veiculo", "0"), ("equipamentos-capital", "0")):
+    definir_pool(
+        BudgetRubrica.objects.get(slug=slug), "territorial", VERBA, territorio_id=territorio_id, comprometido=comprometido,
     )
-budget_service.reservar(allocation=verba["diarias"], valor=Decimal("10000"), demanda_id=f"{P}-diarias", usuario=ugp)
 
 municipio = Municipality.objects.filter(territory_id=territorio_id).order_by("nome").first()
 quando = timezone.now() + timedelta(days=20)
@@ -188,27 +182,13 @@ print("${MARCADOR}_SETUP " + json.dumps({
     "equipamento": ref(equipamento),
     "equipamentoCompleto": ref(equipamento_completo),
     "recusada": ref(recusada, veiculoId=veiculo_recusado.pk),
-    "limites": foto,
 }))
 `;
 
-function teardownScript(limites: MontarDemandaFixture["limites"]): string {
-  return `${COMUM}
-import json
+const TEARDOWN_SCRIPT = `${COMUM}
 limpar()
-foto = json.loads(${JSON.stringify(JSON.stringify(limites))})
-for limite in DemandIndividualLimit.objects.filter(solicitante=adt).select_related("rubrica"):
-    antes = foto.get(limite.rubrica.slug)
-    if antes is None:
-        limite.delete()
-        continue
-    limite.valor_limite = Decimal(antes["limite"])
-    limite.valor_comprometido = Decimal(antes["comprometido"])
-    limite.valor_executado = Decimal(antes["executado"])
-    limite.save(update_fields=["valor_limite", "valor_comprometido", "valor_executado"])
 print("${MARCADOR}_TEARDOWN_OK")
 `;
-}
 
 function djangoShellComoDono(script: string): string {
   return execFileSync(
@@ -242,8 +222,9 @@ export function criarMontarDemandaFixture(): MontarDemandaFixture {
   return JSON.parse(linha.slice(`${MARCADOR}_SETUP `.length)) as MontarDemandaFixture;
 }
 
-export function removerMontarDemandaFixture(fx: MontarDemandaFixture): void {
-  confirmar(djangoShellComoDono(teardownScript(fx.limites)), `${MARCADOR}_TEARDOWN_OK`);
+/** O argumento ficou por compatibilidade: a restauração vem da fotografia do container. */
+export function removerMontarDemandaFixture(_fx?: MontarDemandaFixture): void {
+  confirmar(djangoShellComoDono(TEARDOWN_SCRIPT), `${MARCADOR}_TEARDOWN_OK`);
 }
 
 /** Parecer do Articulador e decisão da UGP no pedido de recurso extra mais recente da demanda. */

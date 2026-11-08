@@ -44,12 +44,10 @@ function Trava({ titulo, trava, testId }: { titulo: string; trava: TravaSaldo; t
  * ela levou: o saldo mostrado já o desconta.
  */
 export function SaldoSolicitacao({
-  atividadeId,
   tipo,
   valor,
   devolvida,
 }: {
-  atividadeId: number;
   tipo: TipoSolicitacao;
   /** Decimal "1234.56"; "0" mostra só o disponível. */
   valor: string;
@@ -57,8 +55,8 @@ export function SaldoSolicitacao({
 }) {
   const valorAdiado = useDebounced(valor);
   const saldo = useQuery({
-    queryKey: qk.solicitacao.saldo(atividadeId, tipo, valorAdiado),
-    queryFn: ({ signal }) => consultarSaldo({ atividadeId, tipo, valor: valorAdiado }, signal),
+    queryKey: qk.solicitacao.saldo(tipo, valorAdiado),
+    queryFn: ({ signal }) => consultarSaldo({ tipo, valor: valorAdiado }, signal),
     placeholderData: (anterior) => anterior,
   });
 

@@ -217,7 +217,6 @@ export function SolicitacaoForm({
             )}
 
             <SaldoSolicitacao
-              atividadeId={demanda.activity}
               tipo={tipo}
               valor={valorParaSaldo}
               devolvida={demanda.status === "devolvida"}

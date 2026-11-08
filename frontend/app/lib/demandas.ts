@@ -412,11 +412,11 @@ export type PreviewDecisao = {
   trava_bloqueada: "individual" | "territorial" | "origem" | null;
   individual: ImpactoTrava;
   territorial: ImpactoTrava;
-  /** Só com `origem_allocation`: o efeito do excedente na alocação de origem. */
+  /** Só com `origem_allocation`: o efeito do excedente no pool de origem. */
   origem?: ImpactoOrigem | null;
 };
 
-/** Efeito da autorização com excedente na alocação de origem (#363). */
+/** Efeito da autorização com excedente no pool de origem (#363). */
 export type ImpactoOrigem = {
   id: number;
   valor_remanejado: number | string;
@@ -464,7 +464,7 @@ export const devolverDemanda = (id: number, justificativa: string) =>
 
 /**
  * UGP. `ajustes`: {id da solicitação: novo valor} — vazio autoriza como pedido.
- * `excedente`: o que passar do limite ou do pool sai da alocação de origem.
+ * `excedente`: o que passar do limite ou do pool sai do pool de origem (#384).
  */
 export const autorizarDemanda = (
   id: number,

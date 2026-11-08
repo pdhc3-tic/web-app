@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
+import { ORCAMENTO_E2E_PY } from "./orcamentoE2E";
 
 /**
  * Fixture da home do SGD (Issue #318), para o Articulador de RN (`articuladorPB`).
@@ -12,9 +13,10 @@ import path from "node:path";
  *   manhã e a `maior` (R$ 900) à tarde — mesmo dia de espera, então o maior
  *   valor vem antes, ainda que tenha chegado depois.
  *
- * E duas verbas ESTADUAIS de RN (valor-marcador R$ 10.318,00) com o
+ * E os pools ESTADUAIS de RN de duas rubricas (R$ 10.318,00) com o
  * comprometido materializado: Alimentação a 95% (vermelho) e Material
- * Gráfico a ~73% (amarelo). O seed não tem verba estadual nenhuma.
+ * Gráfico a ~73% (amarelo). O seed não tem pool estadual nenhum. Orçamento
+ * por pool (#399): a fixture fotografa o orçamento e o teardown restaura.
  *
  * Roda como `postgres` por causa da row-level security de `sgd_demand`.
  */
@@ -30,26 +32,25 @@ export type PainelSgdFixture = {
   antiga: Ref;
   maior: Ref;
   menor: Ref;
-  metaId: number;
 };
 
-const COMUM = `
+const COMUM = `${ORCAMENTO_E2E_PY}
 from decimal import Decimal
 from django.contrib.auth import get_user_model
 from apps.sgp.models import Activity
-from apps.sgp.models.budget import BudgetAllocation
 from apps.sgd.models.demand import Demand
 
 P = "${PREFIXO_318}"
+FOTO = "painel-sgd"
 VERBA = Decimal("10318.00")
 U = get_user_model()
 adt = U.objects.get(email="ewerton.bandeira@demo.pdhc.local")
 territorio_id = adt.profiles.get(perfil__slug="adt-acr").territorio_id
 
 def limpar():
+    restaurar(FOTO)
     Demand.objects.filter(titulo__startswith=P).delete()
     Activity.objects.filter(titulo__startswith=P).delete()
-    BudgetAllocation.objects.filter(nivel="estadual", valor_alocado=VERBA).delete()
 `;
 
 const SETUP_SCRIPT = `${COMUM}
@@ -57,11 +58,12 @@ import json
 from datetime import timedelta
 from django.utils import timezone
 from apps.core.models import Municipality, State
-from apps.sgp.models.budget import BudgetRubrica
+from apps.sgp.budget.models import BudgetRubrica
 from apps.sgp.models.workplan import WorkPlanAcao
 from apps.sgd.models.demand_request import DemandRequest
 
 limpar()
+fotografar(FOTO)
 acao = WorkPlanAcao.objects.order_by("pk").first()
 municipio = Municipality.objects.filter(territory_id=territorio_id).order_by("nome").first()
 quando = timezone.now() + timedelta(days=20)
@@ -76,7 +78,7 @@ hoje = timezone.localtime()
 
 def submetida(titulo, valor, dias, hora):
     d = Demand.objects.create(titulo=f"{P} {titulo}", activity=atividade, justificativa="", solicitante=adt, status="submetida")
-    DemandRequest.objects.create(demanda=d, tipo="alimentacao", rubrica=alimentacao, campos_json={}, valor_estimado=Decimal(valor))
+    DemandRequest.objects.create(demanda=d, tipo_id="alimentacao", rubrica=alimentacao, campos_json={}, valor_estimado=Decimal(valor))
     d.recalcular_totais()
     quando = (hoje - timedelta(days=dias)).replace(hour=hora, minute=0, second=0, microsecond=0)
     Demand.objects.filter(pk=d.pk).update(status_alterado_em=quando)
@@ -88,12 +90,9 @@ maior = submetida("Refeições da caravana", "900", 2, 15)
 
 rn = State.objects.get(sigla="RN")
 for slug, comprometido in (("alimentacao-refeicoes", "9802.10"), ("material-grafico", "7500.00")):
-    BudgetAllocation.objects.create(
-        meta_id=acao.meta_id, rubrica=BudgetRubrica.objects.get(slug=slug), nivel="estadual", estado=rn,
-        valor_alocado=VERBA, valor_comprometido=Decimal(comprometido),
-    )
+    definir_pool(BudgetRubrica.objects.get(slug=slug), "estadual", VERBA, estado=rn, comprometido=comprometido)
 
-print("${MARCADOR}_SETUP " + json.dumps({"antiga": antiga, "maior": maior, "menor": menor, "metaId": acao.meta_id}))
+print("${MARCADOR}_SETUP " + json.dumps({"antiga": antiga, "maior": maior, "menor": menor}))
 `;
 
 const TEARDOWN_SCRIPT = `${COMUM}

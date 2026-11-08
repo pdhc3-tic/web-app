@@ -24,8 +24,12 @@ export type ItemFila = {
 export type ContagemStatus = { status: StatusDemanda; rotulo: string; total: number };
 
 export type AlertaSaldo = {
-  meta_id: number;
-  meta_numero: string;
+  /**
+   * Sempre nulos desde a #384: o saldo é do pool, por rubrica e nível, sem
+   * Meta. O backend mantém as chaves só durante a migração do front (#399).
+   */
+  meta_id: number | null;
+  meta_numero: string | null;
   rubrica_id: number;
   rubrica_slug: string;
   rubrica_nome: string;
@@ -87,13 +91,13 @@ export function linkDaParada(id: number): string {
 }
 
 /**
- * Alerta de saldo → Execução por Rubrica filtrada pela célula do alerta. Quem
- * não acessa essa tela (o ADT) vai ao saldo por rubrica do Painel de
- * Orçamento, na mesma meta.
+ * Alerta de saldo → Execução por Rubrica filtrada pela rubrica e, quando
+ * houver, pelo território do alerta. Quem não acessa essa tela (o ADT) vai ao
+ * Painel de Orçamento. Desde a #384 o alerta é do pool, sem Meta (#399).
  */
 export function linkDoAlerta(alerta: AlertaSaldo, podeVerExecucao: boolean): string {
-  if (!podeVerExecucao) return `/sgp/orcamento/?meta=${alerta.meta_id}`;
-  const qs = new URLSearchParams({ rubrica: alerta.rubrica_slug, meta: String(alerta.meta_id) });
+  if (!podeVerExecucao) return "/sgp/orcamento/";
+  const qs = new URLSearchParams({ rubrica: alerta.rubrica_slug });
   if (alerta.territorio_id !== null) qs.set("territorio", String(alerta.territorio_id));
   return `/sgd/execucao?${qs.toString()}`;
 }

@@ -117,8 +117,8 @@ export async function listPedidos(
 }
 
 /** GET /api/v1/sgd/remanejamentos/{id}/ */
-/** Alocação de um remanejamento, em `BudgetTransferSerializer`. */
-export type AlocacaoDoRemanejamento = {
+/** Pool de origem ou destino de um remanejamento (`PoolDoRemanejamentoSerializer`, #384). */
+export type PoolDoRemanejamento = {
   id: number;
   nivel: "nacional" | "estadual" | "territorial";
   estado: string | null;
@@ -130,8 +130,8 @@ export type TransferenciaRemanejamento = {
   id: number;
   escopo: "pontual" | "elevacao_limite" | "";
   escopo_display: string;
-  origem: AlocacaoDoRemanejamento;
-  destino: AlocacaoDoRemanejamento;
+  origem: PoolDoRemanejamento;
+  destino: PoolDoRemanejamento;
   rubrica: string;
   valor: string;
   motivo: string;
@@ -203,8 +203,8 @@ export const reenviarPedido = (id: number) =>
 
 /**
  * UGP e Super Admin, em Com parecer. A justificativa é obrigatória nas três
- * decisões; `valorAprovado`, só na parcial. `origemAllocation`: a alocação
- * estadual ou nacional que cobre o que faltar no pool territorial — o backend
+ * decisões; `valorAprovado`, só na parcial. `origemAllocation`: o pool
+ * estadual ou nacional (#384) que cobre o que faltar no pool territorial — o backend
  * recusa a aprovação sem ela quando o pool não cobre (erro em `origem_allocation`).
  */
 export function decidirPedido(

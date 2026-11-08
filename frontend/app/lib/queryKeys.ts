@@ -28,8 +28,8 @@ export const qk = {
   },
   /** Detalhe de uma atividade — contexto herdado pela nova demanda (#294). */
   atividade: (id: string | number) => ["sgp", "atividade", String(id)] as const,
-  /** Orçamento de uma Meta por rubrica, com o detalhamento por nível (#321). */
-  orcamentoDaMeta: (metaId: number) => ["sgp", "orcamento", "meta", metaId] as const,
+  /** Pools de uma rubrica num nível, da matriz Rubrica × Nível (#384): origem do excedente e do recurso extra. */
+  poolsDaRubrica: (rubrica: string, nivel: string) => ["sgp", "orcamento", "pools", { rubrica, nivel }] as const,
   /** Ações do Plano de Trabalho para selects (#294). */
   acoesPT: ["sgp", "acoes"] as const,
   /** Municípios de um território (#294). */
@@ -78,8 +78,7 @@ export const qk = {
   },
   /** Montagem da demanda (#295): saldo, simulação de diárias e destinos. */
   solicitacao: {
-    saldo: (atividadeId: number, tipo: string, valor: string) =>
-      ["sgd", "saldo", { atividadeId, tipo, valor }] as const,
+    saldo: (tipo: string, valor: string) => ["sgd", "saldo", { tipo, valor }] as const,
     simulacaoDiarias: (municipioId: string, inicio: string, fim: string) =>
       ["sgd", "diarias", "simulacao", { municipioId, inicio, fim }] as const,
     municipios: (texto: string) => ["core", "municipios", "busca", texto] as const,

@@ -4,10 +4,10 @@ import path from "node:path";
 /**
  * Fixture da configuração tipo → rubrica (Issue #319).
  *
- * O `seed_demo` deixa um mapeamento ativo por tipo. A spec desativa, cria e
- * edita de verdade pelo CRUD da BE-8, então o setup tira uma foto dos
- * mapeamentos e o teardown volta exatamente a ela: apaga o que a spec criou
- * e devolve rubrica e situação dos que já existiam.
+ * Desde a #357 a tela é um alias do catálogo de tipos (`TipoSolicitacao`): uma
+ * linha por tipo, e desativar o mapeamento desativa o tipo. A spec desativa,
+ * cria e edita de verdade, então o setup tira uma foto do catálogo e o
+ * teardown volta exatamente a ela: devolve rubrica e situação de cada tipo.
  *
  * Devolve também o catálogo de rubricas com os ids reais, que os testes de
  * criar e trocar a rubrica usam quando `GET /sgp/rubricas/` existir
@@ -27,12 +27,12 @@ export type TipoRubricaFixture = {
 
 const SETUP_SCRIPT = `
 import json
-from apps.sgp.models.budget import BudgetRubrica
-from apps.sgd.models.demand_type_rubrica_mapping import DemandTypeRubricaMapping as M
+from apps.sgp.budget.models import BudgetRubrica
+from apps.sgd.models.tipo_solicitacao import TipoSolicitacao as M
 
 print("${MARCADOR}_SETUP " + json.dumps({
     "mapeamentos": [
-        {"id": m.pk, "tipo": m.tipo, "rubrica": m.rubrica_id, "ativo": m.ativo}
+        {"id": m.pk, "tipo": m.slug, "rubrica": m.rubrica_id, "ativo": m.ativo}
         for m in M.objects.order_by("pk")
     ],
     "rubricas": [
@@ -46,14 +46,12 @@ function teardownScript(foto: MapeamentoFoto[]): string {
   return `
 import json
 from django.db import transaction
-from apps.sgd.models.demand_type_rubrica_mapping import DemandTypeRubricaMapping as M
+from apps.sgd.models.tipo_solicitacao import TipoSolicitacao as M
 
 foto = json.loads(${JSON.stringify(JSON.stringify(foto))})
 with transaction.atomic():
-    M.objects.exclude(pk__in=[m["id"] for m in foto]).delete()
-    # Primeiro todos inativos: a constraint de um ativo por tipo não pode
-    # barrar a volta no meio do caminho.
-    M.objects.update(ativo=False)
+    # Tipo criado pela spec, sem solicitação (PROTECT), sai; os do catálogo voltam.
+    M.objects.exclude(pk__in=[m["id"] for m in foto]).filter(solicitacoes__isnull=True).delete()
     for m in foto:
         M.objects.filter(pk=m["id"]).update(rubrica_id=m["rubrica"], ativo=m["ativo"])
 print("${MARCADOR}_TEARDOWN_OK")

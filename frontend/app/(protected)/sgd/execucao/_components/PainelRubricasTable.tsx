@@ -68,7 +68,43 @@ function SemaforoRubricaBadge({ linha }: { linha: LinhaPainelRubrica }) {
 }
 
 /**
- * Esqueleto na mesma grade da tabela (seis colunas na mesma largura), para
+ * Limites de gasto individuais da rubrica no período (#385): o disponível em
+ * destaque e, abaixo, o total e o que já foi usado. Rubrica sem limite
+ * atribuído a ninguém no recorte mostra "Sem limite".
+ */
+function LimitesIndividuais({
+  total,
+  comprometido,
+  executado,
+  disponivel,
+  testId,
+}: {
+  total: string | number;
+  comprometido: string | number;
+  executado: string | number;
+  disponivel: string | number;
+  testId: string;
+}) {
+  if (Number(total || 0) === 0) {
+    return (
+      <span className="text-xs text-text-muted" data-testid={testId}>
+        Sem limite
+      </span>
+    );
+  }
+  return (
+    <div className="flex flex-col items-end" data-testid={testId}>
+      <span className="tabular-nums font-medium">{formatCurrencyBRL(disponivel)}</span>
+      <span className="text-2xs font-normal text-text-muted">
+        de {formatCurrencyBRL(total)} · comprometido {formatCurrencyBRL(comprometido)} · executado{" "}
+        {formatCurrencyBRL(executado)}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Esqueleto na mesma grade da tabela (sete colunas na mesma largura), para
  * manter a altura e evitar o "pulo" de layout da #323 quando a tabela de
  * verdade substitui o estado de carregamento.
  */
@@ -88,6 +124,7 @@ export function PainelRubricasTableSkeleton({ linhas = 6 }: { linhas?: number })
               <th scope="col" className="px-4 py-3 text-right">Autorizado</th>
               <th scope="col" className="px-4 py-3 text-right">Executado</th>
               <th scope="col" className="px-4 py-3 text-right">Disponível</th>
+              <th scope="col" className="px-4 py-3 text-right">Limites individuais</th>
               <th scope="col" className="px-4 py-3 text-center">Semáforo (70/90)</th>
             </tr>
           </thead>
@@ -96,6 +133,9 @@ export function PainelRubricasTableSkeleton({ linhas = 6 }: { linhas?: number })
               <tr key={i}>
                 <td className="px-4 py-3">
                   <div className="h-4 w-40 animate-pulse rounded bg-surface-muted" />
+                </td>
+                <td className="px-4 py-3">
+                  <div className="ml-auto h-4 w-24 animate-pulse rounded bg-surface-muted" />
                 </td>
                 <td className="px-4 py-3">
                   <div className="ml-auto h-4 w-24 animate-pulse rounded bg-surface-muted" />
@@ -133,8 +173,21 @@ export function PainelRubricasTable({
         autorizado: acc.autorizado + Number(l.autorizado || 0),
         executado: acc.executado + Number(l.executado || 0),
         disponivel: acc.disponivel + Number(l.disponivel || 0),
+        limiteTotal: acc.limiteTotal + Number(l.limite_total || 0),
+        limiteComprometido: acc.limiteComprometido + Number(l.limite_comprometido || 0),
+        limiteExecutado: acc.limiteExecutado + Number(l.limite_executado || 0),
+        limiteDisponivel: acc.limiteDisponivel + Number(l.limite_disponivel || 0),
       }),
-      { solicitado: 0, autorizado: 0, executado: 0, disponivel: 0 },
+      {
+        solicitado: 0,
+        autorizado: 0,
+        executado: 0,
+        disponivel: 0,
+        limiteTotal: 0,
+        limiteComprometido: 0,
+        limiteExecutado: 0,
+        limiteDisponivel: 0,
+      },
     );
   }, [linhas]);
 
@@ -157,6 +210,7 @@ export function PainelRubricasTable({
               <th scope="col" className="px-4 py-3 text-right">Autorizado</th>
               <th scope="col" className="px-4 py-3 text-right">Executado</th>
               <th scope="col" className="px-4 py-3 text-right">Disponível</th>
+              <th scope="col" className="px-4 py-3 text-right">Limites individuais</th>
               <th scope="col" className="px-4 py-3 text-center">Semáforo (70/90)</th>
             </tr>
           </thead>
@@ -182,6 +236,15 @@ export function PainelRubricasTable({
                 <td className="px-4 py-3 text-right tabular-nums font-medium text-text">
                   {formatCurrencyBRL(linha.disponivel)}
                 </td>
+                <td className="px-4 py-3 text-right">
+                  <LimitesIndividuais
+                    total={linha.limite_total}
+                    comprometido={linha.limite_comprometido}
+                    executado={linha.limite_executado}
+                    disponivel={linha.limite_disponivel}
+                    testId={`limites-${linha.rubrica_slug}`}
+                  />
+                </td>
                 <td className="px-4 py-3 text-center">
                   <SemaforoRubricaBadge linha={linha} />
                 </td>
@@ -202,6 +265,15 @@ export function PainelRubricasTable({
               </td>
               <td className="px-4 py-3 text-right tabular-nums">
                 {formatCurrencyBRL(totais.disponivel)}
+              </td>
+              <td className="px-4 py-3 text-right">
+                <LimitesIndividuais
+                  total={totais.limiteTotal}
+                  comprometido={totais.limiteComprometido}
+                  executado={totais.limiteExecutado}
+                  disponivel={totais.limiteDisponivel}
+                  testId="limites-total"
+                />
               </td>
               <td className="px-4 py-3 text-center text-xs text-text-muted">
                 —
