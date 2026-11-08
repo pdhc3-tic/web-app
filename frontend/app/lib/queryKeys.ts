@@ -62,6 +62,8 @@ export const qk = {
       ["sgd", "demandas", "recorte", filtros, pagina ?? null, ordenacao ?? null] as const,
     preview: (id: number, solicitacaoId: number, valor: string, origem: string) =>
       ["sgd", "demandas", "preview", { id, solicitacaoId, valor, origem }] as const,
+    /** Riscos de glosa da demanda (#360); sob "sgd/demandas", a decisão os invalida junto. */
+    glosas: (id: string | number) => ["sgd", "demandas", "glosas", String(id)] as const,
     auditoria: (id: string | number) =>
       ["sgd", "demandas", "auditoria", String(id)] as const,
     /** Documentos da demanda (#295). */

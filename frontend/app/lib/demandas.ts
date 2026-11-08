@@ -82,16 +82,23 @@ export type EtapaDemanda = {
 };
 
 /**
- * Risco de glosa registrado num pagamento acima do autorizado. Pedido ao
- * backend (pendencias-backend-sprint-12.md, item 1); ausente até lá.
+ * Risco de glosa — `GlosaRiskSerializer` de `GET /sgp/glosa-riscos/` (#391,
+ * pedido da #408). `pago_acima_autorizado` traz a solicitação e os valores
+ * pago e autorizado; `demanda_sem_evidencia` vem da conclusão sem evidência
+ * da atividade e só tem o valor exposto.
  */
-export type GlosaDemanda = {
+export type RiscoGlosa = {
   id: number;
-  demand_request_id: number;
-  valor_autorizado: string;
-  valor_pago: string;
-  excedente: string;
+  tipo: "pago_acima_autorizado" | "demanda_sem_evidencia";
+  severidade: "alta" | "media" | "baixa";
+  valor_exposto: string;
+  activity_id: number | null;
+  demanda_id: number;
+  demand_request_id: number | null;
+  valor_autorizado: string | null;
+  valor_pago: string | null;
   criado_em: string;
+  resolvido_em: string | null;
 };
 
 /** `DemandSerializer` — leitura. Valores monetários vêm como string decimal. */
@@ -113,7 +120,6 @@ export type Demanda = {
   solicitante_nome: string;
   /** Decisões em ordem cronológica (pré-autorização, autorização, atendimento). */
   etapas: EtapaDemanda[];
-  glosas?: GlosaDemanda[];
   criado_em: string;
   atualizado_em: string;
 };
@@ -331,6 +337,19 @@ export async function listDemandas(
 export async function getDemanda(id: number | string, signal?: AbortSignal): Promise<Demanda> {
   const res = await apiClient(`${DEMANDAS_PATH}${id}/`, { signal });
   return res.json();
+}
+
+/**
+ * GET /api/v1/sgp/glosa-riscos/?demanda={id} — os riscos de glosa da demanda,
+ * em ordem cronológica (#360). A rota é paginada (10 por padrão); uma demanda
+ * tem poucos riscos, então uma página de 100 traz todos. Só Super Admin, UGP,
+ * FGD e Articulador acessam (`canVerRiscosDeGlosa`).
+ */
+export async function listRiscosDeGlosa(demandaId: number, signal?: AbortSignal): Promise<RiscoGlosa[]> {
+  const qs = new URLSearchParams({ demanda: String(demandaId), limit: "100" });
+  const res = await apiClient(`/api/v1/sgp/glosa-riscos/?${qs}`, { signal });
+  const corpo = (await res.json()) as { results: RiscoGlosa[] } | RiscoGlosa[];
+  return Array.isArray(corpo) ? corpo : corpo.results;
 }
 
 // ─── Auditoria (#322, BE-7) ──────────────────────────────────────────────────
