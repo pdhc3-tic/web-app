@@ -1,7 +1,6 @@
 import { apiClient, ApiError } from "@/app/lib/api";
 import { uploadToStorage } from "@/app/components/sgp/PhotoUploader/photoUpload";
 import type { SearchSelectOption } from "@/app/components/ui/SearchSelect/SearchSelect";
-import type { TipoSolicitacao } from "@/app/lib/camposSolicitacao";
 import type { Demanda, FaixaSemaforo, SolicitacaoDemanda } from "@/app/lib/demandas";
 import type { Paginated } from "@/app/lib/users";
 
@@ -27,7 +26,8 @@ export function podeMontarDemanda(demanda: Demanda, usuarioId: string | number |
 // ─── Solicitações ────────────────────────────────────────────────────────────
 
 export type SolicitacaoPayload = {
-  tipo: TipoSolicitacao;
+  /** Slug de um tipo ativo do catálogo (#365). */
+  tipo: string;
   campos_json: Record<string, unknown>;
   /** Decimal "1234.56". Fica de fora na diária, que o backend calcula. */
   valor_estimado?: string;
@@ -147,7 +147,7 @@ export type SaldoConsulta = {
  * ignora `activity_id`, e o front deixou de mandar (#399).
  */
 export async function consultarSaldo(
-  params: { tipo: TipoSolicitacao; valor: string },
+  params: { tipo: string; valor: string },
   signal?: AbortSignal,
 ): Promise<SaldoConsulta> {
   const qs = new URLSearchParams({ tipo: params.tipo, valor: params.valor });

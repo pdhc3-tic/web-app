@@ -5,7 +5,6 @@ import { AlertTriangle, ArrowRight } from "lucide-react";
 import Spinner from "@/app/components/icons/Spinner";
 import { SemaforoBadge } from "@/app/components/ui/SemaforoBadge/SemaforoBadge";
 import { ApiError } from "@/app/lib/api";
-import type { TipoSolicitacao } from "@/app/lib/camposSolicitacao";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import { useDebounced } from "@/app/lib/hooks/useDebounced";
 import { qk } from "@/app/lib/queryKeys";
@@ -48,7 +47,7 @@ export function SaldoSolicitacao({
   valor,
   devolvida,
 }: {
-  tipo: TipoSolicitacao;
+  tipo: string;
   /** Decimal "1234.56"; "0" mostra só o disponível. */
   valor: string;
   devolvida: boolean;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   camposVisiveis,
+  configDoTipo,
   montarCamposJson,
   resumoSolicitacao,
   validarCampos,
@@ -14,8 +15,8 @@ import {
   pendenciaDeCotacoes,
 } from "@/app/lib/solicitacoes";
 
-const chaves = (tipo: Parameters<typeof camposVisiveis>[0], valores = {}) =>
-  camposVisiveis(tipo, valores).map((c) => c.chave);
+const chaves = (tipo: string, valores = {}) =>
+  camposVisiveis(configDoTipo(tipo), valores).map((c) => c.chave);
 
 describe("camposVisiveis", () => {
   it("passagem: a volta só aparece com ida e volta = Sim", () => {
@@ -32,31 +33,31 @@ describe("camposVisiveis", () => {
 
 describe("validarCampos", () => {
   it("aponta os obrigatórios visíveis, e só eles", () => {
-    const erros = validarCampos("passagem", {});
+    const erros = validarCampos("passagem", configDoTipo("passagem"), {});
     expect(erros.passageiro_nome).toBe("Campo obrigatório.");
     expect(erros).not.toHaveProperty("data_hora_volta");
-    expect(validarCampos("passagem", { ida_e_volta: "sim" })).toHaveProperty("data_hora_volta");
+    expect(validarCampos("passagem", configDoTipo("passagem"), { ida_e_volta: "sim" })).toHaveProperty("data_hora_volta");
   });
 
   it("confere CPF, inteiro positivo e a ordem das datas da diária", () => {
-    const erros = validarCampos("diaria", {
+    const erros = validarCampos("diaria", configDoTipo("diaria"), {
       beneficiario_cpf: "111.111.111-11",
       data_inicio: "2026-11-12",
       data_fim: "2026-11-10",
     });
     expect(erros.beneficiario_cpf).toBe("CPF inválido.");
     expect(erros.data_fim).toBe("Não pode ser anterior à data de ida.");
-    expect(validarCampos("veiculo", { estimativa_km: "0" }).estimativa_km).toMatch(/maior que zero/);
+    expect(validarCampos("veiculo", configDoTipo("veiculo"), { estimativa_km: "0" }).estimativa_km).toMatch(/maior que zero/);
   });
 
   it("campos opcionais vazios não são erro", () => {
-    expect(validarCampos("alimentacao", { tipo_refeicao: "almoco", numero_pessoas: "40", data_horario_servico: "2026-11-10T12:00" })).toEqual({});
+    expect(validarCampos("alimentacao", configDoTipo("alimentacao"), { tipo_refeicao: "almoco", numero_pessoas: "40", data_horario_servico: "2026-11-10T12:00" })).toEqual({});
   });
 });
 
 describe("montarCamposJson e valoresDoCamposJson", () => {
   it("converte os tipos e deixa de fora o que está oculto ou vazio", () => {
-    const json = montarCamposJson("passagem", {
+    const json = montarCamposJson(configDoTipo("passagem"), {
       passageiro_cpf: "529.982.247-25",
       ida_e_volta: "nao",
       data_hora_volta: "2026-11-21T18:00",
@@ -70,12 +71,12 @@ describe("montarCamposJson e valoresDoCamposJson", () => {
       bagagem_despachada: true,
       aeroporto_origem: "NAT",
     });
-    expect(montarCamposJson("diaria", { municipio_destino_id: "12" })).toEqual({ municipio_destino_id: 12 });
+    expect(montarCamposJson(configDoTipo("diaria"), { municipio_destino_id: "12" })).toEqual({ municipio_destino_id: 12 });
   });
 
   it("volta ao formulário: booleano, CPF mascarado e data e hora no formato do input", () => {
     expect(
-      valoresDoCamposJson("passagem", {
+      valoresDoCamposJson(configDoTipo("passagem"), {
         ida_e_volta: true,
         passageiro_cpf: "52998224725",
         data_hora_ida: "2026-11-20T08:00:00",

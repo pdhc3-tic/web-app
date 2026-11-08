@@ -1,5 +1,6 @@
 import type { ChaveChoice } from "@/app/lib/choices";
 import { formatCpfInput, isValidCpf } from "@/app/lib/format";
+import type { PropriedadeSchema, SchemaCampos } from "@/app/lib/tiposSolicitacao";
 
 /**
  * SGD — campos de cada tipo de solicitação de recurso (#295, SGD §3.1 a §3.6).
@@ -8,10 +9,12 @@ import { formatCpfInput, isValidCpf } from "@/app/lib/format";
  * as do `campos_json`, e obrigatório/condicional segue a mesma regra. As opções
  * dos selects vêm do `/api/v1/choices/` (`choice`), sem lista no front.
  *
- * É o layout por tipo que a SGD-REF-FE-07 (#365) mantém como override quando o
- * formulário passar a ser guiado pelo catálogo de tipos do backend.
+ * Desde a #365 o formulário é guiado pelo catálogo de tipos do backend: estes
+ * seis layouts valem como override pelo slug, e um tipo novo é desenhado a
+ * partir do `schema_campos` (`configDoSchema`). `configDoTipo` escolhe.
  */
 
+/** Os seis tipos de origem, com layout próprio. Um tipo novo do catálogo é só uma string. */
 export type TipoSolicitacao = "diaria" | "passagem" | "veiculo" | "grafico" | "alimentacao" | "equipamento";
 
 export type TipoCampo =
@@ -23,7 +26,9 @@ export type TipoCampo =
   | "inteiro"
   | "booleano"
   | "choice"
-  | "municipio";
+  | "municipio"
+  /** Número de um tipo do catálogo: inteiro ou decimal, com mínimo opcional. */
+  | "numero";
 
 /** O estado do formulário: tudo string, como os inputs entregam. */
 export type ValoresCampos = Record<string, string>;
@@ -34,6 +39,15 @@ export type CampoSolicitacao = {
   tipo: TipoCampo;
   /** Para `choice`: a lista do `/choices/`. */
   choice?: ChaveChoice;
+  /** Para `choice` de um tipo do catálogo: as opções do `enum`/`oneOf` do schema. */
+  opcoes?: { value: string; label: string }[];
+  /** Para `numero`: só inteiros, e o menor valor aceito. */
+  inteiro?: boolean;
+  minimo?: number;
+  /** Para `dataHora` de um tipo do catálogo: vai como ISO completo, o `date-time` do JSON Schema. */
+  isoCompleto?: boolean;
+  /** Mensagem própria do schema para valor fora da regra. */
+  mensagem?: string;
   obrigatorio: boolean;
   /** Campo condicional: só aparece (e só vai no payload) quando devolve true. */
   visivel?: (valores: ValoresCampos) => boolean;
@@ -206,8 +220,87 @@ export function isTipoSolicitacao(tipo: string): tipo is TipoSolicitacao {
   return tipo in CONFIG_POR_TIPO;
 }
 
-export function camposVisiveis(tipo: TipoSolicitacao, valores: ValoresCampos): CampoSolicitacao[] {
-  return CONFIG_POR_TIPO[tipo].campos.filter((c) => !c.visivel || c.visivel(valores));
+/** O tipo do JSON Schema, sem o "null" de um campo que aceita vazio. */
+function tipoJson(prop: PropriedadeSchema): string | undefined {
+  const tipos = Array.isArray(prop.type) ? prop.type : prop.type ? [prop.type] : [];
+  return tipos.find((t) => t !== "null" && t !== "string") ?? tipos.find((t) => t !== "null");
+}
+
+/** Uma propriedade do schema → um campo do formulário. */
+function campoDoSchema(chave: string, prop: PropriedadeSchema, obrigatorio: boolean): CampoSolicitacao {
+  const base = {
+    chave,
+    rotulo: prop.title || chave,
+    obrigatorio,
+    ajuda: prop.description,
+    mensagem: prop.mensagem,
+  };
+  if (prop.oneOf?.length) {
+    return {
+      ...base,
+      tipo: "choice",
+      opcoes: prop.oneOf.map((o) => ({ value: String(o.const), label: o.title ?? String(o.const) })),
+    };
+  }
+  if (prop.enum?.length) {
+    return { ...base, tipo: "choice", opcoes: prop.enum.map((v) => ({ value: String(v), label: String(v) })) };
+  }
+  const tipo = tipoJson(prop);
+  if (tipo === "boolean") return { ...base, tipo: "booleano" };
+  if (tipo === "integer" || tipo === "number") {
+    return { ...base, tipo: "numero", inteiro: tipo === "integer", minimo: prop.minimum };
+  }
+  if (prop.format === "date") return { ...base, tipo: "data" };
+  if (prop.format === "date-time") return { ...base, tipo: "dataHora", isoCompleto: true };
+  // Texto longo vira área de texto; o resto, linha única. Um `format` desconhecido
+  // (o anexo, por exemplo — pendencias-backend-sprint-12a.md, item 1) cai aqui.
+  if ((prop.maxLength ?? 0) >= 200) return { ...base, tipo: "textarea", largo: true };
+  return { ...base, tipo: "texto" };
+}
+
+/**
+ * O formulário de um tipo do catálogo sem layout próprio, a partir do
+ * `schema_campos` (#365). A ordem vem de `x-ordem` (o JSONB do backend não
+ * guarda a ordem das chaves); sem ela, primeiro os obrigatórios, na ordem do
+ * `required`, e depois os demais pela chave. O valor estimado é digitado.
+ */
+export function configDoSchema(schema: SchemaCampos | null | undefined): ConfigTipo {
+  const props = schema?.properties ?? {};
+  const obrigatorios = schema?.required ?? [];
+  const posicao = (chave: string) => {
+    const x = props[chave]?.["x-ordem"];
+    if (typeof x === "number") return x;
+    const i = obrigatorios.indexOf(chave);
+    return i >= 0 ? 10_000 + i : 20_000;
+  };
+  const chaves = Object.keys(props).sort((a, b) => posicao(a) - posicao(b) || a.localeCompare(b));
+  return {
+    valorDigitado: true,
+    campos: chaves.map((chave) => campoDoSchema(chave, props[chave], obrigatorios.includes(chave))),
+  };
+}
+
+/** O layout próprio, para os seis tipos de origem, ou o desenhado pelo schema do catálogo. */
+export function configDoTipo(slug: string, schema?: SchemaCampos | null): ConfigTipo {
+  return isTipoSolicitacao(slug) ? CONFIG_POR_TIPO[slug] : configDoSchema(schema);
+}
+
+export function camposVisiveis(config: ConfigTipo, valores: ValoresCampos): CampoSolicitacao[] {
+  return config.campos.filter((c) => !c.visivel || c.visivel(valores));
+}
+
+/** "AAAA-MM-DDTHH:mm" do `datetime-local` → ISO completo, no fuso do navegador. */
+function isoDoLocal(valor: string): string {
+  const data = new Date(valor);
+  return Number.isNaN(data.getTime()) ? valor : data.toISOString();
+}
+
+/** ISO completo → "AAAA-MM-DDTHH:mm" no fuso do navegador, para o `datetime-local`. */
+function localDoIso(valor: string): string {
+  const data = new Date(valor);
+  if (Number.isNaN(data.getTime())) return valor.slice(0, 16);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${data.getFullYear()}-${p(data.getMonth() + 1)}-${p(data.getDate())}T${p(data.getHours())}:${p(data.getMinutes())}`;
 }
 
 /**
@@ -215,9 +308,13 @@ export function camposVisiveis(tipo: TipoSolicitacao, valores: ValoresCampos): C
  * devolveria. O resto (município inexistente, valor da diária não configurado)
  * chega no 400 e aparece no campo.
  */
-export function validarCampos(tipo: TipoSolicitacao, valores: ValoresCampos): Record<string, string> {
+export function validarCampos(
+  tipo: string,
+  config: ConfigTipo,
+  valores: ValoresCampos,
+): Record<string, string> {
   const erros: Record<string, string> = {};
-  for (const campo of camposVisiveis(tipo, valores)) {
+  for (const campo of camposVisiveis(config, valores)) {
     const valor = (valores[campo.chave] ?? "").trim();
     if (!valor) {
       if (campo.obrigatorio) erros[campo.chave] = "Campo obrigatório.";
@@ -227,6 +324,14 @@ export function validarCampos(tipo: TipoSolicitacao, valores: ValoresCampos): Re
     if (campo.tipo === "inteiro" && !(/^\d+$/.test(valor) && Number(valor) > 0)) {
       erros[campo.chave] = "Informe um número inteiro maior que zero.";
     }
+    if (campo.tipo === "numero") {
+      const n = Number(valor.replace(",", "."));
+      if (!Number.isFinite(n) || (campo.inteiro && !Number.isInteger(n))) {
+        erros[campo.chave] = campo.inteiro ? "Informe um número inteiro." : "Informe um número.";
+      } else if (campo.minimo !== undefined && n < campo.minimo) {
+        erros[campo.chave] = campo.mensagem ?? `Deve ser maior ou igual a ${campo.minimo}.`;
+      }
+    }
   }
   if (tipo === "diaria" && valores.data_inicio && valores.data_fim && valores.data_fim < valores.data_inicio) {
     erros.data_fim = "Não pode ser anterior à data de ida.";
@@ -235,9 +340,9 @@ export function validarCampos(tipo: TipoSolicitacao, valores: ValoresCampos): Re
 }
 
 /** Estado do formulário → `campos_json`. Campos ocultos e vazios ficam de fora. */
-export function montarCamposJson(tipo: TipoSolicitacao, valores: ValoresCampos): Record<string, unknown> {
+export function montarCamposJson(config: ConfigTipo, valores: ValoresCampos): Record<string, unknown> {
   const json: Record<string, unknown> = {};
-  for (const campo of camposVisiveis(tipo, valores)) {
+  for (const campo of camposVisiveis(config, valores)) {
     const valor = (valores[campo.chave] ?? "").trim();
     if (!valor) continue;
     switch (campo.tipo) {
@@ -247,6 +352,12 @@ export function montarCamposJson(tipo: TipoSolicitacao, valores: ValoresCampos):
       case "inteiro":
       case "municipio":
         json[campo.chave] = Number(valor);
+        break;
+      case "numero":
+        json[campo.chave] = Number(valor.replace(",", "."));
+        break;
+      case "dataHora":
+        json[campo.chave] = campo.isoCompleto ? isoDoLocal(valor) : valor;
         break;
       case "cpf":
         json[campo.chave] = valor.replace(/\D/g, "");
@@ -258,8 +369,15 @@ export function montarCamposJson(tipo: TipoSolicitacao, valores: ValoresCampos):
   return json;
 }
 
-/** Uma linha que identifica a solicitação no cartão, pelos campos que a distinguem. */
-export function resumoSolicitacao(tipo: string, json: Record<string, unknown>): string {
+/**
+ * Uma linha que identifica a solicitação no cartão, pelos campos que a
+ * distinguem. Num tipo do catálogo, os dois primeiros campos preenchidos.
+ */
+export function resumoSolicitacao(
+  tipo: string,
+  json: Record<string, unknown>,
+  schema?: SchemaCampos | null,
+): string {
   const t = (chave: string) => (json[chave] === undefined || json[chave] === null ? "" : String(json[chave]));
   const partes: string[] = (() => {
     switch (tipo) {
@@ -276,22 +394,27 @@ export function resumoSolicitacao(tipo: string, json: Record<string, unknown>): 
       case "equipamento":
         return [t("quantidade") && `${t("quantidade")} × ${t("descricao_equipamento")}`];
       default:
-        return [];
+        return configDoSchema(schema)
+          .campos.filter((c) => c.tipo !== "booleano" && t(c.chave))
+          .slice(0, 2)
+          .map((c) => c.opcoes?.find((o) => o.value === t(c.chave))?.label ?? t(c.chave));
     }
   })();
   return partes.filter(Boolean).join(" · ");
 }
 
 /** `campos_json` de uma solicitação salva → estado do formulário, para editar. */
-export function valoresDoCamposJson(tipo: TipoSolicitacao, json: Record<string, unknown>): ValoresCampos {
+export function valoresDoCamposJson(config: ConfigTipo, json: Record<string, unknown>): ValoresCampos {
   const valores: ValoresCampos = {};
-  for (const campo of CONFIG_POR_TIPO[tipo].campos) {
+  for (const campo of config.campos) {
     const bruto = json[campo.chave];
     if (bruto === undefined || bruto === null) continue;
     if (campo.tipo === "booleano") valores[campo.chave] = bruto === true ? SIM : NAO;
     else if (campo.tipo === "cpf") valores[campo.chave] = formatCpfInput(String(bruto));
     // `datetime-local` só aceita "AAAA-MM-DDTHH:mm".
-    else if (campo.tipo === "dataHora") valores[campo.chave] = String(bruto).slice(0, 16);
+    else if (campo.tipo === "dataHora") {
+      valores[campo.chave] = campo.isoCompleto ? localDoIso(String(bruto)) : String(bruto).slice(0, 16);
+    }
     else valores[campo.chave] = String(bruto);
   }
   return valores;

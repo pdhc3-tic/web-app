@@ -71,11 +71,10 @@ export const qk = {
     /** Painel consolidado da home do SGD (#318): as decisões o invalidam junto. */
     dashboard: ["sgd", "demandas", "dashboard"] as const,
   },
-  /** Configuração do SGD (#319): mapeamento tipo → rubrica e o catálogo de rubricas. */
+  /** Configuração do SGD: o catálogo de tipos de solicitação (#365) e o de rubricas. */
   configSgd: {
-    tipoRubrica: ["sgd", "config", "tipo-rubrica"] as const,
-    tipoRubricaLista: (incluirInativos: boolean) =>
-      ["sgd", "config", "tipo-rubrica", { incluirInativos }] as const,
+    /** Todos os tipos, ativos e inativos; quem precisa só dos ativos filtra. */
+    tiposSolicitacao: ["sgd", "config", "tipos-solicitacao"] as const,
     rubricas: ["sgp", "rubricas"] as const,
   },
   /** Montagem da demanda (#295): saldo, simulação de diárias e destinos. */

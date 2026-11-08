@@ -58,7 +58,7 @@ Depois da #384 a #386, o saldo fica no `BudgetPool` (um por rubrica e local), o 
 Os specs rodam em série num único worker, então uma restauração nunca apaga lançamento de outro spec. Não rodar E2E com teste manual em andamento.
 
 Em 08/11/2026, contra a `main` com os PRs #410 a #415: 95 testes do SGD passando. Ficam para a issue de cada tela:
-- `tipos-rubricas`: a tela da #319 virou alias do catálogo de tipos (#357) e será refeita na #365;
+- `tipos-rubricas`: a tela da #319 virou alias do catálogo de tipos (#357). Refeita na #365 sobre o catálogo: o Super Admin cria um tipo e o ADT o solicita, 8 testes;
 - `orcamento`, `orcamento-saldo` e `orcamento-distribuicao`: a matriz do SGP ainda é Meta × Rubrica e será refeita na #398.
 
 ## Situação do CI
