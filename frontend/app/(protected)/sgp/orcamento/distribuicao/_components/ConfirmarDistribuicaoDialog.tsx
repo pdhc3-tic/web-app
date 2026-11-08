@@ -12,7 +12,6 @@ export type Confirmacao = {
   destino: Destino;
   /** Valor pretendido, já normalizado para decimal ("1234.56"). */
   valor: string;
-  metaLabel: string;
   rubricaLabel: string;
   /** "Estadual" ou "Territorial". */
   nivelLabel: string;
@@ -31,7 +30,7 @@ type Props = {
  * SlideOver e não um modal próprio: é o que `ConfirmarRegeneracaoDialog` já faz
  * para a outra ação destrutiva do sistema, e o design system não tem Dialog.
  *
- * O resumo repete Meta, rubrica, destino e nível porque a tela tem dois selects
+ * O resumo repete rubrica, destino e nível porque a tela tem dois selects
  * acima da lista — quem chega aqui depois de mexer nos filtros precisa ver
  * contra o que está gravando, não só quanto.
  */
@@ -41,18 +40,18 @@ export function ConfirmarDistribuicaoDialog({
   onConfirm,
   salvando,
 }: Props) {
-  const atual = confirmacao?.destino.alocacao
-    ? valorNumerico(confirmacao.destino.alocacao.valor_alocado)
+  const atual = confirmacao?.destino.pool
+    ? valorNumerico(confirmacao.destino.pool.valor_aprovado)
     : 0;
   const novo = confirmacao ? valorNumerico(confirmacao.valor) : 0;
   const delta = novo - atual;
-  const ehAjuste = confirmacao?.destino.alocacao != null;
+  const ehAjuste = confirmacao?.destino.pool != null;
 
   return (
     <SlideOver
       open={confirmacao !== null}
       onClose={onCancel}
-      title={ehAjuste ? "Ajustar alocação" : "Distribuir orçamento"}
+      title={ehAjuste ? "Ajustar pool" : "Distribuir orçamento"}
       footer={
         <div className="flex items-center justify-end gap-2">
           <Button
@@ -83,9 +82,9 @@ export function ConfirmarDistribuicaoDialog({
               <AlertTriangle className="h-5 w-5" aria-hidden />
             </span>
             <p className="min-w-0 text-sm leading-relaxed text-text-muted">
-              A alocação fica registrada com uma transação em seu nome. Uma vez
-              gravada, o valor pode ser ajustado, mas a linha{" "}
-              <strong className="text-text">não pode ser excluída</strong>.
+              O valor fica registrado em seu nome. Depois de
+              gravado, pode ser ajustado, mas o pool{" "}
+              <strong className="text-text">não pode ser excluído</strong> por aqui.
             </p>
           </div>
 
@@ -95,7 +94,6 @@ export function ConfirmarDistribuicaoDialog({
             </h3>
             <DefinitionList
               items={[
-                { label: "Meta", value: confirmacao.metaLabel },
                 { label: "Rubrica", value: confirmacao.rubricaLabel },
                 { label: "Destino", value: confirmacao.destino.nome },
                 { label: "Nível", value: confirmacao.nivelLabel },
