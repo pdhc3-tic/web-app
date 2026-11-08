@@ -98,9 +98,9 @@ function CatalogoTipos() {
   async function salvar(payload: TipoSolicitacaoPayload) {
     const editando = form?.editando ?? null;
     if (editando) {
-      const { slug: _slug, ...alteracoes } = payload;
-      void _slug;
-      await atualizarTipoSolicitacao(editando.id, alteracoes);
+      // O identificador não muda depois de criado: a edição manda só o resto.
+      const { nome, rubrica, ordem, ativo, schema_campos } = payload;
+      await atualizarTipoSolicitacao(editando.id, { nome, rubrica, ordem, ativo, schema_campos });
     } else {
       await criarTipoSolicitacao(payload);
     }

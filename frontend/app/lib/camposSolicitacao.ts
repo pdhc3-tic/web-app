@@ -40,7 +40,7 @@ export type CampoSolicitacao = {
   /** Para `choice`: a lista do `/choices/`. */
   choice?: ChaveChoice;
   /** Para `choice` de um tipo do catálogo: as opções do `enum`/`oneOf` do schema. */
-  opcoes?: { value: string; label: string }[];
+  opcoes?: { value: string; label: string; original: string | number }[];
   /** Para `numero`: só inteiros, e o menor valor aceito. */
   inteiro?: boolean;
   minimo?: number;
@@ -239,11 +239,15 @@ function campoDoSchema(chave: string, prop: PropriedadeSchema, obrigatorio: bool
     return {
       ...base,
       tipo: "choice",
-      opcoes: prop.oneOf.map((o) => ({ value: String(o.const), label: o.title ?? String(o.const) })),
+      opcoes: prop.oneOf.map((o) => ({ value: String(o.const), label: o.title ?? String(o.const), original: o.const })),
     };
   }
   if (prop.enum?.length) {
-    return { ...base, tipo: "choice", opcoes: prop.enum.map((v) => ({ value: String(v), label: String(v) })) };
+    return {
+      ...base,
+      tipo: "choice",
+      opcoes: prop.enum.map((v) => ({ value: String(v), label: String(v), original: v })),
+    };
   }
   const tipo = tipoJson(prop);
   if (tipo === "boolean") return { ...base, tipo: "booleano" };
@@ -361,6 +365,10 @@ export function montarCamposJson(config: ConfigTipo, valores: ValoresCampos): Re
         break;
       case "cpf":
         json[campo.chave] = valor.replace(/\D/g, "");
+        break;
+      case "choice":
+        // O select trabalha com texto; um enum numérico volta ao número que o schema espera.
+        json[campo.chave] = campo.opcoes?.find((o) => o.value === valor)?.original ?? valor;
         break;
       default:
         json[campo.chave] = valor;

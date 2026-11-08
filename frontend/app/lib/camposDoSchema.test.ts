@@ -54,12 +54,12 @@ describe("configDoSchema (#365)", () => {
     expect(campo("observacoes")).toMatchObject({ tipo: "textarea", largo: true });
     expect(campo("cafe")).toMatchObject({ tipo: "booleano" });
     expect(campo("categoria").opcoes).toEqual([
-      { value: "simples", label: "Simples" },
-      { value: "luxo", label: "Luxo" },
+      { value: "simples", label: "Simples", original: "simples" },
+      { value: "luxo", label: "Luxo", original: "luxo" },
     ]);
     expect(campo("regiao").opcoes).toEqual([
-      { value: "norte", label: "norte" },
-      { value: "sul", label: "sul" },
+      { value: "norte", label: "norte", original: "norte" },
+      { value: "sul", label: "sul", original: "sul" },
     ]);
   });
 
@@ -113,6 +113,17 @@ describe("validação e payload de um tipo do catálogo (#365)", () => {
     // date-time do JSON Schema: ISO completo, que volta ao datetime-local no mesmo horário local.
     expect(String(json.chegada)).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     expect(valoresDoCamposJson(config, json)).toMatchObject({ chegada: "2026-12-10T14:30", cafe: "sim", diarias: "2" });
+  });
+
+  it("enumeração numérica vai como número, não como o texto do select", () => {
+    const numerica = configDoSchema({
+      properties: {
+        estrelas: { enum: [3, 4, 5], title: "Estrelas" },
+        quartos: { oneOf: [{ const: 1, title: "Individual" }, { const: 2, title: "Duplo" }], title: "Quarto" },
+      },
+    });
+    expect(montarCamposJson(numerica, { estrelas: "4", quartos: "2" })).toEqual({ estrelas: 4, quartos: 2 });
+    expect(valoresDoCamposJson(numerica, { estrelas: 4, quartos: 2 })).toEqual({ estrelas: "4", quartos: "2" });
   });
 
   it("o resumo do cartão usa os dois primeiros campos preenchidos, com o rótulo da opção", () => {
