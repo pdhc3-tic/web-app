@@ -140,6 +140,23 @@ def test_create_document_with_valid_key_persists_record(
     assert storage.head_calls == [key]
 
 
+def test_cria_documento_enviado_com_a_chave_antiga_upfs(auth_client, ufpa, monkeypatch):
+    key = document_key(ufpa).replace("ufpas/", "upfs/", 1)
+    storage = FakeStorage(
+        objects={key: {"ContentLength": 2048, "ContentType": "application/pdf"}}
+    )
+    monkeypatch.setattr("apps.sgp.views.ufpa_documentos.get_storage", lambda: storage)
+
+    response = auth_client.post(
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/documentos/",
+        valid_create_payload(key),
+        format="json",
+    )
+
+    assert response.status_code == 201
+    assert UFPADocument.objects.get(pk=response.data["id"]).arquivo_key == key
+
+
 def test_create_document_with_invalid_key_returns_400(auth_client, ufpa, monkeypatch):
     key = document_key(ufpa)
     storage = FakeStorage()

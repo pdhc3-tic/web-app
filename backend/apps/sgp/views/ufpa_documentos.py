@@ -203,7 +203,8 @@ class UFPADocumentViewSet(viewsets.GenericViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     def _validate_document_key(self, key, ufpa):
-        pattern = rf"^ufpas/{ufpa.pk}/documentos/[0-9a-f-]{{36}}\.(pdf|jpg|png)$"
+        # `upfs/` vem de URL de upload emitida antes da renomeação e confirmada depois.
+        pattern = rf"^(ufpas|upfs)/{ufpa.pk}/documentos/[0-9a-f-]{{36}}\.(pdf|jpg|png)$"
         if not re.match(pattern, key):
             raise serializers.ValidationError({"key": "Key de upload inválida."})
 

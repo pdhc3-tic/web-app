@@ -302,16 +302,16 @@ ADT e ACR precisam de valores diferentes. Hoje os dois são um só perfil no sis
 
 ## 11. Renomeação de UPF para UFPA — o que a #392 não cobre ao pé da letra
 
-- **Rotas:** a canônica é `/api/v1/sgp/ufpas/…`, como a Arquitetura define. `/api/v1/sgp/upfs/…` e `/api/v1/upfs/…` ficam por um ciclo, com o cabeçalho `Deprecation: true`; a #392 cita só a primeira, mas a segunda é a que o front mais usa. O schema descreve só a canônica.
+- **Rotas:** a canônica é `/api/v1/sgp/ufpas/…`, como a Arquitetura define. `/api/v1/sgp/upfs/…` e `/api/v1/upfs/…` ficam por um ciclo, com o cabeçalho `Deprecation: true`; a #392 cita só a primeira, mas a segunda é a que o front mais usa. Os três prefixos respondem todas as rotas aninhadas, inclusive as que antes existiam só em um deles. O schema descreve só a canônica, e o CORS expõe `Deprecation` e `Link` ao front.
 - **JSON e contrato do SCA:** também mudam, sem alias, e o front precisa da #407. O app do SCA ainda não consome essas rotas.
 - **RLS em `sgp_ufpa`:** não existia política em `sgp_upf` para recriar. O escopo continua em Python, e a política da Arquitetura fica para um PR próprio, porque precisa mapear tarefas, exportações e o SCA.
 - **Índice `(cpf)`:** o CPF fica em `MembroFamilia`, como descrito na seção 3, e o índice já existe lá.
 - **Índices automáticos do Django:** os criados por FK e `unique` (`sgp_upf_municipio_id_...`) mantêm o nome de origem, sem efeito no funcionamento. Os nomeados no modelo (`idx_ufpa_*`) foram recriados.
-- **Auditoria gravada:** o `AuditLog` é imutável, então o histórico lê `UFPA` e `UPF`. As chaves dentro de registros antigos, como `upf_id`, ficam como foram gravadas.
-- **Arquivos já enviados:** a chave gravada continua válida; só upload novo usa `ufpas/`.
+- **Auditoria gravada:** o `AuditLog` é imutável, então o histórico da UFPA lê `UFPA` e `UPF`, e o filtro `entidade` de `/audit-logs/` traz o nome antigo junto: `UFPA` com `UPF`, `UFPADocument` com `UPFDocument`. As chaves dentro de registros antigos, como `upf_id`, ficam como foram gravadas.
+- **Arquivos já enviados:** a chave gravada continua válida; só upload novo usa `ufpas/`. A confirmação da foto e do documento aceita também `upfs/`, para a URL de upload emitida antes do deploy e confirmada depois.
 - **Chaves antigas na escrita:** `upfs_participantes` e `daf_caf` respondem 400 durante o ciclo. Como o DRF ignora chave desconhecida, sem isso o front ainda não migrado receberia sucesso e perderia o dado.
 - **`dap_caf`:** o campo `daf_caf` da API passa a se chamar como no SGP 10.1 e no Relatório. O nome do modelo continua `numero_dap`.
-- **Critério do `grep` da #392:** além das migrations antigas e dos aliases, ele acha o que trata o nome antigo de propósito: `NOMES_DA_ENTIDADE`, a recusa das chaves antigas, `ROTAS_DEPRECIADAS` e os testes disso.
+- **Critério do `grep` da #392:** além das migrations antigas e dos aliases, ele acha o que trata o nome antigo de propósito: `NOMES_DA_ENTIDADE`, a recusa das chaves antigas, `ROTAS_DEPRECIADAS`, a confirmação de upload com `upfs/` e os testes disso.
 - **`AlterModelTable`:** não foi preciso: `RenameModel` já move as tabelas, e `AlterField(db_table=...)` leva a M2M a `sgp_activityufpa`.
 - **Conflitos do SCA:** a migration troca `entidade` e `campo`, porque o `campo` volta ao objeto na resolução. Os valores dentro de `valor_local` e `valor_servidor` e os detalhes de erro de `SyncEvent` ficam como foram gravados.
 - **Limite do valor total da Ação:** `valor_unitario` em (14,2) não basta: quantidade × valor também precisa caber nesse limite, e a API recusa com 400. As saídas agregadas de Ação, Submeta, Meta e painel não têm limite de dígitos, para um total alto nunca derrubar a leitura.

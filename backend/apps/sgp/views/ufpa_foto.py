@@ -44,7 +44,8 @@ class ConfirmUploadSerializer(serializers.Serializer):
 
     def validate_key(self, value):
         ufpa = self.context["ufpa"]
-        pattern = rf"^ufpas/{ufpa.pk}/foto/[0-9a-f-]{{36}}\.(jpg|png|webp)$"
+        # `upfs/` vem de URL de upload emitida antes da renomeação e confirmada depois.
+        pattern = rf"^(ufpas|upfs)/{ufpa.pk}/foto/[0-9a-f-]{{36}}\.(jpg|png|webp)$"
         if not re.match(pattern, value):
             raise serializers.ValidationError("Key de upload inválida.")
         return value

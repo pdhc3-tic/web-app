@@ -211,6 +211,22 @@ def test_confirm_upload_updates_foto_url(auth_client, ufpa, monkeypatch):
     assert ufpa.foto_url == f"https://media.example.com/{key}"
 
 
+def test_confirma_foto_enviada_com_a_chave_antiga_upfs(auth_client, ufpa, monkeypatch):
+    key = photo_key(ufpa).replace("ufpas/", "upfs/", 1)
+    storage = FakeStorage(existing_keys={key})
+    monkeypatch.setattr("apps.sgp.views.ufpa_foto.get_storage", lambda: storage)
+
+    response = auth_client.post(
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/foto/confirm/",
+        {"key": key},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    ufpa.refresh_from_db()
+    assert ufpa.foto_url == f"https://media.example.com/{key}"
+
+
 def test_confirm_upload_fails_if_object_not_found(auth_client, ufpa, monkeypatch):
     key = photo_key(ufpa)
     storage = FakeStorage()
