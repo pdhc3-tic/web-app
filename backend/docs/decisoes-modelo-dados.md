@@ -16,7 +16,7 @@ especificação simplesmente não previa (ex.: integração com Google Calendar 
 não há nada especificado para divergir. **O que também não entra aqui:**
 qualquer coisa que pareça lacuna sem justificativa técnica — isso é tratado
 como possível erro e deve virar issue própria, não uma linha deste documento
-(ver seção "Pontos a validar" ao final).
+(ver seção "Observação" ao final).
 
 ---
 
@@ -72,12 +72,14 @@ apenas para `User`.
 titular: `nome_titular, cpf, rg, data_nasc, genero, cor_raca, nis, dap_caf,
 estado_civil, escolaridade, telefone, email, ...`.
 
-**Implementação:** `apps/sgp/models/ufpa.py` não tem nenhum desses campos.
-`UFPA.titular` é uma `OneToOneField` (`PROTECT`) para `MembroFamilia`, e é
-nesse model (`apps/sgp/models/membro.py`) que vivem `nome_completo`, `cpf`,
-`rg`, `nis`, `data_nascimento`, `genero`, `cor_raca`, `escolaridade` — o
-titular é apenas um `MembroFamilia` como outro qualquer, identificado via
-`UFPA.titular`.
+**Implementação:** os dados pessoais do titular não ficam em
+`apps/sgp/models/ufpa.py`. `UFPA.titular` é uma `OneToOneField` (`PROTECT`)
+para `MembroFamilia`, e é nesse model (`apps/sgp/models/membro.py`) que vivem
+`nome_completo`, `cpf`, `rg`, `nis`, `data_nascimento`, `genero`, `cor_raca`,
+`escolaridade` e `caf` — o titular é apenas um `MembroFamilia` como outro
+qualquer, identificado via `UFPA.titular`. Na `UFPA` ficam só os dados da
+unidade: `numero_dap` (exposto na API como `dap_caf`), `nis`, `celular` e
+`whatsapp`.
 
 **Por quê:** evita duplicar o mesmo dado pessoal em duas tabelas (o titular
 já é um membro da família, presente em `MembroFamilia.ufpa`) e mantém uma
@@ -87,10 +89,9 @@ pessoa ser titular ou dependente.
 **Consequências:** qualquer código que precise de dados pessoais do titular
 de uma `UFPA` precisa navegar por `ufpa.titular.<campo>`, não `ufpa.<campo>`
 diretamente. Campos que a especificação lista para `UFPA` mas que não existem
-nem em `UFPA` nem em `MembroFamilia` — `dap_caf` (existe como `caf`, sem o
-prefixo), `estado_civil`, `telefone`, `email` — estão listados na seção
-"Pontos a validar" abaixo, pois não há justificativa técnica registrada para
-a ausência deles.
+nem em `UFPA` nem em `MembroFamilia` — `estado_civil` e `email` — estão
+listados na seção "Observação" abaixo, pois não há justificativa técnica
+registrada para a ausência deles.
 
 ---
 
@@ -326,7 +327,7 @@ nenhum lugar do código ou de outra documentação — não foi tratado como
 Fica aqui como nota para a coordenação técnica confirmar se é decisão
 implícita (e então deve virar uma entrada numerada acima) ou lacuna real:
 
-- **`UFPA`/`MembroFamilia` não têm `estado_civil`, `telefone` nem `email`**,
-  campos que a especificação lista para `UFPA`. `dap_caf` da especificação
-  existe como `MembroFamilia.caf` (sem o prefixo), o que pode ser só uma
-  simplificação de nome, não uma lacuna.
+- **`UFPA`/`MembroFamilia` não têm `estado_civil` nem `email`**, campos que
+  a especificação lista para `UFPA`. O telefone da especificação existe como
+  `UFPA.celular` e `UFPA.whatsapp`, e o `dap_caf` como `UFPA.numero_dap`,
+  exposto na API com o nome `dap_caf`.

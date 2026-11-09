@@ -4,11 +4,12 @@ from decimal import Decimal
 import pytest
 
 from apps.sgp.models import WorkPlanAcao
+from apps.sgp.serializers_workplan import MAIOR_VALOR_TOTAL
 from apps.sgp.tests.factories import WorkPlanAcaoFactory, WorkPlanMetaFactory, WorkPlanSubmetaFactory
 
 pytestmark = pytest.mark.django_db
 
-MAIOR_VALOR = "999999999999.99"
+MAIOR_VALOR = str(MAIOR_VALOR_TOTAL)
 URL = "/api/v1/acoes/"
 
 

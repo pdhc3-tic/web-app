@@ -91,10 +91,10 @@ class TestResolveTerritorioId:
         assert _resolve_territorio_id(Obj(), "territorio_id") == 42
 
     def test_nested(self):
-        class Ufpa:
+        class UFPA:
             territorio_id = 99
         class Obj:
-            ufpa = Ufpa()
+            ufpa = UFPA()
         assert _resolve_territorio_id(Obj(), "ufpa.territorio_id") == 99
 
     def test_missing(self):
