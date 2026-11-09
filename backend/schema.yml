@@ -18160,7 +18160,6 @@ components:
         quantidade_realizada:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           nullable: true
         percentual_realizado:
           type: string
@@ -18630,7 +18629,6 @@ components:
         quantidade_realizada:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
         percentual_realizado:
           type: string
           format: decimal
@@ -19126,7 +19124,6 @@ components:
         quantidade_realizada:
           type: string
           format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           nullable: true
         percentual_realizado:
           type: string
