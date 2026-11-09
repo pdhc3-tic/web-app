@@ -61,7 +61,7 @@ def export_to_power_bi() -> dict:
 
 
 @shared_task(name="sgp.tasks.sync_google_calendar_event")
-def sync_google_calendar_event(activity_id):
+def sync_google_calendar_event(activity_id: int) -> None:
     from apps.sgp.models import Activity
 
     if not get_config("google_calendar_integracao_ativa", False):
@@ -177,7 +177,7 @@ def _notify_super_admins(activity_id, exc):
     )
 
 @shared_task(name="sgp.tasks.sync_activity_to_google_calendar")
-def sync_activity_to_google_calendar(activity_id):
+def sync_activity_to_google_calendar(activity_id: int) -> None:
     """Nome antigo, para o que já estava na fila quando a tarefa mudou de nome."""
     return sync_google_calendar_event(activity_id)
 

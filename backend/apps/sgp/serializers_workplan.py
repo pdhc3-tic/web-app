@@ -190,8 +190,9 @@ class WorkPlanAcaoSerializer(serializers.ModelSerializer):
         quantidade = attrs.get("quantidade_planejada", instance.quantidade_planejada if instance else 0)
         valor_unitario = attrs.get("valor_unitario", instance.valor_unitario if instance else 0)
         if quantidade * valor_unitario > MAIOR_VALOR_TOTAL:
+            campo = "quantidade_planejada" if "valor_unitario" not in attrs else "valor_unitario"
             raise serializers.ValidationError({
-                "valor_unitario": "O valor total da Ação (quantidade × valor unitário) excede o limite.",
+                campo: "O valor total da Ação (quantidade × valor unitário) excede o limite.",
             })
         indicador = attrs.get("indicador", instance.indicador if instance else None)
         if "quantidade_realizada" in attrs and indicador.forma_apuracao != FORMA_MANUAL:
@@ -491,7 +492,7 @@ class _NoVisaoIndicadorSerializer(serializers.Serializer):
     titulo = serializers.CharField()
     quantidade_planejada = serializers.DecimalField(max_digits=None, decimal_places=2)
     quantidade_realizada = serializers.DecimalField(
-        max_digits=14, decimal_places=2, allow_null=True
+        max_digits=None, decimal_places=2, allow_null=True
     )
     percentual_realizado = serializers.DecimalField(
         max_digits=7, decimal_places=2, allow_null=True
@@ -520,7 +521,7 @@ class VisaoIndicadorSerializer(serializers.Serializer):
     indicador = IndicatorResumoSerializer()
     quantidade_planejada = serializers.DecimalField(max_digits=None, decimal_places=2)
     quantidade_realizada = serializers.DecimalField(
-        max_digits=14, decimal_places=2, allow_null=True
+        max_digits=None, decimal_places=2, allow_null=True
     )
     percentual_realizado = serializers.DecimalField(
         max_digits=7, decimal_places=2, allow_null=True
@@ -552,7 +553,7 @@ class WorkPlanDashboardNodeSerializer(serializers.Serializer):
     """Consolidado de um nó da árvore do painel (Submeta ou Meta)."""
 
     quantidade_planejada = serializers.DecimalField(max_digits=None, decimal_places=2)
-    quantidade_realizada = serializers.DecimalField(max_digits=14, decimal_places=2)
+    quantidade_realizada = serializers.DecimalField(max_digits=None, decimal_places=2)
     percentual_realizado = serializers.DecimalField(max_digits=7, decimal_places=2)
     progresso_esperado = serializers.DecimalField(max_digits=7, decimal_places=2)
     semaforo = serializers.CharField(allow_null=True)

@@ -11,7 +11,11 @@ from apps.core.models.audit_log import AuditLog
 from apps.core.storage import StorageObjectNotFound, get_storage
 from apps.sgp.models import UFPA, UFPADocument
 from apps.sgp.serializers import UFPADocumentCreateSerializer, UFPADocumentSerializer
-from apps.sgp.serializers.common import DownloadURLRespostaSerializer, UploadURLRespostaSerializer
+from apps.sgp.serializers.common import (
+    PREFIXOS_DA_CHAVE_DE_UPLOAD,
+    DownloadURLRespostaSerializer,
+    UploadURLRespostaSerializer,
+)
 from apps.sgp.services.access import scope_queryset
 
 
@@ -203,8 +207,7 @@ class UFPADocumentViewSet(viewsets.GenericViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     def _validate_document_key(self, key, ufpa):
-        # `upfs/` vem de URL de upload emitida antes da renomeação e confirmada depois.
-        pattern = rf"^(ufpas|upfs)/{ufpa.pk}/documentos/[0-9a-f-]{{36}}\.(pdf|jpg|png)$"
+        pattern = rf"^{PREFIXOS_DA_CHAVE_DE_UPLOAD}/{ufpa.pk}/documentos/[0-9a-f-]{{36}}\.(pdf|jpg|png)$"
         if not re.match(pattern, key):
             raise serializers.ValidationError({"key": "Key de upload inválida."})
 

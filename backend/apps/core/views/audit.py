@@ -1,3 +1,4 @@
+from django.db.models import QuerySet
 from django_filters import rest_framework as django_filters
 from rest_framework import filters, generics
 from rest_framework.pagination import LimitOffsetPagination
@@ -16,7 +17,7 @@ class AuditLogFilter(django_filters.FilterSet):
         model = AuditLog
         fields = ["user", "entidade"]
 
-    def filter_entidade(self, queryset, name, value):
+    def filter_entidade(self, queryset: QuerySet, name: str, value: str) -> QuerySet:
         return queryset.filter(entidade__in=NOMES_DA_ENTIDADE.get(value, (value,)))
 
 

@@ -16,10 +16,49 @@ def tipo_antigo_das_exportacoes(apps, schema_editor):
     _exportacoes(apps, "ufpas", "upfs")
 
 
+# O RenameModel renomeia o ContentType, mas não as permissões: sem isto, as
+# antigas ficariam órfãs e o post_migrate criaria outras, sem os grupos e
+# usuários que já tinham as antigas.
+NOMES_DAS_PERMISSOES = {
+    # codename do modelo: (codename novo, verbose_name novo)
+    "upf": ("ufpa", "UFPA"),
+    "upfdocument": ("ufpadocument", "Documento da UFPA"),
+}
+NOMES_ANTIGOS_DAS_PERMISSOES = {
+    "ufpa": ("upf", "UPF"),
+    "ufpadocument": ("upfdocument", "Documento da UPF"),
+}
+ACOES = ("add", "change", "delete", "view")
+
+
+def _permissoes(apps, nomes):
+    Permission = apps.get_model("auth", "Permission")
+    for de, (para, verbose_name) in nomes.items():
+        for acao in ACOES:
+            antiga = Permission.objects.filter(content_type__app_label="sgp", codename=f"{acao}_{de}").first()
+            if antiga is None:
+                continue
+            if Permission.objects.filter(content_type=antiga.content_type, codename=f"{acao}_{para}").exists():
+                continue
+            antiga.codename = f"{acao}_{para}"
+            antiga.name = f"Can {acao} {verbose_name}"
+            antiga.save(update_fields=["codename", "name"])
+
+
+def permissoes_novas(apps, schema_editor):
+    _permissoes(apps, NOMES_DAS_PERMISSOES)
+
+
+def permissoes_antigas(apps, schema_editor):
+    _permissoes(apps, NOMES_ANTIGOS_DAS_PERMISSOES)
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
+        ("auth", "0012_alter_user_first_name_max_length"),
+        ("contenttypes", "0002_remove_content_type_name"),
         ("sgp", "0020_valores_monetarios_em_14_digitos"),
     ]
 
@@ -197,4 +236,5 @@ class Migration(migrations.Migration):
             ),
         ),
         migrations.RunPython(tipo_novo_das_exportacoes, tipo_antigo_das_exportacoes),
+        migrations.RunPython(permissoes_novas, permissoes_antigas),
     ]

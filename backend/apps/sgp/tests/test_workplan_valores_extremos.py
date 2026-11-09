@@ -33,6 +33,8 @@ class TestEscrita:
         resposta = auth_client_super_admin.patch(f"{URL}{acao.pk}/", {"quantidade_planejada": 2}, format="json")
 
         assert resposta.status_code == 400
+        assert "quantidade_planejada" in resposta.data
+        assert WorkPlanAcao.objects.get(pk=acao.pk).quantidade_planejada == 1
 
     def test_maior_total_que_cabe_e_aceito(self, auth_client_super_admin):
         acao = WorkPlanAcaoFactory(quantidade_planejada=1, valor_unitario=100)

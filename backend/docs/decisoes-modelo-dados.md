@@ -77,9 +77,9 @@ estado_civil, escolaridade, telefone, email, ...`.
 para `MembroFamilia`, e é nesse model (`apps/sgp/models/membro.py`) que vivem
 `nome_completo`, `cpf`, `rg`, `nis`, `data_nascimento`, `genero`, `cor_raca`,
 `escolaridade` e `caf` — o titular é apenas um `MembroFamilia` como outro
-qualquer, identificado via `UFPA.titular`. Na `UFPA` ficam só os dados da
-unidade: `numero_dap` (exposto na API como `dap_caf`), `nis`, `celular` e
-`whatsapp`.
+qualquer, identificado via `UFPA.titular`. Dos campos de identificação que
+a especificação lista, ficam na `UFPA`, por serem da unidade e não da pessoa,
+`numero_dap` (exposto na API como `dap_caf`), `nis`, `celular` e `whatsapp`.
 
 **Por quê:** evita duplicar o mesmo dado pessoal em duas tabelas (o titular
 já é um membro da família, presente em `MembroFamilia.ufpa`) e mantém uma
@@ -308,6 +308,7 @@ ADT e ACR precisam de valores diferentes. Hoje os dois são um só perfil no sis
 - **Índice `(cpf)`:** o CPF fica em `MembroFamilia`, como descrito na seção 3, e o índice já existe lá.
 - **Índices automáticos do Django:** os criados por FK e `unique` (`sgp_upf_municipio_id_...`) mantêm o nome de origem, sem efeito no funcionamento. Os nomeados no modelo (`idx_ufpa_*`) foram recriados.
 - **Auditoria gravada:** o `AuditLog` é imutável, então o histórico da UFPA lê `UFPA` e `UPF`, e o filtro `entidade` de `/audit-logs/` traz o nome antigo junto: `UFPA` com `UPF`, `UFPADocument` com `UPFDocument`. As chaves dentro de registros antigos, como `upf_id`, ficam como foram gravadas.
+- **Permissões do Django:** a migration renomeia `add_upf`, `change_upf` e as demais para `*_ufpa` (e as de `UPFDocument`), mantendo grupos e usuários que já as tinham. Se a permissão com o nome novo já existir, a antiga fica como está.
 - **Arquivos já enviados:** a chave gravada continua válida; só upload novo usa `ufpas/`. A confirmação da foto e do documento aceita também `upfs/`, para a URL de upload emitida antes do deploy e confirmada depois.
 - **Chaves antigas na escrita:** `upfs_participantes` e `daf_caf` respondem 400 durante o ciclo. Como o DRF ignora chave desconhecida, sem isso o front ainda não migrado receberia sucesso e perderia o dado.
 - **`dap_caf`:** o campo `daf_caf` da API passa a se chamar como no SGP 10.1 e no Relatório. O nome do modelo continua `numero_dap`.

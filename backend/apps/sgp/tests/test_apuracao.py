@@ -69,7 +69,7 @@ class TestContagemDeAtividades:
         assert _realizado(destino) == 1
 
 
-class TestSomaDeUfpas:
+class TestSomaDeUFPAs:
     def test_ufpa_em_varias_atividades_conta_uma_vez(self, nova_ufpa):
         acao = _acao("soma_ufpas")
         repetida, outra = nova_ufpa(), nova_ufpa()

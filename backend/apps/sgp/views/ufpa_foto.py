@@ -8,7 +8,7 @@ from rest_framework.response import Response
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.storage import StorageObjectNotFound, get_storage
-from apps.sgp.serializers.common import UploadURLRespostaSerializer
+from apps.sgp.serializers.common import PREFIXOS_DA_CHAVE_DE_UPLOAD, UploadURLRespostaSerializer
 
 
 ALLOWED_CONTENT_TYPES = {
@@ -44,8 +44,7 @@ class ConfirmUploadSerializer(serializers.Serializer):
 
     def validate_key(self, value):
         ufpa = self.context["ufpa"]
-        # `upfs/` vem de URL de upload emitida antes da renomeação e confirmada depois.
-        pattern = rf"^(ufpas|upfs)/{ufpa.pk}/foto/[0-9a-f-]{{36}}\.(jpg|png|webp)$"
+        pattern = rf"^{PREFIXOS_DA_CHAVE_DE_UPLOAD}/{ufpa.pk}/foto/[0-9a-f-]{{36}}\.(jpg|png|webp)$"
         if not re.match(pattern, value):
             raise serializers.ValidationError("Key de upload inválida.")
         return value

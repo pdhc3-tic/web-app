@@ -3,12 +3,14 @@ import importlib
 
 import pytest
 from django.apps import apps
+from django.contrib.auth.models import Permission
+from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 
 from apps.core.tests.factories import AuditLogFactory, MunicipalityFactory, TerritoryFactory
 from apps.sca.models import ConflictLog
 from apps.sca.tests.factories import ConflictLogFactory
-from apps.sgp.models import ExportJob
+from apps.sgp.models import UFPA, ExportJob
 from apps.sgp.tests.factories import ActivityFactory, MembroFactory, UFPAFactory
 
 pytestmark = pytest.mark.django_db
@@ -45,15 +47,13 @@ class TestRotas:
         assert resposta["Deprecation"] == "true"
         assert resposta["Link"] == f'<{CANONICA}>; rel="successor-version"'
 
-    @pytest.mark.parametrize("prefixo", [CANONICA, *ALIASES])
+    @pytest.mark.parametrize("prefixo", ALIASES)
     @pytest.mark.parametrize("sufixo", ["membros/", "documentos/", "producao/", "formularios/", "historico/"])
     def test_rotas_aninhadas_existem_nos_tres_prefixos(self, auth_client, prefixo, sufixo):
         ufpa = _ufpa()
 
-        status_canonico = auth_client.get(f"{CANONICA}{ufpa.pk}/{sufixo}").status_code
-
-        assert status_canonico == 200
-        assert auth_client.get(f"{prefixo}{ufpa.pk}/{sufixo}").status_code == status_canonico
+        assert auth_client.get(f"{CANONICA}{ufpa.pk}/{sufixo}").status_code == 200
+        assert auth_client.get(f"{prefixo}{ufpa.pk}/{sufixo}").status_code == 200
 
     @pytest.mark.parametrize("prefixo", ALIASES)
     def test_link_do_alias_aponta_para_a_mesma_rota_aninhada(self, auth_client, prefixo):
@@ -63,14 +63,18 @@ class TestRotas:
 
         assert resposta["Link"] == f'<{CANONICA}{ufpa.pk}/membros/>; rel="successor-version"'
 
+    @pytest.mark.parametrize("prefixo", [CANONICA, *ALIASES])
     @pytest.mark.parametrize("sufixo", ["exportar/", "mapa/"])
-    def test_acoes_da_lista_nao_viram_detalhe(self, auth_client, sufixo):
-        assert auth_client.get(f"{CANONICA}{sufixo}").status_code != 404
+    def test_acoes_da_lista_nao_viram_detalhe(self, auth_client_super_admin, prefixo, sufixo):
+        _ufpa()
 
-    def test_alias_tambem_escreve(self, auth_client_super_admin):
+        assert auth_client_super_admin.get(f"{prefixo}{sufixo}").status_code == 200
+
+    @pytest.mark.parametrize("prefixo", ALIASES)
+    def test_alias_tambem_escreve(self, auth_client_super_admin, prefixo):
         ufpa = _ufpa()
 
-        resposta = auth_client_super_admin.delete(f"/api/v1/upfs/{ufpa.pk}/")
+        resposta = auth_client_super_admin.delete(f"{prefixo}{ufpa.pk}/")
 
         assert resposta.status_code == 204
         assert resposta["Deprecation"] == "true"
@@ -160,6 +164,37 @@ class TestDadosComONomeAntigo:
         assert ConflictLog.objects.get(pk=do_membro.pk).campo == "upf"
         assert ConflictLog.objects.get(pk=da_atividade.pk).campo == "upfs_participantes"
         assert (sem_mudanca.entidade, ConflictLog.objects.get(pk=sem_mudanca.pk).campo) == ("member", "whatsapp")
+
+
+    def test_migration_renomeia_as_permissoes_sem_perder_quem_as_tinha(self, usuario):
+        tipo = ContentType.objects.get_for_model(UFPA)
+        Permission.objects.filter(content_type=tipo, codename="change_ufpa").delete()
+        antiga = Permission.objects.create(content_type=tipo, codename="change_upf", name="Can change UPF")
+        usuario.user_permissions.add(antiga)
+
+        migration_sgp.permissoes_novas(apps, None)
+
+        antiga.refresh_from_db()
+        assert (antiga.codename, antiga.name) == ("change_ufpa", "Can change UFPA")
+        assert usuario.user_permissions.filter(pk=antiga.pk).exists()
+
+        migration_sgp.permissoes_antigas(apps, None)
+
+        antiga.refresh_from_db()
+        assert (antiga.codename, antiga.name) == ("change_upf", "Can change UPF")
+
+    def test_migration_nao_duplica_permissao_que_ja_existe_com_o_nome_novo(self):
+        tipo = ContentType.objects.get_for_model(UFPA)
+        nova, _ = Permission.objects.get_or_create(
+            content_type=tipo, codename="view_ufpa", defaults={"name": "Can view UFPA"},
+        )
+        antiga = Permission.objects.create(content_type=tipo, codename="view_upf", name="Can view UPF")
+
+        migration_sgp.permissoes_novas(apps, None)
+
+        antiga.refresh_from_db()
+        assert antiga.codename == "view_upf"
+        assert Permission.objects.filter(content_type=tipo, codename="view_ufpa").get().pk == nova.pk
 
 
 class TestNomesAntigosNaEscrita:

@@ -20,7 +20,7 @@ def _parse_csv(response):
     return list(csv.reader(io.StringIO(content)))
 
 
-class TestExportarMembrosPorUfpa:
+class TestExportarMembrosPorUFPA:
     def test_exporta_todos_os_membros_esperados_da_ufpa(self, auth_client_adt_rn, ufpa):
         MembroFactory(ufpa=ufpa, grau_parentesco="filho", nome_completo="Filho Um")
         MembroFactory(ufpa=ufpa, grau_parentesco="filho", nome_completo="Filho Dois")

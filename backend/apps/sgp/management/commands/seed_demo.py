@@ -1074,7 +1074,7 @@ class Command(BaseCommand):
         """Respostas de formulário (#180/#190) na primeira UFPA do seed.
 
         `frontend/e2e/formularios.spec.ts` ancora os cenários na UFPA de menor
-        id (`primeiroUfpaId()`), por isso o volume e a variação (formulário,
+        id, por isso o volume e a variação (formulário,
         versão, período, respondente e status) ficam concentrados em
         `ufpas[0]`. As datas são embaralhadas para não deixar a ordenação
         cronológica coincidir com a ordem de criação dos registros.

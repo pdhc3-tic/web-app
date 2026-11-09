@@ -14,7 +14,7 @@ from apps.sgp.pagination import HistoricoPagination
 from apps.sgp.serializers import HistoricoEntrySerializer
 from apps.sgp.services.access import ROLES_COM_ESCOPO, ufpas_acessiveis_ao_usuario
 
-# Mesmo padrão de mixin de UFPAPhotoMixin/UFPADocumentMixin.
+# Mesmo padrão de mixin de UFPAPhotoMixin.
 
 
 class UFPAHistoricoMixin:
