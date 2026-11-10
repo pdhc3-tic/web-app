@@ -22,6 +22,10 @@ class DemandFactory(factory.django.DjangoModelFactory):
     status = "rascunho"
     solicitante = factory.SubFactory(UserFactory)
     despesa_posterior = False
+    # Por padrão a abrangência coincide com a atividade (comportamento de antes
+    # da Issue #352); o cenário "atividade fora do território" passa explícito.
+    estado_sigla = factory.LazyAttribute(lambda o: o.activity.municipio.state.sigla)
+    territorio = factory.LazyAttribute(lambda o: o.activity.municipio.territory)
 
 
 class TipoSolicitacaoFactory(factory.django.DjangoModelFactory):

@@ -14,6 +14,7 @@ from django.db.models import Q
 
 from apps.core.utils import formatar_brl
 from apps.sgd.exceptions import TRAVA_TERRITORIAL, RegraDeNegocio, SaldoInsuficiente
+from apps.sgd.services import contexto
 from apps.sgp.budget import alertas as alertas_service
 from apps.sgp.budget import limites as limites_service
 from apps.sgp.budget import services as budget_service
@@ -79,6 +80,15 @@ def resolver_nivel_do_usuario(user) -> tuple[str, str | None, object | None]:
         return budget_service.resolver_nivel_do_usuario(user)
     except budget_service.PermissionDenied as exc:
         raise PermissionDenied(str(exc.detail)) from exc
+
+
+def _nivel_para_pool(*, solicitante, demanda=None) -> tuple[str, str | None, object | None]:
+    """Com demanda, o nível congelado nela (território do solicitante na
+    criação, Issue #352); sem demanda ainda (formulário de saldo), o perfil
+    atual do solicitante."""
+    if demanda is not None:
+        return contexto.nivel_da_demanda(demanda)
+    return resolver_nivel_do_usuario(solicitante)
 
 
 def painel_orcamento_para_usuario(user, **filtros) -> list[dict]:
@@ -168,10 +178,13 @@ def bloqueio_territorial(*, rubrica, pool, disponivel: Decimal, solicitado: Deci
     )
 
 
-def consultar_pool(*, solicitante, rubrica, valor: Decimal, consumo_previo: Decimal = ZERO) -> SaldoCheck:
+def consultar_pool(*, solicitante, rubrica, valor: Decimal, consumo_previo: Decimal = ZERO,
+                   demanda=None) -> SaldoCheck:
     """Somente leitura. `consumo_previo` é o que a mesma operação ainda vai
-    reservar neste pool antes de `valor`."""
-    nivel, estado_sigla, territorio = resolver_nivel_do_usuario(solicitante)
+    reservar neste pool antes de `valor`. Com `demanda`, o pool é o do nível
+    congelado nela (Issue #352); sem demanda ainda (formulário de saldo), o do
+    perfil atual do solicitante."""
+    nivel, estado_sigla, territorio = _nivel_para_pool(solicitante=solicitante, demanda=demanda)
     try:
         check = budget_service.saldo_para_consulta(
             rubrica_slug=rubrica.slug, nivel=nivel, estado_sigla=estado_sigla, territorio=territorio,
@@ -189,11 +202,11 @@ def consultar_pool(*, solicitante, rubrica, valor: Decimal, consumo_previo: Deci
     )
 
 
-def localizar_pool(*, solicitante, rubrica) -> BudgetPool:
+def localizar_pool(*, solicitante, rubrica, demanda=None) -> BudgetPool:
     """Pool territorial do solicitante, para quem decide por ele (a UGP no
-    recurso extra)."""
+    recurso extra). Com `demanda`, o do nível congelado nela."""
     with pelo_solicitante():
-        check = consultar_pool(solicitante=solicitante, rubrica=rubrica, valor=ZERO)
+        check = consultar_pool(solicitante=solicitante, rubrica=rubrica, valor=ZERO, demanda=demanda)
     if check.pool is None:
         raise RegraDeNegocio("Nenhuma alocação territorial encontrada para o solicitante nesta rubrica.")
     return check.pool
@@ -202,7 +215,7 @@ def localizar_pool(*, solicitante, rubrica) -> BudgetPool:
 def reservar_pool(*, solicitante, rubrica, valor: Decimal, demand_request, usuario) -> BudgetPool:
     """Idempotente por `demand_request.pk` (o motor confere a reserva já feita
     depois de travar a alocação)."""
-    nivel, estado_sigla, territorio = resolver_nivel_do_usuario(solicitante)
+    nivel, estado_sigla, territorio = _nivel_para_pool(solicitante=solicitante, demanda=demand_request.demanda)
     try:
         check = budget_service.saldo_para_consulta(
             rubrica_slug=rubrica.slug, nivel=nivel, estado_sigla=estado_sigla, territorio=territorio, valor=valor,
