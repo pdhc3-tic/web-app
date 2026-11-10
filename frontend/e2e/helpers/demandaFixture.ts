@@ -73,10 +73,13 @@ agendada = atividade(f"{P} Oficina agendada")
 comunidade = Comunidade.objects.create(nome=f"{P} Sítio Lajedo", municipio=municipio, criada_por=adt)
 completa = atividade(f"{P} Roda de conversa", comunidade)
 com = atividade(f"{P} Oficina com demandas")
-d1 = Demand.objects.create(titulo=f"{P} Transporte da equipe", activity=com, solicitante=adt)
-d2 = Demand.objects.create(titulo=f"{P} Material da oficina", activity=com, solicitante=adt, status="submetida")
+# Abrangência do solicitante, como a criação pelo serviço grava (#352).
+from apps.sgd.services.contexto import abrangencia_para_nova_demanda
+UF, TERRITORIO = abrangencia_para_nova_demanda(solicitante=adt)
+d1 = Demand.objects.create(titulo=f"{P} Transporte da equipe", activity=com, solicitante=adt, estado_sigla=UF, territorio=TERRITORIO)
+d2 = Demand.objects.create(titulo=f"{P} Material da oficina", activity=com, solicitante=adt, status="submetida", estado_sigla=UF, territorio=TERRITORIO)
 outra = atividade(f"{P} Oficina vizinha")
-Demand.objects.create(titulo=f"{P} Demanda da vizinha", activity=outra, solicitante=adt)
+Demand.objects.create(titulo=f"{P} Demanda da vizinha", activity=outra, solicitante=adt, estado_sigla=UF, territorio=TERRITORIO)
 
 print("${MARCADOR}_SETUP " + json.dumps({
     "agendada": {"id": agendada.pk, "titulo": agendada.titulo},

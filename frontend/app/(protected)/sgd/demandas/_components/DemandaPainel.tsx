@@ -18,12 +18,14 @@ import {
   badgeStatusDaDemanda,
   getDemanda,
   listRiscosDeGlosa,
+  rotuloAbrangencia,
   type Demanda,
   type RiscoGlosa,
 } from "@/app/lib/demandas";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import { qk } from "@/app/lib/queryKeys";
 import { podeMontarDemanda } from "@/app/lib/solicitacoes";
+import { SeloForaDoTerritorio } from "./AbrangenciaDemanda";
 import { AcoesDecisao, type Desfecho } from "./AcoesDecisao";
 import { AvisoRecursoExtra } from "./AvisoRecursoExtra";
 import { DemandaAuditoria } from "./DemandaAuditoria";
@@ -197,6 +199,7 @@ export function DemandaPainel({
               {demanda.despesa_posterior && (
                 <span className="text-xs text-warning-text">Despesa posterior à execução</span>
               )}
+              <SeloForaDoTerritorio demanda={demanda} />
             </div>
           )}
         </div>
@@ -272,8 +275,11 @@ export function DemandaPainel({
                 ),
               },
               { label: "Solicitante", value: <NomeDoSolicitante demanda={demanda} /> },
-              { label: "Território", value: demanda.contexto.territorio_nome },
-              { label: "Município", value: demanda.contexto.municipio_nome },
+              {
+                label: "Território da demanda",
+                value: <span data-testid="painel-abrangencia">{rotuloAbrangencia(demanda)}</span>,
+              },
+              { label: "Município da atividade", value: demanda.contexto.municipio_nome },
               {
                 label: "Plano de Trabalho",
                 value: `Meta ${demanda.contexto.meta_numero} · Ação ${demanda.contexto.acao_numero}`,

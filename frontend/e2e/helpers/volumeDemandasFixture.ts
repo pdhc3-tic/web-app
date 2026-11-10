@@ -47,9 +47,13 @@ atividade = Activity.objects.create(
     data_inicio=quando, data_fim=quando, status="agendado", criado_por=adt,
     descricao_narrativa="Criada pela fixture E2E da issue 323.",
 )
+# Abrangência do solicitante, como a criação pelo serviço grava (#352).
+from apps.sgd.services.contexto import abrangencia_para_nova_demanda
+UF, TERRITORIO = abrangencia_para_nova_demanda(solicitante=adt)
 Demand.objects.bulk_create(
     [
-        Demand(titulo=f"{P} Demanda sintética {i:05d}", activity=atividade, solicitante=adt, status="rascunho")
+        Demand(titulo=f"{P} Demanda sintética {i:05d}", activity=atividade, solicitante=adt, status="rascunho",
+               estado_sigla=UF, territorio=TERRITORIO)
         for i in range(1, ${VOLUME_DEMANDAS} + 1)
     ],
     batch_size=2000,

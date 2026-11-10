@@ -103,8 +103,8 @@ export const qk = {
   demandasDaAtividade: (atividadeId: string | number) =>
     ["sgd", "demandas", { atividade: String(atividadeId) }] as const,
   /** Busca de atividades elegíveis no formulário de nova demanda (#294). */
-  atividadesElegiveis: (tecnicoId: string, busca: string) =>
-    ["sgp", "atividades", "elegiveis", { tecnicoId, busca }] as const,
+  atividadesElegiveis: (busca: string) =>
+    ["sgp", "atividades", "elegiveis", { busca }] as const,
   /** Tarefa assíncrona de exportação da listagem de UPFs (#240). */
   /** Job de exportação assíncrona do SGP (`/sgp/exportacoes/{id}/`), qualquer tipo. */
   exportacao: (id: string) => ["sgp", "exportacao", id] as const,

@@ -5,10 +5,12 @@ import { Badge } from "@/app/components/ui/Badge/Badge";
 import { formatDate } from "@/app/lib/datetime";
 import {
   badgeStatusDaDemanda,
+  rotuloAbrangencia,
   type Demanda,
   type OrdenacaoDemandas,
 } from "@/app/lib/demandas";
 import { formatCurrencyBRL } from "@/app/lib/format";
+import { SeloForaDoTerritorio } from "./AbrangenciaDemanda";
 import { NomeDoSolicitante } from "./NomeDoSolicitante";
 
 type DemandasTabelaProps = {
@@ -187,6 +189,13 @@ export function DemandasTabela({
                   >
                     {d.titulo}
                   </button>
+                  {/* Fica também na versão compacta: é o que o Articulador
+                      precisa ver antes de abrir a demanda. */}
+                  {d.atividade_fora_do_territorio && (
+                    <div className="mt-0.5">
+                      <SeloForaDoTerritorio demanda={d} />
+                    </div>
+                  )}
                 </td>
                 <td className={TD}>
                   <Badge status={badgeStatusDaDemanda(d.status)} label={d.status_display} />
@@ -197,7 +206,7 @@ export function DemandasTabela({
                 {!compacta && (
                   <>
                     <td className={`${TD} text-text-muted`}>
-                      {d.contexto.territorio_nome ?? "—"}
+                      {rotuloAbrangencia(d)}
                     </td>
                     <td className={`${TD} text-text-muted`} title={d.contexto.meta_titulo}>
                       Meta {d.contexto.meta_numero}

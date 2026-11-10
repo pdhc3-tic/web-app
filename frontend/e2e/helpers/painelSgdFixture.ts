@@ -76,8 +76,13 @@ atividade = Activity.objects.create(
 alimentacao = BudgetRubrica.objects.get(slug="alimentacao-refeicoes")
 hoje = timezone.localtime()
 
+# Abrangência do solicitante, como a criação pelo serviço grava (#352): sem
+# ela a demanda vira nacional e sai da fila do Articulador.
+from apps.sgd.services.contexto import abrangencia_para_nova_demanda
+UF, TERRITORIO = abrangencia_para_nova_demanda(solicitante=adt)
+
 def submetida(titulo, valor, dias, hora):
-    d = Demand.objects.create(titulo=f"{P} {titulo}", activity=atividade, justificativa="", solicitante=adt, status="submetida")
+    d = Demand.objects.create(titulo=f"{P} {titulo}", activity=atividade, justificativa="", solicitante=adt, status="submetida", estado_sigla=UF, territorio=TERRITORIO)
     DemandRequest.objects.create(demanda=d, tipo_id="alimentacao", rubrica=alimentacao, campos_json={}, valor_estimado=Decimal(valor))
     d.recalcular_totais()
     quando = (hoje - timedelta(days=dias)).replace(hour=hora, minute=0, second=0, microsecond=0)

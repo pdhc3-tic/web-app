@@ -12,7 +12,12 @@ import { DefinitionList } from "@/app/components/ui/DefinitionList/DefinitionLis
 import { useToast } from "@/app/components/ui/Toast/Toast";
 import { ApiError } from "@/app/lib/api";
 import { formatDate } from "@/app/lib/datetime";
-import { badgeStatusDaDemanda, type Demanda, type SolicitacaoDemanda } from "@/app/lib/demandas";
+import {
+  badgeStatusDaDemanda,
+  rotuloAbrangencia,
+  type Demanda,
+  type SolicitacaoDemanda,
+} from "@/app/lib/demandas";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import { qk } from "@/app/lib/queryKeys";
 import { recursoExtraDoBloqueio, type BloqueioRecursoExtra } from "@/app/lib/remanejamentos";
@@ -24,6 +29,7 @@ import {
   submeterDemanda,
   type BloqueioSolicitacao,
 } from "@/app/lib/solicitacoes";
+import { AvisoForaDoTerritorio } from "../AbrangenciaDemanda";
 import { AvisoRecursoExtra } from "../AvisoRecursoExtra";
 import { SolicitarRecursoExtra } from "../SolicitarRecursoExtra";
 import { DocumentosDemanda, useDocumentosDemanda } from "./DocumentosDemanda";
@@ -121,6 +127,9 @@ export function MontarDemanda({ demanda }: { demanda: Demanda }) {
 
       <AvisoRecursoExtra demanda={demanda} />
 
+      {/* Antes da submissão: quem monta a demanda fica sabendo para onde ela vai. */}
+      <AvisoForaDoTerritorio demanda={demanda} />
+
       <section className="rounded-lg border border-border bg-surface p-6">
         <DefinitionList
           items={[
@@ -132,8 +141,11 @@ export function MontarDemanda({ demanda }: { demanda: Demanda }) {
                 </Link>
               ),
             },
-            { label: "Território", value: demanda.contexto.territorio_nome },
-            { label: "Município", value: demanda.contexto.municipio_nome },
+            {
+              label: "Território da demanda",
+              value: <span data-testid="montar-abrangencia">{rotuloAbrangencia(demanda)}</span>,
+            },
+            { label: "Município da atividade", value: demanda.contexto.municipio_nome },
             {
               label: "Plano de Trabalho",
               value: `Meta ${demanda.contexto.meta_numero} · Ação ${demanda.contexto.acao_numero}`,

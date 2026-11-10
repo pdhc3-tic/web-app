@@ -118,11 +118,38 @@ export type Demanda = {
   contexto: ContextoDemanda;
   solicitacoes: SolicitacaoDemanda[];
   solicitante_nome: string;
+  /**
+   * Abrangência territorial (#352): estado e território do SOLICITANTE,
+   * gravados na criação e congelados. Definem o Articulador que analisa, a
+   * fila e o pool de saldo — a atividade não entra no critério. Os três nulos
+   * = demanda de nível nacional (solicitante sem território, como o Super
+   * Admin). `contexto.territorio_*` também passou a ser o da demanda.
+   */
+  estado_sigla: string | null;
+  territorio: number | null;
+  territorio_nome: string | null;
+  /** A atividade acontece em outro estado que não o da demanda. */
+  atividade_fora_do_territorio: boolean;
   /** Decisões em ordem cronológica (pré-autorização, autorização, atendimento). */
   etapas: EtapaDemanda[];
   criado_em: string;
   atualizado_em: string;
 };
+
+/**
+ * "Território X (PB)", só o estado, ou "Nacional" — a abrangência como o
+ * backend gravou, sem recalcular nada.
+ */
+export function rotuloAbrangencia(
+  demanda: Pick<Demanda, "estado_sigla" | "territorio_nome">,
+): string {
+  if (demanda.territorio_nome) {
+    return demanda.estado_sigla
+      ? `${demanda.territorio_nome} (${demanda.estado_sigla})`
+      : demanda.territorio_nome;
+  }
+  return demanda.estado_sigla ?? "Nacional";
+}
 
 /** Os cinco campos mínimos da atividade criada junto com a demanda. */
 export type AtividadeInline = {
@@ -252,20 +279,27 @@ export type AtividadeElegivel = {
   status: string;
   status_display: string;
   data_inicio: string;
-  municipio: { id: number; nome: string };
+  /** `MunicipioNestedSerializer`: o estado vem embutido (#226). */
+  municipio: { id: number; nome: string; estado?: { sigla: string } | null };
+  tecnico_nome?: string;
 };
 
 /**
- * GET /api/v1/sgp/atividades/?tecnico_id={eu}&status=planejado&status=agendado&q={texto}
- * — atividades do solicitante que aceitam demanda, para o campo com busca.
- * `status` repetido e `q` pelo título são do `ActivityFilter` (PR #328).
+ * GET /api/v1/sgp/atividades/?status=planejado&status=agendado&q={texto}
+ * — atividades que aceitam demanda, para o campo com busca. `status`
+ * repetido e `q` pelo título são do `ActivityFilter` (PR #328).
+ *
+ * Sem `tecnico_id` desde a #361: a demanda pode ser vinculada a qualquer
+ * atividade, de outro técnico ou de outro estado (#352) — a abrangência vem
+ * de quem cria. O recorte que sobra é o territorial da própria rota do SGP,
+ * que ainda esconde as atividades de outros estados
+ * (docs/pendencias-backend-sprint-12a.md).
  */
 export async function buscarAtividadesElegiveis(
-  params: { tecnicoId: string; busca: string },
+  params: { busca: string },
   signal?: AbortSignal,
 ): Promise<AtividadeElegivel[]> {
   const qs = new URLSearchParams();
-  qs.set("tecnico_id", params.tecnicoId);
   for (const s of STATUS_ATIVIDADE_ELEGIVEIS) qs.append("status", s);
   if (params.busca.trim()) qs.set("q", params.busca.trim());
   qs.set("ordering", "data_inicio");

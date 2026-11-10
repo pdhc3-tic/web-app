@@ -61,6 +61,19 @@ Em 08/11/2026, contra a `main` com os PRs #410 a #415: 95 testes do SGD passando
 - `tipos-rubricas`: a tela da #319 virou alias do catálogo de tipos (#357). Refeita na #365 sobre o catálogo: o Super Admin cria um tipo e o ADT o solicita, 8 testes;
 - `orcamento`, `orcamento-saldo` e `orcamento-distribuicao`: a matriz do SGP era Meta × Rubrica. Refeitas na #398 sobre os pools (matriz Rubrica × Nível, saldo do ADT sem Meta, distribuição por pool), com as fixtures `orcamentoFixture` e `distribuicaoFixture` no mesmo prelúdio de fotografia.
 
+## Abrangência territorial da demanda (#361)
+
+Depois do #352, a demanda grava o estado e o território do **solicitante** (`estado_sigla`, `territorio`), e é isso que decide a fila do Articulador, a visibilidade e o pool. `e2e/abrangencia-demanda.spec.ts` cobre:
+
+- a busca de atividade sem `tecnico_id`;
+- a demanda de um ADT do RN com atividade de PE: a montagem mostra o território da demanda e o aviso de atividade em outro estado, que não bloqueia a submissão;
+- a demanda na fila do Articulador de RN, com o selo "Atividade fora do território";
+- a Articuladora de PE sem ver a demanda, nem em Todas.
+
+O caso de ponta a ponta da issue (o ADT acha a atividade do outro estado pela busca) espera a rota do backend, item 2 do `pendencias-backend-sprint-12a.md`. Até lá, a demanda nasce na fixture, pelo `criar_demanda`.
+
+**Regra para fixtures:** quem cria `Demand` direto no banco, sem o serviço, passa `estado_sigla` e `territorio` de `apps.sgd.services.contexto.abrangencia_para_nova_demanda(solicitante=...)`. Sem isso a demanda vira nacional e some da fila do Articulador. Era o que quebrava a `sgd-home`; `painelSgdFixture`, `demandaFixture` e `volumeDemandasFixture` já fazem assim.
+
 ## Situação do CI
 
 O workflow `Playwright E2E` (`.github/workflows/playwright.yml`) roda a suíte completa em cada PR para a `main`. Hoje ele não chega ao fim:
