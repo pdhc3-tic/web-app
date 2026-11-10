@@ -64,6 +64,23 @@ class Demand(models.Model):
         ),
     )
 
+    # Abrangência territorial: o território do solicitante, gravado na criação
+    # e congelado. Fila, visibilidade, RLS, notificação e pool leem daqui, não
+    # da atividade (que pode estar em outro estado). Ambos nulos = nível nacional.
+    estado_sigla = models.CharField(
+        max_length=2, null=True, blank=True, db_index=True,
+        verbose_name="Estado (UF) da demanda",
+        help_text="Estado do solicitante na criação — define o Articulador responsável.",
+    )
+    territorio = models.ForeignKey(
+        "core.Territory",
+        on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name="demandas",
+        verbose_name="Território da demanda",
+        help_text="Território do solicitante na criação — define o pool territorial.",
+    )
+
     numero_processo = models.CharField(
         max_length=64, blank=True, default="", db_index=True,
         verbose_name="Número do processo",
@@ -103,6 +120,7 @@ class Demand(models.Model):
             models.Index(fields=["status", "solicitante"], name="idx_demand_status_solic"),
             models.Index(fields=["status", "-criado_em"], name="idx_demand_status_criado"),
             models.Index(fields=["status", "-valor_estimado_total"], name="idx_demand_status_estimado"),
+            models.Index(fields=["estado_sigla", "status"], name="idx_demand_estado_status"),
         ]
 
     def __str__(self):

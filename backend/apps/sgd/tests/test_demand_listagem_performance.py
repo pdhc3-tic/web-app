@@ -18,9 +18,11 @@ def test_listagem_com_10_mil_demandas_e_filtros_combinados_em_menos_de_2s(
 ):
     status = ["submetida", "autorizada", "concluida", "recusada"]
     Demand.objects.bulk_create([
+        # `bulk_create` não passa por `criar_demanda`: a abrangência territorial
+        # (Issue #352) vai explícita, como a criação gravaria.
         Demand(
             titulo=f"Demanda {i}", activity=activity_rn, solicitante=solicitante_rn,
-            status=status[i % len(status)],
+            status=status[i % len(status)], territorio=territory_rn, estado_sigla="RN",
         )
         for i in range(TOTAL)
     ], batch_size=1000)
@@ -40,11 +42,13 @@ def test_listagem_com_10_mil_demandas_e_filtros_combinados_em_menos_de_2s(
 
 
 def _criar_massa_com_relacionamentos(activity, solicitante, rubrica, responsavel):
-    # `bulk_create` não passa pelos serviços: o total já vai com as duas solicitações de 100.
+    # `bulk_create` não passa pelos serviços: o total já vai com as duas solicitações de 100,
+    # e a abrangência territorial (Issue #352) com o território do município da atividade.
     Demand.objects.bulk_create([
         Demand(
             titulo=f"Demanda {i}", activity=activity, solicitante=solicitante, status="submetida",
-            valor_estimado_total=200,
+            valor_estimado_total=200, territorio=activity.municipio.territory,
+            estado_sigla=activity.municipio.state.sigla,
         )
         for i in range(TOTAL)
     ], batch_size=1000)

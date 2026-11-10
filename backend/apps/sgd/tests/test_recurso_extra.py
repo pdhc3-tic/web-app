@@ -682,15 +682,33 @@ def test_pool_zerado_remaneja_o_necessario_inteiro(
     assert demanda.status == "submetida"
 
 
-def test_pedido_sem_territorio_resolvivel_nao_e_aprovado(pedido_com_parecer, usuario_ugp, solicitante_rn, rubrica_diarias):
+def test_pedido_sem_demanda_e_sem_territorio_resolvivel_nao_e_aprovado(
+    demanda, usuario_ugp, solicitante_rn, rubrica_diarias,
+):
+    """Sem demanda vinculada, o pool é o do perfil atual do solicitante: sem
+    território, não há como localizá-lo."""
+    pedido = BudgetIncreaseRequestFactory(user=solicitante_rn, rubrica=rubrica_diarias, status="com_parecer")
+    UserProfile.objects.filter(user=solicitante_rn).update(territorio=None)
+
+    resposta = _acao(usuario_ugp, pedido.pk, "decidir", APROVAR)
+
+    assert resposta.status_code == 400
+    pedido.refresh_from_db()
+    assert pedido.status == "com_parecer"
+    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")
+
+
+def test_pedido_da_demanda_e_aprovado_mesmo_sem_territorio_atual_do_solicitante(
+    pedido_com_parecer, usuario_ugp, solicitante_rn, rubrica_diarias,
+):
+    """Issue #352: com demanda vinculada, o pool é o do território congelado na
+    demanda — o solicitante ter perdido o território depois não bloqueia."""
     UserProfile.objects.filter(user=solicitante_rn).update(territorio=None)
 
     resposta = _acao(usuario_ugp, pedido_com_parecer.pk, "decidir", APROVAR)
 
-    assert resposta.status_code == 400
-    pedido_com_parecer.refresh_from_db()
-    assert pedido_com_parecer.status == "com_parecer"
-    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("300")
+    assert resposta.status_code == 200, resposta.data
+    assert _limite(solicitante_rn, rubrica_diarias) == Decimal("1000")
 
 
 def test_pedido_sem_pool_territorial_nao_e_aprovado(usuario_ugp, solicitante_rn, rubrica_diarias):

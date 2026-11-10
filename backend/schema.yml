@@ -10881,6 +10881,24 @@ components:
           description: Capturado na criação quando a atividade vinculada já estava
             em Em andamento/Concluída/Concluída sem evidência — sinaliza ao aprovador,
             não é recalculado depois.
+        estado_sigla:
+          type: string
+          readOnly: true
+          nullable: true
+          title: Estado (UF) da demanda
+          description: Estado do solicitante na criação — define o Articulador responsável.
+        territorio:
+          type: integer
+          readOnly: true
+          nullable: true
+          title: Território da demanda
+          description: Território do solicitante na criação — define o pool territorial.
+        territorio_nome:
+          type: string
+          readOnly: true
+        atividade_fora_do_territorio:
+          type: boolean
+          readOnly: true
         valor_estimado_total:
           type: string
           format: decimal
@@ -10919,10 +10937,12 @@ components:
           readOnly: true
       required:
       - activity
+      - atividade_fora_do_territorio
       - atualizado_em
       - contexto
       - criado_em
       - despesa_posterior
+      - estado_sigla
       - etapas
       - id
       - solicitacoes
@@ -10930,6 +10950,8 @@ components:
       - solicitante_nome
       - status
       - status_display
+      - territorio
+      - territorio_nome
       - titulo
       - transicoes_permitidas
       - valor_autorizado_total

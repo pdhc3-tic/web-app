@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 from django.core.exceptions import PermissionDenied
 
-from apps.sgd.exceptions import ErroDeDominio, JustificativaObrigatoria, RegraDeNegocio
+from apps.sgd.exceptions import ErroDeDominio, JustificativaObrigatoria
 from apps.sgd.models.demand import Demand
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services.approval import demand_visibility_scope, preview_impacto
@@ -89,14 +89,15 @@ def solicitante_rn_sem_nivel(solicitante_rn):
 
 
 @pytest.mark.parametrize("valor", [Decimal("1500"), Decimal("500")], ids=["aumento", "reducao"])
-def test_preview_decisao_com_solicitante_sem_nivel_e_regra_de_negocio(
+def test_preview_decisao_nao_depende_do_nivel_atual_do_solicitante(
     demand_request_rn, solicitante_rn_sem_nivel, allocation_territorial_rn, valor,
 ):
-    """Quem decide tem acesso; o que falta é o nível do solicitante."""
-    with pytest.raises(RegraDeNegocio) as excinfo:
-        preview_impacto(demand_request_rn, valor)
+    """Issue #352: o pool é o do território congelado na demanda. O solicitante
+    ter perdido o território depois não impede o preview de quem decide."""
+    preview = preview_impacto(demand_request_rn, valor)
 
-    assert excinfo.value.mensagem.startswith("Não há como conferir o pool territorial do solicitante.")
+    delta = valor - demand_request_rn.valor_estimado
+    assert preview["territorial"]["saldo_apos"] == allocation_territorial_rn.valor_alocado - delta
 
 
 def test_autorizar_com_ajuste_nao_depende_do_nivel_atual_do_solicitante(

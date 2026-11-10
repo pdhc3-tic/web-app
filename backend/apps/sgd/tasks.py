@@ -70,7 +70,7 @@ def _verificar_inatividade() -> int:
     ).select_related(contexto.CAMINHO_ESTADO, "solicitante")
     for demand in demandas:
         referencia = timezone.localdate(demand.status_alterado_em)
-        uf = contexto.estado_da_demanda(demand)
+        uf = contexto.calendario_da_demanda(demand)
         if _dias_uteis_entre(referencia, hoje, uf=uf) < DIAS_UTEIS_LIMITE:
             continue
         link = link_inatividade(demand, referencia=referencia)

@@ -97,3 +97,47 @@ def test_rls_filtra_por_territorio_e_papel(activity_rn, solicitante_rn, municipi
     # FGD também vê todas.
     vistos_fgd = _ids_visiveis_para(user_id=usuario_fgd.pk, role="fgd", territorios="")
     assert {demand_rn.pk, demand_ce.pk} <= vistos_fgd
+
+
+@pytest.mark.django_db(transaction=True)
+def test_rls_e_scope_python_devolvem_o_mesmo_conjunto_no_cenario_pb_rn(usuario_articulador_rn, territory_rn):
+    """Issue #352: a RLS compara `sgd_demand.estado_sigla` (território do
+    solicitante), não a UF da atividade, e bate com `demand_visibility_scope`."""
+    from apps.core.tests.factories import MunicipalityFactory, RoleFactory, StateFactory, TerritoryFactory
+    from apps.sgd.models import Demand
+    from apps.sgd.services.approval import demand_visibility_scope
+
+    territorio_x = TerritoryFactory(nome="Território X", estados=["PB"])
+    municipio_rn_em_x = MunicipalityFactory(
+        state=StateFactory(sigla="RN"), territory=territorio_x, codigo_ibge="2400997",
+    )
+    adt_x = UserFactory(profiles=[(RoleFactory(slug="adt-acr"), territorio_x)])
+    articulador_pb = UserFactory(profiles=[(RoleFactory(slug="articulador-estadual"), territorio_x)])
+    activity = ActivityFactory(
+        municipio=municipio_rn_em_x, tecnico_responsavel=adt_x, status="planejado", acao=WorkPlanAcaoFactory(),
+    )
+    demand_x = DemandFactory(
+        activity=activity, solicitante=adt_x, status="submetida", estado_sigla="PB", territorio=territorio_x,
+    )
+    demand_nacional = DemandFactory(
+        activity=activity, solicitante=UserFactory(), status="submetida", estado_sigla=None, territorio=None,
+    )
+
+    _garantir_app_user_e_grants()
+
+    casos = [
+        (articulador_pb, str(territorio_x.pk)),
+        (usuario_articulador_rn, str(territory_rn.pk)),
+    ]
+    for articulador, territorios in casos:
+        com_rls = _ids_visiveis_para(user_id=articulador.pk, role="articulador-estadual", territorios=territorios)
+        sem_rls = set(Demand.objects.filter(demand_visibility_scope(articulador)).values_list("pk", flat=True))
+        assert com_rls == sem_rls
+        assert demand_nacional.pk not in com_rls
+
+    assert demand_x.pk in _ids_visiveis_para(
+        user_id=articulador_pb.pk, role="articulador-estadual", territorios=str(territorio_x.pk),
+    )
+    assert demand_x.pk not in _ids_visiveis_para(
+        user_id=usuario_articulador_rn.pk, role="articulador-estadual", territorios=str(territory_rn.pk),
+    )

@@ -3,13 +3,14 @@ from rest_framework import serializers
 from apps.sgd.models.demand import Demand
 from apps.sgd.serializers.approval_step import ApprovalStepSerializer
 from apps.sgd.serializers.demand_request import DemandRequestSerializer
+from apps.sgd.services import contexto as contexto_service
 from apps.sgd.services.workflow import destinos_permitidos
 from apps.sgp.models.activity import TIPO_ATIVIDADE_CHOICES
 
 
 class DemandContextoSerializer(serializers.Serializer):
-    """Contexto herdado da Atividade, só leitura (SGD-RF02): território,
-    município, comunidade, data, técnico e a cadeia Ação → Submeta → Meta →
+    """Contexto da demanda, só leitura (SGD-RF02). O território é o da demanda
+    (do solicitante, congelado na criação — Issue #352); município, comunidade, data, técnico e a cadeia Ação → Submeta → Meta →
     Indicador."""
 
     territorio_id = serializers.IntegerField(allow_null=True)
@@ -32,8 +33,9 @@ class DemandContextoSerializer(serializers.Serializer):
     indicador_unidade_medida = serializers.CharField(source="acao.indicador.unidade_medida")
 
 
-def _contexto_da_activity(activity) -> dict:
-    territory = activity.municipio.territory
+def _contexto_da_demanda(demand) -> dict:
+    activity = demand.activity
+    territory = contexto_service.territorio_da_demanda(demand)
     return {
         "territorio_id": territory.pk if territory else None,
         "territorio_nome": territory.nome if territory else None,
@@ -58,25 +60,31 @@ class DemandSerializer(serializers.ModelSerializer):
     solicitacoes = DemandRequestSerializer(many=True, read_only=True)
     etapas = ApprovalStepSerializer(many=True, read_only=True)
     solicitante_nome = serializers.CharField(source="solicitante.nome", read_only=True)
+    territorio_nome = serializers.CharField(source="territorio.nome", read_only=True, default=None)
+    atividade_fora_do_territorio = serializers.SerializerMethodField()
 
     class Meta:
         model = Demand
         fields = [
             "id", "titulo", "activity", "justificativa", "status", "status_display",
             "transicoes_permitidas", "solicitante", "solicitante_nome", "despesa_posterior",
+            "estado_sigla", "territorio", "territorio_nome", "atividade_fora_do_territorio",
             "valor_estimado_total", "valor_autorizado_total", "valor_pago_total",
             "contexto", "solicitacoes", "etapas", "criado_em", "atualizado_em",
         ]
         read_only_fields = [
             "id", "activity", "status", "solicitante", "despesa_posterior",
-            "criado_em", "atualizado_em",
+            "estado_sigla", "territorio", "criado_em", "atualizado_em",
         ]
 
     def get_transicoes_permitidas(self, obj) -> list[str]:
         return destinos_permitidos(obj.status)
 
     def get_contexto(self, obj):
-        return DemandContextoSerializer(_contexto_da_activity(obj.activity)).data
+        return DemandContextoSerializer(_contexto_da_demanda(obj)).data
+
+    def get_atividade_fora_do_territorio(self, obj) -> bool:
+        return contexto_service.atividade_fora_do_territorio(obj)
 
 
 class DemandCreateSerializer(serializers.Serializer):

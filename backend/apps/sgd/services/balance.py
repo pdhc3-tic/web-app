@@ -191,19 +191,22 @@ def _checar_individual(*, solicitante, rubrica, valor: Decimal, consumo_previo: 
 
 
 def verificar_duas_travas(
-    *, solicitante, rubrica, valor: Decimal, consumo_previo: Decimal = ZERO, limite=None,
+    *, solicitante, rubrica, valor: Decimal, consumo_previo: Decimal = ZERO, limite=None, demanda=None,
 ) -> DuasTravasCheck:
     """Somente leitura — não reserva nada. Sem `limite`, confere o limite efetivo do solicitante; quem
     já tem reserva informa a linha dela, de onde o aumento vai sair.
 
     `consumo_previo`: quanto outras solicitações da mesma operação, na mesma
     rubrica, já vão reservar antes desta. Sai do saldo das duas travas — o
-    limite individual e o pool territorial são os mesmos para todas."""
+    limite individual e o pool territorial são os mesmos para todas.
+
+    `demanda`: o pool é o do nível congelado nela (Issue #352); sem demanda
+    ainda (formulário de saldo), o do perfil atual do solicitante."""
     individual = _checar_individual(
         solicitante=solicitante, rubrica=rubrica, valor=valor, consumo_previo=consumo_previo, limite=limite,
     )
     territorial = orcamento_service.consultar_pool(
-        solicitante=solicitante, rubrica=rubrica, valor=valor, consumo_previo=consumo_previo,
+        solicitante=solicitante, rubrica=rubrica, valor=valor, consumo_previo=consumo_previo, demanda=demanda,
     )
     return DuasTravasCheck(individual=individual, territorial=territorial, rubrica=rubrica, valor=valor)
 

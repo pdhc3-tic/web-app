@@ -7,6 +7,7 @@ from apps.sgd.models.demand import STATUS_EDITAVEIS, Demand
 from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import balance as balance_service
+from apps.sgd.services import contexto
 from apps.sgd.services import workflow as workflow_service
 from apps.sgd.services.demand_request import (
     _exigir_minimo_cotacoes_equipamento,  # noqa: F401
@@ -53,9 +54,13 @@ def criar_demanda(*, titulo, activity, justificativa, solicitante) -> Demand:
     despesa_posterior = _despesa_posterior_e_valida(activity)
     if despesa_posterior and not justificativa:
         raise JustificativaObrigatoria("Obrigatória para demandas de atividades já em andamento/concluídas.")
+    # Território do solicitante, congelado aqui: a atividade pode estar em
+    # outro estado, e a lotação do usuário pode mudar depois.
+    estado_sigla, territorio = contexto.abrangencia_para_nova_demanda(solicitante=solicitante)
     demand = Demand.objects.create(
         titulo=titulo, activity=activity, justificativa=justificativa,
         solicitante=solicitante, despesa_posterior=despesa_posterior,
+        estado_sigla=estado_sigla, territorio=territorio,
     )
     auditoria_service.registrar_status(demand, de=None, para=demand.status, usuario=solicitante)
     return demand
