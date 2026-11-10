@@ -12,7 +12,7 @@ import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { RestrictedAccess } from "@/app/components/ui/RestrictedAccess/RestrictedAccess";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 import { ApiError } from "@/app/lib/api";
-import { canDistribuirOrcamento, useOrcamentoScope } from "@/app/lib/auth/roles";
+import { canDistribuirOrcamento, canGerirLimites, useOrcamentoScope } from "@/app/lib/auth/roles";
 import { listMetas, type MetaListItem } from "@/app/lib/metas";
 import {
   fetchPainelOrcamento,
@@ -46,6 +46,7 @@ function PainelOrcamentoConteudo() {
   const { data: session } = useSession();
   const { loading: authLoading, soTerritorio } = useOrcamentoScope();
   const podeDistribuir = canDistribuirOrcamento(session?.user);
+  const podeGerirLimites = canGerirLimites(session?.user);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -262,17 +263,31 @@ function PainelOrcamentoConteudo() {
             `as="a"` é obrigatório: `isAnchor` do Button testa `as === "a"`, não
             a presença de `href`. Sem ele sai um <button> com um href
             decorativo, que não navega para lugar nenhum. */}
-        {podeDistribuir && (
-          <Button
-            as="a"
-            size="sm"
-            variant="secondary"
-            href="/sgp/orcamento/distribuicao"
-            data-testid="orcamento-ir-distribuicao"
-          >
-            Distribuir
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Limites de gasto (#400): só Super Admin e UGP, como o backend. */}
+          {podeGerirLimites && (
+            <Button
+              as="a"
+              size="sm"
+              variant="secondary"
+              href="/sgp/orcamento/limites"
+              data-testid="orcamento-ir-limites"
+            >
+              Limites de gasto
+            </Button>
+          )}
+          {podeDistribuir && (
+            <Button
+              as="a"
+              size="sm"
+              variant="secondary"
+              href="/sgp/orcamento/distribuicao"
+              data-testid="orcamento-ir-distribuicao"
+            >
+              Distribuir
+            </Button>
+          )}
+        </div>
       </div>
     </PageHeader>
   );

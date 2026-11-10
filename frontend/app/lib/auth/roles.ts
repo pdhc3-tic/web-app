@@ -303,6 +303,16 @@ export function canDistribuirOrcamento(
   );
 }
 
+/**
+ * Gestão dos limites de gasto (#400). Espelha o `IsSuperAdmin | IsUGP` do
+ * `SpendingLimitViewSet`: só eles leem e gravam padrões e sobrescritas.
+ */
+export function canGerirLimites(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return isSuperAdmin(user) || hasRole(user, UGP_SLUG);
+}
+
 /** Nível em que o perfil grava — o mesmo que `_autorizar` aceitaria dele. */
 export type NivelDistribuicao = "estadual" | "territorial";
 

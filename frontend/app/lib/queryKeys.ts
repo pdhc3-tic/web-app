@@ -34,6 +34,13 @@ export const qk = {
   orcamentoPool: {
     transacoes: (poolId: number) => ["sgp", "orcamento", "pools", poolId, "transacoes"] as const,
   },
+  /** Limites de gasto (#400): padrão por perfil e sobrescritas, vigentes numa data. */
+  limites: {
+    todos: ["sgp", "orcamento", "limites"] as const,
+    lista: (escopo: string, data: string) => ["sgp", "orcamento", "limites", escopo, data] as const,
+    periodicidade: ["core", "system-config", "budget_limit_period"] as const,
+    perfisOperacionais: ["core", "roles", "operacionais"] as const,
+  },
   /** Ações do Plano de Trabalho para selects (#294). */
   acoesPT: ["sgp", "acoes"] as const,
   /** Municípios de um território (#294). */
