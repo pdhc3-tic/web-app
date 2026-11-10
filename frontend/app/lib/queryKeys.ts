@@ -41,6 +41,14 @@ export const qk = {
     periodicidade: ["core", "system-config", "budget_limit_period"] as const,
     perfisOperacionais: ["core", "roles", "operacionais"] as const,
   },
+  /** "Meu saldo" (#401): os cards por rubrica e o extrato de cada uma. */
+  meuSaldo: {
+    cards: ["sgp", "orcamento", "meu-saldo", "cards"] as const,
+    extrato: (rubrica: string, offset: number, limit: number, historico: boolean) =>
+      ["sgp", "orcamento", "meu-saldo", "extrato", rubrica, { offset, limit, historico }] as const,
+    demandasParaRecurso: (rubrica: string) =>
+      ["sgp", "orcamento", "meu-saldo", "demandas-editaveis", rubrica] as const,
+  },
   /** Ações do Plano de Trabalho para selects (#294). */
   acoesPT: ["sgp", "acoes"] as const,
   /** Municípios de um território (#294). */

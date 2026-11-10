@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   Gauge,
+  PiggyBank,
   Sprout,
   UserCog,
   Users,
@@ -16,7 +17,8 @@ import type { LucideIcon } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
 import { SubmoduleCard } from "@/app/components/ui/SubmoduleCard/SubmoduleCard";
-import { useCanExportWorkPlan } from "@/app/lib/auth/roles";
+import { useSession } from "next-auth/react";
+import { canVerMeuSaldo, useCanExportWorkPlan } from "@/app/lib/auth/roles";
 import { fetchUpfCount } from "@/app/lib/upfs";
 
 type Submodule = {
@@ -69,9 +71,16 @@ const SUBMODULES: Submodule[] = [
     key: "orcamento",
     title: "Painel de Orçamento",
     description:
-      "Matriz Meta × Rubrica com semáforo e alerta das alocações no limite.",
+      "Matriz Rubrica × Nível com semáforo e alerta dos pools no limite.",
     Icon: Wallet,
     href: "/sgp/orcamento/",
+  },
+  {
+    key: "meu-saldo",
+    title: "Meu saldo",
+    description: "Quanto você ainda pode solicitar em cada rubrica, com o extrato dos lançamentos.",
+    Icon: PiggyBank,
+    href: "/sgp/orcamento/meu-saldo/",
   },
   {
     key: "tecnicos",
@@ -99,7 +108,12 @@ const SUBMODULES: Submodule[] = [
 export default function SGPPage() {
   // Relatórios é só exportação: some para quem o backend não deixa exportar.
   const { canExport } = useCanExportWorkPlan();
-  const submodulos = SUBMODULES.filter((s) => s.key !== "relatorios" || canExport);
+  // Meu saldo é dos perfis que têm limite (#401).
+  const { data: session } = useSession();
+  const temLimite = canVerMeuSaldo(session?.user);
+  const submodulos = SUBMODULES.filter(
+    (s) => (s.key !== "relatorios" || canExport) && (s.key !== "meu-saldo" || temLimite),
+  );
   // `null` = carregando ou erro silencioso → o card exibe "—" sem bloquear o layout.
   const [upfCount, setUpfCount] = useState<number | null>(null);
 

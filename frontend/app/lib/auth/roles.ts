@@ -313,6 +313,17 @@ export function canGerirLimites(
   return isSuperAdmin(user) || hasRole(user, UGP_SLUG);
 }
 
+/**
+ * "Meu saldo" (#401): os perfis que recebem limite de gasto — os operacionais
+ * do backend (`PERFIS_OPERACIONAIS`: ADT/ACR e Articulador Estadual). A rota
+ * aceita qualquer autenticado, mas para os outros perfis viria vazia.
+ */
+export function canVerMeuSaldo(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return hasRole(user, ADT_ACR_SLUG) || hasRole(user, ARTICULADOR_ESTADUAL_SLUG);
+}
+
 /** Nível em que o perfil grava — o mesmo que `_autorizar` aceitaria dele. */
 export type NivelDistribuicao = "estadual" | "territorial";
 
