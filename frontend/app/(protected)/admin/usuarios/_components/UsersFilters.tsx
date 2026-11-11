@@ -4,12 +4,14 @@ import { Search, X } from "lucide-react";
 import { Input } from "@/app/components/ui/Input/Input";
 import { Select } from "@/app/components/ui/Select/Select";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
-import type { StatusFilter } from "@/app/lib/users";
+import type { CategoriaPerfil, StatusFilter } from "@/app/lib/users";
 
 const fieldLabelClass = "text-label font-medium text-text leading-[1.2]";
 
 export type UsersFiltersValue = {
   search: string;
+  /** Categoria de perfil (#405): recorta as opções do filtro Perfil. */
+  categoria: CategoriaPerfil | "";
   perfil: string;
   territorio: string;
   status: StatusFilter;
@@ -26,6 +28,12 @@ type UsersFiltersProps = {
   territoryOptions: SelectOption[];
   optionsLoading: boolean;
 };
+
+const CATEGORIA_OPTIONS: SelectOption[] = [
+  { value: "", label: "Todas as categorias" },
+  { value: "principal", label: "Principais" },
+  { value: "operacional", label: "Operacionais" },
+];
 
 const STATUS_SEGMENTS: { value: StatusFilter; label: string }[] = [
   { value: "ativos", label: "Ativos" },
@@ -97,14 +105,31 @@ export function UsersFilters({
 
       {/* Linha 2: perfil + território + último acesso + limpar */}
       <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-40 flex-1">
+        <div className="min-w-40 flex-1" data-testid="usuarios-filtro-categoria">
           <Select
+            id="usuarios-filtro-categoria"
+            label="Categoria de perfil"
+            options={CATEGORIA_OPTIONS}
+            value={value.categoria}
+            // Trocar de categoria solta o perfil: ele pode ser da outra.
+            onChange={(v) => onChange({ categoria: v as CategoriaPerfil | "", perfil: "" })}
+            disabled={optionsLoading}
+            placeholder="Todas as categorias"
+          />
+        </div>
+
+        <div className="min-w-40 flex-1" data-testid="usuarios-filtro-perfil">
+          <Select
+            id="usuarios-filtro-perfil"
             label="Perfil"
             options={perfilOptions}
             value={value.perfil}
             onChange={(v) => onChange({ perfil: v })}
             disabled={optionsLoading}
             placeholder="Todos os perfis"
+            helperText={
+              value.categoria && !value.perfil ? "Escolha o perfil da categoria para filtrar a lista." : undefined
+            }
           />
         </div>
 

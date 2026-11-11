@@ -182,3 +182,147 @@ export async function fetchTerritoryOptions(
     label: t.nome,
   }));
 }
+
+// ─── Perfis principais e operacionais (#405, AJ-BE-10) ───────────────────────
+
+export type CategoriaPerfil = "principal" | "operacional";
+export type ObjetoTipo = "evento" | "edital" | "candidatura";
+
+/** Espelha `OBJETO_DO_PERFIL_OPERACIONAL` (apps/core/models/user_profile.py). */
+export const OBJETO_DO_PERFIL: Record<string, ObjetoTipo> = {
+  "coordenador-evento": "evento",
+  credenciador: "evento",
+  "avaliador-selecao": "candidatura",
+  "gestor-edital": "edital",
+};
+
+export const OBJETO_TIPO_LABEL: Record<ObjetoTipo, string> = {
+  evento: "Evento",
+  edital: "Edital",
+  candidatura: "Candidatura",
+};
+
+/** Perfil sem `categoria` (resposta antiga) conta como principal. */
+export function categoriaDoPerfil(perfil: Pick<Perfil, "categoria"> | undefined): CategoriaPerfil {
+  return perfil?.categoria === "operacional" ? "operacional" : "principal";
+}
+
+/** GET /api/v1/roles/ — os perfis ativos, com a categoria de cada um. */
+export async function fetchRoles(signal?: AbortSignal): Promise<Perfil[]> {
+  const res = await apiClient("/api/v1/roles/?limit=200&ativo=true", { signal });
+  const data: Paginated<Perfil> = await res.json();
+  return data.results;
+}
+
+export function opcoesDePerfil(perfis: Perfil[], categoria?: CategoriaPerfil | ""): SelectOption[] {
+  return perfis
+    .filter((p) => !categoria || categoriaDoPerfil(p) === categoria)
+    .map((p) => ({ value: String(p.id), label: p.nome }));
+}
+
+/** Uma linha de perfil principal do formulário: território vazio = todos. */
+export type LinhaPrincipal = { perfil: string; territorio: string };
+/** Uma linha de perfil operacional: o objeto é obrigatório. */
+export type LinhaOperacional = { perfil: string; objetoId: string };
+
+export type NovoUsuario = {
+  nome: string;
+  email: string;
+  senha: string;
+  principais: LinhaPrincipal[];
+  operacionais: LinhaOperacional[];
+};
+
+/** `PerfilInputSerializer`. */
+export type PerfilInput = {
+  perfil_id: number;
+  territorio_id: number | null;
+  objeto_tipo: ObjetoTipo | null;
+  objeto_id: number | null;
+};
+
+export type ErrosNovoUsuario = {
+  nome?: string;
+  email?: string;
+  principais?: string;
+  /** Erro por linha operacional, pelo índice. */
+  operacionais?: Record<number, string>;
+};
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * As mesmas regras de `validate_perfis_input`, antes do envio: ao menos um
+ * perfil principal, operacional sempre com objeto e sem designação repetida.
+ */
+export function validarNovoUsuario(form: NovoUsuario, perfis: Perfil[]): ErrosNovoUsuario {
+  const erros: ErrosNovoUsuario = {};
+  if (!form.nome.trim()) erros.nome = "Informe o nome completo.";
+  if (!EMAIL.test(form.email.trim())) erros.email = "Informe um e-mail válido.";
+
+  const principais = form.principais.filter((l) => l.perfil);
+  if (principais.length === 0) {
+    erros.principais = "Escolha ao menos um perfil principal.";
+  } else {
+    const chaves = principais.map((l) => `${l.perfil}:${l.territorio}`);
+    if (new Set(chaves).size !== chaves.length) {
+      erros.principais = "O mesmo perfil está repetido no mesmo território.";
+    }
+  }
+
+  const porLinha: Record<number, string> = {};
+  const vistos = new Set<string>();
+  form.operacionais.forEach((linha, i) => {
+    if (!linha.perfil) {
+      porLinha[i] = "Escolha o perfil ou remova a linha.";
+      return;
+    }
+    const perfil = perfis.find((p) => String(p.id) === linha.perfil);
+    const tipo = perfil ? OBJETO_DO_PERFIL[perfil.slug] : undefined;
+    if (!/^[1-9]\d*$/.test(linha.objetoId.trim())) {
+      porLinha[i] = `Informe o número do ${tipo ? OBJETO_TIPO_LABEL[tipo].toLowerCase() : "objeto"}.`;
+      return;
+    }
+    const chave = `${linha.perfil}:${linha.objetoId.trim()}`;
+    if (vistos.has(chave)) porLinha[i] = "Este perfil já está designado a este objeto.";
+    vistos.add(chave);
+  });
+  if (Object.keys(porLinha).length > 0) erros.operacionais = porLinha;
+  return erros;
+}
+
+/** Monta o `perfis_input`: principal leva território (ou nulo), operacional leva o objeto. */
+export function montarPerfisInput(form: NovoUsuario, perfis: Perfil[]): PerfilInput[] {
+  const principais: PerfilInput[] = form.principais
+    .filter((l) => l.perfil)
+    .map((l) => ({
+      perfil_id: Number(l.perfil),
+      territorio_id: l.territorio ? Number(l.territorio) : null,
+      objeto_tipo: null,
+      objeto_id: null,
+    }));
+  const operacionais: PerfilInput[] = form.operacionais
+    .filter((l) => l.perfil)
+    .map((l) => {
+      const perfil = perfis.find((p) => String(p.id) === l.perfil);
+      return {
+        perfil_id: Number(l.perfil),
+        territorio_id: null,
+        objeto_tipo: (perfil && OBJETO_DO_PERFIL[perfil.slug]) ?? null,
+        objeto_id: Number(l.objetoId.trim()),
+      };
+    });
+  return [...principais, ...operacionais];
+}
+
+/** POST /api/v1/users/ — cria o usuário com os perfis. A senha é opcional. */
+export async function criarUsuario(form: NovoUsuario, perfis: Perfil[]): Promise<UserListItem> {
+  const body: Record<string, unknown> = {
+    nome_completo: form.nome.trim(),
+    email: form.email.trim(),
+    perfis_input: montarPerfisInput(form, perfis),
+  };
+  if (form.senha) body.password = form.senha;
+  const res = await apiClient("/api/v1/users/", { method: "POST", body: JSON.stringify(body) });
+  return res.json();
+}

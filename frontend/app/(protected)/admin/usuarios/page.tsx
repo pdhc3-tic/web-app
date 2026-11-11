@@ -16,11 +16,15 @@ import Spinner from "@/app/components/icons/Spinner";
 import { useIsSuperAdmin } from "@/app/lib/auth/roles";
 import {
   listUsers,
-  fetchRoleOptions,
+  fetchRoles,
   fetchTerritoryOptions,
+  opcoesDePerfil,
+  type CategoriaPerfil,
   type StatusFilter,
   type UserListItem,
 } from "@/app/lib/users";
+import type { Perfil } from "@/app/lib/auth/types";
+import { useToast } from "@/app/components/ui/Toast/Toast";
 import { ApiError } from "@/app/lib/api";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 import { RestrictedAccess } from "@/app/components/ui/RestrictedAccess/RestrictedAccess";
@@ -28,6 +32,7 @@ import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { Pagination } from "@/app/components/ui/Pagination/Pagination";
 import { UsersFilters, type UsersFiltersValue } from "./_components/UsersFilters";
 import { UsersTable } from "./_components/UsersTable";
+import { NovoUsuarioForm } from "./_components/NovoUsuarioForm";
 
 const SEARCH_DEBOUNCE_MS = 300;
 const DEFAULT_LIMIT = 25;
@@ -35,12 +40,17 @@ const PAGE_SIZES = [25, 50, 100];
 
 const DEFAULT_FILTERS: UsersFiltersValue = {
   search: "",
+  categoria: "",
   perfil: "",
   territorio: "",
   status: "ativos",
   ultimoAcessoDe: "",
   ultimoAcessoAte: "",
 };
+
+function parseCategoria(value: string | null): CategoriaPerfil | "" {
+  return value === "principal" || value === "operacional" ? value : "";
+}
 
 function parseStatus(value: string | null): StatusFilter {
   return value === "inativos" || value === "todos" ? value : "ativos";
@@ -63,6 +73,7 @@ function UsuariosView() {
 
   const [filters, setFilters] = useState<UsersFiltersValue>(() => ({
     search: searchParams.get("q") ?? "",
+    categoria: parseCategoria(searchParams.get("categoria")),
     perfil: searchParams.get("perfil") ?? "",
     territorio: searchParams.get("territorio") ?? "",
     status: parseStatus(searchParams.get("status")),
@@ -90,13 +101,17 @@ function UsuariosView() {
   const [forbidden, setForbidden] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
-  const [roleOptions, setRoleOptions] = useState<SelectOption[]>([]);
+  const { showToast } = useToast();
+  const [roles, setRoles] = useState<Perfil[]>([]);
+  // O filtro Perfil mostra só os perfis da categoria escolhida (#405).
+  const roleOptions = useMemo(() => opcoesDePerfil(roles, filters.categoria), [roles, filters.categoria]);
   const [territoryOptions, setTerritoryOptions] = useState<SelectOption[]>([]);
   const [optionsLoading, setOptionsLoading] = useState(true);
 
   const hasActiveFilters = useMemo(() => {
     return (
       filters.search.trim() !== "" ||
+      filters.categoria !== "" ||
       filters.perfil !== "" ||
       filters.territorio !== "" ||
       filters.status !== DEFAULT_FILTERS.status ||
@@ -116,6 +131,7 @@ function UsuariosView() {
   useEffect(() => {
     const qs = new URLSearchParams();
     if (debouncedSearch.trim()) qs.set("q", debouncedSearch.trim());
+    if (filters.categoria) qs.set("categoria", filters.categoria);
     if (filters.perfil) qs.set("perfil", filters.perfil);
     if (filters.territorio) qs.set("territorio", filters.territorio);
     if (filters.status !== "ativos") qs.set("status", filters.status);
@@ -129,6 +145,7 @@ function UsuariosView() {
     });
   }, [
     debouncedSearch,
+    filters.categoria,
     filters.perfil,
     filters.territorio,
     filters.status,
@@ -146,11 +163,11 @@ function UsuariosView() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setOptionsLoading(true);
     Promise.all([
-      fetchRoleOptions(controller.signal),
+      fetchRoles(controller.signal),
       fetchTerritoryOptions(controller.signal),
     ])
-      .then(([roles, territories]) => {
-        setRoleOptions(roles);
+      .then(([perfis, territories]) => {
+        setRoles(perfis);
         setTerritoryOptions(territories);
       })
       .catch(() => {
@@ -357,15 +374,18 @@ function UsuariosView() {
         onClose={() => setNewUserOpen(false)}
         title="Novo usuário"
       >
-        <div className="flex flex-col items-center gap-3 py-12 text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-muted text-text-muted">
-            <UserPlus className="h-6 w-6" />
-          </span>
-          <p className="max-w-xs text-sm leading-relaxed text-text-muted">
-            O formulário de cadastro de usuário será implementado na próxima
-            sprint.
-          </p>
-        </div>
+        {newUserOpen && (
+          <NovoUsuarioForm
+            perfis={roles}
+            territoryOptions={territoryOptions}
+            onCancelar={() => setNewUserOpen(false)}
+            onCriado={(usuario) => {
+              setNewUserOpen(false);
+              showToast(`Usuário "${usuario.nome_completo}" criado.`, "success");
+              setReloadKey((k) => k + 1);
+            }}
+          />
+        )}
       </SlideOver>
     </>
   );
