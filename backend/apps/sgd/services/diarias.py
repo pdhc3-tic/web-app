@@ -8,12 +8,14 @@ from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 
 from apps.core.models.system_config import SystemConfig, TipoConfiguracao
 from apps.core.services.audit import log_audit
 from apps.core.utils import get_config
 from apps.sgd.constants import CODIGOS_IBGE_CAPITAIS
 from apps.sgd.exceptions import RegraDeNegocio
+from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.models.diarias import (
     CategoriaBeneficiario,
     EnquadramentoFaixaDiaria,
@@ -274,3 +276,40 @@ def registrar_nova_vigencia(*, atual: TabelaDiaria, valor, inicio: date, origem,
         request=request,
     )
     return nova
+
+
+@transaction.atomic
+def excluir_valor(*, linha: TabelaDiaria, user, request=None) -> None:
+    """Só sai da tabela o valor que ainda não vigorou e que nenhuma solicitação usou; o resto
+    é histórico. Se a linha veio de uma edição, a vigência anterior volta a cobrir o período."""
+    _travar_faixa(linha.faixa_destino)
+    linha = TabelaDiaria.objects.select_for_update().get(pk=linha.pk)
+    hoje = timezone.localdate()
+    if linha.vigencia_inicio <= hoje:
+        raise RegraDeNegocio(
+            f"A vigência começou em {linha.vigencia_inicio.strftime('%d/%m/%Y')} e faz parte do histórico. "
+            "Edite o valor para criar uma nova vigência.",
+            campo="vigencia_inicio",
+        )
+    if DemandRequest.objects.filter(campos_json__tabela_diaria_id=linha.pk).exists():
+        raise RegraDeNegocio(
+            "Este valor já foi usado em solicitação de diária e não pode ser removido. "
+            "Edite-o para criar uma nova vigência.",
+            campo="tabela_diaria",
+        )
+    anterior = TabelaDiaria.objects.select_for_update().filter(
+        faixa_destino=linha.faixa_destino, categoria_beneficiario=linha.categoria_beneficiario,
+        vigencia_fim=linha.vigencia_inicio - timedelta(days=1),
+    ).first()
+    anteriores = {"id": linha.pk, **dados_auditoria(linha)}
+    novos = {}
+    if anterior is not None:
+        anterior.vigencia_fim = linha.vigencia_fim
+        anterior.save(update_fields=["vigencia_fim"])
+        novos["vigencia_reaberta"] = {"id": anterior.pk, **dados_auditoria(anterior)}
+    pk = linha.pk
+    linha.delete()
+    log_audit(
+        user=user, acao="tabela_diaria.removido", modulo="sgd", entidade="TabelaDiaria", entidade_id=pk,
+        valores_anteriores=anteriores, valores_novos=novos, request=request,
+    )

@@ -149,11 +149,15 @@ class FaixaDestinoDiariaViewSet(_ConfiguracaoDiariasMixin, viewsets.ModelViewSet
         tags=_TAG, summary="Edita um valor: encerra a vigência atual e cria uma nova a partir de vigencia_inicio",
         request=NovaVigenciaSerializer, responses={201: TabelaDiariaSerializer},
     ),
+    destroy=extend_schema(
+        tags=_TAG,
+        summary="Remove um valor que ainda não vigorou e nenhuma solicitação usou; a vigência anterior é reaberta",
+    ),
 )
 class TabelaDiariaViewSet(_ConfiguracaoDiariasMixin, viewsets.ModelViewSet):
     queryset = TabelaDiaria.objects.select_related("faixa_destino", "criado_por")
     serializer_class = TabelaDiariaSerializer
-    http_method_names = ["get", "post", "patch", "head", "options"]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -192,3 +196,6 @@ class TabelaDiariaViewSet(_ConfiguracaoDiariasMixin, viewsets.ModelViewSet):
         )
         return Response(TabelaDiariaSerializer(nova).data, status=status.HTTP_201_CREATED)
 
+    def destroy(self, request, *args, **kwargs):
+        diarias_service.excluir_valor(linha=self.get_object(), user=request.user, request=request)
+        return Response(status=status.HTTP_204_NO_CONTENT)

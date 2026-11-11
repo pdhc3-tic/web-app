@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 from apps.core.models.municipality import Municipality
 from apps.sgd.exceptions import RegraDeNegocio
@@ -85,7 +86,42 @@ def calcular_diarias(*, municipio_destino_id, data_inicio, data_fim, hospedagem_
     )
 
 
-@registrar_validador("diaria", chave_cpf="beneficiario_cpf")
+# Calculados na gravação a partir da tabela vigente; ficam congelados na solicitação.
+CAMPOS_CALCULADOS_DIARIA = (
+    "faixa_destino", "tabela_diaria_id", "valor_por_diaria", "numero_diarias", "adicional_embarque", "valor_total",
+)
+
+
+def _dados_do_calculo(campos: dict) -> tuple:
+    return (
+        int(campos["municipio_destino_id"]),
+        _parse_date(campos["data_inicio"]),
+        _parse_date(campos["data_fim"]),
+        _parse_bool(campos.get("hospedagem_custeada"), "hospedagem_custeada"),
+    )
+
+
+def _congelar_diaria(campos: dict, activity, anteriores: dict) -> CamposValidados | None:
+    """Editar a solicitação sem mudar destino, datas ou hospedagem mantém o valor calculado
+    quando ela foi gravada, mesmo que a tabela tenha mudado depois. `None` recalcula."""
+    if not anteriores.get("tabela_diaria_id"):
+        return None  # gravada antes da tabela por faixa: não há o que congelar
+    try:
+        mudou = _dados_do_calculo(campos) != _dados_do_calculo(anteriores)
+    except (KeyError, TypeError, ValueError, RegraDeNegocio):
+        return None  # dado ausente ou inválido: o recálculo dá o erro do campo
+    if mudou:
+        return None
+    cpf = _cpf(campos, "beneficiario_cpf")
+    campos_limpos = {k: v for k, v in campos.items() if k != "beneficiario_cpf"}
+    campos_limpos["hospedagem_custeada"] = _parse_bool(campos.get("hospedagem_custeada"), "hospedagem_custeada")
+    campos_limpos.update({chave: anteriores[chave] for chave in CAMPOS_CALCULADOS_DIARIA})
+    return CamposValidados(
+        campos_json=campos_limpos, beneficiario_cpf=cpf, valor_estimado_auto=Decimal(anteriores["valor_total"]),
+    )
+
+
+@registrar_validador("diaria", chave_cpf="beneficiario_cpf", congelar=_congelar_diaria)
 def _validar_diaria(campos: dict, activity) -> CamposValidados:
     _exigir_campos(campos, "municipio_destino_id", "data_inicio", "data_fim", "beneficiario_cpf")
     hospedagem_custeada = _parse_bool(campos.get("hospedagem_custeada"), "hospedagem_custeada")
@@ -160,7 +196,8 @@ def _validar_equipamento(campos: dict, activity) -> CamposValidados:
     return CamposValidados(campos_json=dict(campos), beneficiario_cpf=None, valor_estimado_auto=None)
 
 
-def validar_campos_json(tipo: str, campos: dict, activity) -> CamposValidados:
+def validar_campos_json(tipo: str, campos: dict, activity, *, anteriores: dict | None = None) -> CamposValidados:
+    """`anteriores` são os `campos_json` gravados, na edição de uma solicitação do mesmo tipo."""
     catalogo = TipoSolicitacao.objects.filter(slug=tipo).first()
     if catalogo is None:
         raise RegraDeNegocio(f"Tipo de solicitação desconhecido: '{tipo}'.", campo="tipo")
@@ -170,6 +207,10 @@ def validar_campos_json(tipo: str, campos: dict, activity) -> CamposValidados:
     validador = obter_validador(catalogo.validador)
     if validador is None:
         return CamposValidados(campos_json=dict(campos), beneficiario_cpf=None, valor_estimado_auto=None)
+    if anteriores and validador.congelar is not None:
+        congelado = validador.congelar(campos, activity, anteriores)
+        if congelado is not None:
+            return congelado
     return validador.preparar(campos, activity)
 
 

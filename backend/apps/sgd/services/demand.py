@@ -131,7 +131,9 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
 
     tipo_final = tipo or solicitacao.tipo_id
     campos_final = campos_json if campos_json is not None else solicitacao.campos_json
-    validado = validar_campos_json(tipo_final, campos_final, demand.activity)
+    # Mesmo tipo: o validador pode preservar o que foi calculado na gravação (ex.: diária).
+    anteriores = solicitacao.campos_json if tipo_final == solicitacao.tipo_id else None
+    validado = validar_campos_json(tipo_final, campos_final, demand.activity, anteriores=anteriores)
     # Não retroativo: só consulta o catálogo se o tipo mudou.
     rubrica = rubrica_para_tipo(tipo_final) if tipo_final != solicitacao.tipo_id else solicitacao.rubrica
 

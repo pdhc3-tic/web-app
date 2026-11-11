@@ -1,6 +1,6 @@
 """Tabela de diárias nos moldes do serviço público federal (#358): faixa de destino,
 vigência, contagem com meia diária, adicional de embarque e manutenção pela FGD."""
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -269,3 +269,129 @@ def test_fgd_nao_ganha_acesso_as_demais_configuracoes_do_core(auth_client_fgd):
     )
 
     assert resposta.status_code == 403
+
+
+# --- Congelamento na edição da solicitação (revisão do PR #418) ------------------------
+
+
+def _solicitacao_gravada(demand, municipio, tabela_diaria, faixa):
+    from apps.sgd.services import demand as demand_service
+
+    [atual] = tabela_diaria("300", faixas=[faixa], inicio=date(2026, 1, 1))
+    solicitacao = demand_service.adicionar_solicitacao(demand, tipo="diaria", campos_json=_campos(municipio))
+    return solicitacao, atual
+
+
+def test_editar_so_a_justificativa_mantem_o_valor_gravado(
+    demand_rascunho_rn, municipio_rn, solicitante_rn, faixas_diaria, tabela_diaria, usuario_fgd,
+):
+    from apps.sgd.services import demand as demand_service
+
+    solicitacao, atual = _solicitacao_gravada(demand_rascunho_rn, municipio_rn, tabela_diaria, faixas_diaria[3])
+    diarias_service.registrar_nova_vigencia(
+        atual=atual, valor=Decimal("500"), inicio=date(2026, 11, 1), origem="fgd", user=usuario_fgd,
+    )
+
+    demand_service.atualizar_solicitacao(
+        solicitacao, usuario=solicitante_rn, campos_json=_campos(municipio_rn, justificativa="Nova justificativa."),
+    )
+
+    solicitacao.refresh_from_db()
+    assert solicitacao.campos_json["justificativa"] == "Nova justificativa."
+    assert solicitacao.campos_json["tabela_diaria_id"] == atual.pk
+    assert solicitacao.campos_json["valor_por_diaria"] == "300.00"
+    assert solicitacao.campos_json["valor_total"] == "750.00"
+    assert solicitacao.valor_estimado == Decimal("750.00")
+
+
+def test_mudar_as_datas_recalcula_pela_tabela_vigente(
+    demand_rascunho_rn, municipio_rn, solicitante_rn, faixas_diaria, tabela_diaria, usuario_fgd,
+):
+    from apps.sgd.services import demand as demand_service
+
+    solicitacao, atual = _solicitacao_gravada(demand_rascunho_rn, municipio_rn, tabela_diaria, faixas_diaria[3])
+    nova = diarias_service.registrar_nova_vigencia(
+        atual=atual, valor=Decimal("500"), inicio=date(2026, 11, 1), origem="fgd", user=usuario_fgd,
+    )
+
+    demand_service.atualizar_solicitacao(
+        solicitacao, usuario=solicitante_rn, campos_json=_campos(municipio_rn, fim="2026-11-05"),
+    )
+
+    solicitacao.refresh_from_db()
+    assert solicitacao.campos_json["tabela_diaria_id"] == nova.pk
+    assert solicitacao.campos_json["numero_diarias"] == "3.5"
+    assert solicitacao.valor_estimado == Decimal("1750.00")  # 3,5 × 500
+
+
+def test_valor_calculado_enviado_na_edicao_e_ignorado(
+    demand_rascunho_rn, municipio_rn, solicitante_rn, faixas_diaria, tabela_diaria,
+):
+    from apps.sgd.services import demand as demand_service
+
+    solicitacao, atual = _solicitacao_gravada(demand_rascunho_rn, municipio_rn, tabela_diaria, faixas_diaria[3])
+
+    demand_service.atualizar_solicitacao(
+        solicitacao, usuario=solicitante_rn,
+        campos_json=_campos(municipio_rn, valor_por_diaria="1.00", valor_total="1.00"),
+    )
+
+    solicitacao.refresh_from_db()
+    assert (solicitacao.campos_json["valor_por_diaria"], solicitacao.valor_estimado) == ("300.00", Decimal("750.00"))
+
+
+# --- Exclusão na tabela (revisão do PR #418) ---------------------------------------------
+
+
+def _futuro(dias=30):
+    from django.utils import timezone
+
+    return timezone.localdate() + timedelta(days=dias)
+
+
+@pytest.mark.parametrize("cliente", ["auth_client_fgd", "auth_client_super_admin"])
+def test_exclui_vigencia_futura_e_reabre_a_anterior(request, cliente, faixas_diaria, tabela_diaria, usuario_fgd):
+    [atual] = tabela_diaria("300", faixas=[faixas_diaria[1]], inicio=date(2026, 1, 1))
+    futura = diarias_service.registrar_nova_vigencia(
+        atual=atual, valor=Decimal("425"), inicio=_futuro(), origem="federal", user=usuario_fgd,
+    )
+
+    resposta = request.getfixturevalue(cliente).delete(f"{URL_TABELA}{futura.pk}/")
+
+    assert resposta.status_code == 204
+    assert not TabelaDiaria.objects.filter(pk=futura.pk).exists()
+    atual.refresh_from_db()
+    assert atual.vigencia_fim is None
+    log = AuditLog.objects.get(acao="tabela_diaria.removido")
+    assert log.valores_anteriores["valor"] == "425.00"
+    assert log.valores_novos["vigencia_reaberta"]["id"] == atual.pk
+
+
+def test_vigencia_ja_iniciada_nao_e_excluida(auth_client_fgd, faixas_diaria, tabela_diaria):
+    [atual] = tabela_diaria("300", faixas=[faixas_diaria[1]], inicio=date(2026, 1, 1))
+
+    resposta = auth_client_fgd.delete(f"{URL_TABELA}{atual.pk}/")
+
+    assert resposta.status_code == 400
+    assert "vigencia_inicio" in resposta.data
+    assert TabelaDiaria.objects.filter(pk=atual.pk).exists()
+
+
+def test_vigencia_usada_por_solicitacao_nao_e_excluida(
+    auth_client_fgd, faixas_diaria, tabela_diaria, demand_request_rn,
+):
+    [futura] = tabela_diaria("300", faixas=[faixas_diaria[1]], inicio=_futuro())
+    demand_request_rn.campos_json = {**demand_request_rn.campos_json, "tabela_diaria_id": futura.pk}
+    demand_request_rn.save(update_fields=["campos_json"])
+
+    resposta = auth_client_fgd.delete(f"{URL_TABELA}{futura.pk}/")
+
+    assert resposta.status_code == 400
+    assert "tabela_diaria" in resposta.data
+    assert TabelaDiaria.objects.filter(pk=futura.pk).exists()
+
+
+def test_adt_nao_exclui_valor(auth_client_solicitante, faixas_diaria, tabela_diaria):
+    [futura] = tabela_diaria("300", faixas=[faixas_diaria[1]], inicio=_futuro())
+
+    assert auth_client_solicitante.delete(f"{URL_TABELA}{futura.pk}/").status_code == 403
