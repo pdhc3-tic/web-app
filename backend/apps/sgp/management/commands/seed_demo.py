@@ -46,6 +46,7 @@ from apps.core.models import (
 from apps.core.models.notifications import Notification
 from apps.sca.models import ConflictLog, SyncDevice, SyncEvent
 from apps.sgd.models import ApprovalStep, ArloImport, Demand, DemandRequest
+from apps.sgd.models.diarias import FaixaDestinoDiaria, OrigemValorDiaria, TabelaDiaria
 from apps.sgd.models.tipo_solicitacao import TipoSolicitacao
 from apps.sgd.seed_demo import popular_arlo, popular_demandas
 from apps.sgp.models import (
@@ -525,10 +526,12 @@ class Command(BaseCommand):
         dele nas rubricas dos seis tipos. As verbas territoriais ficam com as
         fixtures e os roteiros: a combinação meta × rubrica × território é única,
         e uma verba semeada colidiria com a que a fixture E2E cria."""
-        SystemConfig.objects.update_or_create(
-            chave="sgd_valor_diaria_padrao",
-            defaults={"valor": SGD_VALOR_DIARIA_DEMO, "tipo": "string"},
-        )
+        for faixa in FaixaDestinoDiaria.objects.all():
+            if not TabelaDiaria.objects.filter(faixa_destino=faixa).exists():
+                TabelaDiaria.objects.create(
+                    faixa_destino=faixa, vigencia_inicio=date(2000, 1, 1),
+                    valor=Decimal(SGD_VALOR_DIARIA_DEMO), origem=OrigemValorDiaria.FGD,
+                )
         adt = User.objects.get(email=email_de_demo(*SGD_ADT_MONTAGEM))
         for tipo in TipoSolicitacao.objects.filter(ativo=True).select_related("rubrica"):
             limites_service.definir_limite_de_demonstracao(

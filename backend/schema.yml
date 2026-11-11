@@ -2614,6 +2614,181 @@ paths:
               schema:
                 $ref: '#/components/schemas/ArloFieldMapping'
           description: ''
+  /api/v1/sgd/config/diarias/faixas/:
+    get:
+      operationId: v1_sgd_config_diarias_faixas_list
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: Lista as faixas de destino de diária
+      tags:
+      - SGD - Configuração
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FaixaDestinoDiaria'
+          description: ''
+    post:
+      operationId: v1_sgd_config_diarias_faixas_create
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: Cria uma faixa de destino de diária
+      tags:
+      - SGD - Configuração
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FaixaDestinoDiariaRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FaixaDestinoDiariaRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FaixaDestinoDiariaRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaixaDestinoDiaria'
+          description: ''
+  /api/v1/sgd/config/diarias/faixas/{id}/:
+    get:
+      operationId: v1_sgd_config_diarias_faixas_retrieve
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: Detalha uma faixa de destino de diária
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este Faixa de destino de
+          diária.
+        required: true
+      tags:
+      - SGD - Configuração
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaixaDestinoDiaria'
+          description: ''
+    patch:
+      operationId: v1_sgd_config_diarias_faixas_partial_update
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: Altera uma faixa e, se enviado, o seu enquadramento
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este Faixa de destino de
+          diária.
+        required: true
+      tags:
+      - SGD - Configuração
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedFaixaDestinoDiariaRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedFaixaDestinoDiariaRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedFaixaDestinoDiariaRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaixaDestinoDiaria'
+          description: ''
+    delete:
+      operationId: v1_sgd_config_diarias_faixas_destroy
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: Remove uma faixa sem valores na tabela
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este Faixa de destino de
+          diária.
+        required: true
+      tags:
+      - SGD - Configuração
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/sgd/config/diarias/parametros/:
+    get:
+      operationId: v1_sgd_config_diarias_parametros_retrieve
+      description: |-
+        Regras de contagem e adicional de embarque. São parâmetros do Core, editáveis aqui
+        pela FGD e pelo Super Admin para a fundação se afastar do padrão federal sem deploy.
+        Só estas chaves: a tela geral de configurações do Core continua só do Super Admin.
+      summary: Parâmetros de contagem de diárias
+      tags:
+      - SGD - Configuração
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParametrosDiarias'
+          description: ''
+    patch:
+      operationId: v1_sgd_config_diarias_parametros_partial_update
+      description: |-
+        Regras de contagem e adicional de embarque. São parâmetros do Core, editáveis aqui
+        pela FGD e pelo Super Admin para a fundação se afastar do padrão federal sem deploy.
+        Só estas chaves: a tela geral de configurações do Core continua só do Super Admin.
+      summary: Altera os parâmetros de contagem de diárias
+      tags:
+      - SGD - Configuração
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedParametrosDiariasRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedParametrosDiariasRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedParametrosDiariasRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParametrosDiarias'
+          description: ''
   /api/v1/sgd/config/diarias/simular/:
     get:
       operationId: v1_sgd_config_diarias_simular_retrieve
@@ -2633,12 +2808,17 @@ paths:
           format: date
         required: true
       - in: query
+        name: hospedagem_custeada
+        schema:
+          type: boolean
+          default: false
+      - in: query
         name: municipio_destino_id
         schema:
           type: integer
         required: true
       tags:
-      - v1
+      - SGD - Configuração
       security:
       - jwtAuth: []
       responses:
@@ -2655,6 +2835,150 @@ paths:
                 type: object
                 additionalProperties: {}
           description: ''
+  /api/v1/sgd/config/diarias/tabela/:
+    get:
+      operationId: v1_sgd_config_diarias_tabela_list
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: Lista os valores da tabela de diárias
+      parameters:
+      - in: query
+        name: faixa_destino
+        schema:
+          type: integer
+      - in: query
+        name: origem
+        schema:
+          type: string
+          enum:
+          - federal
+          - fgd
+      - in: query
+        name: vigente_em
+        schema:
+          type: string
+          format: date
+        description: Só os valores vigentes nesta data.
+      tags:
+      - SGD - Configuração
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TabelaDiaria'
+          description: ''
+    post:
+      operationId: v1_sgd_config_diarias_tabela_create
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: Cadastra um valor de diária com vigência
+      tags:
+      - SGD - Configuração
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TabelaDiariaRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TabelaDiariaRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TabelaDiariaRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TabelaDiaria'
+          description: ''
+  /api/v1/sgd/config/diarias/tabela/{id}/:
+    get:
+      operationId: v1_sgd_config_diarias_tabela_retrieve
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: Detalha um valor da tabela de diárias
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este Valor de diária.
+        required: true
+      tags:
+      - SGD - Configuração
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TabelaDiaria'
+          description: ''
+    patch:
+      operationId: v1_sgd_config_diarias_tabela_partial_update
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: 'Edita um valor: encerra a vigência atual e cria uma nova a partir
+        de vigencia_inicio'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este Valor de diária.
+        required: true
+      tags:
+      - SGD - Configuração
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedNovaVigenciaRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedNovaVigenciaRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedNovaVigenciaRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TabelaDiaria'
+          description: ''
+    delete:
+      operationId: v1_sgd_config_diarias_tabela_destroy
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: Remove um valor que ainda não vigorou e nenhuma solicitação usou; a
+        vigência anterior é reaberta
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este Valor de diária.
+        required: true
+      tags:
+      - SGD - Configuração
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/sgd/config/tipo-rubrica/:
     get:
       operationId: v1_sgd_config_tipo_rubrica_list
@@ -10117,6 +10441,11 @@ components:
       - categoria
       - id
       - nome
+    CategoriaBeneficiarioEnum:
+      enum:
+      - padrao
+      type: string
+      description: '* `padrao` - Padrão'
     CategoriaDoPerfilEnum:
       enum:
       - principal
@@ -11117,6 +11446,31 @@ components:
       required:
       - expires_in
       - url
+    Enquadramento:
+      type: object
+      properties:
+        codigo_ibge:
+          type: string
+          pattern: ^\d{7}$
+        nome_referencia:
+          type: string
+          title: Município (referência)
+          maxLength: 150
+      required:
+      - codigo_ibge
+    EnquadramentoRequest:
+      type: object
+      properties:
+        codigo_ibge:
+          type: string
+          minLength: 1
+          pattern: ^\d{7}$
+        nome_referencia:
+          type: string
+          title: Município (referência)
+          maxLength: 150
+      required:
+      - codigo_ibge
     EntidadeEnum:
       enum:
       - upf
@@ -11398,6 +11752,77 @@ components:
           type: string
       required:
       - id
+      - nome
+    FaixaDestinoDiaria:
+      type: object
+      description: '`enquadramentos`, quando enviado, substitui a lista de municípios
+        da faixa.'
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        nome:
+          type: string
+          maxLength: 150
+        ordem:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        padrao:
+          nullable: true
+          title: Recebe os municípios sem enquadramento
+          oneOf:
+          - $ref: '#/components/schemas/PadraoEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        ativo:
+          type: boolean
+          title: Ativa
+        enquadramentos:
+          type: array
+          items:
+            $ref: '#/components/schemas/Enquadramento'
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        atualizado_em:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - atualizado_em
+      - criado_em
+      - id
+      - nome
+    FaixaDestinoDiariaRequest:
+      type: object
+      description: '`enquadramentos`, quando enviado, substitui a lista de municípios
+        da faixa.'
+      properties:
+        nome:
+          type: string
+          minLength: 1
+          maxLength: 150
+        ordem:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        padrao:
+          nullable: true
+          title: Recebe os municípios sem enquadramento
+          oneOf:
+          - $ref: '#/components/schemas/PadraoEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        ativo:
+          type: boolean
+          title: Ativa
+        enquadramentos:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnquadramentoRequest'
+      required:
       - nome
     FaixaEnum:
       enum:
@@ -13035,6 +13460,22 @@ components:
       description: |-
         * `web` - Web
         * `sca` - SCA
+    OrigemValorDiariaEnum:
+      enum:
+      - federal
+      - fgd
+      type: string
+      description: |-
+        * `federal` - Tabela federal (Decreto 5.992/2006)
+        * `fgd` - Valor próprio da FGD
+    PadraoEnum:
+      enum:
+      - capitais
+      - demais
+      type: string
+      description: |-
+        * `capitais` - Capitais sem enquadramento
+        * `demais` - Demais localidades
     PaginatedActivityListList:
       type: object
       required:
@@ -13820,6 +14261,25 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WorkPlanSubmeta'
+    ParametrosDiarias:
+      type: object
+      description: Regras de contagem e adicional de embarque, guardados como parâmetros
+        do Core.
+      properties:
+        regra_inteira_por_pernoite:
+          type: boolean
+        regra_meia_no_retorno:
+          type: boolean
+        regra_meia_sem_pernoite:
+          type: boolean
+        regra_meia_hospedagem_custeada:
+          type: boolean
+        adicional_embarque_ativo:
+          type: boolean
+        adicional_embarque_valor:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
     PasswordResetConfirmRequest:
       type: object
       properties:
@@ -14001,6 +14461,33 @@ components:
           nullable: true
         ativa:
           type: boolean
+    PatchedFaixaDestinoDiariaRequest:
+      type: object
+      description: '`enquadramentos`, quando enviado, substitui a lista de municípios
+        da faixa.'
+      properties:
+        nome:
+          type: string
+          minLength: 1
+          maxLength: 150
+        ordem:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        padrao:
+          nullable: true
+          title: Recebe os municípios sem enquadramento
+          oneOf:
+          - $ref: '#/components/schemas/PadraoEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        ativo:
+          type: boolean
+          title: Ativa
+        enquadramentos:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnquadramentoRequest'
     PatchedGoogleCalendarConfigRequest:
       type: object
       properties:
@@ -14190,6 +14677,20 @@ components:
           maximum: 2147483647
           minimum: -2147483648
           nullable: true
+    PatchedNovaVigenciaRequest:
+      type: object
+      description: 'Editar um valor da tabela: cria uma vigência nova a partir de
+        `vigencia_inicio`.'
+      properties:
+        valor:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        vigencia_inicio:
+          type: string
+          format: date
+        origem:
+          $ref: '#/components/schemas/OrigemValorDiariaEnum'
     PatchedOrganizationRequest:
       type: object
       properties:
@@ -14220,6 +14721,25 @@ components:
           maxLength: 20
         ativa:
           type: boolean
+    PatchedParametrosDiariasRequest:
+      type: object
+      description: Regras de contagem e adicional de embarque, guardados como parâmetros
+        do Core.
+      properties:
+        regra_inteira_por_pernoite:
+          type: boolean
+        regra_meia_no_retorno:
+          type: boolean
+        regra_meia_sem_pernoite:
+          type: boolean
+        regra_meia_hospedagem_custeada:
+          type: boolean
+        adicional_embarque_ativo:
+          type: boolean
+        adicional_embarque_valor:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
     PatchedProductionRequest:
       type: object
       properties:
@@ -15694,6 +16214,8 @@ components:
       properties:
         faixa_destino:
           $ref: '#/components/schemas/FaixaDestino'
+        tabela_diaria_id:
+          type: integer
         valor_por_diaria:
           type: string
           format: decimal
@@ -15702,13 +16224,19 @@ components:
           type: string
           format: decimal
           pattern: ^-?\d{0,5}(?:\.\d{0,1})?$
+        adicional_embarque:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
         valor_total:
           type: string
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
       required:
+      - adicional_embarque
       - faixa_destino
       - numero_diarias
+      - tabela_diaria_id
       - valor_por_diaria
       - valor_total
     SimulacaoRemanejamento:
@@ -16628,6 +17156,93 @@ components:
         * `integer` - Integer
         * `boolean` - Boolean
         * `json` - JSON
+    TabelaDiaria:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        faixa_destino:
+          type: integer
+          title: Faixa de destino
+        faixa_destino_nome:
+          type: string
+          readOnly: true
+        categoria_beneficiario:
+          allOf:
+          - $ref: '#/components/schemas/CategoriaBeneficiarioEnum'
+          title: Categoria do beneficiário
+        vigencia_inicio:
+          type: string
+          format: date
+          title: Início da vigência
+        vigencia_fim:
+          type: string
+          format: date
+          nullable: true
+          title: Fim da vigência
+        valor:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        origem:
+          allOf:
+          - $ref: '#/components/schemas/OrigemValorDiariaEnum'
+          title: Origem do valor
+        criado_por:
+          type: integer
+          readOnly: true
+          nullable: true
+        criado_por_nome:
+          type: string
+          nullable: true
+          readOnly: true
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - criado_em
+      - criado_por
+      - criado_por_nome
+      - faixa_destino
+      - faixa_destino_nome
+      - id
+      - origem
+      - valor
+      - vigencia_inicio
+    TabelaDiariaRequest:
+      type: object
+      properties:
+        faixa_destino:
+          type: integer
+          title: Faixa de destino
+        categoria_beneficiario:
+          allOf:
+          - $ref: '#/components/schemas/CategoriaBeneficiarioEnum'
+          title: Categoria do beneficiário
+        vigencia_inicio:
+          type: string
+          format: date
+          title: Início da vigência
+        vigencia_fim:
+          type: string
+          format: date
+          nullable: true
+          title: Fim da vigência
+        valor:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        origem:
+          allOf:
+          - $ref: '#/components/schemas/OrigemValorDiariaEnum'
+          title: Origem do valor
+      required:
+      - faixa_destino
+      - origem
+      - valor
+      - vigencia_inicio
     Tecnico:
       type: object
       properties:
