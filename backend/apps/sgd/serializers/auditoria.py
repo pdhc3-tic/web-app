@@ -1,7 +1,13 @@
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.core.models.audit_log import AuditLog
 from apps.sgd.services.auditoria import ENTIDADE_DEMANDA, ENTIDADE_MOVIMENTACAO_SALDO
+
+
+class UsuarioDaTrilhaSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    nome = serializers.CharField()
 
 
 class DemandAuditEntrySerializer(serializers.ModelSerializer):
@@ -16,6 +22,7 @@ class DemandAuditEntrySerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
+    @extend_schema_field(serializers.ChoiceField(choices=["status", "saldo", "recurso_extra"]))
     def get_tipo(self, obj) -> str:
         if obj.entidade == ENTIDADE_DEMANDA:
             return "status"
@@ -29,6 +36,7 @@ class DemandAuditEntrySerializer(serializers.ModelSerializer):
             dados["ip"] = None
         return dados
 
+    @extend_schema_field(UsuarioDaTrilhaSerializer(allow_null=True))
     def get_usuario(self, obj) -> dict | None:
         if obj.user is None:
             return None

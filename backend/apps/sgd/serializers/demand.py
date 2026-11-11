@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.sgd.models.demand import Demand
@@ -80,6 +81,7 @@ class DemandSerializer(serializers.ModelSerializer):
     def get_transicoes_permitidas(self, obj) -> list[str]:
         return destinos_permitidos(obj.status)
 
+    @extend_schema_field(DemandContextoSerializer)
     def get_contexto(self, obj):
         return DemandContextoSerializer(_contexto_da_demanda(obj)).data
 

@@ -1,5 +1,5 @@
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema, extend_schema_view
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -21,10 +21,12 @@ from apps.sgd.serializers.remanejamento import (
     BudgetIncreaseRequestSerializer,
     BudgetTransferSerializer,
     DecidirRemanejamentoSerializer,
+    DecisaoRemanejamentoRespostaSerializer,
     DevolverRemanejamentoSerializer,
     ParecerSerializer,
     SolicitarRecursoExtraSerializer,
 )
+from apps.sgd.serializers.erros import ERRO_DE_DOMINIO
 from apps.sgd.services import contexto
 from apps.sgd.services import recurso_extra as recurso_extra_service
 from apps.sgp.models import BudgetIncreaseRequest, BudgetTransfer
@@ -64,6 +66,11 @@ class RecursoExtraMixin:
             return [IsAuthenticatedActiveAccess(), (IsADTInTerritory | IsSuperAdmin)()]
         return super().get_permissions()
 
+    @extend_schema(
+        request=SolicitarRecursoExtraSerializer,
+        responses={201: BudgetIncreaseRequestSerializer, 400: ERRO_DE_DOMINIO},
+        description="Pedido de recurso extra para a demanda barrada pelo limite individual (SGD §4.1).",
+    )
     @action(detail=True, methods=["post"], url_path="solicitar-recurso-extra")
     def solicitar_recurso_extra(self, request, pk=None):
         demanda = get_object_or_404(self.get_queryset(), pk=pk)
@@ -75,8 +82,34 @@ class RecursoExtraMixin:
         return Response(BudgetIncreaseRequestSerializer(pedido).data, status=status.HTTP_201_CREATED)
 
 
+@extend_schema_view(
+    list=extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "status", OpenApiTypes.STR, many=True, explode=True,
+                enum=[*sorted(BudgetIncreaseRequest.Status.values), "todos"],
+                description=(
+                    "Repetível. Sem o parâmetro, UGP e Super Admin recebem só os pedidos com parecer; "
+                    "`todos` desliga o filtro."
+                ),
+            ),
+            OpenApiParameter("demanda", OpenApiTypes.INT, description="Id da demanda."),
+        ],
+        responses={200: BudgetIncreaseRequestSerializer(many=True), 400: ERRO_DE_DOMINIO},
+    ),
+    retrieve=extend_schema(responses=BudgetIncreaseRequestSerializer),
+    partial_update=extend_schema(
+        request=AtualizarRemanejamentoSerializer,
+        responses={200: BudgetIncreaseRequestSerializer, 400: ERRO_DE_DOMINIO},
+    ),
+)
 class RemanejamentoViewSet(viewsets.ViewSet):
     """Pedidos de recurso extra e a fila de decisão da UGP."""
+
+    # Num ViewSet não genérico, só para o drf-spectacular: o tipo do `{id}` e o
+    # envelope paginado da listagem e de `transferencias`.
+    queryset = BudgetIncreaseRequest.objects.none()
+    pagination_class = RemanejamentoPagination
 
     PERMISSAO_POR_ACAO = {
         "partial_update": (IsADTInTerritory | IsSuperAdmin),
@@ -163,6 +196,7 @@ class RemanejamentoViewSet(viewsets.ViewSet):
         pedido = recurso_extra_service.editar(pedido, usuario=request.user, **entrada.validated_data)
         return Response(BudgetIncreaseRequestSerializer(pedido).data)
 
+    @extend_schema(request=None, responses={200: BudgetIncreaseRequestSerializer, 400: ERRO_DE_DOMINIO})
     @action(detail=True, methods=["post"], url_path="submeter")
     def submeter(self, request, pk=None):
         pedido = self._pedido(request, pk)
@@ -170,6 +204,7 @@ class RemanejamentoViewSet(viewsets.ViewSet):
         pedido = recurso_extra_service.submeter_pedido(pedido, usuario=request.user)
         return Response(BudgetIncreaseRequestSerializer(pedido).data)
 
+    @extend_schema(request=ParecerSerializer, responses={200: BudgetIncreaseRequestSerializer, 400: ERRO_DE_DOMINIO})
     @action(detail=True, methods=["post"], url_path="parecer")
     def parecer(self, request, pk=None):
         pedido = self._pedido(request, pk)
@@ -178,6 +213,10 @@ class RemanejamentoViewSet(viewsets.ViewSet):
         pedido = recurso_extra_service.emitir_parecer(pedido, usuario=request.user, **entrada.validated_data)
         return Response(BudgetIncreaseRequestSerializer(pedido).data)
 
+    @extend_schema(
+        request=DevolverRemanejamentoSerializer,
+        responses={200: BudgetIncreaseRequestSerializer, 400: ERRO_DE_DOMINIO},
+    )
     @action(detail=True, methods=["post"], url_path="devolver")
     def devolver(self, request, pk=None):
         pedido = self._pedido(request, pk)
@@ -186,6 +225,10 @@ class RemanejamentoViewSet(viewsets.ViewSet):
         pedido = recurso_extra_service.devolver_pedido(pedido, usuario=request.user, **entrada.validated_data)
         return Response(BudgetIncreaseRequestSerializer(pedido).data)
 
+    @extend_schema(
+        request=DecidirRemanejamentoSerializer,
+        responses={200: DecisaoRemanejamentoRespostaSerializer, 400: ERRO_DE_DOMINIO},
+    )
     @action(detail=True, methods=["post"], url_path="decidir")
     def decidir(self, request, pk=None):
         pedido = self._pedido(request, pk)

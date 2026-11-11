@@ -3,6 +3,9 @@ from rest_framework import serializers
 from apps.sgp.models import BudgetIncreaseRequest, BudgetPool, BudgetRubrica, BudgetTransfer
 from apps.sgd.services.recurso_extra import DECISOES
 
+# Nome fixo no schema (`DecisaoRecursoExtraEnum`, em `ENUM_NAME_OVERRIDES`).
+DECISOES_DO_RECURSO_EXTRA = sorted(DECISOES)
+
 
 class BudgetIncreaseRequestSerializer(serializers.ModelSerializer):
     solicitante_nome = serializers.CharField(source="user.nome", read_only=True)
@@ -27,6 +30,16 @@ class BudgetIncreaseRequestSerializer(serializers.ModelSerializer):
 
     def get_transicoes_permitidas(self, obj) -> list[str]:
         return sorted(obj.get_transicoes_permitidas())
+
+
+class DecisaoRemanejamentoRespostaSerializer(BudgetIncreaseRequestSerializer):
+    """Resposta de `decidir`: o pedido e o remanejamento que cobriu o pool, se houve."""
+
+    transferencia_id = serializers.IntegerField(allow_null=True, read_only=True)
+
+    class Meta(BudgetIncreaseRequestSerializer.Meta):
+        fields = [*BudgetIncreaseRequestSerializer.Meta.fields, "transferencia_id"]
+        read_only_fields = fields
 
 
 class SolicitarRecursoExtraSerializer(serializers.Serializer):
@@ -55,7 +68,7 @@ class DevolverRemanejamentoSerializer(serializers.Serializer):
 
 
 class DecidirRemanejamentoSerializer(serializers.Serializer):
-    decisao = serializers.ChoiceField(choices=sorted(DECISOES))
+    decisao = serializers.ChoiceField(choices=DECISOES_DO_RECURSO_EXTRA)
     valor_aprovado = serializers.DecimalField(
         max_digits=14, decimal_places=2, min_value=0, required=False,
         help_text="Só na aprovação parcial.",
