@@ -68,6 +68,7 @@ def fila_aguardando_acao(user, base_qs, *, limite: int = LIMITE_FILA) -> dict:
             "valor_estimado": demanda.valor_estimado_total,
             "atividade_id": demanda.activity_id,
             "atividade_titulo": demanda.activity.titulo,
+            # Abrangência da demanda (território do solicitante), não da atividade.
             "estado": contexto.estado_da_demanda(demanda),
             "territorio": territorio.nome if territorio else None,
         })
@@ -192,7 +193,7 @@ def sem_movimentacao(user, base_qs, *, limite: int = LIMITE_SEM_MOVIMENTACAO) ->
     if candidatas:
         mais_antiga = min(timezone.localdate(d.status_alterado_em) for d in candidatas)
         for demanda in candidatas:
-            uf = contexto.estado_da_demanda(demanda)
+            uf = contexto.calendario_da_demanda(demanda)
             if uf not in calendarios:
                 calendarios[uf] = business_days.feriados(uf, mais_antiga, hoje)
             referencia = timezone.localdate(demanda.status_alterado_em)
