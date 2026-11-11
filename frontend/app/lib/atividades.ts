@@ -184,6 +184,15 @@ export type AtividadeDetail = {
   membros_participantes: MembroParticipante[];
   total_participantes: number;
   /**
+   * Custo da atividade (#404, AJ-BE-08), calculado no backend sobre todas as
+   * demandas dela: o previsto soma o estimado das demandas que ainda contam; o
+   * realizado, o pago das concluídas, limitado ao autorizado (o excedente fica
+   * no risco de glosa). Decimais como string. Opcionais para não quebrar
+   * resposta antiga em cache.
+   */
+  custo_previsto?: string;
+  custo_realizado?: string;
+  /**
    * Espelha GOOGLE_CALENDAR_SYNC_STATUS_CHOICES em models/activity.py.
    * `erro` é só um aviso na ficha (RF24): a atividade está salva, o que falhou
    * foi criar o evento na agenda.

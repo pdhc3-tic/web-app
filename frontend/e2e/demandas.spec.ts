@@ -5,6 +5,7 @@ import {
   removerDemandaFixture,
   type DemandaFixture,
 } from "./helpers/demandaFixture";
+import { abrirComApi, apiGet } from "./helpers/apiReal";
 import { storageStatePath } from "./helpers/users";
 
 /**
@@ -223,5 +224,39 @@ test.describe("SGD — perfis que não abrem demanda", () => {
 
     await page.goto("/sgd/demandas/nova");
     await expect(page.getByTestId("nova-demanda-form")).toHaveCount(0);
+  });
+
+  // #404: custo da atividade no cabeçalho da aba e bloco de riscos de glosa.
+  test("o cabeçalho da aba mostra o custo previsto e o realizado que o backend calcula", async ({ page }) => {
+    const origem = await abrirComApi(page, `/sgp/atividades/${fx.comDemandas.id}?tab=demandas`);
+    const detalhe = await apiGet<{ custo_previsto: string; custo_realizado: string }>(
+      page,
+      origem,
+      `/api/v1/sgp/atividades/${fx.comDemandas.id}/`,
+    );
+    const brl = (valor: string) =>
+      Number(valor).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    await expect(page.getByTestId("atividade-custos")).toBeVisible();
+    await expect(page.getByTestId("atividade-custo-previsto")).toContainText(brl(detalhe.custo_previsto));
+    await expect(page.getByTestId("atividade-custo-realizado")).toContainText(brl(detalhe.custo_realizado));
+  });
+
+  test("o bloco de riscos de glosa só aparece quando a atividade tem risco em aberto", async ({ page }) => {
+    const origem = await abrirComApi(page, `/sgp/atividades/${fx.comDemandas.id}`);
+    const { results } = await apiGet<{ results: { id: number; resolvido_em: string | null }[] }>(
+      page,
+      origem,
+      `/api/v1/sgp/glosa-riscos/?activity=${fx.comDemandas.id}&limit=100`,
+    );
+    const abertos = results.filter((r) => r.resolvido_em === null);
+
+    await expect(page.getByTestId("atividade-status-btn")).toBeVisible();
+    if (abertos.length === 0) {
+      await expect(page.getByTestId("riscos-de-glosa")).toHaveCount(0);
+    } else {
+      await expect(page.getByTestId("riscos-de-glosa")).toBeVisible();
+      await expect(page.locator('[data-testid^="risco-de-glosa-severidade-"]')).toHaveCount(abertos.length);
+    }
   });
 });

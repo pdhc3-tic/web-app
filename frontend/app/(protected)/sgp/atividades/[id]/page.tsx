@@ -37,6 +37,7 @@ import { Tabs } from "@/app/components/ui/Tabs/Tabs";
 import { OrigemScaBadge } from "@/app/components/sgp/OrigemScaBadge";
 import { EvidenceGallery } from "@/app/components/sgp/EvidenceGallery/EvidenceGallery";
 import { DemandasTab } from "./_components/DemandasTab";
+import { RiscosDeGlosa } from "./_components/RiscosDeGlosa";
 import { TransicaoStatusDialog } from "./_components/TransicaoStatusDialog";
 import { useToast } from "@/app/components/ui/Toast/Toast";
 import { isStatusTerminal } from "@/app/lib/atividades";
@@ -297,6 +298,8 @@ export default function AtividadeFichaPage() {
             </Button>
           </div>
         </div>
+
+        <RiscosDeGlosa atividadeId={atividade.id} />
 
         <Tabs
           value={tab}
