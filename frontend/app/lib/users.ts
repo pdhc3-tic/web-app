@@ -52,6 +52,7 @@ export type ListUsersParams = {
   offset: number;
   search?: string;
   perfil?: string;
+  categoria?: "principal" | "operacional";
   territorio?: string;
   status?: StatusFilter;
   /** Datas no formato YYYY-MM-DD (input nativo). */
@@ -104,6 +105,31 @@ export async function listUsers(
   params: ListUsersParams,
   signal?: AbortSignal,
 ): Promise<Paginated<UserListItem>> {
+  if (params.categoria) {
+    // O backend ainda não filtra categoria. Percorrer todas as páginas evita
+    // filtrar só a página visível e produzir contagem/paginação incorretas.
+    const usuarios: UserListItem[] = [];
+    let offset = 0;
+    let pagina: Paginated<UserListItem>;
+    do {
+      const res = await apiClient(
+        `/api/v1/users/?${buildUsersQuery({ ...params, limit: 100, offset })}`,
+        { signal },
+      );
+      pagina = await res.json();
+      usuarios.push(...pagina.results);
+      offset += pagina.results.length;
+    } while (pagina.next && pagina.results.length > 0);
+    const filtrados = usuarios.filter((u) =>
+      u.perfis.some((p) => categoriaDoPerfil(p) === params.categoria),
+    );
+    return {
+      count: filtrados.length,
+      next: null,
+      previous: null,
+      results: filtrados.slice(params.offset, params.offset + params.limit),
+    };
+  }
   const res = await apiClient(`/api/v1/users/?${buildUsersQuery(params)}`, {
     signal,
   });

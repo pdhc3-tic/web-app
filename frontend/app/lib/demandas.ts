@@ -396,9 +396,17 @@ export async function listRiscosDeGlosaDaAtividade(
   signal?: AbortSignal,
 ): Promise<RiscoGlosa[]> {
   const qs = new URLSearchParams({ activity: String(atividadeId), limit: "100" });
-  const res = await apiClient(`/api/v1/sgp/glosa-riscos/?${qs}`, { signal });
-  const corpo = (await res.json()) as { results: RiscoGlosa[] } | RiscoGlosa[];
-  return Array.isArray(corpo) ? corpo : corpo.results;
+  const riscos: RiscoGlosa[] = [];
+  let pagina: { results: RiscoGlosa[]; next?: string | null };
+  do {
+    qs.set("offset", String(riscos.length));
+    const res = await apiClient(`/api/v1/sgp/glosa-riscos/?${qs}`, { signal });
+    const corpo = await res.json();
+    if (Array.isArray(corpo)) return corpo;
+    pagina = corpo;
+    riscos.push(...pagina.results);
+  } while (pagina.next && pagina.results.length > 0);
+  return riscos;
 }
 
 export const TIPO_RISCO_GLOSA_LABEL: Record<RiscoGlosa["tipo"], string> = {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { listDemandas } from "@/app/lib/demandas";
+import { listDemandas, listRiscosDeGlosaDaAtividade, riscosAbertos } from "@/app/lib/demandas";
 
 /**
  * #364 — a listagem master-detail passa a ordenação pelo servidor
@@ -8,6 +8,24 @@ import { listDemandas } from "@/app/lib/demandas";
 
 const api = vi.hoisted(() => ({ client: vi.fn() }));
 vi.mock("@/app/lib/api", () => ({ apiClient: api.client }));
+
+describe("riscos da atividade (#404)", () => {
+  it("encontra risco aberto depois de uma página com apenas riscos resolvidos", async () => {
+    api.client.mockReset();
+    api.client.mockResolvedValueOnce({ json: async () => ({
+      next: "http://backend/glosa-riscos/?offset=1",
+      results: [{ id: 1, resolvido_em: "2026-11-10" }],
+    }) });
+    api.client.mockResolvedValueOnce({ json: async () => ({
+      next: null, results: [{ id: 2, resolvido_em: null }],
+    }) });
+    const resultado = await listRiscosDeGlosaDaAtividade(42);
+    expect(riscosAbertos(resultado).map((r) => r.id)).toEqual([2]);
+    const segunda = new URL(api.client.mock.calls[1][0], "http://local");
+    expect(segunda.searchParams.get("activity")).toBe("42");
+    expect(segunda.searchParams.get("offset")).toBe("1");
+  });
+});
 
 function urlDaChamada(): URL {
   const chamada = api.client.mock.calls.at(-1)?.[0] as string;

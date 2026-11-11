@@ -1,43 +1,28 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import GovbrSpikePage from "./page";
 
-describe("GovbrSpikePage (#397)", () => {
-  it("injeta o CSS do GOV.BR DS ao montar e remove do head ao desmontar", () => {
-    const { unmount } = render(<GovbrSpikePage />);
-    const link = document.head.querySelector(
-      'link[rel="stylesheet"][href*="@govbr-ds/core"]',
-    );
-    expect(link).not.toBeNull();
-
-    unmount();
-    expect(
-      document.head.querySelector('link[rel="stylesheet"][href*="@govbr-ds/core"]'),
-    ).toBeNull();
+ describe("GovbrSpikePage (#397)", () => {
+  it("isola os componentes e as folhas de estilo em um iframe", () => {
+    const linksAntes = document.head.querySelectorAll("link").length;
+    render(<GovbrSpikePage />);
+    const frame = screen.getByTitle("Demonstração isolada de GOV.BR DS e Tailwind prefixado");
+    const documento = new DOMParser().parseFromString(frame.getAttribute("srcdoc")!, "text/html");
+    expect(documento.querySelector('link[href*="@govbr-ds/core"]')).not.toBeNull();
+    expect(documento.querySelector('link[href="/govbr-spike.css"]')).not.toBeNull();
+    expect(documento.querySelector("button.br-button.primary")).not.toBeNull();
+    expect(documento.querySelector('[data-testid="govbr-spike-grid-tw"]')?.classList.contains("tw:grid")).toBe(true);
+    expect(document.head.querySelectorAll("link").length).toBe(linksAntes);
   });
 
-  it("renderiza componentes br-* do GOV.BR DS convivendo com layout tw-* do Tailwind", () => {
-    render(<GovbrSpikePage />);
-
-    const botaoPrimario = screen.getByTestId("govbr-botao-primario");
-    expect(botaoPrimario.className).toContain("br-button primary");
-
-    const inputNome = screen.getByTestId("govbr-input-nome");
-    expect(inputNome.closest("label")?.className).toContain("br-input");
-
-    const mensagem = screen.getByTestId("govbr-mensagem");
-    expect(mensagem.className).toContain("br-message warning");
-
-    const blocoTailwind = screen.getByTestId("govbr-spike-bloco-tailwind");
-    expect(blocoTailwind.className).toContain("tw-p-6");
-
-    const gridTw = screen.getByTestId("govbr-spike-grid-tw");
-    expect(gridTw.className).toContain("tw-grid");
-    expect(gridTw.className).toContain("tw-gap-4");
-
-    const conviv = screen.getByTestId("govbr-spike-conviv");
-    expect(conviv.className).toContain("tw-p-6");
-    expect(conviv.querySelector(".tw-grid.tw-gap-4")).not.toBeNull();
-    expect(conviv.querySelector("button.br-button.primary")).not.toBeNull();
+  it("o CSS compilado contém prefixo v4 e variantes, sem o reset preflight", () => {
+    const css = readFileSync(path.resolve(__dirname, "../../../public/govbr-spike.css"), "utf8");
+    expect(css).toContain(".tw\\:grid");
+    expect(css).toContain(".tw\\:sm\\:grid-cols-2");
+    expect(css).toContain("--tw-spacing");
+    expect(css).not.toContain("box-sizing: border-box");
+    expect(css).not.toContain("::file-selector-button");
   });
 });

@@ -38,4 +38,4 @@ Sem o filtro no servidor, a tela não tem como recortar a lista inteira: ela é 
 
 **Pedido:** aceitar `?categoria=principal|operacional` em `GET /users/`, devolvendo quem tem ao menos um perfil da categoria (`profiles__perfil__categoria`, com `distinct`).
 
-*Estado atual no frontend:* o filtro "Categoria de perfil" existe e recorta as opções do filtro "Perfil" à categoria escolhida; a lista só muda quando o perfil é escolhido. Quando o backend aceitar `categoria`, a tela passa a enviá-la em `listUsers` e a lista filtra só pela categoria.
+*Estado atual no frontend:* ao filtrar categoria, `listUsers` percorre todas as páginas do recorte atual, filtra os perfis e pagina o resultado no cliente. Assim a lista e a contagem ficam corretas, mas o custo cresce com o número de usuários. Quando o backend aceitar `categoria`, substituir essa leitura completa pelo filtro e pela paginação do servidor.

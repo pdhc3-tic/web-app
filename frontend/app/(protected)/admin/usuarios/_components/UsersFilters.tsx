@@ -127,9 +127,6 @@ export function UsersFilters({
             onChange={(v) => onChange({ perfil: v })}
             disabled={optionsLoading}
             placeholder="Todos os perfis"
-            helperText={
-              value.categoria && !value.perfil ? "Escolha o perfil da categoria para filtrar a lista." : undefined
-            }
           />
         </div>
 
