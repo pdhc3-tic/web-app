@@ -2,9 +2,7 @@
 from decimal import Decimal
 
 import pytest
-from django.core.cache import cache
 
-from apps.core.models.system_config import SystemConfig, TipoConfiguracao
 from apps.sgd.exceptions import RegraDeNegocio
 from apps.sgd.services.demand_request import validar_campos_json
 
@@ -14,40 +12,53 @@ URL = "/api/v1/sgd/config/diarias/simular/"
 
 
 @pytest.fixture
-def diaria_a(db):
+def diaria_a(tabela_diaria):
+    """Valor em todas as faixas; "0" deixa a tabela vazia."""
     def configurar(valor):
-        SystemConfig.objects.update_or_create(
-            chave="sgd_valor_diaria_padrao", defaults={"valor": valor, "tipo": TipoConfiguracao.STRING},
-        )
-        cache.delete("system_config:sgd_valor_diaria_padrao")
-    yield configurar
-    cache.delete("system_config:sgd_valor_diaria_padrao")
+        if Decimal(valor) > 0:
+            tabela_diaria(valor)
+    return configurar
 
 
 def _simular(cliente, municipio, inicio="2026-11-02", fim="2026-11-04"):
     return cliente.get(URL, {"municipio_destino_id": municipio.pk, "data_inicio": inicio, "data_fim": fim})
 
 
-def test_simula_com_a_regra_de_hoje(auth_client_solicitante, municipio_rn, diaria_a):
+def test_simula_com_faixa_e_meia_diaria(auth_client_solicitante, municipio_rn, diaria_a, faixas_diaria):
     diaria_a("300")
 
     resposta = _simular(auth_client_solicitante, municipio_rn)
 
     assert resposta.status_code == 200, resposta.data
-    assert resposta.json() == {
-        "faixa_destino": {"id": None, "nome": "Valor padrão"},
+    corpo = resposta.json()
+    tabela_id = corpo.pop("tabela_diaria_id")
+    assert faixas_diaria[3].valores.filter(pk=tabela_id).exists()
+    assert corpo == {
+        "faixa_destino": {"id": faixas_diaria[3].pk, "nome": "Demais localidades"},
         "valor_por_diaria": "300.00",
-        "numero_diarias": "2.0",
-        "valor_total": "600.00",
+        "numero_diarias": "2.5",
+        "adicional_embarque": "0.00",
+        "valor_total": "750.00",
     }
 
 
-def test_ida_e_volta_no_mesmo_dia_conta_uma_diaria(auth_client_solicitante, municipio_rn, diaria_a):
+def test_ida_e_volta_no_mesmo_dia_conta_meia_diaria(auth_client_solicitante, municipio_rn, diaria_a):
     diaria_a("300")
 
     resposta = _simular(auth_client_solicitante, municipio_rn, inicio="2026-11-02", fim="2026-11-02")
 
-    assert (resposta.json()["numero_diarias"], resposta.json()["valor_total"]) == ("1.0", "300.00")
+    assert (resposta.json()["numero_diarias"], resposta.json()["valor_total"]) == ("0.5", "150.00")
+
+
+def test_hospedagem_custeada_reduz_os_pernoites_a_meia(auth_client_solicitante, municipio_rn, diaria_a):
+    diaria_a("300")
+
+    resposta = auth_client_solicitante.get(URL, {
+        "municipio_destino_id": municipio_rn.pk, "data_inicio": "2026-11-02", "data_fim": "2026-11-04",
+        "hospedagem_custeada": "true",
+    })
+
+    assert (resposta.json()["numero_diarias"], resposta.json()["valor_total"]) == ("1.5", "450.00")
 
 
 def test_simulacao_e_gravacao_dao_o_mesmo_valor(auth_client_solicitante, municipio_rn, activity_rn, diaria_a):

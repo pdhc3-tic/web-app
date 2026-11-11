@@ -81,27 +81,23 @@ def test_passagem_cpf_invalido_bloqueia(activity_rn):
         validar_campos_json("passagem", campos, activity_rn)
 
 
-def test_diaria_com_valor_padrao_zero_bloqueia(activity_rn, municipio_rn):
-    """`sgd_valor_diaria_padrao` não configurado (seed default "0") não pode
-    deixar seguir com uma solicitação de R$0 — bloqueia direto."""
+def test_diaria_sem_valor_vigente_bloqueia(activity_rn, municipio_rn, faixas_diaria):
+    """Tabela de diárias sem valor vigente não pode deixar seguir com uma
+    solicitação de R$0 — bloqueia direto, dizendo a faixa e a data."""
     campos = {
         "beneficiario_nome": "Fulano", "beneficiario_cpf": "52998224725",
         "beneficiario_cargo": "Técnico", "beneficiario_vinculo": "servidor_ufersa",
         "municipio_destino_id": municipio_rn.pk, "data_inicio": "2026-06-01", "data_fim": "2026-06-03",
         "meio_transporte": "rodoviario", "justificativa": "Visita técnica.",
     }
-    with pytest.raises(ErroDeDominio):
+    with pytest.raises(ErroDeDominio) as excinfo:
         validar_campos_json("diaria", campos, activity_rn)
+    assert "Demais localidades" in str(excinfo.value)
+    assert "01/06/2026" in str(excinfo.value)
 
 
-def test_diaria_calcula_numero_diarias_e_valor_total(activity_rn, municipio_rn):
-    from django.core.cache import cache
-
-    from apps.core.models.system_config import SystemConfig, TipoConfiguracao
-
-    SystemConfig.objects.update_or_create(
-        chave="sgd_valor_diaria_padrao", defaults={"valor": "200", "tipo": TipoConfiguracao.STRING},
-    )
+def test_diaria_calcula_numero_diarias_e_valor_total(activity_rn, municipio_rn, tabela_diaria):
+    tabela_diaria("200")
 
     campos = {
         "beneficiario_nome": "Fulano", "beneficiario_cpf": "52998224725",
@@ -109,14 +105,10 @@ def test_diaria_calcula_numero_diarias_e_valor_total(activity_rn, municipio_rn):
         "municipio_destino_id": municipio_rn.pk, "data_inicio": "2026-06-01", "data_fim": "2026-06-04",
         "meio_transporte": "rodoviario", "justificativa": "Visita técnica.",
     }
-    try:
-        validado = validar_campos_json("diaria", campos, activity_rn)
-        assert validado.campos_json["numero_diarias"] == 3
-        assert validado.valor_estimado_auto == Decimal("600")
-    finally:
-        # Cache de SystemConfig não é transacional — limpa pra não vazar
-        # "200" pros testes seguintes.
-        cache.delete("system_config:sgd_valor_diaria_padrao")
+    validado = validar_campos_json("diaria", campos, activity_rn)
+    # 3 pernoites + meia diária no retorno.
+    assert validado.campos_json["numero_diarias"] == "3.5"
+    assert validado.valor_estimado_auto == Decimal("700")
 
 
 def test_equipamento_menos_de_3_cotacoes_bloqueia_submissao(demand_rascunho_rn):

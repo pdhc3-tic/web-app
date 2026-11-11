@@ -11,6 +11,9 @@ from apps.sgd.models import (
     Demand,
     DemandDocument,
     DemandRequest,
+    EnquadramentoFaixaDiaria,
+    FaixaDestinoDiaria,
+    TabelaDiaria,
     TipoSolicitacao,
 )
 from apps.sgd.services import orcamento as orcamento_service
@@ -224,6 +227,35 @@ class TipoSolicitacaoAdmin(admin.ModelAdmin):
     list_select_related = ["rubrica"]
 
     # O catálogo é alterado pela API, que valida o schema e audita a operação.
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+class EnquadramentoFaixaDiariaInline(admin.TabularInline):
+    model = EnquadramentoFaixaDiaria
+    extra = 0
+
+
+@admin.register(FaixaDestinoDiaria)
+class FaixaDestinoDiariaAdmin(admin.ModelAdmin):
+    list_display = ["nome", "ordem", "padrao", "ativo", "atualizado_em"]
+    list_filter = ["ativo"]
+    inlines = [EnquadramentoFaixaDiariaInline]
+
+
+@admin.register(TabelaDiaria)
+class TabelaDiariaAdmin(admin.ModelAdmin):
+    list_display = ["faixa_destino", "categoria_beneficiario", "vigencia_inicio", "vigencia_fim", "valor", "origem"]
+    list_filter = ["faixa_destino", "origem", "categoria_beneficiario"]
+    list_select_related = ["faixa_destino"]
+
+    # Editar um valor cria uma nova vigência auditada: isso é feito pela API.
     def has_add_permission(self, request):
         return False
 
