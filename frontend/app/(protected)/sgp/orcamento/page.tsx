@@ -27,6 +27,7 @@ import {
   type PoolOrcamentoApi,
 } from "@/app/lib/orcamento";
 import { fetchStateSiglaOptions, fetchTerritoryMap } from "@/app/lib/upfs";
+import { PainelAlertas } from "@/app/components/sgp/AlertasOrcamento/PainelAlertas";
 import { AlertaAlocacoesCriticas } from "./_components/AlertaAlocacoesCriticas";
 import { CelulaDetalheSlideOver } from "./_components/CelulaDetalheSlideOver";
 import { MatrizOrcamento } from "./_components/MatrizOrcamento";
@@ -462,6 +463,8 @@ function PainelOrcamentoConteudo() {
               comMeta={filtros.meta !== ""}
               onSelect={setSelecionada}
             />
+
+            <PainelAlertas />
           </div>
         )}
       </div>
