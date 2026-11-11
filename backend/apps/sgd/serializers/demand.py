@@ -63,6 +63,13 @@ class TerritorioDaAbrangenciaSerializer(serializers.Serializer):
     nome = serializers.CharField()
 
 
+class AbrangenciaQuerySerializer(serializers.Serializer):
+    activity_id = serializers.IntegerField(
+        required=False, min_value=1,
+        help_text="Atividade a vincular. Sem ela, `atividade_fora_do_territorio` sai `false`.",
+    )
+
+
 class AbrangenciaPreviaSerializer(serializers.Serializer):
     """O que a criação da demanda vai gravar para quem pede a prévia."""
 

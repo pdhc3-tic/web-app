@@ -3957,6 +3957,7 @@ paths:
         name: activity_id
         schema:
           type: integer
+          minimum: 1
         description: Atividade a vincular. Sem ela, `atividade_fora_do_territorio`
           sai `false`.
       tags:
@@ -3969,6 +3970,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AbrangenciaPrevia'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
           description: ''
         '404':
           content:

@@ -57,15 +57,13 @@ class DemandRequestSerializer(serializers.ModelSerializer):
         campos = anexos_service.campos_de_anexo(obj.tipo.schema_campos)
         if not campos:
             return {}
-        # `.all()` aproveita o prefetch da listagem; fora dela, o filtro de ativos vale do mesmo jeito.
+        # `.all()` usa o prefetch da leitura, que já vem só com os ativos; sem ele, filtra aqui.
         documentos = {doc.pk: doc for doc in obj.anexos.all() if doc.ativo}
         anexos = {}
         for campo, multiplo in campos.items():
-            itens = [
-                self._anexo(obj, documentos[doc_id])
-                for doc_id in anexos_service.ids_do_campo(obj.campos_json.get(campo), multiplo=multiplo)
-                if doc_id in documentos
-            ]
+            # Valor sem a forma do campo (o schema mudou depois da gravação) sai como vazio.
+            ids = anexos_service.ids_do_campo(obj.campos_json.get(campo), multiplo=multiplo) or []
+            itens = [self._anexo(obj, documentos[doc_id]) for doc_id in ids if doc_id in documentos]
             anexos[campo] = itens if multiplo else (itens[0] if itens else None)
         return anexos
 

@@ -58,7 +58,7 @@ def atividades_elegiveis(*, q: str = "", status=()):
     ).select_related("municipio__state", "tecnico_responsavel")
     if q := q.strip():
         qs = qs.filter(titulo__icontains=q)
-    return qs.order_by("data_inicio", "pk")
+    return qs.order_by("-data_inicio", "-pk")
 
 
 def criar_activity_inline(*, titulo, tipo_atividade, acao, municipio, data_prevista, usuario):
@@ -193,7 +193,7 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
         "tipo", "rubrica", "campos_json", "beneficiario_cpf", "valor_estimado", "valor_reservado",
         "valor_excedente", "atualizado_em",
     ])
-    anexos_service.vincular_anexos(solicitacao)
+    anexos_service.vincular_anexos(solicitacao, usuario=usuario)
     demand.recalcular_totais()
     return solicitacao
 
@@ -208,13 +208,18 @@ def remover_solicitacao(solicitacao, *, usuario) -> None:
             motivo="Solicitação removida durante edição da demanda.", adiar_gravacao=True,
         )
     _travar_editavel(solicitacao.demanda)
+    anexos_service.remover_anexos(solicitacao, usuario=usuario)
     solicitacao.delete()
     solicitacao.demanda.recalcular_totais()
 
 
 def submeter_demanda(demand, *, usuario) -> Demand:
+    # Antes do saldo, para o erro sair sem travar nada; de novo com a demanda travada,
+    # porque um documento pode ser removido enquanto a submissão espera o lock.
     exigir_regras_de_submissao(demand)
-    return workflow_service.executar_transicao(demand, "submetida", ator=usuario)
+    return workflow_service.executar_transicao(
+        demand, "submetida", ator=usuario, conferir_sob_lock=exigir_regras_de_submissao,
+    )
 
 
 def cancelar_demanda(demand, *, usuario, motivo: str = "") -> Demand:

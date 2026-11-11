@@ -22,6 +22,7 @@ from apps.sgd.serializers.approval import ApprovalStepSerializer, CancelarSerial
 from apps.sgd.serializers.auditoria import DemandAuditEntrySerializer
 from apps.sgd.serializers.demand import (
     AbrangenciaPreviaSerializer,
+    AbrangenciaQuerySerializer,
     DemandCreateSerializer,
     DemandSerializer,
     DemandUpdateSerializer,
@@ -85,15 +86,13 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
             "activity__comunidade", "activity__tecnico_responsavel",
             *contexto.CAMINHOS_CADEIA,
             "solicitante",
-        ).prefetch_related(
-            "solicitacoes__rubrica", "solicitacoes__tipo", contexto.CAMINHO_RUBRICAS_PREVISTAS,
-            Prefetch("solicitacoes__anexos", queryset=DemandDocument.objects.filter(ativo=True)),
-        )
+        ).prefetch_related("solicitacoes__rubrica", "solicitacoes__tipo", contexto.CAMINHO_RUBRICAS_PREVISTAS)
         # Só na leitura: nas ações de decisão o prefetch deixaria `etapas` em
         # cache, e a resposta sairia sem a etapa que a própria ação acabou de criar.
         if self.action in ("list", "retrieve"):
             qs = qs.prefetch_related(
                 Prefetch("etapas", queryset=ApprovalStep.objects.select_related("responsavel")),
+                Prefetch("solicitacoes__anexos", queryset=DemandDocument.objects.filter(ativo=True)),
             )
         scope = demand_visibility_scope(self.request.user)
         if scope is not None:
@@ -164,24 +163,21 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
         return Response(ApprovalStepSerializer(etapas, many=True).data)
 
     @extend_schema(
-        parameters=[
-            OpenApiParameter(
-                "activity_id", OpenApiTypes.INT,
-                description="Atividade a vincular. Sem ela, `atividade_fora_do_territorio` sai `false`.",
-            ),
-        ],
-        responses={200: AbrangenciaPreviaSerializer, 404: OpenApiTypes.OBJECT},
+        parameters=[AbrangenciaQuerySerializer],
+        responses={
+            200: AbrangenciaPreviaSerializer, 400: OpenApiTypes.OBJECT, 403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
     )
     @action(detail=False, methods=["get"], url_path="abrangencia")
     def abrangencia(self, request):
         """Estado, território e Articuladores que a demanda de quem chama vai receber
         ao ser criada, pela mesma regra da criação."""
+        query = AbrangenciaQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
         estado_sigla, territorio = contexto.abrangencia_para_nova_demanda(solicitante=request.user)
-        activity_id = request.query_params.get("activity_id")
         fora = False
-        if activity_id:
-            if not activity_id.isdigit():
-                raise ValidationError({"activity_id": "Deve ser o id de uma atividade."})
+        if activity_id := query.validated_data.get("activity_id"):
             activity = get_object_or_404(Activity.objects.select_related("municipio__state"), pk=activity_id)
             fora = contexto.atividade_fora_do_estado(estado_sigla, activity)
         return Response(AbrangenciaPreviaSerializer({

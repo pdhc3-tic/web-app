@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from apps.sgd.exceptions import RegraDeNegocio
 from apps.sgd.models.demand_document import DemandDocument
+from apps.sgd.services import demand_document as demand_document_service
 
 FORMATO = "anexo"
 TIPO_DOCUMENTO = "anexo"
@@ -16,14 +17,16 @@ def _e_anexo(subschema) -> bool:
     return isinstance(subschema, dict) and subschema.get("format") == FORMATO
 
 
+def _propriedades(schema) -> dict:
+    propriedades = schema.get("properties") if isinstance(schema, dict) else None
+    return propriedades if isinstance(propriedades, dict) else {}
+
+
 def campos_de_anexo(schema) -> dict[str, bool]:
     """Campos de anexo do schema, cada um com `True` se aceita vários arquivos.
     Só as `properties` de primeiro nível: são elas que viram campos do formulário."""
-    propriedades = schema.get("properties") if isinstance(schema, dict) else None
-    if not isinstance(propriedades, dict):
-        return {}
     campos = {}
-    for nome, subschema in propriedades.items():
+    for nome, subschema in _propriedades(schema).items():
         if _e_anexo(subschema):
             campos[nome] = False
         elif isinstance(subschema, dict) and subschema.get("type") == "array" and _e_anexo(subschema.get("items")):
@@ -33,11 +36,8 @@ def campos_de_anexo(schema) -> dict[str, bool]:
 
 def declaracoes_invalidas(schema) -> list[str]:
     """Campos de primeiro nível com `format: anexo` cujo valor não seria um id de documento."""
-    propriedades = schema.get("properties") if isinstance(schema, dict) else None
-    if not isinstance(propriedades, dict):
-        return []
     invalidos = []
-    for nome, subschema in propriedades.items():
+    for nome, subschema in _propriedades(schema).items():
         if _e_anexo(subschema) and subschema.get("type") != "integer":
             invalidos.append(nome)
         elif isinstance(subschema, dict) and _e_anexo(subschema.get("items")):
@@ -46,30 +46,42 @@ def declaracoes_invalidas(schema) -> list[str]:
     return invalidos
 
 
-def ids_do_campo(valor, *, multiplo: bool) -> list[int]:
-    """Ids informados no campo; vazio é campo não preenchido. O tipo já foi conferido pelo schema."""
-    if valor in (None, "", []):
+def _e_id(valor) -> bool:
+    return isinstance(valor, int) and not isinstance(valor, bool)
+
+
+def ids_do_campo(valor, *, multiplo: bool) -> list[int] | None:
+    """Ids informados no campo; vazio é campo não preenchido. `None` quando o valor
+    não tem a forma do campo: o schema do catálogo pode ter mudado depois da gravação."""
+    if valor is None or valor == "" or valor == []:
         return []
-    return list(valor) if multiplo else [valor]
+    itens = valor if multiplo and isinstance(valor, list) else [valor] if not multiplo else None
+    if itens is None or not all(_e_id(item) for item in itens):
+        return None
+    return itens
 
 
-def _ids_por_campo(solicitacao) -> dict[str, list[int]]:
-    campos = campos_de_anexo(solicitacao.tipo.schema_campos)
-    return {
-        campo: ids_do_campo(solicitacao.campos_json.get(campo), multiplo=multiplo)
-        for campo, multiplo in campos.items()
-    }
+def _titulo(schema, campo: str) -> str:
+    titulo = _propriedades(schema).get(campo, {}).get("title")
+    return titulo if isinstance(titulo, str) and titulo else campo
 
 
-def vincular_anexos(solicitacao) -> None:
+def vincular_anexos(solicitacao, *, usuario=None) -> None:
     """Confere os documentos citados nos campos de anexo e os liga à solicitação e ao
-    campo. Os que deixaram de ser citados voltam a ser só documentos da demanda.
+    campo. O anexo que deixa de ser citado é removido, como na aba de documentos.
     Roda com a demanda travada pelo serviço que grava a solicitação."""
+    schema = solicitacao.tipo.schema_campos
+    obrigatorios = set(schema.get("required") or ())
     campo_do_documento: dict[int, str] = {}
-    for campo, ids in _ids_por_campo(solicitacao).items():
+    for campo, multiplo in campos_de_anexo(schema).items():
+        ids = ids_do_campo(solicitacao.campos_json.get(campo), multiplo=multiplo)
+        if ids is None:
+            raise RegraDeNegocio("Deve ser o id de um anexo enviado.", campo=campo)
+        if not ids and campo in obrigatorios:
+            raise RegraDeNegocio("Obrigatório.", campo=campo)
         for doc_id in ids:
             if doc_id in campo_do_documento:
-                raise RegraDeNegocio("O mesmo documento foi informado mais de uma vez.", campo=campo)
+                raise RegraDeNegocio("O mesmo anexo foi informado mais de uma vez.", campo=campo)
             campo_do_documento[doc_id] = campo
 
     documentos = DemandDocument.objects.filter(pk__in=campo_do_documento).in_bulk()
@@ -83,9 +95,9 @@ def vincular_anexos(solicitacao) -> None:
         if documento.solicitacao_id not in (None, solicitacao.pk):
             raise RegraDeNegocio("Este anexo já está em outra solicitação da demanda.", campo=campo)
 
-    DemandDocument.objects.filter(solicitacao=solicitacao).exclude(pk__in=campo_do_documento).update(
-        solicitacao=None, campo="",
-    )
+    substituidos = DemandDocument.objects.filter(solicitacao=solicitacao, ativo=True).exclude(pk__in=campo_do_documento)
+    for documento in substituidos:
+        demand_document_service.remover(documento, usuario=usuario)
     for doc_id, campo in campo_do_documento.items():
         documento = documentos[doc_id]
         if documento.solicitacao_id != solicitacao.pk or documento.campo != campo:
@@ -94,12 +106,25 @@ def vincular_anexos(solicitacao) -> None:
             documento.save(update_fields=["solicitacao", "campo"])
 
 
+def remover_anexos(solicitacao, *, usuario=None) -> None:
+    """Na remoção da solicitação, os anexos dela saem junto."""
+    for documento in DemandDocument.objects.filter(solicitacao=solicitacao, ativo=True):
+        demand_document_service.remover(documento, usuario=usuario)
+
+
 def exigir_anexos_ativos(demand) -> None:
-    """Um anexo removido da aba de documentos depois de informado no campo barra a submissão."""
+    """Um anexo removido da aba de documentos depois de informado no campo, ou um valor
+    que deixou de ter a forma do campo, barra a submissão."""
     ativos = set(
         DemandDocument.objects.filter(solicitacao__demanda=demand, ativo=True).values_list("solicitacao_id", "pk")
     )
     for solicitacao in demand.solicitacoes.select_related("tipo").order_by("ordem", "pk"):
-        for campo, ids in _ids_por_campo(solicitacao).items():
-            if any((solicitacao.pk, doc_id) not in ativos for doc_id in ids):
-                raise RegraDeNegocio("Um anexo deste campo foi removido. Envie o arquivo de novo.", campo=campo)
+        schema = solicitacao.tipo.schema_campos
+        for campo, multiplo in campos_de_anexo(schema).items():
+            ids = ids_do_campo(solicitacao.campos_json.get(campo), multiplo=multiplo)
+            if ids is None or any((solicitacao.pk, doc_id) not in ativos for doc_id in ids):
+                raise RegraDeNegocio(
+                    f'Um anexo de "{_titulo(schema, campo)}" na solicitação de {solicitacao.tipo.nome} '
+                    "foi removido. Envie o arquivo de novo.",
+                    campo=campo,
+                )

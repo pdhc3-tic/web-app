@@ -1,12 +1,16 @@
 """Campos de anexo no catálogo de tipos: o valor é o id de um documento da demanda,
 enviado pelo fluxo de documentos com `tipo="anexo"`, e fica ligado à solicitação e ao campo."""
+from unittest.mock import patch
+
 import pytest
 
+from apps.core.models.audit_log import AuditLog
 from apps.sgd.exceptions import RegraDeNegocio
-from apps.sgd.models import DemandDocument
+from apps.sgd.models import DemandDocument, TipoSolicitacao
 from apps.sgd.services import demand as demand_service
-from apps.sgd.services.anexos import campos_de_anexo
-from apps.sgd.services.demand_document import exigir_pode_gerenciar_documento
+from apps.sgd.services import workflow as workflow_service
+from apps.sgd.services.anexos import campos_de_anexo, ids_do_campo
+from apps.sgd.services.demand_document import documentos_no_limite, exigir_pode_gerenciar_documento
 from apps.sgd.tests.factories import DemandDocumentFactory, DemandFactory, TipoSolicitacaoFactory
 
 pytestmark = pytest.mark.django_db
@@ -30,8 +34,8 @@ def tipo_com_anexos(db, rubrica_diarias):
     return TipoSolicitacaoFactory(slug="material-com-arte", rubrica=rubrica_diarias, schema_campos=SCHEMA_COM_ANEXOS)
 
 
-def _anexo(demand, **kwargs):
-    return DemandDocumentFactory(demanda=demand, tipo="anexo", fornecedor="", nome_original="arte.pdf", **kwargs)
+def _anexo(demand, nome_original="arte.pdf", **kwargs):
+    return DemandDocumentFactory(demanda=demand, tipo="anexo", fornecedor="", nome_original=nome_original, **kwargs)
 
 
 def _url_solicitacoes(demand):
@@ -53,6 +57,15 @@ def _download(demand, documento):
 def test_campos_de_anexo_le_um_arquivo_e_varios():
     assert campos_de_anexo(SCHEMA_COM_ANEXOS) == {"arte": False, "cotacoes": True}
     assert campos_de_anexo({"type": "object"}) == {}
+
+
+@pytest.mark.parametrize("valor, multiplo, esperado", [
+    (None, False, []), ("", False, []), ([], True, []),
+    (7, False, [7]), ([7, 8], True, [7, 8]),
+    ([7], False, None), (7, True, None), ("7", False, None), (True, False, None), ([7, "8"], True, None),
+])
+def test_ids_do_campo_so_aceita_a_forma_do_campo(valor, multiplo, esperado):
+    assert ids_do_campo(valor, multiplo=multiplo) == esperado
 
 
 def test_catalogo_aceita_campo_de_anexo_inteiro_ou_lista(auth_client_super_admin, rubrica_diarias):
@@ -136,6 +149,20 @@ def test_anexo_obrigatorio_sem_arquivo_e_recusado(auth_client_solicitante, deman
     assert "arte" in resp.data["campos_json"][0]
 
 
+def test_lista_de_anexos_obrigatoria_nao_aceita_lista_vazia(
+    auth_client_solicitante, demand_rascunho_rn, rubrica_diarias,
+):
+    TipoSolicitacaoFactory(slug="material-com-arte", rubrica=rubrica_diarias, schema_campos={
+        "type": "object", "required": ["cotacoes"],
+        "properties": {"cotacoes": {"type": "array", "items": {"type": "integer", "format": "anexo"}}},
+    })
+
+    resp = _criar(auth_client_solicitante, demand_rascunho_rn, {"cotacoes": []})
+
+    assert resp.status_code == 400
+    assert resp.data["cotacoes"] == ["Obrigatório."]
+
+
 @pytest.mark.parametrize("documento", [
     "de_outra_demanda", "inativo", "de_outro_tipo", "inexistente",
 ])
@@ -177,8 +204,8 @@ def test_mesmo_documento_em_dois_campos_e_recusado(auth_client_solicitante, dema
     assert "cotacoes" in resp.data
 
 
-def test_trocar_o_arquivo_desfaz_o_vinculo_do_anterior(
-    auth_client_solicitante, demand_rascunho_rn, tipo_com_anexos,
+def test_trocar_o_arquivo_remove_o_anterior(
+    auth_client_solicitante, demand_rascunho_rn, solicitante_rn, tipo_com_anexos,
 ):
     antiga, nova = _anexo(demand_rascunho_rn), _anexo(demand_rascunho_rn)
     solicitacao_id = _criar(auth_client_solicitante, demand_rascunho_rn, {"arte": antiga.pk}).data["id"]
@@ -190,13 +217,15 @@ def test_trocar_o_arquivo_desfaz_o_vinculo_do_anterior(
     assert resp.status_code == 200, resp.data
     antiga.refresh_from_db()
     nova.refresh_from_db()
-    assert (antiga.solicitacao_id, antiga.campo) == (None, "")
-    assert (nova.solicitacao_id, nova.campo) == (solicitacao_id, "arte")
-    assert antiga.ativo
+    assert not antiga.ativo
+    assert (nova.solicitacao_id, nova.campo, nova.ativo) == (solicitacao_id, "arte", True)
+    assert AuditLog.objects.filter(
+        acao="demand_document.deleted", valores_anteriores__doc_id=antiga.pk, user=solicitante_rn,
+    ).exists()
 
 
-def test_remover_a_solicitacao_mantem_o_documento_na_demanda(
-    auth_client_solicitante, demand_rascunho_rn, tipo_com_anexos,
+def test_remover_a_solicitacao_remove_os_anexos_dela(
+    auth_client_solicitante, demand_rascunho_rn, solicitante_rn, tipo_com_anexos,
 ):
     arte = _anexo(demand_rascunho_rn)
     solicitacao_id = _criar(auth_client_solicitante, demand_rascunho_rn, {"arte": arte.pk}).data["id"]
@@ -205,13 +234,32 @@ def test_remover_a_solicitacao_mantem_o_documento_na_demanda(
 
     assert resp.status_code == 204
     arte.refresh_from_db()
-    assert arte.ativo
-    assert arte.solicitacao_id is None
+    assert not arte.ativo
+    assert AuditLog.objects.filter(
+        acao="demand_document.deleted", valores_anteriores__doc_id=arte.pk, user=solicitante_rn,
+    ).exists()
+
+
+# ---------- Limite de documentos ----------
+
+def test_anexo_informado_num_campo_nao_conta_no_limite(
+    auth_client_solicitante, demand_rascunho_rn, tipo_com_anexos,
+):
+    arte = _anexo(demand_rascunho_rn)
+    cotacoes = [_anexo(demand_rascunho_rn).pk for _ in range(3)]
+    _anexo(demand_rascunho_rn)  # enviado e ainda não informado em campo nenhum
+    DemandDocumentFactory(demanda=demand_rascunho_rn, tipo="suporte")
+    assert documentos_no_limite(demand_rascunho_rn) == 6
+
+    resp = _criar(auth_client_solicitante, demand_rascunho_rn, {"arte": arte.pk, "cotacoes": cotacoes})
+
+    assert resp.status_code == 201, resp.data
+    assert documentos_no_limite(demand_rascunho_rn) == 2
 
 
 # ---------- Submissão e leitura ----------
 
-def test_submissao_com_anexo_removido_aponta_o_campo(
+def test_submissao_com_anexo_removido_aponta_o_campo_e_a_solicitacao(
     auth_client_solicitante, demand_rascunho_rn, solicitante_rn, tipo_com_anexos,
 ):
     arte = _anexo(demand_rascunho_rn)
@@ -223,8 +271,70 @@ def test_submissao_com_anexo_removido_aponta_o_campo(
         demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
 
     assert excinfo.value.campo == "arte"
+    assert '"Arte"' in excinfo.value.mensagem
+    assert tipo_com_anexos.nome in excinfo.value.mensagem
     demand_rascunho_rn.refresh_from_db()
     assert demand_rascunho_rn.status == "rascunho"
+
+
+def test_anexo_removido_enquanto_a_submissao_espera_o_lock_barra_a_submissao(
+    auth_client_solicitante, demand_rascunho_rn, solicitante_rn, tipo_com_anexos,
+    allocation_territorial_rn, limite_individual_rn,
+):
+    arte = _anexo(demand_rascunho_rn)
+    _criar(auth_client_solicitante, demand_rascunho_rn, {"arte": arte.pk})
+    travar = workflow_service._travar_demanda
+
+    def remover_antes_do_lock(demand, retrato=None):
+        DemandDocument.objects.filter(pk=arte.pk).update(ativo=False)
+        travar(demand, retrato)
+
+    with patch.object(workflow_service, "_travar_demanda", side_effect=remover_antes_do_lock):
+        with pytest.raises(RegraDeNegocio) as excinfo:
+            demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
+
+    assert excinfo.value.campo == "arte"
+    demand_rascunho_rn.refresh_from_db()
+    assert demand_rascunho_rn.status == "rascunho"
+
+
+def test_documento_nao_sai_de_demanda_ja_submetida(auth_client_solicitante, demand_rascunho_rn):
+    arte = _anexo(demand_rascunho_rn)
+    type(demand_rascunho_rn).objects.filter(pk=demand_rascunho_rn.pk).update(status="submetida")
+
+    resp = auth_client_solicitante.delete(f"/api/v1/sgd/demandas/{demand_rascunho_rn.pk}/documentos/{arte.pk}/")
+
+    assert resp.status_code == 403
+    arte.refresh_from_db()
+    assert arte.ativo
+
+
+# ---------- Schema do catálogo alterado depois da gravação ----------
+
+@pytest.mark.parametrize("campo, novo_schema_do_campo, valor_gravado", [
+    ("arte", {"type": "array", "items": {"type": "integer", "format": "anexo"}}, "id"),
+    ("cotacoes", {"type": "integer", "format": "anexo"}, "lista"),
+])
+def test_schema_alterado_nao_derruba_a_leitura_e_barra_a_submissao(
+    auth_client_solicitante, demand_rascunho_rn, solicitante_rn, tipo_com_anexos,
+    campo, novo_schema_do_campo, valor_gravado,
+):
+    arte = _anexo(demand_rascunho_rn)
+    cotacoes = [_anexo(demand_rascunho_rn).pk for _ in range(3)]
+    _criar(auth_client_solicitante, demand_rascunho_rn, {"arte": arte.pk, "cotacoes": cotacoes})
+    schema = {**SCHEMA_COM_ANEXOS, "properties": {**SCHEMA_COM_ANEXOS["properties"], campo: novo_schema_do_campo}}
+    TipoSolicitacao.objects.filter(pk=tipo_com_anexos.pk).update(schema_campos=schema)
+
+    detalhe = auth_client_solicitante.get(f"/api/v1/sgd/demandas/{demand_rascunho_rn.pk}/")
+    lista = auth_client_solicitante.get("/api/v1/sgd/demandas/")
+
+    assert detalhe.status_code == 200
+    assert lista.status_code == 200
+    anexos = detalhe.data["solicitacoes"][0]["anexos"]
+    assert anexos[campo] == ([] if valor_gravado == "id" else None)
+    with pytest.raises(RegraDeNegocio) as excinfo:
+        demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
+    assert excinfo.value.campo == campo
 
 
 def test_leitura_omite_anexo_removido(auth_client_solicitante, demand_rascunho_rn, tipo_com_anexos):

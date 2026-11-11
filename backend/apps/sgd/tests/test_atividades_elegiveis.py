@@ -1,6 +1,9 @@
 """Busca de atividades para vincular a uma demanda: sem o recorte territorial do SGP,
 só Planejado e Agendado, aberta a quem cria demanda."""
+from datetime import datetime
+
 import pytest
+from django.utils import timezone
 
 from apps.core.tests.factories import MunicipalityFactory, RoleFactory, StateFactory, TerritoryFactory, UserFactory
 from apps.sgp.tests.factories import ActivityFactory
@@ -119,6 +122,19 @@ def test_quem_nao_cria_demanda_recebe_403(request, cliente):
     resp = request.getfixturevalue(cliente).get(URL)
 
     assert resp.status_code == 403
+
+
+def test_usuario_sem_perfil_recebe_403(api_client):
+    api_client.force_authenticate(user=UserFactory())
+
+    assert api_client.get(URL).status_code == 403
+
+
+def test_mais_recentes_primeiro_como_na_listagem_do_sgp(client_adt_pb, municipio_rn):
+    antiga = ActivityFactory(municipio=municipio_rn, data_inicio=timezone.make_aware(datetime(2026, 3, 1, 8)))
+    recente = ActivityFactory(municipio=municipio_rn, data_inicio=timezone.make_aware(datetime(2026, 9, 1, 8)))
+
+    assert _ids(client_adt_pb.get(URL)) == [recente.pk, antiga.pk]
 
 
 def test_sem_autenticacao_recebe_401(api_client):

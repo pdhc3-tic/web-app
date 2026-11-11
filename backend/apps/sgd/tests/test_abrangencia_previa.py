@@ -77,8 +77,9 @@ def test_atividade_inexistente_e_404(auth_client_solicitante):
     assert auth_client_solicitante.get(URL, {"activity_id": 999_999}).status_code == 404
 
 
-def test_activity_id_que_nao_e_numero_e_400(auth_client_solicitante):
-    resp = auth_client_solicitante.get(URL, {"activity_id": "abc"})
+@pytest.mark.parametrize("activity_id", ["abc", "²", "0", "-1", "1.5"])
+def test_activity_id_que_nao_e_id_valido_e_400(auth_client_solicitante, activity_id):
+    resp = auth_client_solicitante.get(URL, {"activity_id": activity_id})
 
     assert resp.status_code == 400
     assert "activity_id" in resp.data
@@ -87,6 +88,12 @@ def test_activity_id_que_nao_e_numero_e_400(auth_client_solicitante):
 @pytest.mark.parametrize("cliente", ["auth_client_articulador_rn", "auth_client_ugp", "auth_client_fgd"])
 def test_quem_nao_cria_demanda_recebe_403(request, cliente):
     assert request.getfixturevalue(cliente).get(URL).status_code == 403
+
+
+def test_usuario_sem_perfil_recebe_403(api_client):
+    api_client.force_authenticate(user=UserFactory())
+
+    assert api_client.get(URL).status_code == 403
 
 
 def test_previa_bate_com_o_que_a_criacao_grava(auth_client_solicitante, activity_ce, usuario_articulador_rn):
