@@ -33,6 +33,8 @@ import { Pagination } from "@/app/components/ui/Pagination/Pagination";
 import { UsersFilters, type UsersFiltersValue } from "./_components/UsersFilters";
 import { UsersTable } from "./_components/UsersTable";
 import { NovoUsuarioForm } from "./_components/NovoUsuarioForm";
+import { DesativarUsuarioDialog } from "./_components/DesativarUsuarioDialog";
+import { useSession } from "next-auth/react";
 
 const SEARCH_DEBOUNCE_MS = 300;
 const DEFAULT_LIMIT = 25;
@@ -93,6 +95,9 @@ function UsuariosView() {
   });
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [newUserOpen, setNewUserOpen] = useState(false);
+  const [desativando, setDesativando] = useState<UserListItem | null>(null);
+  const { data: session } = useSession();
+  const usuarioLogadoId = session?.user?.id != null ? Number(session.user.id) : null;
 
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [count, setCount] = useState(0);
@@ -355,6 +360,8 @@ function UsuariosView() {
               users={users}
               selectedId={selectedId}
               onSelect={handleSelect}
+              onDesativar={setDesativando}
+              usuarioLogadoId={usuarioLogadoId}
               loading={dataLoading}
             />
             <Pagination
@@ -387,6 +394,16 @@ function UsuariosView() {
           />
         )}
       </SlideOver>
+
+      <DesativarUsuarioDialog
+        usuario={desativando}
+        onClose={() => setDesativando(null)}
+        onDesativado={(usuario) => {
+          setDesativando(null);
+          showToast(`Usuário "${usuario.nome_completo}" desativado.`, "success");
+          setReloadKey((k) => k + 1);
+        }}
+      />
     </>
   );
 }

@@ -326,3 +326,29 @@ export async function criarUsuario(form: NovoUsuario, perfis: Perfil[]): Promise
   const res = await apiClient("/api/v1/users/", { method: "POST", body: JSON.stringify(body) });
   return res.json();
 }
+
+// ─── Desativação com aviso de impacto (#406, AJ-BE-11) ───────────────────────
+
+/** `ImpactoDesativacaoSerializer`: o que a desativação cancela e libera. */
+export type ImpactoDesativacao = {
+  demandas: { id: number; titulo: string; status: string; saldo_liberado: string }[];
+  saldo_por_rubrica: { rubrica_id: number; rubrica_nome: string; valor: string }[];
+  saldo_liberado: string;
+};
+
+/** GET /api/v1/core/usuarios/{id}/impacto-desativacao/ — só leitura, não muda nada. */
+export async function fetchImpactoDesativacao(
+  userId: number,
+  signal?: AbortSignal,
+): Promise<ImpactoDesativacao> {
+  const res = await apiClient(`/api/v1/core/usuarios/${userId}/impacto-desativacao/`, { signal });
+  return res.json();
+}
+
+/**
+ * DELETE /api/v1/users/{id}/ — desativa (não apaga): o backend cancela as
+ * demandas ainda não autorizadas da pessoa e libera o saldo que elas reservavam.
+ */
+export async function desativarUsuario(userId: number): Promise<void> {
+  await apiClient(`/api/v1/users/${userId}/`, { method: "DELETE" });
+}

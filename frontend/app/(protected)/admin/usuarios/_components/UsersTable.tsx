@@ -61,6 +61,10 @@ type UsersTableProps = {
   users: UserListItem[];
   selectedId: number | null;
   onSelect: (user: UserListItem) => void;
+  /** Abre o diálogo de desativação com aviso de impacto (#406). */
+  onDesativar: (user: UserListItem) => void;
+  /** Id de quem está logado: ninguém desativa a própria conta por aqui. */
+  usuarioLogadoId: number | null;
   loading: boolean;
 };
 
@@ -69,7 +73,7 @@ function SkeletonRows() {
     <>
       {Array.from({ length: 8 }).map((_, i) => (
         <tr key={i} className="border-t border-border">
-          {Array.from({ length: 6 }).map((__, j) => (
+          {Array.from({ length: 7 }).map((__, j) => (
             <td key={j} className="px-4 py-3">
               <div className="h-4 w-full max-w-[140px] animate-pulse rounded bg-surface-muted" />
             </td>
@@ -84,6 +88,8 @@ export function UsersTable({
   users,
   selectedId,
   onSelect,
+  onDesativar,
+  usuarioLogadoId,
   loading,
 }: UsersTableProps) {
   return (
@@ -97,6 +103,9 @@ export function UsersTable({
             <th className={TH_BASE}>Territórios</th>
             <th className={TH_BASE}>Status</th>
             <th className={TH_BASE}>Último acesso</th>
+            <th className={`${TH_BASE} text-right`}>
+              <span className="sr-only">Ações</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -139,6 +148,21 @@ export function UsersTable({
                     {u.ultimo_login
                       ? relativeTime(u.ultimo_login)
                       : "Nunca acessou"}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {u.ativo && u.id !== usuarioLogadoId && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDesativar(u);
+                        }}
+                        className="rounded px-2 py-1 text-sm font-medium text-error-text hover:bg-error-bg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-error-text"
+                        data-testid={`usuario-desativar-${u.id}`}
+                      >
+                        Desativar
+                      </button>
+                    )}
                   </td>
                 </tr>
               );
