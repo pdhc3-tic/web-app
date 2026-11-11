@@ -218,6 +218,16 @@ export function canVerRiscosDeGlosa(
   return canViewSgdGestao(user);
 }
 
+/**
+ * Remanejamento entre pools do orçamento (#402). Espelha `is_global_budget_user`
+ * do backend — só UGP e Super Admin executam a exceção.
+ */
+export function canRemanejarOrcamento(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return isSuperAdmin(user) || hasRole(user, UGP_SLUG);
+}
+
 export type SuperAdminState = {
   /** true enquanto a sessão ainda está carregando. */
   loading: boolean;

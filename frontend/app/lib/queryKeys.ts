@@ -83,6 +83,9 @@ export const qk = {
       ["sgd", "demandas", "preview", { id, solicitacaoId, valor, origem }] as const,
     /** Riscos de glosa da demanda (#360); sob "sgd/demandas", a decisão os invalida junto. */
     glosas: (id: string | number) => ["sgd", "demandas", "glosas", String(id)] as const,
+    /** Riscos de glosa de uma atividade, para a ficha (#404). */
+    glosasDaAtividade: (atividadeId: string | number) =>
+      ["sgd", "demandas", "glosas", "atividade", String(atividadeId)] as const,
     auditoria: (id: string | number) =>
       ["sgd", "demandas", "auditoria", String(id)] as const,
     /** Documentos da demanda (#295). */
@@ -152,4 +155,9 @@ export const qk = {
     preview: (direcao: "exportacao" | "importacao") =>
       ["sgd", "arlo-mapping", "preview", direcao] as const,
   },
+  /** Alertas orçamentários abertos, por filtro (#403). */
+  alertasOrcamento: (filtros: { tipo: string; faixa: string }, limite: number) =>
+    ["sgp", "orcamento", "alertas", filtros, limite] as const,
+  /** Parâmetros globais em `SystemConfig` (#403). */
+  systemConfig: ["core", "system-config"] as const,
 } as const;

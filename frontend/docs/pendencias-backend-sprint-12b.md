@@ -29,3 +29,13 @@ O backend aceita limite individual para os dois perfis operacionais (`PERFIS_OPE
 **Pedido:** uma lista das pessoas com perfil operacional, acessível a UGP e Super Admin. Pode ser `GET /sgp/orcamento/limites/pessoas/?q=` ou um `papel=operacional` em `/sgd/opcoes/usuarios/`. Ela deve devolver `id`, `nome` e o perfil, para a tela mostrar "ADT" ou "Articulador" ao lado do nome.
 
 *Estado atual no frontend:* a busca usa a lista de solicitantes. Quando a rota existir, só a fonte da lista muda.
+
+## 3. Filtro da listagem de usuários por categoria de perfil (#405)
+
+A #405 pede que a listagem de usuários possa ser filtrada por categoria de perfil (principal ou operacional). O `UserFilter` de `GET /users/` aceita `perfil` (um id), `territorio`, `ativo` e as datas, mas não a categoria. `GET /roles/?categoria=` existe, só que filtra perfis, não usuários.
+
+Sem o filtro no servidor, a tela não tem como recortar a lista inteira: ela é paginada, e filtrar só a página carregada deixaria a contagem e a paginação erradas.
+
+**Pedido:** aceitar `?categoria=principal|operacional` em `GET /users/`, devolvendo quem tem ao menos um perfil da categoria (`profiles__perfil__categoria`, com `distinct`).
+
+*Estado atual no frontend:* ao filtrar categoria, `listUsers` percorre todas as páginas do recorte atual, filtra os perfis e pagina o resultado no cliente. Assim a lista e a contagem ficam corretas, mas o custo cresce com o número de usuários. Quando o backend aceitar `categoria`, substituir essa leitura completa pelo filtro e pela paginação do servidor.

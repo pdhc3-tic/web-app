@@ -65,6 +65,25 @@ export function DemandasTab({ atividade }: { atividade: AtividadeDetail }) {
 
   return (
     <div className="flex flex-col gap-4" data-testid="atividade-demandas">
+      {/* Custo da atividade (#404): vem pronto do detalhe, sem somar no cliente. */}
+      <dl
+        className="grid grid-cols-2 gap-x-6 gap-y-1 rounded-lg border border-border bg-surface px-4 py-3 sm:max-w-md"
+        data-testid="atividade-custos"
+      >
+        <div>
+          <dt className="text-xs text-text-muted">Custo previsto</dt>
+          <dd className="text-sm font-semibold tabular-nums text-text" data-testid="atividade-custo-previsto">
+            {atividade.custo_previsto != null ? formatCurrencyBRL(atividade.custo_previsto) : "—"}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-text-muted">Custo realizado</dt>
+          <dd className="text-sm font-semibold tabular-nums text-text" data-testid="atividade-custo-realizado">
+            {atividade.custo_realizado != null ? formatCurrencyBRL(atividade.custo_realizado) : "—"}
+          </dd>
+        </div>
+      </dl>
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-text-muted">
           Pedidos de recurso do SGD vinculados a esta atividade.

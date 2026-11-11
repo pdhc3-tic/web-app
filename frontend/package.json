@@ -9,7 +9,10 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "build:govbr-spike": "node scripts/build-govbr-spike.mjs",
+    "prebuild": "npm run build:govbr-spike",
+    "predev": "npm run build:govbr-spike"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.103.2",

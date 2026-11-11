@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { Route } from "next";
-import { ChevronRight, ListTree, SlidersHorizontal } from "lucide-react";
+import { ChevronRight, Gauge, ListTree, SlidersHorizontal } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
@@ -17,6 +17,18 @@ type Configuracao = { href: Route; titulo: string; descricao: string; Icon: Luci
  * das telas filhas. Nova configuração = novo item na seção do módulo.
  */
 const SECOES: { modulo: string; itens: Configuracao[] }[] = [
+  {
+    modulo: "SGP",
+    itens: [
+      {
+        href: "/admin/configuracoes/sgp/parametros-orcamento" as Route,
+        titulo: "Parâmetros do orçamento",
+        descricao:
+          "Periodicidade e acúmulo dos limites de gasto, sobrealocação e os limiares dos alertas de subexecução e de remanejamento.",
+        Icon: Gauge,
+      },
+    ],
+  },
   {
     modulo: "SGD",
     itens: [

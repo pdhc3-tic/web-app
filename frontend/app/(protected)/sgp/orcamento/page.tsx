@@ -12,7 +12,13 @@ import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { RestrictedAccess } from "@/app/components/ui/RestrictedAccess/RestrictedAccess";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 import { ApiError } from "@/app/lib/api";
-import { canDistribuirOrcamento, canGerirLimites, canVerMeuSaldo, useOrcamentoScope } from "@/app/lib/auth/roles";
+import {
+  canDistribuirOrcamento,
+  canGerirLimites,
+  canRemanejarOrcamento,
+  canVerMeuSaldo,
+  useOrcamentoScope,
+} from "@/app/lib/auth/roles";
 import { listMetas, type MetaListItem } from "@/app/lib/metas";
 import {
   fetchPainelOrcamento,
@@ -21,6 +27,7 @@ import {
   type PoolOrcamentoApi,
 } from "@/app/lib/orcamento";
 import { fetchStateSiglaOptions, fetchTerritoryMap } from "@/app/lib/upfs";
+import { PainelAlertas } from "@/app/components/sgp/AlertasOrcamento/PainelAlertas";
 import { AlertaAlocacoesCriticas } from "./_components/AlertaAlocacoesCriticas";
 import { CelulaDetalheSlideOver } from "./_components/CelulaDetalheSlideOver";
 import { MatrizOrcamento } from "./_components/MatrizOrcamento";
@@ -47,6 +54,7 @@ function PainelOrcamentoConteudo() {
   const { loading: authLoading, soTerritorio } = useOrcamentoScope();
   const podeDistribuir = canDistribuirOrcamento(session?.user);
   const podeGerirLimites = canGerirLimites(session?.user);
+  const podeRemanejar = canRemanejarOrcamento(session?.user);
   const temLimite = canVerMeuSaldo(session?.user);
   const router = useRouter();
   const pathname = usePathname();
@@ -289,6 +297,18 @@ function PainelOrcamentoConteudo() {
               Limites de gasto
             </Button>
           )}
+          {/* Remanejamento entre pools (#402): só Super Admin e UGP. */}
+          {podeRemanejar && (
+            <Button
+              as="a"
+              size="sm"
+              variant="secondary"
+              href="/sgp/orcamento/remanejamentos/novo"
+              data-testid="orcamento-ir-remanejamento"
+            >
+              Remanejar
+            </Button>
+          )}
           {podeDistribuir && (
             <Button
               as="a"
@@ -443,6 +463,8 @@ function PainelOrcamentoConteudo() {
               comMeta={filtros.meta !== ""}
               onSelect={setSelecionada}
             />
+
+            <PainelAlertas />
           </div>
         )}
       </div>
