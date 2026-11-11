@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     ArloFieldMappingViewSet,
     ArloViewSet,
+    AtividadeElegivelDetalheView,
     AtividadesElegiveisView,
     DemandIndividualLimitViewSet,
     TipoRubricaViewSet,
@@ -40,6 +41,10 @@ urlpatterns = [
     path("sgd/opcoes/usuarios/", OpcoesUsuariosView.as_view(), name="sgd-opcoes-usuarios"),
     path(
         "sgd/atividades-elegiveis/", AtividadesElegiveisView.as_view(), name="sgd-atividades-elegiveis",
+    ),
+    path(
+        "sgd/atividades-elegiveis/<int:pk>/", AtividadeElegivelDetalheView.as_view(),
+        name="sgd-atividade-elegivel-detalhe",
     ),
     path("sgd/dashboard/", SgdDashboardView.as_view(), name="sgd-dashboard"),
     path(

@@ -7,7 +7,6 @@ from rest_framework import serializers, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from apps.core.models.audit_log import AuditLog
 from apps.core.storage import StorageObjectNotFound, get_storage
 from apps.sgd.models.demand_document import DemandDocument
 from apps.sgd.serializers.demand_document import DemandDocumentSerializer
@@ -81,12 +80,12 @@ class DemandDocumentMixin:
     @action(detail=True, methods=["post"], url_path="documentos/upload-url")
     def documentos_upload_url(self, request, pk=None):
         demand = self._get_demand_for_doc(pk)
-        if demand_document_service.documentos_no_limite(demand) >= MAX_DOCUMENTS_PER_DEMAND:
-            return self._limite_atingido()
-
         serializer = DemandDocumentUploadURLSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        exigir_pode_gerenciar_documento(demand, request.user, serializer.validated_data["tipo"])
+        tipo = serializer.validated_data["tipo"]
+        if demand_document_service.documentos_no_limite(demand, tipo) >= MAX_DOCUMENTS_PER_DEMAND:
+            return self._limite_atingido()
+        exigir_pode_gerenciar_documento(demand, request.user, tipo)
         content_type = serializer.validated_data["content_type"]
         size = serializer.validated_data["size"]
         ext = ALLOWED_DOCUMENT_CONTENT_TYPES[content_type]
@@ -98,21 +97,20 @@ class DemandDocumentMixin:
         if url.startswith("/"):
             url = request.build_absolute_uri(url)
 
-        self._log_doc_audit(
-            "demand_document.upload_url", demand,
-            valores_novos={"demanda_id": demand.pk, "key": key, "content_type": content_type, "size": size},
+        demand_document_service.auditar(
+            "demand_document.upload_url", demand, usuario=request.user,
+            novos={"demanda_id": demand.pk, "key": key, "content_type": content_type, "size": size},
         )
         return Response({"url": url, "key": key, "expires_in": expires_in})
 
     @action(detail=True, methods=["post"], url_path="documentos/confirm")
     def documentos_confirm(self, request, pk=None):
         demand = self._get_demand_for_doc(pk)
-        if demand_document_service.documentos_no_limite(demand) >= MAX_DOCUMENTS_PER_DEMAND:
-            return self._limite_atingido()
-
         serializer = DemandDocumentConfirmSerializer(data=request.data, context={"demand": demand})
         serializer.is_valid(raise_exception=True)
         tipo = serializer.validated_data["tipo"]
+        if demand_document_service.documentos_no_limite(demand, tipo) >= MAX_DOCUMENTS_PER_DEMAND:
+            return self._limite_atingido()
         exigir_pode_gerenciar_documento(demand, request.user, tipo)
         key = serializer.validated_data["key"]
 
@@ -143,8 +141,9 @@ class DemandDocumentMixin:
         # A demanda só é travada depois da consulta ao storage, para o lock não esperar a rede.
         # Status e limite são relidos com ela travada: a submissão ou outro envio podem ter passado.
         with transaction.atomic():
-            demand_document_service.travar_para_gerenciar_documento(demand, request.user, tipo)
-            if demand_document_service.documentos_no_limite(demand) >= MAX_DOCUMENTS_PER_DEMAND:
+            demand_document_service.travar_demanda(demand)
+            exigir_pode_gerenciar_documento(demand, request.user, tipo)
+            if demand_document_service.documentos_no_limite(demand, tipo) >= MAX_DOCUMENTS_PER_DEMAND:
                 return self._limite_atingido()
             doc = DemandDocument.objects.create(
                 demanda=demand, arquivo_key=key, arquivo_url=storage.get_public_url(key),
@@ -153,8 +152,8 @@ class DemandDocumentMixin:
                 fornecedor=serializer.validated_data.get("fornecedor", ""),
                 content_type=content_type, tamanho_bytes=tamanho_bytes, enviado_por=request.user,
             )
-            self._log_doc_audit(
-                "demand_document.created", demand, valores_novos=demand_document_service.snapshot(doc),
+            demand_document_service.auditar(
+                "demand_document.created", demand, usuario=request.user, novos=demand_document_service.snapshot(doc),
             )
         return Response(DemandDocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
 
@@ -168,8 +167,9 @@ class DemandDocumentMixin:
         url = storage.generate_presigned_get(doc.arquivo_key, expires_in) if doc.arquivo_key else doc.arquivo_url
         if url.startswith("/"):
             url = request.build_absolute_uri(url)
-        self._log_doc_audit(
-            "demand_document.download", demand, valores_novos={"doc_id": doc.pk, "key": doc.arquivo_key},
+        demand_document_service.auditar(
+            "demand_document.download", demand, usuario=request.user,
+            novos={"doc_id": doc.pk, "key": doc.arquivo_key},
         )
         return Response({"url": url, "expires_in": expires_in})
 
@@ -177,15 +177,9 @@ class DemandDocumentMixin:
     @transaction.atomic
     def documentos_delete(self, request, pk=None, doc_id=None):
         demand = self._get_demand_for_doc(pk)
+        demand_document_service.travar_demanda(demand)
+        # Lido depois do lock: a edição da solicitação pode ter acabado de remover o anexo.
         doc = get_object_or_404(DemandDocument, pk=doc_id, demanda=demand, ativo=True)
-        demand_document_service.travar_para_gerenciar_documento(demand, request.user, doc.tipo)
+        exigir_pode_gerenciar_documento(demand, request.user, doc.tipo)
         demand_document_service.remover(doc, usuario=request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-    def _log_doc_audit(self, acao, demand, valores_anteriores=None, valores_novos=None):
-        AuditLog.objects.create(
-            user=self.request.user, acao=acao, modulo="sgd", entidade="DemandDocument",
-            entidade_id=str(demand.pk), valores_anteriores=valores_anteriores or {},
-            valores_novos=valores_novos or {}, ip=self.request.META.get("REMOTE_ADDR"),
-            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
-        )

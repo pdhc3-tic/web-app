@@ -1,35 +1,50 @@
-from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
-from rest_framework.generics import ListAPIView
+from drf_spectacular.utils import extend_schema
+from rest_framework.filters import OrderingFilter
+from rest_framework.generics import ListAPIView, RetrieveAPIView
 
 from apps.core.permissions import IsADTInTerritory, IsAuthenticatedActiveAccess, IsSuperAdmin
-from apps.sgd.serializers.atividade_elegivel import AtividadeElegivelSerializer
+from apps.sgd.serializers.atividade_elegivel import (
+    AtividadeElegivelDetalheSerializer,
+    AtividadeElegivelSerializer,
+    AtividadesElegiveisQuerySerializer,
+)
 from apps.sgd.services import demand as demand_service
 from apps.sgp.pagination import ActivityPagination
+
+# Mesmo perfil de quem cria demanda.
+_PERMISSOES = [IsAuthenticatedActiveAccess, IsADTInTerritory | IsSuperAdmin]
 
 
 class AtividadesElegiveisView(ListAPIView):
     """Busca de atividades para vincular a uma demanda, sem o recorte territorial da
-    listagem do SGP. Mesmo perfil de quem cria demanda e mesma paginação do SGP."""
+    listagem do SGP. Mesma paginação e ordenação do SGP."""
 
-    permission_classes = [IsAuthenticatedActiveAccess, IsADTInTerritory | IsSuperAdmin]
+    permission_classes = _PERMISSOES
     serializer_class = AtividadeElegivelSerializer
     pagination_class = ActivityPagination
+    filter_backends = [OrderingFilter]
+    ordering_fields = ["data_inicio", "titulo"]
+    ordering = ["-data_inicio", "-pk"]
 
-    @extend_schema(
-        parameters=[
-            OpenApiParameter("q", OpenApiTypes.STR, description="Trecho do título."),
-            OpenApiParameter(
-                "status", OpenApiTypes.STR, many=True, explode=True,
-                enum=list(demand_service.ACTIVITY_STATUS_ELEGIVEIS_NA_BUSCA),
-                description="Repetível. Sem o parâmetro, as duas.",
-            ),
-        ],
-        responses={200: AtividadeElegivelSerializer(many=True), 400: OpenApiTypes.OBJECT},
-    )
+    @extend_schema(parameters=[AtividadesElegiveisQuerySerializer])
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
-        return demand_service.atividades_elegiveis(
-            q=self.request.query_params.get("q", ""), status=self.request.query_params.getlist("status"),
+        query = AtividadesElegiveisQuerySerializer(data=self.request.query_params)
+        query.is_valid(raise_exception=True)
+        return demand_service.atividades_elegiveis(**query.validated_data)
+
+
+class AtividadeElegivelDetalheView(RetrieveAPIView):
+    """A atividade escolhida, em qualquer status: o formulário mostra a regra do status
+    (bloqueio ou justificativa de despesa posterior)."""
+
+    permission_classes = _PERMISSOES
+    serializer_class = AtividadeElegivelDetalheSerializer
+
+    def get_queryset(self):
+        return demand_service.atividades_para_vincular().select_related(
+            "municipio__state", "municipio__territory", "comunidade", "tecnico_responsavel",
+            "acao__meta", "acao__submeta", "acao__indicador",
         )

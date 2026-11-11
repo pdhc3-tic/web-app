@@ -1,6 +1,6 @@
 from .consulta import CustoPorAtividadeView, OpcoesUsuariosView, PainelRubricasView
 from .arlo import ArloViewSet
-from .atividades_elegiveis import AtividadesElegiveisView
+from .atividades_elegiveis import AtividadeElegivelDetalheView, AtividadesElegiveisView
 from .arlo_mapping import ArloFieldMappingViewSet
 from .dashboard import SgdDashboardView
 from .demand import DemandViewSet
@@ -14,6 +14,7 @@ __all__ = [
     "CustoPorAtividadeView",
     "ArloFieldMappingViewSet",
     "ArloViewSet",
+    "AtividadeElegivelDetalheView",
     "AtividadesElegiveisView",
     "DemandIndividualLimitViewSet",
     "TipoRubricaViewSet", "TipoSolicitacaoViewSet",

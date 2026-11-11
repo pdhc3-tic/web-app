@@ -4,7 +4,8 @@ import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
-from apps.core.tests.factories import RoleFactory, UserFactory
+from apps.core.tests.factories import RoleFactory, TerritoryFactory, UserFactory
+from apps.sgd.services.contexto import articuladores_do_estado, articuladores_por_estado
 from apps.sgd.tests.factories import DemandFactory
 from apps.sgp.tests.factories import ActivityFactory
 
@@ -77,6 +78,12 @@ def test_atividade_inexistente_e_404(auth_client_solicitante):
     assert auth_client_solicitante.get(URL, {"activity_id": 999_999}).status_code == 404
 
 
+def test_atividade_inativa_e_404(auth_client_solicitante, municipio_ce):
+    inativa = ActivityFactory(municipio=municipio_ce, ativo=False)
+
+    assert auth_client_solicitante.get(URL, {"activity_id": inativa.pk}).status_code == 404
+
+
 @pytest.mark.parametrize("activity_id", ["abc", "²", "0", "-1", "1.5"])
 def test_activity_id_que_nao_e_id_valido_e_400(auth_client_solicitante, activity_id):
     resp = auth_client_solicitante.get(URL, {"activity_id": activity_id})
@@ -144,8 +151,23 @@ def test_listagem_consulta_os_articuladores_uma_vez_por_estado(
     # A primeira requisição do usuário pode carregar dados que ficam em cache.
     consultas_da_listagem()
     uma = consultas_da_listagem()
-    for _ in range(4):
-        DemandFactory(activity=activity_rn)
-    cinco = consultas_da_listagem()
+    for sigla in ("RN", "CE", "PB", "PE"):
+        DemandFactory(activity=activity_rn, estado_sigla=sigla)
+    varios_estados = consultas_da_listagem()
 
-    assert cinco == uma
+    assert varios_estados == uma
+
+
+def test_articuladores_por_estado_segue_o_criterio_da_notificacao(
+    territory_rn, territory_ce, usuario_articulador_rn, usuario_articulador_ce,
+):
+    nacional = _articulador("Ana Nacional", None)
+    dois_estados = _articulador("Bia RN/CE", TerritoryFactory(nome="Território RN/CE", estados=["RN", "CE"]))
+
+    por_estado = articuladores_por_estado(["RN", "CE", "PB", None])
+
+    assert [a["id"] for a in por_estado["RN"]] == [nacional.pk, usuario_articulador_rn.pk, dois_estados.pk]
+    assert [a["id"] for a in por_estado["CE"]] == [nacional.pk, usuario_articulador_ce.pk, dois_estados.pk]
+    assert [a["id"] for a in por_estado["PB"]] == [nacional.pk]
+    for sigla in ("RN", "CE", "PB"):
+        assert por_estado[sigla] == articuladores_do_estado(sigla)

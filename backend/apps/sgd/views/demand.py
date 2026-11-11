@@ -126,7 +126,9 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
         ).order_by(*ORDENACOES_DA_LISTAGEM.get(ordenacao, ORDENACAO_PADRAO))
         paginator = self.pagination_class()
         pagina = paginator.paginate_queryset(qs, request, view=self)
-        return paginator.get_paginated_response(DemandSerializer(pagina, many=True).data)
+        articuladores = contexto.articuladores_por_estado(demanda.estado_sigla for demanda in pagina)
+        serializer = DemandSerializer(pagina, many=True, context={"articuladores_por_estado": articuladores})
+        return paginator.get_paginated_response(serializer.data)
 
     @action(detail=False, methods=["get"], url_path="exportar")
     def exportar(self, request):
@@ -178,7 +180,9 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
         estado_sigla, territorio = contexto.abrangencia_para_nova_demanda(solicitante=request.user)
         fora = False
         if activity_id := query.validated_data.get("activity_id"):
-            activity = get_object_or_404(Activity.objects.select_related("municipio__state"), pk=activity_id)
+            activity = get_object_or_404(
+                Activity.objects.filter(ativo=True).select_related("municipio__state"), pk=activity_id,
+            )
             fora = contexto.atividade_fora_do_estado(estado_sigla, activity)
         return Response(AbrangenciaPreviaSerializer({
             "estado_sigla": estado_sigla,

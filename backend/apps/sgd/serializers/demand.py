@@ -110,6 +110,7 @@ class DemandSerializer(serializers.ModelSerializer):
     def get_transicoes_permitidas(self, obj) -> list[str]:
         return destinos_permitidos(obj.status)
 
+    @extend_schema_field(DemandContextoSerializer)
     def get_contexto(self, obj):
         return DemandContextoSerializer(_contexto_da_demanda(obj)).data
 
@@ -118,9 +119,11 @@ class DemandSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(ArticuladorSerializer(many=True))
     def get_articuladores(self, obj):
-        # Na listagem, uma consulta por estado da página, não uma por demanda.
-        por_estado = self.context.setdefault("_articuladores_por_estado", {})
+        # A listagem preenche `articuladores_por_estado` com os estados da página de uma vez.
         estado = contexto_service.estado_da_demanda(obj)
+        if estado is None:
+            return []
+        por_estado = self.context.setdefault("articuladores_por_estado", {})
         if estado not in por_estado:
             por_estado[estado] = contexto_service.articuladores_do_estado(estado)
         return por_estado[estado]

@@ -139,3 +139,56 @@ def test_mais_recentes_primeiro_como_na_listagem_do_sgp(client_adt_pb, municipio
 
 def test_sem_autenticacao_recebe_401(api_client):
     assert api_client.get(URL).status_code == 401
+
+
+def test_ordenacao_pedida_pelo_front(client_adt_pb, municipio_rn):
+    antiga = ActivityFactory(municipio=municipio_rn, data_inicio=timezone.make_aware(datetime(2026, 3, 1, 8)))
+    recente = ActivityFactory(municipio=municipio_rn, data_inicio=timezone.make_aware(datetime(2026, 9, 1, 8)))
+
+    assert _ids(client_adt_pb.get(URL, {"ordering": "data_inicio"})) == [antiga.pk, recente.pk]
+
+
+# ---------- Detalhe ----------
+
+def _url_detalhe(atividade):
+    return f"{URL}{atividade.pk}/"
+
+
+def test_detalhe_de_atividade_de_outro_estado_traz_o_contexto_do_formulario(client_adt_pb, municipio_rn):
+    tecnico = UserFactory(nome="Técnica RN", email="tecnica.rn@test.com")
+    atividade = ActivityFactory(municipio=municipio_rn, tecnico_responsavel=tecnico, titulo="Feira em Mossoró")
+    acao = atividade.acao
+
+    resp = client_adt_pb.get(_url_detalhe(atividade))
+
+    assert resp.status_code == 200, resp.data
+    assert resp.data["titulo"] == "Feira em Mossoró"
+    assert resp.data["municipio"]["estado"]["sigla"] == "RN"
+    assert resp.data["territorio"] == {"id": municipio_rn.territory_id, "nome": "Território RN"}
+    assert resp.data["comunidade"] is None
+    assert resp.data["tecnico_responsavel"] == {"id": tecnico.pk, "nome": "Técnica RN"}
+    assert resp.data["acao"]["numero"] == acao.numero
+    assert resp.data["acao"]["submeta"]["numero"] == acao.submeta.numero
+    assert resp.data["acao"]["indicador"]["codigo"] == acao.indicador.codigo
+
+
+def test_detalhe_vale_para_qualquer_status(client_adt_pb, municipio_rn):
+    cancelada = ActivityFactory(municipio=municipio_rn, status="cancelada")
+
+    resp = client_adt_pb.get(_url_detalhe(cancelada))
+
+    assert resp.status_code == 200
+    assert resp.data["status"] == "cancelada"
+
+
+def test_detalhe_de_atividade_inativa_e_404(client_adt_pb, municipio_rn):
+    inativa = ActivityFactory(municipio=municipio_rn, ativo=False)
+
+    assert client_adt_pb.get(_url_detalhe(inativa)).status_code == 404
+
+
+@pytest.mark.parametrize("cliente", ["auth_client_articulador_rn", "auth_client_ugp", "auth_client_fgd"])
+def test_detalhe_para_quem_nao_cria_demanda_e_403(request, cliente, municipio_rn):
+    atividade = ActivityFactory(municipio=municipio_rn)
+
+    assert request.getfixturevalue(cliente).get(_url_detalhe(atividade)).status_code == 403

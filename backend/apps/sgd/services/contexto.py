@@ -133,6 +133,31 @@ def articuladores_do_estado(estado_sigla: str | None) -> list[dict]:
     )
 
 
+def articuladores_por_estado(siglas) -> dict[str, list[dict]]:
+    """`articuladores_do_estado` de vários estados de uma vez, para a listagem: duas
+    consultas, quantos estados forem. Todo estado pedido tem entrada, mesmo vazia."""
+    from apps.core.models import UserProfile
+    from apps.sgd.services import orcamento as orcamento_service
+
+    siglas = sorted({sigla for sigla in siglas if sigla})
+    por_estado: dict[str, list[dict]] = {sigla: [] for sigla in siglas}
+    if not siglas:
+        return por_estado
+    usuarios = list(orcamento_service.articuladores_dos_estados(siglas).order_by("nome", "pk").values("id", "nome"))
+    estados_do_usuario: dict[int, set[str]] = {}
+    perfis = UserProfile.objects.filter(
+        user_id__in=[usuario["id"] for usuario in usuarios], perfil__slug="articulador-estadual",
+    ).values_list("user_id", "territorio_id", "territorio__estados")
+    for user_id, territorio_id, estados in perfis:
+        # Articulador sem território responde por todos os estados, como no critério da notificação.
+        alcance = set(siglas) if territorio_id is None else set(estados or ()) & set(siglas)
+        estados_do_usuario.setdefault(user_id, set()).update(alcance)
+    for usuario in usuarios:
+        for sigla in estados_do_usuario.get(usuario["id"], ()):
+            por_estado[sigla].append(usuario)
+    return por_estado
+
+
 @dataclass(frozen=True)
 class CadeiaPT:
     acao: object

@@ -2432,8 +2432,14 @@ paths:
       operationId: v1_sgd_atividades_elegiveis_list
       description: |-
         Busca de atividades para vincular a uma demanda, sem o recorte territorial da
-        listagem do SGP. Mesmo perfil de quem cria demanda e mesma paginação do SGP.
+        listagem do SGP. Mesma paginação e ordenação do SGP.
       parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Qual campo usar ao ordenar os resultados.
+        schema:
+          type: string
       - name: page
         required: false
         in: query
@@ -2450,18 +2456,21 @@ paths:
         name: q
         schema:
           type: string
+          default: ''
         description: Trecho do título.
       - in: query
         name: status
         schema:
           type: array
           items:
-            type: string
             enum:
-            - agendado
             - planejado
+            - agendado
+            type: string
+            description: |-
+              * `planejado` - planejado
+              * `agendado` - agendado
         description: Repetível. Sem o parâmetro, as duas.
-        explode: true
       tags:
       - v1
       security:
@@ -2473,12 +2482,28 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedAtividadeElegivelList'
           description: ''
-        '400':
+  /api/v1/sgd/atividades-elegiveis/{id}/:
+    get:
+      operationId: v1_sgd_atividades_elegiveis_retrieve
+      description: |-
+        A atividade escolhida, em qualquer status: o formulário mostra a regra do status
+        (bloqueio ou justificativa de despesa posterior).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: {}
+                $ref: '#/components/schemas/AtividadeElegivelDetalhe'
           description: ''
   /api/v1/sgd/config/arlo-mapping/:
     get:
@@ -9928,6 +9953,71 @@ components:
       - tecnico_nome
       - tecnico_responsavel
       - titulo
+    AtividadeElegivelDetalhe:
+      type: object
+      description: |-
+        O que o formulário da demanda mostra da atividade escolhida, com os mesmos nomes e
+        formatos do detalhe do SGP. O técnico sai sem e-mail: a atividade pode ser de outro
+        território.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        titulo:
+          type: string
+          readOnly: true
+          title: Título
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusAtividadeEnum'
+          readOnly: true
+        status_display:
+          type: string
+          readOnly: true
+        data_inicio:
+          type: string
+          format: date-time
+          readOnly: true
+          title: Data de Início
+        data_fim:
+          type: string
+          format: date-time
+          readOnly: true
+          title: Data de Fim
+        municipio:
+          allOf:
+          - $ref: '#/components/schemas/MunicipioNested'
+          readOnly: true
+        territorio:
+          allOf:
+          - $ref: '#/components/schemas/Nested'
+          readOnly: true
+          nullable: true
+        comunidade:
+          allOf:
+          - $ref: '#/components/schemas/Nested'
+          readOnly: true
+          nullable: true
+        tecnico_responsavel:
+          allOf:
+          - $ref: '#/components/schemas/UsuarioRef'
+          readOnly: true
+        acao:
+          allOf:
+          - $ref: '#/components/schemas/AcaoDaAtividade'
+          readOnly: true
+      required:
+      - acao
+      - comunidade
+      - data_fim
+      - data_inicio
+      - id
+      - municipio
+      - status
+      - status_display
+      - tecnico_responsavel
+      - territorio
+      - titulo
     AuditLog:
       type: object
       properties:
@@ -11429,7 +11519,8 @@ components:
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         contexto:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/DemandContexto'
           readOnly: true
         solicitacoes:
           type: array
@@ -11472,6 +11563,76 @@ components:
       - valor_autorizado_total
       - valor_estimado_total
       - valor_pago_total
+    DemandContexto:
+      type: object
+      description: |-
+        Contexto da demanda, só leitura (SGD-RF02). O território é o da demanda
+        (do solicitante, congelado na criação — Issue #352); município, comunidade, data, técnico e a cadeia Ação → Submeta → Meta →
+        Indicador.
+      properties:
+        territorio_id:
+          type: integer
+          nullable: true
+        territorio_nome:
+          type: string
+          nullable: true
+        municipio_id:
+          type: integer
+        municipio_nome:
+          type: string
+        municipio_estado_sigla:
+          type: string
+        comunidade_id:
+          type: integer
+          nullable: true
+        comunidade_nome:
+          type: string
+          nullable: true
+        data_prevista:
+          type: string
+          format: date-time
+        tecnico_id:
+          type: integer
+        tecnico_nome:
+          type: string
+        acao_numero:
+          type: string
+        acao_descricao:
+          type: string
+        submeta_numero:
+          type: string
+        submeta_titulo:
+          type: string
+        meta_numero:
+          type: integer
+        meta_titulo:
+          type: string
+        indicador_codigo:
+          type: string
+        indicador_nome:
+          type: string
+        indicador_unidade_medida:
+          type: string
+      required:
+      - acao_descricao
+      - acao_numero
+      - comunidade_id
+      - comunidade_nome
+      - data_prevista
+      - indicador_codigo
+      - indicador_nome
+      - indicador_unidade_medida
+      - meta_numero
+      - meta_titulo
+      - municipio_estado_sigla
+      - municipio_id
+      - municipio_nome
+      - submeta_numero
+      - submeta_titulo
+      - tecnico_id
+      - tecnico_nome
+      - territorio_id
+      - territorio_nome
     DemandRequest:
       type: object
       properties:

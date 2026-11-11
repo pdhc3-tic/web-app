@@ -6,11 +6,10 @@ solicitação e ao campo."""
 from __future__ import annotations
 
 from apps.sgd.exceptions import RegraDeNegocio
-from apps.sgd.models.demand_document import DemandDocument
+from apps.sgd.models.demand_document import TIPO_ANEXO, DemandDocument
 from apps.sgd.services import demand_document as demand_document_service
 
 FORMATO = "anexo"
-TIPO_DOCUMENTO = "anexo"
 
 
 def _e_anexo(subschema) -> bool:
@@ -89,7 +88,7 @@ def vincular_anexos(solicitacao, *, usuario=None) -> None:
         documento = documentos.get(doc_id)
         if (
             documento is None or documento.demanda_id != solicitacao.demanda_id
-            or not documento.ativo or documento.tipo != TIPO_DOCUMENTO
+            or not documento.ativo or documento.tipo != TIPO_ANEXO
         ):
             raise RegraDeNegocio("Anexo não encontrado nesta demanda. Envie o arquivo de novo.", campo=campo)
         if documento.solicitacao_id not in (None, solicitacao.pk):

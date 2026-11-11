@@ -44,21 +44,20 @@ def _despesa_posterior_e_valida(activity) -> bool:
     return activity.status in ACTIVITY_STATUS_EXIGEM_JUSTIFICATIVA
 
 
-def atividades_elegiveis(*, q: str = "", status=()):
+def atividades_para_vincular():
     """Atividades que o solicitante pode vincular, de qualquer estado ou território: a
     abrangência da demanda vem de quem a cria, não da atividade."""
-    status_pedidos = set(status)
-    invalidos = status_pedidos - set(ACTIVITY_STATUS_ELEGIVEIS_NA_BUSCA)
-    if invalidos:
-        raise RegraDeNegocio(
-            f"Valor inválido. Esperado um de: {list(ACTIVITY_STATUS_ELEGIVEIS_NA_BUSCA)}.", campo="status",
-        )
-    qs = Activity.objects.filter(
-        ativo=True, status__in=status_pedidos or ACTIVITY_STATUS_ELEGIVEIS_NA_BUSCA,
+    return Activity.objects.filter(ativo=True)
+
+
+def atividades_elegiveis(*, q: str = "", status=()):
+    """As de `atividades_para_vincular` que a busca do formulário oferece."""
+    qs = atividades_para_vincular().filter(
+        status__in=status or ACTIVITY_STATUS_ELEGIVEIS_NA_BUSCA,
     ).select_related("municipio__state", "tecnico_responsavel")
     if q := q.strip():
         qs = qs.filter(titulo__icontains=q)
-    return qs.order_by("-data_inicio", "-pk")
+    return qs
 
 
 def criar_activity_inline(*, titulo, tipo_atividade, acao, municipio, data_prevista, usuario):

@@ -7,11 +7,14 @@ import pytest
 from apps.core.models.audit_log import AuditLog
 from apps.sgd.exceptions import RegraDeNegocio
 from apps.sgd.models import DemandDocument, TipoSolicitacao
+from apps.sgd.models.demand_document import TIPO_CHOICES
 from apps.sgd.services import demand as demand_service
+from apps.sgd.services import demand_document as demand_document_service
 from apps.sgd.services import workflow as workflow_service
 from apps.sgd.services.anexos import campos_de_anexo, ids_do_campo
 from apps.sgd.services.demand_document import documentos_no_limite, exigir_pode_gerenciar_documento
 from apps.sgd.tests.factories import DemandDocumentFactory, DemandFactory, TipoSolicitacaoFactory
+from apps.sgd.views.demand_document import DemandDocumentConfirmSerializer
 
 pytestmark = pytest.mark.django_db
 
@@ -95,6 +98,11 @@ def test_catalogo_recusa_campo_de_anexo_que_nao_guarda_id(auth_client_super_admi
 
 def test_solicitante_envia_anexo_com_a_demanda_editavel(demand_rascunho_rn, solicitante_rn):
     exigir_pode_gerenciar_documento(demand_rascunho_rn, solicitante_rn, "anexo")
+
+
+def test_anexo_sobe_pelo_fluxo_de_documentos_mas_nao_aparece_na_aba():
+    assert "anexo" in dict(DemandDocumentConfirmSerializer().fields["tipo"].choices)
+    assert "anexo" not in dict(TIPO_CHOICES)
 
 
 # ---------- Gravação ----------
@@ -235,26 +243,37 @@ def test_remover_a_solicitacao_remove_os_anexos_dela(
     assert resp.status_code == 204
     arte.refresh_from_db()
     assert not arte.ativo
-    assert AuditLog.objects.filter(
-        acao="demand_document.deleted", valores_anteriores__doc_id=arte.pk, user=solicitante_rn,
-    ).exists()
+    removido = AuditLog.objects.get(acao="demand_document.deleted", valores_anteriores__doc_id=arte.pk)
+    assert removido.user == solicitante_rn
+    assert (removido.valores_anteriores["solicitacao_id"], removido.valores_anteriores["campo"]) == (
+        solicitacao_id, "arte",
+    )
 
 
 # ---------- Limite de documentos ----------
 
-def test_anexo_informado_num_campo_nao_conta_no_limite(
+def test_anexo_conta_no_limite_so_enquanto_nao_esta_num_campo(
     auth_client_solicitante, demand_rascunho_rn, tipo_com_anexos,
 ):
     arte = _anexo(demand_rascunho_rn)
     cotacoes = [_anexo(demand_rascunho_rn).pk for _ in range(3)]
     _anexo(demand_rascunho_rn)  # enviado e ainda não informado em campo nenhum
     DemandDocumentFactory(demanda=demand_rascunho_rn, tipo="suporte")
-    assert documentos_no_limite(demand_rascunho_rn) == 6
+    assert documentos_no_limite(demand_rascunho_rn, "anexo") == 5
 
     resp = _criar(auth_client_solicitante, demand_rascunho_rn, {"arte": arte.pk, "cotacoes": cotacoes})
 
     assert resp.status_code == 201, resp.data
-    assert documentos_no_limite(demand_rascunho_rn) == 2
+    assert documentos_no_limite(demand_rascunho_rn, "anexo") == 1
+    assert documentos_no_limite(demand_rascunho_rn, "suporte") == 1
+
+
+def test_aba_cheia_nao_impede_o_envio_de_anexo(demand_rascunho_rn):
+    for _ in range(10):
+        DemandDocumentFactory(demanda=demand_rascunho_rn, tipo="suporte")
+
+    assert documentos_no_limite(demand_rascunho_rn, "suporte") == 10
+    assert documentos_no_limite(demand_rascunho_rn, "anexo") == 0
 
 
 # ---------- Submissão e leitura ----------
@@ -296,6 +315,25 @@ def test_anexo_removido_enquanto_a_submissao_espera_o_lock_barra_a_submissao(
     assert excinfo.value.campo == "arte"
     demand_rascunho_rn.refresh_from_db()
     assert demand_rascunho_rn.status == "rascunho"
+
+
+def test_remocao_que_esperou_o_lock_nao_remove_de_novo(
+    auth_client_solicitante, demand_rascunho_rn, solicitante_rn,
+):
+    arte = _anexo(demand_rascunho_rn)
+    travar = demand_document_service.travar_demanda
+
+    def removido_por_outra_aba(demand):
+        travar(demand)
+        demand_document_service.remover(DemandDocument.objects.get(pk=arte.pk), usuario=solicitante_rn)
+
+    with patch.object(demand_document_service, "travar_demanda", side_effect=removido_por_outra_aba):
+        resp = auth_client_solicitante.delete(
+            f"/api/v1/sgd/demandas/{demand_rascunho_rn.pk}/documentos/{arte.pk}/",
+        )
+
+    assert resp.status_code == 404
+    assert AuditLog.objects.filter(acao="demand_document.deleted", valores_anteriores__doc_id=arte.pk).count() == 1
 
 
 def test_documento_nao_sai_de_demanda_ja_submetida(auth_client_solicitante, demand_rascunho_rn):
