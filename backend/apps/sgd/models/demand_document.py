@@ -7,6 +7,7 @@ TIPO_CHOICES = [
     ("ata", "Ata"),
     ("comprovante", "Comprovante"),
     ("cotacao", "Cotação"),
+    ("anexo", "Anexo de campo do formulário"),
 ]
 
 
@@ -31,6 +32,16 @@ class DemandDocument(models.Model):
         max_length=100, default="application/pdf", verbose_name="Content-Type",
     )
     tamanho_bytes = models.PositiveBigIntegerField(default=0, verbose_name="Tamanho em bytes")
+
+    # Preenchidos quando o documento é o valor de um campo `format: anexo` do catálogo.
+    solicitacao = models.ForeignKey(
+        "sgd.DemandRequest",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="anexos",
+        verbose_name="Solicitação",
+    )
+    campo = models.CharField(max_length=100, blank=True, default="", verbose_name="Campo do formulário")
 
     ativo = models.BooleanField(default=True, verbose_name="Ativo")
 

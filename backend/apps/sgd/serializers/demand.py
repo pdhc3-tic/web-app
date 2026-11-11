@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.sgd.models.demand import Demand
@@ -17,6 +18,7 @@ class DemandContextoSerializer(serializers.Serializer):
     territorio_nome = serializers.CharField(allow_null=True)
     municipio_id = serializers.IntegerField()
     municipio_nome = serializers.CharField()
+    municipio_estado_sigla = serializers.CharField()
     comunidade_id = serializers.IntegerField(allow_null=True)
     comunidade_nome = serializers.CharField(allow_null=True)
     data_prevista = serializers.DateTimeField(source="data_inicio")
@@ -41,6 +43,7 @@ def _contexto_da_demanda(demand) -> dict:
         "territorio_nome": territory.nome if territory else None,
         "municipio_id": activity.municipio_id,
         "municipio_nome": activity.municipio.nome,
+        "municipio_estado_sigla": contexto_service.estado_da_atividade(activity),
         "comunidade_id": activity.comunidade_id,
         "comunidade_nome": activity.comunidade.nome if activity.comunidade_id else None,
         "data_inicio": activity.data_inicio,
@@ -48,6 +51,25 @@ def _contexto_da_demanda(demand) -> dict:
         "tecnico_responsavel": activity.tecnico_responsavel,
         "acao": activity.acao,
     }
+
+
+class ArticuladorSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    nome = serializers.CharField()
+
+
+class TerritorioDaAbrangenciaSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    nome = serializers.CharField()
+
+
+class AbrangenciaPreviaSerializer(serializers.Serializer):
+    """O que a criação da demanda vai gravar para quem pede a prévia."""
+
+    estado_sigla = serializers.CharField(allow_null=True)
+    territorio = TerritorioDaAbrangenciaSerializer(allow_null=True)
+    articuladores = ArticuladorSerializer(many=True)
+    atividade_fora_do_territorio = serializers.BooleanField()
 
 
 class DemandSerializer(serializers.ModelSerializer):
@@ -62,13 +84,14 @@ class DemandSerializer(serializers.ModelSerializer):
     solicitante_nome = serializers.CharField(source="solicitante.nome", read_only=True)
     territorio_nome = serializers.CharField(source="territorio.nome", read_only=True, default=None)
     atividade_fora_do_territorio = serializers.SerializerMethodField()
+    articuladores = serializers.SerializerMethodField()
 
     class Meta:
         model = Demand
         fields = [
             "id", "titulo", "activity", "justificativa", "status", "status_display",
             "transicoes_permitidas", "solicitante", "solicitante_nome", "despesa_posterior",
-            "estado_sigla", "territorio", "territorio_nome", "atividade_fora_do_territorio",
+            "estado_sigla", "territorio", "territorio_nome", "atividade_fora_do_territorio", "articuladores",
             "valor_estimado_total", "valor_autorizado_total", "valor_pago_total",
             "contexto", "solicitacoes", "etapas", "criado_em", "atualizado_em",
         ]
@@ -85,6 +108,15 @@ class DemandSerializer(serializers.ModelSerializer):
 
     def get_atividade_fora_do_territorio(self, obj) -> bool:
         return contexto_service.atividade_fora_do_territorio(obj)
+
+    @extend_schema_field(ArticuladorSerializer(many=True))
+    def get_articuladores(self, obj):
+        # Na listagem, uma consulta por estado da página, não uma por demanda.
+        por_estado = self.context.setdefault("_articuladores_por_estado", {})
+        estado = contexto_service.estado_da_demanda(obj)
+        if estado not in por_estado:
+            por_estado[estado] = contexto_service.articuladores_do_estado(estado)
+        return por_estado[estado]
 
 
 class DemandCreateSerializer(serializers.Serializer):

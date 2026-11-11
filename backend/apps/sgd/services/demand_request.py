@@ -7,6 +7,7 @@ from apps.core.models.municipality import Municipality
 from apps.sgd.exceptions import RegraDeNegocio
 from apps.sgd.models.demand_document import DemandDocument
 from apps.sgd.models.tipo_solicitacao import TipoSolicitacao
+from apps.sgd.services import anexos as anexos_service
 from apps.sgd.services import diarias as diarias_service
 from apps.sgd.services.diarias import CalculoDiarias
 from apps.sgd.services.tipos_solicitacao import (
@@ -215,6 +216,7 @@ def validar_campos_json(tipo: str, campos: dict, activity, *, anteriores: dict |
 
 
 def exigir_regras_de_submissao(demand) -> None:
+    anexos_service.exigir_anexos_ativos(demand)
     nomes = set(demand.solicitacoes.values_list("tipo__validador", flat=True))
     for nome in sorted(nomes):
         validador = obter_validador(nome)

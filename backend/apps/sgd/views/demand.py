@@ -17,9 +17,15 @@ from apps.core.views.audit import AuditLogPagination
 from apps.sgd.filters import DemandFilter
 from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.models.demand import STATUS_CHOICES, Demand
+from apps.sgd.models.demand_document import DemandDocument
 from apps.sgd.serializers.approval import ApprovalStepSerializer, CancelarSerializer
 from apps.sgd.serializers.auditoria import DemandAuditEntrySerializer
-from apps.sgd.serializers.demand import DemandCreateSerializer, DemandSerializer, DemandUpdateSerializer
+from apps.sgd.serializers.demand import (
+    AbrangenciaPreviaSerializer,
+    DemandCreateSerializer,
+    DemandSerializer,
+    DemandUpdateSerializer,
+)
 from apps.sgd.serializers.demand_request import (
     DemandRequestCreateSerializer,
     DemandRequestSerializer,
@@ -69,7 +75,7 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
         # Issue #352): Articulador, UGP e FGD só decidem sobre ela (SGD §1,
         # matriz do Core §2.1). Sem objeto em jogo no create, IsADTInTerritory
         # checa só o perfil.
-        if self.action == "create":
+        if self.action in ("create", "abrangencia"):
             return [IsAuthenticatedActiveAccess(), (IsADTInTerritory | IsSuperAdmin)()]
         return super().get_permissions()
 
@@ -79,7 +85,10 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
             "activity__comunidade", "activity__tecnico_responsavel",
             *contexto.CAMINHOS_CADEIA,
             "solicitante",
-        ).prefetch_related("solicitacoes__rubrica", "solicitacoes__tipo", contexto.CAMINHO_RUBRICAS_PREVISTAS)
+        ).prefetch_related(
+            "solicitacoes__rubrica", "solicitacoes__tipo", contexto.CAMINHO_RUBRICAS_PREVISTAS,
+            Prefetch("solicitacoes__anexos", queryset=DemandDocument.objects.filter(ativo=True)),
+        )
         # Só na leitura: nas ações de decisão o prefetch deixaria `etapas` em
         # cache, e a resposta sairia sem a etapa que a própria ação acabou de criar.
         if self.action in ("list", "retrieve"):
@@ -153,6 +162,34 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
             pagina = paginator.paginate_queryset(etapas, request, view=self)
             return paginator.get_paginated_response(ApprovalStepSerializer(pagina, many=True).data)
         return Response(ApprovalStepSerializer(etapas, many=True).data)
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "activity_id", OpenApiTypes.INT,
+                description="Atividade a vincular. Sem ela, `atividade_fora_do_territorio` sai `false`.",
+            ),
+        ],
+        responses={200: AbrangenciaPreviaSerializer, 404: OpenApiTypes.OBJECT},
+    )
+    @action(detail=False, methods=["get"], url_path="abrangencia")
+    def abrangencia(self, request):
+        """Estado, território e Articuladores que a demanda de quem chama vai receber
+        ao ser criada, pela mesma regra da criação."""
+        estado_sigla, territorio = contexto.abrangencia_para_nova_demanda(solicitante=request.user)
+        activity_id = request.query_params.get("activity_id")
+        fora = False
+        if activity_id:
+            if not activity_id.isdigit():
+                raise ValidationError({"activity_id": "Deve ser o id de uma atividade."})
+            activity = get_object_or_404(Activity.objects.select_related("municipio__state"), pk=activity_id)
+            fora = contexto.atividade_fora_do_estado(estado_sigla, activity)
+        return Response(AbrangenciaPreviaSerializer({
+            "estado_sigla": estado_sigla,
+            "territorio": {"id": territorio.pk, "nome": territorio.nome} if territorio else None,
+            "articuladores": contexto.articuladores_do_estado(estado_sigla),
+            "atividade_fora_do_territorio": fora,
+        }).data)
 
     def retrieve(self, request, pk=None):
         demand = get_object_or_404(self.get_queryset(), pk=pk)
@@ -265,7 +302,10 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
     def solicitacoes(self, request, pk=None):
         demand = get_object_or_404(self.get_queryset(), pk=pk)
         if request.method == "GET":
-            return Response(DemandRequestSerializer(demand.solicitacoes.all(), many=True).data)
+            solicitacoes = demand.solicitacoes.select_related("tipo", "rubrica").prefetch_related(
+                Prefetch("anexos", queryset=DemandDocument.objects.filter(ativo=True)),
+            )
+            return Response(DemandRequestSerializer(solicitacoes, many=True).data)
 
         if demand.solicitante_id != request.user.pk:
             raise PermissionDenied("Só o solicitante pode adicionar solicitações.")

@@ -5,6 +5,7 @@ from django.db import transaction
 from apps.sgd.exceptions import JustificativaObrigatoria, RegraDeNegocio
 from apps.sgd.models.demand import STATUS_EDITAVEIS, Demand
 from apps.sgd.models.demand_request import DemandRequest
+from apps.sgd.services import anexos as anexos_service
 from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import contexto
@@ -15,11 +16,15 @@ from apps.sgd.services.demand_request import (
     rubrica_para_tipo,
     validar_campos_json,
 )
+from apps.sgp.models import Activity
 from apps.sgp.services.activity import criar_planejada
 from apps.sgp.services.activity_status import ActivityRuleError
 
 ACTIVITY_STATUS_BLOQUEIAM_NOVA_DEMANDA = {"cancelada", "nao_realizada"}
 ACTIVITY_STATUS_EXIGEM_JUSTIFICATIVA = {"em_andamento", "concluido", "concluido_sem_evidencia"}
+# Oferecidas na busca do formulário. As demais que aceitam demanda pedem justificativa
+# de despesa posterior e continuam valendo pelo `activity_id`.
+ACTIVITY_STATUS_ELEGIVEIS_NA_BUSCA = ("planejado", "agendado")
 # Campo do cadastro da atividade → campo que o cliente envia na criação inline.
 _CAMPO_DA_ATIVIDADE_INLINE = {
     "titulo": "activity_titulo",
@@ -37,6 +42,23 @@ def _despesa_posterior_e_valida(activity) -> bool:
             f"Atividade em status '{activity.get_status_display()}' não aceita novas demandas.", campo="activity",
         )
     return activity.status in ACTIVITY_STATUS_EXIGEM_JUSTIFICATIVA
+
+
+def atividades_elegiveis(*, q: str = "", status=()):
+    """Atividades que o solicitante pode vincular, de qualquer estado ou território: a
+    abrangência da demanda vem de quem a cria, não da atividade."""
+    status_pedidos = set(status)
+    invalidos = status_pedidos - set(ACTIVITY_STATUS_ELEGIVEIS_NA_BUSCA)
+    if invalidos:
+        raise RegraDeNegocio(
+            f"Valor inválido. Esperado um de: {list(ACTIVITY_STATUS_ELEGIVEIS_NA_BUSCA)}.", campo="status",
+        )
+    qs = Activity.objects.filter(
+        ativo=True, status__in=status_pedidos or ACTIVITY_STATUS_ELEGIVEIS_NA_BUSCA,
+    ).select_related("municipio__state", "tecnico_responsavel")
+    if q := q.strip():
+        qs = qs.filter(titulo__icontains=q)
+    return qs.order_by("data_inicio", "pk")
 
 
 def criar_activity_inline(*, titulo, tipo_atividade, acao, municipio, data_prevista, usuario):
@@ -117,6 +139,7 @@ def adicionar_solicitacao(demand, *, tipo, campos_json, valor_estimado=None, ord
         demanda=demand, tipo_id=tipo, rubrica=rubrica, campos_json=validado.campos_json,
         beneficiario_cpf=validado.beneficiario_cpf, valor_estimado=valor_final, ordem=ordem,
     )
+    anexos_service.vincular_anexos(solicitacao)
     demand.recalcular_totais()
     return solicitacao
 
@@ -170,6 +193,7 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
         "tipo", "rubrica", "campos_json", "beneficiario_cpf", "valor_estimado", "valor_reservado",
         "valor_excedente", "atualizado_em",
     ])
+    anexos_service.vincular_anexos(solicitacao)
     demand.recalcular_totais()
     return solicitacao
 

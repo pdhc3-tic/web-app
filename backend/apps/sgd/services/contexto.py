@@ -109,13 +109,28 @@ def nivel_da_demanda(demand) -> tuple[str, str | None, object | None]:
     return orcamento_service.Nivel.NACIONAL, None, None
 
 
-def atividade_fora_do_territorio(demand) -> bool:
-    """A atividade acontece em outro estado que não o da demanda. Demanda
-    nacional nunca está fora."""
-    estado = estado_da_demanda(demand)
-    if estado is None:
+def atividade_fora_do_estado(estado_sigla: str | None, activity) -> bool:
+    """A atividade acontece em outro estado que não `estado_sigla`. Sem estado
+    (nível nacional), nunca está fora."""
+    if estado_sigla is None:
         return False
-    return estado_da_atividade(demand.activity) != estado
+    return estado_da_atividade(activity) != estado_sigla
+
+
+def atividade_fora_do_territorio(demand) -> bool:
+    return atividade_fora_do_estado(estado_da_demanda(demand), demand.activity)
+
+
+def articuladores_do_estado(estado_sigla: str | None) -> list[dict]:
+    """Quem pré-autoriza as demandas do estado, pelo mesmo critério que decide quem
+    é notificado na submissão. Demanda nacional não tem Articulador."""
+    if estado_sigla is None:
+        return []
+    from apps.sgd.services import orcamento as orcamento_service
+
+    return list(
+        orcamento_service.articuladores_dos_estados([estado_sigla]).order_by("nome", "pk").values("id", "nome")
+    )
 
 
 @dataclass(frozen=True)
