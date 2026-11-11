@@ -181,7 +181,7 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
         fora = False
         if activity_id := query.validated_data.get("activity_id"):
             activity = get_object_or_404(
-                Activity.objects.filter(ativo=True).select_related("municipio__state"), pk=activity_id,
+                contexto.com_estado_da_atividade(demand_service.atividades_para_vincular()), pk=activity_id,
             )
             fora = contexto.atividade_fora_do_estado(estado_sigla, activity)
         return Response(AbrangenciaPreviaSerializer({

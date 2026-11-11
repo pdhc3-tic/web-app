@@ -8,6 +8,7 @@ from apps.sgd.serializers.atividade_elegivel import (
     AtividadeElegivelSerializer,
     AtividadesElegiveisQuerySerializer,
 )
+from apps.sgd.services import contexto
 from apps.sgd.services import demand as demand_service
 from apps.sgp.pagination import ActivityPagination
 
@@ -44,7 +45,10 @@ class AtividadeElegivelDetalheView(RetrieveAPIView):
     serializer_class = AtividadeElegivelDetalheSerializer
 
     def get_queryset(self):
-        return demand_service.atividades_para_vincular().select_related(
-            "municipio__state", "municipio__territory", "comunidade", "tecnico_responsavel",
-            "acao__meta", "acao__submeta", "acao__indicador",
+        return contexto.com_contexto_da_atividade(demand_service.atividades_para_vincular()).select_related(
+            "tecnico_responsavel",
         )
+
+    def check_object_permissions(self, request, obj):
+        """O perfil já foi conferido na entrada. O recorte por território do
+        `IsADTInTerritory` não vale aqui: a demanda aceita atividade de qualquer território."""

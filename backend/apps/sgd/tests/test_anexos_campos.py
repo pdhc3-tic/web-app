@@ -318,22 +318,25 @@ def test_anexo_removido_enquanto_a_submissao_espera_o_lock_barra_a_submissao(
 
 
 def test_remocao_que_esperou_o_lock_nao_remove_de_novo(
-    auth_client_solicitante, demand_rascunho_rn, solicitante_rn,
+    auth_client_solicitante, demand_rascunho_rn,
 ):
     arte = _anexo(demand_rascunho_rn)
     travar = demand_document_service.travar_demanda
 
     def removido_por_outra_aba(demand):
         travar(demand)
-        demand_document_service.remover(DemandDocument.objects.get(pk=arte.pk), usuario=solicitante_rn)
+        DemandDocument.objects.filter(pk=arte.pk).update(ativo=False)
 
-    with patch.object(demand_document_service, "travar_demanda", side_effect=removido_por_outra_aba):
+    with (
+        patch.object(demand_document_service, "travar_demanda", side_effect=removido_por_outra_aba),
+        patch.object(demand_document_service, "remover") as remover,
+    ):
         resp = auth_client_solicitante.delete(
             f"/api/v1/sgd/demandas/{demand_rascunho_rn.pk}/documentos/{arte.pk}/",
         )
 
     assert resp.status_code == 404
-    assert AuditLog.objects.filter(acao="demand_document.deleted", valores_anteriores__doc_id=arte.pk).count() == 1
+    remover.assert_not_called()
 
 
 def test_documento_nao_sai_de_demanda_ja_submetida(auth_client_solicitante, demand_rascunho_rn):

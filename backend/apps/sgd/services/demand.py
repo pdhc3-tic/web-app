@@ -52,9 +52,9 @@ def atividades_para_vincular():
 
 def atividades_elegiveis(*, q: str = "", status=()):
     """As de `atividades_para_vincular` que a busca do formulário oferece."""
-    qs = atividades_para_vincular().filter(
-        status__in=status or ACTIVITY_STATUS_ELEGIVEIS_NA_BUSCA,
-    ).select_related("municipio__state", "tecnico_responsavel")
+    qs = contexto.com_estado_da_atividade(
+        atividades_para_vincular().filter(status__in=status or ACTIVITY_STATUS_ELEGIVEIS_NA_BUSCA),
+    ).select_related("tecnico_responsavel")
     if q := q.strip():
         qs = qs.filter(titulo__icontains=q)
     return qs

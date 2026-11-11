@@ -109,6 +109,19 @@ def nivel_da_demanda(demand) -> tuple[str, str | None, object | None]:
     return orcamento_service.Nivel.NACIONAL, None, None
 
 
+def com_estado_da_atividade(atividades):
+    """Atividades com o que `estado_da_atividade` lê já carregado."""
+    return atividades.select_related("municipio__state")
+
+
+def com_contexto_da_atividade(atividades):
+    """Atividades com estado, território, comunidade e a cadeia do Plano de Trabalho
+    já carregados, para o painel do formulário de demanda."""
+    return com_estado_da_atividade(atividades).select_related(
+        "municipio__territory", "comunidade", "acao__meta", "acao__submeta", "acao__indicador",
+    )
+
+
 def atividade_fora_do_estado(estado_sigla: str | None, activity) -> bool:
     """A atividade acontece em outro estado que não `estado_sigla`. Sem estado
     (nível nacional), nunca está fora."""
