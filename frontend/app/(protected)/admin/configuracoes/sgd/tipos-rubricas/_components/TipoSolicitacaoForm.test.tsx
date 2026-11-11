@@ -83,6 +83,25 @@ describe("TipoSolicitacaoForm (#365)", () => {
     expect(screen.queryByTestId("tipo-previa")).toBeNull();
   });
 
+  it("JSON válido com estrutura que não é schema mostra o erro, sem derrubar a tela (revisão do PR #420)", async () => {
+    const onSalvar = await abrir();
+    fireEvent.change(screen.getByLabelText(/^Nome/), { target: { value: "Hospedagem" } });
+    fireEvent.change(schemaEditor(), {
+      target: { value: JSON.stringify({ type: "object", properties: { hotel: null } }) },
+    });
+    expect(screen.getByText(/O campo “hotel” precisa ser um objeto/)).toBeTruthy();
+    expect(screen.queryByTestId("tipo-previa")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("tipo-salvar"));
+    expect(onSalvar).not.toHaveBeenCalled();
+
+    // Corrigido o campo, a pré-visualização volta.
+    fireEvent.change(schemaEditor(), {
+      target: { value: JSON.stringify({ properties: { hotel: { type: "string", title: "Hotel" } } }) },
+    });
+    expect(screen.getByTestId("tipo-previa").textContent).toContain("Hotel");
+  });
+
   it("não envia sem os obrigatórios nem com JSON quebrado", async () => {
     const onSalvar = await abrir();
     fireEvent.change(schemaEditor(), { target: { value: "[]" } });

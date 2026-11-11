@@ -9,7 +9,7 @@ import { Select, type SelectOption } from "@/app/components/ui/Select/Select";
 import { SlideOver } from "@/app/components/ui/SlideOver/SlideOver";
 import { Textarea } from "@/app/components/ui/Textarea/Textarea";
 import { ApiError } from "@/app/lib/api";
-import { configDoTipo, type ValoresCampos } from "@/app/lib/camposSolicitacao";
+import { configDoTipo, problemasDoSchema, type ValoresCampos } from "@/app/lib/camposSolicitacao";
 import { qk } from "@/app/lib/queryKeys";
 import {
   PADRAO_SLUG,
@@ -40,9 +40,9 @@ function slugDoNome(nome: string): string {
 function lerSchema(texto: string): { schema: SchemaCampos | null; erro: string | null } {
   try {
     const valor: unknown = JSON.parse(texto);
-    if (!valor || typeof valor !== "object" || Array.isArray(valor)) {
-      return { schema: null, erro: "O schema precisa ser um objeto JSON." };
-    }
+    // JSON válido não basta: `{"properties": {"hotel": null}}` derrubava a prévia.
+    const problema = problemasDoSchema(valor);
+    if (problema) return { schema: null, erro: problema };
     return { schema: valor as SchemaCampos, erro: null };
   } catch (e) {
     return { schema: null, erro: `JSON inválido: ${e instanceof Error ? e.message : String(e)}` };
@@ -294,7 +294,7 @@ export function TipoSolicitacaoForm({
           {schema ? (
             <PreviaFormulario slug={editando?.slug ?? slug} schema={schema} />
           ) : (
-            <p className="text-sm text-text-muted">Corrija o JSON para ver o formulário.</p>
+            <p className="text-sm text-text-muted">Corrija o schema para ver o formulário.</p>
           )}
         </section>
 

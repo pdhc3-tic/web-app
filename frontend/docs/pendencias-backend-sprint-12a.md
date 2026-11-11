@@ -50,3 +50,17 @@ Faltam três dados:
 - `contexto.municipio_estado_sigla` (a UF do município da atividade) no `DemandContextoSerializer`.
 
 *Estado atual no frontend:* o território da demanda e o aviso de atividade em outro estado aparecem na montagem, logo depois de criar e antes de submeter, com o que o backend gravou. O detalhe e a listagem mostram o território da demanda e o selo "Atividade fora do território". O nome do Articulador não aparece em lugar nenhum.
+
+---
+
+## 4. Riscos de glosa de uma demanda com atividade em outro estado (#360, #361)
+
+*Item acrescentado em 11/11/2026, na revisão do PR #420.*
+
+Desde o #352 (PR #416), a demanda é visível pela abrangência do **solicitante** (`Demand.estado_sigla`). A atividade pode ser de outro estado. A rota dos riscos de glosa, porém, ainda recorta o Articulador pelo estado da **atividade**: `GlosaRiskListView.get_queryset()` (`apps/sgp/views/glosa_risk.py`, linha 38) filtra por `activity__municipio__state__sigla__in=user_states(user)`, inclusive quando a consulta vem com `?demanda=`.
+
+Resultado: o Articulador do RN abre uma demanda do RN cuja atividade é em PE, já que a demanda está na fila dele, mas a linha do tempo vem sem os riscos de glosa. A resposta é uma lista vazia, sem erro. A Articuladora de PE, que não vê a demanda, recebe esses riscos na lista geral.
+
+**Pedido:** na consulta com `?demanda=`, aplicar a mesma regra de visibilidade da demanda (quem pode ver a demanda vê os riscos dela). Na lista geral, decidir se o risco segue o estado da atividade ou o da demanda e deixar isso registrado.
+
+*Estado atual no frontend:* a linha do tempo do detalhe da demanda lê `GET /sgp/glosa-riscos/?demanda=` e mostra o que vier. Os perfis sem acesso à rota não fazem a requisição. Quando o backend corrigir o recorte, o front não muda.

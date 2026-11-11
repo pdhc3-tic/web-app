@@ -88,6 +88,8 @@ describe("montarCamposJson e valoresDoCamposJson", () => {
 describe("resumoSolicitacao", () => {
   it("identifica a solicitação pelos campos que a distinguem", () => {
     expect(resumoSolicitacao("diaria", { beneficiario_nome: "Paulo", numero_diarias: 2 })).toBe("Paulo · 2 diária(s)");
+    // Meia diária (#358): o backend grava "2.5"; o cartão mostra com vírgula.
+    expect(resumoSolicitacao("diaria", { beneficiario_nome: "Paulo", numero_diarias: "2.5" })).toBe("Paulo · 2,5 diária(s)");
     expect(resumoSolicitacao("equipamento", { quantidade: 5, descricao_equipamento: "Kit" })).toBe("5 × Kit");
     expect(resumoSolicitacao("desconhecido", {})).toBe("");
   });
