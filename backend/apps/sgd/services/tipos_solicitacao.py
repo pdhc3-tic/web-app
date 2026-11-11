@@ -29,14 +29,19 @@ class Validador:
     ao_submeter: Callable[[object], None] | None = None
     # Chave de `campos_json` que recebe o CPF, gravado criptografado em coluna própria.
     chave_cpf: str | None = None
+    # Na edição, recebe os `campos_json` gravados e devolve o resultado com os valores
+    # calculados preservados; `None` pede o recálculo por `preparar`.
+    congelar: Callable[[dict, object, dict], CamposValidados | None] | None = None
 
 
 _VALIDADORES: dict[str, Validador] = {}
 
 
-def registrar_validador(nome: str, *, ao_submeter=None, chave_cpf: str | None = None):
+def registrar_validador(nome: str, *, ao_submeter=None, chave_cpf: str | None = None, congelar=None):
     def registrar(funcao):
-        _VALIDADORES[nome] = Validador(preparar=funcao, ao_submeter=ao_submeter, chave_cpf=chave_cpf)
+        _VALIDADORES[nome] = Validador(
+            preparar=funcao, ao_submeter=ao_submeter, chave_cpf=chave_cpf, congelar=congelar,
+        )
         return funcao
     return registrar
 

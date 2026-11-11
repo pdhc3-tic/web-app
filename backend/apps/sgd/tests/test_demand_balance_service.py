@@ -663,14 +663,15 @@ def test_bloqueio_territorial_vem_sem_valor_faltante(
     assert excinfo.value.como_dict()["solicitacoes_bloqueadas"][str(demand_request_rn.pk)]["valor_faltante"] is None
 
 
-def _campos_diaria_com_dias(*, municipio, dias_a_mais: int) -> dict:
+def _campos_diaria_com_dias(*, municipio, diarias: int) -> dict:
     """`demand_request_rn` é tipo "diaria" — esse tipo sempre recalcula
     valor_estimado a partir das datas (validado.valor_estimado_auto nunca é
     None), então passar `valor_estimado` direto pro service não muda nada
-    sozinho: precisa editar os campos que o auto-cálculo usa."""
+    sozinho: precisa editar os campos que o auto-cálculo usa. Com `diaria_a_200`
+    a contagem é por dia corrido, então `diarias` dias corridos dão o mesmo número de diárias."""
     from datetime import date, timedelta
 
-    nova_data_fim = date.fromisoformat("2026-06-01") + timedelta(days=dias_a_mais)
+    nova_data_fim = date.fromisoformat("2026-06-01") + timedelta(days=diarias - 1)
     return {
         "beneficiario_nome": "Fulano de Tal", "beneficiario_cpf": "52998224725",
         "beneficiario_cargo": "Técnico", "beneficiario_vinculo": "servidor_ufersa",
@@ -682,75 +683,55 @@ def _campos_diaria_com_dias(*, municipio, dias_a_mais: int) -> dict:
 
 def test_editar_valor_em_devolvida_ajusta_reserva_ativa(
     demand_request_rn, solicitante_rn, usuario_articulador_rn, limite_individual_rn, allocation_territorial_rn,
-    municipio_rn,
+    municipio_rn, diaria_a_200,
 ):
     """Em Devolvida a reserva é mantida (§4.2) — editar o valor de uma
     solicitação com reserva ativa ajusta a reserva na hora, não só o campo."""
-    from django.core.cache import cache
-
-    from apps.core.models.system_config import SystemConfig, TipoConfiguracao
-
-    SystemConfig.objects.update_or_create(
-        chave="sgd_valor_diaria_padrao", defaults={"valor": "200", "tipo": TipoConfiguracao.STRING},
+    demand = demand_request_rn.demanda
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    workflow_service.executar_transicao(
+        demand, "devolvida", ator=usuario_articulador_rn, justificativa="Ajustar valor.",
     )
-    try:
-        demand = demand_request_rn.demanda
-        demand_service.submeter_demanda(demand, usuario=solicitante_rn)
-        workflow_service.executar_transicao(
-            demand, "devolvida", ator=usuario_articulador_rn, justificativa="Ajustar valor.",
-        )
 
-        campos = _campos_diaria_com_dias(municipio=municipio_rn, dias_a_mais=4)
-        demand_service.atualizar_solicitacao(demand_request_rn, usuario=solicitante_rn, campos_json=campos)
-        novo_valor = demand_request_rn.valor_estimado  # 4 diárias x R$200 — mutado in place pelo service
+    campos = _campos_diaria_com_dias(municipio=municipio_rn, diarias=4)
+    demand_service.atualizar_solicitacao(demand_request_rn, usuario=solicitante_rn, campos_json=campos)
+    novo_valor = demand_request_rn.valor_estimado  # 4 diárias x R$200 — mutado in place pelo service
 
-        limite_individual_rn.refresh_from_db()
-        allocation_territorial_rn.refresh_from_db()
-        assert limite_individual_rn.valor_comprometido == novo_valor
-        assert allocation_territorial_rn.valor_comprometido == novo_valor
-    finally:
-        cache.delete("system_config:sgd_valor_diaria_padrao")
+    limite_individual_rn.refresh_from_db()
+    allocation_territorial_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == novo_valor
+    assert allocation_territorial_rn.valor_comprometido == novo_valor
 
 
 def test_resubmissao_apos_edicao_nao_bloqueia_a_toa(
     demand_request_rn, solicitante_rn, usuario_articulador_rn, limite_individual_rn, allocation_territorial_rn,
-    municipio_rn,
+    municipio_rn, diaria_a_200,
 ):
     """A solicitação editada em Devolvida já está com a reserva ajustada —
     ressubmeter não deve checar o valor cheio de novo (isso bloquearia à
     toa, já que o saldo já desconta essa própria reserva)."""
-    from django.core.cache import cache
-
-    from apps.core.models.system_config import SystemConfig, TipoConfiguracao
-
-    SystemConfig.objects.update_or_create(
-        chave="sgd_valor_diaria_padrao", defaults={"valor": "200", "tipo": TipoConfiguracao.STRING},
+    demand = demand_request_rn.demanda
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    workflow_service.executar_transicao(
+        demand, "devolvida", ator=usuario_articulador_rn, justificativa="Ajustar valor.",
     )
-    try:
-        demand = demand_request_rn.demanda
-        demand_service.submeter_demanda(demand, usuario=solicitante_rn)
-        workflow_service.executar_transicao(
-            demand, "devolvida", ator=usuario_articulador_rn, justificativa="Ajustar valor.",
-        )
 
-        # Edita pro valor EXATO do limite — sem folga nenhuma pra "pedir de
-        # novo". Se a ressubmissão checasse o valor cheio de novo (em vez de
-        # pular quem já tem reserva ativa), contaria essa reserva em dobro e
-        # bloquearia aqui; com folga o teste passaria mesmo com o bug antigo.
-        dias_no_limite = int(limite_individual_rn.valor_limite / Decimal("200"))
-        campos = _campos_diaria_com_dias(municipio=municipio_rn, dias_a_mais=dias_no_limite)
-        demand_service.atualizar_solicitacao(demand_request_rn, usuario=solicitante_rn, campos_json=campos)
-        novo_valor = demand_request_rn.valor_estimado
-        assert novo_valor == limite_individual_rn.valor_limite
+    # Edita pro valor EXATO do limite — sem folga nenhuma pra "pedir de
+    # novo". Se a ressubmissão checasse o valor cheio de novo (em vez de
+    # pular quem já tem reserva ativa), contaria essa reserva em dobro e
+    # bloquearia aqui; com folga o teste passaria mesmo com o bug antigo.
+    dias_no_limite = int(limite_individual_rn.valor_limite / Decimal("200"))
+    campos = _campos_diaria_com_dias(municipio=municipio_rn, diarias=dias_no_limite)
+    demand_service.atualizar_solicitacao(demand_request_rn, usuario=solicitante_rn, campos_json=campos)
+    novo_valor = demand_request_rn.valor_estimado
+    assert novo_valor == limite_individual_rn.valor_limite
 
-        demand_service.submeter_demanda(demand, usuario=solicitante_rn)
+    demand_service.submeter_demanda(demand, usuario=solicitante_rn)
 
-        demand.refresh_from_db()
-        assert demand.status == "submetida"
-        limite_individual_rn.refresh_from_db()
-        assert limite_individual_rn.valor_comprometido == novo_valor
-    finally:
-        cache.delete("system_config:sgd_valor_diaria_padrao")
+    demand.refresh_from_db()
+    assert demand.status == "submetida"
+    limite_individual_rn.refresh_from_db()
+    assert limite_individual_rn.valor_comprometido == novo_valor
 
 
 def test_remover_solicitacao_com_reserva_ativa_libera_saldo(
@@ -840,16 +821,11 @@ def _confere_comprometido(limite) -> None:
 
 
 @pytest.fixture
-def diaria_a_200(db):
-    from django.core.cache import cache
-
-    from apps.core.models.system_config import SystemConfig, TipoConfiguracao
-
-    SystemConfig.objects.update_or_create(
-        chave="sgd_valor_diaria_padrao", defaults={"valor": "200", "tipo": TipoConfiguracao.STRING},
-    )
-    yield
-    cache.delete("system_config:sgd_valor_diaria_padrao")
+def diaria_a_200(tabela_diaria, regras_diaria):
+    """R$ 200 por diária, contada por dia corrido (sem meia diária), para as contas
+    dos testes de reserva darem valores redondos."""
+    tabela_diaria("200")
+    regras_diaria(sgd_diaria_regra_inteira_por_pernoite=False)
 
 
 @pytest.mark.parametrize(("dias", "valor_editado"), [(2, Decimal("400")), (7, Decimal("1400"))])
@@ -874,7 +850,7 @@ def test_ciclo_da_reserva_mantem_o_comprometido_igual_as_reservas_ativas(
     )
     _confere_comprometido(limite_individual_rn)
 
-    campos = _campos_diaria_com_dias(municipio=municipio_rn, dias_a_mais=dias)
+    campos = _campos_diaria_com_dias(municipio=municipio_rn, diarias=dias)
     demand_service.atualizar_solicitacao(demand_request_rn, usuario=solicitante_rn, campos_json=campos)
     demand_request_rn.refresh_from_db()
     assert demand_request_rn.valor_reservado == valor_editado
