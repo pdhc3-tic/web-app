@@ -5343,8 +5343,10 @@ paths:
   /api/v1/sgp/glosa-riscos/:
     get:
       operationId: v1_sgp_glosa_riscos_list
-      description: GET /api/v1/sgp/glosa-riscos/ — por valor exposto; com `?demanda=`,
-        em ordem cronológica.
+      description: |-
+        GET /api/v1/sgp/glosa-riscos/ — por valor exposto; com `?demanda=`, em ordem cronológica.
+        O Articulador vê o risco de quem vê a demanda e o das demandas do seu estado, que é o
+        da demanda (território do solicitante) e não o da atividade.
       parameters:
       - in: query
         name: activity

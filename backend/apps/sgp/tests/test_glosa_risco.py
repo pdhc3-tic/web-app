@@ -5,6 +5,7 @@ import pytest
 from django.db import IntegrityError, transaction
 from freezegun import freeze_time
 
+from apps.sgd.tests.factories import ApprovalStepFactory, DemandFactory
 from apps.sgp.models import GlosaRisk
 from apps.sgp.tests.factories import ActivityFactory
 
@@ -24,6 +25,11 @@ def _risco(demanda_id=1, *, tipo=Tipo.PAGO_ACIMA_AUTORIZADO, severidade=Severida
         entidade_id=str(demanda_id), activity=activity, demanda_id=str(demanda_id),
         demand_request_id=solicitacao, valor_exposto=Decimal(exposto),
     )
+
+
+def _demanda(activity, estado_sigla, territorio, *, status="concluida"):
+    """O estado e o território da demanda são os do solicitante, não os da atividade."""
+    return DemandFactory(activity=activity, estado_sigla=estado_sigla, territorio=territorio, status=status)
 
 
 def _ids(resposta):
@@ -133,17 +139,45 @@ class TestPerfis:
 
         assert set(_ids(request.getfixturevalue(cliente).get(URL))) == riscos
 
-    def test_articulador_ve_so_as_atividades_dos_seus_estados(
-        self, auth_client_articulador_rn, atividade_rn, atividade_ce,
+    def test_articulador_ve_os_riscos_das_demandas_do_seu_estado_e_nao_o_da_atividade(
+        self, auth_client_articulador_rn, atividade_rn, atividade_ce, territory_rn, territory_ce,
     ):
-        do_rn = _risco(1, activity=atividade_rn)
-        _risco(2, activity=atividade_ce)
-        _risco(3)
+        do_rn_com_atividade_no_ce = _demanda(atividade_ce, "RN", territory_rn)
+        do_ce_com_atividade_no_rn = _demanda(atividade_rn, "CE", territory_ce)
+        nacional = _demanda(atividade_rn, None, None)
+        visivel = _risco(do_rn_com_atividade_no_ce.pk, activity=atividade_ce)
+        _risco(do_ce_com_atividade_no_rn.pk, activity=atividade_rn)
+        _risco(nacional.pk, activity=atividade_rn)
+        _risco(999_999, activity=atividade_rn)  # referência a demanda inexistente
 
-        assert _ids(auth_client_articulador_rn.get(URL)) == [do_rn.pk]
+        assert _ids(auth_client_articulador_rn.get(URL)) == [visivel.pk]
 
-    def test_articulador_continua_vendo_o_risco_de_atividade_inativa(self, auth_client_articulador_rn, municipio_rn):
-        risco = _risco(1, activity=ActivityFactory(municipio=municipio_rn, ativo=False))
+    def test_por_demanda_articulador_ve_os_riscos_da_demanda_que_esta_na_fila_dele(
+        self, auth_client_articulador_rn, atividade_rn, atividade_ce, territory_rn, territory_ce,
+    ):
+        da_fila = _demanda(atividade_ce, "RN", territory_rn, status="submetida")
+        de_outro_estado = _demanda(atividade_rn, "CE", territory_ce, status="submetida")
+        risco = _risco(da_fila.pk, activity=atividade_ce)
+        _risco(de_outro_estado.pk, activity=atividade_rn)
+
+        assert _ids(auth_client_articulador_rn.get(URL, {"demanda": da_fila.pk})) == [risco.pk]
+        assert _ids(auth_client_articulador_rn.get(URL, {"demanda": de_outro_estado.pk})) == []
+
+    def test_articulador_ve_o_risco_da_demanda_que_decidiu_em_outro_estado(
+        self, auth_client_articulador_rn, usuario_articulador_rn, atividade_ce, territory_ce,
+    ):
+        decidida = _demanda(atividade_ce, "CE", territory_ce)
+        ApprovalStepFactory(demanda=decidida, responsavel=usuario_articulador_rn)
+        risco = _risco(decidida.pk, activity=atividade_ce)
+
+        assert _ids(auth_client_articulador_rn.get(URL, {"demanda": decidida.pk})) == [risco.pk]
+        assert _ids(auth_client_articulador_rn.get(URL)) == [risco.pk]
+
+    def test_articulador_continua_vendo_o_risco_de_atividade_inativa(
+        self, auth_client_articulador_rn, municipio_rn, territory_rn,
+    ):
+        atividade = ActivityFactory(municipio=municipio_rn, ativo=False)
+        risco = _risco(_demanda(atividade, "RN", territory_rn).pk, activity=atividade)
 
         assert _ids(auth_client_articulador_rn.get(URL)) == [risco.pk]
 
