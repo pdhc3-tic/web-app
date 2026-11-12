@@ -1,4 +1,10 @@
+/*
+  Spike da ADR 001 (#397): Tailwind v4 só com tema e utilidades, prefixo tw:
+  e sem o preflight. As classes vêm do documento do iframe (documento.ts).
+  Depois de mudar o documento, rode `npm run build:govbr-spike`: o teste
+  govbr-spike-css.test.ts acusa quando o CSS publicado fica desatualizado.
+*/
 @layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme) prefix(tw);
 @import "tailwindcss/utilities.css" layer(utilities) prefix(tw) source(none);
-@source inline("tw:flex tw:flex-col tw:grid tw:grid-cols-1 tw:gap-1 tw:gap-2 tw:gap-3 tw:gap-4 tw:p-3 tw:p-6 tw:mt-4 tw:sm:grid-cols-2 tw:sm:grid-cols-3");
+@source "./documento.ts";
