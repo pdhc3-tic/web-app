@@ -10,20 +10,19 @@ const api = vi.hoisted(() => ({ client: vi.fn() }));
 vi.mock("@/app/lib/api", () => ({ apiClient: api.client }));
 
 describe("riscos da atividade (#404)", () => {
-  it("encontra risco aberto depois de uma página com apenas riscos resolvidos", async () => {
+  it("pede uma página de 100 da atividade, sem percorrer as demais", async () => {
     api.client.mockReset();
     api.client.mockResolvedValueOnce({ json: async () => ({
-      next: "http://backend/glosa-riscos/?offset=1",
-      results: [{ id: 1, resolvido_em: "2026-11-10" }],
-    }) });
-    api.client.mockResolvedValueOnce({ json: async () => ({
-      next: null, results: [{ id: 2, resolvido_em: null }],
+      next: "http://backend/glosa-riscos/?offset=100",
+      results: [{ id: 1, resolvido_em: "2026-11-10" }, { id: 2, resolvido_em: null }],
     }) });
     const resultado = await listRiscosDeGlosaDaAtividade(42);
+    expect(api.client).toHaveBeenCalledTimes(1);
+    const url = new URL(api.client.mock.calls[0][0], "http://local");
+    expect(url.pathname).toBe("/api/v1/sgp/glosa-riscos/");
+    expect(url.searchParams.get("activity")).toBe("42");
+    expect(url.searchParams.get("limit")).toBe("100");
     expect(riscosAbertos(resultado).map((r) => r.id)).toEqual([2]);
-    const segunda = new URL(api.client.mock.calls[1][0], "http://local");
-    expect(segunda.searchParams.get("activity")).toBe("42");
-    expect(segunda.searchParams.get("offset")).toBe("1");
   });
 });
 

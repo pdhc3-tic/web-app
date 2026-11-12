@@ -90,6 +90,19 @@ describe("RiscosDeGlosa (#404)", () => {
     expect(container.textContent).toBe("");
   });
 
+  it("erro na consulta avisa, em vez de parecer que não há risco", async () => {
+    api.listar.mockRejectedValue(new Error("falhou"));
+    montar();
+    expect(await screen.findByTestId("riscos-de-glosa-erro")).toHaveTextContent(
+      "Não foi possível verificar os riscos de glosa desta atividade.",
+    );
+    expect(screen.queryByTestId("riscos-de-glosa")).toBeNull();
+
+    api.listar.mockResolvedValue([risco({ id: 3 })]);
+    screen.getByRole("button", { name: "Tentar de novo" }).click();
+    expect(await screen.findByTestId("riscos-de-glosa")).toBeInTheDocument();
+  });
+
   it("risco já resolvido não conta", async () => {
     api.listar.mockResolvedValue([risco({ id: 1, resolvido_em: "2026-11-05T10:00:00-03:00" })]);
     montar();

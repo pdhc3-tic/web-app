@@ -389,24 +389,21 @@ export async function listRiscosDeGlosa(demandaId: number, signal?: AbortSignal)
 /**
  * GET /api/v1/sgp/glosa-riscos/?activity={id} — os riscos de glosa da atividade,
  * do maior valor exposto para o menor (#404). Mesmos perfis de
- * `listRiscosDeGlosa`.
+ * `listRiscosDeGlosa` e, como ela, uma página de 100: uma atividade tem poucos
+ * riscos.
+ *
+ * A rota não filtra os riscos em aberto, então a ficha descarta os resolvidos
+ * (`riscosAbertos`). Pedir só os abertos ao servidor é o item 7 do
+ * `docs/pendencias-backend-sprint-12b.md`.
  */
 export async function listRiscosDeGlosaDaAtividade(
   atividadeId: number,
   signal?: AbortSignal,
 ): Promise<RiscoGlosa[]> {
   const qs = new URLSearchParams({ activity: String(atividadeId), limit: "100" });
-  const riscos: RiscoGlosa[] = [];
-  let pagina: { results: RiscoGlosa[]; next?: string | null };
-  do {
-    qs.set("offset", String(riscos.length));
-    const res = await apiClient(`/api/v1/sgp/glosa-riscos/?${qs}`, { signal });
-    const corpo = await res.json();
-    if (Array.isArray(corpo)) return corpo;
-    pagina = corpo;
-    riscos.push(...pagina.results);
-  } while (pagina.next && pagina.results.length > 0);
-  return riscos;
+  const res = await apiClient(`/api/v1/sgp/glosa-riscos/?${qs}`, { signal });
+  const corpo = (await res.json()) as { results: RiscoGlosa[] } | RiscoGlosa[];
+  return Array.isArray(corpo) ? corpo : corpo.results;
 }
 
 export const TIPO_RISCO_GLOSA_LABEL: Record<RiscoGlosa["tipo"], string> = {

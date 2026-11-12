@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useQuery } from "@tanstack/react-query";
 import { ShieldAlert } from "lucide-react";
+import { Button } from "@/app/components/ui/Button/Button";
 import { canVerRiscosDeGlosa } from "@/app/lib/auth/roles";
 import {
   SEVERIDADE_GLOSA_LABEL,
@@ -32,8 +33,9 @@ const SEVERIDADE_CLASSE: Record<RiscoGlosa["severidade"], string> = {
  * severidade e valor exposto de cada risco em aberto, de
  * `GET /sgp/glosa-riscos/?activity=`.
  *
- * Só aparece quando há risco: sem risco, em carregamento ou em erro, não ocupa
- * espaço na ficha. O ADT não consulta a rota (`canVerRiscosDeGlosa`).
+ * Só aparece quando há risco: sem risco ou em carregamento, não ocupa espaço
+ * na ficha. Em erro, avisa, para a falha não passar por "sem risco". O ADT não
+ * consulta a rota (`canVerRiscosDeGlosa`).
  */
 export function RiscosDeGlosa({ atividadeId }: { atividadeId: number }) {
   const { data: session } = useSession();
@@ -44,6 +46,22 @@ export function RiscosDeGlosa({ atividadeId }: { atividadeId: number }) {
     queryFn: ({ signal }) => listRiscosDeGlosaDaAtividade(atividadeId, signal),
     enabled: podeVer,
   });
+
+  if (consulta.isError) {
+    return (
+      <div
+        role="alert"
+        className="flex flex-wrap items-center gap-3 rounded-lg border border-error-text bg-error-bg px-4 py-3 text-sm text-error-text"
+        data-testid="riscos-de-glosa-erro"
+      >
+        <ShieldAlert className="h-4 w-4 shrink-0" aria-hidden />
+        Não foi possível verificar os riscos de glosa desta atividade.
+        <Button variant="secondary" size="sm" onClick={() => void consulta.refetch()}>
+          Tentar de novo
+        </Button>
+      </div>
+    );
+  }
 
   const riscos = riscosAbertos(consulta.data);
   if (riscos.length === 0) return null;

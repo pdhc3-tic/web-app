@@ -76,3 +76,11 @@ A tela confere antes de enviar, com faixas que o front definiu por conta própri
 **Pedido:** o backend validar cada chave `budget_*` na escrita, com as opções e faixas que a regra de negócio aceita, e devolver 400 no campo `valor`. Se as faixas forem outras, o front segue as do backend.
 
 *Estado atual no frontend:* `validarParametro` em `app/lib/parametrosOrcamento.ts`. Sem a validação no servidor, outro cliente da API grava qualquer valor.
+
+## 7. Filtro de riscos de glosa em aberto (#404)
+
+A ficha da atividade mostra o bloco "Riscos de glosa" só com os riscos em aberto, e o total exposto deles. `GET /sgp/glosa-riscos/` filtra por `activity`, `demanda`, `tipo` e `severidade`, mas não pelo estado do risco. A rota devolve abertos e resolvidos juntos, paginados, e não traz total.
+
+**Pedido:** aceitar `?aberto=true|false` em `GlosaRiskQuerySerializer` (`resolvido_em__isnull`). Se a ficha também for mostrar o total exposto, devolvê-lo junto da listagem (ex.: `total_exposto` no envelope da paginação), para o front não somar.
+
+*Estado atual no frontend:* `listRiscosDeGlosaDaAtividade` pede uma página de 100 da atividade, e a ficha descarta os resolvidos (`riscosAbertos`) e soma o exposto (`totalExposto`). Uma atividade com mais de 100 riscos teria a lista cortada. Quando o filtro existir, a tela pede só os abertos e usa o total do servidor.
