@@ -50,11 +50,15 @@ def _e_id(valor) -> bool:
 
 
 def ids_do_campo(valor, *, multiplo: bool) -> list[int] | None:
-    """Ids informados no campo; vazio é campo não preenchido. `None` quando o valor
-    não tem a forma do campo: o schema do catálogo pode ter mudado depois da gravação."""
-    if valor is None or valor == "" or valor == []:
+    """Ids informados no campo; ausente ou `null` é campo não preenchido. `None` quando o
+    valor não tem a forma do campo, como `[]` num campo de um arquivo ou `""` num campo de
+    vários: o schema do catálogo pode ter mudado depois da gravação."""
+    if valor is None:
         return []
-    itens = valor if multiplo and isinstance(valor, list) else [valor] if not multiplo else None
+    if multiplo:
+        itens = valor if isinstance(valor, list) else None
+    else:
+        itens = [valor]
     if itens is None or not all(_e_id(item) for item in itens):
         return None
     return itens
@@ -121,9 +125,10 @@ def exigir_anexos_ativos(demand) -> None:
         schema = solicitacao.tipo.schema_campos
         for campo, multiplo in campos_de_anexo(schema).items():
             ids = ids_do_campo(solicitacao.campos_json.get(campo), multiplo=multiplo)
-            if ids is None or any((solicitacao.pk, doc_id) not in ativos for doc_id in ids):
+            onde = f'"{_titulo(schema, campo)}" na solicitação de {solicitacao.tipo.nome}'
+            if ids is None:
                 raise RegraDeNegocio(
-                    f'Um anexo de "{_titulo(schema, campo)}" na solicitação de {solicitacao.tipo.nome} '
-                    "foi removido. Envie o arquivo de novo.",
-                    campo=campo,
+                    f"O valor de {onde} não é um anexo enviado. Envie o arquivo de novo.", campo=campo,
                 )
+            if any((solicitacao.pk, doc_id) not in ativos for doc_id in ids):
+                raise RegraDeNegocio(f"Um anexo de {onde} foi removido. Envie o arquivo de novo.", campo=campo)

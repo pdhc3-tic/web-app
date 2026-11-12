@@ -11,7 +11,7 @@ from apps.sgd.models.demand_document import TIPO_CHOICES
 from apps.sgd.services import demand as demand_service
 from apps.sgd.services import demand_document as demand_document_service
 from apps.sgd.services import workflow as workflow_service
-from apps.sgd.services.anexos import campos_de_anexo, ids_do_campo
+from apps.sgd.services.anexos import campos_de_anexo, exigir_anexos_ativos, ids_do_campo
 from apps.sgd.services.demand_document import documentos_no_limite, exigir_pode_gerenciar_documento
 from apps.sgd.tests.factories import DemandDocumentFactory, DemandFactory, TipoSolicitacaoFactory
 from apps.sgd.views.demand_document import DemandDocumentConfirmSerializer
@@ -63,9 +63,10 @@ def test_campos_de_anexo_le_um_arquivo_e_varios():
 
 
 @pytest.mark.parametrize("valor, multiplo, esperado", [
-    (None, False, []), ("", False, []), ([], True, []),
+    (None, False, []), (None, True, []), ([], True, []),
     (7, False, [7]), ([7, 8], True, [7, 8]),
     ([7], False, None), (7, True, None), ("7", False, None), (True, False, None), ([7, "8"], True, None),
+    ([], False, None), ("", False, None), ("", True, None),
 ])
 def test_ids_do_campo_so_aceita_a_forma_do_campo(valor, multiplo, esperado):
     assert ids_do_campo(valor, multiplo=multiplo) == esperado
@@ -376,6 +377,50 @@ def test_schema_alterado_nao_derruba_a_leitura_e_barra_a_submissao(
     with pytest.raises(RegraDeNegocio) as excinfo:
         demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
     assert excinfo.value.campo == campo
+
+
+@pytest.mark.parametrize("schema_gravado, valor_gravado, schema_novo", [
+    ({"type": "array", "items": {"type": "integer", "format": "anexo"}}, [], {"type": "integer", "format": "anexo"}),
+    ({"type": "string"}, "", {"type": "array", "items": {"type": "integer", "format": "anexo"}}),
+])
+def test_campo_opcional_vazio_noutra_forma_barra_a_submissao_no_campo(
+    auth_client_solicitante, demand_rascunho_rn, solicitante_rn, tipo_com_anexos,
+    schema_gravado, valor_gravado, schema_novo,
+):
+    def schema_com(comprovante):
+        return {**SCHEMA_COM_ANEXOS, "properties": {**SCHEMA_COM_ANEXOS["properties"], "comprovante": comprovante}}
+
+    TipoSolicitacao.objects.filter(pk=tipo_com_anexos.pk).update(schema_campos=schema_com(schema_gravado))
+    arte = _anexo(demand_rascunho_rn)
+    resp = _criar(auth_client_solicitante, demand_rascunho_rn, {"arte": arte.pk, "comprovante": valor_gravado})
+    assert resp.status_code == 201
+    TipoSolicitacao.objects.filter(pk=tipo_com_anexos.pk).update(
+        schema_campos=schema_com({**schema_novo, "title": "Comprovante"}),
+    )
+
+    detalhe = auth_client_solicitante.get(f"/api/v1/sgd/demandas/{demand_rascunho_rn.pk}/")
+    assert detalhe.status_code == 200
+    with pytest.raises(RegraDeNegocio) as excinfo:
+        demand_service.submeter_demanda(demand_rascunho_rn, usuario=solicitante_rn)
+
+    assert excinfo.value.campo == "comprovante"
+    assert '"Comprovante"' in excinfo.value.mensagem
+    assert "não é um anexo enviado" in excinfo.value.mensagem
+    demand_rascunho_rn.refresh_from_db()
+    assert demand_rascunho_rn.status == "rascunho"
+
+
+@pytest.mark.parametrize("cotacoes", ["ausente", None])
+def test_campo_opcional_ausente_ou_nulo_nao_barra_a_submissao(
+    auth_client_solicitante, demand_rascunho_rn, tipo_com_anexos, cotacoes,
+):
+    arte = _anexo(demand_rascunho_rn)
+    resp = _criar(auth_client_solicitante, demand_rascunho_rn, {"arte": arte.pk})
+    assert resp.status_code == 201
+    if cotacoes is None:
+        demand_rascunho_rn.solicitacoes.update(campos_json={"arte": arte.pk, "cotacoes": None})
+
+    exigir_anexos_ativos(demand_rascunho_rn)
 
 
 def test_leitura_omite_anexo_removido(auth_client_solicitante, demand_rascunho_rn, tipo_com_anexos):
