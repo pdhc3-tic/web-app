@@ -8,13 +8,13 @@ import { ORCAMENTO_E2E_PY } from "./orcamentoE2E";
  *
  * Pools territoriais de RN em R$ 10.295,00 em diárias,
  * passagens, locação e equipamentos. A de diárias tem R$ 10.000 já reservados:
- * sobram R$ 295, e a diária de 2 dias (R$ 600) esbarra na trava territorial.
+ * sobram R$ 295, e a diária de 10 a 12/11 (R$ 750 pela tabela da #358) esbarra na trava territorial.
  *
  * Demandas em Rascunho:
  * - `vazia`: sem solicitações — o teste monta pela tela;
  * - `multipla`: passagem de R$ 6.000 (limite individual de R$ 5.000) e veículo
  *   de R$ 700 (cabe) — uma barrada, a outra não;
- * - `territorial`: a diária de R$ 600 contra os R$ 295 do território;
+ * - `territorial`: a diária (valor calculado pelo backend) contra os R$ 295 do território;
  * - `equipamento`: kit de R$ 3.000 com 2 cotações — falta 1;
  * - `equipamentoCompleto`: kit de R$ 1.000 com 3 cotações válidas;
  * - `recusada`: veículo de R$ 1.200 (limite de R$ 1.000) com o pedido de
@@ -41,7 +41,8 @@ export type MontarDemandaFixture = {
   municipioNome: string;
   vazia: Ref;
   multipla: Ref & { passagemId: number; veiculoId: number };
-  territorial: Ref & { diariaId: number };
+  /** `diariaValor`: o que o backend calculou para a diária (#358), em texto decimal. */
+  territorial: Ref & { diariaId: number; diariaValor: string };
   equipamento: Ref;
   equipamentoCompleto: Ref;
   recusada: Ref & { veiculoId: number };
@@ -178,7 +179,7 @@ print("${MARCADOR}_SETUP " + json.dumps({
     "municipioNome": municipio.nome,
     "vazia": ref(vazia),
     "multipla": ref(multipla, passagemId=passagem.pk, veiculoId=veiculo.pk),
-    "territorial": ref(territorial, diariaId=diaria.pk),
+    "territorial": ref(territorial, diariaId=diaria.pk, diariaValor=str(diaria.valor_estimado)),
     "equipamento": ref(equipamento),
     "equipamentoCompleto": ref(equipamento_completo),
     "recusada": ref(recusada, veiculoId=veiculo_recusado.pk),

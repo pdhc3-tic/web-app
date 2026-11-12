@@ -220,6 +220,59 @@ export function isTipoSolicitacao(tipo: string): tipo is TipoSolicitacao {
   return tipo in CONFIG_POR_TIPO;
 }
 
+function ehObjeto(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+const ehPrimitivo = (v: unknown) => v === null || ["string", "number", "boolean"].includes(typeof v);
+
+/**
+ * O que impede o renderizador de desenhar o schema, numa frase para o editor
+ * do catálogo (#365); `null` quando a estrutura serve. Não é um validador de
+ * JSON Schema — quem valida a regra é o backend —: confere só o formato do que
+ * o formulário lê, para que um JSON válido mas fora do lugar não derrube a tela.
+ * Tipos que o formulário não desenha (object, array) passam e viram texto.
+ */
+export function problemasDoSchema(schema: unknown): string | null {
+  if (!ehObjeto(schema)) return "O schema precisa ser um objeto JSON.";
+  const { properties, required } = schema;
+  if (properties !== undefined && !ehObjeto(properties)) {
+    return "“properties” precisa ser um objeto, com um campo por chave.";
+  }
+  if (required !== undefined && !(Array.isArray(required) && required.every((r) => typeof r === "string"))) {
+    return "“required” precisa ser uma lista de nomes de campo.";
+  }
+  for (const [chave, prop] of Object.entries(properties ?? {})) {
+    if (!ehObjeto(prop)) return `O campo “${chave}” precisa ser um objeto, como {"type": "string"}.`;
+    const { type, title, description, enum: opcoes, oneOf, minimum, maxLength } = prop;
+    const tipos = Array.isArray(type) ? type : type === undefined ? [] : [type];
+    if (!tipos.every((t) => typeof t === "string")) {
+      return `O “type” do campo “${chave}” precisa ser um texto, como "string", ou uma lista de textos.`;
+    }
+    if (title !== undefined && typeof title !== "string") return `O “title” do campo “${chave}” precisa ser texto.`;
+    if (description !== undefined && typeof description !== "string") {
+      return `A “description” do campo “${chave}” precisa ser texto.`;
+    }
+    if (opcoes !== undefined && !(Array.isArray(opcoes) && opcoes.every(ehPrimitivo))) {
+      return `O “enum” do campo “${chave}” precisa ser uma lista de valores simples (texto, número ou booleano).`;
+    }
+    if (
+      oneOf !== undefined &&
+      !(
+        Array.isArray(oneOf) &&
+        oneOf.every((o) => ehObjeto(o) && ehPrimitivo(o.const) && (o.title === undefined || typeof o.title === "string"))
+      )
+    ) {
+      return `O “oneOf” do campo “${chave}” precisa ser uma lista de {"const": valor, "title": "rótulo"}.`;
+    }
+    if (minimum !== undefined && typeof minimum !== "number") return `O “minimum” do campo “${chave}” precisa ser número.`;
+    if (maxLength !== undefined && typeof maxLength !== "number") {
+      return `O “maxLength” do campo “${chave}” precisa ser número.`;
+    }
+  }
+  return null;
+}
+
 /** O tipo do JSON Schema, sem o "null" de um campo que aceita vazio. */
 function tipoJson(prop: PropriedadeSchema): string | undefined {
   const tipos = Array.isArray(prop.type) ? prop.type : prop.type ? [prop.type] : [];
@@ -230,19 +283,23 @@ function tipoJson(prop: PropriedadeSchema): string | undefined {
 function campoDoSchema(chave: string, prop: PropriedadeSchema, obrigatorio: boolean): CampoSolicitacao {
   const base = {
     chave,
-    rotulo: prop.title || chave,
+    rotulo: typeof prop.title === "string" && prop.title ? prop.title : chave,
     obrigatorio,
-    ajuda: prop.description,
-    mensagem: prop.mensagem,
+    ajuda: typeof prop.description === "string" ? prop.description : undefined,
+    mensagem: typeof prop.mensagem === "string" ? prop.mensagem : undefined,
   };
-  if (prop.oneOf?.length) {
+  if (Array.isArray(prop.oneOf) && prop.oneOf.length) {
     return {
       ...base,
       tipo: "choice",
-      opcoes: prop.oneOf.map((o) => ({ value: String(o.const), label: o.title ?? String(o.const), original: o.const })),
+      opcoes: prop.oneOf.filter(ehObjeto).map((o) => ({
+        value: String(o.const),
+        label: typeof o.title === "string" ? o.title : String(o.const),
+        original: o.const,
+      })),
     };
   }
-  if (prop.enum?.length) {
+  if (Array.isArray(prop.enum) && prop.enum.length) {
     return {
       ...base,
       tipo: "choice",
@@ -269,8 +326,14 @@ function campoDoSchema(chave: string, prop: PropriedadeSchema, obrigatorio: bool
  * `required`, e depois os demais pela chave. O valor estimado é digitado.
  */
 export function configDoSchema(schema: SchemaCampos | null | undefined): ConfigTipo {
-  const props = schema?.properties ?? {};
-  const obrigatorios = schema?.required ?? [];
+  // Defesa para um schema salvo malformado: o que não é objeto fica de fora,
+  // em vez de derrubar a montagem. O editor do catálogo barra antes (problemasDoSchema).
+  const brutas = ehObjeto(schema?.properties) ? schema.properties : {};
+  const props = Object.fromEntries(Object.entries(brutas).filter(([, p]) => ehObjeto(p))) as Record<
+    string,
+    PropriedadeSchema
+  >;
+  const obrigatorios = Array.isArray(schema?.required) ? schema.required : [];
   const posicao = (chave: string) => {
     const x = props[chave]?.["x-ordem"];
     if (typeof x === "number") return x;
@@ -381,6 +444,8 @@ export function montarCamposJson(config: ConfigTipo, valores: ValoresCampos): Re
  * Uma linha que identifica a solicitação no cartão, pelos campos que a
  * distinguem. Num tipo do catálogo, os dois primeiros campos preenchidos.
  */
+const FORMATO_DIARIAS = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
+
 export function resumoSolicitacao(
   tipo: string,
   json: Record<string, unknown>,
@@ -390,7 +455,11 @@ export function resumoSolicitacao(
   const partes: string[] = (() => {
     switch (tipo) {
       case "diaria":
-        return [t("beneficiario_nome"), t("numero_diarias") && `${t("numero_diarias")} diária(s)`];
+        // Com a meia diária (#358), a quantidade vem "2.5": sai "2,5", como na simulação.
+        return [
+          t("beneficiario_nome"),
+          t("numero_diarias") && `${FORMATO_DIARIAS.format(Number(t("numero_diarias")))} diária(s)`,
+        ];
       case "passagem":
         return [t("passageiro_nome"), t("aeroporto_origem") && `${t("aeroporto_origem")} → ${t("aeroporto_destino")}`];
       case "veiculo":

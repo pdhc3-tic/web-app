@@ -64,8 +64,14 @@ test.describe("SGD — montar e submeter a demanda (ADT)", () => {
     await escolher(page, "campo-meio_transporte", "Rodoviário");
     await page.getByTestId("campo-municipio_destino_id").fill(fx.municipioNome);
     await page.getByRole("option", { name: fx.municipioNome, exact: true }).click();
+    // A quantidade e o valor vêm da regra do backend (#358: meia diária no dia
+    // da volta, adicional de embarque), não de uma conta no teste.
+    const simulacao = page.waitForResponse(
+      (r) => r.url().includes("/sgd/config/diarias/simular/") && r.url().includes("data_fim=2026-11-12"),
+    );
     await form.getByLabel("Data de ida").fill("2026-11-10");
     await form.getByLabel("Data de volta").fill("2026-11-12");
+    const simulado = (await (await simulacao).json()) as { numero_diarias: string; valor_total: string };
     await form.getByLabel("Justificativa").fill("Facilitação do encontro.");
 
     // A diária não tem valor digitado: quem calcula é o backend.
@@ -76,12 +82,17 @@ test.describe("SGD — montar e submeter a demanda (ADT)", () => {
     await page.getByTestId("solicitacao-salvar").click();
     await expect(form).toHaveCount(0);
 
-    // 2 diárias × R$ 300,00 (valor de teste do seed).
+    // O calculado ao salvar é o mesmo da simulação, e a quantidade sai no
+    // formato brasileiro ("2,5" com a meia diária).
+    const total = Number(simulado.valor_total)
+      .toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+      .replace(/\s/g, " ");
     const cartao = page.getByTestId("montar-solicitacoes").locator("li").first();
     await expect(cartao).toContainText("Diárias");
-    await expect(cartao).toContainText("Paulo Rocha · 2 diária(s)");
-    await expect(cartao).toContainText("R$ 600,00");
-    await expect(page.getByTestId("montar-total")).toHaveText("R$ 600,00");
+    const diarias = Number(simulado.numero_diarias).toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+    await expect(cartao).toContainText(`Paulo Rocha · ${diarias} diária(s)`);
+    await expect.poll(async () => ((await cartao.textContent()) ?? "").replace(/\s/g, " ")).toContain(total);
+    await expect.poll(async () => ((await page.getByTestId("montar-total").textContent()) ?? "").replace(/\s/g, " ")).toBe(total);
   });
 
   test("diária: o total aparece em tempo real e muda com as datas", async ({ page }) => {
@@ -206,9 +217,15 @@ test.describe("SGD — montar e submeter a demanda (ADT)", () => {
 
     const bloqueio = page.getByTestId(`bloqueio-${fx.territorial.diariaId}`);
     await expect(bloqueio).toContainText("Verba do território insuficiente.");
-    await expect(page.getByTestId(`bloqueio-valores-${fx.territorial.diariaId}`)).toHaveText(
-      "Disponível na verba do território: R$ 295,00 · Solicitado: R$ 600,00",
-    );
+    // O solicitado é o que o backend calculou para a diária (tabela da #358).
+    const solicitado = Number(fx.territorial.diariaValor)
+      .toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+      .replace(/\s/g, " ");
+    await expect
+      .poll(async () =>
+        ((await page.getByTestId(`bloqueio-valores-${fx.territorial.diariaId}`).textContent()) ?? "").replace(/\s/g, " "),
+      )
+      .toBe(`Disponível na verba do território: R$ 295,00 · Solicitado: ${solicitado}`);
     await expect(bloqueio).toContainText("Articulador Estadual");
     // A trava territorial não tem atalho: quem remaneja é o Articulador.
     await expect(page.getByTestId(`recurso-extra-atalho-${fx.territorial.diariaId}`)).toHaveCount(0);

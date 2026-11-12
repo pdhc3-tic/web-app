@@ -3,6 +3,7 @@ import {
   configDoSchema,
   configDoTipo,
   montarCamposJson,
+  problemasDoSchema,
   resumoSolicitacao,
   validarCampos,
   valoresDoCamposJson,
@@ -75,6 +76,52 @@ describe("configDoSchema (#365)", () => {
   it("os seis tipos de origem mantêm o layout próprio, ignorando o schema", () => {
     expect(configDoTipo("veiculo", HOSPEDAGEM).campos[0].chave).toBe("tipo_veiculo");
     expect(configDoTipo("hospedagem", HOSPEDAGEM).campos[0].chave).toBe("hotel");
+  });
+});
+
+describe("problemasDoSchema — estrutura que o renderizador lê (revisão do PR #420)", () => {
+  it.each([
+    [[], "O schema precisa ser um objeto JSON."],
+    [{ properties: [] }, "“properties” precisa ser um objeto"],
+    [{ required: "hotel" }, "“required” precisa ser uma lista"],
+    [{ properties: { hotel: null } }, "O campo “hotel” precisa ser um objeto"],
+    [{ properties: { hotel: "texto" } }, "O campo “hotel” precisa ser um objeto"],
+    [{ properties: { hotel: { title: { pt: "Hotel" } } } }, "O “title” do campo “hotel”"],
+    [{ properties: { hotel: { type: 1 } } }, "O “type” do campo “hotel”"],
+    [{ properties: { cat: { enum: "a" } } }, "O “enum” do campo “cat”"],
+    [{ properties: { cat: { enum: [{ a: 1 }] } } }, "O “enum” do campo “cat”"],
+    [{ properties: { q: { oneOf: [null] } } }, "O “oneOf” do campo “q”"],
+    [{ properties: { n: { minimum: "1" } } }, "O “minimum” do campo “n”"],
+  ])("%j → erro", (schema, trecho) => {
+    expect(problemasDoSchema(schema)).toContain(trecho);
+  });
+
+  it("aceita o que o backend aceita, mesmo o que o formulário desenha como texto", () => {
+    expect(problemasDoSchema(HOSPEDAGEM)).toBeNull();
+    expect(problemasDoSchema({})).toBeNull();
+    expect(
+      problemasDoSchema({
+        type: "object",
+        properties: {
+          hospede: { type: "object", required: ["nome"] },
+          qtd: { type: ["integer", "string"], pattern: "^\\d+$", minimum: 1 },
+          ok: { enum: [true, false, null] },
+        },
+        allOf: [{ if: { properties: { ok: { const: true } } }, then: { required: ["qtd"] } }],
+      }),
+    ).toBeNull();
+  });
+
+  it("um schema salvo malformado não derruba a montagem: o campo inválido fica de fora", () => {
+    const config = configDoSchema({
+      required: "hotel",
+      properties: { hotel: null, nome: { title: { x: 1 }, description: 3 }, cidade: { type: "string" } },
+    } as unknown as SchemaCampos);
+    expect(config.campos.map((c) => [c.chave, c.rotulo, c.ajuda])).toEqual([
+      ["cidade", "cidade", undefined],
+      ["nome", "nome", undefined],
+    ]);
+    expect(configDoSchema({ properties: [] } as unknown as SchemaCampos).campos).toEqual([]);
   });
 });
 
