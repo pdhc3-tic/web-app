@@ -11,7 +11,7 @@ export type BreadcrumbProps = {
   items: BreadcrumbItem[];
 };
 
-/** Trilha de navegação: "Início › SGP › UPFs › …" com o último item como página atual. */
+/** Trilha de navegação: "Início › SGP › UFPAs › …" com o último item como página atual. */
 export function Breadcrumb({ items }: BreadcrumbProps) {
   return (
     <nav aria-label="Breadcrumb">

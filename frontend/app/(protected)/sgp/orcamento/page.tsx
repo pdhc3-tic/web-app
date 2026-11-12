@@ -26,7 +26,7 @@ import {
   RUBRICA_SLUGS,
   type PoolOrcamentoApi,
 } from "@/app/lib/orcamento";
-import { fetchStateSiglaOptions, fetchTerritoryMap } from "@/app/lib/upfs";
+import { fetchStateSiglaOptions, fetchTerritoryMap } from "@/app/lib/ufpas";
 import { PainelAlertas } from "@/app/components/sgp/AlertasOrcamento/PainelAlertas";
 import { AlertaAlocacoesCriticas } from "./_components/AlertaAlocacoesCriticas";
 import { CelulaDetalheSlideOver } from "./_components/CelulaDetalheSlideOver";

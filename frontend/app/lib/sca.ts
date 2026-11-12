@@ -59,7 +59,7 @@ export type SyncDevicesPaginated = Paginated<SyncDeviceListItem> & {
  *
  * `registros_por_entidade` é um mapa `nome_entidade` → contagem, computado
  * por `services.count_pending_records_by_entity()`. Entidades esperadas na V1:
- * "upf", "member", "activity" — mas o dicionário é mantido aberto para
+ * "ufpa", "member", "activity" — mas o dicionário é mantido aberto para
  * evolução (novas entidades entram sem exigir refactor do tipo).
  */
 export type SyncDeviceDetail = SyncDeviceListItem & {
@@ -313,7 +313,7 @@ export async function fetchScaTerritoryOptions(
 /**
  * Total de dispositivos registrados — número do card da tela-índice do SCA.
  * `page_size=1` porque só interessa o `count` do envelope, mesmo padrão do
- * `fetchUpfCount` do SGP.
+ * `fetchUfpaCount` do SGP.
  */
 export async function fetchDeviceCount(signal?: AbortSignal): Promise<number> {
   const res = await apiClient("/api/v1/sca/devices/?limit=1", { signal });

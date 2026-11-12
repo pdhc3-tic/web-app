@@ -79,13 +79,13 @@ Também segue aberto o pedido do critério: **repassar os filtros de tipo, cultu
 
 ### 3.2 A4 #239 e A5 #240 — fluxo assíncrono dos relatórios
 
-> **Resolvido em 27/10/2026.** O backend já gera o Plano de Trabalho e as Atividades pelo `POST /sgp/exportacoes/` (tipos `plano_trabalho` e `atividades`); Relatórios, o Exportar do painel e as UPFs usam o mesmo fluxo (`app/lib/exportacoes.ts` e `useExportacao`).
+> **Resolvido em 27/10/2026.** O backend já gera o Plano de Trabalho e as Atividades pelo `POST /sgp/exportacoes/` (tipos `plano_trabalho` e `atividades`); Relatórios, o Exportar do painel e as UFPAs usam o mesmo fluxo (`app/lib/exportacoes.ts` e `useExportacao`).
 
-O fluxo assíncrono entregue para a listagem de UPFs (PR #306, `/sgp/exportacoes/{id}/`) **não foi estendido** à exportação do Plano de Trabalho (`/sgp/plano-trabalho/exportar/`) nem à de Atividades (`/sgp/atividades/exportar/`). As duas continuam síncronas, com o `ExportTimeoutError` do cliente (60s) como única defesa.
+O fluxo assíncrono entregue para a listagem de UFPAs (PR #306, `/sgp/exportacoes/{id}/`) **não foi estendido** à exportação do Plano de Trabalho (`/sgp/plano-trabalho/exportar/`) nem à de Atividades (`/sgp/atividades/exportar/`). As duas continuam síncronas, com o `ExportTimeoutError` do cliente (60s) como única defesa.
 
 A migração dos dois fluxos é uma issue inteira — reaproveitar o `app/lib/exportacoes.ts` combinado com a #240 — e depende de o backend oferecer o endpoint assíncrono equivalente para cada uma. Enquanto não oferece, a exportação segue síncrona.
 
-**Pedido** — `apps/sgp/services/workplan_export.py` e `activity_export.py` ganharem o fluxo `202 → GET/download/repetir` do padrão `UPF_EXPORT`, com Celery. A tabela de contrato está no PR #306.
+**Pedido** — `apps/sgp/services/workplan_export.py` e `activity_export.py` ganharem o fluxo `202 → GET/download/repetir` do padrão `UFPA_EXPORT`, com Celery. A tabela de contrato está no PR #306.
 
 ### 3.3 A6 #241 — pendência do `FIELD_ENCRYPTION_KEY` no CI
 
@@ -110,17 +110,17 @@ O NFR "paginação/scroll com volume alto, equivalente aos 10.000 registros" nã
 
 ---
 
-## 4. Busca do mapa de UPFs ignorada pelo cache (B6 da #302) — aberta na #377
+## 4. Busca do mapa de UFPAs ignorada pelo cache (B6 da #302) — aberta na #377
 
 > **Resolvido no backend em 30/10/2026 pelo PR #379.** A busca por texto saiu do `fixme` na `mapa.spec`.
 
 *Compilado em 27/10/2026, ao trocar as simulações da `mapa.spec` pelo backend real.*
 
-`GET /api/v1/upfs/mapa/` guarda a resposta por 60 s (`UPF_MAP_CACHE_TIMEOUT`), e `build_upf_map_cache_key` (`apps/sgp/cache.py`) só considera `bbox`, `municipio`, `territorio`, `projeto` e `ativo`. O `q` da busca por texto fica fora da chave. Conferido pela API em 27/10/2026: depois de `GET /upfs/mapa/` (37 UPFs), `GET /upfs/mapa/?q=texto-que-nao-existe` devolve as mesmas 37, e na ordem inversa a primeira resposta (0) volta para quem pede sem filtro.
+`GET /api/v1/sgp/ufpas/mapa/` guarda a resposta por 60 s (`UFPA_MAP_CACHE_TIMEOUT`), e `build_ufpa_map_cache_key` (`apps/sgp/cache.py`) só considera `bbox`, `municipio`, `territorio`, `projeto` e `ativo`. O `q` da busca por texto fica fora da chave. Conferido pela API em 27/10/2026: depois de `GET /ufpas/mapa/` (37 UFPAs), `GET /ufpas/mapa/?q=texto-que-nao-existe` devolve as mesmas 37, e na ordem inversa a primeira resposta (0) volta para quem pede sem filtro.
 
-Além do `q`, também ficam fora da chave `comunidade`, `cadastrado_de` e `cadastrado_ate`, todos aceitos pelo `UPFFilter` que o endpoint aplica.
+Além do `q`, também ficam fora da chave `comunidade`, `cadastrado_de` e `cadastrado_ate`, todos aceitos pelo `UFPAFilter` que o endpoint aplica.
 
-**Pedido (#377):** montar a chave com todos os parâmetros do `UPFFilter`, mais o `bbox`.
+**Pedido (#377):** montar a chave com todos os parâmetros do `UFPAFilter`, mais o `bbox`.
 
 *Estado atual no frontend:* a tela manda `?q=` corretamente. No E2E, o teste da busca sem resultado está escrito e marcado como `fixme` até a correção.
 

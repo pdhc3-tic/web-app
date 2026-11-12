@@ -111,7 +111,7 @@ const BASE_PATH = "/api/v1/metas/";
  *
  * São no máximo 7 registros (numero é 1–7 e único), então a listagem busca
  * tudo de uma vez e a tela não pagina. `page_size` acompanha o
- * PageNumberPagination do backend (UPFPagination).
+ * PageNumberPagination do backend (UFPAPagination).
  */
 export async function listMetas(
   signal?: AbortSignal,

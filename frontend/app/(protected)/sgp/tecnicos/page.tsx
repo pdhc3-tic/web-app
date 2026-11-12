@@ -17,7 +17,7 @@ import {
   listTecnicosSGP,
   type TecnicoListItem,
 } from "@/app/lib/tecnicos";
-import { fetchTerritoryOptions } from "@/app/lib/upfs";
+import { fetchTerritoryOptions } from "@/app/lib/ufpas";
 import { useSession } from "next-auth/react";
 import {
   EMPTY_FILTERS,

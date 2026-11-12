@@ -5,49 +5,49 @@ import { Search, X } from "lucide-react";
 import { Label } from "@/app/components/ui/Label/Label";
 import { ErrorIcon } from "@/app/components/icons";
 import Spinner from "@/app/components/icons/Spinner";
-import { listUpfs, type UpfListItem } from "@/app/lib/upfs";
+import { listUfpas, type UfpaListItem } from "@/app/lib/ufpas";
 import { listMembros, type MembroListItem } from "@/app/lib/membros";
 import {
-  PENDING_UPF_ID,
+  PENDING_UFPA_ID,
   fieldId,
   type MembroRef,
-  type UpfRef,
+  type UfpaRef,
 } from "./formModel";
 
 const SEARCH_DEBOUNCE_MS = 300;
 const SEARCH_LIMIT = 10;
 
 type Props = {
-  upfs: UpfRef[];
+  ufpas: UfpaRef[];
   membros: MembroRef[];
   onChange: (patch: {
-    upfs_participantes?: UpfRef[];
+    ufpas_participantes?: UfpaRef[];
     membros_participantes?: MembroRef[];
   }) => void;
   errors: Record<string, string>;
 };
 
 /**
- * Seleção de UPFs e membros participantes.
+ * Seleção de UFPAs e membros participantes.
  *
- * A busca de UPF usa o mesmo filtro `q` do módulo Famílias/UPFs (nome do titular
- * ou CPF). Os membros oferecidos são os das UPFs já selecionadas — remover uma
- * UPF remove junto os membros dela. A contagem de participantes é derivada dos
+ * A busca de UFPA usa o mesmo filtro `q` do módulo Famílias/UFPAs (nome do titular
+ * ou CPF). Os membros oferecidos são os das UFPAs já selecionadas — remover uma
+ * UFPA remove junto os membros dela. A contagem de participantes é derivada dos
  * membros e nunca editável.
  */
 export function ParticipantesSection({
-  upfs,
+  ufpas,
   membros,
   onChange,
   errors,
 }: Props) {
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
-  const [resultados, setResultados] = useState<UpfListItem[]>([]);
+  const [resultados, setResultados] = useState<UfpaListItem[]>([]);
   const [buscando, setBuscando] = useState(false);
   const [erroBusca, setErroBusca] = useState<string | null>(null);
 
-  const [membrosPorUpf, setMembrosPorUpf] = useState<
+  const [membrosPorUfpa, setMembrosPorUfpa] = useState<
     Record<number, MembroListItem[]>
   >({});
   const [carregandoMembros, setCarregandoMembros] = useState(false);
@@ -68,12 +68,12 @@ export function ParticipantesSection({
     return () => clearTimeout(t);
   }, [query]);
 
-  // Busca de UPFs por nome do titular ou CPF.
+  // Busca de UFPAs por nome do titular ou CPF.
   useEffect(() => {
     const termo = debounced.trim();
     if (termo === "") {
       // Descarta o resultado anterior para não piscar itens obsoletos quando o
-      // usuário limpa a busca. Mesmo padrão do CatalogoCombobox do módulo UPF.
+      // usuário limpa a busca. Mesmo padrão do CatalogoCombobox do módulo UFPA.
       /* eslint-disable react-hooks/set-state-in-effect */
       setResultados([]);
       setBuscando(false);
@@ -83,7 +83,7 @@ export function ParticipantesSection({
     const controller = new AbortController();
     setBuscando(true);
     setErroBusca(null);
-    listUpfs(
+    listUfpas(
       { limit: SEARCH_LIMIT, offset: 0, search: termo, status: "ativas" },
       controller.signal,
     )
@@ -93,7 +93,7 @@ export function ParticipantesSection({
       })
       .catch(() => {
         if (controller.signal.aborted) return;
-        setErroBusca("Não foi possível buscar UPFs. Tente novamente.");
+        setErroBusca("Não foi possível buscar UFPAs. Tente novamente.");
         setResultados([]);
       })
       .finally(() => {
@@ -102,9 +102,9 @@ export function ParticipantesSection({
     return () => controller.abort();
   }, [debounced]);
 
-  // Carrega os membros de cada UPF selecionada que ainda não está em cache.
+  // Carrega os membros de cada UFPA selecionada que ainda não está em cache.
   useEffect(() => {
-    const pendentes = upfs.filter((u) => !(u.id in membrosPorUpf));
+    const pendentes = ufpas.filter((u) => !(u.id in membrosPorUfpa));
     if (pendentes.length === 0) return;
 
     const controller = new AbortController();
@@ -119,27 +119,27 @@ export function ParticipantesSection({
     )
       .then((pares) => {
         if (controller.signal.aborted) return;
-        setMembrosPorUpf((prev) => {
+        setMembrosPorUfpa((prev) => {
           const next = { ...prev };
-          for (const [upfId, lista] of pares) next[upfId] = lista;
+          for (const [ufpaId, lista] of pares) next[ufpaId] = lista;
           return next;
         });
 
         // Prefill de edição: os membros já selecionados chegam sem nome e sem
-        // UPF (só o id). Agora que a lista de cada UPF carregou, dá para
+        // UFPA (só o id). Agora que a lista de cada UFPA carregou, dá para
         // completá-los — sem isso, "Desmarcar todos" não os alcançaria.
         const pendentesSelecionados = membrosRef.current.some(
-          (m) => m.upfId === PENDING_UPF_ID,
+          (m) => m.ufpaId === PENDING_UFPA_ID,
         );
         if (!pendentesSelecionados) return;
 
-        const porId = new Map<number, { nome: string; upfId: number }>();
-        for (const [upfId, lista] of pares) {
-          for (const m of lista) porId.set(m.id, { nome: m.nome_completo, upfId });
+        const porId = new Map<number, { nome: string; ufpaId: number }>();
+        for (const [ufpaId, lista] of pares) {
+          for (const m of lista) porId.set(m.id, { nome: m.nome_completo, ufpaId });
         }
         onChangeRef.current({
           membros_participantes: membrosRef.current.map((m) => {
-            if (m.upfId !== PENDING_UPF_ID) return m;
+            if (m.ufpaId !== PENDING_UFPA_ID) return m;
             const resolvido = porId.get(m.id);
             return resolvido ? { id: m.id, ...resolvido } : m;
           }),
@@ -150,14 +150,14 @@ export function ParticipantesSection({
       });
 
     return () => controller.abort();
-  }, [upfs, membrosPorUpf]);
+  }, [ufpas, membrosPorUfpa]);
 
-  const adicionarUpf = useCallback(
-    (item: UpfListItem) => {
-      if (upfs.some((u) => u.id === item.id)) return;
+  const adicionarUfpa = useCallback(
+    (item: UfpaListItem) => {
+      if (ufpas.some((u) => u.id === item.id)) return;
       onChange({
-        upfs_participantes: [
-          ...upfs,
+        ufpas_participantes: [
+          ...ufpas,
           { id: item.id, nome: item.nome_titular, cpf: item.cpf },
         ],
       });
@@ -165,27 +165,27 @@ export function ParticipantesSection({
       setResultados([]);
       searchInputRef.current?.focus();
     },
-    [upfs, onChange],
+    [ufpas, onChange],
   );
 
-  const removerUpf = useCallback(
-    (upfId: number) => {
+  const removerUfpa = useCallback(
+    (ufpaId: number) => {
       onChange({
-        upfs_participantes: upfs.filter((u) => u.id !== upfId),
-        // Membros da UPF removida saem junto da seleção.
-        membros_participantes: membros.filter((m) => m.upfId !== upfId),
+        ufpas_participantes: ufpas.filter((u) => u.id !== ufpaId),
+        // Membros da UFPA removida saem junto da seleção.
+        membros_participantes: membros.filter((m) => m.ufpaId !== ufpaId),
       });
     },
-    [upfs, membros, onChange],
+    [ufpas, membros, onChange],
   );
 
   const toggleMembro = useCallback(
-    (membro: MembroListItem, upfId: number, marcado: boolean) => {
+    (membro: MembroListItem, ufpaId: number, marcado: boolean) => {
       onChange({
         membros_participantes: marcado
           ? [
               ...membros,
-              { id: membro.id, nome: membro.nome_completo, upfId },
+              { id: membro.id, nome: membro.nome_completo, ufpaId },
             ]
           : membros.filter((m) => m.id !== membro.id),
       });
@@ -193,39 +193,39 @@ export function ParticipantesSection({
     [membros, onChange],
   );
 
-  const toggleTodosDaUpf = useCallback(
-    (upfId: number, marcar: boolean) => {
-      const lista = membrosPorUpf[upfId] ?? [];
+  const toggleTodosDaUfpa = useCallback(
+    (ufpaId: number, marcar: boolean) => {
+      const lista = membrosPorUfpa[ufpaId] ?? [];
       if (marcar) {
         const jaSelecionados = new Set(membros.map((m) => m.id));
         const novos = lista
           .filter((m) => !jaSelecionados.has(m.id))
-          .map((m) => ({ id: m.id, nome: m.nome_completo, upfId }));
+          .map((m) => ({ id: m.id, nome: m.nome_completo, ufpaId }));
         onChange({ membros_participantes: [...membros, ...novos] });
       } else {
         onChange({
-          membros_participantes: membros.filter((m) => m.upfId !== upfId),
+          membros_participantes: membros.filter((m) => m.ufpaId !== ufpaId),
         });
       }
     },
-    [membrosPorUpf, membros, onChange],
+    [membrosPorUfpa, membros, onChange],
   );
 
   const selecionados = new Set(membros.map((m) => m.id));
 
   return (
     <div className="flex flex-col gap-4">
-      {/* ── Busca de UPFs ───────────────────────────────────────────────── */}
+      {/* ── Busca de UFPAs ───────────────────────────────────────────────── */}
       <div className="flex flex-col gap-1">
-        <Label htmlFor={fieldId("upfs_participantes")}>
-          UPFs participantes
+        <Label htmlFor={fieldId("ufpas_participantes")}>
+          UFPAs participantes
         </Label>
         <div className="relative">
           <div className="flex h-9 items-center gap-2 rounded-md border border-border bg-surface px-3 text-sm text-text focus-within:border-2 focus-within:border-primary">
             <Search className="h-3.5 w-3.5 shrink-0 text-text-muted" />
             <input
               ref={searchInputRef}
-              id={fieldId("upfs_participantes")}
+              id={fieldId("ufpas_participantes")}
               type="search"
               autoComplete="off"
               value={query}
@@ -241,24 +241,24 @@ export function ParticipantesSection({
           {query.trim() !== "" && !buscando && (
             <ul
               role="listbox"
-              aria-label="Resultados da busca de UPFs"
+              aria-label="Resultados da busca de UFPAs"
               className="absolute left-0 right-0 top-full z-30 mt-1 max-h-64 list-none overflow-y-auto rounded-md border border-border bg-surface py-1 shadow-lg"
             >
               {erroBusca ? (
                 <li className="px-3 py-3 text-sm text-error-text">{erroBusca}</li>
               ) : resultados.length === 0 ? (
                 <li className="px-3 py-3 text-sm text-text-muted">
-                  Nenhuma UPF encontrada.
+                  Nenhuma UFPA encontrada.
                 </li>
               ) : (
                 resultados.map((item) => {
-                  const jaAdicionada = upfs.some((u) => u.id === item.id);
+                  const jaAdicionada = ufpas.some((u) => u.id === item.id);
                   return (
                     <li key={item.id} role="option" aria-selected={jaAdicionada}>
                       <button
                         type="button"
                         disabled={jaAdicionada}
-                        onClick={() => adicionarUpf(item)}
+                        onClick={() => adicionarUfpa(item)}
                         className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <span className="truncate text-text">
@@ -276,9 +276,9 @@ export function ParticipantesSection({
           )}
         </div>
 
-        {upfs.length > 0 && (
+        {ufpas.length > 0 && (
           <ul className="mt-2 flex list-none flex-wrap gap-2">
-            {upfs.map((u) => (
+            {ufpas.map((u) => (
               <li
                 key={u.id}
                 className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-muted py-1 pl-3 pr-1 text-xs text-text"
@@ -286,8 +286,8 @@ export function ParticipantesSection({
                 <span>{u.nome}</span>
                 <button
                   type="button"
-                  aria-label={`Remover UPF ${u.nome}`}
-                  onClick={() => removerUpf(u.id)}
+                  aria-label={`Remover UFPA ${u.nome}`}
+                  onClick={() => removerUfpa(u.id)}
                   className="inline-flex h-5 w-5 items-center justify-center rounded-full text-text-muted hover:bg-surface hover:text-text"
                 >
                   <X className="h-3 w-3" />
@@ -304,9 +304,9 @@ export function ParticipantesSection({
           Membros participantes
         </legend>
 
-        {upfs.length === 0 ? (
+        {ufpas.length === 0 ? (
           <p className="text-xs text-text-muted">
-            Selecione ao menos uma UPF para escolher os membros participantes.
+            Selecione ao menos uma UFPA para escolher os membros participantes.
           </p>
         ) : carregandoMembros ? (
           <p className="flex items-center gap-2 text-xs text-text-muted">
@@ -315,8 +315,8 @@ export function ParticipantesSection({
           </p>
         ) : (
           <div className="flex flex-col gap-3">
-            {upfs.map((u) => {
-              const lista = membrosPorUpf[u.id] ?? [];
+            {ufpas.map((u) => {
+              const lista = membrosPorUfpa[u.id] ?? [];
               const todosMarcados =
                 lista.length > 0 && lista.every((m) => selecionados.has(m.id));
               return (
@@ -331,7 +331,7 @@ export function ParticipantesSection({
                     {lista.length > 0 && (
                       <button
                         type="button"
-                        onClick={() => toggleTodosDaUpf(u.id, !todosMarcados)}
+                        onClick={() => toggleTodosDaUfpa(u.id, !todosMarcados)}
                         className="text-xs text-primary hover:underline"
                       >
                         {todosMarcados
@@ -343,7 +343,7 @@ export function ParticipantesSection({
 
                   {lista.length === 0 ? (
                     <p className="text-xs text-text-muted">
-                      Esta UPF não tem membros cadastrados.
+                      Esta UFPA não tem membros cadastrados.
                     </p>
                   ) : (
                     <ul className="grid list-none gap-1 sm:grid-cols-2">
@@ -391,7 +391,7 @@ export function ParticipantesSection({
         </span>
         <output
           id={fieldId("total_participantes")}
-          htmlFor={fieldId("upfs_participantes")}
+          htmlFor={fieldId("ufpas_participantes")}
           aria-live="polite"
           className="ml-auto text-sm font-medium tabular-nums text-text"
         >

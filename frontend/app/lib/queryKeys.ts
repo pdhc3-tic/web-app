@@ -3,8 +3,8 @@
  *
  * Chaves montadas por escopo → recurso → sub-recurso: `invalidateQueries` com
  * um prefixo mais curto atinge todos os descendentes de uma vez. Ex.:
- * `queryClient.invalidateQueries({ queryKey: qk.upf(id).all })` invalida
- * membros, produção, documentos e histórico daquela UPF sem precisar listar.
+ * `queryClient.invalidateQueries({ queryKey: qk.ufpa(id).all })` invalida
+ * membros, produção, documentos e histórico daquela UFPA sem precisar listar.
  *
  * Sempre acessar via este arquivo: chaves cruas espalhadas pelo código levam
  * a strings divergentes entre o `useQuery` e o `invalidate`, e o bug só
@@ -13,17 +13,17 @@
 export const qk = {
   /** Choices do SGP — uma carga por sessão (#272). */
   choices: ["sgp", "choices"] as const,
-  upf: (id: string | number) => {
-    const upfId = String(id);
+  ufpa: (id: string | number) => {
+    const ufpaId = String(id);
     return {
-      /** Todas as consultas dessa UPF — usar para invalidação em massa. */
-      all: ["upf", upfId] as const,
-      membros: ["upf", upfId, "membros"] as const,
-      membrosResumo: ["upf", upfId, "membros", "resumo"] as const,
-      producao: ["upf", upfId, "producao"] as const,
-      documentos: ["upf", upfId, "documentos"] as const,
+      /** Todas as consultas dessa UFPA — usar para invalidação em massa. */
+      all: ["ufpa", ufpaId] as const,
+      membros: ["ufpa", ufpaId, "membros"] as const,
+      membrosResumo: ["ufpa", ufpaId, "membros", "resumo"] as const,
+      producao: ["ufpa", ufpaId, "producao"] as const,
+      documentos: ["ufpa", ufpaId, "documentos"] as const,
       historico: (page: number, pageSize: number) =>
-        ["upf", upfId, "historico", { page, pageSize }] as const,
+        ["ufpa", ufpaId, "historico", { page, pageSize }] as const,
     };
   },
   /** Detalhe de uma atividade — contexto herdado pela nova demanda (#294). */
@@ -125,7 +125,7 @@ export const qk = {
   /** Busca de atividades elegíveis no formulário de nova demanda (#294). */
   atividadesElegiveis: (busca: string) =>
     ["sgp", "atividades", "elegiveis", { busca }] as const,
-  /** Tarefa assíncrona de exportação da listagem de UPFs (#240). */
+  /** Tarefa assíncrona de exportação da listagem de UFPAs (#240). */
   /** Job de exportação assíncrona do SGP (`/sgp/exportacoes/{id}/`), qualquer tipo. */
   exportacao: (id: string) => ["sgp", "exportacao", id] as const,
   /** Execução por rubrica e custo por atividade (#297) e as opções dos filtros. */

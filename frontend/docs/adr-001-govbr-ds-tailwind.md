@@ -89,8 +89,8 @@ na diretiva `@import` e a importação separada de tema e utilidades, omitindo `
    |------|-------|------------|
    | 1 (piloto) | `/styleguide/govbr-spike`, `/esqueci-minha-senha`, `/redefinir-senha` | 2 pts |
    | 2 | `/login`, `/dashboard`, cabeçalho e menu | 3 pts |
-   | 3 | SGP: `/sgp/upfs`, `/sgp/atividades`, `/sgp/metas` (telas de leitura e busca primeiro) | 5 pts |
-   | 4 | SGP: formulários de edição (UPF, Atividade, Membros) | 5 pts |
+   | 3 | SGP: `/sgp/ufpas`, `/sgp/atividades`, `/sgp/metas` (telas de leitura e busca primeiro) | 5 pts |
+   | 4 | SGP: formulários de edição (UFPA, Atividade, Membros) | 5 pts |
    | 5 | SGD: `/sgd/demandas` (listagem + master-detail), `/sgd/execucao` | 5 pts |
    | 6 | SGD: montagem de demanda, configurações, Arlo | 5 pts |
    | 7 | SCA, administração, integrações | 3 pts |

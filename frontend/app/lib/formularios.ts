@@ -15,7 +15,7 @@ export type FormResponseOrigem = "web" | "sca";
  */
 export type FormResponseListItem = {
   id: number;
-  upf: number;
+  ufpa: number;
   formulario_id: number;
   formulario_nome: string;
   formulario_versao: string;
@@ -90,16 +90,16 @@ function buildQuery(params: ListFormResponsesParams): string {
 }
 
 /**
- * GET /api/v1/sgp/upfs/{upfId}/formularios/ — respostas paginadas da UPF.
+ * GET /api/v1/sgp/ufpas/{ufpaId}/formularios/ — respostas paginadas da UFPA.
  * Endpoint usa PageNumberPagination (HistoricoPagination), não LimitOffset.
  */
 export async function listFormResponses(
-  upfId: string | number,
+  ufpaId: string | number,
   params: ListFormResponsesParams = {},
   signal?: AbortSignal,
 ): Promise<Paginated<FormResponseListItem>> {
   const qs = buildQuery(params);
-  const url = `/api/v1/sgp/upfs/${upfId}/formularios/${qs ? `?${qs}` : ""}`;
+  const url = `/api/v1/sgp/ufpas/${ufpaId}/formularios/${qs ? `?${qs}` : ""}`;
   const res = await apiClient(url, { signal });
   return res.json();
 }
@@ -135,14 +135,14 @@ function ordenarOpcoes(
  * que um `page_size` grande cobre tudo.
  */
 async function varrerFormulariosRespondidos(
-  upfId: string | number,
+  ufpaId: string | number,
   signal?: AbortSignal,
 ): Promise<FormularioRespondidoOption[]> {
   const porId = new Map<number, string>();
 
   for (let page = 1; page <= MAX_PAGINAS; page++) {
     const data = await listFormResponses(
-      upfId,
+      ufpaId,
       { page, page_size: OPCOES_PAGE_SIZE },
       signal,
     );
@@ -163,9 +163,9 @@ async function varrerFormulariosRespondidos(
 }
 
 /**
- * Formulários com ao menos uma resposta nesta UPF, para popular o filtro.
+ * Formulários com ao menos uma resposta nesta UFPA, para popular o filtro.
  *
- * Consome `GET /api/v1/sgp/upfs/{id}/formularios/opcoes/` — metadado não
+ * Consome `GET /api/v1/sgp/ufpas/{id}/formularios/opcoes/` — metadado não
  * paginado, que sempre reflete o conjunto completo e não é afetado pela página
  * corrente nem pelos demais filtros. Não confundir com a BE-18
  * (`formularios-disponiveis`), que lista o que está publicado para *novo*
@@ -175,12 +175,12 @@ async function varrerFormulariosRespondidos(
  * páginas da listagem — mais cara, mas igualmente completa.
  */
 export async function listFormulariosRespondidos(
-  upfId: string | number,
+  ufpaId: string | number,
   signal?: AbortSignal,
 ): Promise<FormularioRespondidoOption[]> {
   try {
     const res = await apiClient(
-      `/api/v1/sgp/upfs/${upfId}/formularios/opcoes/`,
+      `/api/v1/sgp/ufpas/${ufpaId}/formularios/opcoes/`,
       { signal },
     );
     const data = (await res.json()) as FormularioRespondidoOption[];
@@ -192,20 +192,20 @@ export async function listFormulariosRespondidos(
     );
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) {
-      return varrerFormulariosRespondidos(upfId, signal);
+      return varrerFormulariosRespondidos(ufpaId, signal);
     }
     throw e;
   }
 }
 
-/** GET /api/v1/sgp/upfs/{upfId}/formularios/{id}/ — resposta + respostas_json. */
+/** GET /api/v1/sgp/ufpas/{ufpaId}/formularios/{id}/ — resposta + respostas_json. */
 export async function getFormResponse(
-  upfId: string | number,
+  ufpaId: string | number,
   id: string | number,
   signal?: AbortSignal,
 ): Promise<FormResponseDetail> {
   const res = await apiClient(
-    `/api/v1/sgp/upfs/${upfId}/formularios/${id}/`,
+    `/api/v1/sgp/ufpas/${ufpaId}/formularios/${id}/`,
     { signal },
   );
   return res.json();
@@ -247,7 +247,7 @@ function nomeDoContentDisposition(header: string | null): string | null {
 
 /** Fallback quando o header não veio ou é ilegível. */
 function nomeDerivadoLocalmente(
-  upfId: string | number,
+  ufpaId: string | number,
   formato: FormatoExportRespostas,
 ): string {
   const agora = new Date();
@@ -260,7 +260,7 @@ function nomeDerivadoLocalmente(
     pad(agora.getMinutes()),
     pad(agora.getSeconds()),
   ].join("-");
-  return `respostas_formularios_upf_${upfId}_${stamp}.${formato}`;
+  return `respostas_formularios_ufpa_${ufpaId}_${stamp}.${formato}`;
 }
 
 function dispararDownload(blob: Blob, nome: string): void {
@@ -275,7 +275,7 @@ function dispararDownload(blob: Blob, nome: string): void {
 }
 
 /**
- * GET /api/v1/sgp/upfs/{upfId}/formularios/exportar/?formato=csv|pdf&<filtros>
+ * GET /api/v1/sgp/ufpas/{ufpaId}/formularios/exportar/?formato=csv|pdf&<filtros>
  *
  * Envia os mesmos filtros da listagem (BE-16 e BE-20 compartilham o
  * `FormResponseFilter`). Não paginado — o arquivo cobre TODAS as respostas
@@ -284,7 +284,7 @@ function dispararDownload(blob: Blob, nome: string): void {
  * Retorna o nome do arquivo entregue (útil para o toast).
  */
 export async function exportarRespostasFormularios(
-  upfId: string | number,
+  ufpaId: string | number,
   filtros: Omit<ListFormResponsesParams, "page" | "page_size"> & {
     formato: FormatoExportRespostas;
   },
@@ -305,7 +305,7 @@ export async function exportarRespostasFormularios(
   let res: Response;
   try {
     res = await apiClient(
-      `/api/v1/sgp/upfs/${upfId}/formularios/exportar/?${qs.toString()}`,
+      `/api/v1/sgp/ufpas/${ufpaId}/formularios/exportar/?${qs.toString()}`,
       { signal: AbortSignal.timeout(EXPORT_RESPOSTAS_TIMEOUT_MS) },
     );
   } catch (e) {
@@ -317,13 +317,13 @@ export async function exportarRespostasFormularios(
 
   const nome =
     nomeDoContentDisposition(res.headers.get("Content-Disposition")) ??
-    nomeDerivadoLocalmente(upfId, formato);
+    nomeDerivadoLocalmente(ufpaId, formato);
 
   dispararDownload(await res.blob(), nome);
   return nome;
 }
 
-// ─── BE-18: formulários publicados que a UPF pode responder ─────────────────
+// ─── BE-18: formulários publicados que a UFPA pode responder ─────────────────
 
 /** Espelha apps/sgp/serializers.py::AvailableFormSerializer. */
 export type AvailableForm = {
@@ -336,7 +336,7 @@ export type AvailableForm = {
 
 /**
  * GET /api/v1/sgp/formularios-disponiveis/ — formulários "publicado" com
- * escopo `upf` e território do usuário (ou globais). Não paginado.
+ * escopo `ufpa` e território do usuário (ou globais). Não paginado.
  */
 export async function listAvailableForms(
   signal?: AbortSignal,

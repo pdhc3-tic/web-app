@@ -19,7 +19,7 @@ import {
   type AtividadeListItem,
 } from "@/app/lib/atividades";
 import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
-import { fetchProjetoOptions, fetchTerritoryOptions } from "@/app/lib/upfs";
+import { fetchProjetoOptions, fetchTerritoryOptions } from "@/app/lib/ufpas";
 import {
   AtividadesFilters,
   EMPTY_FILTERS,

@@ -1,9 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 import { storageStatePath } from "./helpers/users";
-import { primeiroUpfId } from "./helpers/upf";
+import { primeiroUfpaId } from "./helpers/ufpa";
 
 /**
- * Aba "Formulários" na ficha da UPF (#178) — testa integração da tabela +
+ * Aba "Formulários" na ficha da UFPA (#178) — testa integração da tabela +
  * modal de detalhe (#179) + empty state com CTA (stub, wire em #181) +
  * filtros (#180: formulário, período, respondente + URL sync).
  *
@@ -14,17 +14,17 @@ import { primeiroUpfId } from "./helpers/upf";
  * contrato (BE-18) e não faz parte da #180.
  */
 
-test.describe("SGP — Aba Formulários na UPF", () => {
+test.describe("SGP — Aba Formulários na UFPA", () => {
   test.use({ storageState: storageStatePath("ugp") });
 
-  test("UPF sem respostas exibe empty state com CTA de preenchimento", async ({
+  test("UFPA sem respostas exibe empty state com CTA de preenchimento", async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
-    await page.goto(`/sgp/upfs/${upfId}?tab=formularios`);
+    const ufpaId = primeiroUfpaId();
+    await page.goto(`/sgp/ufpas/${ufpaId}?tab=formularios`);
 
     // Aguarda a ficha carregar — sem isto a aba pode ainda estar mostrando o
-    // skeleton do fetch da UPF.
+    // skeleton do fetch da UFPA.
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
     // A aba "Formulários" precisa aparecer no tablist (critério da issue).
@@ -53,10 +53,10 @@ test.describe("SGP — Aba Formulários na UPF", () => {
   test("com filtro ativo o estado vazio fala da busca, não do histórico da família", async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
+    const ufpaId = primeiroUfpaId();
     // Filtro que não casa com nada: o texto do aceite não pode aparecer aqui,
     // senão sugere que a família nunca respondeu formulário algum.
-    await page.goto(`/sgp/upfs/${upfId}?respondente=zzz-inexistente&tab=formularios`);
+    await page.goto(`/sgp/ufpas/${ufpaId}?respondente=zzz-inexistente&tab=formularios`);
 
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await expect(
@@ -74,8 +74,8 @@ test.describe("SGP — Aba Formulários na UPF", () => {
   }) => {
     // Verifica só a abertura do SlideOver — não depende de seed de
     // FormularioSGF, o SlideOver mostra empty state se não houver forms.
-    const upfId = primeiroUpfId();
-    await page.goto(`/sgp/upfs/${upfId}?tab=formularios`);
+    const ufpaId = primeiroUfpaId();
+    await page.goto(`/sgp/ufpas/${ufpaId}?tab=formularios`);
 
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await page.getByTestId("formularios-preencher-novo").click();
@@ -88,7 +88,7 @@ test.describe("SGP — Aba Formulários na UPF", () => {
   test("seletor sem formulários publicados mostra o texto exato do aceite", async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
+    const ufpaId = primeiroUfpaId();
 
     // O seed pode ou não ter formulário publicado; o estado vazio é do
     // catálogo (BE-18), então fixamos a resposta para exercitá-lo sempre.
@@ -102,7 +102,7 @@ test.describe("SGP — Aba Formulários na UPF", () => {
         : route.fallback(),
     );
 
-    await page.goto(`/sgp/upfs/${upfId}?tab=formularios`);
+    await page.goto(`/sgp/ufpas/${ufpaId}?tab=formularios`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await page.getByTestId("formularios-preencher-novo").click();
 
@@ -130,8 +130,8 @@ test.describe("SGP — Aba Formulários na UPF", () => {
     "escolher formulário no seletor navega para o placeholder do motor SGF",
     async ({ page }) => {
       // Depende de FormularioSGF publicado no seed — ainda não coberto.
-      const upfId = primeiroUpfId();
-      await page.goto(`/sgp/upfs/${upfId}?tab=formularios`);
+      const ufpaId = primeiroUfpaId();
+      await page.goto(`/sgp/ufpas/${ufpaId}?tab=formularios`);
       await page.getByTestId("formularios-preencher-novo").click();
 
       const seletor = page.getByTestId("preencher-formulario-slideover");
@@ -146,7 +146,7 @@ test.describe("SGP — Aba Formulários na UPF", () => {
 
       await primeiraOpcao.click();
       await expect(page).toHaveURL(
-        new RegExp(`/sgf/formularios/${formularioId}/preencher\\?upf=${upfId}$`),
+        new RegExp(`/sgf/formularios/${formularioId}/preencher\\?ufpa=${ufpaId}$`),
       );
       await expect(
         page.getByTestId("preencher-formulario-placeholder"),
@@ -161,8 +161,8 @@ test.describe("SGP — Aba Formulários na UPF", () => {
       // ordenação e modal são critério da #178/#179, não da #180. Ao retomar,
       // ancorar a assertion do modal em `respostas_json` conhecido — o seed
       // grava `atividade_principal` no formulário recente.
-      const upfId = primeiroUpfId();
-      await page.goto(`/sgp/upfs/${upfId}?tab=formularios`);
+      const ufpaId = primeiroUfpaId();
+      await page.goto(`/sgp/ufpas/${ufpaId}?tab=formularios`);
 
       const linhas = page.locator('tr[data-testid^="formulario-row-"]');
       await expect(linhas.first()).toBeVisible();
@@ -176,7 +176,7 @@ test.describe("SGP — Aba Formulários na UPF", () => {
 
 /**
  * Filtros da aba (#180) contra o dado real do `seed_demo._form_responses`, que
- * concentra as respostas na UPF de menor id — a mesma que `primeiroUpfId()`
+ * concentra as respostas na UFPA de menor id — a mesma que `primeiroUfpaId()`
  * devolve. O contrato do seed, que é o que estes testes assumem:
  *
  * - `Diagnóstico produtivo` (v1.0): 28 respostas, **uma por dia**, do dia do
@@ -253,7 +253,7 @@ test.describe("SGP — Filtros da aba Formulários", () => {
   }
 
   /**
-   * Data da resposta mais recente da UPF — o "dia 0" do seed.
+   * Data da resposta mais recente da UFPA — o "dia 0" do seed.
    *
    * A listagem vem ordenada por `-data_preenchimento` (`FormResponse.Meta`),
    * então a primeira linha da primeira página é sempre a mais nova. Toda janela
@@ -303,10 +303,10 @@ test.describe("SGP — Filtros da aba Formulários", () => {
 
   /** Abre a aba já com a tabela carregada (não o empty state). */
   async function abrirComRespostas(page: Page): Promise<void> {
-    const upfId = primeiroUpfId();
-    await page.goto(`/sgp/upfs/${upfId}?tab=formularios`);
+    const ufpaId = primeiroUfpaId();
+    await page.goto(`/sgp/ufpas/${ufpaId}?tab=formularios`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    // A UPF do seed tem 31 respostas: a primeira página vem cheia. Serve de
+    // A UFPA do seed tem 31 respostas: a primeira página vem cheia. Serve de
     // linha de base para `contarJaRenderizado` distinguir o antes do depois.
     await expect(linhas(page)).toHaveCount(PAGE_SIZE);
   }
@@ -526,7 +526,7 @@ test.describe("SGP — Opções do filtro de formulário", () => {
   function resposta(id: number, formularioId: number, nome: string) {
     return {
       id,
-      upf: 1,
+      ufpa: 1,
       formulario_id: formularioId,
       formulario_nome: nome,
       formulario_versao: "1.0",
@@ -549,7 +549,7 @@ test.describe("SGP — Opções do filtro de formulário", () => {
       }),
     );
 
-    await page.route(/\/api\/v1\/sgp\/upfs\/\d+\/formularios\/(\?|$)/, async (route) => {
+    await page.route(/\/api\/v1\/sgp\/ufpas\/\d+\/formularios\/(\?|$)/, async (route) => {
       const params = new URL(route.request().url()).searchParams;
       const page1 = (params.get("page") ?? "1") === "1";
       await route.fulfill({
@@ -571,10 +571,10 @@ test.describe("SGP — Opções do filtro de formulário", () => {
   test("formulário cuja resposta está fora da 1ª página aparece ao abrir a aba", async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
+    const ufpaId = primeiroUfpaId();
     await stubRespostasEmDuasPaginas(page);
 
-    await page.goto(`/sgp/upfs/${upfId}?tab=formularios`);
+    await page.goto(`/sgp/ufpas/${ufpaId}?tab=formularios`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
     // Sem clicar em nada nem paginar: a opção distante já está no select.
@@ -611,7 +611,7 @@ test.describe("SGP — Opções do filtro de formulário", () => {
       }),
     );
 
-    await page.route(/\/api\/v1\/sgp\/upfs\/\d+\/formularios\/(\?|$)/, async (route) => {
+    await page.route(/\/api\/v1\/sgp\/ufpas\/\d+\/formularios\/(\?|$)/, async (route) => {
       const params = new URL(route.request().url()).searchParams;
       const pagina = Number(params.get("page") ?? "1");
 
@@ -653,10 +653,10 @@ test.describe("SGP — Opções do filtro de formulário", () => {
   test("a seleção do formulário sobrevive à troca de página da tabela", async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
+    const ufpaId = primeiroUfpaId();
     await stubComPaginacaoNaTabela(page);
 
-    await page.goto(`/sgp/upfs/${upfId}?tab=formularios`);
+    await page.goto(`/sgp/ufpas/${ufpaId}?tab=formularios`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
     await page.getByLabel("Formulário", { exact: true }).click();
@@ -671,7 +671,7 @@ test.describe("SGP — Opções do filtro de formulário", () => {
     const requisicaoPagina2 = page.waitForRequest((r) => {
       const u = new URL(r.url());
       return (
-        u.pathname.endsWith(`/upfs/${upfId}/formularios/`) &&
+        u.pathname.endsWith(`/ufpas/${ufpaId}/formularios/`) &&
         u.searchParams.get("page") === "2" &&
         u.searchParams.get("page_size") === String(PAGE_SIZE)
       );
@@ -701,10 +701,10 @@ test.describe("SGP — Opções do filtro de formulário", () => {
   test("a seleção do formulário distante sobrevive ao reload e à reabertura da aba", async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
+    const ufpaId = primeiroUfpaId();
     await stubRespostasEmDuasPaginas(page);
 
-    await page.goto(`/sgp/upfs/${upfId}?tab=formularios`);
+    await page.goto(`/sgp/ufpas/${ufpaId}?tab=formularios`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
     await page.getByLabel("Formulário", { exact: true }).click();

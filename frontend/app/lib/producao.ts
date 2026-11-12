@@ -156,54 +156,54 @@ function comCamposDeOutrosTiposZerados(
 
 // ─── API ─────────────────────────────────────────────────────────────────────
 
-/** GET /api/v1/upfs/{upfId}/producao/ — atividades produtivas da UPF. */
+/** GET /api/v1/sgp/ufpas/{ufpaId}/producao/ — atividades produtivas da UFPA. */
 export async function listProducoes(
-  upfId: string,
+  ufpaId: string,
   signal?: AbortSignal,
 ): Promise<Producao[]> {
   const res = await apiClient(
-    `/api/v1/upfs/${upfId}/producao/?limit=${LIMITE_PRODUCOES}`,
+    `/api/v1/sgp/ufpas/${ufpaId}/producao/?limit=${LIMITE_PRODUCOES}`,
     { signal },
   );
   const data: Paginated<ProducaoApi> = await res.json();
   return data.results.map(toProducao);
 }
 
-/** POST /api/v1/upfs/{upfId}/producao/ — cria uma atividade produtiva. */
+/** POST /api/v1/sgp/ufpas/{ufpaId}/producao/ — cria uma atividade produtiva. */
 export async function createProducao(
-  upfId: string,
+  ufpaId: string,
   payload: ProducaoWritePayload,
 ): Promise<Producao> {
-  const res = await apiClient(`/api/v1/upfs/${upfId}/producao/`, {
+  const res = await apiClient(`/api/v1/sgp/ufpas/${ufpaId}/producao/`, {
     method: "POST",
     body: JSON.stringify(comCamposDeOutrosTiposZerados(payload)),
   });
   return toProducao(await res.json());
 }
 
-/** PATCH /api/v1/upfs/{upfId}/producao/{id}/ — atualiza uma atividade produtiva. */
+/** PATCH /api/v1/sgp/ufpas/{ufpaId}/producao/{id}/ — atualiza uma atividade produtiva. */
 export async function updateProducao(
-  upfId: string,
+  ufpaId: string,
   id: number,
   payload: ProducaoWritePayload,
 ): Promise<Producao> {
-  const res = await apiClient(`/api/v1/upfs/${upfId}/producao/${id}/`, {
+  const res = await apiClient(`/api/v1/sgp/ufpas/${ufpaId}/producao/${id}/`, {
     method: "PATCH",
     body: JSON.stringify(comCamposDeOutrosTiposZerados(payload)),
   });
   return toProducao(await res.json());
 }
 
-/** DELETE /api/v1/upfs/{upfId}/producao/{id}/ — remove uma atividade produtiva. */
-export async function deleteProducao(upfId: string, id: number): Promise<void> {
-  await apiClient(`/api/v1/upfs/${upfId}/producao/${id}/`, { method: "DELETE" });
+/** DELETE /api/v1/sgp/ufpas/{ufpaId}/producao/{id}/ — remove uma atividade produtiva. */
+export async function deleteProducao(ufpaId: string, id: number): Promise<void> {
+  await apiClient(`/api/v1/sgp/ufpas/${ufpaId}/producao/${id}/`, { method: "DELETE" });
 }
 
 // ─── Listagem consolidada ─────────────────────────────────────────────────────
 
 export type ProducaoConsolidadaItem = Producao & {
-  upf_id: number;
-  upf_nome_titular: string;
+  ufpa_id: number;
+  ufpa_nome_titular: string;
   municipio: string;
   territorio: string | null;
 };
@@ -232,7 +232,7 @@ function toConsolidada(raw: ProducaoConsolidadaApi): ProducaoConsolidadaItem {
 }
 
 export type IndicadoresProducao = {
-  total_upfs_produtoras: number;
+  total_ufpas_produtoras: number;
   area_total_ha: string | null;
   principais_culturas: Array<{ nome: string; count: number }>;
 };
