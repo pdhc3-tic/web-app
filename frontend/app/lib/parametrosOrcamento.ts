@@ -5,8 +5,10 @@ import { apiClient } from "./api";
  * `SystemConfig`: `GET /system-config/` e `PATCH /system-config/{chave}/`.
  * A UGP lê; só o Super Admin altera (`IsSuperAdminOrUGPReadOnly`).
  *
- * O backend valida só o tipo (inteiro, booleano). A faixa de cada parâmetro é
- * conferida aqui, antes de enviar.
+ * O backend valida só o tipo (inteiro, booleano) e aceita qualquer texto na
+ * periodicidade. As opções e as faixas abaixo são conferidas aqui, antes de
+ * enviar; validá-las também no backend é o item 6 do
+ * `docs/pendencias-backend-sprint-12b.md`.
  */
 
 export type ChaveParametro =
@@ -29,7 +31,8 @@ export const PARAMETROS: DefinicaoParametro[] = [
   {
     chave: "budget_limit_period",
     rotulo: "Periodicidade dos limites de gasto",
-    ajuda: "Vale para todo o projeto. A mudança passa a valer no período seguinte.",
+    ajuda:
+      "Vale para todo o projeto. Os limites criados a partir da mudança já usam a nova periodicidade; os que já existem mantêm as datas.",
     controle: "opcoes",
     opcoes: [
       { value: "mensal", label: "Mensal" },
@@ -80,10 +83,16 @@ export const PARAMETROS: DefinicaoParametro[] = [
   },
 ];
 
-/** `SystemConfigSerializer`. O valor é sempre texto: "True", "6", "trimestral". */
+/**
+ * O `valor` de `SystemConfigSerializer` sai convertido pelo `tipo`: número
+ * nos inteiros, `true`/`false` nos booleanos e texto nos demais.
+ */
+export type ValorDeConfig = string | number | boolean | null;
+
+/** `SystemConfigSerializer`. */
 export type ConfigDoSistema = {
   chave: string;
-  valor: string;
+  valor: ValorDeConfig;
   tipo: string;
   descricao: string;
   atualizado_por: string | null;
@@ -109,9 +118,15 @@ export async function salvarConfig(chave: ChaveParametro, valor: string): Promis
   return res.json();
 }
 
-/** "True"/"true"/"1" do backend como booleano. */
-export function paraBooleano(valor: string | null | undefined): boolean {
-  const v = (valor ?? "").trim().toLowerCase();
+/** O valor do backend como texto, qualquer que seja o tipo em que veio. */
+function comoTexto(valor: ValorDeConfig | undefined): string {
+  return valor === null || valor === undefined ? "" : String(valor).trim();
+}
+
+/** `true`, "True", "true" ou "1" do backend como booleano. */
+export function paraBooleano(valor: ValorDeConfig | undefined): boolean {
+  if (typeof valor === "boolean") return valor;
+  const v = comoTexto(valor).toLowerCase();
   return v === "true" || v === "1";
 }
 
@@ -134,7 +149,7 @@ export function validarParametro(def: DefinicaoParametro, valor: string): string
 }
 
 /** O valor do backend na forma que o controle da tela usa. */
-export function valorDeTela(def: DefinicaoParametro, valor: string | undefined): string {
+export function valorDeTela(def: DefinicaoParametro, valor: ValorDeConfig | undefined): string {
   if (def.controle === "booleano") return paraBooleano(valor) ? "true" : "false";
-  return (valor ?? "").trim();
+  return comoTexto(valor);
 }

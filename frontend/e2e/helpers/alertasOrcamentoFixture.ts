@@ -1,23 +1,31 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
+import { ORCAMENTO_E2E_PY } from "./orcamentoE2E";
 
 /**
  * Fixture dos alertas orçamentários e dos parâmetros globais (#403).
  *
- * - Três alertas abertos com alvo sintético (`referencia_id` a partir de
- *   990403001, escopo Meta), para não disputar a restrição de "um alerta aberto
- *   por alvo e tipo" com os alertas reais: um de semáforo em vermelho, um de
- *   subexecução e um de remanejamento excessivo, em rubricas diferentes.
- * - Os valores dos parâmetros `budget_*` que a spec altera são lidos no setup e
- *   devolvidos no teardown.
+ * Os alertas são de pool, como os que o backend gera, e saem dos services de
+ * `apps/sgp/budget/alertas.py`:
+ * - semáforo vermelho: um pool territorial de Diárias com 96,5% comprometido,
+ *   aberto por `sincronizar_semaforo` (o mesmo cálculo da tarefa periódica);
+ * - subexecução e remanejamento excessivo: no pool nacional de Material
+ *   gráfico e no de Locação de veículo, que é onde o backend avalia os
+ *   alertas por rubrica, abertos por `_abrir_ou_resolver`.
  *
- * A UGP e o Super Admin leem todos os alertas (`alertas_visiveis`), então os
- * sintéticos aparecem para eles sem depender de pool ou limite do seed.
+ * Nenhum aviso é enviado: a fixture abre os alertas sem passar pela
+ * notificação. O orçamento é fotografado antes e restaurado no teardown
+ * (`orcamentoE2E.ts`), o que também apaga os alertas criados depois da foto.
+ *
+ * Os seis parâmetros `budget_*` são lidos no setup, como estão gravados, e o
+ * que a spec alterar volta no teardown pelo `save()`, que limpa o cache do
+ * `get_config`.
+ *
+ * Roda como `postgres`, como as demais fixtures de orçamento.
  */
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 const MARCADOR = "ALERTAS_403_FIXTURE";
-const BASE = 990403000;
 
 type AlertaRef = { id: number; rubrica: string };
 
@@ -25,51 +33,71 @@ export type AlertasOrcamentoFixture = {
   vermelho: AlertaRef;
   subexecucao: AlertaRef;
   remanejamento: AlertaRef;
-  /** Valores dos parâmetros antes do teste, por chave. */
+  /** Valores gravados dos parâmetros antes do teste, por chave. */
   parametros: Record<string, string>;
 };
 
-const CHAVES = ["budget_subexec_min_pct"];
+/** Lidas no setup para a spec conferir a tela; no teardown, volta só o que mudou. */
+const CHAVES = [
+  "budget_limit_period",
+  "budget_limit_carry_over",
+  "budget_overallocation_allowed",
+  "budget_subexec_alert_months",
+  "budget_subexec_min_pct",
+  "budget_transfer_alert_pct",
+];
 
-const COMUM = `
-from apps.sgp.budget.models import BudgetAlert
+const COMUM = `${ORCAMENTO_E2E_PY}
+import json
+from apps.core.models import SystemConfig
 
-def limpar():
-    BudgetAlert.objects.filter(referencia_id__gt=${BASE}, referencia_id__lt=${BASE + 1000}).delete()
+FOTO = "alertas-403"
 `;
 
 const SETUP_SCRIPT = `${COMUM}
-import json
 from decimal import Decimal
-from apps.core.models import SystemConfig
-from apps.sgp.budget.models import BudgetRubrica
+from apps.core.models import Territory
+from apps.sgp.budget import alertas as A
+from apps.sgp.budget.models import BudgetAlert, BudgetRubrica
+from apps.sgp.budget.rls import visao_total
 
-limpar()
-rubricas = list(BudgetRubrica.objects.filter(ativo=True).order_by("ordem", "pk")[:3])
+fotografar(FOTO)
+territorio = Territory.objects.order_by("pk").first()
+diarias = BudgetRubrica.objects.get(slug="diarias")
+grafico = BudgetRubrica.objects.get(slug="material-grafico")
+veiculo = BudgetRubrica.objects.get(slug="locacao-veiculo")
 
-def alerta(n, tipo, faixa, pct, rubrica):
-    a = BudgetAlert.objects.create(
-        tipo=tipo, escopo="meta", referencia_id=${BASE} + n, rubrica=rubrica,
-        faixa=faixa, percentual_atingido=Decimal(pct),
+with visao_total():
+    territorial = definir_pool(diarias, "territorial", "1000.00", territorio_id=territorio.pk, comprometido="965.00")
+    A.sincronizar_semaforo(territorial)
+    vermelho = BudgetAlert.objects.get(
+        escopo="pool", referencia_id=territorial.pk, tipo="semaforo", resolvido_em__isnull=True,
     )
-    return {"id": a.pk, "rubrica": rubrica.nome}
+    nacional_grafico = definir_pool(grafico, "nacional", "50000.00", executado="20500.00")
+    subexecucao = A._abrir_ou_resolver(
+        nacional_grafico, "subexecucao", faixa="subexecucao", percentual=Decimal("41.00"), abrir=True,
+    ) or BudgetAlert.objects.get(escopo="pool", referencia_id=nacional_grafico.pk, tipo="subexecucao", resolvido_em__isnull=True)
+    nacional_veiculo = definir_pool(veiculo, "nacional", "80000.00")
+    remanejamento = A._abrir_ou_resolver(
+        nacional_veiculo, "remanejamento_excessivo", faixa="", percentual=Decimal("31.00"), abrir=True,
+    ) or BudgetAlert.objects.get(escopo="pool", referencia_id=nacional_veiculo.pk, tipo="remanejamento_excessivo", resolvido_em__isnull=True)
 
 print("${MARCADOR}_SETUP " + json.dumps({
-    "vermelho": alerta(1, "semaforo", "vermelho", "96.50", rubricas[0]),
-    "subexecucao": alerta(2, "subexecucao", "subexecucao", "41.00", rubricas[1]),
-    "remanejamento": alerta(3, "remanejamento_excessivo", "", "31.00", rubricas[2]),
+    "vermelho": {"id": vermelho.pk, "rubrica": diarias.nome},
+    "subexecucao": {"id": subexecucao.pk, "rubrica": grafico.nome},
+    "remanejamento": {"id": remanejamento.pk, "rubrica": veiculo.nome},
     "parametros": {c.chave: c.valor for c in SystemConfig.objects.filter(chave__in=${JSON.stringify(CHAVES)})},
 }))
 `;
 
 function teardownScript(parametros: Record<string, string>): string {
   return `${COMUM}
-import json
-from apps.core.models import SystemConfig
-
-limpar()
+restaurar(FOTO)
 for chave, valor in json.loads(${JSON.stringify(JSON.stringify(parametros))}).items():
-    SystemConfig.objects.filter(chave=chave).update(valor=valor)
+    config = SystemConfig.objects.filter(chave=chave).first()
+    if config is not None and config.valor != valor:
+        config.valor = valor
+        config.save()
 print("${MARCADOR}_TEARDOWN_OK")
 `;
 }

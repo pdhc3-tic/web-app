@@ -70,6 +70,17 @@ describe("valores do backend", () => {
     expect(valorDeTela(def("budget_limit_carry_over"), "True")).toBe("true");
     expect(valorDeTela(def("budget_subexec_min_pct"), " 60 ")).toBe("60");
   });
+
+  it("lê o valor já convertido, como o SystemConfigSerializer devolve", () => {
+    expect(paraBooleano(true)).toBe(true);
+    expect(paraBooleano(false)).toBe(false);
+    expect(paraBooleano(null)).toBe(false);
+    expect(valorDeTela(def("budget_overallocation_allowed"), true)).toBe("true");
+    expect(valorDeTela(def("budget_limit_carry_over"), false)).toBe("false");
+    expect(valorDeTela(def("budget_subexec_min_pct"), 60)).toBe("60");
+    expect(valorDeTela(def("budget_subexec_alert_months"), null)).toBe("");
+    expect(valorDeTela(def("budget_limit_period"), "trimestral")).toBe("trimestral");
+  });
 });
 
 describe("API", () => {

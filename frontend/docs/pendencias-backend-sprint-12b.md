@@ -49,3 +49,30 @@ Por isso a tela pede os quatro campos e só simula no clique em **Simular**. Sim
 **Pedido:** a simulação aceitar o payload sem `justificativa`, com um serializer próprio de origem, destino e valor. A confirmação continua exigindo a justificativa.
 
 *Estado atual no frontend:* o botão **Simular** só habilita com os quatro campos preenchidos. Quando a simulação dispensar a justificativa, a tela pode simular sozinha, com um pequeno atraso, assim que origem, destino e valor estiverem preenchidos, e pedir a justificativa só para confirmar.
+
+## 5. Alvo do alerta orçamentário (#403)
+
+O painel de alertas mostra o que cada alerta aponta. `BudgetAlertSerializer` devolve só `escopo`, `referencia_id` e a rubrica, e o backend gera alertas de pool (semáforo em qualquer nível; subexecução e remanejamento excessivo no nacional) e de limite individual. A tela fica com "Pool · Diárias" ou "Limite de gasto · Diárias". A UGP e o Super Admin veem os alertas de todos os estados e territórios, então aparecem linhas iguais, sem como saber qual pool estourou ou de quem é o limite.
+
+**Pedido:** o serializer devolver a identificação do alvo, por exemplo:
+- `alvo_nome`: "Nacional", o nome do estado ou o do território, no pool; o nome da pessoa, no limite;
+- ou um objeto `alvo` com `nivel`, `estado{sigla, nome}` e `territorio{id, nome}` no pool, e `usuario{id, nome}` no limite.
+
+*Estado atual no frontend:* `alvoDoAlerta` em `app/lib/alertasOrcamento.ts` monta "Pool · Diárias" com o escopo e a rubrica. A tela não cruza o `referencia_id` com o painel nem com os limites. Quando o campo existir, ele entra no lugar do escopo.
+
+## 6. Validação das opções e faixas dos parâmetros do orçamento (#403)
+
+`PATCH /system-config/{chave}/` valida só o tipo: inteiro ou booleano. `budget_limit_period` é do tipo texto e aceita qualquer valor; um valor fora de mensal, trimestral, semestral e vigência faz `periodo_de` cair em trimestral sem aviso. Os inteiros aceitam zero, negativos e qualquer tamanho: `budget_subexec_min_pct` em 0 desliga o alerta de subexecução, e `budget_transfer_alert_pct` negativo dispara o de remanejamento em todo pool.
+
+A tela confere antes de enviar, com faixas que o front definiu por conta própria:
+
+| Parâmetro | Faixa na tela |
+|---|---|
+| `budget_limit_period` | mensal, trimestral, semestral, vigencia |
+| `budget_subexec_alert_months` | 1 a 24 meses |
+| `budget_subexec_min_pct` | 1 a 100% |
+| `budget_transfer_alert_pct` | 1 a 100% |
+
+**Pedido:** o backend validar cada chave `budget_*` na escrita, com as opções e faixas que a regra de negócio aceita, e devolver 400 no campo `valor`. Se as faixas forem outras, o front segue as do backend.
+
+*Estado atual no frontend:* `validarParametro` em `app/lib/parametrosOrcamento.ts`. Sem a validação no servidor, outro cliente da API grava qualquer valor.

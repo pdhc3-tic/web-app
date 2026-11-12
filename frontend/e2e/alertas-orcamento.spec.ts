@@ -8,7 +8,8 @@ import { storageStatePath } from "./helpers/users";
 
 /**
  * #403 (AJ-FE-07) — Alertas orçamentários e parâmetros globais, contra o
- * backend real: `GET /sgp/orcamento/alertas/` e `/system-config/`.
+ * backend real: `GET /sgp/orcamento/alertas/` e `/system-config/`. Os alertas
+ * são de pool, abertos pelos services do backend (ver a fixture).
  */
 
 let fx: AlertasOrcamentoFixture;
@@ -40,6 +41,7 @@ test.describe("UGP — painel de alertas", () => {
     await expect(vermelho).toContainText("Vermelho");
     await expect(vermelho).toContainText("96,5%");
     await expect(alerta(page, fx.remanejamento.id)).toContainText("Remanejamento excessivo");
+    await expect(alerta(page, fx.subexecucao.id)).toContainText("Subexecução");
   });
 
   test("filtra por tipo e por faixa pelo servidor", async ({ page }) => {
@@ -90,6 +92,22 @@ test.describe("Super Admin — parâmetros do orçamento", () => {
       "budget_transfer_alert_pct",
     ]) {
       await expect(page.getByTestId(`parametro-${chave}`)).toBeVisible();
+    }
+  });
+
+  test("mostra os valores gravados, inclusive os booleanos e inteiros que o backend devolve já convertidos", async ({ page }) => {
+    await page.goto("/admin/configuracoes/sgp/parametros-orcamento");
+    await expect(page.getByTestId("parametros-orcamento")).toBeVisible();
+
+    const controle = (chave: string) => page.locator(`#parametro-${chave}`);
+    const ligado = (valor: string) => (valor === "True" ? "true" : "false");
+    await expect(controle("budget_limit_period")).toHaveValue(fx.parametros.budget_limit_period);
+    await expect(controle("budget_limit_carry_over")).toHaveValue(ligado(fx.parametros.budget_limit_carry_over));
+    await expect(controle("budget_overallocation_allowed")).toHaveValue(
+      ligado(fx.parametros.budget_overallocation_allowed),
+    );
+    for (const chave of ["budget_subexec_alert_months", "budget_subexec_min_pct", "budget_transfer_alert_pct"]) {
+      await expect(controle(chave)).toHaveValue(fx.parametros[chave]);
     }
   });
 
