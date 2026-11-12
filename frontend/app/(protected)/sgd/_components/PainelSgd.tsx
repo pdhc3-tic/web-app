@@ -134,7 +134,7 @@ function Conteudo({ dados }: { dados: SgdDashboard }) {
               <ul className="flex flex-col gap-2 p-3">
                 {dados.alertas_saldo.map((alerta) => (
                   <CartaoAlerta
-                    key={`${alerta.meta_id}-${alerta.rubrica_id}-${alerta.estado_sigla ?? ""}-${alerta.territorio_id ?? ""}`}
+                    key={`${alerta.rubrica_id}-${alerta.nivel}-${alerta.estado_sigla ?? ""}-${alerta.territorio_id ?? ""}`}
                     alerta={alerta}
                     href={linkDoAlerta(alerta, podeVerExecucao)}
                   />
@@ -254,7 +254,7 @@ function LinhaFila({ item }: { item: ItemFila }) {
 function CartaoAlerta({ alerta, href }: { alerta: AlertaSaldo; href: string }) {
   const local = alerta.estado_sigla ?? (alerta.nivel === "nacional" ? "Nacional" : null);
   return (
-    <li data-testid={`alerta-${alerta.rubrica_slug}-${alerta.meta_id}-${alerta.estado_sigla ?? alerta.territorio_id ?? "nacional"}`}>
+    <li data-testid={`alerta-${alerta.rubrica_slug}-${alerta.estado_sigla ?? alerta.territorio_id ?? "nacional"}`}>
       <Link
         href={href}
         className="flex flex-col gap-1.5 rounded-md border border-border px-3 py-2.5 transition-colors hover:bg-surface-muted"
@@ -267,8 +267,7 @@ function CartaoAlerta({ alerta, href }: { alerta: AlertaSaldo; href: string }) {
           />
         </span>
         <span className="text-xs text-text-muted">
-          Meta {alerta.meta_numero}
-          {local && ` · ${local}`} · saldo {formatCurrencyBRL(alerta.saldo_disponivel)} de{" "}
+          {local && `${local} · `}saldo {formatCurrencyBRL(alerta.saldo_disponivel)} de{" "}
           {formatCurrencyBRL(alerta.valor_aprovado)}
         </span>
       </Link>

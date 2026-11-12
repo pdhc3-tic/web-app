@@ -82,16 +82,23 @@ export type EtapaDemanda = {
 };
 
 /**
- * Risco de glosa registrado num pagamento acima do autorizado. Pedido ao
- * backend (pendencias-backend-sprint-12.md, item 1); ausente até lá.
+ * Risco de glosa — `GlosaRiskSerializer` de `GET /sgp/glosa-riscos/` (#391,
+ * pedido da #408). `pago_acima_autorizado` traz a solicitação e os valores
+ * pago e autorizado; `demanda_sem_evidencia` vem da conclusão sem evidência
+ * da atividade e só tem o valor exposto.
  */
-export type GlosaDemanda = {
+export type RiscoGlosa = {
   id: number;
-  demand_request_id: number;
-  valor_autorizado: string;
-  valor_pago: string;
-  excedente: string;
+  tipo: "pago_acima_autorizado" | "demanda_sem_evidencia";
+  severidade: "alta" | "media" | "baixa";
+  valor_exposto: string;
+  activity_id: number | null;
+  demanda_id: number;
+  demand_request_id: number | null;
+  valor_autorizado: string | null;
+  valor_pago: string | null;
   criado_em: string;
+  resolvido_em: string | null;
 };
 
 /** `DemandSerializer` — leitura. Valores monetários vêm como string decimal. */
@@ -111,12 +118,38 @@ export type Demanda = {
   contexto: ContextoDemanda;
   solicitacoes: SolicitacaoDemanda[];
   solicitante_nome: string;
+  /**
+   * Abrangência territorial (#352): estado e território do SOLICITANTE,
+   * gravados na criação e congelados. Definem o Articulador que analisa, a
+   * fila e o pool de saldo — a atividade não entra no critério. Os três nulos
+   * = demanda de nível nacional (solicitante sem território, como o Super
+   * Admin). `contexto.territorio_*` também passou a ser o da demanda.
+   */
+  estado_sigla: string | null;
+  territorio: number | null;
+  territorio_nome: string | null;
+  /** A atividade acontece em outro estado que não o da demanda. */
+  atividade_fora_do_territorio: boolean;
   /** Decisões em ordem cronológica (pré-autorização, autorização, atendimento). */
   etapas: EtapaDemanda[];
-  glosas?: GlosaDemanda[];
   criado_em: string;
   atualizado_em: string;
 };
+
+/**
+ * "Território X (PB)", só o estado, ou "Nacional" — a abrangência como o
+ * backend gravou, sem recalcular nada.
+ */
+export function rotuloAbrangencia(
+  demanda: Pick<Demanda, "estado_sigla" | "territorio_nome">,
+): string {
+  if (demanda.territorio_nome) {
+    return demanda.estado_sigla
+      ? `${demanda.territorio_nome} (${demanda.estado_sigla})`
+      : demanda.territorio_nome;
+  }
+  return demanda.estado_sigla ?? "Nacional";
+}
 
 /** Os cinco campos mínimos da atividade criada junto com a demanda. */
 export type AtividadeInline = {
@@ -246,20 +279,27 @@ export type AtividadeElegivel = {
   status: string;
   status_display: string;
   data_inicio: string;
-  municipio: { id: number; nome: string };
+  /** `MunicipioNestedSerializer`: o estado vem embutido (#226). */
+  municipio: { id: number; nome: string; estado?: { sigla: string } | null };
+  tecnico_nome?: string;
 };
 
 /**
- * GET /api/v1/sgp/atividades/?tecnico_id={eu}&status=planejado&status=agendado&q={texto}
- * — atividades do solicitante que aceitam demanda, para o campo com busca.
- * `status` repetido e `q` pelo título são do `ActivityFilter` (PR #328).
+ * GET /api/v1/sgp/atividades/?status=planejado&status=agendado&q={texto}
+ * — atividades que aceitam demanda, para o campo com busca. `status`
+ * repetido e `q` pelo título são do `ActivityFilter` (PR #328).
+ *
+ * Sem `tecnico_id` desde a #361: a demanda pode ser vinculada a qualquer
+ * atividade, de outro técnico ou de outro estado (#352) — a abrangência vem
+ * de quem cria. O recorte que sobra é o territorial da própria rota do SGP,
+ * que ainda esconde as atividades de outros estados
+ * (docs/pendencias-backend-sprint-12a.md).
  */
 export async function buscarAtividadesElegiveis(
-  params: { tecnicoId: string; busca: string },
+  params: { busca: string },
   signal?: AbortSignal,
 ): Promise<AtividadeElegivel[]> {
   const qs = new URLSearchParams();
-  qs.set("tecnico_id", params.tecnicoId);
   for (const s of STATUS_ATIVIDADE_ELEGIVEIS) qs.append("status", s);
   if (params.busca.trim()) qs.set("q", params.busca.trim());
   qs.set("ordering", "data_inicio");
@@ -331,6 +371,19 @@ export async function listDemandas(
 export async function getDemanda(id: number | string, signal?: AbortSignal): Promise<Demanda> {
   const res = await apiClient(`${DEMANDAS_PATH}${id}/`, { signal });
   return res.json();
+}
+
+/**
+ * GET /api/v1/sgp/glosa-riscos/?demanda={id} — os riscos de glosa da demanda,
+ * em ordem cronológica (#360). A rota é paginada (10 por padrão); uma demanda
+ * tem poucos riscos, então uma página de 100 traz todos. Só Super Admin, UGP,
+ * FGD e Articulador acessam (`canVerRiscosDeGlosa`).
+ */
+export async function listRiscosDeGlosa(demandaId: number, signal?: AbortSignal): Promise<RiscoGlosa[]> {
+  const qs = new URLSearchParams({ demanda: String(demandaId), limit: "100" });
+  const res = await apiClient(`/api/v1/sgp/glosa-riscos/?${qs}`, { signal });
+  const corpo = (await res.json()) as { results: RiscoGlosa[] } | RiscoGlosa[];
+  return Array.isArray(corpo) ? corpo : corpo.results;
 }
 
 // ─── Auditoria (#322, BE-7) ──────────────────────────────────────────────────
@@ -412,11 +465,11 @@ export type PreviewDecisao = {
   trava_bloqueada: "individual" | "territorial" | "origem" | null;
   individual: ImpactoTrava;
   territorial: ImpactoTrava;
-  /** Só com `origem_allocation`: o efeito do excedente na alocação de origem. */
+  /** Só com `origem_allocation`: o efeito do excedente no pool de origem. */
   origem?: ImpactoOrigem | null;
 };
 
-/** Efeito da autorização com excedente na alocação de origem (#363). */
+/** Efeito da autorização com excedente no pool de origem (#363). */
 export type ImpactoOrigem = {
   id: number;
   valor_remanejado: number | string;
@@ -464,7 +517,7 @@ export const devolverDemanda = (id: number, justificativa: string) =>
 
 /**
  * UGP. `ajustes`: {id da solicitação: novo valor} — vazio autoriza como pedido.
- * `excedente`: o que passar do limite ou do pool sai da alocação de origem.
+ * `excedente`: o que passar do limite ou do pool sai do pool de origem (#384).
  */
 export const autorizarDemanda = (
   id: number,

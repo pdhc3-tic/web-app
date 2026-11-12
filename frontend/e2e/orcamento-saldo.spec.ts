@@ -1,133 +1,54 @@
-import { execFileSync } from "node:child_process";
-import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import {
   criarOrcamentoFixture,
+  definirPoolDoAdt,
   desvincularTerritorioDoAdt,
-  META_COM_ORCAMENTO,
   removerOrcamentoFixture,
   revincularTerritorioDoAdt,
+  rubricasComPoolDoAdt,
   RUBRICA_CRITICA,
 } from "./helpers/orcamentoFixture";
+import { RUBRICAS as CATALOGO } from "../app/lib/orcamento";
 import { storageStatePath } from "./helpers/users";
 
 /**
- * Saldo por rubrica no contexto do território (Issue #232).
+ * Saldo por rubrica no contexto do território (Issue #232), sobre o orçamento
+ * por pool (#398): sem Meta, o saldo de cada rubrica é o do pool do território.
  *
- * O card só aparece para o ADT/ACR — para os demais perfis a matriz já mostra
- * os mesmos números no nível que lhes cabe. `semPermissao` é justamente o ADT
- * da demonstração (ver `helpers/users.ts`), com território atribuído.
+ * O card só aparece para o ADT/ACR. `semPermissao` é o ADT da demonstração,
+ * com território atribuído. A fixture do painel ajusta o pool territorial de
+ * Diárias desse ADT (7.000 aprovado, 1.400 comprometido, 700 executado → 4.900
+ * de saldo); este spec acrescenta o de Passagens esgotado (1.000 alocado, 800
+ * comprometido, 200 executado → 0). As rubricas sem pool no território
+ * aparecem bloqueadas, com saldo zero.
  *
- * Reaproveita a fixture do painel: ela cria uma alocação TERRITORIAL de Diárias
- * no território desse ADT (7.000 alocado, 1.400 comprometido, 700 executado →
- * 4.900 de saldo) e nada nas outras cinco rubricas. É o cenário que os dois
- * primeiros testes precisam — uma rubrica com saldo, cinco bloqueadas — sem
- * depender da data em que a suíte roda.
+ * Saldo negativo deixou de existir com a #384: o banco recusa pool com
+ * comprometido mais executado acima do alocado (`ck_budget_pool_saldo_nao_negativo`).
+ * O card ainda o destacaria, mas não há cenário real para o E2E.
  */
 
-const RUBRICAS = 6;
+const RUBRICAS = CATALOGO.length;
 
-/** Rubrica que este spec deixa com saldo negativo. Ver `criarSaldoNegativo`. */
-const RUBRICA_NEGATIVA = { slug: "passagens-aereas", nome: "Passagens Aéreas" };
+/** Rubrica com pool no território, mas esgotado: bloqueada com saldo zero. */
+const RUBRICA_ESGOTADA = { slug: "passagens-aereas", nome: "Passagens Aéreas" };
 
-/**
- * Slugs das rubricas sem alocação territorial na Meta da fixture — num banco
- * recém-semeado, as quatro além de Diárias e Passagens.
- *
- * Lidas do banco, e não fixadas: uma verba territorial criada pelo service (um
- * roteiro manual, por exemplo) tem `BudgetTransaction`, que é PROTECT, e não sai
- * mais. Ela tira a rubrica do grupo das bloqueadas sem que a tela esteja errada.
- */
+/** Rubricas sem pool no território do ADT: as que o card mostra zeradas e bloqueadas. */
 let zeradas: string[] = [];
-
-/**
- * Saldo negativo no território do ADT: 1.000 alocado, 1.500 comprometido.
- *
- * Fica NESTE spec, e não na `orcamentoFixture` compartilhada, porque uma
- * alocação a 150% acende o semáforo vermelho — e `orcamento.spec.ts` afirma
- * que o ADT não vê banner de alerta. Semear lá quebraria aquela suíte.
- *
- * Não há como produzir o cenário pela interface: a tela de distribuição recusa
- * reduzir abaixo do comprometido. O ORM cru é o mesmo caminho da fixture
- * compartilhada, e o teardown dela apaga esta linha junto (filtra por Meta).
- */
-function criarSaldoNegativo(): string[] {
-  const saida = execFileSync(
-    "docker",
-    [
-      "compose", "exec", "-T", "backend", "python", "manage.py", "shell", "-c",
-      `
-from decimal import Decimal
-from apps.core.models.user_profile import UserProfile
-from apps.sgp.models import BudgetAllocation, BudgetRubrica, WorkPlanMeta
-
-perfil = (
-    UserProfile.objects.select_related("territorio")
-    .filter(user__email="marina.albuquerque@demo.pdhc.local", perfil__slug="adt-acr")
-    .exclude(territorio__isnull=True)
-    .first()
-)
-if perfil is None:
-    raise RuntimeError("ADT dos E2E sem territorio: rode manage.py seed_demo")
-
-BudgetAllocation.objects.update_or_create(
-    meta=WorkPlanMeta.objects.get(numero=${META_COM_ORCAMENTO}),
-    rubrica=BudgetRubrica.objects.get(slug="${RUBRICA_NEGATIVA.slug}"),
-    nivel="territorial", estado=None, territorio=perfil.territorio,
-    defaults={
-        "valor_alocado": Decimal("1000.00"),
-        "valor_comprometido": Decimal("1500.00"),
-        "valor_executado": Decimal("200.00"),
-    },
-)
-
-import json
-com_verba = BudgetAllocation.objects.filter(
-    meta__numero=${META_COM_ORCAMENTO}, nivel="territorial", territorio=perfil.territorio,
-).values_list("rubrica__slug", flat=True)
-zeradas = BudgetRubrica.objects.filter(ativo=True).exclude(slug__in=list(com_verba)).values_list("slug", flat=True)
-print("SALDO_ZERADAS " + json.dumps(list(zeradas)))
-`,
-    ],
-    { cwd: path.resolve(__dirname, ".."), encoding: "utf8", timeout: 120_000 },
-  );
-  const linha = saida.split("\n").find((l) => l.startsWith("SALDO_ZERADAS "));
-  if (!linha) throw new Error(`Saldo negativo não confirmou a criação:\n${saida}`);
-  return JSON.parse(linha.slice("SALDO_ZERADAS ".length)) as string[];
-}
 
 test.beforeAll(() => {
   criarOrcamentoFixture();
-  zeradas = criarSaldoNegativo();
+  definirPoolDoAdt(RUBRICA_ESGOTADA.slug, "1000.00", "800.00", "200.00");
+  const comPool = rubricasComPoolDoAdt();
+  zeradas = CATALOGO.map((r) => r.slug).filter((slug) => !comPool.includes(slug));
 });
 
 test.afterAll(() => {
   removerOrcamentoFixture();
 });
 
-/**
- * Resolve o ID da Meta a partir do NÚMERO.
- *
- * `META_COM_ORCAMENTO` é o número exibido ("Meta 1"), não a chave primária —
- * e o filtro da tela trabalha com o id. Ler da matriz já renderizada evita
- * fixar um id que muda a cada `seed_demo --reset`.
- */
-async function idDaMeta(page: Page, numero: number): Promise<string> {
-  const grupo = page
-    .locator('[data-testid^="orcamento-meta-"]')
-    .filter({ hasText: `Meta ${numero}` })
-    .first();
-  await expect(grupo).toBeVisible();
-  const testid = await grupo.getAttribute("data-testid");
-  return testid!.replace("orcamento-meta-", "");
-}
-
-/** Abre o painel filtrado na Meta da fixture e espera o card sair do skeleton. */
+/** Abre o painel e espera o card sair do skeleton. */
 async function abrirCard(page: Page): Promise<void> {
   await page.goto("/sgp/orcamento/");
-  const metaId = await idDaMeta(page, META_COM_ORCAMENTO);
-
-  await page.goto(`/sgp/orcamento/?meta=${metaId}`);
   await expect(page.getByTestId("budget-balance")).toBeVisible();
   await expect(page.getByTestId("budget-balance-skeleton")).toHaveCount(0);
 }
@@ -170,41 +91,26 @@ test.describe("Saldo por rubrica — ADT com território", () => {
       );
     }
 
-    // As zeradas mais a de saldo negativo.
+    // As sem pool mais a esgotada.
     await expect(page.getByTestId("budget-balance-resumo")).toHaveText(
       new RegExp(`${zeradas.length + 1} de ${RUBRICAS} rubricas bloqueadas`),
     );
   });
 
-  test("saldo negativo aparece em destaque, nunca escondido", async ({
-    page,
-  }) => {
+  test("pool esgotado aparece bloqueado com saldo zero, não some", async ({ page }) => {
     await abrirCard(page);
-
-    const valor = page.getByTestId(
-      `budget-balance-valor-${RUBRICA_NEGATIVA.slug}`,
-    );
-    // O valor é EXIBIDO — o critério é explícito em não escondê-lo.
+    const valor = page.getByTestId(`budget-balance-valor-${RUBRICA_ESGOTADA.slug}`);
     await expect(valor).toBeVisible();
-    await expect(valor).toHaveText(/-\s?R\$\s*700,00|R\$\s*-700,00/);
-
-    // E fica bloqueada, com a razão dizendo que veio de remanejamento.
-    await expect(
-      page.getByTestId(`budget-balance-rubrica-${RUBRICA_NEGATIVA.slug}`),
-    ).toHaveAttribute("data-bloqueada", "true");
-    await expect(
-      page.getByTestId(`budget-balance-motivo-${RUBRICA_NEGATIVA.slug}`),
-    ).toContainText(/Saldo negativo por remanejamento/i);
+    await expect(valor).toHaveText(/R\$\s*0,00/);
+    await expect(page.getByTestId(`budget-balance-rubrica-${RUBRICA_ESGOTADA.slug}`)).toHaveAttribute(
+      "data-bloqueada",
+      "true",
+    );
   });
 
   test("falha de rede exibe erro com ação de tentar novamente", async ({
     page,
   }) => {
-    // O id sai da matriz, que vem do MESMO endpoint que este teste derruba —
-    // por isso a interceptação só entra depois de resolvê-lo.
-    await page.goto("/sgp/orcamento/");
-    const metaId = await idDaMeta(page, META_COM_ORCAMENTO);
-
     let derrubar = true;
     await page.route("**/api/v1/sgp/orcamento/painel/**", async (route) => {
       if (derrubar) {
@@ -214,7 +120,7 @@ test.describe("Saldo por rubrica — ADT com território", () => {
       await route.continue();
     });
 
-    await page.goto(`/sgp/orcamento/?meta=${metaId}`);
+    await page.goto("/sgp/orcamento/");
 
     const erro = page.getByTestId("budget-balance-erro");
     await expect(erro).toBeVisible();
@@ -272,12 +178,9 @@ test.describe("Saldo por rubrica — ADT sem território", () => {
       }
     });
 
-    // COM filtro de Meta: sem território, o card nem assim vai buscar o saldo —
-    // é isso que separa "decidiu pela sessão" de "perguntou e recebeu vazio".
+    // Sem território, o card nem vai buscar o saldo — é isso que separa
+    // "decidiu pela sessão" de "perguntou e recebeu vazio".
     await page.goto("/sgp/orcamento/");
-    const metaId = await idDaMeta(page, META_COM_ORCAMENTO);
-    chamadasAoPainel.length = 0;
-    await page.goto(`/sgp/orcamento/?meta=${metaId}`);
 
     const card = page.getByTestId("budget-balance");
     await expect(card).toBeVisible();

@@ -6,12 +6,12 @@ import { Badge } from "@/app/components/ui/Badge/Badge";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { formatDate } from "@/app/lib/datetime";
 import { formatCurrencyBRL } from "@/app/lib/format";
-import type { AlocacaoDoRemanejamento, TransferenciaRemanejamento } from "@/app/lib/remanejamentos";
+import type { PoolDoRemanejamento, TransferenciaRemanejamento } from "@/app/lib/remanejamentos";
 
 const TH = "px-4 py-2.5 text-left text-2xs font-medium uppercase tracking-[0.06em] text-text-muted";
 const TD = "px-4 py-3 align-middle";
 
-const nomeDaAlocacao = (a: AlocacaoDoRemanejamento) => a.territorio ?? a.estado ?? "Nacional";
+const nomeDoPool = (a: PoolDoRemanejamento) => a.territorio ?? a.estado ?? "Nacional";
 
 /** Os excedentes autorizados nas demandas (#363): remanejamentos pontuais, sem pedido de recurso extra. */
 export function ExcedentesTabela({
@@ -67,7 +67,7 @@ export function ExcedentesTabela({
                 </td>
                 <td className={`${TD} text-text-muted`}>{e.rubrica}</td>
                 <td className={`${TD} text-text-muted`}>
-                  {nomeDaAlocacao(e.origem)} → {nomeDaAlocacao(e.destino)}
+                  {nomeDoPool(e.origem)} → {nomeDoPool(e.destino)}
                 </td>
                 <td className={`${TD} text-text-muted`}>{e.aprovado_por_nome ?? "—"}</td>
                 <td className={`${TD} tabular-nums text-text-muted`}>{formatDate(e.criado_em)}</td>

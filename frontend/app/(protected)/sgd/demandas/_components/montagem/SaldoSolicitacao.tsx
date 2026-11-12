@@ -5,7 +5,6 @@ import { AlertTriangle, ArrowRight } from "lucide-react";
 import Spinner from "@/app/components/icons/Spinner";
 import { SemaforoBadge } from "@/app/components/ui/SemaforoBadge/SemaforoBadge";
 import { ApiError } from "@/app/lib/api";
-import type { TipoSolicitacao } from "@/app/lib/camposSolicitacao";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import { useDebounced } from "@/app/lib/hooks/useDebounced";
 import { qk } from "@/app/lib/queryKeys";
@@ -44,21 +43,19 @@ function Trava({ titulo, trava, testId }: { titulo: string; trava: TravaSaldo; t
  * ela levou: o saldo mostrado já o desconta.
  */
 export function SaldoSolicitacao({
-  atividadeId,
   tipo,
   valor,
   devolvida,
 }: {
-  atividadeId: number;
-  tipo: TipoSolicitacao;
+  tipo: string;
   /** Decimal "1234.56"; "0" mostra só o disponível. */
   valor: string;
   devolvida: boolean;
 }) {
   const valorAdiado = useDebounced(valor);
   const saldo = useQuery({
-    queryKey: qk.solicitacao.saldo(atividadeId, tipo, valorAdiado),
-    queryFn: ({ signal }) => consultarSaldo({ atividadeId, tipo, valor: valorAdiado }, signal),
+    queryKey: qk.solicitacao.saldo(tipo, valorAdiado),
+    queryFn: ({ signal }) => consultarSaldo({ tipo, valor: valorAdiado }, signal),
     placeholderData: (anterior) => anterior,
   });
 

@@ -1,30 +1,29 @@
-import type { AlocacaoApi, RubricaOrcamentoApi } from "@/app/lib/orcamento";
+import type { PoolOrcamentoApi } from "@/app/lib/orcamento";
 import { valorNumerico } from "@/app/lib/orcamento";
 
 /**
  * Um destino da distribuição — um estado (para a UGP) ou um território (para o
- * Articulador), com a alocação que já existe para ele, se existir.
+ * Articulador), com o pool que já existe para ele, se existir (#398).
  */
 export type Destino = {
   /** Id do State ou do Territory, conforme o nível. */
   id: number;
   /** "Pernambuco (PE)" ou "Território do Sertão do Pajeú". */
   nome: string;
-  /** A alocação já gravada para este destino, ou null se ainda não existe. */
-  alocacao: AlocacaoApi | null;
+  /** O pool já gravado para este destino, ou null se ainda não existe. */
+  pool: PoolOrcamentoApi | null;
 };
 
 /**
  * O teto contra o qual a tela valida, e suas parcelas.
  *
- * Espelha `_checar_teto` do backend: o que limita não é o valor aprovado do
- * nível de cima, e sim o SALDO dele (aprovado − comprometido − executado), e a
- * soma que precisa caber nesse saldo inclui todos os irmãos do mesmo nível.
+ * Espelha `_travar_pai_e_checar_teto` do backend: o que limita não é o valor
+ * aprovado do pool de cima, e sim o SALDO dele (aprovado − comprometido −
+ * executado), e a soma que precisa caber nesse saldo inclui todos os irmãos.
  */
 export type Teto = {
   /**
-   * O que o nível de cima tem alocado, bruto: `valor_aprovado` da linha
-   * nacional ou `valor_alocado` da estadual. É o total de que todas as outras
+   * O que o pool de cima tem alocado, bruto (`valor_aprovado`). É o total de que todas as outras
    * parcelas são dedução — sem ele a barra mostraria um "disponível" menor que
    * o alocado e nada na tela explicaria a diferença.
    */
@@ -35,9 +34,9 @@ export type Teto = {
    * `saldoDoPai`.
    */
   consumidoNoPai: number;
-  /** `_saldo_disponivel(pai)` — quanto do pai ainda pode descer. */
+  /** Aprovado menos comprometido e executado do pai — quanto dele ainda pode descer. */
   saldoDoPai: number;
-  /** Soma do `valor_alocado` de todos os destinos já gravados. */
+  /** `valor_distribuido` do pai: a soma dos pools de baixo já gravados. */
   jaDistribuido: number;
   /** O que sobra: `saldoDoPai − jaDistribuido`. Nunca negativo na prática. */
   disponivel: number;
@@ -49,74 +48,21 @@ export const SEM_PAI: unique symbol = Symbol("sem-pai");
 export type ResolucaoTeto = Teto | typeof SEM_PAI;
 
 /**
- * Teto do nível ESTADUAL: o pai é a linha nacional, e o endpoint já entrega os
- * agregados dela prontos.
+ * O teto a partir do pool de cima — o nacional, para a UGP distribuir entre os
+ * estados; o do estado, para o Articulador distribuir entre os territórios
+ * (#398). As parcelas vêm prontas do painel: `valor_distribuido` já é a soma
+ * dos pools de baixo, e `saldo_disponivel` o que sobra.
  *
- * `valor_aprovado`, `valor_comprometido` e `valor_executado` de
- * `BudgetRubricaOrcamentoSerializer` são sempre do nacional (documentado em
- * `RubricaOrcamentoApi`), e `valor_distribuido` é a soma das estaduais — as
- * três parcelas do teto sem precisar varrer o detalhamento.
+ * Sem pai (o nível de cima não tem pool nesta rubrica), não há teto, e o
+ * backend recusaria a criação com "distribua o nível acima primeiro".
  */
-export function tetoEstadual(rubrica: RubricaOrcamentoApi): ResolucaoTeto {
-  const aprovado = valorNumerico(rubrica.valor_aprovado);
-  // Sem linha nacional não há teto contra o que validar, e o backend recusaria
-  // a criação com "distribua o nível acima primeiro".
-  if (aprovado === 0) return SEM_PAI;
-
-  const consumidoNoPai =
-    valorNumerico(rubrica.valor_comprometido) +
-    valorNumerico(rubrica.valor_executado);
-  const saldoDoPai = aprovado - consumidoNoPai;
-  const jaDistribuido = valorNumerico(rubrica.valor_distribuido);
-
-  return {
-    alocadoNoPai: aprovado,
-    consumidoNoPai,
-    saldoDoPai,
-    jaDistribuido,
-    disponivel: saldoDoPai - jaDistribuido,
-  };
-}
-
-/**
- * Teto do nível TERRITORIAL: o pai é a alocação estadual do estado escolhido, e
- * os irmãos são os territórios que cobrem esse mesmo estado.
- *
- * O filtro por sigla não é decoração: `_peers_sob_mesmo_pai` usa
- * `territorio__estados__contains=[pai.estado.sigla]`, porque um território pode
- * cobrir mais de um estado e consumir o saldo de mais de um pai.
- */
-export function tetoTerritorial(
-  rubrica: RubricaOrcamentoApi,
-  siglaEstado: string,
-  estadosPorTerritorio: Map<number, string[]>,
-): ResolucaoTeto {
-  const pai = rubrica.detalhamento.find(
-    (a) => a.nivel === "estadual" && a.estado?.sigla === siglaEstado,
-  );
-  if (!pai) return SEM_PAI;
-
-  const alocadoNoPai = valorNumerico(pai.valor_alocado);
-  const consumidoNoPai =
-    valorNumerico(pai.valor_comprometido) + valorNumerico(pai.valor_executado);
+export function tetoDoPool(pai: PoolOrcamentoApi | null | undefined): ResolucaoTeto {
+  if (!pai || valorNumerico(pai.valor_aprovado) === 0) return SEM_PAI;
+  const alocadoNoPai = valorNumerico(pai.valor_aprovado);
+  const consumidoNoPai = valorNumerico(pai.valor_comprometido) + valorNumerico(pai.valor_executado);
   const saldoDoPai = alocadoNoPai - consumidoNoPai;
-
-  const jaDistribuido = rubrica.detalhamento
-    .filter(
-      (a) =>
-        a.nivel === "territorial" &&
-        a.territorio !== null &&
-        (estadosPorTerritorio.get(a.territorio.id) ?? []).includes(siglaEstado),
-    )
-    .reduce((soma, a) => soma + valorNumerico(a.valor_alocado), 0);
-
-  return {
-    alocadoNoPai,
-    consumidoNoPai,
-    saldoDoPai,
-    jaDistribuido,
-    disponivel: saldoDoPai - jaDistribuido,
-  };
+  const jaDistribuido = valorNumerico(pai.valor_distribuido);
+  return { alocadoNoPai, consumidoNoPai, saldoDoPai, jaDistribuido, disponivel: saldoDoPai - jaDistribuido };
 }
 
 /**
@@ -152,7 +98,7 @@ export type Projecao = {
 };
 
 function jaGravado(destino: Destino): number {
-  return destino.alocacao ? valorNumerico(destino.alocacao.valor_alocado) : 0;
+  return destino.pool ? valorNumerico(destino.pool.valor_aprovado) : 0;
 }
 
 /**
@@ -185,7 +131,7 @@ export function projetar(
     // Sem excluir o próprio destino, aumentar de 1.000 para 1.100 pareceria
     // consumir 1.100 de saldo novo, e a tela bloquearia uma gravação que o
     // servidor aceitaria. `jaDistribuido` vem do agregado da API, que é o que
-    // `_checar_teto` também soma.
+    // o teto do backend também soma.
     const outros = teto.jaDistribuido - jaGravado(destino);
     excedentePorDestino[destino.id] = Math.max(
       0,

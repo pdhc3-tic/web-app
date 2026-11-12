@@ -118,9 +118,9 @@ test.describe("SGD — demandas pela ficha da atividade (ADT)", () => {
     );
     await page.getByTestId("atividade-busca").fill("Oficina agendada");
     const params = new URL((await busca).url()).searchParams;
-    // O contrato que o front manda: só as atividades do solicitante, nos dois
-    // status elegíveis, estreitadas pelo texto.
-    expect(params.get("tecnico_id")).toBe(String(fx.tecnicoId));
+    // O contrato que o front manda: os dois status elegíveis, estreitados pelo
+    // texto. Sem `tecnico_id` desde a #361 — vale qualquer atividade (#352).
+    expect(params.has("tecnico_id")).toBe(false);
     expect(params.getAll("status")).toEqual(["planejado", "agendado"]);
     expect(params.get("q")).toBe("Oficina agendada");
 
@@ -161,6 +161,33 @@ test.describe("SGD — demandas pela ficha da atividade (ADT)", () => {
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(tituloAtividade);
     await expect(page.getByText("Planejado").first()).toBeVisible();
     await expect(linhaDaDemanda(page, titulo)).toContainText("Rascunho");
+  });
+
+  // #361: a recusa do backend na atividade nova fica no campo do mini-formulário.
+  test("criando a atividade, o erro de validação do backend aparece no campo dela", async ({
+    page,
+  }) => {
+    await page.goto("/sgd/demandas/nova");
+    await page.getByLabel("A atividade ainda não existe").check();
+
+    // O campo não limita no cliente: quem recusa os 256 caracteres é o backend.
+    await page.getByLabel("Título da atividade").fill(`${PREFIXO} ${"x".repeat(255)}`);
+    await escolher(page, "nova-atividade-tipo", "Oficina");
+    await page.getByLabel("Data prevista").fill("2026-11-20");
+    await escolher(page, "nova-atividade-acao", new RegExp(`^${fx.acao.numero.replace(".", "\\.")} `));
+    await escolher(page, "nova-atividade-municipio", fx.municipio);
+    await page.getByLabel("Título da demanda").fill(`${PREFIXO} Demanda que não nasce`);
+
+    const resposta = page.waitForResponse(
+      (r) => r.url().includes("/api/v1/sgd/demandas/") && r.request().method() === "POST",
+    );
+    await page.getByTestId("nova-demanda-salvar").click();
+    expect((await resposta).status()).toBe(400);
+
+    const campo = page.getByTestId("nova-atividade-campos");
+    await expect(campo.getByText(/255/)).toBeVisible();
+    await expect(page.getByTestId("nova-demanda-erro")).toHaveCount(0);
+    await expect(page).toHaveURL(/\/sgd\/demandas\/nova$/);
   });
 
   test("atividade com várias demandas lista todas, cada uma com o seu status", async ({

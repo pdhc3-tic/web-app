@@ -28,8 +28,12 @@ export const qk = {
   },
   /** Detalhe de uma atividade — contexto herdado pela nova demanda (#294). */
   atividade: (id: string | number) => ["sgp", "atividade", String(id)] as const,
-  /** Orçamento de uma Meta por rubrica, com o detalhamento por nível (#321). */
-  orcamentoDaMeta: (metaId: number) => ["sgp", "orcamento", "meta", metaId] as const,
+  /** Pools de uma rubrica num nível, da matriz Rubrica × Nível (#384): origem do excedente e do recurso extra. */
+  poolsDaRubrica: (rubrica: string, nivel: string) => ["sgp", "orcamento", "pools", { rubrica, nivel }] as const,
+  /** Movimentações do ledger de um pool, no detalhe do Painel de Orçamento (#398). */
+  orcamentoPool: {
+    transacoes: (poolId: number) => ["sgp", "orcamento", "pools", poolId, "transacoes"] as const,
+  },
   /** Ações do Plano de Trabalho para selects (#294). */
   acoesPT: ["sgp", "acoes"] as const,
   /** Municípios de um território (#294). */
@@ -62,6 +66,8 @@ export const qk = {
       ["sgd", "demandas", "recorte", filtros, pagina ?? null, ordenacao ?? null] as const,
     preview: (id: number, solicitacaoId: number, valor: string, origem: string) =>
       ["sgd", "demandas", "preview", { id, solicitacaoId, valor, origem }] as const,
+    /** Riscos de glosa da demanda (#360); sob "sgd/demandas", a decisão os invalida junto. */
+    glosas: (id: string | number) => ["sgd", "demandas", "glosas", String(id)] as const,
     auditoria: (id: string | number) =>
       ["sgd", "demandas", "auditoria", String(id)] as const,
     /** Documentos da demanda (#295). */
@@ -69,17 +75,15 @@ export const qk = {
     /** Painel consolidado da home do SGD (#318): as decisões o invalidam junto. */
     dashboard: ["sgd", "demandas", "dashboard"] as const,
   },
-  /** Configuração do SGD (#319): mapeamento tipo → rubrica e o catálogo de rubricas. */
+  /** Configuração do SGD: o catálogo de tipos de solicitação (#365) e o de rubricas. */
   configSgd: {
-    tipoRubrica: ["sgd", "config", "tipo-rubrica"] as const,
-    tipoRubricaLista: (incluirInativos: boolean) =>
-      ["sgd", "config", "tipo-rubrica", { incluirInativos }] as const,
+    /** Todos os tipos, ativos e inativos; quem precisa só dos ativos filtra. */
+    tiposSolicitacao: ["sgd", "config", "tipos-solicitacao"] as const,
     rubricas: ["sgp", "rubricas"] as const,
   },
   /** Montagem da demanda (#295): saldo, simulação de diárias e destinos. */
   solicitacao: {
-    saldo: (atividadeId: number, tipo: string, valor: string) =>
-      ["sgd", "saldo", { atividadeId, tipo, valor }] as const,
+    saldo: (tipo: string, valor: string) => ["sgd", "saldo", { tipo, valor }] as const,
     simulacaoDiarias: (municipioId: string, inicio: string, fim: string) =>
       ["sgd", "diarias", "simulacao", { municipioId, inicio, fim }] as const,
     municipios: (texto: string) => ["core", "municipios", "busca", texto] as const,
@@ -99,8 +103,8 @@ export const qk = {
   demandasDaAtividade: (atividadeId: string | number) =>
     ["sgd", "demandas", { atividade: String(atividadeId) }] as const,
   /** Busca de atividades elegíveis no formulário de nova demanda (#294). */
-  atividadesElegiveis: (tecnicoId: string, busca: string) =>
-    ["sgp", "atividades", "elegiveis", { tecnicoId, busca }] as const,
+  atividadesElegiveis: (busca: string) =>
+    ["sgp", "atividades", "elegiveis", { busca }] as const,
   /** Tarefa assíncrona de exportação da listagem de UPFs (#240). */
   /** Job de exportação assíncrona do SGP (`/sgp/exportacoes/{id}/`), qualquer tipo. */
   exportacao: (id: string) => ["sgp", "exportacao", id] as const,

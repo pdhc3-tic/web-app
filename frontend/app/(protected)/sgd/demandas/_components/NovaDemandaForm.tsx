@@ -124,6 +124,7 @@ export function NovaDemandaForm({ atividadeIdInicial }: NovaDemandaFormProps) {
   const atividade = detalhe.data ?? null;
 
   const criandoAtividade = !fixa && origem === "nova";
+  const buscaNaTela = !fixa && origem === "existente";
 
   // ── Opções da atividade nova ────────────────────────────────────────────
   const territoriosDaSessao: SelectOption[] = (session?.user?.territorios ?? []).map(
@@ -230,12 +231,19 @@ export function NovaDemandaForm({ atividadeIdInicial }: NovaDemandaFormProps) {
     } catch (err) {
       if (err instanceof ApiError) {
         const porCampo: Erros = {};
+        let semCampoVisivel: string | null = null;
         for (const fe of err.fieldErrors ?? []) {
           const campo = fe.field ? CAMPO_DA_API[fe.field] : undefined;
-          if (campo) porCampo[campo] = fe.message;
+          // O erro da atividade só tem onde aparecer com a busca na tela. Vindo
+          // da ficha (atividade fixa) ou criando a atividade, a regra sem campo
+          // próprio (o serviço do SGP devolve `activity`) vai para o aviso
+          // geral em vez de sumir.
+          if (campo === "atividade" && !buscaNaTela) semCampoVisivel ??= fe.message;
+          else if (campo) porCampo[campo] = fe.message;
         }
         setErros(porCampo);
-        if (Object.keys(porCampo).length === 0) setErroGeral(err.message);
+        if (semCampoVisivel) setErroGeral(semCampoVisivel);
+        else if (Object.keys(porCampo).length === 0) setErroGeral(err.message);
       } else {
         setErroGeral("Não foi possível criar a demanda. Tente novamente.");
       }
@@ -287,9 +295,8 @@ export function NovaDemandaForm({ atividadeIdInicial }: NovaDemandaFormProps) {
           </div>
         )}
 
-        {!fixa && origem === "existente" && (
+        {buscaNaTela && (
           <AtividadeBusca
-            tecnicoId={String(session?.user?.id ?? "")}
             value={escolhida}
             onChange={(a) => {
               setEscolhida(a);
@@ -297,6 +304,15 @@ export function NovaDemandaForm({ atividadeIdInicial }: NovaDemandaFormProps) {
             }}
             error={erros.atividade}
           />
+        )}
+
+        {buscaNaTela && (
+          // O território exato só existe depois de criar: quem o define é o
+          // backend, pelo perfil de quem cria (#352). A montagem mostra.
+          <p className="-mt-2 text-xs text-text-muted">
+            A demanda segue o seu território, mesmo que a atividade seja de outro
+            estado. O território dela aparece na próxima etapa.
+          </p>
         )}
 
         {criandoAtividade && (

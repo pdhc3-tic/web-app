@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
+import { ORCAMENTO_E2E_PY } from "./orcamentoE2E";
 
 /**
  * Fixture do ciclo de vida completo da demanda (Issue #317).
@@ -11,14 +12,14 @@ import path from "node:path";
  * - uma atividade agendada por jornada, no Território RN do ADT Ewerton;
  * - uma atividade com uma demanda em Rascunho, só para consultar o saldo na
  *   montagem (a jornada do cancelamento compara o antes e o depois);
- * - a verba territorial de alimentação, de R$ 10.317,00 (valor-marcador da
- *   limpeza). O seed já tem uma de R$ 60.000 em RN, mas na meta 8: as
- *   atividades daqui ficam numa ação de OUTRA meta, para as jornadas não
- *   mexerem no saldo do seed — o motor procura a verba por meta, rubrica e
- *   território.
+ * - o pool territorial de alimentação do RN em R$ 10.317,00, sem nada
+ *   comprometido nem executado (#399: o pool é único por rubrica e local, então
+ *   a fixture ajusta o do seed em vez de criar outro);
+ * - o limite individual de alimentação do Ewerton em R$ 5.000 no período, sem
+ *   nada usado.
  *
- * O limite individual de alimentação do Ewerton começa em R$ 5.000 sem nada
- * comprometido nem executado, e volta à foto tirada no setup no teardown.
+ * O orçamento é fotografado no setup e restaurado no teardown
+ * (`orcamentoE2E.ts`).
  *
  * O setup também limpa o que uma execução interrompida tenha deixado: os
  * testes não dependem de estado anterior.
@@ -40,19 +41,18 @@ export type CicloDemandaFixture = {
   cancelamento: Ref;
   /** Demanda em Rascunho onde a jornada do cancelamento lê o saldo. */
   consultaSaldo: Ref;
-  limite: { limite: string; comprometido: string; executado: string } | null;
 };
 
-const COMUM = `
+const COMUM = `${ORCAMENTO_E2E_PY}
 from decimal import Decimal
 from django.contrib.auth import get_user_model
 from apps.sgp.models import Activity, BudgetIncreaseRequest
-from apps.sgp.models.budget import BudgetAllocation, BudgetRubrica, BudgetTransaction
+from apps.sgp.budget.models import BudgetRubrica
 from apps.sgd.models.demand import Demand
 from apps.sgd.models.approval_step import ApprovalStep
-from apps.sgd.models.individual_limit import DemandIndividualLimit
 
 P = "${PREFIXO_317}"
+FOTO = "ciclo-demanda"
 VERBA = Decimal("10317.00")
 RUBRICA = "alimentacao-refeicoes"
 U = get_user_model()
@@ -64,11 +64,10 @@ def limpar():
     ids = [str(pk) for pk in demandas.values_list("pk", flat=True)]
     BudgetIncreaseRequest.objects.filter(demanda_id__in=ids).delete()
     ApprovalStep.objects.filter(demanda__in=demandas).delete()
-    verbas = BudgetAllocation.objects.filter(nivel="territorial", territorio_id=territorio_id, valor_alocado=VERBA)
-    BudgetTransaction.objects.filter(allocation__in=verbas).delete()
+    # Antes de apagar: o ledger referencia a atividade.
+    restaurar(FOTO)
     demandas.delete()
     Activity.objects.filter(titulo__startswith=P).delete()
-    verbas.delete()
 `;
 
 const SETUP_SCRIPT = `${COMUM}
@@ -80,32 +79,11 @@ from apps.sgp.models.workplan import WorkPlanAcao
 from apps.sgd.services import demand as ds
 
 limpar()
+fotografar(FOTO)
 rubrica = BudgetRubrica.objects.get(slug=RUBRICA)
-
-# Uma ação de meta sem verba de alimentação neste território: a verba da
-# fixture não colide com a do seed (única por meta, rubrica e território).
-metas_com_verba = BudgetAllocation.objects.filter(
-    nivel="territorial", territorio_id=territorio_id, rubrica=rubrica,
-).values_list("meta_id", flat=True)
-acao = WorkPlanAcao.objects.exclude(meta_id__in=list(metas_com_verba)).order_by("meta_id", "pk").first()
-if acao is None:
-    raise RuntimeError("Nenhuma ação fora das metas com verba de alimentação: rode manage.py seed_demo --reset")
-BudgetAllocation.objects.create(
-    meta_id=acao.meta_id, rubrica=rubrica, nivel="territorial", territorio_id=territorio_id, valor_alocado=VERBA,
-)
-
-limite = DemandIndividualLimit.objects.filter(solicitante=adt, rubrica=rubrica).first()
-foto = limite and {
-    "limite": str(limite.valor_limite),
-    "comprometido": str(limite.valor_comprometido),
-    "executado": str(limite.valor_executado),
-}
-if limite is None:
-    limite = DemandIndividualLimit(solicitante=adt, rubrica=rubrica)
-limite.valor_limite = Decimal("5000")
-limite.valor_comprometido = Decimal("0")
-limite.valor_executado = Decimal("0")
-limite.save()
+acao = WorkPlanAcao.objects.order_by("pk").first()
+definir_pool(rubrica, "territorial", VERBA, territorio_id=territorio_id)
+definir_limite(adt, rubrica, "5000")
 
 municipio = Municipality.objects.filter(territory_id=territorio_id).order_by("nome").first()
 quando = timezone.now() + timedelta(days=20)
@@ -130,27 +108,13 @@ print("${MARCADOR}_SETUP " + json.dumps({
     "recusa": atividade("Encontro de mulheres rurais"),
     "cancelamento": atividade("Dia de campo em quintais produtivos"),
     "consultaSaldo": {"id": consulta.pk, "titulo": consulta.titulo},
-    "limite": foto,
 }))
 `;
 
-function teardownScript(foto: CicloDemandaFixture["limite"]): string {
-  return `${COMUM}
-import json
+const TEARDOWN_SCRIPT = `${COMUM}
 limpar()
-foto = json.loads(${JSON.stringify(JSON.stringify(foto))})
-limite = DemandIndividualLimit.objects.filter(solicitante=adt, rubrica__slug=RUBRICA).first()
-if limite is not None:
-    if foto is None:
-        limite.delete()
-    else:
-        limite.valor_limite = Decimal(foto["limite"])
-        limite.valor_comprometido = Decimal(foto["comprometido"])
-        limite.valor_executado = Decimal(foto["executado"])
-        limite.save(update_fields=["valor_limite", "valor_comprometido", "valor_executado"])
 print("${MARCADOR}_TEARDOWN_OK")
 `;
-}
 
 function djangoShellComoDono(script: string): string {
   return execFileSync(
@@ -180,8 +144,9 @@ export function criarCicloDemandaFixture(): CicloDemandaFixture {
   return JSON.parse(linha.slice(`${MARCADOR}_SETUP `.length)) as CicloDemandaFixture;
 }
 
-export function removerCicloDemandaFixture(fx: CicloDemandaFixture): void {
-  const saida = djangoShellComoDono(teardownScript(fx.limite));
+/** O argumento ficou por compatibilidade: a restauração vem da fotografia do container. */
+export function removerCicloDemandaFixture(_fx?: CicloDemandaFixture): void {
+  const saida = djangoShellComoDono(TEARDOWN_SCRIPT);
   if (!saida.includes(`${MARCADOR}_TEARDOWN_OK`)) {
     throw new Error(`Fixture da #317 não confirmou o teardown:\n${saida}`);
   }

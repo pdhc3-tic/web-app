@@ -174,7 +174,7 @@ function LinhaOrigem({ origem }: { origem: ImpactoOrigem }) {
 const BLOQUEIO: Record<NonNullable<PreviewDecisao["trava_bloqueada"]>, string> = {
   individual: "Este valor excede o limite individual do solicitante.",
   territorial: "Este valor excede o saldo do pool territorial.",
-  origem: "A alocação de origem não tem saldo para cobrir o excedente.",
+  origem: "O pool de origem não tem saldo para cobrir o excedente.",
 };
 
 /**

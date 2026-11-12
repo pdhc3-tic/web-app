@@ -32,7 +32,7 @@ type Props = {
 /**
  * Uma linha da distribuição: destino, quanto tem hoje, quanto passará a ter.
  *
- * Cada linha grava sozinha. O backend não tem endpoint de lote — cada alocação
+ * Cada linha grava sozinha. O backend não tem endpoint de lote — cada pool
  * é um POST ou PATCH próprio —, então um botão "salvar tudo" seria N
  * requisições sem atomicidade: falhando a terceira, as duas primeiras já teriam
  * gravado e o usuário ficaria sem saber onde parou. Num formulário que mexe no
@@ -50,12 +50,12 @@ export function DestinoLinha({
   salvando,
   desabilitado,
 }: Props) {
-  const atual = destino.alocacao
-    ? valorNumerico(destino.alocacao.valor_alocado)
+  const atual = destino.pool
+    ? valorNumerico(destino.pool.valor_aprovado)
     : 0;
-  const comprometido = destino.alocacao
-    ? valorNumerico(destino.alocacao.valor_comprometido) +
-      valorNumerico(destino.alocacao.valor_executado)
+  const comprometido = destino.pool
+    ? valorNumerico(destino.pool.valor_comprometido) +
+      valorNumerico(destino.pool.valor_executado)
     : 0;
 
   const vazio = valor.trim() === "";
@@ -81,20 +81,20 @@ export function DestinoLinha({
             {destino.nome}
           </p>
           <p className="mt-0.5 text-xs text-text-muted tabular-nums">
-            {destino.alocacao ? (
+            {destino.pool ? (
               <>
                 Alocado hoje: {formatCurrencyBRL(atual)}
                 {comprometido > 0 && (
                   <>
                     {" · "}
-                    <span title="Comprometido + executado — o piso desta alocação">
+                    <span title="Comprometido + executado — o piso deste pool">
                       não pode baixar de {formatCurrencyBRL(comprometido)}
                     </span>
                   </>
                 )}
               </>
             ) : (
-              "Sem alocação — será criada"
+              "Sem pool — será criado"
             )}
           </p>
         </div>
@@ -112,8 +112,11 @@ export function DestinoLinha({
           />
         </div>
 
+        {/* Largura fixa: "Ajustar" e "Distribuir" têm tamanhos diferentes, e o
+            campo de valor desalinhava entre as linhas. */}
         <Button
           variant="secondary"
+          className="w-28 justify-center"
           onClick={onDistribuir}
           loading={salvando}
           // O bloqueio pelo teto é o critério de §5.3.2; a autoridade continua
@@ -121,7 +124,7 @@ export function DestinoLinha({
           disabled={desabilitado || estourou || vazio || inalterado}
           data-testid={`distribuicao-submit-${destino.id}`}
         >
-          {destino.alocacao ? "Ajustar" : "Distribuir"}
+          {destino.pool ? "Ajustar" : "Distribuir"}
         </Button>
       </div>
 

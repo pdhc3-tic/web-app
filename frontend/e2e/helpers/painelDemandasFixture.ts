@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
+import { ORCAMENTO_E2E_PY } from "./orcamentoE2E";
 
 /**
  * Fixture do painel de demandas (Issue #296).
@@ -21,6 +22,10 @@ import path from "node:path";
  *
  * Solicitante: o ADT do Território RN. Articulador de RN: o `articuladorPB`
  * (PB/RN/BA/MG); o `articuladorPE` não atua em RN e não deve vê-las.
+ *
+ * Orçamento por pool (#399): a fixture fotografa o orçamento, ajusta o pool
+ * territorial de locação de veículo do Ewerton, cria o estadual do RN e fixa o
+ * limite individual dele no período; o teardown restaura a fotografia.
  *
  * Limite individual de R$ 12.000 e pool territorial de R$ 20.296: com 6
  * demandas de R$ 1.200 reservadas (60%), ajustar a de `autorizar` para
@@ -49,18 +54,17 @@ export type PainelDemandasFixture = {
   excedente: Ref & { solicitacaoId: number; estadualId: number; estado: string };
 };
 
-const COMUM = `
+const COMUM = `${ORCAMENTO_E2E_PY}
 from decimal import Decimal
 from django.contrib.auth import get_user_model
 from apps.sgp.models import Activity
 from apps.sgp.models import GlosaRisk
-from django.db.models import F
-from apps.sgp.models.budget import BudgetAllocation, BudgetRubrica, BudgetTransaction, BudgetTransfer
+from apps.sgp.budget.models import BudgetRubrica
 from apps.sgd.models.demand import Demand
 from apps.sgd.models.approval_step import ApprovalStep
-from apps.sgd.models.individual_limit import DemandIndividualLimit
 
 P = "${PREFIXO_296}"
+FOTO = "painel-demandas"
 POOL = Decimal("20296.00")
 ESTADUAL = Decimal("50296.00")
 U = get_user_model()
@@ -70,26 +74,13 @@ rubrica = BudgetRubrica.objects.get(slug="locacao-veiculo")
 
 def limpar():
     demandas = Demand.objects.filter(titulo__startswith=P)
-    # O excedente da #363 move valor entre as alocações: desfaz antes de achá-las pelo valor.
-    # _raw_delete: o modelo é imutável e recusa o delete comum.
-    transferencias = BudgetTransfer.objects.filter(demanda_id__in=[str(pk) for pk in demandas.values_list("pk", flat=True)])
-    for t in transferencias:
-        BudgetAllocation.objects.filter(pk=t.allocation_origem_id).update(valor_alocado=F("valor_alocado") + t.valor)
-        BudgetAllocation.objects.filter(pk=t.allocation_destino_id).update(valor_alocado=F("valor_alocado") - t.valor)
-    transferencias._raw_delete(transferencias.db)
     ApprovalStep.objects.filter(demanda__in=demandas).delete()
     GlosaRisk.objects.filter(demanda_id__in=[str(pk) for pk in demandas.values_list("pk", flat=True)]).delete()
-    pools = BudgetAllocation.objects.filter(
-        nivel="territorial", territorio_id=territorio_id, rubrica=rubrica, valor_alocado=POOL,
-    )
-    estaduais = BudgetAllocation.objects.filter(nivel="estadual", rubrica=rubrica, valor_alocado=ESTADUAL)
-    BudgetTransaction.objects.filter(allocation__in=pools).delete()
-    BudgetTransaction.objects.filter(allocation__in=estaduais).delete()
-    estaduais.delete()
+    # Ledger, transferências do excedente (#363), pools e limite voltam ao da fotografia.
+    # Antes de apagar: o ledger referencia a atividade com PROTECT.
+    restaurar(FOTO)
     demandas.delete()
     Activity.objects.filter(titulo__startswith=P).delete()
-    DemandIndividualLimit.objects.filter(solicitante=adt, rubrica=rubrica).delete()
-    pools.delete()
 `;
 
 const SETUP_SCRIPT = `${COMUM}
@@ -101,21 +92,16 @@ from apps.sgp.models.workplan import WorkPlanAcao
 from apps.sgd.services import demand as ds, workflow as wf
 
 limpar()
+fotografar(FOTO)
 articulador = U.objects.get(email="helio.fontenele@demo.pdhc.local")
 ugp = U.objects.get(email="beatriz.nogueira@demo.pdhc.local")
 
-# A Meta vem da primeira Ação do PT, não de um id fixo: ids mudam a cada reseed.
 acao = WorkPlanAcao.objects.order_by("pk").first()
-META_ID = acao.meta_id
-BudgetAllocation.objects.create(
-    meta_id=META_ID, rubrica=rubrica, nivel="territorial", territorio_id=territorio_id, valor_alocado=POOL,
-)
-DemandIndividualLimit.objects.create(solicitante=adt, rubrica=rubrica, valor_limite=Decimal("12000"))
+definir_pool(rubrica, "territorial", POOL, territorio_id=territorio_id)
+definir_limite(adt, rubrica, "12000")
 
 municipio = Municipality.objects.filter(territory_id=territorio_id).order_by("nome").first()
-estadual = BudgetAllocation.objects.create(
-    meta_id=META_ID, rubrica=rubrica, nivel="estadual", estado=municipio.state, valor_alocado=ESTADUAL,
-)
+estadual = definir_pool(rubrica, "estadual", ESTADUAL, estado=municipio.state)
 quando = timezone.now() + timedelta(days=20)
 atividade = Activity.objects.create(
     titulo=f"{P} Intercâmbio regional", tipo_atividade="intercambio", acao=acao, municipio=municipio,
@@ -174,9 +160,6 @@ print("${MARCADOR}_SETUP " + json.dumps({
 
 const TEARDOWN_SCRIPT = `${COMUM}
 limpar()
-# A limpeza apaga o limite de locação do Ewerton; devolve o do seed
-# (SGD_LIMITES_ADT_MONTAGEM) para as specs que rodam depois.
-DemandIndividualLimit.objects.get_or_create(solicitante=adt, rubrica=rubrica, defaults={"valor_limite": Decimal("1000")})
 print("${MARCADOR}_TEARDOWN_OK")
 `;
 

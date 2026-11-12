@@ -92,7 +92,7 @@ export function AcoesDecisao({
         ? solicitacoes.map((s) => ({
             solicitacao: s,
             valor: valores[s.id] ?? "",
-            // O excedente só pesa na rubrica da alocação de origem.
+            // O excedente só pesa na rubrica do pool de origem.
             origem: origem?.rubricaSlug === s.rubrica_slug ? origem.id : "",
           }))
         : [];

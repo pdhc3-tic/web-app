@@ -13,14 +13,13 @@ import { useToast } from "@/app/components/ui/Toast/Toast";
 import { ApiError } from "@/app/lib/api";
 import { useDistribuicaoScope } from "@/app/lib/auth/roles";
 import { formatCurrencyBRL, moneyOrNull } from "@/app/lib/format";
-import { listMetas, type MetaListItem } from "@/app/lib/metas";
 import {
-  atualizarAlocacao,
-  criarAlocacao,
-  fetchOrcamentoDaMeta,
+  atualizarPool,
+  criarPool,
+  fetchPainelOrcamento,
   nivelOrcamentoLabel,
   RUBRICAS,
-  type RubricaOrcamentoApi,
+  type PoolOrcamentoApi,
 } from "@/app/lib/orcamento";
 import { fetchStates, fetchTerritorios, type StateItem } from "@/app/lib/upfs";
 import type { Territorio } from "@/app/lib/auth/types";
@@ -33,8 +32,7 @@ import { DestinoLinha } from "./_components/DestinoLinha";
 import {
   projetar,
   SEM_PAI,
-  tetoEstadual,
-  tetoTerritorial,
+  tetoDoPool,
   type Destino,
 } from "./_components/tipos";
 
@@ -47,17 +45,18 @@ function CenteredSpinner() {
 }
 
 /**
- * Distribuição orçamentária (§5.3.2).
+ * Distribuição orçamentária (§5.3.2), sobre o orçamento por pool (#398).
  *
- * A UGP distribui o nacional entre os estados; o Articulador redistribui o
- * estado dele entre os territórios. Quem faz o quê não é escolha da tela: é o
- * que `BudgetAllocationViewSet._autorizar` aceita de cada perfil — ver
+ * A UGP distribui o pool nacional de uma rubrica entre os estados; o
+ * Articulador redistribui o pool do estado dele entre os territórios. Sem Meta:
+ * desde a #384 o saldo é do pool. Quem faz o quê é o que
+ * `BudgetPoolViewSet._autorizar` aceita de cada perfil — ver
  * `useDistribuicaoScope`.
  *
  * ─── O que a tela valida, e o que ela não decide ────────────────────────────
  *
- * `_checar_teto` roda no servidor dentro de uma transação, com
- * `select_for_update` no pai. A projeção daqui é espelho dela para dar resposta
+ * O teto roda no servidor dentro de uma transação, com
+ * `select_for_update` no pool de cima. A projeção daqui é espelho dela para dar resposta
  * enquanto se digita, nunca substituto: entre desenhar a barra e enviar o POST
  * cabe a distribuição de outra pessoa, e é o 400 que decide. Por isso todo erro
  * de campo do servidor é ancorado no input correspondente em vez de virar um
@@ -69,18 +68,17 @@ export default function DistribuicaoOrcamentoPage() {
   const { showToast } = useToast();
 
   // ── Dados de apoio ────────────────────────────────────────────────────────
-  const [metas, setMetas] = useState<MetaListItem[]>([]);
   const [estados, setEstados] = useState<StateItem[]>([]);
   const [territorios, setTerritorios] = useState<Territorio[]>([]);
 
   // ── Seleção ───────────────────────────────────────────────────────────────
-  const [metaId, setMetaId] = useState("");
   const [rubricaSlug, setRubricaSlug] = useState("");
   /** Só o Articulador escolhe: é o pai de que ele redistribui. */
   const [siglaEstado, setSiglaEstado] = useState("");
 
-  // ── Orçamento da Meta ─────────────────────────────────────────────────────
-  const [orcamento, setOrcamento] = useState<RubricaOrcamentoApi[] | null>(null);
+  // ── Pools da rubrica ──────────────────────────────────────────────────────
+  /** O pool de cima e os de baixo já gravados, do painel por rubrica (e estado). */
+  const [pools, setPools] = useState<PoolOrcamentoApi[] | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [erroCarga, setErroCarga] = useState<string | null>(null);
   const [recarga, setRecarga] = useState(0);
@@ -99,8 +97,6 @@ export default function DistribuicaoOrcamentoPage() {
     if (!pode) return;
     const controller = new AbortController();
 
-    listMetas(controller.signal).then(setMetas).catch(() => {});
-
     if (nivel === "estadual") {
       fetchStates(controller.signal).then(setEstados).catch(() => {});
     } else {
@@ -117,51 +113,40 @@ export default function DistribuicaoOrcamentoPage() {
     }
   }, [nivel, soUmEstado, siglaEstado, estadosDoUsuario]);
 
-  // ── Carga do orçamento da Meta ────────────────────────────────────────────
+  // ── Carga dos pools da rubrica ────────────────────────────────────────────
+  // A UGP lê a rubrica inteira (o nacional e os estaduais); o Articulador desce
+  // ao estado escolhido (o pool do estado e os dos territórios dele).
+  const precisaEstado = nivel === "territorial";
   useEffect(() => {
-    if (metaId === "") {
-      setOrcamento(null);
+    if (rubricaSlug === "" || (precisaEstado && siglaEstado === "")) {
+      setPools(null);
       return;
     }
     const controller = new AbortController();
     setCarregando(true);
     setErroCarga(null);
 
-    fetchOrcamentoDaMeta(Number(metaId), controller.signal)
+    fetchPainelOrcamento(
+      precisaEstado ? { rubrica: rubricaSlug, estado: siglaEstado } : { rubrica: rubricaSlug },
+      controller.signal,
+    )
       .then((dados) => {
-        setOrcamento(dados);
+        setPools(dados);
         // O que estava digitado valia para outro recorte; manter o texto na
-        // tela depois de trocar de Meta convidaria a gravar o valor errado.
+        // tela depois de trocar de rubrica convidaria a gravar o valor errado.
         setValores({});
         setErros({});
       })
       .catch((e: unknown) => {
         if (controller.signal.aborted) return;
-        setErroCarga(
-          e instanceof ApiError
-            ? e.message
-            : "Não foi possível carregar o orçamento desta Meta.",
-        );
+        setErroCarga(e instanceof ApiError ? e.message : "Não foi possível carregar o orçamento desta rubrica.");
       })
       .finally(() => {
         if (!controller.signal.aborted) setCarregando(false);
       });
 
     return () => controller.abort();
-  }, [metaId, recarga]);
-
-  const metaOptions: SelectOption[] = useMemo(
-    // Mesmo contorno do painel: o backend devolve as Metas fora de ordem.
-    // Ver frontend/docs/pendencias-backend-sprint-9.md, item 8.
-    () =>
-      [...metas]
-        .sort((a, b) => a.numero - b.numero)
-        .map((m) => ({
-          value: String(m.id),
-          label: `Meta ${m.numero} – ${m.titulo}`,
-        })),
-    [metas],
-  );
+  }, [rubricaSlug, siglaEstado, precisaEstado, recarga]);
 
   const rubricaOptions: SelectOption[] = useMemo(
     () => RUBRICAS.map((r) => ({ value: r.slug, label: r.nome })),
@@ -174,33 +159,29 @@ export default function DistribuicaoOrcamentoPage() {
     [estadosDoUsuario],
   );
 
-  const estadosPorTerritorio = useMemo(
-    () => new Map(territorios.map((t) => [t.id, t.estados ?? []])),
-    [territorios],
-  );
+  /** O pool de onde sai o valor: o nacional (UGP) ou o do estado escolhido (Articulador). */
+  const pai = useMemo(() => {
+    if (!pools) return null;
+    return nivel === "estadual"
+      ? (pools.find((p) => p.nivel === "nacional" && !p.reserva_ugp) ?? null)
+      : (pools.find((p) => p.nivel === "estadual" && p.estado?.sigla === siglaEstado) ?? null);
+  }, [pools, nivel, siglaEstado]);
 
-  const rubricaAtual = useMemo(
-    () => orcamento?.find((r) => r.rubrica.slug === rubricaSlug) ?? null,
-    [orcamento, rubricaSlug],
-  );
+  const rubricaAtual = useMemo(() => RUBRICAS.find((r) => r.slug === rubricaSlug) ?? null, [rubricaSlug]);
 
   // ── Destinos ──────────────────────────────────────────────────────────────
   const destinos: Destino[] = useMemo(() => {
-    if (!rubricaAtual) return [];
+    if (!pools) return [];
 
     if (nivel === "estadual") {
       // `id` é a PK do State, que é o que `estado_id` do payload exige; o
-      // casamento com o que já existe é por SIGLA, que é como o detalhamento
-      // identifica o estado.
+      // casamento com o pool que já existe é pela sigla.
       return [...estados]
         .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
         .map((e) => ({
           id: e.id,
           nome: `${e.nome} (${e.sigla})`,
-          alocacao:
-            rubricaAtual.detalhamento.find(
-              (a) => a.nivel === "estadual" && a.estado?.sigla === e.sigla,
-            ) ?? null,
+          pool: pools.find((p) => p.nivel === "estadual" && p.estado?.sigla === e.sigla) ?? null,
         }));
     }
 
@@ -210,21 +191,11 @@ export default function DistribuicaoOrcamentoPage() {
       .map((t) => ({
         id: t.id,
         nome: t.nome,
-        alocacao:
-          rubricaAtual.detalhamento.find(
-            (a) => a.nivel === "territorial" && a.territorio?.id === t.id,
-          ) ?? null,
+        pool: pools.find((p) => p.nivel === "territorial" && p.territorio?.id === t.id) ?? null,
       }));
-  }, [rubricaAtual, nivel, estados, territorios, siglaEstado]);
+  }, [pools, nivel, estados, territorios, siglaEstado]);
 
-  const teto = useMemo(() => {
-    if (!rubricaAtual) return null;
-    return nivel === "estadual"
-      ? tetoEstadual(rubricaAtual)
-      : siglaEstado === ""
-        ? null
-        : tetoTerritorial(rubricaAtual, siglaEstado, estadosPorTerritorio);
-  }, [rubricaAtual, nivel, siglaEstado, estadosPorTerritorio]);
+  const teto = useMemo(() => (pools ? tetoDoPool(pai) : null), [pools, pai]);
 
   const tetoResolvido = teto !== null && teto !== SEM_PAI ? teto : null;
 
@@ -271,17 +242,15 @@ export default function DistribuicaoOrcamentoPage() {
       setConfirmacao({
         destino,
         valor,
-        metaLabel:
-          metaOptions.find((m) => m.value === metaId)?.label ?? `Meta ${metaId}`,
-        rubricaLabel: rubricaAtual.rubrica.nome,
+        rubricaLabel: rubricaAtual.nome,
         nivelLabel: nivelOrcamentoLabel(nivel === "estadual" ? "estadual" : "territorial"),
       });
     },
-    [valores, rubricaAtual, metaOptions, metaId, nivel],
+    [valores, rubricaAtual, nivel],
   );
 
   const confirmar = useCallback(async () => {
-    if (!confirmacao || !rubricaAtual) return;
+    if (!confirmacao || !pai) return;
     const { destino, valor } = confirmacao;
     const destinoId = destino.id;
 
@@ -289,11 +258,11 @@ export default function DistribuicaoOrcamentoPage() {
     setErros((e) => ({ ...e, [destinoId]: "" }));
 
     try {
-      if (destino.alocacao) {
-        await atualizarAlocacao(destino.alocacao.id, valor);
+      if (destino.pool) {
+        await atualizarPool(destino.pool.id, valor);
       } else {
-        await criarAlocacao(Number(metaId), {
-          rubrica_id: rubricaAtual.rubrica.id,
+        await criarPool({
+          rubrica_id: pai.rubrica.id,
           nivel: nivel === "estadual" ? "estadual" : "territorial",
           ...(nivel === "estadual"
             ? { estado_id: destinoId }
@@ -310,13 +279,13 @@ export default function DistribuicaoOrcamentoPage() {
       });
       showToast(
         `${destino.nome}: ${formatCurrencyBRL(valor)} ${
-          destino.alocacao ? "ajustado" : "distribuído"
+          destino.pool ? "ajustado" : "distribuído"
         }.`,
         "success",
       );
-      // Recarrega o orçamento em vez de remendar o estado local: os agregados
-      // do pai também mudaram, e recalcular a barra a partir da resposta de uma
-      // alocação só reproduziria a conta do servidor pela metade.
+      // Recarrega os pools em vez de remendar o estado local: os agregados do
+      // pai também mudaram, e recalcular a barra a partir da resposta de um
+      // pool só reproduziria a conta do servidor pela metade.
       setRecarga((r) => r + 1);
     } catch (e: unknown) {
       if (e instanceof ApiError && e.fieldErrors?.length) {
@@ -337,7 +306,7 @@ export default function DistribuicaoOrcamentoPage() {
     } finally {
       setSalvandoId(null);
     }
-  }, [confirmacao, rubricaAtual, metaId, nivel, showToast]);
+  }, [confirmacao, pai, nivel, showToast]);
 
   // ── Render ────────────────────────────────────────────────────────────────
   if (authLoading) return <CenteredSpinner />;
@@ -363,10 +332,10 @@ export default function DistribuicaoOrcamentoPage() {
   }
 
   const origem =
-    nivel === "estadual" ? "nível nacional" : `alocação estadual de ${siglaEstado}`;
+    nivel === "estadual" ? "pool nacional" : `pool estadual de ${siglaEstado}`;
 
   const precisaEscolherEstado = nivel === "territorial" && siglaEstado === "";
-  const pronto = metaId !== "" && rubricaSlug !== "" && !precisaEscolherEstado;
+  const pronto = rubricaSlug !== "" && !precisaEscolherEstado;
 
   return (
     <div data-testid="distribuicao-page">
@@ -384,23 +353,12 @@ export default function DistribuicaoOrcamentoPage() {
 
         <p className="max-w-prose text-sm text-text-muted">
           {nivel === "estadual"
-            ? "Distribua o valor aprovado de cada rubrica entre os estados. O teto é o saldo do nível nacional, e cada gravação fica registrada com uma transação em seu nome."
-            : "Redistribua entre os territórios o que o seu estado recebeu. O teto é o saldo da alocação estadual, e cada gravação fica registrada com uma transação em seu nome."}
+            ? "Distribua o pool nacional de cada rubrica entre os estados. O teto é o saldo do pool nacional, e cada gravação fica registrada em seu nome."
+            : "Redistribua entre os territórios o que o pool do seu estado recebeu. O teto é o saldo do pool estadual, e cada gravação fica registrada em seu nome."}
         </p>
 
         {/* Escolha do recorte */}
         <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface p-4">
-          <div className="min-w-56 flex-1">
-            <Select
-              id="distribuicao-meta"
-              label="Meta"
-              options={[{ value: "", label: "Selecione a Meta" }, ...metaOptions]}
-              value={metaId}
-              onChange={setMetaId}
-              placeholder="Selecione a Meta"
-            />
-          </div>
-
           <div className="min-w-44 flex-1">
             <Select
               id="distribuicao-rubrica"
@@ -450,13 +408,13 @@ export default function DistribuicaoOrcamentoPage() {
               icon={<Layers className="h-7 w-7" />}
               title="Escolha o que distribuir"
               description={
-                precisaEscolherEstado && metaId !== "" && rubricaSlug !== ""
+                precisaEscolherEstado && rubricaSlug !== ""
                   ? "Selecione o estado de onde o valor será redistribuído."
-                  : "Selecione a Meta e a rubrica para ver o saldo disponível e os destinos."
+                  : "Selecione a rubrica para ver o saldo disponível e os destinos."
               }
             />
           </div>
-        ) : carregando && orcamento === null ? (
+        ) : carregando && pools === null ? (
           <CenteredSpinner />
         ) : teto === SEM_PAI ? (
           <div
@@ -468,8 +426,8 @@ export default function DistribuicaoOrcamentoPage() {
               title="O nível acima ainda não foi distribuído"
               description={
                 nivel === "estadual"
-                  ? "Esta rubrica não tem valor aprovado no nível nacional para esta Meta. Sem a linha nacional não há teto contra o qual distribuir."
-                  : `Não há alocação estadual de ${siglaEstado} nesta rubrica. A UGP precisa distribuir para o seu estado antes que você possa repassar aos territórios.`
+                  ? "Esta rubrica não tem pool nacional com valor aprovado. Sem ele não há teto contra o qual distribuir."
+                  : `Não há pool estadual de ${siglaEstado} nesta rubrica. A UGP precisa distribuir para o seu estado antes que você possa repassar aos territórios.`
               }
             />
           </div>

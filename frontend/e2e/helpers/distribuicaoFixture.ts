@@ -1,124 +1,90 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
+import { ORCAMENTO_E2E_PY } from "./orcamentoE2E";
 
 /**
- * Fixture da tela de distribuição orçamentária (§5.3.2).
+ * Fixture da distribuição orçamentária (§5.3.2), sobre o orçamento por pool
+ * (#398). Esta suíte GRAVA: a UGP cria e ajusta pools estaduais pela tela.
  *
- * ─── Por que uma Meta só dela ───────────────────────────────────────────────
+ * Cada `criarDistribuicaoFixture` (um por teste) restaura a fotografia anterior
+ * e monta de novo, na rubrica Material Gráfico:
+ * - o pool nacional com R$ 100.000 aprovados, nada comprometido;
+ * - o pool estadual de PB com R$ 10.000, R$ 8.000 comprometidos — o "já
+ *   distribuído" de partida e o piso do teste do erro do servidor;
+ * - nenhum pool estadual de PE, o destino livre.
  *
- * Esta suíte ESCREVE no orçamento, e o que ela grava passa pelo service — logo
- * nasce com `BudgetTransaction`. A de `orcamento.spec.ts` usa as Metas 1 e 2 e
- * apaga por Meta no teardown; se as duas dividissem Meta, uma limparia o
- * cenário da outra no meio da execução. A Meta 7 é exclusiva daqui.
- *
- * ─── Por que o teardown apaga as transactions primeiro ──────────────────────
- *
- * `BudgetTransaction.delete()` levanta ProtectedError e `allocation` é PROTECT:
- * uma alocação criada pela tela não sai por nenhum caminho de instância. O que
- * funciona é `QuerySet.delete()`, que é DELETE em massa e não chama o método do
- * model — apagando primeiro as transactions, some o que protegia a alocação.
- *
- * Sem isso cada execução deixaria lixo permanente no banco de demonstração, e a
- * segunda rodada encontraria "Ajustar" onde esperava "Distribuir".
+ * O teardown restaura a fotografia (`orcamentoE2E.ts`), apagando os pools e o
+ * ledger que a tela gravou. Roda como `postgres`.
  */
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 
-/** Meta reservada a esta suíte. */
-export const META_DISTRIBUICAO = 7;
-
-/** Rubrica em que o cenário é montado. */
 export const RUBRICA = { slug: "material-grafico", nome: "Material Gráfico" };
 
-/** Teto nacional: é contra este saldo que a tela valida. */
 export const APROVADO_NACIONAL = 100000;
 
-/** Estado livre — o teste de criação distribui para ele. */
+/** Destino sem pool. No seed de demonstração, `State.nome` é a própria sigla. */
 export const ESTADO_LIVRE = { sigla: "PE", nome: "PE" };
 
-/**
- * Estado que já tem alocação COM valor comprometido.
- *
- * O comprometido é o que torna possível o teste do erro ancorado: reduzir
- * abaixo dele é recusado por `atualizar_valor_alocado` com a mensagem em
- * `valor_alocado`, e a tela não tem como antecipar isso — ela só valida teto.
- */
-export const ESTADO_COM_COMPROMETIDO = {
-  sigla: "PB",
-  nome: "PB",
-  alocado: 10000,
-  comprometido: 8000,
-};
+/** Destino já distribuído, com comprometido — o piso do teste do erro. */
+export const ESTADO_COM_COMPROMETIDO = { sigla: "PB", nome: "PB", alocado: 10000, comprometido: 8000 };
 
 const MARCADOR = "PDHC_E2E_DISTRIBUICAO";
+const FOTO = "distribuicao";
 
-/**
- * Estado inicial: o pai nacional e uma estadual com comprometido.
- *
- * Ambos criados pelo ORM cru, sem transaction — o cenário de partida precisa
- * sair limpo no teardown, e só o que a TELA gravar é que terá transaction.
- */
-const SETUP_SCRIPT = `
+const PRELUDIO = `${ORCAMENTO_E2E_PY}
 from decimal import Decimal
-
 from apps.core.models import State
-from apps.sgp.models import BudgetAllocation, BudgetTransaction, BudgetRubrica, WorkPlanMeta
+from apps.sgp.budget.models import BudgetPool, BudgetRubrica
 
-meta = WorkPlanMeta.objects.get(numero=${META_DISTRIBUICAO})
 rubrica = BudgetRubrica.objects.get(slug="${RUBRICA.slug}")
-
-# Zera tudo da Meta antes de montar: uma execucao anterior interrompida pode ter
-# deixado alocacoes com transaction, e elas so saem nesta ordem.
-alocacoes = BudgetAllocation.objects.filter(meta=meta)
-BudgetTransaction.objects.filter(allocation__in=alocacoes).delete()
-alocacoes.delete()
-
-BudgetAllocation.objects.create(
-    meta=meta, rubrica=rubrica, nivel="nacional",
-    valor_alocado=Decimal("${APROVADO_NACIONAL}.00"),
-    valor_comprometido=Decimal("0.00"), valor_executado=Decimal("0.00"),
-)
-
-BudgetAllocation.objects.create(
-    meta=meta, rubrica=rubrica, nivel="estadual",
-    estado=State.objects.get(sigla="${ESTADO_COM_COMPROMETIDO.sigla}"),
-    valor_alocado=Decimal("${ESTADO_COM_COMPROMETIDO.alocado}.00"),
-    valor_comprometido=Decimal("${ESTADO_COM_COMPROMETIDO.comprometido}.00"),
-    valor_executado=Decimal("0.00"),
-)
-
-print("${MARCADOR}_SETUP_OK " + str(meta.pk))
 `;
 
-const TEARDOWN_SCRIPT = `
-from apps.sgp.models import BudgetAllocation, BudgetTransaction, WorkPlanMeta
+const SETUP_SCRIPT = `${PRELUDIO}
+fotografar("${FOTO}")
+# Os estaduais da rubrica que não são da fixture saem do recorte: o "já
+# distribuído" de partida precisa ser só o de PB.
+outros = BudgetPool.objects.filter(rubrica=rubrica, nivel="estadual").exclude(estado__sigla="${ESTADO_COM_COMPROMETIDO.sigla}")
+outros.update(valor_alocado=Decimal("0"), valor_comprometido=Decimal("0"), valor_executado=Decimal("0"))
+definir_pool(rubrica, "nacional", "${APROVADO_NACIONAL}.00")
+definir_pool(
+    rubrica, "estadual", "${ESTADO_COM_COMPROMETIDO.alocado}.00",
+    estado=State.objects.get(sigla="${ESTADO_COM_COMPROMETIDO.sigla}"),
+    comprometido="${ESTADO_COM_COMPROMETIDO.comprometido}.00",
+)
+print("${MARCADOR}_SETUP_OK")
+`;
 
-meta = WorkPlanMeta.objects.filter(numero=${META_DISTRIBUICAO}).first()
-if meta is not None:
-    alocacoes = BudgetAllocation.objects.filter(meta=meta)
-    BudgetTransaction.objects.filter(allocation__in=alocacoes).delete()
-    alocacoes.delete()
-
+const TEARDOWN_SCRIPT = `${PRELUDIO}
+restaurar("${FOTO}")
 print("${MARCADOR}_TEARDOWN_OK")
 `;
 
+/** Como `postgres`: a restauração desliga o trigger do ledger na sessão. */
 function djangoShell(script: string): string {
   return execFileSync(
     "docker",
-    ["compose", "exec", "-T", "backend", "python", "manage.py", "shell", "-c", script],
+    [
+      "compose",
+      "exec",
+      "-T",
+      "backend",
+      "sh",
+      "-c",
+      'DB_USER=$POSTGRES_USER DB_PASSWORD=$POSTGRES_PASSWORD python manage.py shell -c "$1"',
+      "sh",
+      script,
+    ],
     { cwd: REPO_ROOT, encoding: "utf8", timeout: 120_000 },
   );
 }
 
-/** Monta o cenário e devolve a PK da Meta (a URL e os selects usam id, não número). */
-export function criarDistribuicaoFixture(): number {
+/** Restaura o que o teste anterior gravou e monta o cenário de novo. */
+export function criarDistribuicaoFixture(): void {
   const saida = djangoShell(SETUP_SCRIPT);
-  const marca = `${MARCADOR}_SETUP_OK `;
-  const linha = saida.split("\n").find((l) => l.startsWith(marca));
-  if (!linha) {
+  if (!saida.includes(`${MARCADOR}_SETUP_OK`)) {
     throw new Error(`Falha ao montar a fixture de distribuição:\n${saida}`);
   }
-  return Number(linha.slice(marca.length).trim());
 }
 
 export function removerDistribuicaoFixture(): void {
@@ -128,52 +94,25 @@ export function removerDistribuicaoFixture(): void {
   }
 }
 
-/**
- * Lê do banco o `valor_alocado` gravado para um estado — a única forma de
- * provar o que a máscara realmente enviou, já que a tela reexibe o valor
- * formatado e um `toContainText` não distinguiria "1.234,56" de "123.456".
- */
+/** O `valor_alocado` do pool estadual da sigla na rubrica, ou null se não existe. */
 export function valorAlocadoNoBanco(sigla: string): string | null {
-  const saida = djangoShell(`
-from apps.sgp.models import BudgetAllocation, WorkPlanMeta
-
-meta = WorkPlanMeta.objects.get(numero=${META_DISTRIBUICAO})
-a = BudgetAllocation.objects.filter(
-    meta=meta, nivel="estadual", estado__sigla="${sigla}",
-).first()
-print("${MARCADOR}_VALOR " + (str(a.valor_alocado) if a else "NENHUMA"))
+  const saida = djangoShell(`${PRELUDIO}
+p = BudgetPool.objects.filter(rubrica=rubrica, nivel="estadual", estado__sigla="${sigla}").first()
+print("${MARCADOR}_VALOR " + (str(p.valor_alocado) if p and p.valor_alocado else "NENHUMA"))
 `);
   const marca = `${MARCADOR}_VALOR `;
   const linha = saida.split("\n").find((l) => l.startsWith(marca));
-  if (!linha) throw new Error(`Falha ao ler a alocação:\n${saida}`);
+  if (!linha) throw new Error(`Falha ao ler o pool:\n${saida}`);
   const valor = linha.slice(marca.length).trim();
   return valor === "NENHUMA" ? null : valor;
 }
 
-/**
- * Compromete parte do teto NACIONAL, sem mexer nas estaduais.
- *
- * Existe para o teste da barra de saldo: enquanto o pai tem comprometido zero,
- * "alocado" e "saldo disponível" são o mesmo número, e a barra podia omitir o
- * alocado sem que nada denunciasse. Com valor comprometido os dois divergem —
- * e é aí que a conta precisa aparecer inteira na tela.
- *
- * Chamar DEPOIS de `criarDistribuicaoFixture`, e só nos testes que precisam: o
- * comprometido reduz o teto e mudaria a aritmética dos outros.
- */
+/** Compromete parte do pool nacional, para a barra mostrar a parcela consumida. */
 export function comprometerNacional(valor: number): void {
-  const saida = djangoShell(`
-from decimal import Decimal
-from apps.sgp.models import BudgetAllocation, BudgetRubrica, WorkPlanMeta
-
-atualizados = BudgetAllocation.objects.filter(
-    meta=WorkPlanMeta.objects.get(numero=${META_DISTRIBUICAO}),
-    rubrica=BudgetRubrica.objects.get(slug="${RUBRICA.slug}"),
-    nivel="nacional",
-).update(valor_comprometido=Decimal("${valor}.00"))
+  const saida = djangoShell(`${PRELUDIO}
+atualizados = BudgetPool.objects.filter(rubrica=rubrica, nivel="nacional").update(valor_comprometido=Decimal("${valor}.00"))
 if not atualizados:
-    raise RuntimeError("Alocacao nacional da fixture nao encontrada")
-
+    raise RuntimeError("Pool nacional da fixture nao encontrado")
 print("${MARCADOR}_COMPROMETIDO_OK")
 `);
   if (!saida.includes(`${MARCADOR}_COMPROMETIDO_OK`)) {

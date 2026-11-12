@@ -5,7 +5,7 @@ import { Select } from "@/app/components/ui/Select/Select";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 
 export type OrcamentoFiltersValue = {
-  /** Id da Meta, como string (valor do <Select>). "" = todas. */
+  /** Id da Meta, como string. Só recorta o executado (relatório), não o saldo. "" = sem recorte. */
   meta: string;
   /** SLUG da rubrica — o backend valida por slug, não por id. "" = todas. */
   rubrica: string;
@@ -40,19 +40,16 @@ type Props = {
 };
 
 /**
- * Filtros do Painel de Orçamento.
+ * Filtros do Painel de Orçamento (#398, orçamento por pool).
  *
- * Os quatro campos NÃO são a mesma coisa, e a tela separa os dois grupos de
- * propósito:
+ * Os quatro campos NÃO são a mesma coisa:
  *
- * - `meta` e `rubrica` recortam a matriz — menos linhas, mesmos valores.
- * - `estado` e `territorio` fazem DRILL-DOWN: mudam o nível que as linhas
- *   representam, e portanto mudam os próprios números. Descer para um estado
- *   não mostra "a parte estadual do total nacional": mostra as alocações
- *   estaduais, que são outra linha do banco.
- *
- * Sem esse aviso a leitura natural seria a errada — mesmo problema que o painel
- * do PT físico resolve com o seu `painel-aviso-territorio`.
+ * - `rubrica` recorta a matriz: menos blocos, mesmos valores.
+ * - `estado` e `territorio` descem na hierarquia: com estado, o pool do
+ *   estado e os dos territórios dele; com território, só o pool do território.
+ * - `meta` é só relatório: a coluna Executado passa a mostrar o executado nas
+ *   atividades da Meta. Aprovado, comprometido e disponível continuam os do
+ *   pool, porque desde a #384 a Meta não tem saldo próprio.
  */
 export function OrcamentoFilters({
   value,
@@ -82,12 +79,12 @@ export function OrcamentoFilters({
         <div className="min-w-40 flex-1">
           <Select
             id="orcamento-filtro-meta"
-            label="Meta"
-            options={[{ value: "", label: "Todas as Metas" }, ...metaOptions]}
+            label="Executado da Meta"
+            options={[{ value: "", label: "Sem recorte por Meta" }, ...metaOptions]}
             value={value.meta}
             onChange={(v) => onChange({ meta: v })}
             disabled={optionsLoading}
-            placeholder="Todas as Metas"
+            placeholder="Sem recorte por Meta"
           />
         </div>
 
@@ -113,7 +110,7 @@ export function OrcamentoFilters({
                 id="orcamento-filtro-estado"
                 label="Estado"
                 options={[
-                  { value: "", label: "Nível nacional" },
+                  { value: "", label: "Todos os estados" },
                   ...estadoOptions,
                 ]}
                 value={value.estado}
@@ -125,7 +122,7 @@ export function OrcamentoFilters({
                   onChange({ estado: v, territorio: "" })
                 }
                 disabled={optionsLoading}
-                placeholder="Nível nacional"
+                placeholder="Todos os estados"
               />
             </div>
 
@@ -134,13 +131,13 @@ export function OrcamentoFilters({
                 id="orcamento-filtro-territorio"
                 label="Território"
                 options={[
-                  { value: "", label: "Sem detalhar território" },
+                  { value: "", label: "Todos os territórios" },
                   ...territorioOptions,
                 ]}
                 value={value.territorio}
                 onChange={(v) => onChange({ territorio: v, estado: "" })}
                 disabled={optionsLoading}
-                placeholder="Sem detalhar território"
+                placeholder="Todos os territórios"
               />
             </div>
           </>
@@ -164,11 +161,16 @@ export function OrcamentoFilters({
           className="text-xs leading-relaxed text-text-muted"
           data-testid="orcamento-aviso-nivel"
         >
-          Estado e território não recortam os valores nacionais: descem um nível
-          na hierarquia. Os números abaixo são das alocações{" "}
-          {value.territorio !== "" ? "territoriais" : "estaduais"}, e o
-          &quot;aprovado&quot; passa a ser o que esse nível recebeu do nível
-          acima.
+          {value.territorio !== ""
+            ? "Só o pool do território escolhido. O aprovado dele é o que recebeu do estado."
+            : "O pool do estado escolhido e os dos territórios dele. O aprovado de cada um é o que recebeu do nível acima."}
+        </p>
+      )}
+
+      {value.meta !== "" && (
+        <p className="text-xs leading-relaxed text-text-muted" data-testid="orcamento-aviso-meta">
+          A coluna Executado mostra só o executado nas atividades desta Meta. Aprovado, comprometido e disponível
+          continuam os do pool: a Meta não tem saldo próprio.
         </p>
       )}
 
@@ -177,7 +179,7 @@ export function OrcamentoFilters({
           className="text-xs leading-relaxed text-text-muted"
           data-testid="orcamento-aviso-adt"
         >
-          Você está vendo o orçamento do seu território. Os níveis nacional e
+          Você está vendo o orçamento do seu território. Os pools nacional e
           estadual não fazem parte do seu escopo.
         </p>
       )}
