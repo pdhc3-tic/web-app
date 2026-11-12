@@ -30,6 +30,8 @@ export const qk = {
   atividade: (id: string | number) => ["sgp", "atividade", String(id)] as const,
   /** Pools de uma rubrica num nível, da matriz Rubrica × Nível (#384): origem do excedente e do recurso extra. */
   poolsDaRubrica: (rubrica: string, nivel: string) => ["sgp", "orcamento", "pools", { rubrica, nivel }] as const,
+  /** Todos os pools do escopo, origem e destino do remanejamento entre pools (#402). */
+  poolsDoRemanejamento: ["sgp", "orcamento", "pools", "remanejamento"] as const,
   /** Movimentações do ledger de um pool, no detalhe do Painel de Orçamento (#398). */
   orcamentoPool: {
     transacoes: (poolId: number) => ["sgp", "orcamento", "pools", poolId, "transacoes"] as const,

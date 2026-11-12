@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { AlertTriangle, ArrowRight, CheckCircle2, GitCompareArrows } from "lucide-react";
 import Spinner from "@/app/components/icons/Spinner";
@@ -17,11 +18,13 @@ import { Textarea } from "@/app/components/ui/Textarea/Textarea";
 import { useToast } from "@/app/components/ui/Toast/Toast";
 import { canRemanejarOrcamento } from "@/app/lib/auth/roles";
 import { formatCurrencyBRL } from "@/app/lib/format";
+import { qk } from "@/app/lib/queryKeys";
 import {
   fetchPainelOrcamento,
   nomeDoPool,
   type PoolOrcamentoApi,
 } from "@/app/lib/orcamento";
+import { ApiError } from "@/app/lib/api";
 import {
   confirmarRemanejamento,
   mensagemDeErro,
@@ -47,7 +50,7 @@ function payloadDoForm(form: Form): RemanejamentoPayload | null {
     !origem_allocation ||
     !destino_allocation ||
     origem_allocation === destino_allocation ||
-    !form.valor ||
+    !(Number(form.valor) > 0) ||
     !form.justificativa.trim()
   ) {
     return null;
@@ -60,11 +63,22 @@ function payloadDoForm(form: Form): RemanejamentoPayload | null {
   };
 }
 
+/**
+ * O saldo da opção é o `saldo_pool` (alocado menos comprometido e executado):
+ * é o que o backend aceita tirar da origem. O `saldo_disponivel` do painel
+ * desconta também o que já foi distribuído aos níveis de baixo.
+ */
 function opcoesDePool(pools: PoolOrcamentoApi[]): SelectOption[] {
   return pools.map((p) => ({
     value: String(p.id),
-    label: `${nomeDoPool(p)} · ${p.rubrica.nome} · disponível ${formatCurrencyBRL(p.saldo_disponivel)}`,
+    label: `${nomeDoPool(p)}${p.reserva_ugp ? " (reserva UGP)" : ""} · ${p.rubrica.nome} · saldo ${formatCurrencyBRL(p.saldo_pool)}`,
   }));
+}
+
+/** O backend só remaneja dentro da mesma rubrica. */
+function destinosPossiveis(pools: PoolOrcamentoApi[], origem: PoolOrcamentoApi | undefined) {
+  if (!origem) return [];
+  return pools.filter((p) => p.id !== origem.id && p.rubrica.id === origem.rubrica.id);
 }
 
 function CartaoImpacto({
@@ -120,6 +134,7 @@ function NovoRemanejamentoView() {
   const router = useRouter();
   const { data: session, status } = useSession();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
 
   const [form, setForm] = useState<Form>(FORM_VAZIO);
   const [simulacao, setSimulacao] = useState<SimulacaoRemanejamento | null>(null);
@@ -129,13 +144,19 @@ function NovoRemanejamentoView() {
   const [erro, setErro] = useState<string | null>(null);
 
   const pools = useQuery({
-    queryKey: ["sgp", "orcamento", "painel", "remanejamento"],
+    queryKey: qk.poolsDoRemanejamento,
     queryFn: ({ signal }) => fetchPainelOrcamento({}, signal),
     staleTime: 30_000,
     enabled: status === "authenticated" && canRemanejarOrcamento(session?.user),
   });
 
-  const opcoes = useMemo(() => opcoesDePool(pools.data ?? []), [pools.data]);
+  const origemPool = pools.data?.find((p) => String(p.id) === form.origem);
+  const opcoesOrigem = useMemo(() => opcoesDePool(pools.data ?? []), [pools.data]);
+  const opcoesDestino = useMemo(
+    () => opcoesDePool(destinosPossiveis(pools.data ?? [], origemPool)),
+    [pools.data, origemPool],
+  );
+  const semPools = pools.isSuccess && pools.data.length === 0;
   const payloadAtual = payloadDoForm(form);
   const podeSimular = payloadAtual !== null && !simulando;
   const podeConfirmar =
@@ -146,13 +167,38 @@ function NovoRemanejamentoView() {
     !confirmando;
 
   function atualizar<K extends keyof Form>(campo: K, valor: Form[K]) {
-    setForm((prev) => ({ ...prev, [campo]: valor }));
+    setForm((prev) => {
+      const proximo = { ...prev, [campo]: valor };
+      if (campo === "origem") {
+        // Trocar a origem descarta um destino que deixou de ser possível.
+        const novaOrigem = pools.data?.find((p) => String(p.id) === valor);
+        const aindaValido = destinosPossiveis(pools.data ?? [], novaOrigem).some(
+          (p) => String(p.id) === prev.destino,
+        );
+        if (!aindaValido) proximo.destino = "";
+      }
+      return proximo;
+    });
     // Qualquer mudança invalida a simulação anterior.
     if (simulacao) {
       setSimulacao(null);
       setPayloadSimulado(null);
     }
     setErro(null);
+  }
+
+  /**
+   * O remanejamento muda o alocado de dois pools: recarrega as opções desta
+   * tela, o painel e os saldos que o SGD mostra na montagem e na execução.
+   */
+  function recarregarSaldos() {
+    void queryClient.invalidateQueries({ queryKey: ["sgp", "orcamento"] });
+    void queryClient.invalidateQueries({ queryKey: ["sgd", "saldo"] });
+    void queryClient.invalidateQueries({ queryKey: ["sgd", "execucao", "painel"] });
+  }
+
+  function saldoMudou(e: unknown) {
+    return e instanceof ApiError && e.code === "INSUFFICIENT_BALANCE";
   }
 
   async function onSimular() {
@@ -164,9 +210,10 @@ function NovoRemanejamentoView() {
       setSimulacao(resultado);
       setPayloadSimulado(payloadAtual);
     } catch (e) {
-      setErro(mensagemDeErro(e));
+      setErro(mensagemDeErro(e, "simular"));
       setSimulacao(null);
       setPayloadSimulado(null);
+      if (saldoMudou(e)) recarregarSaldos();
     } finally {
       setSimulando(false);
     }
@@ -178,13 +225,15 @@ function NovoRemanejamentoView() {
     setErro(null);
     try {
       await confirmarRemanejamento(payloadSimulado);
+      recarregarSaldos();
       showToast("Remanejamento confirmado.", "success");
       router.push("/sgp/orcamento");
     } catch (e) {
-      setErro(mensagemDeErro(e));
-      // INSUFFICIENT_BALANCE: invalida a simulação para forçar nova rodada.
+      setErro(mensagemDeErro(e, "confirmar"));
+      // A simulação não vale mais: o saldo mudou ou o servidor recusou.
       setSimulacao(null);
       setPayloadSimulado(null);
+      if (saldoMudou(e)) recarregarSaldos();
     } finally {
       setConfirmando(false);
     }
@@ -227,6 +276,24 @@ function NovoRemanejamentoView() {
         </p>
       </header>
 
+      {semPools && (
+        <p
+          className="rounded-md border border-border bg-surface-muted px-3 py-2.5 text-sm text-text-muted"
+          data-testid="remanejamento-sem-pools"
+        >
+          Não há pools de orçamento para remanejar. Distribua o orçamento no{" "}
+          <Link href="/sgp/orcamento" className="text-primary hover:underline">
+            Painel de Orçamento
+          </Link>{" "}
+          antes.
+        </p>
+      )}
+      {pools.isError && (
+        <p role="alert" className="text-sm text-error-text" data-testid="remanejamento-erro-pools">
+          Não foi possível carregar os pools. Recarregue a página.
+        </p>
+      )}
+
       <form
         className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-6"
         onSubmit={(e) => {
@@ -239,7 +306,7 @@ function NovoRemanejamentoView() {
           id="remanejamento-origem"
           label="Pool de origem"
           required
-          options={opcoes}
+          options={opcoesOrigem}
           value={form.origem}
           onChange={(v) => atualizar("origem", v)}
           placeholder={pools.isPending ? "Carregando…" : "Selecione..."}
@@ -248,16 +315,19 @@ function NovoRemanejamentoView() {
           id="remanejamento-destino"
           label="Pool de destino"
           required
-          options={opcoes}
+          options={opcoesDestino}
           value={form.destino}
           onChange={(v) => atualizar("destino", v)}
-          placeholder={pools.isPending ? "Carregando…" : "Selecione..."}
+          disabled={!origemPool}
+          placeholder={origemPool ? "Selecione..." : "Escolha a origem primeiro"}
+          helperText={
+            origemPool
+              ? opcoesDestino.length > 0
+                ? `Só pools de ${origemPool.rubrica.nome}, a rubrica da origem.`
+                : `Não há outro pool de ${origemPool.rubrica.nome} para receber o valor.`
+              : undefined
+          }
         />
-        {form.origem && form.origem === form.destino && (
-          <p role="alert" className="text-sm text-error-text" data-testid="remanejamento-erro-mesmo">
-            Origem e destino precisam ser pools diferentes.
-          </p>
-        )}
         <Input
           id="remanejamento-valor"
           label="Valor (R$)"
@@ -322,11 +392,9 @@ function NovoRemanejamentoView() {
             >
               Confirmar remanejamento
             </Button>
-            {!podeConfirmar && !confirmando && (
-              <span className="text-xs text-text-muted">
-                Qualquer alteração no formulário cancela a simulação.
-              </span>
-            )}
+            <span className="text-xs text-text-muted">
+              Mudar qualquer campo descarta esta simulação.
+            </span>
           </div>
         </section>
       )}

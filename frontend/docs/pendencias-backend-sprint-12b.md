@@ -39,3 +39,13 @@ Sem o filtro no servidor, a tela não tem como recortar a lista inteira: ela é 
 **Pedido:** aceitar `?categoria=principal|operacional` em `GET /users/`, devolvendo quem tem ao menos um perfil da categoria (`profiles__perfil__categoria`, com `distinct`).
 
 *Estado atual no frontend:* ao filtrar categoria, `listUsers` percorre todas as páginas do recorte atual, filtra os perfis e pagina o resultado no cliente. Assim a lista e a contagem ficam corretas, mas o custo cresce com o número de usuários. Quando o backend aceitar `categoria`, substituir essa leitura completa pelo filtro e pela paginação do servidor.
+
+## 4. Justificativa obrigatória na simulação do remanejamento (#402)
+
+A #402 pede que, ao preencher origem, destino e valor, a tela chame o simulador e mostre o antes e depois. Mas `POST /sgp/orcamento/remanejamentos/simular/` usa o mesmo `RemanejamentoCreateSerializer` da confirmação, e esse serializer exige `justificativa`. A simulação não grava nada, então a justificativa não tem uso nela.
+
+Por isso a tela pede os quatro campos e só simula no clique em **Simular**. Simular sozinho exigiria a justificativa antes de a pessoa ver o impacto, ou mandaria um texto falso só para passar na validação.
+
+**Pedido:** a simulação aceitar o payload sem `justificativa`, com um serializer próprio de origem, destino e valor. A confirmação continua exigindo a justificativa.
+
+*Estado atual no frontend:* o botão **Simular** só habilita com os quatro campos preenchidos. Quando a simulação dispensar a justificativa, a tela pode simular sozinha, com um pequeno atraso, assim que origem, destino e valor estiverem preenchidos, e pedir a justificativa só para confirmar.

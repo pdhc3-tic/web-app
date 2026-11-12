@@ -1,4 +1,5 @@
 import { apiClient, ApiError } from "@/app/lib/api";
+import { formatCurrencyBRL } from "@/app/lib/format";
 
 /**
  * Remanejamento entre pools do orçamento (#402, AJ-FE-06).
@@ -89,16 +90,35 @@ export async function confirmarRemanejamento(
   return res.json();
 }
 
+/** Corpo do 400 de `_exigir_saldo_na_origem` (`apps/sgp/budget/services.py`). */
+type RecusaDeSaldo = { code?: unknown; disponivel?: unknown; solicitado?: unknown };
+
+function saldoDaRecusa(erro: ApiError): string | null {
+  const corpo = erro.raw as RecusaDeSaldo | undefined;
+  return typeof corpo?.disponivel === "string" ? formatCurrencyBRL(corpo.disponivel) : null;
+}
+
 /**
- * Lê o `code` do 400 do backend. Se `INSUFFICIENT_BALANCE`, a mensagem padrão
- * explica ao usuário que o saldo mudou e pede nova simulação.
+ * A mensagem do erro para a etapa em que ele veio. `INSUFFICIENT_BALANCE` tem
+ * dois sentidos: na simulação, o valor passa do saldo da origem; na
+ * confirmação, o saldo mudou depois da simulação. O código não vai para a tela.
  */
-export function mensagemDeErro(erro: unknown): string {
+export function mensagemDeErro(erro: unknown, etapa: "simular" | "confirmar"): string {
   if (erro instanceof ApiError) {
     if (erro.code === "INSUFFICIENT_BALANCE") {
-      return "O saldo mudou entre a simulação e a confirmação (INSUFFICIENT_BALANCE). Simule de novo antes de confirmar.";
+      const disponivel = saldoDaRecusa(erro);
+      if (etapa === "simular") {
+        return disponivel
+          ? `O valor passa do saldo da origem: há ${disponivel} disponível para remanejar.`
+          : "O valor passa do saldo da origem.";
+      }
+      return disponivel
+        ? `O saldo da origem mudou desde a simulação e agora é ${disponivel}. Simule de novo antes de confirmar.`
+        : "O saldo da origem mudou desde a simulação. Simule de novo antes de confirmar.";
     }
     return erro.message;
   }
-  return "Não foi possível concluir o remanejamento.";
+  return etapa === "simular"
+    ? "Não foi possível simular o remanejamento."
+    : "Não foi possível concluir o remanejamento.";
 }
