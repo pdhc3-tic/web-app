@@ -2,12 +2,15 @@ from django.conf import settings
 from django.db import models
 
 
+# Tipos que a aba de documentos oferece. O anexo só entra pelo campo do formulário.
 TIPO_CHOICES = [
     ("suporte", "Documento de suporte"),
     ("ata", "Ata"),
     ("comprovante", "Comprovante"),
     ("cotacao", "Cotação"),
 ]
+TIPO_ANEXO = "anexo"
+TODOS_OS_TIPOS = [*TIPO_CHOICES, (TIPO_ANEXO, "Anexo de campo do formulário")]
 
 
 class DemandDocument(models.Model):
@@ -19,7 +22,7 @@ class DemandDocument(models.Model):
     )
     arquivo_key = models.CharField(max_length=512, verbose_name="Key do arquivo (R2)")
     arquivo_url = models.URLField(max_length=1024, verbose_name="URL pública do arquivo")
-    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, verbose_name="Tipo")
+    tipo = models.CharField(max_length=20, choices=TODOS_OS_TIPOS, verbose_name="Tipo")
     descricao = models.TextField(blank=True, default="", verbose_name="Descrição")
     nome_original = models.CharField(max_length=255, verbose_name="Nome original do arquivo")
     fornecedor = models.CharField(
@@ -31,6 +34,16 @@ class DemandDocument(models.Model):
         max_length=100, default="application/pdf", verbose_name="Content-Type",
     )
     tamanho_bytes = models.PositiveBigIntegerField(default=0, verbose_name="Tamanho em bytes")
+
+    # Preenchidos quando o documento é o valor de um campo `format: anexo` do catálogo.
+    solicitacao = models.ForeignKey(
+        "sgd.DemandRequest",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="anexos",
+        verbose_name="Solicitação",
+    )
+    campo = models.CharField(max_length=100, blank=True, default="", verbose_name="Campo do formulário")
 
     ativo = models.BooleanField(default=True, verbose_name="Ativo")
 

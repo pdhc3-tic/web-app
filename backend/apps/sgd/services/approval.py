@@ -3,11 +3,13 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied
-from django.db.models import Exists, OuterRef, Q
+from django.db.models import CharField, Exists, OuterRef, Q
+from django.db.models.functions import Cast
 
 from apps.core.models.user import User
 from apps.core.services.permissions import user_has_role, user_role_slugs, user_states
 from apps.sgd.models.approval_step import ApprovalStep
+from apps.sgd.models.demand import Demand
 from apps.sgd.services import balance as balance_service
 from apps.sgd.services import contexto
 from apps.sgd.services import notifications as notifications_service
@@ -43,6 +45,20 @@ def demand_visibility_scope(user) -> Q | None:
         )
 
     return Q(solicitante=user)
+
+
+def filtro_de_registro_da_demanda(user, campo: str = "demanda_id") -> Q | None:
+    """Registro de outro módulo que guarda o id de uma demanda como texto, como o risco
+    de glosa: entra se a demanda é visível ao usuário ou, para o Articulador, se é do
+    estado dele, em qualquer status. O estado é o da demanda, de onde sai o orçamento,
+    e não o da atividade. `None` = visão total."""
+    escopo = demand_visibility_scope(user)
+    if escopo is None:
+        return None
+    if user_has_role(user, "articulador-estadual"):
+        escopo |= contexto.filtro_por_estado(user_states(user))
+    demandas = Demand.objects.annotate(pk_texto=Cast("pk", CharField())).filter(pk_texto=OuterRef(campo))
+    return Q(Exists(demandas.filter(escopo)))
 
 
 STATUS_AGUARDANDO_POR_PERFIL = {
