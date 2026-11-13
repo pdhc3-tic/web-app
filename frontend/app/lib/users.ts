@@ -1,14 +1,12 @@
 import { apiClient } from "@/app/lib/api";
+import type { Paginada, Refinar, Schema } from "@/app/lib/apiSchema";
 import type { Perfil, Territorio } from "@/app/lib/auth/types";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
 /** Autor de uma revogação — `acesso_revogado_por` do UserListSerializer. */
-export type RevogadoPor = {
-  id: number;
-  nome: string;
-};
+export type RevogadoPor = Schema<"UsuarioRef">;
 
 /**
  * Um vínculo do usuário (`role_com_objeto`): o perfil e, no operacional, o
@@ -19,39 +17,35 @@ export type PerfilDoUsuario = Perfil & {
   objeto_id?: number | null;
 };
 
-/** Espelha apps/core/serializers.py::UserListSerializer. */
-export type UserListItem = {
-  id: number;
-  nome_completo: string;
-  email: string;
-  perfis: PerfilDoUsuario[];
-  territorios: Territorio[];
-  ativo: boolean;
-  ultimo_login: string | null;
-  /**
-   * Wipe remoto pendente: o app SCA apaga os dados locais no próximo sync e
-   * exige novo login. Independe de `ativo` — um usuário revogado continua
-   * ativo, então ele não some da listagem default (que filtra `ativo=true`).
-   */
-  acesso_revogado: boolean;
-  acesso_revogado_em: string | null;
-  acesso_revogado_por: RevogadoPor | null;
-  /**
-   * Só vêm preenchidos com `?com_dispositivo=true` — o backend anota os
-   * agregados apenas nesse caso, para não pagar o N+1 nas demais listagens
-   * (apps/core/views/users.py::UserViewSet.get_queryset).
-   */
-  qtd_dispositivos: number | null;
-  ultimo_sync_dispositivos: string | null;
-};
+/**
+ * `UserListSerializer`, a partir do schema (#273).
+ *
+ * Refinamentos: o schema marca como opcionais campos que a resposta sempre
+ * traz (`ativo`, `ultimo_login`, `acesso_revogado` e `acesso_revogado_em`), e
+ * `perfis` e `territorios` seguem os tipos da sessão (`auth/types.ts`), que
+ * ainda não migraram.
+ *
+ * - `acesso_revogado`: wipe remoto pendente. O app SCA apaga os dados locais no
+ *   próximo sync e exige novo login. Independe de `ativo`: um usuário revogado
+ *   continua ativo, então não some da listagem default (`ativo=true`).
+ * - `qtd_dispositivos` e `ultimo_sync_dispositivos`: só vêm preenchidos com
+ *   `?com_dispositivo=true`, para não pagar o N+1 nas demais listagens
+ *   (apps/core/views/users.py::UserViewSet.get_queryset).
+ */
+export type UserListItem = Refinar<
+  Schema<"UserList">,
+  {
+    perfis: PerfilDoUsuario[];
+    territorios: Territorio[];
+    ativo: boolean;
+    ultimo_login: string | null;
+    acesso_revogado: boolean;
+    acesso_revogado_em: string | null;
+  }
+>;
 
-/** Resposta paginada padrão do DRF (LimitOffsetPagination). */
-export type Paginated<T> = {
-  count: number;
-  next: string | null;
-  previous: string | null;
-  results: T[];
-};
+/** Resposta paginada padrão do DRF. O nome antigo segue exportado para quem já importa daqui. */
+export type Paginated<T> = Paginada<T>;
 
 /** Filtro de status mapeado para o parâmetro `ativo` do backend. */
 export type StatusFilter = "ativos" | "inativos" | "todos";
@@ -128,12 +122,7 @@ export async function listUsers(
  * necessidade de novo login) — a tela usa esse texto direto no toast em vez de
  * manter uma segunda cópia da copy do lado do cliente.
  */
-export type AcessoResponse = {
-  message: string;
-  acesso_revogado: boolean;
-  /** Refresh tokens colocados na blacklist — todas as sessões do usuário. */
-  sessoes_invalidadas: number;
-};
+export type AcessoResponse = Schema<"UserAcessoResposta">;
 
 /**
  * PATCH /api/v1/users/{id}/revogar-acesso/ — marca `acesso_revogado` e derruba
@@ -194,8 +183,8 @@ export async function fetchTerritoryOptions(
 
 // ─── Perfis principais e operacionais (#405, AJ-BE-10) ───────────────────────
 
-export type CategoriaPerfil = "principal" | "operacional";
-export type ObjetoTipo = "evento" | "edital" | "candidatura";
+export type CategoriaPerfil = Schema<"CategoriaDoPerfilEnum">;
+export type ObjetoTipo = Schema<"TipoDoObjetoDoPerfilEnum">;
 
 /**
  * Cópia de `OBJETO_DO_PERFIL_OPERACIONAL` (apps/core/models/user_profile.py):
@@ -264,12 +253,11 @@ export type NovoUsuario = {
 };
 
 /** `PerfilInputSerializer`. */
-export type PerfilInput = {
-  perfil_id: number;
-  territorio_id: number | null;
-  objeto_tipo: ObjetoTipo | null;
-  objeto_id: number | null;
-};
+/** Um item de `perfis_input`: o `PerfilInputRequest` do schema, com os anuláveis sempre enviados. */
+export type PerfilInput = Refinar<
+  Schema<"PerfilInputRequest">,
+  { territorio_id: number | null; objeto_tipo: ObjetoTipo | null; objeto_id: number | null }
+>;
 
 export type ErrosNovoUsuario = {
   nome?: string;
@@ -360,11 +348,7 @@ export async function criarUsuario(form: NovoUsuario, perfis: Perfil[]): Promise
 // ─── Desativação com aviso de impacto (#406, AJ-BE-11) ───────────────────────
 
 /** `ImpactoDesativacaoSerializer`: o que a desativação cancela e libera. */
-export type ImpactoDesativacao = {
-  demandas: { id: number; titulo: string; status: string; saldo_liberado: string }[];
-  saldo_por_rubrica: { rubrica_id: number; rubrica_nome: string; valor: string }[];
-  saldo_liberado: string;
-};
+export type ImpactoDesativacao = Schema<"ImpactoDesativacao">;
 
 /** GET /api/v1/core/usuarios/{id}/impacto-desativacao/ — só leitura, não muda nada. */
 export async function fetchImpactoDesativacao(
