@@ -164,18 +164,20 @@ export type SimulacaoDiarias = {
   valor_por_diaria: string;
   /** Decimal: com meia diária, "2.5". */
   numero_diarias: string;
+  /** Adicional de embarque e desembarque já somado ao total; "0.00" quando desligado. */
+  adicional_embarque?: string;
   valor_total: string;
 };
 
 /**
- * GET /api/v1/sgd/config/diarias/simular/?municipio_destino_id=&data_inicio=&data_fim=
+ * GET /api/v1/sgd/config/diarias/simular/?municipio_destino_id=&data_inicio=&data_fim=&hospedagem_custeada=
  *
  * Rota da SGD-REF-BE-12 (#358), pedida na pendência 27: o solicitante não lê o
  * valor da diária (`SystemConfig` é só do Super Admin e da UGP), então o total
  * em tempo real vem dela, pela mesma regra que o backend usa ao gravar.
  */
 export async function simularDiarias(
-  params: { municipioDestinoId: string; dataInicio: string; dataFim: string },
+  params: { municipioDestinoId: string; dataInicio: string; dataFim: string; hospedagemCusteada?: boolean },
   signal?: AbortSignal,
 ): Promise<SimulacaoDiarias> {
   const qs = new URLSearchParams({
@@ -183,6 +185,7 @@ export async function simularDiarias(
     data_inicio: params.dataInicio,
     data_fim: params.dataFim,
   });
+  if (params.hospedagemCusteada) qs.set("hospedagem_custeada", "true");
   const res = await apiClient(`/api/v1/sgd/config/diarias/simular/?${qs}`, { signal });
   return res.json();
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { listDemandas } from "@/app/lib/demandas";
+import { listDemandas, listRiscosDeGlosaDaAtividade, riscosAbertos } from "@/app/lib/demandas";
 
 /**
  * #364 — a listagem master-detail passa a ordenação pelo servidor
@@ -8,6 +8,23 @@ import { listDemandas } from "@/app/lib/demandas";
 
 const api = vi.hoisted(() => ({ client: vi.fn() }));
 vi.mock("@/app/lib/api", () => ({ apiClient: api.client }));
+
+describe("riscos da atividade (#404)", () => {
+  it("pede uma página de 100 da atividade, sem percorrer as demais", async () => {
+    api.client.mockReset();
+    api.client.mockResolvedValueOnce({ json: async () => ({
+      next: "http://backend/glosa-riscos/?offset=100",
+      results: [{ id: 1, resolvido_em: "2026-11-10" }, { id: 2, resolvido_em: null }],
+    }) });
+    const resultado = await listRiscosDeGlosaDaAtividade(42);
+    expect(api.client).toHaveBeenCalledTimes(1);
+    const url = new URL(api.client.mock.calls[0][0], "http://local");
+    expect(url.pathname).toBe("/api/v1/sgp/glosa-riscos/");
+    expect(url.searchParams.get("activity")).toBe("42");
+    expect(url.searchParams.get("limit")).toBe("100");
+    expect(riscosAbertos(resultado).map((r) => r.id)).toEqual([2]);
+  });
+});
 
 function urlDaChamada(): URL {
   const chamada = api.client.mock.calls.at(-1)?.[0] as string;

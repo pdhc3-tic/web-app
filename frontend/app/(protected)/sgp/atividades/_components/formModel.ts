@@ -5,8 +5,8 @@ import {
   type AtividadeWritePayload,
 } from "@/app/lib/atividades";
 
-/** UPF selecionada como participante (o backend só devolve o id na leitura). */
-export type UpfRef = {
+/** UFPA selecionada como participante (o backend só devolve o id na leitura). */
+export type UfpaRef = {
   id: number;
   nome: string;
   /** Já mascarado pelo backend na listagem; "" quando desconhecido. */
@@ -14,24 +14,24 @@ export type UpfRef = {
 };
 
 /**
- * upfId de um membro carregado da API mas ainda não associado à sua UPF —
+ * ufpaId de um membro carregado da API mas ainda não associado à sua UFPA —
  * acontece no prefill de edição, onde o backend só devolve o id do membro.
  */
-export const PENDING_UPF_ID = -1;
+export const PENDING_UFPA_ID = -1;
 
-/** Membro selecionado como participante, com a UPF de origem para agrupar na UI. */
+/** Membro selecionado como participante, com a UFPA de origem para agrupar na UI. */
 export type MembroRef = {
   id: number;
   nome: string;
-  upfId: number;
+  ufpaId: number;
 };
 
 /**
  * Estado do formulário de atividade.
  *
- * Convenções herdadas do wizard de UPF: campos de select guardam o id como
+ * Convenções herdadas do wizard de UFPA: campos de select guardam o id como
  * string; `estado` existe só para dirigir a cascata e não vai no payload.
- * `acao`, `upfs_participantes` e `membros_participantes` guardam objetos (e não
+ * `acao`, `ufpas_participantes` e `membros_participantes` guardam objetos (e não
  * ids) porque a UI precisa exibir rótulo — a conversão para PK acontece em
  * formToPayload().
  */
@@ -57,7 +57,7 @@ export type AtividadeFormData = {
   data_inicio: string;
   data_fim: string;
   // Participantes
-  upfs_participantes: UpfRef[];
+  ufpas_participantes: UfpaRef[];
   membros_participantes: MembroRef[];
   // Parceiros e narrativa
   /** Texto livre: espelha `Activity.parceiros_livres`. */
@@ -84,7 +84,7 @@ export const EMPTY_FORM: AtividadeFormData = {
   longitude: "",
   data_inicio: "",
   data_fim: "",
-  upfs_participantes: [],
+  ufpas_participantes: [],
   membros_participantes: [],
   parceiros_livres: "",
   descricao_narrativa: "",
@@ -96,10 +96,10 @@ export const EMPTY_FORM: AtividadeFormData = {
 /**
  * Preenche o formulário a partir do detalhe (edição).
  *
- * O serializer devolve apenas os ids de UPFs e membros participantes, sem os
- * nomes. As UPFs são resolvidas pelo formulário (fetch por id) e os membros
- * entram aqui como placeholders (`upfId: -1`), que o ParticipantesSection
- * reconcilia assim que carrega os membros de cada UPF. `estado` também é
+ * O serializer devolve apenas os ids de UFPAs e membros participantes, sem os
+ * nomes. As UFPAs são resolvidas pelo formulário (fetch por id) e os membros
+ * entram aqui como placeholders (`ufpaId: -1`), que o ParticipantesSection
+ * reconcilia assim que carrega os membros de cada UFPA. `estado` também é
  * resolvido à parte, a partir do município.
  */
 export function detailToForm(atividade: AtividadeDetail): AtividadeFormData {
@@ -126,18 +126,18 @@ export function detailToForm(atividade: AtividadeDetail): AtividadeFormData {
     data_fim: atividade.data_fim,
     // Nome e CPF vêm no detalhe desde a Issue #227 — não há mais uma requisição
     // por participante para rotulá-los.
-    upfs_participantes: atividade.upfs_participantes.map((u) => ({
+    ufpas_participantes: atividade.ufpas_participantes.map((u) => ({
       id: u.id,
       nome: u.nome_titular,
       cpf: u.cpf,
     })),
-    // O detalhe já traz o nome desde a Issue #227; o `upfId` continua pendente
-    // porque o payload do membro não carrega a UPF, e é a ParticipantesSection
-    // que o resolve ao listar os membros das UPFs selecionadas.
+    // O detalhe já traz o nome desde a Issue #227; o `ufpaId` continua pendente
+    // porque o payload do membro não carrega a UFPA, e é a ParticipantesSection
+    // que o resolve ao listar os membros das UFPAs selecionadas.
     membros_participantes: atividade.membros_participantes.map((m) => ({
       id: m.id,
       nome: m.nome_completo,
-      upfId: PENDING_UPF_ID,
+      ufpaId: PENDING_UFPA_ID,
     })),
     parceiros_livres: atividade.parceiros_livres,
     descricao_narrativa: atividade.descricao_narrativa,
@@ -172,7 +172,7 @@ export function formToPayload(
     longitude: nullIfBlank(form.longitude),
     data_inicio: form.data_inicio,
     data_fim: form.data_fim,
-    upfs_participantes: form.upfs_participantes.map((u) => u.id),
+    ufpas_participantes: form.ufpas_participantes.map((u) => u.id),
     membros_participantes: form.membros_participantes.map((m) => m.id),
     parceiros_livres: form.parceiros_livres.trim(),
     descricao_narrativa: form.descricao_narrativa.trim(),
@@ -263,7 +263,7 @@ export const FIELD_ORDER: string[] = [
   "data_fim",
   "latitude",
   "longitude",
-  "upfs_participantes",
+  "ufpas_participantes",
   "membros_participantes",
   "parceiros_livres",
   "descricao_narrativa",

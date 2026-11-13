@@ -16,7 +16,7 @@ type Props = {
   /**
    * Frase abaixo da pergunta. Default cobre a maioria dos casos; passe uma
    * versão específica quando a ação tiver efeito colateral (ex.: "registra
-   * no histórico" para membros da UPF).
+   * no histórico" para membros da UFPA).
    */
   description?: string;
   /**

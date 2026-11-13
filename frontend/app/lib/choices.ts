@@ -1,4 +1,5 @@
 import { apiClient } from "@/app/lib/api";
+import type { Schema } from "@/app/lib/apiSchema";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 
 /**
@@ -12,7 +13,7 @@ import type { SelectOption } from "@/app/components/ui/Select/Select";
  * backend recusa, ou esconderia uma que ele aceita.
  */
 export const CHAVES_CHOICES = [
-  // UPF e membros (value inteiro no backend, string aqui)
+  // UFPA e membros (value inteiro no backend, string aqui)
   "genero",
   "cor_raca",
   "escolaridade",
@@ -40,7 +41,7 @@ export const CHAVES_CHOICES = [
   "producao_sistema_criacao",
   "producao_tipo_outra",
   // Documentos
-  "upf_documento_tipo",
+  "ufpa_documento_tipo",
   "atividade_documento_tipo",
   // SGD — filtros do painel de execução (#297)
   "solicitacao_tipo",
@@ -54,7 +55,14 @@ export const CHAVES_CHOICES = [
   "tipo_material",
   "tipo_refeicao",
   "demanda_documento_tipo",
-] as const;
+] as const satisfies readonly ChaveDaApi[];
+
+/**
+ * As listas que `GET /choices/` publica: as chaves do `ChoicesResposta` do
+ * schema (#273). Chave que o backend deixar de publicar não compila mais em
+ * `CHAVES_CHOICES`.
+ */
+type ChaveDaApi = keyof Schema<"ChoicesResposta">;
 
 export type ChaveChoice = (typeof CHAVES_CHOICES)[number];
 
@@ -74,7 +82,8 @@ export class ChoicesInvalidosError extends Error {
   }
 }
 
-type RawChoice = { value: string | number; label: string };
+/** Um item de qualquer lista: valor inteiro (UFPA e membros) ou texto. */
+type RawChoice = Schema<"OpcaoNumero"> | Schema<"OpcaoTexto">;
 
 function normalizar(chave: ChaveChoice, raw: unknown): SelectOption[] {
   if (!Array.isArray(raw) || raw.length === 0) {
@@ -90,7 +99,7 @@ function normalizar(chave: ChaveChoice, raw: unknown): SelectOption[] {
     ) {
       throw new ChoicesInvalidosError(`item malformado em "${chave}"`);
     }
-    // O <Select> opera com string; os choices da UPF vêm como int.
+    // O <Select> opera com string; os choices da UFPA vêm como int.
     return { value: String(item.value), label: item.label };
   });
 }

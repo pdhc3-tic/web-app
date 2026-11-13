@@ -4,37 +4,26 @@ import { Badge } from "@/app/components/ui/Badge/Badge";
 import { Avatar } from "@/app/components/ui/Avatar/Avatar";
 import { Chip } from "@/app/components/ui/Chip/Chip";
 import { relativeTime, absoluteDateTime } from "@/app/lib/datetime";
-import type { UserListItem } from "@/app/lib/users";
-import type { Perfil, Territorio } from "@/app/lib/auth/types";
+import { perfisDaListagem, type PerfilDoUsuario, type UserListItem } from "@/app/lib/users";
+import type { Territorio } from "@/app/lib/auth/types";
 
 const TH_BASE =
   "sticky top-0 z-10 bg-surface-muted px-4 py-2.5 text-left text-2xs font-semibold uppercase tracking-[0.08em] text-text-muted whitespace-nowrap";
 
 /**
- * `perfis` do backend é um item por **vínculo** (`UserProfile`), não por perfil
- * distinto — ver `get_perfis` em apps/core/serializers.py. Quem tem o mesmo
- * perfil em vários territórios (o Articulador Estadual vinculado a 4 estados,
- * por exemplo) chega aqui com o id repetido quatro vezes.
- *
- * A coluna mostra o perfil, e o território tem coluna própria: deduplicar por
- * id evita quatro chips idênticos e, de quebra, a colisão de `key`.
+ * `perfis` do backend é um item por **vínculo** (`UserProfile`) — ver
+ * `get_perfis` em apps/core/serializers.py. O principal repetido por território
+ * (o Articulador Estadual em 4 estados) vira um chip; o operacional mostra o
+ * objeto (#405): "Coordenador de evento · evento 12".
  */
-function perfisDistintos(perfis: Perfil[]): Perfil[] {
-  const porId = new Map<number, Perfil>();
-  for (const p of perfis) {
-    if (!porId.has(p.id)) porId.set(p.id, p);
-  }
-  return Array.from(porId.values());
-}
-
-function PerfisCell({ perfis }: { perfis: Perfil[] }) {
+function PerfisCell({ perfis }: { perfis: PerfilDoUsuario[] }) {
   if (!perfis || perfis.length === 0) {
     return <span className="text-text-muted">—</span>;
   }
   return (
     <div className="flex flex-wrap gap-1">
-      {perfisDistintos(perfis).map((p) => (
-        <Chip key={p.id}>{p.nome}</Chip>
+      {perfisDaListagem(perfis).map((p) => (
+        <Chip key={p.chave}>{p.rotulo}</Chip>
       ))}
     </div>
   );
@@ -61,6 +50,10 @@ type UsersTableProps = {
   users: UserListItem[];
   selectedId: number | null;
   onSelect: (user: UserListItem) => void;
+  /** Abre o diálogo de desativação com aviso de impacto (#406). */
+  onDesativar: (user: UserListItem) => void;
+  /** Id de quem está logado: ninguém desativa a própria conta por aqui. */
+  usuarioLogadoId: number | null;
   loading: boolean;
 };
 
@@ -69,7 +62,7 @@ function SkeletonRows() {
     <>
       {Array.from({ length: 8 }).map((_, i) => (
         <tr key={i} className="border-t border-border">
-          {Array.from({ length: 6 }).map((__, j) => (
+          {Array.from({ length: 7 }).map((__, j) => (
             <td key={j} className="px-4 py-3">
               <div className="h-4 w-full max-w-[140px] animate-pulse rounded bg-surface-muted" />
             </td>
@@ -84,6 +77,8 @@ export function UsersTable({
   users,
   selectedId,
   onSelect,
+  onDesativar,
+  usuarioLogadoId,
   loading,
 }: UsersTableProps) {
   return (
@@ -97,6 +92,9 @@ export function UsersTable({
             <th className={TH_BASE}>Territórios</th>
             <th className={TH_BASE}>Status</th>
             <th className={TH_BASE}>Último acesso</th>
+            <th className={`${TH_BASE} text-right`}>
+              <span className="sr-only">Ações</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -108,6 +106,7 @@ export function UsersTable({
               return (
                 <tr
                   key={u.id}
+                  data-testid={`usuario-linha-${u.id}`}
                   onClick={() => onSelect(u)}
                   aria-selected={selected}
                   className={`cursor-pointer border-t border-border transition-colors ${
@@ -139,6 +138,21 @@ export function UsersTable({
                     {u.ultimo_login
                       ? relativeTime(u.ultimo_login)
                       : "Nunca acessou"}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {u.ativo && u.id !== usuarioLogadoId && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDesativar(u);
+                        }}
+                        className="rounded px-2 py-1 text-sm font-medium text-error-text hover:bg-error-bg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-error-text"
+                        data-testid={`usuario-desativar-${u.id}`}
+                      >
+                        Desativar
+                      </button>
+                    )}
                   </td>
                 </tr>
               );

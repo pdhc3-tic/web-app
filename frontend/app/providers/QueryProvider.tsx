@@ -12,7 +12,7 @@ import { useState, type ReactNode } from "react";
  * ProtectedLayout viver.
  *
  * Defaults escolhidos:
- * - `staleTime: 60_000` — as listagens das abas da ficha da UPF não mudam com
+ * - `staleTime: 60_000` — as listagens das abas da ficha da UFPA não mudam com
  *   frequência dentro de uma janela de 1 min; sem stale time as remontagens
  *   disparam refetch imediato e voltamos ao problema que a issue #271 pediu
  *   para eliminar.

@@ -1,6 +1,6 @@
 import { apiClient } from "@/app/lib/api";
 import type { Paginated } from "@/app/lib/users";
-import type { NestedRef } from "@/app/lib/upfs";
+import type { NestedRef } from "@/app/lib/ufpas";
 import type { BadgeStatus } from "@/app/components/ui/Badge/Badge";
 
 // ─── Regras de status espelhadas do backend ──────────────────────────────────
@@ -113,8 +113,8 @@ export type AtividadeListItem = {
  * `tecnico_responsavel` voltam como objetos aninhados, mas são ENVIADOS como
  * PK na escrita. Os M2M continuam como arrays de PK na leitura.
  */
-/** UPF participante, como vem no detalhe consolidado (Issue #227). */
-export type UpfParticipante = {
+/** UFPA participante, como vem no detalhe consolidado (Issue #227). */
+export type UfpaParticipante = {
   id: number;
   nome_titular: string;
   /** Mascarado pelo backend ("105.***.***-30"). */
@@ -154,7 +154,7 @@ export type AtividadeDetail = {
   tecnico_responsavel: TecnicoNested;
   /**
    * Objetos na LEITURA, ids na escrita — mesma assimetria de
-   * `upfs_participantes`. `to_representation` do ActivityDetailSerializer
+   * `ufpas_participantes`. `to_representation` do ActivityDetailSerializer
    * reescreve o M2M como `{id, nome, email}`; o tipo dizia `number[]` e por
    * isso o prefill da edição entregava objetos ao seletor de ids.
    */
@@ -177,12 +177,21 @@ export type AtividadeDetail = {
   /**
    * Objetos, NÃO ids — o detalhe passou a devolver o registro inteiro na Issue
    * #227 (backend, 05/09). O tipo antigo dizia `number[]`, e por causa disso o
-   * prefill da edição chegou a montar `/api/v1/upfs/[object Object]/`.
+   * prefill da edição chegou a montar `/api/v1/sgp/ufpas/[object Object]/`.
    * A ESCRITA continua enviando ids (ver AtividadeWritePayload).
    */
-  upfs_participantes: UpfParticipante[];
+  ufpas_participantes: UfpaParticipante[];
   membros_participantes: MembroParticipante[];
   total_participantes: number;
+  /**
+   * Custo da atividade (#404, AJ-BE-08), calculado no backend sobre todas as
+   * demandas dela: o previsto soma o estimado das demandas que ainda contam; o
+   * realizado, o pago das concluídas, limitado ao autorizado (o excedente fica
+   * no risco de glosa). Decimais como string. Opcionais para não quebrar
+   * resposta antiga em cache.
+   */
+  custo_previsto?: string;
+  custo_realizado?: string;
   /**
    * Espelha GOOGLE_CALENDAR_SYNC_STATUS_CHOICES em models/activity.py.
    * `erro` é só um aviso na ficha (RF24): a atividade está salva, o que falhou
@@ -246,7 +255,7 @@ export type AtividadeWritePayload = {
   data_inicio: string;
   data_fim: string;
   /** Na escrita são ids: o serializer usa PrimaryKeyRelatedField. */
-  upfs_participantes: number[];
+  ufpas_participantes: number[];
   membros_participantes: number[];
   /**
    * `parceiros` não existe no serializer: o campo é `parceiros_livres`. O
@@ -296,7 +305,7 @@ export type ListAtividadesParams = {
  *    `page`/`page_size` — mandar limit/offset seria silenciosamente ignorado e
  *    devolveria sempre a primeira página.
  * 2. O ActivityFilter chama os filtros de `territorio_id` e `tecnico_id`, e não
- *    `territorio`/`tecnico` como o UPFFilter. Nome errado é ignorado pelo
+ *    `territorio`/`tecnico` como o UFPAFilter. Nome errado é ignorado pelo
  *    django-filter, que então devolve a lista inteira sem filtrar.
  */
 function buildAtividadesQuery(params: ListAtividadesParams): string {
@@ -381,7 +390,7 @@ export async function updateAtividade(
 
 // ─── API — Dados relacionados ────────────────────────────────────────────────
 
-const ACOES_PAGE_SIZE = 200; // max_page_size da UPFPagination
+const ACOES_PAGE_SIZE = 200; // max_page_size da UFPAPagination
 const ACOES_MAX_PAGES = 10;
 
 /**

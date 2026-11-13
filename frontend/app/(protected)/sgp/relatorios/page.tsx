@@ -16,7 +16,7 @@ import { useCanExportWorkPlan, useIsSuperAdmin } from "@/app/lib/auth/roles";
 import { criarExportacao, type ResultadoExportacao } from "@/app/lib/exportacoes";
 import { FORMATO_OPTIONS, type FormatoExport } from "@/app/lib/exportarPlano";
 import { useExportacao } from "@/app/lib/hooks/useExportacao";
-import { fetchTerritoryOptions } from "@/app/lib/upfs";
+import { fetchTerritoryOptions } from "@/app/lib/ufpas";
 import { listTodasAcoes } from "@/app/lib/painel";
 import type { Acao } from "@/app/lib/acoes";
 
@@ -253,7 +253,7 @@ export default function RelatoriosPage() {
 
           <ExportCard
             title="Atividades de Campo"
-            description="Exporta atividades com equipe, UPFs participantes e status, pelo período selecionado."
+            description="Exporta atividades com equipe, UFPAs participantes e status, pelo período selecionado."
           >
             <div className="flex flex-col gap-3">
               <Select

@@ -22,7 +22,7 @@ export type MapViewProps = {
   clusteringThreshold?: number;
   onMarkerClick?: (id: MapMarker["id"]) => void;
   /**
-   * aria-label do container. Default aponta para UPFs (uso desta sprint), mas é
+   * aria-label do container. Default aponta para UFPAs (uso desta sprint), mas é
    * sobrescrevível para os usos futuros (atividades, OSCs) — o componente é genérico.
    */
   ariaLabel?: string;

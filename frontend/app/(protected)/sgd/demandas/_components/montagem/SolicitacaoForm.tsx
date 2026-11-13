@@ -88,6 +88,7 @@ export function SolicitacaoForm({
     tipo === "diaria" ? (valores.municipio_destino_id ?? "") : "",
     valores.data_inicio ?? "",
     valores.data_fim ?? "",
+    valores.hospedagem_custeada === "sim",
   );
 
   // O valor que o saldo confere: o digitado, ou, na diária, o que o backend calcula.

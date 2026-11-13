@@ -14,7 +14,7 @@ const CARDS_ATIVOS: ReadonlyArray<{
   key: string;
   destino: RegExp;
 }> = [
-  { key: "upfs", destino: /\/sgp\/upfs\/?$/ },
+  { key: "ufpas", destino: /\/sgp\/ufpas\/?$/ },
   { key: "atividades", destino: /\/sgp\/atividades\/?$/ },
   { key: "calendario", destino: /\/sgp\/atividades\/calendario\/?$/ },
   { key: "plano", destino: /\/sgp\/metas\/?$/ },

@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { AlertTriangle, ChevronRight, Clock, Inbox, PauseCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import Spinner from "@/app/components/icons/Spinner";
+import { PainelAlertas } from "@/app/components/sgp/AlertasOrcamento/PainelAlertas";
 import { Badge } from "@/app/components/ui/Badge/Badge";
 import { Button } from "@/app/components/ui/Button/Button";
 import { SemaforoBadge } from "@/app/components/ui/SemaforoBadge/SemaforoBadge";
@@ -163,6 +164,9 @@ function Conteudo({ dados }: { dados: SgdDashboard }) {
           </Secao>
         </div>
       </div>
+
+      {/* Alertas orçamentários (#403): some para quem não tem acesso ao orçamento. */}
+      <PainelAlertas />
     </div>
   );
 }

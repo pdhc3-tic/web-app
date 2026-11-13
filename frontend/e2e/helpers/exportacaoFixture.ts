@@ -4,9 +4,9 @@ import path from "node:path";
 /**
  * Dados reais para os testes das exportações assíncronas (#240, A4 da #302).
  *
- * - `criarUpfsEmVolume`: 1.001 UPFs sintéticas, para a listagem passar do
- *   limite síncrono do backend (`UPF_EXPORT_ASYNC_THRESHOLD`, 1.000 por
- *   padrão) e o `/upfs/exportar/` responder 202 de verdade.
+ * - `criarUfpasEmVolume`: 1.001 UFPAs sintéticas, para a listagem passar do
+ *   limite síncrono do backend (`UFPA_EXPORT_ASYNC_THRESHOLD`, 1.000 por
+ *   padrão) e o `/ufpas/exportar/` responder 202 de verdade.
  * - `criarJob`: um `ExportJob` do usuário num estado que o fluxo normal não
  *   para tempo suficiente para o teste observar: em `erro`, `pendente` (sem
  *   ir para a fila) ou concluído com o arquivo vencido.
@@ -16,7 +16,7 @@ import path from "node:path";
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 const MARCADOR = "EXPORTACAO_FIXTURE";
-const PREFIXO_UPFS = "E2E-240";
+const PREFIXO_UFPAS = "E2E-240";
 
 /** Como `postgres`, o mesmo das outras fixtures (row-level security). */
 function djangoShell(script: string): string {
@@ -45,38 +45,38 @@ function executar(script: string): string {
   return linha.slice(MARCADOR.length + 1).trim();
 }
 
-const LIMPAR_UPFS = `
-from apps.sgp.models import UPF
+const LIMPAR_UFPAS = `
+from apps.sgp.models import UFPA
 from apps.sgp.models.membro import MembroFamilia
-UPF.all_objects.filter(titular__nome_completo__startswith="${PREFIXO_UPFS}").delete()
-MembroFamilia.objects.filter(nome_completo__startswith="${PREFIXO_UPFS}").delete()
+UFPA.all_objects.filter(titular__nome_completo__startswith="${PREFIXO_UFPAS}").delete()
+MembroFamilia.objects.filter(nome_completo__startswith="${PREFIXO_UFPAS}").delete()
 `;
 
-export function criarUpfsEmVolume(): number {
+export function criarUfpasEmVolume(): number {
   return Number(
-    executar(`${LIMPAR_UPFS}
-base = UPF.objects.filter(ativo=True).order_by("pk").first()
+    executar(`${LIMPAR_UFPAS}
+base = UFPA.objects.filter(ativo=True).order_by("pk").first()
 membros = MembroFamilia.objects.bulk_create(
-    [MembroFamilia(nome_completo=f"${PREFIXO_UPFS} Titular {i:04d}", cpf=f"{i:011d}") for i in range(1, 1002)],
+    [MembroFamilia(nome_completo=f"${PREFIXO_UFPAS} Titular {i:04d}", cpf=f"{i:011d}") for i in range(1, 1002)],
     batch_size=500,
 )
-UPF.objects.bulk_create(
-    [UPF(projeto_id=base.projeto_id, comunidade_id=base.comunidade_id, titular=m,
+UFPA.objects.bulk_create(
+    [UFPA(projeto_id=base.projeto_id, comunidade_id=base.comunidade_id, titular=m,
          municipio_id=base.municipio_id, territorio_id=base.territorio_id) for m in membros],
     batch_size=500,
 )
-print("${MARCADOR}", UPF.objects.filter(titular__nome_completo__startswith="${PREFIXO_UPFS}").count())`),
+print("${MARCADOR}", UFPA.objects.filter(titular__nome_completo__startswith="${PREFIXO_UFPAS}").count())`),
   );
 }
 
-export function removerUpfsEmVolume(): void {
-  executar(`${LIMPAR_UPFS}\nprint("${MARCADOR}", "ok")`);
+export function removerUfpasEmVolume(): void {
+  executar(`${LIMPAR_UFPAS}\nprint("${MARCADOR}", "ok")`);
 }
 
 export type EstadoDoJob = "erro" | "pendente" | "expirado";
 
 /** Cria um job do usuário no estado pedido e devolve o id. Não vai para a fila. */
-export function criarJob(email: string, tipo: "plano_trabalho" | "atividades" | "upfs", estado: EstadoDoJob): number {
+export function criarJob(email: string, tipo: "plano_trabalho" | "atividades" | "ufpas", estado: EstadoDoJob): number {
   return Number(
     executar(`
 from datetime import timedelta

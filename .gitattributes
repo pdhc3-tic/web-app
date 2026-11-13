@@ -1,0 +1,2 @@
+# Gerado pelo openapi-typescript (#273): a checagem compara byte a byte, então o arquivo fica em LF em qualquer sistema.
+frontend/app/lib/api-types.ts text eol=lf

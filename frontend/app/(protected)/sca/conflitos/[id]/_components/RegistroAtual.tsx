@@ -14,7 +14,7 @@ const OCULTOS = new Set([
   "ultima_origem",
   "criado_por",
   "atualizado_por",
-  // "dispositivo" na UPF é o meio de acesso à internet, um inteiro de choices —
+  // "dispositivo" na UFPA é o meio de acesso à internet, um inteiro de choices —
   // ao lado do dispositivo de coleta exibido acima, só confundiria.
   "dispositivo",
 ]);
