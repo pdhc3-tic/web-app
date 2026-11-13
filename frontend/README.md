@@ -73,7 +73,7 @@ export type MetaListItem = Refinar<
 |---|---|
 | `metas.ts`, `semaforo.ts`, `choices.ts`, `users.ts` | Migrados. |
 | `ufpas.ts`, `ufpaDocumentos.ts`, `membros.ts`, `atividades.ts`, `atividadesCalendario.ts`, `producao.ts`, `painel.ts`, `formularios.ts`, `exportarAtividades.ts`, `exportarPlano.ts` | Depois do merge da renomeação para UFPA no backend (PR #417), que muda os nomes no schema. |
-| `acoes.ts` | Pendente: o schema exige `submeta` e `indicador` na escrita da Ação, e o formulário ainda envia `meta` e `tipo_unidade`. Precisa de ajuste de tela antes de migrar. |
+| `acoes.ts` | Pendente, com defeito conhecido: o schema exige `submeta` e `indicador` (e datas não nulas) na escrita da Ação desde a #305, e o formulário ainda envia `meta` e `tipo_unidade`. Hoje criar uma Ação pela tela responde 400. Ajustar o `AcaoSlideOver` ao migrar, com E2E que salve de verdade. |
 | `orcamento.ts`, `tecnicos.ts`, `integracoes.ts`, `integracoesPowerBi.ts` | Já podem migrar; ainda não feitos. |
 | SGD e SCA (`demandas.ts`, `arlo.ts`, `execucaoSgd.ts`, `sca.ts`, `conflitos.ts`, `solicitacoes.ts`, `remanejamentos.ts`) | Esperam o schema dessas rotas ficar preciso no backend. |
 
