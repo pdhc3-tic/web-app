@@ -10,6 +10,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "typecheck": "next typegen && tsc --noEmit",
+    "gen:api-types": "openapi-typescript ../backend/schema.yml -o app/lib/api-types.ts",
+    "check:api-types": "openapi-typescript ../backend/schema.yml -o app/lib/api-types.ts --check",
     "build:govbr-spike": "node scripts/build-govbr-spike.mjs"
   },
   "dependencies": {
@@ -39,6 +42,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "jsdom": "^29.1.1",
+    "openapi-typescript": "7.13.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.11"
