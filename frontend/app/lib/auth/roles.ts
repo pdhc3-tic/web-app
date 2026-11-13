@@ -137,6 +137,17 @@ export function canOperarArlo(
 }
 
 /**
+ * Configuração da tabela de diárias (#366): valores, municípios das faixas e
+ * parâmetros de contagem. Espelha o `IsSuperAdmin | IsFGD` das escritas de
+ * `/sgd/config/diarias/`.
+ */
+export function canConfigurarDiarias(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return hasRole(user, FGD_SLUG) || isSuperAdmin(user);
+}
+
+/**
  * Perfis do usuário que decidem sobre demandas do SGD (#296): Articulador
  * Estadual pré-autoriza/devolve, UGP autoriza/recusa, FGD atende/conclui.
  * Espelha `DemandApprovalMixin._PERMISSAO_POR_ACTION`.

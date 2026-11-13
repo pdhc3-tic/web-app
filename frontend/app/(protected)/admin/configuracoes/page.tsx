@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { Route } from "next";
-import { ChevronRight, Gauge, ListTree, SlidersHorizontal } from "lucide-react";
+import { ChevronRight, Gauge, ListTree, SlidersHorizontal, TableProperties } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
@@ -38,6 +38,13 @@ const SECOES: { modulo: string; itens: Configuracao[] }[] = [
         descricao:
           "Os tipos que o solicitante escolhe, a rubrica de cada um e os campos do formulário (diárias, passagens, veículos…).",
         Icon: ListTree,
+      },
+      {
+        href: "/admin/configuracoes/sgd/diarias" as Route,
+        titulo: "Tabela de diárias",
+        descricao:
+          "Valor da diária por faixa de destino e vigência, os municípios de cada faixa e as regras de meia diária e do adicional de embarque.",
+        Icon: TableProperties,
       },
       {
         href: "/admin/configuracoes/sgd/integracao-arlo" as Route,

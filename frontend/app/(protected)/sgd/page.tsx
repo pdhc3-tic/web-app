@@ -1,13 +1,14 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { ArrowLeftRight, FilePlus2, Inbox, PieChart, Scale } from "lucide-react";
+import { ArrowLeftRight, FilePlus2, Inbox, PieChart, Scale, TableProperties } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
 import { SubmoduleCard } from "@/app/components/ui/SubmoduleCard/SubmoduleCard";
 import {
   canAcessarFilaRemanejamentos,
+  canConfigurarDiarias,
   canCreateDemanda,
   canOperarArlo,
   canViewSgdGestao,
@@ -72,6 +73,15 @@ const SUBMODULES: Submodule[] = [
     Icon: ArrowLeftRight,
     href: "/sgd/arlo/",
     visivel: canOperarArlo,
+  },
+  {
+    // #366: o hub de Configurações é só do Super Admin; a FGD chega à tabela por aqui.
+    key: "diarias",
+    title: "Tabela de diárias",
+    description: "Valores por faixa de destino e vigência, municípios das faixas e regras de contagem.",
+    Icon: TableProperties,
+    href: "/admin/configuracoes/sgd/diarias/",
+    visivel: canConfigurarDiarias,
   },
 ];
 

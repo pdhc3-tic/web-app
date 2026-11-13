@@ -104,8 +104,8 @@ export const qk = {
   /** Montagem da demanda (#295): saldo, simulação de diárias e destinos. */
   solicitacao: {
     saldo: (tipo: string, valor: string) => ["sgd", "saldo", { tipo, valor }] as const,
-    simulacaoDiarias: (municipioId: string, inicio: string, fim: string) =>
-      ["sgd", "diarias", "simulacao", { municipioId, inicio, fim }] as const,
+    simulacaoDiarias: (municipioId: string, inicio: string, fim: string, hospedagemCusteada = false) =>
+      ["sgd", "diarias", "simulacao", { municipioId, inicio, fim, hospedagemCusteada }] as const,
     municipios: (texto: string) => ["core", "municipios", "busca", texto] as const,
     municipio: (id: string) => ["core", "municipios", "detalhe", id] as const,
   },
@@ -162,4 +162,12 @@ export const qk = {
     ["sgp", "orcamento", "alertas", filtros, limite] as const,
   /** Parâmetros globais em `SystemConfig` (#403). */
   systemConfig: ["core", "system-config"] as const,
+  /** Configuração da tabela de diárias do SGD (#366). */
+  diarias: {
+    all: ["sgd", "diarias", "config"] as const,
+    faixas: ["sgd", "diarias", "config", "faixas"] as const,
+    valores: ["sgd", "diarias", "config", "valores"] as const,
+    parametros: ["sgd", "diarias", "config", "parametros"] as const,
+    municipios: (texto: string) => ["sgd", "diarias", "config", "municipios", texto] as const,
+  },
 } as const;

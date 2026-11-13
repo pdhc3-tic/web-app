@@ -89,6 +89,8 @@ export const CONFIG_POR_TIPO: Record<TipoSolicitacao, ConfigTipo> = {
       { chave: "municipio_destino_id", rotulo: "Município de destino", tipo: "municipio", obrigatorio: true, largo: true },
       { chave: "data_inicio", rotulo: "Data de ida", tipo: "data", obrigatorio: true },
       { chave: "data_fim", rotulo: "Data de volta", tipo: "data", obrigatorio: true },
+      // #366: com a regra ligada, cada pernoite com hospedagem custeada conta meia diária.
+      { chave: "hospedagem_custeada", rotulo: "Hospedagem custeada por outro meio?", tipo: "booleano", obrigatorio: false, largo: true },
       { chave: "justificativa", rotulo: "Justificativa", tipo: "textarea", obrigatorio: true, largo: true },
     ],
   },

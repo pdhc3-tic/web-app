@@ -2,11 +2,10 @@
 
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { ApiError } from "@/app/lib/api";
+import { formatarQuantidadeDeDiarias } from "@/app/lib/diarias";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import { qk } from "@/app/lib/queryKeys";
 import { simularDiarias, type SimulacaoDiarias as Simulacao } from "@/app/lib/solicitacoes";
-
-const formatoDiarias = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
 
 export type SimulacaoDiariasState = {
   /** Destino e datas preenchidos, com a volta depois da ida. */
@@ -16,14 +15,21 @@ export type SimulacaoDiariasState = {
 
 /**
  * `GET /sgd/config/diarias/simular/` (pendência 27) para o destino e as datas
- * do formulário. O formulário usa o total no saldo; o quadro abaixo, para
+ * do formulário, e a hospedagem custeada por outro meio (#366), que muda a
+ * contagem. O formulário usa o total no saldo; o quadro abaixo, para
  * mostrar — a mesma consulta, deduplicada pelo React Query.
  */
-export function useSimulacaoDiarias(municipioId: string, dataInicio: string, dataFim: string): SimulacaoDiariasState {
+export function useSimulacaoDiarias(
+  municipioId: string,
+  dataInicio: string,
+  dataFim: string,
+  hospedagemCusteada = false,
+): SimulacaoDiariasState {
   const completo = !!municipioId && !!dataInicio && !!dataFim && dataFim >= dataInicio;
   const simulacao = useQuery({
-    queryKey: qk.solicitacao.simulacaoDiarias(municipioId, dataInicio, dataFim),
-    queryFn: ({ signal }) => simularDiarias({ municipioDestinoId: municipioId, dataInicio, dataFim }, signal),
+    queryKey: qk.solicitacao.simulacaoDiarias(municipioId, dataInicio, dataFim, hospedagemCusteada),
+    queryFn: ({ signal }) =>
+      simularDiarias({ municipioDestinoId: municipioId, dataInicio, dataFim, hospedagemCusteada }, signal),
     enabled: completo,
     retry: false,
   });
@@ -64,9 +70,17 @@ export function SimulacaoDiarias({ completo, simulacao }: SimulacaoDiariasState)
           <dt className="text-text-muted">Valor da diária</dt>
           <dd className="tabular-nums text-text">{formatCurrencyBRL(simulacao.data.valor_por_diaria)}</dd>
           <dt className="text-text-muted">Quantidade</dt>
-          <dd className="tabular-nums text-text">
-            {formatoDiarias.format(Number(simulacao.data.numero_diarias))} diária(s)
+          <dd className="tabular-nums text-text" data-testid="simulacao-diarias-quantidade">
+            {formatarQuantidadeDeDiarias(simulacao.data.numero_diarias)}
           </dd>
+          {Number(simulacao.data.adicional_embarque ?? 0) > 0 && (
+            <>
+              <dt className="text-text-muted">Adicional de embarque e desembarque</dt>
+              <dd className="tabular-nums text-text" data-testid="simulacao-diarias-adicional">
+                {formatCurrencyBRL(simulacao.data.adicional_embarque)}
+              </dd>
+            </>
+          )}
           <dt className="font-medium text-text">Total</dt>
           <dd className="font-medium tabular-nums text-text" data-testid="simulacao-diarias-total">
             {formatCurrencyBRL(simulacao.data.valor_total)}
