@@ -1,5 +1,4 @@
 import { apiClient } from "@/app/lib/api";
-import type { Schema } from "@/app/lib/apiSchema";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 
 /**
@@ -55,14 +54,7 @@ export const CHAVES_CHOICES = [
   "tipo_material",
   "tipo_refeicao",
   "demanda_documento_tipo",
-] as const satisfies readonly ChaveDaApi[];
-
-/**
- * As listas que `GET /choices/` publica: as chaves do `ChoicesResposta` do
- * schema (#273). Chave que o backend deixar de publicar não compila mais em
- * `CHAVES_CHOICES`.
- */
-type ChaveDaApi = keyof Schema<"ChoicesResposta">;
+] as const;
 
 export type ChaveChoice = (typeof CHAVES_CHOICES)[number];
 
@@ -82,8 +74,7 @@ export class ChoicesInvalidosError extends Error {
   }
 }
 
-/** Um item de qualquer lista: valor inteiro (UFPA e membros) ou texto. */
-type RawChoice = Schema<"OpcaoNumero"> | Schema<"OpcaoTexto">;
+type RawChoice = { value: string | number; label: string };
 
 function normalizar(chave: ChaveChoice, raw: unknown): SelectOption[] {
   if (!Array.isArray(raw) || raw.length === 0) {

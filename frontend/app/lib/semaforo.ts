@@ -1,4 +1,3 @@
-import type { Schema } from "@/app/lib/apiSchema";
 import type { PainelAcaoApi } from "@/app/lib/painel";
 
 /**
@@ -30,11 +29,8 @@ import type { PainelAcaoApi } from "@/app/lib/painel";
 
 // ─── Níveis ─────────────────────────────────────────────────────────────────
 
-/** Os três níveis que o backend classifica: o `SemaforoEnum` do schema (#273). */
-export type NivelDaApi = Schema<"SemaforoEnum">;
-
-/** Os do backend, mais o `sem-dado` que a UI acrescenta (ver nivelDaApi). */
-export type NivelSemaforo = NivelDaApi | "sem-dado";
+/** Os três do backend, mais o `sem-dado` que a UI acrescenta (ver nivelDaApi). */
+export type NivelSemaforo = "verde" | "amarelo" | "vermelho" | "sem-dado";
 
 /**
  * Razão realizado/esperado abaixo da qual a Ação está vermelha e entra no
@@ -45,11 +41,7 @@ export type NivelSemaforo = NivelDaApi | "sem-dado";
 export const LIMIAR_VERMELHO = 0.5;
 
 /** Níveis do semáforo propriamente dito, na ordem em que a UI os apresenta. */
-export const NIVEIS_SEMAFORO = ["verde", "amarelo", "vermelho"] as const satisfies readonly NivelDaApi[];
-
-// Nível novo no backend sem entrada na lista acima deixa de compilar aqui.
-const _todosOsNiveis: (typeof NIVEIS_SEMAFORO)[number] = "" as NivelDaApi;
-void _todosOsNiveis;
+export const NIVEIS_SEMAFORO = ["verde", "amarelo", "vermelho"] as const;
 
 const NIVEL_LABEL: Record<NivelSemaforo, string> = {
   verde: "No ritmo",

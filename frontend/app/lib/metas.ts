@@ -1,6 +1,6 @@
 import { apiClient } from "@/app/lib/api";
 import type { Acao } from "@/app/lib/acoes";
-import type { Paginada, Refinar, Schema } from "@/app/lib/apiSchema";
+import type { Paginated } from "@/app/lib/users";
 import type { BadgeStatus } from "@/app/components/ui/Badge/Badge";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 
@@ -61,18 +61,19 @@ export function metaStatusLabel(status: string): string {
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
-/**
- * Os tipos vêm do schema (#273). Os refinamentos abaixo cobrem o que ele ainda
- * descreve de forma frouxa: o status sai como `string`, o `criado_por` não
- * aparece como anulável (a FK é `SET_NULL`) e `ods_ids` é um `JSONField` sem
- * forma declarada.
- */
-
-/** `WorkPlanMetaListSerializer`. */
-export type MetaListItem = Refinar<
-  Schema<"WorkPlanMetaList">,
-  { status_calculado: MetaStatus; criado_por: string | null }
->;
+/** Espelha apps/sgp/serializers_workplan.py::WorkPlanMetaListSerializer. */
+export type MetaListItem = {
+  id: number;
+  numero: number;
+  titulo: string;
+  data_inicio: string;
+  data_fim: string;
+  /** DecimalField → string no DRF; soma de (quantidade × valor unitário) das Ações. */
+  valor_total_planejado: string | null;
+  status_calculado: MetaStatus;
+  criado_por: string | null;
+  criado_em: string;
+};
 
 /**
  * Ação do Plano de Trabalho aninhada no detalhe da Meta.
@@ -83,17 +84,23 @@ export type MetaListItem = Refinar<
  */
 export type MetaAcao = Acao;
 
-/**
- * `WorkPlanMetaDetailSerializer`. `acoes` segue o tipo de `acoes.ts`, que ainda
- * não migrou para o schema (ver a segunda parte da #273).
- */
-export type MetaDetail = Refinar<
-  Schema<"WorkPlanMetaDetail">,
-  { status_calculado: MetaStatus; criado_por: string | null; descricao: string; ods_ids: number[]; acoes: Acao[] }
->;
+/** Espelha WorkPlanMetaDetailSerializer. */
+export type MetaDetail = MetaListItem & {
+  descricao: string;
+  ods_ids: number[];
+  atualizado_em: string;
+  acoes: Acao[];
+};
 
-/** Campos graváveis: o corpo de `POST` e `PATCH /metas/`. */
-export type MetaWritePayload = Refinar<Schema<"WorkPlanMetaDetailRequest">, { descricao: string; ods_ids: number[] }>;
+/** Campos graváveis (os demais são read_only no serializer). */
+export type MetaWritePayload = {
+  numero: number;
+  titulo: string;
+  descricao: string;
+  ods_ids: number[];
+  data_inicio: string;
+  data_fim: string;
+};
 
 // ─── API ────────────────────────────────────────────────────────────────────
 
@@ -112,7 +119,7 @@ export async function listMetas(
   const res = await apiClient(`${BASE_PATH}?page_size=100&ordering=numero`, {
     signal,
   });
-  const data: Paginada<MetaListItem> = await res.json();
+  const data: Paginated<MetaListItem> = await res.json();
   return data.results;
 }
 
