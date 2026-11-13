@@ -8,16 +8,16 @@ from apps.core.permissions import (
     IsSuperAdmin,
     IsUGP,
 )
-from apps.core.services.permissions import user_role_slugs, user_states
+from apps.sgd.services.approval import filtro_de_registro_da_demanda
 from apps.sgp.models import GlosaRisk
 from apps.sgp.serializers.glosa_risk import GlosaRiskQuerySerializer, GlosaRiskSerializer
-
-PERFIS_COM_VISAO_TOTAL = ("super-admin", "ugp", "fgd")
 
 
 @extend_schema(parameters=[GlosaRiskQuerySerializer])
 class GlosaRiskListView(generics.ListAPIView):
-    """GET /api/v1/sgp/glosa-riscos/ — por valor exposto; com `?demanda=`, em ordem cronológica."""
+    """GET /api/v1/sgp/glosa-riscos/ — por valor exposto; com `?demanda=`, em ordem cronológica.
+    O Articulador vê o risco de quem vê a demanda e o das demandas do seu estado, que é o
+    da demanda (território do solicitante) e não o da atividade."""
 
     permission_classes = [
         IsAuthenticatedActiveAccess, IsSuperAdmin | IsUGP | IsFGD | IsArticuladorEstadual,
@@ -33,9 +33,9 @@ class GlosaRiskListView(generics.ListAPIView):
         filtros = consulta.validated_data
 
         riscos = GlosaRisk.objects.all()
-        if not user_role_slugs(self.request.user, PERFIS_COM_VISAO_TOTAL):
-            # Sem filtrar `ativo`: inativar a atividade não apaga o risco da despesa já feita.
-            riscos = riscos.filter(activity__municipio__state__sigla__in=user_states(self.request.user))
+        escopo = filtro_de_registro_da_demanda(self.request.user)
+        if escopo is not None:
+            riscos = riscos.filter(escopo)
         if "activity" in filtros:
             riscos = riscos.filter(activity_id=filtros["activity"])
         if "tipo" in filtros:

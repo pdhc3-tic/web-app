@@ -2427,6 +2427,84 @@ paths:
               schema:
                 $ref: '#/components/schemas/ArloUploadURL'
           description: ''
+  /api/v1/sgd/atividades-elegiveis/:
+    get:
+      operationId: v1_sgd_atividades_elegiveis_list
+      description: |-
+        Busca de atividades para vincular a uma demanda, sem o recorte territorial da
+        listagem do SGP. Mesma paginação e ordenação do SGP.
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Qual campo usar ao ordenar os resultados.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Um número de página dentro do conjunto de resultados paginado.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - in: query
+        name: q
+        schema:
+          type: string
+          default: ''
+        description: Trecho do título.
+      - in: query
+        name: status
+        schema:
+          type: array
+          items:
+            enum:
+            - planejado
+            - agendado
+            type: string
+            description: |-
+              * `planejado` - planejado
+              * `agendado` - agendado
+        description: Repetível. Sem o parâmetro, as duas.
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAtividadeElegivelList'
+          description: ''
+  /api/v1/sgd/atividades-elegiveis/{id}/:
+    get:
+      operationId: v1_sgd_atividades_elegiveis_retrieve
+      description: |-
+        A atividade escolhida, em qualquer status: o formulário mostra a regra do status
+        (bloqueio ou justificativa de despesa posterior).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AtividadeElegivelDetalhe'
+          description: ''
   /api/v1/sgd/config/arlo-mapping/:
     get:
       operationId: v1_sgd_config_arlo_mapping_list
@@ -3893,6 +3971,52 @@ paths:
       responses:
         '200':
           description: No response body
+  /api/v1/sgd/demandas/abrangencia/:
+    get:
+      operationId: v1_sgd_demandas_abrangencia_retrieve
+      description: |-
+        Estado, território e Articuladores que a demanda de quem chama vai receber
+        ao ser criada, pela mesma regra da criação.
+      parameters:
+      - in: query
+        name: activity_id
+        schema:
+          type: integer
+          minimum: 1
+        description: Atividade a vincular. Sem ela, `atividade_fora_do_territorio`
+          sai `false`.
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AbrangenciaPrevia'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/v1/sgd/demandas/aguardando-minha-acao/contagem/:
     get:
       operationId: v1_sgd_demandas_aguardando_minha_acao_contagem_retrieve
@@ -5219,8 +5343,10 @@ paths:
   /api/v1/sgp/glosa-riscos/:
     get:
       operationId: v1_sgp_glosa_riscos_list
-      description: GET /api/v1/sgp/glosa-riscos/ — por valor exposto; com `?demanda=`,
-        em ordem cronológica.
+      description: |-
+        GET /api/v1/sgp/glosa-riscos/ — por valor exposto; com `?demanda=`, em ordem cronológica.
+        O Articulador vê o risco de quem vê a demanda e o das demandas do seu estado, que é o
+        da demanda (território do solicitante) e não o da atividade.
       parameters:
       - in: query
         name: activity
@@ -8616,6 +8742,28 @@ paths:
           description: ''
 components:
   schemas:
+    AbrangenciaPrevia:
+      type: object
+      description: O que a criação da demanda vai gravar para quem pede a prévia.
+      properties:
+        estado_sigla:
+          type: string
+          nullable: true
+        territorio:
+          allOf:
+          - $ref: '#/components/schemas/TerritorioDaAbrangencia'
+          nullable: true
+        articuladores:
+          type: array
+          items:
+            $ref: '#/components/schemas/Articulador'
+        atividade_fora_do_territorio:
+          type: boolean
+      required:
+      - articuladores
+      - atividade_fora_do_territorio
+      - estado_sigla
+      - territorio
     AcaoDaAtividade:
       type: object
       properties:
@@ -9748,6 +9896,130 @@ components:
       - content_type
       - filename
       - size
+    Articulador:
+      type: object
+      properties:
+        id:
+          type: integer
+        nome:
+          type: string
+      required:
+      - id
+      - nome
+    AtividadeElegivel:
+      type: object
+      description: Mesmos nomes de campo da listagem de atividades do SGP.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        titulo:
+          type: string
+          readOnly: true
+          title: Título
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusAtividadeEnum'
+          readOnly: true
+        status_display:
+          type: string
+          readOnly: true
+        data_inicio:
+          type: string
+          format: date-time
+          readOnly: true
+          title: Data de Início
+        data_fim:
+          type: string
+          format: date-time
+          readOnly: true
+          title: Data de Fim
+        municipio:
+          allOf:
+          - $ref: '#/components/schemas/MunicipioNested'
+          readOnly: true
+        tecnico_responsavel:
+          type: integer
+          readOnly: true
+          title: Técnico Responsável
+        tecnico_nome:
+          type: string
+          readOnly: true
+      required:
+      - data_fim
+      - data_inicio
+      - id
+      - municipio
+      - status
+      - status_display
+      - tecnico_nome
+      - tecnico_responsavel
+      - titulo
+    AtividadeElegivelDetalhe:
+      type: object
+      description: |-
+        O que o formulário da demanda mostra da atividade escolhida, com os mesmos nomes e
+        formatos do detalhe do SGP. O técnico sai sem e-mail: a atividade pode ser de outro
+        território.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        titulo:
+          type: string
+          readOnly: true
+          title: Título
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusAtividadeEnum'
+          readOnly: true
+        status_display:
+          type: string
+          readOnly: true
+        data_inicio:
+          type: string
+          format: date-time
+          readOnly: true
+          title: Data de Início
+        data_fim:
+          type: string
+          format: date-time
+          readOnly: true
+          title: Data de Fim
+        municipio:
+          allOf:
+          - $ref: '#/components/schemas/MunicipioNested'
+          readOnly: true
+        territorio:
+          allOf:
+          - $ref: '#/components/schemas/Nested'
+          readOnly: true
+          nullable: true
+        comunidade:
+          allOf:
+          - $ref: '#/components/schemas/Nested'
+          readOnly: true
+          nullable: true
+        tecnico_responsavel:
+          allOf:
+          - $ref: '#/components/schemas/UsuarioRef'
+          readOnly: true
+        acao:
+          allOf:
+          - $ref: '#/components/schemas/AcaoDaAtividade'
+          readOnly: true
+      required:
+      - acao
+      - comunidade
+      - data_fim
+      - data_inicio
+      - id
+      - municipio
+      - status
+      - status_display
+      - tecnico_responsavel
+      - territorio
+      - titulo
     AuditLog:
       type: object
       properties:
@@ -11228,6 +11500,11 @@ components:
         atividade_fora_do_territorio:
           type: boolean
           readOnly: true
+        articuladores:
+          type: array
+          items:
+            $ref: '#/components/schemas/Articulador'
+          readOnly: true
         valor_estimado_total:
           type: string
           format: decimal
@@ -11244,7 +11521,8 @@ components:
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
           readOnly: true
         contexto:
-          type: string
+          allOf:
+          - $ref: '#/components/schemas/DemandContexto'
           readOnly: true
         solicitacoes:
           type: array
@@ -11266,6 +11544,7 @@ components:
           readOnly: true
       required:
       - activity
+      - articuladores
       - atividade_fora_do_territorio
       - atualizado_em
       - contexto
@@ -11286,6 +11565,76 @@ components:
       - valor_autorizado_total
       - valor_estimado_total
       - valor_pago_total
+    DemandContexto:
+      type: object
+      description: |-
+        Contexto da demanda, só leitura (SGD-RF02). O território é o da demanda
+        (do solicitante, congelado na criação — Issue #352); município, comunidade, data, técnico e a cadeia Ação → Submeta → Meta →
+        Indicador.
+      properties:
+        territorio_id:
+          type: integer
+          nullable: true
+        territorio_nome:
+          type: string
+          nullable: true
+        municipio_id:
+          type: integer
+        municipio_nome:
+          type: string
+        municipio_estado_sigla:
+          type: string
+        comunidade_id:
+          type: integer
+          nullable: true
+        comunidade_nome:
+          type: string
+          nullable: true
+        data_prevista:
+          type: string
+          format: date-time
+        tecnico_id:
+          type: integer
+        tecnico_nome:
+          type: string
+        acao_numero:
+          type: string
+        acao_descricao:
+          type: string
+        submeta_numero:
+          type: string
+        submeta_titulo:
+          type: string
+        meta_numero:
+          type: integer
+        meta_titulo:
+          type: string
+        indicador_codigo:
+          type: string
+        indicador_nome:
+          type: string
+        indicador_unidade_medida:
+          type: string
+      required:
+      - acao_descricao
+      - acao_numero
+      - comunidade_id
+      - comunidade_nome
+      - data_prevista
+      - indicador_codigo
+      - indicador_nome
+      - indicador_unidade_medida
+      - meta_numero
+      - meta_titulo
+      - municipio_estado_sigla
+      - municipio_id
+      - municipio_nome
+      - submeta_numero
+      - submeta_titulo
+      - tecnico_id
+      - tecnico_nome
+      - territorio_id
+      - territorio_nome
     DemandRequest:
       type: object
       properties:
@@ -11338,6 +11687,42 @@ components:
         alerta_rubrica_fora_do_previsto:
           type: string
           readOnly: true
+        anexos:
+          type: object
+          description: 'Um item por campo de anexo do schema: o documento (campo de
+            um arquivo, `null` se vazio) ou a lista deles (campo de vários).'
+          additionalProperties:
+            oneOf:
+            - type: object
+              properties:
+                id:
+                  type: integer
+                nome_original:
+                  type: string
+                download:
+                  type: string
+                  description: Rota que devolve a URL assinada do arquivo.
+              required:
+              - id
+              - nome_original
+              - download
+            - type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  nome_original:
+                    type: string
+                  download:
+                    type: string
+                    description: Rota que devolve a URL assinada do arquivo.
+                required:
+                - id
+                - nome_original
+                - download
+            nullable: true
+          readOnly: true
         criado_em:
           type: string
           format: date-time
@@ -11348,6 +11733,7 @@ components:
           readOnly: true
       required:
       - alerta_rubrica_fora_do_previsto
+      - anexos
       - atualizado_em
       - criado_em
       - demanda
@@ -13499,6 +13885,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ActivityList'
+    PaginatedAtividadeElegivelList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AtividadeElegivel'
     PaginatedAuditLogList:
       type: object
       required:
@@ -17324,6 +17733,16 @@ components:
       required:
       - papel
       - user
+    TerritorioDaAbrangencia:
+      type: object
+      properties:
+        id:
+          type: integer
+        nome:
+          type: string
+      required:
+      - id
+      - nome
     TerritorioNested:
       type: object
       properties:
