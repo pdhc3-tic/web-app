@@ -276,6 +276,10 @@ SPECTACULAR_SETTINGS = {
     # alterado e quebra os tipos gerados no frontend.
     "ENUM_NAME_OVERRIDES": {
         "StatusAtividadeEnum": "apps.sgp.models.activity.STATUS_CHOICES",
+        "DemandStatusEnum": "apps.sgd.models.demand.STATUS_CHOICES",
+        "TipoAtividadeEnum": "apps.sgp.models.activity.TIPO_ATIVIDADE_CHOICES",
+        "DecisaoEnum": "apps.sca.serializers.DECISOES_DO_CONFLITO",
+        "DecisaoRecursoExtraEnum": "apps.sgd.serializers.remanejamento.DECISOES_DO_RECURSO_EXTRA",
         "EscopoLimiteDeGastoEnum": "apps.sgp.budget.models.SpendingLimit.Escopo",
         "EscopoRemanejamentoEnum": "apps.sgp.budget.models.BudgetTransfer.Escopo",
         "StatusFormResponseEnum": "apps.sgp.models.form_response.FormResponse.Status",
@@ -297,6 +301,8 @@ SPECTACULAR_SETTINGS = {
         "TipoExportacaoEnum": "apps.sgp.models.export_job.ExportJob.Tipo",
         "TipoDocumentoUPFEnum": "apps.sgp.models.upf_document.UPFDocument.TIPO_CHOICES",
         "TipoDocumentoAtividadeEnum": "apps.sgp.models.activity_document.ActivityDocument.TIPO_CHOICES",
+        "TipoDocumentoDemandaEnum": "apps.sgd.models.demand_document.TODOS_OS_TIPOS",
+        "StatusPedidoRecursoExtraEnum": "apps.sgp.budget.models.BudgetIncreaseRequest.Status",
         "OrigemEnum": "apps.sgp.models.form_response.FormResponse.Origem",
         "OrigemValorDiariaEnum": "apps.sgd.models.diarias.OrigemValorDiaria",
     },
