@@ -36,3 +36,10 @@ export function respostaUfpa(res: Response): Response {
   res.json = async () => contratoUfpa(await json());
   return res;
 }
+
+/**
+ * A tradução de `contratoUfpa` no nível do tipo (#273): uma chave do schema com
+ * o nome antigo vira a chave que o cliente HTTP entrega (`upf_documento_tipo` →
+ * `ufpa_documento_tipo`). Sai junto com esta camada, na AJ-BE-09.
+ */
+export type ChaveComNomeNovo<K> = K extends `upf${infer Resto}` ? `ufpa${Resto}` : K;
