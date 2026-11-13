@@ -83,7 +83,7 @@ function Formulario({ alvo, onClose }: { alvo: AlvoDoValor; onClose: () => void 
   }
 
   return (
-    <form onSubmit={enviar} noValidate className="flex flex-col gap-5 px-4 py-6" data-testid="valor-diaria-form">
+    <form onSubmit={enviar} noValidate className="flex flex-col gap-5 px-4 py-4" data-testid="valor-diaria-form">
       <div>
         <p className="text-sm font-medium text-text">{faixa.nome}</p>
         {atual ? (
