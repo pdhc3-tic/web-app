@@ -6,7 +6,9 @@ import nextConfig from "../../next.config";
 
 /**
  * #407 (AJ-FE-11) — a UPF passou a se chamar UFPA. O nome antigo só pode
- * sobrar no redirecionamento, na camada de compatibilidade e em testes de contrato.
+ * sobrar no redirecionamento das rotas antigas e nos testes dele. Os registros de
+ * pendências das sprints anteriores ficam como foram escritos: citam os endereços
+ * que existiam na época.
  */
 
 const RAIZ = path.resolve(__dirname, "..", "..");
@@ -14,15 +16,11 @@ const NOME_ANTIGO = /upf/i;
 /** Onde o nome antigo aparece de propósito, ou onde a sequência de letras é outra coisa. */
 const PERMITIDOS = new Set([
   "next.config.ts",
-  "app/lib/ufpaContrato.ts",
-  "app/lib/ufpaContrato.test.ts",
-  "app/lib/apiUfpa.test.ts",
   "app/lib/renomeacaoUfpa.test.ts",
   "e2e/ufpas-listagem.spec.ts",
   "package-lock.json",
-  // Gerado de backend/schema.yml (#273): segue o nome que o backend publica, até a AJ-BE-09.
-  "app/lib/api-types.ts",
 ]);
+const REGISTRO_HISTORICO = /^docs\/pendencias-backend-sprint-/;
 const FALSOS_POSITIVOS = /ArrowUpFromLine|setupFiles/g;
 
 function arquivosVersionados(): string[] {
@@ -38,9 +36,9 @@ describe("renomeação de UPF para UFPA (#407)", () => {
     expect(arquivos.filter((a) => NOME_ANTIGO.test(a))).toEqual([]);
   });
 
-  it("nenhum código de interface ou documento cita o nome antigo", { timeout: 60_000 }, () => {
+  it("nenhum código, teste ou documento cita o nome antigo", { timeout: 60_000 }, () => {
     const comNomeAntigo = arquivos
-      .filter((a) => !PERMITIDOS.has(a) && !a.startsWith("e2e/") && /\.(ts|tsx|mts|mjs|js|css|md|json)$/.test(a))
+      .filter((a) => !PERMITIDOS.has(a) && !REGISTRO_HISTORICO.test(a) && /\.(ts|tsx|mts|mjs|js|css|md|json)$/.test(a))
       .filter((a) => NOME_ANTIGO.test(readFileSync(path.join(RAIZ, a), "utf8").replace(FALSOS_POSITIVOS, "")));
     expect(comNomeAntigo).toEqual([]);
   });

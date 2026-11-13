@@ -549,7 +549,7 @@ test.describe("SGP — Opções do filtro de formulário", () => {
       }),
     );
 
-    await page.route(/\/api\/v1\/sgp\/upfs\/\d+\/formularios\/(\?|$)/, async (route) => {
+    await page.route(/\/api\/v1\/sgp\/ufpas\/\d+\/formularios\/(\?|$)/, async (route) => {
       const params = new URL(route.request().url()).searchParams;
       const page1 = (params.get("page") ?? "1") === "1";
       await route.fulfill({
@@ -611,7 +611,7 @@ test.describe("SGP — Opções do filtro de formulário", () => {
       }),
     );
 
-    await page.route(/\/api\/v1\/sgp\/upfs\/\d+\/formularios\/(\?|$)/, async (route) => {
+    await page.route(/\/api\/v1\/sgp\/ufpas\/\d+\/formularios\/(\?|$)/, async (route) => {
       const params = new URL(route.request().url()).searchParams;
       const pagina = Number(params.get("page") ?? "1");
 

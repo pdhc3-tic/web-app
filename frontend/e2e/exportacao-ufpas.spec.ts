@@ -16,7 +16,7 @@ import { storageStatePath } from "./helpers/users";
  *
  * Duas partes:
  *
- * 1. **Backend real** (`GET /api/v1/sgp/upfs/exportar/`, PR #306): o download
+ * 1. **Backend real** (`GET /api/v1/sgp/ufpas/exportar/`, PR #306): o download
  *    síncrono, a igualdade entre arquivo e listagem, o CPF por perfil, o
  *    recorte territorial e o 400 de filtro inválido.
  *
@@ -48,13 +48,13 @@ async function linhasDoCsv(download: Download): Promise<{ cabecalho: string; lin
 /** Exporta e devolve o download junto com o `count` da listagem que a tela mostrava. */
 async function exportarComListagem(page: Page, url: string) {
   const listagem = page.waitForResponse(
-    (r) => /\/api\/v1\/sgp\/upfs\/\?/.test(r.url()) && r.request().method() === "GET",
+    (r) => /\/api\/v1\/sgp\/ufpas\/\?/.test(r.url()) && r.request().method() === "GET",
   );
   await page.goto(url);
   const resposta = await listagem;
   const { count } = (await resposta.json()) as { count: number };
 
-  const pedidoExport = page.waitForRequest((r) => r.url().includes("/api/v1/sgp/upfs/exportar/"));
+  const pedidoExport = page.waitForRequest((r) => r.url().includes("/api/v1/sgp/ufpas/exportar/"));
   const [download] = await Promise.all([page.waitForEvent("download"), botaoExportar(page).click()]);
   return { download, count, urlListagem: resposta.url(), urlExport: (await pedidoExport).url() };
 }
@@ -160,11 +160,11 @@ test.describe("Exportação de UFPAs — acima do limite, em segundo plano (UGP)
   /** Exporta e devolve o `count` da listagem que a tela mostrava. */
   async function exportar(page: Page): Promise<number> {
     const listagem = page.waitForResponse(
-      (r) => /\/api\/v1\/sgp\/upfs\/\?/.test(r.url()) && r.request().method() === "GET",
+      (r) => /\/api\/v1\/sgp\/ufpas\/\?/.test(r.url()) && r.request().method() === "GET",
     );
     await page.goto("/sgp/ufpas");
     const { count } = (await (await listagem).json()) as { count: number };
-    const inicio = page.waitForResponse((r) => r.url().includes("/api/v1/sgp/upfs/exportar/"));
+    const inicio = page.waitForResponse((r) => r.url().includes("/api/v1/sgp/ufpas/exportar/"));
     await botaoExportar(page).click();
     expect((await inicio).status()).toBe(202);
     return count;
@@ -201,7 +201,7 @@ test.describe("Exportação de UFPAs — acima do limite, em segundo plano (UGP)
     await expect(statusPanel(page)).toBeVisible();
 
     const novaListagem = page.waitForRequest(
-      (req) => /\/api\/v1\/sgp\/upfs\/\?/.test(req.url()) && req.url().includes("q=Jos"),
+      (req) => /\/api\/v1\/sgp\/ufpas\/\?/.test(req.url()) && req.url().includes("q=Jos"),
     );
     await page.getByPlaceholder("Buscar por nome ou CPF...").fill("Jos");
     await novaListagem;
@@ -248,7 +248,7 @@ test.describe("Exportação de UFPAs — acima do limite, em segundo plano (UGP)
     await expect(statusPanel(page)).toHaveAttribute("data-status", "erro", { timeout: 10_000 });
     await expect(statusPanel(page)).toContainText("não está mais disponível");
 
-    const pedido = page.waitForRequest((r) => r.url().includes("/api/v1/sgp/upfs/exportar/"));
+    const pedido = page.waitForRequest((r) => r.url().includes("/api/v1/sgp/ufpas/exportar/"));
     const [download] = await Promise.all([
       page.waitForEvent("download"),
       page.getByRole("button", { name: "Tentar novamente" }).click(),
@@ -276,7 +276,7 @@ test.describe("Exportação de UFPAs — acima do limite, em segundo plano (UGP)
   test("erro inesperado do servidor mostra a mensagem genérica", async ({ page }) => {
     // Falha forçada: o único caso em que a resposta é interceptada.
     await page.route(
-      (url) => url.pathname.startsWith("/api/v1/sgp/upfs/exportar/"),
+      (url) => url.pathname.startsWith("/api/v1/sgp/ufpas/exportar/"),
       (route) =>
         route.request().method() === "OPTIONS"
           ? route.fallback()

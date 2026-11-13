@@ -169,7 +169,7 @@ test.describe("SGP — Wizard de cadastro de UFPA", () => {
 
     await esperarPasso(page, "Moradia");
     const criacao = page.waitForResponse(
-      (r) => new URL(r.url()).pathname === "/api/v1/sgp/upfs/" && r.request().method() === "POST",
+      (r) => new URL(r.url()).pathname === "/api/v1/sgp/ufpas/" && r.request().method() === "POST",
     );
     await page.getByRole("button", { name: "Salvar", exact: true }).click();
     const resposta = await criacao;

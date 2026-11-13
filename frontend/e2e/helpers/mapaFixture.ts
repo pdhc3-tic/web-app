@@ -19,8 +19,8 @@ export const TOTAL_UFPAS_MAPA = 201;
 export type MapaFixture = { municipio: number; municipioVazio: number };
 
 const LIMPAR = `
-from apps.sgp.cache import invalidate_upf_map_cache as invalidate_ufpa_map_cache
-from apps.sgp.models import UPF as UFPA
+from apps.sgp.cache import invalidate_ufpa_map_cache
+from apps.sgp.models import UFPA
 from apps.sgp.models.membro import MembroFamilia
 
 def limpar():

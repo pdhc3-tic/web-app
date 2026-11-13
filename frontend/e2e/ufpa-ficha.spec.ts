@@ -46,7 +46,7 @@ function segundaUfpaId(): number {
       "-d",
       "app_db",
       "-tAc",
-      "select id from sgp_upf order by id offset 1 limit 1;",
+      "select id from sgp_ufpa order by id offset 1 limit 1;",
     ],
     { encoding: "utf8", timeout: 30_000 },
   ).trim();

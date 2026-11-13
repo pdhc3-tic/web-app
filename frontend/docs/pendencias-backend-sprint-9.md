@@ -181,7 +181,7 @@ consequências que valem estar escritas:
 
 ```python
 # backend/apps/sgp/views/__init__.py:67
-UFPA_ACCESS_ROLES = ("super-admin", "ugp", "articulador-estadual", "adt-acr")
+UPF_ACCESS_ROLES = ("super-admin", "ugp", "articulador-estadual", "adt-acr")
 
 # backend/apps/core/sensitive_fields.py:21
 SENSITIVE_FIELD_ROLES = {
@@ -191,12 +191,12 @@ SENSITIVE_FIELD_ROLES = {
 ```
 
 Consequência: **não existe, nem pode existir, usuário que abra a ficha de uma
-UFPA e não leia os campos sensíveis.** Quem está fora da matriz está fora do
+UPF e não leia os campos sensíveis.** Quem está fora da matriz está fora do
 módulo. Verificado com o único perfil seedado de fora, o `fgd`:
 
 ```
-GET /api/v1/sgp/ufpas/                         → {"detail":"Você não tem acesso ao módulo SGP."}
-GET /api/v1/sgp/ufpas/80/membros/exportar/ → 404 (a UFPA não entra no queryset dele)
+GET /api/v1/upfs/                         → {"detail":"Você não tem acesso ao módulo SGP."}
+GET /api/v1/sgp/upfs/80/membros/exportar/ → 404 (a UPF não entra no queryset dele)
 ```
 
 Isto **não é falta de usuário no seed** — foi assim que o item 5 da sprint 8
@@ -236,7 +236,7 @@ a exportação do Plano de Trabalho (está comentado em `e2e/exportacao.spec.ts`
 e agora para a de membros (#191).
 
 O efeito visível é pequeno — muda só o separador entre data e hora
-(`membros_ufpa_41_2026-09-04-17-38-40.csv` do cliente contra
+(`membros_upf_41_2026-09-04-17-38-40.csv` do cliente contra
 `..._2026-09-04_17-38-40.csv` do servidor) —, mas a duplicação de regra de
 nomeação é permanente enquanto isso não mudar.
 
@@ -382,7 +382,7 @@ ele prova só o comportamento da UI.
 na branch `frontend/sprint-9c`.*
 
 `ActivityDetailSerializer.to_representation` enriquece `acao`,
-`tecnico_responsavel`, `equipe_adicional`, `ufpas_participantes`,
+`tecnico_responsavel`, `equipe_adicional`, `upfs_participantes`,
 `membros_participantes`, `fotos` e `documentos` — todos saem com nome. **Menos
 `parceiros_organizacoes`**, que continua sendo o `PrimaryKeyRelatedField` cru:
 
@@ -418,32 +418,32 @@ nome e o critério "ficha completa" da #233 fecha de verdade.
 
 ---
 
-## 12. `MembroListSerializer` não devolve a UFPA do membro
+## 12. `MembroListSerializer` não devolve a UPF do membro
 
 *Mesmo levantamento do item 11.*
 
-O critério da #233 pede *"participantes (UFPAs e membros) com link para as
+O critério da #233 pede *"participantes (UPFs e membros) com link para as
 respectivas fichas"*. O membro não tem rota própria — a dele é a aba de membros
-da UFPA (`/sgp/ufpas/{id}/#membros`) —, mas o payload não diz **qual** UFPA:
+da UPF (`/sgp/upfs/{id}/#membros`) —, mas o payload não diz **qual** UPF:
 
 ```python
 # apps/sgp/serializers.py, MembroListSerializer.Meta.fields
 ["id", "nome_completo", "data_nascimento", "idade", "grau_parentesco", ...]
 ```
 
-Sem `ufpa`, o frontend não tem como montar o link a partir do detalhe da
-atividade. E o membro só é alcançável aninhado (`/sgp/ufpas/{ufpa_pk}/membros/`),
+Sem `upf`, o frontend não tem como montar o link a partir do detalhe da
+atividade. E o membro só é alcançável aninhado (`/sgp/upfs/{upf_pk}/membros/`),
 então nem uma busca por id resolve.
 
 *Estado atual no frontend:* a ficha resolve o vínculo por dedução. Com **uma**
-UFPA participante o link sai de graça — `ActivityDetailSerializer.validate`
-recusa membro que não pertença às UFPAs selecionadas, então o vínculo é garantido
+UPF participante o link sai de graça — `ActivityDetailSerializer.validate`
+recusa membro que não pertença às UPFs selecionadas, então o vínculo é garantido
 pelo próprio contrato. Com mais de uma, a ficha cruza com `listMembros` de cada
-UFPA participante: **N requisições** só para descobrir a que já estava no banco.
+UPF participante: **N requisições** só para descobrir a que já estava no banco.
 Falhando o cruzamento, a linha volta a ser texto simples — melhor sem link do
 que apontando para a ficha errada.
 
-**Pedido** — `"ufpa"` em `MembroListSerializer.Meta.fields` (o FK já existe no
+**Pedido** — `"upf"` em `MembroListSerializer.Meta.fields` (o FK já existe no
 model e é usado em `validate_membros_participantes`). Elimina as N requisições e
 torna o link determinístico.
 

@@ -2697,7 +2697,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Exportação territorial agregada de membros, restrita às UPFs acessíveis ao usuário autenticado. Limitada a 500 UPFs por exportação — acima disso, restrinja por territorio_id, municipio ou projeto. */
+        /** @description Exportação territorial agregada de membros, restrita às UFPAs acessíveis ao usuário autenticado. Limitada a 500 UFPAs por exportação — acima disso, restrinja por territorio_id, municipio ou projeto. */
         get: operations["v1_sgp_membros_exportar_retrieve"];
         put?: never;
         post?: never;
@@ -3121,7 +3121,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Produção de todas as UPFs ativas no escopo territorial do usuário. */
+        /** @description Produção de todas as UFPAs ativas no escopo territorial do usuário. */
         get: operations["v1_sgp_producao_list"];
         put?: never;
         post?: never;
@@ -3138,7 +3138,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Produção de todas as UPFs ativas no escopo territorial do usuário. */
+        /** @description Produção de todas as UFPAs ativas no escopo territorial do usuário. */
         get: operations["v1_sgp_producao_indicadores_retrieve"];
         put?: never;
         post?: never;
@@ -3250,143 +3250,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/sgp/upfs/{upf_pk}/formularios/": {
+    "/api/v1/sgp/ufpas/": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["v1_sgp_upfs_formularios_list"];
+        get: operations["v1_sgp_ufpas_list"];
         put?: never;
-        post?: never;
+        post: operations["v1_sgp_ufpas_create"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/sgp/upfs/{upf_pk}/formularios/{id}/": {
+    "/api/v1/sgp/ufpas/{id}/": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["v1_sgp_upfs_formularios_retrieve"];
+        get: operations["v1_sgp_ufpas_retrieve"];
         put?: never;
         post?: never;
-        delete?: never;
+        delete: operations["v1_sgp_ufpas_destroy"];
         options?: never;
         head?: never;
-        patch?: never;
+        patch: operations["v1_sgp_ufpas_partial_update"];
         trace?: never;
     };
-    "/api/v1/sgp/upfs/{upf_pk}/formularios/exportar/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["v1_sgp_upfs_formularios_exportar_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/sgp/upfs/{upf_pk}/formularios/opcoes/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description Metadado não paginado com os formulários já respondidos na UPF.
-         *
-         *     Alimenta o filtro por formulário do histórico (BE-16): diferente da
-         *     listagem paginada, não é afetado pela página corrente nem pelos demais
-         *     filtros (período/respondente) — sempre reflete o conjunto completo.
-         */
-        get: operations["v1_sgp_upfs_formularios_opcoes_list"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/sgp/upfs/{upf_pk}/membros/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["v1_sgp_upfs_membros_list"];
-        put?: never;
-        post: operations["v1_sgp_upfs_membros_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/sgp/upfs/{upf_pk}/membros/{id}/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["v1_sgp_upfs_membros_retrieve"];
-        put: operations["v1_sgp_upfs_membros_update"];
-        post?: never;
-        delete: operations["v1_sgp_upfs_membros_destroy"];
-        options?: never;
-        head?: never;
-        patch: operations["v1_sgp_upfs_membros_partial_update"];
-        trace?: never;
-    };
-    "/api/v1/sgp/upfs/{upf_pk}/membros/exportar/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Exporta em CSV os membros de uma UPF específica (Issue #186). */
-        get: operations["v1_sgp_upfs_membros_exportar_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/sgp/upfs/{upf_pk}/membros/resumo/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["v1_sgp_upfs_membros_resumo_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/sgp/upfs/{upf_pk}/membros/transferir-titularidade/": {
+    "/api/v1/sgp/ufpas/{id}/foto/": {
         parameters: {
             query?: never;
             header?: never;
@@ -3395,7 +3291,343 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["v1_sgp_upfs_membros_transferir_titularidade_create"];
+        post?: never;
+        delete: operations["v1_sgp_ufpas_foto_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/{id}/foto/confirm/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["v1_sgp_ufpas_foto_confirm_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/{id}/foto/upload-url/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["v1_sgp_ufpas_foto_upload_url_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/{id}/historico/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["v1_sgp_ufpas_historico_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/{ufpa_pk}/documentos/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["v1_sgp_ufpas_documentos_list"];
+        put?: never;
+        post: operations["v1_sgp_ufpas_documentos_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/{ufpa_pk}/documentos/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["v1_sgp_ufpas_documentos_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/{ufpa_pk}/documentos/{id}/download/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["v1_sgp_ufpas_documentos_download_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/{ufpa_pk}/documentos/upload-url/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["v1_sgp_ufpas_documentos_upload_url_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/{ufpa_pk}/formularios/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["v1_sgp_ufpas_formularios_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/{ufpa_pk}/formularios/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["v1_sgp_ufpas_formularios_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/{ufpa_pk}/formularios/exportar/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["v1_sgp_ufpas_formularios_exportar_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/{ufpa_pk}/formularios/opcoes/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Metadado não paginado com os formulários já respondidos na UFPA.
+         *
+         *     Alimenta o filtro por formulário do histórico (BE-16): diferente da
+         *     listagem paginada, não é afetado pela página corrente nem pelos demais
+         *     filtros (período/respondente) — sempre reflete o conjunto completo.
+         */
+        get: operations["v1_sgp_ufpas_formularios_opcoes_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/{ufpa_pk}/membros/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["v1_sgp_ufpas_membros_list"];
+        put?: never;
+        post: operations["v1_sgp_ufpas_membros_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/{ufpa_pk}/membros/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["v1_sgp_ufpas_membros_retrieve"];
+        put: operations["v1_sgp_ufpas_membros_update"];
+        post?: never;
+        delete: operations["v1_sgp_ufpas_membros_destroy"];
+        options?: never;
+        head?: never;
+        patch: operations["v1_sgp_ufpas_membros_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/{ufpa_pk}/membros/exportar/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Exporta em CSV os membros de uma UFPA específica (Issue #186). */
+        get: operations["v1_sgp_ufpas_membros_exportar_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/{ufpa_pk}/membros/resumo/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["v1_sgp_ufpas_membros_resumo_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/{ufpa_pk}/membros/transferir-titularidade/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["v1_sgp_ufpas_membros_transferir_titularidade_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/{ufpa_pk}/producao/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["v1_sgp_ufpas_producao_list"];
+        put?: never;
+        post: operations["v1_sgp_ufpas_producao_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/{ufpa_pk}/producao/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["v1_sgp_ufpas_producao_retrieve"];
+        put?: never;
+        post?: never;
+        delete: operations["v1_sgp_ufpas_producao_destroy"];
+        options?: never;
+        head?: never;
+        patch: operations["v1_sgp_ufpas_producao_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/exportar/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description GET /api/v1/sgp/ufpas/exportar/?formato=csv|xlsx&<filtros da listagem>
+         *
+         *     Até `settings.UFPA_EXPORT_ASYNC_THRESHOLD` registros devolve o arquivo; acima
+         *     disso responde 202 com a exportação criada, acompanhada em
+         *     `/api/v1/sgp/exportacoes/{id}/`.
+         */
+        get: operations["v1_sgp_ufpas_exportar_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sgp/ufpas/mapa/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Retorna UFPAs georreferenciadas em GeoJSON FeatureCollection. Cada feature possui geometry.coordinates na ordem [lng, lat] e properties mínimo: id, nome_titular, municipio, territorio e ativo. */
+        get: operations["v1_sgp_ufpas_mapa_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3515,238 +3747,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["v1_territories_partial_update"];
-        trace?: never;
-    };
-    "/api/v1/upfs/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["v1_upfs_list"];
-        put?: never;
-        post: operations["v1_upfs_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/upfs/{id}/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["v1_upfs_retrieve"];
-        put?: never;
-        post?: never;
-        delete: operations["v1_upfs_destroy"];
-        options?: never;
-        head?: never;
-        patch: operations["v1_upfs_partial_update"];
-        trace?: never;
-    };
-    "/api/v1/upfs/{id}/foto/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["v1_upfs_foto_destroy"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/upfs/{id}/foto/confirm/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["v1_upfs_foto_confirm_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/upfs/{id}/foto/upload-url/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["v1_upfs_foto_upload_url_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/upfs/{id}/historico/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["v1_upfs_historico_list"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/upfs/{upf_pk}/documentos/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["v1_upfs_documentos_list"];
-        put?: never;
-        post: operations["v1_upfs_documentos_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/upfs/{upf_pk}/documentos/{id}/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["v1_upfs_documentos_destroy"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/upfs/{upf_pk}/documentos/{id}/download/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["v1_upfs_documentos_download_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/upfs/{upf_pk}/documentos/upload-url/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["v1_upfs_documentos_upload_url_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/upfs/{upf_pk}/producao/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["v1_upfs_producao_list"];
-        put?: never;
-        post: operations["v1_upfs_producao_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/upfs/{upf_pk}/producao/{id}/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["v1_upfs_producao_retrieve"];
-        put?: never;
-        post?: never;
-        delete: operations["v1_upfs_producao_destroy"];
-        options?: never;
-        head?: never;
-        patch: operations["v1_upfs_producao_partial_update"];
-        trace?: never;
-    };
-    "/api/v1/upfs/exportar/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description GET /api/v1/upfs/exportar/?formato=csv|xlsx&<filtros da listagem>
-         *
-         *     Até `settings.UPF_EXPORT_ASYNC_THRESHOLD` registros devolve o arquivo; acima
-         *     disso responde 202 com a exportação criada, acompanhada em
-         *     `/api/v1/sgp/exportacoes/{id}/`.
-         */
-        get: operations["v1_upfs_exportar_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/upfs/mapa/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Retorna UPFs georreferenciadas em GeoJSON FeatureCollection. Cada feature possui geometry.coordinates na ordem [lng, lat] e properties mínimo: id, nome_titular, municipio, territorio e ativo. */
-        get: operations["v1_upfs_mapa_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/api/v1/users/": {
@@ -3918,7 +3918,7 @@ export interface components {
              * Format: date-time
              */
             data_fim: string;
-            upfs_participantes?: number[];
+            ufpas_participantes?: number[];
             membros_participantes?: number[];
             parceiros_organizacoes?: number[];
             /**
@@ -3972,7 +3972,7 @@ export interface components {
              * Format: date-time
              */
             data_fim: string;
-            readonly upfs_participantes: components["schemas"]["UPFList"][];
+            readonly ufpas_participantes: components["schemas"]["UFPAList"][];
             readonly membros_participantes: components["schemas"]["MembroList"][];
             readonly total_participantes: number;
             readonly parceiros_organizacoes: components["schemas"]["Nested"][];
@@ -4784,7 +4784,7 @@ export interface components {
             producao_tipo_outra: components["schemas"]["OpcaoTexto"][];
             cultura_categoria: components["schemas"]["OpcaoTexto"][];
             especie_categoria: components["schemas"]["OpcaoTexto"][];
-            upf_documento_tipo: components["schemas"]["OpcaoTexto"][];
+            ufpa_documento_tipo: components["schemas"]["OpcaoTexto"][];
             atividade_documento_tipo: components["schemas"]["OpcaoTexto"][];
             risco_glosa_tipo: components["schemas"]["OpcaoTexto"][];
             risco_glosa_severidade: components["schemas"]["OpcaoTexto"][];
@@ -5432,13 +5432,13 @@ export interface components {
             nome_referencia?: string;
         };
         /**
-         * @description * `upf` - upf
+         * @description * `ufpa` - ufpa
          *     * `member` - member
          *     * `activity` - activity
          *     * `form_response` - form_response
          * @enum {string}
          */
-        EntidadeEnum: "upf" | "member" | "activity" | "form_response";
+        EntidadeEnum: "ufpa" | "member" | "activity" | "form_response";
         /**
          * @description * `1` - Sem instrução
          *     * `2` - Fundamental incompleto
@@ -5628,7 +5628,7 @@ export interface components {
         FaixaEnum: "amarelo" | "vermelho";
         FormResponseDetail: {
             readonly id: number;
-            readonly upf: number;
+            readonly ufpa: number;
             /** ID do formulário */
             readonly formulario_id: number;
             /** Nome do formulário */
@@ -5654,10 +5654,10 @@ export interface components {
             respostas_json?: unknown;
         };
         /**
-         * @description Opção do filtro de formulário: um formulário com resposta na UPF.
+         * @description Opção do filtro de formulário: um formulário com resposta na UFPA.
          *
          *     Distinto de `AvailableFormSerializer` — este cobre formulários já
-         *     respondidos na UPF corrente (para o filtro do histórico), não os
+         *     respondidos na UFPA corrente (para o filtro do histórico), não os
          *     formulários publicados disponíveis para novo preenchimento.
          */
         FormResponseFormularioOption: {
@@ -5667,7 +5667,7 @@ export interface components {
         };
         FormResponseList: {
             readonly id: number;
-            readonly upf: number;
+            readonly ufpa: number;
             /** ID do formulário */
             readonly formulario_id: number;
             /** Nome do formulário */
@@ -5691,7 +5691,7 @@ export interface components {
             readonly criado_em: string;
         };
         FormResponseReceiveRequest: {
-            upf_id: number;
+            ufpa_id: number;
             formulario_id: number;
             formulario_nome: string;
             formulario_versao: string;
@@ -6027,7 +6027,7 @@ export interface components {
          */
         MembroDetail: {
             readonly id: number;
-            readonly upf: number | null;
+            readonly ufpa: number | null;
             nome_completo: string;
             /**
              * Data de Nascimento
@@ -6162,7 +6162,7 @@ export interface components {
          */
         MembroList: {
             readonly id: number;
-            upf?: number | null;
+            ufpa?: number | null;
             nome_completo: string;
             /**
              * Data de Nascimento
@@ -6874,7 +6874,7 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["Territory"][];
         };
-        PaginatedUPFDocumentList: {
+        PaginatedUFPADocumentList: {
             /** @example 123 */
             count: number;
             /**
@@ -6887,9 +6887,9 @@ export interface components {
              * @example http://api.example.org/accounts/?offset=200&limit=100
              */
             previous?: string | null;
-            results: components["schemas"]["UPFDocument"][];
+            results: components["schemas"]["UFPADocument"][];
         };
-        PaginatedUPFListList: {
+        PaginatedUFPAListList: {
             /** @example 123 */
             count: number;
             /**
@@ -6902,7 +6902,7 @@ export interface components {
              * @example http://api.example.org/accounts/?page=2
              */
             previous?: string | null;
-            results: components["schemas"]["UPFList"][];
+            results: components["schemas"]["UFPAList"][];
         };
         PaginatedUserListList: {
             /** @example 123 */
@@ -7060,7 +7060,7 @@ export interface components {
              * Format: date-time
              */
             data_fim?: string;
-            upfs_participantes?: number[];
+            ufpas_participantes?: number[];
             membros_participantes?: number[];
             parceiros_organizacoes?: number[];
             /**
@@ -7395,7 +7395,7 @@ export interface components {
          *                 "cor_raca": ("cor_raca", "cor_raca_display"),
          *             }
          */
-        PatchedUPFDetailRequest: {
+        PatchedUFPADetailRequest: {
             projeto: number;
             nome: string;
             cpf: string;
@@ -7445,7 +7445,7 @@ export interface components {
             energia?: (components["schemas"]["SimNaoInformadoEnum"] | components["schemas"]["NullEnum"]) | null;
             /** Água */
             agua?: (components["schemas"]["AguaEnum"] | components["schemas"]["NullEnum"]) | null;
-            daf_caf?: string;
+            dap_caf?: string;
             seguridade_social?: unknown;
             /**
              * URL da Foto
@@ -7649,7 +7649,7 @@ export interface components {
         };
         ProducaoConsolidada: {
             readonly id: number;
-            readonly upf: number;
+            readonly ufpa: number;
             tipo: components["schemas"]["TipoProducaoEnum"];
             readonly cultura: components["schemas"]["CatalogoProductionNested"];
             /**
@@ -7694,8 +7694,8 @@ export interface components {
             readonly criado_em: string;
             /** Format: date-time */
             readonly atualizado_em: string;
-            readonly upf_id: number;
-            readonly upf_nome_titular: string;
+            readonly ufpa_id: number;
+            readonly ufpa_nome_titular: string;
             readonly municipio: string;
             readonly territorio: string | null;
         };
@@ -7704,14 +7704,14 @@ export interface components {
             count: number;
         };
         ProducaoIndicadores: {
-            total_upfs_produtoras: number;
+            total_ufpas_produtoras: number;
             /** Format: decimal */
             area_total_ha: string;
             principais_culturas: components["schemas"]["ProducaoCulturaContagem"][];
         };
         Production: {
             readonly id: number;
-            readonly upf: number;
+            readonly ufpa: number;
             tipo: components["schemas"]["TipoProducaoEnum"];
             readonly cultura: components["schemas"]["CatalogoProductionNested"];
             /**
@@ -7841,7 +7841,7 @@ export interface components {
         RefreshRequest: {
             refresh_token: string;
         };
-        RegistroAtualDoConflito: components["schemas"]["UPFDetailResposta"] | components["schemas"]["MembroDetail"] | components["schemas"]["ActivityDetailResposta"];
+        RegistroAtualDoConflito: components["schemas"]["UFPADetailResposta"] | components["schemas"]["MembroDetail"] | components["schemas"]["ActivityDetailResposta"];
         RemanejamentoCreateRequest: {
             origem_allocation: number;
             destino_allocation: number;
@@ -8271,7 +8271,7 @@ export interface components {
             resultados_alcancados?: string;
             status?: string;
             justificativa?: string;
-            upfs_participantes: number[];
+            ufpas_participantes: number[];
             membros_participantes: number[];
             ativo?: boolean;
         };
@@ -8281,7 +8281,7 @@ export interface components {
             uuid_local: string;
             /** Format: date-time */
             atualizado_em: string;
-            upf?: number | null;
+            ufpa?: number | null;
             nome_completo?: string;
             /** Format: date */
             data_nascimento?: string | null;
@@ -8298,14 +8298,14 @@ export interface components {
             escolaridade?: number | null;
         };
         SyncPullResposta: {
-            upfs: components["schemas"]["SyncPullUPF"][];
+            ufpas: components["schemas"]["SyncPullUFPA"][];
             members: components["schemas"]["SyncPullMember"][];
             activities: components["schemas"]["SyncPullActivity"][];
             saldos: components["schemas"]["MeuSaldo"][] | null;
             /** Format: date-time */
             server_time: string;
         };
-        SyncPullUPF: {
+        SyncPullUFPA: {
             id: number;
             /** Format: uuid */
             uuid_local: string;
@@ -8569,14 +8569,14 @@ export interface components {
          *     * `outro` - Outro
          * @enum {string}
          */
-        TipoDocumentoUPFEnum: "dap_caf" | "contrato" | "laudo" | "identidade" | "outro";
+        TipoDocumentoUFPAEnum: "dap_caf" | "contrato" | "laudo" | "identidade" | "outro";
         /**
          * @description * `plano_trabalho` - Plano de Trabalho
          *     * `atividades` - Atividades
-         *     * `upfs` - UPFs
+         *     * `ufpas` - UFPAs
          * @enum {string}
          */
-        TipoExportacaoEnum: "plano_trabalho" | "atividades" | "upfs";
+        TipoExportacaoEnum: "plano_trabalho" | "atividades" | "ufpas";
         /**
          * @description * `1` - Casa
          *     * `2` - Apartamento
@@ -8814,7 +8814,7 @@ export interface components {
          *                 "cor_raca": ("cor_raca", "cor_raca_display"),
          *             }
          */
-        UPFDetailRequest: {
+        UFPADetailRequest: {
             projeto: number;
             nome: string;
             cpf: string;
@@ -8864,7 +8864,7 @@ export interface components {
             energia?: (components["schemas"]["SimNaoInformadoEnum"] | components["schemas"]["NullEnum"]) | null;
             /** Água */
             agua?: (components["schemas"]["AguaEnum"] | components["schemas"]["NullEnum"]) | null;
-            daf_caf?: string;
+            dap_caf?: string;
             seguridade_social?: unknown;
             /**
              * URL da Foto
@@ -8874,10 +8874,10 @@ export interface components {
             ativo?: boolean;
         };
         /**
-         * @description Resposta de `UPFDetailSerializer` no schema: o `to_representation`
+         * @description Resposta de `UFPADetailSerializer` no schema: o `to_representation`
          *     troca os PKs de escrita pelos objetos aninhados.
          */
-        UPFDetailResposta: {
+        UFPADetailResposta: {
             readonly id: number;
             readonly projeto: components["schemas"]["Nested"];
             readonly titular: components["schemas"]["TitularNested"];
@@ -8919,7 +8919,7 @@ export interface components {
             energia?: (components["schemas"]["SimNaoInformadoEnum"] | components["schemas"]["NullEnum"]) | null;
             /** Água */
             agua?: (components["schemas"]["AguaEnum"] | components["schemas"]["NullEnum"]) | null;
-            daf_caf?: string;
+            dap_caf?: string;
             seguridade_social?: unknown;
             /**
              * URL da Foto
@@ -8955,10 +8955,10 @@ export interface components {
              */
             readonly ultimo_sync_em: string | null;
         };
-        UPFDocument: {
+        UFPADocument: {
             readonly id: number;
-            readonly upf: number;
-            tipo: components["schemas"]["TipoDocumentoUPFEnum"];
+            readonly ufpa: number;
+            tipo: components["schemas"]["TipoDocumentoUFPAEnum"];
             /** Descrição */
             descricao?: string;
             /** Key do Arquivo */
@@ -8976,24 +8976,24 @@ export interface components {
             readonly criado_em: string;
             readonly criado_por: string;
         };
-        UPFDocumentCreateRequest: {
+        UFPADocumentCreateRequest: {
             key: string;
             nome_original: string;
-            tipo: components["schemas"]["TipoDocumentoUPFEnum"];
+            tipo: components["schemas"]["TipoDocumentoUFPAEnum"];
             /** @default  */
             descricao: string;
             /** Format: date */
             data_documento: string;
         };
-        UPFDocumentUploadURLRequest: {
+        UFPADocumentUploadURLRequest: {
             filename: string;
             content_type: string;
             size: number;
         };
-        UPFFotoConfirmResposta: {
+        UFPAFotoConfirmResposta: {
             foto_url: string;
         };
-        UPFList: {
+        UFPAList: {
             readonly id: number;
             readonly nome_titular: string;
             readonly cpf: string;
@@ -9008,10 +9008,10 @@ export interface components {
              */
             foto_url?: string;
         };
-        UPFMapFeatureCollection: {
+        UFPAMapFeatureCollection: {
             /** @default FeatureCollection */
             type: string;
-            features: components["schemas"]["_UPFMapFeature"][];
+            features: components["schemas"]["_UFPAMapFeature"][];
             truncated: boolean;
             message?: string;
         };
@@ -9624,18 +9624,18 @@ export interface components {
             nome: string;
             quantidade_realizada: number;
         };
-        _UPFMapFeature: {
+        _UFPAMapFeature: {
             /** @default Feature */
             type: string;
-            geometry: components["schemas"]["_UPFMapGeometry"];
-            properties: components["schemas"]["_UPFMapProperties"];
+            geometry: components["schemas"]["_UFPAMapGeometry"];
+            properties: components["schemas"]["_UFPAMapProperties"];
         };
-        _UPFMapGeometry: {
+        _UFPAMapGeometry: {
             /** @default Point */
             type: string;
             coordinates: number[];
         };
-        _UPFMapProperties: {
+        _UFPAMapProperties: {
             id: number;
             nome_titular: string;
             municipio: components["schemas"]["MunicipioNested"];
@@ -11273,11 +11273,11 @@ export interface operations {
                 criado_em_gte?: string;
                 criado_em_lte?: string;
                 /**
-                 * @description * `upf` - UPF
+                 * @description * `ufpa` - UFPA
                  *     * `member` - Membro
                  *     * `activity` - Atividade
                  */
-                entidade?: "activity" | "member" | "upf";
+                entidade?: "activity" | "member" | "ufpa";
                 /** @description Número de resultados a serem retornados por página. */
                 limit?: number;
                 /** @description O índice inicial a partir do qual retornar os resultados. */
@@ -14972,7 +14972,7 @@ export interface operations {
                     "text/csv": string;
                 };
             };
-            /** @description Filtro inválido ou acima do limite de UPFs. */
+            /** @description Filtro inválido ou acima do limite de UFPAs. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -16003,7 +16003,370 @@ export interface operations {
             };
         };
     };
-    v1_sgp_upfs_formularios_list: {
+    v1_sgp_ufpas_list: {
+        parameters: {
+            query?: {
+                ativo?: boolean;
+                cadastrado_ate?: string;
+                cadastrado_de?: string;
+                comunidade?: number;
+                municipio?: number;
+                /** @description Qual campo usar ao ordenar os resultados. */
+                ordering?: string;
+                /** @description Um número de página dentro do conjunto de resultados paginado. */
+                page?: number;
+                /** @description Número de resultados a serem retornados por página. */
+                page_size?: number;
+                projeto?: number;
+                q?: string;
+                territorio?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedUFPAListList"];
+                };
+            };
+        };
+    };
+    v1_sgp_ufpas_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UFPADetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["UFPADetailRequest"];
+                "multipart/form-data": components["schemas"]["UFPADetailRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UFPADetailResposta"];
+                };
+            };
+        };
+    };
+    v1_sgp_ufpas_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Um valor inteiro único que identifica este UFPA. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UFPADetailResposta"];
+                };
+            };
+        };
+    };
+    v1_sgp_ufpas_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Um valor inteiro único que identifica este UFPA. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    v1_sgp_ufpas_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Um valor inteiro único que identifica este UFPA. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchedUFPADetailRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedUFPADetailRequest"];
+                "multipart/form-data": components["schemas"]["PatchedUFPADetailRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UFPADetailResposta"];
+                };
+            };
+        };
+    };
+    v1_sgp_ufpas_foto_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Um valor inteiro único que identifica este UFPA. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Foto removida. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    v1_sgp_ufpas_foto_confirm_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Um valor inteiro único que identifica este UFPA. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmUploadRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ConfirmUploadRequest"];
+                "multipart/form-data": components["schemas"]["ConfirmUploadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UFPAFotoConfirmResposta"];
+                };
+            };
+        };
+    };
+    v1_sgp_ufpas_foto_upload_url_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Um valor inteiro único que identifica este UFPA. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadURLRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["UploadURLRequest"];
+                "multipart/form-data": components["schemas"]["UploadURLRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadURLResposta"];
+                };
+            };
+        };
+    };
+    v1_sgp_ufpas_historico_list: {
+        parameters: {
+            query?: {
+                ate?: string;
+                campo?: string;
+                desde?: string;
+                /** @description Inclui o histórico dos membros. */
+                incluir_membros?: boolean;
+                /** @description Um número de página dentro do conjunto de resultados paginado. */
+                page?: number;
+                /** @description Número de resultados a serem retornados por página. */
+                page_size?: number;
+                usuario?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Um valor inteiro único que identifica este UFPA. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedHistoricoEntryList"];
+                };
+            };
+        };
+    };
+    v1_sgp_ufpas_documentos_list: {
+        parameters: {
+            query?: {
+                /** @description Número de resultados a serem retornados por página. */
+                limit?: number;
+                /** @description O índice inicial a partir do qual retornar os resultados. */
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                ufpa_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedUFPADocumentList"];
+                };
+            };
+        };
+    };
+    v1_sgp_ufpas_documentos_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ufpa_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UFPADocumentCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["UFPADocumentCreateRequest"];
+                "multipart/form-data": components["schemas"]["UFPADocumentCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UFPADocument"];
+                };
+            };
+        };
+    };
+    v1_sgp_ufpas_documentos_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                ufpa_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    v1_sgp_ufpas_documentos_download_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                ufpa_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadURLResposta"];
+                };
+            };
+        };
+    };
+    v1_sgp_ufpas_documentos_upload_url_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ufpa_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UFPADocumentUploadURLRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["UFPADocumentUploadURLRequest"];
+                "multipart/form-data": components["schemas"]["UFPADocumentUploadURLRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadURLResposta"];
+                };
+            };
+        };
+    };
+    v1_sgp_ufpas_formularios_list: {
         parameters: {
             query?: {
                 data_fim?: string;
@@ -16019,7 +16382,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                upf_pk: number;
+                ufpa_pk: number;
             };
             cookie?: never;
         };
@@ -16035,13 +16398,13 @@ export interface operations {
             };
         };
     };
-    v1_sgp_upfs_formularios_retrieve: {
+    v1_sgp_ufpas_formularios_retrieve: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 id: number;
-                upf_pk: number;
+                ufpa_pk: number;
             };
             cookie?: never;
         };
@@ -16057,7 +16420,7 @@ export interface operations {
             };
         };
     };
-    v1_sgp_upfs_formularios_exportar_retrieve: {
+    v1_sgp_ufpas_formularios_exportar_retrieve: {
         parameters: {
             query: {
                 data_fim?: string;
@@ -16070,7 +16433,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                upf_pk: number;
+                ufpa_pk: number;
             };
             cookie?: never;
         };
@@ -16086,12 +16449,12 @@ export interface operations {
             };
         };
     };
-    v1_sgp_upfs_formularios_opcoes_list: {
+    v1_sgp_ufpas_formularios_opcoes_list: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                upf_pk: number;
+                ufpa_pk: number;
             };
             cookie?: never;
         };
@@ -16107,7 +16470,7 @@ export interface operations {
             };
         };
     };
-    v1_sgp_upfs_membros_list: {
+    v1_sgp_ufpas_membros_list: {
         parameters: {
             query?: {
                 /** @description Número de resultados a serem retornados por página. */
@@ -16117,7 +16480,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                upf_pk: number;
+                ufpa_pk: number;
             };
             cookie?: never;
         };
@@ -16133,12 +16496,12 @@ export interface operations {
             };
         };
     };
-    v1_sgp_upfs_membros_create: {
+    v1_sgp_ufpas_membros_create: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                upf_pk: number;
+                ufpa_pk: number;
             };
             cookie?: never;
         };
@@ -16160,13 +16523,13 @@ export interface operations {
             };
         };
     };
-    v1_sgp_upfs_membros_retrieve: {
+    v1_sgp_ufpas_membros_retrieve: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 id: number;
-                upf_pk: number;
+                ufpa_pk: number;
             };
             cookie?: never;
         };
@@ -16182,13 +16545,13 @@ export interface operations {
             };
         };
     };
-    v1_sgp_upfs_membros_update: {
+    v1_sgp_ufpas_membros_update: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 id: number;
-                upf_pk: number;
+                ufpa_pk: number;
             };
             cookie?: never;
         };
@@ -16210,13 +16573,13 @@ export interface operations {
             };
         };
     };
-    v1_sgp_upfs_membros_destroy: {
+    v1_sgp_ufpas_membros_destroy: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 id: number;
-                upf_pk: number;
+                ufpa_pk: number;
             };
             cookie?: never;
         };
@@ -16231,13 +16594,13 @@ export interface operations {
             };
         };
     };
-    v1_sgp_upfs_membros_partial_update: {
+    v1_sgp_ufpas_membros_partial_update: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 id: number;
-                upf_pk: number;
+                ufpa_pk: number;
             };
             cookie?: never;
         };
@@ -16259,12 +16622,12 @@ export interface operations {
             };
         };
     };
-    v1_sgp_upfs_membros_exportar_retrieve: {
+    v1_sgp_ufpas_membros_exportar_retrieve: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                upf_pk: number;
+                ufpa_pk: number;
             };
             cookie?: never;
         };
@@ -16280,12 +16643,12 @@ export interface operations {
             };
         };
     };
-    v1_sgp_upfs_membros_resumo_retrieve: {
+    v1_sgp_ufpas_membros_resumo_retrieve: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                upf_pk: number;
+                ufpa_pk: number;
             };
             cookie?: never;
         };
@@ -16301,12 +16664,12 @@ export interface operations {
             };
         };
     };
-    v1_sgp_upfs_membros_transferir_titularidade_create: {
+    v1_sgp_ufpas_membros_transferir_titularidade_create: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                upf_pk: number;
+                ufpa_pk: number;
             };
             cookie?: never;
         };
@@ -16324,6 +16687,200 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TransferirTitularidadeResposta"];
+                };
+            };
+        };
+    };
+    v1_sgp_ufpas_producao_list: {
+        parameters: {
+            query?: {
+                /** @description Número de resultados a serem retornados por página. */
+                limit?: number;
+                /** @description O índice inicial a partir do qual retornar os resultados. */
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                ufpa_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedProductionList"];
+                };
+            };
+        };
+    };
+    v1_sgp_ufpas_producao_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ufpa_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductionRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ProductionRequest"];
+                "multipart/form-data": components["schemas"]["ProductionRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Production"];
+                };
+            };
+        };
+    };
+    v1_sgp_ufpas_producao_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                ufpa_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Production"];
+                };
+            };
+        };
+    };
+    v1_sgp_ufpas_producao_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                ufpa_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    v1_sgp_ufpas_producao_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                ufpa_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedProductionRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedProductionRequest"];
+                "multipart/form-data": components["schemas"]["PatchedProductionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Production"];
+                };
+            };
+        };
+    };
+    v1_sgp_ufpas_exportar_retrieve: {
+        parameters: {
+            query?: {
+                ativo?: boolean;
+                cadastrado_ate?: string;
+                cadastrado_de?: string;
+                comunidade?: number;
+                formato?: "csv" | "xlsx";
+                municipio?: number;
+                projeto?: number;
+                /** @description Nome do titular ou início do CPF. */
+                q?: string;
+                territorio?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
+                };
+            };
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportJob"];
+                };
+            };
+        };
+    };
+    v1_sgp_ufpas_mapa_retrieve: {
+        parameters: {
+            query?: {
+                ativo?: boolean;
+                /** @description Bounding box no formato lng_sw,lat_sw,lng_ne,lat_ne. */
+                bbox?: string;
+                cadastrado_ate?: string;
+                cadastrado_de?: string;
+                comunidade?: number;
+                municipio?: number;
+                projeto?: number;
+                /** @description Nome do titular ou início do CPF. */
+                q?: string;
+                territorio?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UFPAMapFeatureCollection"];
                 };
             };
         };
@@ -16740,563 +17297,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Territory"];
-                };
-            };
-        };
-    };
-    v1_upfs_list: {
-        parameters: {
-            query?: {
-                ativo?: boolean;
-                cadastrado_ate?: string;
-                cadastrado_de?: string;
-                comunidade?: number;
-                municipio?: number;
-                /** @description Qual campo usar ao ordenar os resultados. */
-                ordering?: string;
-                /** @description Um número de página dentro do conjunto de resultados paginado. */
-                page?: number;
-                /** @description Número de resultados a serem retornados por página. */
-                page_size?: number;
-                projeto?: number;
-                q?: string;
-                territorio?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PaginatedUPFListList"];
-                };
-            };
-        };
-    };
-    v1_upfs_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UPFDetailRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["UPFDetailRequest"];
-                "multipart/form-data": components["schemas"]["UPFDetailRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UPFDetailResposta"];
-                };
-            };
-        };
-    };
-    v1_upfs_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Um valor inteiro único que identifica este UPF. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UPFDetailResposta"];
-                };
-            };
-        };
-    };
-    v1_upfs_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Um valor inteiro único que identifica este UPF. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    v1_upfs_partial_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Um valor inteiro único que identifica este UPF. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PatchedUPFDetailRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["PatchedUPFDetailRequest"];
-                "multipart/form-data": components["schemas"]["PatchedUPFDetailRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UPFDetailResposta"];
-                };
-            };
-        };
-    };
-    v1_upfs_foto_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Um valor inteiro único que identifica este UPF. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Foto removida. */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    v1_upfs_foto_confirm_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Um valor inteiro único que identifica este UPF. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ConfirmUploadRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["ConfirmUploadRequest"];
-                "multipart/form-data": components["schemas"]["ConfirmUploadRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UPFFotoConfirmResposta"];
-                };
-            };
-        };
-    };
-    v1_upfs_foto_upload_url_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Um valor inteiro único que identifica este UPF. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UploadURLRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["UploadURLRequest"];
-                "multipart/form-data": components["schemas"]["UploadURLRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UploadURLResposta"];
-                };
-            };
-        };
-    };
-    v1_upfs_historico_list: {
-        parameters: {
-            query?: {
-                ate?: string;
-                campo?: string;
-                desde?: string;
-                /** @description Inclui o histórico dos membros. */
-                incluir_membros?: boolean;
-                /** @description Um número de página dentro do conjunto de resultados paginado. */
-                page?: number;
-                /** @description Número de resultados a serem retornados por página. */
-                page_size?: number;
-                usuario?: number;
-            };
-            header?: never;
-            path: {
-                /** @description Um valor inteiro único que identifica este UPF. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PaginatedHistoricoEntryList"];
-                };
-            };
-        };
-    };
-    v1_upfs_documentos_list: {
-        parameters: {
-            query?: {
-                /** @description Número de resultados a serem retornados por página. */
-                limit?: number;
-                /** @description O índice inicial a partir do qual retornar os resultados. */
-                offset?: number;
-            };
-            header?: never;
-            path: {
-                upf_pk: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PaginatedUPFDocumentList"];
-                };
-            };
-        };
-    };
-    v1_upfs_documentos_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                upf_pk: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UPFDocumentCreateRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["UPFDocumentCreateRequest"];
-                "multipart/form-data": components["schemas"]["UPFDocumentCreateRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UPFDocument"];
-                };
-            };
-        };
-    };
-    v1_upfs_documentos_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-                upf_pk: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    v1_upfs_documentos_download_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-                upf_pk: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DownloadURLResposta"];
-                };
-            };
-        };
-    };
-    v1_upfs_documentos_upload_url_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                upf_pk: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UPFDocumentUploadURLRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["UPFDocumentUploadURLRequest"];
-                "multipart/form-data": components["schemas"]["UPFDocumentUploadURLRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UploadURLResposta"];
-                };
-            };
-        };
-    };
-    v1_upfs_producao_list: {
-        parameters: {
-            query?: {
-                /** @description Número de resultados a serem retornados por página. */
-                limit?: number;
-                /** @description O índice inicial a partir do qual retornar os resultados. */
-                offset?: number;
-            };
-            header?: never;
-            path: {
-                upf_pk: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PaginatedProductionList"];
-                };
-            };
-        };
-    };
-    v1_upfs_producao_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                upf_pk: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ProductionRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["ProductionRequest"];
-                "multipart/form-data": components["schemas"]["ProductionRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Production"];
-                };
-            };
-        };
-    };
-    v1_upfs_producao_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-                upf_pk: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Production"];
-                };
-            };
-        };
-    };
-    v1_upfs_producao_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-                upf_pk: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    v1_upfs_producao_partial_update: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-                upf_pk: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["PatchedProductionRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["PatchedProductionRequest"];
-                "multipart/form-data": components["schemas"]["PatchedProductionRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Production"];
-                };
-            };
-        };
-    };
-    v1_upfs_exportar_retrieve: {
-        parameters: {
-            query?: {
-                ativo?: boolean;
-                cadastrado_ate?: string;
-                cadastrado_de?: string;
-                comunidade?: number;
-                formato?: "csv" | "xlsx";
-                municipio?: number;
-                projeto?: number;
-                /** @description Nome do titular ou início do CPF. */
-                q?: string;
-                territorio?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/csv": string;
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
-                };
-            };
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ExportJob"];
-                };
-            };
-        };
-    };
-    v1_upfs_mapa_retrieve: {
-        parameters: {
-            query?: {
-                ativo?: boolean;
-                /** @description Bounding box no formato lng_sw,lat_sw,lng_ne,lat_ne. */
-                bbox?: string;
-                cadastrado_ate?: string;
-                cadastrado_de?: string;
-                comunidade?: number;
-                municipio?: number;
-                projeto?: number;
-                /** @description Nome do titular ou início do CPF. */
-                q?: string;
-                territorio?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UPFMapFeatureCollection"];
                 };
             };
         };

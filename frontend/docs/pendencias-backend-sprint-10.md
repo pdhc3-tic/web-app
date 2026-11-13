@@ -1,7 +1,7 @@
 # Pendências de backend — sprint 10
 
 *Compilado em 23/09/2026, na branch `frontend/sprint-10b`, ao concluir as
-pendências de frontend da issue #240 (exportação da listagem de UFPAs) apontadas
+pendências de frontend da issue #240 (exportação da listagem de UPFs) apontadas
 na revisão do PR #261.*
 
 *Os itens 4 e 5 foram acrescentados em 25/09/2026, ao avaliar se as issues #272
@@ -26,7 +26,7 @@ compilação.*
 
 ---
 
-## 1. `GET /api/v1/sgp/ufpas/exportar/` não existe — bloqueia a #240 inteira
+## 1. `GET /api/v1/upfs/exportar/` não existe — bloqueia a #240 inteira
 
 > **Resolvido em 30/09/2026 pelo PR #306.** O backend adotou outro formato
 > para a exportação assíncrona — `GET/download/repetir` em
@@ -34,34 +34,34 @@ compilação.*
 > `total_registros`/`nome_arquivo`/`expira_em` —, e o frontend foi adaptado a
 > ele em 01/10/2026. O texto abaixo fica como registro do pedido.
 
-*Estado atual:* a rota cai no `retrieve` do `UFPAViewSet` com `pk="exportar"`:
+*Estado atual:* a rota cai no `retrieve` do `UPFViewSet` com `pk="exportar"`:
 
 ```
-GET /api/v1/sgp/ufpas/exportar/?formato=csv   → 404 {"detail":"Não encontrado."}
+GET /api/v1/upfs/exportar/?formato=csv   → 404 {"detail":"Não encontrado."}
 ```
 
-O `UFPAViewSet` (`backend/apps/sgp/views/ufpa.py`) tem só as actions `mapa`,
+O `UPFViewSet` (`backend/apps/sgp/views/upf.py`) tem só as actions `mapa`,
 `foto` e `historico`. O frontend está completo e testado contra respostas
 simuladas: o botão "Exportar" da listagem manda os mesmos parâmetros da
-listagem (gerados por `buildUfpasFilterParams`, fonte única para as duas
+listagem (gerados por `buildUpfsFilterParams`, fonte única para as duas
 chamadas) e reage à resposta. Enquanto a rota não existir, o clique mostra o
 toast "Não encontrado." — nada quebra, mas nenhum critério da issue é
 verificável.
 
-**Contrato que o frontend espera** (documentado em `frontend/app/lib/ufpas.ts`,
+**Contrato que o frontend espera** (documentado em `frontend/app/lib/upfs.ts`,
 seção "Exportação da listagem"):
 
 ```
-GET /api/v1/sgp/ufpas/exportar/?<filtros da listagem>&formato=csv
+GET /api/v1/upfs/exportar/?<filtros da listagem>&formato=csv
   200 text/csv          → até 1.000 registros: o arquivo direto
   202 application/json  → acima de 1.000: tarefa criada
                           {id, status, total, progresso, erro, arquivo_nome}
   400 {message}         → parâmetro desconhecido ou inválido
 
-GET /api/v1/sgp/ufpas/exportar/{id}/          → a tarefa, mesmo formato do 202
+GET /api/v1/upfs/exportar/{id}/          → a tarefa, mesmo formato do 202
                                            status: pendente | processando | concluida | falhou
                                            progresso: 0–100 ou null
-GET /api/v1/sgp/ufpas/exportar/{id}/arquivo/  → o CSV da tarefa concluída
+GET /api/v1/upfs/exportar/{id}/arquivo/  → o CSV da tarefa concluída
 ```
 
 Quem decide entre síncrono e assíncrono é o **servidor**, que conhece o total
@@ -70,23 +70,23 @@ o limite de 1.000 vale também para quem chamar a API direto. Um `404` no
 polling é tratado como tarefa expirada ("gere o arquivo novamente").
 
 Se preferirem outro formato, o ajuste no frontend é localizado
-(`iniciarExportacaoUfpas`, `fetchExportacaoUfpas`, `baixarExportacaoUfpas`) — só
+(`iniciarExportacaoUpfs`, `fetchExportacaoUpfs`, `baixarExportacaoUpfs`) — só
 avisem antes, porque os E2E simulam exatamente o formato acima.
 
 **Pedido**, pelos critérios da issue e pela revisão do PR #261:
 
-- **Mesmos filtros da listagem.** Action `exportar` no `UFPAViewSet`
+- **Mesmos filtros da listagem.** Action `exportar` no `UPFViewSet`
   reaproveitando `self.filter_queryset(self.get_queryset())`, para herdar de
-  graça o `UFPAFilter` (`q`, `municipio`, `territorio`, `projeto`, `ativo`,
+  graça o `UPFFilter` (`q`, `municipio`, `territorio`, `projeto`, `ativo`,
   `cadastrado_de`, `cadastrado_ate`), o default `ativo=True` do
-  `filter_queryset` e o escopo de `ufpas_acessiveis_ao_usuario`. Duplicar os
+  `filter_queryset` e o escopo de `upfs_acessiveis_ao_usuario`. Duplicar os
   filtros num serviço à parte é o que faria arquivo e tela divergirem.
 - **Recusar parâmetro desconhecido com 400.** Hoje o django-filter descarta em
   silêncio — verificado nesta compilação:
 
   ```
-  GET /api/v1/sgp/ufpas/?limit=1            → count 38
-  GET /api/v1/sgp/ufpas/?limit=1&bairro=x   → count 38, 200
+  GET /api/v1/upfs/?limit=1            → count 38
+  GET /api/v1/upfs/?limit=1&bairro=x   → count 38, 200
   ```
 
   Na listagem isso é inofensivo; numa exportação significa entregar a base
@@ -99,18 +99,18 @@ avisem antes, porque os E2E simulam exatamente o formato acima.
 - **Tarefa assíncrona** acima de 1.000 registros (Celery), guardando o arquivo
   gerado para o download posterior. A #239 pede o mesmo fluxo para a exportação
   consolidada de atividades — vale desenhar uma infraestrutura só para as duas.
-- **Testes** em `apps/sgp/tests/test_ufpa_export.py`, conforme a tabela da
+- **Testes** em `apps/sgp/tests/test_upf_export.py`, conforme a tabela da
   issue: filtros aplicados, escopo territorial (ADT exporta só o seu), CPF
   mascarado por perfil e exportação grande assíncrona.
 
 *Referência de padrão:* `services/workplan_export.py` e
 `services/membro_export.py` — este último já tem um limite
-(`MEMBROS_EXPORT_UFPA_LIMIT`) e a exceção `ExportLimitExceeded`.
+(`MEMBROS_EXPORT_UPF_LIMIT`) e a exceção `ExportLimitExceeded`.
 
 *Estado atual no frontend:* entregue no commit `ad9be91`. Fluxo síncrono e
 assíncrono, faixa de progresso, conclusão, falha, download posterior que
 sobrevive a reload e "Tentar novamente" com os filtros originais. 11 E2E em
-`e2e/exportacao-ufpas.spec.ts`, todos com o endpoint simulado. Quando a rota
+`e2e/exportacao-upfs.spec.ts`, todos com o endpoint simulado. Quando a rota
 existir, o teste de igualdade de filtros passa a valer contra o servidor real
 sem mudança; os demais continuam necessários para os estados raros (falha,
 expiração).
@@ -126,9 +126,9 @@ expiração).
 deixa o JavaScript ler o `Content-Disposition`, e o nome de arquivo que o
 backend escolher é descartado.
 
-A exportação de UFPAs entra na mesma lista da do Plano de Trabalho e da de
+A exportação de UPFs entra na mesma lista da do Plano de Trabalho e da de
 membros: sem o header, o arquivo sai com o nome derivado no cliente
-(`ufpas_AAAA-MM-DD.csv`). Para o download de uma tarefa concluída o frontend
+(`upfs_AAAA-MM-DD.csv`). Para o download de uma tarefa concluída o frontend
 ainda usa o `arquivo_nome` da tarefa, então ali o efeito some.
 
 **Pedido** — o mesmo da sprint 9, uma linha:
@@ -141,18 +141,18 @@ CORS_EXPOSE_HEADERS = ["Content-Disposition"]
 
 ## 3. `seed_demo` não permite testar o caso "acima de 1.000"
 
-> **Resolvido no backend em 26/10/2026 pelo PR #376** (item 10 da #373): o limite da exportação assíncrona de UFPAs virou `UFPA_EXPORT_ASYNC_THRESHOLD` (variável de ambiente, padrão 1.000). O E2E da #240 passa do limite com UFPAs sintéticas criadas pela fixture.
+> **Resolvido no backend em 26/10/2026 pelo PR #376** (item 10 da #373): o limite da exportação assíncrona de UPFs virou `UPF_EXPORT_ASYNC_THRESHOLD` (variável de ambiente, padrão 1.000). O E2E da #240 passa do limite com UPFs sintéticas criadas pela fixture.
 
 > *Ainda aberto em 01/10/2026:* o PR #306 manteve o limite fixo
-> (`UFPA_EXPORT_SYNC_LIMIT = 1000` em `apps/sgp/services/ufpa_export.py`). Por
+> (`UPF_EXPORT_SYNC_LIMIT = 1000` em `apps/sgp/services/upf_export.py`). Por
 > isso os E2E do caminho assíncrono continuam com a resposta forjada.
 
-O banco de demonstração tem **41 UFPAs** (38 ativas). O critério "exportação
+O banco de demonstração tem **41 UPFs** (38 ativas). O critério "exportação
 acima de 1.000 registros é assíncrona" não é reproduzível à mão em nenhum
 ambiente que parta do seed.
 
 Não é pedido de seed com mil famílias — isso pesaria em toda execução do CI.
-**Pedido:** tornar o limite configurável (ex.: `UFPA_EXPORT_ASYNC_THRESHOLD` em
+**Pedido:** tornar o limite configurável (ex.: `UPF_EXPORT_ASYNC_THRESHOLD` em
 `settings`, default 1.000), para que homologação e o teste manual possam
 baixá-lo e exercitar o fluxo assíncrono com o seed atual.
 
@@ -187,9 +187,9 @@ os filtros — consumam o endpoint. Hoje ele entrega assim:
 |---|---|
 | Publicadas com rótulo | `genero`, `cor_raca`, `escolaridade`, `dispositivo`, `pct`, `posse_terra`, `situacao_moradia`, `tipo_moradia`, `material_construcao`, `energia`, `agua`, `grau_parentesco` |
 | Publicada sem rótulo | `saude` — sai `{"value": v, "label": v}`, porque `SAUDE_CHOICES` é lista plana de strings; a tela mostraria `deficiencia_visual` em vez de "Deficiência visual" |
-| Existem no backend, fora do endpoint | `SEGURIDADE_SOCIAL_CHOICES` (`constants.py`); `TIPO_ATIVIDADE_CHOICES`, `FORMA_ATUACAO_CHOICES`, `AMBITO_CHOICES`, `STATUS_CHOICES` (`models/activity.py`); `TIPO_CHOICES`, `SISTEMA_CRIACAO_CHOICES`, `TIPO_OUTRA_CHOICES` (`models/production.py`); `ODS_CHOICES` (`constants.py`); os `TIPO_CHOICES` de `ufpa_document.py` e `activity_document.py` |
+| Existem no backend, fora do endpoint | `SEGURIDADE_SOCIAL_CHOICES` (`constants.py`); `TIPO_ATIVIDADE_CHOICES`, `FORMA_ATUACAO_CHOICES`, `AMBITO_CHOICES`, `STATUS_CHOICES` (`models/activity.py`); `TIPO_CHOICES`, `SISTEMA_CRIACAO_CHOICES`, `TIPO_OUTRA_CHOICES` (`models/production.py`); `ODS_CHOICES` (`constants.py`); os `TIPO_CHOICES` de `upf_document.py` e `activity_document.py` |
 
-O wizard de UFPA já consome o endpoint. As 12 listas publicadas ainda têm cópia
+O wizard de UPF já consome o endpoint. As 12 listas publicadas ainda têm cópia
 local em `frontend/app/lib/choices.ts`, mas só como reserva para falha de rede;
 as que o frontend usa **sem** alternativa no endpoint são as da terceira linha
 da tabela, mais `SAUDE_OPTIONS`.
@@ -222,12 +222,12 @@ endpoint não publica — o select ficaria vazio.
 A #273 quer gerar os tipos do frontend a partir desse schema, para que uma
 mudança de payload no backend vire erro de compilação. Isso só funciona se o
 schema for fiel à resposta. Hoje não é — comparação feita em 25/09/2026, com a
-mesma UFPA e a mesma atividade do banco de demonstração:
+mesma UPF e a mesma atividade do banco de demonstração:
 
 | Campo | Schema | Resposta real da API |
 |---|---|---|
-| `UFPADetail.municipio` | `integer` | `{id, nome, estado: {id, sigla, nome}}` |
-| `UFPADetail.membros` | `string` | lista de membros |
+| `UPFDetail.municipio` | `integer` | `{id, nome, estado: {id, sigla, nome}}` |
+| `UPFDetail.membros` | `string` | lista de membros |
 | `ActivityDetail.acao` | `integer` | `{id, numero, descricao}` |
 | `ActivityDetail.tecnico_responsavel` | `integer` | `{id, nome, email}` |
 | `ActivityDetail.fotos` | ausente | lista |
@@ -238,14 +238,14 @@ Tipos gerados deste schema estariam **errados**, e o código de hoje — que lê
 (reverter o bug do Estado e ver o build quebrar) também não fecha: o schema
 modela `municipio` como número.
 
-*Registro:* o bug original da issue — o Estado vazio na ficha da UFPA — já está
+*Registro:* o bug original da issue — o Estado vazio na ficha da UPF — já está
 corrigido na API, que agora aninha o `estado` dentro de `municipio`. Só o
 schema não sabe disso.
 
 **Causas, com o pedido de cada uma:**
 
 1. **Respostas reescritas em `to_representation`** — em
-   `apps/sgp/serializers/ufpa.py`, `apps/sgp/serializers/activity.py`,
+   `apps/sgp/serializers/upf.py`, `apps/sgp/serializers/activity.py`,
    `apps/core/serializers.py` e `apps/sgd/serializers/demand_request.py`. O
    schema descreve os campos declarados (o id cru), não o objeto que sai.
    *Pedido:* serializers de leitura que declarem a forma real, ou
@@ -395,7 +395,7 @@ cliente para compensar.
 **Pedido** — no `ActivityFilter` (`apps/sgp/filters.py`):
 
 - `status` como `MultipleChoiceFilter` (aceitar o parâmetro repetido);
-- `q` por título, no padrão do `UFPAFilter.filter_q`:
+- `q` por título, no padrão do `UPFFilter.filter_q`:
   `queryset.filter(titulo__icontains=value)`.
 
 ---

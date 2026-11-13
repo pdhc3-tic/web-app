@@ -13,7 +13,7 @@ import { storageStatePath } from "./helpers/users";
  * clustering vêm da fixture (`mapaFixture.ts`); só a falha 500 é forçada.
  */
 
-const MAPA_API = "**/api/v1/sgp/upfs/mapa/**";
+const MAPA_API = "**/api/v1/sgp/ufpas/mapa/**";
 
 let fx: MapaFixture;
 

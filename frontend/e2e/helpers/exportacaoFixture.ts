@@ -46,7 +46,7 @@ function executar(script: string): string {
 }
 
 const LIMPAR_UFPAS = `
-from apps.sgp.models import UPF as UFPA
+from apps.sgp.models import UFPA
 from apps.sgp.models.membro import MembroFamilia
 UFPA.all_objects.filter(titular__nome_completo__startswith="${PREFIXO_UFPAS}").delete()
 MembroFamilia.objects.filter(nome_completo__startswith="${PREFIXO_UFPAS}").delete()
@@ -91,7 +91,7 @@ dados = {
                  "expira_em": agora - timedelta(days=1), "nome_arquivo": "${tipo}_expirado.csv", "content_type": "text/csv"},
 }["${estado}"]
 job = ExportJob.objects.create(
-    tipo="${tipo === "ufpas" ? "upfs" : tipo}", formato="csv", filtros={}, solicitante=get_user_model().objects.get(email="${email}"), **dados,
+    tipo="${tipo}", formato="csv", filtros={}, solicitante=get_user_model().objects.get(email="${email}"), **dados,
 )
 print("${MARCADOR}", job.pk)`),
   );

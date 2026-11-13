@@ -1,4 +1,3 @@
-import { contratoUfpa } from "../app/lib/ufpaContrato";
 import { expect, test, type Page } from "@playwright/test";
 import { storageStatePath } from "./helpers/users";
 
@@ -26,7 +25,7 @@ async function abrir(page: Page, query = ""): Promise<string> {
 
 /** GET autenticado direto na API, com o mesmo token da sessão da tela. */
 async function api<T>(page: Page, origem: string, caminho: string): Promise<T> {
-  return contratoUfpa(await page.evaluate(
+  return page.evaluate(
     async ({ url }) => {
       const sessao = await (await fetch("/api/auth/session")).json();
       const res = await fetch(url, { headers: { Authorization: `Bearer ${sessao.accessToken}` } });
@@ -34,7 +33,7 @@ async function api<T>(page: Page, origem: string, caminho: string): Promise<T> {
       return res.json();
     },
     { url: `${origem}${caminho}` },
-  )) as T;
+  ) as Promise<T>;
 }
 
 test.describe("SGP — Produção da UFPA consolidada", () => {

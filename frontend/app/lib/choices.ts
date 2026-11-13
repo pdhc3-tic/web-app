@@ -1,6 +1,5 @@
 import { apiClient } from "@/app/lib/api";
 import type { Schema } from "@/app/lib/apiSchema";
-import type { ChaveComNomeNovo } from "@/app/lib/ufpaContrato";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 
 /**
@@ -62,11 +61,8 @@ export const CHAVES_CHOICES = [
  * As listas que `GET /choices/` publica: as chaves do `ChoicesResposta` do
  * schema (#273). Chave que o backend deixar de publicar não compila mais em
  * `CHAVES_CHOICES`.
- *
- * `ChaveComNomeNovo` aplica ao tipo a mesma tradução que o cliente HTTP faz na
- * resposta (`ufpaContrato.ts`), enquanto o schema não publica o nome novo.
  */
-type ChaveDaApi = ChaveComNomeNovo<keyof Schema<"ChoicesResposta">>;
+type ChaveDaApi = keyof Schema<"ChoicesResposta">;
 
 export type ChaveChoice = (typeof CHAVES_CHOICES)[number];
 

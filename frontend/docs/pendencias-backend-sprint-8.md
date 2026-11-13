@@ -100,19 +100,19 @@ frontend possível até vocês liberarem o contrato.
 
 ---
 
-## 4. Endpoint `GET /api/v1/sgp/ufpas/{ufpa_pk}/membros/exportar/` — bloqueia #191 inteira
+## 4. Endpoint `GET /api/v1/sgp/upfs/{upf_pk}/membros/exportar/` — bloqueia #191 inteira
 
 *Estado atual:* NÃO EXISTE. Só há export de respostas de formulários (BE-20,
 `apps/sgp/views/form_responses.py::export`) e de plano de trabalho (BE-9,
 `apps/sgp/views/workplan.py::WorkPlanExportView`).
 
-O critério da issue é botão "Exportar CSV" na aba Membros da ficha da UFPA.
+O critério da issue é botão "Exportar CSV" na aba Membros da ficha da UPF.
 Sem endpoint, o frontend não tem por onde chamar.
 
 **Pedido:** endpoint dedicado no `MembroFamiliaViewSet` (ou análogo):
 
 ```
-GET /api/v1/sgp/ufpas/{ufpa_pk}/membros/exportar/
+GET /api/v1/sgp/upfs/{upf_pk}/membros/exportar/
 ```
 
 Sem `?formato=` — o critério pede só CSV. Colunas: todas as visíveis na
@@ -164,7 +164,7 @@ a recortar o dia no `TIME_ZONE` do servidor, com renomeação dos parâmetros.
 
 O frontend foi adaptado junto: `data_inicio`/`data_fim` no log de sincronização,
 `ultimo_acesso_de`/`ultimo_acesso_ate` em usuários e
-`cadastrado_de`/`cadastrado_ate` em UFPAs, sem mais conversão para ISO em UTC
+`cadastrado_de`/`cadastrado_ate` em UPFs, sem mais conversão para ISO em UTC
 nesses três pontos. Os helpers continuam existindo para outros usos.
 
 Fica o registro do risco, caso apareça mudança parecida: o django-filter
@@ -218,12 +218,12 @@ sozinho, sem mais mudança de frontend.
 
 ---
 
-## 9. Formulários distintos por UFPA — atendida pela PR #214
+## 9. Formulários distintos por UPF — atendida pela PR #214
 
 *Estado atual:* endpoint proposto em `backend/filtros-formularios` (PR #214,
 aberta), ainda **não mergeado**:
-`GET /api/v1/sgp/ufpas/{ufpa_pk}/formularios/opcoes/`, não paginado, devolvendo
-`{formulario_id, formulario_nome, formulario_versao}` distintos da UFPA.
+`GET /api/v1/sgp/upfs/{upf_pk}/formularios/opcoes/`, não paginado, devolvendo
+`{formulario_id, formulario_nome, formulario_versao}` distintos da UPF.
 
 Não confundir com a BE-18 (`/api/v1/sgp/formularios-disponiveis/`), que lista o
 que está publicado para **novo** preenchimento — um formulário despublicado sai

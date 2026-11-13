@@ -21,7 +21,7 @@ export function primeiroUfpaId(): number {
       "-d",
       "app_db",
       "-tAc",
-      "select id from sgp_upf order by id limit 1;",
+      "select id from sgp_ufpa order by id limit 1;",
     ],
     { encoding: "utf8", timeout: 30_000 },
   ).trim();
@@ -43,7 +43,7 @@ export function primeiraUfpaComComunidadeId(): number {
       "-d",
       "app_db",
       "-tAc",
-      "select id from sgp_upf where comunidade_id is not null order by id limit 1;",
+      "select id from sgp_ufpa where comunidade_id is not null order by id limit 1;",
     ],
     { encoding: "utf8", timeout: 30_000 },
   ).trim();
@@ -73,8 +73,8 @@ export function removerUfpasDoWizard(): void {
       "sh",
       `
 from django.db import transaction
-from apps.sgp.cache import invalidate_upf_map_cache as invalidate_ufpa_map_cache
-from apps.sgp.models import UPF as UFPA
+from apps.sgp.cache import invalidate_ufpa_map_cache
+from apps.sgp.models import UFPA
 from apps.sgp.models.membro import MembroFamilia
 
 # UFPA.titular (PROTECT) e MembroFamilia.ufpa (CASCADE) apontam um para o outro,
@@ -84,7 +84,7 @@ from apps.sgp.models.membro import MembroFamilia
 with transaction.atomic():
     ufpas = UFPA.all_objects.filter(titular__nome_completo__startswith="${PREFIXO_UFPA_E2E}")
     ids = list(ufpas.values_list("pk", flat=True))
-    membros = MembroFamilia.objects.filter(upf_id__in=ids) | MembroFamilia.objects.filter(
+    membros = MembroFamilia.objects.filter(ufpa_id__in=ids) | MembroFamilia.objects.filter(
         nome_completo__startswith="${PREFIXO_UFPA_E2E}",
     )
     membros._raw_delete(membros.db)
