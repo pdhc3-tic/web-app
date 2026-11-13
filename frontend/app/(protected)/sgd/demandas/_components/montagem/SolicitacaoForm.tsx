@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Info } from "lucide-react";
 import { Button } from "@/app/components/ui/Button/Button";
@@ -10,16 +10,16 @@ import { SlideOver } from "@/app/components/ui/SlideOver/SlideOver";
 import { ApiError } from "@/app/lib/api";
 import {
   camposVisiveis,
-  CONFIG_POR_TIPO,
+  configDoTipo,
   isTipoSolicitacao,
   montarCamposJson,
   validarCampos,
   valoresDoCamposJson,
-  type TipoSolicitacao,
   type ValoresCampos,
 } from "@/app/lib/camposSolicitacao";
 import type { Demanda, SolicitacaoDemanda } from "@/app/lib/demandas";
 import { formatMoneyInput, moneyOrNull } from "@/app/lib/format";
+import { useTiposSolicitacao } from "@/app/lib/hooks/useTiposSolicitacao";
 import { qk } from "@/app/lib/queryKeys";
 import {
   atualizarSolicitacao,
@@ -27,7 +27,6 @@ import {
   criarSolicitacao,
   type SolicitacaoPayload,
 } from "@/app/lib/solicitacoes";
-import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
 import { CampoDinamico } from "./CampoDinamico";
 import { SaldoSolicitacao } from "./SaldoSolicitacao";
 import { SimulacaoDiarias, useSimulacaoDiarias } from "./SimulacaoDiarias";
@@ -37,6 +36,9 @@ const CAMPO_VALOR = "valor_estimado";
 /**
  * Formulário de uma solicitação de recurso (#295, SGD-RF04/RF05): os campos
  * mudam com o tipo, e o saldo das duas travas aparece antes de salvar.
+ *
+ * Os tipos vêm do catálogo (#365): só os ativos, na ordem cadastrada. Os seis
+ * de origem mantêm o layout próprio; um tipo novo é desenhado pelo schema.
  *
  * Salvar grava a solicitação na demanda (Rascunho ou Devolvida) sem reservar
  * saldo — a reserva é da submissão. Uma solicitação salva troca de tipo só
@@ -55,13 +57,26 @@ export function SolicitacaoForm({
   onSalvo: (salva: SolicitacaoDemanda, nova: boolean) => void;
 }) {
   const queryClient = useQueryClient();
-  const choices = useSgpChoices();
+  const catalogo = useTiposSolicitacao();
 
-  const tipoInicial = solicitacao && isTipoSolicitacao(solicitacao.tipo) ? solicitacao.tipo : "";
-  const [tipo, setTipo] = useState<TipoSolicitacao | "">(tipoInicial);
+  const [tipo, setTipo] = useState<string>(solicitacao?.tipo ?? "");
+  const tipoDoCatalogo = catalogo.data?.find((t) => t.slug === tipo);
+  // O layout próprio sai na hora; o de um tipo novo espera o schema do catálogo.
+  const config =
+    tipo && (isTipoSolicitacao(tipo) || tipoDoCatalogo) ? configDoTipo(tipo, tipoDoCatalogo?.schema_campos) : null;
+
   const [valores, setValores] = useState<ValoresCampos>(() =>
-    tipoInicial && solicitacao ? valoresDoCamposJson(tipoInicial, solicitacao.campos_json) : {},
+    solicitacao && isTipoSolicitacao(solicitacao.tipo)
+      ? valoresDoCamposJson(configDoTipo(solicitacao.tipo), solicitacao.campos_json)
+      : {},
   );
+  // Editando uma solicitação de tipo novo, os valores entram quando o schema chega.
+  const valoresCarregados = useRef(!solicitacao || isTipoSolicitacao(solicitacao.tipo));
+  useEffect(() => {
+    if (valoresCarregados.current || !solicitacao || !config) return;
+    valoresCarregados.current = true;
+    setValores(valoresDoCamposJson(config, solicitacao.campos_json));
+  }, [config, solicitacao]);
   const [valorEstimado, setValorEstimado] = useState(() =>
     solicitacao ? formatMoneyInput(solicitacao.valor_estimado) : "",
   );
@@ -69,7 +84,6 @@ export function SolicitacaoForm({
   const [erroGeral, setErroGeral] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
 
-  const config = tipo ? CONFIG_POR_TIPO[tipo] : null;
   const diarias = useSimulacaoDiarias(
     tipo === "diaria" ? (valores.municipio_destino_id ?? "") : "",
     valores.data_inicio ?? "",
@@ -91,7 +105,6 @@ export function SolicitacaoForm({
   }
 
   function mudarTipo(novo: string) {
-    if (!isTipoSolicitacao(novo)) return;
     setTipo(novo);
     setValores({});
     setErros({});
@@ -103,7 +116,7 @@ export function SolicitacaoForm({
       setErros({ tipo: "Escolha o tipo da solicitação." });
       return;
     }
-    const e = validarCampos(tipo, valores);
+    const e = validarCampos(tipo, config, valores);
     const valor = moneyOrNull(valorEstimado);
     if (config.valorDigitado && !(valor && Number(valor) > 0)) {
       e[CAMPO_VALOR] = "Informe o valor estimado.";
@@ -112,7 +125,7 @@ export function SolicitacaoForm({
     setErroGeral(null);
     if (Object.keys(e).length > 0) return;
 
-    const payload: SolicitacaoPayload = { tipo, campos_json: montarCamposJson(tipo, valores) };
+    const payload: SolicitacaoPayload = { tipo, campos_json: montarCamposJson(config, valores) };
     if (config.valorDigitado && valor) payload.valor_estimado = valor;
 
     setSalvando(true);
@@ -128,7 +141,7 @@ export function SolicitacaoForm({
         return;
       }
       // Erro de um campo à vista vai para o campo; o resto, para o topo.
-      const visiveis = new Set([...camposVisiveis(tipo, valores).map((c) => c.chave), CAMPO_VALOR]);
+      const visiveis = new Set([...camposVisiveis(config, valores).map((c) => c.chave), CAMPO_VALOR]);
       const porCampo: Record<string, string> = {};
       const soltos: string[] = [];
       for (const fe of err.fieldErrors ?? []) {
@@ -168,10 +181,12 @@ export function SolicitacaoForm({
             id="solicitacao-tipo"
             label="Tipo de solicitação"
             required
-            options={choices.solicitacao_tipo.filter((op) => isTipoSolicitacao(op.value))}
+            disabled={!catalogo.data}
+            placeholder={catalogo.isPending ? "Carregando tipos…" : undefined}
+            options={(catalogo.data ?? []).filter((t) => t.ativo).map((t) => ({ value: t.slug, label: t.nome }))}
             value={tipo}
             onChange={mudarTipo}
-            error={erros.tipo}
+            error={erros.tipo ?? (catalogo.isError ? "Não foi possível carregar os tipos de solicitação." : undefined)}
             name="tipo"
           />
         )}
@@ -179,7 +194,7 @@ export function SolicitacaoForm({
         {tipo && config && (
           <>
             <div className="grid gap-4 sm:grid-cols-2">
-              {camposVisiveis(tipo, valores).map((campo) => (
+              {camposVisiveis(config, valores).map((campo) => (
                 <div key={campo.chave} className={campo.largo ? "sm:col-span-2" : undefined}>
                   <CampoDinamico
                     campo={campo}
@@ -217,7 +232,6 @@ export function SolicitacaoForm({
             )}
 
             <SaldoSolicitacao
-              atividadeId={demanda.activity}
               tipo={tipo}
               valor={valorParaSaldo}
               devolvida={demanda.status === "devolvida"}

@@ -3,7 +3,7 @@
 import { AlertTriangle, ChevronRight } from "lucide-react";
 import { SemaforoBadge } from "@/app/components/ui/SemaforoBadge/SemaforoBadge";
 import { formatCurrencyBRL } from "@/app/lib/format";
-import { labelSemaforoOrcamento, limiaresDaLinha } from "@/app/lib/orcamento";
+import { labelSemaforoOrcamento, limiaresDaLinha, nomeDoPool } from "@/app/lib/orcamento";
 import { formatPercentual } from "@/app/lib/semaforo";
 import type { CelulaOrcamento } from "./tipos";
 
@@ -13,11 +13,11 @@ type Props = {
 };
 
 /**
- * "Alocações que exigem atenção" — o banner das alocações em vermelho.
+ * "Pools que exigem atenção" — o banner dos pools em vermelho (#398).
  *
- * Fica no topo e reúne TODAS as alocações em vermelho, atravessando as Metas:
- * o ponto do requisito é que o gestor não precise varrer a matriz Meta por Meta
- * para descobrir onde o orçamento está no limite.
+ * Fica no topo e reúne TODOS os pools em vermelho, atravessando rubricas e
+ * níveis: o gestor não precisa varrer a matriz para descobrir onde o orçamento
+ * está no limite.
  *
  * Não renderiza nada quando não há vermelhos. Uma caixa de alerta vazia e
  * permanente é ruído — e, pior, ensina a ignorar a caixa. Mesma regra do
@@ -41,7 +41,7 @@ export function AlertaAlocacoesCriticas({ celulas, onSelect }: Props) {
             id="alerta-orcamento-titulo"
             className="text-sm font-semibold text-error-text"
           >
-            Alocações que exigem atenção
+            Pools que exigem atenção
             <span className="ml-2 font-normal tabular-nums">
               ({celulas.length})
             </span>
@@ -58,25 +58,21 @@ export function AlertaAlocacoesCriticas({ celulas, onSelect }: Props) {
         {celulas.map((celula) => {
           const { linha, nivelSemaforo, percentual } = celula;
           return (
-            <li key={`${linha.meta.id}-${linha.rubrica.slug}`}>
+            <li key={linha.id}>
               {/* Botão de largura total, e não uma <li> com link dentro: a
                   linha inteira é o alvo de clique, e um <button> dá foco por
                   teclado e ativação por Enter/Espaço sem handler extra. */}
               <button
                 type="button"
                 onClick={() => onSelect(celula)}
-                data-testid={`orcamento-alerta-item-${linha.meta.id}-${linha.rubrica.slug}`}
-                aria-label={`Meta ${linha.meta.numero}, ${linha.rubrica.nome}: ${formatPercentual(percentual)} do aprovado comprometido. Abrir detalhamento.`}
+                data-testid={`orcamento-alerta-item-${linha.id}`}
+                aria-label={`${linha.rubrica.nome}, ${nomeDoPool(linha)}: ${formatPercentual(percentual)} do aprovado comprometido. Abrir detalhamento.`}
                 className="flex w-full items-center gap-3 rounded-md border border-border bg-surface px-3 py-2.5 text-left transition-colors hover:bg-surface-warm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
               >
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className="shrink-0 text-xs font-medium tabular-nums text-text-muted">
-                      Meta {linha.meta.numero} ·
-                    </span>
-                    <span className="truncate text-sm text-text">
-                      {linha.rubrica.nome}
-                    </span>
+                    <span className="truncate text-sm text-text">{linha.rubrica.nome}</span>
+                    <span className="shrink-0 text-xs font-medium text-text-muted">· {nomeDoPool(linha)}</span>
                   </div>
 
                   <span className="text-xs tabular-nums text-text-muted">

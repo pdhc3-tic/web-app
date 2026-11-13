@@ -206,6 +206,18 @@ export function canViewSgdGestao(
   );
 }
 
+/**
+ * Riscos de glosa (#360, `GET /sgp/glosa-riscos/`): espelha
+ * `IsSuperAdmin | IsUGP | IsFGD | IsArticuladorEstadual` do
+ * `GlosaRiskListView`. O ADT não consulta: a linha do tempo dele fica sem os
+ * riscos, em vez de mostrar um 403.
+ */
+export function canVerRiscosDeGlosa(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return canViewSgdGestao(user);
+}
+
 export type SuperAdminState = {
   /** true enquanto a sessão ainda está carregando. */
   loading: boolean;

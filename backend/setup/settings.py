@@ -303,6 +303,8 @@ SPECTACULAR_SETTINGS = {
         "TipoDocumentoAtividadeEnum": "apps.sgp.models.activity_document.ActivityDocument.TIPO_CHOICES",
         "TipoDocumentoDemandaEnum": "apps.sgd.models.demand_document.TIPO_CHOICES",
         "StatusPedidoRecursoExtraEnum": "apps.sgp.budget.models.BudgetIncreaseRequest.Status",
+        "OrigemEnum": "apps.sgp.models.form_response.FormResponse.Origem",
+        "OrigemValorDiariaEnum": "apps.sgd.models.diarias.OrigemValorDiaria",
     },
     "SWAGGER_UI_SETTINGS": {
         "deepLinking": True,

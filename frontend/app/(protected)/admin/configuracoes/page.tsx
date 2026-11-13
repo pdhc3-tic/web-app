@@ -22,9 +22,9 @@ const SECOES: { modulo: string; itens: Configuracao[] }[] = [
     itens: [
       {
         href: "/admin/configuracoes/sgd/tipos-rubricas" as Route,
-        titulo: "Tipos e Rubricas",
+        titulo: "Tipos de solicitação",
         descricao:
-          "De qual rubrica do orçamento sai o recurso de cada tipo de solicitação (diárias, passagens, veículos…).",
+          "Os tipos que o solicitante escolhe, a rubrica de cada um e os campos do formulário (diárias, passagens, veículos…).",
         Icon: ListTree,
       },
       {

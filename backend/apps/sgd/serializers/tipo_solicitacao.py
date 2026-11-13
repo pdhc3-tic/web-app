@@ -3,6 +3,7 @@ from jsonschema.exceptions import SchemaError
 from rest_framework import serializers
 
 from apps.sgd.models.tipo_solicitacao import TipoSolicitacao
+from apps.sgd.services import anexos as anexos_service
 from apps.sgd.services import demand_request  # noqa: F401  registra os validadores
 from apps.sgd.services.tipos_solicitacao import validadores_registrados
 
@@ -51,6 +52,10 @@ class TipoSolicitacaoSerializer(serializers.ModelSerializer):
             Draft202012Validator.check_schema(schema)
         except SchemaError as exc:
             raise serializers.ValidationError(f"JSON Schema inválido: {exc.message}") from exc
+        if invalidos := anexos_service.declaracoes_invalidas(schema):
+            raise serializers.ValidationError(
+                f"Campo de anexo deve ser \"integer\" ou \"array\" de \"integer\": {', '.join(invalidos)}.",
+            )
         return schema
 
     def validate_validador(self, validador):

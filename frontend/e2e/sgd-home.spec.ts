@@ -63,26 +63,26 @@ test.describe("Articulador Estadual (atua em RN)", () => {
     await page.goto("/sgd");
     const alertas = page.getByTestId("painel-alertas");
 
-    const vermelho = alertas.getByTestId(`alerta-alimentacao-refeicoes-${fx.metaId}-RN`);
+    const vermelho = alertas.getByTestId(`alerta-alimentacao-refeicoes-RN`);
     await expect(vermelho).toContainText("Alimentação");
     await expect(vermelho).toContainText("95% comprometido");
     await expect(vermelho.getByTestId("semaforo-badge")).toHaveAttribute("data-nivel", "vermelho");
     await expect(vermelho).toContainText("RN");
 
-    const amarelo = alertas.getByTestId(`alerta-material-grafico-${fx.metaId}-RN`);
+    const amarelo = alertas.getByTestId(`alerta-material-grafico-RN`);
     await expect(amarelo.getByTestId("semaforo-badge")).toHaveAttribute("data-nivel", "amarelo");
 
     // A vermelha vem antes da amarela.
     const ordem = await alertas
       .locator('[data-testid^="alerta-"]')
       .evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")));
-    expect(ordem.indexOf(`alerta-alimentacao-refeicoes-${fx.metaId}-RN`)).toBeLessThan(
-      ordem.indexOf(`alerta-material-grafico-${fx.metaId}-RN`),
+    expect(ordem.indexOf(`alerta-alimentacao-refeicoes-RN`)).toBeLessThan(
+      ordem.indexOf(`alerta-material-grafico-RN`),
     );
 
     await vermelho.getByRole("link").click();
     await expect(page).toHaveURL(
-      new RegExp(`/sgd/execucao\\?rubrica=alimentacao-refeicoes&meta=${fx.metaId}$`),
+      new RegExp(`/sgd/execucao\\?rubrica=alimentacao-refeicoes$`),
     );
   });
 
@@ -116,7 +116,7 @@ test.describe("Articulador Estadual de outro estado (PE)", () => {
     await expect(page.getByTestId("painel-sgd")).toBeVisible();
     await expect(page.getByTestId(`fila-item-${fx.antiga.id}`)).toHaveCount(0);
     await expect(page.getByTestId(`parada-item-${fx.antiga.id}`)).toHaveCount(0);
-    await expect(page.getByTestId(`alerta-alimentacao-refeicoes-${fx.metaId}-RN`)).toHaveCount(0);
+    await expect(page.getByTestId(`alerta-alimentacao-refeicoes-RN`)).toHaveCount(0);
   });
 });
 

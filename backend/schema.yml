@@ -2427,6 +2427,84 @@ paths:
               schema:
                 $ref: '#/components/schemas/ArloUploadURL'
           description: ''
+  /api/v1/sgd/atividades-elegiveis/:
+    get:
+      operationId: v1_sgd_atividades_elegiveis_list
+      description: |-
+        Busca de atividades para vincular a uma demanda, sem o recorte territorial da
+        listagem do SGP. Mesma paginação e ordenação do SGP.
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Qual campo usar ao ordenar os resultados.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Um número de página dentro do conjunto de resultados paginado.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - in: query
+        name: q
+        schema:
+          type: string
+          default: ''
+        description: Trecho do título.
+      - in: query
+        name: status
+        schema:
+          type: array
+          items:
+            enum:
+            - planejado
+            - agendado
+            type: string
+            description: |-
+              * `planejado` - planejado
+              * `agendado` - agendado
+        description: Repetível. Sem o parâmetro, as duas.
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAtividadeElegivelList'
+          description: ''
+  /api/v1/sgd/atividades-elegiveis/{id}/:
+    get:
+      operationId: v1_sgd_atividades_elegiveis_retrieve
+      description: |-
+        A atividade escolhida, em qualquer status: o formulário mostra a regra do status
+        (bloqueio ou justificativa de despesa posterior).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AtividadeElegivelDetalhe'
+          description: ''
   /api/v1/sgd/config/arlo-mapping/:
     get:
       operationId: v1_sgd_config_arlo_mapping_list
@@ -2614,6 +2692,181 @@ paths:
               schema:
                 $ref: '#/components/schemas/ArloFieldMapping'
           description: ''
+  /api/v1/sgd/config/diarias/faixas/:
+    get:
+      operationId: v1_sgd_config_diarias_faixas_list
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: Lista as faixas de destino de diária
+      tags:
+      - SGD - Configuração
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FaixaDestinoDiaria'
+          description: ''
+    post:
+      operationId: v1_sgd_config_diarias_faixas_create
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: Cria uma faixa de destino de diária
+      tags:
+      - SGD - Configuração
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FaixaDestinoDiariaRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FaixaDestinoDiariaRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FaixaDestinoDiariaRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaixaDestinoDiaria'
+          description: ''
+  /api/v1/sgd/config/diarias/faixas/{id}/:
+    get:
+      operationId: v1_sgd_config_diarias_faixas_retrieve
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: Detalha uma faixa de destino de diária
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este Faixa de destino de
+          diária.
+        required: true
+      tags:
+      - SGD - Configuração
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaixaDestinoDiaria'
+          description: ''
+    patch:
+      operationId: v1_sgd_config_diarias_faixas_partial_update
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: Altera uma faixa e, se enviado, o seu enquadramento
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este Faixa de destino de
+          diária.
+        required: true
+      tags:
+      - SGD - Configuração
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedFaixaDestinoDiariaRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedFaixaDestinoDiariaRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedFaixaDestinoDiariaRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaixaDestinoDiaria'
+          description: ''
+    delete:
+      operationId: v1_sgd_config_diarias_faixas_destroy
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: Remove uma faixa sem valores na tabela
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este Faixa de destino de
+          diária.
+        required: true
+      tags:
+      - SGD - Configuração
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/sgd/config/diarias/parametros/:
+    get:
+      operationId: v1_sgd_config_diarias_parametros_retrieve
+      description: |-
+        Regras de contagem e adicional de embarque. São parâmetros do Core, editáveis aqui
+        pela FGD e pelo Super Admin para a fundação se afastar do padrão federal sem deploy.
+        Só estas chaves: a tela geral de configurações do Core continua só do Super Admin.
+      summary: Parâmetros de contagem de diárias
+      tags:
+      - SGD - Configuração
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParametrosDiarias'
+          description: ''
+    patch:
+      operationId: v1_sgd_config_diarias_parametros_partial_update
+      description: |-
+        Regras de contagem e adicional de embarque. São parâmetros do Core, editáveis aqui
+        pela FGD e pelo Super Admin para a fundação se afastar do padrão federal sem deploy.
+        Só estas chaves: a tela geral de configurações do Core continua só do Super Admin.
+      summary: Altera os parâmetros de contagem de diárias
+      tags:
+      - SGD - Configuração
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedParametrosDiariasRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedParametrosDiariasRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedParametrosDiariasRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParametrosDiarias'
+          description: ''
   /api/v1/sgd/config/diarias/simular/:
     get:
       operationId: v1_sgd_config_diarias_simular_retrieve
@@ -2633,12 +2886,17 @@ paths:
           format: date
         required: true
       - in: query
+        name: hospedagem_custeada
+        schema:
+          type: boolean
+          default: false
+      - in: query
         name: municipio_destino_id
         schema:
           type: integer
         required: true
       tags:
-      - v1
+      - SGD - Configuração
       security:
       - jwtAuth: []
       responses:
@@ -2655,6 +2913,150 @@ paths:
                 type: object
                 additionalProperties: {}
           description: ''
+  /api/v1/sgd/config/diarias/tabela/:
+    get:
+      operationId: v1_sgd_config_diarias_tabela_list
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: Lista os valores da tabela de diárias
+      parameters:
+      - in: query
+        name: faixa_destino
+        schema:
+          type: integer
+      - in: query
+        name: origem
+        schema:
+          type: string
+          enum:
+          - federal
+          - fgd
+      - in: query
+        name: vigente_em
+        schema:
+          type: string
+          format: date
+        description: Só os valores vigentes nesta data.
+      tags:
+      - SGD - Configuração
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TabelaDiaria'
+          description: ''
+    post:
+      operationId: v1_sgd_config_diarias_tabela_create
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: Cadastra um valor de diária com vigência
+      tags:
+      - SGD - Configuração
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TabelaDiariaRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TabelaDiariaRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TabelaDiariaRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TabelaDiaria'
+          description: ''
+  /api/v1/sgd/config/diarias/tabela/{id}/:
+    get:
+      operationId: v1_sgd_config_diarias_tabela_retrieve
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: Detalha um valor da tabela de diárias
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este Valor de diária.
+        required: true
+      tags:
+      - SGD - Configuração
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TabelaDiaria'
+          description: ''
+    patch:
+      operationId: v1_sgd_config_diarias_tabela_partial_update
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: 'Edita um valor: encerra a vigência atual e cria uma nova a partir
+        de vigencia_inicio'
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este Valor de diária.
+        required: true
+      tags:
+      - SGD - Configuração
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedNovaVigenciaRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedNovaVigenciaRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedNovaVigenciaRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TabelaDiaria'
+          description: ''
+    delete:
+      operationId: v1_sgd_config_diarias_tabela_destroy
+      description: Leitura para qualquer usuário autenticado; alterações pelo Super
+        Admin e pela FGD.
+      summary: Remove um valor que ainda não vigorou e nenhuma solicitação usou; a
+        vigência anterior é reaberta
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este Valor de diária.
+        required: true
+      tags:
+      - SGD - Configuração
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/sgd/config/tipo-rubrica/:
     get:
       operationId: v1_sgd_config_tipo_rubrica_list
@@ -3049,40 +3451,16 @@ paths:
           description: ''
     post:
       operationId: v1_sgd_demandas_create
-      description: Cria a demanda em rascunho. Informe `activity_id` ou os campos
-        `activity_*` para criar a atividade em status Planejado junto com a demanda.
+      description: |-
+        Pressupõe que `self.get_queryset()` devolve o queryset com o escopo de
+        visibilidade já aplicado (`demand_visibility_scope`).
       tags:
       - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DemandCreateRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/DemandCreateRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/DemandCreateRequest'
-        required: true
       security:
       - jwtAuth: []
       responses:
         '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Demand'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/demandas/{id}/:
     get:
       operationId: v1_sgd_demandas_retrieve
@@ -3102,11 +3480,7 @@ paths:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Demand'
-          description: ''
+          description: No response body
     patch:
       operationId: v1_sgd_demandas_partial_update
       description: |-
@@ -3121,35 +3495,11 @@ paths:
         required: true
       tags:
       - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedDemandUpdateRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedDemandUpdateRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedDemandUpdateRequest'
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Demand'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/demandas/{id}/atender/:
     post:
       operationId: v1_sgd_demandas_atender_create
@@ -3169,23 +3519,10 @@ paths:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Demand'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/demandas/{id}/auditoria/:
     get:
-      operationId: v1_sgd_demandas_auditoria_list
+      operationId: v1_sgd_demandas_auditoria_retrieve
       description: |-
         Trilha de quem pode ver a demanda. O IP de quem agiu é dado pessoal:
         só o Super Admin, que tem a auditoria completa, o recebe.
@@ -3196,34 +3533,19 @@ paths:
           type: integer
         description: Um valor inteiro único que identifica este Demanda.
         required: true
-      - name: limit
-        required: false
-        in: query
-        description: Número de resultados a serem retornados por página.
-        schema:
-          type: integer
-      - name: offset
-        required: false
-        in: query
-        description: O índice inicial a partir do qual retornar os resultados.
-        schema:
-          type: integer
       tags:
       - v1
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedDemandAuditEntryList'
-          description: ''
+          description: No response body
   /api/v1/sgd/demandas/{id}/autorizar/:
     post:
       operationId: v1_sgd_demandas_autorizar_create
-      description: Ajusta a reserva ao valor autorizado. Com `excedente_autorizado`,
-        o que passa do limite sai de `origem_allocation` (SGD-RF16).
+      description: |-
+        Pressupõe que `self.get_queryset()` devolve o queryset com o escopo de
+        visibilidade já aplicado (`demand_visibility_scope`).
       parameters:
       - in: path
         name: id
@@ -3233,35 +3555,11 @@ paths:
         required: true
       tags:
       - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AutorizarRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/AutorizarRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/AutorizarRequest'
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Demand'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SaldoInsuficiente'
-          description: '`INSUFFICIENT_BALANCE`, no corpo descrito. Os outros erros
-            de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`, `JUSTIFICATION_REQUIRED`)
-            usam o mesmo status, no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/demandas/{id}/cancelar/:
     post:
       operationId: v1_sgd_demandas_cancelar_create
@@ -3314,8 +3612,9 @@ paths:
   /api/v1/sgd/demandas/{id}/concluir/:
     post:
       operationId: v1_sgd_demandas_concluir_create
-      description: Executa por `min(pago, autorizado)` e devolve a diferença ao saldo.
-        O que for pago acima do autorizado vira risco de glosa.
+      description: |-
+        Pressupõe que `self.get_queryset()` devolve o queryset com o escopo de
+        visibilidade já aplicado (`demand_visibility_scope`).
       parameters:
       - in: path
         name: id
@@ -3325,36 +3624,11 @@ paths:
         required: true
       tags:
       - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ConcluirRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/ConcluirRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/ConcluirRequest'
-        required: true
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Demand'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/demandas/{id}/devolver/:
     post:
       operationId: v1_sgd_demandas_devolver_create
@@ -3370,39 +3644,14 @@ paths:
         required: true
       tags:
       - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DevolverRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/DevolverRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/DevolverRequest'
-        required: true
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Demand'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/demandas/{id}/documentos/:
     get:
-      operationId: v1_sgd_demandas_documentos_list
+      operationId: v1_sgd_demandas_documentos_retrieve
       description: |-
         Pressupõe que `self.get_queryset()` devolve o queryset com o escopo de
         visibilidade já aplicado (`demand_visibility_scope`).
@@ -3419,13 +3668,7 @@ paths:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/DemandDocument'
-          description: ''
+          description: No response body
   /api/v1/sgd/demandas/{id}/documentos/{doc_id}/:
     delete:
       operationId: v1_sgd_demandas_documentos_destroy
@@ -3436,7 +3679,8 @@ paths:
       - in: path
         name: doc_id
         schema:
-          type: integer
+          type: string
+          pattern: ^\d+$
         required: true
       - in: path
         name: id
@@ -3450,7 +3694,7 @@ paths:
       - jwtAuth: []
       responses:
         '204':
-          description: Documento removido.
+          description: No response body
   /api/v1/sgd/demandas/{id}/documentos/{doc_id}/download/:
     get:
       operationId: v1_sgd_demandas_documentos_download_retrieve
@@ -3461,7 +3705,8 @@ paths:
       - in: path
         name: doc_id
         schema:
-          type: integer
+          type: string
+          pattern: ^\d+$
         required: true
       - in: path
         name: id
@@ -3475,11 +3720,7 @@ paths:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DownloadURLResposta'
-          description: ''
+          description: No response body
   /api/v1/sgd/demandas/{id}/documentos/confirm/:
     post:
       operationId: v1_sgd_demandas_documentos_confirm_create
@@ -3495,39 +3736,17 @@ paths:
         required: true
       tags:
       - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DemandDocumentConfirmRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/DemandDocumentConfirmRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/DemandDocumentConfirmRequest'
-        required: true
       security:
       - jwtAuth: []
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DemandDocument'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: ''
+        '200':
+          description: No response body
   /api/v1/sgd/demandas/{id}/documentos/upload-url/:
     post:
       operationId: v1_sgd_demandas_documentos_upload_url_create
-      description: URL pré-assinada para enviar o PDF direto ao storage. Confirme
-        depois em `documentos/confirm/`.
+      description: |-
+        Pressupõe que `self.get_queryset()` devolve o queryset com o escopo de
+        visibilidade já aplicado (`demand_visibility_scope`).
       parameters:
       - in: path
         name: id
@@ -3537,40 +3756,17 @@ paths:
         required: true
       tags:
       - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DemandDocumentUploadURLRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/DemandDocumentUploadURLRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/DemandDocumentUploadURLRequest'
-        required: true
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UploadURLResposta'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: ''
+          description: No response body
   /api/v1/sgd/demandas/{id}/historico/:
     get:
-      operationId: v1_sgd_demandas_historico_list
-      description: Etapas da demanda em ordem cronológica. Sem `limit` e `offset`,
-        devolve a lista simples; com um deles, o envelope paginado `{count, next,
-        previous, results}`.
+      operationId: v1_sgd_demandas_historico_retrieve
+      description: |-
+        Pressupõe que `self.get_queryset()` devolve o queryset com o escopo de
+        visibilidade já aplicado (`demand_visibility_scope`).
       parameters:
       - in: path
         name: id
@@ -3578,28 +3774,13 @@ paths:
           type: integer
         description: Um valor inteiro único que identifica este Demanda.
         required: true
-      - in: query
-        name: limit
-        schema:
-          type: integer
-        description: Com `limit` ou `offset`, a resposta vem paginada.
-      - in: query
-        name: offset
-        schema:
-          type: integer
       tags:
       - v1
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/EtapaDoHistorico'
-          description: ''
+          description: No response body
   /api/v1/sgd/demandas/{id}/pre-autorizar/:
     post:
       operationId: v1_sgd_demandas_pre_autorizar_create
@@ -3619,20 +3800,7 @@ paths:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Demand'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/demandas/{id}/preview-decisao/:
     get:
       operationId: v1_sgd_demandas_preview_decisao_retrieve
@@ -3640,30 +3808,11 @@ paths:
         Pressupõe que `self.get_queryset()` devolve o queryset com o escopo de
         visibilidade já aplicado (`demand_visibility_scope`).
       parameters:
-      - in: query
-        name: demand_request_id
-        schema:
-          type: integer
-        required: true
       - in: path
         name: id
         schema:
           type: integer
         description: Um valor inteiro único que identifica este Demanda.
-        required: true
-      - in: query
-        name: origem_allocation
-        schema:
-          type: integer
-          nullable: true
-        description: Simula a autorização com excedente coberto por este pool estadual
-          ou nacional.
-      - in: query
-        name: valor
-        schema:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
         required: true
       tags:
       - v1
@@ -3671,20 +3820,7 @@ paths:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PreviewDecisaoResposta'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/demandas/{id}/recusar/:
     post:
       operationId: v1_sgd_demandas_recusar_create
@@ -3700,39 +3836,14 @@ paths:
         required: true
       tags:
       - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RecusarRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/RecusarRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/RecusarRequest'
-        required: true
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Demand'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/demandas/{id}/solicitacoes/:
     get:
-      operationId: v1_sgd_demandas_solicitacoes_list
+      operationId: v1_sgd_demandas_solicitacoes_retrieve
       description: |-
         Pressupõe que `self.get_queryset()` devolve o queryset com o escopo de
         visibilidade já aplicado (`demand_visibility_scope`).
@@ -3749,13 +3860,7 @@ paths:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/DemandRequest'
-          description: ''
+          description: No response body
     post:
       operationId: v1_sgd_demandas_solicitacoes_create
       description: |-
@@ -3770,36 +3875,11 @@ paths:
         required: true
       tags:
       - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DemandRequestCreateRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/DemandRequestCreateRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/DemandRequestCreateRequest'
-        required: true
       security:
       - jwtAuth: []
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DemandRequest'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+        '200':
+          description: No response body
   /api/v1/sgd/demandas/{id}/solicitacoes/{solicitacao_id}/:
     patch:
       operationId: v1_sgd_demandas_solicitacoes_partial_update
@@ -3816,39 +3896,16 @@ paths:
       - in: path
         name: solicitacao_id
         schema:
-          type: integer
+          type: string
+          pattern: ^\d+$
         required: true
       tags:
       - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedDemandRequestUpdateRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedDemandRequestUpdateRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedDemandRequestUpdateRequest'
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DemandRequest'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SaldoInsuficiente'
-          description: '`INSUFFICIENT_BALANCE`, no corpo descrito. Os outros erros
-            de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`, `JUSTIFICATION_REQUIRED`)
-            usam o mesmo status, no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
     delete:
       operationId: v1_sgd_demandas_solicitacoes_destroy
       description: |-
@@ -3864,7 +3921,8 @@ paths:
       - in: path
         name: solicitacao_id
         schema:
-          type: integer
+          type: string
+          pattern: ^\d+$
         required: true
       tags:
       - v1
@@ -3872,56 +3930,13 @@ paths:
       - jwtAuth: []
       responses:
         '204':
-          description: Solicitação removida.
+          description: No response body
   /api/v1/sgd/demandas/{id}/solicitar-recurso-extra/:
     post:
       operationId: v1_sgd_demandas_solicitar_recurso_extra_create
-      description: Pedido de recurso extra para a demanda barrada pelo limite individual
-        (SGD §4.1).
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: Um valor inteiro único que identifica este Demanda.
-        required: true
-      tags:
-      - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SolicitarRecursoExtraRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/SolicitarRecursoExtraRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/SolicitarRecursoExtraRequest'
-        required: true
-      security:
-      - jwtAuth: []
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BudgetIncreaseRequest'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
-  /api/v1/sgd/demandas/{id}/submeter/:
-    post:
-      operationId: v1_sgd_demandas_submeter_create
-      description: Reserva o saldo de todas as solicitações, tudo ou nada (SGD-RF11
-        a RF13).
+      description: |-
+        Pressupõe que `self.get_queryset()` devolve o queryset com o escopo de
+        visibilidade já aplicado (`demand_visibility_scope`).
       parameters:
       - in: path
         name: id
@@ -3935,20 +3950,73 @@ paths:
       - jwtAuth: []
       responses:
         '200':
+          description: No response body
+  /api/v1/sgd/demandas/{id}/submeter/:
+    post:
+      operationId: v1_sgd_demandas_submeter_create
+      description: |-
+        Pressupõe que `self.get_queryset()` devolve o queryset com o escopo de
+        visibilidade já aplicado (`demand_visibility_scope`).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este Demanda.
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/sgd/demandas/abrangencia/:
+    get:
+      operationId: v1_sgd_demandas_abrangencia_retrieve
+      description: |-
+        Estado, território e Articuladores que a demanda de quem chama vai receber
+        ao ser criada, pela mesma regra da criação.
+      parameters:
+      - in: query
+        name: activity_id
+        schema:
+          type: integer
+          minimum: 1
+        description: Atividade a vincular. Sem ela, `atividade_fora_do_territorio`
+          sai `false`.
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Demand'
+                $ref: '#/components/schemas/AbrangenciaPrevia'
           description: ''
         '400':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SaldoInsuficiente'
-          description: '`INSUFFICIENT_BALANCE`, no corpo descrito. Os outros erros
-            de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`, `JUSTIFICATION_REQUIRED`)
-            usam o mesmo status, no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+                type: object
+                additionalProperties: {}
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/v1/sgd/demandas/aguardando-minha-acao/contagem/:
     get:
       operationId: v1_sgd_demandas_aguardando_minha_acao_contagem_retrieve
@@ -3961,148 +4029,33 @@ paths:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ContagemAguardando'
-          description: ''
+          description: No response body
   /api/v1/sgd/demandas/exportar/:
     get:
       operationId: v1_sgd_demandas_exportar_retrieve
       description: |-
         Exporta as demandas com os filtros de `list` aplicados na chamada
         (RF30) — distinta da exportação no formato Arlo.
-      parameters:
-      - in: query
-        name: acao
-        schema:
-          type: number
-      - in: query
-        name: activity
-        schema:
-          type: number
-      - in: query
-        name: aguardando_minha_acao
-        schema:
-          type: boolean
-      - in: query
-        name: atividade
-        schema:
-          type: number
-      - in: query
-        name: formato
-        schema:
-          type: string
-          enum:
-          - csv
-          - xlsx
-          default: csv
-      - in: query
-        name: meta
-        schema:
-          type: number
-      - in: query
-        name: periodo_fim
-        schema:
-          type: string
-          format: date
-      - in: query
-        name: periodo_inicio
-        schema:
-          type: string
-          format: date
-      - in: query
-        name: responsavel_etapa_atual
-        schema:
-          type: number
-      - in: query
-        name: rubrica
-        schema:
-          type: string
-      - in: query
-        name: solicitante
-        schema:
-          type: number
-      - in: query
-        name: status
-        schema:
-          type: array
-          items:
-            type: string
-            enum:
-            - autorizada
-            - cancelada
-            - concluida
-            - devolvida
-            - em_atendimento
-            - pre_autorizada
-            - rascunho
-            - recusada
-            - submetida
-        description: 'Repetível (`?status=a&status=b`): devolve a união dos status.'
-        explode: true
-      - in: query
-        name: submeta
-        schema:
-          type: number
-      - in: query
-        name: territorio
-        schema:
-          type: number
-      - in: query
-        name: tipo
-        schema:
-          type: string
       tags:
       - v1
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            text/csv:
-              schema:
-                type: string
-                format: binary
-            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
-              schema:
-                type: string
-                format: binary
-          description: Arquivo CSV.
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/limites-individuais/:
     get:
-      operationId: v1_sgd_limites_individuais_list
+      operationId: v1_sgd_limites_individuais_retrieve
       description: |-
         Alias de `/sgp/orcamento/limites/` para as linhas individuais do período vigente,
         enquanto o front migra. A rota antiga não pede justificativa: ela é preenchida aqui.
-      parameters:
-      - in: query
-        name: solicitante
-        schema:
-          type: integer
-        description: Id do usuário.
       tags:
       - v1
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/DemandIndividualLimit'
-          description: ''
+          description: No response body
     post:
       operationId: v1_sgd_limites_individuais_create
       description: |-
@@ -4110,36 +4063,11 @@ paths:
         enquanto o front migra. A rota antiga não pede justificativa: ela é preenchida aqui.
       tags:
       - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DemandIndividualLimitRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/DemandIndividualLimitRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/DemandIndividualLimitRequest'
-        required: true
       security:
       - jwtAuth: []
       responses:
         '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DemandIndividualLimit'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/limites-individuais/{id}/:
     patch:
       operationId: v1_sgd_limites_individuais_partial_update
@@ -4150,40 +4078,15 @@ paths:
       - in: path
         name: id
         schema:
-          type: integer
-        description: Um valor inteiro único que identifica este Limite de Gasto.
+          type: string
         required: true
       tags:
       - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedDemandIndividualLimitRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedDemandIndividualLimitRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedDemandIndividualLimitRequest'
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DemandIndividualLimit'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/opcoes/usuarios/:
     get:
       operationId: v1_sgd_opcoes_usuarios_list
@@ -4213,299 +4116,46 @@ paths:
           description: ''
   /api/v1/sgd/painel/rubricas/:
     get:
-      operationId: v1_sgd_painel_rubricas_list
+      operationId: v1_sgd_painel_rubricas_retrieve
       description: Solicitado, autorizado, executado e disponível por rubrica (SGD-RF28).
-      parameters:
-      - in: query
-        name: acao
-        schema:
-          type: number
-      - in: query
-        name: activity
-        schema:
-          type: number
-      - in: query
-        name: aguardando_minha_acao
-        schema:
-          type: boolean
-      - in: query
-        name: atividade
-        schema:
-          type: number
-      - in: query
-        name: estado
-        schema:
-          type: string
-        description: 'Sigla do estado: recorta os totais do orçamento, como `territorio`
-          e `meta`.'
-      - in: query
-        name: meta
-        schema:
-          type: number
-      - in: query
-        name: periodo_fim
-        schema:
-          type: string
-          format: date
-      - in: query
-        name: periodo_inicio
-        schema:
-          type: string
-          format: date
-      - in: query
-        name: responsavel_etapa_atual
-        schema:
-          type: number
-      - in: query
-        name: rubrica
-        schema:
-          type: string
-      - in: query
-        name: solicitante
-        schema:
-          type: number
-      - in: query
-        name: status
-        schema:
-          type: array
-          items:
-            type: string
-            enum:
-            - autorizada
-            - cancelada
-            - concluida
-            - devolvida
-            - em_atendimento
-            - pre_autorizada
-            - rascunho
-            - recusada
-            - submetida
-        description: |-
-          * `rascunho` - Rascunho
-          * `submetida` - Submetida
-          * `devolvida` - Devolvida
-          * `pre_autorizada` - Pré-autorizada
-          * `autorizada` - Autorizada
-          * `em_atendimento` - Em atendimento
-          * `concluida` - Concluída
-          * `recusada` - Recusada
-          * `cancelada` - Cancelada
-        explode: true
-        style: form
-      - in: query
-        name: submeta
-        schema:
-          type: number
-      - in: query
-        name: territorio
-        schema:
-          type: number
-      - in: query
-        name: tipo
-        schema:
-          type: string
       tags:
       - v1
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/PainelRubrica'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/relatorios/custo-por-atividade/:
     get:
-      operationId: v1_sgd_relatorios_custo_por_atividade_list
+      operationId: v1_sgd_relatorios_custo_por_atividade_retrieve
       description: Custo total por atividade e por entrega do Plano de Trabalho (SGD-RF29).
-      parameters:
-      - in: query
-        name: acao
-        schema:
-          type: number
-      - in: query
-        name: activity
-        schema:
-          type: number
-      - in: query
-        name: aguardando_minha_acao
-        schema:
-          type: boolean
-      - in: query
-        name: atividade
-        schema:
-          type: number
-      - in: query
-        name: meta
-        schema:
-          type: number
-      - in: query
-        name: periodo_fim
-        schema:
-          type: string
-          format: date
-      - in: query
-        name: periodo_inicio
-        schema:
-          type: string
-          format: date
-      - in: query
-        name: responsavel_etapa_atual
-        schema:
-          type: number
-      - in: query
-        name: rubrica
-        schema:
-          type: string
-      - in: query
-        name: solicitante
-        schema:
-          type: number
-      - in: query
-        name: status
-        schema:
-          type: array
-          items:
-            type: string
-            enum:
-            - autorizada
-            - cancelada
-            - concluida
-            - devolvida
-            - em_atendimento
-            - pre_autorizada
-            - rascunho
-            - recusada
-            - submetida
-        description: |-
-          * `rascunho` - Rascunho
-          * `submetida` - Submetida
-          * `devolvida` - Devolvida
-          * `pre_autorizada` - Pré-autorizada
-          * `autorizada` - Autorizada
-          * `em_atendimento` - Em atendimento
-          * `concluida` - Concluída
-          * `recusada` - Recusada
-          * `cancelada` - Cancelada
-        explode: true
-        style: form
-      - in: query
-        name: submeta
-        schema:
-          type: number
-      - in: query
-        name: territorio
-        schema:
-          type: number
-      - in: query
-        name: tipo
-        schema:
-          type: string
       tags:
       - v1
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/CustoPorEntrega'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/remanejamentos/:
     get:
-      operationId: v1_sgd_remanejamentos_list
+      operationId: v1_sgd_remanejamentos_retrieve
       description: Pedidos de recurso extra e a fila de decisão da UGP.
-      parameters:
-      - in: query
-        name: demanda
-        schema:
-          type: integer
-        description: Id da demanda.
-      - name: limit
-        required: false
-        in: query
-        description: Número de resultados a serem retornados por página.
-        schema:
-          type: integer
-      - name: offset
-        required: false
-        in: query
-        description: O índice inicial a partir do qual retornar os resultados.
-        schema:
-          type: integer
-      - in: query
-        name: status
-        schema:
-          type: array
-          items:
-            type: string
-            enum:
-            - aprovada
-            - aprovada_parcialmente
-            - com_parecer
-            - devolvida
-            - rascunho
-            - recusada
-            - submetida
-            - todos
-        description: Repetível. Sem o parâmetro, UGP e Super Admin recebem só os pedidos
-          com parecer; `todos` desliga o filtro.
-        explode: true
       tags:
       - v1
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedBudgetIncreaseRequestList'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/remanejamentos/{id}/:
     get:
-      operationId: v1_sgd_remanejamentos_retrieve
+      operationId: v1_sgd_remanejamentos_retrieve_2
       description: Pedidos de recurso extra e a fila de decisão da UGP.
       parameters:
       - in: path
         name: id
         schema:
-          type: integer
-        description: Um valor inteiro único que identifica este Solicitação de Recurso
-          Extra.
+          type: string
         required: true
       tags:
       - v1
@@ -4513,11 +4163,7 @@ paths:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BudgetIncreaseRequest'
-          description: ''
+          description: No response body
     patch:
       operationId: v1_sgd_remanejamentos_partial_update
       description: Pedidos de recurso extra e a fila de decisão da UGP.
@@ -4525,41 +4171,15 @@ paths:
       - in: path
         name: id
         schema:
-          type: integer
-        description: Um valor inteiro único que identifica este Solicitação de Recurso
-          Extra.
+          type: string
         required: true
       tags:
       - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedAtualizarRemanejamentoRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedAtualizarRemanejamentoRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedAtualizarRemanejamentoRequest'
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BudgetIncreaseRequest'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/remanejamentos/{id}/decidir/:
     post:
       operationId: v1_sgd_remanejamentos_decidir_create
@@ -4568,42 +4188,15 @@ paths:
       - in: path
         name: id
         schema:
-          type: integer
-        description: Um valor inteiro único que identifica este Solicitação de Recurso
-          Extra.
+          type: string
         required: true
       tags:
       - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DecidirRemanejamentoRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/DecidirRemanejamentoRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/DecidirRemanejamentoRequest'
-        required: true
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DecisaoRemanejamentoResposta'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/remanejamentos/{id}/devolver/:
     post:
       operationId: v1_sgd_remanejamentos_devolver_create
@@ -4612,42 +4205,15 @@ paths:
       - in: path
         name: id
         schema:
-          type: integer
-        description: Um valor inteiro único que identifica este Solicitação de Recurso
-          Extra.
+          type: string
         required: true
       tags:
       - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DevolverRemanejamentoRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/DevolverRemanejamentoRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/DevolverRemanejamentoRequest'
-        required: true
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BudgetIncreaseRequest'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/remanejamentos/{id}/parecer/:
     post:
       operationId: v1_sgd_remanejamentos_parecer_create
@@ -4656,42 +4222,15 @@ paths:
       - in: path
         name: id
         schema:
-          type: integer
-        description: Um valor inteiro único que identifica este Solicitação de Recurso
-          Extra.
+          type: string
         required: true
       tags:
       - v1
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ParecerRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/ParecerRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/ParecerRequest'
-        required: true
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BudgetIncreaseRequest'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/remanejamentos/{id}/submeter/:
     post:
       operationId: v1_sgd_remanejamentos_submeter_create
@@ -4700,9 +4239,7 @@ paths:
       - in: path
         name: id
         schema:
-          type: integer
-        description: Um valor inteiro único que identifica este Solicitação de Recurso
-          Extra.
+          type: string
         required: true
       tags:
       - v1
@@ -4710,20 +4247,7 @@ paths:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BudgetIncreaseRequest'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgd/remanejamentos/transferencias/:
     get:
       operationId: v1_sgd_remanejamentos_transferencias_list
@@ -4742,18 +4266,6 @@ paths:
           enum:
           - elevacao_limite
           - pontual
-      - name: limit
-        required: false
-        in: query
-        description: Número de resultados a serem retornados por página.
-        schema:
-          type: integer
-      - name: offset
-        required: false
-        in: query
-        description: O índice inicial a partir do qual retornar os resultados.
-        schema:
-          type: integer
       - in: query
         name: rubrica
         schema:
@@ -4768,58 +4280,20 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedBudgetTransferList'
+                type: array
+                items:
+                  $ref: '#/components/schemas/BudgetTransfer'
           description: ''
   /api/v1/sgd/saldo/:
     get:
       operationId: v1_sgd_saldo_retrieve
-      description: Saldo do usuário nas duas travas para o valor informado, antes
-        da submissão (SGD-RF17). Informe `rubrica` ou `tipo`.
-      parameters:
-      - in: query
-        name: activity_id
-        schema:
-          type: integer
-        description: 'Ignorado: o saldo depende só do solicitante e da rubrica.'
-      - in: query
-        name: rubrica
-        schema:
-          type: string
-          minLength: 1
-        description: slug de BudgetRubrica
-      - in: query
-        name: tipo
-        schema:
-          type: string
-          minLength: 1
-        description: tipo de solicitação; a rubrica sai do catálogo de tipos
-      - in: query
-        name: valor
-        schema:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        required: true
       tags:
       - v1
       security:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SaldoConsultaDemanda'
-          description: ''
-        '400':
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
-          description: 'Erro de validação ou de domínio (`BUSINESS_RULE`, `INVALID_TRANSITION`,
-            `JUSTIFICATION_REQUIRED`), no formato `{campo: [mensagem], code}` ou `{code,
-            detail}`.'
+          description: No response body
   /api/v1/sgp/atividades/:
     get:
       operationId: v1_sgp_atividades_list
@@ -5869,8 +5343,10 @@ paths:
   /api/v1/sgp/glosa-riscos/:
     get:
       operationId: v1_sgp_glosa_riscos_list
-      description: GET /api/v1/sgp/glosa-riscos/ — por valor exposto; com `?demanda=`,
-        em ordem cronológica.
+      description: |-
+        GET /api/v1/sgp/glosa-riscos/ — por valor exposto; com `?demanda=`, em ordem cronológica.
+        O Articulador vê o risco de quem vê a demanda e o das demandas do seu estado, que é o
+        da demanda (território do solicitante) e não o da atividade.
       parameters:
       - in: query
         name: activity
@@ -9266,6 +8742,28 @@ paths:
           description: ''
 components:
   schemas:
+    AbrangenciaPrevia:
+      type: object
+      description: O que a criação da demanda vai gravar para quem pede a prévia.
+      properties:
+        estado_sigla:
+          type: string
+          nullable: true
+        territorio:
+          allOf:
+          - $ref: '#/components/schemas/TerritorioDaAbrangencia'
+          nullable: true
+        articuladores:
+          type: array
+          items:
+            $ref: '#/components/schemas/Articulador'
+        atividade_fora_do_territorio:
+          type: boolean
+      required:
+      - articuladores
+      - atividade_fora_do_territorio
+      - estado_sigla
+      - territorio
     AcaoDaAtividade:
       type: object
       properties:
@@ -9302,14 +8800,6 @@ components:
         * `devolvido` - Devolvido
         * `atendido` - Atendido
         * `cancelado` - Cancelado
-    AcaoSugeridaEnum:
-      enum:
-      - acionar_articulador
-      - solicitar_recurso_extra
-      type: string
-      description: |-
-        * `acionar_articulador` - acionar_articulador
-        * `solicitar_recurso_extra` - solicitar_recurso_extra
     ActivityCalendario:
       type: object
       description: |-
@@ -10406,6 +9896,130 @@ components:
       - content_type
       - filename
       - size
+    Articulador:
+      type: object
+      properties:
+        id:
+          type: integer
+        nome:
+          type: string
+      required:
+      - id
+      - nome
+    AtividadeElegivel:
+      type: object
+      description: Mesmos nomes de campo da listagem de atividades do SGP.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        titulo:
+          type: string
+          readOnly: true
+          title: Título
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusAtividadeEnum'
+          readOnly: true
+        status_display:
+          type: string
+          readOnly: true
+        data_inicio:
+          type: string
+          format: date-time
+          readOnly: true
+          title: Data de Início
+        data_fim:
+          type: string
+          format: date-time
+          readOnly: true
+          title: Data de Fim
+        municipio:
+          allOf:
+          - $ref: '#/components/schemas/MunicipioNested'
+          readOnly: true
+        tecnico_responsavel:
+          type: integer
+          readOnly: true
+          title: Técnico Responsável
+        tecnico_nome:
+          type: string
+          readOnly: true
+      required:
+      - data_fim
+      - data_inicio
+      - id
+      - municipio
+      - status
+      - status_display
+      - tecnico_nome
+      - tecnico_responsavel
+      - titulo
+    AtividadeElegivelDetalhe:
+      type: object
+      description: |-
+        O que o formulário da demanda mostra da atividade escolhida, com os mesmos nomes e
+        formatos do detalhe do SGP. O técnico sai sem e-mail: a atividade pode ser de outro
+        território.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        titulo:
+          type: string
+          readOnly: true
+          title: Título
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusAtividadeEnum'
+          readOnly: true
+        status_display:
+          type: string
+          readOnly: true
+        data_inicio:
+          type: string
+          format: date-time
+          readOnly: true
+          title: Data de Início
+        data_fim:
+          type: string
+          format: date-time
+          readOnly: true
+          title: Data de Fim
+        municipio:
+          allOf:
+          - $ref: '#/components/schemas/MunicipioNested'
+          readOnly: true
+        territorio:
+          allOf:
+          - $ref: '#/components/schemas/Nested'
+          readOnly: true
+          nullable: true
+        comunidade:
+          allOf:
+          - $ref: '#/components/schemas/Nested'
+          readOnly: true
+          nullable: true
+        tecnico_responsavel:
+          allOf:
+          - $ref: '#/components/schemas/UsuarioRef'
+          readOnly: true
+        acao:
+          allOf:
+          - $ref: '#/components/schemas/AcaoDaAtividade'
+          readOnly: true
+      required:
+      - acao
+      - comunidade
+      - data_fim
+      - data_inicio
+      - id
+      - municipio
+      - status
+      - status_display
+      - tecnico_responsavel
+      - territorio
+      - titulo
     AuditLog:
       type: object
       properties:
@@ -10467,29 +10081,6 @@ components:
       - user_agent
       - valores_anteriores
       - valores_novos
-    AutorizarRequest:
-      type: object
-      properties:
-        ajustes:
-          type: object
-          additionalProperties:
-            type: string
-            format: decimal
-            pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-          description: '{demand_request_id: novo_valor} — omitido para autorizar sem
-            ajuste.'
-        excedente_autorizado:
-          type: boolean
-          default: false
-        origem_allocation:
-          type: integer
-          nullable: true
-          description: 'Com `excedente_autorizado`: pool estadual ou nacional, da
-            rubrica que excede, de onde sai o que passar do limite individual ou do
-            pool territorial.'
-        justificativa:
-          type: string
-          default: ''
     AvailableForm:
       type: object
       properties:
@@ -10513,41 +10104,6 @@ components:
     BlankEnum:
       enum:
       - ''
-    BloqueioDeSaldo:
-      type: object
-      properties:
-        code:
-          type: string
-          default: INSUFFICIENT_BALANCE
-        trava:
-          $ref: '#/components/schemas/TravaEnum'
-        rubrica:
-          type: string
-          description: Slug da rubrica.
-        disponivel:
-          type: string
-          description: Valor com duas casas decimais, como texto.
-        solicitado:
-          type: string
-          description: Valor com duas casas decimais, como texto.
-        acao_sugerida:
-          $ref: '#/components/schemas/AcaoSugeridaEnum'
-        valor_faltante:
-          type: string
-          nullable: true
-          description: 'Só na trava individual da submissão: o que falta na rubrica
-            inteira, o mesmo valor que o pedido de recurso extra registraria sem `valor_solicitado`.
-            Nos outros casos, `null`.'
-        detail:
-          type: string
-      required:
-      - acao_sugerida
-      - detail
-      - disponivel
-      - rubrica
-      - solicitado
-      - trava
-      - valor_faltante
     BudgetAlert:
       type: object
       properties:
@@ -10608,131 +10164,6 @@ components:
       - rubrica
       - rubrica_nome
       - tipo
-    BudgetIncreaseRequest:
-      type: object
-      properties:
-        id:
-          type: integer
-          readOnly: true
-        user:
-          type: integer
-          readOnly: true
-          title: Solicitante
-        solicitante_nome:
-          type: string
-          readOnly: true
-        rubrica:
-          type: string
-          readOnly: true
-        rubrica_nome:
-          type: string
-          readOnly: true
-        valor_solicitado:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-          readOnly: true
-          title: Valor solicitado (R$)
-        valor_aprovado:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-          readOnly: true
-          nullable: true
-          title: Valor aprovado (R$)
-        periodo_aplicacao:
-          type: string
-          readOnly: true
-          title: Período de aplicação
-        activity:
-          type: integer
-          readOnly: true
-          nullable: true
-          title: Atividade que motivou o pedido
-        demanda_id:
-          type: string
-          readOnly: true
-          nullable: true
-          title: ID da Demanda
-          description: Referência fraca à Demand bloqueada (apps.sgd) — sem FK, no
-            mesmo padrão de BudgetTransaction.demanda_id.
-        justificativa:
-          type: string
-          readOnly: true
-        status:
-          allOf:
-          - $ref: '#/components/schemas/StatusPedidoRecursoExtraEnum'
-          readOnly: true
-          default: rascunho
-        status_display:
-          type: string
-          readOnly: true
-        transicoes_permitidas:
-          type: array
-          items:
-            type: string
-          readOnly: true
-        parecer_articulador:
-          type: string
-          readOnly: true
-          title: Parecer do Articulador
-        parecer_por:
-          type: integer
-          readOnly: true
-          nullable: true
-        parecer_por_nome:
-          type: string
-          readOnly: true
-          nullable: true
-        justificativa_decisao:
-          type: string
-          readOnly: true
-          title: Justificativa da decisão
-        decidido_por:
-          type: integer
-          readOnly: true
-          nullable: true
-        decidido_por_nome:
-          type: string
-          readOnly: true
-          nullable: true
-        decidido_em:
-          type: string
-          format: date-time
-          readOnly: true
-          nullable: true
-        criado_em:
-          type: string
-          format: date-time
-          readOnly: true
-        atualizado_em:
-          type: string
-          format: date-time
-          readOnly: true
-      required:
-      - activity
-      - atualizado_em
-      - criado_em
-      - decidido_em
-      - decidido_por
-      - decidido_por_nome
-      - demanda_id
-      - id
-      - justificativa
-      - justificativa_decisao
-      - parecer_articulador
-      - parecer_por
-      - parecer_por_nome
-      - periodo_aplicacao
-      - rubrica
-      - rubrica_nome
-      - solicitante_nome
-      - status
-      - status_display
-      - transicoes_permitidas
-      - user
-      - valor_aprovado
-      - valor_solicitado
     BudgetPainelLinha:
       type: object
       description: |-
@@ -11282,6 +10713,11 @@ components:
       - categoria
       - id
       - nome
+    CategoriaBeneficiarioEnum:
+      enum:
+      - padrao
+      type: string
+      description: '* `padrao` - Padrão'
     CategoriaDoPerfilEnum:
       enum:
       - principal
@@ -11569,20 +11005,6 @@ components:
       required:
       - municipio
       - nome
-    ConcluirRequest:
-      type: object
-      properties:
-        valores_pagos:
-          type: object
-          additionalProperties:
-            type: string
-            format: decimal
-            pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-          description: '{demand_request_id: valor_pago} das solicitações ainda sem
-            pagamento. Acima do autorizado, executa o autorizado e registra o excedente
-            como risco de glosa.'
-      required:
-      - valores_pagos
     ConfirmUploadRequest:
       type: object
       properties:
@@ -11760,20 +11182,6 @@ components:
           nullable: true
       required:
       - decisao
-    ContagemAguardando:
-      type: object
-      properties:
-        total:
-          type: integer
-        status:
-          type: array
-          items:
-            $ref: '#/components/schemas/DemandStatusEnum'
-          description: Status em que a demanda espera uma decisão de algum perfil
-            do usuário.
-      required:
-      - status
-      - total
     ContentTypeEnum:
       enum:
       - text/csv
@@ -11845,70 +11253,6 @@ components:
         * `ornamentais` - Ornamentais
         * `medicinais` - Medicinais
         * `outras` - Outras
-    CustoPorAtividade:
-      type: object
-      properties:
-        atividade_id:
-          type: integer
-        atividade_titulo:
-          type: string
-        demandas:
-          type: integer
-        estimado:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        autorizado:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        pago:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-      required:
-      - atividade_id
-      - atividade_titulo
-      - autorizado
-      - demandas
-      - estimado
-      - pago
-    CustoPorEntrega:
-      type: object
-      properties:
-        acao_id:
-          type: integer
-        acao_numero:
-          type: string
-        acao_descricao:
-          type: string
-        demandas:
-          type: integer
-        estimado:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        autorizado:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        pago:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        atividades:
-          type: array
-          items:
-            $ref: '#/components/schemas/CustoPorAtividade'
-      required:
-      - acao_descricao
-      - acao_id
-      - acao_numero
-      - atividades
-      - autorizado
-      - demandas
-      - estimado
-      - pago
     Dashboard:
       type: object
       properties:
@@ -12087,26 +11431,6 @@ components:
       - rotulo
       - status
       - total
-    DecidirRemanejamentoRequest:
-      type: object
-      properties:
-        decisao:
-          $ref: '#/components/schemas/DecisaoRecursoExtraEnum'
-        valor_aprovado:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-          description: Só na aprovação parcial.
-        justificativa:
-          type: string
-          minLength: 1
-        origem_allocation:
-          type: integer
-          nullable: true
-          description: Pool estadual ou nacional que cobre o que faltar no pool territorial.
-      required:
-      - decisao
-      - justificativa
     DecisaoEnum:
       enum:
       - local
@@ -12117,148 +11441,6 @@ components:
         * `local` - local
         * `servidor` - servidor
         * `manual` - manual
-    DecisaoRecursoExtraEnum:
-      enum:
-      - aprovar
-      - aprovar_parcialmente
-      - recusar
-      type: string
-      description: |-
-        * `aprovar` - aprovar
-        * `aprovar_parcialmente` - aprovar_parcialmente
-        * `recusar` - recusar
-    DecisaoRemanejamentoResposta:
-      type: object
-      description: 'Resposta de `decidir`: o pedido e o remanejamento que cobriu o
-        pool, se houve.'
-      properties:
-        id:
-          type: integer
-          readOnly: true
-        user:
-          type: integer
-          readOnly: true
-          title: Solicitante
-        solicitante_nome:
-          type: string
-          readOnly: true
-        rubrica:
-          type: string
-          readOnly: true
-        rubrica_nome:
-          type: string
-          readOnly: true
-        valor_solicitado:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-          readOnly: true
-          title: Valor solicitado (R$)
-        valor_aprovado:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-          readOnly: true
-          nullable: true
-          title: Valor aprovado (R$)
-        periodo_aplicacao:
-          type: string
-          readOnly: true
-          title: Período de aplicação
-        activity:
-          type: integer
-          readOnly: true
-          nullable: true
-          title: Atividade que motivou o pedido
-        demanda_id:
-          type: string
-          readOnly: true
-          nullable: true
-          title: ID da Demanda
-          description: Referência fraca à Demand bloqueada (apps.sgd) — sem FK, no
-            mesmo padrão de BudgetTransaction.demanda_id.
-        justificativa:
-          type: string
-          readOnly: true
-        status:
-          allOf:
-          - $ref: '#/components/schemas/StatusPedidoRecursoExtraEnum'
-          readOnly: true
-          default: rascunho
-        status_display:
-          type: string
-          readOnly: true
-        transicoes_permitidas:
-          type: array
-          items:
-            type: string
-          readOnly: true
-        parecer_articulador:
-          type: string
-          readOnly: true
-          title: Parecer do Articulador
-        parecer_por:
-          type: integer
-          readOnly: true
-          nullable: true
-        parecer_por_nome:
-          type: string
-          readOnly: true
-          nullable: true
-        justificativa_decisao:
-          type: string
-          readOnly: true
-          title: Justificativa da decisão
-        decidido_por:
-          type: integer
-          readOnly: true
-          nullable: true
-        decidido_por_nome:
-          type: string
-          readOnly: true
-          nullable: true
-        decidido_em:
-          type: string
-          format: date-time
-          readOnly: true
-          nullable: true
-        criado_em:
-          type: string
-          format: date-time
-          readOnly: true
-        atualizado_em:
-          type: string
-          format: date-time
-          readOnly: true
-        transferencia_id:
-          type: integer
-          readOnly: true
-          nullable: true
-      required:
-      - activity
-      - atualizado_em
-      - criado_em
-      - decidido_em
-      - decidido_por
-      - decidido_por_nome
-      - demanda_id
-      - id
-      - justificativa
-      - justificativa_decisao
-      - parecer_articulador
-      - parecer_por
-      - parecer_por_nome
-      - periodo_aplicacao
-      - rubrica
-      - rubrica_nome
-      - solicitante_nome
-      - status
-      - status_display
-      - transferencia_id
-      - transicoes_permitidas
-      - user
-      - valor_aprovado
-      - valor_solicitado
     Demand:
       type: object
       properties:
@@ -12318,6 +11500,11 @@ components:
         atividade_fora_do_territorio:
           type: boolean
           readOnly: true
+        articuladores:
+          type: array
+          items:
+            $ref: '#/components/schemas/Articulador'
+          readOnly: true
         valor_estimado_total:
           type: string
           format: decimal
@@ -12357,6 +11544,7 @@ components:
           readOnly: true
       required:
       - activity
+      - articuladores
       - atividade_fora_do_territorio
       - atualizado_em
       - contexto
@@ -12377,60 +11565,6 @@ components:
       - valor_autorizado_total
       - valor_estimado_total
       - valor_pago_total
-    DemandAuditEntry:
-      type: object
-      properties:
-        id:
-          type: integer
-          readOnly: true
-        tipo:
-          allOf:
-          - $ref: '#/components/schemas/DemandAuditEntryTipoEnum'
-          readOnly: true
-        acao:
-          type: string
-          readOnly: true
-          title: Ação
-          description: 'Verbo da operação: CREATE, UPDATE, DELETE, LOGIN, LOGOUT…'
-        usuario:
-          allOf:
-          - $ref: '#/components/schemas/UsuarioDaTrilha'
-          nullable: true
-          readOnly: true
-        ip:
-          type: string
-          readOnly: true
-          nullable: true
-          title: Endereço IP
-        timestamp:
-          type: string
-          format: date-time
-          readOnly: true
-        valores_anteriores:
-          readOnly: true
-          description: Snapshot do estado antes da alteração. Vazio em CREATE.
-        valores_novos:
-          readOnly: true
-          description: Snapshot do estado após a alteração. Vazio em DELETE.
-      required:
-      - acao
-      - id
-      - ip
-      - timestamp
-      - tipo
-      - usuario
-      - valores_anteriores
-      - valores_novos
-    DemandAuditEntryTipoEnum:
-      enum:
-      - status
-      - saldo
-      - recurso_extra
-      type: string
-      description: |-
-        * `status` - status
-        * `saldo` - saldo
-        * `recurso_extra` - recurso_extra
     DemandContexto:
       type: object
       description: |-
@@ -12447,6 +11581,8 @@ components:
         municipio_id:
           type: integer
         municipio_nome:
+          type: string
+        municipio_estado_sigla:
           type: string
         comunidade_id:
           type: integer
@@ -12490,6 +11626,7 @@ components:
       - indicador_unidade_medida
       - meta_numero
       - meta_titulo
+      - municipio_estado_sigla
       - municipio_id
       - municipio_nome
       - submeta_numero
@@ -12498,221 +11635,6 @@ components:
       - tecnico_nome
       - territorio_id
       - territorio_nome
-    DemandCreateRequest:
-      type: object
-      properties:
-        titulo:
-          type: string
-          minLength: 1
-          maxLength: 255
-        justificativa:
-          type: string
-          default: ''
-        activity_id:
-          type: integer
-        activity_titulo:
-          type: string
-          minLength: 1
-          maxLength: 255
-        activity_tipo_atividade:
-          $ref: '#/components/schemas/TipoAtividadeEnum'
-        activity_acao_id:
-          type: integer
-        activity_municipio_id:
-          type: integer
-        activity_data_prevista:
-          type: string
-          format: date-time
-      required:
-      - titulo
-    DemandDocument:
-      type: object
-      properties:
-        id:
-          type: integer
-          readOnly: true
-        demanda:
-          type: integer
-          readOnly: true
-        tipo:
-          allOf:
-          - $ref: '#/components/schemas/TipoDocumentoDemandaEnum'
-          readOnly: true
-        tipo_display:
-          type: string
-          readOnly: true
-        arquivo_url:
-          type: string
-          format: uri
-          readOnly: true
-          title: URL pública do arquivo
-        descricao:
-          type: string
-          readOnly: true
-          title: Descrição
-        fornecedor:
-          type: string
-          readOnly: true
-          description: Obrigatório para tipo='cotacao' — exigido para checar distinção
-            entre as 3 cotações mínimas.
-        nome_original:
-          type: string
-          readOnly: true
-          title: Nome original do arquivo
-        content_type:
-          type: string
-          readOnly: true
-        tamanho_bytes:
-          type: integer
-          readOnly: true
-          title: Tamanho em bytes
-        enviado_por:
-          type: integer
-          readOnly: true
-          nullable: true
-        enviado_em:
-          type: string
-          format: date-time
-          readOnly: true
-      required:
-      - arquivo_url
-      - content_type
-      - demanda
-      - descricao
-      - enviado_em
-      - enviado_por
-      - fornecedor
-      - id
-      - nome_original
-      - tamanho_bytes
-      - tipo
-      - tipo_display
-    DemandDocumentConfirmRequest:
-      type: object
-      properties:
-        key:
-          type: string
-          minLength: 1
-        tipo:
-          $ref: '#/components/schemas/TipoDocumentoDemandaEnum'
-        descricao:
-          type: string
-          default: ''
-        nome_original:
-          type: string
-          minLength: 1
-          maxLength: 255
-        fornecedor:
-          type: string
-          default: ''
-      required:
-      - key
-      - nome_original
-      - tipo
-    DemandDocumentUploadURLRequest:
-      type: object
-      properties:
-        filename:
-          type: string
-          minLength: 1
-        content_type:
-          type: string
-          minLength: 1
-        size:
-          type: integer
-          minimum: 1
-        tipo:
-          $ref: '#/components/schemas/TipoDocumentoDemandaEnum'
-      required:
-      - content_type
-      - filename
-      - size
-      - tipo
-    DemandIndividualLimit:
-      type: object
-      description: |-
-        Contrato de `/sgd/limites-individuais/`, mantido enquanto o front migra para
-        `/sgp/orcamento/limites/`.
-      properties:
-        id:
-          type: integer
-          readOnly: true
-        solicitante:
-          type: integer
-        rubrica:
-          type: integer
-        rubrica_slug:
-          type: string
-          readOnly: true
-        rubrica_nome:
-          type: string
-          readOnly: true
-        valor_limite:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-          title: Valor Limite (R$)
-        valor_comprometido:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-          readOnly: true
-          title: Valor Comprometido (R$)
-        valor_executado:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-          readOnly: true
-          title: Valor Executado (R$)
-        saldo_disponivel:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-          readOnly: true
-        criado_por:
-          type: integer
-          readOnly: true
-          nullable: true
-        criado_em:
-          type: string
-          format: date-time
-          readOnly: true
-        atualizado_em:
-          type: string
-          format: date-time
-          readOnly: true
-      required:
-      - atualizado_em
-      - criado_em
-      - criado_por
-      - id
-      - rubrica
-      - rubrica_nome
-      - rubrica_slug
-      - saldo_disponivel
-      - solicitante
-      - valor_comprometido
-      - valor_executado
-      - valor_limite
-    DemandIndividualLimitRequest:
-      type: object
-      description: |-
-        Contrato de `/sgd/limites-individuais/`, mantido enquanto o front migra para
-        `/sgp/orcamento/limites/`.
-      properties:
-        solicitante:
-          type: integer
-        rubrica:
-          type: integer
-        valor_limite:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-          title: Valor Limite (R$)
-      required:
-      - rubrica
-      - solicitante
-      - valor_limite
     DemandRequest:
       type: object
       properties:
@@ -12763,7 +11685,43 @@ components:
           maximum: 32767
           minimum: 0
         alerta_rubrica_fora_do_previsto:
-          type: boolean
+          type: string
+          readOnly: true
+        anexos:
+          type: object
+          description: 'Um item por campo de anexo do schema: o documento (campo de
+            um arquivo, `null` se vazio) ou a lista deles (campo de vários).'
+          additionalProperties:
+            oneOf:
+            - type: object
+              properties:
+                id:
+                  type: integer
+                nome_original:
+                  type: string
+                download:
+                  type: string
+                  description: Rota que devolve a URL assinada do arquivo.
+              required:
+              - id
+              - nome_original
+              - download
+            - type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  nome_original:
+                    type: string
+                  download:
+                    type: string
+                    description: Rota que devolve a URL assinada do arquivo.
+                required:
+                - id
+                - nome_original
+                - download
+            nullable: true
           readOnly: true
         criado_em:
           type: string
@@ -12775,6 +11733,7 @@ components:
           readOnly: true
       required:
       - alerta_rubrica_fora_do_previsto
+      - anexos
       - atualizado_em
       - criado_em
       - demanda
@@ -12786,23 +11745,6 @@ components:
       - tipo_display
       - valor_autorizado
       - valor_pago
-    DemandRequestCreateRequest:
-      type: object
-      properties:
-        tipo:
-          type: string
-          minLength: 1
-        campos_json: {}
-        valor_estimado:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        ordem:
-          type: integer
-          default: 0
-      required:
-      - campos_json
-      - tipo
     DemandStatusEnum:
       enum:
       - rascunho
@@ -12843,22 +11785,6 @@ components:
       - saldo_liberado
       - status
       - titulo
-    DevolverRemanejamentoRequest:
-      type: object
-      properties:
-        justificativa:
-          type: string
-          minLength: 1
-      required:
-      - justificativa
-    DevolverRequest:
-      type: object
-      properties:
-        justificativa:
-          type: string
-          minLength: 1
-      required:
-      - justificativa
     DirecaoEnum:
       enum:
       - exportacao
@@ -12906,6 +11832,31 @@ components:
       required:
       - expires_in
       - url
+    Enquadramento:
+      type: object
+      properties:
+        codigo_ibge:
+          type: string
+          pattern: ^\d{7}$
+        nome_referencia:
+          type: string
+          title: Município (referência)
+          maxLength: 150
+      required:
+      - codigo_ibge
+    EnquadramentoRequest:
+      type: object
+      properties:
+        codigo_ibge:
+          type: string
+          minLength: 1
+          pattern: ^\d{7}$
+        nome_referencia:
+          type: string
+          title: Município (referência)
+          maxLength: 150
+      required:
+      - codigo_ibge
     EntidadeEnum:
       enum:
       - upf
@@ -13061,59 +12012,6 @@ components:
         * `exclusao_prevalece` - Exclusão do servidor prevalece
         * `merge_automatico` - Merge automático
         * `regra_negocio_rejeitada` - Regra de negócio rejeitada
-    EtapaDoHistorico:
-      type: object
-      description: Uma linha do histórico da demanda (SGD-RF27).
-      properties:
-        id:
-          type: integer
-          readOnly: true
-        etapa:
-          allOf:
-          - $ref: '#/components/schemas/EtapaEnum'
-          readOnly: true
-        etapa_display:
-          type: string
-          readOnly: true
-        acao:
-          allOf:
-          - $ref: '#/components/schemas/AcaoEnum'
-          readOnly: true
-          title: Ação
-        acao_display:
-          type: string
-          readOnly: true
-        responsavel_id:
-          type: integer
-          readOnly: true
-          nullable: true
-        responsavel_nome:
-          type: string
-          nullable: true
-          readOnly: true
-        justificativa:
-          type: string
-          readOnly: true
-        excedente_autorizado:
-          type: boolean
-          readOnly: true
-          description: Marcado quando a UGP autoriza excedendo limite individual ou
-            pool territorial (RF16).
-        criado_em:
-          type: string
-          format: date-time
-          readOnly: true
-      required:
-      - acao
-      - acao_display
-      - criado_em
-      - etapa
-      - etapa_display
-      - excedente_autorizado
-      - id
-      - justificativa
-      - responsavel_id
-      - responsavel_nome
     EtapaEnum:
       enum:
       - pre_autorizacao
@@ -13240,6 +12138,77 @@ components:
           type: string
       required:
       - id
+      - nome
+    FaixaDestinoDiaria:
+      type: object
+      description: '`enquadramentos`, quando enviado, substitui a lista de municípios
+        da faixa.'
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        nome:
+          type: string
+          maxLength: 150
+        ordem:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        padrao:
+          nullable: true
+          title: Recebe os municípios sem enquadramento
+          oneOf:
+          - $ref: '#/components/schemas/PadraoEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        ativo:
+          type: boolean
+          title: Ativa
+        enquadramentos:
+          type: array
+          items:
+            $ref: '#/components/schemas/Enquadramento'
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        atualizado_em:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - atualizado_em
+      - criado_em
+      - id
+      - nome
+    FaixaDestinoDiariaRequest:
+      type: object
+      description: '`enquadramentos`, quando enviado, substitui a lista de municípios
+        da faixa.'
+      properties:
+        nome:
+          type: string
+          minLength: 1
+          maxLength: 150
+        ordem:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        padrao:
+          nullable: true
+          title: Recebe os municípios sem enquadramento
+          oneOf:
+          - $ref: '#/components/schemas/PadraoEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        ativo:
+          type: boolean
+          title: Ativa
+        enquadramentos:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnquadramentoRequest'
+      required:
       - nome
     FaixaEnum:
       enum:
@@ -13695,77 +12664,6 @@ components:
       - demandas
       - saldo_liberado
       - saldo_por_rubrica
-    ImpactoNaOrigem:
-      type: object
-      properties:
-        id:
-          type: integer
-          description: Pool de origem do excedente.
-        valor_remanejado:
-          type: number
-          format: double
-          maximum: 1000000000000
-          minimum: -1000000000000
-          exclusiveMaximum: true
-          exclusiveMinimum: true
-        fora_do_limite:
-          type: number
-          format: double
-          maximum: 1000000000000
-          minimum: -1000000000000
-          exclusiveMaximum: true
-          exclusiveMinimum: true
-        saldo_antes:
-          type: number
-          format: double
-          maximum: 1000000000000
-          minimum: -1000000000000
-          exclusiveMaximum: true
-          exclusiveMinimum: true
-        saldo_apos:
-          type: number
-          format: double
-          maximum: 1000000000000
-          minimum: -1000000000000
-          exclusiveMaximum: true
-          exclusiveMinimum: true
-        semaforo_antes:
-          $ref: '#/components/schemas/SemaforoEnum'
-        semaforo_apos:
-          $ref: '#/components/schemas/SemaforoEnum'
-      required:
-      - fora_do_limite
-      - id
-      - saldo_antes
-      - saldo_apos
-      - semaforo_antes
-      - semaforo_apos
-      - valor_remanejado
-    ImpactoNaTrava:
-      type: object
-      properties:
-        semaforo_antes:
-          nullable: true
-          oneOf:
-          - $ref: '#/components/schemas/SemaforoEnum'
-          - $ref: '#/components/schemas/NullEnum'
-        semaforo_apos:
-          nullable: true
-          oneOf:
-          - $ref: '#/components/schemas/SemaforoEnum'
-          - $ref: '#/components/schemas/NullEnum'
-        saldo_apos:
-          type: number
-          format: double
-          maximum: 1000000000000
-          minimum: -1000000000000
-          exclusiveMaximum: true
-          exclusiveMinimum: true
-          nullable: true
-      required:
-      - saldo_apos
-      - semaforo_antes
-      - semaforo_apos
     ImpactoNoPool:
       type: object
       properties:
@@ -14948,6 +13846,22 @@ components:
       description: |-
         * `web` - Web
         * `sca` - SCA
+    OrigemValorDiariaEnum:
+      enum:
+      - federal
+      - fgd
+      type: string
+      description: |-
+        * `federal` - Tabela federal (Decreto 5.992/2006)
+        * `fgd` - Valor próprio da FGD
+    PadraoEnum:
+      enum:
+      - capitais
+      - demais
+      type: string
+      description: |-
+        * `capitais` - Capitais sem enquadramento
+        * `demais` - Demais localidades
     PaginatedActivityListList:
       type: object
       required:
@@ -14971,6 +13885,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ActivityList'
+    PaginatedAtividadeElegivelList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AtividadeElegivel'
     PaginatedAuditLogList:
       type: object
       required:
@@ -15017,52 +13954,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/BudgetAlert'
-    PaginatedBudgetIncreaseRequestList:
-      type: object
-      required:
-      - count
-      - results
-      properties:
-        count:
-          type: integer
-          example: 123
-        next:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?offset=400&limit=100
-        previous:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?offset=200&limit=100
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/BudgetIncreaseRequest'
-    PaginatedBudgetTransferList:
-      type: object
-      required:
-      - count
-      - results
-      properties:
-        count:
-          type: integer
-          example: 123
-        next:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?offset=400&limit=100
-        previous:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?offset=200&limit=100
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/BudgetTransfer'
     PaginatedComunidadeList:
       type: object
       required:
@@ -15132,29 +14023,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Cultura'
-    PaginatedDemandAuditEntryList:
-      type: object
-      required:
-      - count
-      - results
-      properties:
-        count:
-          type: integer
-          example: 123
-        next:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?offset=400&limit=100
-        previous:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?offset=200&limit=100
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/DemandAuditEntry'
     PaginatedDemandList:
       type: object
       required:
@@ -15802,75 +14670,25 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WorkPlanSubmeta'
-    PainelRubrica:
+    ParametrosDiarias:
       type: object
+      description: Regras de contagem e adicional de embarque, guardados como parâmetros
+        do Core.
       properties:
-        rubrica_id:
-          type: integer
-        rubrica_slug:
-          type: string
-        rubrica_nome:
-          type: string
-        solicitado:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        autorizado:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        executado:
+        regra_inteira_por_pernoite:
+          type: boolean
+        regra_meia_no_retorno:
+          type: boolean
+        regra_meia_sem_pernoite:
+          type: boolean
+        regra_meia_hospedagem_custeada:
+          type: boolean
+        adicional_embarque_ativo:
+          type: boolean
+        adicional_embarque_valor:
           type: string
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        disponivel:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        percentual_execucao:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,5}(?:\.\d{0,2})?$
-        faixa:
-          $ref: '#/components/schemas/SemaforoEnum'
-        limite_total:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        limite_comprometido:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        limite_executado:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        limite_disponivel:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-      required:
-      - autorizado
-      - disponivel
-      - executado
-      - faixa
-      - limite_comprometido
-      - limite_disponivel
-      - limite_executado
-      - limite_total
-      - percentual_execucao
-      - rubrica_id
-      - rubrica_nome
-      - rubrica_slug
-      - solicitado
-    ParecerRequest:
-      type: object
-      properties:
-        parecer:
-          type: string
-          minLength: 1
-      required:
-      - parecer
     PasswordResetConfirmRequest:
       type: object
       properties:
@@ -16024,19 +14842,6 @@ components:
           minimum: 0
         ativo:
           type: boolean
-    PatchedAtualizarRemanejamentoRequest:
-      type: object
-      properties:
-        valor_solicitado:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        justificativa:
-          type: string
-          minLength: 1
-        periodo_aplicacao:
-          type: string
-          maxLength: 100
     PatchedBudgetPoolUpdateRequest:
       type: object
       properties:
@@ -16065,41 +14870,33 @@ components:
           nullable: true
         ativa:
           type: boolean
-    PatchedDemandIndividualLimitRequest:
+    PatchedFaixaDestinoDiariaRequest:
       type: object
-      description: |-
-        Contrato de `/sgd/limites-individuais/`, mantido enquanto o front migra para
-        `/sgp/orcamento/limites/`.
+      description: '`enquadramentos`, quando enviado, substitui a lista de municípios
+        da faixa.'
       properties:
-        solicitante:
-          type: integer
-        rubrica:
-          type: integer
-        valor_limite:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-          title: Valor Limite (R$)
-    PatchedDemandRequestUpdateRequest:
-      type: object
-      properties:
-        tipo:
+        nome:
           type: string
           minLength: 1
-        campos_json: {}
-        valor_estimado:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-    PatchedDemandUpdateRequest:
-      type: object
-      properties:
-        titulo:
-          type: string
-          minLength: 1
-          maxLength: 255
-        justificativa:
-          type: string
+          maxLength: 150
+        ordem:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        padrao:
+          nullable: true
+          title: Recebe os municípios sem enquadramento
+          oneOf:
+          - $ref: '#/components/schemas/PadraoEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        ativo:
+          type: boolean
+          title: Ativa
+        enquadramentos:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnquadramentoRequest'
     PatchedGoogleCalendarConfigRequest:
       type: object
       properties:
@@ -16289,6 +15086,20 @@ components:
           maximum: 2147483647
           minimum: -2147483648
           nullable: true
+    PatchedNovaVigenciaRequest:
+      type: object
+      description: 'Editar um valor da tabela: cria uma vigência nova a partir de
+        `vigencia_inicio`.'
+      properties:
+        valor:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        vigencia_inicio:
+          type: string
+          format: date
+        origem:
+          $ref: '#/components/schemas/OrigemValorDiariaEnum'
     PatchedOrganizationRequest:
       type: object
       properties:
@@ -16319,6 +15130,25 @@ components:
           maxLength: 20
         ativa:
           type: boolean
+    PatchedParametrosDiariasRequest:
+      type: object
+      description: Regras de contagem e adicional de embarque, guardados como parâmetros
+        do Core.
+      properties:
+        regra_inteira_por_pernoite:
+          type: boolean
+        regra_meia_no_retorno:
+          type: boolean
+        regra_meia_sem_pernoite:
+          type: boolean
+        regra_meia_hospedagem_custeada:
+          type: boolean
+        adicional_embarque_ativo:
+          type: boolean
+        adicional_embarque_valor:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
     PatchedProductionRequest:
       type: object
       properties:
@@ -17087,33 +15917,6 @@ components:
       - status_snapshot
       - token_mascarado
       - url_endpoint
-    PreviewDecisaoResposta:
-      type: object
-      description: '`approval.preview_impacto`: o efeito do valor proposto nas duas
-        travas (SGD-RF22).'
-      properties:
-        disponivel:
-          type: boolean
-        trava_bloqueada:
-          nullable: true
-          oneOf:
-          - $ref: '#/components/schemas/TravaBloqueadaEnum'
-          - $ref: '#/components/schemas/NullEnum'
-        individual:
-          $ref: '#/components/schemas/ImpactoNaTrava'
-        territorial:
-          $ref: '#/components/schemas/ImpactoNaTrava'
-        origem:
-          allOf:
-          - $ref: '#/components/schemas/ImpactoNaOrigem'
-          nullable: true
-          description: Só com `origem_allocation`.
-      required:
-      - disponivel
-      - individual
-      - origem
-      - territorial
-      - trava_bloqueada
     PreviewExportacaoArlo:
       type: object
       properties:
@@ -17572,14 +16375,6 @@ components:
       - payload_json
       - updated_at
       - uuid_local
-    RecusarRequest:
-      type: object
-      properties:
-        justificativa:
-          type: string
-          minLength: 1
-      required:
-      - justificativa
     RefreshRequest:
       type: object
       properties:
@@ -17747,73 +16542,6 @@ components:
       - pool_id
       - saldo
       - territorio
-    SaldoConsultaDemanda:
-      type: object
-      properties:
-        rubrica_slug:
-          type: string
-        rubrica_nome:
-          type: string
-        individual:
-          $ref: '#/components/schemas/Trava'
-        territorial:
-          $ref: '#/components/schemas/Trava'
-        disponivel:
-          type: boolean
-        trava_bloqueada:
-          type: string
-          nullable: true
-      required:
-      - disponivel
-      - individual
-      - rubrica_nome
-      - rubrica_slug
-      - territorial
-      - trava_bloqueada
-    SaldoInsuficiente:
-      type: object
-      description: |-
-        `INSUFFICIENT_BALANCE`. Na submissão, o primeiro bloqueio vai no topo e
-        todos aparecem em `solicitacoes_bloqueadas`, chaveados pelo id da solicitação.
-      properties:
-        code:
-          type: string
-          default: INSUFFICIENT_BALANCE
-        trava:
-          $ref: '#/components/schemas/TravaEnum'
-        rubrica:
-          type: string
-          description: Slug da rubrica.
-        disponivel:
-          type: string
-          description: Valor com duas casas decimais, como texto.
-        solicitado:
-          type: string
-          description: Valor com duas casas decimais, como texto.
-        acao_sugerida:
-          $ref: '#/components/schemas/AcaoSugeridaEnum'
-        valor_faltante:
-          type: string
-          nullable: true
-          description: 'Só na trava individual da submissão: o que falta na rubrica
-            inteira, o mesmo valor que o pedido de recurso extra registraria sem `valor_solicitado`.
-            Nos outros casos, `null`.'
-        detail:
-          type: string
-        solicitacao_id:
-          type: integer
-        solicitacoes_bloqueadas:
-          type: object
-          additionalProperties:
-            $ref: '#/components/schemas/BloqueioDeSaldo'
-      required:
-      - acao_sugerida
-      - detail
-      - disponivel
-      - rubrica
-      - solicitado
-      - trava
-      - valor_faltante
     SaldoLiberadoPorRubrica:
       type: object
       properties:
@@ -17895,6 +16623,8 @@ components:
       properties:
         faixa_destino:
           $ref: '#/components/schemas/FaixaDestino'
+        tabela_diaria_id:
+          type: integer
         valor_por_diaria:
           type: string
           format: decimal
@@ -17903,13 +16633,19 @@ components:
           type: string
           format: decimal
           pattern: ^-?\d{0,5}(?:\.\d{0,1})?$
+        adicional_embarque:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
         valor_total:
           type: string
           format: decimal
           pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
       required:
+      - adicional_embarque
       - faixa_destino
       - numero_diarias
+      - tabela_diaria_id
       - valor_por_diaria
       - valor_total
     SimulacaoRemanejamento:
@@ -17972,31 +16708,6 @@ components:
         * `credenciador` - Credenciador
         * `avaliador-selecao` - Avaliador de Seleção
         * `gestor-edital` - Gestor de Edital
-    SolicitarRecursoExtraRequest:
-      type: object
-      properties:
-        rubrica:
-          type: string
-          minLength: 1
-        valor_solicitado:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-          description: No mínimo o que falta no limite individual; omitido, assume
-            esse valor.
-        justificativa:
-          type: string
-          minLength: 1
-        periodo_aplicacao:
-          type: string
-          default: ''
-          maxLength: 100
-        submeter:
-          type: boolean
-          default: true
-      required:
-      - justificativa
-      - rubrica
     SpendingLimit:
       type: object
       description: |-
@@ -18217,24 +16928,6 @@ components:
       description: |-
         * `rascunho` - Rascunho
         * `submetido` - Submetido
-    StatusPedidoRecursoExtraEnum:
-      enum:
-      - rascunho
-      - submetida
-      - devolvida
-      - com_parecer
-      - aprovada
-      - aprovada_parcialmente
-      - recusada
-      type: string
-      description: |-
-        * `rascunho` - Rascunho
-        * `submetida` - Submetida
-        * `devolvida` - Devolvida
-        * `com_parecer` - Com parecer
-        * `aprovada` - Aprovada
-        * `aprovada_parcialmente` - Aprovada parcialmente
-        * `recusada` - Recusada
     StatusSnapshotEnum:
       enum:
       - sem_snapshot
@@ -18872,6 +17565,93 @@ components:
         * `integer` - Integer
         * `boolean` - Boolean
         * `json` - JSON
+    TabelaDiaria:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        faixa_destino:
+          type: integer
+          title: Faixa de destino
+        faixa_destino_nome:
+          type: string
+          readOnly: true
+        categoria_beneficiario:
+          allOf:
+          - $ref: '#/components/schemas/CategoriaBeneficiarioEnum'
+          title: Categoria do beneficiário
+        vigencia_inicio:
+          type: string
+          format: date
+          title: Início da vigência
+        vigencia_fim:
+          type: string
+          format: date
+          nullable: true
+          title: Fim da vigência
+        valor:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        origem:
+          allOf:
+          - $ref: '#/components/schemas/OrigemValorDiariaEnum'
+          title: Origem do valor
+        criado_por:
+          type: integer
+          readOnly: true
+          nullable: true
+        criado_por_nome:
+          type: string
+          nullable: true
+          readOnly: true
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - criado_em
+      - criado_por
+      - criado_por_nome
+      - faixa_destino
+      - faixa_destino_nome
+      - id
+      - origem
+      - valor
+      - vigencia_inicio
+    TabelaDiariaRequest:
+      type: object
+      properties:
+        faixa_destino:
+          type: integer
+          title: Faixa de destino
+        categoria_beneficiario:
+          allOf:
+          - $ref: '#/components/schemas/CategoriaBeneficiarioEnum'
+          title: Categoria do beneficiário
+        vigencia_inicio:
+          type: string
+          format: date
+          title: Início da vigência
+        vigencia_fim:
+          type: string
+          format: date
+          nullable: true
+          title: Fim da vigência
+        valor:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        origem:
+          allOf:
+          - $ref: '#/components/schemas/OrigemValorDiariaEnum'
+          title: Origem do valor
+      required:
+      - faixa_destino
+      - origem
+      - valor
+      - vigencia_inicio
     Tecnico:
       type: object
       properties:
@@ -18953,6 +17733,16 @@ components:
       required:
       - papel
       - user
+    TerritorioDaAbrangencia:
+      type: object
+      properties:
+        id:
+          type: integer
+        nome:
+          type: string
+      required:
+      - id
+      - nome
     TerritorioNested:
       type: object
       properties:
@@ -19104,18 +17894,6 @@ components:
         * `declaracao` - Declaração
         * `contrato` - Contrato
         * `outro` - Outro
-    TipoDocumentoDemandaEnum:
-      enum:
-      - suporte
-      - ata
-      - comprovante
-      - cotacao
-      type: string
-      description: |-
-        * `suporte` - Documento de suporte
-        * `ata` - Ata
-        * `comprovante` - Comprovante
-        * `cotacao` - Cotação
     TipoDocumentoUPFEnum:
       enum:
       - dap_caf
@@ -19543,52 +18321,6 @@ components:
       - antigo_titular
       - detail
       - novo_titular
-    Trava:
-      type: object
-      properties:
-        disponivel:
-          type: boolean
-        saldo:
-          type: string
-          format: decimal
-          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
-        motivo_bloqueio:
-          type: string
-          nullable: true
-        acao_sugerida:
-          type: string
-          nullable: true
-        semaforo_atual:
-          type: string
-          nullable: true
-        semaforo_apos:
-          type: string
-          nullable: true
-      required:
-      - acao_sugerida
-      - disponivel
-      - motivo_bloqueio
-      - saldo
-      - semaforo_apos
-      - semaforo_atual
-    TravaBloqueadaEnum:
-      enum:
-      - individual
-      - territorial
-      - origem
-      type: string
-      description: |-
-        * `individual` - individual
-        * `territorial` - territorial
-        * `origem` - origem
-    TravaEnum:
-      enum:
-      - individual
-      - territorial
-      type: string
-      description: |-
-        * `individual` - individual
-        * `territorial` - territorial
     UPFDetailRequest:
       type: object
       description: |-
@@ -20427,16 +19159,6 @@ components:
       - permissoes_resumo
       - territorios
       - ultimo_login
-    UsuarioDaTrilha:
-      type: object
-      properties:
-        id:
-          type: integer
-        nome:
-          type: string
-      required:
-      - id
-      - nome
     UsuarioElegivel:
       type: object
       properties:

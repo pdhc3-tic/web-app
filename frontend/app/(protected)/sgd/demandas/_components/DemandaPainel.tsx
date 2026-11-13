@@ -13,14 +13,19 @@ import { DefinitionList } from "@/app/components/ui/DefinitionList/DefinitionLis
 import { Tabs } from "@/app/components/ui/Tabs/Tabs";
 import { ApiError } from "@/app/lib/api";
 import { absoluteDateTime, formatDate } from "@/app/lib/datetime";
+import { canVerRiscosDeGlosa } from "@/app/lib/auth/roles";
 import {
   badgeStatusDaDemanda,
   getDemanda,
+  listRiscosDeGlosa,
+  rotuloAbrangencia,
   type Demanda,
+  type RiscoGlosa,
 } from "@/app/lib/demandas";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import { qk } from "@/app/lib/queryKeys";
 import { podeMontarDemanda } from "@/app/lib/solicitacoes";
+import { SeloForaDoTerritorio } from "./AbrangenciaDemanda";
 import { AcoesDecisao, type Desfecho } from "./AcoesDecisao";
 import { AvisoRecursoExtra } from "./AvisoRecursoExtra";
 import { DemandaAuditoria } from "./DemandaAuditoria";
@@ -59,11 +64,57 @@ function Solicitacoes({ demanda }: { demanda: Demanda }) {
   );
 }
 
+const SEVERIDADE: Record<RiscoGlosa["severidade"], string> = { alta: "alta", media: "média", baixa: "baixa" };
+
+/** Um risco de glosa (#360): pago acima do autorizado ou demanda sem evidência. */
+function ItemGlosa({ risco, demanda }: { risco: RiscoGlosa; demanda: Demanda }) {
+  const solicitacao = demanda.solicitacoes.find((s) => s.id === risco.demand_request_id);
+  const detalhes =
+    risco.tipo === "pago_acima_autorizado"
+      ? [
+          solicitacao?.tipo_display,
+          `pago ${formatCurrencyBRL(risco.valor_pago)}, autorizado ${formatCurrencyBRL(risco.valor_autorizado)}`,
+        ]
+      : [`valor exposto ${formatCurrencyBRL(risco.valor_exposto)}`];
+  return (
+    <li className="relative" data-testid={`glosa-${risco.id}`}>
+      <span
+        className={`absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full ${
+          risco.resolvido_em ? "bg-border" : "bg-warning-text"
+        }`}
+        aria-hidden
+      />
+      <p className="text-sm text-warning-text">
+        Risco de glosa:{" "}
+        {risco.tipo === "pago_acima_autorizado"
+          ? `${formatCurrencyBRL(risco.valor_exposto)} acima do autorizado`
+          : "demanda executada sem evidência"}
+        <span className="text-text-muted"> · severidade {SEVERIDADE[risco.severidade]}</span>
+      </p>
+      <p className="text-xs text-text-muted">
+        {[...detalhes.filter(Boolean), absoluteDateTime(risco.criado_em)].join(" · ")}
+        {risco.resolvido_em && ` · resolvido em ${absoluteDateTime(risco.resolvido_em)}`}
+      </p>
+    </li>
+  );
+}
+
 /**
  * Linha do tempo: a criação, cada decisão (quem, quando, com que
  * justificativa), os riscos de glosa e o status atual.
+ *
+ * Os riscos de glosa vêm de `GET /sgp/glosa-riscos/?demanda=` (#360), buscados
+ * pelo painel só para os perfis com acesso à rota.
  */
-export function LinhaDoTempo({ demanda }: { demanda: Demanda }) {
+export function LinhaDoTempo({
+  demanda,
+  glosas = [],
+  glosasFalharam = false,
+}: {
+  demanda: Demanda;
+  glosas?: RiscoGlosa[];
+  glosasFalharam?: boolean;
+}) {
   return (
     <ol className="flex list-none flex-col gap-3 border-l border-border pl-4" data-testid="painel-timeline">
       <li className="relative">
@@ -87,19 +138,14 @@ export function LinhaDoTempo({ demanda }: { demanda: Demanda }) {
           )}
         </li>
       ))}
-      {demanda.glosas?.map((g) => (
-        <li key={g.id} className="relative" data-testid={`glosa-${g.id}`}>
-          <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full bg-warning-text" aria-hidden />
-          <p className="text-sm text-warning-text">
-            Risco de glosa: {formatCurrencyBRL(g.excedente)} acima do autorizado
-          </p>
-          <p className="text-xs text-text-muted">
-            {demanda.solicitacoes.find((s) => s.id === g.demand_request_id)?.tipo_display} · pago{" "}
-            {formatCurrencyBRL(g.valor_pago)}, autorizado {formatCurrencyBRL(g.valor_autorizado)} ·{" "}
-            {absoluteDateTime(g.criado_em)}
-          </p>
-        </li>
+      {glosas.map((risco) => (
+        <ItemGlosa key={risco.id} risco={risco} demanda={demanda} />
       ))}
+      {glosasFalharam && (
+        <li className="relative text-xs text-text-muted" data-testid="glosas-erro">
+          Não foi possível carregar os riscos de glosa desta demanda.
+        </li>
+      )}
       <li className="relative">
         <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full bg-primary" aria-hidden />
         <p className="flex items-center gap-2 text-sm text-text">
@@ -130,6 +176,11 @@ export function DemandaPainel({
     queryKey: qk.demandas.detalhe(demandaId),
     queryFn: ({ signal }) => getDemanda(demandaId, signal),
   });
+  const glosas = useQuery({
+    queryKey: qk.demandas.glosas(demandaId),
+    queryFn: ({ signal }) => listRiscosDeGlosa(demandaId, signal),
+    enabled: canVerRiscosDeGlosa(session?.user),
+  });
 
   return (
     <aside
@@ -148,6 +199,7 @@ export function DemandaPainel({
               {demanda.despesa_posterior && (
                 <span className="text-xs text-warning-text">Despesa posterior à execução</span>
               )}
+              <SeloForaDoTerritorio demanda={demanda} />
             </div>
           )}
         </div>
@@ -223,8 +275,11 @@ export function DemandaPainel({
                 ),
               },
               { label: "Solicitante", value: <NomeDoSolicitante demanda={demanda} /> },
-              { label: "Território", value: demanda.contexto.territorio_nome },
-              { label: "Município", value: demanda.contexto.municipio_nome },
+              {
+                label: "Território da demanda",
+                value: <span data-testid="painel-abrangencia">{rotuloAbrangencia(demanda)}</span>,
+              },
+              { label: "Município da atividade", value: demanda.contexto.municipio_nome },
               {
                 label: "Plano de Trabalho",
                 value: `Meta ${demanda.contexto.meta_numero} · Ação ${demanda.contexto.acao_numero}`,
@@ -245,7 +300,11 @@ export function DemandaPainel({
                 label: `Solicitações (${demanda.solicitacoes.length})`,
                 content: <Solicitacoes demanda={demanda} />,
               },
-              { id: "timeline", label: "Linha do tempo", content: <LinhaDoTempo demanda={demanda} /> },
+              {
+                id: "timeline",
+                label: "Linha do tempo",
+                content: <LinhaDoTempo demanda={demanda} glosas={glosas.data} glosasFalharam={glosas.isError} />,
+              },
               // Quem vê a demanda vê a trilha; o IP só chega ao Super Admin
               // (`DemandViewSet.auditoria`).
               { id: "auditoria", label: "Auditoria", content: <DemandaAuditoria demandaId={demanda.id} /> },

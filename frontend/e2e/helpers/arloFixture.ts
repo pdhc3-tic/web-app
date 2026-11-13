@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
+import { ORCAMENTO_E2E_PY } from "./orcamentoE2E";
 
 /**
  * Fixture da integração Arlo (Issue #298).
@@ -27,17 +28,17 @@ type Ref = { id: number; titulo: string; solicitacaoId: number };
 
 export type ArloFixture = { paga: Ref; glosa: Ref; abaixo: Ref; ultimaOperacao: number };
 
-const COMUM = `
+const COMUM = `${ORCAMENTO_E2E_PY}
 from decimal import Decimal
 from django.contrib.auth import get_user_model
 from apps.sgp.models import Activity, GlosaRisk
-from apps.sgp.models.budget import BudgetAllocation, BudgetRubrica, BudgetTransaction
+from apps.sgp.budget.models import BudgetRubrica
 from apps.sgd.models.arlo_import import ArloImport
 from apps.sgd.models.demand import Demand
 from apps.sgd.models.approval_step import ApprovalStep
-from apps.sgd.models.individual_limit import DemandIndividualLimit
 
 P = "${PREFIXO_298}"
+FOTO = "arlo"
 POOL = Decimal("20298.00")
 U = get_user_model()
 adt = U.objects.get(email="ewerton.bandeira@demo.pdhc.local")
@@ -48,14 +49,10 @@ def limpar(desde=None):
     demandas = Demand.objects.filter(titulo__startswith=P)
     GlosaRisk.objects.filter(demanda_id__in=[str(pk) for pk in demandas.values_list("pk", flat=True)]).delete()
     ApprovalStep.objects.filter(demanda__in=demandas).delete()
-    pools = BudgetAllocation.objects.filter(
-        nivel="territorial", territorio_id=territorio_id, rubrica=rubrica, valor_alocado=POOL,
-    )
-    BudgetTransaction.objects.filter(allocation__in=pools).delete()
+    # Orçamento de volta ao da fotografia antes de apagar: o ledger referencia a atividade.
+    restaurar(FOTO)
     demandas.delete()
     Activity.objects.filter(titulo__startswith=P).delete()
-    DemandIndividualLimit.objects.filter(solicitante=adt, rubrica=rubrica).delete()
-    pools.delete()
     ArloImport.objects.filter(nome_original__startswith=P).delete()
     if desde is not None:
         ArloImport.objects.filter(pk__gt=desde).delete()
@@ -71,14 +68,13 @@ from apps.sgp.models.workplan import WorkPlanAcao
 from apps.sgd.services import demand as ds, workflow as wf
 
 limpar()
+fotografar(FOTO)
 articulador = U.objects.get(email="helio.fontenele@demo.pdhc.local")
 ugp = U.objects.get(email="beatriz.nogueira@demo.pdhc.local")
 
 acao = WorkPlanAcao.objects.order_by("pk").first()
-BudgetAllocation.objects.create(
-    meta_id=acao.meta_id, rubrica=rubrica, nivel="territorial", territorio_id=territorio_id, valor_alocado=POOL,
-)
-DemandIndividualLimit.objects.create(solicitante=adt, rubrica=rubrica, valor_limite=Decimal("10000"))
+definir_pool(rubrica, "territorial", POOL, territorio_id=territorio_id)
+definir_limite(adt, rubrica, "10000")
 
 municipio = Municipality.objects.filter(territory_id=territorio_id).order_by("nome").first()
 quando = timezone.now() + timedelta(days=20)
@@ -112,9 +108,6 @@ print("${MARCADOR}_SETUP " + json.dumps({"paga": paga, "glosa": glosa, "abaixo":
 
 const teardownScript = (desde: number) => `${COMUM}
 limpar(desde=${Number(desde)})
-# A limpeza apaga o limite de locação do Ewerton; devolve o do seed
-# (SGD_LIMITES_ADT_MONTAGEM) para as specs que rodam depois.
-DemandIndividualLimit.objects.get_or_create(solicitante=adt, rubrica=rubrica, defaults={"valor_limite": Decimal("1000")})
 print("${MARCADOR}_TEARDOWN_OK")
 `;
 

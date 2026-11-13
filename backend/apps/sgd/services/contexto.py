@@ -109,13 +109,66 @@ def nivel_da_demanda(demand) -> tuple[str, str | None, object | None]:
     return orcamento_service.Nivel.NACIONAL, None, None
 
 
-def atividade_fora_do_territorio(demand) -> bool:
-    """A atividade acontece em outro estado que não o da demanda. Demanda
-    nacional nunca está fora."""
-    estado = estado_da_demanda(demand)
-    if estado is None:
+def com_estado_da_atividade(atividades):
+    """Atividades com o que `estado_da_atividade` lê já carregado."""
+    return atividades.select_related("municipio__state")
+
+
+def com_contexto_da_atividade(atividades):
+    """Atividades com estado, território, comunidade e a cadeia do Plano de Trabalho
+    já carregados, para o painel do formulário de demanda."""
+    return com_estado_da_atividade(atividades).select_related(
+        "municipio__territory", "comunidade", "acao__meta", "acao__submeta", "acao__indicador",
+    )
+
+
+def atividade_fora_do_estado(estado_sigla: str | None, activity) -> bool:
+    """A atividade acontece em outro estado que não `estado_sigla`. Sem estado
+    (nível nacional), nunca está fora."""
+    if estado_sigla is None:
         return False
-    return estado_da_atividade(demand.activity) != estado
+    return estado_da_atividade(activity) != estado_sigla
+
+
+def atividade_fora_do_territorio(demand) -> bool:
+    return atividade_fora_do_estado(estado_da_demanda(demand), demand.activity)
+
+
+def articuladores_do_estado(estado_sigla: str | None) -> list[dict]:
+    """Quem pré-autoriza as demandas do estado, pelo mesmo critério que decide quem
+    é notificado na submissão. Demanda nacional não tem Articulador."""
+    if estado_sigla is None:
+        return []
+    from apps.sgd.services import orcamento as orcamento_service
+
+    return list(
+        orcamento_service.articuladores_dos_estados([estado_sigla]).order_by("nome", "pk").values("id", "nome")
+    )
+
+
+def articuladores_por_estado(siglas) -> dict[str, list[dict]]:
+    """`articuladores_do_estado` de vários estados de uma vez, para a listagem: duas
+    consultas, quantos estados forem. Todo estado pedido tem entrada, mesmo vazia."""
+    from apps.core.models import UserProfile
+    from apps.sgd.services import orcamento as orcamento_service
+
+    siglas = sorted({sigla for sigla in siglas if sigla})
+    por_estado: dict[str, list[dict]] = {sigla: [] for sigla in siglas}
+    if not siglas:
+        return por_estado
+    usuarios = list(orcamento_service.articuladores_dos_estados(siglas).order_by("nome", "pk").values("id", "nome"))
+    estados_do_usuario: dict[int, set[str]] = {}
+    perfis = UserProfile.objects.filter(
+        user_id__in=[usuario["id"] for usuario in usuarios], perfil__slug="articulador-estadual",
+    ).values_list("user_id", "territorio_id", "territorio__estados")
+    for user_id, territorio_id, estados in perfis:
+        # Articulador sem território responde por todos os estados, como no critério da notificação.
+        alcance = set(siglas) if territorio_id is None else set(estados or ()) & set(siglas)
+        estados_do_usuario.setdefault(user_id, set()).update(alcance)
+    for usuario in usuarios:
+        for sigla in estados_do_usuario.get(usuario["id"], ()):
+            por_estado[sigla].append(usuario)
+    return por_estado
 
 
 @dataclass(frozen=True)
