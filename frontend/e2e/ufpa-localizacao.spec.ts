@@ -54,7 +54,7 @@ test.describe("Ficha da UFPA — localização", () => {
     // Simula backend legado que devolve o municipio sem a chave `estado`.
     // O código deve mostrar um chip vermelho de erro no lugar do valor.
     await page.route(
-      new RegExp(`/api/v1/sgp/ufpas/${ufpaId}/?$`),
+      new RegExp(`/api/v1/sgp/upfs/${ufpaId}/?$`),
       async (route) => {
         const response = await route.fetch();
         const body = await response.json();
@@ -155,7 +155,7 @@ test.describe("Wizard — cascata de localização", () => {
     // habilitado e o usuário pode escolher/criar uma na edição — regressão
     // clássica é o combobox ficar disabled quando comunidade == null.
     await page.route(
-      new RegExp(`/api/v1/sgp/ufpas/${ufpaId}/?$`),
+      new RegExp(`/api/v1/sgp/upfs/${ufpaId}/?$`),
       async (route) => {
         const response = await route.fetch();
         const body = await response.json();

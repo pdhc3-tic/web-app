@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { storageStatePath } from "./helpers/users";
+import { primeiroUfpaId } from "./helpers/ufpa";
 
 /**
  * Listagem de UFPAs — a tela que não tinha cobertura nenhuma.
@@ -25,6 +26,18 @@ async function abrirListagem(page: Page): Promise<void> {
 
 test.describe("Listagem de UFPAs", () => {
   test.use({ storageState: storageStatePath("ugp") });
+
+  test("as telas da UFPA não exibem a sigla antiga", async ({ page }) => {
+    const id = primeiroUfpaId();
+    for (const caminho of ["/sgp", "/sgp/ufpas", "/sgp/ufpas/nova", "/sgp/ufpas/mapa", `/sgp/ufpas/${id}`, `/sgp/ufpas/${id}/editar`]) {
+      await page.goto(caminho);
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      await expect(page.locator("body")).not.toContainText(/\bUPFs?\b/i);
+      for (const nome of await page.locator("[aria-label]").evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")))) {
+        expect(nome).not.toMatch(/\bUPFs?\b/i);
+      }
+    }
+  });
 
   test("os endereços antigos (/sgp/upfs) levam para /sgp/ufpas (#407)", async ({ page }) => {
     await page.goto("/sgp/upfs");

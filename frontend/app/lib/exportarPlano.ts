@@ -1,3 +1,4 @@
+import { nomeUfpa } from "./ufpaContrato";
 /**
  * Utilitários comuns às exportações de arquivo do SGP: o formato, o nome que
  * vem no `Content-Disposition` e o download da blob. O Plano de Trabalho e as
@@ -29,9 +30,9 @@ export function nomeDoContentDisposition(header: string | null): string | null {
   if (!match) return null;
   const bruto = match[1].trim();
   try {
-    return decodeURIComponent(bruto);
+    return nomeUfpa(decodeURIComponent(bruto));
   } catch {
-    return bruto;
+    return nomeUfpa(bruto);
   }
 }
 

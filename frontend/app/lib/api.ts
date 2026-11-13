@@ -1,3 +1,4 @@
+import { caminhoBackendUfpa, contratoUfpa, nomeUfpa, respostaUfpa } from "./ufpaContrato";
 import { getSession, signIn, signOut } from "next-auth/react";
 import type { Session } from "next-auth";
 
@@ -26,11 +27,11 @@ export class ApiError extends Error {
   readonly raw?: unknown;
 
   constructor(status: number, body: ApiErrorBody, raw?: unknown) {
-    super(body.message);
+    super(nomeUfpa(body.message));
     this.name = "ApiError";
     this.status = status;
     this.code = body.code;
-    this.fieldErrors = body.field_errors;
+    this.fieldErrors = body.field_errors?.map((e) => ({ field: e.field, message: nomeUfpa(e.message) }));
     this.raw = raw;
   }
 }
@@ -132,6 +133,10 @@ export async function apiClient(
   path: string,
   options: RequestInit = {}
 ): Promise<Response> {
+  path = caminhoBackendUfpa(path);
+  if (typeof options.body === "string" && options.body.trim().startsWith("{")) {
+    options = { ...options, body: JSON.stringify(contratoUfpa(JSON.parse(options.body), true)) };
+  }
   // Só lê o token: sem `broadcast`, que mandaria as outras abas recarregarem a
   // sessão a cada requisição — e, se uma delas buscar algo ao recarregar, as
   // abas ficam se acordando sem fim. O aviso entre abas fica para o refresh.
@@ -149,7 +154,7 @@ export async function apiClient(
 
   if (res.status !== 401) {
     if (!res.ok) await parseApiError(res);
-    return res;
+    return respostaUfpa(res);
   }
 
   // Token expirado — aguarda o refresh compartilhado (next-auth faz a renovação)
@@ -171,7 +176,7 @@ export async function apiClient(
   });
 
   if (!retried.ok) await parseApiError(retried);
-  return retried;
+  return respostaUfpa(retried);
 }
 
 // --- Logout ---

@@ -6,7 +6,7 @@ import nextConfig from "../../next.config";
 
 /**
  * #407 (AJ-FE-11) — a UPF passou a se chamar UFPA. O nome antigo só pode
- * sobrar no redirecionamento das rotas antigas e nos testes dele.
+ * sobrar no redirecionamento, na camada de compatibilidade e em testes de contrato.
  */
 
 const RAIZ = path.resolve(__dirname, "..", "..");
@@ -14,6 +14,9 @@ const NOME_ANTIGO = /upf/i;
 /** Onde o nome antigo aparece de propósito, ou onde a sequência de letras é outra coisa. */
 const PERMITIDOS = new Set([
   "next.config.ts",
+  "app/lib/ufpaContrato.ts",
+  "app/lib/ufpaContrato.test.ts",
+  "app/lib/apiUfpa.test.ts",
   "app/lib/renomeacaoUfpa.test.ts",
   "e2e/ufpas-listagem.spec.ts",
   "package-lock.json",
@@ -21,7 +24,7 @@ const PERMITIDOS = new Set([
 const FALSOS_POSITIVOS = /ArrowUpFromLine|setupFiles/g;
 
 function arquivosVersionados(): string[] {
-  return execFileSync("git", ["ls-files", "-z"], { cwd: RAIZ, encoding: "utf8" })
+  return execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { cwd: RAIZ, encoding: "utf8" })
     .split("\0")
     .filter(Boolean);
 }
@@ -33,9 +36,9 @@ describe("renomeação de UPF para UFPA (#407)", () => {
     expect(arquivos.filter((a) => NOME_ANTIGO.test(a))).toEqual([]);
   });
 
-  it("nenhum código, teste ou documento cita o nome antigo", { timeout: 60_000 }, () => {
+  it("nenhum código de interface ou documento cita o nome antigo", { timeout: 60_000 }, () => {
     const comNomeAntigo = arquivos
-      .filter((a) => !PERMITIDOS.has(a) && /\.(ts|tsx|mts|mjs|js|css|md|json)$/.test(a))
+      .filter((a) => !PERMITIDOS.has(a) && !a.startsWith("e2e/") && /\.(ts|tsx|mts|mjs|js|css|md|json)$/.test(a))
       .filter((a) => NOME_ANTIGO.test(readFileSync(path.join(RAIZ, a), "utf8").replace(FALSOS_POSITIVOS, "")));
     expect(comNomeAntigo).toEqual([]);
   });

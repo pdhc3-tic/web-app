@@ -59,7 +59,7 @@ test.describe("Procedência SCA — UFPA", () => {
   test("UFPA originada no aplicativo exibe a badge com a data da sincronização", async ({
     page,
   }) => {
-    const id = primeiroId("sgp_ufpa", "sca");
+    const id = primeiroId("sgp_upf", "sca");
 
     await page.goto(`/sgp/ufpas/${id}`);
     await expect(badge(page)).toBeVisible();
@@ -74,7 +74,7 @@ test.describe("Procedência SCA — UFPA", () => {
   });
 
   test("UFPA cadastrada pela web não exibe a badge", async ({ page }) => {
-    const id = primeiroId("sgp_ufpa", "web");
+    const id = primeiroId("sgp_upf", "web");
 
     await page.goto(`/sgp/ufpas/${id}`);
     // Esperar a ficha carregar antes de afirmar a ausência: sem isto o teste

@@ -23,10 +23,10 @@ import { primeiroUfpaId } from "./helpers/ufpa";
  */
 
 /** Regex do GET da listagem — não pega o detalhe (`/membros/{id}/`). */
-const LISTA_MEMBROS = /\/api\/v1\/sgp\/ufpas\/\d+\/membros\/(\?|$)/;
+const LISTA_MEMBROS = /\/api\/v1\/sgp\/upfs\/\d+\/membros\/(\?|$)/;
 
 /** Regex do GET do resumo agregado da composição familiar (BE-23). */
-const RESUMO_MEMBROS = /\/api\/v1\/sgp\/ufpas\/\d+\/membros\/resumo\/$/;
+const RESUMO_MEMBROS = /\/api\/v1\/sgp\/upfs\/\d+\/membros\/resumo\/$/;
 
 /**
  * Prefixo dos membros criados pelos testes. O `limparMembrosDeTeste` apaga por
@@ -675,7 +675,7 @@ test.describe("SGP — Card de composição espera o resumo", () => {
       });
     });
 
-    await page.route(/\/api\/v1\/sgp\/ufpas\/\d+\/membros\/\d+\/$/, async (route) => {
+    await page.route(/\/api\/v1\/sgp\/upfs\/\d+\/membros\/\d+\/$/, async (route) => {
       if (route.request().method() !== "DELETE") return route.fallback();
       await route.fulfill({ status: 204, body: "" });
     });
@@ -749,7 +749,7 @@ test.describe("SGP — Card de composição espera o resumo", () => {
 // ─── #192: exibição condicional de Saúde e Cor/Raça ─────────────────────────
 
 /** GET/PATCH do detalhe de um membro. Não casa `resumo/` nem `exportar/`. */
-const DETALHE_MEMBRO = /\/api\/v1\/sgp\/ufpas\/\d+\/membros\/\d+\/$/;
+const DETALHE_MEMBRO = /\/api\/v1\/sgp\/upfs\/\d+\/membros\/\d+\/$/;
 
 /** Id do membro fixado nos cenários abaixo. */
 const ID_MEMBRO = 9001;
@@ -1061,7 +1061,7 @@ test.describe("SGP — Campos sensíveis por perfil", () => {
   });
 });
 
-const EXPORTAR_MEMBROS = /\/api\/v1\/sgp\/ufpas\/\d+\/membros\/exportar\/$/;
+const EXPORTAR_MEMBROS = /\/api\/v1\/sgp\/upfs\/\d+\/membros\/exportar\/$/;
 
 /**
  * Cabeçalho completo — espelha `BASE_EXPORT_COLUMNS` + `SENSITIVE_EXPORT_COLUMNS`

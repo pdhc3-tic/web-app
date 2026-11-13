@@ -88,7 +88,7 @@ Activity.objects.filter(pk=com_erro.pk).update(google_calendar_sync_status="erro
 completa = None
 for candidata in (
     Activity.objects.annotate(
-        n_ufpas=Count("ufpas_participantes", distinct=True),
+        n_ufpas=Count("upfs_participantes", distinct=True),
         n_membros=Count("membros_participantes", distinct=True),
         n_equipe=Count("equipe_adicional", distinct=True),
     )
@@ -96,7 +96,7 @@ for candidata in (
     .exclude(pk__in=[com_evidencias.pk, com_erro.pk])
     .order_by("pk")
 ):
-    membro = candidata.membros_participantes.filter(ufpa__isnull=False).first()
+    membro = candidata.membros_participantes.filter(upf__isnull=False).first()
     if membro is not None:
         completa = candidata
         break
@@ -116,7 +116,7 @@ print("${MARCADOR}_SETUP " + json.dumps({
     "comEvidencias": com_evidencias.pk,
     "comErroDeAgenda": com_erro.pk,
     "comFichaCompleta": completa.pk,
-    "ufpaDoMembro": membro.ufpa_id,
+    "ufpaDoMembro": membro.upf_id,
     "membroParticipante": membro.pk,
     "latitude": "${LATITUDE}",
     "longitude": "${LONGITUDE}",

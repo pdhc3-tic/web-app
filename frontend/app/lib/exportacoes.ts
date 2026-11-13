@@ -1,3 +1,4 @@
+import { nomeUfpa } from "./ufpaContrato";
 import { apiClient } from "@/app/lib/api";
 import { dispararDownload, nomeDoContentDisposition, type FormatoExport } from "@/app/lib/exportarPlano";
 
@@ -54,7 +55,7 @@ export function emAndamento(e: Pick<Exportacao, "status">): boolean {
 
 /** Dispara o download do corpo da resposta e devolve o nome entregue. */
 export async function baixarResposta(res: Response, nomePadrao: string): Promise<string> {
-  const nome = nomeDoContentDisposition(res.headers.get("Content-Disposition")) ?? nomePadrao;
+  const nome = nomeDoContentDisposition(res.headers.get("Content-Disposition")) ?? nomeUfpa(nomePadrao);
   dispararDownload(await res.blob(), nome);
   return nome;
 }
