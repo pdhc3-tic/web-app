@@ -2,7 +2,7 @@
 
 *Compilado em 10/11/2026, na branch `frontend/sprint-12b`.*
 
-*Os itens deste documento vão para uma issue de backend nova, aberta junto do PR da `frontend/sprint-12b`.*
+*Os itens deste documento vão para uma issue de backend nova, aberta junto do PR da `frontend/sprint-12b`. A exceção é o item 9, que depende de cadastros que ainda não existem e fica registrado aqui para quando o SGE e o SGS chegarem.*
 
 *Os documentos das sprints anteriores continuam valendo para o que está lá. O da 12a já virou a #419.*
 
@@ -24,9 +24,9 @@ Para não pedir uma rota nova só para isso, o front lê `budget_limit_period` e
 
 A sobrescrita individual pede a pessoa. `/users/` é só do Super Admin, e a UGP também cria sobrescritas. Por isso a tela usa `/sgd/opcoes/usuarios/?papel=solicitante`, que a UGP acessa, mas que traz só os ADT/ACR ativos.
 
-O backend aceita limite individual para os dois perfis operacionais (`PERFIS_OPERACIONAIS = adt-acr, articulador-estadual`). Pela tela, o Articulador Estadual não pode receber uma sobrescrita. Hoje isso não muda nada na prática, porque só o ADT cria demanda e reserva no limite. Mas o contrato do backend é mais amplo do que a tela permite.
+O backend aceita limite individual para dois perfis, o ADT/ACR e o Articulador Estadual (a constante `PERFIS_OPERACIONAIS` de `apps/sgp/budget/limites.py`). Aqui "perfis com limite individual" é esse par. Não confundir com a categoria **operacional** de perfil da #405 (item 8), que é outra coisa: coordenador de evento, credenciador etc. Pela tela, o Articulador Estadual não pode receber uma sobrescrita. Hoje isso não muda nada na prática, porque só o ADT cria demanda e reserva no limite. Mas o contrato do backend é mais amplo do que a tela permite.
 
-**Pedido:** uma lista das pessoas com perfil operacional, acessível a UGP e Super Admin. Pode ser `GET /sgp/orcamento/limites/pessoas/?q=` ou um `papel=operacional` em `/sgd/opcoes/usuarios/`. Ela deve devolver `id`, `nome` e o perfil, para a tela mostrar "ADT" ou "Articulador" ao lado do nome.
+**Pedido:** uma lista das pessoas com perfil de limite individual (ADT/ACR e Articulador Estadual), acessível a UGP e Super Admin. Pode ser `GET /sgp/orcamento/limites/pessoas/?q=` ou um novo `papel` em `/sgd/opcoes/usuarios/` (por exemplo `papel=com_limite`; evitar `operacional`, pelo motivo acima). Ela deve devolver `id`, `nome` e o perfil, para a tela mostrar "ADT" ou "Articulador" ao lado do nome.
 
 *Estado atual no frontend:* a busca usa a lista de solicitantes. Quando a rota existir, só a fonte da lista muda.
 
@@ -93,11 +93,13 @@ O cadastro de usuário pede o objeto de cada perfil operacional e manda `objeto_
 
 *Estado atual no frontend:* `OBJETO_DO_PERFIL` em `app/lib/users.ts`. Quando o campo existir, a tela usa o que vier do perfil e o mapa sai.
 
-## 9. Busca dos objetos de abrangência (#405)
+## 9. Busca dos objetos de abrangência (#405) — futuro, fora da issue da 12b
+
+*Não é um pedido para agora: depende dos cadastros de evento, edital e candidatura do SGE e do SGS, que ainda não existem. Fica registrado para não se perder; a #405 não fica presa a ele.*
 
 A #405 pede um seletor de objeto para o perfil operacional. O backend guarda o objeto só pelo número (`objeto_tipo` + `objeto_id`, sem FK) e ainda não tem os cadastros de evento, edital e candidatura do SGE e do SGS. Não há o que listar, então a tela pede o número do objeto ("Evento (número)"), e nada confere se ele existe.
 
-**Pedido:** quando os cadastros existirem, uma busca por tipo, acessível ao Super Admin, por exemplo `GET /core/objetos-abrangencia/?tipo=evento&q=`, devolvendo `id` e um nome para exibir. O `perfis_input` também deveria recusar um `objeto_id` que não existe.
+**Pedido (quando os cadastros existirem):** uma busca por tipo, acessível ao Super Admin, por exemplo `GET /core/objetos-abrangencia/?tipo=evento&q=`, devolvendo `id` e um nome para exibir. O `perfis_input` também deveria recusar um `objeto_id` que não existe.
 
 *Estado atual no frontend:* campo de número no `NovoUsuarioForm`, e a listagem mostra o objeto pelo número ("Coordenador de evento · evento 12"). Com a busca, o campo vira um seletor e a listagem mostra o nome.
 
