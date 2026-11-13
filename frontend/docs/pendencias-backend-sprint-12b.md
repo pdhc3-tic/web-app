@@ -2,7 +2,7 @@
 
 *Compilado em 10/11/2026, na branch `frontend/sprint-12b`.*
 
-*Os itens deste documento vão para uma issue de backend nova, aberta junto do PR da `frontend/sprint-12b`. A exceção é o item 9, que depende de cadastros que ainda não existem e fica registrado aqui para quando o SGE e o SGS chegarem.*
+*Os itens 1 a 8 e 10 viraram a #423, aberta junto do PR da `frontend/sprint-12b`. O item 9 depende de cadastros que ainda não existem e fica registrado aqui para quando o SGE e o SGS chegarem.*
 
 *Os documentos das sprints anteriores continuam valendo para o que está lá. O da 12a já virou a #419.*
 
