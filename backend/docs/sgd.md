@@ -65,7 +65,8 @@ As funções ficam em `services/balance.py`, que só chega ao motor pela porta.
 3. Exige a justificativa quando a linha pede. Sem ela, `JUSTIFICATION_REQUIRED`.
 4. Aplica o efeito no saldo. Essa etapa trava limites e pools.
 5. Trava a `Demand` e relê o status e as solicitações. Se algo mudou, recusa com `INVALID_TRANSITION`.
-6. Grava a demanda, a auditoria, as `DemandRequest`, a etapa (`ApprovalStep`) e a notificação.
+6. Roda `conferir_sob_lock(demand)`, quando quem chama passou essa função: a regra que depende de dados que outra requisição pode mudar até ali. A submissão passa `demand_request.exigir_regras_de_submissao`, que também roda antes do saldo, para o erro comum sair sem travar nada, e de novo aqui, porque um anexo pode ser removido enquanto a submissão espera o lock.
+7. Grava a demanda, a auditoria, as `DemandRequest`, a etapa (`ApprovalStep`) e a notificação.
 
 ### Cancelamento pelo sistema
 
@@ -177,12 +178,24 @@ O estado e o território da demanda são os **do solicitante**, gravados na cria
 | Nacional (ex.: Super Admin) | `null` | `null` |
 
 - **Gravação:** `contexto.abrangencia_para_nova_demanda`, chamada por `services/demand.py` na criação.
+- **Prévia:** `GET demandas/abrangencia/?activity_id=` devolve, pela mesma regra da criação, o estado, o território e os Articuladores que a demanda de quem chama vai receber, e se a atividade fica fora do estado.
 - **Leitura:** fila do Articulador, visibilidade, RLS, notificações e pool leem a abrangência por `contexto`, com `estado_da_demanda` e `nivel_da_demanda`. O pool da reserva é o do nível da demanda.
 - **RLS** (migration `0024_rls_demand_por_estado_sigla`): o Articulador vê as demandas cujo `estado_sigla` está entre os estados dos seus territórios. A demanda nacional não fica com nenhum Articulador.
-- **Atividade fora do território:** quando a atividade acontece em outro estado, o serializer expõe `atividade_fora_do_territorio`.
+- **Atividade fora do território:** quando a atividade acontece em outro estado, o serializer expõe `atividade_fora_do_territorio`. A busca `GET atividades-elegiveis/` oferece atividades de qualquer território para o vínculo.
+- **Riscos de glosa:** o Articulador vê os riscos das demandas que ele vê e os das demandas do seu estado, pelo estado da demanda e não pelo da atividade (`approval.filtro_de_registro_da_demanda`, usado em `GET /sgp/glosa-riscos/`).
 - **Migration 0023:** preencheu as demandas antigas pela lotação atual do solicitante.
 
-Testes: `tests/test_abrangencia_territorial.py`, `tests/test_demand_rls.py` e `tests/test_demand_creation_scope.py`.
+Testes: `tests/test_abrangencia_territorial.py`, `tests/test_abrangencia_previa.py`, `tests/test_demand_rls.py`, `tests/test_demand_creation_scope.py` e `tests/test_atividades_elegiveis.py`.
+
+## Diárias
+
+A solicitação do tipo diária segue o serviço público federal (Lei 8.112/1990, art. 58; Decreto 5.992/2006), em `services/diarias.py` (Issue #358):
+- **Faixa de destino:** `FaixaDestinoDiaria`, com o enquadramento dos municípios como dado. Município sem enquadramento cai em "demais capitais", se for capital, ou em "demais localidades".
+- **Valor vigente:** `TabelaDiaria` por faixa, categoria e vigência. Editar um valor cria uma nova vigência, com `AuditLog`, e `origem` diz se o valor é o federal ou um valor próprio da FGD.
+- **Contagem:** uma diária por pernoite, meia no dia do retorno, meia no deslocamento sem pernoite e meia por dia de hospedagem custeada por outro meio. Cada regra é um parâmetro do Core, assim como o adicional de embarque e desembarque.
+- **Congelamento:** a validação grava em `campos_json` a faixa, o id da tabela, o valor por diária e a quantidade. Alterar a tabela não muda as solicitações já criadas.
+
+Rotas: `config/diarias/simular/` (prévia do formulário), `config/diarias/tabela/`, `config/diarias/faixas/` e `config/diarias/parametros/`. Testes: `tests/test_simular_diarias.py` e `tests/test_tabela_diarias.py`.
 
 ## Semáforo
 
@@ -196,14 +209,14 @@ Requisitos do `SGD_Requisitos_v1_1.docx`. Caminhos relativos a `apps/sgd/`. Todo
 
 | RF | Requisito | Módulo / rota | Testes (`tests/`) | Issue |
 |---|---|---|---|---|
-| RF01 | Demanda vinculada a uma Atividade de Campo | `services/demand.py`, `POST demandas/` | `test_demand_creation.py`, `test_demand_creation_scope.py` | #289, #294 |
+| RF01 | Demanda vinculada a uma Atividade de Campo | `services/demand.py`, `POST demandas/`, `GET atividades-elegiveis/` | `test_demand_creation.py`, `test_demand_creation_scope.py`, `test_atividades_elegiveis.py` | #289, #294, #419 |
 | RF02 | Herança somente leitura da atividade e da cadeia Ação → Submeta → Meta → Indicador | `services/contexto.py`, `serializers/demand.py` | `test_contexto.py`, `test_demand_contexto_plano_trabalho.py` | #355, #294 |
 | RF03 | Criar a atividade Planejada pelo formulário da demanda | `services/demand.py` (`apps.sgp.services.activity.criar_planejada`) | `test_demand_creation_scope.py` | #352, #361 |
-| RF04 | Várias solicitações por demanda, com formulário por tipo | `models/tipo_solicitacao.py`, `services/demand_request.py`, `config/tipos-solicitacao/` | `test_tipo_solicitacao.py`, `test_demand_campos_json_validation.py` | #357, #295, #365 |
+| RF04 | Várias solicitações por demanda, com formulário por tipo | `models/tipo_solicitacao.py`, `services/demand_request.py`, `services/diarias.py`, `config/tipos-solicitacao/`, `config/diarias/` | `test_tipo_solicitacao.py`, `test_demand_campos_json_validation.py`, `test_simular_diarias.py`, `test_tabela_diarias.py` | #357, #358, #295, #365 |
 | RF05 | Rubrica automática pelo tipo, por mapeamento configurável | `services/tipos_solicitacao.py`, `config/tipo-rubrica/` | `test_tipo_rubrica_mapping.py`, `test_tipo_solicitacao.py` | #312, #357 |
 | RF06 | Salvar como rascunho | `services/demand.py` | `test_demand_creation.py` | #289 |
 | RF07 | Editar em Rascunho ou Devolvida | `services/demand.py`, `services/demand_request.py` | `test_demand_balance_service.py`, `test_workflow_concorrencia.py` | #289, #296 |
-| RF08 | Anexar documentos | `views/demand_document.py`, `services/demand_document.py` | `test_demand_document_permissions.py` | #289 |
+| RF08 | Anexar documentos, inclusive nos campos de anexo do formulário | `views/demand_document.py`, `services/demand_document.py`, `services/anexos.py` | `test_demand_document_permissions.py`, `test_anexos_campos.py` | #289, #419 |
 | RF09 | Cancelar a própria demanda antes de autorizada | `services/workflow.py` (`cancelar/`) | `test_demand_cancel.py`, `test_demand_cancelar_autorizada.py` | #291, #337 |
 | RF10 | Bloquear e cancelar demandas de atividade cancelada ou não realizada | `signals/activity.py`, `tasks.py`, `workflow.cancelar_pelo_sistema` | `test_activity_cancel_signal.py`, `test_activity_adiada_signal.py` | #291 |
 | RF11 | Duas travas por rubrica antes de aceitar a submissão, em transação atômica | `services/balance.py` (`verificar_duas_travas`) | `test_demand_balance_service.py`, `test_demand_balance_concurrency.py` | #290 |

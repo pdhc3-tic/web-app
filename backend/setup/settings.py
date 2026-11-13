@@ -301,7 +301,7 @@ SPECTACULAR_SETTINGS = {
         "TipoExportacaoEnum": "apps.sgp.models.export_job.ExportJob.Tipo",
         "TipoDocumentoUPFEnum": "apps.sgp.models.upf_document.UPFDocument.TIPO_CHOICES",
         "TipoDocumentoAtividadeEnum": "apps.sgp.models.activity_document.ActivityDocument.TIPO_CHOICES",
-        "TipoDocumentoDemandaEnum": "apps.sgd.models.demand_document.TIPO_CHOICES",
+        "TipoDocumentoDemandaEnum": "apps.sgd.models.demand_document.TODOS_OS_TIPOS",
         "StatusPedidoRecursoExtraEnum": "apps.sgp.budget.models.BudgetIncreaseRequest.Status",
         "OrigemEnum": "apps.sgp.models.form_response.FormResponse.Origem",
         "OrigemValorDiariaEnum": "apps.sgd.models.diarias.OrigemValorDiaria",

@@ -17,8 +17,8 @@ REGENERAR = "rode `python manage.py spectacular --file schema.yml` no backend e 
 # Débito conhecido. Qualquer warning novo fora daqui quebra o teste.
 FONTES_COM_DEBITO: tuple[str, ...] = ()
 GLOBAIS_COM_DEBITO: tuple[str, ...] = ()
-# Fica com a tabela de diárias (#358), que muda esta rota.
-ROTAS_DO_SGD_FORA_DO_GATE = ("/api/v1/sgd/config/diarias/simular/",)
+# Rotas do SGD dispensadas do gate de corpo de resposta. Vazia desde a #358.
+ROTAS_DO_SGD_FORA_DO_GATE: tuple[str, ...] = ()
 
 
 @pytest.fixture(scope="module")
