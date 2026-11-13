@@ -525,8 +525,12 @@ class ConflictLogDetailSerializer(ConflictLogListSerializer):
         return None
 
 
+# Nome fixo no schema (`DecisaoEnum`, em `ENUM_NAME_OVERRIDES`).
+DECISOES_DO_CONFLITO = ["local", "servidor", "manual"]
+
+
 class ConflictResolveSerializer(serializers.Serializer):
-    decisao = serializers.ChoiceField(choices=["local", "servidor", "manual"])
+    decisao = serializers.ChoiceField(choices=DECISOES_DO_CONFLITO)
     valor_manual = serializers.JSONField(required=False, allow_null=True)
 
     def validate(self, attrs):

@@ -39,7 +39,7 @@ class DemandRequestSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "demanda", "rubrica", "valor_autorizado", "valor_pago", "criado_em", "atualizado_em"]
 
-    def get_alerta_rubrica_fora_do_previsto(self, obj):
+    def get_alerta_rubrica_fora_do_previsto(self, obj) -> bool:
         return alerta_rubrica_fora_do_previsto(obj)
 
     @extend_schema_field({

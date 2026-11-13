@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema_serializer
 from rest_framework import serializers
 
 from apps.sgd.serializers.tipo_solicitacao import SlugDeTipoField
@@ -28,6 +29,8 @@ class TravaSerializer(serializers.Serializer):
     semaforo_apos = serializers.CharField(allow_null=True)
 
 
+# Nome próprio no schema: `apps.sgp.budget.serializers` tem um homônimo.
+@extend_schema_serializer(component_name="SaldoConsultaDemanda")
 class SaldoConsultaSerializer(serializers.Serializer):
     rubrica_slug = serializers.CharField()
     rubrica_nome = serializers.CharField()

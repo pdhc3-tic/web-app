@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, OpenApiTypes, extend_schema
 from rest_framework import serializers, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -12,10 +13,13 @@ from apps.sgd.models.demand_document import DemandDocument
 from apps.sgd.serializers.demand_document import DemandDocumentSerializer
 from apps.sgd.services import demand_document as demand_document_service
 from apps.sgd.services.demand_document import exigir_pode_gerenciar_documento
+from apps.sgp.serializers.common import DownloadURLRespostaSerializer, UploadURLRespostaSerializer
 
 ALLOWED_DOCUMENT_CONTENT_TYPES = {"application/pdf": "pdf"}
 MAX_DOCUMENT_SIZE_BYTES = 10_485_760
 MAX_DOCUMENTS_PER_DEMAND = 10
+
+PARAMETRO_DOCUMENTO = OpenApiParameter("doc_id", OpenApiTypes.INT, OpenApiParameter.PATH)
 
 
 class DemandDocumentUploadURLSerializer(serializers.Serializer):
@@ -64,7 +68,8 @@ class DemandDocumentMixin:
     def _get_demand_for_doc(self, pk):
         return get_object_or_404(self.get_queryset(), pk=pk)
 
-    @action(detail=True, methods=["get"], url_path="documentos")
+    @extend_schema(filters=False, responses=DemandDocumentSerializer(many=True))
+    @action(detail=True, methods=["get"], url_path="documentos", pagination_class=None)
     def documentos_list(self, request, pk=None):
         demand = self._get_demand_for_doc(pk)
         docs = DemandDocument.objects.filter(demanda=demand, ativo=True).order_by("-enviado_em")
@@ -77,6 +82,11 @@ class DemandDocumentMixin:
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    @extend_schema(
+        request=DemandDocumentUploadURLSerializer,
+        responses={200: UploadURLRespostaSerializer, 400: OpenApiTypes.OBJECT},
+        description="URL pré-assinada para enviar o PDF direto ao storage. Confirme depois em `documentos/confirm/`.",
+    )
     @action(detail=True, methods=["post"], url_path="documentos/upload-url")
     def documentos_upload_url(self, request, pk=None):
         demand = self._get_demand_for_doc(pk)
@@ -103,6 +113,10 @@ class DemandDocumentMixin:
         )
         return Response({"url": url, "key": key, "expires_in": expires_in})
 
+    @extend_schema(
+        request=DemandDocumentConfirmSerializer,
+        responses={201: DemandDocumentSerializer, 400: OpenApiTypes.OBJECT},
+    )
     @action(detail=True, methods=["post"], url_path="documentos/confirm")
     def documentos_confirm(self, request, pk=None):
         demand = self._get_demand_for_doc(pk)
@@ -157,6 +171,7 @@ class DemandDocumentMixin:
             )
         return Response(DemandDocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
 
+    @extend_schema(parameters=[PARAMETRO_DOCUMENTO], responses=DownloadURLRespostaSerializer)
     @action(detail=True, methods=["get"], url_path=r"documentos/(?P<doc_id>\d+)/download")
     def documentos_download(self, request, pk=None, doc_id=None):
         demand = self._get_demand_for_doc(pk)
@@ -173,6 +188,9 @@ class DemandDocumentMixin:
         )
         return Response({"url": url, "expires_in": expires_in})
 
+    @extend_schema(
+        parameters=[PARAMETRO_DOCUMENTO], responses={204: OpenApiResponse(description="Documento removido.")},
+    )
     @action(detail=True, methods=["delete"], url_path=r"documentos/(?P<doc_id>\d+)")
     @transaction.atomic
     def documentos_delete(self, request, pk=None, doc_id=None):

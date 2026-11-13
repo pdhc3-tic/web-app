@@ -1,9 +1,14 @@
+from drf_spectacular.utils import extend_schema_serializer
 from rest_framework import serializers
 
 from apps.sgd.models.approval_step import ApprovalStep
+from apps.sgd.models.demand import STATUS_CHOICES
 from apps.sgp.models import BudgetPool
 
 
+# Nome próprio no schema: `serializers/approval_step.py` tem um homônimo, o das
+# etapas embutidas em `DemandSerializer`, sem `responsavel_id`.
+@extend_schema_serializer(component_name="EtapaDoHistorico")
 class ApprovalStepSerializer(serializers.ModelSerializer):
     """Uma linha do histórico da demanda (SGD-RF27)."""
 
@@ -20,7 +25,7 @@ class ApprovalStepSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def get_responsavel_nome(self, obj):
+    def get_responsavel_nome(self, obj) -> str | None:
         return obj.responsavel.nome if obj.responsavel_id else None
 
 
@@ -102,3 +107,44 @@ class CancelarSerializer(serializers.Serializer):
         # `motivo` é o nome que o frontend atual envia.
         data["motivo"] = data["justificativa"] or data["motivo"]
         return data
+
+
+# Respostas montadas como dict pelos serviços, declaradas só para o schema. Os
+# decimais saem como número no JSON (o encoder do DRF converte `Decimal`).
+_NUMERO = {"max_digits": 14, "decimal_places": 2, "coerce_to_string": False}
+# As mesmas do `SemaforoEnum` (`ENUM_NAME_OVERRIDES`), que casa pelo conteúdo.
+_FAIXAS = ["verde", "amarelo", "vermelho"]
+
+
+class ImpactoNaTravaSerializer(serializers.Serializer):
+    semaforo_antes = serializers.ChoiceField(choices=_FAIXAS, allow_null=True)
+    semaforo_apos = serializers.ChoiceField(choices=_FAIXAS, allow_null=True)
+    saldo_apos = serializers.DecimalField(**_NUMERO, allow_null=True)
+
+
+class ImpactoNaOrigemSerializer(serializers.Serializer):
+    id = serializers.IntegerField(help_text="Pool de origem do excedente.")
+    valor_remanejado = serializers.DecimalField(**_NUMERO)
+    fora_do_limite = serializers.DecimalField(**_NUMERO)
+    saldo_antes = serializers.DecimalField(**_NUMERO)
+    saldo_apos = serializers.DecimalField(**_NUMERO)
+    semaforo_antes = serializers.ChoiceField(choices=_FAIXAS)
+    semaforo_apos = serializers.ChoiceField(choices=_FAIXAS)
+
+
+class PreviewDecisaoRespostaSerializer(serializers.Serializer):
+    """`approval.preview_impacto`: o efeito do valor proposto nas duas travas (SGD-RF22)."""
+
+    disponivel = serializers.BooleanField()
+    trava_bloqueada = serializers.ChoiceField(choices=["individual", "territorial", "origem"], allow_null=True)
+    individual = ImpactoNaTravaSerializer()
+    territorial = ImpactoNaTravaSerializer()
+    origem = ImpactoNaOrigemSerializer(allow_null=True, help_text="Só com `origem_allocation`.")
+
+
+class ContagemAguardandoSerializer(serializers.Serializer):
+    total = serializers.IntegerField()
+    status = serializers.ListField(
+        child=serializers.ChoiceField(choices=STATUS_CHOICES),
+        help_text="Status em que a demanda espera uma decisão de algum perfil do usuário.",
+    )
