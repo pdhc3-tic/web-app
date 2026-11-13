@@ -27,6 +27,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Gerado de backend/schema.yml (#273); não se edita nem se formata à mão.
+    "app/lib/api-types.ts",
   ]),
 ]);
 

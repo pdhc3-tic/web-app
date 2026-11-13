@@ -20,6 +20,8 @@ const PERMITIDOS = new Set([
   "app/lib/renomeacaoUfpa.test.ts",
   "e2e/ufpas-listagem.spec.ts",
   "package-lock.json",
+  // Gerado de backend/schema.yml (#273): segue o nome que o backend publica, até a AJ-BE-09.
+  "app/lib/api-types.ts",
 ]);
 const FALSOS_POSITIVOS = /ArrowUpFromLine|setupFiles/g;
 
