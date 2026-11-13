@@ -10,12 +10,21 @@ export type RevogadoPor = {
   nome: string;
 };
 
+/**
+ * Um vínculo do usuário (`role_com_objeto`): o perfil e, no operacional, o
+ * objeto de abrangência. O principal vem com o objeto nulo.
+ */
+export type PerfilDoUsuario = Perfil & {
+  objeto_tipo?: ObjetoTipo | null;
+  objeto_id?: number | null;
+};
+
 /** Espelha apps/core/serializers.py::UserListSerializer. */
 export type UserListItem = {
   id: number;
   nome_completo: string;
   email: string;
-  perfis: Perfil[];
+  perfis: PerfilDoUsuario[];
   territorios: Territorio[];
   ativo: boolean;
   ultimo_login: string | null;
@@ -52,7 +61,6 @@ export type ListUsersParams = {
   offset: number;
   search?: string;
   perfil?: string;
-  categoria?: "principal" | "operacional";
   territorio?: string;
   status?: StatusFilter;
   /** Datas no formato YYYY-MM-DD (input nativo). */
@@ -105,31 +113,6 @@ export async function listUsers(
   params: ListUsersParams,
   signal?: AbortSignal,
 ): Promise<Paginated<UserListItem>> {
-  if (params.categoria) {
-    // O backend ainda não filtra categoria. Percorrer todas as páginas evita
-    // filtrar só a página visível e produzir contagem/paginação incorretas.
-    const usuarios: UserListItem[] = [];
-    let offset = 0;
-    let pagina: Paginated<UserListItem>;
-    do {
-      const res = await apiClient(
-        `/api/v1/users/?${buildUsersQuery({ ...params, limit: 100, offset })}`,
-        { signal },
-      );
-      pagina = await res.json();
-      usuarios.push(...pagina.results);
-      offset += pagina.results.length;
-    } while (pagina.next && pagina.results.length > 0);
-    const filtrados = usuarios.filter((u) =>
-      u.perfis.some((p) => categoriaDoPerfil(p) === params.categoria),
-    );
-    return {
-      count: filtrados.length,
-      next: null,
-      previous: null,
-      results: filtrados.slice(params.offset, params.offset + params.limit),
-    };
-  }
   const res = await apiClient(`/api/v1/users/?${buildUsersQuery(params)}`, {
     signal,
   });
@@ -214,7 +197,11 @@ export async function fetchTerritoryOptions(
 export type CategoriaPerfil = "principal" | "operacional";
 export type ObjetoTipo = "evento" | "edital" | "candidatura";
 
-/** Espelha `OBJETO_DO_PERFIL_OPERACIONAL` (apps/core/models/user_profile.py). */
+/**
+ * Cópia de `OBJETO_DO_PERFIL_OPERACIONAL` (apps/core/models/user_profile.py):
+ * `/roles/` não diz o tipo de objeto de cada perfil operacional. Quando disser
+ * (pendência 8 de `docs/pendencias-backend-sprint-12b.md`), sai daqui.
+ */
 export const OBJETO_DO_PERFIL: Record<string, ObjetoTipo> = {
   "coordenador-evento": "evento",
   credenciador: "evento",
@@ -231,6 +218,23 @@ export const OBJETO_TIPO_LABEL: Record<ObjetoTipo, string> = {
 /** Perfil sem `categoria` (resposta antiga) conta como principal. */
 export function categoriaDoPerfil(perfil: Pick<Perfil, "categoria"> | undefined): CategoriaPerfil {
   return perfil?.categoria === "operacional" ? "operacional" : "principal";
+}
+
+/**
+ * Chips da coluna Perfis. `perfis` vem um item por vínculo: o principal se
+ * repete por território (que tem coluna própria) e vira um chip só; o
+ * operacional vira um chip por objeto, com o objeto no rótulo.
+ */
+export function perfisDaListagem(perfis: PerfilDoUsuario[]): { chave: string; rotulo: string }[] {
+  const itens = new Map<string, string>();
+  for (const p of perfis) {
+    const temObjeto = categoriaDoPerfil(p) === "operacional" && p.objeto_tipo && p.objeto_id != null;
+    const chave = temObjeto ? `${p.id}:${p.objeto_tipo}:${p.objeto_id}` : String(p.id);
+    if (itens.has(chave)) continue;
+    const tipo = temObjeto ? (OBJETO_TIPO_LABEL[p.objeto_tipo as ObjetoTipo] ?? p.objeto_tipo) : "";
+    itens.set(chave, temObjeto ? `${p.nome} · ${String(tipo).toLowerCase()} ${p.objeto_id}` : p.nome);
+  }
+  return Array.from(itens, ([chave, rotulo]) => ({ chave, rotulo }));
 }
 
 /** GET /api/v1/roles/ — os perfis ativos, com a categoria de cada um. */

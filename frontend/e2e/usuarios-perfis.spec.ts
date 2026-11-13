@@ -34,6 +34,7 @@ function apagarUsuarioDoTeste(): void {
 }
 
 type PerfilApi = { id: number; nome: string; slug: string; categoria: "principal" | "operacional" };
+type VinculoApi = { territorio_id: number | null; objeto_tipo: string | null; objeto_id: number | null };
 
 test.describe.configure({ mode: "serial" });
 test.use({ storageState: storageStatePath("superAdmin") });
@@ -94,11 +95,25 @@ test("cria usuário com perfil principal e operacional, e o backend guarda o obj
   );
   await expect(form).toHaveCount(0);
 
+  // O que ficou gravado, lido de volta: um vínculo principal sem objeto e o
+  // operacional preso ao evento 12, sem território.
+  const { id } = (await resposta.json()) as { id: number };
+  const gravado = await apiGet<{ perfis: (PerfilApi & VinculoApi)[] }>(page, origem, `/api/v1/users/${id}/`);
+  expect(gravado.perfis).toContainEqual(
+    expect.objectContaining({ id: principal.id, territorio_id: null, objeto_tipo: null, objeto_id: null }),
+  );
+  expect(gravado.perfis).toContainEqual(
+    expect.objectContaining({ id: operacional.id, territorio_id: null, objeto_tipo: "evento", objeto_id: 12 }),
+  );
+
+  // A listagem mostra o objeto do perfil operacional.
   await page.getByLabel("Buscar").fill("E2E-405");
-  await expect(page.getByText(NOME)).toBeVisible();
+  const linha = page.getByTestId(`usuario-linha-${id}`);
+  await expect(linha).toContainText(NOME);
+  await expect(linha).toContainText(`${operacional.nome} · evento 12`);
 });
 
-test("o filtro de categoria recorta os perfis oferecidos", async ({ page }) => {
+test("a categoria recorta os perfis; a lista filtra no servidor pelo perfil escolhido", async ({ page }) => {
   const origem = await abrirComApi(page, "/admin/usuarios");
   const { results: perfis } = await apiGet<{ results: PerfilApi[] }>(
     page,
@@ -107,14 +122,44 @@ test("o filtro de categoria recorta os perfis oferecidos", async ({ page }) => {
   );
   const operacionais = perfis.filter((p) => p.categoria === "operacional").map((p) => p.nome);
   const principal = perfis.find((p) => p.categoria === "principal")!;
+  const coordenador = perfis.find((p) => p.slug === "coordenador-evento")!;
+
+  const consultas: URL[] = [];
+  page.on("request", (r) => {
+    const url = new URL(r.url());
+    if (url.pathname === "/api/v1/users/" && r.method() === "GET") consultas.push(url);
+  });
 
   await page.getByTestId("usuarios-filtro-categoria").getByRole("combobox").click();
   await page.getByRole("option", { name: "Operacionais", exact: true }).click();
   await expect(page).toHaveURL(/categoria=operacional/);
+  // Sem filtro de categoria no backend (pendência 3), a tela avisa que falta o perfil.
+  await expect(page.getByTestId("usuarios-filtro-perfil")).toContainText(
+    "Escolha o perfil da categoria para filtrar a lista.",
+  );
 
   await page.getByTestId("usuarios-filtro-perfil").getByRole("combobox").click();
   for (const nome of operacionais) {
     await expect(page.getByRole("option", { name: nome, exact: true })).toBeVisible();
   }
   await expect(page.getByRole("option", { name: principal.nome, exact: true })).toHaveCount(0);
+
+  const filtrada = page.waitForResponse((r) => {
+    const url = new URL(r.url());
+    return url.pathname === "/api/v1/users/" && url.searchParams.get("perfil") === String(coordenador.id);
+  });
+  await page.getByRole("option", { name: coordenador.nome, exact: true }).click();
+  const { count, results } = (await (await filtrada).json()) as {
+    count: number;
+    results: { id: number; perfis: { id: number }[] }[];
+  };
+
+  // O servidor devolve só quem tem o perfil, e a tela mostra essa página.
+  expect(count).toBeGreaterThan(0);
+  expect(results.every((u) => u.perfis.some((p) => p.id === coordenador.id))).toBe(true);
+  await expect(page.locator('[data-testid^="usuario-linha-"]')).toHaveCount(results.length);
+  await expect(page.getByText(NOME)).toBeVisible();
+  // A categoria nunca vai na consulta, e cada mudança é uma consulta só (sem varrer páginas).
+  expect(consultas.every((u) => !u.searchParams.has("categoria"))).toBe(true);
+  expect(consultas.every((u) => u.searchParams.get("limit") !== "100")).toBe(true);
 });

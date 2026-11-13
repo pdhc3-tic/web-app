@@ -46,7 +46,8 @@ const TODOS_OS_TERRITORIOS: SelectOption = { value: "", label: "Todos os territ�
  * perfil. O seletor de objeto só existe na seção dos operacionais.
  *
  * O SGE e o SGS ainda não têm os cadastros desses objetos, então o objeto é
- * informado pelo número, como o backend guarda (`objeto_id`, sem FK).
+ * informado pelo número, como o backend guarda (`objeto_id`, sem FK). A busca
+ * desses objetos é a pendência 9 de `docs/pendencias-backend-sprint-12b.md`.
  */
 export function NovoUsuarioForm({ perfis, territoryOptions, onCriado, onCancelar }: Props) {
   const [form, setForm] = useState<NovoUsuario>(VAZIO);

@@ -38,7 +38,7 @@ Sem o filtro no servidor, a tela não tem como recortar a lista inteira: ela é 
 
 **Pedido:** aceitar `?categoria=principal|operacional` em `GET /users/`, devolvendo quem tem ao menos um perfil da categoria (`profiles__perfil__categoria`, com `distinct`).
 
-*Estado atual no frontend:* ao filtrar categoria, `listUsers` percorre todas as páginas do recorte atual, filtra os perfis e pagina o resultado no cliente. Assim a lista e a contagem ficam corretas, mas o custo cresce com o número de usuários. Quando o backend aceitar `categoria`, substituir essa leitura completa pelo filtro e pela paginação do servidor.
+*Estado atual no frontend:* o filtro "Categoria de perfil" existe e recorta as opções do filtro "Perfil" à categoria escolhida; a lista só muda quando o perfil é escolhido, e a tela avisa isso. Quando o backend aceitar `categoria`, a tela passa a enviá-la em `listUsers` e a lista filtra só pela categoria.
 
 ## 4. Justificativa obrigatória na simulação do remanejamento (#402)
 
@@ -84,3 +84,19 @@ A ficha da atividade mostra o bloco "Riscos de glosa" só com os riscos em abert
 **Pedido:** aceitar `?aberto=true|false` em `GlosaRiskQuerySerializer` (`resolvido_em__isnull`). Se a ficha também for mostrar o total exposto, devolvê-lo junto da listagem (ex.: `total_exposto` no envelope da paginação), para o front não somar.
 
 *Estado atual no frontend:* `listRiscosDeGlosaDaAtividade` pede uma página de 100 da atividade, e a ficha descarta os resolvidos (`riscosAbertos`) e soma o exposto (`totalExposto`). Uma atividade com mais de 100 riscos teria a lista cortada. Quando o filtro existir, a tela pede só os abertos e usa o total do servidor.
+
+## 8. Tipo de objeto dos perfis operacionais em `/roles/` (#405)
+
+O cadastro de usuário pede o objeto de cada perfil operacional e manda `objeto_tipo` no `perfis_input`. O backend confere o tipo contra `OBJETO_DO_PERFIL_OPERACIONAL` (`apps/core/models/user_profile.py`), mas `RoleSerializer` devolve só `categoria`, sem o tipo. O front mantém uma cópia do mapa (coordenador-evento e credenciador → evento, avaliador-selecao → candidatura, gestor-edital → edital). Um perfil operacional novo, ou um tipo trocado no backend, faz a tela mandar o tipo errado ou nulo, e o cadastro é recusado com um erro que a pessoa não consegue corrigir.
+
+**Pedido:** `RoleSerializer` devolver `objeto_tipo` (`evento`, `edital`, `candidatura`, ou nulo no principal).
+
+*Estado atual no frontend:* `OBJETO_DO_PERFIL` em `app/lib/users.ts`. Quando o campo existir, a tela usa o que vier do perfil e o mapa sai.
+
+## 9. Busca dos objetos de abrangência (#405)
+
+A #405 pede um seletor de objeto para o perfil operacional. O backend guarda o objeto só pelo número (`objeto_tipo` + `objeto_id`, sem FK) e ainda não tem os cadastros de evento, edital e candidatura do SGE e do SGS. Não há o que listar, então a tela pede o número do objeto ("Evento (número)"), e nada confere se ele existe.
+
+**Pedido:** quando os cadastros existirem, uma busca por tipo, acessível ao Super Admin, por exemplo `GET /core/objetos-abrangencia/?tipo=evento&q=`, devolvendo `id` e um nome para exibir. O `perfis_input` também deveria recusar um `objeto_id` que não existe.
+
+*Estado atual no frontend:* campo de número no `NovoUsuarioForm`, e a listagem mostra o objeto pelo número ("Coordenador de evento · evento 12"). Com a busca, o campo vira um seletor e a listagem mostra o nome.
