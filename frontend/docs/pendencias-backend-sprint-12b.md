@@ -100,3 +100,13 @@ A #405 pede um seletor de objeto para o perfil operacional. O backend guarda o o
 **Pedido:** quando os cadastros existirem, uma busca por tipo, acessível ao Super Admin, por exemplo `GET /core/objetos-abrangencia/?tipo=evento&q=`, devolvendo `id` e um nome para exibir. O `perfis_input` também deveria recusar um `objeto_id` que não existe.
 
 *Estado atual no frontend:* campo de número no `NovoUsuarioForm`, e a listagem mostra o objeto pelo número ("Coordenador de evento · evento 12"). Com a busca, o campo vira um seletor e a listagem mostra o nome.
+
+## 10. Desativação da própria conta e do último Super Admin (#406)
+
+`DELETE /users/{id}/` desativa qualquer usuário, inclusive quem faz o pedido. Nada impede um Super Admin de desativar a si mesmo, nem de desativar o último Super Admin ativo, o que deixa o sistema sem ninguém que reative contas ou gerencie perfis. O `PATCH` com `ativo: false` segue o mesmo caminho (`perform_update` chama `desativar`).
+
+**Pedido:** `desativar` (ou o `UserViewSet`) recusar, com 400 e uma mensagem:
+- a desativação da própria conta;
+- a do último usuário ativo com perfil Super Admin.
+
+*Estado atual no frontend:* a listagem não mostra o botão Desativar na linha de quem está logado (`UsersTable`, `usuarioLogadoId`). É só uma proteção de tela: outro Super Admin pode desativar o último colega, e qualquer cliente da API pode desativar a própria conta.

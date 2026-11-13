@@ -35,6 +35,7 @@ import { UsersTable } from "./_components/UsersTable";
 import { NovoUsuarioForm } from "./_components/NovoUsuarioForm";
 import { DesativarUsuarioDialog } from "./_components/DesativarUsuarioDialog";
 import { useSession } from "next-auth/react";
+import { useQueryClient } from "@tanstack/react-query";
 
 const SEARCH_DEBOUNCE_MS = 300;
 const DEFAULT_LIMIT = 25;
@@ -107,6 +108,7 @@ function UsuariosView() {
   const [reloadKey, setReloadKey] = useState(0);
 
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const [roles, setRoles] = useState<Perfil[]>([]);
   // O filtro Perfil mostra só os perfis da categoria escolhida (#405).
   const roleOptions = useMemo(() => opcoesDePerfil(roles, filters.categoria), [roles, filters.categoria]);
@@ -402,6 +404,10 @@ function UsuariosView() {
           setDesativando(null);
           showToast(`Usuário "${usuario.nome_completo}" desativado.`, "success");
           setReloadKey((k) => k + 1);
+          // As demandas canceladas liberaram saldo: o que o SGD e o orçamento já
+          // carregaram (listas, saldos, painéis) está velho.
+          void queryClient.invalidateQueries({ queryKey: ["sgd"] });
+          void queryClient.invalidateQueries({ queryKey: ["sgp", "orcamento"] });
         }}
       />
     </>

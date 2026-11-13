@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import Spinner from "@/app/components/icons/Spinner";
 import { Button } from "@/app/components/ui/Button/Button";
@@ -29,7 +29,21 @@ type Props = {
  * devolve: as demandas que serão canceladas e o saldo que volta para as
  * rubricas. O botão só libera depois que o impacto carregou e a pessoa marcou
  * a confirmação. Se o impacto não carregar, não dá para desativar às cegas.
+ *
+ * Se uma demanda muda entre a leitura do impacto e a desativação, o backend
+ * desfaz tudo (`INVALID_TRANSITION`). O diálogo recalcula o impacto e pede a
+ * confirmação de novo, em vez de deixar a pessoa repetir o clique às cegas.
  */
+export const AVISO_IMPACTO_MUDOU =
+  "As demandas desta pessoa mudaram enquanto o diálogo estava aberto. Confira o impacto atualizado e confirme de novo.";
+
+/** O erro de domínio vem como `{status: [msg], code}`; a normalização do `ApiError` troca o code, então ele é lido do corpo. */
+function impactoMudou(e: unknown): boolean {
+  if (!(e instanceof ApiError)) return false;
+  const corpo = e.raw as { code?: unknown } | null | undefined;
+  return e.code === "INVALID_TRANSITION" || corpo?.code === "INVALID_TRANSITION";
+}
+
 export function DesativarUsuarioDialog({ usuario, onClose, onDesativado }: Props) {
   const statusLabel = useRotuloChoice("demanda_status");
   const [impacto, setImpacto] = useState<ImpactoDesativacao | null>(null);
@@ -40,15 +54,20 @@ export function DesativarUsuarioDialog({ usuario, onClose, onDesativado }: Props
   const [erro, setErro] = useState<string | null>(null);
 
   const userId = usuario?.id ?? null;
+  const ultimoUsuario = useRef<number | null>(null);
 
   useEffect(() => {
+    // O erro da desativação só some ao trocar de pessoa: no recálculo depois de
+    // um `INVALID_TRANSITION`, ele é o aviso de por que o impacto mudou.
+    const trocouDePessoa = ultimoUsuario.current !== userId;
+    ultimoUsuario.current = userId;
     if (userId === null) return;
     const controller = new AbortController();
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setImpacto(null);
     setErroImpacto(null);
     setCiente(false);
-    setErro(null);
+    if (trocouDePessoa) setErro(null);
     fetchImpactoDesativacao(userId, controller.signal)
       .then(setImpacto)
       .catch((e: unknown) => {
@@ -68,6 +87,11 @@ export function DesativarUsuarioDialog({ usuario, onClose, onDesativado }: Props
       await desativarUsuario(usuario.id);
       onDesativado(usuario);
     } catch (e) {
+      if (impactoMudou(e)) {
+        setErro(AVISO_IMPACTO_MUDOU);
+        setTentativa((n) => n + 1);
+        return;
+      }
       setErro(e instanceof ApiError ? e.message : "Não foi possível desativar o usuário. Tente novamente.");
     } finally {
       setDesativando(false);
@@ -99,7 +123,7 @@ export function DesativarUsuarioDialog({ usuario, onClose, onDesativado }: Props
       }
     >
       {usuario && (
-        <div className="flex flex-col gap-5 px-4 py-6" data-testid="desativar-usuario-dialog">
+        <div className="flex flex-col gap-5 px-4 py-4" data-testid="desativar-usuario-dialog">
           <div className="flex items-start gap-3">
             <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-error-bg text-error-text">
               <AlertTriangle className="h-5 w-5" aria-hidden />
@@ -110,7 +134,7 @@ export function DesativarUsuarioDialog({ usuario, onClose, onDesativado }: Props
               </p>
               <p className="mt-1 text-sm leading-relaxed text-text-muted">
                 A pessoa perde o acesso ao sistema. As demandas dela que ainda não foram autorizadas são
-                canceladas, e o saldo que reservavam volta para as rubricas.
+                canceladas, e o saldo que elas reservavam no limite e no orçamento é liberado.
               </p>
             </div>
           </div>

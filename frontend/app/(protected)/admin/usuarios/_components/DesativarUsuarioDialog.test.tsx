@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/app/lib/api";
 import type { ImpactoDesativacao, UserListItem } from "@/app/lib/users";
-import { DesativarUsuarioDialog } from "./DesativarUsuarioDialog";
+import { AVISO_IMPACTO_MUDOU, DesativarUsuarioDialog } from "./DesativarUsuarioDialog";
 
 /** #406 — o diálogo lista o impacto e exige confirmação explícita antes de desativar. */
 
@@ -113,6 +113,37 @@ describe("DesativarUsuarioDialog (#406)", () => {
     fireEvent.click(confirmar());
 
     expect((await screen.findByTestId("desativar-erro")).textContent).toBe("Não foi possível cancelar a demanda 41.");
+    expect(onDesativado).not.toHaveBeenCalled();
+  });
+
+  it("se as demandas mudaram no meio do caminho, recalcula o impacto e pede a confirmação de novo", async () => {
+    // A 41 foi autorizada depois da leitura: o backend desfaz a desativação.
+    const depois: ImpactoDesativacao = {
+      demandas: [IMPACTO.demandas[1]],
+      saldo_por_rubrica: [],
+      saldo_liberado: "0.00",
+    };
+    api.impacto.mockResolvedValueOnce(IMPACTO).mockResolvedValueOnce(depois);
+    api.desativar.mockRejectedValue(
+      // Como o backend responde: `{status: [msg], code}`, que a normalização vira `validation_error`.
+      new ApiError(
+        400,
+        { code: "validation_error", message: "Transição inválida." },
+        { status: ["Transição inválida."], code: "INVALID_TRANSITION" },
+      ),
+    );
+    const { onDesativado } = montar();
+
+    await screen.findByTestId("impacto-demanda-41");
+    fireEvent.click(screen.getByTestId("desativar-ciente"));
+    fireEvent.click(confirmar());
+
+    await waitFor(() => expect(screen.queryByTestId("impacto-demanda-41")).toBeNull());
+    expect(await screen.findByTestId("impacto-demanda-42")).toBeTruthy();
+    expect(api.impacto).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("desativar-erro").textContent).toBe(AVISO_IMPACTO_MUDOU);
+    expect((screen.getByTestId("desativar-ciente") as HTMLInputElement).checked).toBe(false);
+    expect(confirmar().disabled).toBe(true);
     expect(onDesativado).not.toHaveBeenCalled();
   });
 });
