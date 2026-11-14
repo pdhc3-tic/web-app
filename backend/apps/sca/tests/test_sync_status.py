@@ -13,7 +13,7 @@ import pytest
 from django.utils import timezone
 
 from apps.sca.models import SyncDevice
-from apps.sgp.tests.factories import UPFFactory
+from apps.sgp.tests.factories import UFPAFactory
 
 
 def get_status(auth_client, device_id="dev-001"):
@@ -40,13 +40,13 @@ def test_status_com_ultimo_sync_e_pendentes(auth_client, usuario, municipio, pro
     device.ultimo_push_em = timezone.now() - timedelta(hours=2)
     device.save(update_fields=["ultimo_push_em"])
 
-    UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
+    UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
 
     response = get_status(auth_client)
 
     assert response.status_code == 200
     assert response.data["ultimo_sync_servidor"] is not None
-    assert response.data["registros_pendentes_servidor"] == 2  # 1 UPF + 1 membro (titular)
+    assert response.data["registros_pendentes_servidor"] == 2  # 1 UFPA + 1 membro (titular)
     assert response.data["acesso_revogado"] is False
 
 
@@ -73,7 +73,7 @@ def test_status_nao_duplica_device(auth_client, usuario):
 @pytest.mark.performance
 def test_status_performance_abaixo_200ms(auth_client, usuario, municipio, projeto):
     for i in range(500):
-        UPFFactory(
+        UFPAFactory(
             municipio=municipio,
             projeto=projeto,
             titular_cpf=f"{i:011d}",
@@ -84,5 +84,5 @@ def test_status_performance_abaixo_200ms(auth_client, usuario, municipio, projet
     duracao_ms = (time.perf_counter() - inicio) * 1000
 
     assert response.status_code == 200
-    assert response.data["registros_pendentes_servidor"] == 1000  # 500 UPFs + 500 titulares
+    assert response.data["registros_pendentes_servidor"] == 1000  # 500 UFPAs + 500 titulares
     assert duracao_ms < 200, f"Status demorou {duracao_ms:.1f}ms (limite: 200ms)"

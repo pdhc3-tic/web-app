@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.sgp.filters import ProducaoConsolidadaFilter
-from apps.sgp.models import Production, UPF
+from apps.sgp.models import Production, UFPA
 from apps.sgp.pagination import ProducaoPagination
 from apps.sgp.serializers import ProducaoConsolidadaSerializer, ProductionSerializer
 from apps.sgp.services.access import scope_queryset
@@ -20,18 +20,18 @@ class ProductionViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedActiveAccess]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
-    def get_upf(self):
-        if not hasattr(self, "_upf"):
-            self._upf = get_object_or_404(
-                self._accessible_upf_queryset(),
-                pk=self.kwargs["upf_pk"],
+    def get_ufpa(self):
+        if not hasattr(self, "_ufpa"):
+            self._ufpa = get_object_or_404(
+                self._accessible_ufpa_queryset(),
+                pk=self.kwargs["ufpa_pk"],
             )
-        return self._upf
+        return self._ufpa
 
-    def _accessible_upf_queryset(self):
+    def _accessible_ufpa_queryset(self):
         # all_objects: a checagem de ativo é feita explicitamente em
-        # perform_create (UPF inativa não pode receber produção), não aqui.
-        qs = UPF.all_objects.select_related("municipio", "municipio__state", "territorio")
+        # perform_create (UFPA inativa não pode receber produção), não aqui.
+        qs = UFPA.all_objects.select_related("municipio", "municipio__state", "territorio")
         return scope_queryset(
             qs,
             self.request.user,
@@ -41,18 +41,18 @@ class ProductionViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return (
-            Production.objects.filter(upf=self.get_upf())
-            .select_related("upf", "cultura", "especie")
+            Production.objects.filter(ufpa=self.get_ufpa())
+            .select_related("ufpa", "cultura", "especie")
             .order_by("-criado_em")
         )
 
     def perform_create(self, serializer):
-        upf = self.get_upf()
-        if not upf.ativo:
+        ufpa = self.get_ufpa()
+        if not ufpa.ativo:
             raise serializers.ValidationError(
-                "Não é possível adicionar produção a uma UPF inativa."
+                "Não é possível adicionar produção a uma UFPA inativa."
             )
-        instance = serializer.save(upf=upf)
+        instance = serializer.save(ufpa=ufpa)
         self._log_production_audit(
             "production.create",
             instance,
@@ -82,7 +82,7 @@ class ProductionViewSet(viewsets.ModelViewSet):
     def _production_snapshot(self, production):
         return {
             "production_id": production.pk,
-            "upf_id": production.upf_id,
+            "ufpa_id": production.ufpa_id,
             "tipo": production.tipo,
             "cultura_id": production.cultura_id,
             "area_ha": self._decimal_to_str(production.area_ha),
@@ -132,7 +132,7 @@ class ProductionViewSet(viewsets.ModelViewSet):
 
 
 class ProducaoConsolidadaViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
-    """Produção de todas as UPFs ativas no escopo territorial do usuário."""
+    """Produção de todas as UFPAs ativas no escopo territorial do usuário."""
 
     serializer_class = ProducaoConsolidadaSerializer
     permission_classes = [IsAuthenticatedActiveAccess]
@@ -144,14 +144,14 @@ class ProducaoConsolidadaViewSet(mixins.ListModelMixin, viewsets.GenericViewSet)
         # Na geração do schema não há usuário real para o recorte por perfil.
         if getattr(self, "swagger_fake_view", False):
             return Production.objects.none()
-        qs = Production.objects.filter(upf__ativo=True).select_related(
-            "cultura", "especie", "upf__titular", "upf__municipio", "upf__territorio"
+        qs = Production.objects.filter(ufpa__ativo=True).select_related(
+            "cultura", "especie", "ufpa__titular", "ufpa__municipio", "ufpa__territorio"
         )
         return scope_queryset(
             qs,
             self.request.user,
-            state_lookup="upf__municipio__state__sigla__in",
-            territory_lookup="upf__territorio__in",
+            state_lookup="ufpa__municipio__state__sigla__in",
+            territory_lookup="ufpa__territorio__in",
         ).order_by("-criado_em", "-pk")
 
     @extend_schema(
@@ -159,7 +159,7 @@ class ProducaoConsolidadaViewSet(mixins.ListModelMixin, viewsets.GenericViewSet)
         responses=inline_serializer(
             "ProducaoIndicadores",
             fields={
-                "total_upfs_produtoras": serializers.IntegerField(),
+                "total_ufpas_produtoras": serializers.IntegerField(),
                 "area_total_ha": serializers.DecimalField(max_digits=14, decimal_places=2),
                 "principais_culturas": inline_serializer(
                     "ProducaoCulturaContagem",

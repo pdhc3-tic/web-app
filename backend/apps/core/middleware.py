@@ -12,6 +12,27 @@ from apps.core.utils import get_client_ip
 logger = logging.getLogger(__name__)
 
 
+# Prefixo antigo → rota canônica. Ficam ativos por um ciclo, até o front migrar.
+ROTAS_DEPRECIADAS = {
+    "/api/v1/sgp/upfs/": "/api/v1/sgp/ufpas/",
+    "/api/v1/upfs/": "/api/v1/sgp/ufpas/",
+}
+
+
+class RotaDepreciadaMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        for prefixo, canonica in ROTAS_DEPRECIADAS.items():
+            if request.path.startswith(prefixo):
+                response["Deprecation"] = "true"
+                response["Link"] = f'<{canonica}{request.path[len(prefixo):]}>; rel="successor-version"'
+                break
+        return response
+
+
 class ContentSecurityPolicyMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response

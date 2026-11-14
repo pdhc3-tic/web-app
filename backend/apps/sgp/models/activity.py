@@ -164,11 +164,12 @@ class Activity(SoftDeleteModel, ScaSyncableModel):
     data_fim = models.DateTimeField(verbose_name="Data de Fim")
 
     # ── Participantes ────────────────────────────────────────────────────────
-    upfs_participantes = models.ManyToManyField(
-        "sgp.UPF",
+    ufpas_participantes = models.ManyToManyField(
+        "sgp.UFPA",
         related_name="atividades",
         blank=True,
-        verbose_name="UPFs Participantes",
+        db_table="sgp_activityufpa",
+        verbose_name="UFPAs Participantes",
     )
     membros_participantes = models.ManyToManyField(
         "sgp.MembroFamilia",

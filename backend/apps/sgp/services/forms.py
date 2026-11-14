@@ -3,8 +3,8 @@ from django.db.models import Q
 from apps.core.services.permissions import user_territories
 
 
-def get_available_upf_forms(user) -> list[dict]:
-    """Return published UPF forms without making SGP depend on SGF availability."""
+def get_available_ufpa_forms(user) -> list[dict]:
+    """Return published UFPA forms without making SGP depend on SGF availability."""
     try:
         from apps.sgf.models import FormularioSGF
 
@@ -14,7 +14,7 @@ def get_available_upf_forms(user) -> list[dict]:
 
         forms = FormularioSGF.objects.filter(
             status="publicado",
-            tipo_entidade_alvo="upf",
+            tipo_entidade_alvo="ufpa",
         ).filter(
             Q(territorio__in=territories) | Q(territorio__isnull=True)
         ).order_by("atualizado_em")

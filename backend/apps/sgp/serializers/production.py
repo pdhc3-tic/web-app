@@ -26,7 +26,7 @@ class ProductionSerializer(serializers.ModelSerializer):
         model = Production
         fields = [
             "id",
-            "upf",
+            "ufpa",
             "tipo",
             "cultura",
             "cultura_id",
@@ -50,7 +50,7 @@ class ProductionSerializer(serializers.ModelSerializer):
             "criado_em",
             "atualizado_em",
         ]
-        read_only_fields = ["id", "upf", "criado_em", "atualizado_em"]
+        read_only_fields = ["id", "ufpa", "criado_em", "atualizado_em"]
 
     def validate(self, attrs):
         tipo = attrs.get("tipo", self.instance.tipo if self.instance else None)
@@ -90,16 +90,16 @@ class ProductionSerializer(serializers.ModelSerializer):
 
 
 class ProducaoConsolidadaSerializer(ProductionSerializer):
-    upf_id = serializers.IntegerField(read_only=True)
-    upf_nome_titular = serializers.CharField(
-        source="upf.titular.nome_completo", read_only=True
+    ufpa_id = serializers.IntegerField(read_only=True)
+    ufpa_nome_titular = serializers.CharField(
+        source="ufpa.titular.nome_completo", read_only=True
     )
-    municipio = serializers.CharField(source="upf.municipio.nome", read_only=True)
+    municipio = serializers.CharField(source="ufpa.municipio.nome", read_only=True)
     territorio = serializers.CharField(
-        source="upf.territorio.nome", read_only=True, allow_null=True
+        source="ufpa.territorio.nome", read_only=True, allow_null=True
     )
 
     class Meta(ProductionSerializer.Meta):
         fields = ProductionSerializer.Meta.fields + [
-            "upf_id", "upf_nome_titular", "municipio", "territorio",
+            "ufpa_id", "ufpa_nome_titular", "municipio", "territorio",
         ]

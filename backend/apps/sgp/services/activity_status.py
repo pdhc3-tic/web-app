@@ -56,9 +56,9 @@ class DataFimInvalidaError(ActivityRuleError):
     sync_code = "DATA_FIM_INVALIDA"
 
 
-class MembroForaUPFError(ActivityRuleError):
+class MembroForaUFPAError(ActivityRuleError):
     field = "membros_participantes"
-    sync_code = "MEMBRO_FORA_UPF"
+    sync_code = "MEMBRO_FORA_UFPA"
 
 
 _STATUS_EXIGE_JUSTIFICATIVA = {"nao_realizada", "cancelada"}
@@ -139,26 +139,26 @@ def validar_datas(data_inicio, data_fim):
         raise DataFimInvalidaError("data_fim não pode ser anterior a data_inicio.")
 
 
-def validar_membros_participantes(upfs_ids, membros_ids):
-    """Levanta MembroForaUPFError se algum de `membros_ids` não pertencer a
-    nenhuma das UPFs em `upfs_ids`.
+def validar_membros_participantes(ufpas_ids, membros_ids):
+    """Levanta MembroForaUFPAError se algum de `membros_ids` não pertencer a
+    nenhuma das UFPAs em `ufpas_ids`.
 
     Aceita ids (não instâncias) dos dois lados, para servir tanto o
     serializer web (que já tem os objetos, bastando `.pk`) quanto o sync do
     SCA (que só tem ids resolvidos do payload/uuid_map).
     """
-    upfs_ids = set(upfs_ids or ())
+    ufpas_ids = set(ufpas_ids or ())
     membros_ids = list(membros_ids or ())
-    if not upfs_ids or not membros_ids:
+    if not ufpas_ids or not membros_ids:
         return
     invalidos = list(
         MembroFamilia.objects.filter(pk__in=membros_ids)
-        .exclude(upf_id__in=upfs_ids)
+        .exclude(ufpa_id__in=ufpas_ids)
         .values_list("pk", flat=True)
     )
     if invalidos:
-        raise MembroForaUPFError(
-            f"Membros {invalidos} não pertencem às UPFs participantes selecionadas."
+        raise MembroForaUFPAError(
+            f"Membros {invalidos} não pertencem às UFPAs participantes selecionadas."
         )
 
 

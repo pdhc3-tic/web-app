@@ -53,7 +53,7 @@ def clear_fake_querysets():
 
 
 @pytest.mark.django_db
-def test_available_forms_returns_only_published_upf_contract(auth_client, territory, monkeypatch):
+def test_available_forms_returns_only_published_ufpa_contract(auth_client, territory, monkeypatch):
     form = SimpleNamespace(
         pk=1,
         nome="Diagnóstico produtivo",
@@ -75,7 +75,7 @@ def test_available_forms_returns_only_published_upf_contract(auth_client, territ
     }
     assert FakeQuerySet.created[0].filters == {
         "status": "publicado",
-        "tipo_entidade_alvo": "upf",
+        "tipo_entidade_alvo": "ufpa",
     }
     assert FakeQuerySet.created[-1].q is not None
     assert ("territorio__isnull", True) in FakeQuerySet.created[-1].q.children
@@ -214,7 +214,7 @@ def test_filtro_exclui_formularios_nao_publicados_por_status(
 
 
 @pytest.mark.django_db
-def test_filtro_aplica_tipo_entidade_alvo_igual_upf(
+def test_filtro_aplica_tipo_entidade_alvo_igual_ufpa(
     auth_client, territory, monkeypatch
 ):
     form = SimpleNamespace(
@@ -229,7 +229,7 @@ def test_filtro_aplica_tipo_entidade_alvo_igual_upf(
     response = auth_client.get(URL)
 
     assert response.status_code == 200
-    assert FakeQuerySet.created[0].filters["tipo_entidade_alvo"] == "upf"
+    assert FakeQuerySet.created[0].filters["tipo_entidade_alvo"] == "ufpa"
 
 
 @pytest.mark.django_db
@@ -292,7 +292,7 @@ def test_serializer_nao_expoe_campos_internos_status_tipo_entidade_territorio(
         descricao="Descrição",
         atualizado_em=timezone.now(),
         status="publicado",
-        tipo_entidade_alvo="upf",
+        tipo_entidade_alvo="ufpa",
         territorio=None,
     )
     install_fake_sgf(monkeypatch, [form])

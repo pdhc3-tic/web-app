@@ -16,17 +16,17 @@ from apps.sgp.models.mixins import ScaSyncableModel
 from .base import SoftDeleteModel
 
 
-class UPF(SoftDeleteModel, ScaSyncableModel):
+class UFPA(SoftDeleteModel, ScaSyncableModel):
     projeto = models.ForeignKey(
         "sgp.Projeto",
         on_delete=models.CASCADE,
-        related_name="upfs",
+        related_name="ufpas",
         verbose_name="Projeto",
     )
     comunidade = models.ForeignKey(
         "sgp.Comunidade",
         on_delete=models.PROTECT,
-        related_name="upfs",
+        related_name="ufpas",
         null=True,
         blank=True,
         verbose_name="Comunidade",
@@ -34,7 +34,7 @@ class UPF(SoftDeleteModel, ScaSyncableModel):
     titular = models.OneToOneField(
         "sgp.MembroFamilia",
         on_delete=models.PROTECT,
-        related_name="upf_titular",
+        related_name="ufpa_titular",
         verbose_name="Titular",
     )
 
@@ -77,13 +77,13 @@ class UPF(SoftDeleteModel, ScaSyncableModel):
     municipio = models.ForeignKey(
         "core.Municipality",
         on_delete=models.PROTECT,
-        related_name="upfs",
+        related_name="ufpas",
         verbose_name="Município",
     )
     territorio = models.ForeignKey(
         "core.Territory",
         on_delete=models.PROTECT,
-        related_name="upfs",
+        related_name="ufpas",
         verbose_name="Território",
     )
 
@@ -159,14 +159,14 @@ class UPF(SoftDeleteModel, ScaSyncableModel):
     )
 
     class Meta(SoftDeleteModel.Meta, ScaSyncableModel.Meta):
-        verbose_name = "UPF"
-        verbose_name_plural = "UPFs"
+        verbose_name = "UFPA"
+        verbose_name_plural = "UFPAs"
         ordering = ["-criado_em"]
         indexes = [
-            models.Index(fields=["municipio"], name="idx_upf_municipio"),
-            models.Index(fields=["territorio"], name="idx_upf_territorio"),
-            models.Index(fields=["projeto"], name="idx_upf_projeto"),
-            models.Index(fields=["comunidade"], name="idx_upf_comunidade"),
+            models.Index(fields=["municipio"], name="idx_ufpa_municipio"),
+            models.Index(fields=["territorio"], name="idx_ufpa_territorio"),
+            models.Index(fields=["projeto"], name="idx_ufpa_projeto"),
+            models.Index(fields=["comunidade"], name="idx_ufpa_comunidade"),
         ]
 
     def __str__(self):

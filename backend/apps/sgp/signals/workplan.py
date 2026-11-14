@@ -10,7 +10,7 @@ from django.dispatch import receiver
 
 from apps.sgp.models.activity import Activity
 from apps.sgp.models.membro import MembroFamilia
-from apps.sgp.models.upf import UPF
+from apps.sgp.models.ufpa import UFPA
 from apps.sgp.models.workplan import WorkPlanAcao, valores_gravados
 from apps.sgp.services.apuracao import (
     recalcular_quantidade_realizada,
@@ -83,8 +83,8 @@ def _recalcular_apos_vinculos(sender, instance, action, reverse, pk_set, **kwarg
 
 m2m_changed.connect(
     _recalcular_apos_vinculos,
-    sender=Activity.upfs_participantes.through,
-    dispatch_uid="sgp_apuracao_upfs_participantes",
+    sender=Activity.ufpas_participantes.through,
+    dispatch_uid="sgp_apuracao_ufpas_participantes",
 )
 m2m_changed.connect(
     _recalcular_apos_vinculos,
@@ -95,7 +95,7 @@ m2m_changed.connect(
 
 # Excluir de fato uma UFPA ou um membro apaga os vínculos em cascata sem
 # disparar m2m_changed; as Ações das Atividades afetadas são lidas antes.
-@receiver(pre_delete, sender=UPF, dispatch_uid="sgp_apuracao_upf_pre_delete")
+@receiver(pre_delete, sender=UFPA, dispatch_uid="sgp_apuracao_ufpa_pre_delete")
 @receiver(pre_delete, sender=MembroFamilia, dispatch_uid="sgp_apuracao_membro_pre_delete")
 def _capturar_acoes_antes_de_excluir(sender, instance, **kwargs):
     instance._acoes_afetadas = set(
@@ -103,7 +103,7 @@ def _capturar_acoes_antes_de_excluir(sender, instance, **kwargs):
     )
 
 
-@receiver(post_delete, sender=UPF, dispatch_uid="sgp_apuracao_upf_post_delete")
+@receiver(post_delete, sender=UFPA, dispatch_uid="sgp_apuracao_ufpa_post_delete")
 @receiver(post_delete, sender=MembroFamilia, dispatch_uid="sgp_apuracao_membro_post_delete")
 def _recalcular_apos_excluir(sender, instance, **kwargs):
     recalcular_quantidade_realizada(getattr(instance, "_acoes_afetadas", set()))

@@ -25,7 +25,7 @@ EXPORT_COLUMNS = (
     ("meta", "Meta"),
     ("acao", "Ação"),
     ("tecnico_responsavel", "Técnico responsável"),
-    ("total_upfs", "UPFs participantes"),
+    ("total_ufpas", "UFPAs participantes"),
     ("total_participantes", "Participantes"),
     ("atrasada", "Atrasada"),
 )
@@ -33,7 +33,7 @@ EXPORT_COLUMNS = (
 
 def _contagem_m2m(through):
     # Subquery em vez de Count() anotado: dois M2M no mesmo JOIN multiplicam
-    # as linhas (UPFs × membros) antes do DISTINCT.
+    # as linhas (UFPAs × membros) antes do DISTINCT.
     return Coalesce(
         Subquery(
             through.objects.filter(activity_id=OuterRef("pk"))
@@ -60,7 +60,7 @@ def activity_export_queryset(
         "municipio", "municipio__state", "municipio__territory",
         "comunidade", "tecnico_responsavel",
     ).annotate(
-        _total_upfs=_contagem_m2m(Activity.upfs_participantes.through),
+        _total_ufpas=_contagem_m2m(Activity.ufpas_participantes.through),
         _total_participantes=_contagem_m2m(Activity.membros_participantes.through),
     )
     qs = scope_queryset(
@@ -106,7 +106,7 @@ def _serialize(activity: Activity, agora) -> dict[str, str]:
         "meta": f"{acao.meta.numero} - {acao.meta.titulo}",
         "acao": f"{acao.numero} - {acao.descricao}",
         "tecnico_responsavel": activity.tecnico_responsavel.nome,
-        "total_upfs": str(activity._total_upfs),
+        "total_ufpas": str(activity._total_ufpas),
         "total_participantes": str(activity._total_participantes),
         "atrasada": "Sim" if activity.esta_atrasada(agora) else "Não",
     }

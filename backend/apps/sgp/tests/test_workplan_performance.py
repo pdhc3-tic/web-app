@@ -10,7 +10,7 @@ Cobertura (tabela da issue):
     5. test_painel_queries_constantes — Mesmo nº de queries com 5 e com 30 Ações
        (bate no endpoint real do painel do PT, não em /api/v1/metas/)
     6. test_painel_sob_500ms — Dataset de carga; assertiva de tempo
-    7. test_listagem_5000_upfs_sob_3s — Dataset de carga; assertiva de tempo
+    7. test_listagem_5000_ufpas_sob_3s — Dataset de carga; assertiva de tempo
 
 Os testes de carga/queries imprimem o valor medido (rodar com `-s` para ver
 no output) — é o que alimenta os números de `backend/docs/performance.md`.
@@ -27,7 +27,7 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from apps.core.tests.factories import UserFactory
-from apps.sgp.models import UPF, Activity, MembroFamilia, WorkPlanAcao
+from apps.sgp.models import UFPA, Activity, MembroFamilia, WorkPlanAcao
 from apps.sgp.budget.services import limiares_semaforo
 from apps.sgp.tests.factories import (
     ActivityFactory,
@@ -174,7 +174,7 @@ def test_painel_sob_500ms(auth_client, municipio):
 
 
 @pytest.mark.performance
-def test_listagem_5000_upfs_sob_3s(auth_client, projeto, municipio, territory):
+def test_listagem_5000_ufpas_sob_3s(auth_client, projeto, municipio, territory):
     titulares = [
         MembroFamilia(
             nome_completo=f"Titular de carga {indice}",
@@ -186,8 +186,8 @@ def test_listagem_5000_upfs_sob_3s(auth_client, projeto, municipio, territory):
     ]
     MembroFamilia.objects.bulk_create(titulares, batch_size=1000)
 
-    upfs = [
-        UPF(
+    ufpas = [
+        UFPA(
             projeto=projeto,
             municipio=municipio,
             territorio=territory,
@@ -196,17 +196,17 @@ def test_listagem_5000_upfs_sob_3s(auth_client, projeto, municipio, territory):
         )
         for titular in titulares
     ]
-    UPF.objects.bulk_create(upfs, batch_size=1000)
+    UFPA.objects.bulk_create(ufpas, batch_size=1000)
 
-    for titular, upf in zip(titulares, upfs):
-        titular.upf = upf
-    MembroFamilia.objects.bulk_update(titulares, ["upf"], batch_size=1000)
+    for titular, ufpa in zip(titulares, ufpas):
+        titular.ufpa = ufpa
+    MembroFamilia.objects.bulk_update(titulares, ["ufpa"], batch_size=1000)
 
     started_at = monotonic()
-    response = auth_client.get(f"/api/v1/upfs/?municipio={municipio.pk}&page_size=50")
+    response = auth_client.get(f"/api/v1/sgp/ufpas/?municipio={municipio.pk}&page_size=50")
     elapsed = monotonic() - started_at
 
-    print(f"\n[RNF] listagem de 5.000 UPFs paginada: {elapsed:.3f}s (limite 3s)")
+    print(f"\n[RNF] listagem de 5.000 UFPAs paginada: {elapsed:.3f}s (limite 3s)")
 
     assert response.status_code == 200
     assert len(response.data["results"]) == 50

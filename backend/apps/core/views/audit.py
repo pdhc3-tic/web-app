@@ -1,19 +1,24 @@
+from django.db.models import QuerySet
 from django_filters import rest_framework as django_filters
 from rest_framework import filters, generics
 from rest_framework.pagination import LimitOffsetPagination
 
-from apps.core.models.audit_log import AuditLog
+from apps.core.models.audit_log import NOMES_DA_ENTIDADE, AuditLog
 from apps.core.permissions import IsSuperAdmin
 from apps.core.serializers import AuditLogSerializer
 
 
 class AuditLogFilter(django_filters.FilterSet):
+    entidade = django_filters.CharFilter(method="filter_entidade")
     timestamp_gte = django_filters.IsoDateTimeFilter(field_name="timestamp", lookup_expr="gte")
     timestamp_lte = django_filters.IsoDateTimeFilter(field_name="timestamp", lookup_expr="lte")
 
     class Meta:
         model = AuditLog
         fields = ["user", "entidade"]
+
+    def filter_entidade(self, queryset: QuerySet, name: str, value: str) -> QuerySet:
+        return queryset.filter(entidade__in=NOMES_DA_ENTIDADE.get(value, (value,)))
 
 
 class AuditLogPagination(LimitOffsetPagination):

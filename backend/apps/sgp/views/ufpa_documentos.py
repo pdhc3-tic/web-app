@@ -9,9 +9,13 @@ from rest_framework.response import Response
 
 from apps.core.models.audit_log import AuditLog
 from apps.core.storage import StorageObjectNotFound, get_storage
-from apps.sgp.models import UPF, UPFDocument
-from apps.sgp.serializers import UPFDocumentCreateSerializer, UPFDocumentSerializer
-from apps.sgp.serializers.common import DownloadURLRespostaSerializer, UploadURLRespostaSerializer
+from apps.sgp.models import UFPA, UFPADocument
+from apps.sgp.serializers import UFPADocumentCreateSerializer, UFPADocumentSerializer
+from apps.sgp.serializers.common import (
+    PREFIXOS_DA_CHAVE_DE_UPLOAD,
+    DownloadURLRespostaSerializer,
+    UploadURLRespostaSerializer,
+)
 from apps.sgp.services.access import scope_queryset
 
 
@@ -27,7 +31,7 @@ CONTENT_TYPE_BY_EXTENSION = {
 MAX_DOCUMENT_SIZE = 10_485_760
 
 
-class UPFDocumentUploadURLSerializer(serializers.Serializer):
+class UFPADocumentUploadURLSerializer(serializers.Serializer):
     filename = serializers.CharField()
     content_type = serializers.CharField()
     size = serializers.IntegerField(min_value=1)
@@ -47,23 +51,23 @@ class UPFDocumentUploadURLSerializer(serializers.Serializer):
         return value
 
 
-class UPFDocumentViewSet(viewsets.GenericViewSet):
-    serializer_class = UPFDocumentSerializer
+class UFPADocumentViewSet(viewsets.GenericViewSet):
+    serializer_class = UFPADocumentSerializer
     permission_classes = [IsAuthenticatedActiveAccess]
     http_method_names = ["get", "post", "delete", "head", "options"]
 
-    def get_upf(self):
-        if not hasattr(self, "_upf"):
-            self._upf = get_object_or_404(
-                self._accessible_upf_queryset(),
-                pk=self.kwargs["upf_pk"],
+    def get_ufpa(self):
+        if not hasattr(self, "_ufpa"):
+            self._ufpa = get_object_or_404(
+                self._accessible_ufpa_queryset(),
+                pk=self.kwargs["ufpa_pk"],
             )
-        return self._upf
+        return self._ufpa
 
-    def _accessible_upf_queryset(self):
-        # all_objects: acessar documentos de uma UPF inativa continua
+    def _accessible_ufpa_queryset(self):
+        # all_objects: acessar documentos de uma UFPA inativa continua
         # funcionando (soft-delete não deve se misturar com RLS) — Issue #267.
-        qs = UPF.all_objects.select_related("municipio", "municipio__state", "territorio")
+        qs = UFPA.all_objects.select_related("municipio", "municipio__state", "territorio")
         return scope_queryset(
             qs,
             self.request.user,
@@ -73,8 +77,8 @@ class UPFDocumentViewSet(viewsets.GenericViewSet):
 
     def get_queryset(self):
         return (
-            UPFDocument.objects.filter(upf=self.get_upf())
-            .select_related("upf", "criado_por")
+            UFPADocument.objects.filter(ufpa=self.get_ufpa())
+            .select_related("ufpa", "criado_por")
             .order_by("-criado_em")
         )
 
@@ -88,16 +92,16 @@ class UPFDocumentViewSet(viewsets.GenericViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
-    @extend_schema(request=UPFDocumentUploadURLSerializer, responses=UploadURLRespostaSerializer)
+    @extend_schema(request=UFPADocumentUploadURLSerializer, responses=UploadURLRespostaSerializer)
     def upload_url(self, request, *args, **kwargs):
-        upf = self.get_upf()
-        serializer = UPFDocumentUploadURLSerializer(data=request.data)
+        ufpa = self.get_ufpa()
+        serializer = UFPADocumentUploadURLSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         content_type = serializer.validated_data["content_type"]
         size = serializer.validated_data["size"]
         ext = ALLOWED_DOCUMENT_CONTENT_TYPES[content_type]
-        key = f"upfs/{upf.pk}/documentos/{uuid4()}.{ext}"
+        key = f"ufpas/{ufpa.pk}/documentos/{uuid4()}.{ext}"
         expires_in = 300
 
         storage = get_storage()
@@ -107,9 +111,9 @@ class UPFDocumentViewSet(viewsets.GenericViewSet):
 
         self._log_document_audit(
             "upload_document",
-            upf=upf,
+            ufpa=ufpa,
             valores_novos={
-                "upf_id": upf.pk,
+                "ufpa_id": ufpa.pk,
                 "key": key,
                 "content_type": content_type,
                 "size": size,
@@ -120,13 +124,13 @@ class UPFDocumentViewSet(viewsets.GenericViewSet):
             status=status.HTTP_200_OK,
         )
 
-    @extend_schema(request=UPFDocumentCreateSerializer, responses={201: UPFDocumentSerializer})
+    @extend_schema(request=UFPADocumentCreateSerializer, responses={201: UFPADocumentSerializer})
     def create(self, request, *args, **kwargs):
-        upf = self.get_upf()
-        serializer = UPFDocumentCreateSerializer(data=request.data)
+        ufpa = self.get_ufpa()
+        serializer = UFPADocumentCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         key = serializer.validated_data["key"]
-        self._validate_document_key(key, upf)
+        self._validate_document_key(key, ufpa)
 
         storage = get_storage()
         try:
@@ -141,8 +145,8 @@ class UPFDocumentViewSet(viewsets.GenericViewSet):
         content_type = metadata.get("ContentType") or self._content_type_from_key(key)
         self._validate_uploaded_object(content_type, tamanho_bytes)
 
-        document = UPFDocument.objects.create(
-            upf=upf,
+        document = UFPADocument.objects.create(
+            ufpa=ufpa,
             tipo=serializer.validated_data["tipo"],
             descricao=serializer.validated_data.get("descricao", ""),
             arquivo_key=key,
@@ -155,7 +159,7 @@ class UPFDocumentViewSet(viewsets.GenericViewSet):
 
         self._log_document_audit(
             "create_document",
-            upf=upf,
+            ufpa=ufpa,
             document=document,
             valores_novos=self._document_snapshot(document),
         )
@@ -166,7 +170,7 @@ class UPFDocumentViewSet(viewsets.GenericViewSet):
 
     @extend_schema(responses=DownloadURLRespostaSerializer)
     def download(self, request, *args, **kwargs):
-        upf = self.get_upf()
+        ufpa = self.get_ufpa()
         document = self.get_object()
         expires_in = 300
         storage = get_storage()
@@ -176,7 +180,7 @@ class UPFDocumentViewSet(viewsets.GenericViewSet):
 
         self._log_document_audit(
             "download_document",
-            upf=upf,
+            ufpa=ufpa,
             document=document,
             valores_novos={"document_id": document.pk, "key": document.arquivo_key},
         )
@@ -186,7 +190,7 @@ class UPFDocumentViewSet(viewsets.GenericViewSet):
         )
 
     def destroy(self, request, *args, **kwargs):
-        upf = self.get_upf()
+        ufpa = self.get_ufpa()
         document = self.get_object()
         snapshot = self._document_snapshot(document)
 
@@ -196,14 +200,14 @@ class UPFDocumentViewSet(viewsets.GenericViewSet):
 
         self._log_document_audit(
             "delete_document",
-            upf=upf,
+            ufpa=ufpa,
             document=document,
             valores_anteriores=snapshot,
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    def _validate_document_key(self, key, upf):
-        pattern = rf"^upfs/{upf.pk}/documentos/[0-9a-f-]{{36}}\.(pdf|jpg|png)$"
+    def _validate_document_key(self, key, ufpa):
+        pattern = rf"^{PREFIXOS_DA_CHAVE_DE_UPLOAD}/{ufpa.pk}/documentos/[0-9a-f-]{{36}}\.(pdf|jpg|png)$"
         if not re.match(pattern, key):
             raise serializers.ValidationError({"key": "Key de upload inválida."})
 
@@ -224,7 +228,7 @@ class UPFDocumentViewSet(viewsets.GenericViewSet):
     def _document_snapshot(self, document):
         return {
             "document_id": document.pk,
-            "upf_id": document.upf_id,
+            "ufpa_id": document.ufpa_id,
             "tipo": document.tipo,
             "descricao": document.descricao,
             "arquivo_key": document.arquivo_key,
@@ -237,7 +241,7 @@ class UPFDocumentViewSet(viewsets.GenericViewSet):
     def _log_document_audit(
         self,
         acao,
-        upf,
+        ufpa,
         document=None,
         valores_anteriores=None,
         valores_novos=None,
@@ -246,8 +250,8 @@ class UPFDocumentViewSet(viewsets.GenericViewSet):
             user=self.request.user,
             acao=acao,
             modulo="sgp",
-            entidade="UPFDocument" if document else "UPF",
-            entidade_id=str(document.pk if document else upf.pk),
+            entidade="UFPADocument" if document else "UFPA",
+            entidade_id=str(document.pk if document else ufpa.pk),
             valores_anteriores=valores_anteriores or {},
             valores_novos=valores_novos or {},
             ip=self.request.META.get("REMOTE_ADDR"),

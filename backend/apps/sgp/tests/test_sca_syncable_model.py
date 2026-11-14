@@ -5,10 +5,10 @@ from django.db.migrations.autodetector import MigrationAutodetector
 from django.db.migrations.loader import MigrationLoader
 from django.db.migrations.state import ProjectState
 
-from apps.sgp.models import Activity, MembroFamilia, UPF
+from apps.sgp.models import Activity, MembroFamilia, UFPA
 from apps.sgp.models.mixins import ScaSyncableModel
 
-SYNCABLE_MODELS = [Activity, UPF, MembroFamilia]
+SYNCABLE_MODELS = [Activity, UFPA, MembroFamilia]
 
 
 def test_syncable_models_herdam_o_mixin():

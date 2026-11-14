@@ -1,4 +1,4 @@
-"""Regras de unicidade de MembroFamilia/UPF, compartilhadas entre a API web e o sync SCA.
+"""Regras de unicidade de MembroFamilia/UFPA, compartilhadas entre a API web e o sync SCA.
 
 Espelha o padrão de `apps.sgp.services.activity_status`: exceções com
 `field`/`sync_code`, funções puras que só validam e levantam erro — quem
@@ -13,7 +13,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework.serializers import ValidationError as DRFValidationError
 
 from apps.sgp.constants import SAUDE_CHOICES, SEGURIDADE_SOCIAL_CHOICES
-from apps.sgp.models import MembroFamilia, UPF
+from apps.sgp.models import MembroFamilia, UFPA
 from apps.sgp.validators import validate_cpf as _validar_formato_cpf
 
 VALORES_SAUDE = [valor for valor, _ in SAUDE_CHOICES]
@@ -21,7 +21,7 @@ VALORES_SEGURIDADE_SOCIAL = [valor for valor, _ in SEGURIDADE_SOCIAL_CHOICES]
 
 
 class MembroRuleError(DjangoValidationError):
-    """Base dos erros de unicidade de Membro/UPF. `field` indica onde o
+    """Base dos erros de unicidade de Membro/UFPA. `field` indica onde o
     chamador deve reportar a mensagem. `sync_code` é o prefixo que o sync
     do SCA usa no `SyncEntityError` que devolve pro app."""
 
@@ -110,22 +110,22 @@ def validar_cpf(cpf, *, membro_atual=None):
     duplicado = qs.first()
     if duplicado:
         raise CPFDuplicadoError(
-            f"Já existe um membro cadastrado com este CPF (UPF {duplicado.upf_id}).",
+            f"Já existe um membro cadastrado com este CPF (UFPA {duplicado.ufpa_id}).",
             duplicado=duplicado,
         )
     return cpf_normalizado
 
 
-def validar_titular_unico(upf_id, *, membro_atual=None):
-    """Levanta TitularDuplicadoError se a UPF `upf_id` já tem um titular
+def validar_titular_unico(ufpa_id, *, membro_atual=None):
+    """Levanta TitularDuplicadoError se a UFPA `ufpa_id` já tem um titular
     diferente de `membro_atual`."""
-    if not upf_id:
+    if not ufpa_id:
         return
-    upf = UPF.objects.filter(pk=upf_id).only("id", "titular_id").first()
-    if upf is None or not upf.titular_id:
+    ufpa = UFPA.objects.filter(pk=ufpa_id).only("id", "titular_id").first()
+    if ufpa is None or not ufpa.titular_id:
         return
-    if membro_atual is None or upf.titular_id != membro_atual.pk:
-        raise TitularDuplicadoError("Já existe um titular cadastrado para esta UPF.")
+    if membro_atual is None or ufpa.titular_id != membro_atual.pk:
+        raise TitularDuplicadoError("Já existe um titular cadastrado para esta UFPA.")
 
 
 def validar_data_nascimento(value):

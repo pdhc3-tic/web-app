@@ -4,7 +4,7 @@ from rest_framework import serializers
 
 from apps.core.sensitive_fields import SensitiveFieldsSerializerMixin
 from apps.sgp.models import MembroFamilia
-from apps.sgp.services.access import upfs_acessiveis_ao_usuario
+from apps.sgp.services.access import ufpas_acessiveis_ao_usuario
 from apps.sgp.services.membro_rules import (
     CPFDuplicadoError,
     CPFInvalidoError,
@@ -40,7 +40,7 @@ class MembroListSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSeri
     class Meta:
         model = MembroFamilia
         fields = [
-            "id", "upf", "nome_completo", "data_nascimento", "idade",
+            "id", "ufpa", "nome_completo", "data_nascimento", "idade",
             "grau_parentesco", "grau_parentesco_display", "cpf",
             "genero", "genero_display",
             "cor_raca", "cor_raca_display", "saude",
@@ -83,7 +83,7 @@ class MembroDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSe
     class Meta:
         model = MembroFamilia
         fields = [
-            "id", "upf", "nome_completo", "data_nascimento", "idade",
+            "id", "ufpa", "nome_completo", "data_nascimento", "idade",
             "cpf", "rg", "nis", "caf", "grau_parentesco",
             "grau_parentesco_display",
             "genero", "genero_display",
@@ -95,22 +95,22 @@ class MembroDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSe
         ]
         validators = []
         read_only_fields = [
-            "criado_em", "atualizado_em", "criado_por", "upf",
+            "criado_em", "atualizado_em", "criado_por", "ufpa",
             "device_id", "uuid_local", "ultima_origem", "ultimo_sync_em",
         ]
 
     def validate_grau_parentesco(self, value):
         if value == "titular":
-            upf_id = self.instance.upf_id if self.instance else None
-            if not upf_id:
-                view_upf_id = self.context.get("view").kwargs.get("upf_pk") if self.context.get("view") else None
-                if view_upf_id:
-                    upf_id = view_upf_id
+            ufpa_id = self.instance.ufpa_id if self.instance else None
+            if not ufpa_id:
+                view_ufpa_id = self.context.get("view").kwargs.get("ufpa_pk") if self.context.get("view") else None
+                if view_ufpa_id:
+                    ufpa_id = view_ufpa_id
             try:
-                validar_titular_unico(upf_id, membro_atual=self.instance)
+                validar_titular_unico(ufpa_id, membro_atual=self.instance)
             except TitularDuplicadoError:
                 raise serializers.ValidationError(
-                    "Já existe um titular cadastrado para esta UPF"
+                    "Já existe um titular cadastrado para esta UFPA"
                 )
         return value
 
@@ -132,11 +132,11 @@ class MembroDetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSe
             raise serializers.ValidationError(exc.message)
         except CPFDuplicadoError as exc:
             duplicado = exc.duplicado
-            upfs_visiveis = upfs_acessiveis_ao_usuario(self.context["request"].user)
-            if duplicado.upf_id in upfs_visiveis.values_list("pk", flat=True):
+            ufpas_visiveis = ufpas_acessiveis_ao_usuario(self.context["request"].user)
+            if duplicado.ufpa_id in ufpas_visiveis.values_list("pk", flat=True):
                 raise serializers.ValidationError(
                     "Já existe um membro cadastrado com este CPF: "
-                    f"{duplicado.nome_completo} (UPF {duplicado.upf_id})"
+                    f"{duplicado.nome_completo} (UFPA {duplicado.ufpa_id})"
                 )
             raise serializers.ValidationError(
                 "Já existe um membro cadastrado com este CPF"

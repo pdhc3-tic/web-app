@@ -24,7 +24,7 @@ SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 
 
 def _resolve_territorio_id(obj: Any, path: str) -> int | None:
-    """Traversal: 'upf.territorio_id' → obj.upf.territorio_id"""
+    """Traversal: 'ufpa.territorio_id' → obj.ufpa.territorio_id"""
     current = obj
     for attr in path.split("."):
         current = getattr(current, attr, None)

@@ -9,7 +9,7 @@ from django.utils import timezone
 from apps.core.models import SystemConfig, Territory
 from apps.sca.models import ConflictLog, SyncDevice, SyncEvent
 from apps.sgp.management.commands.seed_demo import DEMO_EMAIL_DOMAIN
-from apps.sgp.models import Activity, MembroFamilia, UPF
+from apps.sgp.models import Activity, MembroFamilia, UFPA
 
 User = get_user_model()
 
@@ -20,7 +20,7 @@ def rodar_seed(reset=False):
     call_command("seed_core")
     opcoes = {"reset": True} if reset else {}
     call_command(
-        "seed_demo", "--no-files", "--upfs", "8", "--atividades", "6", **opcoes
+        "seed_demo", "--no-files", "--ufpas", "8", "--atividades", "6", **opcoes
     )
 
 
@@ -126,20 +126,20 @@ class TestSeedDemoSca:
         rodar_seed()
 
         agora = timezone.now()
-        upf = UPF.objects.get(device_id="dev-mock-001")
-        assert upf.ultima_origem == "sca"
-        assert upf.uuid_local is not None
-        assert abs((agora - upf.ultimo_sync_em).total_seconds()) <= 3 * 3600
+        ufpa = UFPA.objects.get(device_id="dev-mock-001")
+        assert ufpa.ultima_origem == "sca"
+        assert ufpa.uuid_local is not None
+        assert abs((agora - ufpa.ultimo_sync_em).total_seconds()) <= 3 * 3600
 
         membro = MembroFamilia.objects.get(device_id="dev-mock-001")
-        assert membro.pk == upf.titular_id
+        assert membro.pk == ufpa.titular_id
         assert membro.ultima_origem == "sca"
 
         atividade = Activity.objects.get(device_id="dev-mock-001")
         assert atividade.ultima_origem == "sca"
         assert atividade.uuid_local is not None
 
-        assert UPF.objects.filter(device_id="").exclude(pk=upf.pk).exists()
+        assert UFPA.objects.filter(device_id="").exclude(pk=ufpa.pk).exists()
 
     def test_wipe_remoto_e_usuarios_para_cenarios_da_listagem(self):
         rodar_seed()

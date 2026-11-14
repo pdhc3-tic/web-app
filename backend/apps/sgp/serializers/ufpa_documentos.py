@@ -1,16 +1,16 @@
 from rest_framework import serializers
 
-from apps.sgp.models import UPFDocument
+from apps.sgp.models import UFPADocument
 
 
-class UPFDocumentSerializer(serializers.ModelSerializer):
+class UFPADocumentSerializer(serializers.ModelSerializer):
     criado_por = serializers.StringRelatedField(read_only=True)
 
     class Meta:
-        model = UPFDocument
+        model = UFPADocument
         fields = [
             "id",
-            "upf",
+            "ufpa",
             "tipo",
             "descricao",
             "arquivo_key",
@@ -23,7 +23,7 @@ class UPFDocumentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id",
-            "upf",
+            "ufpa",
             "arquivo_key",
             "content_type",
             "tamanho_bytes",
@@ -32,9 +32,9 @@ class UPFDocumentSerializer(serializers.ModelSerializer):
         ]
 
 
-class UPFDocumentCreateSerializer(serializers.Serializer):
+class UFPADocumentCreateSerializer(serializers.Serializer):
     key = serializers.CharField()
     nome_original = serializers.CharField(max_length=255)
-    tipo = serializers.ChoiceField(choices=UPFDocument.TIPO_CHOICES)
+    tipo = serializers.ChoiceField(choices=UFPADocument.TIPO_CHOICES)
     descricao = serializers.CharField(required=False, allow_blank=True, default="")
     data_documento = serializers.DateField()

@@ -5,7 +5,7 @@ Base abstrata para uniformizar o soft-delete dos models que hoje usam
 convenções divergentes (`ativa`/`ativo`). O manager padrão (`objects`)
 já exclui os inativos, tornando o filtro implícito; `all_objects` mantém
 acesso completo para os casos que precisam ver o histórico (admin,
-endpoint de histórico da UPF).
+endpoint de histórico da UFPA).
 """
 from django.db import models
 from django.utils import timezone

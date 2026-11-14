@@ -13,12 +13,12 @@ import pytest
 from django.utils import timezone
 
 from apps.sca.models import ConflictLog, SyncDevice, SyncEvent
-from apps.sca.tests.conftest import payload_upf
-from apps.sgp.models import UPF
+from apps.sca.tests.conftest import payload_ufpa
+from apps.sgp.models import UFPA
 
 
 def build_item(
-    entidade="upf",
+    entidade="ufpa",
     *,
     uuid_local=None,
     operacao="create",
@@ -51,8 +51,8 @@ def post_batch(auth_client, registros, device_id="dev-001"):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_push_upf_nova_retorna_ok_com_id_servidor(auth_client, usuario, municipio, projeto):
-    item = build_item(payload=payload_upf(projeto, municipio))
+def test_push_ufpa_nova_retorna_ok_com_id_servidor(auth_client, usuario, municipio, projeto):
+    item = build_item(payload=payload_ufpa(projeto, municipio))
     response = post_batch(auth_client, [item])
 
     assert response.status_code == 200
@@ -61,10 +61,10 @@ def test_push_upf_nova_retorna_ok_com_id_servidor(auth_client, usuario, municipi
     assert resultado["id_servidor"]
     assert resultado["uuid_local"] == item["uuid_local"]
 
-    upf = UPF.objects.get(pk=resultado["id_servidor"])
-    assert str(upf.uuid_local) == item["uuid_local"]
-    assert upf.titular.nome_completo == "Maria da Silva"
-    assert upf.territorio_id == municipio.territory_id
+    ufpa = UFPA.objects.get(pk=resultado["id_servidor"])
+    assert str(ufpa.uuid_local) == item["uuid_local"]
+    assert ufpa.titular.nome_completo == "Maria da Silva"
+    assert ufpa.territorio_id == municipio.territory_id
     assert response.data["sucesso"] == 1
 
     # device e evento registrados
@@ -78,10 +78,10 @@ def test_push_upf_nova_retorna_ok_com_id_servidor(auth_client, usuario, municipi
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_push_duas_upfs_mesmo_cpf_em_erro_sem_duplicata(auth_client, municipio, projeto):
+def test_push_duas_ufpas_mesmo_cpf_em_erro_sem_duplicata(auth_client, municipio, projeto):
     cpf = "86288366757"
-    item1 = build_item(payload=payload_upf(projeto, municipio, titular={"nome_completo": "Maria", "cpf": cpf}))
-    item2 = build_item(payload=payload_upf(projeto, municipio, titular={"nome_completo": "João", "cpf": cpf}))
+    item1 = build_item(payload=payload_ufpa(projeto, municipio, titular={"nome_completo": "Maria", "cpf": cpf}))
+    item2 = build_item(payload=payload_ufpa(projeto, municipio, titular={"nome_completo": "João", "cpf": cpf}))
 
     response = post_batch(auth_client, [item1, item2])
 
@@ -91,29 +91,29 @@ def test_push_duas_upfs_mesmo_cpf_em_erro_sem_duplicata(auth_client, municipio, 
     assert resultados[item2["uuid_local"]]["status"] == "erro"
     assert "DUPLICATA" in resultados[item2["uuid_local"]]["erro"]
 
-    assert UPF.objects.count() == 1
+    assert UFPA.objects.count() == 1
     assert ConflictLog.objects.filter(
         estrategia=ConflictLog.Estrategia.DUPLICATE_REJEITADO
     ).count() == 1
 
 
 @pytest.mark.django_db
-def test_push_upf_nova_vs_cpf_ja_existente_no_servidor(auth_client, municipio, projeto, upf_existente):
-    item = build_item(payload=payload_upf(projeto, municipio, titular={"nome_completo": "Outro", "cpf": upf_existente.titular.cpf}))
+def test_push_ufpa_nova_vs_cpf_ja_existente_no_servidor(auth_client, municipio, projeto, ufpa_existente):
+    item = build_item(payload=payload_ufpa(projeto, municipio, titular={"nome_completo": "Outro", "cpf": ufpa_existente.titular.cpf}))
     response = post_batch(auth_client, [item])
 
     assert response.status_code == 200
     resultado = response.data["resultados"][0]
     assert resultado["status"] == "erro"
     assert "DUPLICATA" in resultado["erro"]
-    assert UPF.objects.count() == 1
+    assert UFPA.objects.count() == 1
 
 
 @pytest.fixture
-def upf_existente(db, municipio, projeto):
-    from apps.sgp.tests.factories import UPFFactory
+def ufpa_existente(db, municipio, projeto):
+    from apps.sgp.tests.factories import UFPAFactory
 
-    return UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
+    return UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
 
 
 # ---------------------------------------------------------------------------
@@ -121,13 +121,13 @@ def upf_existente(db, municipio, projeto):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_push_campos_diferentes_merge_sem_conflict_log(auth_client, upf_existente, municipio, projeto):
-    upf = upf_existente
-    upf.apelido = "B"  # alterado no servidor desde a última sincronização
-    upf.save()
+def test_push_campos_diferentes_merge_sem_conflict_log(auth_client, ufpa_existente, municipio, projeto):
+    ufpa = ufpa_existente
+    ufpa.apelido = "B"  # alterado no servidor desde a última sincronização
+    ufpa.save()
 
-    base = payload_upf(projeto, municipio, apelido="A", whatsapp="")
-    base["titular"] = {"nome_completo": upf.titular.nome_completo, "cpf": upf.titular.cpf}
+    base = payload_ufpa(projeto, municipio, apelido="A", whatsapp="")
+    base["titular"] = {"nome_completo": ufpa.titular.nome_completo, "cpf": ufpa.titular.cpf}
     payload = dict(base)
     payload["whatsapp"] = "84 9999-0000"  # alterado localmente (sem sobreposição)
 
@@ -143,9 +143,9 @@ def test_push_campos_diferentes_merge_sem_conflict_log(auth_client, upf_existent
     resultado = response.data["resultados"][0]
     assert resultado["status"] == "ok"
 
-    upf.refresh_from_db()
-    assert upf.apelido == "B"        # valor do servidor preservado
-    assert upf.whatsapp == "84 9999-0000"  # merge do valor local
+    ufpa.refresh_from_db()
+    assert ufpa.apelido == "B"        # valor do servidor preservado
+    assert ufpa.whatsapp == "84 9999-0000"  # merge do valor local
     assert ConflictLog.objects.count() == 0
 
 
@@ -154,13 +154,13 @@ def test_push_campos_diferentes_merge_sem_conflict_log(auth_client, upf_existent
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_push_mesmo_campo_sobreposicao_lww_client_novo(auth_client, upf_existente, municipio, projeto):
-    upf = upf_existente
-    upf.whatsapp = "1111"  # alterado no servidor
-    upf.save()
+def test_push_mesmo_campo_sobreposicao_lww_client_novo(auth_client, ufpa_existente, municipio, projeto):
+    ufpa = ufpa_existente
+    ufpa.whatsapp = "1111"  # alterado no servidor
+    ufpa.save()
 
-    base = payload_upf(projeto, municipio, whatsapp="")
-    base["titular"] = {"nome_completo": upf.titular.nome_completo, "cpf": upf.titular.cpf}
+    base = payload_ufpa(projeto, municipio, whatsapp="")
+    base["titular"] = {"nome_completo": ufpa.titular.nome_completo, "cpf": ufpa.titular.cpf}
     payload = dict(base)
     payload["whatsapp"] = "9999"  # alterado localmente
 
@@ -176,8 +176,8 @@ def test_push_mesmo_campo_sobreposicao_lww_client_novo(auth_client, upf_existent
     resultado = response.data["resultados"][0]
     assert resultado["status"] == "conflito"
 
-    upf.refresh_from_db()
-    assert upf.whatsapp == "9999"
+    ufpa.refresh_from_db()
+    assert ufpa.whatsapp == "9999"
 
     conflito = ConflictLog.objects.get(campo="whatsapp")
     assert conflito.valor_local == "9999"
@@ -187,13 +187,13 @@ def test_push_mesmo_campo_sobreposicao_lww_client_novo(auth_client, upf_existent
 
 
 @pytest.mark.django_db
-def test_push_mesmo_campo_lww_servidor_novo(auth_client, upf_existente, municipio, projeto):
-    upf = upf_existente
-    upf.whatsapp = "1111"
-    upf.save()
+def test_push_mesmo_campo_lww_servidor_novo(auth_client, ufpa_existente, municipio, projeto):
+    ufpa = ufpa_existente
+    ufpa.whatsapp = "1111"
+    ufpa.save()
 
-    base = payload_upf(projeto, municipio, whatsapp="")
-    base["titular"] = {"nome_completo": upf.titular.nome_completo, "cpf": upf.titular.cpf}
+    base = payload_ufpa(projeto, municipio, whatsapp="")
+    base["titular"] = {"nome_completo": ufpa.titular.nome_completo, "cpf": ufpa.titular.cpf}
     payload = dict(base)
     payload["whatsapp"] = "9999"
 
@@ -208,8 +208,8 @@ def test_push_mesmo_campo_lww_servidor_novo(auth_client, upf_existente, municipi
     assert response.status_code == 200
     assert response.data["resultados"][0]["status"] == "conflito"
 
-    upf.refresh_from_db()
-    assert upf.whatsapp == "1111"  # servidor prevalece
+    ufpa.refresh_from_db()
+    assert ufpa.whatsapp == "1111"  # servidor prevalece
     assert ConflictLog.objects.filter(campo="whatsapp").count() == 1
 
 
@@ -218,13 +218,13 @@ def test_push_mesmo_campo_lww_servidor_novo(auth_client, upf_existente, municipi
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_push_excluido_no_servidor_descarta_e_notifica(auth_client, upf_inativa, municipio, projeto):
-    upf = upf_inativa
-    payload = payload_upf(projeto, municipio, whatsapp="local editado")
+def test_push_excluido_no_servidor_descarta_e_notifica(auth_client, ufpa_inativa, municipio, projeto):
+    ufpa = ufpa_inativa
+    payload = payload_ufpa(projeto, municipio, whatsapp="local editado")
 
     item = build_item(
         operacao="update",
-        uuid_local=upf.uuid_local or uuid4(),
+        uuid_local=ufpa.uuid_local or uuid4(),
         payload=payload,
         base={},
         updated_at=timezone.now(),
@@ -240,9 +240,9 @@ def test_push_excluido_no_servidor_descarta_e_notifica(auth_client, upf_inativa,
     mock_notify.assert_called_once()
 
     # exclusão prevalece: registro permanece inativo e sem a alteração local
-    upf.refresh_from_db()
-    assert upf.ativo is False
-    assert upf.whatsapp != "local editado"
+    ufpa.refresh_from_db()
+    assert ufpa.ativo is False
+    assert ufpa.whatsapp != "local editado"
 
     assert ConflictLog.objects.filter(
         estrategia=ConflictLog.Estrategia.EXCLUSAO_PREVALECE
@@ -250,13 +250,13 @@ def test_push_excluido_no_servidor_descarta_e_notifica(auth_client, upf_inativa,
 
 
 @pytest.fixture
-def upf_inativa(db, municipio, projeto):
-    from apps.sgp.tests.factories import UPFFactory
+def ufpa_inativa(db, municipio, projeto):
+    from apps.sgp.tests.factories import UFPAFactory
 
-    upf = UPFFactory(municipio=municipio, projeto=projeto, ativo=False, titular_cpf="11144477735")
-    upf.uuid_local = uuid4()
-    upf.save(update_fields=["uuid_local"])
-    return upf
+    ufpa = UFPAFactory(municipio=municipio, projeto=projeto, ativo=False, titular_cpf="11144477735")
+    ufpa.uuid_local = uuid4()
+    ufpa.save(update_fields=["uuid_local"])
+    return ufpa
 
 
 # ---------------------------------------------------------------------------
@@ -264,21 +264,21 @@ def upf_inativa(db, municipio, projeto):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_push_conflito_campo_sensivel_notifica_articulador(auth_client, articulador, upf_existente, municipio, projeto):
-    upf = upf_existente
-    upf.uuid_local = uuid4()
-    upf.save(update_fields=["uuid_local"])
-    MembroFamilia = upf.titular.__class__
-    MembroFamilia.objects.filter(pk=upf.titular.pk).update(cpf="52998224725")  # servidor alterou o CPF
+def test_push_conflito_campo_sensivel_notifica_articulador(auth_client, articulador, ufpa_existente, municipio, projeto):
+    ufpa = ufpa_existente
+    ufpa.uuid_local = uuid4()
+    ufpa.save(update_fields=["uuid_local"])
+    MembroFamilia = ufpa.titular.__class__
+    MembroFamilia.objects.filter(pk=ufpa.titular.pk).update(cpf="52998224725")  # servidor alterou o CPF
 
-    base = payload_upf(projeto, municipio)
-    base["titular"] = {"nome_completo": upf.titular.nome_completo, "cpf": "86288366757"}
+    base = payload_ufpa(projeto, municipio)
+    base["titular"] = {"nome_completo": ufpa.titular.nome_completo, "cpf": "86288366757"}
     payload = dict(base)
-    payload["titular"] = {"nome_completo": upf.titular.nome_completo, "cpf": "33355588800"}
+    payload["titular"] = {"nome_completo": ufpa.titular.nome_completo, "cpf": "33355588800"}
 
     item = build_item(
         operacao="update",
-        uuid_local=upf.uuid_local,
+        uuid_local=ufpa.uuid_local,
         payload=payload,
         base=base,
         updated_at=timezone.now() + timedelta(minutes=1),
@@ -302,18 +302,18 @@ def test_push_conflito_campo_sensivel_notifica_articulador(auth_client, articula
     assert mock_notify.call_args.kwargs["conflict_id"] == conflito.pk
 
     # campo sensível: estratégia automática NÃO é aplicada ao registro definitivo
-    upf.titular.refresh_from_db()
-    assert upf.titular.cpf == "52998224725"
+    ufpa.titular.refresh_from_db()
+    assert ufpa.titular.cpf == "52998224725"
 
 
 @pytest.mark.django_db
-def test_push_conflito_sem_articulador_notifica_ugp(auth_client, usuario, upf_existente, municipio, projeto):
+def test_push_conflito_sem_articulador_notifica_ugp(auth_client, usuario, ufpa_existente, municipio, projeto):
     from apps.core.tests.factories import RoleFactory, UserFactory
 
     role_ugp = RoleFactory(slug="ugp", nome="UGP — Coordenação")
     ugp = UserFactory(email="ugp@test.com", nome="UGP", profiles=[(role_ugp, None)])
 
-    item = _item_conflito_sensivel(upf_existente, projeto, municipio)
+    item = _item_conflito_sensivel(ufpa_existente, projeto, municipio)
 
     with patch("apps.sca.tasks.notify_articulador_sync_conflict.delay") as mock_notify:
         response = post_batch(auth_client, [item])
@@ -325,8 +325,8 @@ def test_push_conflito_sem_articulador_notifica_ugp(auth_client, usuario, upf_ex
 
 
 @pytest.mark.django_db
-def test_push_conflito_sem_articulador_e_sem_ugp_nao_falha(auth_client, upf_existente, municipio, projeto):
-    item = _item_conflito_sensivel(upf_existente, projeto, municipio)
+def test_push_conflito_sem_articulador_e_sem_ugp_nao_falha(auth_client, ufpa_existente, municipio, projeto):
+    item = _item_conflito_sensivel(ufpa_existente, projeto, municipio)
 
     with patch("apps.sca.tasks.notify_articulador_sync_conflict.delay") as mock_notify:
         response = post_batch(auth_client, [item])
@@ -336,21 +336,21 @@ def test_push_conflito_sem_articulador_e_sem_ugp_nao_falha(auth_client, upf_exis
     mock_notify.assert_not_called()
 
 
-def _item_conflito_sensivel(upf, projeto, municipio):
+def _item_conflito_sensivel(ufpa, projeto, municipio):
     """Item de update que gera conflito em campo sensível (CPF do titular)."""
-    upf.uuid_local = uuid4()
-    upf.save(update_fields=["uuid_local"])
-    MembroFamilia = upf.titular.__class__
-    MembroFamilia.objects.filter(pk=upf.titular.pk).update(cpf="52998224725")  # servidor alterou o CPF
+    ufpa.uuid_local = uuid4()
+    ufpa.save(update_fields=["uuid_local"])
+    MembroFamilia = ufpa.titular.__class__
+    MembroFamilia.objects.filter(pk=ufpa.titular.pk).update(cpf="52998224725")  # servidor alterou o CPF
 
-    base = payload_upf(projeto, municipio)
-    base["titular"] = {"nome_completo": upf.titular.nome_completo, "cpf": "86288366757"}
+    base = payload_ufpa(projeto, municipio)
+    base["titular"] = {"nome_completo": ufpa.titular.nome_completo, "cpf": "86288366757"}
     payload = dict(base)
-    payload["titular"] = {"nome_completo": upf.titular.nome_completo, "cpf": "33355588800"}
+    payload["titular"] = {"nome_completo": ufpa.titular.nome_completo, "cpf": "33355588800"}
 
     return build_item(
         operacao="update",
-        uuid_local=upf.uuid_local,
+        uuid_local=ufpa.uuid_local,
         payload=payload,
         base=base,
         updated_at=timezone.now() + timedelta(minutes=1),
@@ -363,7 +363,7 @@ def _item_conflito_sensivel(upf, projeto, municipio):
 
 @pytest.mark.django_db
 def test_push_idempotente_mesmo_uuid_nao_duplica(auth_client, municipio, projeto):
-    item = build_item(payload=payload_upf(projeto, municipio))
+    item = build_item(payload=payload_ufpa(projeto, municipio))
 
     first = post_batch(auth_client, [item])
     assert first.data["resultados"][0]["status"] == "ok"
@@ -375,7 +375,7 @@ def test_push_idempotente_mesmo_uuid_nao_duplica(auth_client, municipio, projeto
     assert resultado["status"] == "ok"
     assert resultado["id_servidor"] == id_servidor
 
-    assert UPF.objects.count() == 1
+    assert UFPA.objects.count() == 1
 
 
 # ---------------------------------------------------------------------------
@@ -384,8 +384,8 @@ def test_push_idempotente_mesmo_uuid_nao_duplica(auth_client, municipio, projeto
 
 @pytest.mark.django_db
 def test_push_item_fora_do_territorio_erro_por_item(auth_client, municipio, municipio_outro, projeto):
-    item_ok = build_item(payload=payload_upf(projeto, municipio))
-    item_fora = build_item(payload=payload_upf(projeto, municipio_outro))
+    item_ok = build_item(payload=payload_ufpa(projeto, municipio))
+    item_fora = build_item(payload=payload_ufpa(projeto, municipio_outro))
 
     response = post_batch(auth_client, [item_ok, item_fora])
 
@@ -396,4 +396,4 @@ def test_push_item_fora_do_territorio_erro_por_item(auth_client, municipio, muni
     assert resultados[item_fora["uuid_local"]]["status"] == "erro"
     assert "FORA_TERRITORIO" in resultados[item_fora["uuid_local"]]["erro"]
 
-    assert UPF.objects.count() == 1  # apenas o item válido foi persistido
+    assert UFPA.objects.count() == 1  # apenas o item válido foi persistido

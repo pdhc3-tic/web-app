@@ -94,6 +94,7 @@ MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "apps.core.middleware.ContentSecurityPolicyMiddleware",
+    "apps.core.middleware.RotaDepreciadaMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -271,6 +272,7 @@ SPECTACULAR_SETTINGS = {
     # Componentes separados para leitura e escrita (`XRequest`), para os tipos
     # gerados no frontend não exigirem campos read-only no payload.
     "COMPONENT_SPLIT_REQUEST": True,
+    "PREPROCESSING_HOOKS": ["apps.core.openapi.sem_rotas_depreciadas"],
     # Campos homônimos (`status`, `tipo`) com choices diferentes ganhariam um
     # sufixo de hash (`Status8eaEnum`), que muda sempre que outro choice é
     # alterado e quebra os tipos gerados no frontend.
@@ -299,7 +301,7 @@ SPECTACULAR_SETTINGS = {
         "SimNaoInformadoEnum": "apps.sgp.constants.ENERGIA_CHOICES",
         "FormatoExportacaoEnum": "apps.sgp.models.export_job.ExportJob.Formato",
         "TipoExportacaoEnum": "apps.sgp.models.export_job.ExportJob.Tipo",
-        "TipoDocumentoUPFEnum": "apps.sgp.models.upf_document.UPFDocument.TIPO_CHOICES",
+        "TipoDocumentoUFPAEnum": "apps.sgp.models.ufpa_document.UFPADocument.TIPO_CHOICES",
         "TipoDocumentoAtividadeEnum": "apps.sgp.models.activity_document.ActivityDocument.TIPO_CHOICES",
         "TipoDocumentoDemandaEnum": "apps.sgd.models.demand_document.TODOS_OS_TIPOS",
         "StatusPedidoRecursoExtraEnum": "apps.sgp.budget.models.BudgetIncreaseRequest.Status",
@@ -319,11 +321,11 @@ CORS_ALLOWED_ORIGINS = [
 ]
 # Sem isso o navegador esconde do `fetch` o nome do arquivo das exportações
 # quando o frontend está em outra origem.
-CORS_EXPOSE_HEADERS = ["Content-Disposition"]
+CORS_EXPOSE_HEADERS = ["Content-Disposition", "Deprecation", "Link"]
 
-# Exportação de UPFs: até este total o arquivo sai na própria requisição; acima,
+# Exportação de UFPAs: até este total o arquivo sai na própria requisição; acima,
 # vira ExportJob processado pelo worker.
-UPF_EXPORT_ASYNC_THRESHOLD = int(os.getenv("UPF_EXPORT_ASYNC_THRESHOLD", "1000"))
+UFPA_EXPORT_ASYNC_THRESHOLD = int(os.getenv("UFPA_EXPORT_ASYNC_THRESHOLD", "1000"))
 
 # CONFIGURAÇÕES DO CELERY
 CELERY_BROKER_URL = f"redis://{os.getenv('REDIS_HOST', 'redis')}:{os.getenv('REDIS_PORT', '6379')}/0"

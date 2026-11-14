@@ -50,6 +50,6 @@ urlpatterns = [
 ]
 
 # Abrir documento local com a URL gerado para download
-# upf_document_download -> GET DOWNLOAD
+# ufpa_document_download -> GET DOWNLOAD
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

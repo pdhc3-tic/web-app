@@ -12,11 +12,11 @@ e quais as consequências práticas de manter a divergência.
 
 **O que não entra aqui:** campos ou funcionalidades adicionados que a
 especificação simplesmente não previa (ex.: integração com Google Calendar em
-`Activity`, campos de endereço em `UPF`) — isso é extensão, não desvio, já que
+`Activity`, campos de endereço em `UFPA`) — isso é extensão, não desvio, já que
 não há nada especificado para divergir. **O que também não entra aqui:**
 qualquer coisa que pareça lacuna sem justificativa técnica — isso é tratado
 como possível erro e deve virar issue própria, não uma linha deste documento
-(ver seção "Pontos a validar" ao final).
+(ver seção "Observação" ao final).
 
 ---
 
@@ -39,7 +39,7 @@ custo de performance de UUID em toda FK que aponta para `Activity`.
 integração/sync externa usa `uuid_local` como identificador estável entre
 dispositivo e servidor, não `id`. O mesmo padrão
 (`device_id` + `uuid_local` + `ultima_origem` + `ultimo_sync_em`) foi
-replicado em `UPF` e `MembroFamilia` por consistência arquitetural, mesmo a
+replicado em `UFPA` e `MembroFamilia` por consistência arquitetural, mesmo a
 especificação não exigindo isso para essas duas entidades.
 
 ---
@@ -66,31 +66,32 @@ apenas para `User`.
 
 ---
 
-## 3. `UPF` — dados pessoais do titular normalizados em `MembroFamilia`
+## 3. `UFPA` — dados pessoais do titular normalizados em `MembroFamilia`
 
-**Especificação:** `UPF` tem, diretamente, os campos de identificação do
-titular: `nome_titular, cpf, rg, data_nasc, genero, cor_raca, nis, daf_caf,
+**Especificação:** `UFPA` tem, diretamente, os campos de identificação do
+titular: `nome_titular, cpf, rg, data_nasc, genero, cor_raca, nis, dap_caf,
 estado_civil, escolaridade, telefone, email, ...`.
 
-**Implementação:** `apps/sgp/models/upf.py` não tem nenhum desses campos.
-`UPF.titular` é uma `OneToOneField` (`PROTECT`) para `MembroFamilia`, e é
-nesse model (`apps/sgp/models/membro.py`) que vivem `nome_completo`, `cpf`,
-`rg`, `nis`, `data_nascimento`, `genero`, `cor_raca`, `escolaridade` — o
-titular é apenas um `MembroFamilia` como outro qualquer, identificado via
-`UPF.titular`.
+**Implementação:** os dados pessoais do titular não ficam em
+`apps/sgp/models/ufpa.py`. `UFPA.titular` é uma `OneToOneField` (`PROTECT`)
+para `MembroFamilia`, e é nesse model (`apps/sgp/models/membro.py`) que vivem
+`nome_completo`, `cpf`, `rg`, `nis`, `data_nascimento`, `genero`, `cor_raca`,
+`escolaridade` e `caf` — o titular é apenas um `MembroFamilia` como outro
+qualquer, identificado via `UFPA.titular`. Dos campos de identificação que
+a especificação lista, ficam na `UFPA`, por serem da unidade e não da pessoa,
+`numero_dap` (exposto na API como `dap_caf`), `nis`, `celular` e `whatsapp`.
 
 **Por quê:** evita duplicar o mesmo dado pessoal em duas tabelas (o titular
-já é um membro da família, presente em `MembroFamilia.upf`) e mantém uma
+já é um membro da família, presente em `MembroFamilia.ufpa`) e mantém uma
 única fonte de verdade para atualização de dados pessoais, independente de a
 pessoa ser titular ou dependente.
 
 **Consequências:** qualquer código que precise de dados pessoais do titular
-de uma `UPF` precisa navegar por `upf.titular.<campo>`, não `upf.<campo>`
-diretamente. Campos que a especificação lista para `UPF` mas que não existem
-nem em `UPF` nem em `MembroFamilia` — `daf_caf` (existe como `caf`, sem o
-prefixo "da"), `estado_civil`, `telefone`, `email` — estão listados na seção
-"Pontos a validar" abaixo, pois não há justificativa técnica registrada para
-a ausência deles.
+de uma `UFPA` precisa navegar por `ufpa.titular.<campo>`, não `ufpa.<campo>`
+diretamente. Campos que a especificação lista para `UFPA` mas que não existem
+nem em `UFPA` nem em `MembroFamilia` — `estado_civil` e `email` — estão
+listados na seção "Observação" abaixo, pois não há justificativa técnica
+registrada para a ausência deles.
 
 ---
 
@@ -115,13 +116,13 @@ descriptografia da aplicação, respeitando o controle de acesso por perfil.
 
 ---
 
-## 5. `ActivityUPF` / `ActivityMember` — relação implícita do Django em vez de entidade explícita
+## 5. `ActivityUFPA` / `ActivityMember` — relação implícita do Django em vez de entidade explícita
 
-**Especificação:** modela `ActivityUPF` e `ActivityMember` como entidades
-próprias, cada uma com `id` próprio, ligando `Activity` a `UPF` e a
+**Especificação:** modela `ActivityUFPA` e `ActivityMember` como entidades
+próprias, cada uma com `id` próprio, ligando `Activity` a `UFPA` e a
 `MembroFamilia` respectivamente.
 
-**Implementação:** `Activity.upfs_participantes` e
+**Implementação:** `Activity.ufpas_participantes` e
 `Activity.membros_participantes` são `ManyToManyField` padrão do Django, com
 tabela *through* implícita (sem model Python próprio, sem `id` exposto pela
 ORM).
@@ -299,6 +300,26 @@ ADT e ACR precisam de valores diferentes. Hoje os dois são um só perfil no sis
 
 ---
 
+## 11. Renomeação de UPF para UFPA — o que a #392 não cobre ao pé da letra
+
+- **Rotas:** a canônica é `/api/v1/sgp/ufpas/…`, como a Arquitetura define. `/api/v1/sgp/upfs/…` e `/api/v1/upfs/…` ficam por um ciclo, com o cabeçalho `Deprecation: true`; a #392 cita só a primeira, mas a segunda é a que o front mais usa. Os três prefixos respondem todas as rotas aninhadas, inclusive as que antes existiam só em um deles. O schema descreve só a canônica, e o CORS expõe `Deprecation` e `Link` ao front.
+- **JSON e contrato do SCA:** também mudam, sem alias, e o front precisa da #407. O app do SCA ainda não consome essas rotas.
+- **RLS em `sgp_ufpa`:** não existia política em `sgp_upf` para recriar. O escopo continua em Python, e a política da Arquitetura fica para um PR próprio, porque precisa mapear tarefas, exportações e o SCA.
+- **Índice `(cpf)`:** o CPF fica em `MembroFamilia`, como descrito na seção 3, e o índice já existe lá.
+- **Índices automáticos do Django:** os criados por FK e `unique` (`sgp_upf_municipio_id_...`) mantêm o nome de origem, sem efeito no funcionamento. Os nomeados no modelo (`idx_ufpa_*`) foram recriados.
+- **Auditoria gravada:** o `AuditLog` é imutável, então o histórico da UFPA lê `UFPA` e `UPF`, e o filtro `entidade` de `/audit-logs/` traz o nome antigo junto: `UFPA` com `UPF`, `UFPADocument` com `UPFDocument`. As chaves dentro de registros antigos, como `upf_id`, ficam como foram gravadas.
+- **Permissões do Django:** a migration renomeia `add_upf`, `change_upf` e as demais para `*_ufpa` (e as de `UPFDocument`), mantendo grupos e usuários que já as tinham. Se a permissão com o nome novo já existir, a antiga fica como está.
+- **Arquivos já enviados:** a chave gravada continua válida; só upload novo usa `ufpas/`. A confirmação da foto e do documento aceita também `upfs/`, para a URL de upload emitida antes do deploy e confirmada depois.
+- **Chaves antigas na escrita:** `upfs_participantes` e `daf_caf` respondem 400 durante o ciclo. Como o DRF ignora chave desconhecida, sem isso o front ainda não migrado receberia sucesso e perderia o dado.
+- **`dap_caf`:** o campo `daf_caf` da API passa a se chamar como no SGP 10.1 e no Relatório. O nome do modelo continua `numero_dap`.
+- **Critério do `grep` da #392:** além das migrations antigas e dos aliases, ele acha o que trata o nome antigo de propósito: `NOMES_DA_ENTIDADE`, a recusa das chaves antigas, `ROTAS_DEPRECIADAS`, a confirmação de upload com `upfs/` e os testes disso.
+- **`AlterModelTable`:** não foi preciso: `RenameModel` já move as tabelas, e `AlterField(db_table=...)` leva a M2M a `sgp_activityufpa`.
+- **Conflitos do SCA:** a migration troca `entidade` e `campo`, porque o `campo` volta ao objeto na resolução. Os valores dentro de `valor_local` e `valor_servidor` e os detalhes de erro de `SyncEvent` ficam como foram gravados.
+- **Limite do valor total da Ação:** `valor_unitario` em (14,2) não basta: quantidade × valor também precisa caber nesse limite, e a API recusa com 400. As saídas agregadas de Ação, Submeta, Meta e painel não têm limite de dígitos, para um total alto nunca derrubar a leitura.
+- **Ensaio da migration:** não há produção. Medido numa cópia com o seed de demonstração (300 UFPAs, 1.140 membros, 692 participantes): 9,5 s no total, contando a inicialização do Django, sem perda ao reverter e reaplicar.
+
+---
+
 ## Observação
 
 Achado da varredura que **não** tem justificativa técnica registrada em
@@ -307,7 +328,7 @@ nenhum lugar do código ou de outra documentação — não foi tratado como
 Fica aqui como nota para a coordenação técnica confirmar se é decisão
 implícita (e então deve virar uma entrada numerada acima) ou lacuna real:
 
-- **`UPF`/`MembroFamilia` não têm `estado_civil`, `telefone` nem `email`**,
-  campos que a especificação lista para `UPF`. `daf_caf` da especificação
-  existe como `MembroFamilia.caf` (sem o prefixo "DA"), o que pode ser só uma
-  simplificação de nome, não uma lacuna.
+- **`UFPA`/`MembroFamilia` não têm `estado_civil` nem `email`**, campos que
+  a especificação lista para `UFPA`. O telefone da especificação existe como
+  `UFPA.celular` e `UFPA.whatsapp`, e o `dap_caf` como `UFPA.numero_dap`,
+  exposto na API com o nome `dap_caf`.
