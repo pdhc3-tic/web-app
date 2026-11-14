@@ -1,20 +1,25 @@
 import re
 from uuid import uuid4
 
+from django.db import transaction
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, OpenApiTypes, extend_schema
 from rest_framework import serializers, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from apps.core.models.audit_log import AuditLog
 from apps.core.storage import StorageObjectNotFound, get_storage
 from apps.sgd.models.demand_document import DemandDocument
 from apps.sgd.serializers.demand_document import DemandDocumentSerializer
+from apps.sgd.services import demand_document as demand_document_service
 from apps.sgd.services.demand_document import exigir_pode_gerenciar_documento
+from apps.sgp.serializers.common import DownloadURLRespostaSerializer, UploadURLRespostaSerializer
 
 ALLOWED_DOCUMENT_CONTENT_TYPES = {"application/pdf": "pdf"}
 MAX_DOCUMENT_SIZE_BYTES = 10_485_760
 MAX_DOCUMENTS_PER_DEMAND = 10
+
+PARAMETRO_DOCUMENTO = OpenApiParameter("doc_id", OpenApiTypes.INT, OpenApiParameter.PATH)
 
 
 class DemandDocumentUploadURLSerializer(serializers.Serializer):
@@ -63,25 +68,34 @@ class DemandDocumentMixin:
     def _get_demand_for_doc(self, pk):
         return get_object_or_404(self.get_queryset(), pk=pk)
 
-    @action(detail=True, methods=["get"], url_path="documentos")
+    @extend_schema(filters=False, responses=DemandDocumentSerializer(many=True))
+    @action(detail=True, methods=["get"], url_path="documentos", pagination_class=None)
     def documentos_list(self, request, pk=None):
         demand = self._get_demand_for_doc(pk)
         docs = DemandDocument.objects.filter(demanda=demand, ativo=True).order_by("-enviado_em")
         return Response(DemandDocumentSerializer(docs, many=True).data)
 
+    @staticmethod
+    def _limite_atingido():
+        return Response(
+            {"detail": f"Limite de {MAX_DOCUMENTS_PER_DEMAND} documentos por demanda atingido."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    @extend_schema(
+        request=DemandDocumentUploadURLSerializer,
+        responses={200: UploadURLRespostaSerializer, 400: OpenApiTypes.OBJECT},
+        description="URL pré-assinada para enviar o PDF direto ao storage. Confirme depois em `documentos/confirm/`.",
+    )
     @action(detail=True, methods=["post"], url_path="documentos/upload-url")
     def documentos_upload_url(self, request, pk=None):
         demand = self._get_demand_for_doc(pk)
-        count = DemandDocument.objects.filter(demanda=demand, ativo=True).count()
-        if count >= MAX_DOCUMENTS_PER_DEMAND:
-            return Response(
-                {"detail": f"Limite de {MAX_DOCUMENTS_PER_DEMAND} documentos por demanda atingido."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         serializer = DemandDocumentUploadURLSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        exigir_pode_gerenciar_documento(demand, request.user, serializer.validated_data["tipo"])
+        tipo = serializer.validated_data["tipo"]
+        if demand_document_service.documentos_no_limite(demand, tipo) >= MAX_DOCUMENTS_PER_DEMAND:
+            return self._limite_atingido()
+        exigir_pode_gerenciar_documento(demand, request.user, tipo)
         content_type = serializer.validated_data["content_type"]
         size = serializer.validated_data["size"]
         ext = ALLOWED_DOCUMENT_CONTENT_TYPES[content_type]
@@ -93,25 +107,25 @@ class DemandDocumentMixin:
         if url.startswith("/"):
             url = request.build_absolute_uri(url)
 
-        self._log_doc_audit(
-            "demand_document.upload_url", demand,
-            valores_novos={"demanda_id": demand.pk, "key": key, "content_type": content_type, "size": size},
+        demand_document_service.auditar(
+            "demand_document.upload_url", demand, usuario=request.user,
+            novos={"demanda_id": demand.pk, "key": key, "content_type": content_type, "size": size},
         )
         return Response({"url": url, "key": key, "expires_in": expires_in})
 
+    @extend_schema(
+        request=DemandDocumentConfirmSerializer,
+        responses={201: DemandDocumentSerializer, 400: OpenApiTypes.OBJECT},
+    )
     @action(detail=True, methods=["post"], url_path="documentos/confirm")
     def documentos_confirm(self, request, pk=None):
         demand = self._get_demand_for_doc(pk)
-        count = DemandDocument.objects.filter(demanda=demand, ativo=True).count()
-        if count >= MAX_DOCUMENTS_PER_DEMAND:
-            return Response(
-                {"detail": f"Limite de {MAX_DOCUMENTS_PER_DEMAND} documentos por demanda atingido."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         serializer = DemandDocumentConfirmSerializer(data=request.data, context={"demand": demand})
         serializer.is_valid(raise_exception=True)
-        exigir_pode_gerenciar_documento(demand, request.user, serializer.validated_data["tipo"])
+        tipo = serializer.validated_data["tipo"]
+        if demand_document_service.documentos_no_limite(demand, tipo) >= MAX_DOCUMENTS_PER_DEMAND:
+            return self._limite_atingido()
+        exigir_pode_gerenciar_documento(demand, request.user, tipo)
         key = serializer.validated_data["key"]
 
         storage = get_storage()
@@ -138,16 +152,26 @@ class DemandDocumentMixin:
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        doc = DemandDocument.objects.create(
-            demanda=demand, arquivo_key=key, arquivo_url=storage.get_public_url(key),
-            tipo=serializer.validated_data["tipo"], descricao=serializer.validated_data.get("descricao", ""),
-            nome_original=serializer.validated_data["nome_original"],
-            fornecedor=serializer.validated_data.get("fornecedor", ""),
-            content_type=content_type, tamanho_bytes=tamanho_bytes, enviado_por=request.user,
-        )
-        self._log_doc_audit("demand_document.created", demand, valores_novos=self._doc_snapshot(doc))
+        # A demanda só é travada depois da consulta ao storage, para o lock não esperar a rede.
+        # Status e limite são relidos com ela travada: a submissão ou outro envio podem ter passado.
+        with transaction.atomic():
+            demand_document_service.travar_demanda(demand)
+            exigir_pode_gerenciar_documento(demand, request.user, tipo)
+            if demand_document_service.documentos_no_limite(demand, tipo) >= MAX_DOCUMENTS_PER_DEMAND:
+                return self._limite_atingido()
+            doc = DemandDocument.objects.create(
+                demanda=demand, arquivo_key=key, arquivo_url=storage.get_public_url(key),
+                tipo=tipo, descricao=serializer.validated_data.get("descricao", ""),
+                nome_original=serializer.validated_data["nome_original"],
+                fornecedor=serializer.validated_data.get("fornecedor", ""),
+                content_type=content_type, tamanho_bytes=tamanho_bytes, enviado_por=request.user,
+            )
+            demand_document_service.auditar(
+                "demand_document.created", demand, usuario=request.user, novos=demand_document_service.snapshot(doc),
+            )
         return Response(DemandDocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
 
+    @extend_schema(parameters=[PARAMETRO_DOCUMENTO], responses=DownloadURLRespostaSerializer)
     @action(detail=True, methods=["get"], url_path=r"documentos/(?P<doc_id>\d+)/download")
     def documentos_download(self, request, pk=None, doc_id=None):
         demand = self._get_demand_for_doc(pk)
@@ -158,34 +182,22 @@ class DemandDocumentMixin:
         url = storage.generate_presigned_get(doc.arquivo_key, expires_in) if doc.arquivo_key else doc.arquivo_url
         if url.startswith("/"):
             url = request.build_absolute_uri(url)
-        self._log_doc_audit(
-            "demand_document.download", demand, valores_novos={"doc_id": doc.pk, "key": doc.arquivo_key},
+        demand_document_service.auditar(
+            "demand_document.download", demand, usuario=request.user,
+            novos={"doc_id": doc.pk, "key": doc.arquivo_key},
         )
         return Response({"url": url, "expires_in": expires_in})
 
+    @extend_schema(
+        parameters=[PARAMETRO_DOCUMENTO], responses={204: OpenApiResponse(description="Documento removido.")},
+    )
     @action(detail=True, methods=["delete"], url_path=r"documentos/(?P<doc_id>\d+)")
+    @transaction.atomic
     def documentos_delete(self, request, pk=None, doc_id=None):
         demand = self._get_demand_for_doc(pk)
+        demand_document_service.travar_demanda(demand)
+        # Lido depois do lock: a edição da solicitação pode ter acabado de remover o anexo.
         doc = get_object_or_404(DemandDocument, pk=doc_id, demanda=demand, ativo=True)
         exigir_pode_gerenciar_documento(demand, request.user, doc.tipo)
-        snapshot = self._doc_snapshot(doc)
-        doc.ativo = False
-        doc.save(update_fields=["ativo"])
-        self._log_doc_audit("demand_document.deleted", demand, valores_anteriores=snapshot)
+        demand_document_service.remover(doc, usuario=request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-    @staticmethod
-    def _doc_snapshot(doc) -> dict:
-        return {
-            "doc_id": doc.pk, "demanda_id": doc.demanda_id, "tipo": doc.tipo,
-            "nome_original": doc.nome_original, "arquivo_key": doc.arquivo_key,
-            "tamanho_bytes": doc.tamanho_bytes, "ativo": doc.ativo,
-        }
-
-    def _log_doc_audit(self, acao, demand, valores_anteriores=None, valores_novos=None):
-        AuditLog.objects.create(
-            user=self.request.user, acao=acao, modulo="sgd", entidade="DemandDocument",
-            entidade_id=str(demand.pk), valores_anteriores=valores_anteriores or {},
-            valores_novos=valores_novos or {}, ip=self.request.META.get("REMOTE_ADDR"),
-            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
-        )

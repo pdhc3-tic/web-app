@@ -14,31 +14,35 @@ import {
 import { qk } from "@/app/lib/queryKeys";
 
 type AtividadeBuscaProps = {
-  /** Usuário logado — a busca cobre só as atividades dele (RF01). */
-  tecnicoId: string;
   value: AtividadeElegivel | null;
   onChange: (atividade: AtividadeElegivel | null) => void;
   error?: string;
 };
 
 function paraOpcao(a: AtividadeElegivel): SearchSelectOption<AtividadeElegivel> {
+  // UF e técnico ajudam a distinguir atividades de mesmo título, agora que a
+  // busca não se limita às do solicitante (#361).
+  const uf = a.municipio.estado?.sigla;
+  const local = uf ? `${a.municipio.nome}/${uf}` : a.municipio.nome;
+  const partes = [local, formatDate(a.data_inicio)];
+  if (a.tecnico_nome) partes.push(a.tecnico_nome);
   return {
     value: String(a.id),
     label: a.titulo,
-    description: `${a.municipio.nome} · ${formatDate(a.data_inicio)}`,
+    description: partes.join(" · "),
     item: a,
   };
 }
 
 /**
  * Campo "Atividade" com busca (#294, caminho alternativo pelo SGD): as
- * atividades do solicitante em Planejado ou Agendado, buscadas no servidor.
+ * atividades em Planejado ou Agendado, buscadas no servidor pelo título.
  *
- * Enquanto o `ActivityFilter` não aceitar `q` e vários `status`, o texto
- * digitado não estreita o resultado e só vêm as Agendadas
- * (docs/pendencias-backend-sprint-10.md, item 9).
+ * Não filtra por técnico nem por estado (#361): a demanda segue o território
+ * de quem a cria, onde quer que a atividade aconteça. O aviso de atividade em
+ * outro estado aparece na montagem, com os dados que o backend gravou.
  */
-export function AtividadeBusca({ tecnicoId, value, onChange, error }: AtividadeBuscaProps) {
+export function AtividadeBusca({ value, onChange, error }: AtividadeBuscaProps) {
   return (
     <SearchSelect<AtividadeElegivel>
       label="Atividade"
@@ -46,15 +50,14 @@ export function AtividadeBusca({ tecnicoId, value, onChange, error }: AtividadeB
       value={value ? paraOpcao(value) : null}
       onChange={(opcao) => onChange(opcao?.item ?? null)}
       search={async (texto, signal) =>
-        (await buscarAtividadesElegiveis({ tecnicoId, busca: texto }, signal)).map(paraOpcao)
+        (await buscarAtividadesElegiveis({ busca: texto }, signal)).map(paraOpcao)
       }
-      queryKey={(texto) => qk.atividadesElegiveis(tecnicoId, texto)}
-      placeholder="Buscar entre as suas atividades planejadas ou agendadas…"
+      queryKey={(texto) => qk.atividadesElegiveis(texto)}
+      placeholder="Buscar atividades planejadas ou agendadas pelo título…"
       emptyText="Nenhuma atividade planejada ou agendada encontrada."
       renderAside={(o) => (
         <Badge status={badgeStatusFor(o.item.status)} label={o.item.status_display} />
       )}
-      disabled={!tecnicoId}
       error={error}
       data-testid="atividade-busca"
     />

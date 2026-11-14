@@ -14,10 +14,11 @@ from apps.sgp.services.ufpa_export import FILTROS_ACEITOS
 SCHEMA_VERSIONADO = Path(settings.BASE_DIR) / "schema.yml"
 REGENERAR = "rode `python manage.py spectacular --file schema.yml` no backend e commite o schema.yml"
 
-# Débito conhecido: o SGD ainda gera warnings. Qualquer warning novo fora
-# daqui quebra o teste.
-FONTES_COM_DEBITO = ("/apps/sgd/",)
-GLOBAIS_COM_DEBITO = ("v1_sgd_",)
+# Débito conhecido. Qualquer warning novo fora daqui quebra o teste.
+FONTES_COM_DEBITO: tuple[str, ...] = ()
+GLOBAIS_COM_DEBITO: tuple[str, ...] = ()
+# Rotas do SGD dispensadas do gate de corpo de resposta. Vazia desde a #358.
+ROTAS_DO_SGD_FORA_DO_GATE: tuple[str, ...] = ()
 
 
 @pytest.fixture(scope="module")
@@ -65,7 +66,7 @@ def test_schema_versionado_e_o_mesmo_gerado_pelo_codigo(geracao):
     assert SCHEMA_VERSIONADO.read_bytes() == gerado, f"schema.yml desatualizado: {REGENERAR}."
 
 
-def test_sgp_core_e_sca_geram_o_schema_sem_warnings(geracao):
+def test_o_schema_e_gerado_sem_warnings(geracao):
     _, avisos = geracao
 
     def tem_debito(aviso):
@@ -155,6 +156,8 @@ def test_exportacao_de_ufpa_documenta_os_mesmos_filtros_que_aceita(schema):
         ("/api/v1/sgp/atividades/{id}/documentos/", "get"),
         ("/api/v1/sgp/atividades/{id}/fotos/reordenar/", "patch"),
         ("/api/v1/sgp/metas/{id}/orcamento/", "get"),
+        ("/api/v1/sgd/demandas/{id}/solicitacoes/", "get"),
+        ("/api/v1/sgd/demandas/{id}/documentos/", "get"),
     ],
 )
 def test_listas_sem_paginacao_saem_como_array(schema, rota, metodo):
@@ -176,7 +179,10 @@ def test_enums_homonimos_tem_nome_fixo(schema):
     assert {
         "StatusAtividadeEnum", "TipoProducaoEnum", "FormatoExportacaoEnum",
         "TipoDocumentoUFPAEnum", "TipoDocumentoAtividadeEnum",
+        "DemandStatusEnum", "TipoDocumentoDemandaEnum", "StatusPedidoRecursoExtraEnum",
+        "TipoAtividadeEnum", "DecisaoEnum", "DecisaoRecursoExtraEnum",
     } <= nomes
+    assert not [nome for nome in nomes if nome.endswith("Enum") and any(c.isdigit() for c in nome)]
 
 
 def test_rotas_do_sca_descrevem_a_resposta(schema):
@@ -255,3 +261,72 @@ def test_schema_so_descreve_ufpa(geracao):
 def test_rotas_antigas_de_ufpa_ficam_fora_do_schema_e_a_canonica_entra(schema):
     assert not [rota for rota in schema["paths"] if "upf" in rota]
     assert "/api/v1/sgp/ufpas/" in schema["paths"]
+
+
+def test_rotas_do_sgd_descrevem_a_resposta(schema):
+    sem_corpo = [
+        f"{metodo.upper()} {rota}"
+        for rota, operacoes in schema["paths"].items()
+        if rota.startswith("/api/v1/sgd/") and rota not in ROTAS_DO_SGD_FORA_DO_GATE
+        for metodo, operacao in operacoes.items() if metodo != "delete"
+        if not any("content" in operacao["responses"].get(codigo, {}) for codigo in ("200", "201", "202"))
+    ]
+    assert sem_corpo == []
+
+
+def test_detalhe_da_demanda_traz_os_campos_calculados_com_o_tipo_real(schema):
+    rota = "/api/v1/sgd/demandas/{id}/"
+    assert _ref(_resposta(schema, rota)) == "Demand"
+    assert _ref(_resposta(schema, rota, "patch")) == "Demand"
+    assert _ref(_resposta(schema, "/api/v1/sgd/demandas/", "post", "201")) == "Demand"
+
+    demanda = _componente(schema, "Demand")["properties"]
+    assert _ref(demanda["contexto"]) == "DemandContexto"
+    assert _ref(demanda["status"]) == "DemandStatusEnum"
+    assert demanda["atividade_fora_do_territorio"]["type"] == "boolean"
+    solicitacao = _componente(schema, "DemandRequest")["properties"]
+    assert solicitacao["alerta_rubrica_fora_do_previsto"]["type"] == "boolean"
+
+
+def test_submissao_documenta_o_contrato_de_saldo_insuficiente(schema):
+    for rota in ("/api/v1/sgd/demandas/{id}/submeter/", "/api/v1/sgd/demandas/{id}/autorizar/"):
+        assert _ref(_resposta(schema, rota, "post")) == "Demand"
+        assert _ref(_resposta(schema, rota, "post", "400")) == "SaldoInsuficiente", rota
+
+    erro = _componente(schema, "SaldoInsuficiente")["properties"]
+    assert {"code", "trava", "rubrica", "disponivel", "solicitado", "acao_sugerida", "valor_faltante"} <= set(erro)
+    assert erro["valor_faltante"]["nullable"] is True
+    assert _ref(erro["solicitacoes_bloqueadas"]["additionalProperties"]) == "BloqueioDeSaldo"
+
+
+def test_preview_da_decisao_le_a_query_e_descreve_o_impacto(schema):
+    rota = "/api/v1/sgd/demandas/{id}/preview-decisao/"
+    parametros = {p["name"] for p in schema["paths"][rota]["get"]["parameters"] if p["in"] == "query"}
+    assert parametros == {"demand_request_id", "valor", "origem_allocation"}
+
+    assert _ref(_resposta(schema, rota)) == "PreviewDecisaoResposta"
+    impacto = _componente(schema, "PreviewDecisaoResposta")["properties"]
+    assert _ref(impacto["individual"]) == _ref(impacto["territorial"]) == "ImpactoNaTrava"
+    assert _componente(schema, "ImpactoNaTrava")["properties"]["saldo_apos"]["type"] == "number"
+
+
+def test_listagens_paginadas_do_sgd_usam_o_proprio_envelope(schema):
+    for rota, componente in (
+        ("/api/v1/sgd/remanejamentos/", "PaginatedBudgetIncreaseRequestList"),
+        ("/api/v1/sgd/remanejamentos/transferencias/", "PaginatedBudgetTransferList"),
+        ("/api/v1/sgd/demandas/{id}/auditoria/", "PaginatedDemandAuditEntryList"),
+    ):
+        assert _ref(_resposta(schema, rota)) == componente, rota
+        parametros = {p["name"] for p in schema["paths"][rota]["get"]["parameters"] if p["in"] == "query"}
+        assert {"limit", "offset"} <= parametros, rota
+        assert "periodo_inicio" not in parametros, rota
+
+
+def test_paineis_do_sgd_documentam_os_filtros_da_listagem(schema):
+    filtros_da_listagem = {
+        p["name"] for p in schema["paths"]["/api/v1/sgd/demandas/"]["get"]["parameters"] if p["in"] == "query"
+    } - {"limit", "offset", "ordering"}
+    for rota in ("/api/v1/sgd/painel/rubricas/", "/api/v1/sgd/relatorios/custo-por-atividade/"):
+        parametros = {p["name"] for p in schema["paths"][rota]["get"]["parameters"] if p["in"] == "query"}
+        assert filtros_da_listagem <= parametros, rota
+        assert _resposta(schema, rota)["type"] == "array"

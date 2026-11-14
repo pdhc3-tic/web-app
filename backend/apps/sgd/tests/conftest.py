@@ -179,3 +179,55 @@ def auth_client_fgd(api_client, usuario_fgd):
 def auth_client_super_admin(api_client, usuario_super_admin):
     api_client.force_authenticate(user=usuario_super_admin)
     return api_client
+
+
+@pytest.fixture
+def faixas_diaria(db):
+    """As faixas semeadas pela migration; recriadas nos testes com `transaction=True`."""
+    from apps.sgd.models import EnquadramentoFaixaDiaria, FaixaDestinoDiaria
+
+    semeadura = import_module("apps.sgd.migrations.0023_seed_faixas_diarias")
+    semeadura.semear_faixas(FaixaDestinoDiaria, EnquadramentoFaixaDiaria)
+    return {faixa.ordem: faixa for faixa in FaixaDestinoDiaria.objects.all()}
+
+
+@pytest.fixture
+def regras_diaria(db):
+    """`regras_diaria(sgd_diaria_regra_meia_no_retorno=False, ...)` grava os parâmetros do Core.
+    O cache do SystemConfig não é transacional: limpa ao fim para não vazar."""
+    from django.core.cache import cache
+
+    from apps.core.models.system_config import SystemConfig, TipoConfiguracao
+
+    chaves = []
+
+    def configurar(**parametros):
+        for chave, valor in parametros.items():
+            tipo = TipoConfiguracao.BOOLEAN if isinstance(valor, bool) else TipoConfiguracao.STRING
+            SystemConfig.objects.update_or_create(chave=chave, defaults={"valor": str(valor), "tipo": tipo})
+            cache.delete(f"system_config:{chave}")
+            chaves.append(chave)
+
+    yield configurar
+    for chave in chaves:
+        cache.delete(f"system_config:{chave}")
+
+
+@pytest.fixture
+def tabela_diaria(faixas_diaria):
+    """`tabela_diaria("300")` cadastra o mesmo valor, desde 2000, em todas as faixas."""
+    from datetime import date
+    from decimal import Decimal
+
+    from apps.sgd.models import TabelaDiaria
+
+    def configurar(valor, *, faixas=None, inicio=date(2000, 1, 1), fim=None, origem="fgd"):
+        return [
+            TabelaDiaria.objects.create(
+                faixa_destino=faixa, vigencia_inicio=inicio, vigencia_fim=fim, valor=Decimal(str(valor)),
+                origem=origem,
+            )
+            for faixa in (faixas or faixas_diaria.values())
+        ]
+
+    return configurar

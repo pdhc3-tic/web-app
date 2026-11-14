@@ -3,7 +3,7 @@ from django.db.models import Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django_filters import rest_framework as django_filters
-from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, OpenApiTypes, extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -17,9 +17,17 @@ from apps.core.views.audit import AuditLogPagination
 from apps.sgd.filters import DemandFilter
 from apps.sgd.models.approval_step import ApprovalStep
 from apps.sgd.models.demand import STATUS_CHOICES, Demand
+from apps.sgd.models.demand_document import DemandDocument
 from apps.sgd.serializers.approval import ApprovalStepSerializer, CancelarSerializer
 from apps.sgd.serializers.auditoria import DemandAuditEntrySerializer
-from apps.sgd.serializers.demand import DemandCreateSerializer, DemandSerializer, DemandUpdateSerializer
+from apps.sgd.serializers.demand import (
+    AbrangenciaPreviaSerializer,
+    AbrangenciaQuerySerializer,
+    DemandCreateSerializer,
+    DemandSerializer,
+    DemandUpdateSerializer,
+)
+from apps.sgd.serializers.erros import ERRO_DE_DOMINIO, SALDO_INSUFICIENTE
 from apps.sgd.serializers.demand_request import (
     DemandRequestCreateSerializer,
     DemandRequestSerializer,
@@ -39,7 +47,8 @@ from apps.sgp.models import BudgetIncreaseRequest
 from apps.sgp.services.exportacao import CONTENT_TYPES, Arquivo, gerar_arquivo
 from apps.sgp.views.exportacao import arquivo_response
 from apps.sgp.models.workplan import WorkPlanAcao
-from apps.sgp.services.access import atividades_acessiveis_ao_usuario, municipios_acessiveis_ao_usuario
+from apps.sgp.models import Activity
+from apps.sgp.services.access import municipios_acessiveis_ao_usuario
 
 
 ORDENACOES_DA_LISTAGEM = {
@@ -47,6 +56,8 @@ ORDENACOES_DA_LISTAGEM = {
     "-valor_estimado_total": ("-valor_estimado_total", "-pk"),
 }
 ORDENACAO_PADRAO = ("-criado_em", "-pk")
+
+PARAMETRO_SOLICITACAO = OpenApiParameter("solicitacao_id", OpenApiTypes.INT, OpenApiParameter.PATH)
 
 
 class DemandPagination(LimitOffsetPagination):
@@ -64,10 +75,11 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
     filterset_class = DemandFilter
 
     def get_permissions(self):
-        # Criar demanda é do ADT/ACR (e Super Admin): Articulador, UGP e FGD
-        # só decidem sobre ela (SGD §1, matriz do Core §2.1). Sem objeto em
-        # jogo no create, IsADTInTerritory checa só o perfil.
-        if self.action == "create":
+        # Criar demanda é do ADT/ACR (e Super Admin, que cria no nível nacional,
+        # Issue #352): Articulador, UGP e FGD só decidem sobre ela (SGD §1,
+        # matriz do Core §2.1). Sem objeto em jogo no create, IsADTInTerritory
+        # checa só o perfil.
+        if self.action in ("create", "abrangencia"):
             return [IsAuthenticatedActiveAccess(), (IsADTInTerritory | IsSuperAdmin)()]
         return super().get_permissions()
 
@@ -83,6 +95,7 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
         if self.action in ("list", "retrieve"):
             qs = qs.prefetch_related(
                 Prefetch("etapas", queryset=ApprovalStep.objects.select_related("responsavel")),
+                Prefetch("solicitacoes__anexos", queryset=DemandDocument.objects.filter(ativo=True)),
             )
         scope = demand_visibility_scope(self.request.user)
         if scope is not None:
@@ -116,9 +129,28 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
         ).order_by(*ORDENACOES_DA_LISTAGEM.get(ordenacao, ORDENACAO_PADRAO))
         paginator = self.pagination_class()
         pagina = paginator.paginate_queryset(qs, request, view=self)
-        return paginator.get_paginated_response(DemandSerializer(pagina, many=True).data)
+        articuladores = contexto.articuladores_por_estado(demanda.estado_sigla for demanda in pagina)
+        serializer = DemandSerializer(pagina, many=True, context={"articuladores_por_estado": articuladores})
+        return paginator.get_paginated_response(serializer.data)
 
-    @action(detail=False, methods=["get"], url_path="exportar")
+    @extend_schema(
+        filters=True,
+        parameters=[
+            OpenApiParameter("formato", OpenApiTypes.STR, enum=sorted(CONTENT_TYPES), default="csv"),
+            OpenApiParameter(
+                "status", OpenApiTypes.STR, many=True, explode=True, enum=[valor for valor, _ in STATUS_CHOICES],
+                description="Repetível (`?status=a&status=b`): devolve a união dos status.",
+            ),
+        ],
+        responses={
+            (200, "text/csv"): OpenApiResponse(OpenApiTypes.BINARY, description="Arquivo CSV."),
+            (200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"): OpenApiResponse(
+                OpenApiTypes.BINARY, description="Arquivo XLSX.",
+            ),
+            400: ERRO_DE_DOMINIO,
+        },
+    )
+    @action(detail=False, methods=["get"], url_path="exportar", pagination_class=None)
     def exportar(self, request):
         """Exporta as demandas com os filtros de `list` aplicados na chamada
         (RF30) — distinta da exportação no formato Arlo."""
@@ -136,7 +168,19 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
             conteudo=conteudo, nome=f"demandas_{timestamp}.{formato}", content_type=CONTENT_TYPES[formato],
         ))
 
-    @action(detail=True, methods=["get"], url_path="historico")
+    @extend_schema(
+        filters=False,
+        parameters=[
+            OpenApiParameter("limit", OpenApiTypes.INT, description="Com `limit` ou `offset`, a resposta vem paginada."),
+            OpenApiParameter("offset", OpenApiTypes.INT),
+        ],
+        responses=ApprovalStepSerializer(many=True),
+        description=(
+            "Etapas da demanda em ordem cronológica. Sem `limit` e `offset`, devolve a lista simples; "
+            "com um deles, o envelope paginado `{count, next, previous, results}`."
+        ),
+    )
+    @action(detail=True, methods=["get"], url_path="historico", pagination_class=None)
     def historico(self, request, pk=None):
         # Só valida o escopo: o queryset da listagem (joins + prefetches) é
         # pesado demais para um endpoint que lê apenas as etapas.
@@ -152,10 +196,46 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
             return paginator.get_paginated_response(ApprovalStepSerializer(pagina, many=True).data)
         return Response(ApprovalStepSerializer(etapas, many=True).data)
 
+    @extend_schema(
+        parameters=[AbrangenciaQuerySerializer],
+        responses={
+            200: AbrangenciaPreviaSerializer, 400: OpenApiTypes.OBJECT, 403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+    )
+    @action(detail=False, methods=["get"], url_path="abrangencia")
+    def abrangencia(self, request):
+        """Estado, território e Articuladores que a demanda de quem chama vai receber
+        ao ser criada, pela mesma regra da criação."""
+        query = AbrangenciaQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        estado_sigla, territorio = contexto.abrangencia_para_nova_demanda(solicitante=request.user)
+        fora = False
+        if activity_id := query.validated_data.get("activity_id"):
+            activity = get_object_or_404(
+                contexto.com_estado_da_atividade(demand_service.atividades_para_vincular()), pk=activity_id,
+            )
+            fora = contexto.atividade_fora_do_estado(estado_sigla, activity)
+        return Response(AbrangenciaPreviaSerializer({
+            "estado_sigla": estado_sigla,
+            "territorio": {"id": territorio.pk, "nome": territorio.nome} if territorio else None,
+            "articuladores": contexto.articuladores_do_estado(estado_sigla),
+            "atividade_fora_do_territorio": fora,
+        }).data)
+
+    @extend_schema(responses=DemandSerializer)
     def retrieve(self, request, pk=None):
         demand = get_object_or_404(self.get_queryset(), pk=pk)
         return Response(DemandSerializer(demand).data)
 
+    @extend_schema(
+        request=DemandCreateSerializer,
+        responses={201: DemandSerializer, 400: ERRO_DE_DOMINIO},
+        description=(
+            "Cria a demanda em rascunho. Informe `activity_id` ou os campos `activity_*` para criar a "
+            "atividade em status Planejado junto com a demanda."
+        ),
+    )
     def create(self, request):
         entrada = DemandCreateSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
@@ -168,9 +248,10 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
         # órfã no banco.
         with transaction.atomic():
             if dados.get("activity_id"):
-                activity = get_object_or_404(
-                    atividades_acessiveis_ao_usuario(request.user), pk=dados["activity_id"],
-                )
+                # Qualquer atividade pode ser vinculada, inclusive de outro
+                # estado/território (Issue #352): a abrangência da demanda vem
+                # do solicitante, e a resposta sinaliza `atividade_fora_do_territorio`.
+                activity = get_object_or_404(Activity, pk=dados["activity_id"])
             else:
                 activity = demand_service.criar_activity_inline(
                     titulo=dados["activity_titulo"],
@@ -189,6 +270,7 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
             )
         return Response(DemandSerializer(demand).data, status=status.HTTP_201_CREATED)
 
+    @extend_schema(request=DemandUpdateSerializer, responses={200: DemandSerializer, 400: ERRO_DE_DOMINIO})
     def partial_update(self, request, pk=None):
         demand = get_object_or_404(self.get_queryset(), pk=pk)
         if demand.solicitante_id != request.user.pk:
@@ -198,7 +280,8 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
         demand = demand_service.atualizar_demanda(demand, **entrada.validated_data)
         return Response(DemandSerializer(demand).data)
 
-    @action(detail=True, methods=["get"], url_path="auditoria")
+    @extend_schema(filters=False, responses=DemandAuditEntrySerializer(many=True))
+    @action(detail=True, methods=["get"], url_path="auditoria", pagination_class=AuditLogPagination)
     def auditoria(self, request, pk=None):
         """Trilha de quem pode ver a demanda. O IP de quem agiu é dado pessoal:
         só o Super Admin, que tem a auditoria completa, o recebe."""
@@ -231,6 +314,11 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
         )
         return paginador.get_paginated_response(serializer.data)
 
+    @extend_schema(
+        request=None,
+        responses={200: DemandSerializer, 400: SALDO_INSUFICIENTE},
+        description="Reserva o saldo de todas as solicitações, tudo ou nada (SGD-RF11 a RF13).",
+    )
     @action(detail=True, methods=["post"], url_path="submeter")
     def submeter(self, request, pk=None):
         demand = get_object_or_404(self.get_queryset(), pk=pk)
@@ -258,11 +346,19 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
         )
         return Response(DemandSerializer(demand).data)
 
-    @action(detail=True, methods=["get", "post"], url_path="solicitacoes")
+    @extend_schema(methods=["GET"], filters=False, responses=DemandRequestSerializer(many=True))
+    @extend_schema(
+        methods=["POST"], request=DemandRequestCreateSerializer,
+        responses={201: DemandRequestSerializer, 400: ERRO_DE_DOMINIO},
+    )
+    @action(detail=True, methods=["get", "post"], url_path="solicitacoes", pagination_class=None)
     def solicitacoes(self, request, pk=None):
         demand = get_object_or_404(self.get_queryset(), pk=pk)
         if request.method == "GET":
-            return Response(DemandRequestSerializer(demand.solicitacoes.all(), many=True).data)
+            solicitacoes = demand.solicitacoes.select_related("tipo", "rubrica").prefetch_related(
+                Prefetch("anexos", queryset=DemandDocument.objects.filter(ativo=True)),
+            )
+            return Response(DemandRequestSerializer(solicitacoes, many=True).data)
 
         if demand.solicitante_id != request.user.pk:
             raise PermissionDenied("Só o solicitante pode adicionar solicitações.")
@@ -271,6 +367,14 @@ class DemandViewSet(DemandApprovalMixin, DemandDocumentMixin, RecursoExtraMixin,
         solicitacao = demand_service.adicionar_solicitacao(demand, **entrada.validated_data)
         return Response(DemandRequestSerializer(solicitacao).data, status=status.HTTP_201_CREATED)
 
+    @extend_schema(
+        methods=["PATCH"], parameters=[PARAMETRO_SOLICITACAO], request=DemandRequestUpdateSerializer,
+        responses={200: DemandRequestSerializer, 400: SALDO_INSUFICIENTE},
+    )
+    @extend_schema(
+        methods=["DELETE"], parameters=[PARAMETRO_SOLICITACAO],
+        responses={204: OpenApiResponse(description="Solicitação removida.")},
+    )
     @action(detail=True, methods=["patch", "delete"], url_path=r"solicitacoes/(?P<solicitacao_id>\d+)")
     def solicitacao_detail(self, request, pk=None, solicitacao_id=None):
         demand = get_object_or_404(self.get_queryset(), pk=pk)

@@ -352,6 +352,14 @@ test.describe("FGD", () => {
     );
     await expect(painel(page)).toContainText("Concluída");
     await expect(painel(page)).toContainText("pago R$ 1.400,00");
+
+    // O risco de glosa gravado na conclusão aparece na linha do tempo, vindo de
+    // `GET /sgp/glosa-riscos/?demanda=` (#360).
+    await painel(page).getByRole("tab", { name: "Linha do tempo" }).click();
+    const glosa = painel(page).getByTestId("painel-timeline").locator('[data-testid^="glosa-"]');
+    await expect(glosa).toHaveCount(1);
+    await expect(glosa).toContainText("R$ 200,00 acima do autorizado");
+    await expect(glosa).toContainText("pago R$ 1.400,00, autorizado R$ 1.200,00");
   });
 
   test("a FGD vê a aba Auditoria da demanda que atende (#322)", async ({ page }) => {
@@ -367,6 +375,26 @@ type PaginaAuditoriaApi = {
   count: number;
   results: { ip: string | null }[];
 };
+
+test.describe("ADT — riscos de glosa (#360)", () => {
+  test.use({ storageState: storageStatePath("adt") });
+
+  test("o solicitante vê a linha do tempo da demanda concluída sem consultar os riscos de glosa", async ({
+    page,
+  }) => {
+    const consultas: string[] = [];
+    page.on("request", (req) => {
+      if (req.url().includes("/api/v1/sgp/glosa-riscos/")) consultas.push(req.url());
+    });
+    await page.goto(`/sgd/demandas?visao=todas&demanda=${fx.atender.id}`);
+    await painel(page).getByRole("tab", { name: "Linha do tempo" }).click();
+    const linha = painel(page).getByTestId("painel-timeline");
+    await expect(linha).toContainText("Status atual");
+    await expect(linha.locator("[data-testid^=\"glosa-\"]")).toHaveCount(0);
+    await expect(painel(page).getByTestId("glosas-erro")).toHaveCount(0);
+    expect(consultas).toEqual([]);
+  });
+});
 
 /**
  * #322 — Aba de auditoria no painel master-detail, consumindo o endpoint

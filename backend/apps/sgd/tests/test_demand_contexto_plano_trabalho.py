@@ -50,8 +50,9 @@ def test_contexto_traz_submeta_e_indicador(auth_client_solicitante, demand_rascu
 # Número de queries do detalhe da demanda. Eram 10 (as 9 de antes de a Submeta e
 # o Indicador entrarem no contexto, mais a das etapas de aprovação). Issue 314:
 # os 3 totais passaram a somar sobre o prefetch de `solicitacoes` (-3) e as
-# rubricas previstas da Ação entraram no prefetch (+1).
-QUERIES_DO_DETALHE = 8
+# rubricas previstas da Ação entraram no prefetch (+1). Os Articuladores do
+# estado da demanda vêm numa consulta própria (+1).
+QUERIES_DO_DETALHE = 9
 
 
 def test_detalhe_nao_aumenta_o_numero_de_queries(

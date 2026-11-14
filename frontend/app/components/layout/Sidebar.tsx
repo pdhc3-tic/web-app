@@ -76,7 +76,7 @@ const ADMIN_ITEMS: ModuleItem[] = [
     Icon: SlidersHorizontal,
   },
   {
-    // Hub das configurações dos módulos — no SGD, Tipos e Rubricas (#319) e
+    // Hub das configurações dos módulos — no SGD, Tipos de solicitação (#365) e
     // Integração Arlo (#320).
     href: "/admin/configuracoes",
     label: "Configurações",

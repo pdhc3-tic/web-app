@@ -24,6 +24,7 @@ describe("PainelRubricasTableSkeleton", () => {
     expect(screen.getByText("Autorizado")).toBeInTheDocument();
     expect(screen.getByText("Executado")).toBeInTheDocument();
     expect(screen.getByText("Disponível")).toBeInTheDocument();
+    expect(screen.getByText("Limites individuais")).toBeInTheDocument();
     expect(screen.getByText(/Semáforo/)).toBeInTheDocument();
 
     // Cinco linhas de esqueleto no `tbody`.
@@ -73,6 +74,10 @@ describe("PainelRubricasTable — contrato com a página", () => {
             disponivel: "4000",
             percentual_execucao: "55.55",
             faixa: "amarelo",
+            limite_total: "3000",
+            limite_comprometido: "1200",
+            limite_executado: "300",
+            limite_disponivel: "1500",
           },
         ]}
       />,
@@ -82,5 +87,34 @@ describe("PainelRubricasTable — contrato com a página", () => {
     expect(
       screen.getByTestId("rubrica-linha-alimentacao-refeicoes"),
     ).toBeInTheDocument();
+    const limites = screen.getByTestId("limites-alimentacao-refeicoes");
+    expect(limites.textContent).toContain("1.500,00");
+    expect(limites.textContent).toContain("de R$ 3.000,00");
+    expect(limites.textContent).toContain("comprometido R$ 1.200,00");
+  });
+
+  it("rubrica sem limite atribuído mostra \"Sem limite\" (#399)", () => {
+    render(
+      <PainelRubricasTable
+        linhas={[
+          {
+            rubrica_id: 2,
+            rubrica_slug: "diarias",
+            rubrica_nome: "Diárias",
+            solicitado: "0",
+            autorizado: "0",
+            executado: "0",
+            disponivel: "100",
+            percentual_execucao: "0",
+            faixa: "verde",
+            limite_total: "0.00",
+            limite_comprometido: "0.00",
+            limite_executado: "0.00",
+            limite_disponivel: "0.00",
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByTestId("limites-diarias").textContent).toBe("Sem limite");
   });
 });

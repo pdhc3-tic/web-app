@@ -12,11 +12,11 @@ import {
 import { storageStatePath } from "./helpers/users";
 
 /**
- * Distribuição orçamentária (§5.3.2) — a tela de escrita do orçamento.
- *
- * A UGP distribui o nacional entre os estados; o Articulador redistribui o seu
- * estado entre os territórios. Quem pode o quê é `_autorizar` no backend; estes
- * testes cobrem a afordância, o feedback de teto e o caminho do erro.
+ * Distribuição orçamentária (§5.3.2) — a tela de escrita do orçamento, sobre o
+ * orçamento por pool (#398): sem Meta, a UGP distribui o pool nacional de uma
+ * rubrica entre os estados; o Articulador, o pool do estado entre os
+ * territórios. Quem pode o quê é `_autorizar` no backend; estes testes cobrem a
+ * afordância, o feedback de teto e o caminho do erro, contra o backend real.
  *
  * ─── Por que cada teste remonta a fixture ───────────────────────────────────
  *
@@ -34,16 +34,10 @@ test.afterAll(() => {
   removerDistribuicaoFixture();
 });
 
-/** Abre a tela e escolhe Meta + rubrica, que é o recorte mínimo para operar. */
+/** Abre a tela e escolhe a rubrica, que é o recorte mínimo para operar. */
 async function abrirRecorte(page: Page): Promise<void> {
   await page.goto("/sgp/orcamento/distribuicao");
   await expect(page.getByTestId("distribuicao-page")).toBeVisible();
-
-  await page.locator("#distribuicao-meta").click();
-  await page
-    .locator('li[role="option"]')
-    .filter({ hasText: /^Meta 7\b/ })
-    .click();
 
   await page.locator("#distribuicao-rubrica").click();
   await page
@@ -249,11 +243,10 @@ test.describe("Distribuição orçamentária — UGP", () => {
     await page.getByTestId(`distribuicao-valor-${id}`).fill("150000");
     await page.getByTestId(`distribuicao-submit-${id}`).click();
 
-    // O resumo repete o recorte inteiro: quem chega aqui depois de mexer nos
-    // selects precisa ver contra o que está gravando.
+    // O resumo repete o recorte: quem chega aqui depois de mexer nos selects
+    // precisa ver contra o que está gravando.
     const dialogo = page.getByTestId("distribuicao-confirmacao");
     await expect(dialogo).toBeVisible();
-    await expect(dialogo).toContainText("Meta 7");
     await expect(dialogo).toContainText(RUBRICA.nome);
     await expect(dialogo).toContainText(ESTADO_LIVRE.sigla);
     await expect(dialogo).toContainText("Estadual");

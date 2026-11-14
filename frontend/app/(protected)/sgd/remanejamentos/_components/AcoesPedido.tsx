@@ -59,7 +59,7 @@ export function AcoesPedido({
 
   const [drawer, setDrawer] = useState<Drawer>(null);
   const [valorParcial, setValorParcial] = useState("");
-  // A aprovação pede a alocação de origem só quando o backend diz que o pool
+  // A aprovação pede o pool de origem só quando o backend diz que o pool
   // territorial não cobre a demanda (erro em `origem_allocation`).
   const [precisaOrigem, setPrecisaOrigem] = useState(false);
   const [origem, setOrigem] = useState("");

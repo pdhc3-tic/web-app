@@ -15,18 +15,13 @@ import {
 import { useSession } from "next-auth/react";
 
 type Props = {
-  /**
-   * Meta cujo saldo será exibido. Obrigatória: cada Meta tem teto próprio, e
-   * uma rubrica somada entre Metas não autoriza gasto nenhum.
-   */
-  metaId: number | string | null;
   /** Cabeçalho do card. O SGD passará o seu próprio ao embutir o componente. */
   titulo?: string;
   /**
    * Força o estado vazio de "sem território". Serve a quem já descobriu a falta
    * do vínculo por conta própria — a tela de orçamento leva o 403 do painel
-   * antes de montar o card, e sem isso ele mostraria "Selecione uma Meta"
-   * enquanto o resto da página já sabe que não há saldo nenhum a apurar.
+   * antes de montar o card, e sem isso ele consultaria um saldo que a página
+   * já sabe que não existe.
    */
   semTerritorio?: boolean;
 };
@@ -35,8 +30,8 @@ type Props = {
  * Saldo por rubrica no contexto do território (Issue #232).
  *
  * Componente autônomo: busca os próprios dados e resolve os próprios estados de
- * carga, erro e vazio. É assim porque o formulário de demanda do SGD vai
- * embuti-lo sem herdar nada da tela de orçamento — a única entrada é a Meta.
+ * carga, erro e vazio. Desde a #384 o saldo é do pool territorial, por rubrica,
+ * sem a Meta (#398).
  *
  * ─── Por que o "sem território" sai da SESSÃO, e não da API ─────────────────
  *
@@ -50,7 +45,6 @@ type Props = {
  * vínculo do "sem acesso" — e também cai no estado vazio.
  */
 export function BudgetBalance({
-  metaId,
   titulo = "Saldo por rubrica",
   semTerritorio: semTerritorioForcado = false,
 }: Props) {
@@ -75,14 +69,7 @@ export function BudgetBalance({
   const recarregar = useCallback(() => setTentativa((n) => n + 1), []);
 
   useEffect(() => {
-    if (
-      sessaoCarregando ||
-      semTerritorioNaSessao ||
-      metaId === null ||
-      metaId === ""
-    ) {
-      return;
-    }
+    if (sessaoCarregando || semTerritorioNaSessao) return;
 
     const controller = new AbortController();
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -90,7 +77,7 @@ export function BudgetBalance({
     setErro(null);
     setNegadoSemTerritorio(false);
 
-    fetchSaldoPorRubrica(metaId, controller.signal)
+    fetchSaldoPorRubrica(controller.signal)
       .then((lista) => {
         if (controller.signal.aborted) return;
         setSaldos(lista);
@@ -117,7 +104,7 @@ export function BudgetBalance({
       });
 
     return () => controller.abort();
-  }, [metaId, sessaoCarregando, semTerritorioNaSessao, adt, tentativa]);
+  }, [sessaoCarregando, semTerritorioNaSessao, adt, tentativa]);
 
   const semTerritorio = semTerritorioNaSessao || negadoSemTerritorio;
 
@@ -151,7 +138,6 @@ export function BudgetBalance({
       <Corpo
         sessaoCarregando={sessaoCarregando}
         semTerritorio={semTerritorio}
-        semMeta={metaId === null || metaId === ""}
         carregando={carregando}
         erro={erro}
         saldos={saldos}
@@ -166,7 +152,6 @@ export function BudgetBalance({
 function Corpo({
   sessaoCarregando,
   semTerritorio,
-  semMeta,
   carregando,
   erro,
   saldos,
@@ -174,7 +159,6 @@ function Corpo({
 }: {
   sessaoCarregando: boolean;
   semTerritorio: boolean;
-  semMeta: boolean;
   carregando: boolean;
   erro: string | null;
   saldos: SaldoRubrica[] | null;
@@ -190,16 +174,6 @@ function Corpo({
         icon={<Wallet className="h-6 w-6" aria-hidden="true" />}
         title="Nenhum território atribuído"
         description="O saldo é apurado por território. Peça ao gestor do projeto para vincular o seu perfil a um território para acompanhar as rubricas."
-      />
-    );
-  }
-
-  if (semMeta) {
-    return (
-      <EmptyState
-        icon={<Wallet className="h-6 w-6" aria-hidden="true" />}
-        title="Selecione uma Meta"
-        description="Cada Meta tem teto próprio — escolha uma para ver o saldo das rubricas."
       />
     );
   }
@@ -231,8 +205,8 @@ function Corpo({
     return (
       <EmptyState
         icon={<Wallet className="h-6 w-6" aria-hidden="true" />}
-        title="Sem rubricas nesta Meta"
-        description="Nenhuma rubrica foi encontrada para a Meta selecionada."
+        title="Sem orçamento no seu território"
+        description="Nenhuma rubrica tem pool lançado para o seu território ainda."
       />
     );
   }

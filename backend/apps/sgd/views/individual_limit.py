@@ -1,9 +1,11 @@
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema, extend_schema_view
 from rest_framework import status, viewsets
 from rest_framework.response import Response
 
 from apps.core.permissions import IsAuthenticatedActiveAccess, IsSuperAdmin
+from apps.sgd.serializers.erros import ERRO_DE_DOMINIO
 from apps.sgd.serializers.individual_limit import DemandIndividualLimitSerializer
 from apps.sgd.services import orcamento as orcamento_service
 from apps.sgp.models import SpendingLimit
@@ -11,11 +13,28 @@ from apps.sgp.models import SpendingLimit
 JUSTIFICATIVA_DA_ROTA = "Definido pela rota de limites individuais do SGD."
 
 
+@extend_schema_view(
+    list=extend_schema(
+        parameters=[OpenApiParameter("solicitante", OpenApiTypes.INT, description="Id do usuário.")],
+        responses=DemandIndividualLimitSerializer(many=True),
+    ),
+    create=extend_schema(
+        request=DemandIndividualLimitSerializer,
+        responses={201: DemandIndividualLimitSerializer, 400: ERRO_DE_DOMINIO},
+    ),
+    partial_update=extend_schema(
+        request=DemandIndividualLimitSerializer,
+        responses={200: DemandIndividualLimitSerializer, 400: ERRO_DE_DOMINIO},
+    ),
+)
 class DemandIndividualLimitViewSet(viewsets.ViewSet):
     """Alias de `/sgp/orcamento/limites/` para as linhas individuais do período vigente,
     enquanto o front migra. A rota antiga não pede justificativa: ela é preenchida aqui."""
 
     permission_classes = [IsAuthenticatedActiveAccess, IsSuperAdmin]
+    # Só para o drf-spectacular: o tipo do `{id}` e a lista sem paginação.
+    queryset = SpendingLimit.objects.none()
+    pagination_class = None
 
     def list(self, request):
         hoje = orcamento_service.hoje()

@@ -1,11 +1,12 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
+import { ORCAMENTO_E2E_PY } from "./orcamentoE2E";
 
 /**
  * Fixture do painel de execução (Issue #297), com movimentação conhecida no
  * Território RN (o do ADT Ewerton):
  *
- * - três verbas territoriais de R$ 10.297,00 (valor-marcador da limpeza):
+ * - os três pools territoriais de RN em R$ 10.297,00:
  *   - Diárias: R$ 9.782,15 reservados → 95,0%, vermelho;
  *   - Passagens Aéreas: R$ 7.722,75 reservados → 75,0%, amarelo;
  *   - Locação de Veículo: a demanda da fixture (R$ 800, autorizada) e uma
@@ -13,12 +14,11 @@ import path from "node:path";
  *     disponível R$ 7.497,00, solicitado e autorizado R$ 800.
  *
  * A demanda passa pelos services do SGD (submeter reserva as duas travas,
- * pré-autorizar, autorizar). As outras reservas usam `budget_service`
- * direto, com `demanda_id` próprio da fixture.
+ * pré-autorizar, autorizar). O comprometido e o executado das outras rubricas
+ * entram direto no pool (#399: o pool materializa os dois valores).
  *
- * O limite individual do Ewerton é compartilhado com o teste manual: a limpeza
- * devolve a ele o que as demandas da fixture reservam, e o teardown repõe o
- * valor do limite (a fixture o aumenta se faltar espaço), em vez de apagá-lo.
+ * O limite individual de locação do Ewerton fica em R$ 1.000 no período. O
+ * orçamento é fotografado no setup e restaurado no teardown (`orcamentoE2E.ts`).
  *
  * Roda como `postgres` por causa da row-level security de `sgd_demand`.
  */
@@ -34,19 +34,18 @@ export type ExecucaoFixture = {
   atividade: { id: number; titulo: string };
   acaoId: number;
   demanda: { id: number; titulo: string };
-  /** Foto do limite individual do Ewerton antes da fixture (null = não havia). */
-  limiteOriginal: { limite: string; comprometido: string; executado: string } | null;
 };
 
-const COMUM = `
+const COMUM = `${ORCAMENTO_E2E_PY}
 from decimal import Decimal
 from django.contrib.auth import get_user_model
 from apps.sgp.models import Activity
-from apps.sgp.models.budget import BudgetAllocation, BudgetRubrica, BudgetTransaction
+from apps.sgp.budget.models import BudgetRubrica
 from apps.sgd.models.demand import Demand
 from apps.sgd.models.approval_step import ApprovalStep
 
 P = "${PREFIXO_297}"
+FOTO = "execucao"
 VERBA = Decimal("10297.00")
 U = get_user_model()
 adt = U.objects.get(email="ewerton.bandeira@demo.pdhc.local")
@@ -54,34 +53,12 @@ perfil_adt = adt.profiles.select_related("territorio").get(perfil__slug="adt-acr
 territorio_id = perfil_adt.territorio_id
 
 def limpar():
-    from django.db.models import Sum
-    from django.db.models.functions import Coalesce
-    from apps.sgd.models.demand_request import DemandRequest
-    from apps.sgd.models.individual_limit import DemandIndividualLimit
-
     demandas = Demand.objects.filter(titulo__startswith=P)
-    # Devolve ao limite individual o que as demandas da fixture ainda reservam:
-    # apagar a demanda não desfaz a reserva, e o limite é o do teste manual.
-    reservado = DemandRequest.objects.filter(
-        demanda__in=demandas.filter(status__in=["submetida", "pre_autorizada", "autorizada", "em_atendimento"]),
-    ).aggregate(t=Sum(Coalesce("valor_autorizado", "valor_estimado")))["t"] or Decimal("0")
-    limite = DemandIndividualLimit.objects.filter(
-        solicitante=adt, rubrica=BudgetRubrica.objects.get(slug="locacao-veiculo"),
-    ).first()
-    if limite is not None and reservado:
-        limite.valor_comprometido = max(Decimal("0"), limite.valor_comprometido - reservado)
-        limite.save(update_fields=["valor_comprometido"])
-
     ApprovalStep.objects.filter(demanda__in=demandas).delete()
-    verbas = BudgetAllocation.objects.filter(
-        nivel="territorial", territorio_id=territorio_id, valor_alocado=VERBA,
-    )
-    BudgetTransaction.objects.filter(allocation__in=verbas).delete()
-    BudgetTransaction.objects.filter(demanda_id__startswith=P).delete()
-    BudgetTransaction.objects.filter(demanda_id__in=[str(pk) for pk in demandas.values_list("pk", flat=True)]).delete()
+    # Antes de apagar: o ledger referencia a atividade.
+    restaurar(FOTO)
     demandas.delete()
     Activity.objects.filter(titulo__startswith=P).delete()
-    verbas.delete()
 `;
 
 const SETUP_SCRIPT = `${COMUM}
@@ -90,39 +67,24 @@ from datetime import timedelta
 from django.utils import timezone
 from apps.core.models import Municipality
 from apps.sgp.models.workplan import WorkPlanAcao
-from apps.sgp.services import budget as budget_service
-from apps.sgd.models.individual_limit import DemandIndividualLimit
 from apps.sgd.services import demand as ds, workflow as wf
 
 limpar()
+fotografar(FOTO)
 articulador = U.objects.get(email="helio.fontenele@demo.pdhc.local")
 ugp = U.objects.get(email="beatriz.nogueira@demo.pdhc.local")
 locacao = BudgetRubrica.objects.get(slug="locacao-veiculo")
 
-limite = DemandIndividualLimit.objects.filter(solicitante=adt, rubrica=locacao).first()
-foto = None if limite is None else {
-    "limite": str(limite.valor_limite),
-    "comprometido": str(limite.valor_comprometido),
-    "executado": str(limite.valor_executado),
-}
-if limite is None:
-    limite = DemandIndividualLimit.objects.create(solicitante=adt, rubrica=locacao, valor_limite=Decimal("1000"))
-if limite.valor_limite - limite.valor_comprometido - limite.valor_executado < Decimal("800"):
-    limite.valor_limite = limite.valor_comprometido + limite.valor_executado + Decimal("800")
-    limite.save(update_fields=["valor_limite"])
+definir_limite(adt, locacao, "1000")
 
 acao = WorkPlanAcao.objects.order_by("pk").first()
-verba = {}
-for slug in ("diarias", "passagens-aereas", "locacao-veiculo"):
-    verba[slug] = BudgetAllocation.objects.create(
-        meta_id=acao.meta_id, rubrica=BudgetRubrica.objects.get(slug=slug),
-        nivel="territorial", territorio_id=territorio_id, valor_alocado=VERBA,
+for slug, comprometido, executado in (
+    ("diarias", "9782.15", "0"), ("passagens-aereas", "7722.75", "0"), ("locacao-veiculo", "0", "2000"),
+):
+    definir_pool(
+        BudgetRubrica.objects.get(slug=slug), "territorial", VERBA, territorio_id=territorio_id,
+        comprometido=comprometido, executado=executado,
     )
-
-budget_service.reservar(allocation=verba["diarias"], valor=Decimal("9782.15"), demanda_id=f"{P}-diarias", usuario=ugp)
-budget_service.reservar(allocation=verba["passagens-aereas"], valor=Decimal("7722.75"), demanda_id=f"{P}-passagens", usuario=ugp)
-budget_service.reservar(allocation=verba["locacao-veiculo"], valor=Decimal("2000"), demanda_id=f"{P}-locacao-paga", usuario=ugp)
-budget_service.executar(demanda_id=f"{P}-locacao-paga", usuario=ugp)
 
 municipio = Municipality.objects.filter(territory_id=territorio_id).order_by("nome").first()
 quando = timezone.now() + timedelta(days=20)
@@ -149,29 +111,13 @@ print("${MARCADOR}_SETUP " + json.dumps({
     "atividade": {"id": atividade.pk, "titulo": atividade.titulo},
     "acaoId": acao.pk,
     "demanda": {"id": d.pk, "titulo": d.titulo},
-    "limiteOriginal": foto,
 }))
 `;
 
-function teardownScript(foto: ExecucaoFixture["limiteOriginal"]): string {
-  return `${COMUM}
-import json
-from apps.sgd.models.individual_limit import DemandIndividualLimit
-
+const TEARDOWN_SCRIPT = `${COMUM}
 limpar()
-foto = json.loads(${JSON.stringify(JSON.stringify(foto))})
-limite = DemandIndividualLimit.objects.filter(
-    solicitante=adt, rubrica=BudgetRubrica.objects.get(slug="locacao-veiculo"),
-).first()
-if foto is None:
-    if limite is not None:
-        limite.delete()
-elif limite is not None:
-    limite.valor_limite = Decimal(foto["limite"])
-    limite.save(update_fields=["valor_limite"])
 print("${MARCADOR}_TEARDOWN_OK")
 `;
-}
 
 function djangoShellComoDono(script: string): string {
   return execFileSync(
@@ -203,6 +149,7 @@ export function criarExecucaoFixture(): ExecucaoFixture {
   return JSON.parse(linha.slice(`${MARCADOR}_SETUP `.length)) as ExecucaoFixture;
 }
 
-export function removerExecucaoFixture(fx: ExecucaoFixture): void {
-  djangoShellComoDono(teardownScript(fx.limiteOriginal));
+/** O argumento ficou por compatibilidade: a restauração vem da fotografia do container. */
+export function removerExecucaoFixture(_fx?: ExecucaoFixture): void {
+  djangoShellComoDono(TEARDOWN_SCRIPT);
 }

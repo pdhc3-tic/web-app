@@ -1,4 +1,5 @@
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -7,11 +8,14 @@ from apps.sgd.models.demand_request import DemandRequest
 from apps.sgd.serializers.approval import (
     AutorizarSerializer,
     ConcluirSerializer,
+    ContagemAguardandoSerializer,
     DevolverSerializer,
+    PreviewDecisaoRespostaSerializer,
     PreviewDecisaoSerializer,
     RecusarSerializer,
 )
 from apps.sgd.serializers.demand import DemandSerializer
+from apps.sgd.serializers.erros import ERRO_DE_DOMINIO, SALDO_INSUFICIENTE
 from apps.sgd.services import approval as approval_service
 from apps.sgd.services import workflow as workflow_service
 
@@ -38,7 +42,8 @@ class DemandApprovalMixin:
     def _get_demand(self, pk):
         return get_object_or_404(self.get_queryset(), pk=pk)
 
-    @action(detail=False, methods=["get"], url_path="aguardando-minha-acao/contagem")
+    @extend_schema(filters=False, responses=ContagemAguardandoSerializer)
+    @action(detail=False, methods=["get"], url_path="aguardando-minha-acao/contagem", pagination_class=None)
     def aguardando_minha_acao_contagem(self, request):
         demandas = approval_service.demandas_aguardando_acao(request.user, self.get_queryset())
         return Response({
@@ -46,12 +51,14 @@ class DemandApprovalMixin:
             "status": approval_service.status_aguardando_acao(request.user),
         })
 
+    @extend_schema(request=None, responses={200: DemandSerializer, 400: ERRO_DE_DOMINIO})
     @action(detail=True, methods=["post"], url_path="pre-autorizar")
     def pre_autorizar(self, request, pk=None):
         demand = self._get_demand(pk)
         demand = workflow_service.executar_transicao(demand, "pre_autorizada", ator=request.user)
         return Response(DemandSerializer(demand).data)
 
+    @extend_schema(request=DevolverSerializer, responses={200: DemandSerializer, 400: ERRO_DE_DOMINIO})
     @action(detail=True, methods=["post"], url_path="devolver")
     def devolver(self, request, pk=None):
         demand = self._get_demand(pk)
@@ -62,6 +69,14 @@ class DemandApprovalMixin:
         )
         return Response(DemandSerializer(demand).data)
 
+    @extend_schema(
+        request=AutorizarSerializer,
+        responses={200: DemandSerializer, 400: SALDO_INSUFICIENTE},
+        description=(
+            "Ajusta a reserva ao valor autorizado. Com `excedente_autorizado`, o que passa do limite "
+            "sai de `origem_allocation` (SGD-RF16)."
+        ),
+    )
     @action(detail=True, methods=["post"], url_path="autorizar")
     def autorizar(self, request, pk=None):
         demand = self._get_demand(pk)
@@ -72,6 +87,7 @@ class DemandApprovalMixin:
         )
         return Response(DemandSerializer(demand).data)
 
+    @extend_schema(request=RecusarSerializer, responses={200: DemandSerializer, 400: ERRO_DE_DOMINIO})
     @action(detail=True, methods=["post"], url_path="recusar")
     def recusar(self, request, pk=None):
         demand = self._get_demand(pk)
@@ -82,12 +98,21 @@ class DemandApprovalMixin:
         )
         return Response(DemandSerializer(demand).data)
 
+    @extend_schema(request=None, responses={200: DemandSerializer, 400: ERRO_DE_DOMINIO})
     @action(detail=True, methods=["post"], url_path="atender")
     def atender(self, request, pk=None):
         demand = self._get_demand(pk)
         demand = workflow_service.executar_transicao(demand, "em_atendimento", ator=request.user)
         return Response(DemandSerializer(demand).data)
 
+    @extend_schema(
+        request=ConcluirSerializer,
+        responses={200: DemandSerializer, 400: ERRO_DE_DOMINIO},
+        description=(
+            "Executa por `min(pago, autorizado)` e devolve a diferença ao saldo. O que for pago acima "
+            "do autorizado vira risco de glosa."
+        ),
+    )
     @action(detail=True, methods=["post"], url_path="concluir")
     def concluir(self, request, pk=None):
         demand = self._get_demand(pk)
@@ -98,7 +123,11 @@ class DemandApprovalMixin:
         )
         return Response(DemandSerializer(demand).data)
 
-    @action(detail=True, methods=["get"], url_path="preview-decisao")
+    @extend_schema(
+        filters=False, parameters=[PreviewDecisaoSerializer],
+        responses={200: PreviewDecisaoRespostaSerializer, 400: ERRO_DE_DOMINIO},
+    )
+    @action(detail=True, methods=["get"], url_path="preview-decisao", pagination_class=None)
     def preview_decisao(self, request, pk=None):
         demand = self._get_demand(pk)
         query = PreviewDecisaoSerializer(data=request.query_params)

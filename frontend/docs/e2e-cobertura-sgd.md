@@ -47,6 +47,33 @@ O cancelamento automático depende do `celery_worker`. Sem ele, a demanda não m
 
 Em 01/11/2026, as 11 specs do SGD e a `orcamento-saldo` rodaram juntas contra a `main` com os PRs #378, #379 e #382: 100 testes passando em 4,9 minutos, sem `fixme` nem simulação de resposta. O `page.route` dessas specs só atrasa ou derruba requisições.
 
+## Orçamento por pool (#399)
+
+Depois da #384 a #386, o saldo fica no `BudgetPool` (um por rubrica e local), o limite no `SpendingLimit` (por pessoa, rubrica e período) e cada movimento no ledger, imutável por trigger. As fixtures do SGD usam o prelúdio de `e2e/helpers/orcamentoE2E.ts`:
+
+- `fotografar(chave)` no setup guarda pools, limites e o último id do ledger, das transferências e dos alertas num arquivo do container;
+- `definir_pool` e `definir_limite` ajustam o que o teste precisa;
+- `restaurar(chave)` no teardown, antes de apagar demandas e atividades (o ledger referencia a atividade), apaga só o que o teste lançou, com `session_replication_role = replica` na sessão do `postgres`, e devolve os valores da foto.
+
+Os specs rodam em série num único worker, então uma restauração nunca apaga lançamento de outro spec. Não rodar E2E com teste manual em andamento.
+
+Em 08/11/2026, contra a `main` com os PRs #410 a #415: 95 testes do SGD passando. Ficam para a issue de cada tela:
+- `tipos-rubricas`: a tela da #319 virou alias do catálogo de tipos (#357). Refeita na #365 sobre o catálogo: o Super Admin cria um tipo e o ADT o solicita, 8 testes;
+- `orcamento`, `orcamento-saldo` e `orcamento-distribuicao`: a matriz do SGP era Meta × Rubrica. Refeitas na #398 sobre os pools (matriz Rubrica × Nível, saldo do ADT sem Meta, distribuição por pool), com as fixtures `orcamentoFixture` e `distribuicaoFixture` no mesmo prelúdio de fotografia.
+
+## Abrangência territorial da demanda (#361)
+
+Depois do #352, a demanda grava o estado e o território do **solicitante** (`estado_sigla`, `territorio`), e é isso que decide a fila do Articulador, a visibilidade e o pool. `e2e/abrangencia-demanda.spec.ts` cobre:
+
+- a busca de atividade sem `tecnico_id`;
+- a demanda de um ADT do RN com atividade de PE: a montagem mostra o território da demanda e o aviso de atividade em outro estado, que não bloqueia a submissão;
+- a demanda na fila do Articulador de RN, com o selo "Atividade fora do território";
+- a Articuladora de PE sem ver a demanda, nem em Todas.
+
+O caso de ponta a ponta da issue (o ADT acha a atividade do outro estado pela busca) espera a rota do backend, item 2 do `pendencias-backend-sprint-12a.md`. Até lá, a demanda nasce na fixture, pelo `criar_demanda`.
+
+**Regra para fixtures:** quem cria `Demand` direto no banco, sem o serviço, passa `estado_sigla` e `territorio` de `apps.sgd.services.contexto.abrangencia_para_nova_demanda(solicitante=...)`. Sem isso a demanda vira nacional e some da fila do Articulador. Era o que quebrava a `sgd-home`; `painelSgdFixture`, `demandaFixture` e `volumeDemandasFixture` já fazem assim.
+
 ## Situação do CI
 
 O workflow `Playwright E2E` (`.github/workflows/playwright.yml`) roda a suíte completa em cada PR para a `main`. Hoje ele não chega ao fim:

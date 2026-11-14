@@ -16,18 +16,15 @@ import { canDistribuirOrcamento, useOrcamentoScope } from "@/app/lib/auth/roles"
 import { listMetas, type MetaListItem } from "@/app/lib/metas";
 import {
   fetchPainelOrcamento,
-  linhaVazia,
-  nivelDaLinha,
-  percentualComprometido,
   RUBRICAS,
   RUBRICA_SLUGS,
-  type NivelOrcamento,
-  type PainelOrcamentoLinhaApi,
+  type PoolOrcamentoApi,
 } from "@/app/lib/orcamento";
 import { fetchStateSiglaOptions, fetchTerritoryMap } from "@/app/lib/upfs";
 import { AlertaAlocacoesCriticas } from "./_components/AlertaAlocacoesCriticas";
 import { CelulaDetalheSlideOver } from "./_components/CelulaDetalheSlideOver";
 import { MatrizOrcamento } from "./_components/MatrizOrcamento";
+import { montarMatriz } from "./_components/matriz";
 import { MatrizSkeleton } from "./_components/MatrizSkeleton";
 import { BudgetBalance } from "@/app/components/sgp/BudgetBalance/BudgetBalance";
 import {
@@ -35,11 +32,7 @@ import {
   OrcamentoFilters,
   type OrcamentoFiltersValue,
 } from "./_components/OrcamentoFilters";
-import type {
-  CelulaOrcamento,
-  EscopoExibido,
-  MetaComRubricas,
-} from "./_components/tipos";
+import type { CelulaOrcamento, RubricaComPools } from "./_components/tipos";
 
 function CenteredSpinner() {
   return (
@@ -62,7 +55,7 @@ function PainelOrcamentoConteudo() {
   const [estados, setEstados] = useState<SelectOption[]>([]);
   const [territorios, setTerritorios] = useState<SelectOption[]>([]);
 
-  const [linhas, setLinhas] = useState<PainelOrcamentoLinhaApi[] | null>(null);
+  const [linhas, setLinhas] = useState<PoolOrcamentoApi[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
@@ -217,60 +210,18 @@ function PainelOrcamentoConteudo() {
   ]);
 
   // ── Montagem da tela ──────────────────────────────────────────────────────
-  // O backend devolve uma lista plana de células; agrupar por Meta é só
-  // apresentação — nenhum indicador é recalculado aqui.
-  const grupos: MetaComRubricas[] = useMemo(() => {
-    if (!linhas) return [];
-    const porMeta = new Map<number, MetaComRubricas>();
-
-    for (const linha of linhas) {
-      let grupo = porMeta.get(linha.meta.id);
-      if (!grupo) {
-        grupo = { meta: linha.meta, celulas: [] };
-        porMeta.set(linha.meta.id, grupo);
-      }
-      grupo.celulas.push({
-        linha,
-        nivelSemaforo: nivelDaLinha(linha),
-        percentual: percentualComprometido(linha),
-        vazia: linhaVazia(linha),
-      });
-    }
-
-    // A ordem de `metas × rubricas` do backend já é numero/ordem; o Map
-    // preserva a ordem de inserção, então não há o que reordenar.
-    return [...porMeta.values()];
-  }, [linhas]);
+  // O backend devolve uma lista plana de pools; a árvore Rubrica × Nível é só
+  // apresentação — nenhum indicador é recalculado aqui (#398).
+  const grupos: RubricaComPools[] = useMemo(() => (linhas ? montarMatriz(linhas) : []), [linhas]);
 
   /**
-   * As alocações do banner: `alerta_80` é o campo que o backend dedica a isso,
-   * e usá-lo (em vez de comparar o percentual aqui) mantém a tela e o e-mail
-   * diário disparando no mesmo critério.
+   * Os pools do banner: `alerta_80` é o campo que o backend dedica a isso,
+   * e usá-lo mantém a tela e o e-mail diário disparando no mesmo critério.
    */
   const criticas = useMemo(
-    () =>
-      grupos.flatMap((g) => g.celulas.filter((c) => c.linha.alerta_80)),
+    () => grupos.flatMap((g) => g.celulas.filter((c) => c.linha.alerta_80)),
     [grupos],
   );
-
-  /** O nível veio na resposta; a tela só o nomeia. Ver `EscopoExibido`. */
-  const escopo: EscopoExibido = useMemo(() => {
-    const nivel: NivelOrcamento = linhas?.[0]?.nivel ?? "nacional";
-    if (nivel === "estadual") {
-      // `value` é a própria sigla (ver fetchStateSiglaOptions), então a opção
-      // casa por igualdade — nada de procurar "(PE)" dentro do rótulo.
-      const opcao = estados.find((e) => e.value === filtros.estado);
-      return { nivel, nomeLocal: opcao?.label ?? (filtros.estado || null) };
-    }
-    if (nivel === "territorial") {
-      const opcao = territorios.find((t) => t.value === filtros.territorio);
-      // O ADT não escolhe o território — o backend resolve pelo perfil dele, e
-      // o nome não chega na resposta do painel. Sem opção correspondente, o
-      // rótulo cai para "Territorial", que continua verdadeiro.
-      return { nivel, nomeLocal: opcao?.label ?? null };
-    }
-    return { nivel, nomeLocal: null };
-  }, [linhas, estados, territorios, filtros.estado, filtros.territorio]);
 
   // Ordenado aqui porque o backend não entrega ordenado: o `annotate(Sum(...))`
   // de `WorkPlanMetaViewSet.get_queryset` derruba o ORDER BY do model, e o
@@ -346,10 +297,8 @@ function PainelOrcamentoConteudo() {
   // num Select custa mais orientação do que entrega.
   const primeiraCarga = loading && linhas === null;
 
-  // `painel_orcamento` emite uma linha por par Meta × rubrica ativa, zeros
-  // inclusive — uma Meta sem orçamento volta como 6 linhas zeradas, nunca uma
-  // lista vazia. Sem este teste a tela mostraria uma matriz de "R$ 0,00" onde o
-  // certo é dizer que não há orçamento lançado.
+  // Pools zerados (criados e ainda sem valor) não contam como orçamento lançado:
+  // sem este teste a tela mostraria uma matriz de "R$ 0,00".
   const semOrcamento =
     !loading &&
     !error &&
@@ -369,9 +318,10 @@ function PainelOrcamentoConteudo() {
         />
 
         <p className="max-w-prose text-sm text-text-muted">
-          Matriz Meta × Rubrica do orçamento do PDHC III. O semáforo compara o
-          valor comprometido com o aprovado de cada rubrica; a partir de 80% a
-          alocação entra no alerta do topo.
+          Orçamento do PDHC III por rubrica e nível: nacional, estados e
+          territórios. O semáforo compara o comprometido com o aprovado de cada
+          pool, nas faixas configuradas; os pools na faixa vermelha entram no
+          alerta do topo.
         </p>
 
         <OrcamentoFilters
@@ -390,7 +340,6 @@ function PainelOrcamentoConteudo() {
             estes números no nível que lhes cabe, e o card seria redundante. */}
         {soTerritorio && (
           <BudgetBalance
-            metaId={filtros.meta || null}
             titulo="Saldo por rubrica no seu território"
             semTerritorio={semTerritorio !== null}
           />
@@ -433,8 +382,8 @@ function PainelOrcamentoConteudo() {
               }
               description={
                 temFiltro
-                  ? "As Metas e rubricas deste recorte não têm valores lançados. Ajuste os filtros para ver outras combinações."
-                  : "Assim que a UGP distribuir o orçamento entre as Metas e rubricas, os valores aparecem aqui."
+                  ? "Os pools deste recorte não têm valores lançados. Ajuste os filtros para ver outros."
+                  : "Assim que a UGP lançar o orçamento nacional e distribuí-lo entre estados e territórios, os valores aparecem aqui."
               }
               action={
                 temFiltro ? (
@@ -463,18 +412,14 @@ function PainelOrcamentoConteudo() {
 
             <MatrizOrcamento
               grupos={grupos}
-              escopo={escopo}
+              comMeta={filtros.meta !== ""}
               onSelect={setSelecionada}
             />
           </div>
         )}
       </div>
 
-      <CelulaDetalheSlideOver
-        celula={selecionada}
-        onClose={() => setSelecionada(null)}
-        soTerritorio={soTerritorio}
-      />
+      <CelulaDetalheSlideOver celula={selecionada} onClose={() => setSelecionada(null)} />
     </div>
   );
 }

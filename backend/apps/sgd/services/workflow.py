@@ -264,7 +264,7 @@ def _reservar(demand, transicao, *, ator, **_) -> tuple[list, dict | None]:
         consumo_previo = consumo_por_rubrica.get(solicitacao.rubrica_id, balance_service.ZERO)
         check = balance_service.verificar_duas_travas(
             solicitante=demand.solicitante, rubrica=solicitacao.rubrica, valor=solicitacao.valor_estimado,
-            consumo_previo=consumo_previo,
+            consumo_previo=consumo_previo, demanda=demand,
         )
         if not check.disponivel:
             bloqueios[solicitacao.pk] = check.bloqueio(solicitacao_id=solicitacao.pk)
@@ -419,6 +419,9 @@ def _articuladores(demand, destinatarios: dict):
     """`destinatarios` guarda a consulta por estado: o cancelamento em lote notifica
     várias demandas da mesma atividade."""
     sigla = contexto.estado_da_demanda(demand)
+    if sigla is None:
+        # Demanda nacional: nenhum Articulador é notificado.
+        return []
     if sigla not in destinatarios:
         destinatarios[sigla] = list(notifications_service.usuarios_articuladores_do_estado(sigla))
     return destinatarios[sigla]
@@ -482,9 +485,12 @@ def _aplicar(demand, transicao: Transicao, solicitacoes, *, ator, destinatarios:
 
 
 @transaction.atomic
-def executar_transicao(demand, destino: str, *, ator=None, origem: str = ORIGEM_USUARIO, **dados):
+def executar_transicao(demand, destino: str, *, ator=None, origem: str = ORIGEM_USUARIO, conferir_sob_lock=None,
+                       **dados):
     """Leva `demand` a `destino`. `dados` são os da ação: `justificativa`;
-    `ajustes`, `excedente_autorizado` (autorizar); `valores_pagos` (concluir)."""
+    `ajustes`, `excedente_autorizado` (autorizar); `valores_pagos` (concluir).
+    `conferir_sob_lock(demand)` roda com a `Demand` travada, antes de gravar: regra
+    que depende de dados que outra requisição pode mudar até ali."""
     desconhecidos = set(dados) - _DADOS_DAS_ACOES
     if desconhecidos:
         raise TypeError(f"Dados desconhecidos para a transição: {sorted(desconhecidos)}.")
@@ -496,6 +502,8 @@ def executar_transicao(demand, destino: str, *, ator=None, origem: str = ORIGEM_
 
     solicitacoes, retrato = _EFEITOS[transicao.efeito_saldo](demand, transicao, ator=ator, **dados)
     _travar_demanda(demand, retrato)
+    if conferir_sob_lock is not None:
+        conferir_sob_lock(demand)
     _aplicar(demand, transicao, solicitacoes, ator=ator, destinatarios={}, **dados)
     return demand
 

@@ -80,7 +80,10 @@ function CampoMunicipio({ campo, valor, onChange, error }: Props) {
   );
 }
 
-/** Um campo do formulário de solicitação, desenhado pelo tipo declarado em `CONFIG_POR_TIPO`. */
+/**
+ * Um campo do formulário de solicitação, desenhado pelo tipo declarado em
+ * `CONFIG_POR_TIPO` ou, num tipo do catálogo, pelo `schema_campos` (#365).
+ */
 export function CampoDinamico(props: Props) {
   const { campo, valor, onChange, error } = props;
   const choices = useSgpChoices();
@@ -97,7 +100,7 @@ export function CampoDinamico(props: Props) {
           id={id}
           label={campo.rotulo}
           required={campo.obrigatorio}
-          options={campo.choice ? choices[campo.choice] : []}
+          options={campo.opcoes ?? (campo.choice ? choices[campo.choice] : [])}
           value={valor}
           onChange={onChange}
           helperText={campo.ajuda}
@@ -112,6 +115,22 @@ export function CampoDinamico(props: Props) {
           label={campo.rotulo}
           required={campo.obrigatorio}
           rows={3}
+          value={valor}
+          onChange={(e) => onChange(e.target.value)}
+          helperText={campo.ajuda}
+          error={error}
+        />
+      );
+    case "numero":
+      return (
+        <Input
+          id={id}
+          label={campo.rotulo}
+          required={campo.obrigatorio}
+          type="number"
+          inputMode={campo.inteiro ? "numeric" : "decimal"}
+          step={campo.inteiro ? 1 : "any"}
+          min={campo.minimo}
           value={valor}
           onChange={(e) => onChange(e.target.value)}
           helperText={campo.ajuda}

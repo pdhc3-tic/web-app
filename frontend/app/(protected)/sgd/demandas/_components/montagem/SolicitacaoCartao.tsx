@@ -4,6 +4,7 @@ import { AlertTriangle, Pencil, PlusCircle, Trash2 } from "lucide-react";
 import { Button } from "@/app/components/ui/Button/Button";
 import { resumoSolicitacao } from "@/app/lib/camposSolicitacao";
 import type { SolicitacaoDemanda } from "@/app/lib/demandas";
+import { useTiposSolicitacao } from "@/app/lib/hooks/useTiposSolicitacao";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import type { BloqueioSolicitacao } from "@/app/lib/solicitacoes";
 
@@ -32,7 +33,10 @@ export function SolicitacaoCartao({
   onRemover: () => void;
   onRecursoExtra: () => void;
 }) {
-  const resumo = resumoSolicitacao(solicitacao.tipo, solicitacao.campos_json);
+  // Num tipo novo do catálogo (#365), o resumo sai dos campos do schema.
+  const catalogo = useTiposSolicitacao();
+  const schema = catalogo.data?.find((t) => t.slug === solicitacao.tipo)?.schema_campos;
+  const resumo = resumoSolicitacao(solicitacao.tipo, solicitacao.campos_json, schema);
 
   return (
     <li

@@ -1,6 +1,6 @@
 # Orçamento — modelo, motor de saldo e contrato com o SGD
 
-Este documento descreve o controle financeiro do SGP: os modelos, o motor de saldo, os limites de gasto, o ledger, a ordem de lock e os endpoints. O código fica em `apps/sgp/budget/`, ainda no app `sgp`.
+Este documento descreve o controle financeiro do SGP: os modelos, o motor de saldo, os limites de gasto, o ledger, a ordem de lock e os endpoints. O código fica em `apps/sgp/budget/`, ainda no app `sgp`. O lado do SGD (máquina de estados, contrato de erro, porta e abrangência territorial) está em [`sgd.md`](sgd.md).
 
 ## Modelos
 
@@ -67,7 +67,7 @@ def liberar(*, demand_request_id, usuario, motivo) -> BudgetTransaction
 def remanejar(*, origem, destino, valor, usuario, justificativa) -> tuple[BudgetTransaction, BudgetTransaction]
 ```
 
-No SGD, só a porta `apps.sgd.services.orcamento` importa o motor e `apps.sgp.budget.limites`. Ela devolve os erros do motor como exceções de domínio (`apps.sgd.exceptions`).
+No SGD, só a porta `apps.sgd.services.orcamento` importa o motor e `apps.sgp.budget.limites`. Ela devolve os erros do motor como exceções de domínio (`apps.sgd.exceptions`). As funções da porta e o contrato `INSUFFICIENT_BALANCE` estão em [`sgd.md`](sgd.md#contrato-de-erro).
 
 ### Estado da demanda → chamada esperada
 
@@ -109,7 +109,7 @@ Os agregados também usam visão total: o `valor_distribuido` do nacional e o ap
 
 ## Ordem de lock
 
-Toda transação que trava mais de uma destas linhas segue esta ordem:
+Toda transação que trava mais de uma destas linhas segue esta ordem (resumo do lado do SGD em [`sgd.md`](sgd.md#ordem-canônica-de-lock)):
 
 1. Linha do `User` solicitante, em `FOR NO KEY UPDATE`: a submissão e a desativação a travam antes de tudo, e assim uma não passa pela outra. A edição do cadastro também a trava, mas não toca em saldo depois. Esse modo não barra a checagem de FK de outras transações.
 2. `BudgetIncreaseRequest` (pedido de recurso extra).
@@ -125,7 +125,7 @@ As transições de status passam por `apps.sgd.services.workflow.executar_transi
 
 | Caminho | O que trava |
 |---|---|
-| Submissão | Linha do solicitante, recusando se ele estiver inativo → por rubrica: linhas de limite (a do período é criada aqui, se faltar) → pool → `Demand` → `DemandRequest` |
+| Submissão | Linha do solicitante, recusando se ele estiver inativo → por rubrica: linhas de limite (a do período é criada aqui, se faltar) → pool → `Demand` → `DemandRequest`. Com a `Demand` travada, as regras de submissão (documentos e anexos) são conferidas de novo, só com leitura |
 | Autorização, recusa, cancelamento pelo solicitante ou pela UGP/Super Admin, conclusão pela FGD | Por rubrica: linhas de limite → pools das reservas, em ordem de pk → `Demand` → `DemandRequest` (estado da reserva, `valor_autorizado` e `valor_pago`, em ordem de pk). Na conclusão, só as solicitações ainda sem pagamento |
 | Autorização com excedente (remanejamento emergencial) | Por rubrica: linhas de limite → pools (origem e os das reservas, em ordem de pk) → depois segue como a autorização |
 | Pré-autorização, devolução, início do atendimento | Só a `Demand` |
@@ -133,8 +133,9 @@ As transições de status passam por `apps.sgd.services.workflow.executar_transi
 | Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todas as linhas de limite e depois todos os pools; só então as `Demand`, em ordem de pk, e por fim as `DemandRequest`. Se uma demanda mudou, a transação volta e a task é repetida (até 3 vezes) |
 | Desativação de usuário (`core.services.usuarios.desativar`) | Grava `ativo` na linha do usuário, sem conflito com a checagem de FK, e segue como o cancelamento em lote, só para demandas não autorizadas. Os outros campos do usuário são gravados por último: trocar o e-mail, coluna única, conflita com essa checagem. Se uma demanda mudou para fora desses status, a transação inteira volta com `INVALID_TRANSITION`, sem repetição automática |
 | Edição do cadastro do usuário (`PATCH /users/{id}/`) | Só a linha do usuário. Trocar o e-mail sobe esse lock para `FOR UPDATE`, sem esperar nenhuma linha de saldo depois |
-| Edição da demanda; inclusão de solicitação | Só a `Demand` |
-| Edição e remoção de solicitação | Limite → pool (se há reserva) → `Demand` → `DemandRequest`; a edição relê a reserva já com o limite travado |
+| Edição da demanda; inclusão de solicitação | Só a `Demand`. A inclusão grava depois os anexos dos campos (`DemandDocument`) |
+| Edição e remoção de solicitação | Limite → pool (se há reserva) → `Demand` → `DemandRequest` → `DemandDocument` (anexos ligados ou removidos); a edição relê a reserva já com o limite travado |
+| Envio (confirmação) e remoção de documento da demanda | Só a `Demand`, com o status relido, e depois o `DemandDocument`. A confirmação consulta o storage antes do lock |
 | Decisão de recurso extra | Pedido → linha de limite do período → pools (territorial e origem, em ordem de pk) → `Demand` → todas as `DemandRequest` da demanda. Com a sobrealocação desligada, relê o pool territorial, já travado |
 | Parecer, devolução, submissão e edição do pedido | Só o pedido |
 | Criação do pedido | A `Demand`, e depois o pedido novo, que nenhuma outra transação enxerga antes do commit |
@@ -163,6 +164,8 @@ A tarefa `reconcile_budget_balances` roda a mesma checagem toda noite e notifica
 ## Alertas
 
 `BudgetAlert` segue o modelo de dados do SGP (`escopo`, `referencia_id`, `rubrica`, `faixa`, `percentual_atingido`, `alertado_em`, `usuarios_alertados_ids`), mais `tipo`, `criado_em` e `resolvido_em`. `criado_em` não muda depois da criação; `alertado_em` guarda a última entrada numa faixa. Cada alvo tem no máximo um alerta aberto por tipo. Os alertas por rubrica, de subexecução e de remanejamento excessivo, usam o pool nacional dela como alvo.
+
+As faixas do semáforo são parametrizáveis: `budget_alert_yellow_pct` (amarelo, padrão 70) e `budget_alert_red_pct` (vermelho, padrão 90), no `SystemConfig`, semeadas pela migration `core/0021`. `limiares_semaforo()` lê os dois valores e `faixa_semaforo()` aplica `>= vermelho` e depois `>= amarelo`. Mudar a configuração muda a cor e os alertas sem deploy. O painel devolve os limiares em vigor em `limiares_semaforo`, porque nem todo perfil lê o `/system-config/`.
 
 ## Endpoints HTTP
 
@@ -295,5 +298,7 @@ Matriz Rubrica × Nível: uma linha por pool no escopo do perfil, com o `id` que
 | `GET /api/v1/sgp/orcamento/alertas/` | Perfis do orçamento, no próprio escopo | Filtros `?tipo=`, `?faixa=` e `?abertos=`; paginado |
 
 ## Painel por rubrica do SGD
+
+O mapa de requisitos do SGD para código e testes está em [`sgd.md`](sgd.md#mapa-rf--módulo--teste).
 
 `GET /api/v1/sgd/painel/rubricas/` traz por rubrica o solicitado e o autorizado das demandas filtradas e os totais do orçamento no nível do usuário. Traz também os limites de gasto agregados no período vigente (`limite_total`, `limite_comprometido`, `limite_executado` e `limite_disponivel`). Esses totais somam só as linhas individuais já criadas: quem ainda não reservou no período não entra, mesmo tendo limite herdado do perfil.

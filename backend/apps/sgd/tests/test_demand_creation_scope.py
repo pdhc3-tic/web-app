@@ -41,13 +41,19 @@ def test_adt_cria_demanda_em_atividade_do_proprio_territorio(auth_client_solicit
     assert Demand.objects.filter(activity=activity_rn).count() == 1
 
 
-def test_adt_nao_cria_demanda_em_atividade_de_outro_territorio(auth_client_solicitante, activity_ce):
+def test_adt_vincula_atividade_de_outro_territorio_e_a_demanda_fica_no_dele(
+    auth_client_solicitante, activity_ce, territory_rn,
+):
+    """Issue #352: vincular atividade de outro estado é permitido; a abrangência
+    é a do solicitante e a resposta sinaliza a atividade fora do território."""
     response = auth_client_solicitante.post(
         URL, {"titulo": "Pedido", "activity_id": activity_ce.pk}, format="json",
     )
 
-    assert response.status_code == 404
-    assert not Demand.objects.exists()
+    assert response.status_code == 201
+    assert response.data["estado_sigla"] == "RN"
+    assert response.data["territorio"] == territory_rn.pk
+    assert response.data["atividade_fora_do_territorio"] is True
 
 
 def test_adt_cria_atividade_inline_em_municipio_do_proprio_territorio(auth_client_solicitante, municipio_rn):
@@ -82,6 +88,10 @@ def test_super_admin_cria_demanda_em_qualquer_territorio(auth_client_super_admin
     )
 
     assert response.status_code == 201
+    # Perfil nacional: a demanda nasce no nível nacional (Issue #352).
+    assert response.data["estado_sigla"] is None
+    assert response.data["territorio"] is None
+    assert response.data["atividade_fora_do_territorio"] is False
 
 
 def test_super_admin_cria_atividade_inline_em_qualquer_territorio(auth_client_super_admin, municipio_ce):

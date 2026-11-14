@@ -5,6 +5,9 @@ import type { SolicitacaoDemanda } from "@/app/lib/demandas";
 import { bloqueiosDaSubmissao, type ErroSaldoInsuficiente } from "@/app/lib/solicitacoes";
 import { SolicitacaoCartao } from "./SolicitacaoCartao";
 
+// O resumo de um tipo do catálogo usa o schema (#365); os tipos daqui têm layout próprio.
+vi.mock("@/app/lib/hooks/useTiposSolicitacao", () => ({ useTiposSolicitacao: () => ({ data: [] }) }));
+
 /**
  * O bloqueio da submissão em cada solicitação, montado pelos campos do
  * `INSUFFICIENT_BALANCE` (#359): a trava, o disponível e o solicitado em BRL

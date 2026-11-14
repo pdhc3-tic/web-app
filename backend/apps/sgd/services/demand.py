@@ -5,8 +5,10 @@ from django.db import transaction
 from apps.sgd.exceptions import JustificativaObrigatoria, RegraDeNegocio
 from apps.sgd.models.demand import STATUS_EDITAVEIS, Demand
 from apps.sgd.models.demand_request import DemandRequest
+from apps.sgd.services import anexos as anexos_service
 from apps.sgd.services import auditoria as auditoria_service
 from apps.sgd.services import balance as balance_service
+from apps.sgd.services import contexto
 from apps.sgd.services import workflow as workflow_service
 from apps.sgd.services.demand_request import (
     _exigir_minimo_cotacoes_equipamento,  # noqa: F401
@@ -14,11 +16,15 @@ from apps.sgd.services.demand_request import (
     rubrica_para_tipo,
     validar_campos_json,
 )
+from apps.sgp.models import Activity
 from apps.sgp.services.activity import criar_planejada
 from apps.sgp.services.activity_status import ActivityRuleError
 
 ACTIVITY_STATUS_BLOQUEIAM_NOVA_DEMANDA = {"cancelada", "nao_realizada"}
 ACTIVITY_STATUS_EXIGEM_JUSTIFICATIVA = {"em_andamento", "concluido", "concluido_sem_evidencia"}
+# Oferecidas na busca do formulário. As demais que aceitam demanda pedem justificativa
+# de despesa posterior e continuam valendo pelo `activity_id`.
+ACTIVITY_STATUS_ELEGIVEIS_NA_BUSCA = ("planejado", "agendado")
 # Campo do cadastro da atividade → campo que o cliente envia na criação inline.
 _CAMPO_DA_ATIVIDADE_INLINE = {
     "titulo": "activity_titulo",
@@ -38,6 +44,22 @@ def _despesa_posterior_e_valida(activity) -> bool:
     return activity.status in ACTIVITY_STATUS_EXIGEM_JUSTIFICATIVA
 
 
+def atividades_para_vincular():
+    """Atividades que o solicitante pode vincular, de qualquer estado ou território: a
+    abrangência da demanda vem de quem a cria, não da atividade."""
+    return Activity.objects.filter(ativo=True)
+
+
+def atividades_elegiveis(*, q: str = "", status=()):
+    """As de `atividades_para_vincular` que a busca do formulário oferece."""
+    qs = contexto.com_estado_da_atividade(
+        atividades_para_vincular().filter(status__in=status or ACTIVITY_STATUS_ELEGIVEIS_NA_BUSCA),
+    ).select_related("tecnico_responsavel")
+    if q := q.strip():
+        qs = qs.filter(titulo__icontains=q)
+    return qs
+
+
 def criar_activity_inline(*, titulo, tipo_atividade, acao, municipio, data_prevista, usuario):
     try:
         return criar_planejada(
@@ -53,9 +75,13 @@ def criar_demanda(*, titulo, activity, justificativa, solicitante) -> Demand:
     despesa_posterior = _despesa_posterior_e_valida(activity)
     if despesa_posterior and not justificativa:
         raise JustificativaObrigatoria("Obrigatória para demandas de atividades já em andamento/concluídas.")
+    # Território do solicitante, congelado aqui: a atividade pode estar em
+    # outro estado, e a lotação do usuário pode mudar depois.
+    estado_sigla, territorio = contexto.abrangencia_para_nova_demanda(solicitante=solicitante)
     demand = Demand.objects.create(
         titulo=titulo, activity=activity, justificativa=justificativa,
         solicitante=solicitante, despesa_posterior=despesa_posterior,
+        estado_sigla=estado_sigla, territorio=territorio,
     )
     auditoria_service.registrar_status(demand, de=None, para=demand.status, usuario=solicitante)
     return demand
@@ -112,6 +138,7 @@ def adicionar_solicitacao(demand, *, tipo, campos_json, valor_estimado=None, ord
         demanda=demand, tipo_id=tipo, rubrica=rubrica, campos_json=validado.campos_json,
         beneficiario_cpf=validado.beneficiario_cpf, valor_estimado=valor_final, ordem=ordem,
     )
+    anexos_service.vincular_anexos(solicitacao)
     demand.recalcular_totais()
     return solicitacao
 
@@ -131,7 +158,9 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
 
     tipo_final = tipo or solicitacao.tipo_id
     campos_final = campos_json if campos_json is not None else solicitacao.campos_json
-    validado = validar_campos_json(tipo_final, campos_final, demand.activity)
+    # Mesmo tipo: o validador pode preservar o que foi calculado na gravação (ex.: diária).
+    anteriores = solicitacao.campos_json if tipo_final == solicitacao.tipo_id else None
+    validado = validar_campos_json(tipo_final, campos_final, demand.activity, anteriores=anteriores)
     # Não retroativo: só consulta o catálogo se o tipo mudou.
     rubrica = rubrica_para_tipo(tipo_final) if tipo_final != solicitacao.tipo_id else solicitacao.rubrica
 
@@ -163,6 +192,7 @@ def atualizar_solicitacao(solicitacao, *, usuario, tipo=None, campos_json=None, 
         "tipo", "rubrica", "campos_json", "beneficiario_cpf", "valor_estimado", "valor_reservado",
         "valor_excedente", "atualizado_em",
     ])
+    anexos_service.vincular_anexos(solicitacao, usuario=usuario)
     demand.recalcular_totais()
     return solicitacao
 
@@ -177,13 +207,18 @@ def remover_solicitacao(solicitacao, *, usuario) -> None:
             motivo="Solicitação removida durante edição da demanda.", adiar_gravacao=True,
         )
     _travar_editavel(solicitacao.demanda)
+    anexos_service.remover_anexos(solicitacao, usuario=usuario)
     solicitacao.delete()
     solicitacao.demanda.recalcular_totais()
 
 
 def submeter_demanda(demand, *, usuario) -> Demand:
+    # Antes do saldo, para o erro sair sem travar nada; de novo com a demanda travada,
+    # porque um documento pode ser removido enquanto a submissão espera o lock.
     exigir_regras_de_submissao(demand)
-    return workflow_service.executar_transicao(demand, "submetida", ator=usuario)
+    return workflow_service.executar_transicao(
+        demand, "submetida", ator=usuario, conferir_sob_lock=exigir_regras_de_submissao,
+    )
 
 
 def cancelar_demanda(demand, *, usuario, motivo: str = "") -> Demand:

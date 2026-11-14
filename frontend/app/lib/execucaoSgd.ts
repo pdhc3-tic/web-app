@@ -16,6 +16,15 @@ export interface LinhaPainelRubrica {
   disponivel: string;
   percentual_execucao: string;
   faixa: FaixaSemaforo;
+  /**
+   * Soma dos limites de gasto individuais do período vigente, no mesmo recorte
+   * (#385). Para o Articulador, só os do estado dele, mesmo quando o orçamento
+   * mostrado é o nacional.
+   */
+  limite_total: string;
+  limite_comprometido: string;
+  limite_executado: string;
+  limite_disponivel: string;
 }
 
 export type FaixaSemaforo = "verde" | "amarelo" | "vermelho";

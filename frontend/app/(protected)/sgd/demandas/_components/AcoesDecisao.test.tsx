@@ -37,11 +37,12 @@ vi.mock("@/app/components/ui/Select/Select", () => ({
   ),
 }));
 
-vi.mock("@/app/lib/hooks/useAlocacoesDeOrigem", () => ({
-  useAlocacoesDeOrigem: () => ({
+vi.mock("@/app/lib/hooks/usePoolsDeOrigem", () => ({
+  usePoolsDeOrigem: () => ({
     carregando: false,
-    alocacoes: [
-      { id: 5, nivel: "estadual", estado: { nome: "Rio Grande do Norte" }, rubrica: { slug: "diarias", nome: "Diárias" }, saldo_disponivel: "9000.00" },
+    falhou: false,
+    pools: [
+      { id: 5, nivel: "estadual", estado: { nome: "Rio Grande do Norte" }, rubrica: { slug: "diarias", nome: "Diárias" }, saldo_pool: "9000.00" },
     ],
   }),
 }));
