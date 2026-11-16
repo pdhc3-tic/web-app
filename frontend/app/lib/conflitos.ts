@@ -21,7 +21,7 @@ import type { Paginated } from "@/app/lib/users";
 export type ConflitoStatus = "pendente" | "resolvido_auto" | "resolvido_manual";
 
 /** Entidades sincronizáveis — ConflictLogFilter aceita exatamente estas três. */
-export type ConflitoEntidade = "upf" | "member" | "activity";
+export type ConflitoEntidade = "ufpa" | "member" | "activity";
 
 /** Espelha ConflictResolveSerializer.decisao. */
 export type ConflitoDecisao = "local" | "servidor" | "manual";
@@ -71,7 +71,7 @@ export type ConflitoDetalhe = Conflito & {
 // ─── Rótulos ─────────────────────────────────────────────────────────────────
 
 export const ENTIDADE_LABEL: Record<ConflitoEntidade, string> = {
-  upf: "UPF",
+  ufpa: "UFPA",
   member: "Membro da família",
   activity: "Atividade de campo",
 };

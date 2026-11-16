@@ -9,7 +9,7 @@ export type ConflitoFiltersValue = {
   status: string;
   /** "true" | "false" | "" — BooleanFilter do backend. */
   sensivel: string;
-  /** upf | member | activity. "" = todas. */
+  /** ufpa | member | activity. "" = todas. */
   entidade: string;
 };
 

@@ -224,4 +224,51 @@ test.describe("SGD — perfis que não abrem demanda", () => {
     await page.goto("/sgd/demandas/nova");
     await expect(page.getByTestId("nova-demanda-form")).toHaveCount(0);
   });
+
+  // #404: custo da atividade no cabeçalho da aba e bloco de riscos de glosa (ver `custo` na fixture).
+  test("o cabeçalho da aba mostra o custo previsto e o realizado que o backend calcula", async ({ page }) => {
+    await page.goto(`/sgp/atividades/${fx.custo.id}?tab=demandas`);
+    await expect(page.getByTestId("atividade-custos")).toBeVisible();
+    // Previsto: a Submetida (R$ 1.200). A Concluída sai do previsto e entra no realizado
+    // pelo autorizado (R$ 800), não pelo pago (R$ 950): o excedente é risco de glosa.
+    await expect(page.getByTestId("atividade-custo-previsto")).toHaveText(/R\$\s1\.200,00/);
+    await expect(page.getByTestId("atividade-custo-realizado")).toHaveText(/R\$\s800,00/);
+  });
+
+  test("o bloco de riscos de glosa lista os riscos em aberto, com severidade e valor exposto", async ({ page }) => {
+    const { pagoAcima, semEvidencia, resolvido } = fx.custo.riscos;
+    await page.goto(`/sgp/atividades/${fx.custo.id}`);
+
+    const bloco = page.getByTestId("riscos-de-glosa");
+    await expect(bloco).toBeVisible();
+    await expect(page.getByTestId("riscos-de-glosa-total")).toHaveText(/R\$\s1\.100,00/);
+
+    const acima = page.getByTestId(`risco-de-glosa-${pagoAcima}`);
+    await expect(acima).toContainText("Pago acima do autorizado");
+    await expect(acima).toContainText("150,00");
+    await expect(page.getByTestId(`risco-de-glosa-severidade-${pagoAcima}`)).toHaveText("Severidade alta");
+    await expect(page.getByTestId(`risco-de-glosa-severidade-${pagoAcima}`)).toHaveAttribute(
+      "data-severidade",
+      "alta",
+    );
+    await expect(page.getByTestId(`risco-de-glosa-${semEvidencia}`)).toContainText(
+      "Demanda executada sem evidência",
+    );
+    await expect(page.getByTestId(`risco-de-glosa-${semEvidencia}`)).toContainText("950,00");
+
+    // Resolvido não é mais risco.
+    await expect(page.getByTestId(`risco-de-glosa-${resolvido}`)).toHaveCount(0);
+    await expect(bloco.locator('[data-testid^="risco-de-glosa-severidade-"]')).toHaveCount(2);
+  });
+
+  test("sem risco em aberto, a ficha não mostra o bloco", async ({ page }) => {
+    // Espera a resposta da consulta, para não passar só porque ela ainda não voltou.
+    const riscos = page.waitForResponse(
+      (r) => r.url().includes(`/api/v1/sgp/glosa-riscos/?activity=${fx.comDemandas.id}`) && r.ok(),
+    );
+    await page.goto(`/sgp/atividades/${fx.comDemandas.id}`);
+    await riscos;
+    await expect(page.getByTestId("atividade-status-btn")).toBeVisible();
+    await expect(page.getByTestId("riscos-de-glosa")).toHaveCount(0);
+  });
 });

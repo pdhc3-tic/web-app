@@ -21,7 +21,7 @@ import {
   RUBRICAS,
   type PoolOrcamentoApi,
 } from "@/app/lib/orcamento";
-import { fetchStates, fetchTerritorios, type StateItem } from "@/app/lib/upfs";
+import { fetchStates, fetchTerritorios, type StateItem } from "@/app/lib/ufpas";
 import type { Territorio } from "@/app/lib/auth/types";
 import { BarraSaldo } from "./_components/BarraSaldo";
 import {

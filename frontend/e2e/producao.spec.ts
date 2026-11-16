@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { storageStatePath } from "./helpers/users";
 
 /**
- * Produção da UPF consolidada (#238, A3 da #302) contra o backend real e o
+ * Produção da UFPA consolidada (#238, A3 da #302) contra o backend real e o
  * `seed_demo` (69 produções, 23 culturas). Cada teste compara a tela com a
  * própria API, consultada com o token da sessão.
  *
@@ -12,8 +12,8 @@ import { storageStatePath } from "./helpers/users";
  */
 
 type Paginado<T> = { count: number; results: T[] };
-type ItemProducao = { id: number; upf_id: number; upf_nome_titular: string; tipo: string; cultura: { id: number; nome: string } | null };
-type Indicadores = { total_upfs_produtoras: number; area_total_ha: string | null; principais_culturas: { nome: string }[] };
+type ItemProducao = { id: number; ufpa_id: number; ufpa_nome_titular: string; tipo: string; cultura: { id: number; nome: string } | null };
+type Indicadores = { total_ufpas_produtoras: number; area_total_ha: string | null; principais_culturas: { nome: string }[] };
 type ItemCatalogo = { id: number; nome: string };
 
 /** Abre a tela e devolve a origem da API, lida de uma requisição real dela. */
@@ -36,17 +36,17 @@ async function api<T>(page: Page, origem: string, caminho: string): Promise<T> {
   ) as Promise<T>;
 }
 
-test.describe("SGP — Produção da UPF consolidada", () => {
+test.describe("SGP — Produção da UFPA consolidada", () => {
   test.use({ storageState: storageStatePath("ugp") });
 
   test("card Produção aparece na página do SGP com link funcional", async ({ page }) => {
     await page.goto("/sgp");
-    const card = page.getByRole("link", { name: /Produção da UPF/i });
+    const card = page.getByRole("link", { name: /Produção da UFPA/i });
     await expect(card).toBeVisible();
     expect(await card.getAttribute("href")).toContain("/sgp/producao");
   });
 
-  test("lista e indicadores batem com a API, e o titular leva à aba Produção da UPF", async ({ page }) => {
+  test("lista e indicadores batem com a API, e o titular leva à aba Produção da UFPA", async ({ page }) => {
     const origem = await abrir(page);
     const [lista, indicadores] = await Promise.all([
       api<Paginado<ItemProducao>>(page, origem, "/api/v1/sgp/producao/?page=1&page_size=20"),
@@ -54,15 +54,15 @@ test.describe("SGP — Produção da UPF consolidada", () => {
     ]);
     expect(lista.count).toBeGreaterThan(0);
 
-    await expect(page.getByTestId("producao-indicador-upfs")).toHaveText(String(indicadores.total_upfs_produtoras));
-    await expect(page.getByRole("columnheader", { name: "UPF / Titular" })).toBeVisible();
+    await expect(page.getByTestId("producao-indicador-ufpas")).toHaveText(String(indicadores.total_ufpas_produtoras));
+    await expect(page.getByRole("columnheader", { name: "UFPA / Titular" })).toBeVisible();
 
     const primeiro = lista.results[0];
     const linha = page.getByTestId(`producao-linha-${primeiro.id}`);
-    await expect(linha).toContainText(primeiro.upf_nome_titular);
-    await expect(linha.getByRole("link", { name: primeiro.upf_nome_titular })).toHaveAttribute(
+    await expect(linha).toContainText(primeiro.ufpa_nome_titular);
+    await expect(linha.getByRole("link", { name: primeiro.ufpa_nome_titular })).toHaveAttribute(
       "href",
-      `/sgp/upfs/${primeiro.upf_id}?tab=producao`,
+      `/sgp/ufpas/${primeiro.ufpa_id}?tab=producao`,
     );
   });
 
@@ -91,8 +91,8 @@ test.describe("SGP — Produção da UPF consolidada", () => {
       api<Indicadores>(page, origem, "/api/v1/sgp/producao/indicadores/"),
     ]);
     // O recorte muda de fato os indicadores: não é o total geral repetido.
-    expect(indicadores.total_upfs_produtoras).toBeLessThan(semFiltro.total_upfs_produtoras);
-    await expect(page.getByTestId("producao-indicador-upfs")).toHaveText(String(indicadores.total_upfs_produtoras));
+    expect(indicadores.total_ufpas_produtoras).toBeLessThan(semFiltro.total_ufpas_produtoras);
+    await expect(page.getByTestId("producao-indicador-ufpas")).toHaveText(String(indicadores.total_ufpas_produtoras));
     expect(indicadores.principais_culturas.map((c) => c.nome)).toEqual([cultura.nome]);
 
     // A listagem mostra exatamente as produções do recorte.

@@ -53,7 +53,7 @@ function readFiltersFromSearchParams(
  * Reflete os filtros na URL, preservando query params alheios a este conjunto.
  * `replaceState` em vez de push: filtrar não é navegação, e cada tecla numa
  * data viraria uma entrada no histórico do browser. Mesmo padrão do
- * FormulariosTab da ficha da UPF.
+ * FormulariosTab da ficha da UFPA.
  */
 function syncFiltersToUrl(filters: SyncEventsFiltrosValue) {
   if (typeof window === "undefined") return;

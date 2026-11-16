@@ -134,6 +134,63 @@ test.describe("SGD — montar e submeter a demanda (ADT)", () => {
     await expect.poll(totalNaTela).toBe(brl(ate14));
   });
 
+  test("diária: marcar hospedagem custeada por outro meio recalcula pela regra do backend (#366)", async ({ page }) => {
+    await abrirMontagem(page, fx.vazia.id);
+    await page.getByTestId("solicitacao-adicionar").click();
+    const form = page.getByTestId("solicitacao-form");
+    await escolher(page, "solicitacao-tipo", "Diárias");
+    await page.getByTestId("campo-municipio_destino_id").fill(fx.municipioNome);
+    await page.getByRole("option", { name: fx.municipioNome, exact: true }).click();
+
+    const simulacao = page.waitForResponse((r) => r.url().includes("/api/v1/sgd/config/diarias/simular/"));
+    await form.getByLabel("Data de ida").fill("2026-11-10");
+    await form.getByLabel("Data de volta").fill("2026-11-12");
+    const api = new URL((await simulacao).url()).origin;
+
+    // O esperado vem da própria rota, com e sem a hospedagem custeada.
+    type Simulado = { numero_diarias: string; valor_total: string };
+    const simular = (custeada: boolean) =>
+      page.evaluate(
+        async ({ api, municipio, custeada }) => {
+          const sessao = await (await fetch("/api/auth/session")).json();
+          const qs = new URLSearchParams({ municipio_destino_id: municipio, data_inicio: "2026-11-10", data_fim: "2026-11-12" });
+          if (custeada) qs.set("hospedagem_custeada", "true");
+          const res = await fetch(`${api}/api/v1/sgd/config/diarias/simular/?${qs}`, {
+            headers: { Authorization: `Bearer ${sessao.accessToken}` },
+          });
+          return (await res.json()) as Simulado;
+        },
+        { api, municipio: String(fx.municipioId), custeada },
+      );
+    const brl = (valor: string) =>
+      Number(valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }).replace(/\s/g, " ");
+    const quantidade = (numero: string) => {
+      const n = Number(numero);
+      return `${n.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} ${n > 1 ? "diárias" : "diária"}`;
+    };
+    const naTela = (testId: string) => () =>
+      page.getByTestId(testId).textContent().then((t) => (t ?? "").replace(/\s/g, " "));
+
+    const pago = await simular(false);
+    const custeado = await simular(true);
+    // Dois pernoites com hospedagem custeada contam meia diária cada (regra ligada na carga inicial).
+    expect(Number(custeado.numero_diarias)).toBeLessThan(Number(pago.numero_diarias));
+
+    await expect.poll(naTela("simulacao-diarias-quantidade")).toBe(quantidade(pago.numero_diarias));
+    await expect.poll(naTela("simulacao-diarias-total")).toBe(brl(pago.valor_total));
+
+    const recalculo = page.waitForResponse(
+      (r) => r.url().includes("/sgd/config/diarias/simular/") && r.url().includes("hospedagem_custeada=true"),
+    );
+    await form.getByTestId("campo-hospedagem_custeada").getByLabel("Sim").check();
+    expect((await recalculo).status()).toBe(200);
+    await expect.poll(naTela("simulacao-diarias-quantidade")).toBe(quantidade(custeado.numero_diarias));
+    await expect.poll(naTela("simulacao-diarias-total")).toBe(brl(custeado.valor_total));
+
+    await form.getByTestId("campo-hospedagem_custeada").getByLabel("Não").check();
+    await expect.poll(naTela("simulacao-diarias-total")).toBe(brl(pago.valor_total));
+  });
+
   test("passagem: com ida e volta = Sim aparecem os campos da volta; com Não, somem", async ({ page }) => {
     await abrirMontagem(page, fx.vazia.id);
     await page.getByTestId("solicitacao-adicionar").click();

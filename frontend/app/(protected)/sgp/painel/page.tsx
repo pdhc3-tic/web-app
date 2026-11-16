@@ -20,7 +20,7 @@ import {
   type PainelMetaGrupoApi,
 } from "@/app/lib/painel";
 import { avaliacaoDaApi } from "@/app/lib/semaforo";
-import { fetchTerritoryMap } from "@/app/lib/upfs";
+import { fetchTerritoryMap } from "@/app/lib/ufpas";
 import { AcaoDetalheSlideOver } from "./_components/AcaoDetalheSlideOver";
 import { ExportarModal } from "./_components/ExportarModal";
 import { AlertaAcoesCriticas } from "./_components/AlertaAcoesCriticas";

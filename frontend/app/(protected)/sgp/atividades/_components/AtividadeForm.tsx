@@ -30,9 +30,9 @@ import {
   fetchMunicipality,
   fetchStateOptions,
   type MunicipalityOpt,
-} from "@/app/lib/upfs";
-// Reaproveitado do wizard de UPF — mesmo comportamento de captura de GPS.
-import { GpsCapture } from "../../upfs/_components/GpsCapture";
+} from "@/app/lib/ufpas";
+// Reaproveitado do wizard de UFPA — mesmo comportamento de captura de GPS.
+import { GpsCapture } from "../../ufpas/_components/GpsCapture";
 import { EvidenceGallery } from "@/app/components/sgp/EvidenceGallery/EvidenceGallery";
 import { AcaoCombobox } from "./AcaoCombobox";
 import { EquipeAdicionalPicker } from "./EquipeAdicionalPicker";
@@ -500,7 +500,7 @@ export function AtividadeForm({
       {/* ── Participantes ────────────────────────────────────────────────── */}
       <Section title="Participantes" columns={1}>
         <ParticipantesSection
-          upfs={form.upfs_participantes}
+          ufpas={form.ufpas_participantes}
           membros={form.membros_participantes}
           onChange={patchForm}
           errors={errors}

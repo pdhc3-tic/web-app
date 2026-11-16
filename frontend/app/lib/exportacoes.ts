@@ -11,12 +11,12 @@ import { dispararDownload, nomeDoContentDisposition, type FormatoExport } from "
  *                                                  410 se expirou (vale 24 h)
  *   POST /api/v1/sgp/exportacoes/{id}/repetir/   → reenfileira um job em `erro`
  *
- * O Plano de Trabalho e as Atividades sempre geram em segundo plano. As UPFs
- * começam por `/upfs/exportar/`, que decide entre o arquivo na hora e o job
- * (`iniciarExportacaoUpfs`); a partir do job, o fluxo é este mesmo.
+ * O Plano de Trabalho e as Atividades sempre geram em segundo plano. As UFPAs
+ * começam por `/ufpas/exportar/`, que decide entre o arquivo na hora e o job
+ * (`iniciarExportacaoUfpas`); a partir do job, o fluxo é este mesmo.
  */
 
-export type TipoExportacao = "plano_trabalho" | "atividades" | "upfs";
+export type TipoExportacao = "plano_trabalho" | "atividades" | "ufpas";
 
 /** Espelha `ExportJob.Status`. */
 export type StatusExportacao = "pendente" | "processando" | "concluida" | "erro";

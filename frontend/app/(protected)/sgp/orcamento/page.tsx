@@ -12,7 +12,13 @@ import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { RestrictedAccess } from "@/app/components/ui/RestrictedAccess/RestrictedAccess";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 import { ApiError } from "@/app/lib/api";
-import { canDistribuirOrcamento, useOrcamentoScope } from "@/app/lib/auth/roles";
+import {
+  canDistribuirOrcamento,
+  canGerirLimites,
+  canRemanejarOrcamento,
+  canVerMeuSaldo,
+  useOrcamentoScope,
+} from "@/app/lib/auth/roles";
 import { listMetas, type MetaListItem } from "@/app/lib/metas";
 import {
   fetchPainelOrcamento,
@@ -20,7 +26,8 @@ import {
   RUBRICA_SLUGS,
   type PoolOrcamentoApi,
 } from "@/app/lib/orcamento";
-import { fetchStateSiglaOptions, fetchTerritoryMap } from "@/app/lib/upfs";
+import { fetchStateSiglaOptions, fetchTerritoryMap } from "@/app/lib/ufpas";
+import { PainelAlertas } from "@/app/components/sgp/AlertasOrcamento/PainelAlertas";
 import { AlertaAlocacoesCriticas } from "./_components/AlertaAlocacoesCriticas";
 import { CelulaDetalheSlideOver } from "./_components/CelulaDetalheSlideOver";
 import { MatrizOrcamento } from "./_components/MatrizOrcamento";
@@ -46,6 +53,9 @@ function PainelOrcamentoConteudo() {
   const { data: session } = useSession();
   const { loading: authLoading, soTerritorio } = useOrcamentoScope();
   const podeDistribuir = canDistribuirOrcamento(session?.user);
+  const podeGerirLimites = canGerirLimites(session?.user);
+  const podeRemanejar = canRemanejarOrcamento(session?.user);
+  const temLimite = canVerMeuSaldo(session?.user);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -262,17 +272,55 @@ function PainelOrcamentoConteudo() {
             `as="a"` é obrigatório: `isAnchor` do Button testa `as === "a"`, não
             a presença de `href`. Sem ele sai um <button> com um href
             decorativo, que não navega para lugar nenhum. */}
-        {podeDistribuir && (
-          <Button
-            as="a"
-            size="sm"
-            variant="secondary"
-            href="/sgp/orcamento/distribuicao"
-            data-testid="orcamento-ir-distribuicao"
-          >
-            Distribuir
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Meu saldo (#401): os perfis que têm limite de gasto. */}
+          {temLimite && (
+            <Button
+              as="a"
+              size="sm"
+              variant="secondary"
+              href="/sgp/orcamento/meu-saldo"
+              data-testid="orcamento-ir-meu-saldo"
+            >
+              Meu saldo
+            </Button>
+          )}
+          {/* Limites de gasto (#400): só Super Admin e UGP, como o backend. */}
+          {podeGerirLimites && (
+            <Button
+              as="a"
+              size="sm"
+              variant="secondary"
+              href="/sgp/orcamento/limites"
+              data-testid="orcamento-ir-limites"
+            >
+              Limites de gasto
+            </Button>
+          )}
+          {/* Remanejamento entre pools (#402): só Super Admin e UGP. */}
+          {podeRemanejar && (
+            <Button
+              as="a"
+              size="sm"
+              variant="secondary"
+              href="/sgp/orcamento/remanejamentos/novo"
+              data-testid="orcamento-ir-remanejamento"
+            >
+              Remanejar
+            </Button>
+          )}
+          {podeDistribuir && (
+            <Button
+              as="a"
+              size="sm"
+              variant="secondary"
+              href="/sgp/orcamento/distribuicao"
+              data-testid="orcamento-ir-distribuicao"
+            >
+              Distribuir
+            </Button>
+          )}
+        </div>
       </div>
     </PageHeader>
   );
@@ -415,6 +463,8 @@ function PainelOrcamentoConteudo() {
               comMeta={filtros.meta !== ""}
               onSelect={setSelecionada}
             />
+
+            <PainelAlertas />
           </div>
         )}
       </div>

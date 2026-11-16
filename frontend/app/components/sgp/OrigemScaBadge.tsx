@@ -3,7 +3,7 @@
 import { Badge } from "@/app/components/ui/Badge/Badge";
 import { absoluteDateTime, relativeTime } from "@/app/lib/datetime";
 
-/** Recorte comum a UPF, Membro e Atividade — os campos de sync do backend. */
+/** Recorte comum a UFPA, Membro e Atividade — os campos de sync do backend. */
 export type ComOrigemSca = {
   ultima_origem: "sca" | "web";
   ultimo_sync_em: string | null;

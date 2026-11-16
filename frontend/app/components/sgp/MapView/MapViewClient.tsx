@@ -19,7 +19,7 @@ export default function MapViewClient({
   initialZoom,
   clusteringThreshold = 200,
   onMarkerClick,
-  ariaLabel = "Mapa de Unidades de Produção Familiar",
+  ariaLabel = "Mapa de Unidades Familiares de Produção Agropecuária",
 }: MapViewProps) {
   const clustering = markers.length > clusteringThreshold;
   const style = { "--map-height": height } as CSSProperties;

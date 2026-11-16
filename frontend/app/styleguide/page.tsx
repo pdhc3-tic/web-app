@@ -107,13 +107,22 @@ export default function StyleguidePage() {
             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-warning-bg text-warning-text text-micro font-medium uppercase tracking-wide border border-border">
               Dev only · NODE_ENV = {process.env.NODE_ENV}
             </span>
-            <Link
-              href="/dashboard"
-              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-border bg-surface text-sm font-medium text-text hover:bg-surface-muted transition-colors"
-            >
-              <ChevronLeftIcon className="h-3.5 w-3.5" />
-              Dashboard
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/styleguide/govbr-spike"
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-border bg-surface text-sm font-medium text-text hover:bg-surface-muted transition-colors"
+                data-testid="styleguide-govbr-spike-link"
+              >
+                Spike GOV.BR DS
+              </Link>
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-border bg-surface text-sm font-medium text-text hover:bg-surface-muted transition-colors"
+              >
+                <ChevronLeftIcon className="h-3.5 w-3.5" />
+                Dashboard
+              </Link>
+            </div>
           </div>
           <h1 className="text-4xl font-bold tracking-tight text-text">
             Guia de Estilo · PDHC III

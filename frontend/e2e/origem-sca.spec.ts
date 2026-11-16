@@ -12,7 +12,7 @@ import { storageStatePath } from "./helpers/users";
  * `ultima_origem="web"` em todo create e update, então o campo acompanha mesmo
  * a última edição.
  *
- * As fixtures vêm do seed: `--sca-only` marca uma UPF e uma Atividade como
+ * As fixtures vêm do seed: `--sca-only` marca uma UFPA e uma Atividade como
  * originadas no aplicativo; todo o resto da demonstração fica como "web". Os ids
  * são lidos do banco porque o seed não garante quais registros recebem a marca.
  */
@@ -53,15 +53,15 @@ test.beforeAll(() => {
   recriarFixturesSca();
 });
 
-test.describe("Procedência SCA — UPF", () => {
+test.describe("Procedência SCA — UFPA", () => {
   test.use({ storageState: storageStatePath("ugp") });
 
-  test("UPF originada no aplicativo exibe a badge com a data da sincronização", async ({
+  test("UFPA originada no aplicativo exibe a badge com a data da sincronização", async ({
     page,
   }) => {
-    const id = primeiroId("sgp_upf", "sca");
+    const id = primeiroId("sgp_ufpa", "sca");
 
-    await page.goto(`/sgp/upfs/${id}`);
+    await page.goto(`/sgp/ufpas/${id}`);
     await expect(badge(page)).toBeVisible();
     await expect(badge(page)).toContainText("Registrado via SCA");
 
@@ -73,10 +73,10 @@ test.describe("Procedência SCA — UPF", () => {
     );
   });
 
-  test("UPF cadastrada pela web não exibe a badge", async ({ page }) => {
-    const id = primeiroId("sgp_upf", "web");
+  test("UFPA cadastrada pela web não exibe a badge", async ({ page }) => {
+    const id = primeiroId("sgp_ufpa", "web");
 
-    await page.goto(`/sgp/upfs/${id}`);
+    await page.goto(`/sgp/ufpas/${id}`);
     // Esperar a ficha carregar antes de afirmar a ausência: sem isto o teste
     // passaria com a página ainda vazia.
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();

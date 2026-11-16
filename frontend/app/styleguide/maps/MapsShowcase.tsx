@@ -17,7 +17,7 @@ function makeMarkers(n: number): MapMarker[] {
       status,
       popup: (
         <div>
-          <p className="font-semibold text-text">UPF #{i + 1}</p>
+          <p className="font-semibold text-text">UFPA #{i + 1}</p>
           <p className="mt-0.5 text-text-muted">
             {status === "active" ? "Ativa" : "Inativa"} · {lat.toFixed(3)},{" "}
             {lng.toFixed(3)}

@@ -13,16 +13,16 @@ import Spinner from "@/app/components/icons/Spinner";
  * Placeholder do motor de preenchimento do SGF (#181).
  *
  * O motor real será entregue em issue futura pelo time do SGF. Este stub:
- * - Reserva a rota `/sgf/formularios/{formularioId}/preencher?upf={upfId}`
+ * - Reserva a rota `/sgf/formularios/{formularioId}/preencher?ufpa={ufpaId}`
  *   (namespace `/sgf/` isolado do SGP).
  * - Exibe os parâmetros recebidos como confirmação de contrato.
- * - Oferece um link de volta pra ficha da UPF de origem quando o contexto veio
+ * - Oferece um link de volta pra ficha da UFPA de origem quando o contexto veio
  *   preenchido.
  *
  * Contrato de entrada:
  * - path param `formularioId` — id do FormularioSGF a preencher.
- * - query param `upf` — id numérico da UPF (contexto obrigatório para o
- *   preenchimento). Sem `upf`, o placeholder informa que o contexto é
+ * - query param `ufpa` — id numérico da UFPA (contexto obrigatório para o
+ *   preenchimento). Sem `ufpa`, o placeholder informa que o contexto é
  *   obrigatório mas segue permitindo voltar.
  */
 export default function PreencherFormularioPage() {
@@ -44,9 +44,9 @@ function CenteredSpinner() {
 function PreencherView() {
   const params = useParams<{ formularioId: string }>();
   const searchParams = useSearchParams();
-  const upfId = searchParams.get("upf") ?? "";
+  const ufpaId = searchParams.get("ufpa") ?? "";
 
-  const voltarHref = upfId ? `/sgp/upfs/${upfId}?tab=formularios` : "/sgp/upfs";
+  const voltarHref = ufpaId ? `/sgp/ufpas/${ufpaId}?tab=formularios` : "/sgp/ufpas";
 
   return (
     <div data-testid="preencher-formulario-placeholder">
@@ -84,9 +84,9 @@ function PreencherView() {
                 </span>
                 <br />
                 <span className="text-text">
-                  UPF de contexto:{" "}
+                  UFPA de contexto:{" "}
                   <code className="rounded bg-surface-muted px-1.5 py-0.5 text-xs">
-                    {upfId || "(não informada)"}
+                    {ufpaId || "(não informada)"}
                   </code>
                 </span>
               </>

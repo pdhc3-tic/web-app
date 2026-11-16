@@ -24,17 +24,17 @@ export type AtividadeFixture = {
   /** Atividade marcada com `google_calendar_sync_status = "erro"`. */
   comErroDeAgenda: number;
   /**
-   * Atividade com a ficha inteira preenchida: UPF e membro participantes,
+   * Atividade com a ficha inteira preenchida: UFPA e membro participantes,
    * equipe adicional, coordenadas e parceiros em texto livre.
    *
    * Os campos escalares e a equipe são POSTOS pela fixture — o `seed_demo` os
    * deixa vazios, e sem eles não há como afirmar que a ficha renderiza cada um.
-   * A UPF e o membro vêm do próprio seed: o vínculo entre eles é o que o teste
+   * A UFPA e o membro vêm do próprio seed: o vínculo entre eles é o que o teste
    * do link precisa, e forjá-lo esconderia justamente o que está sendo testado.
    */
   comFichaCompleta: number;
-  /** UPF do membro participante — o destino esperado do link. */
-  upfDoMembro: number;
+  /** UFPA do membro participante — o destino esperado do link. */
+  ufpaDoMembro: number;
   /** Id do membro participante cuja linha deve virar link. */
   membroParticipante: number;
   /** Valores gravados pela fixture, para o teste conferir o que está na tela. */
@@ -79,7 +79,7 @@ com_erro = (
 Activity.objects.filter(pk=com_erro.pk).update(google_calendar_sync_status="erro")
 
 # ── Ficha completa ───────────────────────────────────────────────────────────
-# Uma atividade que ja tenha UPF E membro participantes. O vinculo membro->UPF
+# Uma atividade que ja tenha UFPA E membro participantes. O vinculo membro->UFPA
 # vem do seed: e ele que o link da ficha precisa resolver, e cria-lo aqui
 # testaria a fixture em vez da tela.
 # O filtro por n_equipe evita mexer no M2M: o seed ja sorteia de 0 a 2 pessoas
@@ -88,22 +88,22 @@ Activity.objects.filter(pk=com_erro.pk).update(google_calendar_sync_status="erro
 completa = None
 for candidata in (
     Activity.objects.annotate(
-        n_upfs=Count("upfs_participantes", distinct=True),
+        n_ufpas=Count("ufpas_participantes", distinct=True),
         n_membros=Count("membros_participantes", distinct=True),
         n_equipe=Count("equipe_adicional", distinct=True),
     )
-    .filter(n_upfs__gt=0, n_membros__gt=0, n_equipe__gt=0, ativo=True)
+    .filter(n_ufpas__gt=0, n_membros__gt=0, n_equipe__gt=0, ativo=True)
     .exclude(pk__in=[com_evidencias.pk, com_erro.pk])
     .order_by("pk")
 ):
-    membro = candidata.membros_participantes.filter(upf__isnull=False).first()
+    membro = candidata.membros_participantes.filter(ufpa__isnull=False).first()
     if membro is not None:
         completa = candidata
         break
 
 if completa is None:
     raise RuntimeError(
-        "Nenhuma atividade com UPF, membro e equipe adicional: "
+        "Nenhuma atividade com UFPA, membro e equipe adicional: "
         "rode manage.py seed_demo --reset"
     )
 
@@ -116,7 +116,7 @@ print("${MARCADOR}_SETUP " + json.dumps({
     "comEvidencias": com_evidencias.pk,
     "comErroDeAgenda": com_erro.pk,
     "comFichaCompleta": completa.pk,
-    "upfDoMembro": membro.upf_id,
+    "ufpaDoMembro": membro.ufpa_id,
     "membroParticipante": membro.pk,
     "latitude": "${LATITUDE}",
     "longitude": "${LONGITUDE}",

@@ -16,7 +16,7 @@ import {
 } from "@/app/lib/execucaoSgd";
 import { listMetas } from "@/app/lib/metas";
 import { qk } from "@/app/lib/queryKeys";
-import { fetchTerritoryOptions } from "@/app/lib/upfs";
+import { fetchTerritoryOptions } from "@/app/lib/ufpas";
 import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
 
 const INPUT_CLASS =

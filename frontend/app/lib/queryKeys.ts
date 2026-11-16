@@ -3,8 +3,8 @@
  *
  * Chaves montadas por escopo → recurso → sub-recurso: `invalidateQueries` com
  * um prefixo mais curto atinge todos os descendentes de uma vez. Ex.:
- * `queryClient.invalidateQueries({ queryKey: qk.upf(id).all })` invalida
- * membros, produção, documentos e histórico daquela UPF sem precisar listar.
+ * `queryClient.invalidateQueries({ queryKey: qk.ufpa(id).all })` invalida
+ * membros, produção, documentos e histórico daquela UFPA sem precisar listar.
  *
  * Sempre acessar via este arquivo: chaves cruas espalhadas pelo código levam
  * a strings divergentes entre o `useQuery` e o `invalidate`, e o bug só
@@ -13,26 +13,43 @@
 export const qk = {
   /** Choices do SGP — uma carga por sessão (#272). */
   choices: ["sgp", "choices"] as const,
-  upf: (id: string | number) => {
-    const upfId = String(id);
+  ufpa: (id: string | number) => {
+    const ufpaId = String(id);
     return {
-      /** Todas as consultas dessa UPF — usar para invalidação em massa. */
-      all: ["upf", upfId] as const,
-      membros: ["upf", upfId, "membros"] as const,
-      membrosResumo: ["upf", upfId, "membros", "resumo"] as const,
-      producao: ["upf", upfId, "producao"] as const,
-      documentos: ["upf", upfId, "documentos"] as const,
+      /** Todas as consultas dessa UFPA — usar para invalidação em massa. */
+      all: ["ufpa", ufpaId] as const,
+      membros: ["ufpa", ufpaId, "membros"] as const,
+      membrosResumo: ["ufpa", ufpaId, "membros", "resumo"] as const,
+      producao: ["ufpa", ufpaId, "producao"] as const,
+      documentos: ["ufpa", ufpaId, "documentos"] as const,
       historico: (page: number, pageSize: number) =>
-        ["upf", upfId, "historico", { page, pageSize }] as const,
+        ["ufpa", ufpaId, "historico", { page, pageSize }] as const,
     };
   },
   /** Detalhe de uma atividade — contexto herdado pela nova demanda (#294). */
   atividade: (id: string | number) => ["sgp", "atividade", String(id)] as const,
   /** Pools de uma rubrica num nível, da matriz Rubrica × Nível (#384): origem do excedente e do recurso extra. */
   poolsDaRubrica: (rubrica: string, nivel: string) => ["sgp", "orcamento", "pools", { rubrica, nivel }] as const,
+  /** Todos os pools do escopo, origem e destino do remanejamento entre pools (#402). */
+  poolsDoRemanejamento: ["sgp", "orcamento", "pools", "remanejamento"] as const,
   /** Movimentações do ledger de um pool, no detalhe do Painel de Orçamento (#398). */
   orcamentoPool: {
     transacoes: (poolId: number) => ["sgp", "orcamento", "pools", poolId, "transacoes"] as const,
+  },
+  /** Limites de gasto (#400): padrão por perfil e sobrescritas, vigentes numa data. */
+  limites: {
+    todos: ["sgp", "orcamento", "limites"] as const,
+    lista: (escopo: string, data: string) => ["sgp", "orcamento", "limites", escopo, data] as const,
+    periodicidade: ["core", "system-config", "budget_limit_period"] as const,
+    perfisOperacionais: ["core", "roles", "operacionais"] as const,
+  },
+  /** "Meu saldo" (#401): os cards por rubrica e o extrato de cada uma. */
+  meuSaldo: {
+    cards: ["sgp", "orcamento", "meu-saldo", "cards"] as const,
+    extrato: (rubrica: string, offset: number, limit: number, historico: boolean) =>
+      ["sgp", "orcamento", "meu-saldo", "extrato", rubrica, { offset, limit, historico }] as const,
+    demandasParaRecurso: (rubrica: string) =>
+      ["sgp", "orcamento", "meu-saldo", "demandas-editaveis", rubrica] as const,
   },
   /** Ações do Plano de Trabalho para selects (#294). */
   acoesPT: ["sgp", "acoes"] as const,
@@ -68,6 +85,9 @@ export const qk = {
       ["sgd", "demandas", "preview", { id, solicitacaoId, valor, origem }] as const,
     /** Riscos de glosa da demanda (#360); sob "sgd/demandas", a decisão os invalida junto. */
     glosas: (id: string | number) => ["sgd", "demandas", "glosas", String(id)] as const,
+    /** Riscos de glosa de uma atividade, para a ficha (#404). */
+    glosasDaAtividade: (atividadeId: string | number) =>
+      ["sgd", "demandas", "glosas", "atividade", String(atividadeId)] as const,
     auditoria: (id: string | number) =>
       ["sgd", "demandas", "auditoria", String(id)] as const,
     /** Documentos da demanda (#295). */
@@ -84,8 +104,8 @@ export const qk = {
   /** Montagem da demanda (#295): saldo, simulação de diárias e destinos. */
   solicitacao: {
     saldo: (tipo: string, valor: string) => ["sgd", "saldo", { tipo, valor }] as const,
-    simulacaoDiarias: (municipioId: string, inicio: string, fim: string) =>
-      ["sgd", "diarias", "simulacao", { municipioId, inicio, fim }] as const,
+    simulacaoDiarias: (municipioId: string, inicio: string, fim: string, hospedagemCusteada = false) =>
+      ["sgd", "diarias", "simulacao", { municipioId, inicio, fim, hospedagemCusteada }] as const,
     municipios: (texto: string) => ["core", "municipios", "busca", texto] as const,
     municipio: (id: string) => ["core", "municipios", "detalhe", id] as const,
   },
@@ -105,7 +125,7 @@ export const qk = {
   /** Busca de atividades elegíveis no formulário de nova demanda (#294). */
   atividadesElegiveis: (busca: string) =>
     ["sgp", "atividades", "elegiveis", { busca }] as const,
-  /** Tarefa assíncrona de exportação da listagem de UPFs (#240). */
+  /** Tarefa assíncrona de exportação da listagem de UFPAs (#240). */
   /** Job de exportação assíncrona do SGP (`/sgp/exportacoes/{id}/`), qualquer tipo. */
   exportacao: (id: string) => ["sgp", "exportacao", id] as const,
   /** Execução por rubrica e custo por atividade (#297) e as opções dos filtros. */
@@ -136,5 +156,18 @@ export const qk = {
     campos: ["sgd", "arlo-mapping", "campos"] as const,
     preview: (direcao: "exportacao" | "importacao") =>
       ["sgd", "arlo-mapping", "preview", direcao] as const,
+  },
+  /** Alertas orçamentários abertos, por filtro (#403). */
+  alertasOrcamento: (filtros: { tipo: string; faixa: string }, limite: number) =>
+    ["sgp", "orcamento", "alertas", filtros, limite] as const,
+  /** Parâmetros globais em `SystemConfig` (#403). */
+  systemConfig: ["core", "system-config"] as const,
+  /** Configuração da tabela de diárias do SGD (#366). */
+  diarias: {
+    all: ["sgd", "diarias", "config"] as const,
+    faixas: ["sgd", "diarias", "config", "faixas"] as const,
+    valores: ["sgd", "diarias", "config", "valores"] as const,
+    parametros: ["sgd", "diarias", "config", "parametros"] as const,
+    municipios: (texto: string) => ["sgd", "diarias", "config", "municipios", texto] as const,
   },
 } as const;

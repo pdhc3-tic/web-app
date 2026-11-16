@@ -13,7 +13,7 @@ import { storageStatePath } from "./helpers/users";
  * resolver e falharia por falta de dado, não por defeito.
  *
  * `seed_demo --sca-only` reconstrói apenas dispositivos, eventos e conflitos —
- * as UPFs, as Metas e as Atividades do restante da suíte ficam intactas.
+ * as UFPAs, as Metas e as Atividades do restante da suíte ficam intactas.
  *
  * ─── O par de articuladores ─────────────────────────────────────────────────
  *

@@ -8,7 +8,7 @@ import type { TarefaExportacao } from "@/app/lib/hooks/useExportacao";
 
 type ExportacaoStatusProps = {
   tarefa: TarefaExportacao<unknown>;
-  /** O que está sendo exportado, com a preposição: "de 1.234 UPFs", "do Plano de Trabalho". */
+  /** O que está sendo exportado, com a preposição: "de 1.234 UFPAs", "do Plano de Trabalho". */
   objeto: string;
   /** Prefixo dos test ids (`{prefixo}-exportacao-status`, `{prefixo}-exportacao-dispensar`). */
   prefixo: string;

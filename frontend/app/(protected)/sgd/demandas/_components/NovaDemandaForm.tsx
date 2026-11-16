@@ -21,7 +21,7 @@ import {
   type NovaDemandaPayload,
 } from "@/app/lib/demandas";
 import { qk } from "@/app/lib/queryKeys";
-import { fetchMunicipiosDoTerritorio, fetchTerritoryOptions } from "@/app/lib/upfs";
+import { fetchMunicipiosDoTerritorio, fetchTerritoryOptions } from "@/app/lib/ufpas";
 import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
 import { AtividadeBusca } from "./AtividadeBusca";
 import { ContextoAtividade } from "./ContextoAtividade";

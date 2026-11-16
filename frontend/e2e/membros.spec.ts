@@ -2,19 +2,19 @@ import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { storageStatePath } from "./helpers/users";
-import { primeiroUpfId } from "./helpers/upf";
+import { primeiroUfpaId } from "./helpers/ufpa";
 
 /**
- * Aba "Membros" na ficha da UPF (#188) e o formulário de cadastro/edição de
+ * Aba "Membros" na ficha da UFPA (#188) e o formulário de cadastro/edição de
  * membro (FE-22), que já existia desde a issue 100.
  *
  * O cenário "com membros" sai do `seed_demo`, que cria um titular + cônjuge +
- * filhos em toda UPF. O cenário vazio NÃO tem como sair do seed: `UPF.titular`
+ * filhos em toda UFPA. O cenário vazio NÃO tem como sair do seed: `UFPA.titular`
  * é FK obrigatória para um `MembroFamilia` e esse membro aparece na própria
  * listagem — por isso o empty state é exercitado interceptando o GET da lista.
  *
  * O card-resumo da composição familiar (FE-23) sai do endpoint `membros/resumo/`
- * (BE-23). Os cenários de composição conhecida e de UPF sem Titular fixam esse
+ * (BE-23). Os cenários de composição conhecida e de UFPA sem Titular fixam esse
  * endpoint junto com a listagem — o segundo, de novo, não existe no seed.
  *
  * A asserção do badge do Titular mora aqui, e não num teste de componente,
@@ -23,10 +23,10 @@ import { primeiroUpfId } from "./helpers/upf";
  */
 
 /** Regex do GET da listagem — não pega o detalhe (`/membros/{id}/`). */
-const LISTA_MEMBROS = /\/api\/v1\/sgp\/upfs\/\d+\/membros\/(\?|$)/;
+const LISTA_MEMBROS = /\/api\/v1\/sgp\/ufpas\/\d+\/membros\/(\?|$)/;
 
 /** Regex do GET do resumo agregado da composição familiar (BE-23). */
-const RESUMO_MEMBROS = /\/api\/v1\/sgp\/upfs\/\d+\/membros\/resumo\/$/;
+const RESUMO_MEMBROS = /\/api\/v1\/sgp\/ufpas\/\d+\/membros\/resumo\/$/;
 
 /**
  * Prefixo dos membros criados pelos testes. O `limparMembrosDeTeste` apaga por
@@ -34,9 +34,9 @@ const RESUMO_MEMBROS = /\/api\/v1\/sgp\/upfs\/\d+\/membros\/resumo\/$/;
  */
 const PREFIXO_TESTE = "E2E Membro";
 
-async function abrirAbaMembros(page: Page, upfId: number): Promise<void> {
-  await page.goto(`/sgp/upfs/${upfId}?tab=membros`);
-  // Sem isto a aba ainda pode estar sob o skeleton do fetch da própria UPF.
+async function abrirAbaMembros(page: Page, ufpaId: number): Promise<void> {
+  await page.goto(`/sgp/ufpas/${ufpaId}?tab=membros`);
+  // Sem isto a aba ainda pode estar sob o skeleton do fetch da própria UFPA.
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Membros" })).toBeVisible();
   await expect(page.getByTestId("membros-tab")).toBeVisible();
@@ -124,7 +124,7 @@ function nascimentoComIdade(anos: number): string {
 
 /**
  * Apaga os membros criados pelos testes. Exclui titulares por segurança:
- * `UPF.titular` referencia a linha e o delete cru falharia na FK.
+ * `UFPA.titular` referencia a linha e o delete cru falharia na FK.
  */
 function limparMembrosDeTeste(): void {
   execFileSync(
@@ -171,7 +171,7 @@ function membroFake(
 }
 
 /**
- * Fixa listagem e resumo de uma UPF. O resumo tem endpoint próprio (BE-23),
+ * Fixa listagem e resumo de uma UFPA. O resumo tem endpoint próprio (BE-23),
  * então os dois precisam ser interceptados juntos — senão o card mostraria os
  * agregados reais do seed sobre uma listagem falsa.
  */
@@ -198,14 +198,14 @@ async function stubComposicao(
   });
 }
 
-test.describe("SGP — Aba Membros na UPF", () => {
+test.describe("SGP — Aba Membros na UFPA", () => {
   test.use({ storageState: storageStatePath("ugp") });
 
-  test("UPF com membros lista os integrantes com a idade calculada", async ({
+  test("UFPA com membros lista os integrantes com a idade calculada", async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
-    await abrirAbaMembros(page, upfId);
+    const ufpaId = primeiroUfpaId();
+    await abrirAbaMembros(page, ufpaId);
 
     const linhas = page.locator('tr[data-testid^="membro-row-"]');
     await expect(linhas.first()).toBeVisible();
@@ -216,7 +216,7 @@ test.describe("SGP — Aba Membros na UPF", () => {
       /^\d+ anos?$/,
     );
 
-    // Badge do Titular: exatamente um por UPF, e na primeira linha — a tabela
+    // Badge do Titular: exatamente um por UFPA, e na primeira linha — a tabela
     // ordena o titular no topo.
     const badges = page.getByTestId("membro-badge-titular");
     await expect(badges).toHaveCount(1);
@@ -228,7 +228,7 @@ test.describe("SGP — Aba Membros na UPF", () => {
     await expect(page.getByTestId("membros-resumo-total")).toHaveText(
       String(await linhas.count()),
     );
-    // Toda UPF do seed tem Titular — nada de alerta de Atenção aqui.
+    // Toda UFPA do seed tem Titular — nada de alerta de Atenção aqui.
     await expect(page.getByTestId("membros-sem-titular-alerta")).toHaveCount(0);
 
     // Campos sensíveis não podem aparecer na listagem resumida (regra FE-25).
@@ -246,10 +246,10 @@ test.describe("SGP — Aba Membros na UPF", () => {
     );
   });
 
-  test("UPF sem membros exibe o card-resumo zerado, o alerta e o CTA para cadastrar o Titular", async ({
+  test("UFPA sem membros exibe o card-resumo zerado, o alerta e o CTA para cadastrar o Titular", async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
+    const ufpaId = primeiroUfpaId();
 
     // Listagem e resumo fixados juntos: com zero membros o card precisa
     // aparecer assim mesmo — total 0, faixas zeradas e o alerta de Atenção.
@@ -266,7 +266,7 @@ test.describe("SGP — Aba Membros na UPF", () => {
       tem_titular: false,
     });
 
-    await abrirAbaMembros(page, upfId);
+    await abrirAbaMembros(page, ufpaId);
 
     // O card não some junto com a lista.
     const card = page.getByTestId("membros-resumo");
@@ -280,7 +280,7 @@ test.describe("SGP — Aba Membros na UPF", () => {
 
     const alerta = page.getByTestId("membros-sem-titular-alerta");
     await expect(alerta).toBeVisible();
-    await expect(alerta).toContainText("Esta UPF não tem Titular.");
+    await expect(alerta).toContainText("Esta UFPA não tem Titular.");
     // Paleta "Atenção" do design system (--color-warning-bg).
     await expect(alerta).toHaveCSS("background-color", "rgb(255, 248, 225)");
 
@@ -307,7 +307,7 @@ test.describe("SGP — Aba Membros na UPF", () => {
   test("card-resumo exibe os totais de uma composição familiar conhecida", async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
+    const ufpaId = primeiroUfpaId();
 
     await stubComposicao(
       page,
@@ -333,7 +333,7 @@ test.describe("SGP — Aba Membros na UPF", () => {
       },
     );
 
-    await abrirAbaMembros(page, upfId);
+    await abrirAbaMembros(page, ufpaId);
 
     const card = page.getByTestId("membros-resumo");
     await expect(card).toBeVisible();
@@ -360,13 +360,13 @@ test.describe("SGP — Aba Membros na UPF", () => {
     await expect(page.getByTestId("membros-sem-titular-alerta")).toHaveCount(0);
   });
 
-  test("UPF sem Titular exibe o alerta de Atenção no card-resumo", async ({
+  test("UFPA sem Titular exibe o alerta de Atenção no card-resumo", async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
+    const ufpaId = primeiroUfpaId();
 
-    // Cenário que o seed não produz: `UPF.titular` é FK obrigatória, então
-    // nenhuma UPF real fica sem Titular. Listagem e resumo vão fixados juntos.
+    // Cenário que o seed não produz: `UFPA.titular` é FK obrigatória, então
+    // nenhuma UFPA real fica sem Titular. Listagem e resumo vão fixados juntos.
     await stubComposicao(
       page,
       [
@@ -387,11 +387,11 @@ test.describe("SGP — Aba Membros na UPF", () => {
       },
     );
 
-    await abrirAbaMembros(page, upfId);
+    await abrirAbaMembros(page, ufpaId);
 
     const alerta = page.getByTestId("membros-sem-titular-alerta");
     await expect(alerta).toBeVisible();
-    await expect(alerta).toContainText("Esta UPF não tem Titular.");
+    await expect(alerta).toContainText("Esta UFPA não tem Titular.");
     // Paleta "Atenção" do design system (--color-warning-bg).
     await expect(alerta).toHaveCSS("background-color", "rgb(255, 248, 225)");
 
@@ -418,13 +418,13 @@ test.describe("SGP — Formulário de membro", () => {
   test("preenche o formulário completo e salva — o membro aparece na aba", async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
+    const ufpaId = primeiroUfpaId();
     const nome = `${PREFIXO_TESTE} ${Date.now()}`;
     const cpf = gerarCpfValido();
     // A listagem esconde o miolo do CPF (maskCpf): "123.***.***-09".
     const cpfMascarado = `${cpf.slice(0, 3)}.***.***-${cpf.slice(9)}`;
 
-    await abrirAbaMembros(page, upfId);
+    await abrirAbaMembros(page, ufpaId);
     const painel = await abrirFormularioNovoMembro(page);
 
     await painel.getByLabel("Nome completo").fill(nome);
@@ -461,7 +461,7 @@ test.describe("SGP — Formulário de membro", () => {
   test("CPF com dígito inválido bloqueia o submit antes de chamar o backend", async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
+    const ufpaId = primeiroUfpaId();
 
     // Contador de POSTs para o endpoint de membros: o critério é que a
     // validação aconteça ANTES de qualquer request.
@@ -470,7 +470,7 @@ test.describe("SGP — Formulário de membro", () => {
       if (req.method() === "POST" && /\/membros\/$/.test(req.url())) posts++;
     });
 
-    await abrirAbaMembros(page, upfId);
+    await abrirAbaMembros(page, ufpaId);
     const painel = await abrirFormularioNovoMembro(page);
 
     await painel.getByLabel("Nome completo").fill(`${PREFIXO_TESTE} CPF`);
@@ -487,7 +487,7 @@ test.describe("SGP — Formulário de membro", () => {
   test("segundo Titular exibe a mensagem de erro do backend", async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
+    const ufpaId = primeiroUfpaId();
 
     // A tela previne o caso desabilitando a opção "Titular" quando já existe
     // um. Zerar a listagem reproduz a lista desatualizada — exatamente a
@@ -502,7 +502,7 @@ test.describe("SGP — Formulário de membro", () => {
       });
     });
 
-    await abrirAbaMembros(page, upfId);
+    await abrirAbaMembros(page, ufpaId);
     await page.getByTestId("membros-adicionar-primeiro").click();
 
     const painel = painelMembro(page);
@@ -512,15 +512,15 @@ test.describe("SGP — Formulário de membro", () => {
     await painel.locator('button:has-text("Salvar")').click();
 
     await expect(
-      painel.getByText("Já existe um titular cadastrado para esta UPF"),
+      painel.getByText("Já existe um titular cadastrado para esta UFPA"),
     ).toBeVisible();
   });
 
   test('"Nenhuma" em Saúde desmarca as demais opções, e vice-versa', async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
-    await abrirAbaMembros(page, upfId);
+    const ufpaId = primeiroUfpaId();
+    await abrirAbaMembros(page, ufpaId);
     const painel = await abrirFormularioNovoMembro(page);
 
     await opcaoDisponivel(painel, "Saúde", "Diabetes").click();
@@ -603,11 +603,11 @@ test.describe("SGP — Card de composição espera o resumo", () => {
   test("o alerta não aparece enquanto o resumo está em voo, e surge quando tem_titular=false", async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
+    const ufpaId = primeiroUfpaId();
     // A listagem não tem Titular: fosse ela a fonte, o alerta apareceria já.
     await stubResumoAtrasado(page, false);
 
-    await abrirAbaMembros(page, upfId);
+    await abrirAbaMembros(page, ufpaId);
 
     // Com a listagem já pintada e o resumo ainda pendente, o alerta tem de
     // estar ausente — é a asserção que o item 5 pede.
@@ -634,7 +634,7 @@ test.describe("SGP — Card de composição espera o resumo", () => {
   test("na revalidação após remover, o alerta sai da tela até o novo resumo chegar", async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
+    const ufpaId = primeiroUfpaId();
 
     let resumoEmVoo!: () => void;
     const segundaChamadaPartiu = new Promise<void>((r) => {
@@ -675,12 +675,12 @@ test.describe("SGP — Card de composição espera o resumo", () => {
       });
     });
 
-    await page.route(/\/api\/v1\/sgp\/upfs\/\d+\/membros\/\d+\/$/, async (route) => {
+    await page.route(/\/api\/v1\/sgp\/ufpas\/\d+\/membros\/\d+\/$/, async (route) => {
       if (route.request().method() !== "DELETE") return route.fallback();
       await route.fulfill({ status: 204, body: "" });
     });
 
-    await abrirAbaMembros(page, upfId);
+    await abrirAbaMembros(page, ufpaId);
 
     const alerta = page.getByTestId("membros-sem-titular-alerta");
     await expect(alerta).toBeVisible();
@@ -727,11 +727,11 @@ test.describe("SGP — Card de composição espera o resumo", () => {
   test("com tem_titular=true o alerta nunca aparece, nem antes nem depois", async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
+    const ufpaId = primeiroUfpaId();
     // Mesma listagem sem Titular; o resumo diz que existe. Vence o resumo.
     await stubResumoAtrasado(page, true);
 
-    await abrirAbaMembros(page, upfId);
+    await abrirAbaMembros(page, ufpaId);
 
     await expect(page.getByTestId("membros-sem-titular-alerta")).toHaveCount(0);
 
@@ -749,7 +749,7 @@ test.describe("SGP — Card de composição espera o resumo", () => {
 // ─── #192: exibição condicional de Saúde e Cor/Raça ─────────────────────────
 
 /** GET/PATCH do detalhe de um membro. Não casa `resumo/` nem `exportar/`. */
-const DETALHE_MEMBRO = /\/api\/v1\/sgp\/upfs\/\d+\/membros\/\d+\/$/;
+const DETALHE_MEMBRO = /\/api\/v1\/sgp\/ufpas\/\d+\/membros\/\d+\/$/;
 
 /** Id do membro fixado nos cenários abaixo. */
 const ID_MEMBRO = 9001;
@@ -762,7 +762,7 @@ const ID_MEMBRO = 9001;
 function detalheFake(): Record<string, unknown> {
   return {
     id: ID_MEMBRO,
-    upf: 1,
+    ufpa: 1,
     nome_completo: "Joana Ferreira da Mata",
     data_nascimento: "1979-04-12",
     idade: 47,
@@ -874,7 +874,7 @@ async function abrirPainelDoMembro(
   page: Page,
   modo: "view" | "edit",
 ): Promise<Locator> {
-  await abrirAbaMembros(page, primeiroUpfId());
+  await abrirAbaMembros(page, primeiroUfpaId());
   await page.locator(`tr[data-testid="membro-row-${ID_MEMBRO}"]`).click();
 
   const painel = painelMembro(page);
@@ -911,7 +911,7 @@ async function abrirPainelDoMembro(
  * 1. o projeto não tem runner de teste de componente (mesma pendência que já
  *    fez a asserção do badge do Titular morar neste arquivo);
  * 2. **não existe perfil capaz de exercitar o caminho "sem permissão" em
- *    runtime.** `UPF_ACCESS_ROLES` (`apps/sgp/views/__init__.py`) e
+ *    runtime.** `UFPA_ACCESS_ROLES` (`apps/sgp/views/__init__.py`) e
  *    `SENSITIVE_FIELD_ROLES` (`apps/core/sensitive_fields.py`) são hoje o mesmo
  *    conjunto — quem não lê os campos sensíveis não entra no módulo SGP e
  *    recebe "Você não tem acesso ao módulo SGP" antes de chegar à ficha. Está
@@ -921,7 +921,7 @@ async function abrirPainelDoMembro(
  *    permissão e passam a valer como E2E de ponta a ponta.
  *
  * Listagem e exportação, as outras duas superfícies citadas no critério, já são
- * cobertas neste arquivo: "UPF com membros lista os integrantes…" garante que a
+ * cobertas neste arquivo: "UFPA com membros lista os integrantes…" garante que a
  * tabela nunca tem as colunas, e "arquivo sem a coluna de Saúde desce como
  * veio…" cobre o CSV.
  */
@@ -1017,7 +1017,7 @@ test.describe("SGP — Campos sensíveis por perfil", () => {
       sem(listaFake(), ...CHAVES_SENSIVEIS),
       sem(detalheFake(), ...CHAVES_SENSIVEIS),
     );
-    await abrirAbaMembros(page, primeiroUpfId());
+    await abrirAbaMembros(page, primeiroUfpaId());
     const painel = await abrirFormularioNovoMembro(page);
 
     await expect(painel.getByLabel("Cor/Raça", { exact: true })).toHaveCount(0);
@@ -1061,7 +1061,7 @@ test.describe("SGP — Campos sensíveis por perfil", () => {
   });
 });
 
-const EXPORTAR_MEMBROS = /\/api\/v1\/sgp\/upfs\/\d+\/membros\/exportar\/$/;
+const EXPORTAR_MEMBROS = /\/api\/v1\/sgp\/ufpas\/\d+\/membros\/exportar\/$/;
 
 /**
  * Cabeçalho completo — espelha `BASE_EXPORT_COLUMNS` + `SENSITIVE_EXPORT_COLUMNS`
@@ -1070,7 +1070,7 @@ const EXPORTAR_MEMBROS = /\/api\/v1\/sgp\/upfs\/\d+\/membros\/exportar\/$/;
  */
 const CABECALHO_MEMBROS = [
   "ID",
-  "UPF",
+  "UFPA",
   "Nome completo",
   "Parentesco",
   "Data de nascimento",
@@ -1085,7 +1085,7 @@ const CABECALHO_MEMBROS = [
 ].join(",");
 
 /**
- * `membros_upf_{id}_{carimbo}.csv`.
+ * `membros_ufpa_{id}_{carimbo}.csv`.
  *
  * O separador entre data e hora depende de QUEM nomeou o arquivo: o backend usa
  * `_` no `Content-Disposition`, o fallback do cliente monta com `-`. Hoje vale
@@ -1094,7 +1094,7 @@ const CABECALHO_MEMBROS = [
  * teste não quebrar no dia em que isso for corrigido.
  */
 const NOME_CSV_MEMBROS =
-  /^membros_upf_\d+_\d{4}-\d{2}-\d{2}[-_]\d{2}-\d{2}-\d{2}\.csv$/;
+  /^membros_ufpa_\d+_\d{4}-\d{2}-\d{2}[-_]\d{2}-\d{2}-\d{2}\.csv$/;
 
 /** O backend prefixa BOM para o Excel abrir os acentos corretamente. */
 function linhasDoCsv(conteudo: string): string[] {
@@ -1114,9 +1114,9 @@ async function baixarCsvDeMembros(page: Page) {
 test.describe("SGP — Exportação de membros (CSV)", () => {
   test.use({ storageState: storageStatePath("ugp") });
 
-  test("exportar baixa o CSV com os membros daquela UPF", async ({ page }) => {
-    const upfId = primeiroUpfId();
-    await abrirAbaMembros(page, upfId);
+  test("exportar baixa o CSV com os membros daquela UFPA", async ({ page }) => {
+    const ufpaId = primeiroUfpaId();
+    await abrirAbaMembros(page, ufpaId);
 
     // `count()` não re-tenta: sem esperar a listagem sair do skeleton, ele lê
     // zero linhas e o teste compararia o CSV com uma tabela ainda vazia.
@@ -1131,14 +1131,14 @@ test.describe("SGP — Exportação de membros (CSV)", () => {
     const linhas = linhasDoCsv(await readFile(await download.path(), "utf8"));
     expect(linhas[0]).toBe(CABECALHO_MEMBROS);
 
-    // "daquela UPF específica" (AC-1): uma linha por membro da ficha aberta, e
-    // nenhuma de outra UPF. As duas primeiras colunas são numéricas e nunca
+    // "daquela UFPA específica" (AC-1): uma linha por membro da ficha aberta, e
+    // nenhuma de outra UFPA. As duas primeiras colunas são numéricas e nunca
     // saem entre aspas, então split(",") basta para lê-las.
     expect(linhas.length - 1).toBe(naTela);
-    const upfsNoArquivo = new Set(
+    const ufpasNoArquivo = new Set(
       linhas.slice(1).map((linha) => linha.split(",")[1]),
     );
-    expect(upfsNoArquivo).toEqual(new Set([String(upfId)]));
+    expect(ufpasNoArquivo).toEqual(new Set([String(ufpaId)]));
 
     const toast = page.getByTestId("toast");
     await expect(toast).toBeVisible();
@@ -1148,9 +1148,9 @@ test.describe("SGP — Exportação de membros (CSV)", () => {
   test("o botão indica o progresso enquanto o arquivo é gerado", async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
+    const ufpaId = primeiroUfpaId();
 
-    // Atraso deliberado: contra o backend real a geração desta UPF é rápida
+    // Atraso deliberado: contra o backend real a geração desta UFPA é rápida
     // demais para observar o estado intermediário sem corrida.
     const ATRASO_EXPORT_MS = 2000;
     await page.route(EXPORTAR_MEMBROS, async (route) => {
@@ -1158,7 +1158,7 @@ test.describe("SGP — Exportação de membros (CSV)", () => {
       await route.continue();
     });
 
-    await abrirAbaMembros(page, upfId);
+    await abrirAbaMembros(page, ufpaId);
 
     const botao = page.getByTestId("membros-exportar-csv");
     const download = page.waitForEvent("download");
@@ -1177,7 +1177,7 @@ test.describe("SGP — Exportação de membros (CSV)", () => {
    * desce exatamente como o backend mandou e a tela não acusa erro.
    *
    * A resposta é FIXADA, e não produzida por um usuário sem permissão, porque
-   * esse usuário não pode existir hoje: `UPF_ACCESS_ROLES`
+   * esse usuário não pode existir hoje: `UFPA_ACCESS_ROLES`
    * (apps/sgp/views/__init__.py) e `SENSITIVE_FIELD_ROLES`
    * (apps/core/sensitive_fields.py) são o MESMO conjunto de quatro perfis —
    * quem não lê Saúde recebe "Você não tem acesso ao módulo SGP" e nem chega à
@@ -1192,11 +1192,11 @@ test.describe("SGP — Exportação de membros (CSV)", () => {
   test("arquivo sem a coluna de Saúde desce como veio, sem erro na tela", async ({
     page,
   }) => {
-    const upfId = primeiroUpfId();
+    const ufpaId = primeiroUfpaId();
 
     const CSV_SEM_SAUDE =
-      "﻿ID,UPF,Nome completo,Parentesco,Data de nascimento,Idade,Gênero,CPF,Município,Território,Projeto,Cor/Raça\r\n" +
-      `1,${upfId},Maria da Silva,Titular,1980-05-02,45,Feminino,,Serra Talhada,Território PE,Projeto Dom Hélder Câmara III,Parda\r\n`;
+      "﻿ID,UFPA,Nome completo,Parentesco,Data de nascimento,Idade,Gênero,CPF,Município,Território,Projeto,Cor/Raça\r\n" +
+      `1,${ufpaId},Maria da Silva,Titular,1980-05-02,45,Feminino,,Serra Talhada,Território PE,Projeto Dom Hélder Câmara III,Parda\r\n`;
 
     await page.route(EXPORTAR_MEMBROS, (route) =>
       route.fulfill({
@@ -1206,7 +1206,7 @@ test.describe("SGP — Exportação de membros (CSV)", () => {
       }),
     );
 
-    await abrirAbaMembros(page, upfId);
+    await abrirAbaMembros(page, ufpaId);
     const download = await baixarCsvDeMembros(page);
 
     // Byte a byte: nenhuma coluna acrescentada, nenhuma célula preenchida.

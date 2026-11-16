@@ -52,7 +52,7 @@ export type MembroListItem = {
  */
 export type MembroDetail = {
   id: number;
-  upf: number;
+  ufpa: number;
   nome_completo: string;
   data_nascimento: string | null;
   idade: number | null;
@@ -94,7 +94,7 @@ export type MembroWritePayload = {
 };
 
 /**
- * Espelha a resposta de GET /api/v1/sgp/upfs/{upfId}/membros/resumo/ (BE-23).
+ * Espelha a resposta de GET /api/v1/sgp/ufpas/{ufpaId}/membros/resumo/ (BE-23).
  * As chaves de `faixa_etaria` são as do backend — use `FAIXAS_ETARIAS` para
  * exibi-las na ordem e com os rótulos certos.
  */
@@ -135,77 +135,77 @@ export const FAIXAS_ETARIAS: { key: FaixaEtariaKey; label: string }[] = [
 type Envelope<T> = { count?: number; results?: T[] };
 
 /**
- * GET /api/v1/sgp/upfs/{upfId}/membros/ — lista todos os membros da UPF.
+ * GET /api/v1/sgp/ufpas/{ufpaId}/membros/ — lista todos os membros da UFPA.
  * Aceita resposta paginada (envelope) ou array cru — retorna sempre um array.
  */
 export async function listMembros(
-  upfId: string | number,
+  ufpaId: string | number,
   signal?: AbortSignal,
 ): Promise<MembroListItem[]> {
-  const res = await apiClient(`/api/v1/sgp/upfs/${upfId}/membros/?limit=1000`, {
+  const res = await apiClient(`/api/v1/sgp/ufpas/${ufpaId}/membros/?limit=1000`, {
     signal,
   });
   const data = (await res.json()) as MembroListItem[] | Envelope<MembroListItem>;
   return Array.isArray(data) ? data : (data.results ?? []);
 }
 
-/** GET /api/v1/sgp/upfs/{upfId}/membros/{id}/ — detalhe completo do membro. */
+/** GET /api/v1/sgp/ufpas/{ufpaId}/membros/{id}/ — detalhe completo do membro. */
 export async function getMembro(
-  upfId: string | number,
+  ufpaId: string | number,
   id: string | number,
   signal?: AbortSignal,
 ): Promise<MembroDetail> {
-  const res = await apiClient(`/api/v1/sgp/upfs/${upfId}/membros/${id}/`, {
+  const res = await apiClient(`/api/v1/sgp/ufpas/${ufpaId}/membros/${id}/`, {
     signal,
   });
   return res.json();
 }
 
-/** POST /api/v1/sgp/upfs/{upfId}/membros/ — cria um membro. */
+/** POST /api/v1/sgp/ufpas/{ufpaId}/membros/ — cria um membro. */
 export async function createMembro(
-  upfId: string | number,
+  ufpaId: string | number,
   payload: MembroWritePayload,
 ): Promise<MembroDetail> {
-  const res = await apiClient(`/api/v1/sgp/upfs/${upfId}/membros/`, {
+  const res = await apiClient(`/api/v1/sgp/ufpas/${ufpaId}/membros/`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
   return res.json();
 }
 
-/** PATCH /api/v1/sgp/upfs/{upfId}/membros/{id}/ — atualiza um membro. */
+/** PATCH /api/v1/sgp/ufpas/{ufpaId}/membros/{id}/ — atualiza um membro. */
 export async function updateMembro(
-  upfId: string | number,
+  ufpaId: string | number,
   id: string | number,
   payload: MembroWritePayload,
 ): Promise<MembroDetail> {
-  const res = await apiClient(`/api/v1/sgp/upfs/${upfId}/membros/${id}/`, {
+  const res = await apiClient(`/api/v1/sgp/ufpas/${ufpaId}/membros/${id}/`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
   return res.json();
 }
 
-/** DELETE /api/v1/sgp/upfs/{upfId}/membros/{id}/ — remove um membro. */
+/** DELETE /api/v1/sgp/ufpas/{ufpaId}/membros/{id}/ — remove um membro. */
 export async function deleteMembro(
-  upfId: string | number,
+  ufpaId: string | number,
   id: string | number,
 ): Promise<void> {
-  await apiClient(`/api/v1/sgp/upfs/${upfId}/membros/${id}/`, {
+  await apiClient(`/api/v1/sgp/ufpas/${ufpaId}/membros/${id}/`, {
     method: "DELETE",
   });
 }
 
 /**
- * GET /api/v1/sgp/upfs/{upfId}/membros/resumo/ — indicadores agregados da
+ * GET /api/v1/sgp/ufpas/{ufpaId}/membros/resumo/ — indicadores agregados da
  * composição familiar (BE-23). É a fonte de `tem_titular` na aba: a listagem
  * local pode estar desatualizada, o resumo vem direto do banco.
  */
 export async function getResumoMembros(
-  upfId: string | number,
+  ufpaId: string | number,
   signal?: AbortSignal,
 ): Promise<ResumoMembros> {
-  const res = await apiClient(`/api/v1/sgp/upfs/${upfId}/membros/resumo/`, {
+  const res = await apiClient(`/api/v1/sgp/ufpas/${ufpaId}/membros/resumo/`, {
     signal,
   });
   return res.json();
@@ -235,7 +235,7 @@ function nomeDoContentDisposition(header: string | null): string | null {
   }
 }
 
-function nomeDerivadoLocalmente(upfId: string | number): string {
+function nomeDerivadoLocalmente(ufpaId: string | number): string {
   const agora = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   const stamp = [
@@ -246,7 +246,7 @@ function nomeDerivadoLocalmente(upfId: string | number): string {
     pad(agora.getMinutes()),
     pad(agora.getSeconds()),
   ].join("-");
-  return `membros_upf_${upfId}_${stamp}.csv`;
+  return `membros_ufpa_${ufpaId}_${stamp}.csv`;
 }
 
 function dispararDownload(blob: Blob, nome: string): void {
@@ -261,9 +261,9 @@ function dispararDownload(blob: Blob, nome: string): void {
 }
 
 /**
- * GET /api/v1/sgp/upfs/{upfId}/membros/exportar/ (BE-24)
+ * GET /api/v1/sgp/ufpas/{ufpaId}/membros/exportar/ (BE-24)
  *
- * Baixa o CSV dos membros da UPF. As colunas respeitam a matriz de permissão
+ * Baixa o CSV dos membros da UFPA. As colunas respeitam a matriz de permissão
  * de BE-25 (#187) — `Cor/Raça` e `Condições de saúde` só saem para perfis
  * autorizados, e quem decide é `export_columns_for`
  * (apps/sgp/services/membro_export.py).
@@ -272,16 +272,16 @@ function dispararDownload(blob: Blob, nome: string): void {
  * resposta vira Blob e desce como veio. É o critério explícito da #191, e é
  * o que faz esta função não ter nenhum ramo dependente de permissão.
  *
- * O 404 aqui é o da UPF fora do escopo territorial do usuário — o mesmo que a
+ * O 404 aqui é o da UFPA fora do escopo territorial do usuário — o mesmo que a
  * ficha inteira devolveria —, e sobe como `ApiError` para virar toast.
  */
 export async function exportarMembrosCsv(
-  upfId: string | number,
+  ufpaId: string | number,
 ): Promise<string> {
   let res: Response;
   try {
     res = await apiClient(
-      `/api/v1/sgp/upfs/${upfId}/membros/exportar/`,
+      `/api/v1/sgp/ufpas/${ufpaId}/membros/exportar/`,
       { signal: AbortSignal.timeout(EXPORT_MEMBROS_TIMEOUT_MS) },
     );
   } catch (e) {
@@ -293,7 +293,7 @@ export async function exportarMembrosCsv(
 
   const nome =
     nomeDoContentDisposition(res.headers.get("Content-Disposition")) ??
-    nomeDerivadoLocalmente(upfId);
+    nomeDerivadoLocalmente(ufpaId);
 
   dispararDownload(await res.blob(), nome);
   return nome;

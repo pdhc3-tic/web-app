@@ -37,6 +37,7 @@ import { Tabs } from "@/app/components/ui/Tabs/Tabs";
 import { OrigemScaBadge } from "@/app/components/sgp/OrigemScaBadge";
 import { EvidenceGallery } from "@/app/components/sgp/EvidenceGallery/EvidenceGallery";
 import { DemandasTab } from "./_components/DemandasTab";
+import { RiscosDeGlosa } from "./_components/RiscosDeGlosa";
 import { TransicaoStatusDialog } from "./_components/TransicaoStatusDialog";
 import { useToast } from "@/app/components/ui/Toast/Toast";
 import { isStatusTerminal } from "@/app/lib/atividades";
@@ -106,7 +107,7 @@ export default function AtividadeFichaPage() {
   const { showToast } = useToast();
   const statusLabel = useRotuloChoice("status_atividade");
 
-  // Abas via `?tab=` (#275), no mesmo formato da ficha da UPF.
+  // Abas via `?tab=` (#275), no mesmo formato da ficha da UFPA.
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -297,6 +298,8 @@ export default function AtividadeFichaPage() {
             </Button>
           </div>
         </div>
+
+        <RiscosDeGlosa atividadeId={atividade.id} />
 
         <Tabs
           value={tab}
@@ -619,36 +622,36 @@ function Auditoria({ atividade }: { atividade: AtividadeDetail }) {
 }
 
 /**
- * Descobre a UPF de cada membro participante.
+ * Descobre a UFPA de cada membro participante.
  *
- * O membro não tem rota própria: a dele é a aba de membros da UPF
- * (`/sgp/upfs/{id}/#membros`). Só que `MembroListSerializer` não devolve a UPF
+ * O membro não tem rota própria: a dele é a aba de membros da UFPA
+ * (`/sgp/ufpas/{id}/#membros`). Só que `MembroListSerializer` não devolve a UFPA
  * de origem, então o payload da atividade não diz para qual ficha ir — e foi
- * por isso que os membros ficaram sem navegação enquanto as UPFs tinham link.
+ * por isso que os membros ficaram sem navegação enquanto as UFPAs tinham link.
  *
- * Com UMA UPF participante a resposta sai de graça: `ActivityDetailSerializer.
- * validate` recusa membro que não pertença às UPFs selecionadas, então o
+ * Com UMA UFPA participante a resposta sai de graça: `ActivityDetailSerializer.
+ * validate` recusa membro que não pertença às UFPAs selecionadas, então o
  * vínculo é garantido pelo próprio contrato. Com mais de uma, `listMembros`
  * resolve o cruzamento; se falhar, o membro volta a ser texto simples — melhor
  * sem link do que apontando para a ficha errada.
  */
-function useUpfDoMembro(atividade: AtividadeDetail): Map<number, number> {
-  const { upfs_participantes: upfs, membros_participantes: membros } = atividade;
+function useUfpaDoMembro(atividade: AtividadeDetail): Map<number, number> {
+  const { ufpas_participantes: ufpas, membros_participantes: membros } = atividade;
   const [mapa, setMapa] = useState<Map<number, number>>(new Map());
 
-  const upfUnica = upfs.length === 1 ? upfs[0].id : null;
-  const chave = `${upfs.map((u) => u.id).join(",")}|${membros.length}`;
+  const ufpaUnica = ufpas.length === 1 ? ufpas[0].id : null;
+  const chave = `${ufpas.map((u) => u.id).join(",")}|${membros.length}`;
 
   useEffect(() => {
-    if (upfUnica !== null || upfs.length === 0 || membros.length === 0) {
+    if (ufpaUnica !== null || ufpas.length === 0 || membros.length === 0) {
       return;
     }
     const controller = new AbortController();
 
     Promise.all(
-      upfs.map((upf) =>
-        listMembros(upf.id, controller.signal)
-          .then((lista) => lista.map((m) => [m.id, upf.id] as const))
+      ufpas.map((ufpa) =>
+        listMembros(ufpa.id, controller.signal)
+          .then((lista) => lista.map((m) => [m.id, ufpa.id] as const))
           .catch(() => [] as (readonly [number, number])[]),
       ),
     ).then((pares) => {
@@ -657,28 +660,28 @@ function useUpfDoMembro(atividade: AtividadeDetail): Map<number, number> {
     });
 
     return () => controller.abort();
-    // `chave` resume as UPFs e a contagem de membros; as instâncias mudam a
+    // `chave` resume as UFPAs e a contagem de membros; as instâncias mudam a
     // cada render da ficha e reexecutariam o efeito à toa.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chave, upfUnica]);
+  }, [chave, ufpaUnica]);
 
-  if (upfUnica !== null) {
-    return new Map(membros.map((m) => [m.id, upfUnica]));
+  if (ufpaUnica !== null) {
+    return new Map(membros.map((m) => [m.id, ufpaUnica]));
   }
   return mapa;
 }
 
 /**
- * UPFs e membros que participaram, cada um com link para a própria ficha.
+ * UFPAs e membros que participaram, cada um com link para a própria ficha.
  *
  * Os dois vêm completos no detalhe desde a Issue #227 — nome, CPF mascarado e
  * parentesco já estão no payload, sem requisição adicional por participante.
  */
 function Participantes({ atividade }: { atividade: AtividadeDetail }) {
-  const { upfs_participantes: upfs, membros_participantes: membros } = atividade;
-  const upfDoMembro = useUpfDoMembro(atividade);
+  const { ufpas_participantes: ufpas, membros_participantes: membros } = atividade;
+  const ufpaDoMembro = useUfpaDoMembro(atividade);
 
-  if (upfs.length === 0 && membros.length === 0) {
+  if (ufpas.length === 0 && membros.length === 0) {
     return null;
   }
 
@@ -697,22 +700,22 @@ function Participantes({ atividade }: { atividade: AtividadeDetail }) {
         <span className="text-text-muted">({atividade.total_participantes})</span>
       </h2>
 
-      {upfs.length > 0 && (
+      {ufpas.length > 0 && (
         <div className="flex flex-col gap-2">
           <h3 className="text-2xs uppercase tracking-[0.08em] text-text-muted">
-            UPFs
+            UFPAs
           </h3>
           <ul className="grid list-none gap-1.5 sm:grid-cols-2">
-            {upfs.map((upf) => (
-              <li key={upf.id}>
+            {ufpas.map((ufpa) => (
+              <li key={ufpa.id}>
                 <Link
-                  href={`/sgp/upfs/${upf.id}/`}
+                  href={`/sgp/ufpas/${ufpa.id}/`}
                   className={linhaNavegavel}
-                  data-testid={`participante-upf-${upf.id}`}
+                  data-testid={`participante-ufpa-${ufpa.id}`}
                 >
-                  <span className="truncate">{upf.nome_titular}</span>
+                  <span className="truncate">{ufpa.nome_titular}</span>
                   <span className="shrink-0 text-2xs text-text-muted">
-                    {upf.municipio.nome}
+                    {ufpa.municipio.nome}
                   </span>
                 </Link>
               </li>
@@ -728,7 +731,7 @@ function Participantes({ atividade }: { atividade: AtividadeDetail }) {
           </h3>
           <ul className="grid list-none gap-1.5 sm:grid-cols-2">
             {membros.map((membro) => {
-              const upfId = upfDoMembro.get(membro.id);
+              const ufpaId = ufpaDoMembro.get(membro.id);
               const conteudo = (
                 <>
                   <span className="truncate">{membro.nome_completo}</span>
@@ -740,7 +743,7 @@ function Participantes({ atividade }: { atividade: AtividadeDetail }) {
 
               return (
                 <li key={membro.id}>
-                  {upfId === undefined ? (
+                  {ufpaId === undefined ? (
                     <span
                       className={linhaClasse}
                       data-testid={`participante-membro-${membro.id}`}
@@ -749,7 +752,7 @@ function Participantes({ atividade }: { atividade: AtividadeDetail }) {
                     </span>
                   ) : (
                     <Link
-                      href={`/sgp/upfs/${upfId}?tab=membros`}
+                      href={`/sgp/ufpas/${ufpaId}?tab=membros`}
                       className={linhaNavegavel}
                       data-testid={`participante-membro-${membro.id}`}
                     >

@@ -5,7 +5,7 @@ export type FileValidationResult =
   | { valid: true }
   | { valid: false; message: string };
 
-/** Valida tipo e tamanho no cliente, espelhando as regras do backend (upf_foto.py). */
+/** Valida tipo e tamanho no cliente, espelhando as regras do backend (ufpa_foto.py). */
 export function validateFile(
   file: File,
   maxSizeMB: number = DEFAULT_MAX_SIZE_MB,

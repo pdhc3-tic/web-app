@@ -5,6 +5,12 @@ export interface Perfil {
   nome: string;
   slug: string;
   descricao: string;
+  /**
+   * Principal (com território) ou operacional (com objeto de abrangência), do
+   * `RoleSerializer` (#405, AJ-BE-10). Opcional: a sessão gravada antes da
+   * mudança não traz o campo.
+   */
+  categoria?: "principal" | "operacional";
   ativo: boolean;
   criado_em: string;
 }

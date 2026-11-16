@@ -31,7 +31,7 @@ import {
   type CalendarActivityEvent,
 } from "@/app/lib/atividadesCalendario";
 import { listAcoes, listTecnicos, type AcaoPT } from "@/app/lib/atividades";
-import { fetchProjetoOptions } from "@/app/lib/upfs";
+import { fetchProjetoOptions } from "@/app/lib/ufpas";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
 import {

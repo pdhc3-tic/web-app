@@ -14,11 +14,11 @@ type Phase = "idle" | "preview" | "uploading" | "confirming" | "error";
 export type PhotoUploaderProps = {
   currentUrl: string | null;
   onChange: (newUrl: string | null) => void;
-  /** Ex.: "/api/v1/upfs/{id}/foto/upload-url/" já resolvido com o id concreto. */
+  /** Ex.: "/api/v1/sgp/ufpas/{id}/foto/upload-url/" já resolvido com o id concreto. */
   uploadUrlEndpoint: string;
-  /** Ex.: "/api/v1/upfs/{id}/foto/confirm/" já resolvido com o id concreto. */
+  /** Ex.: "/api/v1/sgp/ufpas/{id}/foto/confirm/" já resolvido com o id concreto. */
   confirmEndpoint: string;
-  /** Ex.: "/api/v1/upfs/{id}/foto/" já resolvido com o id concreto. */
+  /** Ex.: "/api/v1/sgp/ufpas/{id}/foto/" já resolvido com o id concreto. */
   deleteEndpoint: string;
   maxSizeMB?: number;
   acceptedTypes?: string[];

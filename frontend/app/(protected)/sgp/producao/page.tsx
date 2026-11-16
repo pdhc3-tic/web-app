@@ -26,8 +26,8 @@ import {
   type IndicadoresProducao,
   type ProducaoConsolidadaItem,
 } from "@/app/lib/producao";
-import { fetchTerritoryOptions, fetchMunicipalityOptions } from "@/app/lib/upfs";
-import { CatalogoCombobox } from "@/app/(protected)/sgp/upfs/[id]/_components/CatalogoCombobox";
+import { fetchTerritoryOptions, fetchMunicipalityOptions } from "@/app/lib/ufpas";
+import { CatalogoCombobox } from "@/app/(protected)/sgp/ufpas/[id]/_components/CatalogoCombobox";
 
 const DEFAULT_LIMIT = 20;
 const PAGE_SIZES = [20, 50, 100];
@@ -55,10 +55,10 @@ function IndicadoresBar({ indicadores }: { indicadores: IndicadoresProducao }) {
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
       <div className="rounded-lg border border-border bg-surface p-4">
         <p className="text-xs font-medium uppercase tracking-wide text-text-muted">
-          UPFs produtoras
+          UFPAs produtoras
         </p>
-        <p className="mt-1 text-2xl font-semibold text-text" data-testid="producao-indicador-upfs">
-          {indicadores.total_upfs_produtoras}
+        <p className="mt-1 text-2xl font-semibold text-text" data-testid="producao-indicador-ufpas">
+          {indicadores.total_ufpas_produtoras}
         </p>
       </div>
       {indicadores.area_total_ha && (
@@ -257,13 +257,13 @@ function ProducaoView() {
         items={[
           { label: "Início", href: "/dashboard" },
           { label: "SGP", href: "/sgp" },
-          { label: "Produção da UPF" },
+          { label: "Produção da UFPA" },
         ]}
       />
 
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-text">
-          Produção da UPF
+          Produção da UFPA
         </h1>
         <p className="mt-1 text-sm text-text-muted">
           Visão consolidada das atividades produtivas por território.
@@ -368,7 +368,7 @@ function ProducaoView() {
           description={
             hasActiveFilters
               ? "Tente ajustar os filtros."
-              : "Cadastre atividades produtivas nas fichas das UPFs."
+              : "Cadastre atividades produtivas nas fichas das UFPAs."
           }
           action={
             hasActiveFilters ? (
@@ -388,7 +388,7 @@ function ProducaoView() {
               <thead className="sticky top-0 z-10 bg-surface-muted">
                 <tr>
                   <th className="px-4 py-3 text-left font-medium text-text-muted">
-                    UPF / Titular
+                    UFPA / Titular
                   </th>
                   <th className="px-4 py-3 text-left font-medium text-text-muted">
                     Tipo
@@ -409,10 +409,10 @@ function ProducaoView() {
                   <tr key={item.id} className="hover:bg-surface-muted" data-testid={`producao-linha-${item.id}`}>
                     <td className="px-4 py-3 font-medium text-text">
                       <Link
-                        href={`/sgp/upfs/${item.upf_id}?tab=producao`}
+                        href={`/sgp/ufpas/${item.ufpa_id}?tab=producao`}
                         className="hover:underline"
                       >
-                        {item.upf_nome_titular || "—"}
+                        {item.ufpa_nome_titular || "—"}
                       </Link>
                     </td>
                     <td className="px-4 py-3 text-text-muted">
@@ -459,7 +459,7 @@ export default function ProducaoPage() {
         <div className="flex items-center gap-2">
           <Sprout className="h-5 w-5 text-text-muted" />
           <span className="truncate text-base font-semibold text-text">
-            Produção da UPF
+            Produção da UFPA
           </span>
         </div>
       </PageHeader>

@@ -70,7 +70,16 @@ export type Acao = {
   atualizado_em?: string;
 };
 
-/** Campos graváveis (os demais são read_only no serializer). */
+/**
+ * Campos graváveis (os demais são read_only no serializer).
+ *
+ * DEFEITO CONHECIDO, a corrigir na continuação da #273: desde a #305 o backend
+ * exige `submeta` e `indicador` (e datas não nulas) na escrita da Ação, e este
+ * payload ainda manda `meta` e `tipo_unidade`. Criar uma Ação pelo
+ * `AcaoSlideOver` responde 400. Ao migrar este arquivo para os tipos gerados
+ * (`WorkPlanAcaoRequest`), ajustar o formulário e cobrir o salvar na
+ * `acoes.spec.ts`, que hoje só confere o total antes de salvar.
+ */
 export type AcaoWritePayload = {
   meta: number;
   numero: string;

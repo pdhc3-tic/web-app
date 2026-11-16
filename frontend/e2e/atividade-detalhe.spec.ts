@@ -88,22 +88,22 @@ test.describe("Ficha da Atividade", () => {
     ).toBeVisible();
   });
 
-  test("participantes trazem link para a ficha da UPF", async ({ page }) => {
+  test("participantes trazem link para a ficha da UFPA", async ({ page }) => {
     await abrirFicha(page, fixture.comEvidencias);
 
     const participantes = page.getByTestId("atividade-participantes");
     // Nem toda atividade do seed tem participante; quando tem, o link precisa
-    // apontar para a ficha da UPF — que é o critério desta issue.
+    // apontar para a ficha da UFPA — que é o critério desta issue.
     if ((await participantes.count()) === 0) {
       test.skip(true, "Atividade da fixture não tem participantes");
     }
 
-    const primeiraUpf = participantes
-      .locator('[data-testid^="participante-upf-"]')
+    const primeiraUfpa = participantes
+      .locator('[data-testid^="participante-ufpa-"]')
       .first();
-    await expect(primeiraUpf).toBeVisible();
+    await expect(primeiraUfpa).toBeVisible();
     // O <Link> do Next normaliza a barra final, então ela é opcional aqui.
-    await expect(primeiraUpf).toHaveAttribute("href", /^\/sgp\/upfs\/\d+\/?$/);
+    await expect(primeiraUfpa).toHaveAttribute("href", /^\/sgp\/ufpas\/\d+\/?$/);
   });
 
   /**
@@ -143,12 +143,12 @@ test.describe("Ficha da Atividade", () => {
   /**
    * O membro também navega.
    *
-   * As UPFs tinham link e os membros eram texto morto. O membro não tem rota
-   * própria — a dele é a aba de membros da UPF —, e o payload da atividade não
-   * diz qual UPF é; a ficha resolve o vínculo cruzando com os membros das UPFs
+   * As UFPAs tinham link e os membros eram texto morto. O membro não tem rota
+   * própria — a dele é a aba de membros da UFPA —, e o payload da atividade não
+   * diz qual UFPA é; a ficha resolve o vínculo cruzando com os membros das UFPAs
    * participantes.
    */
-  test("membro participante leva à aba de membros da UPF", async ({ page }) => {
+  test("membro participante leva à aba de membros da UFPA", async ({ page }) => {
     await abrirFicha(page, fixture.comFichaCompleta);
 
     const membro = page.getByTestId(
@@ -157,16 +157,16 @@ test.describe("Ficha da Atividade", () => {
     await expect(membro).toBeVisible();
     await expect(membro).toHaveAttribute(
       "href",
-      new RegExp(`^/sgp/upfs/${fixture.upfDoMembro}/?\\?tab=membros$`),
+      new RegExp(`^/sgp/ufpas/${fixture.ufpaDoMembro}/?\\?tab=membros$`),
     );
 
     await membro.click();
     await expect(page).toHaveURL(
-      new RegExp(`/sgp/upfs/${fixture.upfDoMembro}/?\\?tab=membros$`),
+      new RegExp(`/sgp/ufpas/${fixture.ufpaDoMembro}/?\\?tab=membros$`),
     );
-    // Chegou na aba certa, e não só na ficha da UPF — e o membro clicado está
+    // Chegou na aba certa, e não só na ficha da UFPA — e o membro clicado está
     // naquela lista. Afirmar a LINHA dele é mais forte que procurar um título:
-    // prova que o cruzamento membro → UPF acertou a ficha, não só a rota.
+    // prova que o cruzamento membro → UFPA acertou a ficha, não só a rota.
     await expect(page.getByTestId("membros-tab")).toBeVisible();
     await expect(
       page.getByTestId(`membro-row-${fixture.membroParticipante}`),

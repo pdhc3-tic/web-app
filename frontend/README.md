@@ -20,6 +20,63 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Tipos da API (schema OpenAPI)
+
+Os tipos de resposta e de escrita da API não são escritos à mão. Eles saem do schema do backend:
+
+```
+backend/schema.yml  ->  npm run gen:api-types  ->  app/lib/api-types.ts
+```
+
+`app/lib/api-types.ts` é gerado pelo `openapi-typescript` e fica versionado. Não edite esse arquivo.
+
+### Quando o backend muda
+
+1. O backend regenera o `backend/schema.yml` (ver `backend/README.md`).
+2. No `frontend/`, rode `npm run gen:api-types` e commite o `api-types.ts` junto.
+3. Rode `npm run typecheck`. Campo removido ou renomeado aparece como erro de compilação nos arquivos que o usam.
+
+### Comandos
+
+| Comando | O que faz |
+|---|---|
+| `npm run gen:api-types` | Regenera `app/lib/api-types.ts` a partir de `backend/schema.yml`. |
+| `npm run check:api-types` | Falha se o `api-types.ts` commitado não for o que o schema gera. |
+| `npm run typecheck` | Gera os tipos de rota do Next e compila o projeto (`tsc --noEmit`). |
+
+O workflow `Frontend - tipos da API` roda `check:api-types` e `typecheck` em todo PR que mexe em `frontend/` ou em `backend/schema.yml`.
+
+### Como usar nos arquivos de `app/lib/`
+
+Os tipos de tela são montados a partir do schema, por `app/lib/apiSchema.ts`:
+
+```ts
+import type { Refinar, Schema } from "@/app/lib/apiSchema";
+
+// O componente do schema, como veio.
+export type AcessoResponse = Schema<"UserAcessoResposta">;
+
+// Quando o schema descreve um campo de forma mais frouxa do que a resposta real.
+export type MetaListItem = Refinar<
+  Schema<"WorkPlanMetaList">,
+  { status_calculado: MetaStatus; criado_por: string | null }
+>;
+```
+
+- Tipos de escrita se chamam `XRequest` e `PatchedXRequest` no schema.
+- `Refinar` só aceita campo que existe no tipo gerado. Cada uso é um débito do schema: o ideal é o backend descrever o campo e o refinamento sair.
+- O arquivo é gerado com fim de linha LF em qualquer sistema (`.gitattributes`), porque a checagem compara byte a byte.
+
+### Situação da migração (#273)
+
+| Arquivo | Situação |
+|---|---|
+| `metas.ts`, `semaforo.ts`, `choices.ts`, `users.ts` | Migrados. |
+| `ufpas.ts`, `ufpaDocumentos.ts`, `membros.ts`, `atividades.ts`, `atividadesCalendario.ts`, `producao.ts`, `painel.ts`, `formularios.ts`, `exportarAtividades.ts`, `exportarPlano.ts` | Depois do merge da renomeação para UFPA no backend (PR #417), que muda os nomes no schema. |
+| `acoes.ts` | Pendente, com defeito conhecido: o schema exige `submeta` e `indicador` (e datas não nulas) na escrita da Ação desde a #305, e o formulário ainda envia `meta` e `tipo_unidade`. Hoje criar uma Ação pela tela responde 400. Ajustar o `AcaoSlideOver` ao migrar, com E2E que salve de verdade. |
+| `orcamento.ts`, `tecnicos.ts`, `integracoes.ts`, `integracoesPowerBi.ts` | Já podem migrar; ainda não feitos. |
+| SGD e SCA (`demandas.ts`, `arlo.ts`, `execucaoSgd.ts`, `sca.ts`, `conflitos.ts`, `solicitacoes.ts`, `remanejamentos.ts`) | Esperam o schema dessas rotas ficar preciso no backend. |
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

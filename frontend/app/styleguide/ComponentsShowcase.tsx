@@ -351,9 +351,9 @@ export function ComponentsShowcase() {
         <SlideOver
           open={openView}
           onClose={() => setOpenView(false)}
-          title="Família Pereira — UPF #042"
+          title="Família Pereira — UFPA #042"
           badge={<Badge status="em-andamento" />}
-          breadcrumb="SGP / Unidades Produtivas / #042"
+          breadcrumb="SGP / UFPAs / #042"
           actions={
             <Button
               variant="secondary"
