@@ -7,7 +7,7 @@ from apps.core.tests.factories import (
     TerritoryFactory,
     UserFactory,
 )
-from apps.sgp.tests.factories import MembroFactory, ProjetoFactory, UPFFactory
+from apps.sgp.tests.factories import MembroFactory, ProjetoFactory, UFPAFactory
 
 
 @pytest.fixture
@@ -113,8 +113,8 @@ def outro_projeto(db):
 
 
 @pytest.fixture
-def upf(db, municipio_rn, projeto):
-    return UPFFactory(
+def ufpa(db, municipio_rn, projeto):
+    return UFPAFactory(
         municipio=municipio_rn,
         projeto=projeto,
         ativo=True,
@@ -122,8 +122,8 @@ def upf(db, municipio_rn, projeto):
 
 
 @pytest.fixture
-def upf_inativa(db, municipio_rn, projeto):
-    return UPFFactory(
+def ufpa_inativa(db, municipio_rn, projeto):
+    return UFPAFactory(
         municipio=municipio_rn,
         projeto=projeto,
         ativo=False,
@@ -131,8 +131,8 @@ def upf_inativa(db, municipio_rn, projeto):
 
 
 @pytest.fixture
-def outra_upf(db, municipio, projeto):
-    return UPFFactory(
+def outra_ufpa(db, municipio, projeto):
+    return UFPAFactory(
         municipio=municipio,
         projeto=projeto,
         titular_cpf="52998224725",
@@ -141,8 +141,8 @@ def outra_upf(db, municipio, projeto):
 
 
 @pytest.fixture
-def upf_ce(db, municipio_ce, projeto):
-    return UPFFactory(
+def ufpa_ce(db, municipio_ce, projeto):
+    return UFPAFactory(
         municipio=municipio_ce,
         projeto=projeto,
         ativo=True,
@@ -246,7 +246,7 @@ def auth_client_fgd(api_client, usuario_fgd):
 
 
 @pytest.fixture
-def upf_payload_minimo(projeto, municipio):
+def ufpa_payload_minimo(projeto, municipio):
     return {
         "projeto": projeto.pk,
         "nome": "Maria da Silva",
@@ -256,7 +256,7 @@ def upf_payload_minimo(projeto, municipio):
 
 
 @pytest.fixture
-def upf_payload_completo(projeto, municipio):
+def ufpa_payload_completo(projeto, municipio):
     return {
         "projeto": projeto.pk,
         "nome": "João Oliveira",
@@ -277,13 +277,13 @@ def upf_payload_completo(projeto, municipio):
         "longitude": "-37.123456",
         "situacao_moradia": 1,
         "tipo_moradia": 1,
-        "daf_caf": "DAP123456",
+        "dap_caf": "DAP123456",
         "foto_url": "https://example.com/foto.jpg",
     }
 
 
 @pytest.fixture
-def membro_payload_minimo(upf):
+def membro_payload_minimo(ufpa):
     return {
         "nome_completo": "João Filho",
         "grau_parentesco": "filho",
@@ -291,7 +291,7 @@ def membro_payload_minimo(upf):
 
 
 @pytest.fixture
-def titular_payload(upf):
+def titular_payload(ufpa):
     return {
         "nome_completo": "Maria Titular",
         "grau_parentesco": "titular",
@@ -300,19 +300,19 @@ def titular_payload(upf):
 
 
 @pytest.fixture
-def membro(upf):
+def membro(ufpa):
     return MembroFactory(
-        upf=upf,
+        ufpa=ufpa,
         nome_completo="Membro Existente",
         grau_parentesco="filho",
     )
 
 
 @pytest.fixture
-def membro_outra_upf(outra_upf):
+def membro_outra_ufpa(outra_ufpa):
     return MembroFactory(
-        upf=outra_upf,
-        nome_completo="Membro de Outra UPF",
+        ufpa=outra_ufpa,
+        nome_completo="Membro de Outra UFPA",
         grau_parentesco="filho",
     )
 

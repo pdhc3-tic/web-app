@@ -14,7 +14,7 @@ from apps.sgp.models import (
     MembroFamilia,
     Production,
     Projeto,
-    UPF,
+    UFPA,
     WorkPlanAcao,
     WorkPlanMeta,
     WorkPlanSubmeta,
@@ -25,11 +25,11 @@ from apps.sgp.services.activity_status import ActivityStatusError, validar_trans
 @admin.register(FormResponse)
 class FormResponseAdmin(admin.ModelAdmin):
     list_display = [
-        "formulario_nome", "formulario_versao", "upf", "respondente",
+        "formulario_nome", "formulario_versao", "ufpa", "respondente",
         "status", "origem", "data_preenchimento",
     ]
     list_filter = ["status", "origem", "formulario_id"]
-    search_fields = ["formulario_nome", "respondente", "upf__titular__nome_completo"]
+    search_fields = ["formulario_nome", "respondente", "ufpa__titular__nome_completo"]
     readonly_fields = ["criado_em"]
 
 
@@ -54,8 +54,8 @@ class EspecieAnimalAdmin(admin.ModelAdmin):
     search_fields = ["nome"]
 
 
-@admin.register(UPF)
-class UPFAdmin(admin.ModelAdmin):
+@admin.register(UFPA)
+class UFPAAdmin(admin.ModelAdmin):
     list_display = [
         "get_nome_titular", "get_cpf", "projeto",
         "municipio", "territorio", "ativo", "criado_em",
@@ -67,7 +67,7 @@ class UPFAdmin(admin.ModelAdmin):
     ]
 
     def get_queryset(self, request):
-        # Manager padrão (UPF.objects) exclui inativas — admin precisa ver
+        # Manager padrão (UFPA.objects) exclui inativas — admin precisa ver
         # tudo, com list_filter["ativo"] continuando a funcionar.
         qs = self.model.all_objects.get_queryset()
         ordering = self.get_ordering(request)
@@ -86,10 +86,10 @@ class UPFAdmin(admin.ModelAdmin):
 
 @admin.register(Production)
 class ProductionAdmin(admin.ModelAdmin):
-    list_display = ["upf", "tipo", "cultura", "especie", "tipo_outra", "criado_em"]
+    list_display = ["ufpa", "tipo", "cultura", "especie", "tipo_outra", "criado_em"]
     list_filter = ["tipo", "sistema_criacao", "tipo_outra"]
     search_fields = [
-        "upf__titular__nome_completo",
+        "ufpa__titular__nome_completo",
         "cultura__nome",
         "especie__nome",
         "descricao_outra",
@@ -100,7 +100,7 @@ class ProductionAdmin(admin.ModelAdmin):
 @admin.register(MembroFamilia)
 class MembroFamiliaAdmin(admin.ModelAdmin):
     list_display = [
-        "nome_completo", "grau_parentesco", "upf", "cpf", "criado_em",
+        "nome_completo", "grau_parentesco", "ufpa", "cpf", "criado_em",
     ]
     list_filter = ["grau_parentesco"]
     search_fields = ["nome_completo", "cpf"]
@@ -288,7 +288,7 @@ class ActivityAdmin(admin.ModelAdmin):
             qs = qs.order_by(*ordering)
         return qs
     filter_horizontal = [
-        "equipe_adicional", "upfs_participantes", "membros_participantes",
+        "equipe_adicional", "ufpas_participantes", "membros_participantes",
         "parceiros_organizacoes",
     ]
     fieldsets = [
@@ -306,7 +306,7 @@ class ActivityAdmin(admin.ModelAdmin):
         }),
         ("Participantes", {
             "fields": [
-                "upfs_participantes", "membros_participantes",
+                "ufpas_participantes", "membros_participantes",
                 "parceiros_organizacoes", "parceiros_livres",
             ],
         }),

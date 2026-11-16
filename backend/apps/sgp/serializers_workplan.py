@@ -1,4 +1,5 @@
 import copy
+from decimal import Decimal
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from drf_spectacular.utils import extend_schema_field
@@ -13,6 +14,9 @@ from apps.sgp.services.workplan_access import (
     filter_workplan_submetas_for_user,
     is_global_workplan_user,
 )
+
+
+MAIOR_VALOR_TOTAL = Decimal("999999999999.99")  # O limite dos campos monetários, (14,2).
 
 
 def _validar_ods(value):
@@ -121,10 +125,10 @@ class WorkPlanAcaoSerializer(serializers.ModelSerializer):
     # (ver "Débito técnico" em backend/docs/plano-trabalho.md).
     tipo_unidade_display = serializers.CharField(source="indicador.nome", read_only=True)
     valor_total = serializers.DecimalField(
-        max_digits=14, decimal_places=2, read_only=True
+        max_digits=None, decimal_places=2, read_only=True
     )
     valor_executado = serializers.DecimalField(
-        max_digits=14, decimal_places=2, read_only=True
+        max_digits=None, decimal_places=2, read_only=True
     )
     percentual_realizado = serializers.DecimalField(
         max_digits=7, decimal_places=2, read_only=True
@@ -183,6 +187,13 @@ class WorkPlanAcaoSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         instance = self.instance
+        quantidade = attrs.get("quantidade_planejada", instance.quantidade_planejada if instance else 0)
+        valor_unitario = attrs.get("valor_unitario", instance.valor_unitario if instance else 0)
+        if quantidade * valor_unitario > MAIOR_VALOR_TOTAL:
+            campo = "quantidade_planejada" if "valor_unitario" not in attrs else "valor_unitario"
+            raise serializers.ValidationError({
+                campo: "O valor total da Ação (quantidade × valor unitário) excede o limite.",
+            })
         indicador = attrs.get("indicador", instance.indicador if instance else None)
         if "quantidade_realizada" in attrs and indicador.forma_apuracao != FORMA_MANUAL:
             # Quem devolve o objeto lido (PUT/PATCH) manda o valor apurado de
@@ -241,12 +252,12 @@ class WorkPlanAcaoListSerializer(WorkPlanAcaoSerializer):
 
 class WorkPlanSubmetaSerializer(serializers.ModelSerializer):
     quantidade_planejada = serializers.DecimalField(
-        max_digits=14, decimal_places=2, read_only=True
+        max_digits=None, decimal_places=2, read_only=True
     )
     quantidade_realizada = serializers.IntegerField(read_only=True)
-    valor_total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    valor_total = serializers.DecimalField(max_digits=None, decimal_places=2, read_only=True)
     valor_executado = serializers.DecimalField(
-        max_digits=14, decimal_places=2, read_only=True
+        max_digits=None, decimal_places=2, read_only=True
     )
     status_execucao = serializers.CharField(read_only=True)
     criado_por = serializers.StringRelatedField(read_only=True)
@@ -303,13 +314,13 @@ def _acoes_visiveis(queryset, context):
 
 class WorkPlanMetaListSerializer(serializers.ModelSerializer):
     quantidade_planejada = serializers.DecimalField(
-        max_digits=14, decimal_places=2, read_only=True
+        max_digits=None, decimal_places=2, read_only=True
     )
     valor_total_planejado = serializers.DecimalField(
-        max_digits=14, decimal_places=2, read_only=True
+        max_digits=None, decimal_places=2, read_only=True
     )
     valor_executado = serializers.DecimalField(
-        max_digits=14, decimal_places=2, read_only=True
+        max_digits=None, decimal_places=2, read_only=True
     )
     status_calculado = serializers.CharField(read_only=True)
     criado_por = serializers.StringRelatedField(read_only=True)
@@ -334,13 +345,13 @@ class WorkPlanMetaListSerializer(serializers.ModelSerializer):
 
 class WorkPlanMetaDetailSerializer(serializers.ModelSerializer):
     valor_total_planejado = serializers.DecimalField(
-        max_digits=14, decimal_places=2, read_only=True
+        max_digits=None, decimal_places=2, read_only=True
     )
     quantidade_planejada = serializers.DecimalField(
-        max_digits=14, decimal_places=2, read_only=True
+        max_digits=None, decimal_places=2, read_only=True
     )
     valor_executado = serializers.DecimalField(
-        max_digits=14, decimal_places=2, read_only=True
+        max_digits=None, decimal_places=2, read_only=True
     )
     status_calculado = serializers.CharField(read_only=True)
     criado_por = serializers.StringRelatedField(read_only=True)
@@ -479,9 +490,9 @@ class _NoVisaoIndicadorSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     numero = serializers.CharField()
     titulo = serializers.CharField()
-    quantidade_planejada = serializers.DecimalField(max_digits=14, decimal_places=2)
+    quantidade_planejada = serializers.DecimalField(max_digits=None, decimal_places=2)
     quantidade_realizada = serializers.DecimalField(
-        max_digits=14, decimal_places=2, allow_null=True
+        max_digits=None, decimal_places=2, allow_null=True
     )
     percentual_realizado = serializers.DecimalField(
         max_digits=7, decimal_places=2, allow_null=True
@@ -508,9 +519,9 @@ class VisaoIndicadorSerializer(serializers.Serializer):
     Indicador manual vem nulo quando se pede território ou período."""
 
     indicador = IndicatorResumoSerializer()
-    quantidade_planejada = serializers.DecimalField(max_digits=14, decimal_places=2)
+    quantidade_planejada = serializers.DecimalField(max_digits=None, decimal_places=2)
     quantidade_realizada = serializers.DecimalField(
-        max_digits=14, decimal_places=2, allow_null=True
+        max_digits=None, decimal_places=2, allow_null=True
     )
     percentual_realizado = serializers.DecimalField(
         max_digits=7, decimal_places=2, allow_null=True
@@ -541,14 +552,14 @@ class WorkPlanDashboardSubmetaSerializer(serializers.ModelSerializer):
 class WorkPlanDashboardNodeSerializer(serializers.Serializer):
     """Consolidado de um nó da árvore do painel (Submeta ou Meta)."""
 
-    quantidade_planejada = serializers.DecimalField(max_digits=14, decimal_places=2)
-    quantidade_realizada = serializers.DecimalField(max_digits=14, decimal_places=2)
+    quantidade_planejada = serializers.DecimalField(max_digits=None, decimal_places=2)
+    quantidade_realizada = serializers.DecimalField(max_digits=None, decimal_places=2)
     percentual_realizado = serializers.DecimalField(max_digits=7, decimal_places=2)
     progresso_esperado = serializers.DecimalField(max_digits=7, decimal_places=2)
     semaforo = serializers.CharField(allow_null=True)
     status_execucao = serializers.CharField()
-    valor_total = serializers.DecimalField(max_digits=14, decimal_places=2)
-    valor_executado = serializers.DecimalField(max_digits=14, decimal_places=2)
+    valor_total = serializers.DecimalField(max_digits=None, decimal_places=2)
+    valor_executado = serializers.DecimalField(max_digits=None, decimal_places=2)
     percentual_financeiro = serializers.DecimalField(max_digits=7, decimal_places=2)
     semaforo_financeiro = serializers.CharField(allow_null=True)
 
@@ -589,10 +600,10 @@ class WorkPlanDashboardAcaoSerializer(serializers.Serializer):
     status_execucao = serializers.CharField(
         source="dashboard_status_execucao", read_only=True
     )
-    valor_total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    valor_total = serializers.DecimalField(max_digits=None, decimal_places=2, read_only=True)
     valor_executado = serializers.DecimalField(
         source="dashboard_valor_executado",
-        max_digits=14,
+        max_digits=None,
         decimal_places=2,
         read_only=True,
     )

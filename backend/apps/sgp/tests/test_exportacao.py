@@ -1,5 +1,5 @@
 """Exportações do SGP: fluxo assíncrono (`/sgp/exportacoes/`), exportação de
-Atividades e exportação de UPFs com os filtros da listagem."""
+Atividades e exportação de UFPAs com os filtros da listagem."""
 import csv
 import io
 from datetime import datetime, timedelta
@@ -11,12 +11,12 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.core.tests.factories import RoleFactory, UserFactory
-from apps.sgp.models import UPF, ExportJob
+from apps.sgp.models import UFPA, ExportJob
 from apps.sgp.services import exportacao as exportacao_service
 from apps.sgp.tests.factories import (
     ActivityFactory,
     ComunidadeFactory,
-    UPFFactory,
+    UFPAFactory,
     WorkPlanAcaoFactory,
 )
 
@@ -24,8 +24,8 @@ pytestmark = pytest.mark.django_db
 
 EXPORTACOES_URL = "/api/v1/sgp/exportacoes/"
 ATIVIDADES_EXPORT_URL = "/api/v1/sgp/atividades/exportar/"
-UPFS_URL = "/api/v1/upfs/"
-UPFS_EXPORT_URL = "/api/v1/upfs/exportar/"
+UFPAS_URL = "/api/v1/sgp/ufpas/"
+UFPAS_EXPORT_URL = "/api/v1/sgp/ufpas/exportar/"
 DELAY = "apps.sgp.tasks.processar_exportacao.delay"
 
 
@@ -270,23 +270,23 @@ class TestFluxoAssincrono:
             },
             format="json",
         )
-        parametro_upf = cliente_ugp.post(
+        parametro_ufpa = cliente_ugp.post(
             EXPORTACOES_URL,
-            data={"tipo": "upfs", "formato": "csv", "filtros": {"situacao": "ativas"}},
+            data={"tipo": "ufpas", "formato": "csv", "filtros": {"situacao": "ativas"}},
             format="json",
         )
 
         assert tipo_invalido.status_code == status.HTTP_400_BAD_REQUEST
         assert periodo_invertido.status_code == status.HTTP_400_BAD_REQUEST
         assert "filtros" in periodo_invertido.data
-        assert parametro_upf.status_code == status.HTTP_400_BAD_REQUEST
-        assert parametro_upf.data["code"] == "parametro_desconhecido"
+        assert parametro_ufpa.status_code == status.HTTP_400_BAD_REQUEST
+        assert parametro_ufpa.data["code"] == "parametro_desconhecido"
         assert ExportJob.objects.count() == 0
 
-    def test_valor_invalido_de_filtro_de_upf_e_recusado_na_criacao(self, cliente_ugp):
+    def test_valor_invalido_de_filtro_de_ufpa_e_recusado_na_criacao(self, cliente_ugp):
         response = cliente_ugp.post(
             EXPORTACOES_URL,
-            data={"tipo": "upfs", "formato": "csv", "filtros": {"municipio": "abc"}},
+            data={"tipo": "ufpas", "formato": "csv", "filtros": {"municipio": "abc"}},
             format="json",
         )
 
@@ -320,20 +320,20 @@ class TestFluxoAssincrono:
     def test_job_respeita_o_escopo_do_solicitante(self, usuario_adt_rn, municipio_rn, municipio_ce):
         do_rn = ActivityFactory(municipio=municipio_rn)
         ActivityFactory(municipio=municipio_ce)
-        UPFFactory(municipio=municipio_rn, _titular_nome="Do RN")
-        UPFFactory(municipio=municipio_ce, _titular_nome="Do CE")
+        UFPAFactory(municipio=municipio_rn, _titular_nome="Do RN")
+        UFPAFactory(municipio=municipio_ce, _titular_nome="Do CE")
         atividades = ExportJob.objects.create(tipo="atividades", formato="csv", solicitante=usuario_adt_rn)
-        upfs = ExportJob.objects.create(tipo="upfs", formato="csv", solicitante=usuario_adt_rn)
+        ufpas = ExportJob.objects.create(tipo="ufpas", formato="csv", solicitante=usuario_adt_rn)
 
         exportacao_service.executar_exportacao(atividades.pk)
-        exportacao_service.executar_exportacao(upfs.pk)
+        exportacao_service.executar_exportacao(ufpas.pk)
 
         atividades.refresh_from_db()
-        upfs.refresh_from_db()
+        ufpas.refresh_from_db()
         assert [linha[0] for linha in _linhas_csv(bytes(atividades.conteudo))[1:]] == [str(do_rn.pk)]
-        linhas_upfs = _linhas_csv(bytes(upfs.conteudo))
-        coluna_titular = linhas_upfs[0].index("Titular")
-        assert [linha[coluna_titular] for linha in linhas_upfs[1:]] == ["Do RN"]
+        linhas_ufpas = _linhas_csv(bytes(ufpas.conteudo))
+        coluna_titular = linhas_ufpas[0].index("Titular")
+        assert [linha[coluna_titular] for linha in linhas_ufpas[1:]] == ["Do RN"]
 
 
 class TestJobsTravados:
@@ -438,14 +438,14 @@ class TestExportacaoAtividades:
 
     def test_contagem_de_participantes(self, cliente_ugp, municipio_rn):
         atividade = ActivityFactory(municipio=municipio_rn)
-        upfs = UPFFactory.create_batch(2, municipio=municipio_rn)
-        atividade.upfs_participantes.set(upfs)
-        atividade.membros_participantes.set([upf.titular for upf in upfs])
+        ufpas = UFPAFactory.create_batch(2, municipio=municipio_rn)
+        atividade.ufpas_participantes.set(ufpas)
+        atividade.membros_participantes.set([ufpa.titular for ufpa in ufpas])
 
         response = cliente_ugp.get(ATIVIDADES_EXPORT_URL, {"formato": "csv"})
 
         registro = dict(zip(*_linhas_csv(response.content)[:2]))
-        assert registro["UPFs participantes"] == "2"
+        assert registro["UFPAs participantes"] == "2"
         assert registro["Participantes"] == "2"
 
     def test_escopo_territorial(self, auth_client_adt_rn, municipio_rn, municipio_ce):
@@ -480,33 +480,33 @@ class TestExportacaoAtividades:
 
 
 # ===========================================================================
-# Exportação de UPFs
+# Exportação de UFPAs
 # ===========================================================================
 
-class TestExportacaoUPFs:
+class TestExportacaoUFPAs:
     def _ids_listagem(self, cliente, params):
-        response = cliente.get(UPFS_URL, {**params, "page_size": 200})
+        response = cliente.get(UFPAS_URL, {**params, "page_size": 200})
         return {item["id"] for item in response.data["results"]}
 
     def _titulares_exportados(self, cliente, params):
-        response = cliente.get(UPFS_EXPORT_URL, params)
+        response = cliente.get(UFPAS_EXPORT_URL, params)
         assert response.status_code == status.HTTP_200_OK, response.content
         linhas = _linhas_csv(response.content)
         coluna = linhas[0].index("Titular")
         return {linha[coluna] for linha in linhas[1:]}
 
     @pytest.fixture
-    def cenario_upfs(self, municipio_rn, municipio_ce, projeto, outro_projeto):
+    def cenario_ufpas(self, municipio_rn, municipio_ce, projeto, outro_projeto):
         comunidade = ComunidadeFactory(municipio=municipio_rn)
-        UPFFactory(
+        UFPAFactory(
             municipio=municipio_rn, projeto=projeto, comunidade=comunidade,
             _titular_nome="Maria Ativa RN",
         )
-        UPFFactory(municipio=municipio_ce, projeto=outro_projeto, _titular_nome="Maria Ativa CE")
-        UPFFactory(
+        UFPAFactory(municipio=municipio_ce, projeto=outro_projeto, _titular_nome="Maria Ativa CE")
+        UFPAFactory(
             municipio=municipio_rn, projeto=projeto, _titular_nome="Maria Inativa", ativo=False,
         )
-        UPFFactory(municipio=municipio_rn, projeto=outro_projeto, _titular_nome="José Ativo")
+        UFPAFactory(municipio=municipio_rn, projeto=outro_projeto, _titular_nome="José Ativo")
         return {
             "municipio": str(municipio_rn.pk),
             "territorio": str(municipio_ce.territory_id),
@@ -526,36 +526,36 @@ class TestExportacaoUPFs:
         {"ativo": ""},
         {"cadastrado_de": "2000-01-01", "cadastrado_ate": "2100-01-01"},
     ])
-    def test_paridade_com_a_listagem(self, cliente_ugp, cenario_upfs, params):
-        params = {chave: valor.format(**cenario_upfs) for chave, valor in params.items()}
+    def test_paridade_com_a_listagem(self, cliente_ugp, cenario_ufpas, params):
+        params = {chave: valor.format(**cenario_ufpas) for chave, valor in params.items()}
 
         listagem = self._ids_listagem(cliente_ugp, params)
         esperados = set(
-            UPF.all_objects.filter(pk__in=listagem).values_list(
+            UFPA.all_objects.filter(pk__in=listagem).values_list(
                 "titular__nome_completo", flat=True
             )
         )
 
-        assert esperados, "o cenário deveria produzir ao menos uma UPF para o filtro"
+        assert esperados, "o cenário deveria produzir ao menos uma UFPA para o filtro"
         assert self._titulares_exportados(cliente_ugp, params) == esperados
 
     def test_ativo_invalido_retorna_400_em_vez_de_exportar_tudo(self, cliente_ugp, municipio_rn):
-        UPFFactory(municipio=municipio_rn, ativo=False)
+        UFPAFactory(municipio=municipio_rn, ativo=False)
 
-        response = cliente_ugp.get(UPFS_EXPORT_URL, {"ativo": "xyz"})
+        response = cliente_ugp.get(UFPAS_EXPORT_URL, {"ativo": "xyz"})
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "ativo" in response.data
 
     def test_ativo_invalido_tambem_e_400_na_listagem(self, cliente_ugp):
-        response = cliente_ugp.get(UPFS_URL, {"ativo": "xyz"})
+        response = cliente_ugp.get(UFPAS_URL, {"ativo": "xyz"})
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_colunas(self, cliente_ugp, municipio_rn):
-        UPFFactory(municipio=municipio_rn, _titular_nome="Maria", cpf="12345678901")
+        UFPAFactory(municipio=municipio_rn, _titular_nome="Maria", cpf="12345678901")
 
-        response = cliente_ugp.get(UPFS_EXPORT_URL)
+        response = cliente_ugp.get(UFPAS_EXPORT_URL)
 
         linhas = _linhas_csv(response.content)
         assert linhas[0] == [
@@ -566,10 +566,10 @@ class TestExportacaoUPFs:
         assert registro["Território"] == municipio_rn.territory.nome
 
     def test_cpf_completo_para_ugp_e_mascarado_para_adt(self, cliente_ugp, municipio_rn, usuario_adt_rn):
-        UPFFactory(municipio=municipio_rn, cpf="12345678901")
+        UFPAFactory(municipio=municipio_rn, cpf="12345678901")
 
-        ugp = dict(zip(*_linhas_csv(cliente_ugp.get(UPFS_EXPORT_URL).content)[:2]))
-        adt = dict(zip(*_linhas_csv(_cliente(usuario_adt_rn).get(UPFS_EXPORT_URL).content)[:2]))
+        ugp = dict(zip(*_linhas_csv(cliente_ugp.get(UFPAS_EXPORT_URL).content)[:2]))
+        adt = dict(zip(*_linhas_csv(_cliente(usuario_adt_rn).get(UFPAS_EXPORT_URL).content)[:2]))
 
         assert ugp["CPF"] == "12345678901"
         assert adt["CPF"] == "123.***.***-01"
@@ -577,58 +577,58 @@ class TestExportacaoUPFs:
     def test_cpf_completo_para_super_admin_e_mascarado_para_articulador(
         self, municipio_rn, usuario_super_admin, usuario_articulador_rn
     ):
-        UPFFactory(municipio=municipio_rn, cpf="12345678901")
+        UFPAFactory(municipio=municipio_rn, cpf="12345678901")
 
-        super_admin = _cliente(usuario_super_admin).get(UPFS_EXPORT_URL)
-        articulador = _cliente(usuario_articulador_rn).get(UPFS_EXPORT_URL)
+        super_admin = _cliente(usuario_super_admin).get(UFPAS_EXPORT_URL)
+        articulador = _cliente(usuario_articulador_rn).get(UFPAS_EXPORT_URL)
 
         assert dict(zip(*_linhas_csv(super_admin.content)[:2]))["CPF"] == "12345678901"
         assert dict(zip(*_linhas_csv(articulador.content)[:2]))["CPF"] == "123.***.***-01"
 
     def test_sem_campos_sensiveis(self, cliente_ugp, municipio_rn):
-        UPFFactory(municipio=municipio_rn)
+        UFPAFactory(municipio=municipio_rn)
 
-        cabecalho = _linhas_csv(cliente_ugp.get(UPFS_EXPORT_URL).content)[0]
+        cabecalho = _linhas_csv(cliente_ugp.get(UFPAS_EXPORT_URL).content)[0]
 
         assert not {"Cor/Raça", "Condições de saúde", "Saúde"} & set(cabecalho)
 
     def test_escopo_territorial(self, auth_client_adt_rn, municipio_rn, municipio_ce):
-        UPFFactory(municipio=municipio_rn, _titular_nome="Do RN")
-        UPFFactory(municipio=municipio_ce, _titular_nome="Do CE")
+        UFPAFactory(municipio=municipio_rn, _titular_nome="Do RN")
+        UFPAFactory(municipio=municipio_ce, _titular_nome="Do CE")
 
         assert self._titulares_exportados(auth_client_adt_rn, {}) == {"Do RN"}
 
     def test_parametro_desconhecido_retorna_400(self, cliente_ugp):
-        response = cliente_ugp.get(UPFS_EXPORT_URL, {"situacao": "ativas", "municipo": "1"})
+        response = cliente_ugp.get(UFPAS_EXPORT_URL, {"situacao": "ativas", "municipo": "1"})
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert response.data["code"] == "parametro_desconhecido"
         assert response.data["parametros"] == ["municipo", "situacao"]
 
     def test_nome_antigo_ativa_e_parametro_desconhecido(self, cliente_ugp):
-        response = cliente_ugp.get(UPFS_EXPORT_URL, {"ativa": "false"})
+        response = cliente_ugp.get(UFPAS_EXPORT_URL, {"ativa": "false"})
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert response.data["code"] == "parametro_desconhecido"
         assert response.data["parametros"] == ["ativa"]
 
     def test_filtro_com_valor_invalido_retorna_400(self, cliente_ugp):
-        response = cliente_ugp.get(UPFS_EXPORT_URL, {"municipio": "abc"})
+        response = cliente_ugp.get(UFPAS_EXPORT_URL, {"municipio": "abc"})
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_acima_do_limite_vira_exportacao_assincrona(
         self, cliente_ugp, municipio_rn, django_capture_on_commit_callbacks, settings
     ):
-        settings.UPF_EXPORT_ASYNC_THRESHOLD = 2
-        UPFFactory.create_batch(3, municipio=municipio_rn)
+        settings.UFPA_EXPORT_ASYNC_THRESHOLD = 2
+        UFPAFactory.create_batch(3, municipio=municipio_rn)
 
         with patch(DELAY) as delay:
             with django_capture_on_commit_callbacks(execute=True):
-                response = cliente_ugp.get(UPFS_EXPORT_URL, {"municipio": municipio_rn.pk})
+                response = cliente_ugp.get(UFPAS_EXPORT_URL, {"municipio": municipio_rn.pk})
 
         assert response.status_code == status.HTTP_202_ACCEPTED
-        assert response.data["tipo"] == "upfs"
+        assert response.data["tipo"] == "ufpas"
         assert response.data["total_registros"] == 3
         assert response.data["filtros"] == {"municipio": str(municipio_rn.pk)}
         delay.assert_called_once_with(response.data["id"])
@@ -638,10 +638,10 @@ class TestExportacaoUPFs:
         assert len(_linhas_csv(download.content)) == 4
 
     def test_no_limite_ainda_e_download_direto(self, cliente_ugp, municipio_rn, settings):
-        settings.UPF_EXPORT_ASYNC_THRESHOLD = 2
-        UPFFactory.create_batch(2, municipio=municipio_rn)
+        settings.UFPA_EXPORT_ASYNC_THRESHOLD = 2
+        UFPAFactory.create_batch(2, municipio=municipio_rn)
 
-        response = cliente_ugp.get(UPFS_EXPORT_URL)
+        response = cliente_ugp.get(UFPAS_EXPORT_URL)
 
         assert response.status_code == status.HTTP_200_OK
         assert ExportJob.objects.count() == 0

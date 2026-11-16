@@ -115,7 +115,7 @@ def auth_client_super_admin(super_admin_user):
 # Helpers de payload
 # ──────────────────────────────────────────────────────────────
 
-def payload_upf(projeto, municipio, **overrides):
+def payload_ufpa(projeto, municipio, **overrides):
     payload = {
         "projeto": projeto.pk,
         "municipio": municipio.pk,

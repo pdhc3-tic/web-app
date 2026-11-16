@@ -141,7 +141,7 @@ class TestSGPChoicesEndpoint:
     @pytest.mark.parametrize("chave", [
         "ods", "status_plano_trabalho", "tipo_atividade", "forma_atuacao", "ambito",
         "status_atividade", "producao_tipo", "producao_sistema_criacao",
-        "producao_tipo_outra", "upf_documento_tipo", "atividade_documento_tipo",
+        "producao_tipo_outra", "ufpa_documento_tipo", "atividade_documento_tipo",
         "cultura_categoria", "especie_categoria",
         "risco_glosa_tipo", "risco_glosa_severidade", "perfil_categoria", "perfil_objeto_tipo",
     ])

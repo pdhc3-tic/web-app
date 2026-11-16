@@ -9,7 +9,7 @@ class FormResponseListSerializer(serializers.ModelSerializer):
         model = FormResponse
         fields = [
             "id",
-            "upf",
+            "ufpa",
             "formulario_id",
             "formulario_nome",
             "formulario_versao",
@@ -30,10 +30,10 @@ class FormResponseDetailSerializer(FormResponseListSerializer):
 
 
 class FormResponseFormularioOptionSerializer(serializers.Serializer):
-    """Opção do filtro de formulário: um formulário com resposta na UPF.
+    """Opção do filtro de formulário: um formulário com resposta na UFPA.
 
     Distinto de `AvailableFormSerializer` — este cobre formulários já
-    respondidos na UPF corrente (para o filtro do histórico), não os
+    respondidos na UFPA corrente (para o filtro do histórico), não os
     formulários publicados disponíveis para novo preenchimento.
     """
 
@@ -53,7 +53,7 @@ class AvailableFormSerializer(serializers.Serializer):
 class FormResponseReceiveSerializer(serializers.Serializer):
     SUPPORTED_CONTRACT_VERSION = "1.0"
 
-    upf_id = serializers.IntegerField(min_value=1)
+    ufpa_id = serializers.IntegerField(min_value=1)
     formulario_id = serializers.IntegerField(min_value=1)
     formulario_nome = serializers.CharField(max_length=255)
     formulario_versao = serializers.CharField(max_length=50)
@@ -76,22 +76,22 @@ class FormResponseReceiveSerializer(serializers.Serializer):
             )
         return value
 
-    def validate_upf_id(self, value):
-        upf_queryset = self.context["upf_queryset"]
-        upf = upf_queryset.filter(pk=value).first()
-        if upf is None:
+    def validate_ufpa_id(self, value):
+        ufpa_queryset = self.context["ufpa_queryset"]
+        ufpa = ufpa_queryset.filter(pk=value).first()
+        if ufpa is None:
             raise serializers.ValidationError(
-                "UPF não encontrada ou sem permissão de acesso."
+                "UFPA não encontrada ou sem permissão de acesso."
             )
-        return upf
+        return ufpa
 
     def create(self, validated_data):
-        upf = validated_data.pop("upf_id")
+        ufpa = validated_data.pop("ufpa_id")
         response, created = FormResponse.objects.get_or_create(
             origem=validated_data["origem"],
             resposta_id_origem=validated_data["resposta_id_origem"],
             defaults={
-                "upf": upf,
+                "ufpa": ufpa,
                 "data_preenchimento": timezone.now(),
                 **validated_data,
             },

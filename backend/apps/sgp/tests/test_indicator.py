@@ -8,7 +8,7 @@ from apps.sgp.models import Indicator
 from apps.sgp.tests.factories import (
     ActivityFactory,
     IndicatorFactory,
-    UPFFactory,
+    UFPAFactory,
     WorkPlanAcaoFactory,
     WorkPlanSubmetaFactory,
 )
@@ -183,10 +183,10 @@ class TestTrocaDeFormaDeApuracao:
     @pytest.fixture
     def acao_com_ufpas(self, municipio_rn):
         acao = WorkPlanAcaoFactory(indicador=IndicatorFactory(forma_apuracao="contagem_atividades"))
-        upf = UPFFactory(municipio=municipio_rn)
+        ufpa = UFPAFactory(municipio=municipio_rn)
         for _ in range(3):
             atividade = ActivityFactory(acao=acao, status="concluido", municipio=municipio_rn)
-            atividade.upfs_participantes.add(upf)
+            atividade.ufpas_participantes.add(ufpa)
         acao.refresh_from_db()
         assert acao.quantidade_realizada == 3
         return acao

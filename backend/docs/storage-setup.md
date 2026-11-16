@@ -58,14 +58,14 @@ Configure CORS no bucket para permitir upload direto do frontend:
 
 Ajuste `AllowedOrigins` para os domínios reais de preview e produção do frontend.
 
-## Fluxo Da Foto Da UPF
+## Fluxo Da Foto Da UFPA
 
-1. Cliente solicita `POST /api/v1/upfs/{id}/foto/upload-url/` com `filename`, `content_type` e `size`.
-2. Backend valida permissão, tipo e tamanho, gera key `upfs/{id}/foto/{uuid}.{ext}` e retorna `{ url, key, expires_in }`.
+1. Cliente solicita `POST /api/v1/sgp/ufpas/{id}/foto/upload-url/` com `filename`, `content_type` e `size`.
+2. Backend valida permissão, tipo e tamanho, gera key `ufpas/{id}/foto/{uuid}.{ext}` e retorna `{ url, key, expires_in }`.
 3. Cliente faz `PUT` do binário diretamente para a URL retornada.
-4. Cliente confirma em `POST /api/v1/upfs/{id}/foto/confirm/` com `{ key }`.
-5. Backend valida existência com `head_object`, atualiza `upf.foto_url` e remove a foto anterior quando houver.
-6. Cliente remove com `DELETE /api/v1/upfs/{id}/foto/`.
+4. Cliente confirma em `POST /api/v1/sgp/ufpas/{id}/foto/confirm/` com `{ key }`.
+5. Backend valida existência com `head_object`, atualiza `ufpa.foto_url` e remove a foto anterior quando houver.
+6. Cliente remove com `DELETE /api/v1/sgp/ufpas/{id}/foto/`.
 
 ## CSP
 

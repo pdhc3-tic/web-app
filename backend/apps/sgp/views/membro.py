@@ -21,18 +21,18 @@ from rest_framework.views import APIView
 from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.core.services.membro_audit import log_membro_change, sensitive_fields_changed
-from apps.sgp.models import MembroFamilia, UPF
+from apps.sgp.models import MembroFamilia, UFPA
 from apps.sgp.serializers import (
     MembroDetailSerializer,
     MembroExportQuerySerializer,
     MembroListSerializer,
 )
-from apps.sgp.services.access import upfs_acessiveis_ao_usuario
+from apps.sgp.services.access import ufpas_acessiveis_ao_usuario
 from apps.sgp.services.membro_export import (
-    MEMBROS_EXPORT_UPF_LIMIT,
+    MEMBROS_EXPORT_UFPA_LIMIT,
     ExportLimitExceeded,
     membro_export_rows_for_scope,
-    membro_export_rows_for_upf,
+    membro_export_rows_for_ufpa,
 )
 
 
@@ -76,13 +76,13 @@ class MembroViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedActiveAccess]
     http_method_names = ["get", "post", "put", "patch", "delete", "head", "options"]
 
-    def get_upf(self):
-        upf_pk = self.kwargs["upf_pk"]
-        return get_object_or_404(upfs_acessiveis_ao_usuario(self.request.user), pk=upf_pk)
+    def get_ufpa(self):
+        ufpa_pk = self.kwargs["ufpa_pk"]
+        return get_object_or_404(ufpas_acessiveis_ao_usuario(self.request.user), pk=ufpa_pk)
 
     def get_queryset(self):
-        upf = self.get_upf()
-        return MembroFamilia.objects.filter(upf=upf)
+        ufpa = self.get_ufpa()
+        return MembroFamilia.objects.filter(ufpa=ufpa)
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -90,13 +90,13 @@ class MembroViewSet(viewsets.ModelViewSet):
         return MembroDetailSerializer
 
     def perform_create(self, serializer):
-        upf = self.get_upf()
-        if not upf.ativo:
+        ufpa = self.get_ufpa()
+        if not ufpa.ativo:
             raise serializers.ValidationError(
-                "Não é possível adicionar membros a uma UPF inativa"
+                "Não é possível adicionar membros a uma UFPA inativa"
             )
         try:
-            instance = serializer.save(upf=upf, criado_por=self.request.user, ultima_origem="web")
+            instance = serializer.save(ufpa=ufpa, criado_por=self.request.user, ultima_origem="web")
         except IntegrityError as e:
             if "unique_cpf_global" in str(e):
                 raise serializers.ValidationError(
@@ -116,14 +116,14 @@ class MembroViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         old = self.get_object()
-        if old.pk == old.upf.titular_id and "grau_parentesco" in serializer.validated_data:
+        if old.pk == old.ufpa.titular_id and "grau_parentesco" in serializer.validated_data:
             if serializer.validated_data["grau_parentesco"] != "titular":
                 raise serializers.ValidationError(
                     {"grau_parentesco": "Não é possível alterar o parentesco do titular. Use o endpoint de transferência de titularidade."}
                 )
         valores_anteriores = {
             "membro_id": old.pk,
-            "upf_id": old.upf_id,
+            "ufpa_id": old.ufpa_id,
             "nome_completo": old.nome_completo,
             "grau_parentesco": old.grau_parentesco,
             "cpf": old.cpf,
@@ -152,12 +152,12 @@ class MembroViewSet(viewsets.ModelViewSet):
         )
 
     def perform_destroy(self, instance):
-        upf = instance.upf
-        if upf.titular_id == instance.pk:
-            outros = MembroFamilia.objects.filter(upf=upf).exclude(pk=instance.pk)
+        ufpa = instance.ufpa
+        if ufpa.titular_id == instance.pk:
+            outros = MembroFamilia.objects.filter(ufpa=ufpa).exclude(pk=instance.pk)
             if not outros.exists():
                 raise serializers.ValidationError(
-                    "Não é possível excluir o único titular da UPF"
+                    "Não é possível excluir o único titular da UFPA"
                 )
             raise serializers.ValidationError(
                 "Transfira a titularidade para outro membro antes de excluir"
@@ -173,7 +173,7 @@ class MembroViewSet(viewsets.ModelViewSet):
             request=self.request,
             valores_anteriores={
                 "membro_id": instance.pk,
-                "upf_id": instance.upf_id,
+                "ufpa_id": instance.ufpa_id,
                 "nome_completo": instance.nome_completo,
                 "grau_parentesco": instance.grau_parentesco,
             },
@@ -182,12 +182,12 @@ class MembroViewSet(viewsets.ModelViewSet):
 
     @extend_schema(responses=RESPOSTA_CSV)
     @action(detail=False, methods=["get"], url_path="exportar")
-    def exportar(self, request, upf_pk=None):
-        """Exporta em CSV os membros de uma UPF específica (Issue #186)."""
-        upf = self.get_upf()
-        columns, rows = membro_export_rows_for_upf(upf, user=request.user)
+    def exportar(self, request, ufpa_pk=None):
+        """Exporta em CSV os membros de uma UFPA específica (Issue #186)."""
+        ufpa = self.get_ufpa()
+        columns, rows = membro_export_rows_for_ufpa(ufpa, user=request.user)
         timestamp = timezone.localtime().strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f"membros_upf_{upf.pk}_{timestamp}.csv"
+        filename = f"membros_ufpa_{ufpa.pk}_{timestamp}.csv"
         return _membros_csv_response(columns, rows, filename)
 
     @extend_schema(
@@ -219,14 +219,14 @@ class MembroViewSet(viewsets.ModelViewSet):
         ),
     )
     @action(detail=False, methods=["get"], url_path="resumo")
-    def resumo(self, request, upf_pk=None):
+    def resumo(self, request, ufpa_pk=None):
         from django.db.models import Count, Case, When, IntegerField, Value, Q
         from django.db.models.functions import Coalesce
 
-        upf = self.get_upf()
+        ufpa = self.get_ufpa()
         hoje = date.today()
 
-        membros = MembroFamilia.objects.filter(upf=upf)
+        membros = MembroFamilia.objects.filter(ufpa=ufpa)
 
         total = membros.count()
         tem_titular = membros.filter(grau_parentesco="titular").exists()
@@ -298,7 +298,7 @@ class MembroViewSet(viewsets.ModelViewSet):
         ),
     )
     @action(detail=False, methods=["post"], url_path="transferir-titularidade")
-    def transferir_titularidade(self, request, upf_pk=None):
+    def transferir_titularidade(self, request, ufpa_pk=None):
         novo_titular_id = request.data.get("novo_titular_id")
         if not novo_titular_id:
             raise serializers.ValidationError(
@@ -306,27 +306,27 @@ class MembroViewSet(viewsets.ModelViewSet):
             )
 
         with transaction.atomic():
-            upf = UPF.all_objects.select_for_update().get(pk=self.kwargs["upf_pk"])
-            upfs_visiveis = upfs_acessiveis_ao_usuario(request.user)
-            if not upfs_visiveis.filter(pk=upf.pk).exists():
+            ufpa = UFPA.all_objects.select_for_update().get(pk=self.kwargs["ufpa_pk"])
+            ufpas_visiveis = ufpas_acessiveis_ao_usuario(request.user)
+            if not ufpas_visiveis.filter(pk=ufpa.pk).exists():
                 from django.shortcuts import get_object_or_404
-                get_object_or_404(UPF, pk=self.kwargs["upf_pk"])
+                get_object_or_404(UFPA, pk=self.kwargs["ufpa_pk"])
 
             try:
                 novo_titular = MembroFamilia.objects.select_for_update().get(
-                    pk=novo_titular_id, upf=upf
+                    pk=novo_titular_id, ufpa=ufpa
                 )
             except MembroFamilia.DoesNotExist:
                 raise serializers.ValidationError(
-                    {"novo_titular_id": "Membro não encontrado nesta UPF."}
+                    {"novo_titular_id": "Membro não encontrado nesta UFPA."}
                 )
 
-            if novo_titular.pk == upf.titular_id:
+            if novo_titular.pk == ufpa.titular_id:
                 raise serializers.ValidationError(
                     {"novo_titular_id": "Este membro já é o titular."}
                 )
 
-            antigo_titular = upf.titular
+            antigo_titular = ufpa.titular
             if antigo_titular:
                 antigo_titular = MembroFamilia.objects.select_for_update().get(pk=antigo_titular.pk)
 
@@ -337,23 +337,23 @@ class MembroViewSet(viewsets.ModelViewSet):
                 antigo_titular.save(update_fields=["grau_parentesco"])
             novo_titular.grau_parentesco = "titular"
             novo_titular.save(update_fields=["grau_parentesco"])
-            upf.titular = novo_titular
-            upf.save(update_fields=["titular"])
+            ufpa.titular = novo_titular
+            ufpa.save(update_fields=["titular"])
 
         AuditLog.objects.create(
             user=request.user,
             acao="MEMBRO.transferir_titularidade",
             modulo="sgp",
-            entidade="UPF",
-            entidade_id=str(upf.pk),
+            entidade="UFPA",
+            entidade_id=str(ufpa.pk),
             valores_anteriores={
-                "upf_id": upf.pk,
+                "ufpa_id": ufpa.pk,
                 "antigo_titular_id": antigo_titular.pk if antigo_titular else None,
                 "antigo_titular_nome": antigo_titular.nome_completo if antigo_titular else None,
                 "antigo_titular_grau_parentesco": antigo_titular_grau_parentesco_anterior,
             },
             valores_novos={
-                "upf_id": upf.pk,
+                "ufpa_id": ufpa.pk,
                 "novo_titular_id": novo_titular.pk,
                 "novo_titular_nome": novo_titular.nome_completo,
                 "novo_titular_grau_parentesco": "titular",
@@ -377,7 +377,7 @@ class MembroViewSet(viewsets.ModelViewSet):
 
 class MembroExportView(APIView):
     """
-    Exporta em CSV os membros de múltiplas UPFs dentro do escopo territorial
+    Exporta em CSV os membros de múltiplas UFPAs dentro do escopo territorial
     do usuário — relatório demográfico agregado (Issue #186).
     """
 
@@ -390,14 +390,14 @@ class MembroExportView(APIView):
             OpenApiParameter("projeto", OpenApiTypes.INT, OpenApiParameter.QUERY),
         ],
         description=(
-            "Exportação territorial agregada de membros, restrita às UPFs "
+            "Exportação territorial agregada de membros, restrita às UFPAs "
             "acessíveis ao usuário autenticado. Limitada a "
-            f"{MEMBROS_EXPORT_UPF_LIMIT} UPFs por exportação — acima disso, "
+            f"{MEMBROS_EXPORT_UFPA_LIMIT} UFPAs por exportação — acima disso, "
             "restrinja por territorio_id, municipio ou projeto."
         ),
         responses={
             **RESPOSTA_CSV,
-            400: OpenApiResponse(description="Filtro inválido ou acima do limite de UPFs."),
+            400: OpenApiResponse(description="Filtro inválido ou acima do limite de UFPAs."),
         },
     )
     def get(self, request):
@@ -411,7 +411,7 @@ class MembroExportView(APIView):
             return Response(
                 {
                     "detail": (
-                        f"A exportação abrange {exc.upf_count} UPFs, acima do limite "
+                        f"A exportação abrange {exc.ufpa_count} UFPAs, acima do limite "
                         f"de {exc.limit}. Restrinja por territorio_id, município ou "
                         "projeto."
                     )

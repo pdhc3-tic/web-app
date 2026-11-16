@@ -2,6 +2,13 @@ from django.db import models
 from django.conf import settings
 
 
+# A tabela é imutável: o que foi gravado antes da renomeação continua com o nome antigo.
+NOMES_DA_ENTIDADE = {
+    "UFPA": ("UFPA", "UPF"),
+    "UFPADocument": ("UFPADocument", "UPFDocument"),
+}
+
+
 class AuditLog(models.Model):
     """
     Registro imutável de auditoria de ações realizadas no sistema.

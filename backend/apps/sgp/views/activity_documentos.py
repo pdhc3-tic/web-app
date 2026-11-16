@@ -1,7 +1,7 @@
 """
 View de documentos vinculados a atividades do SGP.
 
-Fluxo de upload em duas etapas (mesmo padrão UPFDocumentViewSet):
+Fluxo de upload em duas etapas (mesmo padrão UFPADocumentViewSet):
   1. POST /api/v1/sgp/atividades/{id}/documentos/upload-url/
   2. POST /api/v1/sgp/atividades/{id}/documentos/confirm/
 

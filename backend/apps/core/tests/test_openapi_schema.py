@@ -9,7 +9,7 @@ from django.conf import settings
 from django.core.management import call_command
 from drf_spectacular.drainage import GENERATOR_STATS
 
-from apps.sgp.services.upf_export import FILTROS_ACEITOS
+from apps.sgp.services.ufpa_export import FILTROS_ACEITOS
 
 SCHEMA_VERSIONADO = Path(settings.BASE_DIR) / "schema.yml"
 REGENERAR = "rode `python manage.py spectacular --file schema.yml` no backend e commite o schema.yml"
@@ -86,23 +86,23 @@ def test_municipio_aninhado_exige_o_estado(schema):
     assert _ref(municipio["properties"]["estado"]) == "EstadoNested"
     assert {"id", "sigla", "nome"} <= set(_componente(schema, "EstadoNested")["properties"])
 
-    for componente in ("UPFList", "UPFDetailResposta", "ActivityDetailResposta"):
+    for componente in ("UFPAList", "UFPADetailResposta", "ActivityDetailResposta"):
         propriedades = _componente(schema, componente)["properties"]
         assert _ref(propriedades["municipio"]) == "MunicipioNested", componente
 
 
-def test_detalhe_de_upf_le_objetos_aninhados_e_escreve_pks(schema):
-    resposta = _componente(schema, "UPFDetailResposta")["properties"]
-    escrita = _componente(schema, "UPFDetailRequest")["properties"]
+def test_detalhe_de_ufpa_le_objetos_aninhados_e_escreve_pks(schema):
+    resposta = _componente(schema, "UFPADetailResposta")["properties"]
+    escrita = _componente(schema, "UFPADetailRequest")["properties"]
 
-    assert _ref(_resposta(schema, "/api/v1/upfs/{id}/")) == "UPFDetailResposta"
-    assert _ref(_resposta(schema, "/api/v1/upfs/", "post", "201")) == "UPFDetailResposta"
+    assert _ref(_resposta(schema, "/api/v1/sgp/ufpas/{id}/")) == "UFPADetailResposta"
+    assert _ref(_resposta(schema, "/api/v1/sgp/ufpas/", "post", "201")) == "UFPADetailResposta"
     for campo in ("projeto", "municipio"):
         assert escrita[campo]["type"] == "integer"
         assert "type" not in resposta[campo]
     assert {"nome", "cpf"} <= set(escrita)
     assert not {"nome", "cpf"} & set(resposta)
-    assert "PatchedUPFDetailRequest" in schema["components"]["schemas"]
+    assert "PatchedUFPADetailRequest" in schema["components"]["schemas"]
 
 
 def test_detalhe_de_atividade_le_objetos_aninhados(schema):
@@ -111,14 +111,14 @@ def test_detalhe_de_atividade_le_objetos_aninhados(schema):
     assert _ref(_resposta(schema, "/api/v1/sgp/atividades/{id}/")) == "ActivityDetailResposta"
     assert _ref(resposta["acao"]) == "AcaoDaAtividade"
     assert _ref(resposta["tecnico_responsavel"]) == "UsuarioRefComEmail"
-    assert _ref(resposta["upfs_participantes"]["items"]) == "UPFList"
+    assert _ref(resposta["ufpas_participantes"]["items"]) == "UFPAList"
     assert _componente(schema, "ActivityDetailRequest")["properties"]["acao"]["type"] == "integer"
 
 
 def test_campos_calculados_saem_com_o_tipo_real(schema):
-    upf = _componente(schema, "UPFDetailResposta")["properties"]
-    assert upf["membros"]["type"] == "array"
-    assert _ref(upf["membros"]["items"]) == "MembroList"
+    ufpa = _componente(schema, "UFPADetailResposta")["properties"]
+    assert ufpa["membros"]["type"] == "array"
+    assert _ref(ufpa["membros"]["items"]) == "MembroList"
 
     idade = _componente(schema, "MembroList")["properties"]["idade"]
     assert idade["type"] == "integer"
@@ -144,8 +144,8 @@ def test_campos_sensiveis_aparecem_como_opcionais(schema):
             assert campo not in definicao.get("required", []), (componente, campo)
 
 
-def test_exportacao_de_upf_documenta_os_mesmos_filtros_que_aceita(schema):
-    parametros = schema["paths"]["/api/v1/upfs/exportar/"]["get"]["parameters"]
+def test_exportacao_de_ufpa_documenta_os_mesmos_filtros_que_aceita(schema):
+    parametros = schema["paths"]["/api/v1/sgp/ufpas/exportar/"]["get"]["parameters"]
     assert {p["name"] for p in parametros if p["in"] == "query"} == set(FILTROS_ACEITOS) | {"formato"}
 
 
@@ -166,8 +166,8 @@ def test_listas_sem_paginacao_saem_como_array(schema, rota, metodo):
     assert not [p for p in operacao.get("parameters", []) if p["in"] == "query"]
 
 
-def test_historico_da_upf_usa_a_propria_paginacao(schema):
-    rota = "/api/v1/upfs/{id}/historico/"
+def test_historico_da_ufpa_usa_a_propria_paginacao(schema):
+    rota = "/api/v1/sgp/ufpas/{id}/historico/"
     parametros = {p["name"] for p in schema["paths"][rota]["get"]["parameters"] if p["in"] == "query"}
     assert {"page", "page_size", "incluir_membros", "campo"} <= parametros
     assert not {"limit", "offset", "municipio", "ordering"} & parametros
@@ -178,7 +178,7 @@ def test_enums_homonimos_tem_nome_fixo(schema):
     nomes = set(schema["components"]["schemas"])
     assert {
         "StatusAtividadeEnum", "TipoProducaoEnum", "FormatoExportacaoEnum",
-        "TipoDocumentoUPFEnum", "TipoDocumentoAtividadeEnum",
+        "TipoDocumentoUFPAEnum", "TipoDocumentoAtividadeEnum",
         "DemandStatusEnum", "TipoDocumentoDemandaEnum", "StatusPedidoRecursoExtraEnum",
         "TipoAtividadeEnum", "DecisaoEnum", "DecisaoRecursoExtraEnum",
     } <= nomes
@@ -198,8 +198,8 @@ def test_rotas_do_sca_descrevem_a_resposta(schema):
 def test_pull_do_sca_traz_cada_entidade_com_o_envelope(schema):
     resposta = _resolver(schema, _resposta(schema, "/api/v1/sca/sync/pull/"))
 
-    assert set(resposta["properties"]) == {"upfs", "members", "activities", "saldos", "server_time"}
-    for grupo in ("upfs", "members", "activities"):
+    assert set(resposta["properties"]) == {"ufpas", "members", "activities", "saldos", "server_time"}
+    for grupo in ("ufpas", "members", "activities"):
         entidade = _resolver(schema, resposta["properties"][grupo]["items"])
         assert {"id", "uuid_local", "atualizado_em"} <= set(entidade["required"])
 
@@ -210,7 +210,7 @@ def test_conflito_do_sca_le_o_tecnico_e_o_registro_atual_com_o_tipo_real(schema)
     assert _ref(conflito["tecnico"]) == "UsuarioRefComEmail"
     assert conflito["registro_atual"]["nullable"] is True
     assert {_ref(opcao) for opcao in _resolver(schema, conflito["registro_atual"])["oneOf"]} == {
-        "UPFDetailResposta", "MembroDetail", "ActivityDetailResposta",
+        "UFPADetailResposta", "MembroDetail", "ActivityDetailResposta",
     }
 
 
@@ -250,6 +250,17 @@ def test_400_do_push_cobre_o_erro_proprio_e_o_de_campo_aninhado(schema):
 @pytest.mark.parametrize("rota", ["/api/v1/sca/conflicts/{id}/resolver/", "/api/v1/sca/auth/refresh/"])
 def test_400_das_rotas_sem_erro_proprio_e_so_o_de_campo(schema, rota):
     assert _resposta_400(schema, rota) == {"type": "object", "additionalProperties": {}}
+
+
+def test_schema_so_descreve_ufpa(geracao):
+    conteudo, _ = geracao
+
+    assert b"upf" not in conteudo.lower()
+
+
+def test_rotas_antigas_de_ufpa_ficam_fora_do_schema_e_a_canonica_entra(schema):
+    assert not [rota for rota in schema["paths"] if "upf" in rota]
+    assert "/api/v1/sgp/ufpas/" in schema["paths"]
 
 
 def test_rotas_do_sgd_descrevem_a_resposta(schema):

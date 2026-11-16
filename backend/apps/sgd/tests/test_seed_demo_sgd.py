@@ -26,7 +26,7 @@ STATUS_JA_EXECUTADA = ["em_andamento", "concluido", "concluido_sem_evidencia"]
 def rodar_seed(reset=False):
     call_command("seed_core")
     opcoes = {"reset": True} if reset else {}
-    call_command("seed_demo", "--no-files", "--upfs", "8", "--atividades", "6", **opcoes)
+    call_command("seed_demo", "--no-files", "--ufpas", "8", "--atividades", "6", **opcoes)
 
 
 @pytest.fixture

@@ -105,7 +105,7 @@ ESPECIES_ANIMAIS = [
     {"nome": "Caprino (corte)", "categoria": "outros"},
 ]
 
-# §5.3.1 — catálogo fixo das 6 rubricas orçamentárias.
+# SGP §6.2 — catálogo fixo das 6 rubricas orçamentárias.
 RUBRICAS = [
     {"slug": "diarias", "nome": "Diárias"},
     {"slug": "passagens-aereas", "nome": "Passagens Aéreas"},

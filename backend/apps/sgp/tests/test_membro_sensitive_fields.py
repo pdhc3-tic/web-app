@@ -23,9 +23,9 @@ TODOS_OS_PERFIS = {
 # ---------------------------------------------------------------------------
 
 class TestCriptografiaEmRepouso:
-    def test_valor_bruto_no_banco_nao_e_legivel_em_texto_claro(self, upf):
+    def test_valor_bruto_no_banco_nao_e_legivel_em_texto_claro(self, ufpa):
         membro = MembroFactory(
-            upf=upf,
+            ufpa=ufpa,
             grau_parentesco="filho",
             cor_raca=3,
             saude=["diabetes", "gestante"],
@@ -51,17 +51,17 @@ class TestCriptografiaEmRepouso:
         assert membro.cor_raca == 3
         assert membro.saude == ["diabetes", "gestante"]
 
-    def test_valores_nulos_e_vazios_sao_preservados(self, upf):
-        membro = MembroFactory(upf=upf, grau_parentesco="filho", cor_raca=None, saude=[])
+    def test_valores_nulos_e_vazios_sao_preservados(self, ufpa):
+        membro = MembroFactory(ufpa=ufpa, grau_parentesco="filho", cor_raca=None, saude=[])
         membro.refresh_from_db()
         assert membro.cor_raca is None
         assert membro.saude == []
 
-    def test_tokens_criptografados_sao_diferentes_para_o_mesmo_valor(self, upf):
+    def test_tokens_criptografados_sao_diferentes_para_o_mesmo_valor(self, ufpa):
         """Nonce aleatório por gravação: dois membros com o mesmo cor_raca não
         podem ter o mesmo texto cifrado (evita inferência por comparação)."""
-        m1 = MembroFactory(upf=upf, grau_parentesco="filho", cor_raca=2)
-        m2 = MembroFactory(upf=upf, grau_parentesco="conjuge", cor_raca=2)
+        m1 = MembroFactory(ufpa=ufpa, grau_parentesco="filho", cor_raca=2)
+        m2 = MembroFactory(ufpa=ufpa, grau_parentesco="conjuge", cor_raca=2)
 
         with connection.cursor() as cursor:
             cursor.execute(
@@ -109,12 +109,12 @@ class TestMatrizPermissaoCamposSensiveis:
         assert sensitive_fields_visible_to(None) == set()
 
     def test_endpoint_detalhe_membro_perfil_com_permissao_ve_saude_e_cor_raca(
-        self, auth_client_adt_rn, upf
+        self, auth_client_adt_rn, ufpa
     ):
         membro = MembroFactory(
-            upf=upf, grau_parentesco="filho", cor_raca=1, saude=["hipertensao"]
+            ufpa=ufpa, grau_parentesco="filho", cor_raca=1, saude=["hipertensao"]
         )
-        response = auth_client_adt_rn.get(f"/api/v1/sgp/upfs/{upf.pk}/membros/{membro.pk}/")
+        response = auth_client_adt_rn.get(f"/api/v1/sgp/ufpas/{ufpa.pk}/membros/{membro.pk}/")
         assert response.status_code == 200
         assert response.data["cor_raca"] == 1
         assert response.data["saude"] == ["hipertensao"]
@@ -124,30 +124,30 @@ class TestMatrizPermissaoCamposSensiveis:
         ["auth_client_super_admin", "auth_client_articulador_rn", "auth_client_adt_rn"],
     )
     def test_endpoint_detalhe_membro_perfis_autorizados_veem_campos_sensiveis(
-        self, client_fixture, request, upf
+        self, client_fixture, request, ufpa
     ):
         membro = MembroFactory(
-            upf=upf, grau_parentesco="filho", cor_raca=1, saude=["hipertensao"]
+            ufpa=ufpa, grau_parentesco="filho", cor_raca=1, saude=["hipertensao"]
         )
         client = request.getfixturevalue(client_fixture)
-        response = client.get(f"/api/v1/sgp/upfs/{upf.pk}/membros/{membro.pk}/")
+        response = client.get(f"/api/v1/sgp/ufpas/{ufpa.pk}/membros/{membro.pk}/")
         assert response.status_code == 200
         assert "cor_raca" in response.data
         assert "saude" in response.data
 
     def test_endpoint_listagem_membro_perfil_sem_permissao_nao_ve_cor_raca(
-        self, auth_client_fgd, upf
+        self, auth_client_fgd, ufpa
     ):
-        """fgd hoje não tem acesso a nenhuma UPF (upfs_acessiveis_ao_usuario);
+        """fgd hoje não tem acesso a nenhuma UFPA (ufpas_acessiveis_ao_usuario);
         a resposta correta é 404 — e por consequência nenhum campo (sensível
         ou não) é exposto a ele. Cobre o mesmo objetivo do critério de
         aceite (perfil sem permissão não recebe o campo)."""
-        membro = MembroFactory(upf=upf, grau_parentesco="filho", cor_raca=1)
-        response = auth_client_fgd.get(f"/api/v1/sgp/upfs/{upf.pk}/membros/{membro.pk}/")
+        membro = MembroFactory(ufpa=ufpa, grau_parentesco="filho", cor_raca=1)
+        response = auth_client_fgd.get(f"/api/v1/sgp/ufpas/{ufpa.pk}/membros/{membro.pk}/")
         assert response.status_code == 404
 
     def test_campos_sensiveis_sao_omitidos_nunca_null_ou_mascarados(
-        self, auth_client_adt_rn, upf
+        self, auth_client_adt_rn, ufpa
     ):
         """Confirma que, quando o campo é ocultado, ele some do payload —
         não aparece como None/"***" (o que sugeriria ao perfil sem permissão
@@ -157,7 +157,7 @@ class TestMatrizPermissaoCamposSensiveis:
 
         assert issubclass(MembroDetailSerializer, SensitiveFieldsSerializerMixin)
 
-        membro = MembroFactory(upf=upf, grau_parentesco="filho", cor_raca=1, saude=["gestante"])
+        membro = MembroFactory(ufpa=ufpa, grau_parentesco="filho", cor_raca=1, saude=["gestante"])
 
         class _AnonRequest:
             user = None
@@ -168,16 +168,16 @@ class TestMatrizPermissaoCamposSensiveis:
         assert "cor_raca_display" not in data
         assert "saude" not in data
 
-    def test_titular_nested_serializer_tambem_respeita_a_matriz(self, upf):
-        """TitularNestedSerializer (UPFDetailSerializer.titular) é a terceira
+    def test_titular_nested_serializer_tambem_respeita_a_matriz(self, ufpa):
+        """TitularNestedSerializer (UFPADetailSerializer.titular) é a terceira
         superfície que expunha cor_raca sem filtro — cobre a correção."""
         from apps.core.sensitive_fields import SensitiveFieldsSerializerMixin
         from apps.sgp.serializers import TitularNestedSerializer
 
         assert issubclass(TitularNestedSerializer, SensitiveFieldsSerializerMixin)
-        upf.titular.cor_raca = 4
-        upf.titular.save(update_fields=["cor_raca"])
-        titular = type(upf.titular).objects.get(pk=upf.titular_id)
+        ufpa.titular.cor_raca = 4
+        ufpa.titular.save(update_fields=["cor_raca"])
+        titular = type(ufpa.titular).objects.get(pk=ufpa.titular_id)
 
         class _AnonRequest:
             user = None
@@ -187,11 +187,11 @@ class TestMatrizPermissaoCamposSensiveis:
         assert "cor_raca" not in data
         assert "cor_raca_display" not in data
 
-    def test_upf_detalhe_via_endpoint_nao_vaza_cor_raca_do_titular_sem_permissao(
-        self, auth_client_fgd, upf
+    def test_ufpa_detalhe_via_endpoint_nao_vaza_cor_raca_do_titular_sem_permissao(
+        self, auth_client_fgd, ufpa
     ):
-        response = auth_client_fgd.get(f"/api/v1/upfs/{upf.pk}/")
-        # UPFViewSet nega perfis fora de super-admin/ugp/articulador-estadual/
+        response = auth_client_fgd.get(f"/api/v1/sgp/ufpas/{ufpa.pk}/")
+        # UFPAViewSet nega perfis fora de super-admin/ugp/articulador-estadual/
         # adt-acr com 403 antes mesmo de resolver o objeto — nada vaza.
         assert response.status_code == 403
 
@@ -203,8 +203,8 @@ class TestMatrizPermissaoCamposSensiveis:
 # manual de criação/edição com saude/cor_raca era apenas ignorado em
 # silêncio (a chave some de `self.fields` para quem não tem permissão, então
 # o DRF não via o valor — sem erro nenhum). Hoje nenhum dos 6 perfis do RBAC
-# tem acesso a UPF sem também ter acesso aos campos sensíveis (fgd/agricultor
-# não acessam UPF nenhuma — ver `upfs_acessiveis_ao_usuario`), então o
+# tem acesso a UFPA sem também ter acesso aos campos sensíveis (fgd/agricultor
+# não acessam UFPA nenhuma — ver `ufpas_acessiveis_ao_usuario`), então o
 # cenário não é reproduzível via HTTP; a cobertura é no nível do serializer,
 # mesmo padrão já usado acima para a omissão de leitura.
 # ---------------------------------------------------------------------------
@@ -254,10 +254,10 @@ class TestBloqueioDeEscritaCamposSensiveis:
         assert not serializer.is_valid()
         assert "saude" in serializer.errors
 
-    def test_edicao_com_saude_por_usuario_sem_permissao_e_rejeitada(self, upf):
+    def test_edicao_com_saude_por_usuario_sem_permissao_e_rejeitada(self, ufpa):
         from apps.sgp.serializers import MembroDetailSerializer
 
-        membro = MembroFactory(upf=upf, grau_parentesco="filho", saude=[])
+        membro = MembroFactory(ufpa=ufpa, grau_parentesco="filho", saude=[])
         serializer = MembroDetailSerializer(
             membro,
             data={"saude": ["hipertensao"]},
@@ -326,7 +326,7 @@ class TestBloqueioDeEscritaCamposSensiveis:
 # ---------------------------------------------------------------------------
 
 class TestAuditLogCamposSensiveis:
-    def test_criacao_de_membro_registra_presenca_sem_expor_valor(self, auth_client_adt_rn, upf):
+    def test_criacao_de_membro_registra_presenca_sem_expor_valor(self, auth_client_adt_rn, ufpa):
         payload = {
             "nome_completo": "Novo Membro",
             "grau_parentesco": "filho",
@@ -334,7 +334,7 @@ class TestAuditLogCamposSensiveis:
             "saude": ["diabetes"],
         }
         response = auth_client_adt_rn.post(
-            f"/api/v1/sgp/upfs/{upf.pk}/membros/", payload, format="json"
+            f"/api/v1/sgp/ufpas/{ufpa.pk}/membros/", payload, format="json"
         )
         assert response.status_code == 201
 
@@ -347,12 +347,12 @@ class TestAuditLogCamposSensiveis:
         assert "saude" not in log.valores_novos
 
     def test_edicao_de_saude_gera_auditlog_com_usuario_campo_e_timestamp_sem_valor(
-        self, auth_client_adt_rn, usuario_adt_rn, upf
+        self, auth_client_adt_rn, usuario_adt_rn, ufpa
     ):
-        membro = MembroFactory(upf=upf, grau_parentesco="filho", saude=[])
+        membro = MembroFactory(ufpa=ufpa, grau_parentesco="filho", saude=[])
 
         response = auth_client_adt_rn.patch(
-            f"/api/v1/sgp/upfs/{upf.pk}/membros/{membro.pk}/",
+            f"/api/v1/sgp/ufpas/{ufpa.pk}/membros/{membro.pk}/",
             {"saude": ["hipertensao", "gestante"]},
             format="json",
         )
@@ -370,12 +370,12 @@ class TestAuditLogCamposSensiveis:
         assert "hipertensao" not in str(log.valores_anteriores)
 
     def test_edicao_sem_tocar_em_campo_sensivel_nao_marca_alterado(
-        self, auth_client_adt_rn, upf
+        self, auth_client_adt_rn, ufpa
     ):
-        membro = MembroFactory(upf=upf, grau_parentesco="filho", cor_raca=1, saude=["diabetes"])
+        membro = MembroFactory(ufpa=ufpa, grau_parentesco="filho", cor_raca=1, saude=["diabetes"])
 
         response = auth_client_adt_rn.patch(
-            f"/api/v1/sgp/upfs/{upf.pk}/membros/{membro.pk}/",
+            f"/api/v1/sgp/ufpas/{ufpa.pk}/membros/{membro.pk}/",
             {"nome_completo": "Nome Atualizado"},
             format="json",
         )
@@ -387,15 +387,15 @@ class TestAuditLogCamposSensiveis:
         assert log.valores_novos["campos_alterados"] == []
 
     def test_exclusao_de_membro_registra_presenca_sem_expor_valor(
-        self, auth_client_adt_rn, upf
+        self, auth_client_adt_rn, ufpa
     ):
-        outro_titular = MembroFactory(upf=upf, grau_parentesco="conjuge")
+        outro_titular = MembroFactory(ufpa=ufpa, grau_parentesco="conjuge")
         membro = MembroFactory(
-            upf=upf, grau_parentesco="filho", cor_raca=5, saude=["doenca_renal"]
+            ufpa=ufpa, grau_parentesco="filho", cor_raca=5, saude=["doenca_renal"]
         )
 
         response = auth_client_adt_rn.delete(
-            f"/api/v1/sgp/upfs/{upf.pk}/membros/{membro.pk}/"
+            f"/api/v1/sgp/ufpas/{ufpa.pk}/membros/{membro.pk}/"
         )
         assert response.status_code == 204
 
@@ -408,13 +408,13 @@ class TestAuditLogCamposSensiveis:
 
 
 # ---------------------------------------------------------------------------
-# UPFDetailSerializer — cor_raca do titular escrita pela API de UPF
+# UFPADetailSerializer — cor_raca do titular escrita pela API de UFPA
 # ---------------------------------------------------------------------------
 
-class TestUPFEscritaEAuditoriaDaCorRacaDoTitular:
+class TestUFPAEscritaEAuditoriaDaCorRacaDoTitular:
     def test_cor_raca_do_titular_por_usuario_sem_permissao_e_rejeitada(self):
         from apps.core.tests.factories import RoleFactory, UserFactory
-        from apps.sgp.serializers import UPFDetailSerializer
+        from apps.sgp.serializers import UFPADetailSerializer
 
         role = RoleFactory(slug="agricultor", nome="Agricultor")
         user = UserFactory(profiles=[(role, None)])
@@ -427,12 +427,12 @@ class TestUPFEscritaEAuditoriaDaCorRacaDoTitular:
             "projeto": 1, "nome": "Novo Titular", "cpf": "86288366757",
             "municipio": 1, "cor_raca": 2,
         }
-        serializer = UPFDetailSerializer(data=payload, context={"request": _FakeRequest(user)})
+        serializer = UFPADetailSerializer(data=payload, context={"request": _FakeRequest(user)})
 
         assert not serializer.is_valid()
         assert "cor_raca" in serializer.errors
 
-    def test_criacao_de_upf_audita_cor_raca_do_titular_como_membrofamilia(
+    def test_criacao_de_ufpa_audita_cor_raca_do_titular_como_membrofamilia(
         self, auth_client_adt_rn, projeto, municipio_rn
     ):
         payload = {
@@ -442,7 +442,7 @@ class TestUPFEscritaEAuditoriaDaCorRacaDoTitular:
             "municipio": municipio_rn.pk,
             "cor_raca": 3,
         }
-        response = auth_client_adt_rn.post("/api/v1/upfs/", payload, format="json")
+        response = auth_client_adt_rn.post("/api/v1/sgp/ufpas/", payload, format="json")
         assert response.status_code == 201, response.data
 
         titular_id = response.data["titular"]["id"]
@@ -453,17 +453,17 @@ class TestUPFEscritaEAuditoriaDaCorRacaDoTitular:
         assert "cor_raca" not in log.valores_novos
         assert log.valores_novos["origem"] == "web"
 
-    def test_edicao_de_upf_altera_cor_raca_do_titular_e_audita_sem_valor(
-        self, auth_client_adt_rn, upf
+    def test_edicao_de_ufpa_altera_cor_raca_do_titular_e_audita_sem_valor(
+        self, auth_client_adt_rn, ufpa
     ):
-        titular_id = upf.titular_id
+        titular_id = ufpa.titular_id
         response = auth_client_adt_rn.patch(
-            f"/api/v1/upfs/{upf.pk}/", {"cor_raca": 4}, format="json"
+            f"/api/v1/sgp/ufpas/{ufpa.pk}/", {"cor_raca": 4}, format="json"
         )
         assert response.status_code == 200
 
-        upf.titular.refresh_from_db()
-        assert upf.titular.cor_raca == 4
+        ufpa.titular.refresh_from_db()
+        assert ufpa.titular.cor_raca == 4
 
         log = AuditLog.objects.filter(
             acao="MEMBRO.update", entidade="MembroFamilia", entidade_id=str(titular_id)
@@ -477,17 +477,17 @@ class TestUPFEscritaEAuditoriaDaCorRacaDoTitular:
 # ---------------------------------------------------------------------------
 
 class TestSaudeNaListagemDeMembros:
-    def test_perfil_autorizado_recebe_saude_na_listagem(self, auth_client_adt_rn, upf):
-        MembroFactory(upf=upf, grau_parentesco="filho", saude=["asma"])
-        response = auth_client_adt_rn.get(f"/api/v1/sgp/upfs/{upf.pk}/membros/")
+    def test_perfil_autorizado_recebe_saude_na_listagem(self, auth_client_adt_rn, ufpa):
+        MembroFactory(ufpa=ufpa, grau_parentesco="filho", saude=["asma"])
+        response = auth_client_adt_rn.get(f"/api/v1/sgp/ufpas/{ufpa.pk}/membros/")
         assert response.status_code == 200
         item = next(m for m in response.data["results"] if m["grau_parentesco"] == "filho")
         assert item["saude"] == ["asma"]
 
-    def test_campo_saude_omitido_da_listagem_e_omitido_nunca_null(self, upf):
+    def test_campo_saude_omitido_da_listagem_e_omitido_nunca_null(self, ufpa):
         from apps.sgp.serializers import MembroListSerializer
 
-        membro = MembroFactory(upf=upf, grau_parentesco="filho", saude=["asma"])
+        membro = MembroFactory(ufpa=ufpa, grau_parentesco="filho", saude=["asma"])
 
         class _AnonRequest:
             user = None

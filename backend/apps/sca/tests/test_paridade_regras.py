@@ -2,9 +2,9 @@
 Teste de paridade entre a API web (`apps/sgp`) e o sync SCA (Issue #277).
 
 As duas portas de entrada escrevem nas mesmas entidades (Activity, Membro,
-UPF) e devem aplicar exatamente as mesmas regras de negócio — transição de
+UFPA) e devem aplicar exatamente as mesmas regras de negócio — transição de
 status, evidência/justificativa/nova-data obrigatórias, unicidade global de
-CPF e titular único por UPF — consumindo os mesmos serviços de domínio
+CPF e titular único por UFPA — consumindo os mesmos serviços de domínio
 (`apps.sgp.services.activity_status`, `apps.sgp.services.membro_rules`).
 
 Reaproveita `build_item`/`post_batch` de `test_sync_push.py` para o lado
@@ -21,23 +21,23 @@ from uuid import uuid4
 import pytest
 
 from apps.sca.models import ConflictLog
-from apps.sca.tests.conftest import payload_upf
+from apps.sca.tests.conftest import payload_ufpa
 from apps.sca.tests.test_sync_push import build_item, post_batch
 from apps.sgp.models import MembroFamilia
 from apps.sgp.services.membro_rules import normalizar_cpf
-from apps.sgp.tests.factories import ActivityFactory, MembroFactory, UPFFactory
+from apps.sgp.tests.factories import ActivityFactory, MembroFactory, UFPAFactory
 
 
 def _activity_detail_url(pk):
     return f"/api/v1/sgp/atividades/{pk}/"
 
 
-def _membro_list_url(upf_pk):
-    return f"/api/v1/sgp/upfs/{upf_pk}/membros/"
+def _membro_list_url(ufpa_pk):
+    return f"/api/v1/sgp/ufpas/{ufpa_pk}/membros/"
 
 
-def _membro_detail_url(upf_pk, membro_pk):
-    return f"/api/v1/sgp/upfs/{upf_pk}/membros/{membro_pk}/"
+def _membro_detail_url(ufpa_pk, membro_pk):
+    return f"/api/v1/sgp/ufpas/{ufpa_pk}/membros/{membro_pk}/"
 
 
 def _sync_update_activity(auth_client, atividade, payload):
@@ -112,23 +112,23 @@ def test_paridade_evidencia(auth_client, municipio):
 def test_paridade_cpf_duplicado(auth_client, municipio, projeto):
     cpf_ja_usado = "86288366757"
     MembroFactory(
-        upf=UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725"),
+        ufpa=UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725"),
         nome_completo="Já Cadastrado",
         grau_parentesco="filho",
         cpf=cpf_ja_usado,
     )
 
-    upf_web = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="33355588800")
-    membro_web = MembroFactory(upf=upf_web, nome_completo="Alvo Web", grau_parentesco="filho", cpf="")
+    ufpa_web = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="33355588800")
+    membro_web = MembroFactory(ufpa=ufpa_web, nome_completo="Alvo Web", grau_parentesco="filho", cpf="")
     response = auth_client.patch(
-        _membro_detail_url(upf_web.pk, membro_web.pk), {"cpf": cpf_ja_usado}, format="json"
+        _membro_detail_url(ufpa_web.pk, membro_web.pk), {"cpf": cpf_ja_usado}, format="json"
     )
     assert response.status_code == 400
     membro_web.refresh_from_db()
     assert membro_web.cpf == ""
 
-    upf_sync = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
-    membro_sync = MembroFactory(upf=upf_sync, nome_completo="Alvo Sync", grau_parentesco="filho", cpf="")
+    ufpa_sync = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
+    membro_sync = MembroFactory(ufpa=ufpa_sync, nome_completo="Alvo Sync", grau_parentesco="filho", cpf="")
     membro_sync.uuid_local = uuid4()
     membro_sync.save(update_fields=["uuid_local"])
     item = build_item(
@@ -151,21 +151,21 @@ def test_paridade_cpf_duplicado(auth_client, municipio, projeto):
 
 @pytest.mark.django_db
 def test_paridade_titular_unico(auth_client, municipio, projeto):
-    upf_web = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
+    ufpa_web = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
     response = auth_client.post(
-        _membro_list_url(upf_web.pk),
+        _membro_list_url(ufpa_web.pk),
         {"nome_completo": "Segundo Titular Web", "grau_parentesco": "titular", "cpf": "52998224725"},
         format="json",
     )
     assert response.status_code == 400
-    assert MembroFamilia.objects.filter(upf=upf_web, grau_parentesco="titular").count() == 1
+    assert MembroFamilia.objects.filter(ufpa=ufpa_web, grau_parentesco="titular").count() == 1
 
-    upf_sync = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="33355588800")
+    ufpa_sync = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="33355588800")
     item = build_item(
         "member",
         operacao="create",
         payload={
-            "upf": upf_sync.pk,
+            "ufpa": ufpa_sync.pk,
             "nome_completo": "Segundo Titular Sync",
             "grau_parentesco": "titular",
             "cpf": "04227503523",
@@ -174,7 +174,7 @@ def test_paridade_titular_unico(auth_client, municipio, projeto):
     resultado = post_batch(auth_client, [item]).data["resultados"][0]
     assert resultado["status"] == "erro"
     assert "TITULAR_DUPLICADO" in resultado["erro"]
-    assert MembroFamilia.objects.filter(upf=upf_sync, grau_parentesco="titular").count() == 1
+    assert MembroFamilia.objects.filter(ufpa=ufpa_sync, grau_parentesco="titular").count() == 1
 
 
 # ---------------------------------------------------------------------------
@@ -212,22 +212,22 @@ def test_paridade_cpf_formatado(auth_client, municipio, projeto):
     dois caminhos — não só quando chega já só com dígitos."""
     cpf_ja_usado = "86288366757"
     MembroFactory(
-        upf=UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725"),
+        ufpa=UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725"),
         nome_completo="Já Cadastrado",
         grau_parentesco="filho",
         cpf=cpf_ja_usado,
     )
     cpf_formatado = "862.883.667-57"
 
-    upf_web = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="33355588800")
-    membro_web = MembroFactory(upf=upf_web, nome_completo="Alvo Web", grau_parentesco="filho", cpf="")
+    ufpa_web = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="33355588800")
+    membro_web = MembroFactory(ufpa=ufpa_web, nome_completo="Alvo Web", grau_parentesco="filho", cpf="")
     response = auth_client.patch(
-        _membro_detail_url(upf_web.pk, membro_web.pk), {"cpf": cpf_formatado}, format="json"
+        _membro_detail_url(ufpa_web.pk, membro_web.pk), {"cpf": cpf_formatado}, format="json"
     )
     assert response.status_code == 400
 
-    upf_sync = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
-    membro_sync = MembroFactory(upf=upf_sync, nome_completo="Alvo Sync", grau_parentesco="filho", cpf="")
+    ufpa_sync = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
+    membro_sync = MembroFactory(ufpa=ufpa_sync, nome_completo="Alvo Sync", grau_parentesco="filho", cpf="")
     membro_sync.uuid_local = uuid4()
     membro_sync.save(update_fields=["uuid_local"])
     item = build_item(
@@ -249,15 +249,15 @@ def test_paridade_cpf_invalido(auth_client, municipio, projeto):
     """Dígito verificador errado é rejeitado nos dois caminhos."""
     cpf_invalido = "11111111111"
 
-    upf_web = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="33355588800")
-    membro_web = MembroFactory(upf=upf_web, nome_completo="Alvo Web", grau_parentesco="filho", cpf="")
+    ufpa_web = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="33355588800")
+    membro_web = MembroFactory(ufpa=ufpa_web, nome_completo="Alvo Web", grau_parentesco="filho", cpf="")
     response = auth_client.patch(
-        _membro_detail_url(upf_web.pk, membro_web.pk), {"cpf": cpf_invalido}, format="json"
+        _membro_detail_url(ufpa_web.pk, membro_web.pk), {"cpf": cpf_invalido}, format="json"
     )
     assert response.status_code == 400
 
-    upf_sync = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
-    membro_sync = MembroFactory(upf=upf_sync, nome_completo="Alvo Sync", grau_parentesco="filho", cpf="")
+    ufpa_sync = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
+    membro_sync = MembroFactory(ufpa=ufpa_sync, nome_completo="Alvo Sync", grau_parentesco="filho", cpf="")
     membro_sync.uuid_local = uuid4()
     membro_sync.save(update_fields=["uuid_local"])
     item = build_item(
@@ -318,13 +318,13 @@ def test_paridade_data_fim_anterior_a_data_inicio(auth_client, municipio):
 
 
 @pytest.mark.django_db
-def test_paridade_membro_fora_da_upf(auth_client, municipio, projeto):
-    upf_valida = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
-    upf_outra = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725")
+def test_paridade_membro_fora_da_ufpa(auth_client, municipio, projeto):
+    ufpa_valida = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
+    ufpa_outra = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725")
 
-    membro_web_fora = MembroFactory(upf=upf_outra, nome_completo="Fora Web", grau_parentesco="filho", cpf="")
+    membro_web_fora = MembroFactory(ufpa=ufpa_outra, nome_completo="Fora Web", grau_parentesco="filho", cpf="")
     atividade_web = ActivityFactory(municipio=municipio, status="planejado")
-    atividade_web.upfs_participantes.set([upf_valida])
+    atividade_web.ufpas_participantes.set([ufpa_valida])
     response = auth_client.patch(
         _activity_detail_url(atividade_web.pk),
         {"membros_participantes": [membro_web_fora.pk]},
@@ -333,14 +333,14 @@ def test_paridade_membro_fora_da_upf(auth_client, municipio, projeto):
     assert response.status_code == 400
     assert "membros_participantes" in response.data
 
-    membro_sync_fora = MembroFactory(upf=upf_outra, nome_completo="Fora Sync", grau_parentesco="filho", cpf="")
+    membro_sync_fora = MembroFactory(ufpa=ufpa_outra, nome_completo="Fora Sync", grau_parentesco="filho", cpf="")
     atividade_sync = ActivityFactory(municipio=municipio, status="planejado")
-    atividade_sync.upfs_participantes.set([upf_valida])
+    atividade_sync.ufpas_participantes.set([ufpa_valida])
     resultado = _sync_update_activity(
         auth_client, atividade_sync, {"membros_participantes": [membro_sync_fora.pk]}
     )
     assert resultado["status"] == "erro"
-    assert "MEMBRO_FORA_UPF" in resultado["erro"]
+    assert "MEMBRO_FORA_UFPA" in resultado["erro"]
 
 
 @pytest.mark.django_db
@@ -349,14 +349,14 @@ def test_conflito_por_violacao_de_constraint_concorrente(auth_client, municipio,
     pela checagem em memória (aqui, a checagem é mockada para não pegar) e só
     a constraint do banco barra a segunda — precisa virar TITULAR_DUPLICADO
     com conflict_log, não ERRO_INTERNO genérico."""
-    upf = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
+    ufpa = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
 
     with patch("apps.sca.sync_entities.validar_titular_unico"):
         item = build_item(
             "member",
             operacao="create",
             payload={
-                "upf": upf.pk,
+                "ufpa": ufpa.pk,
                 "nome_completo": "Titular Concorrente",
                 "grau_parentesco": "titular",
                 "cpf": "04227503523",
@@ -366,7 +366,7 @@ def test_conflito_por_violacao_de_constraint_concorrente(auth_client, municipio,
 
     assert resultado["status"] == "erro"
     assert "TITULAR_DUPLICADO" in resultado["erro"]
-    assert MembroFamilia.objects.filter(upf=upf, grau_parentesco="titular").count() == 1
+    assert MembroFamilia.objects.filter(ufpa=ufpa, grau_parentesco="titular").count() == 1
 
     conflito = ConflictLog.objects.filter(
         entidade="member", estrategia=ConflictLog.Estrategia.REGRA_NEGOCIO_REJEITADA
@@ -387,19 +387,19 @@ def test_paridade_cpf_formatado_no_create_member(auth_client, municipio, projeto
     estratégia errada) na checagem de regra de negócio."""
     cpf_ja_usado = "86288366757"
     MembroFactory(
-        upf=UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725"),
+        ufpa=UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725"),
         nome_completo="Já Cadastrado",
         grau_parentesco="filho",
         cpf=cpf_ja_usado,
     )
     cpf_formatado = "862.883.667-57"
 
-    upf_sync = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
+    ufpa_sync = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
     item = build_item(
         "member",
         operacao="create",
         payload={
-            "upf": upf_sync.pk,
+            "ufpa": ufpa_sync.pk,
             "nome_completo": "Novo Membro",
             "grau_parentesco": "filho",
             "cpf": cpf_formatado,
@@ -417,28 +417,28 @@ def test_paridade_cpf_formatado_no_create_member(auth_client, municipio, projeto
 
 
 @pytest.mark.django_db
-def test_paridade_cpf_formatado_no_create_titular_upf(auth_client, municipio, projeto):
-    """Mesmo cenário do teste acima, mas pelo titular de uma UPF nova."""
+def test_paridade_cpf_formatado_no_create_titular_ufpa(auth_client, municipio, projeto):
+    """Mesmo cenário do teste acima, mas pelo titular de uma UFPA nova."""
     cpf_ja_usado = "86288366757"
     MembroFactory(
-        upf=UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725"),
+        ufpa=UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725"),
         nome_completo="Já Cadastrado",
         grau_parentesco="filho",
         cpf=cpf_ja_usado,
     )
     cpf_formatado = "862.883.667-57"
 
-    payload = payload_upf(
+    payload = payload_ufpa(
         projeto, municipio, titular={"nome_completo": "Nova Titular", "cpf": cpf_formatado}
     )
-    item = build_item("upf", operacao="create", payload=payload)
+    item = build_item("ufpa", operacao="create", payload=payload)
     resultado = post_batch(auth_client, [item]).data["resultados"][0]
     assert resultado["status"] == "erro"
     assert "DUPLICATA" in resultado["erro"]
     assert MembroFamilia.objects.filter(cpf=cpf_ja_usado).count() == 1
 
     conflito = ConflictLog.objects.filter(
-        entidade="upf", estrategia=ConflictLog.Estrategia.DUPLICATE_REJEITADO
+        entidade="ufpa", estrategia=ConflictLog.Estrategia.DUPLICATE_REJEITADO
     ).latest("id")
     assert conflito.status == ConflictLog.Status.RESOLVIDO_AUTO
 
@@ -447,21 +447,21 @@ def test_paridade_cpf_formatado_no_create_titular_upf(auth_client, municipio, pr
 def test_paridade_data_nascimento_futura(auth_client, municipio, projeto):
     data_futura = (date.today() + timedelta(days=30)).isoformat()
 
-    upf_web = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="33355588800")
-    membro_web = MembroFactory(upf=upf_web, nome_completo="Alvo Web", grau_parentesco="filho", cpf="")
+    ufpa_web = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="33355588800")
+    membro_web = MembroFactory(ufpa=ufpa_web, nome_completo="Alvo Web", grau_parentesco="filho", cpf="")
     response = auth_client.patch(
-        _membro_detail_url(upf_web.pk, membro_web.pk),
+        _membro_detail_url(ufpa_web.pk, membro_web.pk),
         {"data_nascimento": data_futura},
         format="json",
     )
     assert response.status_code == 400
 
-    upf_sync = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
+    ufpa_sync = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
     item = build_item(
         "member",
         operacao="create",
         payload={
-            "upf": upf_sync.pk,
+            "ufpa": ufpa_sync.pk,
             "nome_completo": "Novo Membro Nascimento",
             "grau_parentesco": "filho",
             "data_nascimento": data_futura,
@@ -477,19 +477,19 @@ def test_paridade_data_nascimento_futura(auth_client, municipio, projeto):
 def test_paridade_saude_invalida(auth_client, municipio, projeto):
     saude_invalida = ["valor_inexistente"]
 
-    upf_web = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="33355588800")
-    membro_web = MembroFactory(upf=upf_web, nome_completo="Alvo Web", grau_parentesco="filho", cpf="")
+    ufpa_web = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="33355588800")
+    membro_web = MembroFactory(ufpa=ufpa_web, nome_completo="Alvo Web", grau_parentesco="filho", cpf="")
     response = auth_client.patch(
-        _membro_detail_url(upf_web.pk, membro_web.pk), {"saude": saude_invalida}, format="json"
+        _membro_detail_url(ufpa_web.pk, membro_web.pk), {"saude": saude_invalida}, format="json"
     )
     assert response.status_code == 400
 
-    upf_sync = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
+    ufpa_sync = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
     item = build_item(
         "member",
         operacao="create",
         payload={
-            "upf": upf_sync.pk,
+            "ufpa": ufpa_sync.pk,
             "nome_completo": "Novo Membro Saude",
             "grau_parentesco": "filho",
             "saude": saude_invalida,
@@ -503,30 +503,30 @@ def test_paridade_saude_invalida(auth_client, municipio, projeto):
 
 @pytest.mark.django_db
 def test_sync_update_atividade_participantes_validos_nao_quebra(auth_client, municipio, projeto):
-    """Regressão: update de atividade com upfs_participantes/
+    """Regressão: update de atividade com ufpas_participantes/
     membros_participantes válidos não pode derrubar o item com TypeError
     (setattr direto num campo M2M) — tem que gravar com `.set()` e responder
     'ok', não estourar o lote inteiro em 500."""
-    upf = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
+    ufpa = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
     membro = MembroFactory(
-        upf=upf, nome_completo="Participante Valido", grau_parentesco="filho", cpf=""
+        ufpa=ufpa, nome_completo="Participante Valido", grau_parentesco="filho", cpf=""
     )
     atividade = ActivityFactory(municipio=municipio, status="planejado")
 
     resultado = _sync_update_activity(
         auth_client,
         atividade,
-        {"upfs_participantes": [upf.pk], "membros_participantes": [membro.pk]},
+        {"ufpas_participantes": [ufpa.pk], "membros_participantes": [membro.pk]},
     )
     assert resultado["status"] == "ok"
     atividade.refresh_from_db()
-    assert list(atividade.upfs_participantes.values_list("pk", flat=True)) == [upf.pk]
+    assert list(atividade.ufpas_participantes.values_list("pk", flat=True)) == [ufpa.pk]
     assert list(atividade.membros_participantes.values_list("pk", flat=True)) == [membro.pk]
 
 
 @pytest.mark.django_db
 def test_conflito_por_violacao_de_constraint_concorrente_cpf(auth_client, municipio, projeto):
-    """Mesmo padrão do teste já existente para `unique_titular_por_upf`, mas
+    """Mesmo padrão do teste já existente para `unique_titular_por_ufpa`, mas
     simulando a corrida em `unique_cpf_global`: tanto a busca por
     identificador natural (Estratégia 1) quanto a checagem em memória são
     mockadas pra "não ver" o duplicata (como aconteceria se duas requisições
@@ -535,12 +535,12 @@ def test_conflito_por_violacao_de_constraint_concorrente_cpf(auth_client, munici
     conflict_log, não ERRO_INTERNO genérico."""
     cpf_ja_usado = "86288366757"
     MembroFactory(
-        upf=UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725"),
+        ufpa=UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725"),
         nome_completo="Já Cadastrado",
         grau_parentesco="filho",
         cpf=cpf_ja_usado,
     )
-    upf_sync = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
+    ufpa_sync = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
 
     def _passthrough_cpf(cpf, **kwargs):
         return normalizar_cpf(cpf)
@@ -552,7 +552,7 @@ def test_conflito_por_violacao_de_constraint_concorrente_cpf(auth_client, munici
             "member",
             operacao="create",
             payload={
-                "upf": upf_sync.pk,
+                "ufpa": ufpa_sync.pk,
                 "nome_completo": "Concorrente",
                 "grau_parentesco": "filho",
                 "cpf": cpf_ja_usado,
@@ -617,21 +617,21 @@ def _caso_activity(cfg, auth_client, municipio, projeto):
 def _caso_cpf_duplicado(auth_client, municipio, projeto):
     cpf_ja_usado = "86288366757"
     MembroFactory(
-        upf=UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725"),
+        ufpa=UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="52998224725"),
         nome_completo="Já Cadastrado",
         grau_parentesco="filho",
         cpf=cpf_ja_usado,
     )
 
-    upf_web = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="33355588800")
-    membro_web = MembroFactory(upf=upf_web, nome_completo="Alvo Web", grau_parentesco="filho", cpf="")
+    ufpa_web = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="33355588800")
+    membro_web = MembroFactory(ufpa=ufpa_web, nome_completo="Alvo Web", grau_parentesco="filho", cpf="")
     response = auth_client.patch(
-        _membro_detail_url(upf_web.pk, membro_web.pk), {"cpf": cpf_ja_usado}, format="json"
+        _membro_detail_url(ufpa_web.pk, membro_web.pk), {"cpf": cpf_ja_usado}, format="json"
     )
     rejeitado_web = response.status_code == 400
 
-    upf_sync = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
-    membro_sync = MembroFactory(upf=upf_sync, nome_completo="Alvo Sync", grau_parentesco="filho", cpf="")
+    ufpa_sync = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="04227503523")
+    membro_sync = MembroFactory(ufpa=ufpa_sync, nome_completo="Alvo Sync", grau_parentesco="filho", cpf="")
     membro_sync.uuid_local = uuid4()
     membro_sync.save(update_fields=["uuid_local"])
     item = build_item(
@@ -648,20 +648,20 @@ def _caso_cpf_duplicado(auth_client, municipio, projeto):
 
 
 def _caso_titular_duplicado(auth_client, municipio, projeto):
-    upf_web = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
+    ufpa_web = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
     response = auth_client.post(
-        _membro_list_url(upf_web.pk),
+        _membro_list_url(ufpa_web.pk),
         {"nome_completo": "Segundo Titular Web", "grau_parentesco": "titular", "cpf": "52998224725"},
         format="json",
     )
     rejeitado_web = response.status_code == 400
 
-    upf_sync = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="33355588800")
+    ufpa_sync = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="33355588800")
     item = build_item(
         "member",
         operacao="create",
         payload={
-            "upf": upf_sync.pk,
+            "ufpa": ufpa_sync.pk,
             "nome_completo": "Segundo Titular Sync",
             "grau_parentesco": "titular",
             "cpf": "04227503523",

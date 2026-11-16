@@ -7,18 +7,18 @@ import pytest
 from django.utils import timezone
 from pypdf import PdfReader
 
-from apps.sgp.tests.factories import FormResponseFactory, UPFFactory
+from apps.sgp.tests.factories import FormResponseFactory, UFPAFactory
 
 
 pytestmark = pytest.mark.django_db
 
 
-def export_url(upf):
-    return f"/api/v1/sgp/upfs/{upf.pk}/formularios/exportar/"
+def export_url(ufpa):
+    return f"/api/v1/sgp/ufpas/{ufpa.pk}/formularios/exportar/"
 
 
-def list_url(upf):
-    return f"/api/v1/sgp/upfs/{upf.pk}/formularios/"
+def list_url(ufpa):
+    return f"/api/v1/sgp/ufpas/{ufpa.pk}/formularios/"
 
 
 def aware(year, month, day):
@@ -35,19 +35,19 @@ def extract_text(response) -> str:
     return "\n".join(extract_pages_text(response))
 
 
-def test_csv_exports_one_row_per_filtered_response_with_metadata(auth_client, upf):
+def test_csv_exports_one_row_per_filtered_response_with_metadata(auth_client, ufpa):
     expected = FormResponseFactory(
-        upf=upf,
+        ufpa=ufpa,
         formulario_id=7,
-        formulario_nome="Diagnóstico da UPF",
+        formulario_nome="Diagnóstico da UFPA",
         formulario_versao="2.0",
         respondente="Maria Silva",
         respostas_json={"renda": 1200},
     )
-    FormResponseFactory(upf=upf, formulario_id=8)
+    FormResponseFactory(ufpa=ufpa, formulario_id=8)
 
     response = auth_client.get(
-        export_url(upf),
+        export_url(ufpa),
         {"formato": "csv", "formulario_id": expected.formulario_id},
     )
 
@@ -57,7 +57,7 @@ def test_csv_exports_one_row_per_filtered_response_with_metadata(auth_client, up
     assert len(rows) == 1
     assert rows[0] == {
         "ID": str(expected.pk),
-        "Formulário": "Diagnóstico da UPF",
+        "Formulário": "Diagnóstico da UFPA",
         "Versão": "2.0",
         "Data de preenchimento": timezone.localtime(
             expected.data_preenchimento
@@ -69,11 +69,11 @@ def test_csv_exports_one_row_per_filtered_response_with_metadata(auth_client, up
     }
 
 
-def test_pdf_exports_multiple_form_responses(auth_client, upf):
-    FormResponseFactory(upf=upf, formulario_nome="Formulário A")
-    FormResponseFactory(upf=upf, formulario_nome="Formulário B")
+def test_pdf_exports_multiple_form_responses(auth_client, ufpa):
+    FormResponseFactory(ufpa=ufpa, formulario_nome="Formulário A")
+    FormResponseFactory(ufpa=ufpa, formulario_nome="Formulário B")
 
-    response = auth_client.get(export_url(upf), {"formato": "pdf"})
+    response = auth_client.get(export_url(ufpa), {"formato": "pdf"})
 
     assert response.status_code == 200
     assert response["Content-Type"] == "application/pdf"
@@ -81,19 +81,19 @@ def test_pdf_exports_multiple_form_responses(auth_client, upf):
     assert b"".join(response.streaming_content).startswith(b"%PDF-")
 
 
-def test_export_rejects_unsupported_format(auth_client, upf):
-    response = auth_client.get(export_url(upf), {"formato": "xlsx"})
+def test_export_rejects_unsupported_format(auth_client, ufpa):
+    response = auth_client.get(export_url(ufpa), {"formato": "xlsx"})
 
     assert response.status_code == 400
     assert "formato" in response.data
 
 
-def test_export_respects_respondente_isnull_filter(auth_client, upf):
-    anonima = FormResponseFactory(upf=upf, respondente=None)
-    FormResponseFactory(upf=upf, respondente="Maria Silva")
+def test_export_respects_respondente_isnull_filter(auth_client, ufpa):
+    anonima = FormResponseFactory(ufpa=ufpa, respondente=None)
+    FormResponseFactory(ufpa=ufpa, respondente="Maria Silva")
 
     response = auth_client.get(
-        export_url(upf),
+        export_url(ufpa),
         {"formato": "csv", "respondente_isnull": "true"},
     )
 
@@ -103,14 +103,14 @@ def test_export_respects_respondente_isnull_filter(auth_client, upf):
     assert rows[0]["Respondente"] == "Anônimo"
 
 
-def test_export_matches_filtered_list_for_respondente_isnull(auth_client, upf):
-    FormResponseFactory(upf=upf, respondente=None)
-    FormResponseFactory(upf=upf, respondente=None)
-    FormResponseFactory(upf=upf, respondente="Maria Silva")
+def test_export_matches_filtered_list_for_respondente_isnull(auth_client, ufpa):
+    FormResponseFactory(ufpa=ufpa, respondente=None)
+    FormResponseFactory(ufpa=ufpa, respondente=None)
+    FormResponseFactory(ufpa=ufpa, respondente="Maria Silva")
 
     filtros = {"respondente_isnull": "true"}
-    listagem = auth_client.get(list_url(upf), filtros)
-    exportacao = auth_client.get(export_url(upf), {**filtros, "formato": "csv"})
+    listagem = auth_client.get(list_url(ufpa), filtros)
+    exportacao = auth_client.get(export_url(ufpa), {**filtros, "formato": "csv"})
 
     ids_lista = {item["id"] for item in listagem.data["results"]}
     ids_exportacao = {
@@ -121,13 +121,13 @@ def test_export_matches_filtered_list_for_respondente_isnull(auth_client, upf):
     assert ids_exportacao == ids_lista
 
 
-def test_export_respects_completion_period_filter(auth_client, upf):
-    before = FormResponseFactory(upf=upf, data_preenchimento=aware(2026, 1, 10))
-    expected = FormResponseFactory(upf=upf, data_preenchimento=aware(2026, 2, 15))
-    after = FormResponseFactory(upf=upf, data_preenchimento=aware(2026, 3, 10))
+def test_export_respects_completion_period_filter(auth_client, ufpa):
+    before = FormResponseFactory(ufpa=ufpa, data_preenchimento=aware(2026, 1, 10))
+    expected = FormResponseFactory(ufpa=ufpa, data_preenchimento=aware(2026, 2, 15))
+    after = FormResponseFactory(ufpa=ufpa, data_preenchimento=aware(2026, 3, 10))
 
     response = auth_client.get(
-        export_url(upf),
+        export_url(ufpa),
         {
             "formato": "csv",
             "data_inicio": "2026-02-01",
@@ -142,9 +142,9 @@ def test_export_respects_completion_period_filter(auth_client, upf):
     assert str(after.pk) not in [row["ID"] for row in rows]
 
 
-def test_pdf_export_renderiza_grupos_aninhados_profundos_via_endpoint(auth_client, upf):
+def test_pdf_export_renderiza_grupos_aninhados_profundos_via_endpoint(auth_client, ufpa):
     FormResponseFactory(
-        upf=upf,
+        ufpa=ufpa,
         respostas_json={
             "propriedade": {
                 "endereco": {
@@ -157,7 +157,7 @@ def test_pdf_export_renderiza_grupos_aninhados_profundos_via_endpoint(auth_clien
         },
     )
 
-    response = auth_client.get(export_url(upf), {"formato": "pdf"})
+    response = auth_client.get(export_url(ufpa), {"formato": "pdf"})
     text = extract_text(response)
 
     assert response.status_code == 200
@@ -178,10 +178,10 @@ def test_pdf_export_renderiza_grupos_aninhados_profundos_via_endpoint(auth_clien
 
 
 def test_pdf_export_renderiza_lista_mista_de_primitivos_e_dict_como_grupo(
-    auth_client, upf
+    auth_client, ufpa
 ):
     FormResponseFactory(
-        upf=upf,
+        ufpa=ufpa,
         respostas_json={
             "participantes": [
                 "João",
@@ -191,7 +191,7 @@ def test_pdf_export_renderiza_lista_mista_de_primitivos_e_dict_como_grupo(
         },
     )
 
-    response = auth_client.get(export_url(upf), {"formato": "pdf"})
+    response = auth_client.get(export_url(ufpa), {"formato": "pdf"})
     text = extract_text(response)
 
     assert response.status_code == 200
@@ -207,10 +207,10 @@ def test_pdf_export_renderiza_lista_mista_de_primitivos_e_dict_como_grupo(
 
 
 def test_pdf_export_exibe_em_dash_para_campos_vazios_em_resposta_parcial_via_endpoint(
-    auth_client, upf
+    auth_client, ufpa
 ):
     FormResponseFactory(
-        upf=upf,
+        ufpa=ufpa,
         respostas_json={
             "nome": "Maria",
             "telefone": None,
@@ -218,7 +218,7 @@ def test_pdf_export_exibe_em_dash_para_campos_vazios_em_resposta_parcial_via_end
         },
     )
 
-    response = auth_client.get(export_url(upf), {"formato": "pdf"})
+    response = auth_client.get(export_url(ufpa), {"formato": "pdf"})
     text = extract_text(response)
 
     assert response.status_code == 200
@@ -228,14 +228,14 @@ def test_pdf_export_exibe_em_dash_para_campos_vazios_em_resposta_parcial_via_end
     assert text.count("—") >= 2
 
 
-def test_csv_export_serializa_respostas_json_aninhado_sem_perda(auth_client, upf):
+def test_csv_export_serializa_respostas_json_aninhado_sem_perda(auth_client, ufpa):
     payload = {
         "endereco": {"rua": "Rua A", "numero": 10},
         "contatos": ["a@x.com", "b@x.com"],
     }
-    FormResponseFactory(upf=upf, respostas_json=payload)
+    FormResponseFactory(ufpa=ufpa, respostas_json=payload)
 
-    response = auth_client.get(export_url(upf), {"formato": "csv"})
+    response = auth_client.get(export_url(ufpa), {"formato": "csv"})
     rows = list(csv.DictReader(StringIO(response.content.decode("utf-8-sig"))))
 
     assert response.status_code == 200
@@ -243,13 +243,13 @@ def test_csv_export_serializa_respostas_json_aninhado_sem_perda(auth_client, upf
     assert json.loads(rows[0]["Respostas"]) == payload
 
 
-def test_pdf_export_escapa_caracteres_de_markup_xml_em_respostas(auth_client, upf):
+def test_pdf_export_escapa_caracteres_de_markup_xml_em_respostas(auth_client, ufpa):
     FormResponseFactory(
-        upf=upf,
+        ufpa=ufpa,
         respostas_json={"observacao": 'Renda < 1000 & area > 5 hectares "citada"'},
     )
 
-    response = auth_client.get(export_url(upf), {"formato": "pdf"})
+    response = auth_client.get(export_url(ufpa), {"formato": "pdf"})
 
     assert response.status_code == 200
     text = extract_text(response)
@@ -257,13 +257,13 @@ def test_pdf_export_escapa_caracteres_de_markup_xml_em_respostas(auth_client, up
 
 
 def test_pdf_export_pagina_resposta_com_texto_muito_longo_e_mantem_extraivel(
-    auth_client, upf
+    auth_client, ufpa
 ):
     texto_longo = "Lorem ipsum dolor sit amet consectetur adipiscing elit. " * 60
     assert len(texto_longo) > 2000
-    FormResponseFactory(upf=upf, respostas_json={"relato": texto_longo})
+    FormResponseFactory(ufpa=ufpa, respostas_json={"relato": texto_longo})
 
-    response = auth_client.get(export_url(upf), {"formato": "pdf"})
+    response = auth_client.get(export_url(ufpa), {"formato": "pdf"})
 
     assert response.status_code == 200
     pages = extract_pages_text(response)
@@ -273,7 +273,7 @@ def test_pdf_export_pagina_resposta_com_texto_muito_longo_e_mantem_extraivel(
     assert "elit." in full_text
 
 
-def test_pdf_export_nao_contem_json_bruto_indentado_regressao_205(auth_client, upf):
+def test_pdf_export_nao_contem_json_bruto_indentado_regressao_205(auth_client, ufpa):
     """Teste de trava permanente para a issue #205.
 
     A correção (renderização estruturada em vez de JSON bruto) já foi
@@ -282,9 +282,9 @@ def test_pdf_export_nao_contem_json_bruto_indentado_regressao_205(auth_client, u
     garante que a regressão não volta a acontecer.
     """
     respostas = {"pergunta_1": "resposta", "idade": 34, "ativo": True}
-    FormResponseFactory(upf=upf, respostas_json=respostas)
+    FormResponseFactory(ufpa=ufpa, respostas_json=respostas)
 
-    response = auth_client.get(export_url(upf), {"formato": "pdf"})
+    response = auth_client.get(export_url(ufpa), {"formato": "pdf"})
     text = extract_text(response)
 
     assert response.status_code == 200
@@ -294,16 +294,16 @@ def test_pdf_export_nao_contem_json_bruto_indentado_regressao_205(auth_client, u
     assert "resposta" in text
 
 
-def test_pdf_export_respeita_filtro_respondente_isnull(auth_client, upf):
+def test_pdf_export_respeita_filtro_respondente_isnull(auth_client, ufpa):
     FormResponseFactory(
-        upf=upf, respondente=None, respostas_json={"marcador": "anonimo-x"}
+        ufpa=ufpa, respondente=None, respostas_json={"marcador": "anonimo-x"}
     )
     FormResponseFactory(
-        upf=upf, respondente="Maria Silva", respostas_json={"marcador": "nomeada-y"}
+        ufpa=ufpa, respondente="Maria Silva", respostas_json={"marcador": "nomeada-y"}
     )
 
     response = auth_client.get(
-        export_url(upf), {"formato": "pdf", "respondente_isnull": "true"}
+        export_url(ufpa), {"formato": "pdf", "respondente_isnull": "true"}
     )
     text = extract_text(response)
 
@@ -313,25 +313,25 @@ def test_pdf_export_respeita_filtro_respondente_isnull(auth_client, upf):
     assert "Anônimo" in text
 
 
-def test_pdf_export_respeita_filtro_de_periodo_de_preenchimento(auth_client, upf):
+def test_pdf_export_respeita_filtro_de_periodo_de_preenchimento(auth_client, ufpa):
     FormResponseFactory(
-        upf=upf,
+        ufpa=ufpa,
         formulario_nome="Fora do período",
         data_preenchimento=aware(2026, 1, 10),
     )
     FormResponseFactory(
-        upf=upf,
+        ufpa=ufpa,
         formulario_nome="Dentro do período",
         data_preenchimento=aware(2026, 2, 15),
     )
     FormResponseFactory(
-        upf=upf,
+        ufpa=ufpa,
         formulario_nome="Depois do período",
         data_preenchimento=aware(2026, 3, 10),
     )
 
     response = auth_client.get(
-        export_url(upf),
+        export_url(ufpa),
         {"formato": "pdf", "data_inicio": "2026-02-01", "data_fim": "2026-02-28"},
     )
     text = extract_text(response)
@@ -343,24 +343,24 @@ def test_pdf_export_respeita_filtro_de_periodo_de_preenchimento(auth_client, upf
 
 
 def test_pdf_export_mantem_versoes_diferentes_do_mesmo_formulario_separadas(
-    auth_client, upf
+    auth_client, ufpa
 ):
     FormResponseFactory(
-        upf=upf,
+        ufpa=ufpa,
         formulario_id=7,
         formulario_nome="Diagnóstico",
         formulario_versao="1.0",
         respostas_json={"marcador": "versao-um"},
     )
     FormResponseFactory(
-        upf=upf,
+        ufpa=ufpa,
         formulario_id=7,
         formulario_nome="Diagnóstico",
         formulario_versao="2.0",
         respostas_json={"marcador": "versao-dois"},
     )
 
-    response = auth_client.get(export_url(upf), {"formato": "pdf"})
+    response = auth_client.get(export_url(ufpa), {"formato": "pdf"})
     pages = extract_pages_text(response)
 
     page_v1 = next(page for page in pages if "versao-um" in page)
@@ -372,38 +372,38 @@ def test_pdf_export_mantem_versoes_diferentes_do_mesmo_formulario_separadas(
     assert "versao-um" not in page_v2
 
 
-def test_pdf_export_de_upf_fora_do_territorio_retorna_404(
+def test_pdf_export_de_ufpa_fora_do_territorio_retorna_404(
     auth_client_adt_rn, projeto, municipio_ce, territory_ce
 ):
-    upf_ce = UPFFactory(
+    ufpa_ce = UFPAFactory(
         projeto=projeto,
         municipio=municipio_ce,
         territorio=territory_ce,
         titular_cpf="52998224725",
     )
-    FormResponseFactory(upf=upf_ce)
+    FormResponseFactory(ufpa=ufpa_ce)
 
-    response = auth_client_adt_rn.get(export_url(upf_ce), {"formato": "pdf"})
+    response = auth_client_adt_rn.get(export_url(ufpa_ce), {"formato": "pdf"})
 
     assert response.status_code == 404
 
 
-def test_pdf_export_respeita_filtro_formulario_id(auth_client, upf):
+def test_pdf_export_respeita_filtro_formulario_id(auth_client, ufpa):
     esperado = FormResponseFactory(
-        upf=upf,
+        ufpa=ufpa,
         formulario_id=42,
         formulario_nome="Formulário Alvo",
         respostas_json={"marcador": "alvo-marcado"},
     )
     FormResponseFactory(
-        upf=upf,
+        ufpa=ufpa,
         formulario_id=43,
         formulario_nome="Formulário Outro",
         respostas_json={"marcador": "outro-marcado"},
     )
 
     response = auth_client.get(
-        export_url(upf), {"formato": "pdf", "formulario_id": esperado.formulario_id}
+        export_url(ufpa), {"formato": "pdf", "formulario_id": esperado.formulario_id}
     )
     text = extract_text(response)
 
@@ -413,12 +413,12 @@ def test_pdf_export_respeita_filtro_formulario_id(auth_client, upf):
 
 
 def test_csv_export_preserva_virgulas_e_quebras_de_linha_em_respostas(
-    auth_client, upf
+    auth_client, ufpa
 ):
     payload = {"observacao": "Linha um,\ncom vírgula e quebra de linha"}
-    FormResponseFactory(upf=upf, respostas_json=payload)
+    FormResponseFactory(ufpa=ufpa, respostas_json=payload)
 
-    response = auth_client.get(export_url(upf), {"formato": "csv"})
+    response = auth_client.get(export_url(ufpa), {"formato": "csv"})
     rows = list(csv.DictReader(StringIO(response.content.decode("utf-8-sig"))))
 
     assert response.status_code == 200

@@ -1,4 +1,18 @@
+from collections.abc import Mapping
+
 from rest_framework import serializers
+
+# Prefixo da chave de upload. `upfs/` vem de URL emitida antes da renomeação e
+# confirmada depois; sai junto com as rotas antigas.
+PREFIXOS_DA_CHAVE_DE_UPLOAD = "(ufpas|upfs)"
+
+
+def recusar_nomes_antigos(dados: Mapping[str, object], nomes: Mapping[str, str]) -> None:
+    """O DRF ignora chave desconhecida: sem isto, quem ainda envia o nome antigo receberia sucesso
+    e o dado se perderia sem nenhum erro."""
+    erros = {antigo: f"Use `{novo}`." for antigo, novo in nomes.items() if antigo in dados}
+    if erros:
+        raise serializers.ValidationError(erros)
 
 
 class NestedSerializer(serializers.Serializer):

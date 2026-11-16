@@ -17,7 +17,7 @@ pytestmark = pytest.mark.django_db
 
 
 class TestCriptografiaEmRepouso:
-    def test_valor_bruto_no_banco_nao_e_legivel_em_texto_claro(self, upf_existente, territory):
+    def test_valor_bruto_no_banco_nao_e_legivel_em_texto_claro(self, ufpa_existente, territory):
         conflito = ConflictLogFactory(
             entidade="member",
             uuid_local=uuid4(),
@@ -45,7 +45,7 @@ class TestCriptografiaEmRepouso:
         assert conflito.valor_local == ["diabetes", "gestante"]
         assert conflito.valor_servidor == ["hipertensao"]
 
-    def test_valor_final_nulo_antes_da_resolucao_e_preservado(self, upf_existente, territory):
+    def test_valor_final_nulo_antes_da_resolucao_e_preservado(self, ufpa_existente, territory):
         """`valor_final` é nulo até a resolução manual — cobre o bugfix de
         `EncryptedFieldMixin.from_db_value` para campo nulável (antes,
         devolvia a classe `list`, não `None`, quando a coluna era NULL)."""
@@ -63,7 +63,7 @@ class TestCriptografiaEmRepouso:
         conflito.refresh_from_db()
         assert conflito.valor_final is None
 
-    def test_tokens_criptografados_sao_diferentes_para_o_mesmo_valor(self, upf_existente, territory):
+    def test_tokens_criptografados_sao_diferentes_para_o_mesmo_valor(self, ufpa_existente, territory):
         c1 = ConflictLogFactory(
             uuid_local=uuid4(), campo="cor_raca", valor_local=2, valor_servidor=2, territorio=territory,
         )
@@ -81,14 +81,14 @@ class TestCriptografiaEmRepouso:
         assert len(valores) == 2
 
     def test_resolucao_aplica_valor_criptografado_normalmente(
-        self, auth_client_super_admin, super_admin_user, upf_existente, territory
+        self, auth_client_super_admin, super_admin_user, ufpa_existente, territory
     ):
         """Regressão: a mudança de tipo do campo não pode quebrar o fluxo de
         resolução (decisão local/servidor/manual) já coberto em
         test_sca_admin_endpoints.py."""
         conflito = ConflictLogFactory(
-            entidade="upf",
-            uuid_local=str(upf_existente.uuid_local),
+            entidade="ufpa",
+            uuid_local=str(ufpa_existente.uuid_local),
             campo="whatsapp",
             valor_local="9999",
             valor_servidor="1111",
@@ -109,10 +109,10 @@ class TestCriptografiaEmRepouso:
 
 
 @pytest.fixture
-def upf_existente(db, municipio, projeto):
-    from apps.sgp.tests.factories import UPFFactory
+def ufpa_existente(db, municipio, projeto):
+    from apps.sgp.tests.factories import UFPAFactory
 
-    upf = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
-    upf.uuid_local = uuid4()
-    upf.save(update_fields=["uuid_local"])
-    return upf
+    ufpa = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
+    ufpa.uuid_local = uuid4()
+    ufpa.save(update_fields=["uuid_local"])
+    return ufpa

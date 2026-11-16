@@ -30,7 +30,7 @@ class TitularSyncSerializer(serializers.Serializer):
     escolaridade = serializers.IntegerField(required=False, allow_null=True)
 
 
-class UPFSyncSerializer(serializers.Serializer):
+class UFPASyncSerializer(serializers.Serializer):
     projeto = serializers.IntegerField(required=False, allow_null=True)
     comunidade = serializers.IntegerField(required=False, allow_null=True)
     municipio = serializers.IntegerField(required=False, allow_null=True)
@@ -70,8 +70,8 @@ class UPFSyncSerializer(serializers.Serializer):
 
 
 class MemberSyncSerializer(serializers.Serializer):
-    upf = serializers.IntegerField(required=False, allow_null=True)
-    upf_uuid_local = serializers.UUIDField(required=False, allow_null=True)
+    ufpa = serializers.IntegerField(required=False, allow_null=True)
+    ufpa_uuid_local = serializers.UUIDField(required=False, allow_null=True)
     nome_completo = serializers.CharField(required=False, allow_blank=True)
     data_nascimento = serializers.DateField(required=False, allow_null=True)
     genero = serializers.IntegerField(required=False, allow_null=True)
@@ -105,20 +105,20 @@ class ActivitySyncSerializer(serializers.Serializer):
     resultados_alcancados = serializers.CharField(required=False, allow_blank=True)
     status = serializers.CharField(required=False, allow_blank=True)
     justificativa = serializers.CharField(required=False, allow_blank=True)
-    upfs_participantes = serializers.ListField(required=False, default=list)
+    ufpas_participantes = serializers.ListField(required=False, default=list)
     membros_participantes = serializers.ListField(required=False, default=list)
     ativo = serializers.BooleanField(required=False)
 
 
 ENTITY_SERIALIZERS = {
-    "upf": UPFSyncSerializer,
+    "ufpa": UFPASyncSerializer,
     "member": MemberSyncSerializer,
     "activity": ActivitySyncSerializer,
 }
 
 
 class PushItemSerializer(serializers.Serializer):
-    entidade = serializers.ChoiceField(choices=("upf", "member", "activity", "form_response"))
+    entidade = serializers.ChoiceField(choices=("ufpa", "member", "activity", "form_response"))
     uuid_local = serializers.UUIDField()
     operacao = serializers.ChoiceField(choices=("create", "update"))
     payload_json = serializers.DictField()
@@ -157,23 +157,23 @@ class _EnvelopePullSerializer(serializers.Serializer):
     atualizado_em = serializers.DateTimeField()
 
 
-class SyncPullUPFSerializer(_EnvelopePullSerializer, UPFSyncSerializer):
+class SyncPullUFPASerializer(_EnvelopePullSerializer, UFPASyncSerializer):
     pass
 
 
 class SyncPullMemberSerializer(_EnvelopePullSerializer, MemberSyncSerializer):
-    upf_uuid_local = None
+    ufpa_uuid_local = None
 
 
 class SyncPullActivitySerializer(_EnvelopePullSerializer, ActivitySyncSerializer):
     data_inicio = serializers.DateTimeField(required=False, allow_null=True)
     data_fim = serializers.DateTimeField(required=False, allow_null=True)
-    upfs_participantes = serializers.ListField(child=serializers.IntegerField())
+    ufpas_participantes = serializers.ListField(child=serializers.IntegerField())
     membros_participantes = serializers.ListField(child=serializers.IntegerField())
 
 
 class SyncPullRespostaSerializer(serializers.Serializer):
-    upfs = SyncPullUPFSerializer(many=True)
+    ufpas = SyncPullUFPASerializer(many=True)
     members = SyncPullMemberSerializer(many=True)
     activities = SyncPullActivitySerializer(many=True)
     saldos = MeuSaldoSerializer(many=True, allow_null=True)
@@ -478,9 +478,9 @@ class ConflictLogListSerializer(serializers.ModelSerializer):
 def _serializers_do_registro_atual():
     from apps.sgp.serializers import MembroDetailSerializer
     from apps.sgp.serializers.activity import ActivityDetailRespostaSerializer
-    from apps.sgp.serializers.upf import UPFDetailRespostaSerializer
+    from apps.sgp.serializers.ufpa import UFPADetailRespostaSerializer
 
-    return [UPFDetailRespostaSerializer, MembroDetailSerializer, ActivityDetailRespostaSerializer]
+    return [UFPADetailRespostaSerializer, MembroDetailSerializer, ActivityDetailRespostaSerializer]
 
 
 _REGISTRO_ATUAL = PolymorphicProxySerializer(
@@ -498,14 +498,14 @@ class ConflictLogDetailSerializer(ConflictLogListSerializer):
 
     @extend_schema_field(_REGISTRO_ATUAL)
     def get_registro_atual(self, obj):
-        from apps.sgp.models import Activity, MembroFamilia, UPF
+        from apps.sgp.models import Activity, MembroFamilia, UFPA
         from apps.sgp.serializers import (
             ActivityDetailSerializer,
             MembroDetailSerializer,
-            UPFDetailSerializer,
+            UFPADetailSerializer,
         )
 
-        # Propaga o `request` do contexto: `UPFDetailSerializer`/
+        # Propaga o `request` do contexto: `UFPADetailSerializer`/
         # `MembroDetailSerializer` decidem se `saude`/`cor_raca` aparecem no
         # snapshot com base em `context["request"].user` (Issue #187) — sem
         # isso, os campos ficam sempre ocultos aqui, mesmo para Super Admin
@@ -513,9 +513,9 @@ class ConflictLogDetailSerializer(ConflictLogListSerializer):
         # conflitos em campos sensíveis (#158).
         context = {"request": self.context.get("request")}
 
-        if obj.entidade == "upf":
-            upf = UPF.objects.filter(uuid_local=obj.uuid_local).first()
-            return UPFDetailSerializer(upf, context=context).data if upf else None
+        if obj.entidade == "ufpa":
+            ufpa = UFPA.objects.filter(uuid_local=obj.uuid_local).first()
+            return UFPADetailSerializer(ufpa, context=context).data if ufpa else None
         if obj.entidade == "member":
             membro = MembroFamilia.objects.filter(uuid_local=obj.uuid_local).first()
             return MembroDetailSerializer(membro, context=context).data if membro else None

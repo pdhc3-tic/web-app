@@ -14,7 +14,7 @@ class ExportJob(models.Model):
     class Tipo(models.TextChoices):
         PLANO_TRABALHO = "plano_trabalho", "Plano de Trabalho"
         ATIVIDADES = "atividades", "Atividades"
-        UPFS = "upfs", "UPFs"
+        UFPAS = "ufpas", "UFPAs"
 
     class Formato(models.TextChoices):
         CSV = "csv", "CSV"

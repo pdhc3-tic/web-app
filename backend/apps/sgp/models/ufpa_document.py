@@ -2,7 +2,7 @@ from django.conf import settings
 from django.db import models
 
 
-class UPFDocument(models.Model):
+class UFPADocument(models.Model):
     TIPO_DAP_CAF = "dap_caf"
     TIPO_CONTRATO = "contrato"
     TIPO_LAUDO = "laudo"
@@ -17,11 +17,11 @@ class UPFDocument(models.Model):
         (TIPO_OUTRO, "Outro"),
     ]
 
-    upf = models.ForeignKey(
-        "sgp.UPF",
+    ufpa = models.ForeignKey(
+        "sgp.UFPA",
         on_delete=models.CASCADE,
         related_name="documentos",
-        verbose_name="UPF",
+        verbose_name="UFPA",
     )
     tipo = models.CharField(
         max_length=20,
@@ -60,18 +60,18 @@ class UPFDocument(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="documentos_upf_criados",
+        related_name="documentos_ufpa_criados",
         verbose_name="Criado por",
     )
 
     class Meta:
-        verbose_name = "Documento da UPF"
-        verbose_name_plural = "Documentos da UPF"
+        verbose_name = "Documento da UFPA"
+        verbose_name_plural = "Documentos da UFPA"
         ordering = ["-criado_em"]
         indexes = [
-            models.Index(fields=["upf", "-criado_em"], name="idx_upfdoc_upf_criado"),
-            models.Index(fields=["arquivo_key"], name="idx_upfdoc_arquivo_key"),
+            models.Index(fields=["ufpa", "-criado_em"], name="idx_ufpadoc_ufpa_criado"),
+            models.Index(fields=["arquivo_key"], name="idx_ufpadoc_arquivo_key"),
         ]
 
     def __str__(self):
-        return f"{self.upf_id} - {self.nome_original}"
+        return f"{self.ufpa_id} - {self.nome_original}"

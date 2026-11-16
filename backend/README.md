@@ -69,7 +69,7 @@ class MeuSerializer(serializers.Serializer):
 O schema só é útil para gerar tipos se descrever o que a view devolve de fato. O drf-spectacular não avisa nestes casos, e o tipo sai errado:
 
 - **`SerializerMethodField`** sem type hint de retorno (`-> int | None`) ou `@extend_schema_field` sai como `string`.
-- **`to_representation` sobrescrito** troca a forma da resposta sem o schema saber. Declare um serializer de resposta e use-o no `@extend_schema` (ex.: `UPFDetailRespostaSerializer`).
+- **`to_representation` sobrescrito** troca a forma da resposta sem o schema saber. Declare um serializer de resposta e use-o no `@extend_schema` (ex.: `UFPADetailRespostaSerializer`).
 - **`@action`** herda o `serializer_class`, os filtros e a paginação do viewset. Declare `request`/`responses`, `filters=False` quando os filtros da listagem não se aplicam e `pagination_class=None` (ou o paginador real) no `@action` quando a lista não usa o do viewset.
 - **`get_queryset`** que depende do usuário quebra na geração, que não tem usuário: devolva `Model.objects.none()` quando `getattr(self, "swagger_fake_view", False)`.
 
@@ -251,4 +251,4 @@ Referência completa em [`.env.example`](.env.example):
 
 ## Storage De Arquivos
 
-O upload de foto da UPF usa URL presignada para evitar que o backend receba o arquivo como proxy. Consulte [docs/storage-setup.md](docs/storage-setup.md) para criação do bucket, credenciais R2 e CORS.
+O upload de foto da UFPA usa URL presignada para evitar que o backend receba o arquivo como proxy. Consulte [docs/storage-setup.md](docs/storage-setup.md) para criação do bucket, credenciais R2 e CORS.

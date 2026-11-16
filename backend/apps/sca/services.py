@@ -31,7 +31,7 @@ from apps.sgp.services.activity_status import (
     DataFimInvalidaError,
     EvidenciaObrigatoriaError,
     JustificativaObrigatoriaError,
-    MembroForaUPFError,
+    MembroForaUFPAError,
     NovaDataObrigatoriaError,
     TransicaoInvalidaError,
 )
@@ -43,7 +43,7 @@ REGRA_NEGOCIO_SYNC_CODES = MEMBRO_REGRA_SYNC_CODES | {
     JustificativaObrigatoriaError.sync_code,
     NovaDataObrigatoriaError.sync_code,
     DataFimInvalidaError.sync_code,
-    MembroForaUPFError.sync_code,
+    MembroForaUFPAError.sync_code,
 }
 
 # Nome da UniqueConstraint (Meta.constraints de MembroFamilia) → (sync_code,
@@ -53,7 +53,7 @@ REGRA_NEGOCIO_SYNC_CODES = MEMBRO_REGRA_SYNC_CODES | {
 # a checagem síncrona já usaria — ver `_process_item`.
 _CONSTRAINT_REGRA_NEGOCIO = {
     "unique_cpf_global": ("CPF_DUPLICADO", "cpf"),
-    "unique_titular_por_upf": ("TITULAR_DUPLICADO", "grau_parentesco"),
+    "unique_titular_por_ufpa": ("TITULAR_DUPLICADO", "grau_parentesco"),
 }
 
 
@@ -422,11 +422,11 @@ class PushProcessor:
     def _norm_payload(self, entity, data) -> dict:
         return {path: str(value) for path, value in entity.flatten(data).items()}
 
-    # -- auditoria de membro (MembroFamilia via 'member' ou titular via 'upf') --
+    # -- auditoria de membro (MembroFamilia via 'member' ou titular via 'ufpa') --
     def _membro_for_entity(self, entity, instance):
         if entity.name == "member":
             return instance
-        if entity.name == "upf":
+        if entity.name == "ufpa":
             return instance.titular
         return None
 
@@ -652,7 +652,7 @@ def build_pull(user, device, since, tipo_conexao: str | None = None) -> dict:
     iniciado_em = timezone.now()
     territory_ids = territory_ids_for(user)
     server_time = timezone.now()
-    payload = {"upfs": [], "members": [], "activities": [], "server_time": server_time.isoformat()}
+    payload = {"ufpas": [], "members": [], "activities": [], "server_time": server_time.isoformat()}
 
     if not territory_ids:
         _registrar_pull(user, device, server_time, payload)
@@ -674,7 +674,7 @@ def build_pull(user, device, since, tipo_conexao: str | None = None) -> dict:
 
     visible_sensitive_fields = sensitive_fields_visible_to(user)
 
-    group_key = {"upf": "upfs", "member": "members", "activity": "activities"}
+    group_key = {"ufpa": "ufpas", "member": "members", "activity": "activities"}
     for entity in ENTITY_REGISTRY.values():
         qs = entity.filter_by_territories(entity.base_queryset(), territory_ids)
         if since is not None:
@@ -707,15 +707,15 @@ def build_pull(user, device, since, tipo_conexao: str | None = None) -> dict:
 
 def _pull_select_related(entity):
     return {
-        "upf": ("titular",),
-        "member": ("upf",),
+        "ufpa": ("titular",),
+        "member": ("ufpa",),
         "activity": ("municipio",),
     }.get(entity.name, ())
 
 
 def _pull_prefetch(entity):
     return {
-        "activity": ("upfs_participantes", "membros_participantes"),
+        "activity": ("ufpas_participantes", "membros_participantes"),
     }.get(entity.name, ())
 
 

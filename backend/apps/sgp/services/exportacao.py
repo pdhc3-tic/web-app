@@ -1,6 +1,6 @@
 """Geração de arquivos de exportação do SGP, síncrona ou via ExportJob.
 
-Os três datasets (Plano de Trabalho, Atividades e UPFs) passam pela mesma
+Os três datasets (Plano de Trabalho, Atividades e UFPAs) passam pela mesma
 geração de CSV/XLSX, e o fluxo assíncrono reaproveita a mesma validação de
 filtros das rotas síncronas — um filtro aceito numa é aceito na outra.
 """
@@ -25,7 +25,7 @@ from apps.sgp.exceptions import ErroComCodigo, recusar_parametros_desconhecidos
 from apps.sgp.models import ExportJob
 from apps.sgp.serializers.exportacao import AtividadesExportQuerySerializer
 from apps.sgp.serializers_workplan import WorkPlanExportQuerySerializer
-from apps.sgp.services import activity_export, upf_export, workplan_export
+from apps.sgp.services import activity_export, ufpa_export, workplan_export
 from apps.sgp.services.access import resolver_escopo
 
 logger = logging.getLogger(__name__)
@@ -80,13 +80,13 @@ def _opcoes_tipadas_para_json(opcoes: dict) -> dict:
     }
 
 
-def _filtros_upf_para_json(filtros: dict) -> dict:
+def _filtros_ufpa_para_json(filtros: dict) -> dict:
     return {chave: "" if valor is None else str(valor) for chave, valor in filtros.items()}
 
 
-def _linhas_upfs(*, user, **filtros):
-    queryset = upf_export.upf_export_queryset(user=user, filtros=filtros)
-    return upf_export.upf_export_rows(queryset, user=user)
+def _linhas_ufpas(*, user, **filtros):
+    queryset = ufpa_export.ufpa_export_queryset(user=user, filtros=filtros)
+    return ufpa_export.ufpa_export_rows(queryset, user=user)
 
 
 TIPOS = {
@@ -108,14 +108,14 @@ TIPOS = {
         para_json=_opcoes_tipadas_para_json,
         filtros_aceitos=_filtros_do_serializer(AtividadesExportQuerySerializer),
     ),
-    ExportJob.Tipo.UPFS: TipoExportacao(
-        prefixo_arquivo="upfs",
-        titulo_planilha="UPFs",
-        colunas=upf_export.EXPORT_COLUMNS,
-        linhas=_linhas_upfs,
-        validar=upf_export.separar_parametros,
-        para_json=_filtros_upf_para_json,
-        filtros_aceitos=upf_export.FILTROS_ACEITOS,
+    ExportJob.Tipo.UFPAS: TipoExportacao(
+        prefixo_arquivo="ufpas",
+        titulo_planilha="UFPAs",
+        colunas=ufpa_export.EXPORT_COLUMNS,
+        linhas=_linhas_ufpas,
+        validar=ufpa_export.separar_parametros,
+        para_json=_filtros_ufpa_para_json,
+        filtros_aceitos=ufpa_export.FILTROS_ACEITOS,
     ),
 }
 
@@ -179,23 +179,23 @@ def exportar_sincrono(tipo: str, *, user, params: dict) -> Arquivo:
     return _montar_arquivo(tipo, formato, definicao.linhas(user=user, **opcoes))
 
 
-def exportar_upfs(*, user, params: dict) -> Arquivo | ExportJob:
-    """Até `settings.UPF_EXPORT_ASYNC_THRESHOLD` registros devolve o arquivo; acima
+def exportar_ufpas(*, user, params: dict) -> Arquivo | ExportJob:
+    """Até `settings.UFPA_EXPORT_ASYNC_THRESHOLD` registros devolve o arquivo; acima
     disso cria um ExportJob para o worker."""
-    formato, filtros = upf_export.separar_parametros(params)
-    queryset = upf_export.upf_export_queryset(user=user, filtros=filtros)
+    formato, filtros = ufpa_export.separar_parametros(params)
+    queryset = ufpa_export.ufpa_export_queryset(user=user, filtros=filtros)
 
     total = queryset.count()
-    if total > settings.UPF_EXPORT_ASYNC_THRESHOLD:
+    if total > settings.UFPA_EXPORT_ASYNC_THRESHOLD:
         return criar_exportacao(
             user=user,
-            tipo=ExportJob.Tipo.UPFS,
+            tipo=ExportJob.Tipo.UFPAS,
             formato=formato,
-            filtros=TIPOS[ExportJob.Tipo.UPFS].para_json(filtros),
+            filtros=TIPOS[ExportJob.Tipo.UFPAS].para_json(filtros),
             total_registros=total,
         )
     return _montar_arquivo(
-        ExportJob.Tipo.UPFS, formato, upf_export.upf_export_rows(queryset, user=user)
+        ExportJob.Tipo.UFPAS, formato, ufpa_export.ufpa_export_rows(queryset, user=user)
     )
 
 

@@ -11,7 +11,7 @@ from apps.core.models.system_config import SystemConfig, TipoConfiguracao
 from apps.core.tests.factories import RoleFactory, UserFactory
 from apps.sgp.models import Activity, GoogleCalendarSyncEvent
 from apps.sgp.services.google_calendar import GoogleCalendarConfigError
-from apps.sgp.tasks import sync_activity_to_google_calendar
+from apps.sgp.tasks import sync_activity_to_google_calendar, sync_google_calendar_event
 from apps.sgp.tests.factories import ActivityFactory
 
 
@@ -73,7 +73,7 @@ def test_transicao_para_agendada_chama_events_insert_com_payload_correto():
     service = mock_google_service()
 
     with patch("apps.sgp.tasks.get_google_calendar_service", return_value=service):
-        sync_activity_to_google_calendar(activity.pk)
+        sync_google_calendar_event(activity.pk)
 
     insert = service.events.return_value.insert
     assert insert.called
@@ -114,7 +114,7 @@ def test_alteracao_em_atividade_agendada_chama_events_update():
     service = mock_google_service()
 
     with patch("apps.sgp.tasks.get_google_calendar_service", return_value=service):
-        sync_activity_to_google_calendar(activity.pk)
+        sync_google_calendar_event(activity.pk)
 
     update = service.events.return_value.update
     assert update.called
@@ -134,7 +134,7 @@ def test_transicao_para_cancelada_chama_events_delete():
     service = mock_google_service()
 
     with patch("apps.sgp.tasks.get_google_calendar_service", return_value=service):
-        sync_activity_to_google_calendar(activity.pk)
+        sync_google_calendar_event(activity.pk)
 
     delete = service.events.return_value.delete
     assert delete.called
@@ -158,7 +158,7 @@ def test_falha_da_api_marca_erro_notifica_sentry_e_super_admin():
     with patch("apps.sgp.tasks.get_google_calendar_service", return_value=service), \
         patch("apps.sgp.tasks.sentry_sdk.capture_exception") as capture_exception, \
         patch("apps.sgp.tasks.send_email_notification.delay") as send_email:
-        sync_activity_to_google_calendar(activity.pk)
+        sync_google_calendar_event(activity.pk)
 
     activity.refresh_from_db()
     assert activity.google_calendar_sync_status == "erro"
@@ -184,9 +184,9 @@ def test_multiplas_falhas_mesma_activity_geram_eventos_distintos():
     with patch("apps.sgp.tasks.get_google_calendar_service", return_value=service), \
         patch("apps.sgp.tasks.sentry_sdk.capture_exception"), \
         patch("apps.sgp.tasks.send_email_notification.delay"):
-        sync_activity_to_google_calendar(activity.pk)
-        sync_activity_to_google_calendar(activity.pk)
-        sync_activity_to_google_calendar(activity.pk)
+        sync_google_calendar_event(activity.pk)
+        sync_google_calendar_event(activity.pk)
+        sync_google_calendar_event(activity.pk)
 
     eventos = GoogleCalendarSyncEvent.objects.filter(activity=activity)
     assert eventos.count() == 3
@@ -202,7 +202,7 @@ def test_integracao_desativada_nao_enfileira_task():
     client = APIClient()
     client.force_authenticate(user=user)
 
-    with patch("apps.sgp.views.sync_activity_to_google_calendar.delay") as delay:
+    with patch("apps.sgp.views.sync_google_calendar_event.delay") as delay:
         response = client.patch(
             f"/api/v1/sgp/atividades/{activity.pk}/",
             {"status": "agendado"},
@@ -226,7 +226,7 @@ def test_falha_de_credencial_marca_erro_notifica_sentry_e_super_admin_sem_chamar
     ) as get_service, \
         patch("apps.sgp.tasks.sentry_sdk.capture_exception") as capture_exception, \
         patch("apps.sgp.tasks.send_email_notification.delay") as send_email:
-        sync_activity_to_google_calendar(activity.pk)
+        sync_google_calendar_event(activity.pk)
 
     assert get_service.called
     activity.refresh_from_db()
@@ -253,7 +253,7 @@ def test_timeout_da_api_marca_erro_e_notifica_super_admin():
     with patch("apps.sgp.tasks.get_google_calendar_service", return_value=service), \
         patch("apps.sgp.tasks.sentry_sdk.capture_exception") as capture_exception, \
         patch("apps.sgp.tasks.send_email_notification.delay") as send_email:
-        sync_activity_to_google_calendar(activity.pk)
+        sync_google_calendar_event(activity.pk)
 
     activity.refresh_from_db()
     assert activity.google_calendar_sync_status == "erro"
@@ -278,7 +278,7 @@ def test_falha_em_events_update_marca_erro():
     with patch("apps.sgp.tasks.get_google_calendar_service", return_value=service), \
         patch("apps.sgp.tasks.sentry_sdk.capture_exception"), \
         patch("apps.sgp.tasks.send_email_notification.delay"):
-        sync_activity_to_google_calendar(activity.pk)
+        sync_google_calendar_event(activity.pk)
 
     assert service.events.return_value.update.called
     assert not service.events.return_value.insert.called
@@ -304,7 +304,7 @@ def test_evento_ja_deletado_no_google_falha_em_events_delete_marca_erro():
     with patch("apps.sgp.tasks.get_google_calendar_service", return_value=service), \
         patch("apps.sgp.tasks.sentry_sdk.capture_exception"), \
         patch("apps.sgp.tasks.send_email_notification.delay"):
-        sync_activity_to_google_calendar(activity.pk)
+        sync_google_calendar_event(activity.pk)
 
     assert service.events.return_value.delete.called
     activity.refresh_from_db()
@@ -326,7 +326,7 @@ def test_activity_cancelada_sem_event_id_nao_chama_api_e_marca_sucesso():
     with patch(
         "apps.sgp.tasks.get_google_calendar_service", return_value=service
     ) as get_service:
-        sync_activity_to_google_calendar(activity.pk)
+        sync_google_calendar_event(activity.pk)
 
     # Atividade cancelada que nunca teve evento sincronizado: nada a
     # apagar, então a API do Google nem chega a ser consultada.
@@ -346,7 +346,7 @@ def test_integracao_desativada_apos_enfileiramento_mas_antes_da_execucao_e_noop(
     configure_google_calendar(active=False)
 
     with patch("apps.sgp.tasks.get_google_calendar_service") as get_service:
-        sync_activity_to_google_calendar(activity.pk)
+        sync_google_calendar_event(activity.pk)
 
     assert get_service.called is False
     assert GoogleCalendarSyncEvent.objects.filter(activity=activity).count() == 0
@@ -366,7 +366,7 @@ def test_falha_ao_buscar_activity_cai_no_except_generico_e_notifica():
         "apps.sgp.tasks._get_activity", side_effect=Activity.DoesNotExist
     ), patch("apps.sgp.tasks.sentry_sdk.capture_exception") as capture_exception, \
         patch("apps.sgp.tasks.send_email_notification.delay") as send_email:
-        sync_activity_to_google_calendar(activity.pk)
+        sync_google_calendar_event(activity.pk)
 
     activity.refresh_from_db()
     assert activity.google_calendar_sync_status == "erro"
@@ -387,7 +387,7 @@ def test_sem_super_admins_falha_nao_envia_email():
     with patch("apps.sgp.tasks.get_google_calendar_service", return_value=service), \
         patch("apps.sgp.tasks.sentry_sdk.capture_exception"), \
         patch("apps.sgp.tasks.send_email_notification.delay") as send_email:
-        sync_activity_to_google_calendar(activity.pk)
+        sync_google_calendar_event(activity.pk)
 
     activity.refresh_from_db()
     assert activity.google_calendar_sync_status == "erro"
@@ -418,7 +418,7 @@ def test_super_admin_inativo_ou_sem_email_excluido_da_notificacao():
     with patch("apps.sgp.tasks.get_google_calendar_service", return_value=service), \
         patch("apps.sgp.tasks.sentry_sdk.capture_exception"), \
         patch("apps.sgp.tasks.send_email_notification.delay") as send_email:
-        sync_activity_to_google_calendar(activity.pk)
+        sync_google_calendar_event(activity.pk)
 
     send_email.assert_called_once()
     assert send_email.call_args.args[2] == ["super-valido@example.com"]
@@ -438,7 +438,7 @@ def test_calendario_destino_id_ausente_gera_valueerror_e_marca_erro():
     with patch("apps.sgp.tasks.get_google_calendar_service") as get_service, \
         patch("apps.sgp.tasks.sentry_sdk.capture_exception"), \
         patch("apps.sgp.tasks.send_email_notification.delay"):
-        sync_activity_to_google_calendar(activity.pk)
+        sync_google_calendar_event(activity.pk)
 
     assert get_service.called is False
     activity.refresh_from_db()
@@ -457,7 +457,7 @@ def test_falha_ao_enfileirar_task_nao_impede_resposta_http_e_marca_pendente():
     client.force_authenticate(user=user)
 
     with patch(
-        "apps.sgp.views.sync_activity_to_google_calendar.delay",
+        "apps.sgp.views.sync_google_calendar_event.delay",
         side_effect=RuntimeError("fila indisponível"),
     ) as delay:
         response = client.patch(
@@ -481,7 +481,7 @@ def test_edicao_de_campo_nao_monitorado_em_atividade_agendada_nao_reenfileira():
     client = APIClient()
     client.force_authenticate(user=user)
 
-    with patch("apps.sgp.views.sync_activity_to_google_calendar.delay") as delay:
+    with patch("apps.sgp.views.sync_google_calendar_event.delay") as delay:
         response = client.patch(
             f"/api/v1/sgp/atividades/{activity.pk}/",
             {"titulo": "Título revisado"},
@@ -505,7 +505,7 @@ def test_edicao_de_equipe_adicional_em_atividade_agendada_reenfileira():
     client = APIClient()
     client.force_authenticate(user=user)
 
-    with patch("apps.sgp.views.sync_activity_to_google_calendar.delay") as delay:
+    with patch("apps.sgp.views.sync_google_calendar_event.delay") as delay:
         response = client.patch(
             f"/api/v1/sgp/atividades/{activity.pk}/",
             {"equipe_adicional": [novo_membro.pk]},
@@ -526,7 +526,7 @@ def test_transicao_para_status_neutro_nao_aciona_sync():
     with patch(
         "apps.sgp.tasks.get_google_calendar_service", return_value=service
     ) as get_service:
-        sync_activity_to_google_calendar(activity.pk)
+        sync_google_calendar_event(activity.pk)
 
     # Status fora de {agendado, cancelada, nao_realizada}: a task só loga
     # "ignorado" e não chama nenhum verbo da API do Google.
@@ -553,8 +553,18 @@ def test_multiplos_super_admins_validos_recebem_notificacao():
     with patch("apps.sgp.tasks.get_google_calendar_service", return_value=service), \
         patch("apps.sgp.tasks.sentry_sdk.capture_exception"), \
         patch("apps.sgp.tasks.send_email_notification.delay") as send_email:
-        sync_activity_to_google_calendar(activity.pk)
+        sync_google_calendar_event(activity.pk)
 
     send_email.assert_called_once()
     recipients = send_email.call_args.args[2]
     assert set(recipients) == {"super-um@example.com", "super-dois@example.com"}
+
+
+def test_nome_antigo_da_tarefa_continua_registrado_e_delega_para_o_novo():
+    assert sync_activity_to_google_calendar.name == "sgp.tasks.sync_activity_to_google_calendar"
+    assert sync_google_calendar_event.name == "sgp.tasks.sync_google_calendar_event"
+
+    with patch("apps.sgp.tasks.sync_google_calendar_event") as tarefa_nova:
+        sync_activity_to_google_calendar(7)
+
+    tarefa_nova.assert_called_once_with(7)

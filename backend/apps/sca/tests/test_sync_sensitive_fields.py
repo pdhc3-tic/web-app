@@ -20,11 +20,11 @@ from django.utils import timezone
 
 from apps.core.tests.factories import RoleFactory, UserFactory
 from apps.sca.models import ConflictLog
-from apps.sca.tests.conftest import payload_upf
+from apps.sca.tests.conftest import payload_ufpa
 from apps.sca.tests.test_sync_push import build_item, post_batch
 from apps.sca.tests.test_sync_pull import get_pull
 from apps.sgp.models import MembroFamilia
-from apps.sgp.tests.factories import MembroFactory, UPFFactory
+from apps.sgp.tests.factories import MembroFactory, UFPAFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -60,15 +60,15 @@ def auth_client_agricultor(api_client, agricultor_rn):
 
 
 @pytest.fixture
-def upf_com_membro(db, municipio, projeto):
-    upf = UPFFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
-    upf.titular.cor_raca = 3
-    upf.titular.saude = ["hipertensao"]
-    upf.titular.save(update_fields=["cor_raca", "saude"])
+def ufpa_com_membro(db, municipio, projeto):
+    ufpa = UFPAFactory(municipio=municipio, projeto=projeto, titular_cpf="86288366757")
+    ufpa.titular.cor_raca = 3
+    ufpa.titular.saude = ["hipertensao"]
+    ufpa.titular.save(update_fields=["cor_raca", "saude"])
     MembroFactory(
-        upf=upf, grau_parentesco="filho", cor_raca=2, saude=["diabetes"], uuid_local=uuid4(),
+        ufpa=ufpa, grau_parentesco="filho", cor_raca=2, saude=["diabetes"], uuid_local=uuid4(),
     )
-    return upf
+    return ufpa
 
 
 # ──────────────────────────────────────────────────────────────
@@ -77,49 +77,49 @@ def upf_com_membro(db, municipio, projeto):
 
 class TestPullRespeitaMatrizDePermissao:
     def test_perfil_sem_permissao_nao_recebe_saude_nem_cor_raca(
-        self, auth_client_fgd, upf_com_membro
+        self, auth_client_fgd, ufpa_com_membro
     ):
         response = get_pull(auth_client_fgd)
 
         assert response.status_code == 200
-        (upf_data,) = [u for u in response.data["upfs"] if u["id"] == upf_com_membro.pk]
-        assert "cor_raca" not in upf_data["titular"]
-        assert "saude" not in upf_data["titular"]
-        assert upf_data["titular"]["nome_completo"] == upf_com_membro.titular.nome_completo
+        (ufpa_data,) = [u for u in response.data["ufpas"] if u["id"] == ufpa_com_membro.pk]
+        assert "cor_raca" not in ufpa_data["titular"]
+        assert "saude" not in ufpa_data["titular"]
+        assert ufpa_data["titular"]["nome_completo"] == ufpa_com_membro.titular.nome_completo
 
-        membros_filho = [m for m in response.data["members"] if m["upf"] == upf_com_membro.pk]
+        membros_filho = [m for m in response.data["members"] if m["ufpa"] == ufpa_com_membro.pk]
         assert membros_filho
         for membro_data in membros_filho:
             assert "cor_raca" not in membro_data
             assert "saude" not in membro_data
 
     def test_agricultor_tambem_nao_recebe_campos_sensiveis(
-        self, auth_client_agricultor, upf_com_membro
+        self, auth_client_agricultor, ufpa_com_membro
     ):
         response = get_pull(auth_client_agricultor)
-        (upf_data,) = [u for u in response.data["upfs"] if u["id"] == upf_com_membro.pk]
-        assert "cor_raca" not in upf_data["titular"]
-        assert "saude" not in upf_data["titular"]
+        (ufpa_data,) = [u for u in response.data["ufpas"] if u["id"] == ufpa_com_membro.pk]
+        assert "cor_raca" not in ufpa_data["titular"]
+        assert "saude" not in ufpa_data["titular"]
 
-    def test_campos_sensiveis_somem_nunca_viram_null(self, auth_client_fgd, upf_com_membro):
+    def test_campos_sensiveis_somem_nunca_viram_null(self, auth_client_fgd, ufpa_com_membro):
         """Mesmo contrato do resto do sistema: ausência da chave, não `null`
         nem placeholder — não pode sugerir a quem não tem permissão que o
         dado existe."""
         response = get_pull(auth_client_fgd)
-        (upf_data,) = [u for u in response.data["upfs"] if u["id"] == upf_com_membro.pk]
-        assert "cor_raca" not in upf_data["titular"].keys()
+        (ufpa_data,) = [u for u in response.data["ufpas"] if u["id"] == ufpa_com_membro.pk]
+        assert "cor_raca" not in ufpa_data["titular"].keys()
 
     @pytest.mark.parametrize("client_fixture", ["auth_client", "auth_client_super_admin"])
     def test_perfil_autorizado_continua_recebendo(
-        self, client_fixture, request, upf_com_membro
+        self, client_fixture, request, ufpa_com_membro
     ):
         """`auth_client` (conftest) autentica como adt-acr — perfil com
         permissão sobre saude/cor_raca na matriz."""
         client = request.getfixturevalue(client_fixture)
         response = get_pull(client)
-        (upf_data,) = [u for u in response.data["upfs"] if u["id"] == upf_com_membro.pk]
-        assert upf_data["titular"]["cor_raca"] == 3
-        assert upf_data["titular"]["saude"] == ["hipertensao"]
+        (ufpa_data,) = [u for u in response.data["ufpas"] if u["id"] == ufpa_com_membro.pk]
+        assert ufpa_data["titular"]["cor_raca"] == 3
+        assert ufpa_data["titular"]["saude"] == ["hipertensao"]
 
 
 # ──────────────────────────────────────────────────────────────
@@ -128,12 +128,12 @@ class TestPullRespeitaMatrizDePermissao:
 
 class TestPushRecusaEscritaNaoAutorizada:
     def test_criacao_de_membro_com_cor_raca_por_fgd_e_recusada(
-        self, auth_client_fgd, upf_com_membro
+        self, auth_client_fgd, ufpa_com_membro
     ):
         item = build_item(
             entidade="member",
             payload={
-                "upf": upf_com_membro.pk,
+                "ufpa": ufpa_com_membro.pk,
                 "nome_completo": "Novo Filho",
                 "grau_parentesco": "filho",
                 "cor_raca": 1,
@@ -148,12 +148,12 @@ class TestPushRecusaEscritaNaoAutorizada:
         assert not MembroFamilia.objects.filter(nome_completo="Novo Filho").exists()
 
     def test_criacao_de_membro_com_saude_por_agricultor_e_recusada(
-        self, auth_client_agricultor, upf_com_membro
+        self, auth_client_agricultor, ufpa_com_membro
     ):
         item = build_item(
             entidade="member",
             payload={
-                "upf": upf_com_membro.pk,
+                "ufpa": ufpa_com_membro.pk,
                 "nome_completo": "Novo Filho Saude",
                 "grau_parentesco": "filho",
                 "saude": ["gestante"],
@@ -165,21 +165,21 @@ class TestPushRecusaEscritaNaoAutorizada:
         assert resultado["status"] == "erro"
         assert "CAMPO_SENSIVEL_NAO_AUTORIZADO" in resultado["erro"]
 
-    def test_edicao_de_upf_com_cor_raca_do_titular_por_fgd_e_recusada(
-        self, auth_client_fgd, upf_com_membro, municipio, projeto
+    def test_edicao_de_ufpa_com_cor_raca_do_titular_por_fgd_e_recusada(
+        self, auth_client_fgd, ufpa_com_membro, municipio, projeto
     ):
-        upf = upf_com_membro
-        cor_raca_original = upf.titular.cor_raca
+        ufpa = ufpa_com_membro
+        cor_raca_original = ufpa.titular.cor_raca
 
-        base = payload_upf(projeto, municipio)
-        base["titular"] = {"nome_completo": upf.titular.nome_completo, "cpf": upf.titular.cpf}
+        base = payload_ufpa(projeto, municipio)
+        base["titular"] = {"nome_completo": ufpa.titular.nome_completo, "cpf": ufpa.titular.cpf}
         payload = dict(base)
         payload["titular"] = dict(base["titular"], cor_raca=4)
 
         item = build_item(
-            entidade="upf",
+            entidade="ufpa",
             operacao="update",
-            uuid_local=upf.uuid_local,
+            uuid_local=ufpa.uuid_local,
             payload=payload,
             base=base,
             updated_at=timezone.now(),
@@ -187,18 +187,18 @@ class TestPushRecusaEscritaNaoAutorizada:
         response = post_batch(auth_client_fgd, [item])
 
         assert response.data["resultados"][0]["status"] == "erro"
-        upf.titular.refresh_from_db()
-        assert upf.titular.cor_raca == cor_raca_original
+        ufpa.titular.refresh_from_db()
+        assert ufpa.titular.cor_raca == cor_raca_original
 
     def test_criacao_sem_campos_sensiveis_continua_funcionando_para_fgd(
-        self, auth_client_fgd, upf_com_membro
+        self, auth_client_fgd, ufpa_com_membro
     ):
         """Regressão: o bloqueio é só sobre saude/cor_raca — o restante do
         sync continua funcionando para perfis sem essa permissão."""
         item = build_item(
             entidade="member",
             payload={
-                "upf": upf_com_membro.pk,
+                "ufpa": ufpa_com_membro.pk,
                 "nome_completo": "Filho Sem Sensivel",
                 "grau_parentesco": "filho",
             },
@@ -208,13 +208,13 @@ class TestPushRecusaEscritaNaoAutorizada:
         assert response.data["resultados"][0]["status"] == "ok"
         assert MembroFamilia.objects.filter(nome_completo="Filho Sem Sensivel").exists()
 
-    def test_usuario_autorizado_nao_e_afetado(self, auth_client, upf_com_membro):
+    def test_usuario_autorizado_nao_e_afetado(self, auth_client, ufpa_com_membro):
         """`auth_client` autentica como adt-acr — tem permissão sobre
         saude/cor_raca e continua escrevendo normalmente."""
         item = build_item(
             entidade="member",
             payload={
-                "upf": upf_com_membro.pk,
+                "ufpa": ufpa_com_membro.pk,
                 "nome_completo": "Filho Autorizado",
                 "grau_parentesco": "filho",
                 "cor_raca": 2,
@@ -233,15 +233,15 @@ class TestPushRecusaEscritaNaoAutorizada:
 
 class TestConflitoEmCampoSensivelDeSaudeCorRaca:
     def test_conflito_em_saude_do_membro_fica_pendente_e_nao_aplica(
-        self, auth_client, articulador, upf_com_membro
+        self, auth_client, articulador, ufpa_com_membro
     ):
-        membro = MembroFamilia.objects.filter(upf=upf_com_membro, grau_parentesco="filho").first()
+        membro = MembroFamilia.objects.filter(ufpa=ufpa_com_membro, grau_parentesco="filho").first()
         membro.uuid_local = uuid4()
         membro.save(update_fields=["uuid_local"])
         MembroFamilia.objects.filter(pk=membro.pk).update(saude=["asma"])
 
         base = {
-            "upf": upf_com_membro.pk,
+            "ufpa": ufpa_com_membro.pk,
             "nome_completo": membro.nome_completo,
             "grau_parentesco": "filho",
             "saude": ["diabetes"],

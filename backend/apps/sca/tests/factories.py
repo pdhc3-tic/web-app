@@ -29,7 +29,7 @@ class ConflictLogFactory(factory.django.DjangoModelFactory):
 
     user = factory.SubFactory("apps.core.tests.factories.UserFactory")
     device = factory.SubFactory(SyncDeviceFactory)
-    entidade = "upf"
+    entidade = "ufpa"
     uuid_local = factory.Faker("uuid4")
     campo = "whatsapp"
     valor_local = {}

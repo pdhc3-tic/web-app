@@ -72,7 +72,7 @@ def form_publicado():
         pk=1,
         nome="Formulário A",
         versao="1.0",
-        tipo_entidade_alvo="upf",
+        tipo_entidade_alvo="ufpa",
         schema_json={},
         atualizado_em=timezone.now(),
     )

@@ -9,7 +9,7 @@ from rest_framework.exceptions import PermissionDenied
 from apps.core.models.municipality import Municipality
 from apps.core.models.user_profile import UserProfile
 from apps.core.services.permissions import user_has_role, user_role_slugs, user_states
-from apps.sgp.models import UPF, Activity, Tecnico
+from apps.sgp.models import UFPA, Activity, Tecnico
 
 ROLES_COM_ESCOPO = ("super-admin", "ugp", "articulador-estadual", "adt-acr")
 
@@ -91,7 +91,7 @@ def scope_queryset(
     `raise_on_no_role=False` faz retornar `qs.none()` em vez de levantar
     `PermissionDenied` quando o usuário não tem nenhum papel com escopo —
     necessário para funções cujo contrato público já é "queryset vazio,
-    nunca exceção" (`upfs_acessiveis_ao_usuario`, `tecnicos_acessiveis_ao_usuario`).
+    nunca exceção" (`ufpas_acessiveis_ao_usuario`, `tecnicos_acessiveis_ao_usuario`).
     Um papel reconhecido com escopo vazio (`"vazio"`) sempre devolve
     `qs.none()`, nunca levanta — só a ausência de papel (`"negado"`) é
     afetada por `raise_on_no_role`.
@@ -141,19 +141,19 @@ def municipios_acessiveis_ao_usuario(user):
     )
 
 
-def upfs_acessiveis_ao_usuario(user, role_slugs=None, *, raise_on_no_role=False):
-    """Retorna queryset de UPFs acessíveis ao usuário conforme regras territoriais.
+def ufpas_acessiveis_ao_usuario(user, role_slugs=None, *, raise_on_no_role=False):
+    """Retorna queryset de UFPAs acessíveis ao usuário conforme regras territoriais.
 
-    `role_slugs` pode ser passado já computado (ver `UPFViewSet.get_queryset`)
+    `role_slugs` pode ser passado já computado (ver `UFPAViewSet.get_queryset`)
     para evitar refazer a checagem de roles do usuário em outra query.
 
     Usa `all_objects`: RLS territorial e soft-delete são preocupações
     independentes — o padrão de só ativas fica em
     `apps.sgp.filters.somente_ativas_sem_filtro_ativo` (listagem e exportação),
-    e quem precisa de uma UPF ativa específica checa `upf.ativo` por conta própria.
+    e quem precisa de uma UFPA ativa específica checa `ufpa.ativo` por conta própria.
     """
     return scope_queryset(
-        UPF.all_objects.all(),
+        UFPA.all_objects.all(),
         user,
         state_lookup="municipio__state__sigla__in",
         territory_lookup="territorio__in",

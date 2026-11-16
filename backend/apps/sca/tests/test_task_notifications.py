@@ -10,7 +10,7 @@ class TestNotifyArticuladorSyncConflict:
         notify_articulador_sync_conflict(
             articulador.pk,
             conflict_id=42,
-            entidade="upf",
+            entidade="ufpa",
             uuid_local="8f14e45f-ea0a-4b1c-9c2f-0f5a7d3b9e01",
             campo="titular.cpf",
             valor_local="33355588800",
@@ -25,7 +25,7 @@ class TestNotifyArticuladorSyncConflict:
         assert notification.tipo == TipoNotificacao.IN_APP
 
     def test_sem_conflict_id_link_cai_na_fila_geral(self, articulador):
-        notify_articulador_sync_conflict(articulador.pk, entidade="upf", campo="whatsapp")
+        notify_articulador_sync_conflict(articulador.pk, entidade="ufpa", campo="whatsapp")
 
         notification = Notification.objects.get(user=articulador)
         assert notification.link == "/sca/conflitos"

@@ -18,31 +18,31 @@ from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.core.services.membro_audit import log_membro_change, sensitive_fields_changed
 from apps.core.services.permissions import user_role_slugs
-from apps.sgp.cache import UPF_MAP_CACHE_TIMEOUT, build_upf_map_cache_key
-from apps.sgp.filters import UPFFilter, somente_ativas_sem_filtro_ativo
-from apps.sgp.models import ExportJob, UPF
-from apps.sgp.pagination import UPFPagination
-from apps.sgp.serializers import HistoricoEntrySerializer, MunicipioNestedSerializer, UPFDetailSerializer, UPFListSerializer
+from apps.sgp.cache import UFPA_MAP_CACHE_TIMEOUT, build_ufpa_map_cache_key
+from apps.sgp.filters import UFPAFilter, somente_ativas_sem_filtro_ativo
+from apps.sgp.models import ExportJob, UFPA
+from apps.sgp.pagination import UFPAPagination
+from apps.sgp.serializers import HistoricoEntrySerializer, MunicipioNestedSerializer, UFPADetailSerializer, UFPAListSerializer
 from apps.sgp.serializers.exportacao import ExportJobSerializer
-from apps.sgp.serializers.upf import UPFDetailRespostaSerializer
-from apps.sgp.services.access import ROLES_COM_ESCOPO, upfs_acessiveis_ao_usuario
-from apps.sgp.services.exportacao import exportar_upfs
+from apps.sgp.serializers.ufpa import UFPADetailRespostaSerializer
+from apps.sgp.services.access import ROLES_COM_ESCOPO, ufpas_acessiveis_ao_usuario
+from apps.sgp.services.exportacao import exportar_ufpas
 from apps.sgp.views.exportacao import RESPOSTA_ARQUIVO, arquivo_response
-from apps.sgp.views.upf_foto import UPFPhotoMixin
-from apps.sgp.views.upf_historico import UPFHistoricoMixin
+from apps.sgp.views.ufpa_foto import UFPAPhotoMixin
+from apps.sgp.views.ufpa_historico import UFPAHistoricoMixin
 
-UPF_ACCESS_ROLES = ROLES_COM_ESCOPO
+UFPA_ACCESS_ROLES = ROLES_COM_ESCOPO
 
 
-# Documentação OpenAPI da action UPFViewSet.mapa — o payload real é montado
+# Documentação OpenAPI da action UFPAViewSet.mapa — o payload real é montado
 # em _build_mapa_feature. Desvio entre os dois é pego por
 # test_mapa_openapi_schema_tipa_municipio_estado.
-class _UPFMapGeometrySerializer(serializers.Serializer):
+class _UFPAMapGeometrySerializer(serializers.Serializer):
     type = serializers.CharField(default="Point")
     coordinates = serializers.ListField(child=serializers.FloatField())
 
 
-class _UPFMapPropertiesSerializer(serializers.Serializer):
+class _UFPAMapPropertiesSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     nome_titular = serializers.CharField()
     municipio = MunicipioNestedSerializer()
@@ -50,37 +50,37 @@ class _UPFMapPropertiesSerializer(serializers.Serializer):
     ativo = serializers.BooleanField()
 
 
-class _UPFMapFeatureSerializer(serializers.Serializer):
+class _UFPAMapFeatureSerializer(serializers.Serializer):
     type = serializers.CharField(default="Feature")
-    geometry = _UPFMapGeometrySerializer()
-    properties = _UPFMapPropertiesSerializer()
+    geometry = _UFPAMapGeometrySerializer()
+    properties = _UFPAMapPropertiesSerializer()
 
 
 @extend_schema_view(
-    retrieve=extend_schema(responses=UPFDetailRespostaSerializer),
-    create=extend_schema(request=UPFDetailSerializer, responses={201: UPFDetailRespostaSerializer}),
-    partial_update=extend_schema(request=UPFDetailSerializer, responses=UPFDetailRespostaSerializer),
+    retrieve=extend_schema(responses=UFPADetailRespostaSerializer),
+    create=extend_schema(request=UFPADetailSerializer, responses={201: UFPADetailRespostaSerializer}),
+    partial_update=extend_schema(request=UFPADetailSerializer, responses=UFPADetailRespostaSerializer),
 )
-class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
+class UFPAViewSet(UFPAPhotoMixin, UFPAHistoricoMixin, viewsets.ModelViewSet):
     MAPA_FEATURE_LIMIT = 10000
-    queryset = UPF.objects.select_related(
+    queryset = UFPA.objects.select_related(
         "municipio", "municipio__state", "territorio", "projeto", "criado_por"
     ).all()
     permission_classes = [IsAuthenticatedActiveAccess]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
-    pagination_class = UPFPagination
+    pagination_class = UFPAPagination
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
-    filterset_class = UPFFilter
+    filterset_class = UFPAFilter
     ordering_fields = ["criado_em", "titular__nome_completo"]
     ordering = ["-criado_em"]
 
     def get_serializer_class(self):
         if self.action == "list":
-            return UPFListSerializer
+            return UFPAListSerializer
         if self.action == "historico":
             return HistoricoEntrySerializer
-        return UPFDetailSerializer
+        return UFPADetailSerializer
 
     def filter_queryset(self, queryset):
         queryset = somente_ativas_sem_filtro_ativo(queryset, self.request.query_params)
@@ -89,17 +89,17 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         # all_objects: o padrão ativo=True é aplicado por filter_queryset,
         # que também permite `?ativo=false`/`?ativo=` sobrepor o default.
-        qs = UPF.all_objects.select_related(
+        qs = UFPA.all_objects.select_related(
             "municipio", "municipio__state", "territorio", "projeto",
             "criado_por", "titular",
         ).prefetch_related("membros").all()
 
         user = self.request.user
-        role_slugs = user_role_slugs(user, UPF_ACCESS_ROLES)
+        role_slugs = user_role_slugs(user, UFPA_ACCESS_ROLES)
         if not role_slugs:
             raise PermissionDenied("Você não tem acesso ao módulo SGP.")
 
-        pks = upfs_acessiveis_ao_usuario(user, role_slugs=role_slugs).values_list("pk", flat=True)
+        pks = ufpas_acessiveis_ao_usuario(user, role_slugs=role_slugs).values_list("pk", flat=True)
         return qs.filter(pk__in=pks)
 
     @extend_schema(
@@ -118,12 +118,12 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
     )
     @action(detail=False, methods=["get"], url_path="exportar")
     def exportar(self, request):
-        """GET /api/v1/upfs/exportar/?formato=csv|xlsx&<filtros da listagem>
+        """GET /api/v1/sgp/ufpas/exportar/?formato=csv|xlsx&<filtros da listagem>
 
-        Até `settings.UPF_EXPORT_ASYNC_THRESHOLD` registros devolve o arquivo; acima
+        Até `settings.UFPA_EXPORT_ASYNC_THRESHOLD` registros devolve o arquivo; acima
         disso responde 202 com a exportação criada, acompanhada em
         `/api/v1/sgp/exportacoes/{id}/`."""
-        arquivo_ou_job = exportar_upfs(user=request.user, params=request.query_params.dict())
+        arquivo_ou_job = exportar_ufpas(user=request.user, params=request.query_params.dict())
         if isinstance(arquivo_ou_job, ExportJob):
             return Response(
                 ExportJobSerializer(arquivo_ou_job).data, status=status.HTTP_202_ACCEPTED
@@ -152,17 +152,17 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
         ],
         responses={
             200: inline_serializer(
-                name="UPFMapFeatureCollection",
+                name="UFPAMapFeatureCollection",
                 fields={
                     "type": serializers.CharField(default="FeatureCollection"),
-                    "features": _UPFMapFeatureSerializer(many=True),
+                    "features": _UFPAMapFeatureSerializer(many=True),
                     "truncated": serializers.BooleanField(),
                     "message": serializers.CharField(required=False),
                 },
             )
         },
         description=(
-            "Retorna UPFs georreferenciadas em GeoJSON FeatureCollection. "
+            "Retorna UFPAs georreferenciadas em GeoJSON FeatureCollection. "
             "Cada feature possui geometry.coordinates na ordem [lng, lat] "
             "e properties mínimo: id, nome_titular, municipio, territorio e ativo."
         ),
@@ -170,7 +170,7 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="mapa")
     def mapa(self, request):
         bbox = self._parse_bbox(request.query_params.get("bbox"))
-        cache_key = build_upf_map_cache_key(
+        cache_key = build_ufpa_map_cache_key(
             request.user.pk,
             request.query_params,
         )
@@ -214,21 +214,21 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
             .order_by("id")
         )
 
-        upfs = list(queryset[: self.MAPA_FEATURE_LIMIT + 1])
-        truncated = len(upfs) > self.MAPA_FEATURE_LIMIT
-        upfs = upfs[: self.MAPA_FEATURE_LIMIT]
+        ufpas = list(queryset[: self.MAPA_FEATURE_LIMIT + 1])
+        truncated = len(ufpas) > self.MAPA_FEATURE_LIMIT
+        ufpas = ufpas[: self.MAPA_FEATURE_LIMIT]
 
         response_data = {
             "type": "FeatureCollection",
-            "features": [self._build_mapa_feature(upf) for upf in upfs],
+            "features": [self._build_mapa_feature(ufpa) for ufpa in ufpas],
             "truncated": truncated,
         }
         if truncated:
             response_data["message"] = (
-                "Resultado limitado a 10000 UPFs. Use o filtro bbox para reduzir a área."
+                "Resultado limitado a 10000 UFPAs. Use o filtro bbox para reduzir a área."
             )
 
-        cache.set(cache_key, response_data, UPF_MAP_CACHE_TIMEOUT)
+        cache.set(cache_key, response_data, UFPA_MAP_CACHE_TIMEOUT)
         return Response(response_data)
 
     def _parse_bbox(self, value):
@@ -260,21 +260,21 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
 
         return lng_sw, lat_sw, lng_ne, lat_ne
 
-    def _build_mapa_feature(self, upf):
-        # Dict puro (não usa _UPFMapFeatureSerializer) para evitar overhead
-        # de Serializer por item em listas de até MAPA_FEATURE_LIMIT UPFs.
+    def _build_mapa_feature(self, ufpa):
+        # Dict puro (não usa _UFPAMapFeatureSerializer) para evitar overhead
+        # de Serializer por item em listas de até MAPA_FEATURE_LIMIT UFPAs.
         return {
             "type": "Feature",
             "geometry": {
                 "type": "Point",
-                "coordinates": [float(upf.longitude), float(upf.latitude)],
+                "coordinates": [float(ufpa.longitude), float(ufpa.latitude)],
             },
             "properties": {
-                "id": upf.pk,
-                "nome_titular": upf.titular.nome_completo,
-                "municipio": MunicipioNestedSerializer(upf.municipio).data,
-                "territorio": upf.territorio.nome,
-                "ativo": upf.ativo,
+                "id": ufpa.pk,
+                "nome_titular": ufpa.titular.nome_completo,
+                "municipio": MunicipioNestedSerializer(ufpa.municipio).data,
+                "territorio": ufpa.territorio.nome,
+                "ativo": ufpa.ativo,
             },
         }
 
@@ -283,11 +283,11 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
             user=self.request.user,
             acao=acao,
             modulo="sgp",
-            entidade="UPF",
+            entidade="UFPA",
             entidade_id=str(instance.pk),
             valores_anteriores=valores_anteriores or {},
             valores_novos={
-                "upf_id": instance.pk,
+                "ufpa_id": instance.pk,
                 "nome_titular": instance.titular.nome_completo,
                 "cpf": instance.titular.cpf,
                 "projeto_id": instance.projeto_id,
@@ -302,7 +302,7 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         instance = serializer.save(criado_por=self.request.user, ultima_origem="web")
-        self._log_audit("UPF.create", instance)
+        self._log_audit("UFPA.create", instance)
         log_membro_change(
             user=self.request.user,
             acao="MEMBRO.create",
@@ -312,13 +312,13 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
                 None, {"cor_raca": instance.titular.cor_raca}
             ),
             request=self.request,
-            extra_novos={"via": "upf.titular"},
+            extra_novos={"via": "ufpa.titular"},
         )
 
     def perform_update(self, serializer):
         old = self.get_object()
         valores_anteriores = {
-            "upf_id": old.pk,
+            "ufpa_id": old.pk,
             "nome_titular": old.titular.nome_completo,
             "cpf": old.titular.cpf,
             "projeto_id": old.projeto_id,
@@ -329,7 +329,7 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
         }
         anteriores_sensiveis = {"cor_raca": old.titular.cor_raca}
         instance = serializer.save(ultima_origem="web")
-        self._log_audit("UPF.update", instance, valores_anteriores)
+        self._log_audit("UFPA.update", instance, valores_anteriores)
         log_membro_change(
             user=self.request.user,
             acao="MEMBRO.update",
@@ -339,12 +339,12 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
                 anteriores_sensiveis, {"cor_raca": instance.titular.cor_raca}
             ),
             request=self.request,
-            extra_novos={"via": "upf.titular"},
+            extra_novos={"via": "ufpa.titular"},
         )
 
     def perform_destroy(self, instance):
         valores_anteriores = {
-            "upf_id": instance.pk,
+            "ufpa_id": instance.pk,
             "nome_titular": instance.titular.nome_completo,
             "cpf": instance.titular.cpf,
             "projeto_id": instance.projeto_id,
@@ -354,7 +354,7 @@ class UPFViewSet(UPFPhotoMixin, UPFHistoricoMixin, viewsets.ModelViewSet):
             "ativo": instance.ativo,
         }
         instance.soft_delete()
-        self._log_audit("UPF.deactivate", instance, valores_anteriores)
+        self._log_audit("UFPA.deactivate", instance, valores_anteriores)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()

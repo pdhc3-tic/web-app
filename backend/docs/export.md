@@ -1,13 +1,13 @@
 # Exportação do Plano de Trabalho e Integração Power BI
 
-## Exportação de Respostas de Formulários da UPF
+## Exportação de Respostas de Formulários da UFPA
 
 ```http
-GET /api/v1/sgp/upfs/{upf_pk}/formularios/exportar/?formato={csv|pdf}
+GET /api/v1/sgp/ufpas/{ufpa_pk}/formularios/exportar/?formato={csv|pdf}
 ```
 
 Requer autenticação JWT e aplica o mesmo escopo territorial e os mesmos filtros da
-listagem de formulários da UPF. Os parâmetros opcionais são `formulario_id`,
+listagem de formulários da UFPA. Os parâmetros opcionais são `formulario_id`,
 `data_inicio`, `data_fim` e `respondente`.
 
 | Formato | Content-Type | Conteúdo |
@@ -53,18 +53,18 @@ embutido, serializado em JSON, na coluna "Respostas".
 ## Exportação de Membros (Issue #186)
 
 ```http
-GET /api/v1/sgp/upfs/{upf_pk}/membros/exportar/
+GET /api/v1/sgp/ufpas/{ufpa_pk}/membros/exportar/
 GET /api/v1/sgp/membros/exportar/?territorio_id=&municipio=&projeto=
 ```
 
-Requer autenticação JWT. A primeira rota exporta os membros de uma única UPF,
-respeitando o mesmo escopo territorial de acesso à UPF (`upfs_acessiveis_ao_usuario`).
-A segunda exporta membros de múltiplas UPFs dentro do escopo territorial do
+Requer autenticação JWT. A primeira rota exporta os membros de uma única UFPA,
+respeitando o mesmo escopo territorial de acesso à UFPA (`ufpas_acessiveis_ao_usuario`).
+A segunda exporta membros de múltiplas UFPAs dentro do escopo territorial do
 usuário — um relatório demográfico agregado —, com os filtros opcionais
 `territorio_id`, `municipio` e `projeto` (IDs inteiros).
 
 Resposta: CSV UTF-8 com BOM (`text/csv; charset=utf-8`), uma linha por membro,
-com `Content-Disposition: attachment`. Colunas: ID, UPF, nome completo,
+com `Content-Disposition: attachment`. Colunas: ID, UFPA, nome completo,
 parentesco, data de nascimento, idade, gênero, CPF, município, território e
 projeto.
 
@@ -76,7 +76,7 @@ vazios ou mascarados, para não sugerir a um perfil sem permissão que o dado
 existe.
 
 **Limite da exportação agregada.** Restrita a
-`apps.sgp.services.membro_export.MEMBROS_EXPORT_UPF_LIMIT` (500) UPFs por
+`apps.sgp.services.membro_export.MEMBROS_EXPORT_UFPA_LIMIT` (500) UFPAs por
 exportação. Acima disso, a API responde `400 Bad Request` pedindo para
 restringir por `territorio_id`, `municipio` ou `projeto`, em vez de truncar o
 resultado silenciosamente — um relatório demográfico incompleto sem aviso
@@ -85,9 +85,9 @@ seria pior do que um erro explícito.
 | Cenário | Status |
 | :--- | :--- |
 | JWT ausente ou inválido | `401 Unauthorized` |
-| UPF fora do escopo do usuário (rota por UPF) | `404 Not Found` |
+| UFPA fora do escopo do usuário (rota por UFPA) | `404 Not Found` |
 | `territorio_id`/`municipio`/`projeto` inválidos | `400 Bad Request` |
-| Escopo territorial acima do limite de UPFs (rota agregada) | `400 Bad Request` |
+| Escopo territorial acima do limite de UFPAs (rota agregada) | `400 Bad Request` |
 
 ## Exportação de Atividades
 
@@ -99,19 +99,19 @@ Download direto, no escopo territorial do usuário (mesma regra da listagem de
 atividades). `periodo_inicio`/`periodo_fim` recortam por `data_inicio` da
 atividade, e `periodo_inicio` posterior a `periodo_fim` retorna `400`. Colunas:
 ID, título, tipo, status, data de início e de fim, estado, município, território,
-comunidade, Meta, Ação, técnico responsável, UPFs participantes, participantes e
+comunidade, Meta, Ação, técnico responsável, UFPAs participantes, participantes e
 atrasada (mesma regra do campo `atrasada` da API). Dataset em
 `apps/sgp/services/activity_export.py`.
 
-## Exportação de UPFs
+## Exportação de UFPAs
 
 ```http
-GET /api/v1/upfs/exportar/?formato={csv|xlsx}&<filtros da listagem>
+GET /api/v1/sgp/ufpas/exportar/?formato={csv|xlsx}&<filtros da listagem>
 ```
 
-Aceita **exatamente** os filtros de `GET /api/v1/upfs/` (os declarados em
-`UPFFilter`: `q`, `municipio`, `territorio`, `projeto`, `comunidade`, `ativo`,
-`cadastrado_de`, `cadastrado_ate`), com o mesmo padrão de só UPFs ativas quando
+Aceita **exatamente** os filtros de `GET /api/v1/sgp/ufpas/` (os declarados em
+`UFPAFilter`: `q`, `municipio`, `territorio`, `projeto`, `comunidade`, `ativo`,
+`cadastrado_de`, `cadastrado_ate`), com o mesmo padrão de só UFPAs ativas quando
 `ativo` não é informado. Qualquer outro parâmetro, inclusive o nome antigo
 `ativa`, retorna `400` com `{"code": "parametro_desconhecido", "parametros": [...]}`
 — o django-filter ignoraria o parâmetro e o arquivo sairia com a base inteira.
@@ -123,15 +123,15 @@ cadastro. O CPF sai completo para Super Admin e UGP e mascarado
 (`123.***.***-45`) para os demais perfis (`CPF_COMPLETO_ROLES` em
 `apps/core/sensitive_fields.py`). Saúde e Cor/Raça não fazem parte do arquivo.
 
-Até `UPF_EXPORT_ASYNC_THRESHOLD` registros (variável de ambiente, padrão 1.000)
+Até `UFPA_EXPORT_ASYNC_THRESHOLD` registros (variável de ambiente, padrão 1.000)
 a resposta é o arquivo. Acima disso a API cria uma exportação assíncrona e
 responde `202` com o mesmo corpo de `GET /api/v1/sgp/exportacoes/{id}/`. Em
-homologação, um valor baixo permite testar o fluxo assíncrono com poucas UPFs.
+homologação, um valor baixo permite testar o fluxo assíncrono com poucas UFPAs.
 
 ## Exportação assíncrona
 
 ```http
-POST /api/v1/sgp/exportacoes/              {"tipo": "plano_trabalho|atividades|upfs", "formato": "csv|xlsx", "filtros": {...}}
+POST /api/v1/sgp/exportacoes/              {"tipo": "plano_trabalho|atividades|ufpas", "formato": "csv|xlsx", "filtros": {...}}
 GET  /api/v1/sgp/exportacoes/{id}/
 GET  /api/v1/sgp/exportacoes/{id}/download/
 POST /api/v1/sgp/exportacoes/{id}/repetir/

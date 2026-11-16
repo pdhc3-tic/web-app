@@ -87,7 +87,7 @@ class TestRemanejamentoValido:
         assert Decimal(credito["valor"]) == Decimal("300.00")
 
     def test_remanejamento_entre_niveis_diferentes(self, auth_client_super_admin, state_rn, territory_rn):
-        # o cenário que motiva a feature (§5.3.3): UGP cobre um território
+        # o cenário que motiva a feature (SGP §6.7): UGP cobre um território
         # sem saldo usando o saldo do próprio estado — não é estadual↔estadual.
         rubrica = BudgetRubricaFactory()
         estadual = BudgetPoolFactory(

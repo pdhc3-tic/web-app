@@ -1,11 +1,11 @@
-# Performance do Painel do PT e da Listagem de UPFs
+# Performance do Painel do PT e da Listagem de UFPAs
 
 ## Objetivo
 
 Documenta a denormalização de `WorkPlanAcao.quantidade_realizada` (issue #229) e comprova, com números medidos, que os RNFs de latência do SGP são atendidos:
 
 - Painel do PT atualizado em **< 500ms** após a conclusão de uma atividade.
-- Listagem de **5.000 UPFs em < 3s**, com filtros e paginação de 50.
+- Listagem de **5.000 UFPAs em < 3s**, com filtros e paginação de 50.
 
 Antes desta issue, `WorkPlanAcao.quantidade_realizada` era uma `@property` que executava um `COUNT` por Ação a cada acesso, e `WorkPlanMeta.status_calculado` disparava essa property uma vez por Ação da Meta — um N+1 sem medição registrada.
 
@@ -25,7 +25,7 @@ Antes desta issue, `WorkPlanAcao.quantidade_realizada` era uma `@property` que e
 - **Ambiente**: banco Postgres do `docker-compose.yml` do projeto (container `db`), aplicação rodando via `docker compose exec backend pytest`.
 - **Datasets de carga**:
   - Painel do PT: 7 Metas × 30 Ações × 500 Atividades concluídas (105.000 Atividades), populadas via `bulk_create` para não pagar o custo de criação no cronômetro do teste.
-  - Listagem de UPFs: 5.000 UPFs (com seus 5.000 titulares) populados via `bulk_create`, consultados com filtro por `municipio` (indexado) e paginação padrão (`page_size=50`).
+  - Listagem de UFPAs: 5.000 UFPAs (com seus 5.000 titulares) populados via `bulk_create`, consultados com filtro por `municipio` (indexado) e paginação padrão (`page_size=50`).
 - **Como reproduzir**:
   ```bash
   docker compose exec backend pytest apps/sgp/tests/test_workplan_performance.py -v -s
@@ -39,14 +39,14 @@ Antes desta issue, `WorkPlanAcao.quantidade_realizada` era uma `@property` que e
 | Cenário | RNF | Medido | Método |
 | --- | --- | --- | --- |
 | Painel do PT (105.000 Atividades, 210 Ações, 7 Metas) | < 500ms | **0.155s** | `time.monotonic()` |
-| Listagem de 5.000 UPFs, paginação de 50 | < 3s | **0.076s** | `time.monotonic()` |
+| Listagem de 5.000 UFPAs, paginação de 50 | < 3s | **0.076s** | `time.monotonic()` |
 | Queries de `GET /api/v1/sgp/plano-trabalho/painel/` (5 vs. 30 Ações na mesma Meta) | constante | **5 queries em ambos os casos** | `CaptureQueriesContext` |
 
 > Medido via `docker compose exec backend pytest apps/sgp/tests/test_workplan_performance.py -v -s` (suíte completa, incluindo `test_workplan.py`, passando 100%). Todos os RNFs foram atendidos com folga considerável em relação ao limite.
 
 ## Decisões Derivadas da Medição
 
-- Nenhum índice novo foi adicionado a `UPF` (além dos já existentes em `municipio`, `territorio`, `projeto`, `comunidade`). Caso `test_listagem_5000_upfs_sob_3s` não atinja o RNF neste ambiente, avaliar um índice em `criado_em` (usado no `ordering` padrão) ou um índice composto alinhado ao filtro exercitado no teste.
+- Nenhum índice novo foi adicionado a `UFPA` (além dos já existentes em `municipio`, `territorio`, `projeto`, `comunidade`). Caso `test_listagem_5000_ufpas_sob_3s` não atinja o RNF neste ambiente, avaliar um índice em `criado_em` (usado no `ordering` padrão) ou um índice composto alinhado ao filtro exercitado no teste.
 - `services/workplan_dashboard.py` (painel do PT) e `services/workplan_export.py` continuam calculando o progresso por requisição (`expressao_quantidade_realizada`, em `services/apuracao.py`, conforme a forma de apuração do Indicador), em vez de ler `quantidade_realizada` diretamente — esses endpoints filtram o progresso por escopo territorial do usuário, algo que o campo materializado (global, sem escopo) não captura. O campo `quantidade_realizada` resolve o N+1 dos consumidores "crus" da Ação (serializer padrão, admin, `WorkPlanMetaViewSet.list()` via `status_calculado`).
 - `manage.py verificar_progresso_acoes` reconcilia (corrige) as divergências por padrão; use `--check-only` para apenas detectá-las sem alterar o banco (útil em CI/monitoramento).
 

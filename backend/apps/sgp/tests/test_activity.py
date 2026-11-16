@@ -739,18 +739,18 @@ def test_detalhe_sem_criador_devolve_criado_por_nulo(auth_ugp, municipio_rn):
 
 
 @pytest.mark.django_db
-def test_detalhe_traz_upf_nos_membros_participantes(auth_ugp, municipio_rn):
-    from apps.sgp.tests.factories import MembroFactory, UPFFactory
+def test_detalhe_traz_ufpa_nos_membros_participantes(auth_ugp, municipio_rn):
+    from apps.sgp.tests.factories import MembroFactory, UFPAFactory
 
-    upf = UPFFactory(municipio=municipio_rn)
-    membro = MembroFactory(upf=upf)
+    ufpa = UFPAFactory(municipio=municipio_rn)
+    membro = MembroFactory(ufpa=ufpa)
     atividade = ActivityFactory(municipio=municipio_rn)
-    atividade.upfs_participantes.set([upf])
+    atividade.ufpas_participantes.set([ufpa])
     atividade.membros_participantes.set([membro])
 
     membros = auth_ugp.get(detail_url(atividade.pk)).data["membros_participantes"]
 
-    assert [m["upf"] for m in membros] == [upf.pk]
+    assert [m["ufpa"] for m in membros] == [ufpa.pk]
 
 
 # ===========================================================================

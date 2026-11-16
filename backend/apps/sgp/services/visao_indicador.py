@@ -75,7 +75,7 @@ class Granularidade:
 
 
 # A cadência mensal é a dos relatórios do SGP (curva S e fechamento mensal,
-# §7.4–§7.6). Outra granularidade entra aqui com o tamanho da fatia em meses.
+# §7.3 e §7.6). Outra granularidade entra aqui com o tamanho da fatia em meses.
 GRANULARIDADES = {
     "mes": Granularidade(meses=1),
     "trimestre": Granularidade(meses=3),

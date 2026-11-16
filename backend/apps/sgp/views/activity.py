@@ -18,7 +18,7 @@ from apps.core.models.audit_log import AuditLog
 from apps.core.permissions import IsAuthenticatedActiveAccess
 from apps.core.utils import get_config
 from apps.sgp.filters import ActivityFilter
-from apps.sgp.models import Activity, ActivityDocument, ActivityPhoto, ExportJob, UPF
+from apps.sgp.models import Activity, ActivityDocument, ActivityPhoto, ExportJob, UFPA
 from apps.sgp.models.activity import STATUS_CHOICES, TIPO_ATIVIDADE_CHOICES
 from apps.sgp.pagination import ActivityPagination
 from apps.sgp.serializers import (
@@ -30,7 +30,7 @@ from apps.sgp.serializers.activity import ActivityDetailRespostaSerializer
 from apps.sgp.serializers.exportacao import AtividadesExportQuerySerializer
 from apps.sgp.services.access import atividades_acessiveis_ao_usuario
 from apps.sgp.services.exportacao import exportar_sincrono
-from apps.sgp.tasks import sync_activity_to_google_calendar
+from apps.sgp.tasks import sync_google_calendar_event
 from apps.sgp.views.activity_documentos import ActivityDocumentMixin
 from apps.sgp.views.activity_foto import ActivityPhotoMixin
 from apps.sgp.views.exportacao import RESPOSTA_ARQUIVO, arquivo_response
@@ -85,8 +85,8 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
         ).prefetch_related(
             "equipe_adicional",
             Prefetch(
-                "upfs_participantes",
-                queryset=UPF.objects.select_related(
+                "ufpas_participantes",
+                queryset=UFPA.objects.select_related(
                     "municipio", "municipio__state", "territorio", "titular"
                 ),
             ),
@@ -205,7 +205,7 @@ class ActivityViewSet(ActivityPhotoMixin, ActivityDocumentMixin, viewsets.ModelV
         )
         instance.google_calendar_sync_status = "pendente"
         try:
-            sync_activity_to_google_calendar.delay(instance.pk)
+            sync_google_calendar_event.delay(instance.pk)
         except Exception:
             logger.exception(
                 "Falha ao enfileirar sync Google Calendar activity_id=%s.",

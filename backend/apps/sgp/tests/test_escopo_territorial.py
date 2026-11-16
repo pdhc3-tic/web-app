@@ -1,14 +1,14 @@
 """
 Matriz de isolamento territorial dos endpoints de listagem do SGP que usam
 `apps.sgp.services.access.scope_queryset`/`resolver_escopo` — a rede de
-segurança que garante que UPF, Atividade, Técnico, Ação e Meta do Plano de
+segurança que garante que UFPA, Atividade, Técnico, Ação e Meta do Plano de
 Trabalho nunca vazam dado entre territórios/estados.
 
-Os recursos aninhados sob uma UPF específica (documentos, produção,
+Os recursos aninhados sob uma UFPA específica (documentos, produção,
 membros, formulários) não têm forma de lista territorialmente filtrada —
-dependem de resolver a UPF-pai dentro do escopo do usuário via
+dependem de resolver a UFPA-pai dentro do escopo do usuário via
 `get_object_or_404`, então o isolamento deles é testado à parte, pelo
-comportamento esperado (404 pra UPF fora do escopo), não pela matriz de IDs.
+comportamento esperado (404 pra UFPA fora do escopo), não pela matriz de IDs.
 """
 import pytest
 from rest_framework import status
@@ -18,7 +18,7 @@ from apps.core.tests.factories import RoleFactory, UserFactory
 from apps.sgp.tests.factories import (
     ActivityFactory,
     TecnicoFactory,
-    UPFFactory,
+    UFPAFactory,
     WorkPlanAcaoFactory,
     WorkPlanMetaFactory,
 )
@@ -26,18 +26,18 @@ from apps.sgp.tests.factories import (
 pytestmark = pytest.mark.django_db
 
 LIST_URLS = {
-    "upfs": "/api/v1/upfs/",
+    "ufpas": "/api/v1/sgp/ufpas/",
     "atividades": "/api/v1/sgp/atividades/",
     "tecnicos": "/api/v1/sgp/tecnicos/",
     "acoes": "/api/v1/acoes/",
     "metas": "/api/v1/metas/",
 }
 
-NESTED_UPF_URLS = {
-    "upf_documentos": "/api/v1/upfs/{upf_pk}/documentos/",
-    "upf_producao": "/api/v1/upfs/{upf_pk}/producao/",
-    "upf_membros": "/api/v1/sgp/upfs/{upf_pk}/membros/",
-    "upf_formularios": "/api/v1/sgp/upfs/{upf_pk}/formularios/",
+NESTED_UFPA_URLS = {
+    "ufpa_documentos": "/api/v1/sgp/ufpas/{ufpa_pk}/documentos/",
+    "ufpa_producao": "/api/v1/sgp/ufpas/{ufpa_pk}/producao/",
+    "ufpa_membros": "/api/v1/sgp/ufpas/{ufpa_pk}/membros/",
+    "ufpa_formularios": "/api/v1/sgp/ufpas/{ufpa_pk}/formularios/",
 }
 
 
@@ -46,7 +46,7 @@ def _ids(response):
 
 
 def _entidade(municipio, territorio, projeto, *, numero_meta):
-    """Cria uma UPF, uma Atividade (com sua Ação/Meta) e um Técnico, todos no
+    """Cria uma UFPA, uma Atividade (com sua Ação/Meta) e um Técnico, todos no
     mesmo município/território — usados pra montar os dois lados (RN/CE) da
     matriz. A Atividade tem `acao` explícita pra a Ação/Meta ficarem no
     mesmo escopo territorial dela (Ação/Meta não têm território próprio,
@@ -55,7 +55,7 @@ def _entidade(municipio, territorio, projeto, *, numero_meta):
     acao = WorkPlanAcaoFactory(meta=meta, numero=f"{numero_meta}.1")
     atividade = ActivityFactory(acao=acao, municipio=municipio)
     return {
-        "upfs": UPFFactory(municipio=municipio, projeto=projeto, territorio=territorio),
+        "ufpas": UFPAFactory(municipio=municipio, projeto=projeto, territorio=territorio),
         "atividades": atividade,
         "tecnicos": TecnicoFactory(territorio=territorio),
         "acoes": acao,
@@ -73,7 +73,7 @@ def entidade_ce(municipio_ce, territory_ce, projeto):
     return _entidade(municipio_ce, territory_ce, projeto, numero_meta=2)
 
 
-ENDPOINTS = ["upfs", "atividades", "tecnicos", "acoes", "metas"]
+ENDPOINTS = ["ufpas", "atividades", "tecnicos", "acoes", "metas"]
 
 
 # ===========================================================================
@@ -189,19 +189,19 @@ def test_usuario_sem_territorio_nao_vaza(endpoint, entidade_rn, entidade_ce, api
 
 
 # ===========================================================================
-# 7 — recursos aninhados sob UPF (documentos, produção, membros,
+# 7 — recursos aninhados sob UFPA (documentos, produção, membros,
 # formulários): sem lista territorial própria, dependem de resolver a
-# UPF-pai no escopo do usuário — fora do escopo dá 404, não lista vazia.
+# UFPA-pai no escopo do usuário — fora do escopo dá 404, não lista vazia.
 # ===========================================================================
 
-@pytest.mark.parametrize("recurso", list(NESTED_UPF_URLS))
-def test_recursos_aninhados_sob_upf_fora_do_territorio_dao_404(
+@pytest.mark.parametrize("recurso", list(NESTED_UFPA_URLS))
+def test_recursos_aninhados_sob_ufpa_fora_do_territorio_dao_404(
     recurso, entidade_rn, entidade_ce, auth_client_adt_rn,
 ):
-    url_fora = NESTED_UPF_URLS[recurso].format(upf_pk=entidade_ce["upfs"].pk)
+    url_fora = NESTED_UFPA_URLS[recurso].format(ufpa_pk=entidade_ce["ufpas"].pk)
     response_fora = auth_client_adt_rn.get(url_fora)
     assert response_fora.status_code == status.HTTP_404_NOT_FOUND
 
-    url_dentro = NESTED_UPF_URLS[recurso].format(upf_pk=entidade_rn["upfs"].pk)
+    url_dentro = NESTED_UFPA_URLS[recurso].format(ufpa_pk=entidade_rn["ufpas"].pk)
     response_dentro = auth_client_adt_rn.get(url_dentro)
     assert response_dentro.status_code == status.HTTP_200_OK

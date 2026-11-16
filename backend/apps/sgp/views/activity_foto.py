@@ -1,7 +1,7 @@
 """
 View de fotos vinculadas a atividades do SGP.
 
-Fluxo de upload em duas etapas (mesmo padrão UPFPhotoMixin):
+Fluxo de upload em duas etapas (mesmo padrão UFPAPhotoMixin):
   1. POST /api/v1/sgp/atividades/{id}/fotos/upload-url/
      → retorna URL presignada PUT para o R2
   2. POST /api/v1/sgp/atividades/{id}/fotos/confirm/

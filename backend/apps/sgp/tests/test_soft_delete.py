@@ -3,22 +3,22 @@ Testes do soft-delete unificado (Issue #267).
 
 Cobre a tabela de testes da issue: manager padrão exclui inativos,
 `all_objects` dá acesso completo, `has_evidencias()` mantém o comportamento e
-o endpoint de histórico da UPF continua enxergando UPFs inativas.
+o endpoint de histórico da UFPA continua enxergando UFPAs inativas.
 """
 import pytest
 
-from apps.sgp.models import Activity, ActivityDocument, ActivityPhoto, UPF
-from apps.sgp.tests.factories import ActivityFactory, UPFFactory
+from apps.sgp.models import Activity, ActivityDocument, ActivityPhoto, UFPA
+from apps.sgp.tests.factories import ActivityFactory, UFPAFactory
 
 pytestmark = pytest.mark.django_db
 
 
 class TestManagerPadraoExcluiInativos:
-    def test_upf(self, municipio_rn, projeto):
-        UPFFactory(municipio=municipio_rn, projeto=projeto, ativo=True)
-        UPFFactory(municipio=municipio_rn, projeto=projeto, ativo=False)
-        assert UPF.objects.count() == 1
-        assert UPF.objects.get().ativo is True
+    def test_ufpa(self, municipio_rn, projeto):
+        UFPAFactory(municipio=municipio_rn, projeto=projeto, ativo=True)
+        UFPAFactory(municipio=municipio_rn, projeto=projeto, ativo=False)
+        assert UFPA.objects.count() == 1
+        assert UFPA.objects.get().ativo is True
 
     def test_activity(self, municipio_rn):
         ActivityFactory(municipio=municipio_rn, ativo=True)
@@ -70,10 +70,10 @@ class TestManagerPadraoExcluiInativos:
 
 
 class TestAllObjectsTrazTudo:
-    def test_upf(self, municipio_rn, projeto):
-        UPFFactory(municipio=municipio_rn, projeto=projeto, ativo=True)
-        UPFFactory(municipio=municipio_rn, projeto=projeto, ativo=False)
-        assert UPF.all_objects.count() == 2
+    def test_ufpa(self, municipio_rn, projeto):
+        UFPAFactory(municipio=municipio_rn, projeto=projeto, ativo=True)
+        UFPAFactory(municipio=municipio_rn, projeto=projeto, ativo=False)
+        assert UFPA.all_objects.count() == 2
 
     def test_activity(self, municipio_rn):
         ActivityFactory(municipio=municipio_rn, ativo=True)
@@ -110,14 +110,14 @@ class TestAllObjectsTrazTudo:
 
 
 class TestMigracaoPreservaDados:
-    """Rename `ativa -> ativo` (UPF e ActivityPhoto): a coluna renomeada
+    """Rename `ativa -> ativo` (UFPA e ActivityPhoto): a coluna renomeada
     preserva o valor e o atributo antigo deixa de existir no model."""
 
-    def test_upf(self, municipio_rn, projeto):
-        upf = UPFFactory(municipio=municipio_rn, projeto=projeto, ativo=False)
-        upf.refresh_from_db()
-        assert upf.ativo is False
-        assert not hasattr(upf, "ativa")
+    def test_ufpa(self, municipio_rn, projeto):
+        ufpa = UFPAFactory(municipio=municipio_rn, projeto=projeto, ativo=False)
+        ufpa.refresh_from_db()
+        assert ufpa.ativo is False
+        assert not hasattr(ufpa, "ativa")
 
     def test_activity_photo(self, municipio_rn):
         atividade = ActivityFactory(municipio=municipio_rn)
@@ -169,8 +169,8 @@ class TestHasEvidenciasAposUnificacao:
 
 
 class TestHistoricoVeInativos:
-    def test_historico_de_upf_inativa_retorna_200(
-        self, auth_client, upf_inativa
+    def test_historico_de_ufpa_inativa_retorna_200(
+        self, auth_client, ufpa_inativa
     ):
-        response = auth_client.get(f"/api/v1/upfs/{upf_inativa.pk}/historico/")
+        response = auth_client.get(f"/api/v1/sgp/ufpas/{ufpa_inativa.pk}/historico/")
         assert response.status_code == 200

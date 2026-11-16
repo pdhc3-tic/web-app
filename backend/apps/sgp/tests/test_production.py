@@ -6,19 +6,19 @@ from apps.sgp.tests.factories import (
     CulturaFactory,
     EspecieAnimalFactory,
     ProductionFactory,
-    UPFFactory,
+    UFPAFactory,
 )
 
 
 pytestmark = pytest.mark.django_db
 
 
-def producao_url(upf):
-    return f"/api/v1/upfs/{upf.pk}/producao/"
+def producao_url(ufpa):
+    return f"/api/v1/sgp/ufpas/{ufpa.pk}/producao/"
 
 
-def producao_detail_url(upf, production):
-    return f"/api/v1/upfs/{upf.pk}/producao/{production.pk}/"
+def producao_detail_url(ufpa, production):
+    return f"/api/v1/sgp/ufpas/{ufpa.pk}/producao/{production.pk}/"
 
 
 def response_results(response):
@@ -70,11 +70,11 @@ def outra_payload(**overrides):
     return payload
 
 
-def test_create_producao_agricola_with_cultura(auth_client, upf):
+def test_create_producao_agricola_with_cultura(auth_client, ufpa):
     cultura = CulturaFactory(nome="Milho", categoria="graos")
 
     response = auth_client.post(
-        producao_url(upf),
+        producao_url(ufpa),
         agricultura_payload(cultura),
         format="json",
     )
@@ -89,9 +89,9 @@ def test_create_producao_agricola_with_cultura(auth_client, upf):
     assert response.data["especie"] is None
 
 
-def test_create_producao_agricola_without_cultura_returns_400(auth_client, upf):
+def test_create_producao_agricola_without_cultura_returns_400(auth_client, ufpa):
     response = auth_client.post(
-        producao_url(upf),
+        producao_url(ufpa),
         {"tipo": "agricola"},
         format="json",
     )
@@ -100,12 +100,12 @@ def test_create_producao_agricola_without_cultura_returns_400(auth_client, upf):
     assert "cultura_id" in response.data
 
 
-def test_create_producao_agricola_with_especie_returns_400(auth_client, upf):
+def test_create_producao_agricola_with_especie_returns_400(auth_client, ufpa):
     cultura = CulturaFactory()
     especie = EspecieAnimalFactory()
 
     response = auth_client.post(
-        producao_url(upf),
+        producao_url(ufpa),
         agricultura_payload(cultura, especie_id=especie.pk),
         format="json",
     )
@@ -114,11 +114,11 @@ def test_create_producao_agricola_with_especie_returns_400(auth_client, upf):
     assert "especie_id" in response.data
 
 
-def test_create_producao_pecuaria_with_especie(auth_client, upf):
+def test_create_producao_pecuaria_with_especie(auth_client, ufpa):
     especie = EspecieAnimalFactory(nome="Caprino", categoria="caprino")
 
     response = auth_client.post(
-        producao_url(upf),
+        producao_url(ufpa),
         pecuaria_payload(especie),
         format="json",
     )
@@ -133,9 +133,9 @@ def test_create_producao_pecuaria_with_especie(auth_client, upf):
     assert response.data["cultura"] is None
 
 
-def test_create_producao_pecuaria_without_especie_returns_400(auth_client, upf):
+def test_create_producao_pecuaria_without_especie_returns_400(auth_client, ufpa):
     response = auth_client.post(
-        producao_url(upf),
+        producao_url(ufpa),
         {"tipo": "pecuaria"},
         format="json",
     )
@@ -144,12 +144,12 @@ def test_create_producao_pecuaria_without_especie_returns_400(auth_client, upf):
     assert "especie_id" in response.data
 
 
-def test_create_producao_pecuaria_with_cultura_returns_400(auth_client, upf):
+def test_create_producao_pecuaria_with_cultura_returns_400(auth_client, ufpa):
     especie = EspecieAnimalFactory()
     cultura = CulturaFactory()
 
     response = auth_client.post(
-        producao_url(upf),
+        producao_url(ufpa),
         pecuaria_payload(especie, cultura_id=cultura.pk),
         format="json",
     )
@@ -158,9 +158,9 @@ def test_create_producao_pecuaria_with_cultura_returns_400(auth_client, upf):
     assert "cultura_id" in response.data
 
 
-def test_create_producao_outra_with_tipo(auth_client, upf):
+def test_create_producao_outra_with_tipo(auth_client, ufpa):
     response = auth_client.post(
-        producao_url(upf),
+        producao_url(ufpa),
         outra_payload(),
         format="json",
     )
@@ -172,9 +172,9 @@ def test_create_producao_outra_with_tipo(auth_client, upf):
     assert response.data["especie"] is None
 
 
-def test_create_producao_outra_without_tipo_outra_returns_400(auth_client, upf):
+def test_create_producao_outra_without_tipo_outra_returns_400(auth_client, ufpa):
     response = auth_client.post(
-        producao_url(upf),
+        producao_url(ufpa),
         {"tipo": "outra"},
         format="json",
     )
@@ -183,11 +183,11 @@ def test_create_producao_outra_without_tipo_outra_returns_400(auth_client, upf):
     assert "tipo_outra" in response.data
 
 
-def test_create_producao_outra_with_cultura_returns_400(auth_client, upf):
+def test_create_producao_outra_with_cultura_returns_400(auth_client, ufpa):
     cultura = CulturaFactory()
 
     response = auth_client.post(
-        producao_url(upf),
+        producao_url(ufpa),
         outra_payload(cultura_id=cultura.pk),
         format="json",
     )
@@ -196,11 +196,11 @@ def test_create_producao_outra_with_cultura_returns_400(auth_client, upf):
     assert "cultura_id" in response.data
 
 
-def test_create_producao_outra_with_especie_returns_400(auth_client, upf):
+def test_create_producao_outra_with_especie_returns_400(auth_client, ufpa):
     especie = EspecieAnimalFactory()
 
     response = auth_client.post(
-        producao_url(upf),
+        producao_url(ufpa),
         outra_payload(especie_id=especie.pk),
         format="json",
     )
@@ -209,30 +209,30 @@ def test_create_producao_outra_with_especie_returns_400(auth_client, upf):
     assert "especie_id" in response.data
 
 
-def test_list_producao_only_returns_for_correct_upf(auth_client, upf, outra_upf):
-    own_production = ProductionFactory(upf=upf)
-    ProductionFactory(upf=outra_upf)
+def test_list_producao_only_returns_for_correct_ufpa(auth_client, ufpa, outra_ufpa):
+    own_production = ProductionFactory(ufpa=ufpa)
+    ProductionFactory(ufpa=outra_ufpa)
 
-    response = auth_client.get(producao_url(upf))
+    response = auth_client.get(producao_url(ufpa))
 
     assert response.status_code == 200
     ids = {item["id"] for item in response_results(response)}
     assert ids == {own_production.pk}
 
 
-def test_cross_upf_producao_returns_404(auth_client, upf, outra_upf):
-    other_production = ProductionFactory(upf=outra_upf)
+def test_cross_ufpa_producao_returns_404(auth_client, ufpa, outra_ufpa):
+    other_production = ProductionFactory(ufpa=outra_ufpa)
 
-    response = auth_client.get(producao_detail_url(upf, other_production))
+    response = auth_client.get(producao_detail_url(ufpa, other_production))
 
     assert response.status_code == 404
 
 
-def test_serializer_expands_cultura_object(auth_client, upf):
+def test_serializer_expands_cultura_object(auth_client, ufpa):
     cultura = CulturaFactory(nome="Feijão", categoria="graos")
-    production = ProductionFactory(upf=upf, cultura=cultura)
+    production = ProductionFactory(ufpa=ufpa, cultura=cultura)
 
-    response = auth_client.get(producao_detail_url(upf, production))
+    response = auth_client.get(producao_detail_url(ufpa, production))
 
     assert response.status_code == 200
     assert response.data["cultura"] == {
@@ -242,16 +242,16 @@ def test_serializer_expands_cultura_object(auth_client, upf):
     }
 
 
-def test_serializer_expands_especie_object(auth_client, upf):
+def test_serializer_expands_especie_object(auth_client, ufpa):
     especie = EspecieAnimalFactory(nome="Ovino", categoria="ovino")
     production = Production.objects.create(
-        upf=upf,
+        ufpa=ufpa,
         tipo=Production.TIPO_PECUARIA,
         especie=especie,
         n_matrizes=5,
     )
 
-    response = auth_client.get(producao_detail_url(upf, production))
+    response = auth_client.get(producao_detail_url(ufpa, production))
 
     assert response.status_code == 200
     assert response.data["especie"] == {
@@ -261,17 +261,17 @@ def test_serializer_expands_especie_object(auth_client, upf):
     }
 
 
-def test_create_producao_for_inactive_upf_returns_400(auth_client, upf_inativa):
+def test_create_producao_for_inactive_ufpa_returns_400(auth_client, ufpa_inativa):
     cultura = CulturaFactory()
 
     response = auth_client.post(
-        producao_url(upf_inativa),
+        producao_url(ufpa_inativa),
         agricultura_payload(cultura),
         format="json",
     )
 
     assert response.status_code == 400
-    assert "UPF inativa" in str(response.data)
+    assert "UFPA inativa" in str(response.data)
 
 
 def test_adt_other_territory_cannot_create_producao(
@@ -280,7 +280,7 @@ def test_adt_other_territory_cannot_create_producao(
     municipio_ce,
     territory_ce,
 ):
-    upf_ce = UPFFactory(
+    ufpa_ce = UFPAFactory(
         projeto=projeto,
         municipio=municipio_ce,
         territorio=territory_ce,
@@ -289,7 +289,7 @@ def test_adt_other_territory_cannot_create_producao(
     cultura = CulturaFactory()
 
     response = auth_client_adt_rn.post(
-        producao_url(upf_ce),
+        producao_url(ufpa_ce),
         agricultura_payload(cultura),
         format="json",
     )
@@ -297,22 +297,22 @@ def test_adt_other_territory_cannot_create_producao(
     assert response.status_code == 404
 
 
-def test_audit_log_on_producao_changes(auth_client, upf):
+def test_audit_log_on_producao_changes(auth_client, ufpa):
     cultura = CulturaFactory()
 
     create_response = auth_client.post(
-        producao_url(upf),
+        producao_url(ufpa),
         agricultura_payload(cultura),
         format="json",
     )
     production_id = create_response.data["id"]
 
     auth_client.patch(
-        f"/api/v1/upfs/{upf.pk}/producao/{production_id}/",
+        f"/api/v1/sgp/ufpas/{ufpa.pk}/producao/{production_id}/",
         {"observacoes": "Observação atualizada"},
         format="json",
     )
-    auth_client.delete(f"/api/v1/upfs/{upf.pk}/producao/{production_id}/")
+    auth_client.delete(f"/api/v1/sgp/ufpas/{ufpa.pk}/producao/{production_id}/")
 
     for action in [
         "production.create",

@@ -54,7 +54,7 @@ FiltroAtividades = Callable[[str], Q]
 # Formas por soma de participantes distintos: tabela de vínculo com a
 # Atividade e coluna contada.
 _VINCULOS_POR_FORMA = {
-    FORMA_SOMA_UFPAS: (Activity.upfs_participantes.through, "upf_id"),
+    FORMA_SOMA_UFPAS: (Activity.ufpas_participantes.through, "ufpa_id"),
     FORMA_SOMA_PARTICIPANTES: (Activity.membros_participantes.through, "membrofamilia_id"),
 }
 
