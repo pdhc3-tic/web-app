@@ -11243,9 +11243,8 @@ components:
       - valor_faltante
     BudgetAlert:
       type: object
-      description: |-
-        `alvo` vem do contexto `alvos` (pk do alerta → alvo), montado para a página inteira; nulo quando o
-        alvo foi apagado.
+      description: Alerta orçamentário com o alvo identificado; `alvo` é nulo quando
+        o alvo foi apagado.
       properties:
         id:
           type: integer
@@ -18650,8 +18649,7 @@ components:
       - $ref: '#/components/schemas/ActivityDetailResposta'
     RemanejamentoCreateRequest:
       type: object
-      description: 'A simulação não grava nada: dispensa a justificativa, que só a
-        confirmação pede.'
+      description: O remanejamento confirmado, com a justificativa que fica no ledger.
       properties:
         origem_allocation:
           type: integer

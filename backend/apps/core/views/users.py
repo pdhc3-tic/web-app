@@ -15,7 +15,7 @@ from apps.core.models import Role, User, UserProfile
 from apps.core.permissions import IsSuperAdmin
 from apps.core.serializers import ImpactoDesativacaoSerializer, UserDetailSerializer, UserListSerializer
 from apps.core.services.audit import log_audit
-from apps.core.services.usuarios import SUPER_ADMIN, desativar, e_super_admin, exigir_outro_super_admin_ativo
+from apps.core.services.usuarios import SUPER_ADMIN, desativar, e_super_admin, exigir_super_admin_restante
 
 
 logger = logging.getLogger(__name__)
@@ -137,7 +137,7 @@ class UserViewSet(viewsets.ModelViewSet):
         desativando = serializer.instance.ativo and serializer.validated_data.get("ativo") is False
         with transaction.atomic():
             if not desativando and self._tira_o_perfil_super_admin(serializer):
-                exigir_outro_super_admin_ativo(serializer.instance)
+                exigir_super_admin_restante(sem_usuarios=[serializer.instance.pk], campo="perfis_input")
             # Depois da desativação: trocar o e-mail, coluna única, barra a checagem de FK de
             # quem segura o limite que o cancelamento precisa, e as duas transações se esperariam.
             if desativando:
@@ -199,14 +199,20 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["patch"], url_path="revogar-acesso")
     def revogar_acesso(self, request, pk=None):
         instance = self.get_object()
-        instance.acesso_revogado = True
-        instance.acesso_revogado_em = timezone.now()
-        instance.acesso_revogado_por = request.user
-        instance.save(update_fields=[
-            "acesso_revogado",
-            "acesso_revogado_em",
-            "acesso_revogado_por",
-        ])
+        if instance.pk == request.user.pk:
+            raise serializers.ValidationError({"acesso_revogado": ["Você não pode revogar o próprio acesso."]})
+        with transaction.atomic():
+            # Super Admin sem acesso não entra: revogar o último deixa o sistema sem quem reative contas.
+            if e_super_admin(instance):
+                exigir_super_admin_restante(sem_usuarios=[instance.pk], campo="acesso_revogado")
+            instance.acesso_revogado = True
+            instance.acesso_revogado_em = timezone.now()
+            instance.acesso_revogado_por = request.user
+            instance.save(update_fields=[
+                "acesso_revogado",
+                "acesso_revogado_em",
+                "acesso_revogado_por",
+            ])
         revoked = self._invalidate_all_sessions(instance)
         log_audit(
             user=request.user,

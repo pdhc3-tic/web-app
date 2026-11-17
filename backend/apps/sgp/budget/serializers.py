@@ -5,6 +5,7 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.core.models import Role, State, Territory, User
+from apps.core.serializers import PERIODICIDADES_DO_LIMITE
 from apps.sgp.budget.ledger import efeito_no_saldo
 from apps.sgp.budget.limites import PERFIS_OPERACIONAIS
 from apps.sgp.models import BudgetAlert, BudgetPool, BudgetRubrica, BudgetTransaction, SpendingLimit, WorkPlanMeta
@@ -155,6 +156,8 @@ class RemanejamentoSimulacaoSerializer(serializers.Serializer):
 
 
 class RemanejamentoCreateSerializer(RemanejamentoSimulacaoSerializer):
+    """O remanejamento confirmado, com a justificativa que fica no ledger."""
+
     justificativa = serializers.CharField()
 
 
@@ -228,9 +231,9 @@ class AlvoDoAlertaSerializer(serializers.Serializer):
 
 
 class BudgetAlertSerializer(serializers.ModelSerializer):
-    """`alvo` vem do contexto `alvos` (pk do alerta → alvo), montado para a página inteira; nulo quando o
-    alvo foi apagado."""
+    """Alerta orçamentário com o alvo identificado; `alvo` é nulo quando o alvo foi apagado."""
 
+    # O alvo vem do contexto `alvos` (pk do alerta → alvo), montado de uma vez para a página.
     rubrica_nome = serializers.CharField(source="rubrica.nome", read_only=True, allow_null=True)
     alvo = serializers.SerializerMethodField()
 
@@ -369,7 +372,7 @@ class PeriodoDosLimitesQuerySerializer(serializers.Serializer):
 class PeriodoDosLimitesSerializer(serializers.Serializer):
     inicio = serializers.DateField()
     fim = serializers.DateField()
-    periodicidade = serializers.ChoiceField(choices=["mensal", "trimestral", "semestral", "vigencia"])
+    periodicidade = serializers.ChoiceField(choices=list(PERIODICIDADES_DO_LIMITE))
 
 
 class PessoasComLimiteQuerySerializer(serializers.Serializer):

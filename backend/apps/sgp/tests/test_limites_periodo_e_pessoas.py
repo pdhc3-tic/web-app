@@ -116,3 +116,17 @@ class TestPessoas:
     @pytest.mark.parametrize("cliente", ["auth_client_adt_rn", "auth_client_articulador_rn", "auth_client_fgd"])
     def test_outros_perfis_recebem_403(self, request, cliente):
         assert request.getfixturevalue(cliente).get(PESSOAS_URL).status_code == 403
+
+
+def test_core_valida_as_mesmas_periodicidades_e_padroes_que_o_sgp_usa():
+    """O Core valida `budget_*` sem importar o SGP: as cópias precisam bater."""
+    from apps.core.serializers import LIMIARES_DO_SEMAFORO, PERIODICIDADES_DO_LIMITE
+    from apps.sgp.budget import limites
+    from apps.sgp.budget.services import LIMIAR_SEMAFORO_AMARELO_PADRAO, LIMIAR_SEMAFORO_VERMELHO_PADRAO
+
+    assert set(PERIODICIDADES_DO_LIMITE) == {*limites.MESES_POR_PERIODO, "vigencia"}
+    assert limites.PERIODO_PADRAO in PERIODICIDADES_DO_LIMITE
+    assert LIMIARES_DO_SEMAFORO == {
+        "budget_alert_yellow_pct": LIMIAR_SEMAFORO_AMARELO_PADRAO,
+        "budget_alert_red_pct": LIMIAR_SEMAFORO_VERMELHO_PADRAO,
+    }

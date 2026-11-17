@@ -131,8 +131,9 @@ As transições de status passam por `apps.sgd.services.workflow.executar_transi
 | Pré-autorização, devolução, início do atendimento | Só a `Demand` |
 | Importação do Arlo, por linha | Limite → pool da solicitação paga → `Demand` (status relido) → `DemandRequest`. Cada linha numa transação própria. A última linha conclui a demanda sem travar mais saldo, porque já está tudo pago |
 | Cancelamento automático por atividade (`tasks.py`) | `liberar_duas_travas_em_lote`: por rubrica, todas as linhas de limite e depois todos os pools; só então as `Demand`, em ordem de pk, e por fim as `DemandRequest`. Se uma demanda mudou, a transação volta e a task é repetida (até 3 vezes) |
-| Desativação de usuário (`core.services.usuarios.desativar`) | Grava `ativo` na linha do usuário, sem conflito com a checagem de FK, e segue como o cancelamento em lote, só para demandas não autorizadas. Os outros campos do usuário são gravados por último: trocar o e-mail, coluna única, conflita com essa checagem. Se uma demanda mudou para fora desses status, a transação inteira volta com `INVALID_TRANSITION`, sem repetição automática |
-| Edição do cadastro do usuário (`PATCH /users/{id}/`) | Só a linha do usuário. Trocar o e-mail sobe esse lock para `FOR UPDATE`, sem esperar nenhuma linha de saldo depois |
+| Desativação de usuário (`core.services.usuarios.desativar`) | Se o usuário é Super Admin, primeiro as linhas de todos os Super Admins, em ordem de pk (`travar_super_admins`), para conferir que sobra outro. Depois grava `ativo` na linha do usuário, sem conflito com a checagem de FK, e segue como o cancelamento em lote, só para demandas não autorizadas. Os outros campos do usuário são gravados por último: trocar o e-mail, coluna única, conflita com essa checagem. Se uma demanda mudou para fora desses status, a transação inteira volta com `INVALID_TRANSITION`, sem repetição automática |
+| Edição do cadastro do usuário (`PATCH /users/{id}/`) | Só a linha do usuário. Trocar o e-mail sobe esse lock para `FOR UPDATE`, sem esperar nenhuma linha de saldo depois. Quando tira o perfil Super Admin, trava antes as linhas de todos os Super Admins, em ordem de pk, como a desativação |
+| Revogação de acesso, perfis pelo Django Admin, exclusão de usuário ou vínculo pelo Admin | Quando tira um Super Admin, as linhas de todos os Super Admins, em ordem de pk, antes de gravar qualquer linha de usuário. Sem saldo depois |
 | Edição da demanda; inclusão de solicitação | Só a `Demand`. A inclusão grava depois os anexos dos campos (`DemandDocument`) |
 | Edição e remoção de solicitação | Limite → pool (se há reserva) → `Demand` → `DemandRequest` → `DemandDocument` (anexos ligados ou removidos); a edição relê a reserva já com o limite travado |
 | Envio (confirmação) e remoção de documento da demanda | Só a `Demand`, com o status relido, e depois o `DemandDocument`. A confirmação consulta o storage antes do lock |
@@ -166,6 +167,15 @@ A tarefa `reconcile_budget_balances` roda a mesma checagem toda noite e notifica
 `BudgetAlert` segue o modelo de dados do SGP (`escopo`, `referencia_id`, `rubrica`, `faixa`, `percentual_atingido`, `alertado_em`, `usuarios_alertados_ids`), mais `tipo`, `criado_em` e `resolvido_em`. `criado_em` não muda depois da criação; `alertado_em` guarda a última entrada numa faixa. Cada alvo tem no máximo um alerta aberto por tipo. Os alertas por rubrica, de subexecução e de remanejamento excessivo, usam o pool nacional dela como alvo.
 
 As faixas do semáforo são parametrizáveis: `budget_alert_yellow_pct` (amarelo, padrão 70) e `budget_alert_red_pct` (vermelho, padrão 90), no `SystemConfig`, semeadas pela migration `core/0021`. `limiares_semaforo()` lê os dois valores e `faixa_semaforo()` aplica `>= vermelho` e depois `>= amarelo`. Mudar a configuração muda a cor e os alertas sem deploy. O painel devolve os limiares em vigor em `limiares_semaforo`, porque nem todo perfil lê o `/system-config/`.
+
+`PATCH /system-config/{chave}/` e o Django Admin validam os parâmetros do orçamento, com 400 em `valor`. Os documentos não definem faixas; as de `budget_limit_period` e das três chaves do alerta são as que o front já usava. Os limiares do semáforo também vão de 1 a 100, e o amarelo precisa ficar abaixo do vermelho, para a faixa amarela existir. A conferência usa o valor gravado do outro limiar, com as duas linhas travadas, então subir os dois acima do vermelho atual pede mudar o vermelho primeiro.
+
+| Chave | Aceita |
+|---|---|
+| `budget_limit_period` | `mensal`, `trimestral`, `semestral`, `vigencia` |
+| `budget_subexec_alert_months` | 1 a 24 |
+| `budget_subexec_min_pct`, `budget_transfer_alert_pct` | 1 a 100 |
+| `budget_alert_yellow_pct`, `budget_alert_red_pct` | 1 a 100, amarelo menor que vermelho |
 
 ## Endpoints HTTP
 
@@ -241,7 +251,7 @@ Só Super Admin e UGP. O padrão por perfil aceita só os perfis operacionais (A
 O `PATCH` recebe `valor_limite` e `justificativa`, obrigatória quando o valor muda. `/sgd/limites-individuais/` segue como alias, com o contrato antigo, para as linhas individuais do período vigente.
 
 Duas rotas de apoio à tela, também só de Super Admin e UGP:
-- `GET .../limites/periodo/?data=` devolve `{inicio, fim, periodicidade}` do período que contém a data (hoje, se omitida), pela mesma conta das linhas individuais. Um `budget_limit_period` desconhecido conta como `trimestral`.
+- `GET .../limites/periodo/?data=` devolve `{inicio, fim, periodicidade}` do período que contém a data (hoje, se omitida), pelo `budget_limit_period` atual: é o período em que uma linha individual nova nasceria. Uma linha que já existe não muda quando o parâmetro muda; se ele mudar no meio do período, as linhas vigentes podem cobrir outras datas. Um valor desconhecido conta como `trimestral`.
 - `GET .../limites/pessoas/?q=` lista, sem paginação e por nome, os usuários ativos com perfil ADT/ACR ou Articulador Estadual, os que recebem limite individual: `[{id, nome, perfis: [{slug, nome}]}]`. `q` busca no nome e no e-mail.
 
 ### `GET /api/v1/sgp/rubricas/?ativo=`
