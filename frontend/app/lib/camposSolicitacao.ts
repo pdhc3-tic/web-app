@@ -226,7 +226,9 @@ export const CONFIG_POR_TIPO: Record<TipoSolicitacao, ConfigTipo> = {
 };
 
 export function isTipoSolicitacao(tipo: string): tipo is TipoSolicitacao {
-  return tipo in CONFIG_POR_TIPO;
+  // Só as chaves próprias: com `in`, um slug como "constructor" passaria por um
+  // dos seis tipos de origem, sem configuração de campos.
+  return Object.prototype.hasOwnProperty.call(CONFIG_POR_TIPO, tipo);
 }
 
 function ehObjeto(v: unknown): v is Record<string, unknown> {

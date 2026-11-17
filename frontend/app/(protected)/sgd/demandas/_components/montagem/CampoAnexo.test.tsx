@@ -60,6 +60,7 @@ function Formulario({ contexto, inicial = {} }: { contexto?: Partial<ContextoAne
       contexto.onEnviado?.(doc);
     },
     onRetirado: (id) => contexto.onRetirado?.(id),
+    onEnviando: (ativo) => contexto.onEnviando?.(ativo),
   };
   return (
     <div>
@@ -120,6 +121,29 @@ describe("CampoAnexo (#365)", () => {
     await screen.findByText("fundos.pdf");
 
     expect(montarCamposJson(config, valoresNaTela())).toEqual({ reserva: 41, fotos: [42, 43] });
+  });
+
+  it("durante um envio não dá para retirar outro arquivo do campo, então nada retirado volta (#426)", async () => {
+    const onEnviando = vi.fn();
+    let concluir: (doc: { id: number; nome_original: string }) => void = () => {};
+    enviar.mockReturnValueOnce(new Promise((r) => (concluir = r)));
+    render(
+      <Formulario
+        contexto={{ onEnviando, nomes: { 11: "frente.pdf" } }}
+        inicial={{ fotos: "11" }}
+      />,
+    );
+
+    fireEvent.change(arquivoDo("fotos"), { target: { files: [pdf("fundos.pdf")] } });
+    const retirar = screen.getByRole("button", { name: "Retirar frente.pdf" }) as HTMLButtonElement;
+    await waitFor(() => expect(retirar.disabled).toBe(true));
+    expect(onEnviando).toHaveBeenLastCalledWith(true);
+
+    concluir({ id: 12, nome_original: "fundos.pdf" });
+    await screen.findByText("fundos.pdf");
+    expect(onEnviando).toHaveBeenLastCalledWith(false);
+    expect(retirar.disabled).toBe(false);
+    expect(valoresNaTela()).toEqual({ fotos: "11,12" });
   });
 
   it("recusa o que não é PDF sem enviar", () => {

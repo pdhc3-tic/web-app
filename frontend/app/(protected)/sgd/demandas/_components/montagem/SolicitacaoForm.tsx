@@ -99,6 +99,10 @@ export function SolicitacaoForm({
     ),
   );
   const anexosNaoSalvos = useRef(new Set<number>());
+  // Envios em curso seguram Salvar e a troca de tipo; um envio que termina depois
+  // de o formulário fechar é apagado na chegada, sem ficar solto na demanda.
+  const [enviandoAnexos, setEnviandoAnexos] = useState(0);
+  const encerrado = useRef(false);
 
   function descartarAnexos(ids: Iterable<number>) {
     for (const docId of [...ids]) {
@@ -113,6 +117,10 @@ export function SolicitacaoForm({
     demandaId: demanda.id,
     nomes: nomesAnexos,
     onEnviado: (doc: DocumentoDemanda) => {
+      if (encerrado.current) {
+        void removerDocumentoDemanda(demanda.id, doc.id).catch(() => {});
+        return;
+      }
       anexosNaoSalvos.current.add(doc.id);
       setNomesAnexos((prev) => ({ ...prev, [doc.id]: doc.nome_original }));
     },
@@ -120,9 +128,11 @@ export function SolicitacaoForm({
     onRetirado: (docId) => {
       if (anexosNaoSalvos.current.has(docId)) descartarAnexos([docId]);
     },
+    onEnviando: (ativo) => setEnviandoAnexos((n) => Math.max(0, n + (ativo ? 1 : -1))),
   };
 
   function fechar() {
+    encerrado.current = true;
     descartarAnexos(anexosNaoSalvos.current);
     onClose();
   }
@@ -157,6 +167,7 @@ export function SolicitacaoForm({
   }
 
   async function salvar() {
+    if (enviandoAnexos > 0) return;
     if (!tipo || !config) {
       setErros({ tipo: "Escolha o tipo da solicitação." });
       return;
@@ -206,10 +217,20 @@ export function SolicitacaoForm({
 
   const rodape = (
     <div className="flex items-center justify-end gap-2">
+      {enviandoAnexos > 0 && (
+        <span className="mr-auto text-sm text-text-muted" role="status">
+          Aguarde o envio do arquivo.
+        </span>
+      )}
       <Button variant="secondary" onClick={fechar} disabled={salvando}>
         Cancelar
       </Button>
-      <Button onClick={salvar} loading={salvando} disabled={!tipo} data-testid="solicitacao-salvar">
+      <Button
+        onClick={salvar}
+        loading={salvando}
+        disabled={!tipo || enviandoAnexos > 0}
+        data-testid="solicitacao-salvar"
+      >
         Salvar solicitação
       </Button>
     </div>
@@ -228,7 +249,7 @@ export function SolicitacaoForm({
             id="solicitacao-tipo"
             label="Tipo de solicitação"
             required
-            disabled={!catalogo.data}
+            disabled={!catalogo.data || enviandoAnexos > 0}
             placeholder={catalogo.isPending ? "Carregando tipos…" : undefined}
             options={(catalogo.data ?? []).filter((t) => t.ativo).map((t) => ({ value: t.slug, label: t.nome }))}
             value={tipo}

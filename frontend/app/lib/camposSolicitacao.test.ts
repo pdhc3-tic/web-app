@@ -3,6 +3,7 @@ import {
   camposVisiveis,
   configDoSchema,
   configDoTipo,
+  isTipoSolicitacao,
   montarCamposJson,
   problemasDoSchema,
   resumoSolicitacao,
@@ -19,6 +20,17 @@ import {
 
 const chaves = (tipo: string, valores = {}) =>
   camposVisiveis(configDoTipo(tipo), valores).map((c) => c.chave);
+
+describe("isTipoSolicitacao", () => {
+  it("reconhece só os seis tipos de origem, não as propriedades herdadas do objeto (#426)", () => {
+    expect(isTipoSolicitacao("diaria")).toBe(true);
+    for (const slug of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      expect(isTipoSolicitacao(slug)).toBe(false);
+      // Um slug desses no catálogo é um tipo novo, desenhado pelo schema.
+      expect(configDoTipo(slug, { type: "object", properties: {} }).campos).toEqual([]);
+    }
+  });
+});
 
 describe("camposVisiveis", () => {
   it("passagem: a volta só aparece com ida e volta = Sim", () => {

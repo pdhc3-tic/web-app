@@ -23,6 +23,8 @@ export type ContextoAnexo = {
   nomes: Record<number, string>;
   onEnviado: (documento: DocumentoDemanda) => void;
   onRetirado: (documentoId: number) => void;
+  /** Início e fim de um envio, para o formulário segurar Salvar e a troca de tipo. */
+  onEnviando?: (ativo: boolean) => void;
 };
 
 type Props = {
@@ -47,7 +49,8 @@ export function CampoAnexo({ campo, valor, onChange, error, contexto }: Props) {
   const [erroLocal, setErroLocal] = useState<string | null>(null);
 
   const ids = idsDoAnexo(valor);
-  const podeEnviar = !!contexto && progresso === null && (campo.multiplo || ids.length === 0);
+  const enviando = progresso !== null;
+  const podeEnviar = !!contexto && !enviando && (campo.multiplo || ids.length === 0);
 
   async function enviar(arquivo: File) {
     if (!contexto) return;
@@ -55,6 +58,7 @@ export function CampoAnexo({ campo, valor, onChange, error, contexto }: Props) {
     if (arquivo.size > DOCUMENTO_MAX_BYTES) return setErroLocal("O arquivo passa de 10 MB.");
     setErroLocal(null);
     setProgresso(0);
+    contexto.onEnviando?.(true);
     try {
       const documento = await enviarDocumentoDemanda(
         contexto.demandaId,
@@ -63,11 +67,14 @@ export function CampoAnexo({ campo, valor, onChange, error, contexto }: Props) {
         setProgresso,
       );
       contexto.onEnviado(documento);
+      // `ids` é o de quando o envio começou: retirar fica bloqueado durante o
+      // envio, então a lista não muda no meio e nada retirado volta (#426).
       onChange([...ids, documento.id].join(","));
     } catch (err) {
       setErroLocal(err instanceof ApiError ? err.message : "Não foi possível enviar o arquivo. Tente novamente.");
     } finally {
       setProgresso(null);
+      contexto.onEnviando?.(false);
       if (arquivoRef.current) arquivoRef.current.value = "";
     }
   }
@@ -117,8 +124,9 @@ export function CampoAnexo({ campo, valor, onChange, error, contexto }: Props) {
                 <button
                   type="button"
                   onClick={() => retirar(docId)}
+                  disabled={enviando}
                   aria-label={`Retirar ${nome}`}
-                  className="rounded p-1 text-text-muted hover:text-error-text"
+                  className="rounded p-1 text-text-muted hover:text-error-text disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <X className="h-4 w-4" />
                 </button>
