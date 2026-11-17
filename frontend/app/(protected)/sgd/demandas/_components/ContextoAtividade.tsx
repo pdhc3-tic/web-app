@@ -4,11 +4,9 @@ import { useRotuloChoice } from "@/app/providers/SgpChoicesProvider";
 import { Lock } from "lucide-react";
 import { Badge } from "@/app/components/ui/Badge/Badge";
 import { DefinitionList } from "@/app/components/ui/DefinitionList/DefinitionList";
-import {
-  badgeStatusFor,
-  type AtividadeDetail,
-} from "@/app/lib/atividades";
+import { badgeStatusFor } from "@/app/lib/atividades";
 import { formatDate } from "@/app/lib/datetime";
+import type { AtividadeElegivelDetalhe } from "@/app/lib/demandas";
 
 /**
  * Campo que a API ainda não entrega. Diz isso em vez de cair em "—", que
@@ -25,7 +23,7 @@ function NaoDisponivel() {
  *
  * Sem território ou sem um elo da cadeia, mostra "Não disponível".
  */
-export function ContextoAtividade({ atividade }: { atividade: AtividadeDetail }) {
+export function ContextoAtividade({ atividade }: { atividade: AtividadeElegivelDetalhe }) {
   const statusLabel = useRotuloChoice("status_atividade");
   const { meta, submeta, indicador } = atividade.acao;
 
@@ -56,7 +54,13 @@ export function ContextoAtividade({ atividade }: { atividade: AtividadeDetail })
             label: "Território",
             value: atividade.territorio?.nome ?? <NaoDisponivel />,
           },
-          { label: "Município", value: atividade.municipio.nome },
+          {
+            label: "Município",
+            // Com a UF: a atividade pode ser de outro estado (#361).
+            value: atividade.municipio.estado?.sigla
+              ? `${atividade.municipio.nome}/${atividade.municipio.estado.sigla}`
+              : atividade.municipio.nome,
+          },
           { label: "Comunidade", value: atividade.comunidade?.nome },
           { label: "Data prevista", value: formatDate(atividade.data_inicio) },
           { label: "Técnico", value: atividade.tecnico_responsavel.nome },

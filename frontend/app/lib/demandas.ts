@@ -1,4 +1,5 @@
 import { apiClient } from "@/app/lib/api";
+import type { Schema } from "@/app/lib/apiSchema";
 import type { BadgeStatus } from "@/app/components/ui/Badge/Badge";
 
 /**
@@ -34,6 +35,8 @@ export type ContextoDemanda = {
   territorio_nome: string | null;
   municipio_id: number;
   municipio_nome: string;
+  /** UF do município da atividade (#361) — pode diferir de `Demanda.estado_sigla`. */
+  municipio_estado_sigla: string;
   comunidade_id: number | null;
   comunidade_nome: string | null;
   data_prevista: string;
@@ -130,6 +133,12 @@ export type Demanda = {
   territorio_nome: string | null;
   /** A atividade acontece em outro estado que não o da demanda. */
   atividade_fora_do_territorio: boolean;
+  /**
+   * Articuladores Estaduais que analisam a demanda (#361): os ativos do
+   * `estado_sigla`, em ordem de nome. Lista porque um estado pode ter mais de
+   * um; vazia na demanda nacional.
+   */
+  articuladores: Articulador[];
   /** Decisões em ordem cronológica (pré-autorização, autorização, atendimento). */
   etapas: EtapaDemanda[];
   criado_em: string;
@@ -272,28 +281,23 @@ export async function criarDemanda(payload: NovaDemandaPayload): Promise<Demanda
   return res.json();
 }
 
-/** Item da busca do campo "Atividade" — subset de `ActivityListSerializer`. */
-export type AtividadeElegivel = {
-  id: number;
-  titulo: string;
-  status: string;
-  status_display: string;
-  data_inicio: string;
-  /** `MunicipioNestedSerializer`: o estado vem embutido (#226). */
-  municipio: { id: number; nome: string; estado?: { sigla: string } | null };
-  tecnico_nome?: string;
-};
+export type Articulador = Schema<"Articulador">;
+
+/** Item da busca do campo "Atividade" — `AtividadeElegivelSerializer`. */
+export type AtividadeElegivel = Schema<"AtividadeElegivel">;
 
 /**
- * GET /api/v1/sgp/atividades/?status=planejado&status=agendado&q={texto}
- * — atividades que aceitam demanda, para o campo com busca. `status`
- * repetido e `q` pelo título são do `ActivityFilter` (PR #328).
- *
- * Sem `tecnico_id` desde a #361: a demanda pode ser vinculada a qualquer
- * atividade, de outro técnico ou de outro estado (#352) — a abrangência vem
- * de quem cria. O recorte que sobra é o territorial da própria rota do SGP,
- * que ainda esconde as atividades de outros estados
- * (docs/pendencias-backend-sprint-12a.md).
+ * Detalhe da atividade escolhida, para o contexto herdado e as regras de
+ * status do formulário — `AtividadeElegivelDetalheSerializer`, com os nomes
+ * do detalhe do SGP. Qualquer status (o formulário mostra o bloqueio ou pede
+ * a justificativa de despesa posterior); o técnico vem sem e-mail.
+ */
+export type AtividadeElegivelDetalhe = Schema<"AtividadeElegivelDetalhe">;
+
+/**
+ * GET /api/v1/sgd/atividades-elegiveis/?status=planejado&status=agendado&q={texto}
+ * — atividades que aceitam demanda, de qualquer estado ou território (#361):
+ * a abrangência da demanda vem de quem cria, não da atividade (#352).
  */
 export async function buscarAtividadesElegiveis(
   params: { busca: string },
@@ -305,9 +309,40 @@ export async function buscarAtividadesElegiveis(
   qs.set("ordering", "data_inicio");
   qs.set("page_size", "20");
 
-  const res = await apiClient(`/api/v1/sgp/atividades/?${qs}`, { signal });
+  const res = await apiClient(`/api/v1/sgd/atividades-elegiveis/?${qs}`, { signal });
   const data: { results: AtividadeElegivel[] } = await res.json();
   return data.results;
+}
+
+/**
+ * GET /api/v1/sgd/atividades-elegiveis/{id}/ — no lugar do detalhe do SGP,
+ * que recorta pelo território de quem chama e daria 404 para a atividade de
+ * outro estado.
+ */
+export async function getAtividadeElegivel(
+  id: number | string,
+  signal?: AbortSignal,
+): Promise<AtividadeElegivelDetalhe> {
+  const res = await apiClient(`/api/v1/sgd/atividades-elegiveis/${id}/`, { signal });
+  return res.json();
+}
+
+/** Prévia da abrangência — `AbrangenciaPreviaSerializer`. */
+export type AbrangenciaPrevia = Schema<"AbrangenciaPrevia">;
+
+/**
+ * GET /api/v1/sgd/demandas/abrangencia/?activity_id= — estado, território e
+ * Articuladores que a demanda de quem chama vai receber ao ser criada, pela
+ * mesma regra da criação (#361). Sem `activity_id` (atividade criada junto),
+ * `atividade_fora_do_territorio` vem falso.
+ */
+export async function fetchAbrangenciaPrevia(
+  activityId: number | null,
+  signal?: AbortSignal,
+): Promise<AbrangenciaPrevia> {
+  const qs = activityId !== null ? `?activity_id=${activityId}` : "";
+  const res = await apiClient(`${DEMANDAS_PATH}abrangencia/${qs}`, { signal });
+  return res.json();
 }
 
 // ─── Painel de decisão (#296) ────────────────────────────────────────────────

@@ -27,6 +27,8 @@ Os cinco primeiros têm representação no JSON Schema que o backend já valida 
 
 ## 2. Busca de atividades de outros estados para vincular à demanda (#361)
 
+> **Resolvido no backend em 12/11/2026 pelo PR #422** (item 2 da #419): `GET /sgd/atividades-elegiveis/` e o detalhe `/sgd/atividades-elegiveis/{id}/`, sem recorte territorial, só Planejado e Agendado na busca. O formulário da nova demanda usa as duas rotas (branch `frontend/sprint-12c`), e o E2E da #361 acha a atividade de outro estado pela tela.
+
 O #352 (PR #416) passou a aceitar, na criação da demanda, uma `activity_id` de qualquer estado ou território: a abrangência vem do solicitante e a resposta traz `atividade_fora_do_territorio`. Mas não há por onde o ADT **encontrar** essa atividade. O campo de busca usa `GET /sgp/atividades/?status=planejado&status=agendado&q=`, e essa rota aplica `atividades_acessiveis_ao_usuario`, que recorta pelo território do usuário. Um ADT da PB nunca vê uma atividade do RN, e o E2E que a #361 pede (ADT da PB vincula atividade do RN) não tem como ser feito pela tela.
 
 **Pedido:** uma busca de atividades elegíveis para demanda sem o recorte territorial, só com os filtros de status e título. Pode ser um parâmetro na rota do SGP (ex.: `?elegiveis_para_demanda=true`, que troca o recorte territorial por "status Planejado/Agendado") ou uma rota no SGD (ex.: `GET /sgd/atividades-elegiveis/?q=`), devolvendo id, título, status, data, município com estado e técnico.
@@ -34,6 +36,8 @@ O #352 (PR #416) passou a aceitar, na criação da demanda, uma `activity_id` de
 *Estado atual no frontend:* o campo já não filtra por técnico nem por estado. Quando a rota existir, só a URL da busca muda.
 
 ## 3. Estado e Articulador antes de criar, e o estado da atividade na demanda (#361)
+
+> **Resolvido no backend em 12/11/2026 pelo PR #422** (item 3 da #419): `GET /sgd/demandas/abrangencia/?activity_id=`, `articuladores` (lista, porque um estado pode ter mais de um) no `DemandSerializer` e `contexto.municipio_estado_sigla`. O formulário mostra a prévia antes de criar; a montagem e o detalhe mostram "Analisada por" e o aviso com a UF da atividade (branch `frontend/sprint-12c`).
 
 A #361 pede que o formulário mostre, só para leitura, o território da demanda e o Articulador que vai analisá-la, e que avise antes de submeter quando a atividade é de outro estado ("A atividade é em RN; a demanda será analisada pelo Articulador da PB…").
 

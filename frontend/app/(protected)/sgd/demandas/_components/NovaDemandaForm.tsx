@@ -12,9 +12,11 @@ import { Select, type SelectOption } from "@/app/components/ui/Select/Select";
 import { Textarea } from "@/app/components/ui/Textarea/Textarea";
 import { useToast } from "@/app/components/ui/Toast/Toast";
 import { ApiError } from "@/app/lib/api";
-import { getAtividade, listAcoes } from "@/app/lib/atividades";
+import { listAcoes } from "@/app/lib/atividades";
 import {
   criarDemanda,
+  fetchAbrangenciaPrevia,
+  getAtividadeElegivel,
   STATUS_ATIVIDADE_BLOQUEIAM_DEMANDA,
   STATUS_ATIVIDADE_EXIGEM_JUSTIFICATIVA,
   type AtividadeElegivel,
@@ -23,6 +25,7 @@ import {
 import { qk } from "@/app/lib/queryKeys";
 import { fetchMunicipiosDoTerritorio, fetchTerritoryOptions } from "@/app/lib/ufpas";
 import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
+import { PreviaAbrangencia } from "./AbrangenciaDemanda";
 import { AtividadeBusca } from "./AtividadeBusca";
 import { ContextoAtividade } from "./ContextoAtividade";
 
@@ -116,15 +119,26 @@ export function NovaDemandaForm({ atividadeIdInicial }: NovaDemandaFormProps) {
   const atividadeId =
     atividadeIdInicial ?? (origem === "existente" ? (escolhida?.id ?? null) : null);
 
+  // Pela rota do SGD, e não pelo detalhe do SGP: este recorta pelo território
+  // de quem chama e daria 404 para a atividade de outro estado (#361).
   const detalhe = useQuery({
-    queryKey: qk.atividade(atividadeId ?? ""),
-    queryFn: ({ signal }) => getAtividade(atividadeId!, signal),
+    queryKey: qk.atividadeElegivel(atividadeId ?? ""),
+    queryFn: ({ signal }) => getAtividadeElegivel(atividadeId!, signal),
     enabled: atividadeId !== null,
   });
   const atividade = detalhe.data ?? null;
 
   const criandoAtividade = !fixa && origem === "nova";
   const buscaNaTela = !fixa && origem === "existente";
+
+  // Prévia da abrangência (#361): com a atividade escolhida, ou já de início
+  // quando ela é criada junto (aí sem `activity_id`, e nunca fora do território).
+  const idDaPrevia = criandoAtividade ? null : atividadeId;
+  const previa = useQuery({
+    queryKey: qk.abrangenciaPrevia(idDaPrevia),
+    queryFn: ({ signal }) => fetchAbrangenciaPrevia(idDaPrevia, signal),
+    enabled: criandoAtividade || atividadeId !== null,
+  });
 
   // ── Opções da atividade nova ────────────────────────────────────────────
   const territoriosDaSessao: SelectOption[] = (session?.user?.territorios ?? []).map(
@@ -306,12 +320,10 @@ export function NovaDemandaForm({ atividadeIdInicial }: NovaDemandaFormProps) {
           />
         )}
 
-        {buscaNaTela && (
-          // O território exato só existe depois de criar: quem o define é o
-          // backend, pelo perfil de quem cria (#352). A montagem mostra.
+        {buscaNaTela && atividadeId === null && (
           <p className="-mt-2 text-xs text-text-muted">
             A demanda segue o seu território, mesmo que a atividade seja de outro
-            estado. O território dela aparece na próxima etapa.
+            estado.
           </p>
         )}
 
@@ -396,6 +408,14 @@ export function NovaDemandaForm({ atividadeIdInicial }: NovaDemandaFormProps) {
           ) : atividade ? (
             <ContextoAtividade atividade={atividade} />
           ) : null)}
+
+        {/* Sem a prévia, o formulário segue: o território aparece de todo modo na montagem. */}
+        {previa.data && (
+          <PreviaAbrangencia
+            previa={previa.data}
+            ufAtividade={atividade?.municipio.estado?.sigla ?? null}
+          />
+        )}
 
         {bloqueada && (
           <p
