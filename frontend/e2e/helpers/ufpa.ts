@@ -30,6 +30,33 @@ export function primeiroUfpaId(): number {
   return id;
 }
 
+/**
+ * Id da primeira UFPA ativa sem resposta de formulário: o `seed_demo`
+ * concentra as respostas na de menor id (`primeiroUfpaId`), então o estado
+ * vazio da aba Formulários precisa de outra.
+ */
+export function primeiraUfpaSemRespostasId(): number {
+  const linha = execFileSync(
+    "docker",
+    [
+      "exec",
+      "db",
+      "psql",
+      "-U",
+      "postgres",
+      "-d",
+      "app_db",
+      "-tAc",
+      "select u.id from sgp_ufpa u where u.deleted_at is null and not exists " +
+        "(select 1 from sgp_formresponse r where r.ufpa_id = u.id) order by u.id limit 1;",
+    ],
+    { encoding: "utf8", timeout: 30_000 },
+  ).trim();
+  const id = Number(linha);
+  expect(id, "seed não tem UFPA sem resposta de formulário").toBeGreaterThan(0);
+  return id;
+}
+
 /** Id da primeira UFPA que tem comunidade — para a edição pré-carregá-la. */
 export function primeiraUfpaComComunidadeId(): number {
   const linha = execFileSync(

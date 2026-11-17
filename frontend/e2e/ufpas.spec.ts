@@ -48,11 +48,27 @@ async function preencherLocalizacao(page: Page) {
   await escolher(page, /^Projeto/, /.+/);
 }
 
-/** Espera o rascunho debounced chegar ao localStorage. */
-async function esperarRascunho(page: Page) {
+/**
+ * Espera o rascunho debounced chegar ao localStorage com os campos pedidos.
+ *
+ * Só "existir" não basta: o debounce pode gravar no meio do preenchimento (só
+ * o Estado), e sair da tela antes da gravação seguinte deixa um rascunho que
+ * não passa do passo 0. Num runner lento, o do CI, foi o que aconteceu.
+ */
+async function esperarRascunho(page: Page, campos: string[] = []) {
   await expect
-    .poll(() => page.evaluate((chave) => window.localStorage.getItem(chave), DRAFT_NOVA))
-    .not.toBeNull();
+    .poll(() =>
+      page.evaluate(
+        ({ chave, campos }) => {
+          const bruto = window.localStorage.getItem(chave);
+          if (!bruto) return false;
+          const dados = (JSON.parse(bruto) as { data?: Record<string, unknown> }).data ?? {};
+          return campos.every((c) => !!dados[c]);
+        },
+        { chave: DRAFT_NOVA, campos },
+      ),
+    )
+    .toBe(true);
 }
 
 async function abrirNova(page: Page) {
@@ -125,7 +141,7 @@ test.describe("SGP — Wizard de cadastro de UFPA", () => {
   test("continuar rascunho restaura todos os valores do passo 0", async ({ page }) => {
     await abrirNova(page);
     await preencherLocalizacao(page);
-    await esperarRascunho(page);
+    await esperarRascunho(page, ["estado", "municipio", "projeto"]);
 
     await page.goto("/sgp/atividades");
     await page.goto("/sgp/ufpas/nova");

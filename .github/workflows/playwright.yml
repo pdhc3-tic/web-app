@@ -103,9 +103,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-${{ github.run_id }}
-          path: |
-            frontend/playwright-report/
-            frontend/test-results/
+          # O `outputDir` do playwright.config.ts fica na raiz do repo, fora de
+          # frontend/ (o reporter é só `list`, sem relatório HTML).
+          path: .playwright/test-results/
           retention-days: 7
 
       - name: Parar stack Docker

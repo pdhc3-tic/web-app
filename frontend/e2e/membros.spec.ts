@@ -1024,7 +1024,7 @@ test.describe("SGP — Campos sensíveis por perfil", () => {
     await expect(
       painel.locator('[role="group"][aria-label="Saúde"]'),
     ).toHaveCount(0);
-    await expect(painel.getByLabel("Nome completo", { exact: true })).toBeVisible();
+    await expect(painel.getByRole("textbox", { name: /^Nome completo/ })).toBeVisible();
   });
 
   test("perfil com permissão vê e edita os dois campos normalmente", async ({

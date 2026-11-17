@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { storageStatePath } from "./helpers/users";
-import { primeiroUfpaId } from "./helpers/ufpa";
+import { primeiraUfpaSemRespostasId, primeiroUfpaId } from "./helpers/ufpa";
 
 /**
  * Aba "Formulários" na ficha da UFPA (#178) — testa integração da tabela +
@@ -20,7 +20,7 @@ test.describe("SGP — Aba Formulários na UFPA", () => {
   test("UFPA sem respostas exibe empty state com CTA de preenchimento", async ({
     page,
   }) => {
-    const ufpaId = primeiroUfpaId();
+    const ufpaId = primeiraUfpaSemRespostasId();
     await page.goto(`/sgp/ufpas/${ufpaId}?tab=formularios`);
 
     // Aguarda a ficha carregar — sem isto a aba pode ainda estar mostrando o
