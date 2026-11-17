@@ -4,11 +4,36 @@ from __future__ import annotations
 import logging
 
 from django.db import transaction
+from rest_framework.exceptions import ValidationError
 
 from apps.core.services.audit import log_audit
 from apps.core.signals.audit import get_audit_context
 
 audit_event_logger = logging.getLogger("audit_events")
+
+SUPER_ADMIN = "super-admin"
+
+
+def e_super_admin(user) -> bool:
+    from apps.core.models import UserProfile
+
+    return UserProfile.objects.filter(user=user, perfil__slug=SUPER_ADMIN).exists()
+
+
+def exigir_outro_super_admin_ativo(user) -> None:
+    """Recusa tirar `user` dos Super Admins ativos se ele for o último. Trava os Super Admins ativos em
+    ordem de pk antes de contar: dois pedidos simultâneos, cada um tirando um dos dois últimos, não
+    passam juntos. Chamar antes de travar qualquer outra linha de usuário."""
+    from apps.core.models import User, UserProfile
+
+    ativos = list(
+        User.objects.select_for_update(no_key=True)
+        .filter(ativo=True, pk__in=UserProfile.objects.filter(perfil__slug=SUPER_ADMIN).values("user_id"))
+        .order_by("pk")
+        .values_list("pk", flat=True)
+    )
+    if ativos == [user.pk]:
+        raise ValidationError({"ativo": "Este é o último Super Admin ativo: ative ou cadastre outro antes."})
 
 
 @transaction.atomic
@@ -22,6 +47,10 @@ def desativar(user, *, por) -> list:
 
     if not user.ativo:
         return []
+    if por is not None and por.pk == user.pk:
+        raise ValidationError({"ativo": "Você não pode desativar a própria conta."})
+    if e_super_admin(user):
+        exigir_outro_super_admin_ativo(user)
     # Antes do cancelamento, para um Articulador desativado não notificar a si mesmo.
     # Só `ativo` muda, sem tocar em coluna referenciada: o lock não barra as checagens
     # de FK de quem grava notificação ou auditoria para este usuário.

@@ -51,6 +51,16 @@ urlpatterns = [
         name="budget-limites",
     ),
     path(
+        "sgp/orcamento/limites/periodo/",
+        SpendingLimitViewSet.as_view({"get": "periodo"}),
+        name="budget-limites-periodo",
+    ),
+    path(
+        "sgp/orcamento/limites/pessoas/",
+        SpendingLimitViewSet.as_view({"get": "pessoas"}),
+        name="budget-limites-pessoas",
+    ),
+    path(
         "sgp/orcamento/limites/<int:pk>/",
         SpendingLimitViewSet.as_view({"patch": "partial_update"}),
         name="budget-limites-detail",

@@ -378,6 +378,24 @@ def _payload(origem, destino, valor="200.00"):
 
 
 class TestSimulador:
+    def test_simula_sem_justificativa(self, auth_client_super_admin, pools):
+        payload = _payload(*pools)
+        del payload["justificativa"]
+
+        resposta = auth_client_super_admin.post(SIMULAR_URL, payload, format="json")
+
+        assert resposta.status_code == 200, resposta.json()
+        assert resposta.json()["origem"]["saldo_depois"] == "300.00"
+
+    def test_confirmacao_continua_exigindo_justificativa(self, auth_client_super_admin, pools):
+        payload = _payload(*pools)
+        del payload["justificativa"]
+
+        resposta = auth_client_super_admin.post(REMANEJAR_URL, payload, format="json")
+
+        assert resposta.status_code == 400
+        assert "justificativa" in resposta.json()
+
     def test_mostra_saldo_percentual_e_faixa_antes_e_depois(self, auth_client_super_admin, pools):
         resposta = auth_client_super_admin.post(SIMULAR_URL, _payload(*pools), format="json")
 

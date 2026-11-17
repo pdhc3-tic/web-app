@@ -7,11 +7,46 @@ from django.db import transaction
 from drf_spectacular.utils import extend_schema_field
 from .models import Role, State, Territory, Municipality, Organization
 from .models.notifications import Notification
-from .models.user_profile import ObjetoTipo, UserProfile, abrangencia_invalida
+from .models.user_profile import OBJETO_DO_PERFIL_OPERACIONAL, ObjetoTipo, UserProfile, abrangencia_invalida
 from apps.core.models.audit_log import AuditLog
 from .models.system_config import SystemConfig, TipoConfiguracao
 
 User = get_user_model()
+
+
+PERIODICIDADES_DO_LIMITE = ("mensal", "trimestral", "semestral", "vigencia")
+LIMIARES_DO_SEMAFORO = {"budget_alert_yellow_pct": 70, "budget_alert_red_pct": 90}
+FAIXA_DOS_PARAMETROS_DO_ORCAMENTO = {
+    "budget_subexec_alert_months": (1, 24),
+    "budget_subexec_min_pct": (1, 100),
+    "budget_transfer_alert_pct": (1, 100),
+    "budget_alert_yellow_pct": (1, 100),
+    "budget_alert_red_pct": (1, 100),
+}
+
+
+def parametro_do_orcamento_invalido(chave: str, valor: str) -> str | None:
+    """A mensagem do erro, se houver. `valor` já vem normalizado pelo tipo do parâmetro."""
+    if chave == "budget_limit_period" and valor not in PERIODICIDADES_DO_LIMITE:
+        return f"Use uma destas periodicidades: {', '.join(PERIODICIDADES_DO_LIMITE)}."
+    if chave in FAIXA_DOS_PARAMETROS_DO_ORCAMENTO:
+        minimo, maximo = FAIXA_DOS_PARAMETROS_DO_ORCAMENTO[chave]
+        if not minimo <= int(valor) <= maximo:
+            return f"Informe um valor de {minimo} a {maximo}."
+    if chave in LIMIARES_DO_SEMAFORO:
+        # Os dois limiares travados, sempre na mesma ordem: duas alterações simultâneas, uma em cada, não
+        # passam juntas deixando o amarelo acima do vermelho. Quem chama está numa transação.
+        gravados = dict(
+            SystemConfig.objects.select_for_update().filter(chave__in=LIMIARES_DO_SEMAFORO)
+            .order_by("chave").values_list("chave", "valor")
+        )
+        amarelo, vermelho = (
+            int(valor) if chave == limiar else int(gravados.get(limiar, padrao))
+            for limiar, padrao in LIMIARES_DO_SEMAFORO.items()
+        )
+        if amarelo >= vermelho:
+            return f"O limiar amarelo ({amarelo}%) precisa ser menor que o vermelho ({vermelho}%)."
+    return None
 
 
 class SystemConfigSerializer(serializers.ModelSerializer):
@@ -33,7 +68,14 @@ class SystemConfigSerializer(serializers.ModelSerializer):
         instance = getattr(self, "instance", None)
         if instance is None:
             return value
+        valor = self._valor_do_tipo(instance, value)
+        erro = parametro_do_orcamento_invalido(instance.chave, valor)
+        if erro:
+            raise serializers.ValidationError(erro)
+        return valor
 
+    @staticmethod
+    def _valor_do_tipo(instance, value):
         tipo = instance.tipo
 
         if tipo == TipoConfiguracao.INTEGER:
@@ -107,10 +149,18 @@ class GoogleCalendarConfigSerializer(serializers.Serializer):
 
 
 class RoleSerializer(serializers.ModelSerializer):
+    objeto_tipo = serializers.SerializerMethodField(
+        help_text="O tipo de objeto que o perfil operacional exige na designação; nulo no perfil principal.",
+    )
+
     class Meta:
         model = Role
-        fields = ['id', 'nome', 'slug', 'descricao', 'categoria', 'ativo', 'criado_em']
+        fields = ['id', 'nome', 'slug', 'descricao', 'categoria', 'objeto_tipo', 'ativo', 'criado_em']
         read_only_fields = ['categoria', 'criado_em']
+
+    @extend_schema_field(serializers.ChoiceField(choices=ObjetoTipo.choices, allow_null=True))
+    def get_objeto_tipo(self, perfil):
+        return OBJETO_DO_PERFIL_OPERACIONAL.get(perfil.slug)
 
     def validate_slug(self, value):
         # O slug é a identidade do perfil para as regras de acesso e para o RLS.
@@ -126,7 +176,7 @@ class RoleComObjetoSerializer(RoleSerializer):
     objeto_id = serializers.IntegerField(allow_null=True, read_only=True)
 
     class Meta(RoleSerializer.Meta):
-        fields = [*RoleSerializer.Meta.fields, "objeto_tipo", "objeto_id"]
+        fields = [*RoleSerializer.Meta.fields, "objeto_id"]
 
 
 def com_o_principal_primeiro(perfis) -> list:

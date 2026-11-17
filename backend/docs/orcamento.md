@@ -240,6 +240,10 @@ Só Super Admin e UGP. O padrão por perfil aceita só os perfis operacionais (A
 
 O `PATCH` recebe `valor_limite` e `justificativa`, obrigatória quando o valor muda. `/sgd/limites-individuais/` segue como alias, com o contrato antigo, para as linhas individuais do período vigente.
 
+Duas rotas de apoio à tela, também só de Super Admin e UGP:
+- `GET .../limites/periodo/?data=` devolve `{inicio, fim, periodicidade}` do período que contém a data (hoje, se omitida), pela mesma conta das linhas individuais. Um `budget_limit_period` desconhecido conta como `trimestral`.
+- `GET .../limites/pessoas/?q=` lista, sem paginação e por nome, os usuários ativos com perfil ADT/ACR ou Articulador Estadual, os que recebem limite individual: `[{id, nome, perfis: [{slug, nome}]}]`. `q` busca no nome e no e-mail.
+
 ### `GET /api/v1/sgp/rubricas/?ativo=`
 
 Catálogo de `BudgetRubrica`, sem paginação, ordenado por `nome`, para qualquer usuário autenticado. Sem o parâmetro, devolve também as inativas. Valor que não seja booleano retorna `400`.
@@ -294,8 +298,8 @@ Matriz Rubrica × Nível: uma linha por pool no escopo do perfil, com o `id` que
 |---|---|---|
 | `GET /api/v1/sgp/orcamento/meu-saldo/` | Autenticado | Limite, comprometido, executado, disponível e semáforo por rubrica, com o período e o saldo do pool do território. Rubrica inativa só aparece para quem já movimentou nela, com `rubrica_ativa: false` |
 | `GET /api/v1/sgp/orcamento/meu-saldo/{rubrica}/extrato/` | Autenticado | Linhas do ledger do próprio usuário no período vigente, com `efeito` no saldo; `?historico=true` traz os encerrados; paginado |
-| `POST /api/v1/sgp/orcamento/remanejamentos/simular/` | UGP e Super Admin | Saldo, percentuais de comprometimento e de execução e faixa antes e depois, sem gravar nada |
-| `GET /api/v1/sgp/orcamento/alertas/` | Perfis do orçamento, no próprio escopo | Filtros `?tipo=`, `?faixa=` e `?abertos=`; paginado |
+| `POST /api/v1/sgp/orcamento/remanejamentos/simular/` | UGP e Super Admin | Saldo, percentuais de comprometimento e de execução e faixa antes e depois, sem gravar nada. Recebe origem, destino e valor; a justificativa só é pedida na confirmação |
+| `GET /api/v1/sgp/orcamento/alertas/` | Perfis do orçamento, no próprio escopo | Filtros `?tipo=`, `?faixa=` e `?abertos=`; paginado. `alvo` identifica o que o alerta aponta: `{nome, nivel, estado, territorio, usuario}`, com `nome` "Nacional", o estado ou o território no pool, e a pessoa no limite. Nulo se o alvo foi apagado |
 
 ## Painel por rubrica do SGD
 

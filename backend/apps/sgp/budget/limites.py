@@ -12,10 +12,11 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.db import IntegrityError, transaction
-from django.db.models import Q, Sum
+from django.db.models import Prefetch, Q, Sum
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
+from apps.core.models import User
 from apps.core.models.user_profile import UserProfile
 from apps.core.services.audit import log_audit
 from apps.core.signals.audit import get_audit_context
@@ -43,15 +44,42 @@ def hoje() -> date:
     return timezone.localdate()
 
 
+def periodicidade_vigente() -> str:
+    """O `budget_limit_period` em uso: um valor desconhecido conta como o padrão."""
+    periodicidade = get_config("budget_limit_period", PERIODO_PADRAO)
+    return periodicidade if periodicidade == "vigencia" or periodicidade in MESES_POR_PERIODO else PERIODO_PADRAO
+
+
 def periodo_de(data: date, periodicidade: str | None = None) -> tuple[date, date]:
     """(início, fim) do período que contém `data`, pelo parâmetro global `budget_limit_period`."""
-    periodicidade = periodicidade or get_config("budget_limit_period", PERIODO_PADRAO)
+    periodicidade = periodicidade or periodicidade_vigente()
     if periodicidade == "vigencia":
         return INICIO_DA_VIGENCIA, FIM_EM_ABERTO
     meses = MESES_POR_PERIODO.get(periodicidade, MESES_POR_PERIODO[PERIODO_PADRAO])
     mes_inicial = ((data.month - 1) // meses) * meses + 1
     mes_final = mes_inicial + meses - 1
     return date(data.year, mes_inicial, 1), date(data.year, mes_final, calendar.monthrange(data.year, mes_final)[1])
+
+
+def pessoas_com_limite_individual(busca: str = "") -> list[dict]:
+    """Usuários ativos com perfil que recebe limite individual, com esses perfis, para a escolha da pessoa
+    numa sobrescrita. `busca` filtra por nome ou e-mail."""
+    vinculos = UserProfile.objects.filter(perfil__slug__in=PERFIS_OPERACIONAIS).select_related("perfil")
+    usuarios = (
+        User.objects.filter(ativo=True, profiles__perfil__slug__in=PERFIS_OPERACIONAIS)
+        .distinct().order_by("nome", "pk")
+        .prefetch_related(Prefetch("profiles", queryset=vinculos, to_attr="vinculos_com_limite"))
+    )
+    if busca:
+        usuarios = usuarios.filter(Q(nome__icontains=busca) | Q(email__icontains=busca))
+    pessoas = []
+    for usuario in usuarios:
+        perfis = {vinculo.perfil.slug: vinculo.perfil.nome for vinculo in usuario.vinculos_com_limite}
+        pessoas.append({
+            "id": usuario.pk, "nome": usuario.nome,
+            "perfis": [{"slug": slug, "nome": perfis[slug]} for slug in PERFIS_OPERACIONAIS if slug in perfis],
+        })
+    return pessoas
 
 
 def _vigentes_em(data: date):

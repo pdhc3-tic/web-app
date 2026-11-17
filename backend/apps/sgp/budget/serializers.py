@@ -146,10 +146,15 @@ class SaldoConsultaSerializer(serializers.Serializer):
     motivo_bloqueio = serializers.CharField(allow_null=True)
 
 
-class RemanejamentoCreateSerializer(serializers.Serializer):
+class RemanejamentoSimulacaoSerializer(serializers.Serializer):
+    """A simulação não grava nada: dispensa a justificativa, que só a confirmação pede."""
+
     origem_allocation = serializers.PrimaryKeyRelatedField(queryset=BudgetPool.objects.all())
     destino_allocation = serializers.PrimaryKeyRelatedField(queryset=BudgetPool.objects.all())
     valor = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"))
+
+
+class RemanejamentoCreateSerializer(RemanejamentoSimulacaoSerializer):
     justificativa = serializers.CharField()
 
 
@@ -202,16 +207,44 @@ class LinhaDoExtratoSerializer(BudgetTransactionSerializer):
         return f"{efeito_no_saldo(transacao.tipo, transacao.valor):.2f}"
 
 
+class EstadoDoAlvoSerializer(serializers.Serializer):
+    sigla = serializers.CharField()
+    nome = serializers.CharField()
+
+
+class ReferenciaComNomeSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    nome = serializers.CharField()
+
+
+class AlvoDoAlertaSerializer(serializers.Serializer):
+    nome = serializers.CharField(
+        allow_null=True, help_text='"Nacional", o estado ou o território, no pool; a pessoa, no limite.',
+    )
+    nivel = serializers.ChoiceField(choices=BudgetPool.Nivel.choices, allow_null=True)
+    estado = EstadoDoAlvoSerializer(allow_null=True)
+    territorio = ReferenciaComNomeSerializer(allow_null=True)
+    usuario = ReferenciaComNomeSerializer(allow_null=True)
+
+
 class BudgetAlertSerializer(serializers.ModelSerializer):
+    """`alvo` vem do contexto `alvos` (pk do alerta → alvo), montado para a página inteira; nulo quando o
+    alvo foi apagado."""
+
     rubrica_nome = serializers.CharField(source="rubrica.nome", read_only=True, allow_null=True)
+    alvo = serializers.SerializerMethodField()
 
     class Meta:
         model = BudgetAlert
         fields = [
-            "id", "tipo", "escopo", "referencia_id", "rubrica", "rubrica_nome", "faixa", "percentual_atingido",
-            "criado_em", "alertado_em", "resolvido_em",
+            "id", "tipo", "escopo", "referencia_id", "alvo", "rubrica", "rubrica_nome", "faixa",
+            "percentual_atingido", "criado_em", "alertado_em", "resolvido_em",
         ]
         read_only_fields = fields
+
+    @extend_schema_field(AlvoDoAlertaSerializer(allow_null=True))
+    def get_alvo(self, alerta):
+        return self.context.get("alvos", {}).get(alerta.pk)
 
 
 class BudgetAlertQuerySerializer(serializers.Serializer):
@@ -327,6 +360,31 @@ class SpendingLimitCreateSerializer(serializers.Serializer):
         if inicio and fim and fim < inicio:
             raise serializers.ValidationError({"periodo_fim": "Não pode ser anterior ao início."})
         return attrs
+
+
+class PeriodoDosLimitesQuerySerializer(serializers.Serializer):
+    data = serializers.DateField(required=False, help_text="Data dentro do período. Sem ela, hoje.")
+
+
+class PeriodoDosLimitesSerializer(serializers.Serializer):
+    inicio = serializers.DateField()
+    fim = serializers.DateField()
+    periodicidade = serializers.ChoiceField(choices=["mensal", "trimestral", "semestral", "vigencia"])
+
+
+class PessoasComLimiteQuerySerializer(serializers.Serializer):
+    q = serializers.CharField(required=False, allow_blank=True, default="", help_text="Parte do nome ou do e-mail.")
+
+
+class PerfilComLimiteSerializer(serializers.Serializer):
+    slug = serializers.CharField(help_text="adt-acr ou articulador-estadual.")
+    nome = serializers.CharField()
+
+
+class PessoaComLimiteSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    nome = serializers.CharField()
+    perfis = PerfilComLimiteSerializer(many=True)
 
 
 class SpendingLimitUpdateSerializer(serializers.Serializer):

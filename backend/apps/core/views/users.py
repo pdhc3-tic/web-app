@@ -11,11 +11,11 @@ from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
-from apps.core.models import User
+from apps.core.models import Role, User, UserProfile
 from apps.core.permissions import IsSuperAdmin
 from apps.core.serializers import ImpactoDesativacaoSerializer, UserDetailSerializer, UserListSerializer
 from apps.core.services.audit import log_audit
-from apps.core.services.usuarios import desativar
+from apps.core.services.usuarios import SUPER_ADMIN, desativar, e_super_admin, exigir_outro_super_admin_ativo
 
 
 logger = logging.getLogger(__name__)
@@ -39,6 +39,10 @@ def _user_access_snapshot(user):
 
 class UserFilter(django_filters.FilterSet):
     perfil = django_filters.NumberFilter(field_name="profiles__perfil_id")
+    categoria = django_filters.ChoiceFilter(
+        choices=Role.Categoria.choices, method="filter_categoria",
+        help_text="Quem tem ao menos um perfil da categoria.",
+    )
     territorio = django_filters.NumberFilter(field_name="profiles__territorio_id")
     ativo = django_filters.BooleanFilter()
     ultimo_acesso_de = django_filters.DateFilter(
@@ -52,10 +56,14 @@ class UserFilter(django_filters.FilterSet):
     class Meta:
         model = User
         fields = [
-            "perfil", "territorio", "ativo",
+            "perfil", "categoria", "territorio", "ativo",
             "ultimo_acesso_de", "ultimo_acesso_ate",
             "com_dispositivo",
         ]
+
+    def filter_categoria(self, qs, name, value):
+        # Subconsulta, e não JOIN: quem tem dois perfis da categoria apareceria duas vezes.
+        return qs.filter(pk__in=UserProfile.objects.filter(perfil__categoria=value).values("user_id"))
 
     def filter_com_dispositivo(self, qs, name, value):
         if value:
@@ -128,6 +136,8 @@ class UserViewSet(viewsets.ModelViewSet):
         old_snapshot = _user_access_snapshot(serializer.instance)
         desativando = serializer.instance.ativo and serializer.validated_data.get("ativo") is False
         with transaction.atomic():
+            if not desativando and self._tira_o_perfil_super_admin(serializer):
+                exigir_outro_super_admin_ativo(serializer.instance)
             # Depois da desativação: trocar o e-mail, coluna única, barra a checagem de FK de
             # quem segura o limite que o cancelamento precisa, e as duas transações se esperariam.
             if desativando:
@@ -150,6 +160,14 @@ class UserViewSet(viewsets.ModelViewSet):
             getattr(self.request.user, "pk", None),
             user.pk,
         )
+
+    @staticmethod
+    def _tira_o_perfil_super_admin(serializer) -> bool:
+        perfis = serializer.validated_data.get("perfis_input")
+        if perfis is None or not serializer.instance.ativo or not e_super_admin(serializer.instance):
+            return False
+        super_admin = Role.objects.filter(slug=SUPER_ADMIN).values_list("pk", flat=True).first()
+        return all(item["perfil_id"] != super_admin for item in perfis)
 
     def perform_destroy(self, instance):
         desativar(instance, por=self.request.user)

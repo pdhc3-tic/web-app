@@ -3,13 +3,15 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.utils.html import format_html_join
 from django.urls import reverse
 
+from rest_framework.exceptions import ValidationError
+
 from apps.sgd.exceptions import TransicaoInvalida
 
 from .models import State, Territory, Municipality, User, Role, UserProfile, Organization
 from .models.notifications import Notification, NotificationPreference
 from .models.system_config import SystemConfig
 from .models import AuditLog
-from .services.usuarios import desativar
+from .services.usuarios import SUPER_ADMIN, desativar, e_super_admin, exigir_outro_super_admin_ativo
 
 
 class UserProfileInline(admin.TabularInline):
@@ -90,7 +92,31 @@ class UserAdmin(DjangoUserAdmin):
         except TransicaoInvalida as exc:
             obj.ativo = True
             self.message_user(request, f"Usuário não desativado: {exc.mensagem}", level=messages.ERROR)
+        except ValidationError as exc:
+            obj.ativo = True
+            self.message_user(request, f"Usuário não desativado: {exc.detail['ativo'][0]}", level=messages.ERROR)
         super().save_model(request, obj, form, change)
+
+    def save_related(self, request, form, formsets, change):
+        usuario = form.instance
+        if change and usuario.ativo and e_super_admin(usuario) and not self._continua_super_admin(formsets):
+            try:
+                exigir_outro_super_admin_ativo(usuario)
+            except ValidationError as exc:
+                form.save_m2m()
+                self.message_user(request, f"Perfis não alterados: {exc.detail['ativo'][0]}", level=messages.ERROR)
+                return
+        super().save_related(request, form, formsets, change)
+
+    @staticmethod
+    def _continua_super_admin(formsets) -> bool:
+        for formset in formsets:
+            if formset.model is UserProfile:
+                return any(
+                    getattr(dados.get("perfil"), "slug", None) == SUPER_ADMIN and not dados.get("DELETE")
+                    for dados in (form.cleaned_data for form in formset.forms)
+                )
+        return True
 
     def perfis_resumo(self, obj):
         profiles = obj.profiles.select_related("perfil", "territorio").all()

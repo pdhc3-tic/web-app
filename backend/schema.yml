@@ -6323,6 +6323,13 @@ paths:
         da demanda (território do solicitante) e não o da atividade.
       parameters:
       - in: query
+        name: aberto
+        schema:
+          type: boolean
+          nullable: true
+        description: 'true: só os ainda não resolvidos; false: só os resolvidos. Sem
+          ele, todos.'
+      - in: query
         name: activity
         schema:
           type: integer
@@ -6965,6 +6972,53 @@ paths:
               schema:
                 $ref: '#/components/schemas/SpendingLimit'
           description: ''
+  /api/v1/sgp/orcamento/limites/periodo/:
+    get:
+      operationId: v1_sgp_orcamento_limites_periodo_retrieve
+      description: O período de limites que contém `?data=`, pelo parâmetro `budget_limit_period`.
+      parameters:
+      - in: query
+        name: data
+        schema:
+          type: string
+          format: date
+        description: Data dentro do período. Sem ela, hoje.
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PeriodoDosLimites'
+          description: ''
+  /api/v1/sgp/orcamento/limites/pessoas/:
+    get:
+      operationId: v1_sgp_orcamento_limites_pessoas_list
+      description: Usuários ativos com perfil que recebe limite individual (ADT/ACR
+        e Articulador Estadual).
+      parameters:
+      - in: query
+        name: q
+        schema:
+          type: string
+          default: ''
+        description: Parte do nome ou do e-mail.
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PessoaComLimite'
+          description: ''
   /api/v1/sgp/orcamento/meu-saldo/:
     get:
       operationId: v1_sgp_orcamento_meu_saldo_list
@@ -7222,13 +7276,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RemanejamentoCreateRequest'
+              $ref: '#/components/schemas/RemanejamentoSimulacaoRequest'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/RemanejamentoCreateRequest'
+              $ref: '#/components/schemas/RemanejamentoSimulacaoRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/RemanejamentoCreateRequest'
+              $ref: '#/components/schemas/RemanejamentoSimulacaoRequest'
         required: true
       security:
       - jwtAuth: []
@@ -9523,6 +9577,18 @@ paths:
         schema:
           type: boolean
       - in: query
+        name: categoria
+        schema:
+          type: string
+          enum:
+          - operacional
+          - principal
+        description: |-
+          Quem tem ao menos um perfil da categoria.
+
+          * `principal` - Principal
+          * `operacional` - Operacional
+      - in: query
         name: com_dispositivo
         schema:
           type: boolean
@@ -10566,6 +10632,37 @@ components:
         * `6` - Chuva
         * `7` - Outro
         * `8` - Não Informado
+    AlvoDoAlerta:
+      type: object
+      properties:
+        nome:
+          type: string
+          nullable: true
+          description: '"Nacional", o estado ou o território, no pool; a pessoa, no
+            limite.'
+        nivel:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/NivelEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        estado:
+          allOf:
+          - $ref: '#/components/schemas/EstadoDoAlvo'
+          nullable: true
+        territorio:
+          allOf:
+          - $ref: '#/components/schemas/ReferenciaComNome'
+          nullable: true
+        usuario:
+          allOf:
+          - $ref: '#/components/schemas/ReferenciaComNome'
+          nullable: true
+      required:
+      - estado
+      - nivel
+      - nome
+      - territorio
+      - usuario
     AmbitoEnum:
       enum:
       - municipal
@@ -11146,6 +11243,9 @@ components:
       - valor_faltante
     BudgetAlert:
       type: object
+      description: |-
+        `alvo` vem do contexto `alvos` (pk do alerta → alvo), montado para a página inteira; nulo quando o
+        alvo foi apagado.
       properties:
         id:
           type: integer
@@ -11162,6 +11262,11 @@ components:
           type: integer
           readOnly: true
           title: ID do alvo
+        alvo:
+          allOf:
+          - $ref: '#/components/schemas/AlvoDoAlerta'
+          nullable: true
+          readOnly: true
         rubrica:
           type: integer
           readOnly: true
@@ -11194,6 +11299,7 @@ components:
           nullable: true
       required:
       - alertado_em
+      - alvo
       - criado_em
       - escopo
       - faixa
@@ -13702,6 +13808,16 @@ components:
       required:
       - saldos
       - ultimo_sync
+    EstadoDoAlvo:
+      type: object
+      properties:
+        sigla:
+          type: string
+        nome:
+          type: string
+      required:
+      - nome
+      - sigla
     EstadoEnum:
       enum:
       - pendente
@@ -16022,6 +16138,7 @@ components:
       required:
       - count
       - results
+      - total_exposto
       properties:
         count:
           type: integer
@@ -16040,6 +16157,9 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/GlosaRisk'
+        total_exposto:
+          type: string
+          format: decimal
     PaginatedHistoricoEntryList:
       type: object
       required:
@@ -17746,6 +17866,17 @@ components:
           nullable: true
           title: Responsável
           description: Usuário da UGP que acompanha a Submeta.
+    PerfilComLimite:
+      type: object
+      properties:
+        slug:
+          type: string
+          description: adt-acr ou articulador-estadual.
+        nome:
+          type: string
+      required:
+      - nome
+      - slug
     PerfilDoUsuario:
       type: object
       properties:
@@ -17815,6 +17946,48 @@ components:
           nullable: true
       required:
       - perfil_id
+    PeriodicidadeEnum:
+      enum:
+      - mensal
+      - trimestral
+      - semestral
+      - vigencia
+      type: string
+      description: |-
+        * `mensal` - mensal
+        * `trimestral` - trimestral
+        * `semestral` - semestral
+        * `vigencia` - vigencia
+    PeriodoDosLimites:
+      type: object
+      properties:
+        inicio:
+          type: string
+          format: date
+        fim:
+          type: string
+          format: date
+        periodicidade:
+          $ref: '#/components/schemas/PeriodicidadeEnum'
+      required:
+      - fim
+      - inicio
+      - periodicidade
+    PessoaComLimite:
+      type: object
+      properties:
+        id:
+          type: integer
+        nome:
+          type: string
+        perfis:
+          type: array
+          items:
+            $ref: '#/components/schemas/PerfilComLimite'
+      required:
+      - id
+      - nome
+      - perfis
     PlanoTrabalho:
       type: object
       description: Forma do dict de `plano_trabalho_da_acao`.
@@ -18452,6 +18625,16 @@ components:
           minLength: 1
       required:
       - justificativa
+    ReferenciaComNome:
+      type: object
+      properties:
+        id:
+          type: integer
+        nome:
+          type: string
+      required:
+      - id
+      - nome
     RefreshRequest:
       type: object
       properties:
@@ -18467,6 +18650,8 @@ components:
       - $ref: '#/components/schemas/ActivityDetailResposta'
     RemanejamentoCreateRequest:
       type: object
+      description: 'A simulação não grava nada: dispensa a justificativa, que só a
+        confirmação pede.'
       properties:
         origem_allocation:
           type: integer
@@ -18482,6 +18667,23 @@ components:
       required:
       - destino_allocation
       - justificativa
+      - origem_allocation
+      - valor
+    RemanejamentoSimulacaoRequest:
+      type: object
+      description: 'A simulação não grava nada: dispensa a justificativa, que só a
+        confirmação pede.'
+      properties:
+        origem_allocation:
+          type: integer
+        destino_allocation:
+          type: integer
+        valor:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+      required:
+      - destino_allocation
       - origem_allocation
       - valor
     Role:
@@ -18503,6 +18705,14 @@ components:
           allOf:
           - $ref: '#/components/schemas/CategoriaDoPerfilEnum'
           readOnly: true
+        objeto_tipo:
+          description: O tipo de objeto que o perfil operacional exige na designação;
+            nulo no perfil principal.
+          nullable: true
+          readOnly: true
+          oneOf:
+          - $ref: '#/components/schemas/TipoDoObjetoDoPerfilEnum'
+          - $ref: '#/components/schemas/NullEnum'
         ativo:
           type: boolean
         criado_em:
@@ -18514,6 +18724,7 @@ components:
       - criado_em
       - id
       - nome
+      - objeto_tipo
       - slug
     RoleComObjeto:
       type: object
@@ -18536,18 +18747,18 @@ components:
           allOf:
           - $ref: '#/components/schemas/CategoriaDoPerfilEnum'
           readOnly: true
-        ativo:
-          type: boolean
-        criado_em:
-          type: string
-          format: date-time
-          readOnly: true
         objeto_tipo:
           readOnly: true
           nullable: true
           oneOf:
           - $ref: '#/components/schemas/TipoDoObjetoDoPerfilEnum'
           - $ref: '#/components/schemas/NullEnum'
+        ativo:
+          type: boolean
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
         objeto_id:
           type: integer
           readOnly: true
