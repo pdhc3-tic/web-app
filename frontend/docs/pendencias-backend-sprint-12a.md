@@ -59,6 +59,8 @@ Faltam três dados:
 
 ## 4. Riscos de glosa de uma demanda com atividade em outro estado (#360, #361)
 
+> **Resolvido no backend em 12/11/2026 pelo PR #422** (item 4 da #419): `GlosaRiskListView` recorta pelo `filtro_de_registro_da_demanda`. Quem vê a demanda vê os riscos dela, e na lista geral o Articulador vê os riscos das demandas do seu estado, que é o da demanda e não o da atividade. Validado em 17/11/2026 contra o backend real: numa demanda do RN com atividade de PE, o Articulador do RN recebe o risco pela consulta da demanda, pela lista geral e na linha do tempo; a Articuladora de PE não recebe. O frontend não mudou.
+
 *Item acrescentado em 11/11/2026, na revisão do PR #420.*
 
 Desde o #352 (PR #416), a demanda é visível pela abrangência do **solicitante** (`Demand.estado_sigla`). A atividade pode ser de outro estado. A rota dos riscos de glosa, porém, ainda recorta o Articulador pelo estado da **atividade**: `GlosaRiskListView.get_queryset()` (`apps/sgp/views/glosa_risk.py`, linha 38) filtra por `activity__municipio__state__sigla__in=user_states(user)`, inclusive quando a consulta vem com `?demanda=`.
