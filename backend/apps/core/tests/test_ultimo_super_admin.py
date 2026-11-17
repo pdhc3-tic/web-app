@@ -374,7 +374,7 @@ class TestCamposDaRevogacao:
         def falhar(**_):
             raise RuntimeError("auditoria fora do ar")
 
-        monkeypatch.setattr("apps.core.views.users.log_audit", falhar)
+        monkeypatch.setattr("apps.core.services.usuarios.log_audit", falhar)
 
         with pytest.raises(RuntimeError):
             cliente.patch(f"{USERS_URL}{outro_super_admin.pk}/revogar-acesso/")

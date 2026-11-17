@@ -11245,8 +11245,9 @@ components:
       - valor_faltante
     BudgetAlert:
       type: object
-      description: Alerta orçamentário com o alvo identificado; `alvo` é nulo quando
-        o alvo foi apagado.
+      description: |-
+        Alerta orçamentário com o alvo identificado. `alvo` é nulo quando o alvo foi apagado e nos alertas
+        de Meta, Submeta e Ação, que hoje não são gerados.
       properties:
         id:
           type: integer

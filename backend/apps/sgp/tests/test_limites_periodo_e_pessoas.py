@@ -122,7 +122,7 @@ class TestPessoas:
 
 def test_core_valida_as_mesmas_periodicidades_e_padroes_que_o_sgp_usa():
     """O Core valida `budget_*` sem importar o SGP: as cópias precisam bater."""
-    from apps.core.serializers import LIMIARES_DO_SEMAFORO, PERIODICIDADES_DO_LIMITE
+    from apps.core.services.parametros import LIMIARES_DO_SEMAFORO, PERIODICIDADES_DO_LIMITE
     from apps.sgp.budget import limites
     from apps.sgp.budget.services import LIMIAR_SEMAFORO_AMARELO_PADRAO, LIMIAR_SEMAFORO_VERMELHO_PADRAO
 

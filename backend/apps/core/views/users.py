@@ -2,20 +2,19 @@ import logging
 
 from django.db import transaction
 from django.db.models import Count, Max
-from django.utils import timezone
 from django_filters import rest_framework as django_filters
 from drf_spectacular.utils import OpenApiResponse, extend_schema, inline_serializer
 from rest_framework import filters, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
-from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
 from apps.core.models import Role, User, UserProfile
 from apps.core.permissions import IsSuperAdmin
 from apps.core.serializers import ImpactoDesativacaoSerializer, UserDetailSerializer, UserListSerializer
 from apps.core.services.audit import log_audit
-from apps.core.services.usuarios import SUPER_ADMIN, desativar, exigir_super_admin_restante
+from apps.core.services import usuarios as usuarios_service
+from apps.core.services.usuarios import desativar
 
 
 logger = logging.getLogger(__name__)
@@ -136,8 +135,9 @@ class UserViewSet(viewsets.ModelViewSet):
         old_snapshot = _user_access_snapshot(serializer.instance)
         desativando = serializer.instance.ativo and serializer.validated_data.get("ativo") is False
         with transaction.atomic():
-            if not desativando and self._tira_o_perfil_super_admin(serializer):
-                exigir_super_admin_restante(sem_usuarios=[serializer.instance.pk], campo="perfis_input")
+            perfis = serializer.validated_data.get("perfis_input")
+            if not desativando and perfis is not None:
+                usuarios_service.exigir_super_admin_nos_perfis(serializer.instance, perfis)
             # Depois da desativação: trocar o e-mail, coluna única, barra a checagem de FK de
             # quem segura o limite que o cancelamento precisa, e as duas transações se esperariam.
             if desativando:
@@ -161,14 +161,6 @@ class UserViewSet(viewsets.ModelViewSet):
             user.pk,
         )
 
-    @staticmethod
-    def _tira_o_perfil_super_admin(serializer) -> bool:
-        perfis = serializer.validated_data.get("perfis_input")
-        if perfis is None:
-            return False
-        super_admin = Role.objects.filter(slug=SUPER_ADMIN).values_list("pk", flat=True).first()
-        return all(item["perfil_id"] != super_admin for item in perfis)
-
     def perform_destroy(self, instance):
         desativar(instance, por=self.request.user)
 
@@ -186,61 +178,18 @@ class UserViewSet(viewsets.ModelViewSet):
     # ------------------------------------------------------------------
     # Acesso do SCA — revogar / reativar
     # ------------------------------------------------------------------
-    def _invalidate_all_sessions(self, user):
-        """Blacklista todos os refresh tokens ativos do usuário (todos os dispositivos)."""
-        tokens = OutstandingToken.objects.filter(user=user)
-        revoked = 0
-        for token in tokens:
-            _, created = BlacklistedToken.objects.get_or_create(token=token)
-            revoked += int(created)
-        return revoked
-
     @extend_schema(request=None, responses={
         200: _ACESSO_RESPOSTA,
         400: OpenApiResponse(description="A própria conta ou o último Super Admin ativo, em `acesso_revogado`."),
     })
     @action(detail=True, methods=["patch"], url_path="revogar-acesso")
     def revogar_acesso(self, request, pk=None):
-        instance = self.get_object()
-        if instance.pk == request.user.pk:
-            raise serializers.ValidationError({"acesso_revogado": ["Você não pode revogar o próprio acesso."]})
-        with transaction.atomic():
-            # Super Admin sem acesso não entra: revogar o último deixa o sistema sem quem reative contas.
-            exigir_super_admin_restante(sem_usuarios=[instance.pk], campo="acesso_revogado")
-            instance.acesso_revogado = True
-            instance.acesso_revogado_em = timezone.now()
-            instance.acesso_revogado_por = request.user
-            instance.save(update_fields=[
-                "acesso_revogado",
-                "acesso_revogado_em",
-                "acesso_revogado_por",
-            ])
-            # Na mesma transação: sem as sessões encerradas e sem a auditoria, a revogação não vale.
-            revoked = self._invalidate_all_sessions(instance)
-            log_audit(
-                user=request.user,
-                acao="user.access_revoked",
-                modulo="core",
-                entidade="User",
-                entidade_id=instance.pk,
-                valores_anteriores={"acesso_revogado": False},
-                valores_novos={
-                    "acesso_revogado": True,
-                    "sessoes_invalidadas": revoked,
-                },
-                request=request,
-            )
-        audit_event_logger.info(
-            "user.access_revoked actor_user_id=%s target_user_id=%s sessions=%s",
-            getattr(request.user, "pk", None),
-            instance.pk,
-            revoked,
-        )
+        encerradas = usuarios_service.revogar_acesso(self.get_object(), por=request.user)
         return Response(
             {
                 "message": "Acesso revogado. O app SCA fará o wipe remoto no próximo sync.",
                 "acesso_revogado": True,
-                "sessoes_invalidadas": revoked,
+                "sessoes_invalidadas": encerradas,
             }
         )
 
@@ -256,7 +205,7 @@ class UserViewSet(viewsets.ModelViewSet):
             "acesso_revogado_em",
             "acesso_revogado_por",
         ])
-        revoked = self._invalidate_all_sessions(instance)
+        revoked = usuarios_service.encerrar_sessoes(instance)
         log_audit(
             user=request.user,
             acao="user.access_reactivated",

@@ -15,7 +15,7 @@ from .models import State, Territory, Municipality, User, Role, UserProfile, Org
 from .models.notifications import Notification, NotificationPreference
 from .models.system_config import SystemConfig
 from .models import AuditLog
-from .serializers import parametro_do_orcamento_invalido, valor_do_tipo
+from .services.parametros import parametro_do_orcamento_invalido, valor_do_tipo
 from .services.usuarios import SUPER_ADMIN, desativar, exigir_super_admin_restante, sobra_super_admin
 
 

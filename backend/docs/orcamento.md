@@ -309,7 +309,7 @@ Matriz Rubrica × Nível: uma linha por pool no escopo do perfil, com o `id` que
 | `GET /api/v1/sgp/orcamento/meu-saldo/` | Autenticado | Limite, comprometido, executado, disponível e semáforo por rubrica, com o período e o saldo do pool do território. Rubrica inativa só aparece para quem já movimentou nela, com `rubrica_ativa: false` |
 | `GET /api/v1/sgp/orcamento/meu-saldo/{rubrica}/extrato/` | Autenticado | Linhas do ledger do próprio usuário no período vigente, com `efeito` no saldo; `?historico=true` traz os encerrados; paginado |
 | `POST /api/v1/sgp/orcamento/remanejamentos/simular/` | UGP e Super Admin | Saldo, percentuais de comprometimento e de execução e faixa antes e depois, sem gravar nada. Recebe origem, destino e valor; a justificativa só é pedida na confirmação |
-| `GET /api/v1/sgp/orcamento/alertas/` | Perfis do orçamento, no próprio escopo | Filtros `?tipo=`, `?faixa=` e `?abertos=`; paginado. `alvo` identifica o que o alerta aponta: `{nome, nivel, estado, territorio, usuario}`, com `nome` "Nacional", o estado ou o território no pool, e a pessoa no limite. Nulo se o alvo foi apagado |
+| `GET /api/v1/sgp/orcamento/alertas/` | Perfis do orçamento, no próprio escopo | Filtros `?tipo=`, `?faixa=` e `?abertos=`; paginado. `alvo` identifica o que o alerta aponta: `{nome, nivel, estado, territorio, usuario}`, com `nome` "Nacional", o estado ou o território no pool, e a pessoa no limite. Nulo se o alvo foi apagado e nos alertas de Meta, Submeta e Ação, que hoje não são gerados |
 
 ## Painel por rubrica do SGD
 

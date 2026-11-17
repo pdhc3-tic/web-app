@@ -5,7 +5,7 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.core.models import Role, State, Territory, User
-from apps.core.serializers import PERIODICIDADES_DO_LIMITE
+from apps.core.services.parametros import PERIODICIDADES_DO_LIMITE
 from apps.sgp.budget.ledger import efeito_no_saldo
 from apps.sgp.budget.limites import PERFIS_OPERACIONAIS
 from apps.sgp.models import BudgetAlert, BudgetPool, BudgetRubrica, BudgetTransaction, SpendingLimit, WorkPlanMeta
@@ -231,7 +231,8 @@ class AlvoDoAlertaSerializer(serializers.Serializer):
 
 
 class BudgetAlertSerializer(serializers.ModelSerializer):
-    """Alerta orçamentário com o alvo identificado; `alvo` é nulo quando o alvo foi apagado."""
+    """Alerta orçamentário com o alvo identificado. `alvo` é nulo quando o alvo foi apagado e nos alertas
+    de Meta, Submeta e Ação, que hoje não são gerados."""
 
     # O alvo vem do contexto `alvos` (pk do alerta → alvo), montado de uma vez para a página.
     rubrica_nome = serializers.CharField(source="rubrica.nome", read_only=True, allow_null=True)

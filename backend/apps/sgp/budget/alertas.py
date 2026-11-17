@@ -6,6 +6,7 @@ notificar duas vezes."""
 from __future__ import annotations
 
 import calendar
+from collections.abc import Iterable
 import re
 from dataclasses import dataclass
 from datetime import date
@@ -492,7 +493,7 @@ def _limites_do_escopo(user) -> Q:
     return filtro
 
 
-def alvos_dos_alertas(alertas) -> dict:
+def alvos_dos_alertas(alertas: Iterable[BudgetAlert]) -> dict[int, dict]:
     """O alvo de cada alerta, por pk do alerta, em duas consultas para a página inteira. Quem chama já
     recortou os alertas pelo escopo do perfil, então o alvo é lido com visão total. Alvo apagado e
     escopo sem alvo carregado ficam de fora."""
@@ -503,13 +504,13 @@ def alvos_dos_alertas(alertas) -> dict:
             por_escopo[alerta.escopo].add(alerta.referencia_id)
     with visao_total():
         pools = BudgetPool.objects.select_related("estado", "territorio").in_bulk(por_escopo[Escopo.POOL])
-        limites_ = SpendingLimit.objects.select_related("user").in_bulk(por_escopo[Escopo.LIMITE])
+        limites_por_pk = SpendingLimit.objects.select_related("user").in_bulk(por_escopo[Escopo.LIMITE])
     alvos = {}
     for alerta in alertas:
         if alerta.escopo == Escopo.POOL and alerta.referencia_id in pools:
             alvos[alerta.pk] = _alvo_do_pool(pools[alerta.referencia_id])
-        elif alerta.escopo == Escopo.LIMITE and alerta.referencia_id in limites_:
-            alvos[alerta.pk] = _alvo_do_limite(limites_[alerta.referencia_id])
+        elif alerta.escopo == Escopo.LIMITE and alerta.referencia_id in limites_por_pk:
+            alvos[alerta.pk] = _alvo_do_limite(limites_por_pk[alerta.referencia_id])
     return alvos
 
 
