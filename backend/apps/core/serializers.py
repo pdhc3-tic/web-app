@@ -49,6 +49,46 @@ def parametro_do_orcamento_invalido(chave: str, valor: str) -> str | None:
     return None
 
 
+def valor_do_tipo(tipo: str, value) -> str:
+    """O valor gravado em `SystemConfig.valor`, normalizado pelo tipo do parâmetro."""
+    if tipo == TipoConfiguracao.INTEGER:
+        try:
+            return str(int(value))
+        except (ValueError, TypeError):
+            raise serializers.ValidationError(
+                f"Valor inválido para tipo INTEGER: '{value}' não é um número inteiro válido."
+            )
+
+    if tipo == TipoConfiguracao.BOOLEAN:
+        if isinstance(value, bool):
+            return str(value)
+        if isinstance(value, str):
+            normalized = value.lower().strip()
+            if normalized in ("true", "false", "1", "0"):
+                return str(normalized in ("true", "1"))
+        raise serializers.ValidationError(
+            f"Valor inválido para tipo BOOLEAN: '{value}' não é um valor booleano válido."
+        )
+
+    if tipo == TipoConfiguracao.JSON:
+        if isinstance(value, str):
+            try:
+                json.loads(value)
+                return value
+            except json.JSONDecodeError:
+                raise serializers.ValidationError(
+                    f"Valor inválido para tipo JSON: '{value}' não é um JSON válido."
+                )
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except (TypeError, ValueError):
+            raise serializers.ValidationError(
+                "Valor inválido para tipo JSON: não foi possível serializar."
+            )
+
+    return str(value)
+
+
 class SystemConfigSerializer(serializers.ModelSerializer):
     atualizado_por = serializers.StringRelatedField(read_only=True)
 
@@ -68,52 +108,11 @@ class SystemConfigSerializer(serializers.ModelSerializer):
         instance = getattr(self, "instance", None)
         if instance is None:
             return value
-        valor = self._valor_do_tipo(instance, value)
+        valor = valor_do_tipo(instance.tipo, value)
         erro = parametro_do_orcamento_invalido(instance.chave, valor)
         if erro:
             raise serializers.ValidationError(erro)
         return valor
-
-    @staticmethod
-    def _valor_do_tipo(instance, value):
-        tipo = instance.tipo
-
-        if tipo == TipoConfiguracao.INTEGER:
-            try:
-                return str(int(value))
-            except (ValueError, TypeError):
-                raise serializers.ValidationError(
-                    f"Valor inválido para tipo INTEGER: '{value}' não é um número inteiro válido."
-                )
-
-        if tipo == TipoConfiguracao.BOOLEAN:
-            if isinstance(value, bool):
-                return str(value)
-            if isinstance(value, str):
-                normalized = value.lower().strip()
-                if normalized in ("true", "false", "1", "0"):
-                    return str(normalized in ("true", "1"))
-            raise serializers.ValidationError(
-                f"Valor inválido para tipo BOOLEAN: '{value}' não é um valor booleano válido."
-            )
-
-        if tipo == TipoConfiguracao.JSON:
-            if isinstance(value, str):
-                try:
-                    json.loads(value)
-                    return value
-                except json.JSONDecodeError:
-                    raise serializers.ValidationError(
-                        f"Valor inválido para tipo JSON: '{value}' não é um JSON válido."
-                    )
-            try:
-                return json.dumps(value, ensure_ascii=False)
-            except (TypeError, ValueError):
-                raise serializers.ValidationError(
-                    "Valor inválido para tipo JSON: não foi possível serializar."
-                )
-
-        return str(value)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -383,7 +382,8 @@ class UserDetailSerializer(serializers.ModelSerializer):
             "acesso_revogado", "acesso_revogado_em", "acesso_revogado_por",
             "qtd_dispositivos", "ultimo_sync_dispositivos",
         ]
-        read_only_fields = ["ultimo_login"]
+        # A revogação tem rota própria, com as regras do último Super Admin e o fim das sessões.
+        read_only_fields = ["ultimo_login", "acesso_revogado", "acesso_revogado_em"]
 
     @extend_schema_field(UsuarioRefComEmailSerializer(allow_null=True))
     def get_acesso_revogado_por(self, obj):

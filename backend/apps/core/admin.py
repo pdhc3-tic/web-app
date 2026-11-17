@@ -1,4 +1,5 @@
 from django import forms
+from django.db import transaction
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.core.exceptions import PermissionDenied
@@ -14,8 +15,8 @@ from .models import State, Territory, Municipality, User, Role, UserProfile, Org
 from .models.notifications import Notification, NotificationPreference
 from .models.system_config import SystemConfig
 from .models import AuditLog
-from .serializers import SystemConfigSerializer, parametro_do_orcamento_invalido
-from .services.usuarios import SUPER_ADMIN, desativar, e_super_admin, exigir_super_admin_restante, sobra_super_admin
+from .serializers import parametro_do_orcamento_invalido, valor_do_tipo
+from .services.usuarios import SUPER_ADMIN, desativar, exigir_super_admin_restante, sobra_super_admin
 
 
 def _mensagem(erro: ValidationError) -> str:
@@ -44,11 +45,20 @@ def _exigir_na_exclusao(**removidos) -> None:
         raise PermissionDenied(_mensagem(exc)) from exc
 
 
+def _exclusao_em_lote_atomica(acoes):
+    """As ações do Admin rodam sem a transação que ele abre na edição: o registro da exclusão e a exclusão
+    entram ou saem juntos, e a trava do último Super Admin vale até o commit."""
+    if "delete_selected" in acoes:
+        funcao, nome, descricao = acoes["delete_selected"]
+        acoes["delete_selected"] = (transaction.atomic(funcao), nome, descricao)
+    return acoes
+
+
 class UserProfileFormSet(BaseInlineFormSet):
     def clean(self):
         super().clean()
         usuario = self.instance
-        if usuario.pk is None or not e_super_admin(usuario) or self._continua_super_admin():
+        if usuario.pk is None or self._continua_super_admin():
             return
         _exigir_no_formulario(sem_usuarios=[usuario.pk])
 
@@ -153,9 +163,13 @@ class UserAdmin(DjangoUserAdmin):
         _exigir_na_exclusao(sem_usuarios=[obj.pk])
         super().delete_model(request, obj)
 
+    @transaction.atomic
     def delete_queryset(self, request, queryset):
         _exigir_na_exclusao(sem_usuarios=list(queryset.values_list("pk", flat=True)))
         super().delete_queryset(request, queryset)
+
+    def get_actions(self, request):
+        return _exclusao_em_lote_atomica(super().get_actions(request))
 
     def perfis_resumo(self, obj):
         profiles = obj.profiles.select_related("perfil", "territorio").all()
@@ -237,7 +251,7 @@ class UserProfileAdminForm(forms.ModelForm):
         dados = super().clean()
         # Antes de `_post_clean`: `self.instance` ainda tem o perfil e o usuário gravados.
         vinculo = self.instance
-        if vinculo.pk is None or vinculo.perfil.slug != SUPER_ADMIN:
+        if self.errors or vinculo.pk is None:
             return dados
         if getattr(dados.get("perfil"), "slug", None) != SUPER_ADMIN or dados.get("user") != vinculo.user:
             _exigir_no_formulario(sem_vinculos=[vinculo.pk])
@@ -261,9 +275,13 @@ class UserProfileAdmin(admin.ModelAdmin):
         _exigir_na_exclusao(sem_vinculos=[obj.pk])
         super().delete_model(request, obj)
 
+    @transaction.atomic
     def delete_queryset(self, request, queryset):
         _exigir_na_exclusao(sem_vinculos=list(queryset.values_list("pk", flat=True)))
         super().delete_queryset(request, queryset)
+
+    def get_actions(self, request):
+        return _exclusao_em_lote_atomica(super().get_actions(request))
 
 
 @admin.register(Notification)
@@ -293,7 +311,7 @@ class SystemConfigAdminForm(forms.ModelForm):
 
     def clean_valor(self):
         try:
-            valor = SystemConfigSerializer._valor_do_tipo(self.instance, self.cleaned_data["valor"])
+            valor = valor_do_tipo(self.instance.tipo, self.cleaned_data["valor"])
         except ValidationError as exc:
             raise forms.ValidationError(_mensagem(exc)) from exc
         erro = parametro_do_orcamento_invalido(self.instance.chave, valor)

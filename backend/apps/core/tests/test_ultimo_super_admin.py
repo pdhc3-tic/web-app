@@ -8,6 +8,7 @@ import pytest
 from django.contrib.admin.sites import site
 from django.core.exceptions import PermissionDenied
 from django.db import connection, transaction
+from django.db.transaction import TransactionManagementError
 from django.forms.models import inlineformset_factory
 from django.test import RequestFactory
 from rest_framework.exceptions import ValidationError
@@ -356,3 +357,75 @@ def test_desativar_enquanto_outro_pedido_tira_o_perfil_do_colega(perfil_super_ad
     assert not primeira.is_alive() and not segunda.is_alive()
     assert set(erros) == {"desativar"} and isinstance(erros["desativar"], ValidationError)
     assert User.objects.get(pk=ana.pk).ativo is True
+
+
+@pytest.mark.django_db
+class TestCamposDaRevogacao:
+    def test_patch_nao_grava_acesso_revogado(self, cliente, super_admin_user):
+        resposta = cliente.patch(
+            f"{USERS_URL}{super_admin_user.pk}/", {"acesso_revogado": True, "acesso_revogado_em": None}, format="json",
+        )
+
+        assert resposta.status_code == 200, resposta.data
+        super_admin_user.refresh_from_db()
+        assert super_admin_user.acesso_revogado is False
+
+    def test_revogacao_volta_inteira_se_a_auditoria_falhar(self, cliente, outro_super_admin, monkeypatch):
+        def falhar(**_):
+            raise RuntimeError("auditoria fora do ar")
+
+        monkeypatch.setattr("apps.core.views.users.log_audit", falhar)
+
+        with pytest.raises(RuntimeError):
+            cliente.patch(f"{USERS_URL}{outro_super_admin.pk}/revogar-acesso/")
+
+        outro_super_admin.refresh_from_db()
+        assert outro_super_admin.acesso_revogado is False
+
+    def test_conferencia_fora_de_transacao_e_recusada(self, monkeypatch):
+        conexao = SimpleNamespace(in_atomic_block=False)
+        monkeypatch.setattr("apps.core.services.usuarios.transaction.get_connection", lambda: conexao)
+
+        with pytest.raises(TransactionManagementError):
+            exigir_super_admin_restante(sem_usuarios=[1])
+
+
+@pytest.mark.django_db(transaction=True)
+class TestExclusaoEmLotePeloAdmin:
+    """A ação "Excluir selecionados" roda sem a transação que o Admin abre na edição."""
+
+    @pytest.fixture
+    def admin_logado(self, client):
+        client.force_login(UserFactory(is_superuser=True))
+        return client
+
+    def _excluir(self, cliente, modelo, pks):
+        return cliente.post(f"/admin/core/{modelo}/", {
+            "action": "delete_selected", "_selected_action": [str(pk) for pk in pks], "post": "yes",
+        })
+
+    def test_exclui_vinculo_que_nao_e_super_admin(self, admin_logado, perfil_super_admin):
+        UserFactory(profiles=[(perfil_super_admin, None)])
+        vinculo = UserFactory(profiles=[(RoleFactory(slug="ugp"), None)]).profiles.get()
+
+        resposta = self._excluir(admin_logado, "userprofile", [vinculo.pk])
+
+        assert resposta.status_code == 302
+        assert not UserProfile.objects.filter(pk=vinculo.pk).exists()
+
+    def test_nao_exclui_o_vinculo_do_ultimo_super_admin(self, admin_logado, perfil_super_admin):
+        vinculo = UserFactory(profiles=[(perfil_super_admin, None)]).profiles.get()
+
+        resposta = self._excluir(admin_logado, "userprofile", [vinculo.pk])
+
+        assert resposta.status_code == 403
+        assert UserProfile.objects.filter(pk=vinculo.pk).exists()
+
+    def test_nao_exclui_os_dois_ultimos_super_admins_juntos(self, admin_logado, perfil_super_admin):
+        ana = UserFactory(profiles=[(perfil_super_admin, None)])
+        bia = UserFactory(profiles=[(perfil_super_admin, None)])
+
+        resposta = self._excluir(admin_logado, "user", [ana.pk, bia.pk])
+
+        assert resposta.status_code == 403
+        assert User.objects.filter(pk__in=[ana.pk, bia.pk]).count() == 2

@@ -4,7 +4,7 @@ from django.db import transaction
 from django.db.models import Count, Max
 from django.utils import timezone
 from django_filters import rest_framework as django_filters
-from drf_spectacular.utils import extend_schema, inline_serializer
+from drf_spectacular.utils import OpenApiResponse, extend_schema, inline_serializer
 from rest_framework import filters, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import LimitOffsetPagination
@@ -15,7 +15,7 @@ from apps.core.models import Role, User, UserProfile
 from apps.core.permissions import IsSuperAdmin
 from apps.core.serializers import ImpactoDesativacaoSerializer, UserDetailSerializer, UserListSerializer
 from apps.core.services.audit import log_audit
-from apps.core.services.usuarios import SUPER_ADMIN, desativar, e_super_admin, exigir_super_admin_restante
+from apps.core.services.usuarios import SUPER_ADMIN, desativar, exigir_super_admin_restante
 
 
 logger = logging.getLogger(__name__)
@@ -164,7 +164,7 @@ class UserViewSet(viewsets.ModelViewSet):
     @staticmethod
     def _tira_o_perfil_super_admin(serializer) -> bool:
         perfis = serializer.validated_data.get("perfis_input")
-        if perfis is None or not serializer.instance.ativo or not e_super_admin(serializer.instance):
+        if perfis is None:
             return False
         super_admin = Role.objects.filter(slug=SUPER_ADMIN).values_list("pk", flat=True).first()
         return all(item["perfil_id"] != super_admin for item in perfis)
@@ -195,7 +195,10 @@ class UserViewSet(viewsets.ModelViewSet):
             revoked += int(created)
         return revoked
 
-    @extend_schema(request=None, responses=_ACESSO_RESPOSTA)
+    @extend_schema(request=None, responses={
+        200: _ACESSO_RESPOSTA,
+        400: OpenApiResponse(description="A própria conta ou o último Super Admin ativo, em `acesso_revogado`."),
+    })
     @action(detail=True, methods=["patch"], url_path="revogar-acesso")
     def revogar_acesso(self, request, pk=None):
         instance = self.get_object()
@@ -203,8 +206,7 @@ class UserViewSet(viewsets.ModelViewSet):
             raise serializers.ValidationError({"acesso_revogado": ["Você não pode revogar o próprio acesso."]})
         with transaction.atomic():
             # Super Admin sem acesso não entra: revogar o último deixa o sistema sem quem reative contas.
-            if e_super_admin(instance):
-                exigir_super_admin_restante(sem_usuarios=[instance.pk], campo="acesso_revogado")
+            exigir_super_admin_restante(sem_usuarios=[instance.pk], campo="acesso_revogado")
             instance.acesso_revogado = True
             instance.acesso_revogado_em = timezone.now()
             instance.acesso_revogado_por = request.user
@@ -213,20 +215,21 @@ class UserViewSet(viewsets.ModelViewSet):
                 "acesso_revogado_em",
                 "acesso_revogado_por",
             ])
-        revoked = self._invalidate_all_sessions(instance)
-        log_audit(
-            user=request.user,
-            acao="user.access_revoked",
-            modulo="core",
-            entidade="User",
-            entidade_id=instance.pk,
-            valores_anteriores={"acesso_revogado": False},
-            valores_novos={
-                "acesso_revogado": True,
-                "sessoes_invalidadas": revoked,
-            },
-            request=request,
-        )
+            # Na mesma transação: sem as sessões encerradas e sem a auditoria, a revogação não vale.
+            revoked = self._invalidate_all_sessions(instance)
+            log_audit(
+                user=request.user,
+                acao="user.access_revoked",
+                modulo="core",
+                entidade="User",
+                entidade_id=instance.pk,
+                valores_anteriores={"acesso_revogado": False},
+                valores_novos={
+                    "acesso_revogado": True,
+                    "sessoes_invalidadas": revoked,
+                },
+                request=request,
+            )
         audit_event_logger.info(
             "user.access_revoked actor_user_id=%s target_user_id=%s sessions=%s",
             getattr(request.user, "pk", None),

@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 
 from django.db import transaction
+from django.db.transaction import TransactionManagementError
 from django.db.models import Q
 from rest_framework.exceptions import ValidationError
 
@@ -13,12 +14,8 @@ from apps.core.signals.audit import get_audit_context
 audit_event_logger = logging.getLogger("audit_events")
 
 SUPER_ADMIN = "super-admin"
-
-
-def e_super_admin(user) -> bool:
-    from apps.core.models import UserProfile
-
-    return UserProfile.objects.filter(user=user, perfil__slug=SUPER_ADMIN).exists()
+TRAVA_DO_ULTIMO_SUPER_ADMIN = "core_ultimo_super_admin"
+MENSAGEM_DO_ULTIMO_SUPER_ADMIN = "Este é o último Super Admin ativo: ative ou cadastre outro antes."
 
 
 def _vinculos_que_operam():
@@ -28,21 +25,9 @@ def _vinculos_que_operam():
     return UserProfile.objects.filter(perfil__slug=SUPER_ADMIN, user__ativo=True, user__acesso_revogado=False)
 
 
-def travar_super_admins() -> None:
-    """Trava, em ordem de pk, a linha de todo usuário com o perfil Super Admin. Vem antes de qualquer
-    outra linha de usuário, para quem tira um Super Admin conferir depois de quem tirou outro."""
-    from apps.core.models import User, UserProfile
-
-    list(
-        User.objects.select_for_update(no_key=True)
-        .filter(pk__in=UserProfile.objects.filter(perfil__slug=SUPER_ADMIN).values("user_id"))
-        .order_by("pk").values_list("pk", flat=True)
-    )
-
-
 def sobra_super_admin(*, sem_usuarios=(), sem_vinculos=()) -> bool:
     """Se, sem esses usuários e vínculos, ainda há Super Admin que opera; ou se eles não tiram nenhum, porque
-    nenhum deles opera. Sem trava: serve para decidir o que mostrar, não para gravar."""
+    nenhum deles opera. Sem trava: sozinha, serve para decidir o que mostrar, não para gravar."""
     restantes = _vinculos_que_operam().exclude(user_id__in=sem_usuarios).exclude(pk__in=sem_vinculos)
     if restantes.exists():
         return True
@@ -51,12 +36,20 @@ def sobra_super_admin(*, sem_usuarios=(), sem_vinculos=()) -> bool:
 
 
 def exigir_super_admin_restante(*, sem_usuarios=(), sem_vinculos=(), campo="ativo") -> None:
-    """Recusa, com o erro em `campo`, tirar os últimos Super Admins que operam. A contagem é um comando
-    depois da trava: o snapshot do comando que trava é de antes de esperar, e não veria o vínculo que a
-    outra transação apagou ou o acesso que ela revogou. Quem chama está numa transação."""
-    travar_super_admins()
+    """Recusa, com o erro em `campo`, tirar de operação os últimos Super Admins: desativar, revogar o
+    acesso, tirar o perfil ou excluir. Vale para qualquer usuário ou vínculo, Super Admin ou não, porque
+    saber se é Super Admin antes da trava abriria espaço para quem acabou de virar um.
+
+    Um advisory lock único, pego antes de qualquer linha, serializa toda conferência até o commit, e a
+    contagem é um comando depois dele, que já vê o que a transação anterior gravou. Fora de uma transação
+    a trava não duraria até a gravação, por isso é recusado."""
+    conexao = transaction.get_connection()
+    if not conexao.in_atomic_block:
+        raise TransactionManagementError("A conferência do último Super Admin precisa de uma transação.")
+    with conexao.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", [TRAVA_DO_ULTIMO_SUPER_ADMIN])
     if not sobra_super_admin(sem_usuarios=sem_usuarios, sem_vinculos=sem_vinculos):
-        raise ValidationError({campo: ["Este é o último Super Admin ativo: ative ou cadastre outro antes."]})
+        raise ValidationError({campo: [MENSAGEM_DO_ULTIMO_SUPER_ADMIN]})
 
 
 @transaction.atomic
@@ -72,8 +65,7 @@ def desativar(user, *, por) -> list:
         return []
     if por is not None and por.pk == user.pk:
         raise ValidationError({"ativo": ["Você não pode desativar a própria conta."]})
-    if e_super_admin(user):
-        exigir_super_admin_restante(sem_usuarios=[user.pk])
+    exigir_super_admin_restante(sem_usuarios=[user.pk])
     # Antes do cancelamento, para um Articulador desativado não notificar a si mesmo.
     # Só `ativo` muda, sem tocar em coluna referenciada: o lock não barra as checagens
     # de FK de quem grava notificação ou auditoria para este usuário.

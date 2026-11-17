@@ -63,7 +63,7 @@ def periodo_de(data: date, periodicidade: str | None = None) -> tuple[date, date
 
 def pessoas_com_limite_individual(busca: str = "") -> list[dict]:
     """Usuários ativos com perfil que recebe limite individual, com esses perfis, para a escolha da pessoa
-    numa sobrescrita. `busca` filtra por nome ou e-mail."""
+    numa sobrescrita. `busca` filtra pelo nome: a UGP não lê os e-mails dos usuários."""
     vinculos = UserProfile.objects.filter(perfil__slug__in=PERFIS_OPERACIONAIS).select_related("perfil")
     usuarios = (
         User.objects.filter(ativo=True, profiles__perfil__slug__in=PERFIS_OPERACIONAIS)
@@ -71,7 +71,7 @@ def pessoas_com_limite_individual(busca: str = "") -> list[dict]:
         .prefetch_related(Prefetch("profiles", queryset=vinculos, to_attr="vinculos_com_limite"))
     )
     if busca:
-        usuarios = usuarios.filter(Q(nome__icontains=busca) | Q(email__icontains=busca))
+        usuarios = usuarios.filter(nome__icontains=busca)
     pessoas = []
     for usuario in usuarios:
         perfis = {vinculo.perfil.slug: vinculo.perfil.nome for vinculo in usuario.vinculos_com_limite}

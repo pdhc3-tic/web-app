@@ -90,8 +90,10 @@ class TestPessoas:
             ]},
         ]
 
-    @pytest.mark.parametrize("busca, esperados", [("bru", ["bruno"]), ("CARLA@", ["carla"]), ("davi", [])])
-    def test_busca_por_nome_ou_email(self, auth_client, pessoas, busca, esperados):
+    @pytest.mark.parametrize("busca, esperados", [
+        ("bru", ["bruno"]), ("CARLA", ["carla"]), ("davi", []), ("carla@test.com", []),
+    ])
+    def test_busca_so_pelo_nome(self, auth_client, pessoas, busca, esperados):
         resposta = auth_client.get(PESSOAS_URL, {"q": busca})
 
         assert [item["id"] for item in resposta.json()] == [pessoas[chave].pk for chave in esperados]

@@ -7005,7 +7005,7 @@ paths:
         schema:
           type: string
           default: ''
-        description: Parte do nome ou do e-mail.
+        description: Parte do nome.
       tags:
       - v1
       security:
@@ -9780,6 +9780,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/UserAcessoResposta'
           description: ''
+        '400':
+          description: A própria conta ou o último Super Admin ativo, em `acesso_revogado`.
 components:
   schemas:
     AbrangenciaPrevia:
@@ -17751,15 +17753,6 @@ components:
           writeOnly: true
           nullable: true
           minLength: 1
-        acesso_revogado:
-          type: boolean
-          description: Se True, o app SCA apaga os dados locais e exige novo login
-            (wipe remoto).
-        acesso_revogado_em:
-          type: string
-          format: date-time
-          nullable: true
-          title: Revogado em
     PatchedWorkPlanAcaoRequest:
       type: object
       properties:
@@ -21432,11 +21425,13 @@ components:
           maxLength: 200
         acesso_revogado:
           type: boolean
+          readOnly: true
           description: Se True, o app SCA apaga os dados locais e exige novo login
             (wipe remoto).
         acesso_revogado_em:
           type: string
           format: date-time
+          readOnly: true
           nullable: true
           title: Revogado em
         acesso_revogado_por:
@@ -21454,6 +21449,8 @@ components:
           nullable: true
           readOnly: true
       required:
+      - acesso_revogado
+      - acesso_revogado_em
       - acesso_revogado_por
       - email
       - id
@@ -21495,15 +21492,6 @@ components:
           writeOnly: true
           nullable: true
           minLength: 1
-        acesso_revogado:
-          type: boolean
-          description: Se True, o app SCA apaga os dados locais e exige novo login
-            (wipe remoto).
-        acesso_revogado_em:
-          type: string
-          format: date-time
-          nullable: true
-          title: Revogado em
       required:
       - email
       - nome_completo

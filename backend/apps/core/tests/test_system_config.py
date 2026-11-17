@@ -489,3 +489,36 @@ class TestParametrosDoOrcamento:
 
     def test_parametro_fora_do_orcamento_so_confere_o_tipo(self, cliente):
         assert self._patch(cliente, "session_timeout_hours", 0).status_code == status.HTTP_200_OK
+
+
+class TestParametrosDoOrcamentoNoAdmin:
+    """O Django Admin aplica as mesmas regras do PATCH."""
+
+    def _formulario(self, chave, valor):
+        from django.contrib.admin.sites import site
+        from django.test import RequestFactory
+
+        from apps.core.tests.factories import UserFactory
+
+        config = SystemConfig.objects.get(chave=chave)
+        request = RequestFactory().post("/")
+        request.user = UserFactory(is_superuser=True)
+        Formulario = site._registry[SystemConfig].get_form(request, config)
+        return Formulario(data={"valor": valor, "descricao": config.descricao}, instance=config)
+
+    @pytest.mark.parametrize("chave, valor, aceito", [
+        ("budget_limit_period", "anual", False),
+        ("budget_limit_period", "mensal", True),
+        ("budget_subexec_min_pct", "0", False),
+        ("budget_subexec_alert_months", "abc", False),
+        ("budget_alert_yellow_pct", "95", False),
+        ("budget_alert_yellow_pct", "80", True),
+    ])
+    def test_opcoes_faixas_e_limiares(self, chave, valor, aceito):
+        SystemConfig.objects.filter(chave="budget_alert_yellow_pct").update(valor="70")
+        SystemConfig.objects.filter(chave="budget_alert_red_pct").update(valor="90")
+
+        formulario = self._formulario(chave, valor)
+        formulario.is_valid()
+
+        assert ("valor" not in formulario.errors) is aceito, formulario.errors

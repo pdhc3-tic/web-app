@@ -376,7 +376,7 @@ class PeriodoDosLimitesSerializer(serializers.Serializer):
 
 
 class PessoasComLimiteQuerySerializer(serializers.Serializer):
-    q = serializers.CharField(required=False, allow_blank=True, default="", help_text="Parte do nome ou do e-mail.")
+    q = serializers.CharField(required=False, allow_blank=True, default="", help_text="Parte do nome.")
 
 
 class PerfilComLimiteSerializer(serializers.Serializer):
