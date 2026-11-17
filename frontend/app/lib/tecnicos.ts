@@ -1,31 +1,31 @@
 import { apiClient } from "@/app/lib/api";
 import type { Paginated } from "@/app/lib/users";
+import type { Refinar, Schema } from "@/app/lib/apiSchema";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 
-export type UsuarioElegivel = {
-  id: number;
-  nome_completo: string;
-  email: string;
-};
+// ─── Tipos ──────────────────────────────────────────────────────────────────
 
-export type TecnicoListItem = {
-  id: number;
-  user: number;
-  user_nome: string;
-  territorio: number | null;
-  territorio_nome: string | null;
-  osc: number | null;
-  osc_nome: string | null;
-  papel: string;
-  ativo: boolean;
-};
+/**
+ * Os tipos vêm do schema (#273).
+ *
+ * `territorio` e `ativo` são opcionais no schema (`Schema<"Tecnico">`) mas
+ * sempre presentes na resposta — Refinar os torna obrigatórios.
+ */
 
-export type TecnicoWritePayload = {
-  user: number;
-  territorio: number | null;
-  osc: number | null;
-  papel: string;
-};
+/** `UsuarioElegivel` — sem refinamentos necessários. */
+export type UsuarioElegivel = Schema<"UsuarioElegivel">;
+
+/** `TecnicoListSerializer`. */
+export type TecnicoListItem = Refinar<
+  Schema<"Tecnico">,
+  { territorio: number | null; ativo: boolean }
+>;
+
+/** Campos graváveis do técnico (POST/PATCH). */
+export type TecnicoWritePayload = Refinar<
+  Schema<"TecnicoRequest">,
+  { territorio: number | null }
+>;
 
 export type ListTecnicosSGPParams = {
   limit: number;
