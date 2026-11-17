@@ -17,7 +17,7 @@ import {
   valoresDoCamposJson,
   type ValoresCampos,
 } from "@/app/lib/camposSolicitacao";
-import type { Demanda, SolicitacaoDemanda } from "@/app/lib/demandas";
+import { anexosDaSolicitacao, type Demanda, type SolicitacaoDemanda } from "@/app/lib/demandas";
 import { formatMoneyInput, moneyOrNull } from "@/app/lib/format";
 import { useTiposSolicitacao } from "@/app/lib/hooks/useTiposSolicitacao";
 import { qk } from "@/app/lib/queryKeys";
@@ -25,8 +25,11 @@ import {
   atualizarSolicitacao,
   COTACOES_MINIMAS,
   criarSolicitacao,
+  removerDocumentoDemanda,
+  type DocumentoDemanda,
   type SolicitacaoPayload,
 } from "@/app/lib/solicitacoes";
+import type { ContextoAnexo } from "./CampoAnexo";
 import { CampoDinamico } from "./CampoDinamico";
 import { SaldoSolicitacao } from "./SaldoSolicitacao";
 import { SimulacaoDiarias, useSimulacaoDiarias } from "./SimulacaoDiarias";
@@ -84,6 +87,46 @@ export function SolicitacaoForm({
   const [erroGeral, setErroGeral] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
 
+  // Anexos (#365): o nome de cada documento informado, e os que subiram neste
+  // formulário e ainda não foram salvos. Estes saem do backend se o usuário
+  // retira o arquivo ou fecha sem salvar; sem isso, ficariam soltos na demanda e
+  // ocupariam o limite de anexos ainda não informados.
+  const [nomesAnexos, setNomesAnexos] = useState<Record<number, string>>(() =>
+    Object.fromEntries(
+      (solicitacao ? anexosDaSolicitacao(solicitacao) : []).flatMap(([, lista]) =>
+        lista.map((a) => [a.id, a.nome_original]),
+      ),
+    ),
+  );
+  const anexosNaoSalvos = useRef(new Set<number>());
+
+  function descartarAnexos(ids: Iterable<number>) {
+    for (const docId of [...ids]) {
+      anexosNaoSalvos.current.delete(docId);
+      void removerDocumentoDemanda(demanda.id, docId).catch(() => {
+        // Melhor esforço: o que sobrar não entra na demanda e sai se a solicitação for salva sem ele.
+      });
+    }
+  }
+
+  const contextoAnexo: ContextoAnexo = {
+    demandaId: demanda.id,
+    nomes: nomesAnexos,
+    onEnviado: (doc: DocumentoDemanda) => {
+      anexosNaoSalvos.current.add(doc.id);
+      setNomesAnexos((prev) => ({ ...prev, [doc.id]: doc.nome_original }));
+    },
+    // Um anexo já salvo só sai quando a solicitação for salva sem ele (o backend remove).
+    onRetirado: (docId) => {
+      if (anexosNaoSalvos.current.has(docId)) descartarAnexos([docId]);
+    },
+  };
+
+  function fechar() {
+    descartarAnexos(anexosNaoSalvos.current);
+    onClose();
+  }
+
   const diarias = useSimulacaoDiarias(
     tipo === "diaria" ? (valores.municipio_destino_id ?? "") : "",
     valores.data_inicio ?? "",
@@ -106,6 +149,7 @@ export function SolicitacaoForm({
   }
 
   function mudarTipo(novo: string) {
+    descartarAnexos(anexosNaoSalvos.current);
     setTipo(novo);
     setValores({});
     setErros({});
@@ -134,6 +178,8 @@ export function SolicitacaoForm({
       const salva = solicitacao
         ? await atualizarSolicitacao(demanda.id, solicitacao.id, payload)
         : await criarSolicitacao(demanda.id, payload);
+      // Ligados à solicitação, os anexos deixam de ser "não salvos".
+      anexosNaoSalvos.current.clear();
       await queryClient.invalidateQueries({ queryKey: qk.demandas.all });
       onSalvo(salva, solicitacao === null);
     } catch (err) {
@@ -160,7 +206,7 @@ export function SolicitacaoForm({
 
   const rodape = (
     <div className="flex items-center justify-end gap-2">
-      <Button variant="secondary" onClick={onClose} disabled={salvando}>
+      <Button variant="secondary" onClick={fechar} disabled={salvando}>
         Cancelar
       </Button>
       <Button onClick={salvar} loading={salvando} disabled={!tipo} data-testid="solicitacao-salvar">
@@ -172,7 +218,7 @@ export function SolicitacaoForm({
   return (
     <SlideOver
       open
-      onClose={salvando ? () => {} : onClose}
+      onClose={salvando ? () => {} : fechar}
       title={solicitacao ? `Editar solicitação — ${solicitacao.tipo_display}` : "Nova solicitação de recurso"}
       footer={rodape}
     >
@@ -202,6 +248,7 @@ export function SolicitacaoForm({
                     valor={valores[campo.chave] ?? ""}
                     onChange={(v) => mudarCampo(campo.chave, v)}
                     error={erros[campo.chave]}
+                    anexo={contextoAnexo}
                   />
                 </div>
               ))}

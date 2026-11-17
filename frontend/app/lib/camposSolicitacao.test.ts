@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   camposVisiveis,
+  configDoSchema,
   configDoTipo,
   montarCamposJson,
+  problemasDoSchema,
   resumoSolicitacao,
   validarCampos,
   valoresDoCamposJson,
@@ -92,6 +94,34 @@ describe("resumoSolicitacao", () => {
     expect(resumoSolicitacao("diaria", { beneficiario_nome: "Paulo", numero_diarias: "2.5" })).toBe("Paulo · 2,5 diária(s)");
     expect(resumoSolicitacao("equipamento", { quantidade: 5, descricao_equipamento: "Kit" })).toBe("5 × Kit");
     expect(resumoSolicitacao("desconhecido", {})).toBe("");
+  });
+});
+
+describe("campo de anexo do catálogo (#365)", () => {
+  const schema = {
+    properties: {
+      hotel: { type: "string", title: "Hotel", "x-ordem": 1 },
+      reserva: { type: "integer", format: "anexo", title: "Reserva", "x-ordem": 2 },
+      fotos: { type: "array", items: { type: "integer", format: "anexo" }, "x-ordem": 3 },
+    },
+  };
+
+  it("volta ao formulário com os ids, e o resumo do cartão não mostra o id", () => {
+    const config = configDoSchema(schema);
+    const valores = valoresDoCamposJson(config, { hotel: "Pousada", reserva: 41, fotos: [42, 43] });
+    expect(valores).toEqual({ hotel: "Pousada", reserva: "41", fotos: "42,43" });
+    expect(montarCamposJson(config, valores)).toEqual({ hotel: "Pousada", reserva: 41, fotos: [42, 43] });
+    expect(resumoSolicitacao("hospedagem", { hotel: "Pousada", reserva: 41 }, schema)).toBe("Pousada");
+  });
+
+  it("o editor do catálogo barra a declaração que o backend recusa", () => {
+    expect(problemasDoSchema(schema)).toBeNull();
+    expect(problemasDoSchema({ properties: { reserva: { type: "string", format: "anexo" } } })).toBe(
+      'O campo de anexo “reserva” precisa ser {"type": "integer", "format": "anexo"}.',
+    );
+    expect(
+      problemasDoSchema({ properties: { fotos: { type: "array", items: { type: "string", format: "anexo" } } } }),
+    ).toMatch(/O campo de vários anexos “fotos” precisa ser/);
   });
 });
 

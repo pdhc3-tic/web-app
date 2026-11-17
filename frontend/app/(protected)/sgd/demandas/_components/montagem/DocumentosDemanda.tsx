@@ -14,6 +14,7 @@ import {
   DOCUMENTO_CONTENT_TYPE,
   DOCUMENTO_MAX_BYTES,
   DOCUMENTOS_POR_DEMANDA,
+  documentosDaAba,
   enviarDocumentoDemanda,
   listDocumentosDemanda,
   removerDocumentoDemanda,
@@ -56,7 +57,8 @@ export function DocumentosDemanda({ demandaId }: { demandaId: number }) {
   const [progresso, setProgresso] = useState<number | null>(null);
   const [removendo, setRemovendo] = useState<DocumentoDemanda | null>(null);
 
-  const lista = documentos.data ?? [];
+  // Os anexos de campo (#365) aparecem na solicitação e têm limite próprio no backend.
+  const lista = documentosDaAba(documentos.data ?? []);
   const cheio = lista.length >= DOCUMENTOS_POR_DEMANDA;
 
   function limpar() {

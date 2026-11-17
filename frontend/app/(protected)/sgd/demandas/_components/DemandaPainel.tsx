@@ -30,6 +30,7 @@ import { AcoesDecisao, type Desfecho } from "./AcoesDecisao";
 import { AvisoRecursoExtra } from "./AvisoRecursoExtra";
 import { DemandaAuditoria } from "./DemandaAuditoria";
 import { NomeDoSolicitante } from "./NomeDoSolicitante";
+import { AnexosSolicitacao } from "./montagem/AnexosSolicitacao";
 
 function Solicitacoes({ demanda }: { demanda: Demanda }) {
   if (demanda.solicitacoes.length === 0) {
@@ -48,6 +49,9 @@ function Solicitacoes({ demanda }: { demanda: Demanda }) {
             {s.valor_autorizado !== null && ` · autorizado ${formatCurrencyBRL(s.valor_autorizado)}`}
             {s.valor_pago !== null && ` · pago ${formatCurrencyBRL(s.valor_pago)}`}
           </p>
+          <div className="mt-1.5 empty:hidden">
+            <AnexosSolicitacao solicitacao={s} />
+          </div>
           {s.alerta_rubrica_fora_do_previsto && (
             // RF22: alerta, não bloqueio — a decisão continua possível.
             <p

@@ -10,6 +10,8 @@
 
 ## 1. Campo de anexo no catálogo de tipos (#365)
 
+> **Resolvido no backend em 12/11/2026 pelo PR #422** (item 1 da #419): `{"type": "integer", "format": "anexo"}` guarda o id de um `DemandDocument` da demanda, e um `array` deles aceita vários. O arquivo sobe pelo fluxo de documentos com `tipo="anexo"`, a solicitação devolve `anexos` com o nome e a rota de download, e os anexos não contam no limite da aba Documentos. O formulário, o cartão, o painel e o editor do catálogo usam o contrato (branch `frontend/sprint-12c`).
+
 A #365 pede que o formulário de um tipo de solicitação novo, desenhado a partir do `schema_campos` do catálogo (`/sgd/config/tipos-solicitacao/`, #357), aceite campos de texto, número, data, booleano, enumeração **e upload**.
 
 Os cinco primeiros têm representação no JSON Schema que o backend já valida (`type`, `format: date`/`date-time`, `enum`). O upload não tem: os campos da solicitação são gravados em `DemandRequest.campos_json`, sem arquivo, e os anexos da demanda vão por `DemandDocument` (aba Documentos), sem ligação com um campo do schema. Nada no catálogo diz que um campo é um anexo, nem onde o arquivo fica.

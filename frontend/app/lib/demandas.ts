@@ -67,9 +67,24 @@ export type SolicitacaoDemanda = {
   valor_pago: string | null;
   ordem: number;
   alerta_rubrica_fora_do_previsto: boolean;
+  /**
+   * Um item por campo de anexo do schema do tipo (#365): o documento, `null` se
+   * vazio, ou a lista deles num campo de vários. Vazio num tipo sem anexo.
+   */
+  anexos: Record<string, AnexoDoCampo | AnexoDoCampo[] | null>;
   criado_em: string;
   atualizado_em: string;
 };
+
+/** Um arquivo informado num campo de anexo. Abre pelo id, na rota de download dos documentos. */
+export type AnexoDoCampo = { id: number; nome_original: string; download: string };
+
+/** Os anexos de uma solicitação, campo a campo, já como lista. */
+export function anexosDaSolicitacao(s: Pick<SolicitacaoDemanda, "anexos">): [string, AnexoDoCampo[]][] {
+  return Object.entries(s.anexos ?? {})
+    .map(([campo, v]): [string, AnexoDoCampo[]] => [campo, v === null ? [] : Array.isArray(v) ? v : [v]])
+    .filter(([, lista]) => lista.length > 0);
+}
 
 /** `ApprovalStepSerializer` — uma decisão na linha do tempo da demanda. */
 export type EtapaDemanda = {

@@ -22,6 +22,8 @@ export type PropriedadeSchema = {
   oneOf?: { const: string | number; title?: string }[];
   minimum?: number;
   maxLength?: number;
+  /** Num campo de vários anexos: `{"type": "integer", "format": "anexo"}`. */
+  items?: PropriedadeSchema;
   /** Mensagem própria da regra, que o backend devolve no erro. */
   mensagem?: string;
   /** Convenção do front: a ordem do campo no formulário (o JSONB não guarda a ordem das chaves). */
