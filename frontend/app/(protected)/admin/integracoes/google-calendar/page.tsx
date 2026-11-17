@@ -318,7 +318,7 @@ const ESTADO_BADGE: Record<
 function StatusSection({ status }: { status: GoogleCalendarStatus | null }) {
   const estado = status?.estado ?? "indisponivel";
   const badge = ESTADO_BADGE[estado];
-  const falhasRecentes = status?.falhasRecentes ?? 0;
+  const falhasRecentes = status?.falhas_recentes ?? 0;
 
   return (
     <section
@@ -359,12 +359,12 @@ function StatusSection({ status }: { status: GoogleCalendarStatus | null }) {
             className="text-sm text-text-muted"
           >
             Última sincronização:{" "}
-            {status?.ultimaSincronizacao ? (
+            {status?.ultima_sincronizacao ? (
               <span
                 className="text-text"
-                title={absoluteDateTime(status.ultimaSincronizacao)}
+                title={absoluteDateTime(status.ultima_sincronizacao)}
               >
-                {relativeTime(status.ultimaSincronizacao)}
+                {relativeTime(status.ultima_sincronizacao)}
               </span>
             ) : (
               <span className="text-text">nunca executada</span>
@@ -383,12 +383,12 @@ function StatusSection({ status }: { status: GoogleCalendarStatus | null }) {
           {/* O backend devolve a falha mais recente já ocorrida, mesmo quando o
               estado atual é "ok" — daí o rótulo dizer "registrado", e não dar a
               entender que a integração está falhando agora. */}
-          {status?.ultimoErro && (
+          {status?.ultimo_erro && (
             <p
               data-testid="gcal-ultimo-erro"
               className="rounded-md bg-error-bg px-3 py-2 text-xs text-error-text"
             >
-              Último erro registrado: {status.ultimoErro}
+              Último erro registrado: {status.ultimo_erro}
             </p>
           )}
         </>
