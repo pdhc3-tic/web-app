@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Refinar, Schema } from "./apiSchema";
 import type { MetaListItem } from "./metas";
+import type { MunicipioResumo } from "./ufpas";
 import type { UserListItem } from "./users";
 
 /**
@@ -18,7 +19,11 @@ const RAIZ = path.resolve(__dirname, "..", "..");
 const SCHEMA = path.resolve(RAIZ, "..", "backend", "schema.yml");
 
 /** Só para o `tsc` ter o que conferir; nunca é chamada. */
-export function provasDeTipo(meta: MetaListItem, usuario: UserListItem) {
+export function provasDeTipo(
+  meta: MetaListItem,
+  usuario: UserListItem,
+  municipio: MunicipioResumo,
+) {
   // Campo que o backend não publica não existe no tipo: é o bug do "Estado"
   // vazio da issue, agora pego na compilação.
   // @ts-expect-error `estado` não existe em WorkPlanMetaList
@@ -30,12 +35,16 @@ export function provasDeTipo(meta: MetaListItem, usuario: UserListItem) {
   const executado: string = meta.valor_executado;
   const autor: { id: number; nome: string } | null = usuario.acesso_revogado_por;
 
+  // `estado` é obrigatório em `MunicipioNested`: acesso direto compila sem
+  // null-check. Se o schema tornar `estado` opcional, esta linha quebra.
+  const sigla: string = municipio.estado.sigla;
+
   // Refinar só aceita campo que existe no tipo gerado: se o backend remover o
   // campo, o refinamento deixa de compilar em vez de inventá-lo.
   // @ts-expect-error `campo_que_nao_existe` não está em WorkPlanMetaList
   type Invalido = Refinar<Schema<"WorkPlanMetaList">, { campo_que_nao_existe: string }>;
 
-  return [executado, autor, null as unknown as Invalido];
+  return [executado, autor, sigla, null as unknown as Invalido];
 }
 
 describe("tipos da API a partir do schema (#273)", () => {
