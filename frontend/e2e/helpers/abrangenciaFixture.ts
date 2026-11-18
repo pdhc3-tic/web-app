@@ -5,17 +5,16 @@ import { ORCAMENTO_E2E_PY } from "./orcamentoE2E";
 /**
  * Fixture da abrangência territorial da demanda (#361, backend #352).
  *
- * O ADT Ewerton (Território RN) tem uma demanda em Rascunho vinculada a uma
- * atividade de PE, da ADT Marina — criada pelo `criar_demanda` do SGD, que
- * grava o estado e o território do SOLICITANTE. A tela ainda não acha a
- * atividade de outro estado pela busca (o SGP recorta por território;
- * docs/pendencias-backend-sprint-12a.md, item 2), por isso a demanda nasce
- * aqui e não pelo formulário.
+ * Uma atividade agendada de PE, da ADT Marina, que o ADT Ewerton (Território
+ * RN) acha pela busca do formulário e vincula a uma demanda nova — pela tela,
+ * desde que a busca saiu do recorte territorial do SGP (#361, PR #422).
  *
- * A demanda leva uma locação de veículo de R$ 700, que cabe no limite de
- * R$ 1.000 do Ewerton e no pool territorial de RN: a submissão passa e a
- * demanda vai para a fila do Articulador de RN (Hélio), não para a de PE
- * (Sandra). O orçamento é fotografado no setup e restaurado no teardown.
+ * A solicitação entra por `adicionarSolicitacao361`, depois que a tela cria a
+ * demanda: uma locação de veículo de R$ 700, que cabe no limite de R$ 1.000
+ * do Ewerton e no pool territorial de RN. Assim a submissão passa e a demanda
+ * vai para a fila do Articulador de RN, não para a de PE. O formulário de
+ * veículo tem E2E próprio (`montar-demanda`). O orçamento é fotografado no
+ * setup e restaurado no teardown.
  *
  * Roda como `postgres` por causa da row-level security de `sgd_demand`.
  */
@@ -26,13 +25,13 @@ const MARCADOR = "ABRANGENCIA_361_FIXTURE";
 export const PREFIXO_361 = "E2E-361";
 
 export type AbrangenciaFixture = {
-  demandaId: number;
-  demandaTitulo: string;
   atividadeTitulo: string;
   /** Como a tela deve mostrar: "Território (UF)". */
   abrangencia: string;
   estadoDemanda: string;
   estadoAtividade: string;
+  /** Como "Analisada por" deve mostrar: os nomes, separados por vírgula. */
+  articuladores: string;
 };
 
 const COMUM = `${ORCAMENTO_E2E_PY}
@@ -63,7 +62,7 @@ from django.utils import timezone
 from apps.core.models import Municipality
 from apps.sgp.models.workplan import WorkPlanAcao
 from apps.sgp.budget.models import BudgetRubrica
-from apps.sgd.services import demand as ds
+from apps.sgd.services import contexto
 
 limpar()
 fotografar(FOTO)
@@ -84,25 +83,29 @@ atividade = Activity.objects.create(
     descricao_narrativa="Criada pela fixture E2E da issue 361.",
 )
 
-demanda = ds.criar_demanda(
-    titulo=f"{P} Van para a feira em PE", activity=atividade, justificativa="", solicitante=adt,
-)
+estado, territorio = contexto.abrangencia_para_nova_demanda(solicitante=adt)
+assert estado and estado != "PE" and territorio, (estado, territorio)
+
+print("${MARCADOR}_SETUP " + json.dumps({
+    "atividadeTitulo": atividade.titulo,
+    "abrangencia": f"{territorio.nome} ({estado})",
+    "estadoDemanda": estado,
+    "estadoAtividade": "PE",
+    "articuladores": ", ".join(a["nome"] for a in contexto.articuladores_do_estado(estado)),
+}))
+`;
+
+const SOLICITACAO_SCRIPT = (demandaId: number) => `${COMUM}
+from decimal import Decimal
+from apps.sgd.services import demand as ds
+
+demanda = Demand.objects.get(pk=${demandaId}, titulo__startswith=P, solicitante=adt)
 ds.adicionar_solicitacao(demanda, tipo="veiculo", valor_estimado=Decimal("700"), campos_json={
     "tipo_veiculo": "van", "data_hora_retirada": "2026-12-01T08:00", "data_hora_devolucao": "2026-12-02T18:00",
     "destino_rota": "Mossoró → Caruaru", "estimativa_km": 600, "motorista_incluso": True,
     "combustivel_incluso": True, "numero_passageiros": 10,
 })
-demanda.refresh_from_db()
-assert demanda.estado_sigla and demanda.estado_sigla != "PE", demanda.estado_sigla
-
-print("${MARCADOR}_SETUP " + json.dumps({
-    "demandaId": demanda.pk,
-    "demandaTitulo": demanda.titulo,
-    "atividadeTitulo": atividade.titulo,
-    "abrangencia": f"{demanda.territorio.nome} ({demanda.estado_sigla})",
-    "estadoDemanda": demanda.estado_sigla,
-    "estadoAtividade": "PE",
-}))
+print("${MARCADOR}_SOLICITACAO_OK")
 `;
 
 const TEARDOWN_SCRIPT = `${COMUM}
@@ -142,5 +145,14 @@ export function removerAbrangenciaFixture(): void {
   const saida = djangoShellComoDono(TEARDOWN_SCRIPT);
   if (!saida.includes(`${MARCADOR}_TEARDOWN_OK`)) {
     throw new Error(`Fixture da #361 não confirmou o teardown:\n${saida}`);
+  }
+}
+
+/** Locação de veículo de R$ 700 na demanda que a tela criou. */
+export function adicionarSolicitacao361(demandaId: number): void {
+  const saida = djangoShellComoDono(SOLICITACAO_SCRIPT(demandaId));
+  if (!saida.includes(`${MARCADOR}_SOLICITACAO_OK`)) {
+    throw new Error(`Fixture da #361 não adicionou a solicitação:
+${saida}`);
   }
 }

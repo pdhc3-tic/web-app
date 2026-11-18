@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { AtividadeDetail } from "@/app/lib/atividades";
+import type { AtividadeElegivelDetalhe } from "@/app/lib/demandas";
 import { ContextoAtividade } from "./ContextoAtividade";
 
 vi.mock("@/app/providers/SgpChoicesProvider", () => ({
@@ -16,7 +16,7 @@ describe("ContextoAtividade (#294)", () => {
       municipio: { id: 1, nome: "Caicó" },
       tecnico_responsavel: { id: 1, nome: "Técnico" },
       acao: { id: 1, numero: "1.1.1", descricao: "Ação" },
-    } as unknown as AtividadeDetail;
+    } as unknown as AtividadeElegivelDetalhe;
 
     render(<ContextoAtividade atividade={atividade} />);
 

@@ -7,6 +7,7 @@ import type { SolicitacaoDemanda } from "@/app/lib/demandas";
 import { useTiposSolicitacao } from "@/app/lib/hooks/useTiposSolicitacao";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import type { BloqueioSolicitacao } from "@/app/lib/solicitacoes";
+import { AnexosSolicitacao } from "./AnexosSolicitacao";
 
 const ORIENTACAO: Record<BloqueioSolicitacao["acao_sugerida"], string> = {
   solicitar_recurso_extra: "Peça recurso extra para cobrir a diferença.",
@@ -75,6 +76,8 @@ export function SolicitacaoCartao({
           </button>
         </div>
       </div>
+
+      <AnexosSolicitacao solicitacao={solicitacao} />
 
       {solicitacao.alerta_rubrica_fora_do_previsto && (
         // RF22: alerta, não bloqueio.

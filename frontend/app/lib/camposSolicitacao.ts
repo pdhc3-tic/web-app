@@ -28,7 +28,12 @@ export type TipoCampo =
   | "choice"
   | "municipio"
   /** Número de um tipo do catálogo: inteiro ou decimal, com mínimo opcional. */
-  | "numero";
+  | "numero"
+  /**
+   * Arquivo de um tipo do catálogo (`format: anexo`). O valor é o id do documento
+   * da demanda; num campo `multiplo`, os ids separados por vírgula.
+   */
+  | "anexo";
 
 /** O estado do formulário: tudo string, como os inputs entregam. */
 export type ValoresCampos = Record<string, string>;
@@ -44,6 +49,8 @@ export type CampoSolicitacao = {
   /** Para `numero`: só inteiros, e o menor valor aceito. */
   inteiro?: boolean;
   minimo?: number;
+  /** Para `anexo`: aceita vários arquivos (`array` de `integer` com `format: anexo`). */
+  multiplo?: boolean;
   /** Para `dataHora` de um tipo do catálogo: vai como ISO completo, o `date-time` do JSON Schema. */
   isoCompleto?: boolean;
   /** Mensagem própria do schema para valor fora da regra. */
@@ -219,7 +226,9 @@ export const CONFIG_POR_TIPO: Record<TipoSolicitacao, ConfigTipo> = {
 };
 
 export function isTipoSolicitacao(tipo: string): tipo is TipoSolicitacao {
-  return tipo in CONFIG_POR_TIPO;
+  // Só as chaves próprias: com `in`, um slug como "constructor" passaria por um
+  // dos seis tipos de origem, sem configuração de campos.
+  return Object.prototype.hasOwnProperty.call(CONFIG_POR_TIPO, tipo);
 }
 
 function ehObjeto(v: unknown): v is Record<string, unknown> {
@@ -227,6 +236,11 @@ function ehObjeto(v: unknown): v is Record<string, unknown> {
 }
 
 const ehPrimitivo = (v: unknown) => v === null || ["string", "number", "boolean"].includes(typeof v);
+
+/** Formato do campo de anexo no `schema_campos` (`services/anexos.py`, PR #422). */
+export const FORMATO_ANEXO = "anexo";
+
+const ehAnexo = (v: unknown) => ehObjeto(v) && v.format === FORMATO_ANEXO;
 
 /**
  * O que impede o renderizador de desenhar o schema, numa frase para o editor
@@ -271,6 +285,13 @@ export function problemasDoSchema(schema: unknown): string | null {
     if (maxLength !== undefined && typeof maxLength !== "number") {
       return `O “maxLength” do campo “${chave}” precisa ser número.`;
     }
+    // A mesma regra de `declaracoes_invalidas` do backend: o valor do anexo é o id do documento.
+    if (ehAnexo(prop) && type !== "integer") {
+      return `O campo de anexo “${chave}” precisa ser {"type": "integer", "format": "anexo"}.`;
+    }
+    if (ehAnexo(prop.items) && !(type === "array" && ehObjeto(prop.items) && prop.items.type === "integer")) {
+      return `O campo de vários anexos “${chave}” precisa ser {"type": "array", "items": {"type": "integer", "format": "anexo"}}.`;
+    }
   }
   return null;
 }
@@ -290,6 +311,9 @@ function campoDoSchema(chave: string, prop: PropriedadeSchema, obrigatorio: bool
     ajuda: typeof prop.description === "string" ? prop.description : undefined,
     mensagem: typeof prop.mensagem === "string" ? prop.mensagem : undefined,
   };
+  // Antes do número: o anexo é um `integer` (ou lista deles), mas o valor é um arquivo.
+  if (ehAnexo(prop)) return { ...base, tipo: "anexo", largo: true };
+  if (ehAnexo(prop.items)) return { ...base, tipo: "anexo", multiplo: true, largo: true };
   if (Array.isArray(prop.oneOf) && prop.oneOf.length) {
     return {
       ...base,
@@ -315,8 +339,7 @@ function campoDoSchema(chave: string, prop: PropriedadeSchema, obrigatorio: bool
   }
   if (prop.format === "date") return { ...base, tipo: "data" };
   if (prop.format === "date-time") return { ...base, tipo: "dataHora", isoCompleto: true };
-  // Texto longo vira área de texto; o resto, linha única. Um `format` desconhecido
-  // (o anexo, por exemplo — pendencias-backend-sprint-12a.md, item 1) cai aqui.
+  // Texto longo vira área de texto; o resto, linha única. Um `format` desconhecido cai aqui.
   if ((prop.maxLength ?? 0) >= 200) return { ...base, tipo: "textarea", largo: true };
   return { ...base, tipo: "texto" };
 }
@@ -408,7 +431,18 @@ export function validarCampos(
   return erros;
 }
 
-/** Estado do formulário → `campos_json`. Campos ocultos e vazios ficam de fora. */
+/** Valor de um campo de anexo no estado do formulário ("12" ou "12,13") → ids dos documentos. */
+export function idsDoAnexo(valor: string): number[] {
+  return valor
+    .split(",")
+    .map((v) => Number(v.trim()))
+    .filter((n) => Number.isInteger(n) && n > 0);
+}
+
+/**
+ * Estado do formulário → `campos_json`. Campos ocultos e vazios ficam de fora;
+ * um campo de anexo vazio também, que o backend lê como não preenchido.
+ */
 export function montarCamposJson(config: ConfigTipo, valores: ValoresCampos): Record<string, unknown> {
   const json: Record<string, unknown> = {};
   for (const campo of camposVisiveis(config, valores)) {
@@ -431,6 +465,11 @@ export function montarCamposJson(config: ConfigTipo, valores: ValoresCampos): Re
       case "cpf":
         json[campo.chave] = valor.replace(/\D/g, "");
         break;
+      case "anexo": {
+        const ids = idsDoAnexo(valor);
+        json[campo.chave] = campo.multiplo ? ids : ids[0];
+        break;
+      }
       case "choice":
         // O select trabalha com texto; um enum numérico volta ao número que o schema espera.
         json[campo.chave] = campo.opcoes?.find((o) => o.value === valor)?.original ?? valor;
@@ -474,7 +513,8 @@ export function resumoSolicitacao(
         return [t("quantidade") && `${t("quantidade")} × ${t("descricao_equipamento")}`];
       default:
         return configDoSchema(schema)
-          .campos.filter((c) => c.tipo !== "booleano" && t(c.chave))
+          // O id do anexo não diz nada a quem lê: o arquivo aparece à parte, no cartão.
+          .campos.filter((c) => c.tipo !== "booleano" && c.tipo !== "anexo" && t(c.chave))
           .slice(0, 2)
           .map((c) => c.opcoes?.find((o) => o.value === t(c.chave))?.label ?? t(c.chave));
     }
@@ -489,6 +529,7 @@ export function valoresDoCamposJson(config: ConfigTipo, json: Record<string, unk
     const bruto = json[campo.chave];
     if (bruto === undefined || bruto === null) continue;
     if (campo.tipo === "booleano") valores[campo.chave] = bruto === true ? SIM : NAO;
+    else if (campo.tipo === "anexo") valores[campo.chave] = Array.isArray(bruto) ? bruto.join(",") : String(bruto);
     else if (campo.tipo === "cpf") valores[campo.chave] = formatCpfInput(String(bruto));
     // `datetime-local` só aceita "AAAA-MM-DDTHH:mm".
     else if (campo.tipo === "dataHora") {

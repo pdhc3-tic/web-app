@@ -103,7 +103,12 @@ export function BudgetBalance({
         if (!controller.signal.aborted) setCarregando(false);
       });
 
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      // A busca cancelada não chega ao `finally`: sem isto o card ficaria em
+      // "carregando" quando a página avisa a falta de território no meio dela.
+      setCarregando(false);
+    };
   }, [sessaoCarregando, semTerritorioNaSessao, adt, tentativa]);
 
   const semTerritorio = semTerritorioNaSessao || negadoSemTerritorio;
@@ -164,10 +169,11 @@ function Corpo({
   saldos: SaldoRubrica[] | null;
   onRetry: () => void;
 }) {
-  if (sessaoCarregando || (carregando && !saldos)) {
+  if (sessaoCarregando) {
     return <SaldoSkeleton />;
   }
 
+  // Antes do carregamento: sabida a falta de território, nada mais a esperar.
   if (semTerritorio) {
     return (
       <EmptyState
@@ -176,6 +182,10 @@ function Corpo({
         description="O saldo é apurado por território. Peça ao gestor do projeto para vincular o seu perfil a um território para acompanhar as rubricas."
       />
     );
+  }
+
+  if (carregando && !saldos) {
+    return <SaldoSkeleton />;
   }
 
   if (erro) {

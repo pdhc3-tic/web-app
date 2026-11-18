@@ -14,8 +14,8 @@ import { CampoDinamico } from "./CampoDinamico";
 /**
  * #365 — o renderizador genérico, campo a campo: cada tipo que o `schema_campos`
  * declara vira o controle certo, aceita a digitação do usuário e chega ao
- * `campos_json` com o tipo do JSON Schema. O anexo entra quando o backend
- * definir o contrato (pendencias-backend-sprint-12a.md, item 1).
+ * `campos_json` com o tipo do JSON Schema. O anexo tem teste próprio, em
+ * `CampoAnexo.test.tsx`.
  */
 
 vi.mock("@/app/providers/SgpChoicesProvider", () => ({ useSgpChoices: () => ({}) }));

@@ -114,12 +114,13 @@ test.describe("SGD — demandas pela ficha da atividade (ADT)", () => {
     await page.waitForURL("**/sgd/demandas/nova");
 
     const busca = page.waitForRequest(
-      (req) => req.url().includes("/api/v1/sgp/atividades/?") && req.url().includes("q="),
+      (req) => req.url().includes("/api/v1/sgd/atividades-elegiveis/?") && req.url().includes("q="),
     );
     await page.getByTestId("atividade-busca").fill("Oficina agendada");
     const params = new URL((await busca).url()).searchParams;
     // O contrato que o front manda: os dois status elegíveis, estreitados pelo
-    // texto. Sem `tecnico_id` desde a #361 — vale qualquer atividade (#352).
+    // texto, pela rota do SGD. Sem `tecnico_id` desde a #361 — vale qualquer
+    // atividade, de qualquer estado (#352).
     expect(params.has("tecnico_id")).toBe(false);
     expect(params.getAll("status")).toEqual(["planejado", "agendado"]);
     expect(params.get("q")).toBe("Oficina agendada");

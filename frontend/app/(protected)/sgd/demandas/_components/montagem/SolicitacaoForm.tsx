@@ -11,13 +11,14 @@ import { ApiError } from "@/app/lib/api";
 import {
   camposVisiveis,
   configDoTipo,
+  idsDoAnexo,
   isTipoSolicitacao,
   montarCamposJson,
   validarCampos,
   valoresDoCamposJson,
   type ValoresCampos,
 } from "@/app/lib/camposSolicitacao";
-import type { Demanda, SolicitacaoDemanda } from "@/app/lib/demandas";
+import { anexosDaSolicitacao, type Demanda, type SolicitacaoDemanda } from "@/app/lib/demandas";
 import { formatMoneyInput, moneyOrNull } from "@/app/lib/format";
 import { useTiposSolicitacao } from "@/app/lib/hooks/useTiposSolicitacao";
 import { qk } from "@/app/lib/queryKeys";
@@ -25,8 +26,11 @@ import {
   atualizarSolicitacao,
   COTACOES_MINIMAS,
   criarSolicitacao,
+  removerDocumentoDemanda,
+  type DocumentoDemanda,
   type SolicitacaoPayload,
 } from "@/app/lib/solicitacoes";
+import type { ContextoAnexo } from "./CampoAnexo";
 import { CampoDinamico } from "./CampoDinamico";
 import { SaldoSolicitacao } from "./SaldoSolicitacao";
 import { SimulacaoDiarias, useSimulacaoDiarias } from "./SimulacaoDiarias";
@@ -84,6 +88,57 @@ export function SolicitacaoForm({
   const [erroGeral, setErroGeral] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
 
+  // Anexos (#365): o nome de cada documento informado, e os que subiram neste
+  // formulário e ainda não foram salvos. Estes saem do backend se o usuário
+  // retira o arquivo ou fecha sem salvar; sem isso, ficariam soltos na demanda e
+  // ocupariam o limite de anexos ainda não informados.
+  const [nomesAnexos, setNomesAnexos] = useState<Record<number, string>>(() =>
+    Object.fromEntries(
+      (solicitacao ? anexosDaSolicitacao(solicitacao) : []).flatMap(([, lista]) =>
+        lista.map((a) => [a.id, a.nome_original]),
+      ),
+    ),
+  );
+  const anexosNaoSalvos = useRef(new Set<number>());
+  // Envios em curso seguram Salvar e a troca de tipo; um envio que termina depois
+  // de o formulário fechar é apagado na chegada, sem ficar solto na demanda.
+  const [enviandoAnexos, setEnviandoAnexos] = useState(0);
+  const encerrado = useRef(false);
+
+  function descartarAnexos(ids: Iterable<number>) {
+    for (const docId of [...ids]) {
+      anexosNaoSalvos.current.delete(docId);
+      void removerDocumentoDemanda(demanda.id, docId).catch(() => {
+        // Melhor esforço: o que sobrar não entra na demanda e sai se a solicitação for salva sem ele.
+      });
+    }
+  }
+
+  const contextoAnexo: ContextoAnexo = {
+    demandaId: demanda.id,
+    nomes: nomesAnexos,
+    onEnviado: (doc: DocumentoDemanda) => {
+      if (encerrado.current) {
+        void removerDocumentoDemanda(demanda.id, doc.id).catch(() => {});
+        return;
+      }
+      anexosNaoSalvos.current.add(doc.id);
+      setNomesAnexos((prev) => ({ ...prev, [doc.id]: doc.nome_original }));
+    },
+    // Um anexo já salvo só sai quando a solicitação for salva sem ele (o backend remove).
+    onRetirado: (docId) => {
+      if (anexosNaoSalvos.current.has(docId)) descartarAnexos([docId]);
+    },
+    onEnviando: (ativo) => setEnviandoAnexos((n) => Math.max(0, n + (ativo ? 1 : -1))),
+    bloqueado: salvando,
+  };
+
+  function fechar() {
+    encerrado.current = true;
+    descartarAnexos(anexosNaoSalvos.current);
+    onClose();
+  }
+
   const diarias = useSimulacaoDiarias(
     tipo === "diaria" ? (valores.municipio_destino_id ?? "") : "",
     valores.data_inicio ?? "",
@@ -106,6 +161,7 @@ export function SolicitacaoForm({
   }
 
   function mudarTipo(novo: string) {
+    descartarAnexos(anexosNaoSalvos.current);
     setTipo(novo);
     setValores({});
     setErros({});
@@ -113,6 +169,7 @@ export function SolicitacaoForm({
   }
 
   async function salvar() {
+    if (enviandoAnexos > 0) return;
     if (!tipo || !config) {
       setErros({ tipo: "Escolha o tipo da solicitação." });
       return;
@@ -129,11 +186,25 @@ export function SolicitacaoForm({
     const payload: SolicitacaoPayload = { tipo, campos_json: montarCamposJson(config, valores) };
     if (config.valorDigitado && valor) payload.valor_estimado = valor;
 
+    // Os anexos que vão de fato neste payload (só os campos visíveis entram no
+    // campos_json); o que não foi nele não fica ligado à solicitação.
+    const noPayload = new Set(
+      camposVisiveis(config, valores)
+        .filter((c) => c.tipo === "anexo")
+        .flatMap((c) => idsDoAnexo(valores[c.chave] ?? "")),
+    );
+
     setSalvando(true);
     try {
       const salva = solicitacao
         ? await atualizarSolicitacao(demanda.id, solicitacao.id, payload)
         : await criarSolicitacao(demanda.id, payload);
+      // O formulário fecha: um envio que ainda chegar é apagado na chegada.
+      encerrado.current = true;
+      // Os do payload estão ligados à solicitação; qualquer outro ainda não
+      // salvo ficaria solto na demanda, e sai.
+      for (const docId of noPayload) anexosNaoSalvos.current.delete(docId);
+      descartarAnexos(anexosNaoSalvos.current);
       await queryClient.invalidateQueries({ queryKey: qk.demandas.all });
       onSalvo(salva, solicitacao === null);
     } catch (err) {
@@ -160,10 +231,20 @@ export function SolicitacaoForm({
 
   const rodape = (
     <div className="flex items-center justify-end gap-2">
-      <Button variant="secondary" onClick={onClose} disabled={salvando}>
+      {enviandoAnexos > 0 && (
+        <span className="mr-auto text-sm text-text-muted" role="status">
+          Aguarde o envio do arquivo.
+        </span>
+      )}
+      <Button variant="secondary" onClick={fechar} disabled={salvando}>
         Cancelar
       </Button>
-      <Button onClick={salvar} loading={salvando} disabled={!tipo} data-testid="solicitacao-salvar">
+      <Button
+        onClick={salvar}
+        loading={salvando}
+        disabled={!tipo || enviandoAnexos > 0}
+        data-testid="solicitacao-salvar"
+      >
         Salvar solicitação
       </Button>
     </div>
@@ -172,7 +253,7 @@ export function SolicitacaoForm({
   return (
     <SlideOver
       open
-      onClose={salvando ? () => {} : onClose}
+      onClose={salvando ? () => {} : fechar}
       title={solicitacao ? `Editar solicitação — ${solicitacao.tipo_display}` : "Nova solicitação de recurso"}
       footer={rodape}
     >
@@ -182,7 +263,9 @@ export function SolicitacaoForm({
             id="solicitacao-tipo"
             label="Tipo de solicitação"
             required
-            disabled={!catalogo.data}
+            // Trocar o tipo descarta os anexos ainda não salvos: durante o
+            // salvamento, apagaria os que estão no payload a caminho do backend.
+            disabled={!catalogo.data || enviandoAnexos > 0 || salvando}
             placeholder={catalogo.isPending ? "Carregando tipos…" : undefined}
             options={(catalogo.data ?? []).filter((t) => t.ativo).map((t) => ({ value: t.slug, label: t.nome }))}
             value={tipo}
@@ -202,6 +285,7 @@ export function SolicitacaoForm({
                     valor={valores[campo.chave] ?? ""}
                     onChange={(v) => mudarCampo(campo.chave, v)}
                     error={erros[campo.chave]}
+                    anexo={contextoAnexo}
                   />
                 </div>
               ))}

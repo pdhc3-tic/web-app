@@ -12,7 +12,10 @@ jobs:
   e2e:
     name: Testes E2E (Playwright)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Soma do setup (npm, vitest, build da stack e seeds, ~10 min) com o teto de
+    # 60 min do passo da suíte, mais folga. Com 20 aqui o job era cancelado antes
+    # de a suíte terminar, e o teto do passo nunca chegava a valer (#302 A6, #317).
+    timeout-minutes: 90
 
     steps:
       - uses: actions/checkout@v4
@@ -21,8 +24,9 @@ jobs:
         run: |
           cat > backend/.env <<'EOF'
           DJANGO_SECRET_KEY=ci-only-secret
-          DEBUG=False
+          DEBUG=True
           ALLOWED_HOSTS=localhost,127.0.0.1,backend
+          CORS_ALLOWED_ORIGINS=http://localhost:3000
           DB_NAME=app_db
           DB_USER=postgres
           DB_PASSWORD=postgres
@@ -35,6 +39,10 @@ jobs:
           REDIS_PORT=6379
           FIELD_ENCRYPTION_KEY=Y2ktb25seS1maWVsZC1lbmNyeXB0aW9uLWtleS0wMDAwMDA=
           EOF
+          # O navegador chama o backend em outra origem (localhost:8000): sem o
+          # CORS, toda requisição do front é bloqueada e só o login, feito pelo
+          # servidor do Next, passa. DEBUG=True espelha o ambiente local e serve
+          # /media/, de onde saem os downloads de documentos.
           # Chave descartável: o banco do E2E nasce vazio a cada execução, então
           # nada criptografado precisa ser lido com a chave de outra rodada.
           echo "FIELD_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> backend/.env
@@ -95,9 +103,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-${{ github.run_id }}
-          path: |
-            frontend/playwright-report/
-            frontend/test-results/
+          # O `outputDir` do playwright.config.ts fica na raiz do repo, fora de
+          # frontend/ (o reporter é só `list`, sem relatório HTML).
+          path: .playwright/test-results/
           retention-days: 7
 
       - name: Parar stack Docker

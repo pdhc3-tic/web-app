@@ -89,6 +89,9 @@ function getPortalTargetServer(): null {
 
 // ─── SlideOver ────────────────────────────────────────────────────────────────
 
+/** Duração das transições do painel e do backdrop (`duration-250`). */
+const DURACAO_MS = 250;
+
 export function SlideOver({
   open,
   onClose,
@@ -135,15 +138,29 @@ export function SlideOver({
       // não diretamente no corpo do efeito — para respeitar a regra do React
       // Compiler e garantir que o elemento esteja no DOM antes de aplicar
       // a classe de transição que dispara o slide-in.
+      let rafInterno = 0;
       const raf = requestAnimationFrame(() => {
         setMounted(true);
-        requestAnimationFrame(() => setVisible(true));
+        rafInterno = requestAnimationFrame(() => setVisible(true));
       });
-      return () => cancelAnimationFrame(raf);
+      // Os dois quadros: fechar entre eles não pode deixar o slide-in pendente.
+      return () => {
+        cancelAnimationFrame(raf);
+        cancelAnimationFrame(rafInterno);
+      };
     } else {
       // queueMicrotask mantém o setState fora do corpo direto do efeito
       // (requisito do React Compiler) sem atraso visível para a animação.
       queueMicrotask(() => setVisible(false));
+      // Sem transição o `transitionend` não chega: com `motion-reduce`, ou ao
+      // fechar antes de o slide-in começar. Passado o tempo da animação, o painel
+      // sai do DOM de qualquer jeito, em vez de ficar aberto na tela.
+      const fallback = setTimeout(() => {
+        setMounted(false);
+        if (returnFocusRef.current instanceof HTMLElement) returnFocusRef.current.focus();
+        returnFocusRef.current = null;
+      }, DURACAO_MS + 50);
+      return () => clearTimeout(fallback);
     }
   }, [open]);
 

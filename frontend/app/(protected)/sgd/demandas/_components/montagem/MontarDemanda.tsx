@@ -29,7 +29,7 @@ import {
   submeterDemanda,
   type BloqueioSolicitacao,
 } from "@/app/lib/solicitacoes";
-import { AvisoForaDoTerritorio } from "../AbrangenciaDemanda";
+import { AvisoForaDoTerritorio, rotuloArticuladores } from "../AbrangenciaDemanda";
 import { AvisoRecursoExtra } from "../AvisoRecursoExtra";
 import { SolicitarRecursoExtra } from "../SolicitarRecursoExtra";
 import { DocumentosDemanda, useDocumentosDemanda } from "./DocumentosDemanda";
@@ -128,7 +128,10 @@ export function MontarDemanda({ demanda }: { demanda: Demanda }) {
       <AvisoRecursoExtra demanda={demanda} />
 
       {/* Antes da submissão: quem monta a demanda fica sabendo para onde ela vai. */}
-      <AvisoForaDoTerritorio demanda={demanda} />
+      <AvisoForaDoTerritorio
+        demanda={demanda}
+        ufAtividade={demanda.contexto.municipio_estado_sigla || null}
+      />
 
       <section className="rounded-lg border border-border bg-surface p-6">
         <DefinitionList
@@ -145,7 +148,22 @@ export function MontarDemanda({ demanda }: { demanda: Demanda }) {
               label: "Território da demanda",
               value: <span data-testid="montar-abrangencia">{rotuloAbrangencia(demanda)}</span>,
             },
-            { label: "Município da atividade", value: demanda.contexto.municipio_nome },
+            ...(rotuloArticuladores(demanda.estado_sigla, demanda.articuladores)
+              ? [
+                  {
+                    label: "Analisada por",
+                    value: (
+                      <span data-testid="montar-articuladores">
+                        {rotuloArticuladores(demanda.estado_sigla, demanda.articuladores)}
+                      </span>
+                    ),
+                  },
+                ]
+              : []),
+            {
+              label: "Município da atividade",
+              value: `${demanda.contexto.municipio_nome}/${demanda.contexto.municipio_estado_sigla}`,
+            },
             {
               label: "Plano de Trabalho",
               value: `Meta ${demanda.contexto.meta_numero} · Ação ${demanda.contexto.acao_numero}`,

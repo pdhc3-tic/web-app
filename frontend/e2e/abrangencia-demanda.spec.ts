@@ -1,26 +1,29 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
+  adicionarSolicitacao361,
   criarAbrangenciaFixture,
+  PREFIXO_361,
   removerAbrangenciaFixture,
   type AbrangenciaFixture,
 } from "./helpers/abrangenciaFixture";
 import { storageStatePath } from "./helpers/users";
 
 /**
- * #361 — Abrangência territorial da demanda (backend #352).
+ * #361 — Abrangência territorial da demanda (backend #352 e PR #422).
  *
  * A demanda segue o estado e o território de quem a cria, não os da
- * atividade. Contra o backend real: um ADT do RN monta e submete uma demanda
- * de uma atividade de PE; ela vai para a fila do Articulador de RN, com o
- * selo de atividade fora do território, e não aparece para a Articuladora de
- * PE.
+ * atividade. Contra o backend real, pela tela: um ADT do RN acha pela busca
+ * uma atividade de PE, vê antes de criar o território da demanda, quem vai
+ * analisá-la e o aviso de atividade em outro estado, cria e submete. A
+ * demanda vai para a fila do Articulador de RN, com o selo de atividade fora
+ * do território, e não aparece para a Articuladora de PE.
  *
- * A primeira etapa do E2E da issue — achar a atividade de outro estado pela
- * busca — espera a rota do backend (pendencias-backend-sprint-12a.md, item 2);
- * a demanda nasce na fixture, pelo mesmo serviço do formulário.
+ * Só a solicitação (locação de veículo) entra pela fixture: o formulário de
+ * veículo tem E2E próprio, e o foco aqui é a abrangência.
  */
 
 let fx: AbrangenciaFixture;
+let demandaId: number;
 
 test.describe.configure({ mode: "serial" });
 
@@ -32,41 +35,63 @@ test.afterAll(() => {
   removerAbrangenciaFixture();
 });
 
-const linha = (page: Page) => page.getByTestId(`demanda-linha-${fx.demandaId}`);
+const linha = (page: Page) => page.getByTestId(`demanda-linha-${demandaId}`);
 
 test.describe("ADT do RN com atividade de PE", () => {
   test.use({ storageState: storageStatePath("adt") });
 
-  test("a busca de atividade não filtra por técnico", async ({ page }) => {
+  test("acha a atividade de outro estado pela busca e vê a abrangência antes de criar", async ({
+    page,
+  }) => {
     await page.goto("/sgd/demandas/nova");
+
     const busca = page.waitForRequest(
-      (req) => req.url().includes("/api/v1/sgp/atividades/?") && req.url().includes("q="),
+      (req) => req.url().includes("/api/v1/sgd/atividades-elegiveis/?") && req.url().includes("q="),
     );
-    await page.getByTestId("atividade-busca").fill("Oficina");
+    await page.getByTestId("atividade-busca").fill("Feira agroecológica");
     const params = new URL((await busca).url()).searchParams;
     expect(params.has("tecnico_id")).toBe(false);
     expect(params.getAll("status")).toEqual(["planejado", "agendado"]);
+
+    await page.getByRole("option", { name: new RegExp(fx.atividadeTitulo) }).click();
+    await expect(page.getByTestId("demanda-contexto")).toContainText(`/${fx.estadoAtividade}`);
+
+    await expect(page.getByTestId("previa-territorio")).toHaveText(fx.abrangencia);
+    await expect(page.getByTestId("previa-articuladores")).toHaveText(fx.articuladores);
+    const aviso = page.getByTestId("aviso-fora-do-territorio");
+    await expect(aviso).toContainText(`A atividade é em ${fx.estadoAtividade}.`);
+    await expect(aviso).toContainText(`Articulador de ${fx.estadoDemanda}`);
+
+    await page.getByLabel("Título da demanda").fill(`${PREFIXO_361} Van para a feira em PE`);
+    await page.getByTestId("nova-demanda-salvar").click();
+    await page.waitForURL(/\/sgd\/demandas\/\d+\/editar$/);
+    demandaId = Number(page.url().match(/\/sgd\/demandas\/(\d+)\/editar$/)![1]);
+
+    // A demanda gravou a mesma abrangência que a prévia mostrou.
+    await expect(page.getByTestId("montar-abrangencia")).toHaveText(fx.abrangencia);
+    await expect(page.getByTestId("montar-articuladores")).toHaveText(fx.articuladores);
   });
 
-  test("a montagem mostra o território da demanda e avisa, sem bloquear, que a atividade é de outro estado", async ({
+  test("a montagem avisa, sem bloquear, e a submissão segue o território do solicitante", async ({
     page,
   }) => {
-    await page.goto(`/sgd/demandas/${fx.demandaId}/editar`);
+    adicionarSolicitacao361(demandaId);
+    await page.goto(`/sgd/demandas/${demandaId}/editar`);
     await expect(page.getByTestId("montar-demanda")).toBeVisible();
 
-    await expect(page.getByTestId("montar-abrangencia")).toHaveText(fx.abrangencia);
     const aviso = page.getByTestId("aviso-fora-do-territorio");
-    await expect(aviso).toContainText("A atividade é em outro estado");
+    await expect(aviso).toContainText(`A atividade é em ${fx.estadoAtividade}.`);
     await expect(aviso).toContainText(`Articulador de ${fx.estadoDemanda}`);
 
     const resposta = page.waitForResponse((r) => r.url().includes("/submeter/"));
     await page.getByTestId("demanda-submeter").click();
     expect((await resposta).status()).toBe(200);
-    await page.waitForURL(`**/sgd/demandas?demanda=${fx.demandaId}`);
+    await page.waitForURL(`**/sgd/demandas?demanda=${demandaId}`);
 
     const painel = page.getByTestId("demanda-painel");
     await expect(painel).toContainText("Submetida");
     await expect(painel.getByTestId("painel-abrangencia")).toHaveText(fx.abrangencia);
+    await expect(painel.getByTestId("painel-articuladores")).toHaveText(fx.articuladores);
     await expect(painel.getByTestId("selo-fora-do-territorio")).toBeVisible();
   });
 });
