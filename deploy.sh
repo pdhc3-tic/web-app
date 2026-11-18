@@ -144,6 +144,13 @@ docker compose -f docker-compose.prod.yml exec -T \
   -e DB_USER=postgres -e DB_PASSWORD="$POSTGRES_PASSWORD" \
   backend python manage.py migrate
 
+DEPLOY_PHASE="verificação do papel de banco do runtime"
+echo "    Verificando se o usuário de runtime está sujeito à RLS"
+# Sem sobrescrever DB_USER: confere o usuário que a aplicação usa de fato.
+# Superusuário, BYPASSRLS ou dono de tabela sem FORCE ignorariam as políticas.
+docker compose -f docker-compose.prod.yml exec -T \
+  backend python manage.py verificar_papel_rls
+
 DEPLOY_PHASE="provisionamento do superusuário"
 echo "==> [9/11] Garantindo superusuário de produção"
 docker compose -f docker-compose.prod.yml exec -T \

@@ -20,6 +20,7 @@ from django_filters import rest_framework as django_filters
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import filters, generics, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -28,6 +29,7 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.settings import api_settings as jwt_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from apps.core.db_context import acesso_de_sistema_ufpa
 from apps.core.models import Role, SystemConfig, Territory
 from apps.core.permissions import (
     IsArticuladorEstadual,
@@ -39,6 +41,7 @@ from apps.core.services.audit import log_audit
 from apps.core.services.membro_audit import log_membro_change, sensitive_fields_changed
 from apps.core.services.permissions import user_has_role, user_states
 from apps.core.throttling import RefreshRateThrottle
+from apps.sgp.services.access import estados_do_articulador
 from apps.sca import services
 from apps.sca.models import ConflictLog, SyncDevice, SyncEvent
 from apps.sca.serializers import (
@@ -357,6 +360,15 @@ class SyncEventViewSet(viewsets.ReadOnlyModelViewSet):
 # Conflicts (#158)
 # ---------------------------------------------------------------------------
 
+def _pode_gravar_resolucao(user, conflict) -> bool:
+    if user_has_role(user, "super-admin"):
+        return True
+    territorio = conflict.territorio
+    if territorio is None:
+        return False
+    return bool(set(territorio.estados or []) & estados_do_articulador(user))
+
+
 class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
     # Somente Articulador Estadual (do próprio estado) e Super Admin (acesso
     # global) — UGP foi removida (correção de auditoria dos critérios de
@@ -413,6 +425,15 @@ class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
         # duplicada aqui.
         conflict = self.get_object()
 
+        # A gravação abaixo roda com a elevação de sistema de sgp_ufpa, então a
+        # autorização não pode ser mais larga que a da política: o
+        # `IsArticuladorEstadual` usa `user_states()`, em que Articulador sem
+        # território alcança todos os estados e territórios de outros perfis
+        # contam. Aqui vale o critério do SGP (só o próprio perfil, sem vínculo
+        # = nada).
+        if not _pode_gravar_resolucao(request.user, conflict):
+            raise PermissionDenied("Você só pode resolver conflitos dos estados em que atua como Articulador.")
+
         if conflict.status != ConflictLog.Status.PENDENTE:
             return Response(
                 {"code": "CONFLITO_JA_RESOLVIDO", "message": "Este conflito não está mais pendente de resolução."},
@@ -436,16 +457,22 @@ class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
             membro = None
             anteriores_sensiveis = None
             if entity:
-                instance = entity.get_by_uuid_local(conflict.uuid_local)
-                if instance:
-                    membro = (
-                        instance if entity.name == "member"
-                        else instance.titular if entity.name == "ufpa"
-                        else None
-                    )
-                    if membro is not None:
-                        anteriores_sensiveis = {"saude": membro.saude, "cor_raca": membro.cor_raca}
-                    entity.apply_changes(instance, {conflict.campo: valor_final})
+                # Quem resolve já foi autorizado por `get_object()` (Super Admin,
+                # ou Articulador no estado do conflito). Pela matriz do Core o
+                # Articulador só lê UFPAs, então a RLS de sgp_ufpa recusaria a
+                # gravação: a resolução roda como operação de sistema, restrita
+                # a este bloco.
+                with acesso_de_sistema_ufpa("sca.resolucao_conflito"):
+                    instance = entity.get_by_uuid_local(conflict.uuid_local)
+                    if instance:
+                        membro = (
+                            instance if entity.name == "member"
+                            else instance.titular if entity.name == "ufpa"
+                            else None
+                        )
+                        if membro is not None:
+                            anteriores_sensiveis = {"saude": membro.saude, "cor_raca": membro.cor_raca}
+                        entity.apply_changes(instance, {conflict.campo: valor_final})
 
             conflict.status = ConflictLog.Status.RESOLVIDO_MANUAL
             conflict.valor_final = services._jsonable(valor_final)

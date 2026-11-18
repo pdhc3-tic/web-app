@@ -47,6 +47,14 @@ def activity_scope_for_user(user, *, prefix: str = "atividades__") -> Q | None:
                 f"{prefix}municipio__territory__in": valor,
             }
         )
+    if tipo == "combinado":
+        # Articulador e ADT/ACR: estados de um ou territórios do outro, na
+        # mesma atividade (um único `filter()` com o Q, mesmo join).
+        estados, territorios = valor
+        return Q(**{f"{prefix}ativo": True}) & (
+            Q(**{f"{prefix}municipio__state__sigla__in": list(estados)})
+            | Q(**{f"{prefix}municipio__territory__in": territorios})
+        )
     # "vazio": tem o papel com escopo, mas nenhum território ou estado.
     return Q(pk__in=[])
 

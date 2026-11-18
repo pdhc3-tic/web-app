@@ -12,6 +12,13 @@ from apps.sgp.models import UFPA
 from apps.sgp.tests.factories import UFPAFactory
 
 
+@pytest.fixture
+def usuario(usuario_super_admin):
+    """`auth_client` escreve UFPAs neste módulo. Pela matriz do Core (#425), a
+    escrita é de Super Admin e ADT/ACR: a UGP do `usuario` padrão só lê."""
+    return usuario_super_admin
+
+
 pytestmark = pytest.mark.django_db
 
 

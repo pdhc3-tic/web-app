@@ -1,6 +1,10 @@
 """RLS do orçamento: protege o que as views leem. O motor age em nome de outra pessoa (a FGD conclui
 a demanda do técnico, o sistema cancela a de todos), e sem visão total não acharia a linha a travar.
-Quem autoriza a operação continua sendo o serviço que a chama."""
+Quem autoriza a operação continua sendo o serviço que a chama.
+
+A elevação vale só para as políticas que leem `app.user_role` (orçamento e sgd_demand). A de
+`sgp_ufpa` resolve o escopo pelo `app.current_user_id`, então `visao_total()` não amplia o acesso a
+UFPAs; quando uma operação de sistema precisa delas, usa `apps.core.db_context.acesso_de_sistema_ufpa`."""
 from contextlib import contextmanager
 from functools import wraps
 

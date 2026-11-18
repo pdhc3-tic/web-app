@@ -54,13 +54,46 @@ def test_articulador_com_territorio_ve_seus_estados(role_articulador, territory_
     assert valor == {"RN"}
 
 
-def test_articulador_sem_territorio_cai_no_fallback_global(role_articulador, territory_rn, territory_ce):
-    """territorio=None é concessão deliberada de acesso global — comportamento
-    intencional herdado de user_states(), preservado sem alteração."""
+def test_articulador_sem_territorio_nao_recebe_acesso_global(role_articulador, territory_rn, territory_ce):
+    """#425: o Articulador alcança os estados e territórios *vinculados*
+    (Requisitos-CORE §2.1). Sem vínculo, o escopo é vazio, como na RLS de
+    sgp_ufpa — antes, user_states() dava todos os estados."""
     user = UserFactory(profiles=[(role_articulador, None)])
-    tipo, valor = resolver_escopo(user)
-    assert tipo == "estados"
-    assert valor == {"RN", "CE"}
+    assert resolver_escopo(user) == ("vazio", None)
+
+
+def test_articulador_ignora_territorio_de_outro_perfil(role_articulador, territory_ce):
+    """Só o território do próprio perfil de Articulador conta para os estados dele."""
+    role_tecnico = RoleFactory(slug="tecnico-campo", nome="Técnico")
+    user = UserFactory(profiles=[(role_articulador, None), (role_tecnico, territory_ce)])
+    assert resolver_escopo(user) == ("vazio", None)
+
+
+def test_articulador_e_adt_recebem_a_uniao_dos_escopos(role_articulador, role_adt, territory_rn, territory_ce):
+    user = UserFactory(profiles=[(role_articulador, territory_rn), (role_adt, territory_ce)])
+    tipo, (estados, territorios) = resolver_escopo(user)
+    assert tipo == "combinado"
+    assert estados == {"RN"}
+    assert territorios == [territory_ce.pk]
+
+
+def test_scope_queryset_combinado_une_estado_e_territorio(
+    role_articulador, role_adt, territory_rn, territory_ce, municipio_rn, municipio_ce, projeto,
+):
+    from apps.core.tests.factories import MunicipalityFactory, StateFactory, TerritoryFactory
+
+    territorio_pb = TerritoryFactory(nome="Território PB", estados=["PB"])
+    municipio_pb = MunicipalityFactory(state=StateFactory(sigla="PB"), territory=territorio_pb, codigo_ibge="2507507")
+    ufpa_rn = UFPAFactory(municipio=municipio_rn, projeto=projeto)
+    ufpa_ce = UFPAFactory(municipio=municipio_ce, projeto=projeto)
+    UFPAFactory(municipio=municipio_pb, projeto=projeto)
+    user = UserFactory(profiles=[(role_articulador, territory_rn), (role_adt, territory_ce)])
+
+    result = scope_queryset(
+        UFPA.objects.all(), user, state_lookup="municipio__state__sigla__in", territory_lookup="territorio__in",
+    )
+
+    assert set(result) == {ufpa_rn, ufpa_ce}
 
 
 def test_adt_com_territorio_ve_seu_territorio(role_adt, territory_rn):

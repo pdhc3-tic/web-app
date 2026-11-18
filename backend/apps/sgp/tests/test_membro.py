@@ -153,9 +153,10 @@ class TestSaude:
 
 class TestDeleteUFPA:
     def test_delete_ufpa_does_not_delete_membros(
-        self, auth_client, ufpa, membro
+        self, auth_client_super_admin, ufpa, membro
     ):
-        auth_client.delete(f"/api/v1/sgp/ufpas/{ufpa.pk}/")
+        # Desativar UFPA é escrita: Super Admin ou ADT/ACR (#425), não a UGP do `auth_client`.
+        auth_client_super_admin.delete(f"/api/v1/sgp/ufpas/{ufpa.pk}/")
         ufpa_atualizada = UFPA.all_objects.get(pk=ufpa.pk)
         assert ufpa_atualizada.ativo is False
         assert MembroFamilia.objects.filter(

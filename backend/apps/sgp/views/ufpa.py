@@ -12,6 +12,7 @@ from drf_spectacular.utils import (
 from rest_framework import filters, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import SAFE_METHODS, BasePermission
 from rest_framework.response import Response
 
 from apps.core.models.audit_log import AuditLog
@@ -25,13 +26,45 @@ from apps.sgp.pagination import UFPAPagination
 from apps.sgp.serializers import HistoricoEntrySerializer, MunicipioNestedSerializer, UFPADetailSerializer, UFPAListSerializer
 from apps.sgp.serializers.exportacao import ExportJobSerializer
 from apps.sgp.serializers.ufpa import UFPADetailRespostaSerializer
-from apps.sgp.services.access import ROLES_COM_ESCOPO, ufpas_acessiveis_ao_usuario
+from apps.sgp.services.access import (
+    ROLES_COM_ESCOPO,
+    pode_escrever_ufpa,
+    pode_escrever_ufpa_no_territorio,
+    ufpas_acessiveis_ao_usuario,
+)
 from apps.sgp.services.exportacao import exportar_ufpas
 from apps.sgp.views.exportacao import RESPOSTA_ARQUIVO, arquivo_response
 from apps.sgp.views.ufpa_foto import UFPAPhotoMixin
 from apps.sgp.views.ufpa_historico import UFPAHistoricoMixin
 
 UFPA_ACCESS_ROLES = ROLES_COM_ESCOPO
+MENSAGEM_SEM_ESCRITA = "Seu perfil só tem leitura de UFPAs."
+MENSAGEM_FORA_DO_TERRITORIO = "Você só pode cadastrar UFPAs nos territórios em que atua."
+MENSAGEM_ALTERACAO_FORA_DO_TERRITORIO = "Você só pode alterar UFPAs dos territórios em que atua."
+
+
+class PodeEscreverUFPA(BasePermission):
+    """Leitura segue o escopo de `get_queryset`; escrita (criar, editar,
+    desativar, foto) é só de Super Admin e ADT/ACR, pela matriz do Core.
+    A RLS de `sgp_ufpa` aplica o mesmo critério no banco — esta checagem
+    devolve 403 antes de o banco recusar a gravação."""
+
+    message = MENSAGEM_SEM_ESCRITA
+
+    def has_permission(self, request, view):
+        return request.method in SAFE_METHODS or pode_escrever_ufpa(request.user)
+
+    def has_object_permission(self, request, view, obj):
+        """A UFPA já está no escopo de leitura (`get_queryset`), mas quem acumula
+        perfis lê mais do que escreve: UGP ou Articulador com ADT/ACR leem o
+        estado inteiro e só escrevem nos territórios do ADT/ACR. Sem isto, o
+        UPDATE seria recusado pela RLS e a resposta seria 500."""
+        if request.method in SAFE_METHODS:
+            return True
+        if pode_escrever_ufpa_no_territorio(request.user, obj.territorio_id):
+            return True
+        self.message = MENSAGEM_ALTERACAO_FORA_DO_TERRITORIO
+        return False
 
 
 # Documentação OpenAPI da action UFPAViewSet.mapa — o payload real é montado
@@ -66,7 +99,7 @@ class UFPAViewSet(UFPAPhotoMixin, UFPAHistoricoMixin, viewsets.ModelViewSet):
     queryset = UFPA.objects.select_related(
         "municipio", "municipio__state", "territorio", "projeto", "criado_por"
     ).all()
-    permission_classes = [IsAuthenticatedActiveAccess]
+    permission_classes = [IsAuthenticatedActiveAccess, PodeEscreverUFPA]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     pagination_class = UFPAPagination
@@ -300,7 +333,18 @@ class UFPAViewSet(UFPAPhotoMixin, UFPAHistoricoMixin, viewsets.ModelViewSet):
             user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
         )
 
+    def _exigir_territorio_de_escrita(self, serializer):
+        """O território vem do município (signal `auto_preencher_territorio`).
+        Sem esta checagem, um ADT/ACR gravando em município de outro território
+        receberia o erro da RLS em vez de um 403."""
+        municipio = serializer.validated_data.get("municipio")
+        if municipio is None:
+            return
+        if not pode_escrever_ufpa_no_territorio(self.request.user, municipio.territory_id):
+            raise PermissionDenied(MENSAGEM_FORA_DO_TERRITORIO)
+
     def perform_create(self, serializer):
+        self._exigir_territorio_de_escrita(serializer)
         instance = serializer.save(criado_por=self.request.user, ultima_origem="web")
         self._log_audit("UFPA.create", instance)
         log_membro_change(
@@ -316,6 +360,7 @@ class UFPAViewSet(UFPAPhotoMixin, UFPAHistoricoMixin, viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
+        self._exigir_territorio_de_escrita(serializer)
         old = self.get_object()
         valores_anteriores = {
             "ufpa_id": old.pk,

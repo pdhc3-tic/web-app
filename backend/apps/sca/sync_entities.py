@@ -16,7 +16,10 @@ from uuid import uuid4
 from django.db import models
 from django.utils import timezone
 
+from apps.core.db_context import acesso_de_sistema_ufpa
+from apps.core.models.municipality import Municipality
 from apps.sgp.models import Activity, MembroFamilia, UFPA
+from apps.sgp.services.access import pode_escrever_ufpa_no_territorio
 from apps.sgp.services.activity_status import (
     ActivityRuleError,
     transition,
@@ -175,6 +178,12 @@ class SyncEntity:
         """Registro soft-deletado com o mesmo identificador natural (Estratégia 4)."""
         return None
 
+    def pode_escrever(self, user, data: dict, instance=None) -> bool:
+        """Se `user` pode gravar este registro. O escopo territorial do SCA
+        (`territory_ids_for`) decide o que é visível; aqui entram as regras de
+        escrita próprias da entidade. Por padrão, quem vê escreve."""
+        return True
+
     # ------------------------------------------------------------------
     # Escopo territorial
     # ------------------------------------------------------------------
@@ -251,16 +260,27 @@ class UFPASyncEntity(SyncEntity):
     def territorio_of(self, instance):
         return instance.territorio_id
 
+    # As duas buscas abaixo precisam achar a UFPA mesmo fora do território de
+    # quem sincroniza: é assim que o push responde FORA_TERRITORIO/DUPLICATA
+    # em vez de tentar criar de novo e bater na constraint. Com a RLS de
+    # sgp_ufpa, isso exige a elevação de sistema — só para localizar a linha;
+    # o escopo de quem sincroniza é conferido logo depois, em
+    # `SyncProcessor._in_scope_instance`, e nada é gravado sob a elevação.
+    def get_by_uuid_local(self, uuid):
+        with acesso_de_sistema_ufpa("sca.idempotencia"):
+            return super().get_by_uuid_local(uuid)
+
     def get_by_natural(self, data):
         titular = data.get("titular") or {}
         cpf = normalizar_cpf(titular.get("cpf"))
         if not cpf:
             return None
-        membro = (
-            MembroFamilia.objects.filter(cpf=cpf, ufpa__isnull=False)
-            .select_related("ufpa")
-            .first()
-        )
+        with acesso_de_sistema_ufpa("sca.duplicidade"):
+            membro = (
+                MembroFamilia.objects.filter(cpf=cpf, ufpa__isnull=False)
+                .select_related("ufpa")
+                .first()
+            )
         return membro.ufpa if membro else None
 
     def get_deleted_by_natural(self, data):
@@ -268,6 +288,31 @@ class UFPASyncEntity(SyncEntity):
         if ufpa is not None and not ufpa.ativo:
             return ufpa
         return None
+
+    # ------------------------------------------------------------------
+    def territorios_de_destino(self, data, instance=None) -> set:
+        """Territórios que a gravação toca: o atual da UFPA e o de destino. O
+        território salvo vem do município (signal `auto_preencher_territorio`),
+        então o do município conta mesmo que o payload informe outro."""
+        destinos = set()
+        if instance is not None:
+            destinos.add(instance.territorio_id)
+        if data.get("territorio") is not None:
+            destinos.add(int(data["territorio"]))
+        if data.get("municipio") is not None:
+            destinos.add(
+                Municipality.objects.filter(pk=data["municipio"]).values_list("territory_id", flat=True).first()
+            )
+        return destinos
+
+    def pode_escrever(self, user, data, instance=None) -> bool:
+        """Matriz do Core: só Super Admin e ADT/ACR (no próprio território)
+        gravam UFPAs — o mesmo critério de escrita da RLS de sgp_ufpa. Sem
+        isto, o push de quem só lê chegaria ao banco e seria recusado lá."""
+        return all(
+            pode_escrever_ufpa_no_territorio(user, territorio_id)
+            for territorio_id in self.territorios_de_destino(data, instance)
+        )
 
     # ------------------------------------------------------------------
     def create(self, data, *, user, device_id, uuid_local, uuid_map):
