@@ -25,6 +25,11 @@ export type ContextoAnexo = {
   onRetirado: (documentoId: number) => void;
   /** Início e fim de um envio, para o formulário segurar Salvar e a troca de tipo. */
   onEnviando?: (ativo: boolean) => void;
+  /**
+   * O formulário está salvando: nada de enviar nem retirar arquivo. O payload já
+   * foi montado, e o que mudasse agora não entraria nele.
+   */
+  bloqueado?: boolean;
 };
 
 type Props = {
@@ -50,10 +55,11 @@ export function CampoAnexo({ campo, valor, onChange, error, contexto }: Props) {
 
   const ids = idsDoAnexo(valor);
   const enviando = progresso !== null;
-  const podeEnviar = !!contexto && !enviando && (campo.multiplo || ids.length === 0);
+  const bloqueado = !!contexto?.bloqueado;
+  const podeEnviar = !!contexto && !enviando && !bloqueado && (campo.multiplo || ids.length === 0);
 
   async function enviar(arquivo: File) {
-    if (!contexto) return;
+    if (!contexto || !podeEnviar) return;
     if (arquivo.type !== DOCUMENTO_CONTENT_TYPE) return setErroLocal("Apenas PDF é aceito.");
     if (arquivo.size > DOCUMENTO_MAX_BYTES) return setErroLocal("O arquivo passa de 10 MB.");
     setErroLocal(null);
@@ -124,7 +130,7 @@ export function CampoAnexo({ campo, valor, onChange, error, contexto }: Props) {
                 <button
                   type="button"
                   onClick={() => retirar(docId)}
-                  disabled={enviando}
+                  disabled={enviando || bloqueado}
                   aria-label={`Retirar ${nome}`}
                   className="rounded p-1 text-text-muted hover:text-error-text disabled:cursor-not-allowed disabled:opacity-50"
                 >

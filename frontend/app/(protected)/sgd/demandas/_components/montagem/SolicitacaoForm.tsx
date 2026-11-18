@@ -11,6 +11,7 @@ import { ApiError } from "@/app/lib/api";
 import {
   camposVisiveis,
   configDoTipo,
+  idsDoAnexo,
   isTipoSolicitacao,
   montarCamposJson,
   validarCampos,
@@ -129,6 +130,7 @@ export function SolicitacaoForm({
       if (anexosNaoSalvos.current.has(docId)) descartarAnexos([docId]);
     },
     onEnviando: (ativo) => setEnviandoAnexos((n) => Math.max(0, n + (ativo ? 1 : -1))),
+    bloqueado: salvando,
   };
 
   function fechar() {
@@ -184,13 +186,25 @@ export function SolicitacaoForm({
     const payload: SolicitacaoPayload = { tipo, campos_json: montarCamposJson(config, valores) };
     if (config.valorDigitado && valor) payload.valor_estimado = valor;
 
+    // Os anexos que vão de fato neste payload (só os campos visíveis entram no
+    // campos_json); o que não foi nele não fica ligado à solicitação.
+    const noPayload = new Set(
+      camposVisiveis(config, valores)
+        .filter((c) => c.tipo === "anexo")
+        .flatMap((c) => idsDoAnexo(valores[c.chave] ?? "")),
+    );
+
     setSalvando(true);
     try {
       const salva = solicitacao
         ? await atualizarSolicitacao(demanda.id, solicitacao.id, payload)
         : await criarSolicitacao(demanda.id, payload);
-      // Ligados à solicitação, os anexos deixam de ser "não salvos".
-      anexosNaoSalvos.current.clear();
+      // O formulário fecha: um envio que ainda chegar é apagado na chegada.
+      encerrado.current = true;
+      // Os do payload estão ligados à solicitação; qualquer outro ainda não
+      // salvo ficaria solto na demanda, e sai.
+      for (const docId of noPayload) anexosNaoSalvos.current.delete(docId);
+      descartarAnexos(anexosNaoSalvos.current);
       await queryClient.invalidateQueries({ queryKey: qk.demandas.all });
       onSalvo(salva, solicitacao === null);
     } catch (err) {
@@ -249,7 +263,9 @@ export function SolicitacaoForm({
             id="solicitacao-tipo"
             label="Tipo de solicitação"
             required
-            disabled={!catalogo.data || enviandoAnexos > 0}
+            // Trocar o tipo descarta os anexos ainda não salvos: durante o
+            // salvamento, apagaria os que estão no payload a caminho do backend.
+            disabled={!catalogo.data || enviandoAnexos > 0 || salvando}
             placeholder={catalogo.isPending ? "Carregando tipos…" : undefined}
             options={(catalogo.data ?? []).filter((t) => t.ativo).map((t) => ({ value: t.slug, label: t.nome }))}
             value={tipo}
