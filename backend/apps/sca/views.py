@@ -360,13 +360,18 @@ class SyncEventViewSet(viewsets.ReadOnlyModelViewSet):
 # Conflicts (#158)
 # ---------------------------------------------------------------------------
 
-def _pode_gravar_resolucao(user, conflict) -> bool:
+MENSAGEM_CONFLITO_FORA_DO_ESTADO = "Você só pode resolver conflitos dos estados em que atua como Articulador."
+
+
+def _pode_gravar_no_territorio(user, territorio_id) -> bool:
+    """Critério das gravações elevadas da resolução de conflito: Super Admin,
+    ou território nos estados do **próprio** perfil de Articulador."""
     if user_has_role(user, "super-admin"):
         return True
-    territorio = conflict.territorio
-    if territorio is None:
+    if territorio_id is None:
         return False
-    return bool(set(territorio.estados or []) & estados_do_articulador(user))
+    estados = Territory.objects.filter(pk=territorio_id).values_list("estados", flat=True).first()
+    return bool(set(estados or []) & estados_do_articulador(user))
 
 
 class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
@@ -431,8 +436,8 @@ class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
         # território alcança todos os estados e territórios de outros perfis
         # contam. Aqui vale o critério do SGP (só o próprio perfil, sem vínculo
         # = nada).
-        if not _pode_gravar_resolucao(request.user, conflict):
-            raise PermissionDenied("Você só pode resolver conflitos dos estados em que atua como Articulador.")
+        if not _pode_gravar_no_territorio(request.user, conflict.territorio_id):
+            raise PermissionDenied(MENSAGEM_CONFLITO_FORA_DO_ESTADO)
 
         if conflict.status != ConflictLog.Status.PENDENTE:
             return Response(
@@ -465,6 +470,14 @@ class ConflictLogViewSet(viewsets.ReadOnlyModelViewSet):
                 with acesso_de_sistema_ufpa("sca.resolucao_conflito"):
                     instance = entity.get_by_uuid_local(conflict.uuid_local)
                     if instance:
+                        # O território do conflito é o de quando ele nasceu: a
+                        # entidade pode ter mudado de território depois, e a
+                        # mudança pode levá-la a outro. Os dois precisam estar
+                        # no escopo de quem resolve, senão a elevação gravaria
+                        # fora dele. O `atomic` desfaz e o conflito segue pendente.
+                        afetados = entity.territorios_afetados(instance, {conflict.campo: valor_final})
+                        if not all(_pode_gravar_no_territorio(request.user, t) for t in afetados):
+                            raise PermissionDenied(MENSAGEM_CONFLITO_FORA_DO_ESTADO)
                         membro = (
                             instance if entity.name == "member"
                             else instance.titular if entity.name == "ufpa"

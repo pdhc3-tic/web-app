@@ -226,10 +226,24 @@ class SyncEntity:
         raise NotImplementedError
 
     def ensure_uuid_local(self, instance):
+        """Gera o `uuid_local` de registro criado fora do SCA. Um UPDATE só da
+        coluna, condicionado a ela ainda estar vazia: dois pulls concorrentes
+        não sobrescrevem o valor um do outro, e o que perdeu relê o gravado."""
         if not instance.uuid_local:
-            instance.uuid_local = uuid4()
-            instance.save(update_fields=["uuid_local"])
+            manager = self.model._base_manager
+            novo = uuid4()
+            if manager.filter(pk=instance.pk, uuid_local__isnull=True).update(uuid_local=novo):
+                instance.uuid_local = novo
+            else:
+                instance.uuid_local = manager.filter(pk=instance.pk).values_list("uuid_local", flat=True).first()
         return instance.uuid_local
+
+    def territorios_afetados(self, instance, changes: dict) -> set:
+        """Territórios que aplicar `changes` em `instance` toca: o atual e o de
+        destino, quando a mudança troca o vínculo territorial."""
+        territorios = {self.territorio_of(instance), self.territorio_id_from_payload(changes)}
+        territorios.discard(None)
+        return territorios
 
     def base_envelope(self, instance, data: dict) -> dict:
         data["id"] = instance.pk
@@ -269,6 +283,18 @@ class UFPASyncEntity(SyncEntity):
     def get_by_uuid_local(self, uuid):
         with acesso_de_sistema_ufpa("sca.idempotencia"):
             return super().get_by_uuid_local(uuid)
+
+    def ensure_uuid_local(self, instance):
+        # Quem só lê (UGP, Articulador) também recebe o pull, e a RLS recusaria o
+        # UPDATE dele. A gravação é técnica: só esta coluna, numa linha que o
+        # usuário já lê.
+        with acesso_de_sistema_ufpa("sca.uuid_local"):
+            return super().ensure_uuid_local(instance)
+
+    def territorios_afetados(self, instance, changes):
+        territorios = self.territorios_de_destino(changes, instance)
+        territorios.discard(None)
+        return territorios
 
     def get_by_natural(self, data):
         titular = data.get("titular") or {}
@@ -472,7 +498,14 @@ class MemberSyncEntity(SyncEntity):
         return None
 
     def territorio_of(self, instance):
-        return instance.ufpa.territorio_id if instance.ufpa_id else None
+        """Só o território da UFPA do membro. A UFPA pode estar oculta pela RLS
+        para quem sincroniza (é justamente o caso de um membro fora do escopo):
+        ler `instance.ufpa` daria DoesNotExist. A elevação devolve só o id do
+        território, para `_in_scope_instance` responder FORA_TERRITORIO."""
+        if not instance.ufpa_id:
+            return None
+        with acesso_de_sistema_ufpa("sca.escopo_membro"):
+            return UFPA.all_objects.filter(pk=instance.ufpa_id).values_list("territorio_id", flat=True).first()
 
     def get_by_natural(self, data):
         cpf = normalizar_cpf(data.get("cpf"))

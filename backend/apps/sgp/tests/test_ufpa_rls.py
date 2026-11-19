@@ -714,3 +714,136 @@ class TestApiComRls:
         assert {m["id"] for m in resposta.data["membros_participantes"]} == {membro_rn.pk}
         # A tabela de ligação não passa pela RLS: as contagens agregadas seguem completas.
         assert atividade.ufpas_participantes.through.objects.filter(activity_id=atividade.pk).count() == 2
+
+
+# ---------------------------------------------------------------------------
+# Revisão do PR #428 — casos do SCA sob a política ativa
+# ---------------------------------------------------------------------------
+
+def _conflito_de_ufpa(ufpa, territorio, *, campo="apelido", valor_local="Apelido do campo"):
+    from apps.sca.models import ConflictLog
+    from apps.sca.tests.factories import ConflictLogFactory
+
+    if not ufpa.uuid_local:
+        ufpa.uuid_local = uuid4()
+        ufpa.save(update_fields=["uuid_local"])
+    return ConflictLogFactory(
+        entidade="ufpa", uuid_local=str(ufpa.uuid_local), campo=campo,
+        valor_local=valor_local, valor_servidor="valor do servidor",
+        estrategia=ConflictLog.Estrategia.LAST_WRITE_WINS, campo_sensivel=False,
+        status=ConflictLog.Status.PENDENTE, territorio=territorio,
+    )
+
+
+def _resolver(user, conflito):
+    return _cliente_jwt(user).post(
+        f"/api/v1/sca/conflicts/{conflito.pk}/resolver/", data={"decisao": "local"}, format="json",
+    )
+
+
+class TestRevisaoSca:
+    def test_conflito_de_ufpa_que_mudou_de_territorio_nao_e_resolvido(
+        self, runtime, cenario, papeis, territory_rn, territory_ce, municipio_ce,
+    ):
+        """[P1] O conflito nasceu no RN, mas a UFPA foi movida para o CE de forma
+        autorizada. O Articulador do RN não pode gravar nela pela resolução."""
+        from apps.sca.models import ConflictLog
+
+        ufpa = cenario["rn"]
+        conflito = _conflito_de_ufpa(ufpa, territory_rn)
+        UFPA.all_objects.filter(pk=ufpa.pk).update(municipio=municipio_ce, territorio=territory_ce)
+        articulador = UserFactory(profiles=[(papeis["articulador-estadual"], territory_rn)])
+
+        with runtime():
+            resposta = _resolver(articulador, conflito)
+
+        assert resposta.status_code == 403
+        ufpa.refresh_from_db()
+        assert ufpa.apelido != "Apelido do campo"
+        conflito.refresh_from_db()
+        assert conflito.status == ConflictLog.Status.PENDENTE
+
+    def test_resolucao_que_levaria_a_ufpa_para_outro_territorio_e_recusada(
+        self, runtime, cenario, papeis, territory_rn, municipio_ce,
+    ):
+        """[P1] O destino da alteração também precisa estar no escopo."""
+        ufpa = cenario["rn"]
+        conflito = _conflito_de_ufpa(ufpa, territory_rn, campo="municipio", valor_local=municipio_ce.pk)
+        articulador = UserFactory(profiles=[(papeis["articulador-estadual"], territory_rn)])
+
+        with runtime():
+            resposta = _resolver(articulador, conflito)
+
+        assert resposta.status_code == 403
+        ufpa.refresh_from_db()
+        assert ufpa.territorio_id == territory_rn.pk
+
+    @pytest.mark.parametrize("slug", ["ugp", "articulador-estadual"])
+    def test_pull_de_quem_so_le_gera_uuid_local(self, runtime, cenario, papeis, territory_rn, slug):
+        """[P2] UFPA criada pela web não tem `uuid_local`. O pull de quem só lê
+        precisa gerá-lo sem esbarrar na RLS de escrita."""
+        from apps.sca.tests.test_sync_pull import get_pull
+
+        assert UFPA.all_objects.get(pk=cenario["rn"].pk).uuid_local is None
+        user = UserFactory(profiles=[(papeis[slug], territory_rn if slug != "ugp" else None)])
+
+        with runtime():
+            primeiro = get_pull(_cliente_jwt(user))
+            segundo = get_pull(_cliente_jwt(user))
+
+        assert primeiro.status_code == 200, primeiro.data
+        assert segundo.status_code == 200, segundo.data
+
+        def uuid_da_rn(resposta):
+            return next(u["uuid_local"] for u in resposta.data["ufpas"] if u["id"] == cenario["rn"].pk)
+
+        gravado = UFPA.all_objects.get(pk=cenario["rn"].pk).uuid_local
+        assert gravado is not None
+        assert uuid_da_rn(primeiro) == uuid_da_rn(segundo) == str(gravado)
+
+    def test_duplicidade_de_membro_fora_do_escopo_nao_derruba_o_batch(self, runtime, cenario, papeis, territory_rn):
+        """[P3] O CPF já é de um membro de UFPA do CE, oculta para o ADT do RN."""
+        from apps.sca.tests.test_sync_push import build_item, post_batch
+        from apps.sgp.models import MembroFamilia
+        from apps.sgp.tests.factories import MembroFactory
+
+        MembroFactory(ufpa=cenario["ce"], nome_completo="Membro CE", cpf="39053344705")
+        adt = UserFactory(profiles=[(papeis["adt-acr"], territory_rn)])
+        duplicado = build_item(
+            entidade="member",
+            payload={"ufpa": cenario["rn"].pk, "nome_completo": "Duplicado", "grau_parentesco": "filho",
+                     "cpf": "39053344705"},
+        )
+        valido = build_item(
+            entidade="member",
+            payload={"ufpa": cenario["rn"].pk, "nome_completo": "Filho Valido", "grau_parentesco": "filho"},
+        )
+
+        with runtime():
+            resposta = post_batch(_cliente_jwt(adt), [duplicado, valido])
+
+        assert resposta.status_code == 200, resposta.data
+        resultados = resposta.data["resultados"]
+        assert [r["status"] for r in resultados] == ["erro", "ok"]
+        assert resultados[0]["erro"] == "FORA_TERRITORIO"
+        assert MembroFamilia.objects.filter(nome_completo="Filho Valido", ufpa=cenario["rn"]).exists()
+
+    def test_update_de_membro_fora_do_escopo_responde_fora_territorio(self, runtime, cenario, papeis, territory_rn):
+        """[P3] Replay/update por UUID de membro cuja UFPA está oculta."""
+        from apps.sca.tests.test_sync_push import build_item, post_batch
+        from apps.sgp.tests.factories import MembroFactory
+
+        membro_ce = MembroFactory(ufpa=cenario["ce"], nome_completo="Membro CE", uuid_local=uuid4())
+        adt = UserFactory(profiles=[(papeis["adt-acr"], territory_rn)])
+        item = build_item(
+            entidade="member", operacao="update", uuid_local=membro_ce.uuid_local,
+            payload={"nome_completo": "Alterado"}, base={"nome_completo": "Membro CE"},
+        )
+
+        with runtime():
+            resposta = post_batch(_cliente_jwt(adt), [item])
+
+        assert resposta.status_code == 200, resposta.data
+        assert resposta.data["resultados"][0]["erro"] == "FORA_TERRITORIO"
+        membro_ce.refresh_from_db()
+        assert membro_ce.nome_completo == "Membro CE"

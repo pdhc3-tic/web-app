@@ -15,6 +15,7 @@ import logging
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -284,6 +285,11 @@ class PushProcessor:
             # savepoint do item já sofreu rollback: o restante do batch segue.
             logger.exception("sca.push.item_db_error entity=%s uuid=%s", item["entidade"], item["uuid_local"])
             return self._result(item, "erro", erro="ERRO_INTERNO: falha ao persistir o registro.")
+        except ObjectDoesNotExist:
+            # Ex.: relação oculta pela RLS de sgp_ufpa (a UFPA de um membro fora
+            # do escopo). O erro fica no item; o restante do batch segue.
+            logger.exception("sca.push.item_relacao_inacessivel entity=%s uuid=%s", item["entidade"], item["uuid_local"])
+            return self._result(item, "erro", erro="ERRO_INTERNO: registro relacionado inacessível.")
 
     def _dispatch(self, entity, item) -> dict:
         try:
