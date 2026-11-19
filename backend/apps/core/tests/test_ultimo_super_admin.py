@@ -10,11 +10,12 @@ from django.core.exceptions import PermissionDenied
 from django.db import connection, transaction
 from django.db.transaction import TransactionManagementError
 from django.forms.models import inlineformset_factory
+from django.http import Http404
 from django.test import Client, RequestFactory
 from rest_framework.exceptions import ValidationError
 
 from apps.core.models import AuditLog, User, UserProfile
-from apps.core.services.usuarios import desativar, exigir_super_admin_restante
+from apps.core.services.usuarios import TRAVA_DO_ULTIMO_SUPER_ADMIN, desativar, exigir_super_admin_restante
 from apps.core.tests.factories import RoleFactory, UserFactory
 from apps.core.views.users import UserViewSet
 
@@ -590,6 +591,32 @@ class TestEdicaoPeloAdminComLeituraAntiga:
         assert bia.ativo is True
         assert bia.nome == "Bia Souza"
 
+    def test_auditoria_da_edicao_nao_registra_o_ativo_da_leitura_antiga(self):
+        alvo = UserFactory()
+        lida = User.objects.get(pk=alvo.pk)
+        User.objects.filter(pk=alvo.pk).update(ativo=False)
+        lida.nome = "Nome novo"
+
+        self._salvar(lida, ["nome"])
+
+        registro = (
+            AuditLog.objects.filter(acao="UPDATE", entidade="User", entidade_id=str(alvo.pk)).order_by("-pk").first()
+        )
+        assert registro.valores_anteriores["ativo"] is False
+        assert registro.valores_novos["ativo"] is False
+        assert registro.valores_novos["nome"] == "Nome novo"
+
+    def test_conta_excluida_no_meio_da_edicao_da_404(self):
+        alvo = UserFactory()
+        lida = User.objects.get(pk=alvo.pk)
+        User.objects.filter(pk=alvo.pk).delete()
+        lida.nome = "Nome novo"
+
+        with pytest.raises(Http404):
+            self._salvar(lida, ["nome"])
+
+        assert not User.objects.filter(pk=alvo.pk).exists()
+
     def test_editar_o_nome_nao_desfaz_uma_desativacao_concorrente(self):
         alvo = UserFactory()
         lida = User.objects.get(pk=alvo.pk)
@@ -623,9 +650,12 @@ class TestEdicaoPeloAdminComLeituraAntiga:
 
 
 def _segura_a_trava_do_ultimo_super_admin() -> bool:
+    # A chave de 64 bits aparece em `pg_locks` partida em `classid` (alta) e `objid` (baixa).
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND granted AND pid = pg_backend_pid()"
+            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND granted AND objsubid = 1"
+            " AND pid = pg_backend_pid() AND ((classid::bigint << 32) | objid::bigint) = hashtext(%s)::bigint",
+            [TRAVA_DO_ULTIMO_SUPER_ADMIN],
         )
         return cursor.fetchone()[0] > 0
 

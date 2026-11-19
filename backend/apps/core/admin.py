@@ -6,6 +6,7 @@ from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.core.exceptions import PermissionDenied
 from django.forms.models import BaseInlineFormSet
+from django.http import Http404
 from django.utils.html import format_html_join
 from django.urls import reverse
 
@@ -179,6 +180,12 @@ class UserAdmin(ExclusaoComTravaMixin, DjangoUserAdmin):
         # A conta foi lida sem trava. Regravar a linha inteira devolveria o `ativo` dessa leitura por cima
         # de uma ativação ou desativação concorrente, sem passar pela regra do último Super Admin. Por isso
         # só o que o formulário mudou é gravado, e `ativo` só na reativação.
+        try:
+            self._gravar_o_que_mudou(request, obj, form)
+        except User.DoesNotExist:
+            raise Http404("A conta foi excluída enquanto era editada.") from None
+
+    def _gravar_o_que_mudou(self, request, obj, form):
         mudou_ativo = "ativo" in form.changed_data
         reativando = mudou_ativo and obj.ativo
         if mudou_ativo and not obj.ativo:
@@ -197,8 +204,18 @@ class UserAdmin(ExclusaoComTravaMixin, DjangoUserAdmin):
             campo.name for campo in obj._meta.concrete_fields
             if campo.name in form.changed_data and (campo.name != "ativo" or reativando)
         ]
-        if campos:
-            obj.save(update_fields=campos)
+        if not campos:
+            return
+        # Trava a linha, como o UPDATE travaria, e relê as colunas que o formulário não mudou: a auditoria
+        # serializa a instância inteira e registraria os valores da leitura sem trava como mudança.
+        if not User.objects.select_for_update(no_key=True).filter(pk=obj.pk).values_list("pk", flat=True):
+            raise User.DoesNotExist
+        intocados = [
+            campo.name for campo in obj._meta.concrete_fields if not campo.primary_key and campo.name not in campos
+        ]
+        if intocados:
+            obj.refresh_from_db(fields=intocados)
+        obj.save(update_fields=campos)
 
     def has_delete_permission(self, request, obj=None):
         if obj is not None and not sobra_super_admin(sem_usuarios=[obj.pk]):
