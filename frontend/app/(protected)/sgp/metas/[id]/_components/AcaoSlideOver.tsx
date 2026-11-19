@@ -171,11 +171,16 @@ export function AcaoSlideOver({
     Promise.all([
       listSubmetasDaMeta(metaId, controller.signal),
       listIndicadores(controller.signal),
-    ]).then(([submetas, indicadores]) => {
-      if (controller.signal.aborted) return;
-      setSubmetaOpts(submetas);
-      setIndicadorOpts(indicadores);
-    });
+    ])
+      .then(([submetas, indicadores]) => {
+        if (controller.signal.aborted) return;
+        setSubmetaOpts(submetas);
+        setIndicadorOpts(indicadores);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setGlobalError("Não foi possível carregar as submetas e indicadores.");
+      });
     return () => controller.abort();
   }, [open, metaId]);
 
