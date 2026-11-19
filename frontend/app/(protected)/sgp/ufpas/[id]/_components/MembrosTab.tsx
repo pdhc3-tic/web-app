@@ -77,7 +77,9 @@ export function MembrosTab({ ufpaId }: Props) {
 
   const {
     data: resumo = null,
-    isPending: resumoLoading,
+    // `isFetching`, e não `isPending`: este só vale na primeira carga, e a
+    // revalidação depois de salvar/remover também é "ainda não sei".
+    isFetching: resumoLoading,
     error: resumoError,
     refetch: refetchResumo,
   } = useQuery({

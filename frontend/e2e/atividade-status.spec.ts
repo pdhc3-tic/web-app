@@ -23,27 +23,14 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..");
 /**
  * Atividades da demonstração escolhidas por status e evidência.
  *
- * Ids fixos porque o `seed_demo` é determinístico (SEED fixo em seed_demo.py).
- * O `beforeAll` confere que cada uma está no status esperado e falha cedo, com
- * mensagem clara, se um re-seed tiver mudado a distribuição.
+ * Buscadas no banco a cada execução, a de menor id em cada situação: os ids do
+ * `seed_demo` mudam a cada `--reset` (a sequência do Postgres não volta), então
+ * ids fixos só valiam no banco em que foram anotados.
  */
-const ATIVIDADES = {
-  planejado: 99,
-  agendado: 91,
-  adiada: 100,
-  emAndamentoSemEvidencia: 105,
-  terminal: 93,
-} as const;
+type Papel = "planejado" | "agendado" | "adiada" | "emAndamentoSemEvidencia" | "terminal";
+let ATIVIDADES: Record<Papel, number>;
 
-const STATUS_ESPERADO: Record<number, string> = {
-  99: "planejado",
-  91: "agendado",
-  100: "adiada",
-  105: "em_andamento",
-  93: "concluido",
-};
-
-function statusNoBanco(): Record<number, string> {
+function atividadesNoBanco(): Partial<Record<Papel, number>> {
   const saida = execFileSync(
     "docker",
     [
@@ -51,32 +38,36 @@ function statusNoBanco(): Record<number, string> {
       `
 import json
 from apps.sgp.models import Activity
-ids = [${Object.keys(STATUS_ESPERADO).join(", ")}]
-print("STATUS " + json.dumps({
-    a.pk: a.status for a in Activity.objects.filter(pk__in=ids)
+def primeira(qs):
+    return qs.order_by("pk").values_list("pk", flat=True).first()
+print("ATIVIDADES " + json.dumps({
+    "planejado": primeira(Activity.objects.filter(status="planejado")),
+    "agendado": primeira(Activity.objects.filter(status="agendado")),
+    "adiada": primeira(Activity.objects.filter(status="adiada")),
+    "emAndamentoSemEvidencia": primeira(
+        Activity.objects.filter(status="em_andamento", fotos__isnull=True, documentos__isnull=True)
+    ),
+    "terminal": primeira(Activity.objects.filter(status="concluido")),
 }))
 `,
     ],
     { cwd: REPO_ROOT, encoding: "utf8", timeout: 120_000 },
   );
-  const linha = saida.split("\n").map((l) => l.trim()).find((l) => l.startsWith("STATUS "));
-  if (!linha) throw new Error(`Não consegui ler os status:\n${saida}`);
-  const bruto = JSON.parse(linha.slice("STATUS ".length)) as Record<string, string>;
-  return Object.fromEntries(
-    Object.entries(bruto).map(([k, v]) => [Number(k), v]),
-  );
+  const linha = saida.split("\n").map((l) => l.trim()).find((l) => l.startsWith("ATIVIDADES "));
+  if (!linha) throw new Error(`Não consegui ler as atividades:\n${saida}`);
+  return JSON.parse(linha.slice("ATIVIDADES ".length));
 }
 
 test.beforeAll(() => {
-  const atual = statusNoBanco();
-  for (const [id, esperado] of Object.entries(STATUS_ESPERADO)) {
-    const encontrado = atual[Number(id)];
+  const achadas = atividadesNoBanco();
+  for (const [papel, id] of Object.entries(achadas)) {
     expect(
-      encontrado,
-      `Atividade ${id} deveria estar em "${esperado}" e está em "${encontrado}". ` +
+      id,
+      `Nenhuma atividade da demonstração serve como "${papel}". ` +
         `Rode manage.py seed_demo --reset para restaurar a distribuição.`,
-    ).toBe(esperado);
+    ).toEqual(expect.any(Number));
   }
+  ATIVIDADES = achadas as Record<Papel, number>;
 });
 
 /** Abre a ficha e o diálogo de transição. */

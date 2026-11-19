@@ -10,12 +10,15 @@ import { formatCpfInput } from "@/app/lib/format";
 import { qk } from "@/app/lib/queryKeys";
 import { buscarMunicipios, getMunicipio } from "@/app/lib/solicitacoes";
 import { useSgpChoices } from "@/app/providers/SgpChoicesProvider";
+import { CampoAnexo, type ContextoAnexo } from "./CampoAnexo";
 
 type Props = {
   campo: CampoSolicitacao;
   valor: string;
   onChange: (valor: string) => void;
   error?: string;
+  /** Para um campo de anexo (#365): a demanda e os arquivos da solicitação em edição. */
+  anexo?: ContextoAnexo;
 };
 
 /** Sim/Não como par de rádios: os dois estados ficam à vista. */
@@ -94,6 +97,8 @@ export function CampoDinamico(props: Props) {
       return <CampoBooleano {...props} />;
     case "municipio":
       return <CampoMunicipio {...props} />;
+    case "anexo":
+      return <CampoAnexo campo={campo} valor={valor} onChange={onChange} error={error} contexto={props.anexo} />;
     case "choice":
       return (
         <Select

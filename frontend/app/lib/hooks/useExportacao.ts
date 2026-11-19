@@ -17,7 +17,18 @@ import {
 import { ExportTimeoutError } from "@/app/lib/exportarPlano";
 import { qk } from "@/app/lib/queryKeys";
 
-const POLL_INTERVAL_MS = 2_000;
+const POLL_INICIAL_MS = 2_000;
+const POLL_MAXIMO_MS = 15_000;
+const POLL_FATOR = 1.5;
+
+/**
+ * Backoff do acompanhamento (A4 da #302): começa em 2 s e cresce 1,5× a cada
+ * leitura, até 15 s. Uma tarefa curta conclui logo; uma longa não martela o
+ * backend a cada 2 s.
+ */
+export function intervaloDoPolling(leituras: number): number {
+  return Math.min(POLL_INICIAL_MS * POLL_FATOR ** Math.max(0, leituras), POLL_MAXIMO_MS);
+}
 
 /**
  * Tarefa em andamento + os filtros que a geraram. Os filtros ficam guardados
@@ -125,7 +136,7 @@ export function useExportacao<F>({ chave: base, iniciar, erroAoIniciar, avisoNaF
     refetchInterval: (query) => {
       if (expirou(query.state.error)) return false;
       const atual = query.state.data;
-      return atual && !emAndamento(atual) ? false : POLL_INTERVAL_MS;
+      return atual && !emAndamento(atual) ? false : intervaloDoPolling(query.state.dataUpdateCount);
     },
   });
 

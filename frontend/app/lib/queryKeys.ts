@@ -124,7 +124,13 @@ export const qk = {
     ["sgd", "demandas", { atividade: String(atividadeId) }] as const,
   /** Busca de atividades elegíveis no formulário de nova demanda (#294). */
   atividadesElegiveis: (busca: string) =>
-    ["sgp", "atividades", "elegiveis", { busca }] as const,
+    ["sgd", "atividades-elegiveis", { busca }] as const,
+  /** Detalhe da atividade escolhida no formulário de nova demanda (#361). */
+  atividadeElegivel: (id: string | number) =>
+    ["sgd", "atividades-elegiveis", String(id)] as const,
+  /** Prévia da abrangência da nova demanda (#361); `null` = atividade criada junto. */
+  abrangenciaPrevia: (activityId: number | null) =>
+    ["sgd", "demandas", "abrangencia", activityId] as const,
   /** Tarefa assíncrona de exportação da listagem de UFPAs (#240). */
   /** Job de exportação assíncrona do SGP (`/sgp/exportacoes/{id}/`), qualquer tipo. */
   exportacao: (id: string) => ["sgp", "exportacao", id] as const,

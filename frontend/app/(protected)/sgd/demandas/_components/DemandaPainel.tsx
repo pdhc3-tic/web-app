@@ -25,11 +25,12 @@ import {
 import { formatCurrencyBRL } from "@/app/lib/format";
 import { qk } from "@/app/lib/queryKeys";
 import { podeMontarDemanda } from "@/app/lib/solicitacoes";
-import { SeloForaDoTerritorio } from "./AbrangenciaDemanda";
+import { rotuloArticuladores, SeloForaDoTerritorio } from "./AbrangenciaDemanda";
 import { AcoesDecisao, type Desfecho } from "./AcoesDecisao";
 import { AvisoRecursoExtra } from "./AvisoRecursoExtra";
 import { DemandaAuditoria } from "./DemandaAuditoria";
 import { NomeDoSolicitante } from "./NomeDoSolicitante";
+import { AnexosSolicitacao } from "./montagem/AnexosSolicitacao";
 
 function Solicitacoes({ demanda }: { demanda: Demanda }) {
   if (demanda.solicitacoes.length === 0) {
@@ -48,6 +49,9 @@ function Solicitacoes({ demanda }: { demanda: Demanda }) {
             {s.valor_autorizado !== null && ` · autorizado ${formatCurrencyBRL(s.valor_autorizado)}`}
             {s.valor_pago !== null && ` · pago ${formatCurrencyBRL(s.valor_pago)}`}
           </p>
+          <div className="mt-1.5 empty:hidden">
+            <AnexosSolicitacao solicitacao={s} />
+          </div>
           {s.alerta_rubrica_fora_do_previsto && (
             // RF22: alerta, não bloqueio — a decisão continua possível.
             <p
@@ -279,7 +283,22 @@ export function DemandaPainel({
                 label: "Território da demanda",
                 value: <span data-testid="painel-abrangencia">{rotuloAbrangencia(demanda)}</span>,
               },
-              { label: "Município da atividade", value: demanda.contexto.municipio_nome },
+              ...(rotuloArticuladores(demanda.estado_sigla, demanda.articuladores)
+                ? [
+                    {
+                      label: "Analisada por",
+                      value: (
+                        <span data-testid="painel-articuladores">
+                          {rotuloArticuladores(demanda.estado_sigla, demanda.articuladores)}
+                        </span>
+                      ),
+                    },
+                  ]
+                : []),
+              {
+                label: "Município da atividade",
+                value: `${demanda.contexto.municipio_nome}/${demanda.contexto.municipio_estado_sigla}`,
+              },
               {
                 label: "Plano de Trabalho",
                 value: `Meta ${demanda.contexto.meta_numero} · Ação ${demanda.contexto.acao_numero}`,

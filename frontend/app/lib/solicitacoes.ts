@@ -214,7 +214,10 @@ export async function getMunicipio(id: string, signal?: AbortSignal): Promise<Mu
 
 // ─── Documentos ──────────────────────────────────────────────────────────────
 
-/** Espelha `views/demand_document.py`: só PDF, até 10 MB, até 10 por demanda. */
+/**
+ * Espelha `views/demand_document.py`: só PDF, até 10 MB, até 10 por demanda.
+ * Os anexos de campo seguem as mesmas regras de arquivo, mas têm contagem à parte.
+ */
 export const DOCUMENTO_CONTENT_TYPE = "application/pdf";
 export const DOCUMENTO_MAX_BYTES = 10_485_760;
 export const DOCUMENTOS_POR_DEMANDA = 10;
@@ -231,9 +234,23 @@ export type DocumentoDemanda = {
   nome_original: string;
   content_type: string;
   tamanho_bytes: number;
+  /** Num anexo de campo do formulário (#365): a solicitação e o campo em que foi informado. */
+  solicitacao: number | null;
+  campo: string;
   enviado_por: number;
   enviado_em: string;
 };
+
+/**
+ * Tipo do documento que é valor de um campo `format: anexo` (#365). Não entra pela
+ * aba Documentos nem conta no limite dela: quem limita é o schema do tipo.
+ */
+export const TIPO_ANEXO = "anexo";
+
+/** Os documentos da aba, sem os anexos de campo, que aparecem na solicitação. */
+export function documentosDaAba(lista: DocumentoDemanda[]): DocumentoDemanda[] {
+  return lista.filter((d) => d.tipo !== TIPO_ANEXO);
+}
 
 /** GET /sgd/demandas/{id}/documentos/ */
 export async function listDocumentosDemanda(

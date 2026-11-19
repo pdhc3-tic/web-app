@@ -285,7 +285,7 @@ export function TipoSolicitacaoForm({
             setTextoSchema(e.target.value);
             limparErro("schema_campos");
           }}
-          helperText="Tipos aceitos: texto, número (integer/number), data (format: date), data e hora (format: date-time), booleano e enumeração (enum, ou oneOf com const e title). Use title, description, required e x-ordem para a ordem dos campos."
+          helperText="Tipos aceitos: texto, número (integer/number), data (format: date), data e hora (format: date-time), booleano, enumeração (enum, ou oneOf com const e title) e anexo em PDF (integer com format: anexo, ou array deles para vários arquivos). Use title, description, required e x-ordem para a ordem dos campos."
           error={erros.schema_campos ?? erroJson ?? undefined}
         />
 

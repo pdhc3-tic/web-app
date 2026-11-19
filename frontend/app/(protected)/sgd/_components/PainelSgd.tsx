@@ -77,7 +77,11 @@ export function PainelSgd() {
 }
 
 function Conteudo({ dados }: { dados: SgdDashboard }) {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
+  // Com a sessão ainda carregando, a permissão é desconhecida: o alerta sai sem
+  // link em vez de apontar para o Painel de Orçamento e levar quem clica cedo
+  // para a tela errada.
+  const sessaoCarregando = status === "loading";
   const podeVerExecucao = canViewSgdGestao(session?.user);
 
   return (
@@ -137,7 +141,7 @@ function Conteudo({ dados }: { dados: SgdDashboard }) {
                   <CartaoAlerta
                     key={`${alerta.rubrica_id}-${alerta.nivel}-${alerta.estado_sigla ?? ""}-${alerta.territorio_id ?? ""}`}
                     alerta={alerta}
-                    href={linkDoAlerta(alerta, podeVerExecucao)}
+                    href={sessaoCarregando ? null : linkDoAlerta(alerta, podeVerExecucao)}
                   />
                 ))}
               </ul>
@@ -255,26 +259,33 @@ function LinhaFila({ item }: { item: ItemFila }) {
   );
 }
 
-function CartaoAlerta({ alerta, href }: { alerta: AlertaSaldo; href: string }) {
+function CartaoAlerta({ alerta, href }: { alerta: AlertaSaldo; href: string | null }) {
   const local = alerta.estado_sigla ?? (alerta.nivel === "nacional" ? "Nacional" : null);
+  const classes = "flex flex-col gap-1.5 rounded-md border border-border px-3 py-2.5";
+  const conteudo = (
+    <>
+      <span className="flex items-start justify-between gap-2">
+        <span className="min-w-0 text-sm font-medium text-text">{alerta.rubrica_nome}</span>
+        <SemaforoBadge
+          nivel={alerta.faixa}
+          label={`${formatoPercentual.format(Number(alerta.percentual_comprometido))}% comprometido`}
+        />
+      </span>
+      <span className="text-xs text-text-muted">
+        {local && `${local} · `}saldo {formatCurrencyBRL(alerta.saldo_disponivel)} de{" "}
+        {formatCurrencyBRL(alerta.valor_aprovado)}
+      </span>
+    </>
+  );
   return (
     <li data-testid={`alerta-${alerta.rubrica_slug}-${alerta.estado_sigla ?? alerta.territorio_id ?? "nacional"}`}>
-      <Link
-        href={href}
-        className="flex flex-col gap-1.5 rounded-md border border-border px-3 py-2.5 transition-colors hover:bg-surface-muted"
-      >
-        <span className="flex items-start justify-between gap-2">
-          <span className="min-w-0 text-sm font-medium text-text">{alerta.rubrica_nome}</span>
-          <SemaforoBadge
-            nivel={alerta.faixa}
-            label={`${formatoPercentual.format(Number(alerta.percentual_comprometido))}% comprometido`}
-          />
-        </span>
-        <span className="text-xs text-text-muted">
-          {local && `${local} · `}saldo {formatCurrencyBRL(alerta.saldo_disponivel)} de{" "}
-          {formatCurrencyBRL(alerta.valor_aprovado)}
-        </span>
-      </Link>
+      {href ? (
+        <Link href={href} className={`${classes} transition-colors hover:bg-surface-muted`}>
+          {conteudo}
+        </Link>
+      ) : (
+        <div className={classes}>{conteudo}</div>
+      )}
     </li>
   );
 }

@@ -166,7 +166,8 @@ test.describe("UFPA — ficha (data-fetching via TanStack Query)", () => {
     await abrirFicha(page, ufpaId, "?tab=documentos");
     await expect(abaAtiva(page, "Documentos")).toBeVisible();
     await expect(
-      page.getByText(/Nenhum documento anexado|documentos? anexados/),
+      // "1 documento anexado" no singular: o seed passou a anexar um laudo.
+      page.getByText(/^(Nenhum documento anexado|\d+ documentos? anexados?)/),
     ).toBeVisible();
   });
 
