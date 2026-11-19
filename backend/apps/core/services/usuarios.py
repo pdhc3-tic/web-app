@@ -47,13 +47,30 @@ def exigir_super_admin_restante(
     Um advisory lock único, pego antes de qualquer linha, serializa toda conferência até o commit, e a
     contagem é um comando depois dele, que já vê o que a transação anterior gravou. Fora de uma transação
     a trava não duraria até a gravação, por isso é recusado."""
+    sem_usuarios, sem_vinculos = list(sem_usuarios), list(sem_vinculos)
     conexao = transaction.get_connection()
     if not conexao.in_atomic_block:
         raise TransactionManagementError("A conferência do último Super Admin precisa de uma transação.")
     with conexao.cursor() as cursor:
         cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", [TRAVA_DO_ULTIMO_SUPER_ADMIN])
+    _travar_quem_sai(sem_usuarios, sem_vinculos)
     if not sobra_super_admin(sem_usuarios=sem_usuarios, sem_vinculos=sem_vinculos):
         raise ValidationError({campo: [MENSAGEM_DO_ULTIMO_SUPER_ADMIN]})
+
+
+def _travar_quem_sai(sem_usuarios: list[int], sem_vinculos: list[int]) -> None:
+    """Trava as linhas de quem sai antes da contagem. Reativar não pega o advisory lock: sem isto, uma conta
+    contada como inativa poderia ser reativada antes da gravação e sair sem ter sido contada. Os vínculos
+    entram pelo `user_id` numa subquery, sem JOIN, para travar só a linha do usuário."""
+    from apps.core.models import User, UserProfile
+
+    if not sem_usuarios and not sem_vinculos:
+        return
+    donos = UserProfile.objects.filter(pk__in=sem_vinculos).values("user_id")
+    list(
+        User.objects.filter(Q(pk__in=sem_usuarios) | Q(pk__in=donos))
+        .order_by("pk").select_for_update(no_key=True).values_list("pk", flat=True)
+    )
 
 
 @transaction.atomic
@@ -65,11 +82,14 @@ def desativar(user, *, por) -> list:
     o `ativo` no banco; a instância em memória fica para quem chamou corrigir."""
     from apps.sgd.services.desativacao import cancelar_demandas_do_usuario
 
-    if not user.ativo:
-        return []
     if por is not None and por.pk == user.pk:
         raise ValidationError({"ativo": ["Você não pode desativar a própria conta."]})
     exigir_super_admin_restante(sem_usuarios=[user.pk])
+    # A instância pode ter sido lida antes de outra transação ativar ou desativar a conta; a linha
+    # já está travada, então o valor relido vale até o commit.
+    user.refresh_from_db(fields=["ativo"])
+    if not user.ativo:
+        return []
     # Antes do cancelamento, para um Articulador desativado não notificar a si mesmo.
     # Só `ativo` muda, sem tocar em coluna referenciada: o lock não barra as checagens
     # de FK de quem grava notificação ou auditoria para este usuário.

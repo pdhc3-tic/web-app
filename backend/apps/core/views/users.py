@@ -133,7 +133,8 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         old_snapshot = _user_access_snapshot(serializer.instance)
-        desativando = serializer.instance.ativo and serializer.validated_data.get("ativo") is False
+        # Pelo pedido, não pela instância lida sem trava: `desativar` relê o estado com a linha travada.
+        desativando = serializer.validated_data.get("ativo") is False
         with transaction.atomic():
             perfis = serializer.validated_data.get("perfis_input")
             if not desativando and perfis is not None:

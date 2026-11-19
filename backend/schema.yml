@@ -2675,13 +2675,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ArloFieldMappingRequest'
+              $ref: '#/components/schemas/ReordenarArloRequest'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/ArloFieldMappingRequest'
+              $ref: '#/components/schemas/ReordenarArloRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/ArloFieldMappingRequest'
+              $ref: '#/components/schemas/ReordenarArloRequest'
         required: true
       security:
       - jwtAuth: []
@@ -2690,7 +2690,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ArloFieldMapping'
+                type: array
+                items:
+                  $ref: '#/components/schemas/ArloFieldMapping'
           description: ''
   /api/v1/sgd/config/diarias/faixas/:
     get:
@@ -18678,6 +18680,18 @@ components:
       - destino_allocation
       - origem_allocation
       - valor
+    ReordenarArloRequest:
+      type: object
+      properties:
+        direcao:
+          $ref: '#/components/schemas/DirecaoEnum'
+        ids:
+          type: array
+          items:
+            type: integer
+      required:
+      - direcao
+      - ids
     Role:
       type: object
       properties:

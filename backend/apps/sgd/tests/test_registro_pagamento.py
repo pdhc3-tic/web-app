@@ -116,7 +116,7 @@ def _trilha(demand):
     return {
         "etapas": list(demand.etapas.order_by("criado_em", "pk").values_list("etapa", "acao", "responsavel_id")),
         "notificacoes": list(
-            Notification.objects.filter(link__endswith=f"/sgd/demandas/{demand.pk}")
+            Notification.objects.filter(link__endswith=f"/sgd/demandas?demanda={demand.pk}")
             .order_by("id").values_list("evento", "user_id", "tipo")
         ),
         "status": [

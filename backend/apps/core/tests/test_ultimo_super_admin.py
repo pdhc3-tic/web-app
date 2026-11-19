@@ -13,9 +13,10 @@ from django.forms.models import inlineformset_factory
 from django.test import RequestFactory
 from rest_framework.exceptions import ValidationError
 
-from apps.core.models import User, UserProfile
+from apps.core.models import AuditLog, User, UserProfile
 from apps.core.services.usuarios import desativar, exigir_super_admin_restante
 from apps.core.tests.factories import RoleFactory, UserFactory
+from apps.core.views.users import UserViewSet
 
 USERS_URL = "/api/v1/users/"
 
@@ -357,6 +358,139 @@ def test_desativar_enquanto_outro_pedido_tira_o_perfil_do_colega(perfil_super_ad
     assert not primeira.is_alive() and not segunda.is_alive()
     assert set(erros) == {"desativar"} and isinstance(erros["desativar"], ValidationError)
     assert User.objects.get(pk=ana.pk).ativo is True
+
+
+def _em_outra_conexao(funcao):
+    """Roda `funcao` noutra thread, com conexão e commit próprios, e espera terminar."""
+    erros = []
+
+    def alvo():
+        try:
+            funcao()
+        except Exception as exc:
+            erros.append(exc)
+        finally:
+            connection.close()
+
+    thread = threading.Thread(target=alvo)
+    thread.start()
+    thread.join(timeout=15)
+    assert not thread.is_alive() and not erros, erros
+
+
+def _depois_de_ler(monkeypatch, acontece):
+    """O pedido lê a conta e, antes de gravar, outro pedido faz `acontece` e o commit."""
+    ler = UserViewSet.get_object
+
+    def ler_e_esperar_o_outro(view):
+        instancia = ler(view)
+        _em_outra_conexao(acontece)
+        return instancia
+
+    monkeypatch.setattr(UserViewSet, "get_object", ler_e_esperar_o_outro)
+
+
+def _desativar_pela_api(cliente, metodo, usuario):
+    if metodo == "patch":
+        return cliente.patch(f"{USERS_URL}{usuario.pk}/", {"ativo": False}, format="json")
+    return cliente.delete(f"{USERS_URL}{usuario.pk}/")
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("metodo", ["patch", "delete"])
+def test_conta_lida_inativa_e_reativada_no_meio_nao_sai_se_e_a_ultima(api_client, perfil_super_admin, monkeypatch, metodo):
+    """O pedido lê Bia inativa; antes de gravar, Bia é reativada e desativa Ana, ficando como a única."""
+    ana = UserFactory(profiles=[(perfil_super_admin, None)])
+    bia = UserFactory(ativo=False, profiles=[(perfil_super_admin, None)])
+
+    def reativar_bia_e_desativar_ana():
+        User.objects.filter(pk=bia.pk).update(ativo=True)
+        desativar(User.objects.get(pk=ana.pk), por=User.objects.get(pk=bia.pk))
+
+    _depois_de_ler(monkeypatch, reativar_bia_e_desativar_ana)
+    api_client.force_authenticate(user=ana)
+
+    resposta = _desativar_pela_api(api_client, metodo, bia)
+
+    assert resposta.status_code == 400, resposta.data
+    assert "último Super Admin ativo" in str(resposta.data["ativo"])
+    assert User.objects.get(pk=bia.pk).ativo is True
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("metodo", ["patch", "delete"])
+def test_conta_lida_inativa_e_reativada_no_meio_e_desativada_de_verdade(
+    api_client, perfil_super_admin, monkeypatch, metodo,
+):
+    """Com outro Super Admin, a conta reativada no meio passa pela desativação inteira, com auditoria."""
+    ana = UserFactory(profiles=[(perfil_super_admin, None)])
+    bia = UserFactory(ativo=False)
+    _depois_de_ler(monkeypatch, lambda: User.objects.filter(pk=bia.pk).update(ativo=True))
+    api_client.force_authenticate(user=ana)
+
+    resposta = _desativar_pela_api(api_client, metodo, bia)
+
+    assert resposta.status_code in (200, 204), resposta.data
+    assert User.objects.get(pk=bia.pk).ativo is False
+    assert AuditLog.objects.filter(acao="user.deactivated", entidade_id=str(bia.pk)).exists()
+
+
+@pytest.mark.django_db
+def test_desativar_conta_ja_desativada_por_outro_pedido_nao_repete(perfil_super_admin, outro_super_admin):
+    lida_ativa = UserFactory()
+    User.objects.filter(pk=lida_ativa.pk).update(ativo=False)
+
+    assert desativar(lida_ativa, por=outro_super_admin) == []
+
+    assert lida_ativa.ativo is False
+    assert not AuditLog.objects.filter(acao="user.deactivated", entidade_id=str(lida_ativa.pk)).exists()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_reativar_espera_quem_conferiu_a_saida_da_conta(perfil_super_admin):
+    """A contagem viu Bia inativa. Reativada antes do commit, ela sairia sem ter sido contada."""
+    bia = UserFactory(ativo=False, profiles=[(perfil_super_admin, None)])
+    conferiu, pode_commitar = threading.Event(), threading.Event()
+    erros = {}
+
+    def tirar_o_perfil_de_bia():
+        try:
+            with transaction.atomic():
+                exigir_super_admin_restante(sem_usuarios=[bia.pk], campo="perfis_input")
+                conferiu.set()
+                pode_commitar.wait(timeout=10)
+                UserProfile.objects.filter(user_id=bia.pk).delete()
+        except Exception as exc:
+            erros["perfil"] = exc
+        finally:
+            conferiu.set()
+            connection.close()
+
+    def reativar_bia():
+        try:
+            User.objects.filter(pk=bia.pk).update(ativo=True)
+        except Exception as exc:
+            erros["reativar"] = exc
+        finally:
+            connection.close()
+
+    primeira = threading.Thread(target=tirar_o_perfil_de_bia)
+    primeira.start()
+    assert conferiu.wait(timeout=10)
+    segunda = threading.Thread(target=reativar_bia)
+    segunda.start()
+    try:
+        _esperar_alguem_bloqueado()
+        assert segunda.is_alive()
+    finally:
+        pode_commitar.set()
+        primeira.join(timeout=15)
+        segunda.join(timeout=15)
+
+    assert not primeira.is_alive() and not segunda.is_alive()
+    assert not erros
+    assert not UserProfile.objects.filter(user_id=bia.pk).exists()
+    assert User.objects.get(pk=bia.pk).ativo is True
 
 
 @pytest.mark.django_db

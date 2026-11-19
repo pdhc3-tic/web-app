@@ -18,7 +18,7 @@ from apps.sgd.services import arlo_export
 from apps.sgd.services.arlo_mapping import catalogo_de_campos, validar_ativos_obrigatorios
 
 
-class ReordenarSerializer(serializers.Serializer):
+class ReordenarArloSerializer(serializers.Serializer):
     direcao = serializers.ChoiceField(choices=ArloFieldMapping.Direcao.choices)
     ids = serializers.ListField(child=serializers.IntegerField(), allow_empty=False)
 
@@ -97,11 +97,12 @@ class ArloFieldMappingViewSet(viewsets.ModelViewSet):
         """Cabeçalho e uma linha do CSV de exportação com o mapeamento vigente."""
         return Response(PreviewExportacaoArloSerializer(arlo_export.preview()).data)
 
+    @extend_schema(request=ReordenarArloSerializer, responses={200: ArloFieldMappingSerializer(many=True)})
     @action(detail=False, methods=["post"], url_path="reordenar")
     @transaction.atomic
     def reordenar(self, request):
         """Define a ordem das colunas de uma direção conforme a lista de ids."""
-        serializer = ReordenarSerializer(data=request.data)
+        serializer = ReordenarArloSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         direcao, ids = serializer.validated_data["direcao"], serializer.validated_data["ids"]
 
