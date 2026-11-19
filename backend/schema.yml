@@ -9724,6 +9724,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/UserDetail'
           description: ''
+        '400':
+          description: 'Campos inválidos. Com `ativo: false`, a própria conta ou o
+            último Super Admin ativo, em `ativo`. Sem o perfil Super Admin em `perfis_input`,
+            o último Super Admin ativo, em `perfis_input`.'
     delete:
       operationId: v1_users_destroy
       parameters:
@@ -9740,6 +9744,8 @@ paths:
       responses:
         '204':
           description: No response body
+        '400':
+          description: A própria conta ou o último Super Admin ativo, em `ativo`.
   /api/v1/users/{id}/reativar-acesso/:
     patch:
       operationId: v1_users_reativar_acesso_partial_update

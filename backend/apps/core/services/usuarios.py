@@ -48,14 +48,22 @@ def exigir_super_admin_restante(
     contagem é um comando depois dele, que já vê o que a transação anterior gravou. Fora de uma transação
     a trava não duraria até a gravação, por isso é recusado."""
     sem_usuarios, sem_vinculos = list(sem_usuarios), list(sem_vinculos)
+    travar_ultimo_super_admin()
+    _travar_quem_sai(sem_usuarios, sem_vinculos)
+    if not sobra_super_admin(sem_usuarios=sem_usuarios, sem_vinculos=sem_vinculos):
+        raise ValidationError({campo: [MENSAGEM_DO_ULTIMO_SUPER_ADMIN]})
+
+
+def travar_ultimo_super_admin() -> None:
+    """O advisory lock do último Super Admin, até o fim da transação. Quem grava antes da conferência uma
+    linha com FK para um usuário pega a trava antes dessa gravação: a FK trava a linha do usuário, e
+    esperar a trava global segurando essa linha fecharia um ciclo com quem a exclui. Pegar de novo na
+    mesma transação não espera."""
     conexao = transaction.get_connection()
     if not conexao.in_atomic_block:
         raise TransactionManagementError("A conferência do último Super Admin precisa de uma transação.")
     with conexao.cursor() as cursor:
         cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", [TRAVA_DO_ULTIMO_SUPER_ADMIN])
-    _travar_quem_sai(sem_usuarios, sem_vinculos)
-    if not sobra_super_admin(sem_usuarios=sem_usuarios, sem_vinculos=sem_vinculos):
-        raise ValidationError({campo: [MENSAGEM_DO_ULTIMO_SUPER_ADMIN]})
 
 
 def _travar_quem_sai(sem_usuarios: list[int], sem_vinculos: list[int]) -> None:

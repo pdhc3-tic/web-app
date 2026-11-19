@@ -3,7 +3,7 @@ import logging
 from django.db import transaction
 from django.db.models import Count, Max
 from django_filters import rest_framework as django_filters
-from drf_spectacular.utils import OpenApiResponse, extend_schema, inline_serializer
+from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view, inline_serializer
 from rest_framework import filters, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import LimitOffsetPagination
@@ -75,6 +75,19 @@ class UserPagination(LimitOffsetPagination):
     max_limit = 100
 
 
+@extend_schema_view(
+    partial_update=extend_schema(responses={
+        200: UserDetailSerializer,
+        400: OpenApiResponse(description=(
+            "Campos inválidos. Com `ativo: false`, a própria conta ou o último Super Admin ativo, em `ativo`. "
+            "Sem o perfil Super Admin em `perfis_input`, o último Super Admin ativo, em `perfis_input`."
+        )),
+    }),
+    destroy=extend_schema(responses={
+        204: None,
+        400: OpenApiResponse(description="A própria conta ou o último Super Admin ativo, em `ativo`."),
+    }),
+)
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     permission_classes = [IsSuperAdmin]

@@ -339,3 +339,10 @@ def test_reordenar_do_arlo_descreve_a_ordem_e_devolve_a_lista(schema):
     assert _ref(operacao["requestBody"]["content"]["application/json"]["schema"]) == "ReordenarArloRequest"
     assert resposta["type"] == "array"
     assert _ref(resposta["items"]) == "ArloFieldMapping"
+
+
+def test_edicao_e_exclusao_de_usuario_documentam_o_400(schema):
+    rota = schema["paths"]["/api/v1/users/{id}/"]
+
+    assert "400" in rota["patch"]["responses"]
+    assert "400" in rota["delete"]["responses"]

@@ -10,7 +10,7 @@ from django.core.exceptions import PermissionDenied
 from django.db import connection, transaction
 from django.db.transaction import TransactionManagementError
 from django.forms.models import inlineformset_factory
-from django.test import RequestFactory
+from django.test import Client, RequestFactory
 from rest_framework.exceptions import ValidationError
 
 from apps.core.models import AuditLog, User, UserProfile
@@ -391,9 +391,11 @@ def _depois_de_ler(monkeypatch, acontece):
 
 
 def _desativar_pela_api(cliente, metodo, usuario):
+    # `?ativo=false`: sem o filtro, a lista só tem contas ativas e a conta lida inativa daria 404.
+    rota = f"{USERS_URL}{usuario.pk}/?ativo=false"
     if metodo == "patch":
-        return cliente.patch(f"{USERS_URL}{usuario.pk}/", {"ativo": False}, format="json")
-    return cliente.delete(f"{USERS_URL}{usuario.pk}/")
+        return cliente.patch(rota, {"ativo": False}, format="json")
+    return cliente.delete(rota)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -563,3 +565,153 @@ class TestExclusaoEmLotePeloAdmin:
 
         assert resposta.status_code == 403
         assert User.objects.filter(pk__in=[ana.pk, bia.pk]).count() == 2
+
+
+@pytest.mark.django_db
+class TestEdicaoPeloAdminComLeituraAntiga:
+    """O Admin lê a conta sem trava e grava só o que o formulário mudou."""
+
+    def _salvar(self, lida, mudados):
+        site._registry[User].save_model(
+            _request(UserFactory(is_superuser=True)), lida, SimpleNamespace(changed_data=mudados), True,
+        )
+
+    def test_editar_o_nome_nao_desativa_quem_virou_o_ultimo_super_admin(self, perfil_super_admin):
+        ana = UserFactory(profiles=[(perfil_super_admin, None)])
+        bia = UserFactory(ativo=False, profiles=[(perfil_super_admin, None)])
+        lida = User.objects.get(pk=bia.pk)
+        User.objects.filter(pk=bia.pk).update(ativo=True)
+        desativar(User.objects.get(pk=ana.pk), por=None)
+        lida.nome = "Bia Souza"
+
+        self._salvar(lida, ["nome"])
+
+        bia.refresh_from_db()
+        assert bia.ativo is True
+        assert bia.nome == "Bia Souza"
+
+    def test_editar_o_nome_nao_desfaz_uma_desativacao_concorrente(self):
+        alvo = UserFactory()
+        lida = User.objects.get(pk=alvo.pk)
+        User.objects.filter(pk=alvo.pk).update(ativo=False)
+        lida.nome = "Nome novo"
+
+        self._salvar(lida, ["nome"])
+
+        alvo.refresh_from_db()
+        assert alvo.ativo is False
+        assert alvo.nome == "Nome novo"
+
+    def test_marcar_ativo_reativa(self):
+        alvo = UserFactory(ativo=False)
+        alvo.ativo = True
+
+        self._salvar(alvo, ["ativo"])
+
+        alvo.refresh_from_db()
+        assert alvo.ativo is True
+
+    def test_desmarcar_ativo_desativa_com_auditoria(self, outro_super_admin):
+        alvo = UserFactory()
+        alvo.ativo = False
+
+        self._salvar(alvo, ["ativo"])
+
+        alvo.refresh_from_db()
+        assert alvo.ativo is False
+        assert AuditLog.objects.filter(acao="user.deactivated", entidade_id=str(alvo.pk)).exists()
+
+
+def _segura_a_trava_do_ultimo_super_admin() -> bool:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND granted AND pid = pg_backend_pid()"
+        )
+        return cursor.fetchone()[0] > 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("modelo", ["user", "userprofile"])
+@pytest.mark.parametrize("em_lote", [False, True])
+def test_admin_pega_a_trava_antes_de_registrar_a_exclusao(client, monkeypatch, modelo, em_lote):
+    """O registro da exclusão tem FK para quem exclui; gravado antes da trava, fecharia um ciclo com quem
+    exclui essa pessoa ao mesmo tempo."""
+    model_admin = site._registry[User if modelo == "user" else UserProfile]
+    registrar = type(model_admin).log_deletions
+    com_trava = []
+
+    def registrar_conferindo(self, request, objetos):
+        com_trava.append(_segura_a_trava_do_ultimo_super_admin())
+        return registrar(self, request, objetos)
+
+    monkeypatch.setattr(type(model_admin), "log_deletions", registrar_conferindo)
+    client.force_login(UserFactory(is_superuser=True))
+    usuario = UserFactory(profiles=[(RoleFactory(slug="ugp"), None)])
+    alvo = usuario if modelo == "user" else usuario.profiles.get()
+
+    if em_lote:
+        resposta = client.post(f"/admin/core/{modelo}/", {
+            "action": "delete_selected", "_selected_action": [str(alvo.pk)], "post": "yes",
+        })
+    else:
+        resposta = client.post(f"/admin/core/{modelo}/{alvo.pk}/delete/", {"post": "yes"})
+
+    assert resposta.status_code == 302
+    assert com_trava == [True]
+    assert not type(alvo).objects.filter(pk=alvo.pk).exists()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_duas_pessoas_excluindo_uma_a_outra_pelo_admin(perfil_super_admin, monkeypatch):
+    """Ana exclui Bia enquanto Bia exclui Ana. O pedido de Bia espera a trava antes de registrar qualquer
+    coisa e, quando a recebe, Bia já não existe: recusa com 403, sem erro de banco."""
+    UserFactory(profiles=[(perfil_super_admin, None)])
+    ana = UserFactory(is_superuser=True, profiles=[(perfil_super_admin, None)])
+    bia = UserFactory(is_superuser=True, profiles=[(perfil_super_admin, None)])
+    excluiu, pode_commitar = threading.Event(), threading.Event()
+    classe = type(site._registry[User])
+    excluir = classe.delete_queryset
+
+    def excluir_e_esperar(self, request, queryset):
+        excluir(self, request, queryset)
+        if request.user.pk == ana.pk:
+            excluiu.set()
+            pode_commitar.wait(timeout=10)
+
+    monkeypatch.setattr(classe, "delete_queryset", excluir_e_esperar)
+    clientes = {}
+    for pessoa in (ana, bia):
+        clientes[pessoa.pk] = Client()
+        clientes[pessoa.pk].force_login(pessoa)
+    respostas, erros = {}, {}
+
+    def excluir_pelo_admin(quem, alvo):
+        try:
+            respostas[quem.pk] = clientes[quem.pk].post("/admin/core/user/", {
+                "action": "delete_selected", "_selected_action": [str(alvo.pk)], "post": "yes",
+            })
+        except Exception as exc:
+            erros[quem.pk] = exc
+        finally:
+            if quem.pk == ana.pk:
+                excluiu.set()
+            connection.close()
+
+    primeira = threading.Thread(target=excluir_pelo_admin, args=(ana, bia))
+    primeira.start()
+    assert excluiu.wait(timeout=10)
+    segunda = threading.Thread(target=excluir_pelo_admin, args=(bia, ana))
+    segunda.start()
+    try:
+        _esperar_alguem_bloqueado()
+    finally:
+        pode_commitar.set()
+        primeira.join(timeout=15)
+        segunda.join(timeout=15)
+
+    assert not primeira.is_alive() and not segunda.is_alive()
+    assert not erros, erros
+    assert respostas[ana.pk].status_code == 302
+    assert respostas[bia.pk].status_code == 403
+    assert User.objects.filter(pk=ana.pk).exists()
+    assert not User.objects.filter(pk=bia.pk).exists()
