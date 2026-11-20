@@ -102,7 +102,10 @@ export default function LimitesPage() {
 
   const periodo = periodoQ.data;
   const vigente = vigenteQ.data;
-  const ehVigente = !!periodo && !!vigente && periodo.inicio === vigente.inicio;
+  // Enquanto o período navegado carrega, o exibido ainda é o anterior: nada é
+  // tratado como vigente (sem Nova sobrescrita nem edição) até ele chegar.
+  const ehVigente =
+    !!periodo && !!vigente && !periodoQ.isPlaceholderData && periodo.inicio === vigente.inicio;
   // Um período adiante basta para ver o padrão agendado para o seguinte.
   const podeAvancar = !!periodo && !!vigente && periodo.inicio <= vigente.inicio && !periodoQ.isPlaceholderData;
 
