@@ -4,6 +4,7 @@ import {
   removerAlertasOrcamentoFixture,
   type AlertasOrcamentoFixture,
 } from "./helpers/alertasOrcamentoFixture";
+import { abrirComApi } from "./helpers/apiReal";
 import { storageStatePath } from "./helpers/users";
 
 /**
@@ -36,7 +37,11 @@ test.describe("UGP — painel de alertas", () => {
     await expect(painel(page)).toBeVisible();
 
     const vermelho = alerta(page, fx.vermelho.id);
-    await expect(vermelho).toContainText(fx.vermelho.rubrica);
+    // O alvo pelo nome (#423, item 5): o território do pool, e não "Pool · Diárias".
+    await expect(vermelho).toContainText(`${fx.vermelho.alvo} · ${fx.vermelho.rubrica}`);
+    await expect(vermelho).toContainText("Pool territorial");
+    await expect(alerta(page, fx.subexecucao.id)).toContainText(`Nacional · ${fx.subexecucao.rubrica}`);
+    await expect(alerta(page, fx.subexecucao.id)).toContainText("Pool nacional");
     await expect(vermelho).toContainText("Semáforo");
     await expect(vermelho).toContainText("Vermelho");
     await expect(vermelho).toContainText("96,5%");
@@ -124,6 +129,44 @@ test.describe("Super Admin — parâmetros do orçamento", () => {
     await campo.fill("150");
     await expect(page.getByTestId(`parametro-erro-${CHAVE}`)).toHaveText("Informe um valor entre 1 e 100.");
     await expect(salvar).toBeDisabled();
+  });
+
+  /**
+   * O backend valida as faixas desde a #423 (item 6). As da tela
+   * (`PARAMETROS` em `lib/parametrosOrcamento.ts`) precisam ser as mesmas: um
+   * valor que a tela aceita e o servidor recusa só aparece depois do Salvar.
+   * Os PATCH abaixo são recusados, então nada é gravado.
+   */
+  test("as faixas da tela são as que o backend aceita", async ({ page }) => {
+    const origem = await abrirComApi(page, "/admin/configuracoes/sgp/parametros-orcamento");
+    const patch = (chave: string, valor: string) =>
+      page.evaluate(
+        async ({ url, valor }) => {
+          const sessao = await (await fetch("/api/auth/session")).json();
+          const res = await fetch(url, {
+            method: "PATCH",
+            headers: { Authorization: `Bearer ${sessao.accessToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ valor }),
+          });
+          return { status: res.status, corpo: await res.json() };
+        },
+        { url: `${origem}/api/v1/system-config/${chave}/`, valor },
+      );
+
+    const faixas: [string, number, number][] = [
+      ["budget_subexec_alert_months", 1, 24],
+      ["budget_subexec_min_pct", 1, 100],
+      ["budget_transfer_alert_pct", 1, 100],
+    ];
+    for (const [chave, min, max] of faixas) {
+      for (const fora of [min - 1, max + 1]) {
+        const { status, corpo } = await patch(chave, String(fora));
+        expect(status, `${chave}=${fora}`).toBe(400);
+        expect(JSON.stringify(corpo), `${chave}=${fora}`).toContain("valor");
+      }
+    }
+    const periodo = await patch("budget_limit_period", "anual");
+    expect(periodo.status).toBe(400);
   });
 
   test("salva o valor e ele continua lá depois de recarregar", async ({ page }) => {

@@ -22,6 +22,13 @@ function alerta(id: number, parcial: Partial<AlertaOrcamento>): AlertaOrcamento 
     tipo: "semaforo",
     escopo: "pool",
     referencia_id: 100 + id,
+    alvo: {
+      nome: "Cariri Paraibano",
+      nivel: "territorial",
+      estado: { sigla: "PB", nome: "Paraíba" },
+      territorio: { id: 2, nome: "Cariri Paraibano" },
+      usuario: null,
+    },
     rubrica: 1,
     rubrica_nome: "Diárias",
     faixa: "vermelho",
@@ -62,8 +69,9 @@ describe("PainelAlertas (#403)", () => {
     renderPainel();
 
     const vermelho = await screen.findByTestId("alerta-orcamento-1");
-    expect(vermelho).toHaveTextContent("Pool · Diárias");
-    expect(vermelho).toHaveTextContent("Semáforo · desde 10/11/2026");
+    // O alvo pelo nome que o backend devolve (#423, item 5).
+    expect(vermelho).toHaveTextContent("Cariri Paraibano · Diárias");
+    expect(vermelho).toHaveTextContent("Pool territorial · Semáforo · desde 10/11/2026");
     expect(vermelho).toHaveTextContent("96,5%");
     expect(vermelho).toHaveTextContent("Vermelho");
 
@@ -102,12 +110,62 @@ describe("PainelAlertas (#403)", () => {
     });
   });
 
-  it("Ver mais pede a página seguinte", async () => {
-    mocks.fetchAlertas.mockResolvedValue({ count: 15, results: [VERMELHO, REMANEJAMENTO] });
+  /**
+   * O servidor de verdade: `OrcamentoPagination` corta o `limit` em 100 e anda
+   * por `offset`. Revisão do PR #433: só aumentar o `limit` deixava o 101º
+   * alerta inacessível.
+   */
+  function servidorCom(quantos: number) {
+    const todos = Array.from({ length: quantos }, (_, i) => alerta(1000 + i, {}));
+    mocks.fetchAlertas.mockImplementation(async ({ offset = 0, limit = 10 }: { offset?: number; limit?: number }) => ({
+      count: todos.length,
+      results: todos.slice(offset, offset + Math.min(limit, 100)),
+    }));
+    return todos;
+  }
+
+  it("Ver mais avança pelo offset até o último de mais de 100 alertas, e então some", async () => {
+    const todos = servidorCom(101);
+    renderPainel();
+    await screen.findByTestId(`alerta-orcamento-${todos[9].id}`);
+
+    // 10 por página: dez cliques levam do 10º ao 101º.
+    for (let pagina = 1; pagina <= 10; pagina++) {
+      fireEvent.click(await screen.findByText(new RegExp(`^Ver mais \\(${pagina * 10} de 101\\)$`)));
+      await screen.findByTestId(`alerta-orcamento-${todos[Math.min(pagina * 10 + 9, 100)].id}`);
+    }
+
+    expect(screen.getByTestId(`alerta-orcamento-${todos[100].id}`)).toBeInTheDocument();
+    expect(screen.getAllByTestId(/^alerta-orcamento-\d+$/)).toHaveLength(101);
+    await waitFor(() => expect(screen.queryByTestId("alertas-orcamento-mais")).toBeNull());
+    // Cada página pediu o trecho seguinte, sem passar do teto da API.
+    const pedidos = mocks.fetchAlertas.mock.calls.map(([p]) => p as { offset?: number; limit: number });
+    expect(pedidos.map((p) => p.offset ?? 0)).toEqual([0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]);
+    expect(pedidos.every((p) => p.limit <= 100)).toBe(true);
+  });
+
+  it("um alerta repetido entre páginas aparece uma vez só", async () => {
+    const todos = Array.from({ length: 15 }, (_, i) => alerta(2000 + i, {}));
+    mocks.fetchAlertas
+      .mockResolvedValueOnce({ count: 15, results: todos.slice(0, 10) })
+      // Um alerta novo no topo desloca a lista: o 10º volta na página seguinte.
+      .mockResolvedValueOnce({ count: 16, results: todos.slice(9, 15) });
     renderPainel();
 
     fireEvent.click(await screen.findByTestId("alertas-orcamento-mais"));
-    await waitFor(() => expect(ultimaChamada()).toMatchObject({ limit: 20 }));
+    await screen.findByTestId(`alerta-orcamento-${todos[14].id}`);
+    expect(screen.getAllByTestId(`alerta-orcamento-${todos[9].id}`)).toHaveLength(1);
+  });
+
+  it("trocar o filtro recomeça a paginação do início", async () => {
+    servidorCom(30);
+    renderPainel();
+    fireEvent.click(await screen.findByTestId("alertas-orcamento-mais"));
+    await waitFor(() => expect(ultimaChamada()).toMatchObject({ offset: 10 }));
+
+    fireEvent.change(screen.getByTestId("alertas-orcamento-filtro-tipo"), { target: { value: "semaforo" } });
+    await waitFor(() => expect(ultimaChamada()).toMatchObject({ tipo: "semaforo", offset: 0 }));
+    await waitFor(() => expect(screen.getAllByTestId(/^alerta-orcamento-\d+$/)).toHaveLength(10));
   });
 
   it("some para quem não tem acesso ao orçamento (403)", async () => {

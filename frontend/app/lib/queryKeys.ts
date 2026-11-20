@@ -32,6 +32,8 @@ export const qk = {
   poolsDaRubrica: (rubrica: string, nivel: string) => ["sgp", "orcamento", "pools", { rubrica, nivel }] as const,
   /** Todos os pools do escopo, origem e destino do remanejamento entre pools (#402). */
   poolsDoRemanejamento: ["sgp", "orcamento", "pools", "remanejamento"] as const,
+  /** Sob ["sgp", "orcamento"]: recarregar os saldos refaz a simulação. */
+  simulacaoRemanejamento: (chave: string) => ["sgp", "orcamento", "remanejamento", "simulacao", chave] as const,
   /** Movimentações do ledger de um pool, no detalhe do Painel de Orçamento (#398). */
   orcamentoPool: {
     transacoes: (poolId: number) => ["sgp", "orcamento", "pools", poolId, "transacoes"] as const,
@@ -40,8 +42,10 @@ export const qk = {
   limites: {
     todos: ["sgp", "orcamento", "limites"] as const,
     lista: (escopo: string, data: string) => ["sgp", "orcamento", "limites", escopo, data] as const,
-    periodicidade: ["core", "system-config", "budget_limit_period"] as const,
+    /** `null` = o vigente, pelo dia do servidor. */
+    periodo: (data: string | null) => ["sgp", "orcamento", "limites", "periodo", data ?? "vigente"] as const,
     perfisOperacionais: ["core", "roles", "operacionais"] as const,
+    pessoas: (q: string) => ["sgp", "orcamento", "limites", "pessoas", q.trim()] as const,
   },
   /** "Meu saldo" (#401): os cards por rubrica e o extrato de cada uma. */
   meuSaldo: {
@@ -164,8 +168,9 @@ export const qk = {
       ["sgd", "arlo-mapping", "preview", direcao] as const,
   },
   /** Alertas orçamentários abertos, por filtro (#403). */
-  alertasOrcamento: (filtros: { tipo: string; faixa: string }, limite: number) =>
-    ["sgp", "orcamento", "alertas", filtros, limite] as const,
+  /** Páginas dos alertas abertos com estes filtros; trocar o filtro recomeça do início. */
+  alertasOrcamento: (filtros: { tipo: string; faixa: string }) =>
+    ["sgp", "orcamento", "alertas", filtros] as const,
   /** Parâmetros globais em `SystemConfig` (#403). */
   systemConfig: ["core", "system-config"] as const,
   /** Configuração da tabela de diárias do SGD (#366). */

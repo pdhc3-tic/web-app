@@ -6,6 +6,21 @@
 
 *Os documentos das sprints anteriores continuam valendo para o que está lá. O da 12a já virou a #419.*
 
+**Situação em 20/11/2026:** o backend entregou os itens 1 a 8 e o 10 no PR #427, que fechou a #423. O front passou a consumi-los na branch `frontend/sprint-12e`, e as soluções provisórias descritas em cada item saíram. Fica pendente só o item 9.
+
+| Item | Rota ou campo do PR #427 | Front (`frontend/sprint-12e`) |
+|---|---|---|
+| 1 | `GET /sgp/orcamento/limites/periodo/` | `fetchPeriodo` no lugar de `periodoDe` (#400) |
+| 2 | `GET /sgp/orcamento/limites/pessoas/` | `listPessoasComLimite` na sobrescrita (#400) |
+| 3 | `GET /users/?categoria=` | `listUsers` com `categoria` (#405) |
+| 4 | simulação sem `justificativa` | simulação automática (#402) |
+| 5 | `alvo` do alerta | `alvoDoAlerta` com `alvo.nome` (#403) |
+| 6 | validação dos `budget_*` | faixas conferidas por E2E (#403) |
+| 7 | `?aberto=` e `total_exposto` | `listRiscosAbertosDaAtividade` (#404) |
+| 8 | `objeto_tipo` em `/roles/` | `objetoDoPerfil` no lugar de `OBJETO_DO_PERFIL` (#405) |
+| 9 | — | pendente: depende dos cadastros do SGE e do SGS |
+| 10 | 400 na própria conta e no último Super Admin | mensagem no diálogo, E2E (#406) |
+
 ---
 
 ## 1. Datas do período na listagem de limites (#400)

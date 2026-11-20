@@ -1,64 +1,43 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import {
+  comRotulo,
   dataVizinha,
   hojeIso,
-  paraPeriodicidade,
-  periodoDe,
   precedenciaDo,
   sobrealocacaoDoErro,
 } from "./limites";
 
-describe("periodoDe (#400, espelho de periodo_de)", () => {
-  it("trimestral: blocos de três meses a partir de janeiro", () => {
-    expect(periodoDe("2026-11-10", "trimestral")).toEqual({
-      inicio: "2026-10-01",
-      fim: "2026-12-31",
-      rotulo: "4º trimestre de 2026",
-    });
-    expect(periodoDe("2026-02-15", "trimestral")).toMatchObject({ inicio: "2026-01-01", fim: "2026-03-31" });
+describe("comRotulo (#400): nome do período que o backend devolveu", () => {
+  it("trimestral e semestral pela posição do início no ano", () => {
+    expect(comRotulo({ inicio: "2026-10-01", fim: "2026-12-31", periodicidade: "trimestral" }).rotulo).toBe(
+      "4º trimestre de 2026",
+    );
+    expect(comRotulo({ inicio: "2026-07-01", fim: "2026-12-31", periodicidade: "semestral" }).rotulo).toBe(
+      "2º semestre de 2026",
+    );
   });
 
-  it("mensal acerta o último dia, inclusive em ano bissexto", () => {
-    expect(periodoDe("2028-02-10", "mensal")).toEqual({
-      inicio: "2028-02-01",
-      fim: "2028-02-29",
-      rotulo: "fev/2028",
-    });
+  it("mensal e vigência", () => {
+    expect(comRotulo({ inicio: "2028-02-01", fim: "2028-02-29", periodicidade: "mensal" }).rotulo).toBe("fev/2028");
+    expect(comRotulo({ inicio: "2000-01-01", fim: "2099-12-31", periodicidade: "vigencia" }).rotulo).toBe(
+      "Vigência do TED",
+    );
   });
 
-  it("semestral", () => {
-    expect(periodoDe("2026-07-01", "semestral")).toEqual({
-      inicio: "2026-07-01",
-      fim: "2026-12-31",
-      rotulo: "2º semestre de 2026",
-    });
-  });
-
-  it("vigência: período único", () => {
-    expect(periodoDe("2026-11-10", "vigencia")).toEqual({
-      inicio: "2000-01-01",
-      fim: "2099-12-31",
-      rotulo: "Vigência do TED",
+  it("mantém as datas do backend", () => {
+    expect(comRotulo({ inicio: "2026-01-01", fim: "2026-03-31", periodicidade: "trimestral" })).toMatchObject({
+      inicio: "2026-01-01",
+      fim: "2026-03-31",
     });
   });
 });
 
 describe("dataVizinha", () => {
-  it("anda um período para trás e para a frente, virando o ano", () => {
-    const q1 = periodoDe("2026-01-20", "trimestral");
+  it("anda um dia para fora do período, virando o ano", () => {
+    const q1 = comRotulo({ inicio: "2026-01-01", fim: "2026-03-31", periodicidade: "trimestral" });
     expect(dataVizinha(q1, -1)).toBe("2025-12-31");
-    expect(periodoDe(dataVizinha(q1, -1), "trimestral").rotulo).toBe("4º trimestre de 2025");
-    expect(dataVizinha(periodoDe("2026-12-05", "trimestral"), 1)).toBe("2027-01-01");
-  });
-});
-
-describe("paraPeriodicidade", () => {
-  it("aceita os quatro valores e cai no trimestral, como o backend", () => {
-    expect(paraPeriodicidade("Mensal")).toBe("mensal");
-    expect(paraPeriodicidade("vigencia")).toBe("vigencia");
-    expect(paraPeriodicidade("anual")).toBe("trimestral");
-    expect(paraPeriodicidade(null)).toBe("trimestral");
+    expect(dataVizinha(q1, 1)).toBe("2026-04-01");
   });
 });
 

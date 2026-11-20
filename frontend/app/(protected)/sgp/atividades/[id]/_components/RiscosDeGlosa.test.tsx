@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { riscosAbertos, totalExposto, type RiscoGlosa } from "@/app/lib/demandas";
+import type { RiscoGlosa, RiscosAbertosDaAtividade } from "@/app/lib/demandas";
 import { RiscosDeGlosa } from "./RiscosDeGlosa";
 
 /** #404 — bloco "Riscos de glosa" da ficha: só aparece quando há risco em aberto. */
@@ -19,7 +19,7 @@ vi.mock("@/app/lib/auth/roles", () => ({
 
 vi.mock("@/app/lib/demandas", async (original) => ({
   ...(await original<typeof import("@/app/lib/demandas")>()),
-  listRiscosDeGlosaDaAtividade: api.listar,
+  listRiscosAbertosDaAtividade: api.listar,
 }));
 
 const risco = (extra: Partial<RiscoGlosa>): RiscoGlosa => ({
@@ -34,6 +34,14 @@ const risco = (extra: Partial<RiscoGlosa>): RiscoGlosa => ({
   valor_pago: "1400.00",
   criado_em: "2026-11-01T10:00:00-03:00",
   resolvido_em: null,
+  ...extra,
+});
+
+/** A resposta do servidor: os abertos da página, a contagem e o total de todos. */
+const pagina = (riscos: RiscoGlosa[], extra: Partial<RiscosAbertosDaAtividade> = {}): RiscosAbertosDaAtividade => ({
+  riscos,
+  total: riscos.length,
+  totalExposto: "0.00",
   ...extra,
 });
 
@@ -52,10 +60,15 @@ beforeEach(() => {
 
 describe("RiscosDeGlosa (#404)", () => {
   it("lista tipo, severidade e valor exposto de cada risco em aberto", async () => {
-    api.listar.mockResolvedValue([
-      risco({ id: 1 }),
-      risco({ id: 2, tipo: "demanda_sem_evidencia", severidade: "media", valor_exposto: "350.50", demanda_id: 43 }),
-    ]);
+    api.listar.mockResolvedValue(
+      pagina(
+        [
+          risco({ id: 1 }),
+          risco({ id: 2, tipo: "demanda_sem_evidencia", severidade: "media", valor_exposto: "350.50", demanda_id: 43 }),
+        ],
+        { totalExposto: "550.50" },
+      ),
+    );
     montar();
 
     const primeiro = await screen.findByTestId("risco-de-glosa-1");
@@ -66,15 +79,25 @@ describe("RiscosDeGlosa (#404)", () => {
     const segundo = screen.getByTestId("risco-de-glosa-2");
     expect(segundo.textContent).toContain("Demanda executada sem evidência");
     expect(segundo.textContent).toContain("350,50");
+    // O total é o que o servidor somou (#423, item 7), não uma conta da tela.
     expect(screen.getByTestId("riscos-de-glosa-total").textContent).toContain("550,50");
+    expect(screen.queryByTestId("riscos-de-glosa-parcial")).toBeNull();
+  });
+
+  it("com mais riscos que a página, mostra a contagem e o total do servidor e avisa", async () => {
+    api.listar.mockResolvedValue(pagina([risco({ id: 1 })], { total: 140, totalExposto: "98765.40" }));
+    montar();
+
+    const bloco = await screen.findByTestId("riscos-de-glosa");
+    expect(bloco.querySelector("h2")?.textContent).toContain("140");
+    expect(screen.getByTestId("riscos-de-glosa-total").textContent).toContain("98.765,40");
+    expect(screen.getByTestId("riscos-de-glosa-parcial")).toHaveTextContent("Mostrando os 1 de maior valor exposto, de 140.");
   });
 
   it("a severidade tem cor própria: alta em erro, média em atenção, baixa em neutro", async () => {
-    api.listar.mockResolvedValue([
-      risco({ id: 1, severidade: "alta" }),
-      risco({ id: 2, severidade: "media" }),
-      risco({ id: 3, severidade: "baixa" }),
-    ]);
+    api.listar.mockResolvedValue(
+      pagina([risco({ id: 1, severidade: "alta" }), risco({ id: 2, severidade: "media" }), risco({ id: 3, severidade: "baixa" })]),
+    );
     montar();
 
     expect((await screen.findByTestId("risco-de-glosa-severidade-1")).className).toContain("text-error-text");
@@ -83,7 +106,7 @@ describe("RiscosDeGlosa (#404)", () => {
   });
 
   it("sem risco, o bloco não aparece", async () => {
-    api.listar.mockResolvedValue([]);
+    api.listar.mockResolvedValue(pagina([]));
     const { container } = montar();
     await waitFor(() => expect(api.listar).toHaveBeenCalled());
     expect(screen.queryByTestId("riscos-de-glosa")).toBeNull();
@@ -98,16 +121,9 @@ describe("RiscosDeGlosa (#404)", () => {
     );
     expect(screen.queryByTestId("riscos-de-glosa")).toBeNull();
 
-    api.listar.mockResolvedValue([risco({ id: 3 })]);
+    api.listar.mockResolvedValue(pagina([risco({ id: 3 })]));
     screen.getByRole("button", { name: "Tentar de novo" }).click();
     expect(await screen.findByTestId("riscos-de-glosa")).toBeInTheDocument();
-  });
-
-  it("risco já resolvido não conta", async () => {
-    api.listar.mockResolvedValue([risco({ id: 1, resolvido_em: "2026-11-05T10:00:00-03:00" })]);
-    montar();
-    await waitFor(() => expect(api.listar).toHaveBeenCalled());
-    expect(screen.queryByTestId("riscos-de-glosa")).toBeNull();
   });
 
   it("quem não pode ver riscos (ADT) nem consulta a rota", () => {
@@ -115,17 +131,5 @@ describe("RiscosDeGlosa (#404)", () => {
     montar();
     expect(api.listar).not.toHaveBeenCalled();
     expect(screen.queryByTestId("riscos-de-glosa")).toBeNull();
-  });
-});
-
-describe("riscos de glosa — leitura", () => {
-  it("riscosAbertos descarta os resolvidos e aceita lista ausente", () => {
-    expect(riscosAbertos(undefined)).toEqual([]);
-    expect(riscosAbertos([risco({ id: 1 }), risco({ id: 2, resolvido_em: "2026-11-05T10:00:00-03:00" })]).map((r) => r.id)).toEqual([1]);
-  });
-
-  it("totalExposto soma sem erro de ponto flutuante", () => {
-    expect(totalExposto([risco({ valor_exposto: "0.10" }), risco({ valor_exposto: "0.20" })])).toBe("0.30");
-    expect(totalExposto([])).toBe("0.00");
   });
 });

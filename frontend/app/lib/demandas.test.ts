@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { listDemandas, listRiscosDeGlosaDaAtividade, riscosAbertos } from "@/app/lib/demandas";
+import { listDemandas, listRiscosAbertosDaAtividade } from "@/app/lib/demandas";
 
 /**
  * #364 — a listagem master-detail passa a ordenação pelo servidor
@@ -10,19 +10,24 @@ const api = vi.hoisted(() => ({ client: vi.fn() }));
 vi.mock("@/app/lib/api", () => ({ apiClient: api.client }));
 
 describe("riscos da atividade (#404)", () => {
-  it("pede uma página de 100 da atividade, sem percorrer as demais", async () => {
+  it("pede ao servidor só os abertos, numa página de 100, e usa a contagem e o total dele", async () => {
     api.client.mockReset();
     api.client.mockResolvedValueOnce({ json: async () => ({
+      count: 140,
+      total_exposto: "98765.40",
       next: "http://backend/glosa-riscos/?offset=100",
-      results: [{ id: 1, resolvido_em: "2026-11-10" }, { id: 2, resolvido_em: null }],
+      results: [{ id: 2, resolvido_em: null }],
     }) });
-    const resultado = await listRiscosDeGlosaDaAtividade(42);
+    const resultado = await listRiscosAbertosDaAtividade(42);
     expect(api.client).toHaveBeenCalledTimes(1);
     const url = new URL(api.client.mock.calls[0][0], "http://local");
     expect(url.pathname).toBe("/api/v1/sgp/glosa-riscos/");
     expect(url.searchParams.get("activity")).toBe("42");
+    expect(url.searchParams.get("aberto")).toBe("true");
     expect(url.searchParams.get("limit")).toBe("100");
-    expect(riscosAbertos(resultado).map((r) => r.id)).toEqual([2]);
+    expect(resultado.riscos.map((r) => r.id)).toEqual([2]);
+    expect(resultado.total).toBe(140);
+    expect(resultado.totalExposto).toBe("98765.40");
   });
 });
 

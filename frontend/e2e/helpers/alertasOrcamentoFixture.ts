@@ -27,7 +27,8 @@ import { ORCAMENTO_E2E_PY } from "./orcamentoE2E";
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 const MARCADOR = "ALERTAS_403_FIXTURE";
 
-type AlertaRef = { id: number; rubrica: string };
+/** `alvo`: o nome que o backend põe em `alvo.nome` (#423, item 5). */
+type AlertaRef = { id: number; rubrica: string; alvo: string };
 
 export type AlertasOrcamentoFixture = {
   vermelho: AlertaRef;
@@ -83,9 +84,9 @@ with visao_total():
     ) or BudgetAlert.objects.get(escopo="pool", referencia_id=nacional_veiculo.pk, tipo="remanejamento_excessivo", resolvido_em__isnull=True)
 
 print("${MARCADOR}_SETUP " + json.dumps({
-    "vermelho": {"id": vermelho.pk, "rubrica": diarias.nome},
-    "subexecucao": {"id": subexecucao.pk, "rubrica": grafico.nome},
-    "remanejamento": {"id": remanejamento.pk, "rubrica": veiculo.nome},
+    "vermelho": {"id": vermelho.pk, "rubrica": diarias.nome, "alvo": territorio.nome},
+    "subexecucao": {"id": subexecucao.pk, "rubrica": grafico.nome, "alvo": "Nacional"},
+    "remanejamento": {"id": remanejamento.pk, "rubrica": veiculo.nome, "alvo": "Nacional"},
     "parametros": {c.chave: c.valor for c in SystemConfig.objects.filter(chave__in=${JSON.stringify(CHAVES)})},
 }))
 `;

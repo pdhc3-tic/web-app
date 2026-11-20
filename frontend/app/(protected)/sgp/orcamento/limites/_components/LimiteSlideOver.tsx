@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/app/components/ui/Button/Button";
 import { Input } from "@/app/components/ui/Input/Input";
@@ -13,11 +12,11 @@ import { Select } from "@/app/components/ui/Select/Select";
 import { SlideOver } from "@/app/components/ui/SlideOver/SlideOver";
 import { Textarea } from "@/app/components/ui/Textarea/Textarea";
 import { ApiError } from "@/app/lib/api";
-import { fetchOpcoesUsuarios } from "@/app/lib/execucaoSgd";
 import { formatCurrencyBRL, formatMoneyInput, moneyOrNull } from "@/app/lib/format";
 import {
   alterarLimite,
   criarLimite,
+  listPessoasComLimite,
   sobrealocacaoDoErro,
   type LimiteGasto,
   type PerfilOperacional,
@@ -98,12 +97,6 @@ function FormularioLimite({ edicao, rubricas, onClose, onSalvo }: Props & { edic
   const [salvando, setSalvando] = useState(false);
 
   const nova = edicao.tipo === "sobrescrita-nova";
-  const usuarios = useQuery({
-    queryKey: qk.execucao.opcoesUsuarios("solicitante"),
-    queryFn: ({ signal }) => fetchOpcoesUsuarios("solicitante", signal),
-    enabled: nova,
-    staleTime: 5 * 60_000,
-  });
 
   const limiteAtual =
     edicao.tipo === "padrao-alterar" || edicao.tipo === "sobrescrita-alterar" ? edicao.limite : null;
@@ -169,12 +162,6 @@ function FormularioLimite({ edicao, rubricas, onClose, onSalvo }: Props & { edic
     }
   }
 
-  const opcoesUsuarios = (usuarios.data ?? []).map((o) => ({
-    value: o.value,
-    label: o.label,
-    item: Number(o.value),
-  }));
-
   return (
     <SlideOver
       open
@@ -229,13 +216,18 @@ function FormularioLimite({ edicao, rubricas, onClose, onSalvo }: Props & { edic
                 setUsuario(o);
                 setErros((p) => ({ ...p, user: undefined }));
               }}
-              // A lista já vem inteira (os ADTs ativos); a busca filtra aqui.
-              search={async (texto) => {
-                const t = texto.trim().toLowerCase();
-                return t ? opcoesUsuarios.filter((o) => o.label.toLowerCase().includes(t)) : opcoesUsuarios;
-              }}
-              queryKey={(texto) => ["limites", "usuarios", texto, opcoesUsuarios.length]}
-              placeholder={usuarios.isPending ? "Carregando…" : "Buscar pelo nome…"}
+              // Quem recebe limite individual: ADT/ACR e Articulador Estadual
+              // (#423, item 2). O perfil vai ao lado do nome.
+              search={async (texto, signal) =>
+                (await listPessoasComLimite(texto, signal)).map((p) => ({
+                  value: String(p.id),
+                  label: p.nome,
+                  description: p.perfis.map((perfil) => perfil.nome).join(" · "),
+                  item: p.id,
+                }))
+              }
+              queryKey={(texto) => qk.limites.pessoas(texto)}
+              placeholder="Buscar pelo nome…"
               emptyText="Nenhuma pessoa encontrada."
               error={erros.user}
               data-testid="limite-usuario"

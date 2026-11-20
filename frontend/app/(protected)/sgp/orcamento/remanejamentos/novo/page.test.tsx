@@ -111,12 +111,13 @@ const SIMULACAO = {
   },
 };
 
-const PAYLOAD = {
+/** A simulação não leva justificativa (#423, item 4); a confirmação leva. */
+const SIMULADO = {
   origem_allocation: 10,
   destino_allocation: 20,
   valor: "1000.00",
-  justificativa: "Reforço para o RN",
 };
+const PAYLOAD = { ...SIMULADO, justificativa: "Reforço para o RN" };
 
 /** O 400 de `_exigir_saldo_na_origem`, como o `apiClient` o entrega. */
 function recusaDeSaldo(disponivel: string) {
@@ -164,7 +165,11 @@ async function preencher(valor = "1000.00") {
   fireEvent.mouseDown(screen.getByRole("option", { name: /Paraíba/ }));
   escolherSelect(/Pool de destino/i, /Rio Grande do Norte/);
   fireEvent.change(screen.getByLabelText(/Valor \(R\$\)/i), { target: { value: valor } });
-  fireEvent.change(screen.getByLabelText(/Justificativa/i), {
+}
+
+/** A justificativa só aparece com a simulação na tela. */
+async function justificar() {
+  fireEvent.change(await screen.findByLabelText(/Justificativa/i), {
     target: { value: "Reforço para o RN" },
   });
 }
@@ -177,22 +182,43 @@ describe("NovoRemanejamentoPage (#402)", () => {
     mocks.confirmarRemanejamento.mockResolvedValue([{ id: 1 }]);
   });
 
-  it("simula antes de exibir o botão de confirmar, mostra mudança de faixa e confirma com o mesmo payload", async () => {
+  it("simula sozinha com origem, destino e valor; a justificativa só é pedida para confirmar", async () => {
     await preencher();
     expect(screen.queryByTestId("remanejamento-confirmar")).toBeNull();
+    expect(screen.queryByTestId("remanejamento-simular")).toBeNull();
 
-    fireEvent.click(screen.getByTestId("remanejamento-simular"));
-    await waitFor(() => {
-      expect(screen.getByTestId("remanejamento-simulacao")).toBeInTheDocument();
-    });
+    await screen.findByTestId("remanejamento-simulacao");
     expect(screen.getByTestId("impacto-destino-mudou-faixa")).toBeInTheDocument();
-    expect(mocks.simularRemanejamento).toHaveBeenCalledWith(PAYLOAD);
+    expect(mocks.simularRemanejamento).toHaveBeenCalledTimes(1);
+    expect(mocks.simularRemanejamento.mock.calls[0][0]).toEqual(SIMULADO);
+
+    // Sem justificativa não confirma.
+    expect(screen.getByTestId("remanejamento-confirmar")).toBeDisabled();
+    await justificar();
+    // Escrever a justificativa não refaz a simulação.
+    expect(mocks.simularRemanejamento).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByTestId("remanejamento-confirmar"));
     await waitFor(() => {
       expect(mocks.confirmarRemanejamento).toHaveBeenCalledWith(PAYLOAD);
     });
     await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/sgp/orcamento"));
+  });
+
+  it("mudar o valor refaz a simulação com o valor novo, só depois de ele parar de mudar", async () => {
+    await preencher();
+    await screen.findByTestId("remanejamento-simulacao");
+
+    const valor = screen.getByLabelText(/Valor \(R\$\)/i);
+    fireEvent.change(valor, { target: { value: "15" } });
+    fireEvent.change(valor, { target: { value: "150" } });
+    // A simulação anterior sai na hora: ela não vale para o valor novo.
+    expect(screen.queryByTestId("remanejamento-simulacao")).toBeNull();
+    expect(screen.getByTestId("remanejamento-simulando")).toBeInTheDocument();
+
+    await screen.findByTestId("remanejamento-simulacao");
+    expect(mocks.simularRemanejamento).toHaveBeenCalledTimes(2);
+    expect(mocks.simularRemanejamento.mock.calls[1][0]).toEqual({ ...SIMULADO, valor: "150" });
   });
 
   it("cada opção mostra o saldo que o remanejamento aceita tirar (saldo_pool)", async () => {
@@ -224,15 +250,16 @@ describe("NovoRemanejamentoPage (#402)", () => {
     expect(screen.getByLabelText(/Pool de destino/i)).not.toHaveTextContent("Rio Grande do Norte");
   });
 
-  it("não deixa simular com valor zero", async () => {
+  it("com valor zero não simula", async () => {
     await preencher("0");
-    expect(screen.getByTestId("remanejamento-simular")).toBeDisabled();
+    expect(screen.queryByTestId("remanejamento-simulando")).toBeNull();
+    await new Promise((r) => setTimeout(r, 700));
+    expect(mocks.simularRemanejamento).not.toHaveBeenCalled();
   });
 
   it("na simulação, saldo insuficiente diz quanto há na origem, sem mostrar o código", async () => {
     mocks.simularRemanejamento.mockRejectedValueOnce(recusaDeSaldo("200.00"));
     await preencher();
-    fireEvent.click(screen.getByTestId("remanejamento-simular"));
 
     await waitFor(() => {
       expect(screen.getByTestId("remanejamento-erro")).toHaveTextContent(
@@ -243,14 +270,14 @@ describe("NovoRemanejamentoPage (#402)", () => {
     expect(screen.getByTestId("remanejamento-erro")).not.toHaveTextContent("mudou");
   });
 
-  it("na confirmação, saldo que mudou invalida a simulação e recarrega os pools", async () => {
+  it("na confirmação, saldo que mudou recarrega os pools e refaz a simulação", async () => {
     mocks.confirmarRemanejamento.mockRejectedValueOnce(recusaDeSaldo("200.00"));
     await preencher();
-    fireEvent.click(screen.getByTestId("remanejamento-simular"));
-    await waitFor(() => {
-      expect(screen.getByTestId("remanejamento-confirmar")).toBeInTheDocument();
-    });
+    await screen.findByTestId("remanejamento-simulacao");
+    await justificar();
     const leiturasAntes = mocks.fetchPainelOrcamento.mock.calls.length;
+    // Com o saldo novo, o mesmo valor já não cabe na origem.
+    mocks.simularRemanejamento.mockRejectedValueOnce(recusaDeSaldo("200.00"));
 
     fireEvent.click(screen.getByTestId("remanejamento-confirmar"));
 
@@ -264,6 +291,10 @@ describe("NovoRemanejamentoPage (#402)", () => {
     await waitFor(() => {
       expect(mocks.fetchPainelOrcamento.mock.calls.length).toBeGreaterThan(leiturasAntes);
     });
+    // A simulação foi refeita com o saldo novo, e a recusa dela não volta a mostrar o impacto antigo.
+    await waitFor(() => expect(mocks.simularRemanejamento).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId("remanejamento-simulacao")).toBeNull();
+    expect(screen.queryByTestId("remanejamento-confirmar")).toBeNull();
   });
 
   it("sem pools, explica que é preciso distribuir o orçamento antes", async () => {

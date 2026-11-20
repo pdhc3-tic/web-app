@@ -238,7 +238,18 @@ test.describe("SGD — perfis que não abrem demanda", () => {
 
   test("o bloco de riscos de glosa lista os riscos em aberto, com severidade e valor exposto", async ({ page }) => {
     const { pagoAcima, semEvidencia, resolvido } = fx.custo.riscos;
+    // Só os abertos, filtrados e somados pelo servidor (#423, item 7).
+    const consulta = page.waitForResponse((r) => {
+      const url = new URL(r.url());
+      return (
+        url.pathname === "/api/v1/sgp/glosa-riscos/" &&
+        url.searchParams.get("activity") === String(fx.custo.id) &&
+        url.searchParams.get("aberto") === "true"
+      );
+    });
     await page.goto(`/sgp/atividades/${fx.custo.id}`);
+    const corpo = (await (await consulta).json()) as { count: number; total_exposto: string };
+    expect(corpo).toMatchObject({ count: 2, total_exposto: "1100.00" });
 
     const bloco = page.getByTestId("riscos-de-glosa");
     await expect(bloco).toBeVisible();

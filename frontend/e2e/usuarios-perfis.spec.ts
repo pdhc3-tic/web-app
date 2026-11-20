@@ -113,7 +113,7 @@ test("cria usuário com perfil principal e operacional, e o backend guarda o obj
   await expect(linha).toContainText(`${operacional.nome} · evento 12`);
 });
 
-test("a categoria recorta os perfis; a lista filtra no servidor pelo perfil escolhido", async ({ page }) => {
+test("a categoria filtra a lista no servidor e recorta os perfis; o perfil afina", async ({ page }) => {
   const origem = await abrirComApi(page, "/admin/usuarios");
   const { results: perfis } = await apiGet<{ results: PerfilApi[] }>(
     page,
@@ -130,13 +130,23 @@ test("a categoria recorta os perfis; a lista filtra no servidor pelo perfil esco
     if (url.pathname === "/api/v1/users/" && r.method() === "GET") consultas.push(url);
   });
 
+  // `?categoria=` (#423, item 3): a lista inteira é recortada no servidor, sem
+  // precisar escolher um perfil.
+  const idsOperacionais = new Set(perfis.filter((p) => p.categoria === "operacional").map((p) => p.id));
+  const porCategoria = page.waitForResponse((r) => {
+    const url = new URL(r.url());
+    return url.pathname === "/api/v1/users/" && url.searchParams.get("categoria") === "operacional";
+  });
   await page.getByTestId("usuarios-filtro-categoria").getByRole("combobox").click();
   await page.getByRole("option", { name: "Operacionais", exact: true }).click();
   await expect(page).toHaveURL(/categoria=operacional/);
-  // Sem filtro de categoria no backend (pendência 3), a tela avisa que falta o perfil.
-  await expect(page.getByTestId("usuarios-filtro-perfil")).toContainText(
-    "Escolha o perfil da categoria para filtrar a lista.",
-  );
+  const daCategoria = (await (await porCategoria).json()) as {
+    count: number;
+    results: { id: number; perfis: { id: number }[] }[];
+  };
+  expect(daCategoria.count).toBeGreaterThan(0);
+  expect(daCategoria.results.every((u) => u.perfis.some((p) => idsOperacionais.has(p.id)))).toBe(true);
+  await expect(page.locator('[data-testid^="usuario-linha-"]')).toHaveCount(daCategoria.results.length);
 
   await page.getByTestId("usuarios-filtro-perfil").getByRole("combobox").click();
   for (const nome of operacionais) {
@@ -159,7 +169,7 @@ test("a categoria recorta os perfis; a lista filtra no servidor pelo perfil esco
   expect(results.every((u) => u.perfis.some((p) => p.id === coordenador.id))).toBe(true);
   await expect(page.locator('[data-testid^="usuario-linha-"]')).toHaveCount(results.length);
   await expect(page.getByText(NOME)).toBeVisible();
-  // A categoria nunca vai na consulta, e cada mudança é uma consulta só (sem varrer páginas).
-  expect(consultas.every((u) => !u.searchParams.has("categoria"))).toBe(true);
+  // Escolhido o perfil, a categoria segue na consulta; cada mudança é uma consulta só (sem varrer páginas).
+  expect(consultas.filter((u) => u.searchParams.has("perfil")).every((u) => u.searchParams.get("categoria") === "operacional")).toBe(true);
   expect(consultas.every((u) => u.searchParams.get("limit") !== "100")).toBe(true);
 });

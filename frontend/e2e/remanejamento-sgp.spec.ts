@@ -11,10 +11,11 @@ import { storageStatePath } from "./helpers/users";
 
 /**
  * #402 (AJ-FE-06) — Simulador de remanejamento entre pools, contra o backend
- * real. A UGP escolhe origem e destino da mesma rubrica, simula, vê o antes e
- * depois com a mudança de faixa e confirma com o mesmo payload. Quando o saldo
- * da origem muda entre a simulação e a confirmação, o backend recusa com
- * `INSUFFICIENT_BALANCE` e a tela pede nova simulação.
+ * real. A UGP escolhe origem e destino da mesma rubrica e o valor; a tela simula
+ * sozinha e mostra o antes e depois com a mudança de faixa. A justificativa é
+ * pedida só para confirmar, com o payload simulado. Quando o saldo da origem
+ * muda entre a simulação e a confirmação, o backend recusa com
+ * `INSUFFICIENT_BALANCE` e a tela refaz a simulação com o saldo novo.
  *
  * O payload enviado é lido das requisições, sem interceptá-las.
  */
@@ -49,6 +50,10 @@ async function preencher(page: Page, valor = "1000") {
   await escolher(page, "remanejamento-origem", opcao(fx.origem.territorio));
   await escolher(page, "remanejamento-destino", opcao(fx.destino.territorio));
   await page.getByLabel("Valor (R$)").fill(valor);
+}
+
+/** A justificativa só aparece com a simulação: é pedida para confirmar (#423, item 4). */
+async function justificar(page: Page) {
   await page.getByLabel("Justificativa").fill("Reforço para o território com o pool no vermelho.");
 }
 
@@ -91,12 +96,11 @@ test.describe("UGP — novo remanejamento", () => {
     await expect(page.getByText(/Só pools de Diárias, a rubrica da origem/)).toBeVisible();
   });
 
-  test("simula, vê o antes e depois com a mudança de faixa e confirma com o mesmo payload", async ({ page }) => {
+  test("simula sozinha, mostra o antes e depois com a mudança de faixa e confirma com o mesmo payload", async ({ page }) => {
     const corpos = capturarPayloads(page);
     await preencher(page);
-    await expect(page.getByTestId("remanejamento-confirmar")).toHaveCount(0);
 
-    await page.getByTestId("remanejamento-simular").click();
+    // Sem botão Simular: origem, destino e valor bastam.
     await expect(page.getByTestId("remanejamento-simulacao")).toBeVisible();
     await expect(page.getByTestId("impacto-origem-saldo-antes")).toContainText("10.000,00");
     await expect(page.getByTestId("impacto-origem-saldo-depois")).toContainText("9.000,00");
@@ -106,26 +110,32 @@ test.describe("UGP — novo remanejamento", () => {
     await expect(page.getByTestId("impacto-destino-mudou-faixa")).toBeVisible();
     await expect(page.getByTestId("impacto-origem-mudou-faixa")).toHaveCount(0);
 
+    // A simulação foi sem justificativa; a confirmação exige uma.
+    expect(corpos.simular.at(-1)).not.toHaveProperty("justificativa");
+    await expect(page.getByTestId("remanejamento-confirmar")).toBeDisabled();
+    await justificar(page);
     await page.getByTestId("remanejamento-confirmar").click();
     await expect(page).toHaveURL(/\/sgp\/orcamento$/);
 
     expect(corpos.confirmar).toHaveLength(1);
-    expect(corpos.confirmar[0]).toEqual(corpos.simular.at(-1));
+    expect(corpos.confirmar[0]).toEqual({
+      ...(corpos.simular.at(-1) as object),
+      justificativa: "Reforço para o território com o pool no vermelho.",
+    });
     expect(lerAlocado(fx)).toEqual({ origem: "9000.00", destino: "2000.00" });
   });
 
-  test("mudar um campo depois de simular descarta a simulação", async ({ page }) => {
+  test("mudar o valor refaz a simulação com o valor novo", async ({ page }) => {
     await preencher(page);
-    await page.getByTestId("remanejamento-simular").click();
-    await expect(page.getByTestId("remanejamento-confirmar")).toBeEnabled();
+    await expect(page.getByTestId("impacto-origem-saldo-depois")).toContainText("9.000,00");
 
     await page.getByLabel("Valor (R$)").fill("2000");
-    await expect(page.getByTestId("remanejamento-simulacao")).toHaveCount(0);
+    await expect(page.getByTestId("impacto-origem-saldo-depois")).toContainText("8.000,00");
+    await expect(page.getByTestId("impacto-destino-saldo-depois")).toContainText("2.050,00");
   });
 
   test("valor acima do saldo é recusado já na simulação, com o saldo da origem", async ({ page }) => {
     await preencher(page, "20000");
-    await page.getByTestId("remanejamento-simular").click();
 
     const erro = page.getByTestId("remanejamento-erro");
     await expect(erro).toContainText("O valor passa do saldo da origem: há R$ 10.000,00 disponível");
@@ -135,7 +145,7 @@ test.describe("UGP — novo remanejamento", () => {
 
   test("saldo que muda depois da simulação é recusado na confirmação e as opções se atualizam", async ({ page }) => {
     await preencher(page);
-    await page.getByTestId("remanejamento-simular").click();
+    await justificar(page);
     await expect(page.getByTestId("remanejamento-confirmar")).toBeEnabled();
 
     // Outra operação consome a origem: sobram R$ 500.

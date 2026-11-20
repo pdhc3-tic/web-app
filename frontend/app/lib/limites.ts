@@ -1,4 +1,5 @@
 import { ApiError, apiClient } from "./api";
+import type { Schema } from "./apiSchema";
 
 /**
  * Limites de gasto (#400, backend #385 / PR #411).
@@ -96,64 +97,60 @@ export async function fetchPerfisOperacionais(signal?: AbortSignal): Promise<Per
   });
 }
 
+/** `PessoaComLimiteSerializer`: os perfis vêm só entre os de `PERFIS_OPERACIONAIS`. */
+export type PessoaComLimite = Schema<"PessoaComLimite">;
+
+/**
+ * GET .../limites/pessoas/?q= — usuários ativos com perfil que recebe limite
+ * individual (ADT/ACR e Articulador Estadual), por nome e sem paginação
+ * (#423, item 2). `q` busca só no nome.
+ */
+export async function listPessoasComLimite(q: string, signal?: AbortSignal): Promise<PessoaComLimite[]> {
+  const qs = q.trim() ? `?${new URLSearchParams({ q: q.trim() })}` : "";
+  const res = await apiClient(`${BASE}pessoas/${qs}`, { signal });
+  return res.json();
+}
+
 // ─── Período ────────────────────────────────────────────────────────────────
 
 /** Valores de `budget_limit_period`. */
-export type Periodicidade = "mensal" | "trimestral" | "semestral" | "vigencia";
+export type Periodicidade = Schema<"PeriodicidadeEnum">;
 
-const MESES: Record<Exclude<Periodicidade, "vigencia">, number> = {
-  mensal: 1,
-  trimestral: 3,
-  semestral: 6,
-};
+/** `PeriodoDosLimitesSerializer`: datas `YYYY-MM-DD`. */
+export type PeriodoDosLimites = Schema<"PeriodoDosLimites">;
 
-/** O padrão do backend (`PERIODO_PADRAO`) quando o parâmetro tem valor desconhecido. */
-const PERIODICIDADE_PADRAO: Periodicidade = "trimestral";
+export type Periodo = PeriodoDosLimites & { rotulo: string };
 
-/** GET /api/v1/system-config/budget_limit_period/ — leitura liberada à UGP. */
-export async function fetchPeriodicidade(signal?: AbortSignal): Promise<Periodicidade> {
-  const res = await apiClient("/api/v1/system-config/budget_limit_period/", { signal });
-  const data: { valor: string } = await res.json();
-  return paraPeriodicidade(data.valor);
+/**
+ * GET .../limites/periodo/?data= — o período que contém a data, pelo
+ * `budget_limit_period` atual (#423, item 1). Sem `data`, o backend usa o dia
+ * dele: é o período vigente.
+ */
+export async function fetchPeriodo(data: string | null, signal?: AbortSignal): Promise<Periodo> {
+  const qs = data ? `?${new URLSearchParams({ data })}` : "";
+  const res = await apiClient(`${BASE}periodo/${qs}`, { signal });
+  return comRotulo(await res.json());
 }
-
-export function paraPeriodicidade(valor: string | null | undefined): Periodicidade {
-  const v = (valor ?? "").trim().toLowerCase();
-  return v === "mensal" || v === "trimestral" || v === "semestral" || v === "vigencia"
-    ? v
-    : PERIODICIDADE_PADRAO;
-}
-
-export type Periodo = { inicio: string; fim: string; rotulo: string };
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const iso = (ano: number, mes: number, dia: number) => `${ano}-${pad(mes)}-${pad(dia)}`;
 const MESES_ABREV = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
 /**
- * Início, fim e rótulo do período que contém `data` (`YYYY-MM-DD`).
- *
- * Espelha `periodo_de` de `apps/sgp/budget/limites.py`: blocos de 1, 3 ou 6
- * meses contados de janeiro; na vigência, um período único. O backend não
- * devolve as datas do período na listagem (pendencias-backend-sprint-12b.md,
- * item 1); o cálculo serve só para navegar e rotular — quem filtra é o
- * `?data=`.
+ * O nome do período, a partir do que o backend devolveu. As datas são as dele;
+ * aqui só se dá nome ao bloco ("4º trimestre de 2026", "nov/2026").
  */
-export function periodoDe(data: string, periodicidade: Periodicidade): Periodo {
-  if (periodicidade === "vigencia") {
-    return { inicio: "2000-01-01", fim: "2099-12-31", rotulo: "Vigência do TED" };
-  }
-  const [ano, mes] = data.split("-").map(Number);
-  const meses = MESES[periodicidade];
-  const mesInicial = Math.floor((mes - 1) / meses) * meses + 1;
-  const mesFinal = mesInicial + meses - 1;
-  const ultimoDia = new Date(ano, mesFinal, 0).getDate();
-  const ordem = Math.floor((mes - 1) / meses) + 1;
+export function comRotulo(p: PeriodoDosLimites): Periodo {
+  const [ano, mes] = p.inicio.split("-").map(Number);
   const rotulo =
-    periodicidade === "mensal"
-      ? `${MESES_ABREV[mesInicial - 1]}/${ano}`
-      : `${ordem}º ${periodicidade === "trimestral" ? "trimestre" : "semestre"} de ${ano}`;
-  return { inicio: iso(ano, mesInicial, 1), fim: iso(ano, mesFinal, ultimoDia), rotulo };
+    p.periodicidade === "vigencia"
+      ? "Vigência do TED"
+      : p.periodicidade === "mensal"
+        ? `${MESES_ABREV[mes - 1]}/${ano}`
+        : p.periodicidade === "trimestral"
+          ? `${Math.floor((mes - 1) / 3) + 1}º trimestre de ${ano}`
+          : `${Math.floor((mes - 1) / 6) + 1}º semestre de ${ano}`;
+  return { ...p, rotulo };
 }
 
 /** Uma data dentro do período anterior (`passo = -1`) ou seguinte (`passo = 1`). */

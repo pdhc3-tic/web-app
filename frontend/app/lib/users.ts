@@ -55,6 +55,8 @@ export type ListUsersParams = {
   offset: number;
   search?: string;
   perfil?: string;
+  /** Quem tem ao menos um perfil da categoria (#423, item 3). */
+  categoria?: CategoriaPerfil;
   territorio?: string;
   status?: StatusFilter;
   /** Datas no formato YYYY-MM-DD (input nativo). */
@@ -77,6 +79,7 @@ function buildUsersQuery(params: ListUsersParams): string {
 
   if (params.search?.trim()) qs.set("search", params.search.trim());
   if (params.perfil) qs.set("perfil", params.perfil);
+  if (params.categoria) qs.set("categoria", params.categoria);
   if (params.territorio) qs.set("territorio", params.territorio);
   if (params.ordering) qs.set("ordering", params.ordering);
   if (params.comDispositivo) qs.set("com_dispositivo", "true");
@@ -187,21 +190,28 @@ export type CategoriaPerfil = Schema<"CategoriaDoPerfilEnum">;
 export type ObjetoTipo = Schema<"TipoDoObjetoDoPerfilEnum">;
 
 /**
- * Cópia de `OBJETO_DO_PERFIL_OPERACIONAL` (apps/core/models/user_profile.py):
- * `/roles/` não diz o tipo de objeto de cada perfil operacional. Quando disser
- * (pendência 8 de `docs/pendencias-backend-sprint-12b.md`), sai daqui.
+ * Um perfil de `/roles/`, com o tipo de objeto que o operacional exige
+ * (`objeto_tipo`, #423 item 8): evento, edital ou candidatura; nulo no
+ * principal e no operacional fora de `OBJETO_DO_PERFIL_OPERACIONAL`.
  */
-export const OBJETO_DO_PERFIL: Record<string, ObjetoTipo> = {
-  "coordenador-evento": "evento",
-  credenciador: "evento",
-  "avaliador-selecao": "candidatura",
-  "gestor-edital": "edital",
-};
+export type PerfilDoCatalogo = Perfil & { objeto_tipo?: ObjetoTipo | null };
+
+/** O tipo de objeto do perfil, como o backend o declara. */
+export function objetoDoPerfil(perfil: PerfilDoCatalogo | undefined): ObjetoTipo | undefined {
+  return perfil?.objeto_tipo ?? undefined;
+}
 
 export const OBJETO_TIPO_LABEL: Record<ObjetoTipo, string> = {
   evento: "Evento",
   edital: "Edital",
   candidatura: "Candidatura",
+};
+
+/** "do evento", "do edital", "da candidatura": para as mensagens do formulário. */
+const DO_OBJETO: Record<ObjetoTipo, string> = {
+  evento: "do evento",
+  edital: "do edital",
+  candidatura: "da candidatura",
 };
 
 /** Perfil sem `categoria` (resposta antiga) conta como principal. */
@@ -226,10 +236,10 @@ export function perfisDaListagem(perfis: PerfilDoUsuario[]): { chave: string; ro
   return Array.from(itens, ([chave, rotulo]) => ({ chave, rotulo }));
 }
 
-/** GET /api/v1/roles/ — os perfis ativos, com a categoria de cada um. */
-export async function fetchRoles(signal?: AbortSignal): Promise<Perfil[]> {
+/** GET /api/v1/roles/ — os perfis ativos, com a categoria e o tipo de objeto de cada um. */
+export async function fetchRoles(signal?: AbortSignal): Promise<PerfilDoCatalogo[]> {
   const res = await apiClient("/api/v1/roles/?limit=200&ativo=true", { signal });
-  const data: Paginated<Perfil> = await res.json();
+  const data: Paginated<PerfilDoCatalogo> = await res.json();
   return data.results;
 }
 
@@ -273,7 +283,7 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * As mesmas regras de `validate_perfis_input`, antes do envio: ao menos um
  * perfil principal, operacional sempre com objeto e sem designação repetida.
  */
-export function validarNovoUsuario(form: NovoUsuario, perfis: Perfil[]): ErrosNovoUsuario {
+export function validarNovoUsuario(form: NovoUsuario, perfis: PerfilDoCatalogo[]): ErrosNovoUsuario {
   const erros: ErrosNovoUsuario = {};
   if (!form.nome.trim()) erros.nome = "Informe o nome completo.";
   if (!EMAIL.test(form.email.trim())) erros.email = "Informe um e-mail válido.";
@@ -296,9 +306,9 @@ export function validarNovoUsuario(form: NovoUsuario, perfis: Perfil[]): ErrosNo
       return;
     }
     const perfil = perfis.find((p) => String(p.id) === linha.perfil);
-    const tipo = perfil ? OBJETO_DO_PERFIL[perfil.slug] : undefined;
+    const tipo = objetoDoPerfil(perfil);
     if (!/^[1-9]\d*$/.test(linha.objetoId.trim())) {
-      porLinha[i] = `Informe o número do ${tipo ? OBJETO_TIPO_LABEL[tipo].toLowerCase() : "objeto"}.`;
+      porLinha[i] = `Informe o número ${tipo ? DO_OBJETO[tipo] : "do objeto"}.`;
       return;
     }
     const chave = `${linha.perfil}:${linha.objetoId.trim()}`;
@@ -310,7 +320,7 @@ export function validarNovoUsuario(form: NovoUsuario, perfis: Perfil[]): ErrosNo
 }
 
 /** Monta o `perfis_input`: principal leva território (ou nulo), operacional leva o objeto. */
-export function montarPerfisInput(form: NovoUsuario, perfis: Perfil[]): PerfilInput[] {
+export function montarPerfisInput(form: NovoUsuario, perfis: PerfilDoCatalogo[]): PerfilInput[] {
   const principais: PerfilInput[] = form.principais
     .filter((l) => l.perfil)
     .map((l) => ({
@@ -326,7 +336,7 @@ export function montarPerfisInput(form: NovoUsuario, perfis: Perfil[]): PerfilIn
       return {
         perfil_id: Number(l.perfil),
         territorio_id: null,
-        objeto_tipo: (perfil && OBJETO_DO_PERFIL[perfil.slug]) ?? null,
+        objeto_tipo: objetoDoPerfil(perfil) ?? null,
         objeto_id: Number(l.objetoId.trim()),
       };
     });
@@ -334,7 +344,7 @@ export function montarPerfisInput(form: NovoUsuario, perfis: Perfil[]): PerfilIn
 }
 
 /** POST /api/v1/users/ — cria o usuário com os perfis. A senha é opcional. */
-export async function criarUsuario(form: NovoUsuario, perfis: Perfil[]): Promise<UserListItem> {
+export async function criarUsuario(form: NovoUsuario, perfis: PerfilDoCatalogo[]): Promise<UserListItem> {
   const body: Record<string, unknown> = {
     nome_completo: form.nome.trim(),
     email: form.email.trim(),

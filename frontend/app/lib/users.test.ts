@@ -10,11 +10,11 @@ const perfil = (parcial: Partial<PerfilDaLista>): PerfilDaLista =>
   ({ id: 1, nome: "Gestor", slug: "gestor", categoria: "principal", ...parcial }) as PerfilDaLista;
 
 describe("listUsers (#405)", () => {
-  it("faz uma só consulta, com a página e o perfil pedidos ao servidor", async () => {
+  it("faz uma só consulta, com a página, o perfil e a categoria pedidos ao servidor", async () => {
     api.client.mockReset();
     api.client.mockResolvedValue({ json: async () => ({ count: 0, next: null, previous: null, results: [] }) });
 
-    await listUsers({ limit: 20, offset: 40, perfil: "7", search: " Ana " });
+    await listUsers({ limit: 20, offset: 40, perfil: "7", categoria: "operacional", search: " Ana " });
 
     expect(api.client).toHaveBeenCalledTimes(1);
     const url = new URL(api.client.mock.calls[0][0], "http://local");
@@ -22,8 +22,8 @@ describe("listUsers (#405)", () => {
     expect(url.searchParams.get("offset")).toBe("40");
     expect(url.searchParams.get("perfil")).toBe("7");
     expect(url.searchParams.get("search")).toBe("Ana");
-    // A categoria não vai: o backend ainda não filtra por ela (pendência 3).
-    expect(url.searchParams.has("categoria")).toBe(false);
+    // `?categoria=` desde a #423 (item 3): o recorte é do servidor, com a contagem certa.
+    expect(url.searchParams.get("categoria")).toBe("operacional");
   });
 });
 
