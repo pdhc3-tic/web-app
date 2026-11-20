@@ -34,6 +34,11 @@ type Props = {
   /** Em "edit", a Ação sendo editada. */
   acao?: Acao;
   onSaved: (acao: Acao, mode: AcaoSlideOverMode) => void;
+  /**
+   * Leva ao cadastro de Submeta (#431). Sem Submeta na Meta, a Ação não tem
+   * como ser salva, e o formulário oferece este caminho em vez de travar.
+   */
+  onPedirSubmeta?: () => void;
 };
 
 type FormState = {
@@ -145,6 +150,7 @@ export function AcaoSlideOver({
   metaId,
   acao,
   onSaved,
+  onPedirSubmeta,
 }: Props) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -152,6 +158,7 @@ export function AcaoSlideOver({
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [submetaOpts, setSubmetaOpts] = useState<SubmetaOption[]>([]);
   const [indicadorOpts, setIndicadorOpts] = useState<IndicadorOption[]>([]);
+  const [opcoesCarregadas, setOpcoesCarregadas] = useState(false);
 
   const acaoId = acao?.id;
 
@@ -168,6 +175,8 @@ export function AcaoSlideOver({
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOpcoesCarregadas(false);
     Promise.all([
       listSubmetasDaMeta(metaId, controller.signal),
       listIndicadores(controller.signal),
@@ -176,6 +185,7 @@ export function AcaoSlideOver({
         if (controller.signal.aborted) return;
         setSubmetaOpts(submetas);
         setIndicadorOpts(indicadores);
+        setOpcoesCarregadas(true);
       })
       .catch(() => {
         if (controller.signal.aborted) return;
@@ -297,6 +307,21 @@ export function AcaoSlideOver({
         />
 
         <div data-testid="acao-form-submeta">
+          {opcoesCarregadas && submetaOpts.length === 0 && (
+            // Sem Submeta não há Ação: explica e leva ao cadastro (#431).
+            <div
+              role="status"
+              className="mb-2 flex flex-col items-start gap-2 rounded-md border border-warning-text bg-warning-bg px-3 py-2.5 text-sm text-warning-text"
+              data-testid="acao-form-sem-submeta"
+            >
+              Esta Meta ainda não tem Submetas, e toda Ação fica dentro de uma. Cadastre a Submeta primeiro.
+              {onPedirSubmeta && (
+                <Button size="sm" variant="secondary" onClick={onPedirSubmeta} data-testid="acao-form-nova-submeta">
+                  Cadastrar submeta
+                </Button>
+              )}
+            </div>
+          )}
           <Select
             label="Submeta"
             required
