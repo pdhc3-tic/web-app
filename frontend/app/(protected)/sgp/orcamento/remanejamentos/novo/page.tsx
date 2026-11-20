@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
-import { AlertTriangle, ArrowRight, CheckCircle2, GitCompareArrows } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2 } from "lucide-react";
 import Spinner from "@/app/components/icons/Spinner";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
@@ -17,6 +17,7 @@ import { Select, type SelectOption } from "@/app/components/ui/Select/Select";
 import { Textarea } from "@/app/components/ui/Textarea/Textarea";
 import { useToast } from "@/app/components/ui/Toast/Toast";
 import { canRemanejarOrcamento } from "@/app/lib/auth/roles";
+import { useDebounced } from "@/app/lib/hooks/useDebounced";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import { qk } from "@/app/lib/queryKeys";
 import {
@@ -30,8 +31,7 @@ import {
   mensagemDeErro,
   simularRemanejamento,
   type ImpactoNoPool,
-  type RemanejamentoPayload,
-  type SimulacaoRemanejamento,
+  type SimulacaoPayload,
 } from "@/app/lib/remanejamentoSgp";
 
 type Form = {
@@ -43,25 +43,26 @@ type Form = {
 
 const FORM_VAZIO: Form = { origem: "", destino: "", valor: "", justificativa: "" };
 
-function payloadDoForm(form: Form): RemanejamentoPayload | null {
+/** Espera depois da última mudança antes de simular. */
+const ATRASO_DA_SIMULACAO_MS = 500;
+
+/** O que a simulação pede: origem, destino e valor. A justificativa fica para a confirmação. */
+function simulacaoDoForm(form: Form): SimulacaoPayload | null {
   const origem_allocation = Number(form.origem);
   const destino_allocation = Number(form.destino);
   if (
     !origem_allocation ||
     !destino_allocation ||
     origem_allocation === destino_allocation ||
-    !(Number(form.valor) > 0) ||
-    !form.justificativa.trim()
+    !(Number(form.valor) > 0)
   ) {
     return null;
   }
-  return {
-    origem_allocation,
-    destino_allocation,
-    valor: form.valor,
-    justificativa: form.justificativa.trim(),
-  };
+  return { origem_allocation, destino_allocation, valor: form.valor };
 }
+
+const chaveDa = (p: SimulacaoPayload | null) =>
+  p ? `${p.origem_allocation}|${p.destino_allocation}|${p.valor}` : "";
 
 /**
  * O saldo da opção é o `saldo_pool` (alocado menos comprometido e executado):
@@ -137,11 +138,8 @@ function NovoRemanejamentoView() {
   const queryClient = useQueryClient();
 
   const [form, setForm] = useState<Form>(FORM_VAZIO);
-  const [simulacao, setSimulacao] = useState<SimulacaoRemanejamento | null>(null);
-  const [payloadSimulado, setPayloadSimulado] = useState<RemanejamentoPayload | null>(null);
-  const [simulando, setSimulando] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
+  const [erroConfirmacao, setErroConfirmacao] = useState<string | null>(null);
 
   const pools = useQuery({
     queryKey: qk.poolsDoRemanejamento,
@@ -157,14 +155,29 @@ function NovoRemanejamentoView() {
     [pools.data, origemPool],
   );
   const semPools = pools.isSuccess && pools.data.length === 0;
-  const payloadAtual = payloadDoForm(form);
-  const podeSimular = payloadAtual !== null && !simulando;
-  const podeConfirmar =
-    simulacao !== null &&
-    payloadSimulado !== null &&
-    payloadAtual !== null &&
-    JSON.stringify(payloadAtual) === JSON.stringify(payloadSimulado) &&
-    !confirmando;
+
+  // A simulação roda sozinha (#423, item 4): com origem, destino e valor, e só
+  // depois de eles pararem de mudar. Mudar um deles refaz a simulação.
+  const simulacaoAtual = simulacaoDoForm(form);
+  const chaveAtual = chaveDa(simulacaoAtual);
+  const chaveSimulada = useDebounced(chaveAtual, ATRASO_DA_SIMULACAO_MS);
+  const emDia = chaveAtual !== "" && chaveAtual === chaveSimulada;
+  const simulacaoQ = useQuery({
+    queryKey: qk.simulacaoRemanejamento(chaveSimulada),
+    queryFn: ({ signal }) => simularRemanejamento(simulacaoAtual!, signal),
+    enabled: emDia,
+    retry: false,
+    staleTime: 0,
+    gcTime: 0,
+  });
+  // Só vale a simulação dos campos de agora, sem erro e sem releitura em curso.
+  const simulacao =
+    emDia && !simulacaoQ.isError && !simulacaoQ.isFetching ? (simulacaoQ.data ?? null) : null;
+  const simulando = chaveAtual !== "" && (!emDia || simulacaoQ.isFetching);
+  const erro =
+    erroConfirmacao ??
+    (emDia && simulacaoQ.isError ? mensagemDeErro(simulacaoQ.error, "simular") : null);
+  const podeConfirmar = simulacao !== null && form.justificativa.trim() !== "" && !confirmando;
 
   function atualizar<K extends keyof Form>(campo: K, valor: Form[K]) {
     setForm((prev) => {
@@ -179,12 +192,7 @@ function NovoRemanejamentoView() {
       }
       return proximo;
     });
-    // Qualquer mudança invalida a simulação anterior.
-    if (simulacao) {
-      setSimulacao(null);
-      setPayloadSimulado(null);
-    }
-    setErro(null);
+    setErroConfirmacao(null);
   }
 
   /**
@@ -201,38 +209,19 @@ function NovoRemanejamentoView() {
     return e instanceof ApiError && e.code === "INSUFFICIENT_BALANCE";
   }
 
-  async function onSimular() {
-    if (!payloadAtual) return;
-    setSimulando(true);
-    setErro(null);
-    try {
-      const resultado = await simularRemanejamento(payloadAtual);
-      setSimulacao(resultado);
-      setPayloadSimulado(payloadAtual);
-    } catch (e) {
-      setErro(mensagemDeErro(e, "simular"));
-      setSimulacao(null);
-      setPayloadSimulado(null);
-      if (saldoMudou(e)) recarregarSaldos();
-    } finally {
-      setSimulando(false);
-    }
-  }
-
   async function onConfirmar() {
-    if (!payloadSimulado) return;
+    if (!simulacao || !simulacaoAtual || !form.justificativa.trim()) return;
     setConfirmando(true);
-    setErro(null);
+    setErroConfirmacao(null);
     try {
-      await confirmarRemanejamento(payloadSimulado);
+      // O payload da simulação exibida, mais a justificativa.
+      await confirmarRemanejamento({ ...simulacaoAtual, justificativa: form.justificativa.trim() });
       recarregarSaldos();
       showToast("Remanejamento confirmado.", "success");
       router.push("/sgp/orcamento");
     } catch (e) {
-      setErro(mensagemDeErro(e, "confirmar"));
-      // A simulação não vale mais: o saldo mudou ou o servidor recusou.
-      setSimulacao(null);
-      setPayloadSimulado(null);
+      setErroConfirmacao(mensagemDeErro(e, "confirmar"));
+      // O saldo mudou: recarregar os saldos refaz também a simulação.
       if (saldoMudou(e)) recarregarSaldos();
     } finally {
       setConfirmando(false);
@@ -270,9 +259,9 @@ function NovoRemanejamentoView() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight text-text">Novo remanejamento</h1>
         <p className="mt-1 text-sm text-text-muted">
-          Exceção à distribuição hierárquica: a UGP move saldo entre dois pools. A simulação
-          mostra o antes e depois com a mudança de faixa; a confirmação relê o saldo no
-          servidor.
+          Exceção à distribuição hierárquica: a UGP move saldo entre dois pools. Com origem,
+          destino e valor, a simulação mostra o antes e depois com a mudança de faixa; a
+          confirmação pede a justificativa e relê o saldo no servidor.
         </p>
       </header>
 
@@ -296,10 +285,7 @@ function NovoRemanejamentoView() {
 
       <form
         className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-6"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void onSimular();
-        }}
+        onSubmit={(e) => e.preventDefault()}
         data-testid="remanejamento-form"
       >
         <Select
@@ -338,26 +324,16 @@ function NovoRemanejamentoView() {
           value={form.valor}
           onChange={(e) => atualizar("valor", e.target.value)}
         />
-        <Textarea
-          id="remanejamento-justificativa"
-          label="Justificativa"
-          required
-          rows={3}
-          value={form.justificativa}
-          onChange={(e) => atualizar("justificativa", e.target.value)}
-        />
-        <div className="flex gap-2">
-          <Button
-            type="submit"
-            variant="secondary"
-            disabled={!podeSimular}
-            loading={simulando}
-            leftIcon={<GitCompareArrows className="h-4 w-4" />}
-            data-testid="remanejamento-simular"
+        {simulando && (
+          <p
+            role="status"
+            className="flex items-center gap-2 text-sm text-text-muted"
+            data-testid="remanejamento-simulando"
           >
-            Simular
-          </Button>
-        </div>
+            <Spinner className="h-4 w-4 animate-spin" />
+            Simulando…
+          </p>
+        )}
       </form>
 
       {simulacao && (
@@ -381,6 +357,15 @@ function NovoRemanejamentoView() {
               testId="impacto-destino"
             />
           </div>
+          <Textarea
+            id="remanejamento-justificativa"
+            label="Justificativa"
+            required
+            rows={3}
+            value={form.justificativa}
+            onChange={(e) => atualizar("justificativa", e.target.value)}
+            helperText="Fica registrada no lançamento do remanejamento."
+          />
           <div className="flex items-center gap-2">
             <Button
               type="button"
@@ -393,7 +378,7 @@ function NovoRemanejamentoView() {
               Confirmar remanejamento
             </Button>
             <span className="text-xs text-text-muted">
-              Mudar qualquer campo descarta esta simulação.
+              Mudar origem, destino ou valor refaz a simulação.
             </span>
           </div>
         </section>
@@ -415,7 +400,7 @@ function NovoRemanejamentoView() {
 
 /**
  * Tela de novo remanejamento entre pools (#402, AJ-FE-06). UGP/Super Admin
- * simulam o impacto antes e confirmam usando o mesmo payload.
+ * veem o impacto simulado e confirmam com o mesmo payload e a justificativa.
  */
 export default function NovoRemanejamentoPage() {
   return (

@@ -65,14 +65,14 @@ describe("mensagemDeErro", () => {
 
   it("na confirmação, INSUFFICIENT_BALANCE diz que o saldo mudou e pede nova simulação", () => {
     const msg = mensagemDeErro(recusa({ code: "INSUFFICIENT_BALANCE", disponivel: "200.00" }), "confirmar");
-    expect(msg).toMatch(/^O saldo da origem mudou desde a simulação e agora é R\$\s200,00\. Simule de novo/);
+    expect(msg).toMatch(/^O saldo da origem mudou desde a simulação e agora é R\$\s200,00\. Confira a nova simulação/);
     expect(msg).not.toContain("INSUFFICIENT_BALANCE");
   });
 
   it("sem o saldo no corpo, as mensagens ficam sem o valor", () => {
     expect(mensagemDeErro(recusa({}), "simular")).toBe("O valor passa do saldo da origem.");
     expect(mensagemDeErro(recusa({}), "confirmar")).toBe(
-      "O saldo da origem mudou desde a simulação. Simule de novo antes de confirmar.",
+      "O saldo da origem mudou desde a simulação. Confira a nova simulação antes de confirmar.",
     );
   });
 

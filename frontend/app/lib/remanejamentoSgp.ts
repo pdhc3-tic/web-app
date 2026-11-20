@@ -5,9 +5,10 @@ import { formatCurrencyBRL } from "@/app/lib/format";
  * Remanejamento entre pools do orçamento (#402, AJ-FE-06).
  *
  * UGP/Super Admin usam o endpoint para mover saldo entre pools sem seguir a
- * hierarquia de distribuição. O fluxo da tela é simular → confirmar; o
- * backend valida de novo na confirmação e devolve `INSUFFICIENT_BALANCE` se
- * o saldo mudou entre as duas chamadas.
+ * hierarquia de distribuição. A tela simula sozinha com origem, destino e
+ * valor (a simulação dispensa a justificativa desde a #423, item 4) e só pede
+ * a justificativa para confirmar. O backend valida de novo na confirmação e
+ * devolve `INSUFFICIENT_BALANCE` se o saldo mudou entre as duas chamadas.
  */
 
 export type NivelSemaforo = "verde" | "amarelo" | "vermelho";
@@ -34,6 +35,9 @@ export type RemanejamentoPayload = {
   valor: string;
   justificativa: string;
 };
+
+/** `RemanejamentoSimulacaoRequest`: a simulação não grava, então não leva justificativa. */
+export type SimulacaoPayload = Omit<RemanejamentoPayload, "justificativa">;
 
 /** BudgetTransaction retornada pela confirmação. */
 export type LancamentoRemanejamento = {
@@ -64,7 +68,7 @@ const CRIAR_PATH = "/api/v1/sgp/orcamento/remanejamentos/";
  * saldo antes/depois e a faixa do semáforo de origem e destino. Não grava.
  */
 export async function simularRemanejamento(
-  payload: RemanejamentoPayload,
+  payload: SimulacaoPayload,
   signal?: AbortSignal,
 ): Promise<SimulacaoRemanejamento> {
   const res = await apiClient(SIMULAR_PATH, {
@@ -112,9 +116,10 @@ export function mensagemDeErro(erro: unknown, etapa: "simular" | "confirmar"): s
           ? `O valor passa do saldo da origem: há ${disponivel} disponível para remanejar.`
           : "O valor passa do saldo da origem.";
       }
+      // A tela refaz a simulação com o saldo novo logo em seguida.
       return disponivel
-        ? `O saldo da origem mudou desde a simulação e agora é ${disponivel}. Simule de novo antes de confirmar.`
-        : "O saldo da origem mudou desde a simulação. Simule de novo antes de confirmar.";
+        ? `O saldo da origem mudou desde a simulação e agora é ${disponivel}. Confira a nova simulação antes de confirmar.`
+        : "O saldo da origem mudou desde a simulação. Confira a nova simulação antes de confirmar.";
     }
     return erro.message;
   }
