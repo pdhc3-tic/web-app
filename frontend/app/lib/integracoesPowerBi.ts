@@ -1,4 +1,5 @@
 import { apiClient } from "@/app/lib/api";
+import type { Refinar, Schema } from "@/app/lib/apiSchema";
 
 /**
  * Painel administrativo da integração Power BI (#143).
@@ -17,44 +18,34 @@ import { apiClient } from "@/app/lib/api";
  * não há como a tela recuperá-lo depois — daí o diálogo de exibição única.
  */
 
+// ─── Tipos ──────────────────────────────────────────────────────────────────
+
+/**
+ * Os tipos vêm do schema (#273).
+ */
+
 /** Status do snapshot calculado pelo servidor, com limite de 1h (AC-2). */
-export type StatusSnapshot = "sem_snapshot" | "em_dia" | "atrasado";
+export type StatusSnapshot = Schema<"StatusSnapshotEnum">;
 
 const STATUS_SNAPSHOT: StatusSnapshot[] = ["sem_snapshot", "em_dia", "atrasado"];
 
-/** Espelha PowerBITokenStatusSerializer (apps/core/serializers.py). */
-export type PowerBiConfig = {
-  /** URL do endpoint público consumido pelo Power BI. A tela apenas exibe. */
-  url_endpoint: string;
-  /**
-   * Token mascarado (`••••3f2a`, últimos 4 caracteres). `null` quando nunca
-   * se gerou nenhum token — estado inicial de qualquer ambiente novo, já que
-   * o `seed_demo` não cria `PowerBIToken`.
-   */
-  token_mascarado: string | null;
-  /**
-   * ISO do último `refresh_power_bi_snapshot` bem-sucedido, ou `null` se o
-   * snapshot nunca foi gerado.
-   */
-  atualizado_em: string | null;
-  /**
-   * `null` quando a resposta não traz o campo (ou traz valor desconhecido) —
-   * aí a tela recai no cálculo local. Fora isso, o servidor é a fonte de
-   * verdade: ele aplica o mesmo limite de 1h, mas com o relógio dele.
-   */
-  status_snapshot: StatusSnapshot | null;
-};
+/**
+ * `PowerBITokenStatusSerializer`.
+ *
+ * `status_snapshot` é refinado para aceitar `null`: a tela recai no cálculo
+ * local quando o campo está ausente ou o servidor devolve valor desconhecido.
+ */
+export type PowerBiConfig = Refinar<
+  Schema<"PowerBITokenStatus">,
+  { status_snapshot: Schema<"StatusSnapshotEnum"> | null }
+>;
 
 /**
- * Espelha PowerBITokenRegenerateSerializer. `token` é o valor EM CLARO e
- * chega uma única vez — o nome do campo é `token`, e não `novo_token` como
- * chegou a ser pedido ao backend.
+ * `PowerBITokenRegenerateSerializer`. `token` é o valor EM CLARO e chega uma
+ * única vez — o nome do campo é `token`, e não `novo_token` como chegou a ser
+ * pedido ao backend.
  */
-export type PowerBiTokenRegenerado = {
-  token: string;
-  token_mascarado: string;
-  criado_em: string;
-};
+export type PowerBiTokenRegenerado = Schema<"PowerBITokenRegenerate">;
 
 const ADMIN_TOKEN_PATH = "/api/v1/admin/power-bi-token/";
 const ADMIN_REGENERAR_PATH = "/api/v1/admin/power-bi-token/regenerar/";

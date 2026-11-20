@@ -84,8 +84,8 @@ export type MetaListItem = Refinar<
 export type MetaAcao = Acao;
 
 /**
- * `WorkPlanMetaDetailSerializer`. `acoes` segue o tipo de `acoes.ts`, que ainda
- * não migrou para o schema (ver a segunda parte da #273).
+ * `WorkPlanMetaDetailSerializer`. `acoes` segue o tipo de `acoes.ts` (migrado
+ * para o schema na issue #273).
  */
 export type MetaDetail = Refinar<
   Schema<"WorkPlanMetaDetail">,

@@ -1,5 +1,6 @@
 import { apiClient } from "@/app/lib/api";
 import type { Paginated } from "@/app/lib/users";
+import type { Schema } from "@/app/lib/apiSchema";
 import {
   requestUploadUrl,
   uploadToStorage,
@@ -26,30 +27,17 @@ export const MAX_DOC_SIZE_BYTES = 10 * 1024 * 1024;
 const LIMITE_DOCUMENTOS = 100;
 
 /** Rótulo humano de um tipo de documento (ou o próprio valor, se desconhecido). */
-// ─── Tipos ───────────────────────────────────────────────────────────────────
+// ─── Tipos ──────────────────────────────────────────────────────────────────
 
-/** Espelha apps/sgp/serializers.py::UFPADocumentSerializer (leitura). */
-export type Documento = {
-  id: number;
-  tipo: TipoDocumento;
-  descricao: string;
-  nome_original: string;
-  content_type: string;
-  tamanho_bytes: number;
-  data_documento: string;
-  criado_em: string;
-  criado_por: string;
-};
+/**
+ * Os tipos vêm do schema (#273).
+ */
 
-/** Campos que a UI coleta para gravar o documento após o upload. */
-export type DocumentoWritePayload = {
-  tipo: TipoDocumento;
-  descricao: string;
-  data_documento: string;
-  nome_original: string;
-  content_type: string;
-  tamanho_bytes: number;
-};
+/** `UFPADocumentSerializer` (leitura). */
+export type Documento = Schema<"UFPADocument">;
+
+/** `UFPADocumentCreateRequest` — campos que a UI envia após o upload. */
+export type DocumentoWritePayload = Schema<"UFPADocumentCreateRequest">;
 
 export type UploadHandle = {
   promise: Promise<Documento>;
@@ -86,7 +74,7 @@ export function uploadDocumento(
   file: File,
   payload: Omit<
     DocumentoWritePayload,
-    "nome_original" | "content_type" | "tamanho_bytes"
+    "key" | "nome_original" | "content_type" | "tamanho_bytes"
   >,
   onProgress: (percent: number) => void,
 ): UploadHandle {

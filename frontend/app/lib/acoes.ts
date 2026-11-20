@@ -1,40 +1,15 @@
 import { apiClient } from "@/app/lib/api";
 import type { Paginated } from "@/app/lib/users";
-import type { SelectOption } from "@/app/components/ui/Select/Select";
+import type { Refinar, Schema } from "@/app/lib/apiSchema";
 
 // ─── Constantes ─────────────────────────────────────────────────────────────
 
 /**
- * Unidades de medida da Ação — espelha apps/sgp/constants.py::TIPO_UNIDADE_MEDIDA.
- *
- * Diferente das demais listas do SGP, esta NÃO é servida por
- * GET /api/v1/choices/ (a SGPChoicesView não a expõe). Como é lista fechada e
- * curta, espelhá-la aqui evita um endpoint novo — mesmo critério já aplicado
- * aos ODS em metas.ts.
+ * Formato do número da Ação: X.Y.Z (1.1.1, 2.3.4), com X.Y igual ao número
+ * da Submeta. Validar aqui só antecipa a resposta; quem manda é o servidor,
+ * que também checa a unicidade dentro da Submeta.
  */
-export const TIPO_UNIDADE_OPTIONS: SelectOption[] = [
-  { value: "1", label: "Seminário" },
-  { value: "2", label: "Oficina" },
-  { value: "3", label: "Curso / Capacitação" },
-  { value: "4", label: "Plano" },
-  { value: "5", label: "Relatório de pesquisas" },
-  { value: "6", label: "Intercâmbio" },
-  { value: "7", label: "Conteúdo audiovisual" },
-  { value: "8", label: "Visita técnica" },
-  { value: "9", label: "Encontro / Reunião" },
-  { value: "10", label: "Unidade implementada" },
-  { value: "11", label: "Família atendida" },
-  { value: "12", label: "Outro" },
-];
-
-/**
- * Formato do número da Ação: X.Y (1.1, 2.3, 10.2).
- *
- * Mesma regex do backend — validate_numero_acao no model e validate_numero no
- * serializer. Validar aqui só antecipa a resposta; quem manda continua sendo o
- * servidor, que também checa a unicidade dentro da Meta.
- */
-export const NUMERO_ACAO_RE = /^\d+\.\d+$/;
+export const NUMERO_ACAO_RE = /^\d+\.\d+\.\d+$/;
 
 // ─── Status de execução ─────────────────────────────────────────────────────
 
@@ -45,51 +20,14 @@ export type AcaoStatus = "no_prazo" | "em_atraso" | "concluida";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
-/** Espelha apps/sgp/serializers_workplan.py::WorkPlanAcaoSerializer. */
-export type Acao = {
-  id: number;
-  meta: number;
-  numero: string;
-  descricao: string;
-  tipo_unidade: number;
-  tipo_unidade_display: string;
-  /** DecimalField → string no DRF. */
-  quantidade_planejada: string;
-  valor_unitario: string;
-  /** Derivado: quantidade_planejada × valor_unitario. */
-  valor_total: string;
-  /**
-   * Derivado: contagem de Atividades de Campo com status "concluido"
-   * vinculadas à Ação. NÃO soma quantidades — ver progressoAcao().
-   */
-  quantidade_realizada: string;
-  data_inicio: string | null;
-  data_fim: string | null;
-  status_execucao: AcaoStatus;
-  criado_em?: string;
-  atualizado_em?: string;
-};
+/** `WorkPlanAcaoListSerializer`. */
+export type Acao = Refinar<
+  Schema<"WorkPlanAcaoList">,
+  { status_execucao: AcaoStatus }
+>;
 
-/**
- * Campos graváveis (os demais são read_only no serializer).
- *
- * DEFEITO CONHECIDO, a corrigir na continuação da #273: desde a #305 o backend
- * exige `submeta` e `indicador` (e datas não nulas) na escrita da Ação, e este
- * payload ainda manda `meta` e `tipo_unidade`. Criar uma Ação pelo
- * `AcaoSlideOver` responde 400. Ao migrar este arquivo para os tipos gerados
- * (`WorkPlanAcaoRequest`), ajustar o formulário e cobrir o salvar na
- * `acoes.spec.ts`, que hoje só confere o total antes de salvar.
- */
-export type AcaoWritePayload = {
-  meta: number;
-  numero: string;
-  descricao: string;
-  tipo_unidade: number;
-  quantidade_planejada: string;
-  valor_unitario: string;
-  data_inicio: string | null;
-  data_fim: string | null;
-};
+/** Campos graváveis (POST/PATCH) — `WorkPlanAcaoRequest` do schema. */
+export type AcaoWritePayload = Schema<"WorkPlanAcaoRequest">;
 
 // ─── Progresso ──────────────────────────────────────────────────────────────
 
@@ -203,4 +141,34 @@ export async function updateAcao(
  */
 export async function deleteAcao(id: number): Promise<void> {
   await apiClient(`${BASE_PATH}${id}/`, { method: "DELETE" });
+}
+
+// ─── Submeta e Indicador (seletores do formulário) ──────────────────────────
+
+export type SubmetaOption = Schema<"WorkPlanSubmeta">;
+export type IndicadorOption = Schema<"Indicator">;
+
+/** GET /api/v1/sgp/submetas/?meta={metaId} — submetas vinculadas à Meta. */
+export async function listSubmetasDaMeta(
+  metaId: number,
+  signal?: AbortSignal,
+): Promise<SubmetaOption[]> {
+  const res = await apiClient(
+    `/api/v1/sgp/submetas/?meta=${metaId}&page_size=100`,
+    { signal },
+  );
+  const data: Paginated<SubmetaOption> = await res.json();
+  return data.results;
+}
+
+/** GET /api/v1/sgp/indicadores/?ativo=true — catálogo de indicadores ativos. */
+export async function listIndicadores(
+  signal?: AbortSignal,
+): Promise<IndicadorOption[]> {
+  const res = await apiClient(
+    `/api/v1/sgp/indicadores/?ativo=true&page_size=200`,
+    { signal },
+  );
+  const data: Paginated<IndicadorOption> = await res.json();
+  return data.results;
 }

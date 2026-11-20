@@ -10,11 +10,10 @@ const META_NUMERO = 1;
 /**
  * Número livre para as Ações criadas pelos testes.
  *
- * Diferente das Metas (numero 1–7, único global, todos ocupados pelo seed), o
- * número da Ação é texto X.Y único apenas dentro da Meta — "9.9" nunca colide
- * com o seed. Por isso estes testes não precisam de fixture de banco.
+ * O número da Ação segue a formatação X.Y.Z, com X.Y sendo a Submeta (ex: 1.1).
+ * "1.1.99" é livre no seed e nunca colide com as Ações existentes.
  */
-const NUMERO_LIVRE = "9.9";
+const NUMERO_LIVRE = "1.1.99";
 
 function tabelaMetas(page: Page): Locator {
   return page.getByTestId("metas-table").locator("table");
@@ -91,17 +90,22 @@ test.describe("Ações do Plano de Trabalho — UGP", () => {
     await page
       .getByTestId("acao-form-descricao")
       .fill("Ação com número em formato inválido.");
-    const tipo = page.getByTestId("acao-form-tipo-unidade");
-    await tipo.locator('button[role="combobox"]').click();
-    await tipo
-      .locator('li[role="option"]')
-      .filter({ hasText: /^Oficina$/ })
-      .click();
+
+    const submeta = page.getByTestId("acao-form-submeta");
+    await submeta.locator('button[role="combobox"]').click();
+    await submeta.locator('li[role="option"]').first().click();
+
+    const indicador = page.getByTestId("acao-form-indicador");
+    await indicador.locator('button[role="combobox"]').click();
+    await indicador.locator('li[role="option"]').first().click();
+
+    await page.getByTestId("acao-form-data-inicio").fill("2026-03-01");
+    await page.getByTestId("acao-form-data-fim").fill("2026-12-31");
 
     await page.getByTestId("acao-form-submit").click();
 
     await expect(page.getByTestId("acao-form")).toContainText(
-      "Formato inválido. Use X.Y (ex: 1.1, 2.3).",
+      "Formato inválido. Use X.Y.Z (ex: 1.1.1, 2.3.4).",
     );
     // O painel continua aberto — nada foi salvo.
     await expect(page.getByTestId("acao-form")).toBeVisible();
@@ -110,8 +114,61 @@ test.describe("Ações do Plano de Trabalho — UGP", () => {
     // E o formato certo limpa o erro.
     await page.getByTestId("acao-form-numero").fill(NUMERO_LIVRE);
     await expect(page.getByTestId("acao-form")).not.toContainText(
-      "Formato inválido. Use X.Y",
+      "Formato inválido. Use X.Y.Z",
     );
+  });
+
+  test("cria uma nova Ação vinculada à Submeta com sucesso", async ({
+    page,
+  }) => {
+    await abrirMeta(page);
+    await abrirFormularioNovaAcao(page);
+
+    const desc = `Ação E2E ${Date.now()}`;
+    await page.getByTestId("acao-form-numero").fill(NUMERO_LIVRE);
+    await page.getByTestId("acao-form-descricao").fill(desc);
+
+    const submeta = page.getByTestId("acao-form-submeta");
+    await submeta.locator('button[role="combobox"]').click();
+    await submeta
+      .locator('li[role="option"]')
+      .filter({ hasText: /^1\.1\b/ })
+      .first()
+      .click();
+
+    const indicador = page.getByTestId("acao-form-indicador");
+    await indicador.locator('button[role="combobox"]').click();
+    await indicador.locator('li[role="option"]').first().click();
+
+    await page.getByTestId("acao-form-quantidade").fill("5");
+    await page.getByTestId("acao-form-valor-unitario").fill("100000");
+    await page.getByTestId("acao-form-data-inicio").fill("2026-03-01");
+    await page.getByTestId("acao-form-data-fim").fill("2026-12-31");
+
+    await page.getByTestId("acao-form-submit").click();
+
+    await expect(page.getByTestId("toast")).toContainText(
+      "Ação criada com sucesso.",
+    );
+    await expect(page.getByTestId("acao-form")).toBeHidden();
+
+    // A Ação recém-criada aparece na tabela
+    const linha = tabelaAcoes(page).getByRole("row").filter({ hasText: NUMERO_LIVRE });
+    await expect(linha).toBeVisible();
+    await expect(linha).toContainText(desc);
+
+    // Limpa a Ação criada para manter o banco idempotente
+    const excluirBtn = linha.getByRole("button", {
+      name: new RegExp(`^Excluir Ação ${NUMERO_LIVRE}`),
+    });
+    await excluirBtn.click();
+    const confirmar = page.getByTestId("acao-excluir-confirmar");
+    await expect(confirmar).toBeVisible();
+    await confirmar.click();
+    await expect(page.getByTestId("toast")).toContainText(
+      "Ação excluída com sucesso.",
+    );
+    await expect(linha).toBeHidden();
   });
 });
 

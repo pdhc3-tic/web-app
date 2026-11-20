@@ -1,4 +1,5 @@
 import { ApiError, apiClient } from "@/app/lib/api";
+import type { Refinar, Schema } from "@/app/lib/apiSchema";
 
 /**
  * Configurações não sensíveis da integração com o Google Calendar.
@@ -27,13 +28,14 @@ export const REMINDER_MAX_COUNT = 5;
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
-/** Espelha GoogleCalendarConfigSerializer (apps/core/serializers.py). */
-export type GoogleCalendarConfig = {
-  calendario_destino_id: string;
-  /** Minutos de antecedência de cada lembrete. */
-  lembretes: number[];
-  integracao_ativa: boolean;
-};
+// ─── Tipos ──────────────────────────────────────────────────────────────────
+
+/**
+ * Os tipos vêm do schema (#273).
+ */
+
+/** `GoogleCalendarConfigSerializer`. Sem refinamentos necessários. */
+export type GoogleCalendarConfig = Schema<"GoogleCalendarConfigResposta">;
 
 /** Usado como estado inicial enquanto a requisição não volta. */
 export const EMPTY_CONFIG: GoogleCalendarConfig = {
@@ -113,31 +115,28 @@ export function configEquals(
 // ─── Status de sincronização ─────────────────────────────────────────────────
 
 /**
- * Os quatro primeiros são os que `GoogleCalendarStatusView` devolve — o mesmo
- * vocabulário de `Activity.google_calendar_sync_status` (ok/pendente/erro),
- * mais `nunca_executada` para quando não há nenhum `GoogleCalendarSyncEvent`.
- * `indisponivel` é local: marca "não consegui falar com o endpoint", nunca vem
- * do servidor.
+ * Estados do `GoogleCalendarStatusView`: os quatro do `EstadoEnum` do schema,
+ * mais `indisponivel` local — marca "não consegui falar com o endpoint", nunca
+ * vem do servidor.
  */
-export type SyncEstado =
-  | "ok"
-  | "pendente"
-  | "erro"
-  | "nunca_executada"
-  | "indisponivel";
+export type SyncEstado = Schema<"EstadoEnum"> | "indisponivel";
 
-export type GoogleCalendarStatus = {
-  estado: SyncEstado;
-  ultimaSincronizacao: string | null;
-  ultimoErro: string | null;
-  falhasRecentes: number;
-};
+/**
+ * `GoogleCalendarStatusSerializer`.
+ *
+ * `estado` é refinado para incluir `"indisponivel"`, que é produzido
+ * localmente quando o endpoint não responde.
+ */
+export type GoogleCalendarStatus = Refinar<
+  Schema<"GoogleCalendarStatusResposta">,
+  { estado: SyncEstado }
+>;
 
 const STATUS_INDISPONIVEL: GoogleCalendarStatus = {
   estado: "indisponivel",
-  ultimaSincronizacao: null,
-  ultimoErro: null,
-  falhasRecentes: 0,
+  ultima_sincronizacao: null,
+  ultimo_erro: null,
+  falhas_recentes: 0,
 };
 
 type RawStatus = {
@@ -235,9 +234,9 @@ export async function fetchGoogleCalendarStatus(
 
   return {
     estado: raw.estado as SyncEstado,
-    ultimaSincronizacao: raw.ultima_sincronizacao ?? null,
-    ultimoErro: raw.ultimo_erro ?? null,
-    falhasRecentes:
+    ultima_sincronizacao: raw.ultima_sincronizacao ?? null,
+    ultimo_erro: raw.ultimo_erro ?? null,
+    falhas_recentes:
       typeof raw.falhas_recentes === "number" ? raw.falhas_recentes : 0,
   };
 }

@@ -1,10 +1,15 @@
 import { apiClient } from "@/app/lib/api";
 import type { Paginated } from "@/app/lib/users";
+import type { Refinar, Schema } from "@/app/lib/apiSchema";
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 // As LISTAS (tipo, sistema de criação, tipo de "outra") vêm de `useSgpChoices()`:
 // `producao_tipo`, `producao_sistema_criacao`, `producao_tipo_outra` (#272).
 // Aqui ficam só os valores que o código compara.
+
+/**
+ * Os tipos vêm do schema (#273).
+ */
 
 export type TipoProducao = "agricola" | "pecuaria" | "outra";
 export type SistemaCriacao = "extensivo" | "semi_intensivo" | "intensivo";
@@ -82,35 +87,25 @@ export type Producao = {
   observacoes: string | null;
 };
 
-/** Campos graváveis (POST/PATCH). As FKs vão como `cultura_id` / `especie_id`. */
-export type ProducaoWritePayload = {
-  tipo: TipoProducao;
+/**
+ * Campos graváveis (POST/PATCH) — `ProductionRequest` do schema.
+ *
+ * Refinamentos: `tipo`, `sistema_criacao` e `tipo_outra` passam dos enums
+ * estreitos do schema para os union types locais.
+ */
+export type ProducaoWritePayload = Refinar<
+  Schema<"ProductionRequest">,
+  {
+    tipo: TipoProducao;
+    sistema_criacao?: SistemaCriacao | null;
+    tipo_outra?: TipoOutra | null;
+  }
+>;
 
-  cultura_id?: number | null;
-  area_ha?: string | null;
-  producao_estimada?: string | null;
-  unidade_producao?: string | null;
-  sementes_crioulas?: boolean;
-
-  especie_id?: number | null;
-  n_matrizes?: number | null;
-  n_reprodutores?: number | null;
-  n_jovens?: number | null;
-  area_pastejo_ha?: string | null;
-  sistema_criacao?: SistemaCriacao | null;
-
-  tipo_outra?: TipoOutra | null;
-  descricao_outra?: string | null;
-  quantidade_produzida?: string | null;
-  renda_estimada_mensal?: string | null;
-
-  custo_anual?: string | null;
-  observacoes?: string | null;
-};
-
-/** Forma crua devolvida pela API, antes da tradução de `categoria`. */
+/** Forma crua do catálogo na resposta da API, antes da tradução de `categoria`. */
 type CatalogoApiItem = { id: number; nome: string; categoria: string };
 
+/** Forma crua de `Production` devolvida pela API, antes da tradução de `categoria`. */
 type ProducaoApi = Omit<Producao, "cultura" | "especie"> & {
   cultura: CatalogoApiItem | null;
   especie: CatalogoApiItem | null;
@@ -201,12 +196,21 @@ export async function deleteProducao(ufpaId: string, id: number): Promise<void> 
 
 // ─── Listagem consolidada ─────────────────────────────────────────────────────
 
-export type ProducaoConsolidadaItem = Producao & {
-  ufpa_id: number;
-  ufpa_nome_titular: string;
-  municipio: string;
-  territorio: string | null;
-};
+/**
+ * `ProducaoConsolidada` do schema — entrada da listagem consolidada (com dados
+ * da UFPA). `cultura` e `especie` usam `CatalogoItem` (categoria já traduzida);
+ * `tipo`, `sistema_criacao` e `tipo_outra` para os union types locais.
+ */
+export type ProducaoConsolidadaItem = Refinar<
+  Schema<"ProducaoConsolidada">,
+  {
+    tipo: TipoProducao;
+    cultura: CatalogoItem | null;
+    especie: CatalogoItem | null;
+    sistema_criacao?: SistemaCriacao | null;
+    tipo_outra?: TipoOutra | null;
+  }
+>;
 
 export type ListProducaoConsolidadaParams = {
   limit: number;
@@ -218,6 +222,7 @@ export type ListProducaoConsolidadaParams = {
   territorio?: string;
 };
 
+/** Forma crua da listagem consolidada, antes da tradução de `categoria`. */
 type ProducaoConsolidadaApi = Omit<ProducaoConsolidadaItem, "cultura" | "especie"> & {
   cultura: CatalogoApiItem | null;
   especie: CatalogoApiItem | null;
@@ -231,11 +236,16 @@ function toConsolidada(raw: ProducaoConsolidadaApi): ProducaoConsolidadaItem {
   };
 }
 
-export type IndicadoresProducao = {
-  total_ufpas_produtoras: number;
-  area_total_ha: string | null;
-  principais_culturas: Array<{ nome: string; count: number }>;
-};
+/**
+ * `ProducaoIndicadores` do schema.
+ *
+ * `area_total_ha` é refinado de `string` para `string | null`: o campo pode
+ * ser nulo quando não há produção agrícola com área cadastrada.
+ */
+export type IndicadoresProducao = Refinar<
+  Schema<"ProducaoIndicadores">,
+  { area_total_ha: string | null }
+>;
 
 export async function listProducaoConsolidada(
   params: ListProducaoConsolidadaParams,

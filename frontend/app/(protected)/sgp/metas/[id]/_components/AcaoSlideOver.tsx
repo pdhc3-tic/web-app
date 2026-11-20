@@ -9,12 +9,15 @@ import { Textarea } from "@/app/components/ui/Textarea/Textarea";
 import { ApiError } from "@/app/lib/api";
 import {
   NUMERO_ACAO_RE,
-  TIPO_UNIDADE_OPTIONS,
   createAcao,
   formatQtd,
+  listIndicadores,
+  listSubmetasDaMeta,
   updateAcao,
   type Acao,
   type AcaoWritePayload,
+  type IndicadorOption,
+  type SubmetaOption,
 } from "@/app/lib/acoes";
 import { decOrNull, formatCurrencyBRL, formatMoneyInput, moneyOrNull } from "@/app/lib/format";
 
@@ -37,7 +40,9 @@ type FormState = {
   numero: string;
   descricao: string;
   /** String porque vem do <Select>; convertido em formToPayload. */
-  tipo_unidade: string;
+  submeta: string;
+  /** String porque vem do <Select>; convertido em formToPayload. */
+  indicador: string;
   quantidade_planejada: string;
   /** Mascarado como moeda ("R$ 3.500,00"); convertido em formToPayload. */
   valor_unitario: string;
@@ -48,7 +53,8 @@ type FormState = {
 const EMPTY_FORM: FormState = {
   numero: "",
   descricao: "",
-  tipo_unidade: "",
+  submeta: "",
+  indicador: "",
   quantidade_planejada: "",
   valor_unitario: "",
   data_inicio: "",
@@ -59,7 +65,8 @@ function acaoToForm(a: Acao): FormState {
   return {
     numero: a.numero ?? "",
     descricao: a.descricao ?? "",
-    tipo_unidade: String(a.tipo_unidade ?? ""),
+    submeta: String(a.submeta ?? ""),
+    indicador: String(a.indicador ?? ""),
     // O DRF devolve "12.00"; editar não deve mostrar casas decimais que o
     // usuário não digitou. formatQtd/decOrNull fazem o ida-e-volta com vírgula.
     quantidade_planejada: formatQtd(a.quantidade_planejada),
@@ -72,16 +79,16 @@ function acaoToForm(a: Acao): FormState {
   };
 }
 
-function formToPayload(f: FormState, metaId: number): AcaoWritePayload {
+function formToPayload(f: FormState): AcaoWritePayload {
   return {
-    meta: metaId,
+    submeta: Number(f.submeta),
+    indicador: Number(f.indicador),
     numero: f.numero.trim(),
     descricao: f.descricao.trim(),
-    tipo_unidade: Number(f.tipo_unidade),
     quantidade_planejada: decOrNull(f.quantidade_planejada) ?? "0",
     valor_unitario: moneyOrNull(f.valor_unitario) ?? "0",
-    data_inicio: f.data_inicio || null,
-    data_fim: f.data_fim || null,
+    data_inicio: f.data_inicio,
+    data_fim: f.data_fim,
   };
 }
 
@@ -112,11 +119,14 @@ function validate(f: FormState): Record<string, string> {
   if (!f.numero.trim()) {
     errs.numero = "Informe o número da Ação.";
   } else if (!NUMERO_ACAO_RE.test(f.numero.trim())) {
-    errs.numero = "Formato inválido. Use X.Y (ex: 1.1, 2.3).";
+    errs.numero = "Formato inválido. Use X.Y.Z (ex: 1.1.1, 2.3.4).";
   }
 
   if (!f.descricao.trim()) errs.descricao = "Informe a descrição da Ação.";
-  if (!f.tipo_unidade) errs.tipo_unidade = "Selecione o tipo de unidade.";
+  if (!f.submeta) errs.submeta = "Selecione a Submeta.";
+  if (!f.indicador) errs.indicador = "Selecione o Indicador.";
+  if (!f.data_inicio) errs.data_inicio = "Informe a data de início.";
+  if (!f.data_fim) errs.data_fim = "Informe a data de término.";
 
   // Comparação lexicográfica é segura para "YYYY-MM-DD".
   if (f.data_inicio && f.data_fim && f.data_fim < f.data_inicio) {
@@ -140,6 +150,8 @@ export function AcaoSlideOver({
   const [saving, setSaving] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [submetaOpts, setSubmetaOpts] = useState<SubmetaOption[]>([]);
+  const [indicadorOpts, setIndicadorOpts] = useState<IndicadorOption[]>([]);
 
   const acaoId = acao?.id;
 
@@ -152,6 +164,25 @@ export function AcaoSlideOver({
     setGlobalError(null);
     setForm(mode === "edit" && acao ? acaoToForm(acao) : EMPTY_FORM);
   }, [open, mode, acao]);
+
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    Promise.all([
+      listSubmetasDaMeta(metaId, controller.signal),
+      listIndicadores(controller.signal),
+    ])
+      .then(([submetas, indicadores]) => {
+        if (controller.signal.aborted) return;
+        setSubmetaOpts(submetas);
+        setIndicadorOpts(indicadores);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setGlobalError("Não foi possível carregar as submetas e indicadores.");
+      });
+    return () => controller.abort();
+  }, [open, metaId]);
 
   function update<K extends keyof FormState>(field: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -178,7 +209,7 @@ export function AcaoSlideOver({
     setSaving(true);
 
     try {
-      const payload = formToPayload(form, metaId);
+      const payload = formToPayload(form);
       const salva =
         mode === "edit" && acaoId
           ? await updateAcao(acaoId, payload)
@@ -248,8 +279,8 @@ export function AcaoSlideOver({
           error={fieldErrors.numero}
           disabled={saving}
           autoComplete="off"
-          placeholder="1.1"
-          helperText="Numeração X.Y, única dentro da Meta."
+          placeholder="1.1.1"
+          helperText="Numeração X.Y.Z, com X.Y igual ao número da Submeta."
           data-testid="acao-form-numero"
         />
 
@@ -265,16 +296,34 @@ export function AcaoSlideOver({
           data-testid="acao-form-descricao"
         />
 
-        <div data-testid="acao-form-tipo-unidade">
+        <div data-testid="acao-form-submeta">
           <Select
-            label="Tipo de unidade"
+            label="Submeta"
             required
-            options={TIPO_UNIDADE_OPTIONS}
-            value={form.tipo_unidade}
-            onChange={(v) => update("tipo_unidade", v)}
+            options={submetaOpts.map((s) => ({
+              value: String(s.id),
+              label: `${s.numero} — ${s.titulo}`,
+            }))}
+            value={form.submeta}
+            onChange={(v) => update("submeta", v)}
             placeholder="Selecione..."
-            helperText="Unidade em que a quantidade planejada é medida."
-            error={fieldErrors.tipo_unidade}
+            error={fieldErrors.submeta}
+            disabled={saving}
+          />
+        </div>
+
+        <div data-testid="acao-form-indicador">
+          <Select
+            label="Indicador"
+            required
+            options={indicadorOpts.map((i) => ({
+              value: String(i.id),
+              label: `${i.codigo} — ${i.nome}`,
+            }))}
+            value={form.indicador}
+            onChange={(v) => update("indicador", v)}
+            placeholder="Selecione..."
+            error={fieldErrors.indicador}
             disabled={saving}
           />
         </div>
