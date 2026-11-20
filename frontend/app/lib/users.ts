@@ -55,6 +55,8 @@ export type ListUsersParams = {
   offset: number;
   search?: string;
   perfil?: string;
+  /** Quem tem ao menos um perfil da categoria (#423, item 3). */
+  categoria?: CategoriaPerfil;
   territorio?: string;
   status?: StatusFilter;
   /** Datas no formato YYYY-MM-DD (input nativo). */
@@ -77,6 +79,7 @@ function buildUsersQuery(params: ListUsersParams): string {
 
   if (params.search?.trim()) qs.set("search", params.search.trim());
   if (params.perfil) qs.set("perfil", params.perfil);
+  if (params.categoria) qs.set("categoria", params.categoria);
   if (params.territorio) qs.set("territorio", params.territorio);
   if (params.ordering) qs.set("ordering", params.ordering);
   if (params.comDispositivo) qs.set("com_dispositivo", "true");

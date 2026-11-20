@@ -10,7 +10,7 @@ const fieldLabelClass = "text-label font-medium text-text leading-[1.2]";
 
 export type UsersFiltersValue = {
   search: string;
-  /** Categoria de perfil (#405): recorta as opções do filtro Perfil. */
+  /** Categoria de perfil (#405): filtra a lista no servidor e recorta as opções do filtro Perfil. */
   categoria: CategoriaPerfil | "";
   perfil: string;
   territorio: string;
@@ -127,10 +127,6 @@ export function UsersFilters({
             onChange={(v) => onChange({ perfil: v })}
             disabled={optionsLoading}
             placeholder="Todos os perfis"
-            // A listagem ainda não filtra por categoria no servidor (pendência 3).
-            helperText={
-              value.categoria && !value.perfil ? "Escolha o perfil da categoria para filtrar a lista." : undefined
-            }
           />
         </div>
 
