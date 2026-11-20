@@ -6,6 +6,7 @@ notificar duas vezes."""
 from __future__ import annotations
 
 import calendar
+from collections.abc import Iterable
 import re
 from dataclasses import dataclass
 from datetime import date
@@ -490,6 +491,42 @@ def _limites_do_escopo(user) -> Q:
         if estados:
             filtro |= Q(territorio__estados__overlap=list(estados))
     return filtro
+
+
+def alvos_dos_alertas(alertas: Iterable[BudgetAlert]) -> dict[int, dict]:
+    """O alvo de cada alerta, por pk do alerta, em duas consultas para a página inteira. Quem chama já
+    recortou os alertas pelo escopo do perfil, então o alvo é lido com visão total. Alvo apagado e
+    escopo sem alvo carregado ficam de fora."""
+    alertas = list(alertas)
+    por_escopo = {Escopo.POOL: set(), Escopo.LIMITE: set()}
+    for alerta in alertas:
+        if alerta.escopo in por_escopo:
+            por_escopo[alerta.escopo].add(alerta.referencia_id)
+    with visao_total():
+        pools = BudgetPool.objects.select_related("estado", "territorio").in_bulk(por_escopo[Escopo.POOL])
+        limites_por_pk = SpendingLimit.objects.select_related("user").in_bulk(por_escopo[Escopo.LIMITE])
+    alvos = {}
+    for alerta in alertas:
+        if alerta.escopo == Escopo.POOL and alerta.referencia_id in pools:
+            alvos[alerta.pk] = _alvo_do_pool(pools[alerta.referencia_id])
+        elif alerta.escopo == Escopo.LIMITE and alerta.referencia_id in limites_por_pk:
+            alvos[alerta.pk] = _alvo_do_limite(limites_por_pk[alerta.referencia_id])
+    return alvos
+
+
+def _alvo_do_pool(pool) -> dict:
+    estado = {"sigla": pool.estado.sigla, "nome": pool.estado.nome} if pool.estado_id else None
+    territorio = {"id": pool.territorio_id, "nome": pool.territorio.nome} if pool.territorio_id else None
+    nome = (territorio or estado or {"nome": "Nacional"})["nome"]
+    return {"nome": nome, "nivel": pool.nivel, "estado": estado, "territorio": territorio, "usuario": None}
+
+
+def _alvo_do_limite(limite) -> dict:
+    usuario = {"id": limite.user_id, "nome": limite.user.nome} if limite.user_id else None
+    return {
+        "nome": usuario["nome"] if usuario else None, "nivel": None, "estado": None, "territorio": None,
+        "usuario": usuario,
+    }
 
 
 def alertas_visiveis(user):

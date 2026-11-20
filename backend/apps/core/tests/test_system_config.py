@@ -426,3 +426,99 @@ class TestGoogleCalendarStatusAPI:
         }
         assert response.data["estado"] in {"ok", "pendente", "erro", "nunca_executada"}
         assert isinstance(response.data["falhas_recentes"], int)
+
+
+class TestParametrosDoOrcamento:
+    @pytest.fixture
+    def cliente(self, api_client, super_admin_user):
+        api_client.force_authenticate(user=super_admin_user)
+        return api_client
+
+    def _patch(self, cliente, chave, valor):
+        return cliente.patch(f"/api/v1/system-config/{chave}/", {"valor": valor}, format="json")
+
+    @pytest.mark.parametrize("chave, valor, aceito", [
+        ("budget_limit_period", "anual", False),
+        ("budget_limit_period", "semestral", True),
+        ("budget_limit_period", "vigencia", True),
+        ("budget_subexec_alert_months", 0, False),
+        ("budget_subexec_alert_months", 25, False),
+        ("budget_subexec_alert_months", 24, True),
+        ("budget_subexec_min_pct", 0, False),
+        ("budget_subexec_min_pct", 101, False),
+        ("budget_subexec_min_pct", 100, True),
+        ("budget_transfer_alert_pct", -5, False),
+        ("budget_transfer_alert_pct", 1, True),
+        ("budget_alert_yellow_pct", 0, False),
+        ("budget_alert_red_pct", 101, False),
+    ])
+    def test_opcoes_e_faixas(self, cliente, chave, valor, aceito):
+        antes = SystemConfig.objects.get(chave=chave).valor
+
+        resposta = self._patch(cliente, chave, valor)
+
+        if aceito:
+            assert resposta.status_code == status.HTTP_200_OK, resposta.data
+            assert SystemConfig.objects.get(chave=chave).valor == str(valor)
+        else:
+            assert resposta.status_code == status.HTTP_400_BAD_REQUEST
+            assert "valor" in resposta.data
+            assert SystemConfig.objects.get(chave=chave).valor == antes
+
+    @pytest.mark.parametrize("chave, valor, aceito", [
+        ("budget_alert_yellow_pct", 90, False),
+        ("budget_alert_yellow_pct", 89, True),
+        ("budget_alert_red_pct", 70, False),
+        ("budget_alert_red_pct", 71, True),
+    ])
+    def test_amarelo_precisa_ser_menor_que_o_vermelho(self, cliente, chave, valor, aceito):
+        SystemConfig.objects.filter(chave="budget_alert_yellow_pct").update(valor="70")
+        SystemConfig.objects.filter(chave="budget_alert_red_pct").update(valor="90")
+
+        resposta = self._patch(cliente, chave, valor)
+
+        assert resposta.status_code == (status.HTTP_200_OK if aceito else status.HTTP_400_BAD_REQUEST)
+
+    def test_a_conferencia_usa_o_valor_gravado_depois_de_uma_alteracao(self, cliente):
+        assert self._patch(cliente, "budget_alert_yellow_pct", 80).status_code == status.HTTP_200_OK
+
+        resposta = self._patch(cliente, "budget_alert_red_pct", 80)
+
+        assert resposta.status_code == status.HTTP_400_BAD_REQUEST
+        assert "amarelo (80%)" in str(resposta.data["valor"])
+
+    def test_parametro_fora_do_orcamento_so_confere_o_tipo(self, cliente):
+        assert self._patch(cliente, "session_timeout_hours", 0).status_code == status.HTTP_200_OK
+
+
+class TestParametrosDoOrcamentoNoAdmin:
+    """O Django Admin aplica as mesmas regras do PATCH."""
+
+    def _formulario(self, chave, valor):
+        from django.contrib.admin.sites import site
+        from django.test import RequestFactory
+
+        from apps.core.tests.factories import UserFactory
+
+        config = SystemConfig.objects.get(chave=chave)
+        request = RequestFactory().post("/")
+        request.user = UserFactory(is_superuser=True)
+        Formulario = site._registry[SystemConfig].get_form(request, config)
+        return Formulario(data={"valor": valor, "descricao": config.descricao}, instance=config)
+
+    @pytest.mark.parametrize("chave, valor, aceito", [
+        ("budget_limit_period", "anual", False),
+        ("budget_limit_period", "mensal", True),
+        ("budget_subexec_min_pct", "0", False),
+        ("budget_subexec_alert_months", "abc", False),
+        ("budget_alert_yellow_pct", "95", False),
+        ("budget_alert_yellow_pct", "80", True),
+    ])
+    def test_opcoes_faixas_e_limiares(self, chave, valor, aceito):
+        SystemConfig.objects.filter(chave="budget_alert_yellow_pct").update(valor="70")
+        SystemConfig.objects.filter(chave="budget_alert_red_pct").update(valor="90")
+
+        formulario = self._formulario(chave, valor)
+        formulario.is_valid()
+
+        assert ("valor" not in formulario.errors) is aceito, formulario.errors

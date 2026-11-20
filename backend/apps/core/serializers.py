@@ -7,9 +7,10 @@ from django.db import transaction
 from drf_spectacular.utils import extend_schema_field
 from .models import Role, State, Territory, Municipality, Organization
 from .models.notifications import Notification
-from .models.user_profile import ObjetoTipo, UserProfile, abrangencia_invalida
+from .models.user_profile import OBJETO_DO_PERFIL_OPERACIONAL, ObjetoTipo, UserProfile, abrangencia_invalida
 from apps.core.models.audit_log import AuditLog
 from .models.system_config import SystemConfig, TipoConfiguracao
+from .services.parametros import parametro_do_orcamento_invalido, valor_do_tipo
 
 User = get_user_model()
 
@@ -33,45 +34,11 @@ class SystemConfigSerializer(serializers.ModelSerializer):
         instance = getattr(self, "instance", None)
         if instance is None:
             return value
-
-        tipo = instance.tipo
-
-        if tipo == TipoConfiguracao.INTEGER:
-            try:
-                return str(int(value))
-            except (ValueError, TypeError):
-                raise serializers.ValidationError(
-                    f"Valor inválido para tipo INTEGER: '{value}' não é um número inteiro válido."
-                )
-
-        if tipo == TipoConfiguracao.BOOLEAN:
-            if isinstance(value, bool):
-                return str(value)
-            if isinstance(value, str):
-                normalized = value.lower().strip()
-                if normalized in ("true", "false", "1", "0"):
-                    return str(normalized in ("true", "1"))
-            raise serializers.ValidationError(
-                f"Valor inválido para tipo BOOLEAN: '{value}' não é um valor booleano válido."
-            )
-
-        if tipo == TipoConfiguracao.JSON:
-            if isinstance(value, str):
-                try:
-                    json.loads(value)
-                    return value
-                except json.JSONDecodeError:
-                    raise serializers.ValidationError(
-                        f"Valor inválido para tipo JSON: '{value}' não é um JSON válido."
-                    )
-            try:
-                return json.dumps(value, ensure_ascii=False)
-            except (TypeError, ValueError):
-                raise serializers.ValidationError(
-                    "Valor inválido para tipo JSON: não foi possível serializar."
-                )
-
-        return str(value)
+        valor = valor_do_tipo(instance.tipo, value)
+        erro = parametro_do_orcamento_invalido(instance.chave, valor)
+        if erro:
+            raise serializers.ValidationError(erro)
+        return valor
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -107,10 +74,18 @@ class GoogleCalendarConfigSerializer(serializers.Serializer):
 
 
 class RoleSerializer(serializers.ModelSerializer):
+    objeto_tipo = serializers.SerializerMethodField(
+        help_text="O tipo de objeto que o perfil operacional exige na designação; nulo no perfil principal.",
+    )
+
     class Meta:
         model = Role
-        fields = ['id', 'nome', 'slug', 'descricao', 'categoria', 'ativo', 'criado_em']
+        fields = ['id', 'nome', 'slug', 'descricao', 'categoria', 'objeto_tipo', 'ativo', 'criado_em']
         read_only_fields = ['categoria', 'criado_em']
+
+    @extend_schema_field(serializers.ChoiceField(choices=ObjetoTipo.choices, allow_null=True))
+    def get_objeto_tipo(self, perfil):
+        return OBJETO_DO_PERFIL_OPERACIONAL.get(perfil.slug)
 
     def validate_slug(self, value):
         # O slug é a identidade do perfil para as regras de acesso e para o RLS.
@@ -126,7 +101,7 @@ class RoleComObjetoSerializer(RoleSerializer):
     objeto_id = serializers.IntegerField(allow_null=True, read_only=True)
 
     class Meta(RoleSerializer.Meta):
-        fields = [*RoleSerializer.Meta.fields, "objeto_tipo", "objeto_id"]
+        fields = [*RoleSerializer.Meta.fields, "objeto_id"]
 
 
 def com_o_principal_primeiro(perfis) -> list:
@@ -333,7 +308,8 @@ class UserDetailSerializer(serializers.ModelSerializer):
             "acesso_revogado", "acesso_revogado_em", "acesso_revogado_por",
             "qtd_dispositivos", "ultimo_sync_dispositivos",
         ]
-        read_only_fields = ["ultimo_login"]
+        # A revogação tem rota própria, com as regras do último Super Admin e o fim das sessões.
+        read_only_fields = ["ultimo_login", "acesso_revogado", "acesso_revogado_em"]
 
     @extend_schema_field(UsuarioRefComEmailSerializer(allow_null=True))
     def get_acesso_revogado_por(self, obj):

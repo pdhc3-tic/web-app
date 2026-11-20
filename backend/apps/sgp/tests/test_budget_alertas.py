@@ -5,13 +5,14 @@ from unittest.mock import patch
 
 import pytest
 from django.core.cache import cache
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from freezegun import freeze_time
 
 from apps.core.models.notifications import Notification, TipoNotificacao
 from apps.core.models.system_config import SystemConfig
-from apps.core.tests.factories import RoleFactory, UserFactory
+from apps.core.tests.factories import RoleFactory, TerritoryFactory, UserFactory
 from apps.sgp.budget import alertas
 from apps.sgp.budget import services as budget_service
 from apps.sgp.models import BudgetAlert, BudgetPool, BudgetRubrica, BudgetTransaction, SpendingLimit
@@ -732,6 +733,62 @@ class TestListagem:
 
     def test_filtro_invalido_responde_400(self, auth_client_super_admin):
         assert auth_client_super_admin.get(URL, {"tipo": "outro"}).status_code == 400
+
+    def _alvo_por_referencia(self, cliente):
+        resposta = cliente.get(URL, {"limit": 100})
+        assert resposta.status_code == 200
+        return {(item["escopo"], item["referencia_id"]): item["alvo"] for item in resposta.json()["results"]}
+
+    def test_alvo_identifica_o_pool_em_cada_nivel_e_a_pessoa_do_limite(
+        self, auth_client_super_admin, cenario, territory_rn, state_rn, usuario_adt_rn,
+    ):
+        estadual = BudgetPoolFactory(
+            nivel=Nivel.ESTADUAL, estado=state_rn, territorio=None,
+            valor_alocado=Decimal("1000"), valor_comprometido=Decimal("950"),
+        )
+        check_budget_thresholds(pool_id=estadual.pk)
+
+        alvos = self._alvo_por_referencia(auth_client_super_admin)
+
+        pool = BudgetAlert.Escopo.POOL
+        assert alvos[(pool, cenario["rn"].pk)] == {
+            "nome": territory_rn.nome, "nivel": "territorial", "estado": None,
+            "territorio": {"id": territory_rn.pk, "nome": territory_rn.nome}, "usuario": None,
+        }
+        assert alvos[(pool, estadual.pk)] == {
+            "nome": state_rn.nome, "nivel": "estadual", "estado": {"sigla": state_rn.sigla, "nome": state_rn.nome},
+            "territorio": None, "usuario": None,
+        }
+        assert alvos[(pool, cenario["nacional"].pk)] == {
+            "nome": "Nacional", "nivel": "nacional", "estado": None, "territorio": None, "usuario": None,
+        }
+        assert alvos[(BudgetAlert.Escopo.LIMITE, cenario["meu"].pk)] == {
+            "nome": usuario_adt_rn.nome, "nivel": None, "estado": None, "territorio": None,
+            "usuario": {"id": usuario_adt_rn.pk, "nome": usuario_adt_rn.nome},
+        }
+
+    def test_alvo_apagado_vira_nulo(self, auth_client_super_admin, cenario):
+        BudgetAlert.objects.create(
+            tipo=Tipo.SEMAFORO, escopo=BudgetAlert.Escopo.POOL, referencia_id=999_999,
+            rubrica=cenario["rn"].rubrica, faixa="vermelho", percentual_atingido=Decimal("95"),
+        )
+
+        assert self._alvo_por_referencia(auth_client_super_admin)[(BudgetAlert.Escopo.POOL, 999_999)] is None
+
+    def test_consultas_nao_crescem_com_o_numero_de_alertas(self, auth_client_super_admin, cenario):
+        def consultas():
+            with CaptureQueriesContext(connection) as capturadas:
+                auth_client_super_admin.get(URL, {"limit": 100})
+            return len(capturadas)
+
+        consultas()  # O primeiro pedido aquece o cache dos parâmetros.
+        antes = consultas()
+        for _ in range(5):
+            limite = SpendingLimitFactory(valor_limite=1000, valor_comprometido=950)
+            check_budget_thresholds(limite_id=limite.pk)
+            check_budget_thresholds(pool_id=_territorial(TerritoryFactory(), comprometido=950).pk)
+
+        assert consultas() == antes
 
 
 # ---------- Catálogo de eventos

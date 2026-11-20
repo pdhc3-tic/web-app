@@ -320,6 +320,28 @@ ADT e ACR precisam de valores diferentes. Hoje os dois são um só perfil no sis
 
 ---
 
+## 12. Saúde e Cor/Raça — quem lê, por decisão da coordenação
+
+A Arquitetura exige criptografia desses campos, e a matriz do Core dá leitura das UFPAs ao
+Articulador e à UGP sem separar os campos sensíveis. Nenhum documento diz quem pode lê-los. A
+pergunta foi levada à coordenação (PDF de 11/11/2026, item 1), com quatro opções: manter como
+está, restringir a quem cadastra, restringir a quem cadastra e à UGP, ou outra regra.
+
+**Resposta da coordenação (17/11/2026): opção "a", manter como está.** Leem Saúde e Cor/Raça:
+
+| Perfil | Lê |
+|---|---|
+| Super Admin | Sim |
+| UGP | Sim |
+| Articulador Estadual | Sim, nas UFPAs que vê |
+| ADT/ACR | Sim, nas UFPAs do território |
+| FGD, Agricultor e perfis operacionais | Não |
+
+A matriz fica em `apps/core/sensitive_fields.py` (`SENSITIVE_FIELD_ROLES`), usada pelos serializers
+e pela exportação. O código não mudou.
+
+---
+
 ## Observação
 
 Achado da varredura que **não** tem justificativa técnica registrada em

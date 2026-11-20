@@ -8,7 +8,7 @@ from apps.sgd.services import orcamento as orcamento_service
 
 
 def _link_demanda(demand) -> str:
-    return f"{settings.FRONTEND_BASE_URL.rstrip('/')}/sgd/demandas/{demand.pk}"
+    return f"{settings.FRONTEND_BASE_URL.rstrip('/')}/sgd/demandas?demanda={demand.pk}"
 
 
 def usuarios_articuladores_do_estado(sigla: str):
@@ -151,7 +151,7 @@ def link_inatividade(demand, *, referencia) -> str:
     qualquer outro tipo de notificação, filtrável por NotificationPreference
     e exposto como está na API); o dedup por período parado usa esse link
     distinto por período em vez disso."""
-    return f"{_link_demanda(demand)}?ref={referencia.isoformat()}"
+    return f"{_link_demanda(demand)}&ref={referencia.isoformat()}"
 
 
 def notificar_inatividade(demand, responsaveis, *, referencia) -> None:

@@ -85,6 +85,10 @@ class SystemConfigDetailView(generics.RetrieveUpdateAPIView):
     http_method_names = ["get", "patch"]
     permission_classes = [IsAuthenticatedActiveAccess, IsSuperAdminOrUGPReadOnly]
 
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
     def perform_update(self, serializer):
         serializer.save(atualizado_por=self.request.user)
 

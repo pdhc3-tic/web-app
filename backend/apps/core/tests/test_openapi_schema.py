@@ -330,3 +330,19 @@ def test_paineis_do_sgd_documentam_os_filtros_da_listagem(schema):
         parametros = {p["name"] for p in schema["paths"][rota]["get"]["parameters"] if p["in"] == "query"}
         assert filtros_da_listagem <= parametros, rota
         assert _resposta(schema, rota)["type"] == "array"
+
+
+def test_reordenar_do_arlo_descreve_a_ordem_e_devolve_a_lista(schema):
+    operacao = schema["paths"]["/api/v1/sgd/config/arlo-mapping/reordenar/"]["post"]
+    resposta = _resposta(schema, "/api/v1/sgd/config/arlo-mapping/reordenar/", "post")
+
+    assert _ref(operacao["requestBody"]["content"]["application/json"]["schema"]) == "ReordenarArloRequest"
+    assert resposta["type"] == "array"
+    assert _ref(resposta["items"]) == "ArloFieldMapping"
+
+
+def test_edicao_e_exclusao_de_usuario_documentam_o_400(schema):
+    rota = schema["paths"]["/api/v1/users/{id}/"]
+
+    assert "400" in rota["patch"]["responses"]
+    assert "400" in rota["delete"]["responses"]

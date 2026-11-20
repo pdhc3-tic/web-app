@@ -29,7 +29,12 @@ from apps.sgp.budget.serializers import (
     BudgetTransactionSerializer,
     LinhaDoExtratoSerializer,
     MeuSaldoSerializer,
+    PeriodoDosLimitesQuerySerializer,
+    PeriodoDosLimitesSerializer,
+    PessoaComLimiteSerializer,
+    PessoasComLimiteQuerySerializer,
     RemanejamentoCreateSerializer,
+    RemanejamentoSimulacaoSerializer,
     SaldoConsultaQuerySerializer,
     SaldoConsultaSerializer,
     SimulacaoRemanejamentoSerializer,
@@ -209,12 +214,12 @@ class RemanejamentoSimulacaoView(APIView):
 
     permission_classes = [IsAuthenticatedActiveAccess]
 
-    @extend_schema(request=RemanejamentoCreateSerializer, responses=SimulacaoRemanejamentoSerializer)
+    @extend_schema(request=RemanejamentoSimulacaoSerializer, responses=SimulacaoRemanejamentoSerializer)
     def post(self, request):
         if not budget_service.is_global_budget_user(request.user):
             raise PermissionDenied("Só UGP/Super Admin executam remanejamento.")
 
-        entrada = RemanejamentoCreateSerializer(data=request.data)
+        entrada = RemanejamentoSimulacaoSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
         dados = entrada.validated_data
 
@@ -285,6 +290,11 @@ class BudgetAlertListView(generics.ListAPIView):
         if dados["abertos"] is not None:
             alertas = alertas.filter(resolvido_em__isnull=dados["abertos"])
         return alertas
+
+    def list(self, request, *args, **kwargs):
+        pagina = self.paginate_queryset(self.get_queryset())
+        contexto = {**self.get_serializer_context(), "alvos": alertas_service.alvos_dos_alertas(pagina)}
+        return self.get_paginated_response(BudgetAlertSerializer(pagina, many=True, context=contexto).data)
 
 
 class BudgetPainelView(APIView):
@@ -366,6 +376,25 @@ class SpendingLimitViewSet(viewsets.ViewSet):
             if campo in dados:
                 limites = limites.filter(**{campo: dados[campo]})
         return Response(SpendingLimitSerializer(limites, many=True).data)
+
+    @extend_schema(parameters=[PeriodoDosLimitesQuerySerializer], responses=PeriodoDosLimitesSerializer)
+    def periodo(self, request):
+        """O período de limites que contém `?data=`, pelo parâmetro `budget_limit_period`."""
+        query = PeriodoDosLimitesQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        data = query.validated_data.get("data") or limites_service.hoje()
+        periodicidade = limites_service.periodicidade_vigente()
+        inicio, fim = limites_service.periodo_de(data, periodicidade)
+        periodo = {"inicio": inicio, "fim": fim, "periodicidade": periodicidade}
+        return Response(PeriodoDosLimitesSerializer(periodo).data)
+
+    @extend_schema(parameters=[PessoasComLimiteQuerySerializer], responses=PessoaComLimiteSerializer(many=True))
+    def pessoas(self, request):
+        """Usuários ativos com perfil que recebe limite individual (ADT/ACR e Articulador Estadual)."""
+        query = PessoasComLimiteQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        pessoas = limites_service.pessoas_com_limite_individual(query.validated_data["q"].strip())
+        return Response(PessoaComLimiteSerializer(pessoas, many=True).data)
 
     @extend_schema(request=SpendingLimitCreateSerializer, responses={201: SpendingLimitSerializer})
     def create(self, request):

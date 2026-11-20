@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 from freezegun import freeze_time
 
 from apps.sgd.tests.factories import ApprovalStepFactory, DemandFactory
@@ -215,3 +216,38 @@ class TestUnicidade:
         _risco(1, tipo=Tipo.DEMANDA_SEM_EVIDENCIA)
 
         assert GlosaRisk.objects.count() == 2
+
+
+class TestEmAbertoETotalExposto:
+    @pytest.fixture
+    def riscos(self):
+        aberto = _risco(1, exposto="100.00")
+        outro_aberto = _risco(2, exposto="250.50")
+        resolvido = _risco(3, exposto="40.00")
+        GlosaRisk.objects.filter(pk=resolvido.pk).update(resolvido_em=timezone.now())
+        return {"aberto": aberto, "outro_aberto": outro_aberto, "resolvido": resolvido}
+
+    @pytest.mark.parametrize("aberto, esperados", [
+        ("true", ["outro_aberto", "aberto"]), ("false", ["resolvido"]), (None, ["outro_aberto", "aberto", "resolvido"]),
+    ])
+    def test_filtra_pelo_estado_do_risco(self, auth_client_super_admin, riscos, aberto, esperados):
+        filtros = {} if aberto is None else {"aberto": aberto}
+
+        assert _ids(auth_client_super_admin.get(URL, filtros)) == [riscos[chave].pk for chave in esperados]
+
+    def test_total_exposto_soma_todos_os_filtrados_e_nao_so_a_pagina(self, auth_client_super_admin, riscos):
+        resposta = auth_client_super_admin.get(URL, {"aberto": "true", "limit": 1})
+
+        assert resposta.status_code == 200
+        assert (resposta.data["count"], len(resposta.data["results"])) == (2, 1)
+        assert resposta.data["total_exposto"] == "350.50"
+
+    def test_total_exposto_segue_o_recorte_do_perfil(self, auth_client_articulador_rn, riscos):
+        resposta = auth_client_articulador_rn.get(URL)
+
+        assert resposta.status_code == 200
+        assert resposta.data["count"] == 0
+        assert resposta.data["total_exposto"] == "0.00"
+
+    def test_valor_invalido_responde_400(self, auth_client_super_admin):
+        assert auth_client_super_admin.get(URL, {"aberto": "talvez"}).status_code == 400

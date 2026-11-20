@@ -285,7 +285,7 @@ def _levar(demand, destino, atores):
 
 def _notificados(demand):
     return set(
-        Notification.objects.filter(link__endswith=f"/sgd/demandas/{demand.pk}")
+        Notification.objects.filter(link__endswith=f"/sgd/demandas?demanda={demand.pk}")
         .exclude(evento="demand_semaforo_mudou").values_list("user_id", "tipo")
     )
 

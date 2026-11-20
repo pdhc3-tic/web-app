@@ -182,7 +182,7 @@ O estado e o território da demanda são os **do solicitante**, gravados na cria
 - **Leitura:** fila do Articulador, visibilidade, RLS, notificações e pool leem a abrangência por `contexto`, com `estado_da_demanda` e `nivel_da_demanda`. O pool da reserva é o do nível da demanda.
 - **RLS** (migration `0024_rls_demand_por_estado_sigla`): o Articulador vê as demandas cujo `estado_sigla` está entre os estados dos seus territórios. A demanda nacional não fica com nenhum Articulador.
 - **Atividade fora do território:** quando a atividade acontece em outro estado, o serializer expõe `atividade_fora_do_territorio`. A busca `GET atividades-elegiveis/` oferece atividades de qualquer território para o vínculo.
-- **Riscos de glosa:** o Articulador vê os riscos das demandas que ele vê e os das demandas do seu estado, pelo estado da demanda e não pelo da atividade (`approval.filtro_de_registro_da_demanda`, usado em `GET /sgp/glosa-riscos/`).
+- **Riscos de glosa:** o Articulador vê os riscos das demandas que ele vê e os das demandas do seu estado, pelo estado da demanda e não pelo da atividade (`approval.filtro_de_registro_da_demanda`, usado em `GET /sgp/glosa-riscos/`). A rota aceita `?aberto=true|false` (pelo `resolvido_em`) e devolve, junto da paginação, `total_exposto`: a soma do valor exposto de todos os riscos filtrados, não só os da página.
 - **Migration 0023:** preencheu as demandas antigas pela lotação atual do solicitante.
 
 Testes: `tests/test_abrangencia_territorial.py`, `tests/test_abrangencia_previa.py`, `tests/test_demand_rls.py`, `tests/test_demand_creation_scope.py` e `tests/test_atividades_elegiveis.py`.
