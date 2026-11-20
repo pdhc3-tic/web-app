@@ -138,8 +138,12 @@ export function AcoesTable({ acoes, canManage, onEdit, onDelete }: Props) {
                 </td>
                 <td className="min-w-64 px-4 py-3">
                   <span className="text-text">{acao.descricao}</span>
-                  <span className="mt-0.5 block text-xs text-text-muted">
-                    {periodo(acao.data_inicio, acao.data_fim)}
+                  {/* Meta → Submeta → Ação (#431): a Submeta de cada Ação fica explícita. */}
+                  <span
+                    className="mt-0.5 block text-xs text-text-muted"
+                    data-testid={`acao-row-${acao.id}-submeta`}
+                  >
+                    Submeta {acao.submeta_numero} · {periodo(acao.data_inicio, acao.data_fim)}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-text">
@@ -184,7 +188,7 @@ export function AcoesTable({ acoes, canManage, onEdit, onDelete }: Props) {
               <div className="flex items-start justify-between gap-2">
                 <div className="flex min-w-0 flex-col leading-tight">
                   <span className="text-xs tabular-nums text-text-muted">
-                    Ação {acao.numero} · {acao.tipo_unidade_display}
+                    Ação {acao.numero} · Submeta {acao.submeta_numero} · {acao.tipo_unidade_display}
                   </span>
                   <span className="font-medium text-text">
                     {acao.descricao}

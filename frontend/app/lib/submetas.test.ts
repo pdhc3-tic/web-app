@@ -50,10 +50,14 @@ describe("validarSubmeta (#431): as regras de WorkPlanSubmeta.clean", () => {
     );
   });
 
-  it("período contido no da Meta", () => {
-    expect(validarSubmeta({ ...valido, data_fim: "2028-01-31" }, META).data_inicio).toBe(
-      "O período da Submeta deve estar contido no período da Meta (01/01/2026 a 31/12/2027).",
-    );
+  it("período contido no da Meta, com o erro na data que saiu dele", () => {
+    const msg = "O período da Submeta deve estar contido no período da Meta (01/01/2026 a 31/12/2027).";
+    expect(validarSubmeta({ ...valido, data_fim: "2028-01-31" }, META)).toEqual({ data_fim: msg });
+    expect(validarSubmeta({ ...valido, data_inicio: "2025-12-01" }, META)).toEqual({ data_inicio: msg });
+    expect(validarSubmeta({ ...valido, data_inicio: "2025-12-01", data_fim: "2028-01-31" }, META)).toEqual({
+      data_inicio: msg,
+      data_fim: msg,
+    });
   });
 });
 

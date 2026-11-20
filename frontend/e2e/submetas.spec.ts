@@ -55,6 +55,9 @@ test.describe("UGP — Meta → Submeta → Ação", () => {
     });
     await page.getByTestId("submeta-form-submit").click();
     await expect(form).toContainText("O período da Submeta deve estar contido no período da Meta");
+    // O erro fica na data que saiu do período (o término), não no início.
+    await expect(page.getByTestId("submeta-form-data-fim")).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByTestId("submeta-form-data-inicio")).not.toHaveAttribute("aria-invalid", "true");
     expect(enviou).toBe(false);
 
     await page.getByTestId("submeta-form-data-fim").fill(meta.fim);
@@ -99,6 +102,9 @@ test.describe("UGP — Meta → Submeta → Ação", () => {
     // A Ação entra na tabela, e a Submeta passa a contar 1 ação.
     await expect(page.getByTestId("acoes-table")).toContainText("Oficina de formação (E2E-431).");
     await expect(page.getByTestId(`submeta-${submeta.id}-acoes`)).toHaveText("1 ação");
+    // E a linha da Ação diz a que Submeta pertence.
+    const { id: acaoId } = (await respostaAcao.json()) as { id: number };
+    await expect(page.getByTestId(`acao-row-${acaoId}-submeta`)).toContainText(`Submeta ${meta.numero}.1`);
   });
 });
 

@@ -74,8 +74,12 @@ export function validarSubmeta(f: FormSubmeta, meta: MetaDaSubmeta): Partial<Rec
   if (f.data_inicio && f.data_fim) {
     if (f.data_fim < f.data_inicio) {
       erros.data_fim = "A data de término não pode ser anterior à de início.";
-    } else if (f.data_inicio < meta.data_inicio || f.data_fim > meta.data_fim) {
-      erros.data_inicio = `O período da Submeta deve estar contido no período da Meta (${dataBr(meta.data_inicio)} a ${dataBr(meta.data_fim)}).`;
+    } else {
+      // O backend devolve o erro sempre em `data_inicio`; aqui ele vai para a
+      // data que de fato saiu do período da Meta (ou para as duas).
+      const fora = `O período da Submeta deve estar contido no período da Meta (${dataBr(meta.data_inicio)} a ${dataBr(meta.data_fim)}).`;
+      if (f.data_inicio < meta.data_inicio) erros.data_inicio = fora;
+      if (f.data_fim > meta.data_fim) erros.data_fim = fora;
     }
   }
   return erros;
