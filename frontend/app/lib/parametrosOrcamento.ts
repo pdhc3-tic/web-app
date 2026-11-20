@@ -5,10 +5,11 @@ import { apiClient } from "./api";
  * `SystemConfig`: `GET /system-config/` e `PATCH /system-config/{chave}/`.
  * A UGP lê; só o Super Admin altera (`IsSuperAdminOrUGPReadOnly`).
  *
- * O backend valida só o tipo (inteiro, booleano) e aceita qualquer texto na
- * periodicidade. As opções e as faixas abaixo são conferidas aqui, antes de
- * enviar; validá-las também no backend é o item 6 do
- * `docs/pendencias-backend-sprint-12b.md`.
+ * O backend valida opções e faixas na escrita e responde 400 em `valor`
+ * (#423, item 6). As opções e faixas abaixo são as mesmas dele: a tela confere
+ * antes de enviar, para avisar sem ida ao servidor, e mostra a recusa do
+ * servidor quando ela vem. O E2E `alertas-orcamento.spec.ts` confere que as
+ * faixas batem.
  */
 
 export type ChaveParametro =
