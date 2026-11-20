@@ -87,6 +87,9 @@ async function abrirDialogo(page: Page, id: number): Promise<void> {
 async function destinosOferecidos(page: Page): Promise<string[]> {
   const campo = page.getByTestId("transicao-destino");
   await campo.locator('button[role="combobox"]').click();
+  // Até as choices do SGP chegarem, o rótulo é o próprio valor ("agendado").
+  // Num runner lento a lista abre antes disso (run 44370958620).
+  await expect(campo.locator('[role="option"]').first()).toHaveText(/^\p{Lu}/u);
   const rotulos = await campo.locator('[role="option"]').allTextContents();
   await page.keyboard.press("Escape"); // fecha a lista, mantém o diálogo
   return rotulos;

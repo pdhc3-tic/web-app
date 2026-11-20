@@ -135,6 +135,10 @@ test.describe("SGD — ciclo de vida da demanda", () => {
   test("caminho feliz: criada, submetida, pré-autorizada, autorizada, atendida e concluída com valor pago", async ({
     browser,
   }) => {
+    // Seis etapas com quatro perfis e várias navegações: leva ~30 s num runner
+    // normal e passou de 60 s num runner lento do CI (run 44370958620), parando
+    // no meio da autorização. O teto triplica só aqui.
+    test.slow();
     const [adt, articulador, ugp, fgd] = await Promise.all(
       (["adt", "articuladorPB", "ugp", "fgd"] as const).map((p) => comoPerfil(browser, p)),
     );
