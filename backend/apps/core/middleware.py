@@ -5,6 +5,7 @@ from django.conf import settings
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from apps.core.db_context import ROLES_RLS, contexto_de_admin, montar_contexto
 from apps.core.signals.audit import set_audit_context, clear_audit_context
 from apps.core.utils import get_client_ip
 
@@ -46,13 +47,9 @@ class ContentSecurityPolicyMiddleware:
 
 
 class SessionContextMiddleware:
-    # Só os papéis com critério próprio na política RLS de sgd_demand
-    # precisam de resolução aqui — qualquer outro papel cai no critério
-    # "vê as próprias" da policy, que não olha pra app.user_role. Mesma
-    # ordem de prioridade de apps.sgd.services.approval.demand_visibility_scope:
-    # super-admin/ugp/fgd dão acesso total (a ordem entre os três não importa
-    # pro resultado), articulador-estadual é o único com recorte territorial.
-    _ROLES_RLS = ("super-admin", "ugp", "fgd", "articulador-estadual")
+    # Montagem do contexto em apps.core.db_context — a mesma usada fora do
+    # HTTP (tarefas Celery). Ver lá por que `adt-acr` não está em ROLES_RLS.
+    _ROLES_RLS = ROLES_RLS
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -80,7 +77,7 @@ class SessionContextMiddleware:
             # (sgd_demand e futuras tabelas) deixa o Admin com listas vazias
             # pra qualquer staff, já que superusuário do Django não tem
             # nenhuma relação com privilégio de role no Postgres.
-            context = {"user_id": str(request.user.pk), "territorios": "", "role": "super-admin"}
+            context = contexto_de_admin(request.user)
         else:
             return self.get_response(request)
 
@@ -94,55 +91,7 @@ class SessionContextMiddleware:
             return self.get_response(request)
 
     def _build_session_context(self, token, user):
-        # O JWT emitido hoje (setup/serializers.py:LoginSerializer, um
-        # TokenObtainPairSerializer sem get_token() customizado) não carrega
-        # role/perfil/território nenhum — só user_id. Sem o fallback pro
-        # banco aqui, toda política RLS baseada em app.user_role/
-        # app.user_territorios trataria UGP/FGD/Articulador como se não
-        # tivessem papel nenhum, e cada um só veria as próprias demandas.
-        role = str(token.get("role") or token.get("perfil") or "") or self._user_role_from_db(user)
-        territorios = self._format_territorios(token.get("territorios")) or self._user_territories_from_db(user)
-        return {
-            "user_id": str(token["user_id"]),
-            "territorios": territorios,
-            "role": role,
-        }
-
-    @classmethod
-    def _user_role_from_db(cls, user):
-        try:
-            from apps.core.services.permissions import user_role_slugs
-            slugs = user_role_slugs(user, slugs=cls._ROLES_RLS)
-        except Exception:
-            # Fail-safe: role vazio nunca é um dos papéis privilegiados na
-            # policy, então isso só restringe (cai no "vê as próprias"),
-            # nunca abre acesso — mas um lookup de RLS falhando em silêncio,
-            # sem log nenhum, não pode passar despercebido.
-            logger.exception("session_context.user_role_from_db_failed user_id=%s", getattr(user, "pk", None))
-            return ""
-        for role in cls._ROLES_RLS:
-            if role in slugs:
-                return role
-        return ""
-
-    @staticmethod
-    def _user_territories_from_db(user):
-        try:
-            from apps.core.models.user_profile import UserProfile
-            ids = list(
-                UserProfile.objects.filter(
-                    user=user, territorio__isnull=False
-                ).values_list("territorio_id", flat=True)
-            )
-            return ",".join(str(i) for i in ids) if ids else ""
-        except Exception:
-            # Ao contrário do role, "" aqui significa "todos os territórios"
-            # pra um Articulador (fail-open) — mas só importa se o role
-            # também resolveu pra articulador-estadual; se a mesma falha
-            # atingiu os dois lookups, o role já veio "" e essa policy nem
-            # olha pro território.
-            logger.exception("session_context.user_territories_from_db_failed user_id=%s", getattr(user, "pk", None))
-        return ""
+        return montar_contexto(user, token)
 
     def _authenticate_request(self, request):
         try:
@@ -164,16 +113,7 @@ class SessionContextMiddleware:
             cursor.execute("SET LOCAL app.user_territorios = %s;", [context["territorios"]])
             cursor.execute("SET LOCAL app.user_role = %s;", [context["role"]])
 
-    @staticmethod
-    def _format_territorios(raw_territorios):
-        if raw_territorios is None:
-            return ""
-        if isinstance(raw_territorios, str):
-            return raw_territorios
-        if isinstance(raw_territorios, (list, tuple, set)):
-            return ",".join(str(territorio_id) for territorio_id in raw_territorios)
-        return str(raw_territorios)
-    
+
 class AuditContextMiddleware:
     """
     Injeta user, ip e user_agent num threading.local() para que os

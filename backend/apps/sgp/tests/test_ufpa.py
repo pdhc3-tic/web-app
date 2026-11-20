@@ -10,6 +10,14 @@ from apps.sgp.models import MembroFamilia, UFPA
 from apps.sgp.tests.factories import UFPAFactory
 from apps.core.tests.factories import MunicipalityFactory
 
+
+@pytest.fixture
+def usuario(usuario_super_admin):
+    """`auth_client` escreve UFPAs neste módulo. Pela matriz do Core (#425), a
+    escrita é de Super Admin e ADT/ACR: a UGP do `usuario` padrão só lê."""
+    return usuario_super_admin
+
+
 pytestmark = pytest.mark.django_db
 
 
@@ -578,7 +586,7 @@ class TestIsolamentoTerritorial:
         assert len(response.data["results"]) == 2
 
     def test_ugp_sees_all_ufpas(
-        self, auth_client, projeto,
+        self, ugp_client, projeto,
         municipio_rn, municipio_ce, territory_rn, territory_ce,
     ):
         UFPAFactory(
@@ -589,7 +597,7 @@ class TestIsolamentoTerritorial:
             projeto=projeto, municipio=municipio_ce,
             territorio=territory_ce, titular_cpf="52998224725",
         )
-        response = auth_client.get("/api/v1/sgp/ufpas/")
+        response = ugp_client.get("/api/v1/sgp/ufpas/")
         assert response.status_code == 200
         assert len(response.data["results"]) == 2
 

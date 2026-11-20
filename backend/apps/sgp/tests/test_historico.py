@@ -4,6 +4,14 @@ from apps.core.models.audit_log import AuditLog
 from apps.sgp.models import UFPA
 from apps.sgp.tests.factories import UFPAFactory
 
+
+@pytest.fixture
+def usuario(usuario_super_admin):
+    """`auth_client` escreve UFPAs neste módulo. Pela matriz do Core (#425), a
+    escrita é de Super Admin e ADT/ACR: a UGP do `usuario` padrão só lê."""
+    return usuario_super_admin
+
+
 FUTURE = "2099-01-01T00:00:00Z"
 PAST = "2020-01-01T00:00:00Z"
 

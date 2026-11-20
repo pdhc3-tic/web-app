@@ -21,6 +21,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
 
+from apps.core.db_context import contexto_de_acesso
 from apps.sgp.exceptions import ErroComCodigo, recusar_parametros_desconhecidos
 from apps.sgp.models import ExportJob
 from apps.sgp.serializers.exportacao import AtividadesExportQuerySerializer
@@ -304,8 +305,13 @@ def executar_exportacao(job_id: int) -> None:
 
     definicao = TIPOS[job.tipo]
     try:
-        formato, opcoes = definicao.validar({**job.filtros, "formato": job.formato})
-        rows = definicao.linhas(user=job.solicitante, **opcoes)
+        # O worker não passa pelo SessionContextMiddleware: sem isto, a RLS de
+        # sgp_ufpa (e de qualquer tabela que a consulta toque) trataria a
+        # tarefa como sem contexto e o arquivo sairia vazio. O contexto é do
+        # solicitante e termina com o bloco — nada fica para o próximo job.
+        with contexto_de_acesso(job.solicitante):
+            formato, opcoes = definicao.validar({**job.filtros, "formato": job.formato})
+            rows = definicao.linhas(user=job.solicitante, **opcoes)
         ExportJob.objects.filter(pk=job.pk).update(progresso=60, total_registros=len(rows))
         arquivo = _montar_arquivo(job.tipo, formato, rows)
     except (PermissionDenied, ValidationError, ErroComCodigo) as exc:

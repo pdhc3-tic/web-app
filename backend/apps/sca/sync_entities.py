@@ -16,7 +16,10 @@ from uuid import uuid4
 from django.db import models
 from django.utils import timezone
 
+from apps.core.db_context import acesso_de_sistema_ufpa
+from apps.core.models.municipality import Municipality
 from apps.sgp.models import Activity, MembroFamilia, UFPA
+from apps.sgp.services.access import pode_escrever_ufpa_no_territorio
 from apps.sgp.services.activity_status import (
     ActivityRuleError,
     transition,
@@ -175,6 +178,12 @@ class SyncEntity:
         """Registro soft-deletado com o mesmo identificador natural (Estratégia 4)."""
         return None
 
+    def pode_escrever(self, user, data: dict, instance=None) -> bool:
+        """Se `user` pode gravar este registro. O escopo territorial do SCA
+        (`territory_ids_for`) decide o que é visível; aqui entram as regras de
+        escrita próprias da entidade. Por padrão, quem vê escreve."""
+        return True
+
     # ------------------------------------------------------------------
     # Escopo territorial
     # ------------------------------------------------------------------
@@ -217,10 +226,24 @@ class SyncEntity:
         raise NotImplementedError
 
     def ensure_uuid_local(self, instance):
+        """Gera o `uuid_local` de registro criado fora do SCA. Um UPDATE só da
+        coluna, condicionado a ela ainda estar vazia: dois pulls concorrentes
+        não sobrescrevem o valor um do outro, e o que perdeu relê o gravado."""
         if not instance.uuid_local:
-            instance.uuid_local = uuid4()
-            instance.save(update_fields=["uuid_local"])
+            manager = self.model._base_manager
+            novo = uuid4()
+            if manager.filter(pk=instance.pk, uuid_local__isnull=True).update(uuid_local=novo):
+                instance.uuid_local = novo
+            else:
+                instance.uuid_local = manager.filter(pk=instance.pk).values_list("uuid_local", flat=True).first()
         return instance.uuid_local
+
+    def territorios_afetados(self, instance, changes: dict) -> set:
+        """Territórios que aplicar `changes` em `instance` toca: o atual e o de
+        destino, quando a mudança troca o vínculo territorial."""
+        territorios = {self.territorio_of(instance), self.territorio_id_from_payload(changes)}
+        territorios.discard(None)
+        return territorios
 
     def base_envelope(self, instance, data: dict) -> dict:
         data["id"] = instance.pk
@@ -251,16 +274,39 @@ class UFPASyncEntity(SyncEntity):
     def territorio_of(self, instance):
         return instance.territorio_id
 
+    # As duas buscas abaixo precisam achar a UFPA mesmo fora do território de
+    # quem sincroniza: é assim que o push responde FORA_TERRITORIO/DUPLICATA
+    # em vez de tentar criar de novo e bater na constraint. Com a RLS de
+    # sgp_ufpa, isso exige a elevação de sistema — só para localizar a linha;
+    # o escopo de quem sincroniza é conferido logo depois, em
+    # `SyncProcessor._in_scope_instance`, e nada é gravado sob a elevação.
+    def get_by_uuid_local(self, uuid):
+        with acesso_de_sistema_ufpa("sca.idempotencia"):
+            return super().get_by_uuid_local(uuid)
+
+    def ensure_uuid_local(self, instance):
+        # Quem só lê (UGP, Articulador) também recebe o pull, e a RLS recusaria o
+        # UPDATE dele. A gravação é técnica: só esta coluna, numa linha que o
+        # usuário já lê.
+        with acesso_de_sistema_ufpa("sca.uuid_local"):
+            return super().ensure_uuid_local(instance)
+
+    def territorios_afetados(self, instance, changes):
+        territorios = self.territorios_de_destino(changes, instance)
+        territorios.discard(None)
+        return territorios
+
     def get_by_natural(self, data):
         titular = data.get("titular") or {}
         cpf = normalizar_cpf(titular.get("cpf"))
         if not cpf:
             return None
-        membro = (
-            MembroFamilia.objects.filter(cpf=cpf, ufpa__isnull=False)
-            .select_related("ufpa")
-            .first()
-        )
+        with acesso_de_sistema_ufpa("sca.duplicidade"):
+            membro = (
+                MembroFamilia.objects.filter(cpf=cpf, ufpa__isnull=False)
+                .select_related("ufpa")
+                .first()
+            )
         return membro.ufpa if membro else None
 
     def get_deleted_by_natural(self, data):
@@ -268,6 +314,31 @@ class UFPASyncEntity(SyncEntity):
         if ufpa is not None and not ufpa.ativo:
             return ufpa
         return None
+
+    # ------------------------------------------------------------------
+    def territorios_de_destino(self, data, instance=None) -> set:
+        """Territórios que a gravação toca: o atual da UFPA e o de destino. O
+        território salvo vem do município (signal `auto_preencher_territorio`),
+        então o do município conta mesmo que o payload informe outro."""
+        destinos = set()
+        if instance is not None:
+            destinos.add(instance.territorio_id)
+        if data.get("territorio") is not None:
+            destinos.add(int(data["territorio"]))
+        if data.get("municipio") is not None:
+            destinos.add(
+                Municipality.objects.filter(pk=data["municipio"]).values_list("territory_id", flat=True).first()
+            )
+        return destinos
+
+    def pode_escrever(self, user, data, instance=None) -> bool:
+        """Matriz do Core: só Super Admin e ADT/ACR (no próprio território)
+        gravam UFPAs — o mesmo critério de escrita da RLS de sgp_ufpa. Sem
+        isto, o push de quem só lê chegaria ao banco e seria recusado lá."""
+        return all(
+            pode_escrever_ufpa_no_territorio(user, territorio_id)
+            for territorio_id in self.territorios_de_destino(data, instance)
+        )
 
     # ------------------------------------------------------------------
     def create(self, data, *, user, device_id, uuid_local, uuid_map):
@@ -427,7 +498,14 @@ class MemberSyncEntity(SyncEntity):
         return None
 
     def territorio_of(self, instance):
-        return instance.ufpa.territorio_id if instance.ufpa_id else None
+        """Só o território da UFPA do membro. A UFPA pode estar oculta pela RLS
+        para quem sincroniza (é justamente o caso de um membro fora do escopo):
+        ler `instance.ufpa` daria DoesNotExist. A elevação devolve só o id do
+        território, para `_in_scope_instance` responder FORA_TERRITORIO."""
+        if not instance.ufpa_id:
+            return None
+        with acesso_de_sistema_ufpa("sca.escopo_membro"):
+            return UFPA.all_objects.filter(pk=instance.ufpa_id).values_list("territorio_id", flat=True).first()
 
     def get_by_natural(self, data):
         cpf = normalizar_cpf(data.get("cpf"))

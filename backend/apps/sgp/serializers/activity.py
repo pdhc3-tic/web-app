@@ -372,8 +372,16 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         data["ufpas_participantes"] = UFPAListSerializer(
             instance.ufpas_participantes.all(), many=True, context=self.context
         ).data
+        # `ufpas_participantes` passa pela RLS de sgp_ufpa: quem lê a atividade
+        # vê só as UFPAs participantes do próprio escopo. Os membros seguem o
+        # mesmo recorte (a subconsulta em UFPA também passa pela política) —
+        # sem isto, o membro de uma UFPA oculta apareceria sem a família dele.
+        # Contagens agregadas (apuração, exportação) leem a tabela de ligação
+        # e continuam contando todos os participantes.
         data["membros_participantes"] = MembroListSerializer(
-            instance.membros_participantes.all(), many=True, context=self.context
+            instance.membros_participantes.filter(ufpa__in=UFPA.all_objects.values("pk")),
+            many=True,
+            context=self.context,
         ).data
         data["fotos"] = ActivityPhotoSerializer(
             instance.fotos.all(), many=True

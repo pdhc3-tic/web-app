@@ -304,7 +304,7 @@ ADT e ACR precisam de valores diferentes. Hoje os dois são um só perfil no sis
 
 - **Rotas:** a canônica é `/api/v1/sgp/ufpas/…`, como a Arquitetura define. `/api/v1/sgp/upfs/…` e `/api/v1/upfs/…` ficam por um ciclo, com o cabeçalho `Deprecation: true`; a #392 cita só a primeira, mas a segunda é a que o front mais usa. Os três prefixos respondem todas as rotas aninhadas, inclusive as que antes existiam só em um deles. O schema descreve só a canônica, e o CORS expõe `Deprecation` e `Link` ao front.
 - **JSON e contrato do SCA:** também mudam, sem alias, e o front precisa da #407. O app do SCA ainda não consome essas rotas.
-- **RLS em `sgp_ufpa`:** não existia política em `sgp_upf` para recriar. O escopo continua em Python, e a política da Arquitetura fica para um PR próprio, porque precisa mapear tarefas, exportações e o SCA.
+- **RLS em `sgp_ufpa`:** não existia política em `sgp_upf` para recriar. A política foi entregue na #425, descrita na seção 12.
 - **Índice `(cpf)`:** o CPF fica em `MembroFamilia`, como descrito na seção 3, e o índice já existe lá.
 - **Índices automáticos do Django:** os criados por FK e `unique` (`sgp_upf_municipio_id_...`) mantêm o nome de origem, sem efeito no funcionamento. Os nomeados no modelo (`idx_ufpa_*`) foram recriados.
 - **Auditoria gravada:** o `AuditLog` é imutável, então o histórico da UFPA lê `UFPA` e `UPF`, e o filtro `entidade` de `/audit-logs/` traz o nome antigo junto: `UFPA` com `UPF`, `UFPADocument` com `UPFDocument`. As chaves dentro de registros antigos, como `upf_id`, ficam como foram gravadas.
@@ -320,6 +320,37 @@ ADT e ACR precisam de valores diferentes. Hoje os dois são um só perfil no sis
 
 ---
 
+## 12. RLS em `sgp_ufpa` — matriz do Core no banco (#425)
+
+A migration `sgp/0022_rls_ufpa` habilita a RLS e cria quatro políticas, uma por comando. Ela não toca em dados: reverter só remove as políticas e desabilita a RLS, e reaplicar as recria. O escopo em Python (`apps/sgp/services/access.py`) continua sendo o filtro das telas, e a política é a proteção extra para consultas que não o apliquem.
+
+**Matriz aplicada** (Requisitos-CORE §2.1, "SGP — UFPAs"):
+
+| Perfil | Leitura | Escrita (INSERT/UPDATE/DELETE) |
+|---|---|---|
+| Super Admin (ou `is_superuser`, o Django Admin) | todas | todas |
+| UGP | todas | — |
+| Articulador Estadual | UFPAs dos estados dos territórios do **próprio** perfil | — |
+| ADT/ACR | UFPAs dos territórios do **próprio** perfil | as mesmas |
+| FGD, Agricultor, sem perfil | — | — |
+
+- **O escopo sai de `app.current_user_id`, não de `app.user_role`:** a política consulta `core_userprofile`/`core_role` (e `core_user.is_superuser`). Assim, um usuário com vários perfis recebe a união dos escopos, e a elevação `visao_total()` do orçamento, que troca só `app.user_role`, não amplia o acesso a UFPAs. Por isso `adt-acr` também não precisou entrar na lista de papéis do `SessionContextMiddleware`.
+- **Vínculo ausente não vira acesso global:** um ADT/ACR ou Articulador sem território no próprio perfil não vê nada. Os territórios de outros perfis não contam. Sem contexto, nada é visível nem gravável. O Python seguiu a mesma regra: `resolver_escopo` devolve `vazio` para o Articulador sem vínculo (antes, `user_states` dava todos os estados) e `combinado` para quem acumula Articulador e ADT/ACR. `user_states` não mudou, porque o SGD e o orçamento o usam.
+- **Efeito fora do SGP:** `municipios_acessiveis_ao_usuario` também segue `resolver_escopo`. Por isso, o Articulador sem vínculo deixa de ver municípios ao criar uma demanda com atividade nova no SGD (`apps/sgd/views/demand.py`) e recebe 404 no município informado. As demais regras do SGD usam `user_states` e não mudaram.
+- **Escrita na API:** UGP e Articulador recebem 403 ao criar, editar, desativar ou trocar a foto de uma UFPA (`PodeEscreverUFPA`), como a matriz define. A permissão também confere o território da UFPA existente (`has_object_permission`) e o do município de destino. Quem acumula perfis (UGP ou Articulador com ADT/ACR) lê mais do que escreve, e sem essa checagem o UPDATE recusado pela RLS virava 500. O `WITH CHECK` impede, no banco, mover uma UFPA para fora do escopo.
+- **Escrita no SCA:** o escopo do sync (`territory_ids_for`, via `user_territories`) decide o que é visível. A escrita de UFPA segue a matriz em `UFPASyncEntity.pode_escrever`, que confere o território atual e o de destino (o do município conta, porque o signal preenche o território a partir dele). O item recusado volta como `SEM_PERMISSAO_ESCRITA`. Se uma recusa do banco ainda escapar, `_process_item` trata `DatabaseError` como erro do item (`ERRO_INTERNO`), e o restante do batch segue.
+- **Agricultor ("Própria"):** pendente. O modelo ainda não liga `User` a uma UFPA, então a política não tem como reconhecer a "própria" e o Agricultor fica sem acesso, como já era em Python.
+- **Elevação de sistema:** `app.ufpa_sistema = 'on'` libera a tabela, só por `apps.core.db_context.acesso_de_sistema_ufpa(motivo)`, que registra o motivo em log e restaura o valor anterior. Ela é usada em cinco pontos do SCA:
+  1. **Idempotência:** a busca por `uuid_local`.
+  2. **Duplicidade:** a busca por CPF do titular. Esta e a busca anterior precisam achar a UFPA fora do território para responder `FORA_TERRITORIO`/`DUPLICATA` em vez de bater na constraint, e nada é gravado sob a elevação.
+  3. **Território do membro:** `MemberSyncEntity.territorio_of` lê só o `territorio_id` da UFPA do membro. Sem isso, a UFPA oculta lançava `DoesNotExist` e derrubava o batch inteiro, em vez de responder `FORA_TERRITORIO` no item.
+  4. **Geração de `uuid_local` no pull:** é um UPDATE só dessa coluna, condicionado a ela estar vazia, numa linha que o usuário já lê. UGP e Articulador recebem o pull, mas a RLS recusaria a gravação deles.
+  5. **Aplicação da resolução de conflito:** o Articulador resolve conflitos, mas só lê UFPAs. Antes da elevação, `_pode_gravar_no_territorio` exige Super Admin ou que o território esteja nos estados do **próprio** perfil de Articulador. O critério vale para o território registrado no conflito e também, dentro do bloco elevado, para os territórios que a gravação toca (`territorios_afetados`): o atual da entidade, que pode ter mudado depois que o conflito nasceu, e o de destino, quando o campo resolvido troca o vínculo territorial. Se algum falhar, a resposta é 403 e o conflito segue pendente. O `IsArticuladorEstadual` usa `user_states`, em que Articulador sem território alcança todos os estados, e não pode ser a única barreira de uma gravação elevada.
+- **Erros por item no push:** além de `DatabaseError`, o `_process_item` trata `ObjectDoesNotExist`, por exemplo uma relação oculta pela RLS, como erro do item. O restante do batch segue.
+- **Tarefas e exportações:** o worker do Celery não passa pelo middleware. `executar_exportacao` gera as linhas dentro de `contexto_de_acesso(job.solicitante)`, que monta o contexto pela mesma função do middleware (`montar_contexto`) e o restaura no fim do job. Sem isso, o arquivo sairia vazio. Uma tarefa nova que leia UFPAs precisa do mesmo bloco.
+- **Push e pull do SCA:** rodam com o contexto HTTP do técnico. O pull filtra pelos territórios do usuário, e a política só corta o que já estaria fora do escopo.
+- **Participantes de atividade:** o detalhe da atividade lista só as UFPAs participantes que quem lê alcança, e os membros seguem o mesmo recorte. As contagens agregadas (apuração de indicadores, exportação) leem a tabela de ligação `sgp_activityufpa`, que não tem RLS, e contam todos os participantes. Na edição, `set()` não enxerga as UFPAs ocultas e por isso não as remove: quem não vê uma participante não a tira da atividade.
+- **Papel de runtime:** `app_user` não é superusuário, não tem `BYPASSRLS` e não é dono das tabelas, porque as migrations rodam como `postgres`. Por isso basta `ENABLE`, sem `FORCE`, como em `sgd_demand` e no orçamento. `python manage.py verificar_papel_rls`, rodado com o usuário de runtime, falha se essa premissa deixar de valer. O `deploy.sh` o executa logo depois das migrations, sem sobrescrever `DB_USER`, e um papel fora da premissa interrompe o deploy. A suíte de testes e os seeds de desenvolvimento rodam como `postgres` e ignoram a RLS: os testes de `apps/sgp/tests/test_ufpa_rls.py` trocam para um papel `NOBYPASSRLS` com `SET LOCAL ROLE`.
 ## 12. Saúde e Cor/Raça — quem lê, por decisão da coordenação
 
 A Arquitetura exige criptografia desses campos, e a matriz do Core dá leitura das UFPAs ao
