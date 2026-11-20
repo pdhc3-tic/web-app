@@ -2860,6 +2860,40 @@ export interface paths {
         patch: operations["v1_sgp_orcamento_limites_partial_update"];
         trace?: never;
     };
+    "/api/v1/sgp/orcamento/limites/periodo/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description O período de limites que contém `?data=`, pelo parâmetro `budget_limit_period`. */
+        get: operations["v1_sgp_orcamento_limites_periodo_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sgp/orcamento/limites/pessoas/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Usuários ativos com perfil que recebe limite individual (ADT/ACR e Articulador Estadual). */
+        get: operations["v1_sgp_orcamento_limites_pessoas_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sgp/orcamento/meu-saldo/": {
         parameters: {
             query?: never;
@@ -4169,6 +4203,14 @@ export interface components {
          * @enum {integer}
          */
         AguaEnum: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+        AlvoDoAlerta: {
+            /** @description "Nacional", o estado ou o território, no pool; a pessoa, no limite. */
+            nome: string | null;
+            nivel: (components["schemas"]["NivelEnum"] | components["schemas"]["NullEnum"]) | null;
+            estado: components["schemas"]["EstadoDoAlvo"] | null;
+            territorio: components["schemas"]["ReferenciaComNome"] | null;
+            usuario: components["schemas"]["ReferenciaComNome"] | null;
+        };
         /**
          * @description * `municipal` - Municipal
          *     * `microrregional` - Microrregional
@@ -4423,12 +4465,17 @@ export interface components {
             valor_faltante: string | null;
             detail: string;
         };
+        /**
+         * @description Alerta orçamentário com o alvo identificado. `alvo` é nulo quando o alvo foi apagado e nos alertas
+         *     de Meta, Submeta e Ação, que hoje não são gerados.
+         */
         BudgetAlert: {
             readonly id: number;
             readonly tipo: components["schemas"]["TipoAlertaOrcamentoEnum"];
             readonly escopo: components["schemas"]["EscopoAlertaOrcamentoEnum"];
             /** ID do alvo */
             readonly referencia_id: number;
+            readonly alvo: components["schemas"]["AlvoDoAlerta"] | null;
             readonly rubrica: number | null;
             readonly rubrica_nome: string | null;
             readonly faixa: components["schemas"]["FaixaAlertaOrcamentoEnum"];
@@ -5494,6 +5541,10 @@ export interface components {
             saldos: components["schemas"]["MeuSaldo"][];
             /** Format: date-time */
             ultimo_sync: string | null;
+        };
+        EstadoDoAlvo: {
+            sigla: string;
+            nome: string;
         };
         /**
          * @description * `pendente` - pendente
@@ -6617,6 +6668,8 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["GlosaRisk"][];
+            /** Format: decimal */
+            total_exposto: string;
         };
         PaginatedHistoricoEntryList: {
             /** @example 123 */
@@ -7465,13 +7518,6 @@ export interface components {
             /** Format: uri */
             foto_url?: string;
             password?: string | null;
-            /** @description Se True, o app SCA apaga os dados locais e exige novo login (wipe remoto). */
-            acesso_revogado?: boolean;
-            /**
-             * Revogado em
-             * Format: date-time
-             */
-            acesso_revogado_em?: string | null;
         };
         PatchedWorkPlanAcaoRequest: {
             submeta?: number;
@@ -7555,6 +7601,11 @@ export interface components {
              */
             responsavel?: number | null;
         };
+        PerfilComLimite: {
+            /** @description adt-acr ou articulador-estadual. */
+            slug: string;
+            nome: string;
+        };
         PerfilDoUsuario: {
             id: number;
             slug: string;
@@ -7576,6 +7627,26 @@ export interface components {
             objeto_tipo?: (components["schemas"]["TipoDoObjetoDoPerfilEnum"] | components["schemas"]["NullEnum"]) | null;
             /** Format: int64 */
             objeto_id?: number | null;
+        };
+        /**
+         * @description * `mensal` - mensal
+         *     * `trimestral` - trimestral
+         *     * `semestral` - semestral
+         *     * `vigencia` - vigencia
+         * @enum {string}
+         */
+        PeriodicidadeEnum: "mensal" | "trimestral" | "semestral" | "vigencia";
+        PeriodoDosLimites: {
+            /** Format: date */
+            inicio: string;
+            /** Format: date */
+            fim: string;
+            periodicidade: components["schemas"]["PeriodicidadeEnum"];
+        };
+        PessoaComLimite: {
+            id: number;
+            nome: string;
+            perfis: components["schemas"]["PerfilComLimite"][];
         };
         /** @description Forma do dict de `plano_trabalho_da_acao`. */
         PlanoTrabalho: {
@@ -7838,10 +7909,15 @@ export interface components {
         RecusarRequest: {
             justificativa: string;
         };
+        ReferenciaComNome: {
+            id: number;
+            nome: string;
+        };
         RefreshRequest: {
             refresh_token: string;
         };
         RegistroAtualDoConflito: components["schemas"]["UFPADetailResposta"] | components["schemas"]["MembroDetail"] | components["schemas"]["ActivityDetailResposta"];
+        /** @description O remanejamento confirmado, com a justificativa que fica no ledger. */
         RemanejamentoCreateRequest: {
             origem_allocation: number;
             destino_allocation: number;
@@ -7849,12 +7925,25 @@ export interface components {
             valor: string;
             justificativa: string;
         };
+        /** @description A simulação não grava nada: dispensa a justificativa, que só a confirmação pede. */
+        RemanejamentoSimulacaoRequest: {
+            origem_allocation: number;
+            destino_allocation: number;
+            /** Format: decimal */
+            valor: string;
+        };
+        ReordenarArloRequest: {
+            direcao: components["schemas"]["DirecaoEnum"];
+            ids: number[];
+        };
         Role: {
             readonly id: number;
             nome: string;
             slug: components["schemas"]["SlugEnum"];
             descricao?: string;
             readonly categoria: components["schemas"]["CategoriaDoPerfilEnum"];
+            /** @description O tipo de objeto que o perfil operacional exige na designação; nulo no perfil principal. */
+            readonly objeto_tipo: (components["schemas"]["TipoDoObjetoDoPerfilEnum"] | components["schemas"]["NullEnum"]) | null;
             ativo?: boolean;
             /** Format: date-time */
             readonly criado_em: string;
@@ -7866,10 +7955,10 @@ export interface components {
             slug: components["schemas"]["SlugEnum"];
             descricao?: string;
             readonly categoria: components["schemas"]["CategoriaDoPerfilEnum"];
+            readonly objeto_tipo: (components["schemas"]["TipoDoObjetoDoPerfilEnum"] | components["schemas"]["NullEnum"]) | null;
             ativo?: boolean;
             /** Format: date-time */
             readonly criado_em: string;
-            readonly objeto_tipo: (components["schemas"]["TipoDoObjetoDoPerfilEnum"] | components["schemas"]["NullEnum"]) | null;
             readonly objeto_id: number | null;
         };
         RoleRequest: {
@@ -9064,12 +9153,12 @@ export interface components {
             /** Format: uri */
             foto_url?: string;
             /** @description Se True, o app SCA apaga os dados locais e exige novo login (wipe remoto). */
-            acesso_revogado?: boolean;
+            readonly acesso_revogado: boolean;
             /**
              * Revogado em
              * Format: date-time
              */
-            acesso_revogado_em?: string | null;
+            readonly acesso_revogado_em: string | null;
             readonly acesso_revogado_por: components["schemas"]["UsuarioRefComEmail"] | null;
             readonly qtd_dispositivos: number | null;
             /** Format: date-time */
@@ -9086,13 +9175,6 @@ export interface components {
             /** Format: uri */
             foto_url?: string;
             password?: string | null;
-            /** @description Se True, o app SCA apaga os dados locais e exige novo login (wipe remoto). */
-            acesso_revogado?: boolean;
-            /**
-             * Revogado em
-             * Format: date-time
-             */
-            acesso_revogado_em?: string | null;
         };
         UserList: {
             readonly id: number;
@@ -11992,9 +12074,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ArloFieldMappingRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["ArloFieldMappingRequest"];
-                "multipart/form-data": components["schemas"]["ArloFieldMappingRequest"];
+                "application/json": components["schemas"]["ReordenarArloRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ReordenarArloRequest"];
+                "multipart/form-data": components["schemas"]["ReordenarArloRequest"];
             };
         };
         responses: {
@@ -12003,7 +12085,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArloFieldMapping"];
+                    "application/json": components["schemas"]["ArloFieldMapping"][];
                 };
             };
         };
@@ -14752,6 +14834,8 @@ export interface operations {
     v1_sgp_glosa_riscos_list: {
         parameters: {
             query?: {
+                /** @description true: só os ainda não resolvidos; false: só os resolvidos. Sem ele, todos. */
+                aberto?: boolean | null;
                 activity?: number;
                 demanda?: number;
                 /** @description Número de resultados a serem retornados por página. */
@@ -15229,6 +15313,50 @@ export interface operations {
             };
         };
     };
+    v1_sgp_orcamento_limites_periodo_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Data dentro do período. Sem ela, hoje. */
+                data?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeriodoDosLimites"];
+                };
+            };
+        };
+    };
+    v1_sgp_orcamento_limites_pessoas_list: {
+        parameters: {
+            query?: {
+                /** @description Parte do nome. */
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PessoaComLimite"][];
+                };
+            };
+        };
+    };
     v1_sgp_orcamento_meu_saldo_list: {
         parameters: {
             query?: never;
@@ -15428,9 +15556,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RemanejamentoCreateRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["RemanejamentoCreateRequest"];
-                "multipart/form-data": components["schemas"]["RemanejamentoCreateRequest"];
+                "application/json": components["schemas"]["RemanejamentoSimulacaoRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["RemanejamentoSimulacaoRequest"];
+                "multipart/form-data": components["schemas"]["RemanejamentoSimulacaoRequest"];
             };
         };
         responses: {
@@ -17305,6 +17433,13 @@ export interface operations {
         parameters: {
             query?: {
                 ativo?: boolean;
+                /**
+                 * @description Quem tem ao menos um perfil da categoria.
+                 *
+                 *     * `principal` - Principal
+                 *     * `operacional` - Operacional
+                 */
+                categoria?: "operacional" | "principal";
                 com_dispositivo?: boolean;
                 /** @description Número de resultados a serem retornados por página. */
                 limit?: number;
@@ -17401,6 +17536,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description A própria conta ou o último Super Admin ativo, em `ativo`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     v1_users_partial_update: {
@@ -17428,6 +17570,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["UserDetail"];
                 };
+            };
+            /** @description Campos inválidos. Com `ativo: false`, a própria conta ou o último Super Admin ativo, em `ativo`. Sem o perfil Super Admin em `perfis_input`, o último Super Admin ativo, em `perfis_input`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -17472,6 +17621,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["UserAcessoResposta"];
                 };
+            };
+            /** @description A própria conta ou o último Super Admin ativo, em `acesso_revogado`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
