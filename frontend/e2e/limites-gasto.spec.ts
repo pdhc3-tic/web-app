@@ -123,12 +123,39 @@ test.describe("UGP", () => {
     await expect(linha.getByTestId("limite-precedencia")).toHaveText("Herdado do perfil");
   });
 
+  test("a busca de pessoas traz ADT/ACR e Articulador Estadual, com o perfil ao lado do nome", async ({ page }) => {
+    await abrir(page);
+    await page.getByRole("tab", { name: /Sobrescritas individuais/ }).click();
+    await page.getByTestId("limites-nova-sobrescrita").click();
+
+    // `limites/pessoas/` (#423, item 2): antes a lista era a de solicitantes do
+    // SGD, só com ADT/ACR, e sem o perfil.
+    const pessoas = page.waitForResponse((r) => r.url().includes("/orcamento/limites/pessoas/"));
+    await page.getByTestId("limite-usuario").click();
+    expect((await pessoas).status()).toBe(200);
+    await expect(page.getByRole("option", { name: /ADT \/ ACR/ }).first()).toBeVisible();
+    await expect(page.getByRole("option", { name: /Articulador Estadual/ }).first()).toBeVisible();
+
+    // A busca vai ao servidor pelo nome.
+    const busca = page.waitForResponse((r) => r.url().includes(`/orcamento/limites/pessoas/?q=`));
+    await page.getByTestId("limite-usuario").fill(fx.marina.nome.split(" ")[0]);
+    await busca;
+    await expect(page.getByRole("option", { name: fx.marina.nome })).toBeVisible();
+  });
+
   test("cria uma sobrescrita: sem justificativa não envia; com ela, aparece como sobrescrita", async ({ page }) => {
     await abrir(page);
     await page.getByRole("tab", { name: /Sobrescritas individuais/ }).click();
     await page.getByTestId("limites-nova-sobrescrita").click();
 
+    // O clique espera o painel assentar: o SlideOver move o foco ao abrir, e um
+    // `fill` antes disso perde o foco e fecha a lista sem buscar. A busca vai ao
+    // servidor depois do debounce; clicar na opção antes da resposta pega a da
+    // lista inteira no instante em que ela é trocada pela filtrada.
+    await page.getByTestId("limite-usuario").click();
+    const busca = page.waitForResponse((r) => r.url().includes("/orcamento/limites/pessoas/?q="));
     await page.getByTestId("limite-usuario").fill(fx.marina.nome.split(" ")[0]);
+    await busca;
     await page.getByRole("option", { name: fx.marina.nome }).click();
     await escolher(page, "limite-rubrica", "Diárias");
     await page.getByTestId("limite-valor").fill("80000");

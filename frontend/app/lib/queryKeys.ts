@@ -40,8 +40,10 @@ export const qk = {
   limites: {
     todos: ["sgp", "orcamento", "limites"] as const,
     lista: (escopo: string, data: string) => ["sgp", "orcamento", "limites", escopo, data] as const,
-    periodicidade: ["core", "system-config", "budget_limit_period"] as const,
+    /** `null` = o vigente, pelo dia do servidor. */
+    periodo: (data: string | null) => ["sgp", "orcamento", "limites", "periodo", data ?? "vigente"] as const,
     perfisOperacionais: ["core", "roles", "operacionais"] as const,
+    pessoas: (q: string) => ["sgp", "orcamento", "limites", "pessoas", q.trim()] as const,
   },
   /** "Meu saldo" (#401): os cards por rubrica e o extrato de cada uma. */
   meuSaldo: {

@@ -53,6 +53,10 @@ function LinhaParametro({ def, config }: { def: DefinicaoParametro; config: Conf
     onSuccess: async () => {
       setErroDoServidor(null);
       await queryClient.invalidateQueries({ queryKey: qk.systemConfig });
+      // A tela de limites lê o período do backend, que depende deste parâmetro.
+      if (def.chave === "budget_limit_period") {
+        await queryClient.invalidateQueries({ queryKey: qk.limites.todos });
+      }
       showToast(`"${def.rotulo}" atualizado.`, "success");
     },
     onError: (e) => {

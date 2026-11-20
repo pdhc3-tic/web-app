@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import Spinner from "@/app/components/icons/Spinner";
 import { TabErroSection } from "@/app/components/sgp/CrudTab/CrudTab";
@@ -19,10 +19,9 @@ import { formatDate } from "@/app/lib/datetime";
 import {
   dataVizinha,
   fetchPerfisOperacionais,
-  fetchPeriodicidade,
+  fetchPeriodo,
   hojeIso,
   listLimites,
-  periodoDe,
   type LimiteGasto,
 } from "@/app/lib/limites";
 import { qk } from "@/app/lib/queryKeys";
@@ -63,11 +62,20 @@ export default function LimitesPage() {
   const [data, setData] = useState(hoje);
   const [edicao, setEdicao] = useState<Edicao | null>(null);
 
-  const periodicidade = useQuery({
-    queryKey: qk.limites.periodicidade,
-    queryFn: ({ signal }) => fetchPeriodicidade(signal),
+  // O período vem do backend (#423, item 1): o vigente pelo dia do servidor e
+  // o exibido pela data navegada. A tela não recalcula a regra de periodo_de.
+  const vigenteQ = useQuery({
+    queryKey: qk.limites.periodo(null),
+    queryFn: ({ signal }) => fetchPeriodo(null, signal),
     enabled: pode,
     staleTime: 5 * 60_000,
+  });
+  const periodoQ = useQuery({
+    queryKey: qk.limites.periodo(data),
+    queryFn: ({ signal }) => fetchPeriodo(data, signal),
+    enabled: pode,
+    staleTime: 5 * 60_000,
+    placeholderData: keepPreviousData,
   });
   const perfis = useQuery({
     queryKey: qk.limites.perfisOperacionais,
@@ -92,12 +100,11 @@ export default function LimitesPage() {
     enabled: pode,
   });
 
-  const per = periodicidade.data ?? "trimestral";
-  const periodo = useMemo(() => periodoDe(data, per), [data, per]);
-  const vigente = useMemo(() => periodoDe(hoje, per), [hoje, per]);
-  const ehVigente = periodo.inicio === vigente.inicio;
+  const periodo = periodoQ.data;
+  const vigente = vigenteQ.data;
+  const ehVigente = !!periodo && !!vigente && periodo.inicio === vigente.inicio;
   // Um período adiante basta para ver o padrão agendado para o seguinte.
-  const podeAvancar = periodo.inicio <= vigente.inicio;
+  const podeAvancar = !!periodo && !!vigente && periodo.inicio <= vigente.inicio && !periodoQ.isPlaceholderData;
 
   const rubricasAtivas = useMemo(() => (rubricas.data ?? []).filter((r) => r.ativo), [rubricas.data]);
   const linhasIndividuais = useMemo(
@@ -118,7 +125,7 @@ export default function LimitesPage() {
     void queryClient.invalidateQueries({ queryKey: ["sgd", "execucao", "painel"] });
     void queryClient.invalidateQueries({ queryKey: ["sgd", "saldo"] });
     // O padrão já em uso não muda no período: o backend agenda o valor novo.
-    if (limite.periodo_inicio > vigente.fim) {
+    if (vigente && limite.periodo_inicio > vigente.fim) {
       showToast(
         `Padrão alterado. Como já está em uso neste período, o valor novo vale a partir de ${formatDate(limite.periodo_inicio)}.`,
         "success",
@@ -152,8 +159,8 @@ export default function LimitesPage() {
     );
   }
 
-  const carregandoBase = periodicidade.isPending || perfis.isPending || rubricas.isPending;
-  const erroBase = periodicidade.error ?? perfis.error ?? rubricas.error;
+  const carregandoBase = vigenteQ.isPending || periodoQ.isPending || perfis.isPending || rubricas.isPending;
+  const erroBase = vigenteQ.error ?? periodoQ.error ?? perfis.error ?? rubricas.error;
 
   return (
     <div data-testid="limites-page">
@@ -181,22 +188,23 @@ export default function LimitesPage() {
           <TabErroSection
             message={mensagemDe(erroBase)}
             onRetry={() => {
-              void periodicidade.refetch();
+              void vigenteQ.refetch();
+              void periodoQ.refetch();
               void perfis.refetch();
               void rubricas.refetch();
             }}
           />
-        ) : (
+        ) : !periodo || !vigente ? null : (
           <>
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface p-4">
               <PeriodoNavegador
                 periodo={periodo}
                 vigente={ehVigente}
-                navegavel={per !== "vigencia"}
+                navegavel={periodo.periodicidade !== "vigencia"}
                 podeAvancar={podeAvancar}
                 onAnterior={() => setData(dataVizinha(periodo, -1))}
                 onSeguinte={() => setData(dataVizinha(periodo, 1))}
-                onVoltarAoVigente={() => setData(hoje)}
+                onVoltarAoVigente={() => setData(vigente.inicio)}
               />
               {aba === "sobrescritas" && ehVigente && (
                 <Button
