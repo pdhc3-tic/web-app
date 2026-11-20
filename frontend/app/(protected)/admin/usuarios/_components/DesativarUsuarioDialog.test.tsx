@@ -116,6 +116,26 @@ describe("DesativarUsuarioDialog (#406)", () => {
     expect(onDesativado).not.toHaveBeenCalled();
   });
 
+  it("a recusa do último Super Admin aparece com a mensagem do backend (#423, item 10)", async () => {
+    // O corpo do DRF é `{ativo: [msg]}`; o apiClient o entrega assim.
+    const msg = "Este é o último Super Admin ativo: ative ou cadastre outro antes.";
+    api.impacto.mockResolvedValue(IMPACTO);
+    api.desativar.mockRejectedValue(
+      new ApiError(400, { code: "validation_error", message: msg, field_errors: [{ field: "ativo", message: msg }] }, {
+        ativo: [msg],
+      }),
+    );
+    const { onDesativado, onClose } = montar();
+
+    await screen.findByTestId("desativar-impacto");
+    fireEvent.click(screen.getByTestId("desativar-ciente"));
+    fireEvent.click(confirmar());
+
+    expect((await screen.findByTestId("desativar-erro")).textContent).toBe(msg);
+    expect(onDesativado).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("se as demandas mudaram no meio do caminho, recalcula o impacto e pede a confirmação de novo", async () => {
     // A 41 foi autorizada depois da leitura: o backend desfaz a desativação.
     const depois: ImpactoDesativacao = {

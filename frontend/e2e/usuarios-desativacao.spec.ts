@@ -7,6 +7,7 @@ import {
   removerDesativacaoFixture,
   type DesativacaoFixture,
 } from "./helpers/desativacaoFixture";
+import { abrirComApi } from "./helpers/apiReal";
 import { storageStatePath } from "./helpers/users";
 
 /**
@@ -113,4 +114,30 @@ test("sem demanda a cancelar, o diálogo diz isso; cancelar fecha sem desativar 
   await expect(page.getByText(NOME_406)).toBeVisible();
   expect(desativou).toBe(false);
   expect(lerEstadoDepois().ativo).toBe(true);
+});
+
+/**
+ * #423, item 10: a tela não oferece Desativar na linha de quem está logado, e
+ * o backend agora também recusa, com 400 em `ativo`. O DELETE abaixo é
+ * recusado, então nada muda.
+ */
+test("a própria conta não tem Desativar, e o backend recusa a desativação dela", async ({ page }) => {
+  const origem = await abrirComApi(page, "/admin/usuarios");
+  const sessao = await (await page.request.get("/api/auth/session")).json();
+  const meuId = Number(sessao.user.id);
+
+  await page.getByLabel("Buscar").fill(sessao.user.email);
+  await expect(page.getByTestId(`usuario-linha-${meuId}`)).toBeVisible();
+  await expect(page.getByTestId(`usuario-desativar-${meuId}`)).toHaveCount(0);
+
+  const recusa = await page.evaluate(
+    async ({ url }) => {
+      const s = await (await fetch("/api/auth/session")).json();
+      const res = await fetch(url, { method: "DELETE", headers: { Authorization: `Bearer ${s.accessToken}` } });
+      return { status: res.status, corpo: await res.json() };
+    },
+    { url: `${origem}/api/v1/users/${meuId}/` },
+  );
+  expect(recusa.status).toBe(400);
+  expect(recusa.corpo).toEqual({ ativo: ["Você não pode desativar a própria conta."] });
 });
