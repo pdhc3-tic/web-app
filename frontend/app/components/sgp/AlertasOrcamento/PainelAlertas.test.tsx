@@ -22,6 +22,13 @@ function alerta(id: number, parcial: Partial<AlertaOrcamento>): AlertaOrcamento 
     tipo: "semaforo",
     escopo: "pool",
     referencia_id: 100 + id,
+    alvo: {
+      nome: "Cariri Paraibano",
+      nivel: "territorial",
+      estado: { sigla: "PB", nome: "Paraíba" },
+      territorio: { id: 2, nome: "Cariri Paraibano" },
+      usuario: null,
+    },
     rubrica: 1,
     rubrica_nome: "Diárias",
     faixa: "vermelho",
@@ -62,8 +69,9 @@ describe("PainelAlertas (#403)", () => {
     renderPainel();
 
     const vermelho = await screen.findByTestId("alerta-orcamento-1");
-    expect(vermelho).toHaveTextContent("Pool · Diárias");
-    expect(vermelho).toHaveTextContent("Semáforo · desde 10/11/2026");
+    // O alvo pelo nome que o backend devolve (#423, item 5).
+    expect(vermelho).toHaveTextContent("Cariri Paraibano · Diárias");
+    expect(vermelho).toHaveTextContent("Pool territorial · Semáforo · desde 10/11/2026");
     expect(vermelho).toHaveTextContent("96,5%");
     expect(vermelho).toHaveTextContent("Vermelho");
 

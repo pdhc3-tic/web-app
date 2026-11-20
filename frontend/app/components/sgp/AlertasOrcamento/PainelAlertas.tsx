@@ -12,6 +12,7 @@ import {
   FAIXA_ALERTA_LABEL,
   TIPO_ALERTA_LABEL,
   alvoDoAlerta,
+  escopoDoAlerta,
   fetchAlertas,
   nivelDoAlerta,
   type FaixaAlerta,
@@ -148,7 +149,8 @@ export function PainelAlertas({ titulo = "Alertas orçamentários" }: { titulo?:
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <span className="truncate text-sm font-medium text-text">{alvoDoAlerta(a)}</span>
                   <span className="text-xs text-text-muted">
-                    {TIPO_ALERTA_LABEL[a.tipo] ?? a.tipo} · desde {formatDate(a.alertado_em)}
+                    {escopoDoAlerta(a)} · {TIPO_ALERTA_LABEL[a.tipo] ?? a.tipo} · desde{" "}
+                    {formatDate(a.alertado_em)}
                   </span>
                 </div>
                 <span className="flex shrink-0 items-center gap-2">

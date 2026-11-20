@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { alvoDoAlerta, fetchAlertas, nivelDoAlerta } from "@/app/lib/alertasOrcamento";
+import { alvoDoAlerta, escopoDoAlerta, fetchAlertas, nivelDoAlerta } from "@/app/lib/alertasOrcamento";
 
 /** #403: cliente e leitura dos alertas orçamentários. */
 
@@ -47,9 +47,49 @@ describe("nivelDoAlerta", () => {
   });
 });
 
-describe("alvoDoAlerta", () => {
-  it("usa a rubrica quando há, e o id do alvo quando não há", () => {
-    expect(alvoDoAlerta({ escopo: "pool", referencia_id: 7, rubrica_nome: "Diárias" })).toBe("Pool · Diárias");
-    expect(alvoDoAlerta({ escopo: "meta", referencia_id: 3, rubrica_nome: null })).toBe("Meta #3");
+const alvo = (parcial: Partial<NonNullable<Parameters<typeof alvoDoAlerta>[0]["alvo"]>>) => ({
+  nome: null,
+  nivel: null,
+  estado: null,
+  territorio: null,
+  usuario: null,
+  ...parcial,
+});
+
+describe("alvoDoAlerta (#423, item 5)", () => {
+  it("usa o nome que o backend devolve, com a rubrica", () => {
+    expect(
+      alvoDoAlerta({
+        escopo: "pool",
+        referencia_id: 7,
+        rubrica_nome: "Diárias",
+        alvo: alvo({ nome: "Cariri Paraibano", nivel: "territorial", territorio: { id: 2, nome: "Cariri Paraibano" } }),
+      }),
+    ).toBe("Cariri Paraibano · Diárias");
+    expect(
+      alvoDoAlerta({
+        escopo: "limite",
+        referencia_id: 9,
+        rubrica_nome: "Diárias",
+        alvo: alvo({ nome: "Ana Souza", usuario: { id: 4, nome: "Ana Souza" } }),
+      }),
+    ).toBe("Ana Souza · Diárias");
+  });
+
+  it("sem nome, cai no escopo com a rubrica ou o id", () => {
+    expect(alvoDoAlerta({ escopo: "pool", referencia_id: 7, rubrica_nome: "Diárias", alvo: null })).toBe(
+      "Pool · Diárias",
+    );
+    expect(alvoDoAlerta({ escopo: "meta", referencia_id: 3, rubrica_nome: null, alvo: null })).toBe("Meta #3");
+  });
+});
+
+describe("escopoDoAlerta", () => {
+  it("dá o nível do pool e o nome do escopo nos demais", () => {
+    expect(escopoDoAlerta({ escopo: "pool", alvo: alvo({ nome: "Nacional", nivel: "nacional" }) })).toBe(
+      "Pool nacional",
+    );
+    expect(escopoDoAlerta({ escopo: "pool", alvo: null })).toBe("Pool");
+    expect(escopoDoAlerta({ escopo: "limite", alvo: alvo({ nome: "Ana Souza" }) })).toBe("Limite de gasto");
   });
 });

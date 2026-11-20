@@ -36,7 +36,11 @@ test.describe("UGP — painel de alertas", () => {
     await expect(painel(page)).toBeVisible();
 
     const vermelho = alerta(page, fx.vermelho.id);
-    await expect(vermelho).toContainText(fx.vermelho.rubrica);
+    // O alvo pelo nome (#423, item 5): o território do pool, e não "Pool · Diárias".
+    await expect(vermelho).toContainText(`${fx.vermelho.alvo} · ${fx.vermelho.rubrica}`);
+    await expect(vermelho).toContainText("Pool territorial");
+    await expect(alerta(page, fx.subexecucao.id)).toContainText(`Nacional · ${fx.subexecucao.rubrica}`);
+    await expect(alerta(page, fx.subexecucao.id)).toContainText("Pool nacional");
     await expect(vermelho).toContainText("Semáforo");
     await expect(vermelho).toContainText("Vermelho");
     await expect(vermelho).toContainText("96,5%");
