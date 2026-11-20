@@ -1,7 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Perfil } from "@/app/lib/auth/types";
-import { montarPerfisInput, opcoesDePerfil, validarNovoUsuario, type NovoUsuario } from "@/app/lib/users";
+import {
+  montarPerfisInput,
+  opcoesDePerfil,
+  validarNovoUsuario,
+  type NovoUsuario,
+  type PerfilDoCatalogo,
+} from "@/app/lib/users";
 import { NovoUsuarioForm } from "./NovoUsuarioForm";
 
 /** #405 — perfis principais (com território) e operacionais (com objeto) no cadastro de usuário. */
@@ -38,21 +43,28 @@ vi.mock("@/app/components/ui/Select/Select", () => ({
   ),
 }));
 
-const perfil = (id: number, slug: string, nome: string, categoria: Perfil["categoria"]): Perfil => ({
+const perfil = (
+  id: number,
+  slug: string,
+  nome: string,
+  categoria: PerfilDoCatalogo["categoria"],
+  objeto_tipo: PerfilDoCatalogo["objeto_tipo"] = null,
+): PerfilDoCatalogo => ({
   id,
   slug,
   nome,
   categoria,
+  objeto_tipo,
   descricao: "",
   ativo: true,
   criado_em: "2026-01-01T00:00:00Z",
 });
 
-const PERFIS: Perfil[] = [
+const PERFIS: PerfilDoCatalogo[] = [
   perfil(1, "adt-acr", "ADT / ACR", "principal"),
   perfil(2, "ugp", "UGP", "principal"),
-  perfil(10, "coordenador-evento", "Coordenador de Evento", "operacional"),
-  perfil(11, "gestor-edital", "Gestor de Edital", "operacional"),
+  perfil(10, "coordenador-evento", "Coordenador de Evento", "operacional", "evento"),
+  perfil(11, "gestor-edital", "Gestor de Edital", "operacional", "edital"),
 ];
 
 const TERRITORIOS = [{ value: "5", label: "Território RN" }];
@@ -157,6 +169,22 @@ describe("perfis no cadastro — regras", () => {
     principais: [{ perfil: "1", territorio: "" }],
     operacionais: [],
   };
+
+  it("o tipo do objeto vem de /roles/ (#423, item 8), não do slug", () => {
+    // Um perfil operacional que a tela não conhecia: o tipo é o que o backend declara.
+    const novo = perfil(12, "parecerista", "Parecerista", "operacional", "candidatura");
+    const form = { ...base, operacionais: [{ perfil: "12", objetoId: "7" }] };
+    expect(validarNovoUsuario(form, [...PERFIS, novo])).toEqual({});
+    expect(montarPerfisInput(form, [...PERFIS, novo])[1]).toEqual({
+      perfil_id: 12,
+      territorio_id: null,
+      objeto_tipo: "candidatura",
+      objeto_id: 7,
+    });
+    expect(validarNovoUsuario({ ...form, operacionais: [{ perfil: "12", objetoId: "" }] }, [...PERFIS, novo]).operacionais).toEqual({
+      0: "Informe o número da candidatura.",
+    });
+  });
 
   it("válido com um principal sem território (todos os territórios)", () => {
     expect(validarNovoUsuario(base, PERFIS)).toEqual({});

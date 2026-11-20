@@ -20,10 +20,10 @@ import {
   fetchTerritoryOptions,
   opcoesDePerfil,
   type CategoriaPerfil,
+  type PerfilDoCatalogo,
   type StatusFilter,
   type UserListItem,
 } from "@/app/lib/users";
-import type { Perfil } from "@/app/lib/auth/types";
 import { useToast } from "@/app/components/ui/Toast/Toast";
 import { ApiError } from "@/app/lib/api";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
@@ -109,7 +109,7 @@ function UsuariosView() {
 
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const [roles, setRoles] = useState<Perfil[]>([]);
+  const [roles, setRoles] = useState<PerfilDoCatalogo[]>([]);
   // O filtro Perfil mostra só os perfis da categoria escolhida (#405).
   const roleOptions = useMemo(() => opcoesDePerfil(roles, filters.categoria), [roles, filters.categoria]);
   const [territoryOptions, setTerritoryOptions] = useState<SelectOption[]>([]);

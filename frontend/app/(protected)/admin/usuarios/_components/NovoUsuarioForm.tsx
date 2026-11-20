@@ -6,22 +6,22 @@ import { Button } from "@/app/components/ui/Button/Button";
 import { Input } from "@/app/components/ui/Input/Input";
 import { Select, type SelectOption } from "@/app/components/ui/Select/Select";
 import { ApiError } from "@/app/lib/api";
-import type { Perfil } from "@/app/lib/auth/types";
 import {
-  OBJETO_DO_PERFIL,
   OBJETO_TIPO_LABEL,
   criarUsuario,
+  objetoDoPerfil,
   opcoesDePerfil,
   validarNovoUsuario,
   type ErrosNovoUsuario,
   type LinhaOperacional,
   type LinhaPrincipal,
   type NovoUsuario,
+  type PerfilDoCatalogo,
   type UserListItem,
 } from "@/app/lib/users";
 
 type Props = {
-  perfis: Perfil[];
+  perfis: PerfilDoCatalogo[];
   territoryOptions: SelectOption[];
   onCriado: (usuario: UserListItem) => void;
   onCancelar: () => void;
@@ -210,7 +210,7 @@ export function NovoUsuarioForm({ perfis, territoryOptions, onCriado, onCancelar
         </p>
         {form.operacionais.map((linha, i) => {
           const perfil = perfis.find((p) => String(p.id) === linha.perfil);
-          const tipo = perfil ? OBJETO_DO_PERFIL[perfil.slug] : undefined;
+          const tipo = objetoDoPerfil(perfil);
           const erro = erros.operacionais?.[i];
           return (
             <div key={i} className="flex flex-col gap-2 rounded-md border border-border p-3" data-testid={`perfil-operacional-${i}`}>
