@@ -168,8 +168,9 @@ export const qk = {
       ["sgd", "arlo-mapping", "preview", direcao] as const,
   },
   /** Alertas orçamentários abertos, por filtro (#403). */
-  alertasOrcamento: (filtros: { tipo: string; faixa: string }, limite: number) =>
-    ["sgp", "orcamento", "alertas", filtros, limite] as const,
+  /** Páginas dos alertas abertos com estes filtros; trocar o filtro recomeça do início. */
+  alertasOrcamento: (filtros: { tipo: string; faixa: string }) =>
+    ["sgp", "orcamento", "alertas", filtros] as const,
   /** Parâmetros globais em `SystemConfig` (#403). */
   systemConfig: ["core", "system-config"] as const,
   /** Configuração da tabela de diárias do SGD (#366). */

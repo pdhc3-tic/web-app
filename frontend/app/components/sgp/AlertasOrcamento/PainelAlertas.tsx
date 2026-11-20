@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 import { BellRing } from "lucide-react";
 import Spinner from "@/app/components/icons/Spinner";
 import { Button } from "@/app/components/ui/Button/Button";
@@ -15,6 +15,7 @@ import {
   escopoDoAlerta,
   fetchAlertas,
   nivelDoAlerta,
+  type AlertaOrcamento,
   type FaixaAlerta,
   type FiltrosDeAlerta,
   type TipoAlerta,
@@ -37,25 +38,48 @@ const SELECT =
  */
 export function PainelAlertas({ titulo = "Alertas orçamentários" }: { titulo?: string }) {
   const [filtros, setFiltros] = useState<FiltrosDeAlerta>({ tipo: "", faixa: "" });
-  const [limite, setLimite] = useState(ALERTAS_POR_PAGINA);
 
-  const alertas = useQuery({
-    queryKey: qk.alertasOrcamento(filtros, limite),
-    queryFn: ({ signal }) => fetchAlertas({ ...filtros, limit: limite }, signal),
+  // Ver mais pede a página seguinte por `offset`: só aumentar o `limit` parava
+  // no teto da API (`OrcamentoPagination.max_limit = 100`), e o 101º alerta
+  // nunca aparecia (revisão do PR #433). Trocar o filtro troca a chave e
+  // recomeça do início.
+  const alertas = useInfiniteQuery({
+    queryKey: qk.alertasOrcamento(filtros),
+    queryFn: ({ pageParam, signal }) =>
+      fetchAlertas({ ...filtros, offset: pageParam, limit: ALERTAS_POR_PAGINA }, signal),
+    initialPageParam: 0,
+    getNextPageParam: (ultima, paginas) => {
+      const lidos = paginas.reduce((n, p) => n + p.results.length, 0);
+      // Página vazia encerra mesmo que a contagem diga outra coisa: evita pedir sem fim.
+      return ultima.results.length > 0 && lidos < ultima.count ? lidos : undefined;
+    },
     placeholderData: keepPreviousData,
     staleTime: 30_000,
     retry: (tentativas, erro) => !(erro instanceof ApiError && erro.status === 403) && tentativas < 2,
   });
 
+  // As páginas acumuladas, sem repetir: um alerta novo no meio desloca os
+  // seguintes, e o mesmo registro pode vir em duas páginas.
+  const itens = useMemo(() => {
+    const vistos = new Set<number>();
+    const lista: AlertaOrcamento[] = [];
+    for (const pagina of alertas.data?.pages ?? []) {
+      for (const a of pagina.results) {
+        if (vistos.has(a.id)) continue;
+        vistos.add(a.id);
+        lista.push(a);
+      }
+    }
+    return lista;
+  }, [alertas.data]);
+
   if (alertas.error instanceof ApiError && alertas.error.status === 403) return null;
 
   function filtrar(patch: Partial<FiltrosDeAlerta>) {
     setFiltros((atual) => ({ ...atual, ...patch }));
-    setLimite(ALERTAS_POR_PAGINA);
   }
 
-  const itens = alertas.data?.results ?? [];
-  const total = alertas.data?.count ?? 0;
+  const total = alertas.data?.pages.at(-1)?.count ?? 0;
   const filtrando = filtros.tipo !== "" || filtros.faixa !== "";
 
   return (
@@ -165,15 +189,16 @@ export function PainelAlertas({ titulo = "Alertas orçamentários" }: { titulo?:
               </li>
             ))}
           </ul>
-          {total > itens.length && (
+          {alertas.hasNextPage && (
             <div className="border-t border-border px-4 py-2.5 text-center">
               <button
                 type="button"
-                onClick={() => setLimite((n) => n + ALERTAS_POR_PAGINA)}
-                className="text-sm text-primary hover:underline"
+                onClick={() => void alertas.fetchNextPage()}
+                disabled={alertas.isFetchingNextPage}
+                className="text-sm text-primary hover:underline disabled:cursor-wait disabled:opacity-60"
                 data-testid="alertas-orcamento-mais"
               >
-                Ver mais ({itens.length} de {total})
+                {alertas.isFetchingNextPage ? "Carregando…" : `Ver mais (${itens.length} de ${total})`}
               </button>
             </div>
           )}
