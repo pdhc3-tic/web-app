@@ -9,9 +9,7 @@ import { canVerRiscosDeGlosa } from "@/app/lib/auth/roles";
 import {
   SEVERIDADE_GLOSA_LABEL,
   TIPO_RISCO_GLOSA_LABEL,
-  listRiscosDeGlosaDaAtividade,
-  riscosAbertos,
-  totalExposto,
+  listRiscosAbertosDaAtividade,
   type RiscoGlosa,
 } from "@/app/lib/demandas";
 import { formatCurrencyBRL } from "@/app/lib/format";
@@ -31,7 +29,8 @@ const SEVERIDADE_CLASSE: Record<RiscoGlosa["severidade"], string> = {
 /**
  * Bloco "Riscos de glosa" da ficha da Atividade (#404, SGP §3.4): tipo,
  * severidade e valor exposto de cada risco em aberto, de
- * `GET /sgp/glosa-riscos/?activity=`.
+ * `GET /sgp/glosa-riscos/?activity=&aberto=true`. O total exposto e a contagem
+ * são do servidor.
  *
  * Só aparece quando há risco: sem risco ou em carregamento, não ocupa espaço
  * na ficha. Em erro, avisa, para a falha não passar por "sem risco". O ADT não
@@ -43,7 +42,7 @@ export function RiscosDeGlosa({ atividadeId }: { atividadeId: number }) {
 
   const consulta = useQuery({
     queryKey: qk.demandas.glosasDaAtividade(atividadeId),
-    queryFn: ({ signal }) => listRiscosDeGlosaDaAtividade(atividadeId, signal),
+    queryFn: ({ signal }) => listRiscosAbertosDaAtividade(atividadeId, signal),
     enabled: podeVer,
   });
 
@@ -63,8 +62,8 @@ export function RiscosDeGlosa({ atividadeId }: { atividadeId: number }) {
     );
   }
 
-  const riscos = riscosAbertos(consulta.data);
-  if (riscos.length === 0) return null;
+  if (!consulta.data || consulta.data.total === 0) return null;
+  const { riscos, total, totalExposto } = consulta.data;
 
   return (
     <section
@@ -76,12 +75,12 @@ export function RiscosDeGlosa({ atividadeId }: { atividadeId: number }) {
         <h2 id="riscos-de-glosa-titulo" className="flex items-center gap-2 text-sm font-semibold text-text">
           <ShieldAlert className="h-4 w-4 text-warning-text" aria-hidden />
           Riscos de glosa
-          <span className="text-xs font-normal tabular-nums text-text-muted">{riscos.length}</span>
+          <span className="text-xs font-normal tabular-nums text-text-muted">{total}</span>
         </h2>
         <p className="text-sm text-text-muted">
           Total exposto:{" "}
           <span className="font-semibold tabular-nums text-text" data-testid="riscos-de-glosa-total">
-            {formatCurrencyBRL(totalExposto(riscos))}
+            {formatCurrencyBRL(totalExposto)}
           </span>
         </p>
       </header>
@@ -116,6 +115,11 @@ export function RiscosDeGlosa({ atividadeId }: { atividadeId: number }) {
           </li>
         ))}
       </ul>
+      {total > riscos.length && (
+        <p className="border-t border-border px-4 py-2 text-xs text-text-muted" data-testid="riscos-de-glosa-parcial">
+          Mostrando os {riscos.length} de maior valor exposto, de {total}. O total exposto soma todos.
+        </p>
+      )}
     </section>
   );
 }

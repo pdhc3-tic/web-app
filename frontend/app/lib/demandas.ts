@@ -436,24 +436,39 @@ export async function listRiscosDeGlosa(demandaId: number, signal?: AbortSignal)
   return Array.isArray(corpo) ? corpo : corpo.results;
 }
 
+/** Os riscos em aberto de uma atividade, com o total e a contagem do servidor. */
+export type RiscosAbertosDaAtividade = {
+  riscos: RiscoGlosa[];
+  /** Quantos riscos em aberto a atividade tem, mesmo além da página. */
+  total: number;
+  /** Soma do valor exposto de todos os abertos, não só os da página. */
+  totalExposto: string;
+};
+
+/** Quantos riscos a ficha mostra; o total e a soma vêm do servidor. */
+export const RISCOS_POR_FICHA = 100;
+
 /**
- * GET /api/v1/sgp/glosa-riscos/?activity={id} — os riscos de glosa da atividade,
- * do maior valor exposto para o menor (#404). Mesmos perfis de
- * `listRiscosDeGlosa` e, como ela, uma página de 100: uma atividade tem poucos
- * riscos.
+ * GET /api/v1/sgp/glosa-riscos/?activity={id}&aberto=true — os riscos de glosa
+ * em aberto da atividade, do maior valor exposto para o menor (#404). Mesmos
+ * perfis de `listRiscosDeGlosa`.
  *
- * A rota não filtra os riscos em aberto, então a ficha descarta os resolvidos
- * (`riscosAbertos`). Pedir só os abertos ao servidor é o item 7 do
- * `docs/pendencias-backend-sprint-12b.md`.
+ * O servidor filtra os abertos e devolve `total_exposto` somando todos os
+ * filtrados (#423, item 7): a ficha não descarta resolvidos nem soma no
+ * cliente, e uma atividade com mais riscos que a página mantém o total certo.
  */
-export async function listRiscosDeGlosaDaAtividade(
+export async function listRiscosAbertosDaAtividade(
   atividadeId: number,
   signal?: AbortSignal,
-): Promise<RiscoGlosa[]> {
-  const qs = new URLSearchParams({ activity: String(atividadeId), limit: "100" });
+): Promise<RiscosAbertosDaAtividade> {
+  const qs = new URLSearchParams({
+    activity: String(atividadeId),
+    aberto: "true",
+    limit: String(RISCOS_POR_FICHA),
+  });
   const res = await apiClient(`/api/v1/sgp/glosa-riscos/?${qs}`, { signal });
-  const corpo = (await res.json()) as { results: RiscoGlosa[] } | RiscoGlosa[];
-  return Array.isArray(corpo) ? corpo : corpo.results;
+  const corpo = (await res.json()) as { count: number; total_exposto: string; results: RiscoGlosa[] };
+  return { riscos: corpo.results, total: corpo.count, totalExposto: corpo.total_exposto };
 }
 
 export const TIPO_RISCO_GLOSA_LABEL: Record<RiscoGlosa["tipo"], string> = {
@@ -466,17 +481,6 @@ export const SEVERIDADE_GLOSA_LABEL: Record<RiscoGlosa["severidade"], string> = 
   media: "Média",
   baixa: "Baixa",
 };
-
-/** Só os riscos em aberto contam para o bloco da ficha: resolvido não é mais risco. */
-export function riscosAbertos(riscos: RiscoGlosa[] | undefined): RiscoGlosa[] {
-  return (riscos ?? []).filter((r) => r.resolvido_em === null);
-}
-
-/** Soma do valor exposto, em centavos para não acumular erro de ponto flutuante. */
-export function totalExposto(riscos: RiscoGlosa[]): string {
-  const centavos = riscos.reduce((soma, r) => soma + Math.round(Number(r.valor_exposto) * 100), 0);
-  return (centavos / 100).toFixed(2);
-}
 
 // ─── Auditoria (#322, BE-7) ──────────────────────────────────────────────────
 
