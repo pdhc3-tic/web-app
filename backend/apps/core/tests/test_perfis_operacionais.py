@@ -481,3 +481,39 @@ class TestNaoAmpliaOAcesso:
         usuario = UserFactory(profiles=[(_principal("ugp"), None)])
 
         assert user_territories(usuario).count() == Territory.objects.count()
+
+
+class TestTipoDoObjetoEFiltroDeUsuarios:
+    @pytest.mark.parametrize("rota", ["/api/v1/core/roles/", "/api/v1/roles/"])
+    def test_roles_devolve_o_tipo_de_objeto_de_cada_perfil(self, cliente, rota):
+        esperado = {
+            "coordenador-evento": "evento", "credenciador": "evento",
+            "avaliador-selecao": "candidatura", "gestor-edital": "edital",
+        }
+        for slug in esperado:
+            _operacional(slug)
+        _principal("ugp")
+
+        resposta = cliente.get(rota, {"limit": 100})
+
+        tipos = {item["slug"]: item["objeto_tipo"] for item in resposta.data["results"]}
+        assert {slug: tipos[slug] for slug in esperado} == esperado
+        assert tipos["ugp"] is None
+
+    def test_filtra_usuarios_por_categoria_sem_repetir(self, cliente, super_admin_user):
+        so_principal = UserFactory(profiles=[(_principal("ugp"), None)])
+        com_designacoes = UserFactory(profiles=[(_principal("adt-acr"), TerritoryFactory())])
+        _designar(com_designacoes, "coordenador-evento", objeto_id=1)
+        _designar(com_designacoes, "credenciador", objeto_id=2)
+
+        def ids(categoria):
+            resposta = cliente.get(USERS_URL, {"categoria": categoria, "limit": 100})
+            assert resposta.status_code == 200
+            return [item["id"] for item in resposta.data["results"]]
+
+        assert ids("operacional") == [com_designacoes.pk]
+        principais = ids("principal")
+        assert sorted(principais) == sorted({so_principal.pk, com_designacoes.pk, super_admin_user.pk})
+
+    def test_categoria_invalida_responde_400(self, cliente):
+        assert cliente.get(USERS_URL, {"categoria": "outra"}).status_code == 400

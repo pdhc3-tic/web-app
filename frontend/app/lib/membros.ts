@@ -1,4 +1,5 @@
 import { apiClient } from "@/app/lib/api";
+import type { Refinar, Schema } from "@/app/lib/apiSchema";
 
 // Parentesco e saúde vêm de `useSgpChoices()` (#272): `grau_parentesco`, `saude`.
 
@@ -21,94 +22,60 @@ export function temVinculoEscolar(
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
 /**
- * Espelha apps/sgp/serializers.py::MembroListSerializer.
- * genero/cor_raca são choices inteiros; use os `*_display` para exibição.
+ * Os tipos vêm do schema (#273).
  *
- * `cor_raca`/`cor_raca_display` são omitidos pelo backend (BE-25/#187) quando o
- * perfil do usuário não tem permissão de leitura — a ausência da chave é o
- * sinal usado pelo frontend para não renderizar o campo (#192).
+ * `grau_parentesco` é refinado de enum (`GrauParentescoEnum`) para `string`
+ * para compatibilidade com o restante do código. `genero`, `cor_raca` e
+ * `escolaridade` são refinados dos enums estreitos do schema para `number | null`.
+ *
+ * `cor_raca`/`cor_raca_display` são omitidos pelo backend (BE-25/#187) quando
+ * o perfil do usuário não tem permissão de leitura (#192).
  */
-export type MembroListItem = {
-  id: number;
-  nome_completo: string;
-  data_nascimento: string | null;
-  idade: number | null;
-  grau_parentesco: string;
-  grau_parentesco_display: string;
-  cpf: string;
-  genero: number | null;
-  genero_display: string;
-  cor_raca?: number | null;
-  cor_raca_display?: string;
-  criado_em: string;
-};
+
+/** `MembroListSerializer`. */
+export type MembroListItem = Refinar<
+  Schema<"MembroList">,
+  {
+    grau_parentesco: string;
+    genero: number | null;
+    cor_raca?: number | null;
+  }
+>;
+
+/** `MembroDetailSerializer`. */
+export type MembroDetail = Refinar<
+  Schema<"MembroDetail">,
+  {
+    ufpa: number;
+    grau_parentesco: string;
+    genero: number | null;
+    cor_raca?: number | null;
+    escolaridade: number | null;
+    saude?: string[];
+    seguridade_social: string[];
+  }
+>;
+
+/** Campos graváveis (POST/PATCH) — `MembroDetailRequest` do schema. */
+export type MembroWritePayload = Refinar<
+  Schema<"MembroDetailRequest">,
+  {
+    grau_parentesco: string;
+    genero?: number | null;
+    cor_raca?: number | null;
+    escolaridade?: number | null;
+    saude?: string[];
+    seguridade_social?: string[];
+  }
+>;
 
 /**
- * Espelha apps/sgp/serializers.py::MembroDetailSerializer.
+ * `MembroResumo` — indicadores agregados (BE-23).
  *
- * `cor_raca`/`cor_raca_display` e `saude` são omitidos pelo backend (BE-25/#187)
- * quando o perfil do usuário não tem permissão de leitura — a ausência da chave
- * é o sinal usado pelo frontend para não renderizar o campo (#192).
- */
-export type MembroDetail = {
-  id: number;
-  ufpa: number;
-  nome_completo: string;
-  data_nascimento: string | null;
-  idade: number | null;
-  cpf: string;
-  rg: string;
-  nis: string;
-  caf: string;
-  grau_parentesco: string;
-  grau_parentesco_display: string;
-  genero: number | null;
-  genero_display: string;
-  cor_raca?: number | null;
-  cor_raca_display?: string;
-  escola: string;
-  seguridade_social: string[];
-  saude?: string[];
-  escolaridade: number | null;
-  escolaridade_display: string;
-  criado_por: number | null;
-  criado_em: string;
-  atualizado_em: string;
-};
-
-/** Campos graváveis (POST/PATCH). Campos opcionais podem ser omitidos. */
-export type MembroWritePayload = {
-  nome_completo: string;
-  grau_parentesco: string;
-  data_nascimento?: string | null;
-  cpf?: string;
-  rg?: string;
-  nis?: string;
-  caf?: string;
-  genero?: number | null;
-  cor_raca?: number | null;
-  escola?: string;
-  escolaridade?: number | null;
-  saude?: string[];
-  seguridade_social?: string[];
-};
-
-/**
- * Espelha a resposta de GET /api/v1/sgp/ufpas/{ufpaId}/membros/resumo/ (BE-23).
  * As chaves de `faixa_etaria` são as do backend — use `FAIXAS_ETARIAS` para
  * exibi-las na ordem e com os rótulos certos.
  */
-export type ResumoMembros = {
-  total_membros: number;
-  faixa_etaria: Record<FaixaEtariaKey, number>;
-  genero: {
-    masculino: number;
-    feminino: number;
-    nao_binario: number;
-    nao_informado: number;
-  };
-  tem_titular: boolean;
-};
+export type ResumoMembros = Schema<"MembroResumo">;
 
 export type FaixaEtariaKey =
   | "0-11"

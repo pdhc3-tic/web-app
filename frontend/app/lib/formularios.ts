@@ -1,32 +1,17 @@
 import { ApiError, apiClient } from "@/app/lib/api";
 import type { Paginated } from "@/app/lib/users";
+import type { Refinar, Schema } from "@/app/lib/apiSchema";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
-/** Espelha apps/sgp/models/form_response.py::FormResponse.Status. */
-export type FormResponseStatus = "rascunho" | "submetido";
-
-/** Espelha apps/sgp/models/form_response.py::FormResponse.Origem. */
-export type FormResponseOrigem = "web" | "sca";
+export type FormResponseStatus = Schema<"StatusFormResponseEnum">;
+export type FormResponseOrigem = Schema<"OrigemEnum">;
 
 /**
- * Espelha apps/sgp/serializers.py::FormResponseListSerializer.
+ * `FormResponseListSerializer`.
  * `respondente` pode ser `null` — o front rotula como "Anônimo" (critério #178).
  */
-export type FormResponseListItem = {
-  id: number;
-  ufpa: number;
-  formulario_id: number;
-  formulario_nome: string;
-  formulario_versao: string;
-  contract_version: string;
-  resposta_id_origem: string;
-  data_preenchimento: string;
-  respondente: string | null;
-  status: FormResponseStatus;
-  origem: FormResponseOrigem;
-  criado_em: string;
-};
+export type FormResponseListItem = Schema<"FormResponseList">;
 
 /**
  * Estrutura livre do payload recebido do SGF. O contrato só garante ser
@@ -45,12 +30,11 @@ export type RespostasJsonValor =
 
 export type RespostasJson = { [chave: string]: RespostasJsonValor };
 
-/**
- * Espelha FormResponseDetailSerializer — mesmo do list + `respostas_json`.
- */
-export type FormResponseDetail = FormResponseListItem & {
-  respostas_json: RespostasJson;
-};
+/** `FormResponseDetailSerializer` — mesmo do list + `respostas_json` tipado. */
+export type FormResponseDetail = Refinar<
+  Schema<"FormResponseDetail">,
+  { respostas_json: RespostasJson }
+>;
 
 /** Filtros aceitos pelo endpoint (BE-16). */
 export type ListFormResponsesParams = {
@@ -114,11 +98,8 @@ const OPCOES_PAGE_SIZE = 200;
 /** Trava de segurança do laço de paginação do fallback. */
 const MAX_PAGINAS = 100;
 
-/** Par `{formulario_id, formulario_nome}` para o select da aba Formulários. */
-export type FormularioRespondidoOption = {
-  formulario_id: number;
-  formulario_nome: string;
-};
+/** Opção do filtro de formulário — formulário com resposta nesta UFPA. */
+export type FormularioRespondidoOption = Schema<"FormResponseFormularioOption">;
 
 function ordenarOpcoes(
   opcoes: FormularioRespondidoOption[],
@@ -138,7 +119,7 @@ async function varrerFormulariosRespondidos(
   ufpaId: string | number,
   signal?: AbortSignal,
 ): Promise<FormularioRespondidoOption[]> {
-  const porId = new Map<number, string>();
+  const porId = new Map<number, { nome: string; versao: string }>();
 
   for (let page = 1; page <= MAX_PAGINAS; page++) {
     const data = await listFormResponses(
@@ -148,16 +129,20 @@ async function varrerFormulariosRespondidos(
     );
     for (const r of data.results) {
       if (!porId.has(r.formulario_id)) {
-        porId.set(r.formulario_id, r.formulario_nome);
+        porId.set(r.formulario_id, {
+          nome: r.formulario_nome,
+          versao: r.formulario_versao,
+        });
       }
     }
     if (!data.next || data.results.length === 0) break;
   }
 
   return ordenarOpcoes(
-    Array.from(porId, ([formulario_id, formulario_nome]) => ({
+    Array.from(porId, ([formulario_id, { nome: formulario_nome, versao: formulario_versao }]) => ({
       formulario_id,
       formulario_nome,
+      formulario_versao,
     })),
   );
 }
@@ -188,6 +173,7 @@ export async function listFormulariosRespondidos(
       data.map((o) => ({
         formulario_id: o.formulario_id,
         formulario_nome: o.formulario_nome,
+        formulario_versao: o.formulario_versao,
       })),
     );
   } catch (e) {
@@ -325,14 +311,8 @@ export async function exportarRespostasFormularios(
 
 // ─── BE-18: formulários publicados que a UFPA pode responder ─────────────────
 
-/** Espelha apps/sgp/serializers.py::AvailableFormSerializer. */
-export type AvailableForm = {
-  id: number;
-  nome: string;
-  versao: string;
-  descricao: string | null;
-  atualizado_em: string;
-};
+/** `AvailableFormSerializer` — formulários publicados disponíveis para preenchimento. */
+export type AvailableForm = Schema<"AvailableForm">;
 
 /**
  * GET /api/v1/sgp/formularios-disponiveis/ — formulários "publicado" com

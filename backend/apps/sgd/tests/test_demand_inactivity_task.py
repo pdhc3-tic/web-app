@@ -140,3 +140,14 @@ def test_dias_uteis_desconta_feriados_nacionais_e_estaduais(inicio, fim, uf, esp
     from apps.sgd.tasks import _dias_uteis_entre
 
     assert _dias_uteis_entre(inicio, fim, uf=uf) == esperado
+
+
+def test_link_da_inatividade_abre_a_demanda_no_painel(activity_rn, settings):
+    from apps.sgd.services.notifications import link_inatividade
+
+    settings.FRONTEND_BASE_URL = "https://pdhc.example/"
+    demand = DemandFactory(activity=activity_rn, status="submetida")
+
+    link = link_inatividade(demand, referencia=date(2026, 11, 3))
+
+    assert link == f"https://pdhc.example/sgd/demandas?demanda={demand.pk}&ref=2026-11-03"

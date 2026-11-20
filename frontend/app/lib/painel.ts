@@ -1,6 +1,7 @@
 import { apiClient } from "@/app/lib/api";
 import type { Acao, AcaoStatus } from "@/app/lib/acoes";
 import type { Paginated } from "@/app/lib/users";
+import type { Refinar, Schema } from "@/app/lib/apiSchema";
 
 /**
  * Camada de dados do Painel de Acompanhamento (FE-9).
@@ -22,54 +23,59 @@ import type { Paginated } from "@/app/lib/users";
 
 // ─── Contrato do endpoint ───────────────────────────────────────────────────
 
+/**
+ * Os tipos vêm do schema (#273).
+ */
+
 /** Níveis que o backend produz. `sem-dado` é decisão da UI — ver semaforo.ts. */
 export type SemaforoApi = "verde" | "amarelo" | "vermelho";
 
-/** Meta enxuta do painel: WorkPlanDashboardMetaSerializer. */
-export type PainelMetaApi = {
-  id: number;
-  numero: number;
-  titulo: string;
-};
+/** `WorkPlanDashboardMeta` — Meta enxuta do painel. */
+export type PainelMetaApi = Schema<"WorkPlanDashboardMeta">;
 
-/** Espelha apps/sgp/serializers_workplan.py::WorkPlanDashboardAcaoSerializer. */
-export type PainelAcaoApi = {
-  id: number;
-  meta: PainelMetaApi;
-  numero: string;
-  descricao: string;
-  /** DecimalField → string no DRF, como no resto da API. */
-  quantidade_planejada: string;
-  /** CONTAGEM de Atividades concluídas — mesma semântica de acoes.ts. */
-  quantidade_realizada: string;
-  /** 0–100. Sem teto: uma Ação pode passar de 100%. */
-  percentual_realizado: string;
-  /** 0–100: fração do período já decorrida, com as datas herdadas da Meta. */
-  progresso_esperado: string;
-  semaforo: SemaforoApi;
-  status_execucao: AcaoStatus;
-  /** Datas próprias da Ação — nulas quando o cálculo herdou as da Meta. */
-  data_inicio: string | null;
-  data_fim: string | null;
-};
+/**
+ * `WorkPlanDashboardAcao` — Ação com indicadores calculados.
+ *
+ * Refinamentos: `status_execucao` refinado para o tipo local `AcaoStatus`.
+ * `semaforo` refinado para `SemaforoApi` (os valores concretos).
+ * `data_inicio` e `data_fim` refinados para `string | null`: as datas próprias
+ * da Ação são nulas quando o cálculo herda as da Meta.
+ */
+export type PainelAcaoApi = Refinar<
+  Schema<"WorkPlanDashboardAcao">,
+  {
+    semaforo: SemaforoApi;
+    status_execucao: AcaoStatus;
+    /** Datas próprias da Ação — nulas quando o cálculo herdou as da Meta. */
+    data_inicio: string | null;
+    data_fim: string | null;
+  }
+>;
 
-/** Contagem por nível que o backend já devolve por Meta. */
-export type PainelResumoApi = {
-  total_acoes: number;
-  verde: number;
-  amarelo: number;
-  vermelho: number;
-};
+/** `WorkPlanDashboardResumo` — contagem por semáforo por Meta. */
+export type PainelResumoApi = Schema<"WorkPlanDashboardResumo">;
 
-export type PainelMetaGrupoApi = {
-  meta: PainelMetaApi;
-  resumo: PainelResumoApi;
-  acoes: PainelAcaoApi[];
-};
+/**
+ * `WorkPlanDashboardMetaNo` — grupo Meta com resumo e Ações.
+ *
+ * `acoes` refinado para `PainelAcaoApi[]` para propagar os refinamentos de
+ * `semaforo` e `status_execucao`.
+ */
+export type PainelMetaGrupoApi = Refinar<
+  Schema<"WorkPlanDashboardMetaNo">,
+  { acoes: PainelAcaoApi[] }
+>;
 
-export type PainelResponse = {
-  metas: PainelMetaGrupoApi[];
-};
+/**
+ * `WorkPlanDashboardResposta`.
+ *
+ * `metas` refinado para `PainelMetaGrupoApi[]` para propagar os refinamentos
+ * em cascata.
+ */
+export type PainelResponse = Refinar<
+  Schema<"WorkPlanDashboardResposta">,
+  { metas: PainelMetaGrupoApi[] }
+>;
 
 /** Filtros aceitos por WorkPlanDashboardQuerySerializer. */
 export type PainelFiltrosApi = {

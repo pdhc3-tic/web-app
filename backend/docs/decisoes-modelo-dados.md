@@ -351,6 +351,25 @@ A migration `sgp/0022_rls_ufpa` habilita a RLS e cria quatro políticas, uma por
 - **Push e pull do SCA:** rodam com o contexto HTTP do técnico. O pull filtra pelos territórios do usuário, e a política só corta o que já estaria fora do escopo.
 - **Participantes de atividade:** o detalhe da atividade lista só as UFPAs participantes que quem lê alcança, e os membros seguem o mesmo recorte. As contagens agregadas (apuração de indicadores, exportação) leem a tabela de ligação `sgp_activityufpa`, que não tem RLS, e contam todos os participantes. Na edição, `set()` não enxerga as UFPAs ocultas e por isso não as remove: quem não vê uma participante não a tira da atividade.
 - **Papel de runtime:** `app_user` não é superusuário, não tem `BYPASSRLS` e não é dono das tabelas, porque as migrations rodam como `postgres`. Por isso basta `ENABLE`, sem `FORCE`, como em `sgd_demand` e no orçamento. `python manage.py verificar_papel_rls`, rodado com o usuário de runtime, falha se essa premissa deixar de valer. O `deploy.sh` o executa logo depois das migrations, sem sobrescrever `DB_USER`, e um papel fora da premissa interrompe o deploy. A suíte de testes e os seeds de desenvolvimento rodam como `postgres` e ignoram a RLS: os testes de `apps/sgp/tests/test_ufpa_rls.py` trocam para um papel `NOBYPASSRLS` com `SET LOCAL ROLE`.
+## 12. Saúde e Cor/Raça — quem lê, por decisão da coordenação
+
+A Arquitetura exige criptografia desses campos, e a matriz do Core dá leitura das UFPAs ao
+Articulador e à UGP sem separar os campos sensíveis. Nenhum documento diz quem pode lê-los. A
+pergunta foi levada à coordenação (PDF de 11/11/2026, item 1), com quatro opções: manter como
+está, restringir a quem cadastra, restringir a quem cadastra e à UGP, ou outra regra.
+
+**Resposta da coordenação (17/11/2026): opção "a", manter como está.** Leem Saúde e Cor/Raça:
+
+| Perfil | Lê |
+|---|---|
+| Super Admin | Sim |
+| UGP | Sim |
+| Articulador Estadual | Sim, nas UFPAs que vê |
+| ADT/ACR | Sim, nas UFPAs do território |
+| FGD, Agricultor e perfis operacionais | Não |
+
+A matriz fica em `apps/core/sensitive_fields.py` (`SENSITIVE_FIELD_ROLES`), usada pelos serializers
+e pela exportação. O código não mudou.
 
 ---
 

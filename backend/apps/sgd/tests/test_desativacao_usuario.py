@@ -435,7 +435,7 @@ def test_admin_com_demanda_que_mudou_avisa_e_mantem_o_usuario_ativo(
     solicitante_rn.nome = "Outro nome"
 
     with patch(FALHA_NO_CANCELAMENTO, side_effect=TransicaoInvalida("Mudou.")):
-        mensagem = _salvar_no_admin(solicitante_rn, por=usuario_super_admin, changed_data=["ativo"])
+        mensagem = _salvar_no_admin(solicitante_rn, por=usuario_super_admin, changed_data=["ativo", "nome"])
 
     mensagem.assert_called_once()
     salvo = User.objects.get(pk=solicitante_rn.pk)

@@ -10,48 +10,41 @@ import {
 } from "@/app/lib/exportacoes";
 import { ExportTimeoutError } from "@/app/lib/exportarPlano";
 import type { Paginated } from "@/app/lib/users";
+import type { Refinar, Schema } from "@/app/lib/apiSchema";
 import type { Territorio } from "@/app/lib/auth/types";
 import type { SelectOption } from "@/app/components/ui/Select/Select";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
-/** Espelha apps/sgp/serializers.py::UFPAListSerializer. */
 /**
- * Município como vem nas listagens de UFPA (`MunicipioNestedSerializer`).
+ * Os tipos vêm do schema (#273).
  *
- * Era `string` até 5b63bde (21/07), quando o backend trocou o
- * `CharField(source="municipio.nome")` pelo serializer aninhado. O tipo do
- * front seguiu dizendo `string`, e a listagem passou a renderizar o objeto
- * direto — "Objects are not valid as a React child" derrubava /sgp/ufpas.
- * Não havia E2E cobrindo a listagem, então ninguém percebeu.
+ * Prova de valor: `MunicipioNested` (e, logo, `MunicipioResumo`) agora tem
+ * `estado` OBRIGATÓRIO — antes era `estado?: ...` e o campo podia vir como
+ * `undefined` em tempo de execução sem o TypeScript detectar. O teste
+ * `apiSchema.test.ts` confere que `municipio.estado.sigla` compila.
  */
-export type MunicipioResumo = {
-  id: number;
-  nome: string;
-  estado?: { id: number; sigla: string; nome: string };
-};
 
-export type UfpaListItem = {
-  id: number;
-  nome_titular: string;
-  /** Já vem mascarado do backend: "XXX.***.***-XX". */
-  cpf: string;
-  /**
-   * Objeto, NÃO string — o `UFPAListSerializer` usa `MunicipioNestedSerializer`
-   * desde 5b63bde (21/07), que substituiu um `CharField(source="municipio.nome")`.
-   * O tipo seguiu dizendo `string` e a listagem renderizava o objeto direto,
-   * derrubando a página com "Objects are not valid as a React child".
-   */
-  municipio: MunicipioResumo;
-  territorio: string | null;
-  criado_em: string;
-  ativo: boolean;
-  /**
-   * Opcional: UFPAListSerializer ainda não expõe este campo (pendente no
-   * backend). Quando ausente, o avatar da listagem cai para as iniciais.
-   */
-  foto_url?: string | null;
-};
+/**
+ * Município como vem nas listagens e no detalhe de UFPA.
+ *
+ * `estado` é obrigatório no schema (`MunicipioNested`), o que era a prova de
+ * valor da issue: antes era `estado?: ...` e o campo podia vir como
+ * `undefined` sem erro de compilação.
+ */
+export type MunicipioResumo = Schema<"MunicipioNested">;
+
+/**
+ * `UFPAListSerializer`.
+ *
+ * `territorio` é refinado de `string` (nunca nulo no schema) para
+ * `string | null` (a resposta real pode ser nula); `ativo` passa de opcional
+ * para obrigatório.
+ */
+export type UfpaListItem = Refinar<
+  Schema<"UFPAList">,
+  { territorio: string | null; ativo: boolean }
+>;
 
 /** Filtro de status mapeado para o parâmetro `ativo` do backend. */
 export type StatusUfpaFilter = "ativas" | "inativas" | "todas";
@@ -254,103 +247,72 @@ export async function fetchUfpasMapa(
 
 // ─── Detalhe da UFPA ───────────────────────────────────────────────────────────
 
-/** Objeto aninhado {id, nome} usado no detalhe (município, território, etc.). */
-export type NestedRef = { id: number; nome: string };
+/** `Nested` — `{id, nome}` usado no detalhe (município, território, etc.). */
+export type NestedRef = Schema<"Nested">;
 
 /**
- * Município aninhado no `UfpaDetail`. O backend serializa o Estado junto (id,
- * sigla e nome) via `MunicipioNestedSerializer`, então a ficha nunca precisa
- * de uma segunda requisição só para descobrir o Estado — a listagem já usa a
- * mesma forma em `MunicipioResumo`.
+ * Município aninhado no `UfpaDetail`.
  *
- * `estado` é opcional na tipagem para não quebrar respostas antigas em cache
- * de dev, mas é obrigatório no contrato atual: a ficha da UFPA sinaliza erro
- * explícito quando vem ausente (ver `ufpas/[id]/page.tsx`).
+ * Alias de `MunicipioResumo`: mesmo schema (`MunicipioNested`), mesmo formato.
+ * O alias preserva compatibilidade com código que importa `MunicipioNested`.
  */
-export type MunicipioNested = {
-  id: number;
-  nome: string;
-  estado?: { id: number; sigla: string; nome: string };
-};
+export type MunicipioNested = MunicipioResumo;
 
 /**
- * Titular aninhado no detalhe da UFPA. Espelha
- * apps/sgp/serializers.py::TitularNestedSerializer. O titular é um MembroFamilia
- * (grau_parentesco="titular"). CPF vem CRU (sem máscara) — mascarar na exibição.
- * Campos de choice (genero, cor_raca, escolaridade) são inteiros + `*_display`.
+ * `TitularNestedSerializer`. CPF vem CRU (sem máscara) — mascarar na exibição.
  *
- * `cor_raca`/`cor_raca_display` são omitidos pelo backend (BE-25/#187) quando o
- * perfil do usuário não tem permissão de leitura — a ausência da chave é o
+ * `cpf`, `rg` e `nis` são refinados para obrigatórios porque o serializer
+ * sempre os inclui no detalhe da UFPA. `genero`, `cor_raca` e `escolaridade`
+ * são refinados de enums complexos para `number | null`, compatível com o
+ * restante do código.
+ *
+ * `cor_raca`/`cor_raca_display` são omitidos pelo backend (BE-25/#187) quando
+ * o perfil do usuário não tem permissão de leitura — a ausência da chave é o
  * sinal usado pelo frontend para não renderizar o campo (#192).
  */
-export type TitularNested = {
-  id: number;
-  nome_completo: string;
-  cpf: string;
-  rg: string;
-  data_nascimento: string | null;
-  genero: number | null;
-  genero_display: string;
-  cor_raca?: number | null;
-  cor_raca_display?: string;
-  escolaridade: number | null;
-  escolaridade_display: string;
-  nis: string;
-  idade: number | null;
-};
+export type TitularNested = Refinar<
+  Schema<"TitularNested">,
+  {
+    cpf: string;
+    rg: string;
+    nis: string;
+    genero: number | null;
+    cor_raca?: number | null;
+    escolaridade: number | null;
+  }
+>;
 
 /**
- * Espelha apps/sgp/serializers.py::UFPADetailSerializer (leitura).
- * Os campos de choice da UFPA (pct, posse_terra, dispositivo, tipo_moradia,
- * situacao_moradia, material_construcao, energia, agua) vêm como id inteiro cru,
- * sem `*_display` — usar labelForValue() na exibição. Os dados do titular ficam
- * no objeto aninhado `titular`.
+ * `UFPADetailSerializer` (leitura) — `UFPADetailResposta` no schema.
+ *
+ * Refinamentos:
+ * - `titular` usa o tipo refinado `TitularNested` (cpf, rg, nis obrigatórios).
+ * - `seguridade_social` passa de `unknown` para `string[]`.
+ * - `foto_url` de opcional para obrigatório.
+ * - `ativo` de opcional para obrigatório.
+ * - Campos de texto opcionais no schema que a resposta sempre inclui são
+ *   tornados obrigatórios (`apelido`, `celular`, `whatsapp`, `internet`,
+ *   `cep`, `logradouro`, `numero`, `complemento`, `bairro`, `dap_caf`).
  */
-export type UfpaDetail = {
-  id: number;
-  projeto: NestedRef;
-  titular: TitularNested;
-  apelido: string;
-  celular: string;
-  whatsapp: string;
-  internet: boolean;
-  dispositivo: number | null;
-  cep: string;
-  logradouro: string;
-  numero: string;
-  complemento: string;
-  bairro: string;
-  municipio: MunicipioNested;
-  territorio: NestedRef | null;
-  comunidade: NestedRef | null;
-  latitude: string | null;
-  longitude: string | null;
-  pct: number | null;
-  posse_terra: number | null;
-  area_terra_ha: string | null;
-  situacao_moradia: number | null;
-  tipo_moradia: number | null;
-  material_construcao: number | null;
-  num_comodos: number | null;
-  energia: number | null;
-  agua: number | null;
-  dap_caf: string;
-  seguridade_social: string[];
-  foto_url: string;
-  criado_por: string | null;
-  ativo: boolean;
-  criado_em: string;
-  atualizado_em: string;
-  // ── Procedência SCA ────────────────────────────────────────────────────────
-  // Espelham os campos de sync do backend. `ultima_origem` é o que vale para a
-  // badge: `device_id` fica preenchido para sempre depois do primeiro sync,
-  // inclusive quando a última edição veio da web.
-  device_id: string;
-  uuid_local: string | null;
-  ultima_origem: "sca" | "web";
-  ultimo_sync_em: string | null;
-
-};
+export type UfpaDetail = Refinar<
+  Schema<"UFPADetailResposta">,
+  {
+    titular: TitularNested;
+    seguridade_social: string[];
+    ativo: boolean;
+    foto_url: string;
+    apelido: string;
+    celular: string;
+    whatsapp: string;
+    internet: boolean;
+    cep: string;
+    logradouro: string;
+    numero: string;
+    complemento: string;
+    bairro: string;
+    dap_caf: string;
+  }
+>;
 
 /** GET /api/v1/sgp/ufpas/{id}/ — detalhe completo da UFPA. Lança ApiError (404/403). */
 export async function getUfpaDetail(
@@ -363,15 +325,8 @@ export async function getUfpaDetail(
 
 // ─── Histórico da UFPA ─────────────────────────────────────────────────────────
 
-/** Espelha apps/sgp/serializers.py::HistoricoEntrySerializer. */
-export type HistoricoEntry = {
-  id: string;
-  campo: string | null;
-  valor_anterior: unknown;
-  valor_novo: unknown;
-  usuario: { id: number; nome: string } | null;
-  timestamp: string;
-};
+/** `HistoricoEntrySerializer`. */
+export type HistoricoEntry = Schema<"HistoricoEntry">;
 
 export type HistoricoParams = {
   page: number;
@@ -395,49 +350,45 @@ export async function fetchUfpaHistorico(
 // ─── Escrita (cadastro / edição) ──────────────────────────────────────────────
 
 /**
- * Campos graváveis de UFPA (POST/PATCH). `territorio` é derivado no backend e não
- * é enviado. Os dados do titular são enviados achatados (nome, cpf, rg, ...),
- * conforme os campos write_only do UFPADetailSerializer que alimentam o
- * MembroFamilia titular. Campos de choice vão como id inteiro.
+ * Campos graváveis de UFPA (POST/PATCH) — `UFPADetailRequest` do schema.
+ *
+ * Refinamentos:
+ * - `projeto` e `municipio` aceitam `null` (formulário pode estar sem seleção).
+ * - `seguridade_social` passa de `unknown` para `string[]`.
+ * - Os campos de choice (pct, posse_terra, etc.) passam dos enums estreitos do
+ *   schema para `number | null`, compatível com o formulário.
+ * - Campos opcionais no schema que o formulário sempre envia são tornados
+ *   obrigatórios (`rg`, `nis`, `apelido`, `celular`, `whatsapp`, `internet`,
+ *   `cep`, `logradouro`, `numero`, `complemento`, `bairro`, `dap_caf`).
  */
-export type UfpaWritePayload = {
-  projeto: number | null;
-  municipio: number | null;
-  comunidade: number | null;
-  // Titular (write_only → _titular_* no backend)
-  nome: string;
-  cpf: string;
-  rg?: string;
-  data_nascimento?: string | null;
-  genero?: number | null;
-  cor_raca?: number | null;
-  escolaridade?: number | null;
-  nis?: string;
-  // UFPA
-  apelido?: string;
-  celular?: string;
-  whatsapp?: string;
-  internet?: boolean;
-  dispositivo?: number | null;
-  cep?: string;
-  logradouro?: string;
-  numero?: string;
-  complemento?: string;
-  bairro?: string;
-  latitude?: string | null;
-  longitude?: string | null;
-  pct?: number | null;
-  posse_terra?: number | null;
-  area_terra_ha?: string | null;
-  situacao_moradia?: number | null;
-  tipo_moradia?: number | null;
-  material_construcao?: number | null;
-  num_comodos?: number | null;
-  energia?: number | null;
-  agua?: number | null;
-  dap_caf?: string;
-  seguridade_social?: string[];
-};
+export type UfpaWritePayload = Refinar<
+  Schema<"UFPADetailRequest">,
+  {
+    projeto: number | null;
+    municipio: number | null;
+    seguridade_social?: string[];
+    rg: string;
+    nis: string;
+    apelido: string;
+    celular: string;
+    whatsapp: string;
+    internet: boolean;
+    cep: string;
+    logradouro: string;
+    numero: string;
+    complemento: string;
+    bairro: string;
+    dap_caf: string;
+    dispositivo?: number | null;
+    pct?: number | null;
+    posse_terra?: number | null;
+    situacao_moradia?: number | null;
+    tipo_moradia?: number | null;
+    material_construcao?: number | null;
+    energia?: number | null;
+    agua?: number | null;
+  }
+>;
 
 /** POST /api/v1/sgp/ufpas/ — cria uma UFPA; retorna o detalhe com id. */
 export async function createUfpa(payload: UfpaWritePayload): Promise<UfpaDetail> {

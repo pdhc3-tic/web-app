@@ -1,5 +1,6 @@
 import { apiClient } from "@/app/lib/api";
 import type { NivelSemaforo } from "@/app/lib/semaforo";
+import type { Refinar, Schema } from "@/app/lib/apiSchema";
 
 /**
  * Camada de dados do Painel de Orçamento (§5.3.3) sobre o orçamento por pool
@@ -19,70 +20,38 @@ import type { NivelSemaforo } from "@/app/lib/semaforo";
 
 // ─── Contrato do endpoint ───────────────────────────────────────────────────
 
-/** Níveis da hierarquia orçamentária — espelha `BudgetPool.Nivel`. */
-export type NivelOrcamento = "nacional" | "estadual" | "territorial";
+/**
+ * Os tipos vêm do schema (#273).
+ */
+
+/** Níveis da hierarquia orçamentária — `NivelEnum` do schema. */
+export type NivelOrcamento = Schema<"NivelEnum">;
 
 /** Os três que o backend produz. `sem-dado` é decisão da UI (ver nivelDaLinha). */
-export type SemaforoOrcamentoApi = "verde" | "amarelo" | "vermelho";
+export type SemaforoOrcamentoApi = Schema<"SemaforoEnum">;
 
-export type RubricaApi = {
-  id: number;
-  nome: string;
-  slug: string;
-};
+/** `BudgetRubricaNested`. */
+export type RubricaApi = Schema<"BudgetRubricaNested">;
 
-export type EstadoApi = {
-  id: number;
-  sigla: string;
-  nome: string;
-};
+/** `EstadoNested`. */
+export type EstadoApi = Schema<"EstadoNested">;
 
-export type TerritorioApi = {
-  id: number;
-  nome: string;
-  /** Siglas dos estados do território. */
-  estados?: string[];
-};
+/** `TerritorioNested`. */
+export type TerritorioApi = Schema<"TerritorioNested">;
 
-/** `budget_alert_yellow_pct` e `budget_alert_red_pct` do backend. */
-export type LimiaresSemaforo = { amarelo: number; vermelho: number };
+/** `LimiaresSemaforo` — `budget_alert_yellow_pct` e `budget_alert_red_pct` do backend. */
+export type LimiaresSemaforo = Schema<"LimiaresSemaforo">;
 
 /**
- * Uma linha da matriz Rubrica × Nível — espelha `BudgetPainelLinhaSerializer`:
- * um `BudgetPool`, com o id que a distribuição, a origem do excedente (#363) e
- * a do recurso extra (#321) usam.
+ * Uma linha da matriz Rubrica × Nível — `BudgetPainelLinhaSerializer`.
  *
- * Os valores são string porque o DRF serializa DecimalField assim, como no
- * resto da API. `formatCurrencyBRL` aceita string direto.
+ * `nivel` é refinado para o tipo enumerado (o schema declara `string`). Os
+ * valores decimais são string porque o DRF serializa DecimalField assim.
  */
-export type PoolOrcamentoApi = {
-  id: number;
-  rubrica: RubricaApi;
-  nivel: NivelOrcamento;
-  /**
-   * Nulo no nacional. No territorial, o backend preenche com o estado do
-   * território; a árvore da matriz usa `nivel` e `territorio.estados`, não este campo.
-   */
-  estado: EstadoApi | null;
-  /** Só no territorial. */
-  territorio: TerritorioApi | null;
-  /** Fatia do nacional retida com a UGP, que não recebe pool-filho. */
-  reserva_ugp: boolean;
-  valor_aprovado: string;
-  valor_distribuido: string;
-  valor_comprometido: string;
-  valor_executado: string;
-  /** Só com `?meta=`: o executado deste pool nas atividades da Meta. */
-  valor_executado_meta?: string;
-  /** Aprovado menos distribuído, comprometido e executado: o que ainda cabe distribuir ou reservar. */
-  saldo_disponivel: string;
-  /** Alocado menos comprometido e executado: o que o remanejamento aceita tirar deste pool. */
-  saldo_pool: string;
-  semaforo: SemaforoOrcamentoApi;
-  /** true no mesmo limiar de `vermelho` (o nome é de contrato, não 80 fixo). */
-  alerta_80: boolean;
-  limiares_semaforo: LimiaresSemaforo;
-};
+export type PoolOrcamentoApi = Refinar<
+  Schema<"BudgetPainelLinha">,
+  { nivel: NivelOrcamento }
+>;
 
 /** Filtros de `BudgetPainelQuerySerializer`. Chaves vazias são omitidas. */
 export type PainelOrcamentoFiltrosApi = {
@@ -126,21 +95,11 @@ export function fetchPoolsDaRubrica(
 
 // ─── Movimentações de um pool ───────────────────────────────────────────────
 
-export type TipoTransacao = "reserva" | "liberacao" | "execucao" | "remanejamento" | "ajuste" | "aumento_limite";
+/** `BudgetTransactionTipoEnum`. */
+export type TipoTransacao = Schema<"BudgetTransactionTipoEnum">;
 
-/** `BudgetTransactionSerializer` — uma linha do ledger, imutável. */
-export type TransacaoPoolApi = {
-  id: number;
-  pool: number | null;
-  tipo: TipoTransacao;
-  valor: string;
-  saldo_anterior: string | null;
-  saldo_posterior: string | null;
-  demanda_id: string | null;
-  demand_request_id: string | null;
-  justificativa: string;
-  criado_em: string;
-};
+/** `BudgetTransaction` — uma linha do ledger, imutável. */
+export type TransacaoPoolApi = Schema<"BudgetTransaction">;
 
 export const TIPO_TRANSACAO_LABEL: Record<TipoTransacao, string> = {
   reserva: "Reserva",
@@ -260,20 +219,15 @@ export function nomeDoPool(pool: Pick<PoolOrcamentoApi, "nivel" | "estado" | "te
 // ─── Escrita: distribuição orçamentária (§5.3.2) ────────────────────────────
 
 /**
- * Payload de `POST /sgp/orcamento/pools/` (`BudgetPoolCreateSerializer`). Os
- * sufixos `_id` são do contrato. `reserva_ugp` fica de fora: só vale no
- * nacional, que esta tela não cria.
+ * Payload de `POST /sgp/orcamento/pools/` — `BudgetPoolCreateRequest`.
+ *
+ * `nivel` é refinado para excluir `"nacional"` (esta tela não cria pools
+ * nacionais) e `reserva_ugp` é tornado opcional (omitido = false).
  */
-export type CriarPoolPayload = {
-  rubrica_id: number;
-  nivel: Exclude<NivelOrcamento, "nacional">;
-  /** Obrigatório no estadual. */
-  estado_id?: number;
-  /** Obrigatório no territorial. */
-  territorio_id?: number;
-  /** Decimal em string: "1234.56". */
-  valor_alocado: string;
-};
+export type CriarPoolPayload = Refinar<
+  Schema<"BudgetPoolCreateRequest">,
+  { nivel: Exclude<NivelOrcamento, "nacional">; reserva_ugp?: boolean }
+>;
 
 /**
  * POST /api/v1/sgp/orcamento/pools/ — o service confere o teto do pool de cima

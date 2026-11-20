@@ -6,8 +6,13 @@
  * Fonte: apps/sgp/serializers.py::ActivityCalendarioSerializer.
  */
 import { apiClient } from "@/app/lib/api";
+import type { Refinar, Schema } from "@/app/lib/apiSchema";
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
+
+/**
+ * Os tipos vêm do schema (#273).
+ */
 
 /** Objeto aninhado leve devolvido pelo serializer do calendário. */
 export type CalendarNestedRef = {
@@ -15,37 +20,22 @@ export type CalendarNestedRef = {
   nome: string;
 };
 
-/** Evento do calendário — subset de Activity otimizado para grade. */
-export type CalendarActivityEvent = {
-  id: number;
-  titulo: string;
-  tipo_atividade: string;
-  tipo_atividade_display: string;
-  status: string;
-  status_display: string;
-  /** True quando data_fim ficou no passado sem chegar a status terminal. */
-  atrasada: boolean;
-  /** Cor HEX da paleta semântica do design system, derivada do status. */
-  cor: string;
-  /**
-   * ISO 8601 com horário e fuso ("2026-08-02T13:00:00-03:00") — `data_inicio`
-   * e `data_fim` são DateTimeField em apps/sgp/models/activity.py. Use
-   * parseDayStart() de lib/datetime para agrupar por dia e formatTime() para
-   * exibir a hora; split("-") NÃO funciona por causa do fuso.
-   */
-  data_inicio: string;
-  data_fim: string;
-  tecnico_responsavel: CalendarNestedRef;
-  municipio: CalendarNestedRef;
-  comunidade: CalendarNestedRef | null;
-};
+/**
+ * `ActivityCalendarioSerializer` — evento do calendário.
+ *
+ * Refinamentos: `tipo_atividade` e `status` passam dos enums estreitos do
+ * schema para `string`, compatível com o restante do código.
+ */
+export type CalendarActivityEvent = Refinar<
+  Schema<"ActivityCalendario">,
+  {
+    tipo_atividade: string;
+    status: string;
+  }
+>;
 
-export type CalendarResponse = {
-  count: number;
-  inicio: string;
-  fim: string;
-  results: CalendarActivityEvent[];
-};
+/** `ActivityCalendarioResposta`. */
+export type CalendarResponse = Schema<"ActivityCalendarioResposta">;
 
 // ── Query ────────────────────────────────────────────────────────────────────
 

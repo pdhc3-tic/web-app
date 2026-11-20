@@ -1,7 +1,16 @@
+import functools
+
+from django import forms
+from django.db import router, transaction
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
+from django.core.exceptions import PermissionDenied
+from django.forms.models import BaseInlineFormSet
+from django.http import Http404
 from django.utils.html import format_html_join
 from django.urls import reverse
+
+from rest_framework.exceptions import ValidationError
 
 from apps.sgd.exceptions import TransicaoInvalida
 
@@ -9,11 +18,97 @@ from .models import State, Territory, Municipality, User, Role, UserProfile, Org
 from .models.notifications import Notification, NotificationPreference
 from .models.system_config import SystemConfig
 from .models import AuditLog
-from .services.usuarios import desativar
+from .services.parametros import parametro_do_orcamento_invalido, valor_do_tipo
+from .services.usuarios import (
+    SUPER_ADMIN, desativar, exigir_super_admin_restante, sobra_super_admin, travar_ultimo_super_admin,
+)
+
+
+def _mensagem(erro: ValidationError) -> str:
+    detalhe = erro.detail
+    grupos = detalhe.values() if isinstance(detalhe, dict) else [detalhe]
+    return " ".join(
+        str(mensagem) for grupo in grupos for mensagem in (grupo if isinstance(grupo, list) else [grupo])
+    )
+
+
+def _exigir_no_formulario(**removidos) -> None:
+    """A conferência com trava, como erro de formulário. O Admin salva numa transação, então a trava vale
+    até o commit, e vem antes de gravar qualquer linha de usuário."""
+    try:
+        exigir_super_admin_restante(**removidos)
+    except ValidationError as exc:
+        raise forms.ValidationError(_mensagem(exc)) from exc
+
+
+def _exigir_na_exclusao(**removidos) -> None:
+    """Mesma conferência na exclusão, que não tem formulário: o botão já some sem outro Super Admin, e
+    isto cobre o pedido que chega junto com outro."""
+    try:
+        exigir_super_admin_restante(**removidos)
+    except ValidationError as exc:
+        raise PermissionDenied(_mensagem(exc)) from exc
+
+
+def _travar_antes_do_registro(request) -> None:
+    """O Django grava o registro da exclusão, com FK para quem exclui, antes de `delete_model` e
+    `delete_queryset`. A trava do último Super Admin vem antes desse registro: duas pessoas excluindo uma
+    à outra ao mesmo tempo, com a trava depois, esperariam uma pela outra até o banco abortar uma delas.
+    Quem exclui é conferido já com a trava: se foi excluído ou desativado enquanto esperava, para aqui."""
+    travar_ultimo_super_admin()
+    if not User.objects.filter(pk=getattr(request.user, "pk", None), ativo=True).exists():
+        raise PermissionDenied("Sua conta foi desativada ou excluída.")
+
+
+def _exclusao_em_lote_atomica(acoes):
+    """As ações do Admin rodam sem a transação que ele abre na edição: o registro da exclusão e a exclusão
+    entram ou saem juntos, e a trava do último Super Admin vale até o commit."""
+    if "delete_selected" in acoes:
+        funcao, nome, descricao = acoes["delete_selected"]
+
+        @functools.wraps(funcao)
+        def excluir_selecionados(modeladmin, request, queryset):
+            with transaction.atomic(using=router.db_for_write(modeladmin.model)):
+                _travar_antes_do_registro(request)
+                return funcao(modeladmin, request, queryset)
+
+        acoes["delete_selected"] = (excluir_selecionados, nome, descricao)
+    return acoes
+
+
+class ExclusaoComTravaMixin:
+    """Exclusão unitária e em lote com a trava do último Super Admin pega antes do registro da exclusão."""
+
+    def delete_view(self, request, object_id, extra_context=None):
+        if request.method != "POST":
+            return super().delete_view(request, object_id, extra_context)
+        with transaction.atomic(using=router.db_for_write(self.model)):
+            _travar_antes_do_registro(request)
+            return super().delete_view(request, object_id, extra_context)
+
+    def get_actions(self, request):
+        return _exclusao_em_lote_atomica(super().get_actions(request))
+
+
+class UserProfileFormSet(BaseInlineFormSet):
+    def clean(self):
+        super().clean()
+        usuario = self.instance
+        if usuario.pk is None or self._continua_super_admin():
+            return
+        _exigir_no_formulario(sem_usuarios=[usuario.pk])
+
+    def _continua_super_admin(self) -> bool:
+        return any(
+            getattr(form.cleaned_data.get("perfil"), "slug", None) == SUPER_ADMIN
+            and not form.cleaned_data.get("DELETE")
+            for form in self.forms
+        )
 
 
 class UserProfileInline(admin.TabularInline):
     model = UserProfile
+    formset = UserProfileFormSet
     verbose_name = "Perfil"
     verbose_name_plural = "Perfis"
     extra = 1
@@ -29,7 +124,7 @@ class RoleAdmin(admin.ModelAdmin):
 
 
 @admin.register(User)
-class UserAdmin(DjangoUserAdmin):
+class UserAdmin(ExclusaoComTravaMixin, DjangoUserAdmin):
     inlines = [UserProfileInline]
     list_display = (
         "email",
@@ -79,18 +174,62 @@ class UserAdmin(DjangoUserAdmin):
     filter_horizontal = ("groups", "user_permissions")
 
     def save_model(self, request, obj, form, change):
-        if not (change and "ativo" in form.changed_data and not obj.ativo):
+        if not change:
             super().save_model(request, obj, form, change)
             return
-        # `desativar` só age em usuário ainda ativo. Os outros campos vão depois: trocar o e-mail,
-        # coluna única, barra a checagem de FK de quem segura o limite que o cancelamento precisa.
-        obj.ativo = True
+        # A conta foi lida sem trava. Regravar a linha inteira devolveria o `ativo` dessa leitura por cima
+        # de uma ativação ou desativação concorrente, sem passar pela regra do último Super Admin. Por isso
+        # só o que o formulário mudou é gravado, e `ativo` só na reativação.
         try:
-            desativar(obj, por=request.user)
-        except TransicaoInvalida as exc:
-            obj.ativo = True
-            self.message_user(request, f"Usuário não desativado: {exc.mensagem}", level=messages.ERROR)
-        super().save_model(request, obj, form, change)
+            self._gravar_o_que_mudou(request, obj, form)
+        except User.DoesNotExist:
+            raise Http404("A conta foi excluída enquanto era editada.") from None
+
+    def _gravar_o_que_mudou(self, request, obj, form):
+        mudou_ativo = "ativo" in form.changed_data
+        reativando = mudou_ativo and obj.ativo
+        if mudou_ativo and not obj.ativo:
+            # `desativar` relê `ativo` com a linha travada e grava só essa coluna. Os outros campos vão
+            # depois: trocar o e-mail, coluna única, barra a checagem de FK de quem segura o limite que o
+            # cancelamento precisa.
+            try:
+                desativar(obj, por=request.user)
+            except TransicaoInvalida as exc:
+                obj.ativo = True
+                self.message_user(request, f"Usuário não desativado: {exc.mensagem}", level=messages.ERROR)
+            except ValidationError as exc:
+                obj.ativo = True
+                self.message_user(request, f"Usuário não desativado: {_mensagem(exc)}", level=messages.ERROR)
+        campos = [
+            campo.name for campo in obj._meta.concrete_fields
+            if campo.name in form.changed_data and (campo.name != "ativo" or reativando)
+        ]
+        if not campos:
+            return
+        # Trava a linha, como o UPDATE travaria, e relê as colunas que o formulário não mudou: a auditoria
+        # serializa a instância inteira e registraria os valores da leitura sem trava como mudança.
+        if not User.objects.select_for_update(no_key=True).filter(pk=obj.pk).values_list("pk", flat=True):
+            raise User.DoesNotExist
+        intocados = [
+            campo.name for campo in obj._meta.concrete_fields if not campo.primary_key and campo.name not in campos
+        ]
+        if intocados:
+            obj.refresh_from_db(fields=intocados)
+        obj.save(update_fields=campos)
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and not sobra_super_admin(sem_usuarios=[obj.pk]):
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def delete_model(self, request, obj):
+        _exigir_na_exclusao(sem_usuarios=[obj.pk])
+        super().delete_model(request, obj)
+
+    @transaction.atomic
+    def delete_queryset(self, request, queryset):
+        _exigir_na_exclusao(sem_usuarios=list(queryset.values_list("pk", flat=True)))
+        super().delete_queryset(request, queryset)
 
     def perfis_resumo(self, obj):
         profiles = obj.profiles.select_related("perfil", "territorio").all()
@@ -163,12 +302,43 @@ class AuditLogAdmin(admin.ModelAdmin):
         return False
 
 
+class UserProfileAdminForm(forms.ModelForm):
+    class Meta:
+        model = UserProfile
+        fields = "__all__"
+
+    def clean(self):
+        dados = super().clean()
+        # Antes de `_post_clean`: `self.instance` ainda tem o perfil e o usuário gravados.
+        vinculo = self.instance
+        if self.errors or vinculo.pk is None:
+            return dados
+        if getattr(dados.get("perfil"), "slug", None) != SUPER_ADMIN or dados.get("user") != vinculo.user:
+            _exigir_no_formulario(sem_vinculos=[vinculo.pk])
+        return dados
+
+
 @admin.register(UserProfile)
-class UserProfileAdmin(admin.ModelAdmin):
+class UserProfileAdmin(ExclusaoComTravaMixin, admin.ModelAdmin):
+    form = UserProfileAdminForm
     list_display = ("user", "perfil", "territorio", "criado_em")
     list_filter = ("perfil", "territorio")
     search_fields = ("user__email", "user__nome")
     raw_id_fields = ("user",)
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and not sobra_super_admin(sem_vinculos=[obj.pk]):
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def delete_model(self, request, obj):
+        _exigir_na_exclusao(sem_vinculos=[obj.pk])
+        super().delete_model(request, obj)
+
+    @transaction.atomic
+    def delete_queryset(self, request, queryset):
+        _exigir_na_exclusao(sem_vinculos=list(queryset.values_list("pk", flat=True)))
+        super().delete_queryset(request, queryset)
 
 
 @admin.register(Notification)
@@ -188,8 +358,28 @@ class NotificationPreferenceAdmin(admin.ModelAdmin):
     raw_id_fields = ("user",)
 
 
+class SystemConfigAdminForm(forms.ModelForm):
+    """Mesmas regras do `PATCH /system-config/{chave}/`: o tipo e, nos parâmetros do orçamento, as opções e
+    faixas. O Admin salva numa transação, que segura a trava dos limiares do semáforo."""
+
+    class Meta:
+        model = SystemConfig
+        fields = "__all__"
+
+    def clean_valor(self):
+        try:
+            valor = valor_do_tipo(self.instance.tipo, self.cleaned_data["valor"])
+        except ValidationError as exc:
+            raise forms.ValidationError(_mensagem(exc)) from exc
+        erro = parametro_do_orcamento_invalido(self.instance.chave, valor)
+        if erro:
+            raise forms.ValidationError(erro)
+        return valor
+
+
 @admin.register(SystemConfig)
 class SystemConfigAdmin(admin.ModelAdmin):
+    form = SystemConfigAdminForm
     list_display = ("chave", "tipo", "descricao", "atualizado_por", "atualizado_em")
     list_filter = ("tipo",)
     search_fields = ("chave", "descricao")

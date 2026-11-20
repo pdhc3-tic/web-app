@@ -2,19 +2,18 @@ import logging
 
 from django.db import transaction
 from django.db.models import Count, Max
-from django.utils import timezone
 from django_filters import rest_framework as django_filters
-from drf_spectacular.utils import extend_schema, inline_serializer
+from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view, inline_serializer
 from rest_framework import filters, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
-from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
-from apps.core.models import User
+from apps.core.models import Role, User, UserProfile
 from apps.core.permissions import IsSuperAdmin
 from apps.core.serializers import ImpactoDesativacaoSerializer, UserDetailSerializer, UserListSerializer
 from apps.core.services.audit import log_audit
+from apps.core.services import usuarios as usuarios_service
 from apps.core.services.usuarios import desativar
 
 
@@ -39,6 +38,10 @@ def _user_access_snapshot(user):
 
 class UserFilter(django_filters.FilterSet):
     perfil = django_filters.NumberFilter(field_name="profiles__perfil_id")
+    categoria = django_filters.ChoiceFilter(
+        choices=Role.Categoria.choices, method="filter_categoria",
+        help_text="Quem tem ao menos um perfil da categoria.",
+    )
     territorio = django_filters.NumberFilter(field_name="profiles__territorio_id")
     ativo = django_filters.BooleanFilter()
     ultimo_acesso_de = django_filters.DateFilter(
@@ -52,10 +55,14 @@ class UserFilter(django_filters.FilterSet):
     class Meta:
         model = User
         fields = [
-            "perfil", "territorio", "ativo",
+            "perfil", "categoria", "territorio", "ativo",
             "ultimo_acesso_de", "ultimo_acesso_ate",
             "com_dispositivo",
         ]
+
+    def filter_categoria(self, qs, name, value):
+        # Subconsulta, e não JOIN: quem tem dois perfis da categoria apareceria duas vezes.
+        return qs.filter(pk__in=UserProfile.objects.filter(perfil__categoria=value).values("user_id"))
 
     def filter_com_dispositivo(self, qs, name, value):
         if value:
@@ -68,6 +75,19 @@ class UserPagination(LimitOffsetPagination):
     max_limit = 100
 
 
+@extend_schema_view(
+    partial_update=extend_schema(responses={
+        200: UserDetailSerializer,
+        400: OpenApiResponse(description=(
+            "Campos inválidos. Com `ativo: false`, a própria conta ou o último Super Admin ativo, em `ativo`. "
+            "Sem o perfil Super Admin em `perfis_input`, o último Super Admin ativo, em `perfis_input`."
+        )),
+    }),
+    destroy=extend_schema(responses={
+        204: None,
+        400: OpenApiResponse(description="A própria conta ou o último Super Admin ativo, em `ativo`."),
+    }),
+)
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     permission_classes = [IsSuperAdmin]
@@ -126,8 +146,12 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         old_snapshot = _user_access_snapshot(serializer.instance)
-        desativando = serializer.instance.ativo and serializer.validated_data.get("ativo") is False
+        # Pelo pedido, não pela instância lida sem trava: `desativar` relê o estado com a linha travada.
+        desativando = serializer.validated_data.get("ativo") is False
         with transaction.atomic():
+            perfis = serializer.validated_data.get("perfis_input")
+            if not desativando and perfis is not None:
+                usuarios_service.exigir_super_admin_nos_perfis(serializer.instance, perfis)
             # Depois da desativação: trocar o e-mail, coluna única, barra a checagem de FK de
             # quem segura o limite que o cancelamento precisa, e as duas transações se esperariam.
             if desativando:
@@ -168,52 +192,18 @@ class UserViewSet(viewsets.ModelViewSet):
     # ------------------------------------------------------------------
     # Acesso do SCA — revogar / reativar
     # ------------------------------------------------------------------
-    def _invalidate_all_sessions(self, user):
-        """Blacklista todos os refresh tokens ativos do usuário (todos os dispositivos)."""
-        tokens = OutstandingToken.objects.filter(user=user)
-        revoked = 0
-        for token in tokens:
-            _, created = BlacklistedToken.objects.get_or_create(token=token)
-            revoked += int(created)
-        return revoked
-
-    @extend_schema(request=None, responses=_ACESSO_RESPOSTA)
+    @extend_schema(request=None, responses={
+        200: _ACESSO_RESPOSTA,
+        400: OpenApiResponse(description="A própria conta ou o último Super Admin ativo, em `acesso_revogado`."),
+    })
     @action(detail=True, methods=["patch"], url_path="revogar-acesso")
     def revogar_acesso(self, request, pk=None):
-        instance = self.get_object()
-        instance.acesso_revogado = True
-        instance.acesso_revogado_em = timezone.now()
-        instance.acesso_revogado_por = request.user
-        instance.save(update_fields=[
-            "acesso_revogado",
-            "acesso_revogado_em",
-            "acesso_revogado_por",
-        ])
-        revoked = self._invalidate_all_sessions(instance)
-        log_audit(
-            user=request.user,
-            acao="user.access_revoked",
-            modulo="core",
-            entidade="User",
-            entidade_id=instance.pk,
-            valores_anteriores={"acesso_revogado": False},
-            valores_novos={
-                "acesso_revogado": True,
-                "sessoes_invalidadas": revoked,
-            },
-            request=request,
-        )
-        audit_event_logger.info(
-            "user.access_revoked actor_user_id=%s target_user_id=%s sessions=%s",
-            getattr(request.user, "pk", None),
-            instance.pk,
-            revoked,
-        )
+        encerradas = usuarios_service.revogar_acesso(self.get_object(), por=request.user)
         return Response(
             {
                 "message": "Acesso revogado. O app SCA fará o wipe remoto no próximo sync.",
                 "acesso_revogado": True,
-                "sessoes_invalidadas": revoked,
+                "sessoes_invalidadas": encerradas,
             }
         )
 
@@ -229,7 +219,7 @@ class UserViewSet(viewsets.ModelViewSet):
             "acesso_revogado_em",
             "acesso_revogado_por",
         ])
-        revoked = self._invalidate_all_sessions(instance)
+        revoked = usuarios_service.encerrar_sessoes(instance)
         log_audit(
             user=request.user,
             acao="user.access_reactivated",

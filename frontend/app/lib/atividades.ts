@@ -1,5 +1,6 @@
 import { apiClient } from "@/app/lib/api";
 import type { Paginated } from "@/app/lib/users";
+import type { Refinar, Schema } from "@/app/lib/apiSchema";
 import type { NestedRef } from "@/app/lib/ufpas";
 import type { BadgeStatus } from "@/app/components/ui/Badge/Badge";
 
@@ -43,6 +44,12 @@ export function badgeStatusFor(status: string): BadgeStatus {
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
+// ─── Tipos ──────────────────────────────────────────────────────────────────
+
+/**
+ * Os tipos vêm do schema (#273).
+ */
+
 /** Ação do Plano de Trabalho (WorkPlanAcaoListSerializer, subset usado aqui). */
 export type AcaoPT = {
   id: number;
@@ -51,11 +58,8 @@ export type AcaoPT = {
   descricao: string;
 };
 
-/** Técnico/usuário para os campos de equipe. */
-export type TecnicoOption = {
-  id: number;
-  nome: string;
-};
+/** `TecnicoOption` — opções do filtro por técnico. */
+export type TecnicoOption = Schema<"TecnicoOption">;
 
 /** Ação aninhada no detalhe (to_representation do ActivityDetailSerializer). */
 export type AcaoNested = {
@@ -81,31 +85,22 @@ export type TecnicoNested = {
 };
 
 /**
- * Espelha apps/sgp/serializers.py::ActivityListSerializer.
- * `municipio` vem como PK e `municipio_nome` como texto; idem para o técnico.
- * `atrasada` já é calculado no backend (false para status terminais).
+ * `ActivityListSerializer`.
+ *
+ * Refinamentos: `tipo_atividade`, `forma_atuacao`, `ambito` e `status` passam
+ * dos enums estreitos do schema para `string`, compatível com o restante do
+ * código. `municipio` mantém o tipo `MunicipioNested` do schema (`.nome` para
+ * exibição, como no restante das telas de atividade).
  */
-export type AtividadeListItem = {
-  id: number;
-  titulo: string;
-  tipo_atividade: string;
-  tipo_atividade_display: string;
-  forma_atuacao: string;
-  ambito: string;
-  ambito_display: string;
-  municipio: number;
-  municipio_nome: string;
-  data_inicio: string;
-  data_fim: string;
-  status: string;
-  status_display: string;
-  tecnico_responsavel: number;
-  tecnico_nome: string;
-  total_participantes: number;
-  atrasada: boolean;
-  ativo: boolean;
-  criado_em: string;
-};
+export type AtividadeListItem = Refinar<
+  Schema<"ActivityList">,
+  {
+    tipo_atividade: string;
+    forma_atuacao: string;
+    ambito: string;
+    status: string;
+  }
+>;
 
 /**
  * Espelha apps/sgp/serializers.py::ActivityDetailSerializer (leitura).
@@ -143,136 +138,78 @@ export type MembroParticipante = {
   criado_em: string;
 };
 
-export type AtividadeDetail = {
-  id: number;
-  titulo: string;
-  tipo_atividade: string;
-  tipo_atividade_display: string;
-  acao: AcaoNested;
-  forma_atuacao: string;
-  forma_atuacao_display: string;
-  tecnico_responsavel: TecnicoNested;
-  /**
-   * Objetos na LEITURA, ids na escrita — mesma assimetria de
-   * `ufpas_participantes`. `to_representation` do ActivityDetailSerializer
-   * reescreve o M2M como `{id, nome, email}`; o tipo dizia `number[]` e por
-   * isso o prefill da edição entregava objetos ao seletor de ids.
-   */
-  equipe_adicional: TecnicoNested[];
-  municipio: NestedRef;
-  territorio_id: number | null;
-  /**
-   * Território com nome — ainda NÃO vem no detalhe (só `territorio_id`). O
-   * contexto da nova demanda (#294) precisa exibi-lo; pedido em
-   * docs/pendencias-backend-sprint-10.md, item 8. Opcional até lá.
-   */
-  territorio?: NestedRef | null;
-  comunidade: NestedRef | null;
-  ambito: string;
-  ambito_display: string;
-  latitude: string | null;
-  longitude: string | null;
-  data_inicio: string;
-  data_fim: string;
-  /**
-   * Objetos, NÃO ids — o detalhe passou a devolver o registro inteiro na Issue
-   * #227 (backend, 05/09). O tipo antigo dizia `number[]`, e por causa disso o
-   * prefill da edição chegou a montar `/api/v1/sgp/ufpas/[object Object]/`.
-   * A ESCRITA continua enviando ids (ver AtividadeWritePayload).
-   */
-  ufpas_participantes: UfpaParticipante[];
-  membros_participantes: MembroParticipante[];
-  total_participantes: number;
-  /**
-   * Custo da atividade (#404, AJ-BE-08), calculado no backend sobre todas as
-   * demandas dela: o previsto soma o estimado das demandas que ainda contam; o
-   * realizado, o pago das concluídas, limitado ao autorizado (o excedente fica
-   * no risco de glosa). Decimais como string. Opcionais para não quebrar
-   * resposta antiga em cache.
-   */
-  custo_previsto?: string;
-  custo_realizado?: string;
-  /**
-   * Espelha GOOGLE_CALENDAR_SYNC_STATUS_CHOICES em models/activity.py.
-   * `erro` é só um aviso na ficha (RF24): a atividade está salva, o que falhou
-   * foi criar o evento na agenda.
-   */
-  google_calendar_sync_status: "pendente" | "ok" | "erro";
-  /**
-   * Evidências vinculadas, como vêm no detalhe consolidado (Issue #227).
-   *
-   * O tipo declara só o que a UI consome — a presença de ao menos um item é o
-   * que decide se "Concluído" pode ser oferecido. A galeria carrega os dados
-   * completos por conta própria, pelos endpoints de fotos/documentos.
-   */
-  fotos?: { id: number; arquivo_url: string; legenda: string; ordem: number }[];
-  documentos?: { id: number; nome_original: string; tipo: string }[];
-  /**
-   * Ids das `core.Organization` parceiras. O detalhe NÃO aninha nome — só o
-   * M2M cru —, e `OrganizationViewSet` restringe a listagem a
-   * super-admin/UGP/Articulador, então o ADT não tem como resolvê-los.
-   * Pedido aberto ao backend em docs/pendencias-backend-sprint-9.md.
-   */
-  parceiros_organizacoes: number[];
-  /** Parceiros em texto livre — o campo que o formulário preenche. */
-  parceiros_livres: string;
-  descricao_narrativa: string;
-  resultados_alcancados: string;
-  status: string;
-  status_display: string;
-  justificativa: string;
-  atrasada: boolean;
-  /** Status para os quais o backend aceita transitar a partir do atual. */
-  transicoes_permitidas: string[];
-  ativo: boolean;
-  criado_por: number | null;
-  criado_em: string;
-  atualizado_em: string;
-  // ── Procedência SCA ────────────────────────────────────────────────────────
-  // Espelham os campos de sync do backend. `ultima_origem` é o que vale para a
-  // badge: `device_id` fica preenchido para sempre depois do primeiro sync,
-  // inclusive quando a última edição veio da web.
-  device_id: string;
-  uuid_local: string | null;
-  ultima_origem: "sca" | "web";
-  ultimo_sync_em: string | null;
+/**
+ * `ActivityDetailSerializer` (leitura) — `ActivityDetailResposta` no schema.
+ *
+ * Refinamentos:
+ * - `acao` usa o tipo local `AcaoNested` (mantém a shape histórica).
+ * - `tecnico_responsavel` e `equipe_adicional` usam `TecnicoNested`.
+ * - `municipio` refinado de `MunicipioNested` para `NestedRef` (shape anterior).
+ * - `ufpas_participantes`, `membros_participantes` usam os tipos locais.
+ * - `parceiros_organizacoes` refinado de `Nested[]` para `number[]`.
+ * - `google_calendar_sync_status` refinado de enum para union literal.
+ * - `criado_por` refinado de `UsuarioRef | null` para `number | null`.
+ * - `status`, `tipo_atividade`, `ambito`, `forma_atuacao` refinados para `string`.
+ * - `transicoes_permitidas` refinado de enum[] para `string[]`.
+ */
+export type AtividadeDetail = Refinar<
+  Schema<"ActivityDetailResposta">,
+  {
+    acao: AcaoNested;
+    tecnico_responsavel: TecnicoNested;
+    equipe_adicional: TecnicoNested[];
+    municipio: NestedRef;
+    ufpas_participantes: UfpaParticipante[];
+    membros_participantes: MembroParticipante[];
+    parceiros_organizacoes: number[];
+    google_calendar_sync_status: "pendente" | "ok" | "erro";
+    criado_por: number | null;
+    tipo_atividade: string;
+    forma_atuacao: string;
+    ambito: string;
+    status: string;
+    transicoes_permitidas: string[];
+    custo_previsto: string;
+    custo_realizado: string;
+    /** Sempre presente na resposta (string vazia quando não preenchido). */
+    parceiros_livres: string;
+    resultados_alcancados: string;
+    justificativa: string;
+    ativo: boolean;
+  }
+>;
 
-};
-
-/** Campos graváveis (POST/PATCH). FKs e M2M vão como PK. */
-export type AtividadeWritePayload = {
-  titulo: string;
-  tipo_atividade: string;
-  acao: number | null;
-  forma_atuacao: string;
-  tecnico_responsavel: number | null;
-  equipe_adicional: number[];
-  municipio: number | null;
-  comunidade: number | null;
-  ambito: string;
-  latitude: string | null;
-  longitude: string | null;
-  data_inicio: string;
-  data_fim: string;
-  /** Na escrita são ids: o serializer usa PrimaryKeyRelatedField. */
-  ufpas_participantes: number[];
-  membros_participantes: number[];
-  /**
-   * `parceiros` não existe no serializer: o campo é `parceiros_livres`. O
-   * formulário enviava a chave antiga, o DRF a descartava em silêncio e o que
-   * o técnico digitava nunca chegava ao banco.
-   *
-   * `parceiros_organizacoes` fica FORA do payload de propósito. O formulário
-   * não tem seletor de organizações, e mandar `[]` a cada PATCH apagaria os
-   * vínculos criados por outro caminho — o serializer só toca no M2M quando a
-   * chave vem, então omiti-la é o que preserva o que já está lá.
-   */
-  parceiros_livres: string;
-  descricao_narrativa: string;
-  resultados_alcancados: string;
-  status: string;
-  justificativa: string;
-};
+/**
+ * Campos graváveis (POST/PATCH) — `ActivityDetailRequest` do schema.
+ *
+ * Refinamentos:
+ * - `tipo_atividade`, `forma_atuacao`, `ambito`, `status` passam dos enums
+ *   estreitos do schema para `string`, compatível com o restante do código.
+ * - `acao`, `tecnico_responsavel` e `municipio` passam de required para
+ *   `number | null`: o formulário inicia com null e envia null enquanto o
+ *   usuário não escolheu — o backend valida na save, não aqui.
+ */
+export type AtividadeWritePayload = Refinar<
+  Schema<"ActivityDetailRequest">,
+  {
+    tipo_atividade: string;
+    /** FK obrigatória, mas null no estado inicial do formulário. */
+    acao: number | null;
+    forma_atuacao: string;
+    /** FK obrigatória, mas null no estado inicial do formulário. */
+    tecnico_responsavel: number | null;
+    /** FK obrigatória, mas null no estado inicial do formulário. */
+    municipio: number | null;
+    ambito: string;
+    status: string;
+    /**
+     * `parceiros_organizacoes` fica FORA do payload de propósito. O formulário
+     * não tem seletor de organizações, e mandar `[]` a cada PATCH apagaria os
+     * vínculos criados por outro caminho — o serializer só toca no M2M quando a
+     * chave vem, então omiti-la é o que preserva o que já está lá.
+     */
+  }
+>;
 
 // ─── API — Listagem ──────────────────────────────────────────────────────────
 
@@ -430,9 +367,9 @@ export async function listTecnicos(
     const res = await apiClient("/api/v1/users/?limit=500&ativo=true", {
       signal,
     });
-    const data: Paginated<{ id: number; nome_completo: string }> =
+    const data: Paginated<{ id: number; nome_completo: string; email: string }> =
       await res.json();
-    return data.results.map((u) => ({ id: u.id, nome: u.nome_completo }));
+    return data.results.map((u) => ({ id: u.id, nome: u.nome_completo, email: u.email }));
   } catch {
     return [];
   }

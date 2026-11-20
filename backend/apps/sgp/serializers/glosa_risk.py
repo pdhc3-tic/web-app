@@ -33,3 +33,7 @@ class GlosaRiskQuerySerializer(serializers.Serializer):
     tipo = serializers.ChoiceField(choices=GlosaRisk.Tipo.choices, required=False)
     severidade = serializers.ChoiceField(choices=GlosaRisk.Severidade.choices, required=False)
     demanda = serializers.IntegerField(required=False)
+    aberto = serializers.BooleanField(
+        required=False, allow_null=True, default=None,
+        help_text="true: só os ainda não resolvidos; false: só os resolvidos. Sem ele, todos.",
+    )

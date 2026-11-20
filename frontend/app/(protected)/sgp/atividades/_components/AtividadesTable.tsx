@@ -144,7 +144,7 @@ export function AtividadesTable({ atividades, loading }: Props) {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-text-muted">
-                    {a.municipio_nome || "—"}
+                    {a.municipio.nome || "—"}
                   </td>
                   <td className="px-4 py-3 text-text-muted">
                     {a.tecnico_nome || "—"}
@@ -207,7 +207,7 @@ export function AtividadesTable({ atividades, loading }: Props) {
 
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
                     <span>{periodo(a.data_inicio, a.data_fim)}</span>
-                    <span>{a.municipio_nome || "—"}</span>
+                    <span>{a.municipio.nome || "—"}</span>
                     <span className="inline-flex items-center gap-1 tabular-nums">
                       <Users className="h-3 w-3" aria-hidden="true" />
                       {a.total_participantes}
