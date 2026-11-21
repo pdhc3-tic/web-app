@@ -146,6 +146,8 @@ export const qk = {
       ["sgd", "execucao", "custo", filtros] as const,
     metas: ["sgp", "metas", "opcoes"] as const,
     submetas: ["sgp", "submetas", "opcoes"] as const,
+    /** As Submetas de uma Meta (#431). Criar uma invalida ["sgp", "submetas"]. */
+    submetasDaMeta: (metaId: number) => ["sgp", "submetas", "meta", metaId] as const,
     opcoesUsuarios: (papel: string) => ["sgd", "opcoes", "usuarios", papel] as const,
     buscaAtividade: (texto: string) => ["sgp", "atividades", "filtro", { texto }] as const,
   },

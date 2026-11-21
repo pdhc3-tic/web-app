@@ -1,9 +1,10 @@
 "use client";
 
 import { useRotuloChoice } from "@/app/providers/SgpChoicesProvider";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { notFound, useParams, useSearchParams } from "next/navigation";
-import { AlertTriangle, ListChecks, Plus } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, Layers, ListChecks, Plus } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { AlertCircleIcon } from "@/app/components/icons";
 import Spinner from "@/app/components/icons/Spinner";
@@ -18,7 +19,7 @@ import { SlideOver } from "@/app/components/ui/SlideOver/SlideOver";
 import { useToast } from "@/app/components/ui/Toast/Toast";
 import { ApiError } from "@/app/lib/api";
 import { useCanManageWorkPlan } from "@/app/lib/auth/roles";
-import { deleteAcao, type Acao } from "@/app/lib/acoes";
+import { deleteAcao, listSubmetasDaMeta, type Acao } from "@/app/lib/acoes";
 import { formatDate } from "@/app/lib/datetime";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import {
@@ -28,11 +29,15 @@ import {
   odsShortLabel,
   type MetaDetail,
 } from "@/app/lib/metas";
+import { qk } from "@/app/lib/queryKeys";
+import type { Submeta } from "@/app/lib/submetas";
 import {
   AcaoSlideOver,
   type AcaoSlideOverMode,
 } from "./_components/AcaoSlideOver";
 import { AcoesTable } from "./_components/AcoesTable";
+import { SubmetaSlideOver } from "./_components/SubmetaSlideOver";
+import { SubmetasLista } from "./_components/SubmetasLista";
 
 type SlideOverState = {
   open: boolean;
@@ -137,6 +142,8 @@ function MetaDetalheConteudo() {
 
   const [deleteTarget, setDeleteTarget] = useState<Acao | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [submetaAberta, setSubmetaAberta] = useState(false);
+  const queryClient = useQueryClient();
 
   // Id não numérico na URL é 404 direto — dá para saber no render, sem estado.
   const idInvalido = !Number.isFinite(metaId);
@@ -187,6 +194,49 @@ function MetaDetalheConteudo() {
   }, [acaoParam, meta, canManage, deepLinkAplicado]);
 
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
+
+  // As Submetas da Meta (#431): sem elas a Meta não recebe Ação.
+  const submetasQ = useQuery({
+    queryKey: qk.execucao.submetasDaMeta(metaId),
+    queryFn: ({ signal }) => listSubmetasDaMeta(metaId, signal),
+    enabled: !idInvalido && meta !== null,
+  });
+  const submetas = useMemo(
+    () => [...(submetasQ.data ?? [])].sort((a, b) => a.numero.localeCompare(b.numero, "pt-BR", { numeric: true })),
+    [submetasQ.data],
+  );
+  const semSubmetas = submetasQ.isSuccess && submetas.length === 0;
+  const acoesPorSubmeta = useMemo(() => {
+    const contagem = new Map<number, number>();
+    for (const a of meta?.acoes ?? []) contagem.set(a.submeta, (contagem.get(a.submeta) ?? 0) + 1);
+    return contagem;
+  }, [meta]);
+
+  // O formulário sugere o próximo número a partir desta lista: só abre com ela
+  // inteira. Carregando ou com erro, a sugestão sairia de uma lista vazia e
+  // repetiria um número já usado (revisão do PR #434).
+  const listaDeSubmetasPronta = submetasQ.isSuccess;
+
+  const abrirNovaSubmeta = useCallback(() => {
+    if (!listaDeSubmetasPronta) return;
+    setSlideOver((prev) => ({ ...prev, open: false }));
+    setSubmetaAberta(true);
+  }, [listaDeSubmetasPronta]);
+
+  const handleSubmetaSalva = useCallback(
+    (submeta: Submeta) => {
+      setSubmetaAberta(false);
+      showToast(`Submeta ${submeta.numero} criada. Ela já pode receber Ações.`, "success");
+      // Entra na lista já: um segundo cadastro aberto antes da releitura
+      // terminar não pode sugerir o número que acabou de ser usado.
+      queryClient.setQueryData<Submeta[]>(qk.execucao.submetasDaMeta(metaId), (atual) =>
+        atual && !atual.some((s) => s.id === submeta.id) ? [...atual, submeta] : atual,
+      );
+      // A lista desta Meta, o seletor da Ação e os filtros do SGD que listam Submetas.
+      void queryClient.invalidateQueries({ queryKey: ["sgp", "submetas"] });
+    },
+    [metaId, queryClient, showToast],
+  );
 
   const closeSlideOver = useCallback(
     () => setSlideOver((prev) => ({ ...prev, open: false })),
@@ -251,14 +301,27 @@ function MetaDetalheConteudo() {
           {meta ? `Meta ${meta.numero} – ${meta.titulo}` : "Meta"}
         </h1>
         {canManage && meta && (
-          <Button
-            size="sm"
-            onClick={handleNew}
-            leftIcon={<Plus className="h-4 w-4" />}
-            data-testid="acao-nova-btn"
-          >
-            Nova ação
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={abrirNovaSubmeta}
+              disabled={!listaDeSubmetasPronta}
+              title={listaDeSubmetasPronta ? undefined : "Aguarde a lista de Submetas carregar."}
+              leftIcon={<Plus className="h-4 w-4" />}
+              data-testid="submeta-nova-btn"
+            >
+              Nova submeta
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleNew}
+              leftIcon={<Plus className="h-4 w-4" />}
+              data-testid="acao-nova-btn"
+            >
+              Nova ação
+            </Button>
+          </div>
         )}
       </div>
     </PageHeader>
@@ -305,6 +368,56 @@ function MetaDetalheConteudo() {
           <>
             <MetaResumo meta={meta} />
 
+            {/* Meta → Submeta → Ação (#431): toda Ação fica dentro de uma Submeta. */}
+            <div className="flex flex-col gap-3" data-testid="submetas-secao">
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-text-muted">
+                  Submetas
+                </h2>
+                {submetasQ.isSuccess && (
+                  <span className="text-xs tabular-nums text-text-muted">
+                    {submetas.length} {submetas.length === 1 ? "submeta" : "submetas"}
+                  </span>
+                )}
+              </div>
+              {submetasQ.isPending ? (
+                <div className="flex justify-center rounded-lg border border-border bg-surface py-6">
+                  <Spinner className="h-5 w-5 animate-spin text-text-muted" />
+                </div>
+              ) : submetasQ.isError ? (
+                <div
+                  role="alert"
+                  className="flex flex-wrap items-center gap-3 rounded-lg border border-error-text bg-error-bg px-4 py-3 text-sm text-error-text"
+                >
+                  Não foi possível carregar as Submetas desta Meta.
+                  <Button variant="secondary" size="sm" onClick={() => void submetasQ.refetch()}>
+                    Tentar de novo
+                  </Button>
+                </div>
+              ) : semSubmetas ? (
+                <div className="rounded-lg border border-border bg-surface" data-testid="submetas-vazio">
+                  <EmptyState
+                    icon={<Layers className="h-7 w-7" />}
+                    title="Nenhuma Submeta cadastrada"
+                    description={
+                      canManage
+                        ? "As Ações desta Meta ficam dentro de uma Submeta. Cadastre a primeira Submeta para poder cadastrar Ações."
+                        : "As Submetas desta Meta ainda não foram cadastradas pela UGP."
+                    }
+                    action={
+                      canManage ? (
+                        <Button variant="primary" onClick={abrirNovaSubmeta} leftIcon={<Plus className="h-4 w-4" />}>
+                          Nova submeta
+                        </Button>
+                      ) : undefined
+                    }
+                  />
+                </div>
+              ) : (
+                <SubmetasLista submetas={submetas} acoesPorSubmeta={acoesPorSubmeta} />
+              )}
+            </div>
+
             <div className="flex flex-col gap-3">
               <div className="flex items-baseline justify-between gap-3">
                 <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-text-muted">
@@ -322,12 +435,15 @@ function MetaDetalheConteudo() {
                     icon={<ListChecks className="h-7 w-7" />}
                     title="Nenhuma Ação cadastrada"
                     description={
-                      canManage
-                        ? "Cadastre a primeira Ação desta Meta para acompanhar execução e custo."
-                        : "As Ações desta Meta ainda não foram cadastradas pela UGP."
+                      !canManage
+                        ? "As Ações desta Meta ainda não foram cadastradas pela UGP."
+                        : semSubmetas
+                          ? "Toda Ação fica dentro de uma Submeta. Cadastre uma Submeta acima e depois a primeira Ação."
+                          : "Cadastre a primeira Ação desta Meta para acompanhar execução e custo."
                     }
                     action={
-                      canManage ? (
+                      // Sem Submeta, a Ação não teria como ser salva: o botão é o da Submeta.
+                      canManage && !semSubmetas ? (
                         <Button
                           variant="primary"
                           onClick={handleNew}
@@ -360,6 +476,17 @@ function MetaDetalheConteudo() {
           metaId={meta.id}
           acao={slideOver.acao}
           onSaved={handleSaved}
+          onPedirSubmeta={canManage && listaDeSubmetasPronta ? abrirNovaSubmeta : undefined}
+        />
+      )}
+
+      {meta && canManage && (
+        <SubmetaSlideOver
+          open={submetaAberta}
+          onClose={() => setSubmetaAberta(false)}
+          meta={meta}
+          existentes={submetas}
+          onSaved={handleSubmetaSalva}
         />
       )}
 
