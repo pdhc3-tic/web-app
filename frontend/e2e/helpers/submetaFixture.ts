@@ -24,7 +24,7 @@ function djangoShell(script: string): string {
   );
 }
 
-const CRIAR = `
+const CRIAR = (submetas: number) => `
 import json
 from datetime import date
 from apps.core.models import User
@@ -39,6 +39,15 @@ meta = WorkPlanMeta.objects.create(
     data_fim=date(2027, 12, 31),
     criado_por=autor,
 )
+from apps.sgp.models import WorkPlanSubmeta
+# Submetas já existentes, para o caso de mais de uma página da API (revisão do PR #434).
+WorkPlanSubmeta.objects.bulk_create([
+    WorkPlanSubmeta(
+        meta=meta, numero=f"${SLOT_NUMERO}.{i}", titulo=f"E2E-431 Submeta {i}",
+        data_inicio=date(2026, 1, 1), data_fim=date(2027, 12, 31),
+    )
+    for i in range(1, ${submetas} + 1)
+])
 print("${MARCADOR} " + json.dumps({"id": meta.pk, "numero": meta.numero, "inicio": "2026-01-01", "fim": "2027-12-31"}))
 `;
 
@@ -52,11 +61,12 @@ for meta in WorkPlanMeta.objects.filter(numero=${SLOT_NUMERO}, titulo__startswit
 print("${MARCADOR}_LIMPO")
 `;
 
-export function criarMetaSemSubmetas(): MetaSemSubmetas {
+/** `submetas` > 0 cria a Meta já com as Submetas X.1 a X.N. */
+export function criarMetaSemSubmetas(submetas = 0): MetaSemSubmetas {
   // Um run interrompido pode ter deixado a Meta do teste no slot.
   djangoShell(LIMPAR);
   freeMetaSlot();
-  const saida = djangoShell(CRIAR);
+  const saida = djangoShell(CRIAR(submetas));
   const linha = saida.split("\n").map((l) => l.trim()).find((l) => l.startsWith(`${MARCADOR} `));
   if (!linha) throw new Error(`Não consegui criar a Meta do teste:\n${saida}`);
   return JSON.parse(linha.slice(MARCADOR.length + 1));

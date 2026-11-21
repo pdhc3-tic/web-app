@@ -162,13 +162,24 @@ export function formatPercentual(valor: string | number): string {
 
 // ─── Opções dos filtros ─────────────────────────────────────────────────────
 
-type Paginated<T> = { results: T[] };
+type Paginated<T> = { results: T[]; next?: string | null };
 
-/** GET /api/v1/sgp/submetas/ — leitura aberta a qualquer perfil autenticado. */
+/**
+ * GET /api/v1/sgp/submetas/ — leitura aberta a qualquer perfil autenticado.
+ *
+ * Percorre as páginas (de 200, o teto da rota) até o fim: com o cadastro de
+ * Submetas pela tela (#431), o total pode passar de uma página, e as
+ * seguintes sumiriam do filtro. Registro repetido entre páginas entra uma vez.
+ */
 export async function fetchSubmetaOptions(signal?: AbortSignal): Promise<SelectOption[]> {
-  const res = await apiClient("/api/v1/sgp/submetas/?page_size=200", { signal });
-  const data: Paginated<{ id: number; numero: string; titulo: string }> = await res.json();
-  return data.results
+  const porId = new Map<number, { id: number; numero: string; titulo: string }>();
+  for (let page = 1; ; page++) {
+    const res = await apiClient(`/api/v1/sgp/submetas/?page=${page}&page_size=200`, { signal });
+    const data: Paginated<{ id: number; numero: string; titulo: string }> = await res.json();
+    for (const s of data.results) porId.set(s.id, s);
+    if (!data.next || data.results.length === 0) break;
+  }
+  return Array.from(porId.values())
     .map((s) => ({ value: String(s.id), label: `${s.numero} — ${s.titulo}` }))
     .sort((a, b) => a.label.localeCompare(b.label, "pt-BR", { numeric: true }));
 }

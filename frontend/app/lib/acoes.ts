@@ -148,17 +148,30 @@ export async function deleteAcao(id: number): Promise<void> {
 export type SubmetaOption = Schema<"WorkPlanSubmeta">;
 export type IndicadorOption = Schema<"Indicator">;
 
-/** GET /api/v1/sgp/submetas/?meta={metaId} — submetas vinculadas à Meta. */
+/** Tamanho de página pedido: o teto de `UFPAPagination` (`max_page_size = 200`). */
+const SUBMETAS_POR_PAGINA = 200;
+
+/**
+ * GET /api/v1/sgp/submetas/?meta={metaId} — TODAS as Submetas da Meta.
+ *
+ * A rota é paginada e a Meta não tem limite de Submetas: a função segue as
+ * páginas até o fim (revisão do PR #434). Ler só a primeira deixava de fora as
+ * seguintes, inclusive uma recém-criada, da lista, do seletor da Ação e da
+ * sugestão do próximo número. Um registro repetido entre páginas entra uma vez.
+ */
 export async function listSubmetasDaMeta(
   metaId: number,
   signal?: AbortSignal,
 ): Promise<SubmetaOption[]> {
-  const res = await apiClient(
-    `/api/v1/sgp/submetas/?meta=${metaId}&page_size=100`,
-    { signal },
-  );
-  const data: Paginated<SubmetaOption> = await res.json();
-  return data.results;
+  const porId = new Map<number, SubmetaOption>();
+  for (let page = 1; ; page++) {
+    const qs = new URLSearchParams({ meta: String(metaId), page: String(page), page_size: String(SUBMETAS_POR_PAGINA) });
+    const res = await apiClient(`/api/v1/sgp/submetas/?${qs}`, { signal });
+    const data: Paginated<SubmetaOption> = await res.json();
+    for (const s of data.results) porId.set(s.id, s);
+    if (!data.next || data.results.length === 0) break;
+  }
+  return Array.from(porId.values());
 }
 
 /** GET /api/v1/sgp/indicadores/?ativo=true — catálogo de indicadores ativos. */

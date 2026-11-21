@@ -212,19 +212,30 @@ function MetaDetalheConteudo() {
     return contagem;
   }, [meta]);
 
+  // O formulário sugere o próximo número a partir desta lista: só abre com ela
+  // inteira. Carregando ou com erro, a sugestão sairia de uma lista vazia e
+  // repetiria um número já usado (revisão do PR #434).
+  const listaDeSubmetasPronta = submetasQ.isSuccess;
+
   const abrirNovaSubmeta = useCallback(() => {
+    if (!listaDeSubmetasPronta) return;
     setSlideOver((prev) => ({ ...prev, open: false }));
     setSubmetaAberta(true);
-  }, []);
+  }, [listaDeSubmetasPronta]);
 
   const handleSubmetaSalva = useCallback(
     (submeta: Submeta) => {
       setSubmetaAberta(false);
       showToast(`Submeta ${submeta.numero} criada. Ela já pode receber Ações.`, "success");
+      // Entra na lista já: um segundo cadastro aberto antes da releitura
+      // terminar não pode sugerir o número que acabou de ser usado.
+      queryClient.setQueryData<Submeta[]>(qk.execucao.submetasDaMeta(metaId), (atual) =>
+        atual && !atual.some((s) => s.id === submeta.id) ? [...atual, submeta] : atual,
+      );
       // A lista desta Meta, o seletor da Ação e os filtros do SGD que listam Submetas.
       void queryClient.invalidateQueries({ queryKey: ["sgp", "submetas"] });
     },
-    [queryClient, showToast],
+    [metaId, queryClient, showToast],
   );
 
   const closeSlideOver = useCallback(
@@ -295,6 +306,8 @@ function MetaDetalheConteudo() {
               size="sm"
               variant="secondary"
               onClick={abrirNovaSubmeta}
+              disabled={!listaDeSubmetasPronta}
+              title={listaDeSubmetasPronta ? undefined : "Aguarde a lista de Submetas carregar."}
               leftIcon={<Plus className="h-4 w-4" />}
               data-testid="submeta-nova-btn"
             >
@@ -463,7 +476,7 @@ function MetaDetalheConteudo() {
           metaId={meta.id}
           acao={slideOver.acao}
           onSaved={handleSaved}
-          onPedirSubmeta={canManage ? abrirNovaSubmeta : undefined}
+          onPedirSubmeta={canManage && listaDeSubmetasPronta ? abrirNovaSubmeta : undefined}
         />
       )}
 
