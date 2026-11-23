@@ -307,6 +307,8 @@ SPECTACULAR_SETTINGS = {
         "StatusPedidoRecursoExtraEnum": "apps.sgp.budget.models.BudgetIncreaseRequest.Status",
         "OrigemEnum": "apps.sgp.models.form_response.FormResponse.Origem",
         "OrigemValorDiariaEnum": "apps.sgd.models.diarias.OrigemValorDiaria",
+        "TipoVersaoTEDEnum": "apps.sgp.ted.models.TEDVersion.Tipo",
+        "TipoNovaVersaoTEDEnum": "apps.sgp.ted.serializers.TIPOS_DE_NOVA_VERSAO",
     },
     "SWAGGER_UI_SETTINGS": {
         "deepLinking": True,

@@ -45,7 +45,7 @@ class BudgetPoolSerializer(serializers.ModelSerializer):
         fields = [
             "id", "rubrica", "nivel", "estado", "territorio",
             "valor_alocado", "valor_comprometido", "valor_executado",
-            "reserva_ugp", "saldo_disponivel", "criado_por", "criado_em",
+            "reserva_ugp", "saldo_disponivel", "ted_versao", "criado_por", "criado_em",
         ]
         read_only_fields = fields
 

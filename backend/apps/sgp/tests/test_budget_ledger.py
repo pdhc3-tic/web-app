@@ -14,7 +14,13 @@ from apps.sgp.budget import limites
 from apps.sgp.budget import services as budget_service
 from apps.sgp.budget.rls import visao_total
 from apps.sgp.models import BudgetPool, BudgetTransaction, BudgetTransfer, SpendingLimit
-from apps.sgp.tests.factories import BudgetPoolFactory, BudgetRubricaFactory, BudgetTransactionFactory, SpendingLimitFactory
+from apps.sgp.tests.factories import (
+    BudgetPoolFactory,
+    BudgetRubricaFactory,
+    BudgetTransactionFactory,
+    SpendingLimitFactory,
+    aprovar_no_ted,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -73,8 +79,10 @@ class TestSaldoAnteriorEPosterior:
         assert (credito.saldo_anterior, credito.saldo_posterior) == (Decimal("100"), Decimal("400"))
 
     def test_criacao_de_pool_parte_de_zero(self):
+        rubrica = BudgetRubricaFactory()
+        aprovar_no_ted(rubrica)
         pool = budget_service.criar_pool(
-            rubrica=BudgetRubricaFactory(), nivel=Nivel.NACIONAL, valor_alocado=Decimal("500"), usuario=UserFactory(),
+            rubrica=rubrica, nivel=Nivel.NACIONAL, valor_alocado=Decimal("500"), usuario=UserFactory(),
         )
 
         transacao = pool.transactions.get()

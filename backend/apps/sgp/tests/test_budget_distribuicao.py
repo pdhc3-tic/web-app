@@ -14,6 +14,7 @@ from apps.sgp.tests.factories import (
     BudgetPoolFactory,
     BudgetRubricaFactory,
     WorkPlanMetaFactory,
+    aprovar_no_ted,
 )
 
 pytestmark = pytest.mark.django_db
@@ -129,6 +130,7 @@ class TestDistribuicaoEstadual:
     def test_reserva_ugp_nao_aceita_filhas(self, auth_client_super_admin, state_rn):
         """Uma reserva nacional bloqueia filhas mesmo quando ainda tem saldo."""
         rubrica = BudgetRubricaFactory()
+        aprovar_no_ted(rubrica)
         reserva = auth_client_super_admin.post(
             POOLS_URL,
             {
@@ -191,6 +193,7 @@ class TestCriacaoDePool:
 
     def test_pool_repetido_e_400(self, auth_client_super_admin):
         rubrica = BudgetRubricaFactory()
+        aprovar_no_ted(rubrica)
         BudgetPoolFactory(
             rubrica=rubrica, nivel=Nivel.NACIONAL,
             estado=None, territorio=None, valor_alocado=Decimal("1000"),
@@ -209,6 +212,7 @@ class TestCriacaoDePool:
 class TestAliasDasRotasDeAlocacao:
     def test_criacao_pela_rota_da_meta_vira_pool_sem_meta(self, auth_client_super_admin):
         rubrica = BudgetRubricaFactory()
+        aprovar_no_ted(rubrica)
 
         response = auth_client_super_admin.post(
             alias_de_criacao_url(WorkPlanMetaFactory().pk),
@@ -232,6 +236,7 @@ class TestAliasDasRotasDeAlocacao:
         pool = BudgetPoolFactory(
             nivel=Nivel.NACIONAL, estado=None, territorio=None, valor_alocado=Decimal("500"),
         )
+        aprovar_no_ted(pool.rubrica)
 
         alteracao = auth_client_super_admin.patch(
             alias_de_detalhe_url(pool.pk), {"valor_alocado": "700.00"}, format="json",

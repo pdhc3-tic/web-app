@@ -36,7 +36,7 @@ from apps.sgp.constants import (
     STATUS_WORKPLAN,
     TIPO_MORADIA_CHOICES,
 )
-from apps.sgp.models import ActivityDocument, Cultura, EspecieAnimal, GlosaRisk, Production, UFPADocument
+from apps.sgp.models import ActivityDocument, Cultura, EspecieAnimal, GlosaRisk, Production, TEDVersion, UFPADocument
 from apps.sgp.models.activity import (
     AMBITO_CHOICES,
     FORMA_ATUACAO_CHOICES,
@@ -87,6 +87,7 @@ CHOICES_PUBLICADOS = {
     "tipo_veiculo": TipoVeiculo.choices,
     "tipo_material": TipoMaterial.choices,
     "tipo_refeicao": TipoRefeicao.choices,
+    "ted_versao_tipo": TEDVersion.Tipo.choices,
 }
 
 

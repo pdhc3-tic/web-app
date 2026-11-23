@@ -77,6 +77,15 @@ class BudgetPool(models.Model):
         verbose_name="Reserva Própria da UGP",
         help_text="Só em nível nacional. Uma reserva própria da UGP nunca recebe pools-filhos.",
     )
+    ted_versao = models.ForeignKey(
+        "sgp.TEDVersion",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="pools",
+        verbose_name="Versão do TED",
+        help_text="Versão do TED vigente quando o valor do pool foi definido.",
+    )
     criado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

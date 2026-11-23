@@ -7988,6 +7988,240 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedUsuarioElegivelList'
           description: ''
+  /api/v1/sgp/ted/:
+    get:
+      operationId: v1_sgp_ted_list
+      description: |-
+        Cadastro do TED. O projeto tem um TED só, que nasce com a versão original;
+        aditivos e prorrogações entram como novas versões.
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: O índice inicial a partir do qual retornar os resultados.
+        schema:
+          type: integer
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTEDList'
+          description: ''
+    post:
+      operationId: v1_sgp_ted_create
+      description: |-
+        Cadastro do TED. O projeto tem um TED só, que nasce com a versão original;
+        aditivos e prorrogações entram como novas versões.
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TEDCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TEDCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TEDCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TED'
+          description: ''
+  /api/v1/sgp/ted/{id}/:
+    get:
+      operationId: v1_sgp_ted_retrieve
+      description: |-
+        Cadastro do TED. O projeto tem um TED só, que nasce com a versão original;
+        aditivos e prorrogações entram como novas versões.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este TED.
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TED'
+          description: ''
+    patch:
+      operationId: v1_sgp_ted_partial_update
+      description: |-
+        Cadastro do TED. O projeto tem um TED só, que nasce com a versão original;
+        aditivos e prorrogações entram como novas versões.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Um valor inteiro único que identifica este TED.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTEDUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTEDUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTEDUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TED'
+          description: ''
+  /api/v1/sgp/ted/{ted_pk}/versoes/:
+    get:
+      operationId: v1_sgp_ted_versoes_list
+      description: Versões do TED, da original em diante. Nenhuma se altera nem se
+        remove.
+      parameters:
+      - name: limit
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: O índice inicial a partir do qual retornar os resultados.
+        schema:
+          type: integer
+      - in: path
+        name: ted_pk
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTEDVersaoList'
+          description: ''
+    post:
+      operationId: v1_sgp_ted_versoes_create
+      description: Versões do TED, da original em diante. Nenhuma se altera nem se
+        remove.
+      parameters:
+      - in: path
+        name: ted_pk
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TEDVersaoNovaEntradaRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TEDVersaoNovaEntradaRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TEDVersaoNovaEntradaRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TEDVersaoDetalhe'
+          description: ''
+  /api/v1/sgp/ted/{ted_pk}/versoes/{id}/:
+    get:
+      operationId: v1_sgp_ted_versoes_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: ted_pk
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TEDVersaoDetalhe'
+          description: ''
+  /api/v1/sgp/ted/documentos/upload-url/:
+    post:
+      operationId: v1_sgp_ted_documentos_upload_url_create
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TEDDocumentoUploadURLRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TEDDocumentoUploadURLRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TEDDocumentoUploadURLRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadURLResposta'
+          description: ''
   /api/v1/sgp/ufpas/:
     get:
       operationId: v1_sgp_ufpas_list
@@ -11580,6 +11814,12 @@ components:
           type: number
           format: double
           readOnly: true
+        ted_versao:
+          type: integer
+          readOnly: true
+          nullable: true
+          title: Versão do TED
+          description: Versão do TED vigente quando o valor do pool foi definido.
         criado_por:
           type: integer
           readOnly: true
@@ -11597,6 +11837,7 @@ components:
       - reserva_ugp
       - rubrica
       - saldo_disponivel
+      - ted_versao
       - territorio
       - valor_alocado
       - valor_comprometido
@@ -12170,6 +12411,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OpcaoTexto'
+        ted_versao_tipo:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
         solicitacao_tipo:
           type: array
           items:
@@ -12209,6 +12454,7 @@ components:
       - solicitacao_tipo
       - status_atividade
       - status_plano_trabalho
+      - ted_versao_tipo
       - tipo_atividade
       - tipo_material
       - tipo_moradia
@@ -16518,6 +16764,52 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SystemConfig'
+    PaginatedTEDList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/TED'
+    PaginatedTEDVersaoList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/TEDVersao'
     PaginatedTecnicoList:
       type: object
       required:
@@ -17469,6 +17761,24 @@ components:
           type: string
           minLength: 1
         descricao:
+          type: string
+    PatchedTEDUpdateRequest:
+      type: object
+      description: |-
+        Só a identificação. Valor global e vigência vêm da versão vigente: mandá-los
+        aqui é recusado, para o cliente não achar que mudou o que não mudou.
+      properties:
+        numero:
+          type: string
+          minLength: 1
+          maxLength: 100
+        participes:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 255
+        objeto:
           type: string
     PatchedTecnicoRequest:
       type: object
@@ -19975,6 +20285,329 @@ components:
         * `integer` - Integer
         * `boolean` - Boolean
         * `json` - JSON
+    TED:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        numero:
+          type: string
+          readOnly: true
+          title: Número do TED
+        participes:
+          type: array
+          items:
+            type: string
+            maxLength: 255
+          readOnly: true
+          title: Partícipes
+        objeto:
+          type: string
+          readOnly: true
+        valor_global:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          title: Valor Global (R$)
+        vigencia_inicio:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+          title: Início da Vigência
+        vigencia_fim:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+          title: Fim da Vigência
+        versao_vigente:
+          allOf:
+          - $ref: '#/components/schemas/TEDVersao'
+          readOnly: true
+          nullable: true
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - criado_em
+      - id
+      - numero
+      - objeto
+      - participes
+      - valor_global
+      - versao_vigente
+      - vigencia_fim
+      - vigencia_inicio
+    TEDCreateRequest:
+      type: object
+      properties:
+        numero:
+          type: string
+          minLength: 1
+          maxLength: 100
+        participes:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 255
+        objeto:
+          type: string
+          default: ''
+        versao:
+          allOf:
+          - $ref: '#/components/schemas/TEDVersaoOriginalEntradaRequest'
+          description: Versão original do TED.
+      required:
+      - numero
+      - participes
+      - versao
+    TEDDocumentoUploadURLRequest:
+      type: object
+      properties:
+        filename:
+          type: string
+          minLength: 1
+        content_type:
+          type: string
+          minLength: 1
+        size:
+          type: integer
+          minimum: 1
+      required:
+      - content_type
+      - filename
+      - size
+    TEDVersao:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        numero_versao:
+          type: integer
+          readOnly: true
+          title: Número da Versão
+        tipo:
+          allOf:
+          - $ref: '#/components/schemas/TipoVersaoTEDEnum'
+          readOnly: true
+        tipo_display:
+          type: string
+          readOnly: true
+        motivo:
+          type: string
+          readOnly: true
+        vigencia_inicio:
+          type: string
+          format: date
+          readOnly: true
+          title: Início da Vigência
+        vigencia_fim:
+          type: string
+          format: date
+          readOnly: true
+          title: Fim da Vigência
+        valor_global:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          title: Valor Global (R$)
+        rubricas:
+          type: array
+          items:
+            $ref: '#/components/schemas/TEDVersaoRubrica'
+          readOnly: true
+        registrado_por:
+          allOf:
+          - $ref: '#/components/schemas/UsuarioRef'
+          readOnly: true
+          nullable: true
+        registrado_em:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - id
+      - motivo
+      - numero_versao
+      - registrado_em
+      - registrado_por
+      - rubricas
+      - tipo
+      - tipo_display
+      - valor_global
+      - vigencia_fim
+      - vigencia_inicio
+    TEDVersaoDetalhe:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        numero_versao:
+          type: integer
+          readOnly: true
+          title: Número da Versão
+        tipo:
+          allOf:
+          - $ref: '#/components/schemas/TipoVersaoTEDEnum'
+          readOnly: true
+        tipo_display:
+          type: string
+          readOnly: true
+        motivo:
+          type: string
+          readOnly: true
+        vigencia_inicio:
+          type: string
+          format: date
+          readOnly: true
+          title: Início da Vigência
+        vigencia_fim:
+          type: string
+          format: date
+          readOnly: true
+          title: Fim da Vigência
+        valor_global:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          title: Valor Global (R$)
+        rubricas:
+          type: array
+          items:
+            $ref: '#/components/schemas/TEDVersaoRubrica'
+          readOnly: true
+        registrado_por:
+          allOf:
+          - $ref: '#/components/schemas/UsuarioRef'
+          readOnly: true
+          nullable: true
+        registrado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        plano_snapshot:
+          readOnly: true
+          title: Plano de Trabalho Aprovado
+        documento_url:
+          type: string
+          readOnly: true
+      required:
+      - documento_url
+      - id
+      - motivo
+      - numero_versao
+      - plano_snapshot
+      - registrado_em
+      - registrado_por
+      - rubricas
+      - tipo
+      - tipo_display
+      - valor_global
+      - vigencia_fim
+      - vigencia_inicio
+    TEDVersaoNovaEntradaRequest:
+      type: object
+      properties:
+        motivo:
+          type: string
+          minLength: 1
+        vigencia_inicio:
+          type: string
+          format: date
+        vigencia_fim:
+          type: string
+          format: date
+        valor_global:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        rubricas:
+          type: array
+          items:
+            $ref: '#/components/schemas/TEDVersaoRubricaEntradaRequest'
+        documento_key:
+          type: string
+          minLength: 1
+          description: Chave devolvida por `POST /sgp/ted/documentos/upload-url/`
+            depois do envio do PDF.
+        tipo:
+          $ref: '#/components/schemas/TipoNovaVersaoTEDEnum'
+      required:
+      - documento_key
+      - motivo
+      - rubricas
+      - tipo
+      - valor_global
+      - vigencia_fim
+      - vigencia_inicio
+    TEDVersaoOriginalEntradaRequest:
+      type: object
+      properties:
+        motivo:
+          type: string
+          default: ''
+        vigencia_inicio:
+          type: string
+          format: date
+        vigencia_fim:
+          type: string
+          format: date
+        valor_global:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+        rubricas:
+          type: array
+          items:
+            $ref: '#/components/schemas/TEDVersaoRubricaEntradaRequest'
+        documento_key:
+          type: string
+          minLength: 1
+          description: Chave devolvida por `POST /sgp/ted/documentos/upload-url/`
+            depois do envio do PDF.
+      required:
+      - documento_key
+      - rubricas
+      - valor_global
+      - vigencia_fim
+      - vigencia_inicio
+    TEDVersaoRubrica:
+      type: object
+      properties:
+        rubrica:
+          allOf:
+          - $ref: '#/components/schemas/BudgetRubricaNested'
+          readOnly: true
+        valor_aprovado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+          readOnly: true
+          title: Valor Aprovado (R$)
+      required:
+      - rubrica
+      - valor_aprovado
+    TEDVersaoRubricaEntradaRequest:
+      type: object
+      properties:
+        rubrica:
+          type: integer
+        valor_aprovado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,2})?$
+      required:
+      - rubrica
+      - valor_aprovado
     TabelaDiaria:
       type: object
       properties:
@@ -20358,6 +20991,14 @@ components:
         * `4` - Barraca
         * `5` - Outro
         * `6` - Não Informado
+    TipoNovaVersaoTEDEnum:
+      enum:
+      - aditivo
+      - prorrogacao
+      type: string
+      description: |-
+        * `aditivo` - Termo Aditivo
+        * `prorrogacao` - Prorrogação
     TipoOutraEnum:
       enum:
       - artesanato
@@ -20521,6 +21162,16 @@ components:
         * `push` - Push
         * `pull` - Pull
         * `refresh` - Refresh
+    TipoVersaoTEDEnum:
+      enum:
+      - original
+      - aditivo
+      - prorrogacao
+      type: string
+      description: |-
+        * `original` - Original
+        * `aditivo` - Termo Aditivo
+        * `prorrogacao` - Prorrogação
     TitularNested:
       type: object
       description: |-
