@@ -9260,8 +9260,11 @@ export interface components {
         WorkPlanAcao: {
             readonly id: number;
             readonly meta: number;
+            readonly meta_numero: number;
+            readonly meta_titulo: string;
             submeta: number;
             readonly submeta_numero: string;
+            readonly submeta_titulo: string;
             indicador: number;
             readonly indicador_detalhe: components["schemas"]["IndicatorResumo"];
             readonly tipo_unidade_display: string;
@@ -9310,8 +9313,11 @@ export interface components {
         WorkPlanAcaoList: {
             readonly id: number;
             readonly meta: number;
+            readonly meta_numero: number;
+            readonly meta_titulo: string;
             submeta: number;
             readonly submeta_numero: string;
+            readonly submeta_titulo: string;
             indicador: number;
             readonly indicador_detalhe: components["schemas"]["IndicatorResumo"];
             readonly tipo_unidade_display: string;
