@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from uuid import uuid4
 
 import pytest
+from django.conf import settings
 from django.db import DatabaseError, connection, transaction
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken
@@ -688,7 +689,7 @@ class TestApiComRls:
         cliente = Client()
         cliente.force_login(admin)
         with runtime():
-            resposta = cliente.get("/admin/sgp/ufpa/")
+            resposta = cliente.get(f"{settings.ADMIN_URL_PATH}sgp/ufpa/")
 
         assert resposta.status_code == 200
         assert resposta.context["cl"].result_count == 3

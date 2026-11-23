@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
+from django.conf import settings
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken
 
@@ -105,7 +106,7 @@ def test_session_context_skips_set_local_when_jwt_is_invalid(monkeypatch):
 def test_session_context_sets_super_admin_for_staff_admin_session(monkeypatch):
     """Sessão do Django (não JWT) no Admin, de um staff — sem token pra
     extrair role/território, trata como acesso total pra RLS."""
-    request = make_request(path="/admin/sgd/demand/", is_staff=True, pk=42)
+    request = make_request(path=f"{settings.ADMIN_URL_PATH}sgd/demand/", is_staff=True, pk=42)
     request.user.is_authenticated = True
     cursor = RecordingCursor()
     middleware = SessionContextMiddleware(lambda request: "ok")
@@ -123,7 +124,7 @@ def test_session_context_sets_super_admin_for_staff_admin_session(monkeypatch):
 
 
 def test_session_context_skips_staff_session_outside_admin_path(monkeypatch):
-    """A sessão de staff só vale dentro de /admin/ — fora dali (ex.: a mesma
+    """A sessão de staff só vale dentro do Django Admin (settings.ADMIN_URL_PATH) — fora dali (ex.: a mesma
     aba do navegador batendo na API depois de logar no Admin), não deve
     ganhar acesso total pra RLS."""
     request = make_request(path="/api/v1/sgd/demandas/", is_staff=True)
@@ -139,10 +140,28 @@ def test_session_context_skips_staff_session_outside_admin_path(monkeypatch):
     assert cursor.calls == []
 
 
+def test_session_context_skips_staff_session_on_frontend_admin_path(monkeypatch):
+    """Issue 435: /admin/ é das telas do Next.js; o Django Admin está em
+    settings.ADMIN_URL_PATH. Sessão de staff em /admin/... não é o Admin e
+    não deve ganhar acesso total pra RLS."""
+    assert settings.ADMIN_URL_PATH != "/admin/"
+    request = make_request(path="/admin/usuarios", is_staff=True)
+    request.user.is_authenticated = True
+    cursor = RecordingCursor()
+    middleware = SessionContextMiddleware(lambda request: "ok")
+
+    monkeypatch.setattr(middleware.jwt_authentication, "authenticate", lambda request: None)
+    monkeypatch.setattr("apps.core.middleware.transaction.atomic", lambda: DummyContext())
+    monkeypatch.setattr("apps.core.middleware.connection.cursor", lambda: cursor)
+
+    assert middleware(request) == "ok"
+    assert cursor.calls == []
+
+
 def test_session_context_skips_non_staff_session_in_admin_path(monkeypatch):
     """Sessão autenticada mas sem is_staff (não deveria nem conseguir logar
     no Admin, mas a checagem não confia só nisso) não ganha SET LOCAL."""
-    request = make_request(path="/admin/sgd/demand/", is_staff=False)
+    request = make_request(path=f"{settings.ADMIN_URL_PATH}sgd/demand/", is_staff=False)
     request.user.is_authenticated = True
     cursor = RecordingCursor()
     middleware = SessionContextMiddleware(lambda request: "ok")
@@ -158,7 +177,7 @@ def test_session_context_skips_non_staff_session_in_admin_path(monkeypatch):
 def test_session_context_jwt_takes_priority_over_staff_session(monkeypatch):
     """Um JWT válido nunca deve ser ignorado em favor do branch de sessão do
     Admin, mesmo que o usuário também seja staff."""
-    request = make_request(path="/admin/sgd/demand/", is_staff=True)
+    request = make_request(path=f"{settings.ADMIN_URL_PATH}sgd/demand/", is_staff=True)
     cursor = RecordingCursor()
     user = SimpleNamespace(pk=7, is_authenticated=True, is_staff=True)
     token = {"user_id": 7, "territorios": [], "role": "articulador-estadual"}

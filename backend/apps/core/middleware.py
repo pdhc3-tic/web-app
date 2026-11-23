@@ -63,12 +63,13 @@ class SessionContextMiddleware:
             _, token = auth_result
             context = self._build_session_context(token, request.user)
         elif (
-            request.path.startswith("/admin/")
+            request.path.startswith(settings.ADMIN_URL_PATH)
             and is_authenticated
             and getattr(request.user, "is_staff", False)
         ):
             # Sessão do Django (cookie, não JWT) especificamente no Admin
-            # (setup/urls.py: path("admin/", ...)) — sem restringir por path,
+            # (setup/urls.py: path(settings.DJANGO_ADMIN_URL, ...), por padrão
+            # /django-admin/; /admin/ é das telas do Next.js — Issue 435) — sem restringir por path,
             # qualquer request com cookie de sessão de staff (ex.: a mesma
             # aba do navegador batendo na API depois de logar no Admin)
             # cairia aqui também. Quem chega até aqui já passou pelo próprio

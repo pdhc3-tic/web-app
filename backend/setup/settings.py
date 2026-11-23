@@ -15,6 +15,7 @@ from pathlib import Path
 import os
 from urllib.parse import urlparse
 from dotenv import load_dotenv
+from django.core.exceptions import ImproperlyConfigured
 from celery.schedules import crontab
 import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
@@ -183,6 +184,16 @@ STATIC_URL = "static/"
 STATIC_ROOT = Path(os.getenv("STATIC_ROOT", BASE_DIR / "staticfiles"))
 if not STATIC_ROOT.is_absolute():
     STATIC_ROOT = BASE_DIR / STATIC_ROOT
+
+# Prefixo do Django Admin (Issue 435). "/admin/" pertence às telas do Next.js:
+# o nginx manda esse prefixo para o frontend. O `location` do Django Admin em
+# nginx/conf.d/default.conf precisa usar o mesmo valor desta variável.
+DJANGO_ADMIN_URL = os.getenv("DJANGO_ADMIN_URL", "django-admin/").strip().strip("/") + "/"
+if DJANGO_ADMIN_URL in ("/", "admin/"):
+    raise ImproperlyConfigured(
+        "DJANGO_ADMIN_URL não pode ser vazio nem 'admin/': esse prefixo é das telas do frontend."
+    )
+ADMIN_URL_PATH = f"/{DJANGO_ADMIN_URL}"  # ex.: "/django-admin/"
 
 MEDIA_URL = os.getenv("MEDIA_URL", "/media/")
 MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", BASE_DIR / "media"))

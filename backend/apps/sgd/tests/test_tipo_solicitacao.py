@@ -3,6 +3,7 @@ from importlib import import_module
 from unittest.mock import patch
 
 import pytest
+from django.conf import settings
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 
@@ -185,7 +186,7 @@ def test_catalogo_no_admin_e_somente_leitura(rf):
     from django.contrib.admin.sites import site
 
     model_admin = site._registry[TipoSolicitacao]
-    request = rf.get("/admin/")
+    request = rf.get(f"{settings.ADMIN_URL_PATH}")
 
     assert not model_admin.has_add_permission(request)
     assert not model_admin.has_change_permission(request)
