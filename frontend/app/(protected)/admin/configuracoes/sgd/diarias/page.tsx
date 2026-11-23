@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle } from "lucide-react";
 import Spinner from "@/app/components/icons/Spinner";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { TabErroSection } from "@/app/components/sgp/CrudTab/CrudTab";
@@ -14,9 +15,12 @@ import { canConfigurarDiarias, isSuperAdmin } from "@/app/lib/auth/roles";
 import { formatDate } from "@/app/lib/datetime";
 import {
   excluirValor,
+  hojeIso,
+  lacunasDeValor,
   lerParametros,
   listarFaixas,
   listarValores,
+  type FaixaDestino,
   type ValorDiaria,
 } from "@/app/lib/diarias";
 import { formatCurrencyBRL } from "@/app/lib/format";
@@ -31,6 +35,48 @@ function HeaderSlot() {
     <PageHeader>
       <h1 className="truncate text-base font-semibold text-text">Tabela de diárias</h1>
     </PageHeader>
+  );
+}
+
+/**
+ * Faixas ativas sem valor vigente (#440). Sem valor, a simulação e a gravação
+ * da diária são recusadas para todo município da faixa: o SGD não aceita a
+ * solicitação. O aviso diz quais são, e o selo na grade marca a linha.
+ */
+function AvisoLacunas({ faixas, valores }: { faixas: FaixaDestino[]; valores: ValorDiaria[] }) {
+  const lacunas = lacunasDeValor(faixas, valores, hojeIso());
+  if (lacunas.length === 0) return null;
+  const semValor = lacunas.filter((l) => l.tipo === "sem-valor");
+  const acabam = lacunas.flatMap((l) => (l.tipo === "acaba" ? [l] : []));
+  return (
+    <div
+      role="alert"
+      // Vermelho quando alguma faixa já recusa hoje; amarelo se a falta é só mais adiante.
+      className={`flex items-start gap-2 rounded-md border px-4 py-3 text-sm ${
+        semValor.length > 0
+          ? "border-error-text bg-error-bg text-error-text"
+          : "border-warning-text bg-warning-bg text-warning-text"
+      }`}
+      data-testid="diarias-aviso-lacunas"
+      data-nivel={semValor.length > 0 ? "erro" : "alerta"}
+    >
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+      <div className="flex flex-col gap-1">
+        {semValor.length > 0 && (
+          <p>
+            <strong>Sem valor vigente:</strong> {semValor.map((l) => l.faixa.nome).join("; ")}. As diárias para os
+            municípios {semValor.length > 1 ? "dessas faixas" : "desta faixa"} não podem ser solicitadas até um valor
+            ser cadastrado.
+          </p>
+        )}
+        {acabam.map((l) => (
+          <p key={l.faixa.id}>
+            <strong>{l.faixa.nome}:</strong> sem valor a partir de {formatDate(l.desde)}. As viagens com ida a partir
+            dessa data não podem ser solicitadas.
+          </p>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -128,6 +174,8 @@ export default function TabelaDiariasPage() {
           </p>
         ) : (
           <>
+            <AvisoLacunas faixas={listaDeFaixas} valores={listaDeValores} />
+
             <section className="flex flex-col gap-3" aria-labelledby="diarias-valores-titulo">
               <div>
                 <h3 id="diarias-valores-titulo" className="text-base font-semibold text-text">

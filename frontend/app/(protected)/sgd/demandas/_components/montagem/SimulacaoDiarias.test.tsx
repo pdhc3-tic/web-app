@@ -103,13 +103,48 @@ describe("SimulacaoDiarias (#366)", () => {
     expect(texto("simulacao-diarias-total")).toContain("845,00");
   });
 
-  it("sem valor vigente, mostra a mensagem do backend", async () => {
+  it("sem valor vigente, mostra a mensagem do backend e que não pode salvar (#440)", async () => {
     const mensagem = "Sem valor de diária vigente para a faixa 'Demais localidades' em 16/11/2026. Contate a FGD ou o Super Admin.";
-    api.simular.mockRejectedValue(new ApiError(400, { code: "error", message: mensagem }));
+    api.simular.mockRejectedValue(
+      new ApiError(400, {
+        code: "BUSINESS_RULE",
+        message: mensagem,
+        field_errors: [{ field: "valor_por_diaria", message: mensagem }],
+      }),
+    );
     montar({ municipio: "12", ida: "2026-11-16", volta: "2026-11-18" });
 
     expect((await screen.findByTestId("simulacao-diarias-erro")).textContent).toContain(mensagem);
+    expect(texto("simulacao-diarias-bloqueio")).toContain("não pode ser salva");
+    expect(texto("simulacao-diarias-bloqueio")).toContain("Tabela de diárias");
+    expect(texto("simulacao-diarias")).not.toContain("calculado pelo sistema ao salvar");
     expect(screen.queryByTestId("simulacao-diarias-resultado")).toBeNull();
+  });
+
+  it("outra recusa do cálculo também bloqueia, sem citar a tabela", async () => {
+    api.simular.mockRejectedValue(
+      new ApiError(400, { code: "BUSINESS_RULE", message: "Não pode ser anterior à data de início." }),
+    );
+    montar({ municipio: "12", ida: "2026-11-16", volta: "2026-11-18" });
+
+    expect(await screen.findByTestId("simulacao-diarias-bloqueio")).toHaveTextContent(
+      "não pode ser salva com este destino e estas datas",
+    );
+  });
+
+  it("total zerado bloqueia (#440)", async () => {
+    api.simular.mockResolvedValue(simulacao("2.5", "0.00"));
+    montar({ municipio: "12", ida: "2026-11-16", volta: "2026-11-18" });
+
+    expect(await screen.findByTestId("simulacao-diarias-erro")).toHaveTextContent("R$ 0,00");
+  });
+
+  it("falha de rede não bloqueia: o total sai ao salvar", async () => {
+    api.simular.mockRejectedValue(new ApiError(503, { code: "error", message: "Indisponível" }));
+    montar({ municipio: "12", ida: "2026-11-16", volta: "2026-11-18" });
+
+    expect(await screen.findByTestId("simulacao-diarias-erro")).toHaveTextContent("calculado pelo sistema ao salvar");
+    expect(screen.queryByTestId("simulacao-diarias-bloqueio")).toBeNull();
   });
 
   it("sem destino ou datas, não consulta o backend", () => {
