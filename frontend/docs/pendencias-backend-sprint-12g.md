@@ -7,6 +7,7 @@
 | Item | Issue do front | Depende de | Bloqueia critério de aceite? |
 |---|---|---|---|
 | 1 | #438 (dotação nacional) | #437 (entidade TED) | Não. A #438 fica aberta só por ele |
+| 2 | #453 (catálogo de indicadores) | — | Não. Melhoria: a tela funciona com a cópia dos rótulos |
 
 ---
 
@@ -29,3 +30,27 @@ O backend não confere o valor contra nada, porque o pool nacional não tem pai 
 3. **O que acontece com a dotação quando um aditivo reduz o valor aprovado** abaixo do que já foi lançado: se o pool é ajustado automaticamente, se fica acima até alguém ajustar, ou se o aditivo é recusado. O front precisa saber disso para mostrar o aviso certo.
 
 *Estado atual no frontend:* `lancarDotacaoNacional` e `pisoDoPool` em `app/lib/orcamento.ts`. A página é `app/(protected)/sgp/orcamento/dotacao/page.tsx`. Quando a #437 entregar, a tela ganha uma coluna com o aprovado no TED, a versão vigente no topo e o bloqueio antes de enviar um valor acima do aprovado.
+
+## 2. Rótulos do Indicador em `/api/v1/choices/` (#453)
+
+*Melhoria, não bloqueia: a #453 fecha com a cópia dos rótulos no front.*
+
+**Estado atual.** O Catálogo de Indicadores (`/sgp/indicadores`) mostra e edita unidade de medida, forma de apuração, categoria e desagregação. `/api/v1/choices/` não publica nenhuma dessas listas, e o schema só traz os códigos (`UnidadeMedidaEnum`, `FormaApuracaoEnum`, `IndicatorCategoriaEnum`; a desagregação é um `JSONField` sem forma). O front copiou os rótulos de `apps/sgp/models/indicator.py`. Se o backend mudar um rótulo, a tela fica com o antigo sem aviso. Um valor novo só aparece no `tsc`, quando os tipos forem regenerados.
+
+**Pedido:** acrescentar a `CHOICES_PUBLICADOS` (`apps/sgp/views/choices.py`):
+
+```python
+from apps.sgp.models.indicator import (
+    CATEGORIA_CHOICES as INDICADOR_CATEGORIA_CHOICES,
+    DESAGREGACAO_CHOICES, FORMA_APURACAO_CHOICES, UNIDADE_MEDIDA_CHOICES,
+)
+
+    "indicador_unidade_medida": UNIDADE_MEDIDA_CHOICES,
+    "indicador_forma_apuracao": FORMA_APURACAO_CHOICES,
+    "indicador_categoria": INDICADOR_CATEGORIA_CHOICES,
+    "indicador_desagregacao": DESAGREGACAO_CHOICES,
+```
+
+O comentário de `CHOICES_PUBLICADOS` diz que os testes de contrato conferem que toda constante de choices do SGP está lá. As do Indicador escaparam dessa conferência, então vale também acrescentá-las ao teste.
+
+*Estado atual no frontend:* `UNIDADE_MEDIDA_LABEL`, `FORMA_APURACAO_LABEL`, `CATEGORIA_LABEL` e `DESAGREGACAO_LABEL` em `app/lib/indicadores.ts`. Quando as choices forem publicadas, a tela passa a lê-las de `useSgpChoices` e as cópias saem.
