@@ -118,7 +118,10 @@ class IndicatorResumoSerializer(serializers.ModelSerializer):
 # ---------------------------------------------------------------------------
 
 class WorkPlanAcaoSerializer(serializers.ModelSerializer):
+    meta_numero = serializers.IntegerField(source="meta.numero", read_only=True)
+    meta_titulo = serializers.CharField(source="meta.titulo", read_only=True)
     submeta_numero = serializers.CharField(source="submeta.numero", read_only=True)
+    submeta_titulo = serializers.CharField(source="submeta.titulo", read_only=True)
     indicador_detalhe = IndicatorResumoSerializer(source="indicador", read_only=True)
     # Débito técnico: alias de transição do antigo `tipo_unidade`, que o
     # Indicador substituiu. Só existe até o front ler `indicador_detalhe`
@@ -148,8 +151,11 @@ class WorkPlanAcaoSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "meta",
+            "meta_numero",
+            "meta_titulo",
             "submeta",
             "submeta_numero",
+            "submeta_titulo",
             "indicador",
             "indicador_detalhe",
             "tipo_unidade_display",
@@ -300,7 +306,7 @@ class WorkPlanSubmetaDetailSerializer(WorkPlanSubmetaSerializer):
 
 def _acoes_visiveis(queryset, context):
     request = context.get("request")
-    queryset = queryset.select_related("submeta", "indicador").prefetch_related(
+    queryset = queryset.select_related("meta", "submeta", "indicador").prefetch_related(
         "rubricas_previstas"
     )
     if request is not None and request.user.is_authenticated:

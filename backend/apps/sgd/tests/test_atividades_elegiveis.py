@@ -168,8 +168,16 @@ def test_detalhe_de_atividade_de_outro_estado_traz_o_contexto_do_formulario(clie
     assert resp.data["comunidade"] is None
     assert resp.data["tecnico_responsavel"] == {"id": tecnico.pk, "nome": "Técnica RN"}
     assert resp.data["acao"]["numero"] == acao.numero
-    assert resp.data["acao"]["submeta"]["numero"] == acao.submeta.numero
-    assert resp.data["acao"]["indicador"]["codigo"] == acao.indicador.codigo
+    assert resp.data["acao"]["meta"] == {
+        "id": acao.meta_id, "numero": acao.meta.numero, "titulo": acao.meta.titulo,
+    }
+    assert resp.data["acao"]["submeta"] == {
+        "id": acao.submeta_id, "numero": acao.submeta.numero, "titulo": acao.submeta.titulo,
+    }
+    assert resp.data["acao"]["indicador"] == {
+        "id": acao.indicador_id, "codigo": acao.indicador.codigo,
+        "nome": acao.indicador.nome, "unidade_medida": acao.indicador.unidade_medida,
+    }
 
 
 def test_detalhe_vale_para_qualquer_status(client_adt_pb, municipio_rn):
