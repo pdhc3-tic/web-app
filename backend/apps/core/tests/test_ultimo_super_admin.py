@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from django.conf import settings
 from django.contrib.admin.sites import site
 from django.core.exceptions import PermissionDenied
 from django.db import connection, transaction
@@ -537,7 +538,7 @@ class TestExclusaoEmLotePeloAdmin:
         return client
 
     def _excluir(self, cliente, modelo, pks):
-        return cliente.post(f"/admin/core/{modelo}/", {
+        return cliente.post(f"{settings.ADMIN_URL_PATH}core/{modelo}/", {
             "action": "delete_selected", "_selected_action": [str(pk) for pk in pks], "post": "yes",
         })
 
@@ -680,11 +681,11 @@ def test_admin_pega_a_trava_antes_de_registrar_a_exclusao(client, monkeypatch, m
     alvo = usuario if modelo == "user" else usuario.profiles.get()
 
     if em_lote:
-        resposta = client.post(f"/admin/core/{modelo}/", {
+        resposta = client.post(f"{settings.ADMIN_URL_PATH}core/{modelo}/", {
             "action": "delete_selected", "_selected_action": [str(alvo.pk)], "post": "yes",
         })
     else:
-        resposta = client.post(f"/admin/core/{modelo}/{alvo.pk}/delete/", {"post": "yes"})
+        resposta = client.post(f"{settings.ADMIN_URL_PATH}core/{modelo}/{alvo.pk}/delete/", {"post": "yes"})
 
     assert resposta.status_code == 302
     assert com_trava == [True]
@@ -717,7 +718,7 @@ def test_duas_pessoas_excluindo_uma_a_outra_pelo_admin(perfil_super_admin, monke
 
     def excluir_pelo_admin(quem, alvo):
         try:
-            respostas[quem.pk] = clientes[quem.pk].post("/admin/core/user/", {
+            respostas[quem.pk] = clientes[quem.pk].post(f"{settings.ADMIN_URL_PATH}core/user/", {
                 "action": "delete_selected", "_selected_action": [str(alvo.pk)], "post": "yes",
             })
         except Exception as exc:

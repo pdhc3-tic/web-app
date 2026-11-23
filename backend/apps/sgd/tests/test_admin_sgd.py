@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from django.conf import settings
 from django.contrib.admin.sites import site
 from django.core.cache import cache
 from django.db import connection
@@ -165,7 +166,7 @@ def client_super_admin(client, super_admin):
 
 
 def _url_do_limite(limite, acao="change"):
-    return f"/admin/sgp/spendinglimit/{limite.pk}/{acao}/"
+    return f"{settings.ADMIN_URL_PATH}sgp/spendinglimit/{limite.pk}/{acao}/"
 
 
 def test_post_do_admin_altera_so_o_valor_limite(client_super_admin, limite_individual_rn):
@@ -238,13 +239,13 @@ def test_admin_nao_altera_padrao_por_perfil(client_super_admin, solicitante_rn, 
 
 
 def test_admin_do_pool_e_so_consulta(client_super_admin, allocation_territorial_rn):
-    url = f"/admin/sgp/budgetpool/{allocation_territorial_rn.pk}/change/"
+    url = f"{settings.ADMIN_URL_PATH}sgp/budgetpool/{allocation_territorial_rn.pk}/change/"
     valor = allocation_territorial_rn.valor_alocado
 
     leitura = client_super_admin.get(url)
     edicao = client_super_admin.post(url, {"valor_alocado": "1", "_save": "Salvar"})
-    exclusao = client_super_admin.post(f"/admin/sgp/budgetpool/{allocation_territorial_rn.pk}/delete/", {"post": "yes"})
-    criacao = client_super_admin.get("/admin/sgp/budgetpool/add/")
+    exclusao = client_super_admin.post(f"{settings.ADMIN_URL_PATH}sgp/budgetpool/{allocation_territorial_rn.pk}/delete/", {"post": "yes"})
+    criacao = client_super_admin.get(f"{settings.ADMIN_URL_PATH}sgp/budgetpool/add/")
 
     assert leitura.status_code == 200
     assert (edicao.status_code, exclusao.status_code, criacao.status_code) == (403, 403, 403)
@@ -263,10 +264,10 @@ def test_post_do_admin_nao_exclui_limite_com_saldo(client_super_admin, limite_in
 
 def test_admin_mostra_demanda_e_solicitacao_para_consulta(client_super_admin, demand_request_rn):
     ordem_antes = demand_request_rn.ordem
-    resposta_demanda = client_super_admin.get(f"/admin/sgd/demand/{demand_request_rn.demanda_id}/change/")
-    resposta_solicitacao = client_super_admin.get(f"/admin/sgd/demandrequest/{demand_request_rn.pk}/change/")
+    resposta_demanda = client_super_admin.get(f"{settings.ADMIN_URL_PATH}sgd/demand/{demand_request_rn.demanda_id}/change/")
+    resposta_solicitacao = client_super_admin.get(f"{settings.ADMIN_URL_PATH}sgd/demandrequest/{demand_request_rn.pk}/change/")
     tentativa_de_edicao = client_super_admin.post(
-        f"/admin/sgd/demandrequest/{demand_request_rn.pk}/change/", {"ordem": ordem_antes + 1, "_save": "Salvar"},
+        f"{settings.ADMIN_URL_PATH}sgd/demandrequest/{demand_request_rn.pk}/change/", {"ordem": ordem_antes + 1, "_save": "Salvar"},
     )
 
     assert resposta_demanda.status_code == 200
@@ -279,7 +280,7 @@ def test_admin_mostra_demanda_e_solicitacao_para_consulta(client_super_admin, de
 def test_criacao_e_alteracao_pelo_admin_ficam_na_auditoria(
     client_super_admin, super_admin, solicitante_rn, rubrica_diarias,
 ):
-    criado = client_super_admin.post("/admin/sgp/spendinglimit/add/", {
+    criado = client_super_admin.post(f"{settings.ADMIN_URL_PATH}sgp/spendinglimit/add/", {
         "escopo": "individual", "user": solicitante_rn.pk, "rubrica": rubrica_diarias.pk, "valor_limite": "1000",
         "justificativa": "Criado no Admin.", "periodo_inicio": "2026-10-01", "periodo_fim": "2026-12-31",
         "valor_comprometido": "0", "valor_executado": "0", "_save": "Salvar",
@@ -310,7 +311,7 @@ def _corpo_do_novo_limite(user, rubrica, valor):
 
 def test_admin_sem_usuario_devolve_erro_no_formulario(client_super_admin, rubrica_diarias):
     resposta = client_super_admin.post(
-        "/admin/sgp/spendinglimit/add/", _corpo_do_novo_limite("", rubrica_diarias, "1000"),
+        f"{settings.ADMIN_URL_PATH}sgp/spendinglimit/add/", _corpo_do_novo_limite("", rubrica_diarias, "1000"),
     )
 
     assert resposta.status_code == 200
@@ -331,7 +332,7 @@ def test_admin_nao_soma_o_padrao_ao_valor_da_linha_nova(client_super_admin, soli
 
     try:
         resposta = client_super_admin.post(
-            "/admin/sgp/spendinglimit/add/", _corpo_do_novo_limite(solicitante_rn.pk, rubrica_diarias, "1000"),
+            f"{settings.ADMIN_URL_PATH}sgp/spendinglimit/add/", _corpo_do_novo_limite(solicitante_rn.pk, rubrica_diarias, "1000"),
         )
     finally:
         cache.delete("system_config:budget_overallocation_allowed")

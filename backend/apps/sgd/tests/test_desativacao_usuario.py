@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from django.conf import settings
 from django.contrib import admin
 from django.db import connection
 from django.test import RequestFactory
@@ -408,7 +409,7 @@ def test_reativar_nao_restaura_as_demandas_canceladas(
 
 
 def _salvar_no_admin(usuario, *, por, changed_data):
-    request = RequestFactory().post("/admin/core/user/")
+    request = RequestFactory().post(f"{settings.ADMIN_URL_PATH}core/user/")
     request.user = por
     modelo_admin = UserAdmin(User, admin.site)
     with patch.object(UserAdmin, "message_user") as mensagem:

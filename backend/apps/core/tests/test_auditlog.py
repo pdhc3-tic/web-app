@@ -1,4 +1,5 @@
 import pytest
+from django.conf import settings
 from django.db import connection, transaction
 from django.db.utils import DatabaseError
 from rest_framework.test import APIClient
@@ -99,7 +100,7 @@ class TestAuditLogModel:
         client.force_login(superadmin)
 
         response = client.post(
-            f"/admin/core/auditlog/{log.pk}/delete/",{"post": "yes"},
+            f"{settings.ADMIN_URL_PATH}core/auditlog/{log.pk}/delete/",{"post": "yes"},
         )
 
         assert response.status_code == 403

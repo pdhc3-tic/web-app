@@ -99,7 +99,7 @@ sudo docker compose exec \
 |---------|-----|
 | Frontend | http://localhost:3000 |
 | API REST | http://localhost:8000/api/v1/ |
-| Django Admin | http://localhost:8000/admin/ |
+| Django Admin | http://localhost:8000/django-admin/ |
 
 ---
 
@@ -183,6 +183,15 @@ O `DB_PASSWORD` de `backend/.env` precisa corresponder à senha do usuário
 compatível com a senha administrativa já existente no volume do banco.
 As credenciais `SUPERUSER_*` são usadas somente na primeira criação; se o
 superusuário já existir, o deploy preserva a senha atual.
+
+### Django Admin
+
+O Django Admin fica em `/django-admin/`, prefixo definido pela variável
+`DJANGO_ADMIN_URL` (padrão `django-admin/`). O prefixo `/admin/` pertence às
+telas administrativas do Next.js (`/admin/usuarios`, `/admin/configuracoes/...`)
+e o nginx o encaminha para o frontend (Issue #435). Se `DJANGO_ADMIN_URL` mudar,
+altere também o `location` correspondente em `nginx/conf.d/default.conf`; o
+backend recusa subir com `DJANGO_ADMIN_URL` vazio ou igual a `admin/`.
 
 ### Política de migrations e seed
 
