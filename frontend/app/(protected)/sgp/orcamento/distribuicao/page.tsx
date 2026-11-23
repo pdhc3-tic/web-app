@@ -423,11 +423,30 @@ export default function DistribuicaoOrcamentoPage() {
           >
             <EmptyState
               icon={<AlertTriangle className="h-7 w-7" />}
-              title="O nível acima ainda não foi distribuído"
+              title={
+                // Para a UGP, o nível acima é a dotação nacional, que não se
+                // "distribui": se lança (#438).
+                nivel === "estadual"
+                  ? "Rubrica sem dotação nacional"
+                  : "O nível acima ainda não foi distribuído"
+              }
               description={
                 nivel === "estadual"
-                  ? "Esta rubrica não tem pool nacional com valor aprovado. Sem ele não há teto contra o qual distribuir."
-                  : `Não há pool estadual de ${siglaEstado} nesta rubrica. A UGP precisa distribuir para o seu estado antes que você possa repassar aos territórios.`
+                  ? "Esta rubrica ainda não tem dotação nacional. Lance o valor aprovado dela para ter o teto da distribuição aos estados."
+                  : `Não há pool estadual de ${siglaEstado} nesta rubrica. A UGP precisa lançar a dotação nacional e distribuir para o seu estado antes que você possa repassar aos territórios.`
+              }
+              action={
+                // Só a UGP e o Super Admin distribuem no nível estadual, e são
+                // eles que lançam a dotação (#438).
+                nivel === "estadual" ? (
+                  <Button
+                    as="a"
+                    href="/sgp/orcamento/dotacao"
+                    data-testid="distribuicao-ir-dotacao"
+                  >
+                    Lançar dotação nacional
+                  </Button>
+                ) : undefined
               }
             />
           </div>
