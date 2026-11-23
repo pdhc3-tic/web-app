@@ -37,6 +37,8 @@ export type AtividadeFixture = {
   ufpaDoMembro: number;
   /** Id do membro participante cuja linha deve virar link. */
   membroParticipante: number;
+  /** Nome de quem criou a atividade da ficha completa, lido do banco; null se não tem autor (#449). */
+  criadoPorNome: string | null;
   /** Valores gravados pela fixture, para o teste conferir o que está na tela. */
   latitude: string;
   longitude: string;
@@ -118,6 +120,7 @@ print("${MARCADOR}_SETUP " + json.dumps({
     "comFichaCompleta": completa.pk,
     "ufpaDoMembro": membro.ufpa_id,
     "membroParticipante": membro.pk,
+    "criadoPorNome": completa.criado_por.nome if completa.criado_por_id else None,
     "latitude": "${LATITUDE}",
     "longitude": "${LONGITUDE}",
     "parceirosLivres": "${PARCEIROS_LIVRES}",
