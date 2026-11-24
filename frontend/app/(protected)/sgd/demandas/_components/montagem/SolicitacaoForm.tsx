@@ -33,9 +33,18 @@ import {
 import type { ContextoAnexo } from "./CampoAnexo";
 import { CampoDinamico } from "./CampoDinamico";
 import { SaldoSolicitacao } from "./SaldoSolicitacao";
-import { SimulacaoDiarias, useSimulacaoDiarias } from "./SimulacaoDiarias";
+import { bloqueioDaDiaria, SimulacaoDiarias, useSimulacaoDiarias } from "./SimulacaoDiarias";
 
 const CAMPO_VALOR = "valor_estimado";
+
+/** O que decide o valor da diária: mudar um deles faz o backend recalcular ao salvar. */
+const CAMPOS_DO_CALCULO_DA_DIARIA = ["municipio_destino_id", "data_inicio", "data_fim", "hospedagem_custeada"] as const;
+
+/** Hospedagem "não" e em branco são a mesma coisa para o backend (`_parse_bool`). */
+function campoDoCalculo(chave: string, valor: string | undefined): string {
+  if (chave === "hospedagem_custeada") return valor === "sim" ? "sim" : "";
+  return valor ?? "";
+}
 
 /**
  * Formulário de uma solicitação de recurso (#295, SGD-RF04/RF05): os campos
@@ -146,6 +155,23 @@ export function SolicitacaoForm({
     valores.hospedagem_custeada === "sim",
   );
 
+  // Editar uma diária gravada sem mudar destino, datas nem hospedagem mantém o
+  // valor congelado (`_congelar_diaria` no backend), mesmo sem tabela vigente.
+  // Só vale para as gravadas com a tabela por faixa (`tabela_diaria_id`).
+  const [valoresGravados] = useState(valores);
+  const diariaCongelada =
+    tipo === "diaria" &&
+    solicitacao?.tipo === "diaria" &&
+    !!solicitacao.campos_json?.tabela_diaria_id &&
+    CAMPOS_DO_CALCULO_DA_DIARIA.every((c) => campoDoCalculo(c, valores[c]) === campoDoCalculo(c, valoresGravados[c]));
+  // #440: sem valor de diária vigente (ou com outra recusa do cálculo), salvar
+  // seria recusado pelo backend; o botão fica desabilitado com o motivo.
+  // O motivo é lido sempre, mesmo na edição congelada: o `useQuery` só
+  // redesenha o formulário pelos campos lidos aqui, e sem ler o erro o quadro
+  // ficava em "Calculando…" depois que a simulação falhava.
+  const motivoDaRecusa = bloqueioDaDiaria(diarias);
+  const bloqueioDiaria = tipo === "diaria" && !diariaCongelada ? motivoDaRecusa : null;
+
   // O valor que o saldo confere: o digitado, ou, na diária, o que o backend calcula.
   const valorParaSaldo = config?.valorDigitado
     ? (moneyOrNull(valorEstimado) ?? "0")
@@ -169,7 +195,7 @@ export function SolicitacaoForm({
   }
 
   async function salvar() {
-    if (enviandoAnexos > 0) return;
+    if (enviandoAnexos > 0 || bloqueioDiaria) return;
     if (!tipo || !config) {
       setErros({ tipo: "Escolha o tipo da solicitação." });
       return;
@@ -231,10 +257,16 @@ export function SolicitacaoForm({
 
   const rodape = (
     <div className="flex items-center justify-end gap-2">
-      {enviandoAnexos > 0 && (
+      {enviandoAnexos > 0 ? (
         <span className="mr-auto text-sm text-text-muted" role="status">
           Aguarde o envio do arquivo.
         </span>
+      ) : (
+        bloqueioDiaria && (
+          <span className="mr-auto text-sm text-error-text" data-testid="solicitacao-bloqueio">
+            Sem valor calculado para a diária.
+          </span>
+        )
       )}
       <Button variant="secondary" onClick={fechar} disabled={salvando}>
         Cancelar
@@ -242,7 +274,7 @@ export function SolicitacaoForm({
       <Button
         onClick={salvar}
         loading={salvando}
-        disabled={!tipo || enviandoAnexos > 0}
+        disabled={!tipo || enviandoAnexos > 0 || bloqueioDiaria !== null}
         data-testid="solicitacao-salvar"
       >
         Salvar solicitação
@@ -305,7 +337,7 @@ export function SolicitacaoForm({
                 error={erros[CAMPO_VALOR]}
               />
             ) : (
-              <SimulacaoDiarias {...diarias} />
+              <SimulacaoDiarias {...diarias} congelada={diariaCongelada} />
             )}
 
             {tipo === "equipamento" && (

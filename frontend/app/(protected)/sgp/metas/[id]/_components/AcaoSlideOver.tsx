@@ -13,6 +13,7 @@ import {
   formatQtd,
   listIndicadores,
   listSubmetasDaMeta,
+  proximoNumeroDeAcao,
   updateAcao,
   type Acao,
   type AcaoWritePayload,
@@ -20,6 +21,7 @@ import {
   type SubmetaOption,
 } from "@/app/lib/acoes";
 import { decOrNull, formatCurrencyBRL, formatMoneyInput, moneyOrNull } from "@/app/lib/format";
+import type { Rubrica } from "@/app/lib/tiposSolicitacao";
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -33,6 +35,12 @@ type Props = {
   metaId: number;
   /** Em "edit", a Ação sendo editada. */
   acao?: Acao;
+  /** As Ações que a Meta já tem: sugerem o próximo número da Submeta (#452). */
+  existentes: Pick<Acao, "id" | "numero">[];
+  /** Catálogo de rubricas, com as inativas; `undefined` enquanto carrega. */
+  rubricas: Rubrica[] | undefined;
+  /** A leitura do catálogo de rubricas falhou. */
+  rubricasFalhou?: boolean;
   onSaved: (acao: Acao, mode: AcaoSlideOverMode) => void;
   /**
    * Leva ao cadastro de Submeta (#431). Sem Submeta na Meta, a Ação não tem
@@ -53,6 +61,8 @@ type FormState = {
   valor_unitario: string;
   data_inicio: string;
   data_fim: string;
+  /** Ids de `BudgetRubrica` (#452): o SGD alerta quando a solicitação usa outra. */
+  rubricas_previstas: number[];
 };
 
 const EMPTY_FORM: FormState = {
@@ -64,6 +74,7 @@ const EMPTY_FORM: FormState = {
   valor_unitario: "",
   data_inicio: "",
   data_fim: "",
+  rubricas_previstas: [],
 };
 
 function acaoToForm(a: Acao): FormState {
@@ -81,6 +92,7 @@ function acaoToForm(a: Acao): FormState {
     ),
     data_inicio: a.data_inicio ?? "",
     data_fim: a.data_fim ?? "",
+    rubricas_previstas: a.rubricas_previstas ?? [],
   };
 }
 
@@ -94,6 +106,7 @@ function formToPayload(f: FormState): AcaoWritePayload {
     valor_unitario: moneyOrNull(f.valor_unitario) ?? "0",
     data_inicio: f.data_inicio,
     data_fim: f.data_fim,
+    rubricas_previstas: f.rubricas_previstas,
   };
 }
 
@@ -116,20 +129,37 @@ export function calcularValorTotal(f: {
 
 /**
  * Validação de cliente — só o que dá para checar sem ida ao servidor. A
- * unicidade do número dentro da Meta fica no backend e volta como field_error.
+ * unicidade do número dentro da Submeta fica no backend e volta como
+ * field_error. Quantidade, valor unitário e datas são obrigatórios pela DRS
+ * §5.5 (#452); a quantidade segue o `MinValueValidator(0.01)` do model.
  */
-function validate(f: FormState): Record<string, string> {
+function validate(f: FormState, submetaNumero?: string): Record<string, string> {
   const errs: Record<string, string> = {};
+  const numero = f.numero.trim();
 
-  if (!f.numero.trim()) {
+  if (!numero) {
     errs.numero = "Informe o número da Ação.";
-  } else if (!NUMERO_ACAO_RE.test(f.numero.trim())) {
+  } else if (!NUMERO_ACAO_RE.test(numero)) {
     errs.numero = "Formato inválido. Use X.Y.Z (ex: 1.1.1, 2.3.4).";
+  } else if (submetaNumero && !numero.startsWith(`${submetaNumero}.`)) {
+    // A mesma regra de `_erros_no_pai` no backend.
+    errs.numero = `O número da Ação deve começar com ${submetaNumero}. (número da Submeta).`;
   }
 
   if (!f.descricao.trim()) errs.descricao = "Informe a descrição da Ação.";
   if (!f.submeta) errs.submeta = "Selecione a Submeta.";
   if (!f.indicador) errs.indicador = "Selecione o Indicador.";
+
+  const quantidade = decOrNull(f.quantidade_planejada);
+  if (!f.quantidade_planejada.trim()) {
+    errs.quantidade_planejada = "Informe a quantidade planejada.";
+  } else if (quantidade === null || !(Number(quantidade) > 0)) {
+    errs.quantidade_planejada = "A quantidade planejada precisa ser maior que zero.";
+  }
+  if (moneyOrNull(f.valor_unitario) === null) {
+    errs.valor_unitario = "Informe o valor unitário.";
+  }
+
   if (!f.data_inicio) errs.data_inicio = "Informe a data de início.";
   if (!f.data_fim) errs.data_fim = "Informe a data de término.";
 
@@ -149,6 +179,9 @@ export function AcaoSlideOver({
   mode,
   metaId,
   acao,
+  existentes,
+  rubricas,
+  rubricasFalhou = false,
   onSaved,
   onPedirSubmeta,
 }: Props) {
@@ -159,6 +192,12 @@ export function AcaoSlideOver({
   const [submetaOpts, setSubmetaOpts] = useState<SubmetaOption[]>([]);
   const [indicadorOpts, setIndicadorOpts] = useState<IndicadorOption[]>([]);
   const [opcoesCarregadas, setOpcoesCarregadas] = useState(false);
+  /**
+   * O último número que o formulário sugeriu. Enquanto o campo tiver ele (ou
+   * estiver vazio), trocar a Submeta troca a sugestão; o que o usuário digitou
+   * à mão nunca é sobrescrito.
+   */
+  const [ultimaSugestao, setUltimaSugestao] = useState<string | null>(null);
 
   const acaoId = acao?.id;
 
@@ -169,6 +208,7 @@ export function AcaoSlideOver({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setFieldErrors({});
     setGlobalError(null);
+    setUltimaSugestao(null);
     setForm(mode === "edit" && acao ? acaoToForm(acao) : EMPTY_FORM);
   }, [open, mode, acao]);
 
@@ -204,10 +244,63 @@ export function AcaoSlideOver({
     });
   }
 
+  function limparErros(...campos: string[]) {
+    setFieldErrors((prev) => {
+      if (!campos.some((c) => c in prev)) return prev;
+      const next = { ...prev };
+      for (const c of campos) delete next[c];
+      return next;
+    });
+  }
+
+  /**
+   * Escolher a Submeta sugere o próximo número livre nela (#452). Na edição,
+   * voltar à Submeta original devolve o número que a Ação já tem, em vez de
+   * pular para o próximo.
+   */
+  function escolherSubmeta(valor: string) {
+    const submeta = submetaOpts.find((s) => String(s.id) === valor);
+    const atual = form.numero.trim();
+    const automatico =
+      atual === "" ||
+      atual === ultimaSugestao ||
+      (mode === "edit" && atual === acao?.numero);
+    let numero = form.numero;
+    if (submeta && automatico) {
+      numero =
+        mode === "edit" && acao && valor === String(acao.submeta)
+          ? acao.numero
+          : proximoNumeroDeAcao(
+              submeta.numero,
+              existentes.filter((a) => a.id !== acao?.id),
+            );
+      setUltimaSugestao(numero);
+    }
+    setForm((prev) => ({ ...prev, submeta: valor, numero }));
+    limparErros("submeta", ...(numero !== form.numero ? ["numero"] : []));
+  }
+
+  function alternarRubrica(id: number) {
+    update(
+      "rubricas_previstas",
+      form.rubricas_previstas.includes(id)
+        ? form.rubricas_previstas.filter((r) => r !== id)
+        : [...form.rubricas_previstas, id],
+    );
+  }
+
+  const submetaEscolhida = submetaOpts.find((s) => String(s.id) === form.submeta);
+
+  // Ativas, mais as inativas que a Ação já tem: desmarcar uma delas é possível,
+  // marcar uma inativa de novo não.
+  const opcoesRubrica = (rubricas ?? []).filter(
+    (r) => r.ativo || form.rubricas_previstas.includes(r.id),
+  );
+
   async function handleSave() {
     if (saving) return;
 
-    const errs = validate(form);
+    const errs = validate(form, submetaEscolhida?.numero);
     if (Object.keys(errs).length > 0) {
       setFieldErrors(errs);
       setGlobalError("Corrija os campos destacados e tente novamente.");
@@ -281,31 +374,6 @@ export function AcaoSlideOver({
           </div>
         )}
 
-        <Input
-          label="Número"
-          required
-          value={form.numero}
-          onChange={(e) => update("numero", e.target.value)}
-          error={fieldErrors.numero}
-          disabled={saving}
-          autoComplete="off"
-          placeholder="1.1.1"
-          helperText="Numeração X.Y.Z, com X.Y igual ao número da Submeta."
-          data-testid="acao-form-numero"
-        />
-
-        <Textarea
-          label="Descrição"
-          required
-          rows={3}
-          maxLength={500}
-          value={form.descricao}
-          onChange={(e) => update("descricao", e.target.value)}
-          error={fieldErrors.descricao}
-          disabled={saving}
-          data-testid="acao-form-descricao"
-        />
-
         <div data-testid="acao-form-submeta">
           {opcoesCarregadas && submetaOpts.length === 0 && (
             // Sem Submeta não há Ação: explica e leva ao cadastro (#431).
@@ -330,12 +398,37 @@ export function AcaoSlideOver({
               label: `${s.numero} — ${s.titulo}`,
             }))}
             value={form.submeta}
-            onChange={(v) => update("submeta", v)}
+            onChange={escolherSubmeta}
             placeholder="Selecione..."
             error={fieldErrors.submeta}
             disabled={saving}
           />
         </div>
+
+        <Input
+          label="Número"
+          required
+          value={form.numero}
+          onChange={(e) => update("numero", e.target.value)}
+          error={fieldErrors.numero}
+          disabled={saving}
+          autoComplete="off"
+          placeholder="X.Y.Z"
+          helperText="Sugerido pelo próximo número livre da Submeta. Formato X.Y.Z, com X.Y igual ao número da Submeta."
+          data-testid="acao-form-numero"
+        />
+
+        <Textarea
+          label="Descrição"
+          required
+          rows={3}
+          maxLength={500}
+          value={form.descricao}
+          onChange={(e) => update("descricao", e.target.value)}
+          error={fieldErrors.descricao}
+          disabled={saving}
+          data-testid="acao-form-descricao"
+        />
 
         <div data-testid="acao-form-indicador">
           <Select
@@ -356,6 +449,7 @@ export function AcaoSlideOver({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input
             label="Quantidade planejada"
+            required
             value={form.quantidade_planejada}
             onChange={(e) =>
               update("quantidade_planejada", e.target.value)
@@ -368,6 +462,7 @@ export function AcaoSlideOver({
           />
           <Input
             label="Valor unitário (R$)"
+            required
             value={form.valor_unitario}
             onChange={(e) =>
               update("valor_unitario", formatMoneyInput(e.target.value))
@@ -395,6 +490,7 @@ export function AcaoSlideOver({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input
             label="Data de início"
+            required
             type="date"
             value={form.data_inicio}
             onChange={(e) => update("data_inicio", e.target.value)}
@@ -404,6 +500,7 @@ export function AcaoSlideOver({
           />
           <Input
             label="Data de término"
+            required
             type="date"
             value={form.data_fim}
             onChange={(e) => update("data_fim", e.target.value)}
@@ -412,6 +509,41 @@ export function AcaoSlideOver({
             data-testid="acao-form-data-fim"
           />
         </div>
+
+        <fieldset className="flex flex-col gap-1" data-testid="acao-form-rubricas">
+          <legend className="text-label font-medium leading-[1.2] text-text">Rubricas previstas</legend>
+          <p className="text-2xs text-text-muted">
+            O SGD avisa quando uma solicitação desta Ação usar outra rubrica. Sem nenhuma marcada, não há aviso.
+          </p>
+          {rubricasFalhou ? (
+            <span role="alert" className="mt-1 text-2xs text-error-text">
+              Não foi possível carregar as rubricas do orçamento.
+            </span>
+          ) : rubricas === undefined ? (
+            <span className="mt-1 text-sm text-text-muted">Carregando rubricas…</span>
+          ) : (
+            <div className="mt-1 grid grid-cols-1 gap-x-5 gap-y-2 sm:grid-cols-2">
+              {opcoesRubrica.map((r) => (
+                <label key={r.id} className="flex items-center gap-2 text-sm text-text">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-[var(--color-primary)]"
+                    checked={form.rubricas_previstas.includes(r.id)}
+                    onChange={() => alternarRubrica(r.id)}
+                    disabled={saving}
+                    data-testid={`acao-form-rubrica-${r.id}`}
+                  />
+                  {r.ativo ? r.nome : `${r.nome} (inativa)`}
+                </label>
+              ))}
+            </div>
+          )}
+          {fieldErrors.rubricas_previstas && (
+            <span role="alert" className="text-2xs text-error-text">
+              {fieldErrors.rubricas_previstas}
+            </span>
+          )}
+        </fieldset>
       </div>
     </SlideOver>
   );

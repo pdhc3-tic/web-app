@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { AlertTriangle, Plus, Target } from "lucide-react";
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { AlertCircleIcon } from "@/app/components/icons";
@@ -185,7 +186,15 @@ export default function MetasPage() {
 
         <p className="text-sm text-text-muted">
           As 7 Metas do PDHC III. O valor total planejado é a soma das Ações
-          vinculadas a cada Meta.
+          vinculadas a cada Meta. Cada Ação é medida por um indicador do{" "}
+          <Link
+            href="/sgp/indicadores"
+            className="text-primary hover:underline"
+            data-testid="metas-ir-indicadores"
+          >
+            Catálogo de Indicadores
+          </Link>
+          .
         </p>
 
         {error ? (

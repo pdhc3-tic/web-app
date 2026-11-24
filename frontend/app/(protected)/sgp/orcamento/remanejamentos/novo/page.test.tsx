@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/app/lib/api";
 import NovoRemanejamentoPage from "./page";
@@ -297,11 +297,14 @@ describe("NovoRemanejamentoPage (#402)", () => {
     expect(screen.queryByTestId("remanejamento-confirmar")).toBeNull();
   });
 
-  it("sem pools, explica que é preciso distribuir o orçamento antes", async () => {
+  it("sem pools, aponta para a dotação nacional (#438)", async () => {
     mocks.fetchPainelOrcamento.mockResolvedValue([]);
     renderPage();
     await waitFor(() => {
       expect(screen.getByTestId("remanejamento-sem-pools")).toBeInTheDocument();
     });
+    expect(
+      within(screen.getByTestId("remanejamento-sem-pools")).getByRole("link", { name: "dotação nacional" }),
+    ).toHaveAttribute("href", "/sgp/orcamento/dotacao");
   });
 });

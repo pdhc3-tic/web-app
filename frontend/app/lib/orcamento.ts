@@ -239,6 +239,37 @@ export async function criarPool(payload: CriarPoolPayload): Promise<PoolOrcament
 }
 
 /**
+ * POST /api/v1/sgp/orcamento/pools/ no nível nacional (#438) — a dotação de uma
+ * rubrica, o topo da hierarquia. Não tem pai, então o service não confere teto;
+ * só UGP e Super Admin passam por `_autorizar`. O banco aceita um único pool
+ * nacional por rubrica: o segundo POST volta 400 em `nivel`, e quem já tem pool
+ * ajusta com `atualizarPool`.
+ *
+ * Ainda não há TED contra o que validar (#437); quando houver, o teto do valor
+ * aprovado na versão vigente chega como erro em `valor_alocado`.
+ */
+export async function lancarDotacaoNacional(rubricaId: number, valorAlocado: string): Promise<PoolOrcamentoApi> {
+  const res = await apiClient("/api/v1/sgp/orcamento/pools/", {
+    method: "POST",
+    body: JSON.stringify({ rubrica_id: rubricaId, nivel: "nacional", valor_alocado: valorAlocado }),
+  });
+  return res.json();
+}
+
+/**
+ * O menor valor que a dotação de um pool aceita, como `atualizar_valor_alocado`
+ * do backend: o que já desceu ao nível de baixo mais o que já foi comprometido e
+ * executado nele.
+ */
+export function pisoDoPool(pool: Pick<PoolOrcamentoApi, "valor_distribuido" | "valor_comprometido" | "valor_executado">): number {
+  return (
+    valorNumerico(pool.valor_distribuido) +
+    valorNumerico(pool.valor_comprometido) +
+    valorNumerico(pool.valor_executado)
+  );
+}
+
+/**
  * PATCH /api/v1/sgp/orcamento/pools/{id}/ — só o valor muda. Reduzir abaixo do
  * já comprometido e executado (ou do distribuído aos filhos) é recusado.
  */

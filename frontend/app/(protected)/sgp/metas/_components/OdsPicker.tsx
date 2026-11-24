@@ -12,6 +12,9 @@ export type OdsPickerProps = {
   onChange: (value: number[]) => void;
   error?: string;
   disabled?: boolean;
+  /** Texto de ajuda sob o título; o padrão é o da Meta. */
+  descricao?: string;
+  testId?: string;
 };
 
 const checkboxClass =
@@ -32,6 +35,8 @@ export function OdsPicker({
   onChange,
   error,
   disabled = false,
+  descricao = "Objetivos de Desenvolvimento Sustentável associados a esta Meta.",
+  testId = "meta-form-ods",
 }: OdsPickerProps) {
   const odsOpcoes = useSgpChoices().ods.map((o) => ({ id: Number(o.value), label: o.label }));
   const id = useId();
@@ -51,15 +56,13 @@ export function OdsPicker({
       className="flex flex-col gap-1"
       aria-describedby={errorId}
       aria-invalid={error ? true : undefined}
-      data-testid="meta-form-ods"
+      data-testid={testId}
     >
       <legend className="text-label font-medium leading-[1.2] text-text">
         ODS vinculados
       </legend>
 
-      <p className="text-2xs text-text-muted">
-        Objetivos de Desenvolvimento Sustentável associados a esta Meta.
-      </p>
+      <p className="text-2xs text-text-muted">{descricao}</p>
 
       <div
         className={`mt-1 grid max-h-56 grid-cols-1 gap-0.5 overflow-y-auto rounded-md border p-1 sm:grid-cols-2 ${

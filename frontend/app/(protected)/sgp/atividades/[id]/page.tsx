@@ -1,7 +1,7 @@
 "use client";
 
 import { useRotuloChoice } from "@/app/providers/SgpChoicesProvider";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   notFound,
   useParams,
@@ -9,14 +9,12 @@ import {
   useRouter,
   useSearchParams,
 } from "next/navigation";
-import { useSession } from "next-auth/react";
 import {
   AlertTriangle,
   CalendarX,
   Check,
   Compass,
   Handshake,
-  History,
   ImagePlus,
   MapPin,
   RefreshCw,
@@ -36,6 +34,7 @@ import { RestrictedAccess } from "@/app/components/ui/RestrictedAccess/Restricte
 import { Tabs } from "@/app/components/ui/Tabs/Tabs";
 import { OrigemScaBadge } from "@/app/components/sgp/OrigemScaBadge";
 import { EvidenceGallery } from "@/app/components/sgp/EvidenceGallery/EvidenceGallery";
+import { AuditoriaAtividade } from "./_components/AuditoriaAtividade";
 import { DemandasTab } from "./_components/DemandasTab";
 import { RiscosDeGlosa } from "./_components/RiscosDeGlosa";
 import { TransicaoStatusDialog } from "./_components/TransicaoStatusDialog";
@@ -49,10 +48,8 @@ import {
 } from "@/app/lib/atividades";
 import { listMembros } from "@/app/lib/membros";
 import {
-  absoluteDateTime,
   formatDate,
   formatTimeRange,
-  relativeTime,
 } from "@/app/lib/datetime";
 
 type Status = "loading" | "ok" | "notfound" | "forbidden" | "error";
@@ -449,7 +446,7 @@ export default function AtividadeFichaPage() {
                   )}
 
 
-                  <Auditoria atividade={atividade} />
+                  <AuditoriaAtividade atividade={atividade} />
 
                   {!atividade.ativo && (
                     <p className="flex items-center gap-2 text-sm text-text-muted">
@@ -529,12 +526,9 @@ function Coordenadas({ atividade }: { atividade: AtividadeDetail }) {
  * Parceiros — os DOIS campos do modelo.
  *
  * `parceiros_livres` é o texto que o formulário grava. `parceiros_organizacoes`
- * é um M2M com `core.Organization` que o detalhe devolve como ids crus, sem
- * nome, e `OrganizationViewSet` só deixa super-admin/UGP/Articulador listar —
- * ou seja, o ADT, que é quem mais abre esta ficha, não teria como resolvê-los.
- * Enquanto o backend não aninhar o nome (pedido aberto em
- * docs/pendencias-backend-sprint-9.md), a ficha declara quantos são em vez de
- * imprimir números de banco ou de fingir que não existem.
+ * é um M2M com `core.Organization`; o detalhe já o devolve como `{id, nome}`
+ * (o tipo deixou de forçar `number[]` na #449), mas a ficha ainda só declara
+ * quantos são. Mostrar os nomes fica com a revisão da ficha (#464).
  */
 function Parceiros({ atividade }: { atividade: AtividadeDetail }) {
   const livres = atividade.parceiros_livres?.trim() ?? "";
@@ -561,63 +555,6 @@ function Parceiros({ atividade }: { atividade: AtividadeDetail }) {
         </span>
       )}
     </span>
-  );
-}
-
-/**
- * Procedência do registro: quem criou, quando, e quando mudou pela última vez.
- *
- * `criado_por` vem como id puro — o detalhe não aninha o usuário, e
- * `/api/v1/users/` é `IsSuperAdmin`, então nem dá para resolver por fora. O que
- * a ficha faz é procurar o id entre as pessoas que ELA já tem com nome (o
- * técnico responsável, a equipe adicional, o próprio usuário logado), que
- * cobre a grande maioria das atividades. Sem correspondência, fica o id —
- * dizer "Usuário #12" é honesto; inventar um nome, não.
- */
-function Auditoria({ atividade }: { atividade: AtividadeDetail }) {
-  const { data: session } = useSession();
-
-  const autor = useMemo(() => {
-    const id = atividade.criado_por;
-    if (id === null) return null;
-
-    if (String(id) === String(session?.user?.id)) {
-      return `${session?.user?.nome_completo ?? "Você"} (você)`;
-    }
-    if (id === atividade.tecnico_responsavel.id) {
-      return atividade.tecnico_responsavel.nome;
-    }
-    const naEquipe = atividade.equipe_adicional.find((u) => u.id === id);
-    if (naEquipe) return naEquipe.nome;
-
-    return `Usuário #${id}`;
-  }, [atividade, session]);
-
-  return (
-    <section
-      className="rounded-lg border border-border bg-surface p-6"
-      data-testid="atividade-auditoria"
-    >
-      <h2 className="mb-4 flex items-center gap-2 text-sm font-medium text-text">
-        <History className="h-4 w-4 text-text-muted" aria-hidden="true" />
-        Registro e auditoria
-      </h2>
-      <DefinitionList
-        items={[
-          { label: "Criado por", value: autor },
-          { label: "Criado em", value: absoluteDateTime(atividade.criado_em) },
-          {
-            label: "Última atualização",
-            value: (
-              <span title={absoluteDateTime(atividade.atualizado_em)}>
-                {absoluteDateTime(atividade.atualizado_em)} (
-                {relativeTime(atividade.atualizado_em)})
-              </span>
-            ),
-          },
-        ]}
-      />
-    </section>
   );
 }
 

@@ -32,6 +32,13 @@ export const qk = {
   poolsDaRubrica: (rubrica: string, nivel: string) => ["sgp", "orcamento", "pools", { rubrica, nivel }] as const,
   /** Todos os pools do escopo, origem e destino do remanejamento entre pools (#402). */
   poolsDoRemanejamento: ["sgp", "orcamento", "pools", "remanejamento"] as const,
+  /** Catálogo de Indicadores (#453): uma página com os filtros. */
+  indicadores: {
+    todos: ["sgp", "indicadores"] as const,
+    lista: (params: Record<string, string | number>) => ["sgp", "indicadores", params] as const,
+  },
+  /** Os pools nacionais, um por rubrica: a dotação que a UGP lança (#438). */
+  dotacaoNacional: ["sgp", "orcamento", "pools", "nacional"] as const,
   /** Sob ["sgp", "orcamento"]: recarregar os saldos refaz a simulação. */
   simulacaoRemanejamento: (chave: string) => ["sgp", "orcamento", "remanejamento", "simulacao", chave] as const,
   /** Movimentações do ledger de um pool, no detalhe do Painel de Orçamento (#398). */

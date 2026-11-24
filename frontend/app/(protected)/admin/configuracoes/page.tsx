@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import type { Route } from "next";
 import { ChevronRight, Gauge, ListTree, SlidersHorizontal, TableProperties } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -9,6 +10,8 @@ import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
 import { RestrictedAccess } from "@/app/components/ui/RestrictedAccess/RestrictedAccess";
 import Spinner from "@/app/components/icons/Spinner";
 import { useIsSuperAdmin } from "@/app/lib/auth/roles";
+import { hojeIso, lacunasDeValor, listarFaixas, listarValores } from "@/app/lib/diarias";
+import { qk } from "@/app/lib/queryKeys";
 
 type Configuracao = { href: Route; titulo: string; descricao: string; Icon: LucideIcon };
 
@@ -55,6 +58,35 @@ const SECOES: { modulo: string; itens: Configuracao[] }[] = [
     ],
   },
 ];
+
+/**
+ * Aviso no card da Tabela de diárias (#440): faixa ativa sem valor vigente faz
+ * o SGD recusar toda diária para os municípios dela, e o Super Admin só
+ * descobriria abrindo a tela. Falha ao carregar não mostra nada: o card segue
+ * levando à tela, onde o erro aparece.
+ */
+function AvisoDiarias() {
+  const faixas = useQuery({ queryKey: qk.diarias.faixas, queryFn: ({ signal }) => listarFaixas(signal) });
+  const valores = useQuery({ queryKey: qk.diarias.valores, queryFn: ({ signal }) => listarValores(signal) });
+  if (!faixas.data || !valores.data) return null;
+  const lacunas = lacunasDeValor(faixas.data, valores.data, hojeIso());
+  const semValor = lacunas.filter((l) => l.tipo === "sem-valor").length;
+  const acabam = lacunas.length - semValor;
+  if (lacunas.length === 0) return null;
+  const plural = (n: number) => (n > 1 ? `${n} faixas` : "1 faixa");
+  return (
+    <p
+      className={`mt-2 w-fit rounded-full px-2 py-0.5 text-xs font-medium ${
+        semValor > 0 ? "bg-error-bg text-error-text" : "bg-warning-bg text-warning-text"
+      }`}
+      data-testid="configuracao-aviso-diarias"
+    >
+      {semValor > 0
+        ? `${plural(semValor)} sem valor vigente`
+        : `${plural(acabam)} com valor que termina sem substituto`}
+    </p>
+  );
+}
 
 function HeaderSlot() {
   return (
@@ -116,6 +148,7 @@ export default function ConfiguracoesPage() {
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-text">{titulo}</p>
                       <p className="mt-1 text-sm text-text-muted">{descricao}</p>
+                      {href === "/admin/configuracoes/sgd/diarias" && <AvisoDiarias />}
                     </div>
                     <ChevronRight className="h-5 w-5 shrink-0 text-text-muted transition group-hover:text-primary" />
                   </Link>

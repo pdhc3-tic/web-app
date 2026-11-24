@@ -6,10 +6,12 @@ import { formatDate } from "@/app/lib/datetime";
 import {
   ORIGEM_LABEL,
   hojeIso,
+  lacunasDeValor,
   montarGrade,
   situacaoDoValor,
   valorEditavel,
   type FaixaDestino,
+  type LacunaDaFaixa,
   type OrigemValorDiaria,
   type SituacaoDoValor,
   type ValorDiaria,
@@ -26,6 +28,21 @@ function Origem({ origem }: { origem: OrigemValorDiaria }) {
   const cor = origem === "federal" ? "bg-info-bg text-info-text" : "bg-warning-bg text-warning-text";
   return (
     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${cor}`}>{ORIGEM_LABEL[origem]}</span>
+  );
+}
+
+/** Selo da faixa sem valor (#440): vermelho se já falta hoje, amarelo se vai faltar. */
+function SeloLacuna({ lacuna }: { lacuna: LacunaDaFaixa }) {
+  const semValor = lacuna.tipo === "sem-valor";
+  return (
+    <span
+      className={`mt-1 flex w-fit rounded-full px-2 py-0.5 text-xs font-medium ${
+        semValor ? "bg-error-bg text-error-text" : "bg-warning-bg text-warning-text"
+      }`}
+      data-testid={`grade-lacuna-${lacuna.faixa.id}`}
+    >
+      {semValor ? "Sem valor vigente" : `Sem valor a partir de ${formatDate(lacuna.desde)}`}
+    </span>
   );
 }
 
@@ -50,6 +67,7 @@ export function GradeValores({ faixas, valores, onEditar, onExcluir, hoje = hoje
   const [aberta, setAberta] = useState<number | null>(null);
   const grade = montarGrade(faixas, valores);
   const colunas = grade.vigencias.length + 2;
+  const lacunas = new Map(lacunasDeValor(faixas, valores, hoje).map((l) => [l.faixa.id, l]));
 
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-surface">
@@ -81,6 +99,7 @@ export function GradeValores({ faixas, valores, onEditar, onExcluir, hoje = hoje
                 celulas={celulas}
                 historico={historico}
                 atual={atual}
+                lacuna={lacunas.get(faixa.id) ?? null}
                 hoje={hoje}
                 colunas={colunas}
                 expandida={expandida}
@@ -101,6 +120,8 @@ type LinhaProps = {
   celulas: ReturnType<typeof montarGrade>["linhas"][number]["celulas"];
   historico: ValorDiaria[];
   atual: ValorDiaria | null;
+  /** Falta de valor vigente hoje ou mais adiante (#440). */
+  lacuna: LacunaDaFaixa | null;
   hoje: string;
   colunas: number;
   expandida: boolean;
@@ -114,6 +135,7 @@ function FaixaLinhas({
   celulas,
   historico,
   atual,
+  lacuna,
   hoje,
   colunas,
   expandida,
@@ -127,6 +149,7 @@ function FaixaLinhas({
         <th scope="row" className="px-4 py-3 text-left font-medium text-text">
           {faixa.nome}
           {!faixa.ativo && <span className="ml-2 text-xs font-normal text-text-muted">(inativa)</span>}
+          {lacuna && <SeloLacuna lacuna={lacuna} />}
         </th>
         {celulas.map((celula, i) => (
           <td key={i} className="px-4 py-3 align-top" data-testid={`grade-celula-${faixa.id}-${i}`}>

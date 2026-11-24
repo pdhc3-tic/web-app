@@ -15,6 +15,7 @@ import { ApiError } from "@/app/lib/api";
 import {
   canDistribuirOrcamento,
   canGerirLimites,
+  canLancarDotacaoNacional,
   canRemanejarOrcamento,
   canVerMeuSaldo,
   useOrcamentoScope,
@@ -55,6 +56,7 @@ function PainelOrcamentoConteudo() {
   const podeDistribuir = canDistribuirOrcamento(session?.user);
   const podeGerirLimites = canGerirLimites(session?.user);
   const podeRemanejar = canRemanejarOrcamento(session?.user);
+  const podeLancarDotacao = canLancarDotacaoNacional(session?.user);
   const temLimite = canVerMeuSaldo(session?.user);
   const router = useRouter();
   const pathname = usePathname();
@@ -263,7 +265,7 @@ function PainelOrcamentoConteudo() {
   const header = (
     <PageHeader>
       <div className="flex w-full items-center justify-between gap-3">
-        <h1 className="truncate text-base font-semibold text-text">
+        <h1 className="shrink-0 truncate text-base font-semibold text-text max-sm:max-w-[45%]">
           Painel de Orçamento
         </h1>
         {/* O painel é a leitura; a distribuição (§5.3.2) é a escrita que o
@@ -272,7 +274,9 @@ function PainelOrcamentoConteudo() {
             `as="a"` é obrigatório: `isAnchor` do Button testa `as === "a"`, não
             a presença de `href`. Sem ele sai um <button> com um href
             decorativo, que não navega para lugar nenhum. */}
-        <div className="flex items-center gap-2">
+        {/* Até cinco ações para a UGP: na tela estreita o grupo rola na horizontal
+            em vez de empurrar a página para fora da tela (#438). */}
+        <div className="flex min-w-0 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&>*]:shrink-0">
           {/* Meu saldo (#401): os perfis que têm limite de gasto. */}
           {temLimite && (
             <Button
@@ -307,6 +311,18 @@ function PainelOrcamentoConteudo() {
               data-testid="orcamento-ir-remanejamento"
             >
               Remanejar
+            </Button>
+          )}
+          {/* Dotação nacional (#438): o topo da hierarquia, só Super Admin e UGP. */}
+          {podeLancarDotacao && (
+            <Button
+              as="a"
+              size="sm"
+              variant="secondary"
+              href="/sgp/orcamento/dotacao"
+              data-testid="orcamento-ir-dotacao"
+            >
+              Dotação nacional
             </Button>
           )}
           {podeDistribuir && (
@@ -431,7 +447,9 @@ function PainelOrcamentoConteudo() {
               description={
                 temFiltro
                   ? "Os pools deste recorte não têm valores lançados. Ajuste os filtros para ver outros."
-                  : "Assim que a UGP lançar o orçamento nacional e distribuí-lo entre estados e territórios, os valores aparecem aqui."
+                  : podeLancarDotacao
+                    ? "Comece lançando a dotação nacional de cada rubrica. Depois, distribua entre os estados, e os estados entre os territórios."
+                    : "A UGP ainda não lançou a dotação nacional. Assim que ela lançar e distribuir entre estados e territórios, os valores aparecem aqui."
               }
               action={
                 temFiltro ? (
@@ -441,6 +459,14 @@ function PainelOrcamentoConteudo() {
                     data-testid="orcamento-vazio-limpar"
                   >
                     Limpar filtros
+                  </Button>
+                ) : podeLancarDotacao ? (
+                  <Button
+                    as="a"
+                    href="/sgp/orcamento/dotacao"
+                    data-testid="orcamento-vazio-dotacao"
+                  >
+                    Lançar dotação nacional
                   </Button>
                 ) : undefined
               }

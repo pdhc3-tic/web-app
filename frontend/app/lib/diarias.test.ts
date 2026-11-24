@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatarQuantidadeDeDiarias,
   hojeIso,
+  lacunasDeValor,
   montarGrade,
   situacaoDoValor,
   validarNovoValor,
@@ -132,5 +133,47 @@ describe("validarNovoValor", () => {
 
   it("no primeiro valor da faixa, qualquer data serve", () => {
     expect(validarNovoValor({ valor: "480.00", vigencia_inicio: "2020-01-01" }, null)).toEqual({});
+  });
+});
+
+describe("lacunasDeValor (#440)", () => {
+  const faixa = (id: number, ativo = true): FaixaDestino => ({
+    id, nome: `Faixa ${id}`, ordem: id, padrao: null, ativo, enquadramentos: [],
+  });
+  const v = (id: number, faixaId: number, inicio: string, fim: string | null, categoria = "padrao"): ValorDiaria => ({
+    id, faixa_destino: faixaId, faixa_destino_nome: `Faixa ${faixaId}`, categoria_beneficiario: categoria,
+    vigencia_inicio: inicio, vigencia_fim: fim, valor: "300.00", origem: "fgd", criado_por_nome: null,
+    criado_em: "2026-01-01T00:00:00Z",
+  });
+  const HOJE = "2026-11-23";
+
+  it("faixa ativa sem valor hoje é sem-valor; com valor em aberto, não entra", () => {
+    const lacunas = lacunasDeValor([faixa(1), faixa(2)], [v(1, 2, "2026-01-01", null)], HOJE);
+    expect(lacunas).toEqual([{ faixa: faixa(1), tipo: "sem-valor" }]);
+  });
+
+  it("só um valor futuro não cobre hoje", () => {
+    expect(lacunasDeValor([faixa(1)], [v(1, 1, "2026-12-01", null)], HOJE)[0].tipo).toBe("sem-valor");
+  });
+
+  it("valor que termina sem sucessor vira lacuna a partir do dia seguinte", () => {
+    expect(lacunasDeValor([faixa(1)], [v(1, 1, "2026-01-01", "2026-12-31")], HOJE)).toEqual([
+      { faixa: faixa(1), tipo: "acaba", desde: "2027-01-01" },
+    ]);
+  });
+
+  it("vigências encadeadas sem buraco não são lacuna; um buraco no meio é", () => {
+    const encadeadas = [v(1, 1, "2026-01-01", "2026-12-31"), v(2, 1, "2027-01-01", null)];
+    expect(lacunasDeValor([faixa(1)], encadeadas, HOJE)).toEqual([]);
+
+    const comBuraco = [v(1, 1, "2026-01-01", "2026-12-31"), v(2, 1, "2027-02-01", null)];
+    expect(lacunasDeValor([faixa(1)], comBuraco, HOJE)).toEqual([
+      { faixa: faixa(1), tipo: "acaba", desde: "2027-01-01" },
+    ]);
+  });
+
+  it("ignora faixa inativa e valor de outra categoria", () => {
+    expect(lacunasDeValor([faixa(1, false)], [], HOJE)).toEqual([]);
+    expect(lacunasDeValor([faixa(1)], [v(1, 1, "2026-01-01", null, "outra")], HOJE)[0].tipo).toBe("sem-valor");
   });
 });

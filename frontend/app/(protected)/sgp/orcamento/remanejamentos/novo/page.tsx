@@ -270,11 +270,11 @@ function NovoRemanejamentoView() {
           className="rounded-md border border-border bg-surface-muted px-3 py-2.5 text-sm text-text-muted"
           data-testid="remanejamento-sem-pools"
         >
-          Não há pools de orçamento para remanejar. Distribua o orçamento no{" "}
-          <Link href="/sgp/orcamento" className="text-primary hover:underline">
-            Painel de Orçamento
+          Não há pools de orçamento para remanejar. Lance a{" "}
+          <Link href="/sgp/orcamento/dotacao" className="text-primary hover:underline">
+            dotação nacional
           </Link>{" "}
-          antes.
+          das rubricas e distribua-a entre os estados antes.
         </p>
       )}
       {pools.isError && (
