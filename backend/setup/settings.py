@@ -324,6 +324,11 @@ SPECTACULAR_SETTINGS = {
         "OrigemValorDiariaEnum": "apps.sgd.models.diarias.OrigemValorDiaria",
         "TipoVersaoTEDEnum": "apps.sgp.ted.models.TEDVersion.Tipo",
         "TipoNovaVersaoTEDEnum": "apps.sgp.ted.serializers.TIPOS_DE_NOVA_VERSAO",
+        "EscopoAderenciaEnum": "apps.sgp.ted.models.AdherenceIndex.Escopo",
+        "FaixaAderenciaEnum": "apps.sgp.ted.models.AdherenceIndex.Faixa",
+        "FaixaCustoPorEntregaEnum": "apps.sgp.ted.execucao.FaixaDeCusto.CHOICES",
+        "ElementoComparativoDeVersoesEnum": "apps.sgp.ted.serializers.ELEMENTOS_DO_COMPARATIVO",
+        "SituacaoComparativoDeVersoesEnum": "apps.sgp.ted.serializers.SITUACOES_DO_COMPARATIVO",
     },
     "SWAGGER_UI_SETTINGS": {
         "deepLinking": True,
@@ -364,6 +369,10 @@ CELERY_BEAT_SCHEDULE = {
     "reconcile_budget_balances": {
         "task": "sgp.tasks.reconcile_budget_balances",
         "schedule": crontab(hour=2, minute=30),  # todo dia às 2h30
+    },
+    "calculate_adherence_index": {
+        "task": "sgp.tasks.calculate_adherence_index",
+        "schedule": crontab(hour=4, minute=0),  # todo dia às 4h
     },
     "check_budget_underexecution": {
         "task": "sgp.tasks.check_budget_underexecution",

@@ -9,7 +9,7 @@ from apps.sgp.budget.models import (
     BudgetTransfer,
     SpendingLimit,
 )
-from apps.sgp.ted.models import TED, TEDVersion, TEDVersionRubrica
+from apps.sgp.ted.models import TED, AdherenceIndex, TEDVersion, TEDVersionRubrica
 from .export_job import ExportJob
 from .form_response import FormResponse
 from .glosa_risk import GlosaRisk
@@ -28,6 +28,7 @@ from .google_calendar_sync_event import GoogleCalendarSyncEvent
 
 __all__ = [
     "Activity",
+    "AdherenceIndex",
     "ActivityDocument",
     "ActivityPhoto",
     "BudgetAlert",
