@@ -4,12 +4,14 @@
 
 *Os documentos das sprints anteriores continuam valendo para o que está lá. O item 9 da 12b, o seletor de objeto de abrangência da #405, segue pendente.*
 
+*Issues de backend: o item 1 é parte da #437, com o que o front precisa comentado lá. Os itens 2, 3 e 4 estão na #473.*
+
 | Item | Issue do front | Depende de | Bloqueia critério de aceite? |
 |---|---|---|---|
 | 1 | #438 (dotação nacional) | #437 (entidade TED) | Não. A #438 fica aberta só por ele |
-| 2 | #453 (catálogo de indicadores) | — | Não. Melhoria: a tela funciona com a cópia dos rótulos |
-| 3 | #456 (Painel de Demandas) | — | Não. Melhoria: a coluna Atividade mostra Ação, município e data |
-| 4 | #456 (Painel de Demandas) | — | Não. Melhoria: a ordenação por Valor estimado já funciona |
+| 2 | #453 (catálogo de indicadores) | #473 | Não. Melhoria: a tela funciona com a cópia dos rótulos |
+| 3 | #456 (Painel de Demandas) | #473 | Não. Melhoria: a coluna Atividade mostra Ação, município e data |
+| 4 | #456 (Painel de Demandas) | #473 | Não. Melhoria: a ordenação por Valor estimado já funciona |
 
 ---
 
