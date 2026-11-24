@@ -6,7 +6,7 @@ import { DefinitionList } from "@/app/components/ui/DefinitionList/DefinitionLis
 import { ProgressBar } from "@/app/components/ui/ProgressBar/ProgressBar";
 import { SemaforoBadge } from "@/app/components/ui/SemaforoBadge/SemaforoBadge";
 import { SlideOver } from "@/app/components/ui/SlideOver/SlideOver";
-import { formatQtd, progressoLabel } from "@/app/lib/acoes";
+import { formatQtd, progressoLabel, rotuloIndicadorDaAcao } from "@/app/lib/acoes";
 import { formatDate } from "@/app/lib/datetime";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import { formatPercentual } from "@/app/lib/semaforo";
@@ -30,8 +30,8 @@ type Props = {
 export function AcaoDetalheSlideOver({ item, onClose, canManage }: Props) {
   const acao = item?.acao;
   const avaliacao = item?.avaliacao;
-  // Tipo de unidade e valores não vêm na resposta do painel: saem do
-  // cruzamento com /acoes/ e ficam de fora da lista quando ele falta.
+  // Indicador e valores não vêm na resposta do painel: saem do cruzamento
+  // com /acoes/ e ficam de fora da lista quando ele falta.
   const detalhe = item?.detalhe ?? null;
 
   const hrefEdicao =
@@ -90,7 +90,7 @@ export function AcaoDetalheSlideOver({ item, onClose, canManage }: Props) {
               label={`Progresso da Ação ${acao.numero}`}
               valueText={
                 detalhe
-                  ? `${progressoLabel(acao)} — ${detalhe.tipo_unidade_display}`
+                  ? `${progressoLabel(acao)} — ${detalhe.indicador_detalhe?.nome ?? ""}`
                   : progressoLabel(acao)
               }
             />
@@ -105,8 +105,8 @@ export function AcaoDetalheSlideOver({ item, onClose, canManage }: Props) {
           <DefinitionList
             items={[
               {
-                label: "Tipo / unidade",
-                value: detalhe?.tipo_unidade_display ?? null,
+                label: "Indicador",
+                value: detalhe ? rotuloIndicadorDaAcao(detalhe) : null,
               },
               {
                 label: "Quantidade planejada",

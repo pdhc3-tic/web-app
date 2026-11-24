@@ -11,6 +11,33 @@ import type { Refinar, Schema } from "@/app/lib/apiSchema";
  */
 export const NUMERO_ACAO_RE = /^\d+\.\d+\.\d+$/;
 
+/**
+ * O próximo número livre na Submeta: "1.2.1" na primeira Ação, "1.2.4" depois
+ * de 1.2.1 a 1.2.3 (#452). Conta as Ações cujo número começa com o da Submeta,
+ * a mesma regra que o backend aplica. É só uma sugestão para o campo; quem
+ * confere a unicidade é o backend.
+ */
+export function proximoNumeroDeAcao(
+  submetaNumero: string,
+  existentes: Pick<Acao, "numero">[],
+): string {
+  const prefixo = `${submetaNumero}.`;
+  const maior = existentes.reduce((m, a) => {
+    if (!a.numero.startsWith(prefixo)) return m;
+    const z = Number(a.numero.slice(prefixo.length));
+    return Number.isInteger(z) && z > m ? z : m;
+  }, 0);
+  return `${prefixo}${maior + 1}`;
+}
+
+/** "IND-OFI — Oficinas realizadas": o Indicador da Ação, onde antes ia o tipo/unidade. */
+export function rotuloIndicadorDaAcao(
+  acao: Pick<Acao, "indicador_detalhe">,
+): string {
+  const i = acao.indicador_detalhe;
+  return i ? `${i.codigo} — ${i.nome}` : "—";
+}
+
 // ─── Status de execução ─────────────────────────────────────────────────────
 
 /** Valores de WorkPlanAcao.status_execucao. */

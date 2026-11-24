@@ -14,7 +14,7 @@ import type { Refinar, Schema } from "@/app/lib/apiSchema";
  * gestor veria uma cor na tela e outra no e-mail.
  *
  * O endpoint agrega e filtra, mas devolve só o necessário ao cálculo. Faltam
- * campos descritivos que a tela exibe (`tipo_unidade_display`, valores, datas
+ * campos descritivos que a tela exibe (`indicador_detalhe`, valores, datas
  * da Meta), por isso `listMetas()` e `listTodasAcoes()` continuam sendo
  * carregados UMA VEZ e cruzados por id. São ≤7 Metas e ≤100 Ações; a troca de
  * filtro refaz apenas a chamada do painel. Ver as sugestões abertas com a
@@ -114,7 +114,7 @@ export async function fetchPainel(
 /**
  * GET /api/v1/acoes/ — todas as Ações, sem filtro de Meta.
  *
- * Serve apenas ao cruzamento descritivo: `tipo_unidade_display`,
+ * Serve apenas ao cruzamento descritivo: `indicador_detalhe`,
  * `valor_unitario` e `valor_total` não existem na resposta do painel. Os
  * números que alimentam o semáforo vêm sempre do endpoint do painel.
  */

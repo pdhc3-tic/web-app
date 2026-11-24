@@ -99,6 +99,8 @@ test.describe("Ações do Plano de Trabalho — UGP", () => {
     await indicador.locator('button[role="combobox"]').click();
     await indicador.locator('li[role="option"]').first().click();
 
+    await page.getByTestId("acao-form-quantidade").fill("5");
+    await page.getByTestId("acao-form-valor-unitario").fill("100000");
     await page.getByTestId("acao-form-data-inicio").fill("2026-03-01");
     await page.getByTestId("acao-form-data-fim").fill("2026-12-31");
 
@@ -118,23 +120,42 @@ test.describe("Ações do Plano de Trabalho — UGP", () => {
     );
   });
 
-  test("cria uma nova Ação vinculada à Submeta com sucesso", async ({
+  test("cria uma nova Ação com o número sugerido e as rubricas previstas (#452)", async ({
     page,
   }) => {
     await abrirMeta(page);
-    await abrirFormularioNovaAcao(page);
+    await expect(
+      tabelaAcoes(page).getByRole("columnheader", { name: "Indicador", exact: true }),
+    ).toBeVisible();
+    await expect(tabelaAcoes(page)).not.toContainText(/Tipo \/ unidade/i);
+    const numerosExistentes = await tabelaAcoes(page)
+      .locator('[data-testid^="acao-row-"] td:first-child')
+      .allInnerTexts();
 
-    const desc = `Ação E2E ${Date.now()}`;
-    await page.getByTestId("acao-form-numero").fill(NUMERO_LIVRE);
-    await page.getByTestId("acao-form-descricao").fill(desc);
+    await abrirFormularioNovaAcao(page);
+    const campoNumero = page.getByTestId("acao-form-numero");
+    await expect(campoNumero).toHaveValue("");
 
     const submeta = page.getByTestId("acao-form-submeta");
     await submeta.locator('button[role="combobox"]').click();
     await submeta
       .locator('li[role="option"]')
-      .filter({ hasText: /^1\.1\b/ })
+      .filter({ hasText: /^1\.1 —/ })
       .first()
       .click();
+
+    // O número vem sugerido: o próximo livre da Submeta 1.1, que não é de
+    // nenhuma Ação da tabela.
+    await expect(campoNumero).toHaveValue(/^1\.1\.\d+$/);
+    const numero = await campoNumero.inputValue();
+    const maior = Math.max(
+      0,
+      ...numerosExistentes.map((n) => n.trim()).filter((n) => n.startsWith("1.1.")).map((n) => Number(n.slice(4))),
+    );
+    expect(numero).toBe(`1.1.${maior + 1}`);
+
+    const desc = `Ação E2E ${Date.now()}`;
+    await page.getByTestId("acao-form-descricao").fill(desc);
 
     const indicador = page.getByTestId("acao-form-indicador");
     await indicador.locator('button[role="combobox"]').click();
@@ -145,6 +166,16 @@ test.describe("Ações do Plano de Trabalho — UGP", () => {
     await page.getByTestId("acao-form-data-inicio").fill("2026-03-01");
     await page.getByTestId("acao-form-data-fim").fill("2026-12-31");
 
+    // Duas rubricas previstas.
+    const rubricas = page.getByTestId("acao-form-rubricas").getByRole("checkbox");
+    await expect(rubricas.first()).toBeVisible();
+    const nomes: string[] = [];
+    for (const i of [0, 1]) {
+      const caixa = rubricas.nth(i);
+      await caixa.check();
+      nomes.push((await caixa.locator("xpath=..").innerText()).trim());
+    }
+
     await page.getByTestId("acao-form-submit").click();
 
     await expect(page.getByTestId("toast")).toContainText(
@@ -152,15 +183,25 @@ test.describe("Ações do Plano de Trabalho — UGP", () => {
     );
     await expect(page.getByTestId("acao-form")).toBeHidden();
 
-    // A Ação recém-criada aparece na tabela
-    const linha = tabelaAcoes(page).getByRole("row").filter({ hasText: NUMERO_LIVRE });
+    // A Ação recém-criada aparece na tabela, com as rubricas previstas.
+    const linha = tabelaAcoes(page).getByRole("row").filter({ hasText: desc });
     await expect(linha).toBeVisible();
-    await expect(linha).toContainText(desc);
+    await expect(linha.getByRole("cell").first()).toHaveText(numero);
+    // Em ordem alfabética, seja qual for a ordem em que foram marcadas.
+    const emOrdem = [...nomes].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    await expect(linha).toContainText(`Rubricas previstas: ${emOrdem.join(", ")}`);
+
+    // Reaberta para edição, as rubricas vêm marcadas: foram gravadas.
+    await linha.getByRole("button", { name: `Editar Ação ${numero}` }).click();
+    await expect(page.getByTestId("acao-form")).toBeVisible();
+    await expect(campoNumero).toHaveValue(numero);
+    await expect(rubricas.nth(0)).toBeChecked();
+    await expect(rubricas.nth(1)).toBeChecked();
+    await page.getByRole("button", { name: "Cancelar" }).click();
+    await expect(page.getByTestId("acao-form")).toBeHidden();
 
     // Limpa a Ação criada para manter o banco idempotente
-    const excluirBtn = linha.getByRole("button", {
-      name: new RegExp(`^Excluir Ação ${NUMERO_LIVRE}`),
-    });
+    const excluirBtn = linha.getByRole("button", { name: `Excluir Ação ${numero}`, exact: true });
     await excluirBtn.click();
     const confirmar = page.getByTestId("acao-excluir-confirmar");
     await expect(confirmar).toBeVisible();

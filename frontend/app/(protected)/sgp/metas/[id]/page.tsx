@@ -30,6 +30,7 @@ import {
   type MetaDetail,
 } from "@/app/lib/metas";
 import { qk } from "@/app/lib/queryKeys";
+import { listRubricas } from "@/app/lib/tiposSolicitacao";
 import type { Submeta } from "@/app/lib/submetas";
 import {
   AcaoSlideOver,
@@ -206,6 +207,17 @@ function MetaDetalheConteudo() {
     [submetasQ.data],
   );
   const semSubmetas = submetasQ.isSuccess && submetas.length === 0;
+
+  // Rubricas previstas da Ação (#452): o formulário marca, a tabela mostra o nome.
+  const rubricasQ = useQuery({
+    queryKey: qk.configSgd.rubricas,
+    queryFn: ({ signal }) => listRubricas(signal),
+    enabled: !idInvalido,
+  });
+  const nomesRubricas = useMemo(
+    () => new Map((rubricasQ.data ?? []).map((r) => [r.id, r.nome])),
+    [rubricasQ.data],
+  );
   const acoesPorSubmeta = useMemo(() => {
     const contagem = new Map<number, number>();
     for (const a of meta?.acoes ?? []) contagem.set(a.submeta, (contagem.get(a.submeta) ?? 0) + 1);
@@ -458,6 +470,7 @@ function MetaDetalheConteudo() {
               ) : (
                 <AcoesTable
                   acoes={acoes}
+                  nomesRubricas={nomesRubricas}
                   canManage={canManage}
                   onEdit={handleEdit}
                   onDelete={setDeleteTarget}
@@ -475,6 +488,9 @@ function MetaDetalheConteudo() {
           mode={slideOver.mode}
           metaId={meta.id}
           acao={slideOver.acao}
+          existentes={acoes}
+          rubricas={rubricasQ.data}
+          rubricasFalhou={rubricasQ.isError}
           onSaved={handleSaved}
           onPedirSubmeta={canManage && listaDeSubmetasPronta ? abrirNovaSubmeta : undefined}
         />
