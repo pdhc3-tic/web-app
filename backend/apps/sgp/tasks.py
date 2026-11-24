@@ -288,6 +288,20 @@ def reconcile_budget_balances() -> int:
         raise
 
 
+@shared_task(name="sgp.tasks.calculate_adherence_index")
+def calculate_adherence_index() -> int:
+    """Índice de aderência de todos os escopos, no mês corrente, contra a versão
+    vigente do TED. Sem TED cadastrado, não grava nada."""
+    from apps.sgp.ted.execucao import gravar_serie_do_mes
+
+    try:
+        return gravar_serie_do_mes()
+    except Exception as exc:
+        sentry_sdk.capture_exception(exc)
+        logger.exception("Falha no cálculo do índice de aderência.")
+        raise
+
+
 # Abaixo de `PRAZO_JOB_TRAVADO` (30 min): um job só é tido como travado depois
 # que o worker que o processava com certeza já foi interrompido.
 @shared_task(

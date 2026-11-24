@@ -8196,6 +8196,469 @@ paths:
               schema:
                 $ref: '#/components/schemas/TEDVersaoDetalhe'
           description: ''
+  /api/v1/sgp/ted/{ted_pk}/versoes/comparar/:
+    get:
+      operationId: v1_sgp_ted_versoes_comparar_retrieve
+      description: |-
+        O que mudou entre duas versões do TED em quantidade, valor e prazo, por Meta,
+        Submeta e Ação.
+      parameters:
+      - in: query
+        name: de
+        schema:
+          type: integer
+          minimum: 1
+        description: Id da versão de origem.
+        required: true
+      - in: query
+        name: para
+        schema:
+          type: integer
+          minimum: 1
+        description: Id da versão de destino.
+        required: true
+      - in: path
+        name: ted_pk
+        schema:
+          type: integer
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComparativoResposta'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroDoRelatorio'
+          description: 'Parâmetro inválido (`{campo: [mensagem]}`) ou erro com código
+            (`{code, message}`).'
+  /api/v1/sgp/ted/aderencia/:
+    get:
+      operationId: v1_sgp_ted_aderencia_retrieve
+      description: |-
+        Índice de aderência calculado agora, contra a versão pedida do TED, no recorte
+        de quem consulta.
+      parameters:
+      - in: query
+        name: data
+        schema:
+          type: string
+          format: date
+        description: Usa a versão vigente nessa data.
+      - in: query
+        name: escopo
+        schema:
+          enum:
+          - acao
+          - submeta
+          - meta
+          - indicador
+          - territorio
+          - projeto
+          type: string
+          minLength: 1
+        description: |-
+          * `acao` - Ação
+          * `submeta` - Submeta
+          * `meta` - Meta
+          * `indicador` - Indicador
+          * `territorio` - Território
+          * `projeto` - Projeto
+        required: true
+      - in: query
+        name: periodo_fim
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: periodo_inicio
+        schema:
+          type: string
+          format: date
+        description: Pela data de término da Atividade.
+      - in: query
+        name: territorio_id
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: versao
+        schema:
+          type: integer
+          minimum: 1
+        description: Id da versão do TED. Sem ela, vale a vigente.
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AderenciaResposta'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroDoRelatorio'
+          description: 'Parâmetro inválido (`{campo: [mensagem]}`) ou erro com código
+            (`{code, message}`).'
+  /api/v1/sgp/ted/aderencia/exportar/:
+    get:
+      operationId: v1_sgp_ted_aderencia_exportar_retrieve
+      parameters:
+      - in: query
+        name: data
+        schema:
+          type: string
+          format: date
+        description: Usa a versão vigente nessa data.
+      - in: query
+        name: escopo
+        schema:
+          enum:
+          - acao
+          - submeta
+          - meta
+          - indicador
+          - territorio
+          - projeto
+          type: string
+          minLength: 1
+        description: |-
+          * `acao` - Ação
+          * `submeta` - Submeta
+          * `meta` - Meta
+          * `indicador` - Indicador
+          * `territorio` - Território
+          * `projeto` - Projeto
+        required: true
+      - in: query
+        name: formato
+        schema:
+          enum:
+          - csv
+          - xlsx
+          type: string
+          default: csv
+          minLength: 1
+        description: |-
+          * `csv` - CSV
+          * `xlsx` - XLSX
+      - in: query
+        name: periodo_fim
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: periodo_inicio
+        schema:
+          type: string
+          format: date
+        description: Pela data de término da Atividade.
+      - in: query
+        name: territorio_id
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: versao
+        schema:
+          type: integer
+          minimum: 1
+        description: Id da versão do TED. Sem ela, vale a vigente.
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroDoRelatorio'
+          description: 'Parâmetro inválido (`{campo: [mensagem]}`) ou erro com código
+            (`{code, message}`).'
+  /api/v1/sgp/ted/aderencia/historico/:
+    get:
+      operationId: v1_sgp_ted_aderencia_historico_list
+      description: |-
+        Série mensal gravada pela task diária. A série é do projeto inteiro: o
+        Articulador lê só a dos territórios que ficam inteiros nos seus estados.
+      parameters:
+      - in: query
+        name: escopo
+        schema:
+          enum:
+          - acao
+          - submeta
+          - meta
+          - indicador
+          - territorio
+          - projeto
+          type: string
+          minLength: 1
+        description: |-
+          * `acao` - Ação
+          * `submeta` - Submeta
+          * `meta` - Meta
+          * `indicador` - Indicador
+          * `territorio` - Território
+          * `projeto` - Projeto
+        required: true
+      - name: limit
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: O índice inicial a partir do qual retornar os resultados.
+        schema:
+          type: integer
+      - in: query
+        name: periodo_fim
+        schema:
+          type: string
+          format: date
+        description: Mês final (qualquer dia do mês).
+      - in: query
+        name: periodo_inicio
+        schema:
+          type: string
+          format: date
+        description: Mês inicial (qualquer dia do mês).
+      - in: query
+        name: referencia_id
+        schema:
+          type: integer
+          minimum: 1
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAdherenceIndexList'
+          description: ''
+  /api/v1/sgp/ted/aderencia/recalcular/:
+    post:
+      operationId: v1_sgp_ted_aderencia_recalcular_create
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '202':
+          description: No response body
+  /api/v1/sgp/ted/custo-por-entrega/:
+    get:
+      operationId: v1_sgp_ted_custo_por_entrega_retrieve
+      description: |-
+        Custo unitário realizado contra o previsto na versão do TED, do maior desvio
+        para o menor, para cima ou para baixo.
+      parameters:
+      - in: query
+        name: agrupar
+        schema:
+          enum:
+          - acao
+          - indicador
+          - territorio
+          type: string
+          default: acao
+          minLength: 1
+        description: |-
+          * `acao` - acao
+          * `indicador` - indicador
+          * `territorio` - territorio
+      - in: query
+        name: data
+        schema:
+          type: string
+          format: date
+        description: Usa a versão vigente nessa data.
+      - in: query
+        name: indicador_id
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: periodo_fim
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: periodo_inicio
+        schema:
+          type: string
+          format: date
+        description: Pela data de término da Atividade.
+      - in: query
+        name: territorio_id
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: versao
+        schema:
+          type: integer
+          minimum: 1
+        description: Id da versão do TED. Sem ela, vale a vigente.
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustoPorEntregaResposta'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroDoRelatorio'
+          description: 'Parâmetro inválido (`{campo: [mensagem]}`) ou erro com código
+            (`{code, message}`).'
+  /api/v1/sgp/ted/custo-por-entrega/composicao/:
+    get:
+      operationId: v1_sgp_ted_custo_por_entrega_composicao_retrieve
+      parameters:
+      - in: query
+        name: acao_id
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: indicador_id
+        schema:
+          type: integer
+          minimum: 1
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComposicaoResposta'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroDoRelatorio'
+          description: 'Parâmetro inválido (`{campo: [mensagem]}`) ou erro com código
+            (`{code, message}`).'
+  /api/v1/sgp/ted/custo-por-entrega/exportar/:
+    get:
+      operationId: v1_sgp_ted_custo_por_entrega_exportar_retrieve
+      parameters:
+      - in: query
+        name: agrupar
+        schema:
+          enum:
+          - acao
+          - indicador
+          - territorio
+          type: string
+          default: acao
+          minLength: 1
+        description: |-
+          * `acao` - acao
+          * `indicador` - indicador
+          * `territorio` - territorio
+      - in: query
+        name: data
+        schema:
+          type: string
+          format: date
+        description: Usa a versão vigente nessa data.
+      - in: query
+        name: formato
+        schema:
+          enum:
+          - csv
+          - xlsx
+          type: string
+          default: csv
+          minLength: 1
+        description: |-
+          * `csv` - CSV
+          * `xlsx` - XLSX
+      - in: query
+        name: indicador_id
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: periodo_fim
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: periodo_inicio
+        schema:
+          type: string
+          format: date
+        description: Pela data de término da Atividade.
+      - in: query
+        name: territorio_id
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: versao
+        schema:
+          type: integer
+          minimum: 1
+        description: Id da versão do TED. Sem ela, vale a vigente.
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroDoRelatorio'
+          description: 'Parâmetro inválido (`{campo: [mensagem]}`) ou erro com código
+            (`{code, message}`).'
   /api/v1/sgp/ted/documentos/upload-url/:
     post:
       operationId: v1_sgp_ted_documentos_upload_url_create
@@ -8222,6 +8685,66 @@ paths:
               schema:
                 $ref: '#/components/schemas/UploadURLResposta'
           description: ''
+  /api/v1/sgp/ted/rastreabilidade/:
+    get:
+      operationId: v1_sgp_ted_rastreabilidade_list
+      description: |-
+        Da rubrica à evidência de campo: cada solicitação paga com a demanda, a
+        Atividade, a cadeia do Plano de Trabalho e as evidências. O recorte é o estado
+        da Atividade, como no custo e na composição; por isso a leitura do SGD, que o
+        RLS recorta pelo solicitante, roda em visão total.
+      parameters:
+      - in: query
+        name: acao_id
+        schema:
+          type: integer
+          minimum: 1
+      - name: limit
+        required: false
+        in: query
+        description: Número de resultados a serem retornados por página.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: O índice inicial a partir do qual retornar os resultados.
+        schema:
+          type: integer
+      - in: query
+        name: periodo_fim
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: periodo_inicio
+        schema:
+          type: string
+          format: date
+        description: Pela data de término da Atividade.
+      - in: query
+        name: rubrica
+        schema:
+          type: string
+          minLength: 1
+        required: true
+      - in: query
+        name: territorio_id
+        schema:
+          type: integer
+          minimum: 1
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroDoRelatorio'
+          description: 'Parâmetro inválido (`{campo: [mensagem]}`) ou erro com código
+            (`{code, message}`).'
   /api/v1/sgp/ufpas/:
     get:
       operationId: v1_sgp_ufpas_list
@@ -10856,6 +11379,173 @@ components:
       - content_type
       - filename
       - size
+    AderenciaLinha:
+      type: object
+      properties:
+        referencia_id:
+          type: integer
+          nullable: true
+        nome:
+          type: string
+        quantidade_planejada:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,18}(?:\.\d{0,2})?$
+        quantidade_realizada:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,18}(?:\.\d{0,2})?$
+        valor_planejado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,18}(?:\.\d{0,2})?$
+        valor_executado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,18}(?:\.\d{0,2})?$
+        perc_fisico:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+        perc_financeiro:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+        indice:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+          nullable: true
+        faixa:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/FaixaAderenciaEnum'
+          - $ref: '#/components/schemas/NullEnum'
+      required:
+      - faixa
+      - indice
+      - nome
+      - perc_financeiro
+      - perc_fisico
+      - quantidade_planejada
+      - quantidade_realizada
+      - referencia_id
+      - valor_executado
+      - valor_planejado
+    AderenciaResposta:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          format: uri
+          nullable: true
+        previous:
+          type: string
+          format: uri
+          nullable: true
+        versao:
+          $ref: '#/components/schemas/VersaoDoRelatorio'
+        acoes_fora_da_versao:
+          type: integer
+          description: Ações do plano atual que não estão no snapshot da versão e
+            ficaram de fora.
+        acoes_da_versao_fora_do_plano:
+          type: integer
+          description: 'Ações do snapshot que não existem mais no plano atual: entram
+            com o planejado e sem execução.'
+        acoes_manuais_fora_do_recorte:
+          type: integer
+          description: 'Ações de Indicador com lançamento manual, que não tem território
+            nem período: ficam de fora quando há recorte ou quebra por território.'
+        escopo:
+          $ref: '#/components/schemas/EscopoAderenciaEnum'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AderenciaLinha'
+      required:
+      - acoes_da_versao_fora_do_plano
+      - acoes_fora_da_versao
+      - acoes_manuais_fora_do_recorte
+      - count
+      - escopo
+      - next
+      - previous
+      - results
+      - versao
+    AdherenceIndex:
+      type: object
+      properties:
+        escopo:
+          allOf:
+          - $ref: '#/components/schemas/EscopoAderenciaEnum'
+          readOnly: true
+        referencia_id:
+          type: integer
+          readOnly: true
+          nullable: true
+          title: Referência
+          description: Id da Ação, Submeta, Meta, Indicador ou Território. Vazio no
+            projeto como um todo.
+        periodo_ref:
+          type: string
+          format: date
+          readOnly: true
+          title: Mês de referência
+          description: Primeiro dia do mês.
+        ted_versao:
+          allOf:
+          - $ref: '#/components/schemas/VersaoDoRelatorio'
+          readOnly: true
+        perc_fisico:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,18}(?:\.\d{0,2})?$
+          readOnly: true
+          title: '% físico'
+        perc_financeiro:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,18}(?:\.\d{0,2})?$
+          readOnly: true
+          title: '% financeiro'
+        indice:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,18}(?:\.\d{0,2})?$
+          readOnly: true
+          nullable: true
+          title: Índice
+        faixa:
+          allOf:
+          - $ref: '#/components/schemas/FaixaAderenciaEnum'
+          readOnly: true
+        calculado_em:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - calculado_em
+      - escopo
+      - faixa
+      - indice
+      - perc_financeiro
+      - perc_fisico
+      - periodo_ref
+      - referencia_id
+      - ted_versao
+    AgrupamentoEnum:
+      enum:
+      - acao
+      - indicador
+      - territorio
+      type: string
+      description: |-
+        * `acao` - acao
+        * `indicador` - indicador
+        * `territorio` - territorio
     AguaEnum:
       enum:
       - 1
@@ -12415,11 +13105,25 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OpcaoTexto'
+        aderencia_escopo:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
+        aderencia_faixa:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
+        custo_faixa:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
         solicitacao_tipo:
           type: array
           items:
             $ref: '#/components/schemas/OpcaoTexto'
       required:
+      - aderencia_escopo
+      - aderencia_faixa
       - agua
       - ambito
       - atividade_documento_tipo
@@ -12427,6 +13131,7 @@ components:
       - classe
       - cor_raca
       - cultura_categoria
+      - custo_faixa
       - demanda_documento_tipo
       - demanda_status
       - dispositivo
@@ -12472,6 +13177,60 @@ components:
         * `anual` - Anual
         * `perene` - Perene
         * `bianual` - Bianual
+    ComparativoResposta:
+      type: object
+      properties:
+        de:
+          $ref: '#/components/schemas/VersaoDoRelatorio'
+        para:
+          $ref: '#/components/schemas/VersaoDoRelatorio'
+        diferencas:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiferencaEntreVersoes'
+      required:
+      - de
+      - diferencas
+      - para
+    ComposicaoPorRubrica:
+      type: object
+      properties:
+        rubrica:
+          $ref: '#/components/schemas/_RubricaRef'
+        valor_executado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,18}(?:\.\d{0,2})?$
+        participacao_percentual:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,5}(?:\.\d{0,2})?$
+      required:
+      - participacao_percentual
+      - rubrica
+      - valor_executado
+    ComposicaoResposta:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          format: uri
+          nullable: true
+        previous:
+          type: string
+          format: uri
+          nullable: true
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ComposicaoPorRubrica'
+      required:
+      - count
+      - next
+      - previous
+      - results
     Comunidade:
       type: object
       properties:
@@ -12872,6 +13631,107 @@ components:
       - demandas
       - estimado
       - pago
+    CustoPorEntregaLinha:
+      type: object
+      properties:
+        referencia_id:
+          type: integer
+          nullable: true
+        nome:
+          type: string
+        territorio_id:
+          type: integer
+          nullable: true
+        territorio_nome:
+          type: string
+          nullable: true
+        quantidade_realizada:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,18}(?:\.\d{0,2})?$
+        valor_executado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,18}(?:\.\d{0,2})?$
+        custo_unitario_previsto:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+          nullable: true
+        custo_unitario_realizado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+          nullable: true
+        desvio_percentual:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+          nullable: true
+        faixa:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/FaixaCustoPorEntregaEnum'
+          - $ref: '#/components/schemas/NullEnum'
+      required:
+      - custo_unitario_previsto
+      - custo_unitario_realizado
+      - desvio_percentual
+      - faixa
+      - nome
+      - quantidade_realizada
+      - referencia_id
+      - territorio_id
+      - territorio_nome
+      - valor_executado
+    CustoPorEntregaResposta:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          format: uri
+          nullable: true
+        previous:
+          type: string
+          format: uri
+          nullable: true
+        versao:
+          $ref: '#/components/schemas/VersaoDoRelatorio'
+        acoes_fora_da_versao:
+          type: integer
+          description: Ações do plano atual que não estão no snapshot da versão e
+            ficaram de fora.
+        acoes_da_versao_fora_do_plano:
+          type: integer
+          description: 'Ações do snapshot que não existem mais no plano atual: entram
+            com o planejado e sem execução.'
+        acoes_manuais_fora_do_recorte:
+          type: integer
+          description: 'Ações de Indicador com lançamento manual, que não tem território
+            nem período: ficam de fora quando há recorte ou quebra por território.'
+        agrupamento:
+          $ref: '#/components/schemas/AgrupamentoEnum'
+        limiar_desvio_percentual:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustoPorEntregaLinha'
+      required:
+      - acoes_da_versao_fora_do_plano
+      - acoes_fora_da_versao
+      - acoes_manuais_fora_do_recorte
+      - agrupamento
+      - count
+      - limiar_desvio_percentual
+      - next
+      - previous
+      - results
+      - versao
     Dashboard:
       type: object
       properties:
@@ -13879,6 +14739,38 @@ components:
           minLength: 1
       required:
       - justificativa
+    DiferencaEntreVersoes:
+      type: object
+      properties:
+        elemento:
+          $ref: '#/components/schemas/ElementoComparativoDeVersoesEnum'
+        chave:
+          type: string
+          description: Número da Meta, da Submeta ou da Ação.
+        nome:
+          type: string
+        situacao:
+          $ref: '#/components/schemas/SituacaoComparativoDeVersoesEnum'
+        campos_alterados:
+          type: array
+          items:
+            type: string
+        antes:
+          allOf:
+          - $ref: '#/components/schemas/_ConsolidadoDaVersao'
+          nullable: true
+        depois:
+          allOf:
+          - $ref: '#/components/schemas/_ConsolidadoDaVersao'
+          nullable: true
+      required:
+      - antes
+      - campos_alterados
+      - chave
+      - depois
+      - elemento
+      - nome
+      - situacao
     DirecaoEnum:
       enum:
       - exportacao
@@ -13926,6 +14818,16 @@ components:
       required:
       - expires_in
       - url
+    ElementoComparativoDeVersoesEnum:
+      enum:
+      - meta
+      - submeta
+      - acao
+      type: string
+      description: |-
+        * `meta` - Meta
+        * `submeta` - Submeta
+        * `acao` - Ação
     Enquadramento:
       type: object
       properties:
@@ -13963,6 +14865,17 @@ components:
         * `member` - member
         * `activity` - activity
         * `form_response` - form_response
+    ErroDoRelatorio:
+      type: object
+      properties:
+        code:
+          type: string
+          description: 'Ex.: `ted_nao_cadastrado`, `versao_invalida`, `sem_versao_na_data`.'
+        message:
+          type: string
+      required:
+      - code
+      - message
     EscolaridadeEnum:
       enum:
       - 1
@@ -13981,6 +14894,22 @@ components:
         * `5` - Médio completo
         * `6` - Superior incompleto
         * `7` - Superior completo
+    EscopoAderenciaEnum:
+      enum:
+      - acao
+      - submeta
+      - meta
+      - indicador
+      - territorio
+      - projeto
+      type: string
+      description: |-
+        * `acao` - Ação
+        * `submeta` - Submeta
+        * `meta` - Meta
+        * `indicador` - Indicador
+        * `territorio` - Território
+        * `projeto` - Projeto
     EscopoAlertaOrcamentoEnum:
       enum:
       - limite
@@ -14273,6 +15202,18 @@ components:
         * `processando` - Processando
         * `concluida` - Concluída
         * `erro` - Erro
+    FaixaAderenciaEnum:
+      enum:
+      - equilibrada
+      - atencao
+      - critica
+      - subexecucao_financeira
+      type: string
+      description: |-
+        * `equilibrada` - Execução equilibrada
+        * `atencao` - Atenção
+        * `critica` - Crítica
+        * `subexecucao_financeira` - Subexecução financeira
     FaixaAlertaOrcamentoEnum:
       enum:
       - amarelo
@@ -14285,6 +15226,16 @@ components:
         * `vermelho` - Vermelho
         * `subexecucao` - Subexecução
         * `devolucao` - Devolução
+    FaixaCustoPorEntregaEnum:
+      enum:
+      - dentro_do_limiar
+      - acima_do_previsto
+      - abaixo_do_previsto
+      type: string
+      description: |-
+        * `dentro_do_limiar` - Dentro do limiar
+        * `acima_do_previsto` - Acima do previsto
+        * `abaixo_do_previsto` - Abaixo do previsto
     FaixaDestino:
       type: object
       properties:
@@ -16113,6 +17064,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ActivityList'
+    PaginatedAdherenceIndexList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdherenceIndex'
     PaginatedAtividadeElegivelList:
       type: object
       required:
@@ -19345,6 +20319,16 @@ components:
         * `extensivo` - Extensivo
         * `semi_intensivo` - Semi-intensivo
         * `intensivo` - Intensivo
+    SituacaoComparativoDeVersoesEnum:
+      enum:
+      - incluida
+      - removida
+      - alterada
+      type: string
+      description: |-
+        * `incluida` - Incluída
+        * `removida` - Removida
+        * `alterada` - Alterada
     SituacaoMoradiaEnum:
       enum:
       - 1
@@ -22325,6 +23309,29 @@ components:
       - email
       - id
       - nome
+    VersaoDoRelatorio:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        numero_versao:
+          type: integer
+          readOnly: true
+          title: Número da Versão
+        tipo:
+          allOf:
+          - $ref: '#/components/schemas/TipoVersaoTEDEnum'
+          readOnly: true
+        registrado_em:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - id
+      - numero_versao
+      - registrado_em
+      - tipo
     VisaoIndicador:
       type: object
       description: |-
@@ -23291,6 +24298,30 @@ components:
       - meta
       - numero
       - titulo
+    _ConsolidadoDaVersao:
+      type: object
+      properties:
+        quantidade_planejada:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,18}(?:\.\d{0,2})?$
+        valor_planejado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,18}(?:\.\d{0,2})?$
+        data_inicio:
+          type: string
+          format: date
+          nullable: true
+        data_fim:
+          type: string
+          format: date
+          nullable: true
+      required:
+      - data_fim
+      - data_inicio
+      - quantidade_planejada
+      - valor_planejado
     _NoVisaoIndicador:
       type: object
       properties:
@@ -23334,6 +24365,19 @@ components:
       - fim
       - inicio
       - quantidade_realizada
+    _RubricaRef:
+      type: object
+      properties:
+        id:
+          type: integer
+        nome:
+          type: string
+        slug:
+          type: string
+      required:
+      - id
+      - nome
+      - slug
     _TerritorioVisaoIndicador:
       type: object
       properties:

@@ -36,7 +36,17 @@ from apps.sgp.constants import (
     STATUS_WORKPLAN,
     TIPO_MORADIA_CHOICES,
 )
-from apps.sgp.models import ActivityDocument, Cultura, EspecieAnimal, GlosaRisk, Production, TEDVersion, UFPADocument
+from apps.sgp.models import (
+    ActivityDocument,
+    AdherenceIndex,
+    Cultura,
+    EspecieAnimal,
+    GlosaRisk,
+    Production,
+    TEDVersion,
+    UFPADocument,
+)
+from apps.sgp.ted.execucao import FaixaDeCusto
 from apps.sgp.models.activity import (
     AMBITO_CHOICES,
     FORMA_ATUACAO_CHOICES,
@@ -88,6 +98,9 @@ CHOICES_PUBLICADOS = {
     "tipo_material": TipoMaterial.choices,
     "tipo_refeicao": TipoRefeicao.choices,
     "ted_versao_tipo": TEDVersion.Tipo.choices,
+    "aderencia_escopo": AdherenceIndex.Escopo.choices,
+    "aderencia_faixa": AdherenceIndex.Faixa.choices,
+    "custo_faixa": FaixaDeCusto.CHOICES,
 }
 
 
