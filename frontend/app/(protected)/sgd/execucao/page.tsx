@@ -24,8 +24,8 @@ import {
   CustoPorAtividadeTable,
   CustoPorAtividadeTableSkeleton,
 } from "./_components/CustoPorAtividadeTable";
-import { ExecucaoFilters } from "./_components/ExecucaoFilters";
-import { ExportarButton } from "./_components/ExportarButton";
+import { ExportarDemandas } from "../_components/ExportarDemandas";
+import { FiltrosDemandas } from "../_components/FiltrosDemandas";
 import {
   PainelRubricasTable,
   PainelRubricasTableSkeleton,
@@ -132,7 +132,7 @@ function ExecucaoView() {
             Acompanhamento orçamentário das demandas do SGD e relatório de custos das atividades.
           </p>
         </div>
-        <ExportarButton filtros={filtros} />
+        <ExportarDemandas filtros={filtros} />
       </div>
 
       <div role="tablist" aria-label="Visão da execução" className="flex border-b border-border">
@@ -160,7 +160,8 @@ function ExecucaoView() {
         </button>
       </div>
 
-      <ExecucaoFilters
+      <FiltrosDemandas
+        titulo="Filtros de Execução e Custo"
         filtros={filtros}
         onChange={(novos) => navegar(aba, novos)}
         rubricaOptions={rubricaOptions}

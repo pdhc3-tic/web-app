@@ -13,9 +13,11 @@ import {
 /**
  * Link do drill-down para a lista de demandas, levando os filtros ativos do
  * painel — a lista mostra as mesmas demandas que compõem o custo exibido.
+ * `origem=execucao` faz a lista mostrar a faixa "Voltar ao painel" (#456).
  */
 function hrefDemandas(filtros: ExecucaoFiltros, recorte: ExecucaoFiltros): string {
   const qs = queryDeFiltros({ ...filtros, ...recorte });
+  qs.set("origem", "execucao");
   return `/sgd/demandas?${qs}`;
 }
 

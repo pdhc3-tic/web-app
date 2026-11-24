@@ -8,6 +8,8 @@
 |---|---|---|---|
 | 1 | #438 (dotação nacional) | #437 (entidade TED) | Não. A #438 fica aberta só por ele |
 | 2 | #453 (catálogo de indicadores) | — | Não. Melhoria: a tela funciona com a cópia dos rótulos |
+| 3 | #456 (Painel de Demandas) | — | Não. Melhoria: a coluna Atividade mostra Ação, município e data |
+| 4 | #456 (Painel de Demandas) | — | Não. Melhoria: a ordenação por Valor estimado já funciona |
 
 ---
 
@@ -54,3 +56,38 @@ from apps.sgp.models.indicator import (
 O comentário de `CHOICES_PUBLICADOS` diz que os testes de contrato conferem que toda constante de choices do SGP está lá. As do Indicador escaparam dessa conferência, então vale também acrescentá-las ao teste.
 
 *Estado atual no frontend:* `UNIDADE_MEDIDA_LABEL`, `FORMA_APURACAO_LABEL`, `CATEGORIA_LABEL` e `DESAGREGACAO_LABEL` em `app/lib/indicadores.ts`. Quando as choices forem publicadas, a tela passa a lê-las de `useSgpChoices` e as cópias saem.
+
+## 3. Título da atividade na listagem de demandas (#456)
+
+*Melhoria, não bloqueia: a #456 fecha com a coluna provisória.*
+
+**Estado atual.** O Painel de Demandas (`/sgd/demandas`) ganhou a coluna Atividade, com link para a ficha. `DemandSerializer` só traz o id (`activity`) e o contexto herdado, sem o título. A coluna mostra o que vem: "Ação 1.1.2 · Mossoró · 12/03/2026". Buscar o título linha a linha seriam até 50 chamadas por página, o que pesa justamente no que a #448 reclama.
+
+**Pedido:** acrescentar ao `DemandSerializer` (`apps/sgd/serializers/demand.py`) o título da atividade, só leitura:
+
+```python
+activity_titulo = serializers.CharField(source="activity.titulo", read_only=True)
+```
+
+O `get_queryset` de `DemandViewSet` já faz `select_related` da atividade, então não há consulta a mais. O campo também serve à exportação (`COLUNAS_EXPORTACAO`), se fizer sentido lá.
+
+*Estado atual no frontend:* `rotuloAtividade` em `app/(protected)/sgd/demandas/_components/DemandasTabela.tsx`. Quando o campo chegar, a coluna passa a mostrar o título.
+
+## 4. Ordenação da listagem de demandas por outras colunas (#456)
+
+*Melhoria, não bloqueia: a ordenação por Valor estimado já funciona.*
+
+**Estado atual.** `DemandViewSet.list` só aceita `ordering` em `ORDENACOES_DA_LISTAGEM` (`valor_estimado_total` e o inverso) e responde 400 para qualquer outro valor. Sem o parâmetro, vêm as mais recentes primeiro. A #456 pede ordenação, e a tabela só pode oferecê-la na coluna Valor estimado.
+
+**Pedido:** acrescentar a `ORDENACOES_DA_LISTAGEM` pelo menos:
+
+```python
+"criado_em": ("criado_em", "pk"),
+"-criado_em": ("-criado_em", "-pk"),
+"titulo": ("titulo", "pk"),
+"-titulo": ("-titulo", "-pk"),
+```
+
+Status fica de fora: o código do status em ordem alfabética não segue o fluxo da demanda, e o filtro de status já atende a quem quer separar por ele.
+
+*Estado atual no frontend:* `OrdenacaoDemandas` em `app/lib/demandas.ts` e o botão de ordenação da coluna Valor em `DemandasTabela.tsx`. Com as ordenações novas, as colunas Título e Criada em ganham o mesmo botão.

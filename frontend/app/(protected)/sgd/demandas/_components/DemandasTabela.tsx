@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { Badge } from "@/app/components/ui/Badge/Badge";
 import { formatDate } from "@/app/lib/datetime";
@@ -35,6 +36,17 @@ function proximaOrdenacaoPorValor(
 }
 
 const TH = "px-4 py-2.5 text-left text-2xs font-medium uppercase tracking-[0.06em] text-text-muted";
+
+/**
+ * "Ação 1.1.2 · Mossoró · 12/03/2026": a atividade pelo que a listagem traz.
+ * O `DemandSerializer` não tem o título da atividade, só o id e o contexto
+ * (pendencias-backend-sprint-12g.md, item 3); quando vier, a coluna passa a
+ * mostrar o título.
+ */
+export function rotuloAtividade(d: Pick<Demanda, "contexto">): string {
+  const c = d.contexto;
+  return `Ação ${c.acao_numero} · ${c.municipio_nome} · ${formatDate(c.data_prevista)}`;
+}
 const TD = "px-4 py-3 align-middle";
 
 /**
@@ -65,7 +77,8 @@ export function DemandasTabelaSkeleton({
             {!compacta && (
               <>
                 <th className={TH}>Território</th>
-                <th className={TH}>Meta PT</th>
+                <th className={TH}>Atividade</th>
+                <th className={`${TH} whitespace-nowrap`}>Meta PT</th>
                 <th className={TH}>Criada em</th>
                 <th className={`${TH} text-right`}>Valor estimado</th>
               </>
@@ -90,6 +103,9 @@ export function DemandasTabelaSkeleton({
                     <div className="h-4 w-20 animate-pulse rounded bg-surface-muted" />
                   </td>
                   <td className={TD}>
+                    <div className="h-4 w-40 animate-pulse rounded bg-surface-muted" />
+                  </td>
+                  <td className={TD}>
                     <div className="h-4 w-28 animate-pulse rounded bg-surface-muted" />
                   </td>
                   <td className={TD}>
@@ -109,8 +125,9 @@ export function DemandasTabelaSkeleton({
 }
 
 /**
- * Lista master das demandas. Com o painel aberto, Território, Meta PT, Data de
- * criação e Valor estimado saem de cena; Título, Status e Solicitante ficam.
+ * Lista master das demandas. Com o painel aberto, Território, Atividade, Meta
+ * PT, Data de criação e Valor estimado saem de cena; Título, Status e
+ * Solicitante ficam.
  */
 export function DemandasTabela({
   demandas,
@@ -143,7 +160,8 @@ export function DemandasTabela({
             {!compacta && (
               <>
                 <th className={TH}>Território</th>
-                <th className={TH}>Meta PT</th>
+                <th className={TH}>Atividade</th>
+                <th className={`${TH} whitespace-nowrap`}>Meta PT</th>
                 <th className={TH}>Criada em</th>
                 <th className={`${TH} text-right`} aria-sort={direcaoValor}>
                   {onOrdenar ? (
@@ -208,7 +226,18 @@ export function DemandasTabela({
                     <td className={`${TD} text-text-muted`}>
                       {rotuloAbrangencia(d)}
                     </td>
-                    <td className={`${TD} text-text-muted`} title={d.contexto.meta_titulo}>
+                    <td className={`${TD} text-text-muted`}>
+                      {/* Link próprio: não abre o painel da demanda. */}
+                      <Link
+                        href={`/sgp/atividades/${d.activity}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="whitespace-nowrap text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                        data-testid={`demanda-atividade-${d.id}`}
+                      >
+                        {rotuloAtividade(d)}
+                      </Link>
+                    </td>
+                    <td className={`${TD} whitespace-nowrap text-text-muted`} title={d.contexto.meta_titulo}>
                       Meta {d.contexto.meta_numero}
                     </td>
                     <td className={`${TD} tabular-nums text-text-muted`}>
