@@ -547,3 +547,61 @@ class TestAcaoListagemDetalhe:
         response = auth_client.get(f"/api/v1/acoes/{acao.pk}/")
         assert response.status_code == 200
         assert response.data["numero"] == acao.numero
+
+
+class TestAcaoCadeiaDoPlano:
+    """Meta e Submeta nomeadas na Ação, para o formulário de atividade mostrar
+    a cadeia assim que a Ação é escolhida."""
+
+    @staticmethod
+    def _cadeia(dados):
+        return (
+            dados["meta"], dados["meta_numero"], dados["meta_titulo"],
+            dados["submeta"], dados["submeta_numero"], dados["submeta_titulo"],
+        )
+
+    def test_listagem_traz_meta_e_submeta_nomeadas(self, auth_client, acao, meta, submeta):
+        item = auth_client.get("/api/v1/acoes/").data["results"][0]
+
+        assert self._cadeia(item) == (meta.pk, 1, "Meta Teste", submeta.pk, "1.1", "Submeta Teste")
+        assert item["indicador_detalhe"]["codigo"] == acao.indicador.codigo
+
+    def test_detalhe_traz_meta_e_submeta_nomeadas(self, auth_client, acao, meta, submeta):
+        dados = auth_client.get(f"/api/v1/acoes/{acao.pk}/").data
+
+        assert self._cadeia(dados) == (meta.pk, 1, "Meta Teste", submeta.pk, "1.1", "Submeta Teste")
+
+    def test_criacao_ignora_cadeia_enviada(self, auth_client, acao_payload, meta, submeta):
+        response = auth_client.post("/api/v1/acoes/", {
+            **acao_payload, "meta_numero": 9, "meta_titulo": "Outra", "submeta_titulo": "Outra",
+        }, format="json")
+
+        assert response.status_code == 201, response.data
+        assert self._cadeia(response.data) == (
+            meta.pk, 1, "Meta Teste", submeta.pk, "1.1", "Submeta Teste"
+        )
+
+    def test_edicao_ignora_cadeia_enviada(self, auth_client, acao, meta, submeta):
+        response = auth_client.patch(f"/api/v1/acoes/{acao.pk}/", {
+            "meta_numero": 9, "meta_titulo": "Outra", "submeta_titulo": "Outra",
+        }, format="json")
+
+        assert response.status_code == 200, response.data
+        meta.refresh_from_db()
+        submeta.refresh_from_db()
+        assert (meta.numero, meta.titulo, submeta.titulo) == (1, "Meta Teste", "Submeta Teste")
+        assert self._cadeia(response.data) == (
+            meta.pk, 1, "Meta Teste", submeta.pk, "1.1", "Submeta Teste"
+        )
+
+    def test_listagem_nao_consulta_meta_e_submeta_por_linha(self, auth_client, acao):
+        with CaptureQueriesContext(connection) as uma_acao:
+            auth_client.get("/api/v1/acoes/")
+
+        for numero in (2, 3):
+            WorkPlanAcaoFactory(meta=WorkPlanMetaFactory(numero=numero))
+        with CaptureQueriesContext(connection) as tres_acoes:
+            response = auth_client.get("/api/v1/acoes/")
+
+        assert len(response.data["results"]) == 3
+        assert len(tres_acoes.captured_queries) == len(uma_acao.captured_queries)

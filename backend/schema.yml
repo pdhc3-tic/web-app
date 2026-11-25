@@ -21743,9 +21743,18 @@ components:
         meta:
           type: integer
           readOnly: true
+        meta_numero:
+          type: integer
+          readOnly: true
+        meta_titulo:
+          type: string
+          readOnly: true
         submeta:
           type: integer
         submeta_numero:
+          type: string
+          readOnly: true
+        submeta_titulo:
           type: string
           readOnly: true
         indicador:
@@ -21835,12 +21844,15 @@ components:
       - indicador
       - indicador_detalhe
       - meta
+      - meta_numero
+      - meta_titulo
       - numero
       - percentual_realizado
       - quantidade_planejada
       - status_execucao
       - submeta
       - submeta_numero
+      - submeta_titulo
       - tipo_unidade_display
       - valor_executado
       - valor_total
@@ -21854,9 +21866,18 @@ components:
         meta:
           type: integer
           readOnly: true
+        meta_numero:
+          type: integer
+          readOnly: true
+        meta_titulo:
+          type: string
+          readOnly: true
         submeta:
           type: integer
         submeta_numero:
+          type: string
+          readOnly: true
+        submeta_titulo:
           type: string
           readOnly: true
         indicador:
@@ -21941,12 +21962,15 @@ components:
       - indicador
       - indicador_detalhe
       - meta
+      - meta_numero
+      - meta_titulo
       - numero
       - percentual_realizado
       - quantidade_planejada
       - status_execucao
       - submeta
       - submeta_numero
+      - submeta_titulo
       - tipo_unidade_display
       - valor_executado
       - valor_total
