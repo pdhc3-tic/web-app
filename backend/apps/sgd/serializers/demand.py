@@ -85,6 +85,7 @@ class DemandSerializer(serializers.ModelSerializer):
     valor_estimado_total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
     valor_autorizado_total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
     valor_pago_total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    activity_titulo = serializers.CharField(source="activity.titulo", read_only=True)
     contexto = serializers.SerializerMethodField()
     solicitacoes = DemandRequestSerializer(many=True, read_only=True)
     etapas = ApprovalStepSerializer(many=True, read_only=True)
@@ -96,7 +97,7 @@ class DemandSerializer(serializers.ModelSerializer):
     class Meta:
         model = Demand
         fields = [
-            "id", "titulo", "activity", "justificativa", "status", "status_display",
+            "id", "titulo", "activity", "activity_titulo", "justificativa", "status", "status_display",
             "transicoes_permitidas", "solicitante", "solicitante_nome", "despesa_posterior",
             "estado_sigla", "territorio", "territorio_nome", "atividade_fora_do_territorio", "articuladores",
             "valor_estimado_total", "valor_autorizado_total", "valor_pago_total",

@@ -117,7 +117,7 @@ def test_listagem_ordena_pelo_total_estimado(auth_client_ugp, demandas_por_valor
 
 
 def test_listagem_com_ordenacao_desconhecida_e_400(auth_client_ugp):
-    resposta = auth_client_ugp.get(LISTAGEM, {"ordering": "titulo"})
+    resposta = auth_client_ugp.get(LISTAGEM, {"ordering": "status"})
 
     assert resposta.status_code == 400
     assert "ordering" in resposta.json()
