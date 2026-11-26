@@ -1,10 +1,12 @@
-FROM python:3.12-slim
+FROM python:3.12.16-slim@sha256:191083cdf6c7bda8c76158983163ead5d5cf7b77cf3033e805bb0f5296f51b4b
 
 WORKDIR /app
 
 # Evita gerar .pyc e melhora logs
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+# O gunicorn lê WEB_CONCURRENCY sozinho. 3 workers sync cabem em 2 vCPU.
+ENV WEB_CONCURRENCY=3
 
 # Copia apenas dependências primeiro (melhora cache)
 COPY requirements/base.txt /app/requirements/base.txt
@@ -21,4 +23,4 @@ EXPOSE 8000
 
 ENTRYPOINT ["/app/entrypoint.prod.sh"]
 # O navegador envia o cookie de sessão do Auth.js também nas chamadas à API.
-CMD ["gunicorn", "setup.wsgi:application", "--bind", "0.0.0.0:8000", "--limit-request-field_size", "32768"]
+CMD ["gunicorn", "setup.wsgi:application", "--bind", "0.0.0.0:8000", "--timeout", "60", "--access-logfile", "-", "--limit-request-field_size", "32768"]

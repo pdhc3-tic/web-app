@@ -12,3 +12,8 @@ logs/
 media/
 staticfiles/
 .git/
+# Dado do seed e planilhas (nome, e-mail, telefone) nunca entram na imagem.
+*.xlsx
+*.xls
+*.jsonl
+db.sqlite3

@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Imagem de produção roda `node server.js` (frontend/Dockerfile.prod).
+  output: "standalone",
   turbopack: {},
   // #407: a UPF passou a se chamar UFPA. Os endereços antigos continuam
   // funcionando, para não quebrar link salvo nem favorito.

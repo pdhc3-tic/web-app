@@ -15,6 +15,7 @@ from .views import (
     AuditLogListView,
     LocalStorageUploadView,
     local_storage_download,
+    health,
     GoogleCalendarConfigView,
     GoogleCalendarStatusView,
     SystemConfigListView,
@@ -39,6 +40,7 @@ urlpatterns = router.urls + [
     path("audit-logs/", AuditLogListView.as_view(), name="audit-log-list"),
     path("storage/local-upload/", LocalStorageUploadView.as_view(), name="local-storage-upload"),
     path("storage/local-download/", local_storage_download, name="local-storage-download"),
+    path("health/", health, name="health"),
     path(
         "core/config/google-calendar/",
         GoogleCalendarConfigView.as_view(),
