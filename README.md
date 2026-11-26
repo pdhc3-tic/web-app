@@ -18,8 +18,8 @@ web-app/
 |------------------|--------------------|---------|------------------------------------|
 | **backend**      | Python 3.12 / Django 6 | `8000` | API REST + Django Admin         |
 | **frontend**     | Node 20 / Next.js      | `3000` | Interface web SPA/SSR           |
-| **db**           | PostgreSQL 16          | `5432` | Banco de dados relacional       |
-| **redis**        | Redis 7                | `6379` | Cache + broker do Celery        |
+| **db**           | PostgreSQL 18          | `5432` | Banco de dados relacional       |
+| **redis**        | Redis 7.4              | `6379` | Cache + broker do Celery        |
 | **celery_worker**| Celery                 | —      | Processamento assíncrono        |
 | **celery_beat**  | Celery Beat            | —      | Tarefas agendadas (cron)        |
 
@@ -105,110 +105,99 @@ sudo docker compose exec \
 
 ## Deploy em produção
 
-O deploy é executado pelo GitHub Actions na branch `main`. O workflow roda os
-testes e a verificação de migrations em um ambiente CI e, somente se passarem,
-conecta na VPS por SSH e executa `deploy.sh`. Na VPS, o script faz `git pull`,
-build das imagens, valida novamente as migrations, prepara o pacote de seed,
-aplica as migrations, importa os dados e executa o health check.
+Produção roda nos servidores do contrato de sustentação (`pdhc-app` com a stack
+e `pdhc-db` só com o PostgreSQL 18), em `https://pdhc.ufersa.edu.br`. O compose,
+o Caddy (TLS), os `.env`, os papéis do banco, os backups e o runbook ficam no
+repositório **archelos-devops** (`deploy/pdhc/`). Este repositório entrega
+imagens e não guarda nenhum `.env` de produção.
 
-### Secrets do GitHub Actions
+### Fluxo (`.github/workflows/deploy.yml`)
 
-Configure em **Settings → Secrets and variables → Actions → Repository secrets**:
+```text
+push na main → testes (Postgres 18.7) → imagens no GHCR → deploy no pdhc-app
+```
+
+1. **Testes:** `makemigrations --check` e `pytest`.
+2. **Imagens:** `ghcr.io/pdhc3-tic/web-app/{backend,frontend,nginx}:<sha>`, construídas
+   uma vez. A mesma imagem de backend serve backend, worker, beat e migrate.
+3. **Deploy:** o job entra no `pdhc-app` com uma chave que só executa
+   `/opt/pdhc/bin/promover` e passa o sha e os digests construídos no próprio run.
+   No servidor, o `promover`:
+   - faz dump pré-deploy se houver migration;
+   - roda `migrate` como `pdhc_owner` e `verificar_papel_rls` como `pdhc_app`;
+   - sobe a versão nova e confere o health (`/api/v1/health/`);
+   - volta para a versão anterior se o health falhar.
+
+**Migrations precisam ser expand/contract.** A versão anterior roda por alguns
+segundos contra o schema novo, e o rollback volta para ela: remova coluna ou
+tabela só no release seguinte ao que parou de usá-la. Se o push trouxer
+migration com `DROP TABLE`, `DROP COLUMN`, `RENAME` ou `SET NOT NULL`, o deploy
+automático para (o Slack avisa). Ele só sai pelo workflow manual (**Run
+workflow**), marcando a confirmação, depois do aviso aos usuários.
+
+### Secrets
+
+No environment **`production`**, restrito à branch `main`, e nunca como secret de
+repositório:
 
 | Secret | Uso |
 |--------|-----|
-| `VPS_HOST` | Host ou IP da VPS; também entra em `ALLOWED_HOSTS` |
-| `VPS_USER` | Usuário SSH usado pelo deploy |
-| `VPS_PORT` | Porta SSH |
-| `SSH_PRIVATE_KEY` | Chave privada correspondente à chave autorizada na VPS |
-| `VPS_APP_DIR` | Caminho absoluto do checkout na VPS |
-| `POSTGRES_PASSWORD` | Senha administrativa do PostgreSQL |
-| `SEED_DATA_DIR` | Caminho absoluto dos XLSX privados na VPS |
-| `SUPERUSER_EMAIL` | E-mail do administrador inicial |
-| `SUPERUSER_NAME` | Nome do administrador inicial |
-| `SUPERUSER_PASSWORD` | Senha do administrador inicial |
-| `SLACK_WEBHOOK_URL` | Webhook usado nas notificações de sucesso e falha |
-| `FIELD_ENCRYPTION_KEY` | Chave AES-256 de criptografia em repouso de `saude`/`cor_raca` (Issue #187). **Opcional, mas fortemente recomendado em produção** — gere uma vez com `openssl rand -base64 32` e cadastre antes do primeiro deploy. Serve como backup durável, fora da VPS, dessa chave: se ela não for cadastrada, o `deploy.sh` gera uma sozinha na VPS na primeira execução, mas aí ela só existe lá — perder o disco da VPS sem essa cópia é perda permanente dos dados de saúde/cor-raça já gravados. |
+| `PDHC_DEPLOY_SSH_KEY` | Chave privada do usuário `deploy` (comando único no servidor) |
+| `PDHC_DEPLOY_KNOWN_HOSTS` | Linha do `known_hosts` do `pdhc-app` |
+| `PDHC_DEPLOY_HOST` | Endereço SSH do `pdhc-app` |
 
-O workflow não versiona nem transporta os XLSX. O `SEED_DATA_DIR` é apenas
-enviado ao script remoto. Não coloque valores de secrets em arquivos do
-repositório ou nos logs.
+O `SLACK_WEBHOOK_URL` continua como secret do repositório. O push no GHCR usa o
+`GITHUB_TOKEN`. Os secrets do deploy antigo devem ser apagados: `VPS_*`,
+`SSH_PRIVATE_KEY`, `POSTGRES_PASSWORD`, `SEED_DATA_DIR`, `SUPERUSER_*` e,
+principalmente, `FIELD_ENCRYPTION_KEY`.
 
-### Preparação da VPS
+### `FIELD_ENCRYPTION_KEY`
 
-O usuário SSH precisa ter Docker, o plugin Docker Compose, Git, `curl`,
-`openssl`, `realpath` e `find`, além de permissão para executar Docker
-(normalmente, estar no grupo `docker`). O repositório deve estar clonado em
-`VPS_APP_DIR`, na branch `main`, e `deploy.sh` deve ser executável:
+A chave cifra `saude`/`cor_raca` de `MembroFamilia` e o CPF de beneficiário.
+**Trocá-la ou perdê-la apaga esses dados de vez.** Ela vive só no `.env` do
+servidor e no cofre da Archelos Dev: nunca no GitHub, num dump ou em log.
+`python manage.py verificar_criptografia` confere, só com contagens, se todo
+valor cifrado do banco decifra com a chave em uso. É o teste do ensaio de
+restauração.
 
-```bash
-chmod +x deploy.sh
-git checkout main
-```
+### Mídia
 
-Mantenha os dados legados fora do checkout, por exemplo:
+`STORAGE_BACKEND=local`: os arquivos ficam num volume do `pdhc-app` e **não têm
+rota pública**. A API devolve URLs assinadas com validade
+(`/api/v1/storage/local-download/`). O Django confere a assinatura e o nginx
+entrega o arquivo pela location interna `/protected-media/` (`X-Accel-Redirect`).
 
-```text
-/srv/pdhc/dados_seed/
-├── Comunidades (1).xlsx
-├── Culturas e Animais.xlsx
-├── Municípios (1).xlsx
-└── SGP.xlsx
-```
+### Seed e primeiro superusuário
 
-O diretório e os arquivos devem ser acessíveis somente pelo usuário do deploy
-(sem permissões para grupo ou outros). O pacote normalizado será criado
-automaticamente em `../pdhc-seed-package`, também fora da aplicação, com
-permissões restritas. Veja o formato e o relatório em
-[`backend/README.md`](backend/README.md#seed-de-dados).
-
-Na primeira execução, o script cria `backend/.env` e `frontend/.env.local` a
-partir dos exemplos e gera `DJANGO_SECRET_KEY` e `AUTH_SECRET` se estiverem
-vazios. `FIELD_ENCRYPTION_KEY` segue a mesma lógica de "só grava se estiver
-vazia", mas com uma fonte diferente: se o secret `FIELD_ENCRYPTION_KEY` do
-GitHub Actions estiver cadastrado, o valor gravado no `.env` da VPS vem dele;
-senão, cai no fallback de gerar localmente. **Atenção:** diferente das outras
-chaves, ela não pode ser trocada depois que existirem membros com
-`saude`/`cor_raca` preenchidos — trocar o valor torna esses dados já gravados
-indecifráveis (perda de dado, não apenas de acesso), e o `deploy.sh` nunca
-sobrescreve um valor já existente no `.env`, mesmo que o secret do GitHub
-mude depois. Por isso, cadastre `FIELD_ENCRYPTION_KEY` nos secrets do GitHub
-**antes do primeiro deploy em produção** — assim ela fica com um backup
-durável fora da VPS desde o início, em vez de existir só localmente. Revise
-os demais valores de produção, especialmente `ALLOWED_HOSTS`,
-`CORS_ALLOWED_ORIGINS`, storage R2 e `NEXT_PUBLIC_API_URL` no `.env` da raiz.
-O `DB_PASSWORD` de `backend/.env` precisa corresponder à senha do usuário
-`app_user` criado no PostgreSQL; a instalação inicial usa `app_pass` conforme
-`backend/db/init/01_app_user.sql`. O `POSTGRES_PASSWORD` deve permanecer
-compatível com a senha administrativa já existente no volume do banco.
-As credenciais `SUPERUSER_*` são usadas somente na primeira criação; se o
-superusuário já existir, o deploy preserva a senha atual.
-
-### Política de migrations e seed
-
-Conflitos de migrations devem ser resolvidos localmente, com uma merge
-migration revisada e versionada. A VPS **não** executa
-`makemigrations --merge`; o deploy aborta se
-`makemigrations --check --dry-run` detectar divergências.
-
-O seed segue o fluxo:
+Rodam uma vez só, pelo runbook do archelos-devops, fora do deploy:
 
 ```text
 XLSX privado → prepare_seed → pacote JSONL + manifest/report → seed_prod → PostgreSQL
 ```
 
-O pacote é validado por SHA-256 antes da importação. A importação é idempotente,
-preserva a identidade legada em `SeedImportRecord` e apenas relata registros
-existentes no banco que não estão nas planilhas; não remove nem inativa esses
-registros automaticamente.
+O pacote é validado por SHA-256 antes da importação. A importação é
+idempotente, preserva a identidade legada em `SeedImportRecord` e só relata os
+registros do banco que não estão nas planilhas. Ela não remove nem inativa
+esses registros. Veja o formato em
+[`backend/README.md`](backend/README.md#seed-de-dados). Os XLSX têm dado pessoal
+e não entram no git nem na imagem (`backend/.dockerignore`).
 
-### Falhas e notificações
+### O que o PR precisa avisar
 
-Deploys são serializados para impedir duas atualizações simultâneas. Em caso de
-falha nos testes ou no deploy remoto, o Slack recebe a etapa, o commit, as
-últimas linhas do log e um link para o workflow. Falhas de migration ou seed
-interrompem o deploy; falhas no health check acionam o rollback do código
-anterior.
+O compose de produção é mantido no archelos-devops. Um PR que crie **serviço,
+fila do Celery, comando de operação ou variável de ambiente** descreve a
+mudança numa seção "Operação", para que ela seja replicada lá antes do merge.
+
+### Testar as imagens de produção localmente
+
+`docker-compose.prod.yml` sobe as imagens `Dockerfile.prod` com nginx, URL
+assinada, front standalone e healthchecks, como em produção, mas com banco
+local. As instruções estão no cabeçalho do arquivo.
+
+### Notificações
+
+O Slack recebe só a etapa, o commit e o link do run. As linhas de log não vão,
+porque podem carregar dado pessoal.
 
 ---
 
