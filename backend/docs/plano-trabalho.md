@@ -171,6 +171,6 @@ chaves `indicador`/`unidade_medida`.
 
 ## Fora do escopo
 
-- Monitoramento do TED: fica em `apps/sgp/ted/`. Aderência, custo por entrega, rastreabilidade e comparativo entre versões estão em `GET /api/v1/sgp/ted/aderencia/`, `.../custo-por-entrega/`, `.../rastreabilidade/` e `.../ted/{id}/versoes/comparar/` (ver `decisoes-modelo-dados.md`, seção 14). Curva S e fechamento mensal ainda não.
+- Monitoramento do TED: fica em `apps/sgp/ted/`. Aderência, custo por entrega, rastreabilidade e comparativo entre versões estão em `GET /api/v1/sgp/ted/aderencia/`, `.../custo-por-entrega/`, `.../rastreabilidade/` e `.../ted/{id}/versoes/comparar/` (ver `decisoes-modelo-dados.md`, seção 14). Curva S, projeções por rubrica e ranking por território estão em `.../curva-s/`, `.../projecoes/` e `.../ranking-territorios/` (seção 15). Fechamento mensal ainda não.
 - Árvore do PT offline no SCA.
 - Filtros do SGD por Submeta (SGD-RF26) e colunas do Arlo.

@@ -6743,12 +6743,14 @@ paths:
           - semaforo
           - subexecucao
           - remanejamento_excessivo
+          - risco_devolucao
           type: string
           minLength: 1
         description: |-
           * `semaforo` - Semáforo
           * `subexecucao` - Subexecução
           * `remanejamento_excessivo` - Remanejamento excessivo
+          * `risco_devolucao` - Risco de devolução
       tags:
       - v1
       security:
@@ -8240,6 +8242,8 @@ paths:
                 $ref: '#/components/schemas/ErroDoRelatorio'
           description: 'Parâmetro inválido (`{campo: [mensagem]}`) ou erro com código
             (`{code, message}`).'
+        '403':
+          description: Perfil sem acesso a este relatório do Monitoramento do TED.
   /api/v1/sgp/ted/aderencia/:
     get:
       operationId: v1_sgp_ted_aderencia_retrieve
@@ -8313,6 +8317,8 @@ paths:
                 $ref: '#/components/schemas/ErroDoRelatorio'
           description: 'Parâmetro inválido (`{campo: [mensagem]}`) ou erro com código
             (`{code, message}`).'
+        '403':
+          description: Perfil sem acesso a este relatório do Monitoramento do TED.
   /api/v1/sgp/ted/aderencia/exportar/:
     get:
       operationId: v1_sgp_ted_aderencia_exportar_retrieve
@@ -8388,6 +8394,10 @@ paths:
               schema:
                 type: string
                 format: binary
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
           description: ''
         '400':
           content:
@@ -8396,6 +8406,8 @@ paths:
                 $ref: '#/components/schemas/ErroDoRelatorio'
           description: 'Parâmetro inválido (`{campo: [mensagem]}`) ou erro com código
             (`{code, message}`).'
+        '403':
+          description: Perfil sem acesso a este relatório do Monitoramento do TED.
   /api/v1/sgp/ted/aderencia/historico/:
     get:
       operationId: v1_sgp_ted_aderencia_historico_list
@@ -8473,6 +8485,68 @@ paths:
       responses:
         '202':
           description: No response body
+  /api/v1/sgp/ted/curva-s/:
+    get:
+      operationId: v1_sgp_ted_curva_s_retrieve
+      description: |-
+        Previsto contra realizado acumulados, mês a mês, em quantidade e R$, por
+        Meta, Submeta, rubrica ou para o projeto inteiro. Na árvore, o Articulador vê o
+        realizado dos seus estados; a curva da rubrica é de quem lê o orçamento inteiro.
+      parameters:
+      - in: query
+        name: data
+        schema:
+          type: string
+          format: date
+        description: Usa a versão vigente nessa data.
+      - in: query
+        name: escopo
+        schema:
+          enum:
+          - projeto
+          - meta
+          - submeta
+          - rubrica
+          type: string
+          default: projeto
+          minLength: 1
+        description: |-
+          * `projeto` - Projeto
+          * `meta` - Meta
+          * `submeta` - Submeta
+          * `rubrica` - Rubrica
+      - in: query
+        name: referencia_id
+        schema:
+          type: integer
+          minimum: 1
+        description: Id da Meta, da Submeta ou da rubrica. Obrigatório fora do projeto.
+      - in: query
+        name: versao
+        schema:
+          type: integer
+          minimum: 1
+        description: Id da versão do TED. Sem ela, vale a vigente.
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurvaSResposta'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroDoRelatorio'
+          description: 'Parâmetro inválido (`{campo: [mensagem]}`) ou erro com código
+            (`{code, message}`).'
+        '403':
+          description: Perfil sem acesso a este relatório do Monitoramento do TED.
   /api/v1/sgp/ted/custo-por-entrega/:
     get:
       operationId: v1_sgp_ted_custo_por_entrega_retrieve
@@ -8545,6 +8619,8 @@ paths:
                 $ref: '#/components/schemas/ErroDoRelatorio'
           description: 'Parâmetro inválido (`{campo: [mensagem]}`) ou erro com código
             (`{code, message}`).'
+        '403':
+          description: Perfil sem acesso a este relatório do Monitoramento do TED.
   /api/v1/sgp/ted/custo-por-entrega/composicao/:
     get:
       operationId: v1_sgp_ted_custo_por_entrega_composicao_retrieve
@@ -8577,6 +8653,8 @@ paths:
                 $ref: '#/components/schemas/ErroDoRelatorio'
           description: 'Parâmetro inválido (`{campo: [mensagem]}`) ou erro com código
             (`{code, message}`).'
+        '403':
+          description: Perfil sem acesso a este relatório do Monitoramento do TED.
   /api/v1/sgp/ted/custo-por-entrega/exportar/:
     get:
       operationId: v1_sgp_ted_custo_por_entrega_exportar_retrieve
@@ -8651,6 +8729,10 @@ paths:
               schema:
                 type: string
                 format: binary
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
           description: ''
         '400':
           content:
@@ -8659,6 +8741,8 @@ paths:
                 $ref: '#/components/schemas/ErroDoRelatorio'
           description: 'Parâmetro inválido (`{campo: [mensagem]}`) ou erro com código
             (`{code, message}`).'
+        '403':
+          description: Perfil sem acesso a este relatório do Monitoramento do TED.
   /api/v1/sgp/ted/documentos/upload-url/:
     post:
       operationId: v1_sgp_ted_documentos_upload_url_create
@@ -8685,6 +8769,187 @@ paths:
               schema:
                 $ref: '#/components/schemas/UploadURLResposta'
           description: ''
+  /api/v1/sgp/ted/projecoes/:
+    get:
+      operationId: v1_sgp_ted_projecoes_retrieve
+      description: |-
+        Projeção de execução no fim da vigência e de esgotamento de cada rubrica, no
+        ritmo dos últimos 90 dias. Agregado de todos os pools: Super Admin, UGP e FGD.
+      parameters:
+      - in: query
+        name: data
+        schema:
+          type: string
+          format: date
+        description: Usa a versão vigente nessa data.
+      - in: query
+        name: versao
+        schema:
+          type: integer
+          minimum: 1
+        description: Id da versão do TED. Sem ela, vale a vigente.
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjecoesResposta'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroDoRelatorio'
+          description: 'Parâmetro inválido (`{campo: [mensagem]}`) ou erro com código
+            (`{code, message}`).'
+        '403':
+          description: Perfil sem acesso a este relatório do Monitoramento do TED.
+  /api/v1/sgp/ted/ranking-territorios/:
+    get:
+      operationId: v1_sgp_ted_ranking_territorios_retrieve
+      description: |-
+        Os territórios nas dimensões física e financeira, com o índice de aderência.
+        Território sem execução entra zerado. Sem paginação: são os 16 de uma vez.
+      parameters:
+      - in: query
+        name: data
+        schema:
+          type: string
+          format: date
+        description: Usa a versão vigente nessa data.
+      - in: query
+        name: ordenar
+        schema:
+          enum:
+          - fisico
+          - financeiro
+          - indice
+          type: string
+          default: fisico
+          minLength: 1
+        description: |-
+          * `fisico` - % físico
+          * `financeiro` - % financeiro
+          * `indice` - Índice de aderência
+      - in: query
+        name: periodo_fim
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: periodo_inicio
+        schema:
+          type: string
+          format: date
+        description: Pela data de término da Atividade.
+      - in: query
+        name: versao
+        schema:
+          type: integer
+          minimum: 1
+        description: Id da versão do TED. Sem ela, vale a vigente.
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RankingTerritorioResposta'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroDoRelatorio'
+          description: 'Parâmetro inválido (`{campo: [mensagem]}`) ou erro com código
+            (`{code, message}`).'
+        '403':
+          description: Perfil sem acesso a este relatório do Monitoramento do TED.
+  /api/v1/sgp/ted/ranking-territorios/exportar/:
+    get:
+      operationId: v1_sgp_ted_ranking_territorios_exportar_retrieve
+      parameters:
+      - in: query
+        name: data
+        schema:
+          type: string
+          format: date
+        description: Usa a versão vigente nessa data.
+      - in: query
+        name: formato
+        schema:
+          enum:
+          - csv
+          - xlsx
+          type: string
+          default: csv
+          minLength: 1
+        description: |-
+          * `csv` - CSV
+          * `xlsx` - XLSX
+      - in: query
+        name: ordenar
+        schema:
+          enum:
+          - fisico
+          - financeiro
+          - indice
+          type: string
+          default: fisico
+          minLength: 1
+        description: |-
+          * `fisico` - % físico
+          * `financeiro` - % financeiro
+          * `indice` - Índice de aderência
+      - in: query
+        name: periodo_fim
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: periodo_inicio
+        schema:
+          type: string
+          format: date
+        description: Pela data de término da Atividade.
+      - in: query
+        name: versao
+        schema:
+          type: integer
+          minimum: 1
+        description: Id da versão do TED. Sem ela, vale a vigente.
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErroDoRelatorio'
+          description: 'Parâmetro inválido (`{campo: [mensagem]}`) ou erro com código
+            (`{code, message}`).'
+        '403':
+          description: Perfil sem acesso a este relatório do Monitoramento do TED.
   /api/v1/sgp/ted/rastreabilidade/:
     get:
       operationId: v1_sgp_ted_rastreabilidade_list
@@ -8745,6 +9010,8 @@ paths:
                 $ref: '#/components/schemas/ErroDoRelatorio'
           description: 'Parâmetro inválido (`{campo: [mensagem]}`) ou erro com código
             (`{code, message}`).'
+        '403':
+          description: Perfil sem acesso a este relatório do Monitoramento do TED.
   /api/v1/sgp/ufpas/:
     get:
       operationId: v1_sgp_ufpas_list
@@ -13117,6 +13384,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OpcaoTexto'
+        curva_escopo:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
+        ranking_ordenar:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
         solicitacao_tipo:
           type: array
           items:
@@ -13131,6 +13406,7 @@ components:
       - classe
       - cor_raca
       - cultura_categoria
+      - curva_escopo
       - custo_faixa
       - demanda_documento_tipo
       - demanda_status
@@ -13151,6 +13427,7 @@ components:
       - producao_sistema_criacao
       - producao_tipo
       - producao_tipo_outra
+      - ranking_ordenar
       - risco_glosa_severidade
       - risco_glosa_tipo
       - saude
@@ -13567,6 +13844,73 @@ components:
         * `ornamentais` - Ornamentais
         * `medicinais` - Medicinais
         * `outras` - Outras
+    CurvaSResposta:
+      type: object
+      properties:
+        versao:
+          $ref: '#/components/schemas/VersaoDoRelatorio'
+        vigencia_inicio:
+          type: string
+          format: date
+        vigencia_fim:
+          type: string
+          format: date
+        escopo:
+          $ref: '#/components/schemas/CurvaSRespostaEscopoEnum'
+        referencia_id:
+          type: integer
+          nullable: true
+        nome:
+          type: string
+        data_base:
+          type: string
+          format: date
+        pontos:
+          type: array
+          items:
+            $ref: '#/components/schemas/PontoDaCurva'
+          description: Acumulados, um por mês da vigência da versão.
+        ritmo_necessario:
+          allOf:
+          - $ref: '#/components/schemas/RitmoNecessario'
+          description: Quanto falta executar por mês, a partir de hoje, para chegar
+            a 100% do previsto.
+        acoes_manuais_fora_da_quantidade:
+          type: integer
+          description: 'Ações de Indicador com lançamento manual, sem data de realização:
+            entram no valor e ficam fora da quantidade, no previsto e no realizado.'
+        acoes_manuais_fora_do_recorte:
+          type: integer
+        acoes_fora_da_versao:
+          type: integer
+        acoes_da_versao_fora_do_plano:
+          type: integer
+      required:
+      - acoes_da_versao_fora_do_plano
+      - acoes_fora_da_versao
+      - acoes_manuais_fora_da_quantidade
+      - acoes_manuais_fora_do_recorte
+      - data_base
+      - escopo
+      - nome
+      - pontos
+      - referencia_id
+      - ritmo_necessario
+      - versao
+      - vigencia_fim
+      - vigencia_inicio
+    CurvaSRespostaEscopoEnum:
+      enum:
+      - projeto
+      - meta
+      - submeta
+      - rubrica
+      type: string
+      description: |-
+        * `projeto` - Projeto
+        * `meta` - Meta
+        * `submeta` - Submeta
+        * `rubrica` - Rubrica
     CustoPorAtividade:
       type: object
       properties:
@@ -16930,6 +17274,16 @@ components:
       description: |-
         * `create` - create
         * `update` - update
+    OrdenarEnum:
+      enum:
+      - fisico
+      - financeiro
+      - indice
+      type: string
+      description: |-
+        * `fisico` - % físico
+        * `financeiro` - % financeiro
+        * `indice` - Índice de aderência
     Organization:
       type: object
       properties:
@@ -19345,6 +19699,41 @@ components:
       - id
       - numero
       - titulo
+    PontoDaCurva:
+      type: object
+      properties:
+        mes:
+          type: string
+          format: date
+          description: Primeiro dia do mês.
+        previsto_quantidade:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+          nullable: true
+          description: Nulo na rubrica, que não tem quantidade.
+        realizado_quantidade:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+          nullable: true
+          description: Nulo nos meses depois do corrente e na rubrica.
+        previsto_valor:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+        realizado_valor:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+          nullable: true
+          description: Nulo nos meses depois do corrente.
+      required:
+      - mes
+      - previsto_quantidade
+      - previsto_valor
+      - realizado_quantidade
+      - realizado_valor
     PoolDoRemanejamento:
       type: object
       properties:
@@ -19824,6 +20213,159 @@ components:
           title: Observações
       required:
       - tipo
+    Projecao:
+      type: object
+      properties:
+        rubrica_id:
+          type: integer
+          nullable: true
+          description: Nulo na linha do projeto.
+        nome:
+          type: string
+        slug:
+          type: string
+          nullable: true
+        valor_aprovado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+        valor_comprometido:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+          description: 'Reservado e executado: o que já saiu do aprovado.'
+        valor_executado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+        perc_execucao_atual:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+          nullable: true
+        ritmo_execucao_mensal:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+        ritmo_comprometimento_mensal:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+        valor_executado_projetado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+          description: No fim da vigência, no ritmo da janela.
+        perc_execucao_projetado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+          nullable: true
+        saldo_remanescente_projetado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+        perc_saldo_remanescente_projetado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+          nullable: true
+        data_esgotamento:
+          type: string
+          format: date
+          nullable: true
+          description: Quando o comprometido chega a 100% do aprovado. Nulo sem ritmo
+            ou já esgotada.
+        ja_esgotada:
+          type: boolean
+        esgota_antes_do_fim:
+          type: boolean
+        ritmo_necessario_mensal:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+          nullable: true
+          description: Quanto executar por mês, a partir de hoje, para chegar a 100%
+            do aprovado.
+        risco_devolucao:
+          type: boolean
+          description: Saldo remanescente projetado acima do limiar, dentro ou fora
+            da janela do alerta.
+      required:
+      - data_esgotamento
+      - esgota_antes_do_fim
+      - ja_esgotada
+      - nome
+      - perc_execucao_atual
+      - perc_execucao_projetado
+      - perc_saldo_remanescente_projetado
+      - risco_devolucao
+      - ritmo_comprometimento_mensal
+      - ritmo_execucao_mensal
+      - ritmo_necessario_mensal
+      - rubrica_id
+      - saldo_remanescente_projetado
+      - slug
+      - valor_aprovado
+      - valor_comprometido
+      - valor_executado
+      - valor_executado_projetado
+    ProjecoesResposta:
+      type: object
+      properties:
+        versao:
+          $ref: '#/components/schemas/VersaoDoRelatorio'
+        data_base:
+          type: string
+          format: date
+        vigencia_fim:
+          type: string
+          format: date
+        janela_inicio:
+          type: string
+          format: date
+          description: O ritmo é o dos lançamentos depois desta data.
+        janela_dias:
+          type: integer
+        meses_restantes:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+          nullable: true
+        antecedencia_meses:
+          type: integer
+          description: Parâmetro `budget_return_risk_alert_months`.
+        limiar_saldo_remanescente_pct:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+          description: Parâmetro `budget_return_risk_pct`.
+        alerta_a_partir_de:
+          type: string
+          format: date
+        na_janela_do_alerta:
+          type: boolean
+          description: Entre `alerta_a_partir_de` (ou o início da vigência, se for
+            depois) e o fim da vigência.
+        rubricas:
+          type: array
+          items:
+            $ref: '#/components/schemas/Projecao'
+        projeto:
+          $ref: '#/components/schemas/Projecao'
+      required:
+      - alerta_a_partir_de
+      - antecedencia_meses
+      - data_base
+      - janela_dias
+      - janela_inicio
+      - limiar_saldo_remanescente_pct
+      - meses_restantes
+      - na_janela_do_alerta
+      - projeto
+      - rubricas
+      - versao
+      - vigencia_fim
     Projeto:
       type: object
       properties:
@@ -19902,6 +20444,91 @@ components:
       - payload_json
       - updated_at
       - uuid_local
+    RankingTerritorioLinha:
+      type: object
+      properties:
+        referencia_id:
+          type: integer
+          nullable: true
+        nome:
+          type: string
+        quantidade_planejada:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,18}(?:\.\d{0,2})?$
+        quantidade_realizada:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,18}(?:\.\d{0,2})?$
+        valor_planejado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,18}(?:\.\d{0,2})?$
+        valor_executado:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,18}(?:\.\d{0,2})?$
+        perc_fisico:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+        perc_financeiro:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+        indice:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+          nullable: true
+        faixa:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/FaixaAderenciaEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        posicao_fisico:
+          type: integer
+        posicao_financeiro:
+          type: integer
+      required:
+      - faixa
+      - indice
+      - nome
+      - perc_financeiro
+      - perc_fisico
+      - posicao_financeiro
+      - posicao_fisico
+      - quantidade_planejada
+      - quantidade_realizada
+      - referencia_id
+      - valor_executado
+      - valor_planejado
+    RankingTerritorioResposta:
+      type: object
+      description: 'Sem paginação: o comparativo é de todos os territórios de uma
+        vez.'
+      properties:
+        versao:
+          $ref: '#/components/schemas/VersaoDoRelatorio'
+        acoes_fora_da_versao:
+          type: integer
+        acoes_da_versao_fora_do_plano:
+          type: integer
+        acoes_manuais_fora_do_recorte:
+          type: integer
+        ordenar:
+          $ref: '#/components/schemas/OrdenarEnum'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/RankingTerritorioLinha'
+      required:
+      - acoes_da_versao_fora_do_plano
+      - acoes_fora_da_versao
+      - acoes_manuais_fora_do_recorte
+      - ordenar
+      - results
+      - versao
     RecusarRequest:
       type: object
       properties:
@@ -19982,6 +20609,33 @@ components:
       required:
       - direcao
       - ids
+    RitmoNecessario:
+      type: object
+      description: 'Nulo no Articulador: o ritmo é do projeto, e o realizado dele
+        é só o dos seus estados.'
+      properties:
+        meses_restantes:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+          nullable: true
+          description: Nulo depois do fim da vigência.
+        quantidade_por_mes:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+          nullable: true
+          description: Soma as unidades das Ações, como a árvore do Plano de Trabalho
+            consolida.
+        valor_por_mes:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,22}(?:\.\d{0,2})?$
+          nullable: true
+      required:
+      - meses_restantes
+      - quantidade_por_mes
+      - valor_por_mes
     Role:
       type: object
       properties:
@@ -21844,11 +22498,13 @@ components:
       - semaforo
       - subexecucao
       - remanejamento_excessivo
+      - risco_devolucao
       type: string
       description: |-
         * `semaforo` - Semáforo
         * `subexecucao` - Subexecução
         * `remanejamento_excessivo` - Remanejamento excessivo
+        * `risco_devolucao` - Risco de devolução
     TipoAtividadeEnum:
       enum:
       - visita_tecnica

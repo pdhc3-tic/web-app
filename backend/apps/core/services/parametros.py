@@ -11,6 +11,8 @@ FAIXA_DOS_PARAMETROS_DO_ORCAMENTO = {
     "budget_subexec_alert_months": (1, 24),
     "budget_subexec_min_pct": (1, 100),
     "budget_transfer_alert_pct": (1, 100),
+    "budget_return_risk_alert_months": (1, 24),
+    "budget_return_risk_pct": (1, 100),
     "budget_alert_yellow_pct": (1, 100),
     "budget_alert_red_pct": (1, 100),
 }

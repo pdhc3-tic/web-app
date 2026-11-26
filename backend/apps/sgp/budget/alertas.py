@@ -1,4 +1,5 @@
-"""Alertas orçamentários: semáforo de pools e limites, subexecução e remanejamento excessivo.
+"""Alertas orçamentários: semáforo de pools e limites, subexecução, risco de devolução e
+remanejamento excessivo.
 
 Cada alvo tem no máximo um alerta aberto por tipo. A notificação sai só quando o alerta abre
 ou entra em outra faixa, então a movimentação e a tarefa periódica podem avaliar o mesmo alvo sem
@@ -23,7 +24,9 @@ from apps.core.utils import formatar_brl, get_config
 from apps.sgp.budget import limites
 from apps.sgp.budget import services as budget_service
 from apps.sgp.budget.rls import visao_total
+from apps.sgp.exceptions import ErroComCodigo
 from apps.sgp.models import (
+    TED,
     BudgetAlert,
     BudgetPool,
     BudgetTransfer,
@@ -45,6 +48,7 @@ SO_IN_APP = (TipoNotificacao.IN_APP,)
 EVENTO_SEMAFORO = "budget_semaforo_mudou"
 EVENTO_SUBEXECUCAO = "budget_subexecucao"
 EVENTO_REMANEJAMENTO_EXCESSIVO = "budget_remanejamento_excessivo"
+EVENTO_RISCO_DEVOLUCAO = "budget_risco_devolucao"
 EVENTO_REMANEJAMENTO_EFETIVADO = "remanejamento_efetivado"
 EVENTO_RECONCILIACAO = "budget_reconciliacao_divergente"
 
@@ -59,6 +63,12 @@ MODELOS = {
         "Subexecução em {{rubrica}}",
         "A rubrica {{rubrica}} executou {{percentual}}%, abaixo do mínimo de {{minimo}}%, e a vigência "
         "termina em {{fim_da_vigencia}}. Saldo disponível: {{saldo_disponivel}}.",
+    ),
+    "risco_devolucao": (
+        "Risco de devolução em {{rubrica}}",
+        "No ritmo dos últimos 90 dias, a rubrica {{rubrica}} chega ao fim da vigência, em {{fim_da_vigencia}}, "
+        "com saldo remanescente projetado de {{saldo_remanescente}} ({{percentual}}% do aprovado), acima do "
+        "limiar de {{limiar}}%. Avalie remanejamento ou aditivo. Saldo disponível: {{saldo_disponivel}}.",
     ),
     "remanejamento_excessivo": (
         "Volume remanejado alto em {{rubrica}}",
@@ -355,11 +365,15 @@ def _abrir_ou_resolver(pool: BudgetPool, tipo: str, *, faixa: str, percentual: D
 
 
 def fim_da_vigencia() -> date | None:
-    """Maior `data_fim` das Metas, até existir a vigência da entidade do TED."""
-    return WorkPlanMeta.objects.aggregate(fim=Max("data_fim"))["fim"]
+    """Fim da vigência do TED, o mesmo das projeções. Sem TED cadastrado, a maior `data_fim`
+    das Metas."""
+    fim_do_ted = (
+        TED.objects.filter(versao_vigente__isnull=False).order_by("pk").values_list("vigencia_fim", flat=True).first()
+    )
+    return fim_do_ted or WorkPlanMeta.objects.aggregate(fim=Max("data_fim"))["fim"]
 
 
-def _meses_antes(data: date, meses: int) -> date:
+def meses_antes(data: date, meses: int) -> date:
     ano, mes = divmod(data.year * 12 + data.month - 1 - meses, 12)
     mes += 1
     return date(ano, mes, min(data.day, calendar.monthrange(ano, mes)[1]))
@@ -376,7 +390,7 @@ def avaliar_subexecucao() -> int:
     fim = fim_da_vigencia()
     meses = int(get_config("budget_subexec_alert_months", 6))
     minimo = Decimal(str(get_config("budget_subexec_min_pct", 60)))
-    na_janela = fim is not None and limites.hoje() >= _meses_antes(fim, meses)
+    na_janela = fim is not None and limites.hoje() >= meses_antes(fim, meses)
 
     enviadas = 0
     for pk in _pools_a_avaliar(Tipo.SUBEXECUCAO):
@@ -401,6 +415,48 @@ def avaliar_subexecucao() -> int:
                 usuarios, modelo="subexecucao", evento=EVENTO_SUBEXECUCAO, canais=EMAIL_E_IN_APP,
                 rubrica=pool.rubrica.nome, percentual=f"{percentual:.1f}", minimo=minimo,
                 fim_da_vigencia=fim.strftime("%d/%m/%Y"), saldo_disponivel=formatar_brl(saldo_do_alvo(pool)),
+            )
+            registrar_alertados(aberto, usuarios)
+    return enviadas
+
+
+def avaliar_risco_de_devolucao() -> int:
+    """Abre o alerta quando, no ritmo dos últimos 90 dias, a rubrica chega ao fim da vigência com
+    saldo remanescente acima do limiar, a partir da antecedência configurada. Resolve quando a
+    projeção volta ao limiar. A projeção da rubrica é refeita com o pool nacional travado, como a
+    subexecução relê o executado. Sem TED cadastrado, não há vigência para projetar."""
+    from apps.sgp.ted.execucao import versao_do_relatorio
+    from apps.sgp.ted.projecoes import projecoes_por_rubrica
+
+    try:
+        versao = versao_do_relatorio()
+    except ErroComCodigo:
+        return 0
+    hoje = limites.hoje()
+
+    enviadas = 0
+    for pk in _pools_a_avaliar(Tipo.RISCO_DEVOLUCAO):
+        with visao_total():
+            pool = _travar(BudgetPool, pk)
+            if pool is None:
+                continue
+            projecoes = projecoes_por_rubrica(versao, hoje, rubrica_id=pool.rubrica_id)
+            linha = projecoes.rubricas[0] if projecoes.rubricas else None
+            em_risco = linha is not None and linha.risco_devolucao
+            aberto = _abrir_ou_resolver(
+                pool, Tipo.RISCO_DEVOLUCAO, faixa=Faixa.DEVOLUCAO,
+                percentual=linha.perc_saldo_remanescente_projetado if em_risco else ZERO,
+                abrir=pool.rubrica.ativo and em_risco and projecoes.na_janela_do_alerta,
+            )
+            if aberto is None:
+                continue
+            usuarios = list(usuarios_do_perfil("ugp"))
+            enviadas += _notificar(
+                usuarios, modelo="risco_devolucao", evento=EVENTO_RISCO_DEVOLUCAO, canais=EMAIL_E_IN_APP,
+                rubrica=pool.rubrica.nome, fim_da_vigencia=projecoes.vigencia_fim.strftime("%d/%m/%Y"),
+                saldo_remanescente=formatar_brl(linha.saldo_remanescente_projetado),
+                percentual=f"{linha.perc_saldo_remanescente_projetado:.1f}",
+                limiar=projecoes.limiar_saldo_remanescente_pct, saldo_disponivel=formatar_brl(saldo_do_alvo(pool)),
             )
             registrar_alertados(aberto, usuarios)
     return enviadas

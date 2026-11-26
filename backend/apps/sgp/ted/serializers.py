@@ -6,7 +6,8 @@ from apps.core.storage import get_storage
 from apps.sgp.budget.serializers import BudgetRubricaNestedSerializer
 from apps.sgp.models import TED, AdherenceIndex, BudgetRubrica, TEDVersion, TEDVersionRubrica
 from apps.sgp.serializers.common import PlanoTrabalhoSerializer, plano_trabalho_da_acao
-from apps.sgp.ted.execucao import AGRUPAMENTOS_DE_CUSTO, FaixaDeCusto
+from apps.sgp.ted.execucao import AGRUPAMENTOS_DE_CUSTO, ORDENACOES_DO_RANKING, FaixaDeCusto
+from apps.sgp.ted.projecoes import EscopoDaCurva
 from apps.sgp.ted.services import erro_no_documento
 
 VALIDADE_DO_LINK_DO_DOCUMENTO = 300
@@ -409,3 +410,154 @@ class ComparativoRespostaSerializer(serializers.Serializer):
     de = VersaoDoRelatorioSerializer()
     para = VersaoDoRelatorioSerializer()
     diferencas = DiferencaEntreVersoesSerializer(many=True)
+
+
+# ---------------------------------------------------------------------------
+# Curva S, projeções e ranking por território
+# ---------------------------------------------------------------------------
+
+def _decimal(**opcoes):
+    return serializers.DecimalField(max_digits=24, decimal_places=2, **opcoes)
+
+
+class CurvaSQuerySerializer(serializers.Serializer):
+    escopo = serializers.ChoiceField(choices=EscopoDaCurva.CHOICES, default=EscopoDaCurva.PROJETO)
+    referencia_id = serializers.IntegerField(
+        min_value=1, required=False, help_text="Id da Meta, da Submeta ou da rubrica. Obrigatório fora do projeto.",
+    )
+    versao = serializers.IntegerField(
+        min_value=1, required=False, help_text="Id da versão do TED. Sem ela, vale a vigente.",
+    )
+    data = serializers.DateField(required=False, help_text="Usa a versão vigente nessa data.")
+
+    def validate(self, attrs):
+        if attrs.get("versao") and attrs.get("data"):
+            raise serializers.ValidationError({"data": "Informe a versão ou a data, não as duas."})
+        if attrs["escopo"] != EscopoDaCurva.PROJETO and not attrs.get("referencia_id"):
+            raise serializers.ValidationError({"referencia_id": "Obrigatório fora do escopo projeto."})
+        return attrs
+
+
+class PontoDaCurvaSerializer(serializers.Serializer):
+    mes = serializers.DateField(help_text="Primeiro dia do mês.")
+    previsto_quantidade = _decimal(allow_null=True, help_text="Nulo na rubrica, que não tem quantidade.")
+    realizado_quantidade = _decimal(allow_null=True, help_text="Nulo nos meses depois do corrente e na rubrica.")
+    previsto_valor = _decimal()
+    realizado_valor = _decimal(allow_null=True, help_text="Nulo nos meses depois do corrente.")
+
+
+class RitmoNecessarioSerializer(serializers.Serializer):
+    """Nulo no Articulador: o ritmo é do projeto, e o realizado dele é só o dos seus estados."""
+
+    meses_restantes = _decimal(allow_null=True, help_text="Nulo depois do fim da vigência.")
+    quantidade_por_mes = _decimal(
+        allow_null=True, help_text="Soma as unidades das Ações, como a árvore do Plano de Trabalho consolida.",
+    )
+    valor_por_mes = _decimal(allow_null=True)
+
+
+class CurvaSRespostaSerializer(serializers.Serializer):
+    versao = VersaoDoRelatorioSerializer()
+    vigencia_inicio = serializers.DateField(source="versao.vigencia_inicio")
+    vigencia_fim = serializers.DateField(source="versao.vigencia_fim")
+    escopo = serializers.ChoiceField(choices=EscopoDaCurva.CHOICES)
+    referencia_id = serializers.IntegerField(allow_null=True)
+    nome = serializers.CharField()
+    data_base = serializers.DateField()
+    pontos = PontoDaCurvaSerializer(many=True, help_text="Acumulados, um por mês da vigência da versão.")
+    ritmo_necessario = RitmoNecessarioSerializer(
+        help_text="Quanto falta executar por mês, a partir de hoje, para chegar a 100% do previsto.",
+    )
+    acoes_manuais_fora_da_quantidade = serializers.IntegerField(
+        help_text="Ações de Indicador com lançamento manual, sem data de realização: entram no valor e "
+                  "ficam fora da quantidade, no previsto e no realizado.",
+    )
+    acoes_manuais_fora_do_recorte = serializers.IntegerField()
+    acoes_fora_da_versao = serializers.IntegerField()
+    acoes_da_versao_fora_do_plano = serializers.IntegerField()
+
+
+class ProjecaoSerializer(serializers.Serializer):
+    rubrica_id = serializers.IntegerField(allow_null=True, help_text="Nulo na linha do projeto.")
+    nome = serializers.CharField()
+    slug = serializers.CharField(allow_null=True)
+    valor_aprovado = _decimal()
+    valor_comprometido = _decimal(help_text="Reservado e executado: o que já saiu do aprovado.")
+    valor_executado = _decimal()
+    perc_execucao_atual = _decimal(allow_null=True)
+    ritmo_execucao_mensal = _decimal()
+    ritmo_comprometimento_mensal = _decimal()
+    valor_executado_projetado = _decimal(help_text="No fim da vigência, no ritmo da janela.")
+    perc_execucao_projetado = _decimal(allow_null=True)
+    saldo_remanescente_projetado = _decimal()
+    perc_saldo_remanescente_projetado = _decimal(allow_null=True)
+    data_esgotamento = serializers.DateField(
+        allow_null=True, help_text="Quando o comprometido chega a 100% do aprovado. Nulo sem ritmo ou já esgotada.",
+    )
+    ja_esgotada = serializers.BooleanField()
+    esgota_antes_do_fim = serializers.BooleanField()
+    ritmo_necessario_mensal = _decimal(
+        allow_null=True, help_text="Quanto executar por mês, a partir de hoje, para chegar a 100% do aprovado.",
+    )
+    risco_devolucao = serializers.BooleanField(
+        help_text="Saldo remanescente projetado acima do limiar, dentro ou fora da janela do alerta.",
+    )
+
+
+class ProjecoesQuerySerializer(serializers.Serializer):
+    versao = serializers.IntegerField(
+        min_value=1, required=False, help_text="Id da versão do TED. Sem ela, vale a vigente.",
+    )
+    data = serializers.DateField(required=False, help_text="Usa a versão vigente nessa data.")
+
+    def validate(self, attrs):
+        if attrs.get("versao") and attrs.get("data"):
+            raise serializers.ValidationError({"data": "Informe a versão ou a data, não as duas."})
+        return attrs
+
+
+class ProjecoesRespostaSerializer(serializers.Serializer):
+    versao = VersaoDoRelatorioSerializer()
+    data_base = serializers.DateField()
+    vigencia_fim = serializers.DateField()
+    janela_inicio = serializers.DateField(help_text="O ritmo é o dos lançamentos depois desta data.")
+    janela_dias = serializers.IntegerField()
+    meses_restantes = _decimal(allow_null=True)
+    antecedencia_meses = serializers.IntegerField(help_text="Parâmetro `budget_return_risk_alert_months`.")
+    limiar_saldo_remanescente_pct = _decimal(help_text="Parâmetro `budget_return_risk_pct`.")
+    alerta_a_partir_de = serializers.DateField()
+    na_janela_do_alerta = serializers.BooleanField(
+        help_text="Entre `alerta_a_partir_de` (ou o início da vigência, se for depois) e o fim da vigência.",
+    )
+    rubricas = ProjecaoSerializer(many=True)
+    projeto = ProjecaoSerializer()
+
+
+class RankingTerritorioQuerySerializer(_VersaoQuerySerializer):
+    territorio_id = None
+    ordenar = serializers.ChoiceField(choices=ORDENACOES_DO_RANKING, default="fisico")
+
+    def validate(self, attrs):
+        if "territorio_id" in self.initial_data:
+            raise serializers.ValidationError({"territorio_id": "O ranking compara todos os territórios do escopo."})
+        return super().validate(attrs)
+
+
+class RankingTerritorioExportacaoQuerySerializer(RankingTerritorioQuerySerializer):
+    formato = serializers.ChoiceField(choices=FORMATOS_DE_EXPORTACAO, default="csv")
+
+
+class RankingTerritorioLinhaSerializer(AderenciaLinhaSerializer):
+    posicao_fisico = serializers.IntegerField()
+    posicao_financeiro = serializers.IntegerField()
+
+
+class RankingTerritorioRespostaSerializer(serializers.Serializer):
+    """Sem paginação: o comparativo é de todos os territórios de uma vez."""
+
+    versao = VersaoDoRelatorioSerializer()
+    acoes_fora_da_versao = serializers.IntegerField()
+    acoes_da_versao_fora_do_plano = serializers.IntegerField()
+    acoes_manuais_fora_do_recorte = serializers.IntegerField()
+    ordenar = serializers.ChoiceField(choices=ORDENACOES_DO_RANKING)
+    results = RankingTerritorioLinhaSerializer(many=True)

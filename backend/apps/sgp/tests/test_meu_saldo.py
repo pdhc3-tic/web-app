@@ -18,6 +18,7 @@ from apps.sgp.tests.factories import (
     BudgetPoolFactory,
     BudgetRubricaFactory,
     SpendingLimitFactory,
+    TEDVersionFactory,
     WorkPlanMetaFactory,
 )
 
@@ -65,6 +66,20 @@ class TestMeuSaldo:
         linha = _linha(auth_client_adt_rn.get(URL), rubrica)
 
         assert (linha["periodo_fim"], linha["dias_restantes"]) == (fim, dias)
+
+    @freeze_time("2026-11-05 12:00")
+    def test_periodo_em_aberto_usa_o_fim_do_ted_cadastrado(self, auth_client_adt_rn, usuario_adt_rn):
+        rubrica = BudgetRubricaFactory()
+        SpendingLimitFactory(
+            user=usuario_adt_rn, rubrica=rubrica, periodo_inicio=limites.INICIO_DA_VIGENCIA,
+            periodo_fim=limites.FIM_EM_ABERTO,
+        )
+        WorkPlanMetaFactory(data_inicio=date(2026, 1, 1), data_fim=date(2026, 12, 31))
+        TEDVersionFactory(vigencia_inicio=date(2026, 1, 1), vigencia_fim=date(2027, 6, 30))
+
+        linha = _linha(auth_client_adt_rn.get(URL), rubrica)
+
+        assert (linha["periodo_fim"], linha["dias_restantes"]) == ("2027-06-30", 237)
 
     def test_traz_os_valores_e_o_semaforo_por_rubrica(self, auth_client_adt_rn, usuario_adt_rn):
         rubrica = BudgetRubricaFactory(nome="Diárias")

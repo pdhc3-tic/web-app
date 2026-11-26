@@ -29,6 +29,7 @@ from django.db.models import (
     DecimalField,
     F,
     IntegerField,
+    Min,
     OuterRef,
     Q,
     Subquery,
@@ -36,7 +37,8 @@ from django.db.models import (
     Value,
     When,
 )
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, TruncMonth
+from django.utils import timezone
 
 from apps.sgp.models import Activity, WorkPlanAcao
 from apps.sgp.models.indicator import (
@@ -187,6 +189,45 @@ def realizado_agrupado(
             if None not in chave:
                 por_acao[linha["id_acao"]][chave] = linha["total"]
     return por_acao
+
+
+def mes_de(momento) -> date:
+    return timezone.localtime(momento).date().replace(day=1)
+
+
+def realizado_por_mes(
+    acoes: Iterable[WorkPlanAcao],
+    filtro: FiltroAtividades | None = None,
+) -> dict[date, int]:
+    """Realizado das Ações nas formas calculadas, somado pelo mês de término da
+    Atividade concluída. Na soma de UFPAs ou de participantes, cada um conta no
+    mês da primeira Atividade da Ação em que aparece: somados os meses, dá a
+    mesma contagem distinta do total."""
+    ids_por_forma: dict[str, list[int]] = defaultdict(list)
+    for acao in acoes:
+        if acao.indicador.forma_apuracao in FORMAS_RECALCULADAS:
+            ids_por_forma[acao.indicador.forma_apuracao].append(acao.pk)
+
+    por_mes: dict[date, int] = defaultdict(int)
+    for forma, ids in ids_por_forma.items():
+        if forma == FORMA_CONTAGEM_ATIVIDADES:
+            consulta = (
+                Activity.all_objects.filter(_concluidas("", filtro), acao_id__in=ids)
+                .annotate(mes=TruncMonth("data_fim")).order_by()
+                .values("mes").annotate(total=Count("pk"))
+            )
+            for linha in consulta:
+                por_mes[mes_de(linha["mes"])] += linha["total"]
+            continue
+        through, campo = _VINCULOS_POR_FORMA[forma]
+        primeiras = (
+            through.objects.filter(_concluidas("activity__", filtro), activity__acao_id__in=ids)
+            .order_by().values("activity__acao_id", campo)
+            .annotate(primeira=Min("activity__data_fim")).values_list("primeira", flat=True)
+        )
+        for primeira in primeiras:
+            por_mes[mes_de(primeira)] += 1
+    return dict(por_mes)
 
 
 def expressao_valor_executado() -> Coalesce:

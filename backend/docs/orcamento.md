@@ -169,7 +169,7 @@ A tarefa `reconcile_budget_balances` roda a mesma checagem toda noite e notifica
 
 ## Alertas
 
-`BudgetAlert` segue o modelo de dados do SGP (`escopo`, `referencia_id`, `rubrica`, `faixa`, `percentual_atingido`, `alertado_em`, `usuarios_alertados_ids`), mais `tipo`, `criado_em` e `resolvido_em`. `criado_em` não muda depois da criação; `alertado_em` guarda a última entrada numa faixa. Cada alvo tem no máximo um alerta aberto por tipo. Os alertas por rubrica, de subexecução e de remanejamento excessivo, usam o pool nacional dela como alvo.
+`BudgetAlert` segue o modelo de dados do SGP (`escopo`, `referencia_id`, `rubrica`, `faixa`, `percentual_atingido`, `alertado_em`, `usuarios_alertados_ids`), mais `tipo`, `criado_em` e `resolvido_em`. `criado_em` não muda depois da criação; `alertado_em` guarda a última entrada numa faixa. Cada alvo tem no máximo um alerta aberto por tipo. Os alertas por rubrica, de subexecução, de risco de devolução e de remanejamento excessivo, usam o pool nacional dela como alvo. O de risco de devolução lê a projeção do Monitoramento do TED (`decisoes-modelo-dados.md`, seção 15).
 
 As faixas do semáforo são parametrizáveis: `budget_alert_yellow_pct` (amarelo, padrão 70) e `budget_alert_red_pct` (vermelho, padrão 90), no `SystemConfig`, semeadas pela migration `core/0021`. `limiares_semaforo()` lê os dois valores e `faixa_semaforo()` aplica `>= vermelho` e depois `>= amarelo`. Mudar a configuração muda a cor e os alertas sem deploy. O painel devolve os limiares em vigor em `limiares_semaforo`, porque nem todo perfil lê o `/system-config/`.
 

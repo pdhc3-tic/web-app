@@ -1,6 +1,6 @@
 """Execução física e financeira do Plano de Trabalho contra uma versão do TED:
-índice de aderência, custo por entrega, rastreabilidade da rubrica à evidência e
-comparativo entre versões.
+índice de aderência, ranking por território, custo por entrega, rastreabilidade
+da rubrica à evidência e comparativo entre versões.
 
 O planejado de cada Ação (quantidade e valor unitário) e a árvore Meta → Submeta →
 Ação saem do snapshot da versão pedida: é o que o TED aprovou naquela versão. O
@@ -399,6 +399,57 @@ def _aderencia_por_territorio(dados: Execucao) -> list[Aderencia]:
             sum((executado.get(i.numero, ZERO) for i in envolvidas), ZERO),
         ))
     return sorted(linhas, key=lambda linha: linha.nome)
+
+
+ORDENACOES_DO_RANKING = [
+    ("fisico", "% físico"), ("financeiro", "% financeiro"), ("indice", "Índice de aderência"),
+]
+
+
+@dataclass(frozen=True)
+class PosicaoNoRanking:
+    aderencia: Aderencia
+    posicao_fisico: int
+    posicao_financeiro: int
+
+
+def _territorios_do_escopo(user) -> dict[int, str]:
+    Territory = apps.get_model("core", "Territory")
+    territorios = Territory.objects.filter(ativo=True)
+    estados = estados_do_escopo(user)
+    if estados is not None:
+        territorios = territorios.filter(estados__overlap=sorted(estados))
+    return dict(territorios.values_list("pk", "nome"))
+
+
+def _posicoes(linhas: list[Aderencia], campo: str) -> dict[int, int]:
+    """Posição de cada território, do maior percentual para o menor. Empatados
+    dividem a posição, e o seguinte pula as que eles ocuparam."""
+    valores = [getattr(linha, campo) for linha in linhas]
+    return {linha.referencia_id: 1 + sum(1 for v in valores if v > getattr(linha, campo)) for linha in linhas}
+
+
+def ranking_por_territorio(user, dados: Execucao, ordenar: str = "fisico") -> list[PosicaoNoRanking]:
+    """Os territórios ativos do escopo nas duas dimensões, com a aderência da
+    quebra por território. Território sem execução entra zerado, para o
+    comparativo ser de todos."""
+    executados = {linha.referencia_id: linha for linha in _aderencia_por_territorio(dados)}
+    todas = [
+        executados.get(id_territorio)
+        or _aderencia(Escopo.TERRITORIO, id_territorio, nome, ZERO, ZERO, ZERO, ZERO)
+        for id_territorio, nome in _territorios_do_escopo(user).items()
+    ]
+    fisico, financeiro = _posicoes(todas, "perc_fisico"), _posicoes(todas, "perc_financeiro")
+
+    def chave(linha: Aderencia):
+        if ordenar == "indice":
+            return linha.indice is None, -(linha.indice or ZERO), linha.nome
+        return -(linha.perc_fisico if ordenar == "fisico" else linha.perc_financeiro), linha.nome
+
+    return [
+        PosicaoNoRanking(linha, fisico[linha.referencia_id], financeiro[linha.referencia_id])
+        for linha in sorted(todas, key=chave)
+    ]
 
 
 def mes_da_serie(hoje: date) -> date:

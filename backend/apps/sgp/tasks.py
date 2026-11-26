@@ -271,6 +271,16 @@ def check_budget_underexecution() -> int:
         raise
 
 
+@shared_task(name="sgp.tasks.check_budget_return_risk")
+def check_budget_return_risk() -> int:
+    try:
+        return alertas.avaliar_risco_de_devolucao()
+    except Exception as exc:
+        sentry_sdk.capture_exception(exc)
+        logger.exception("Falha ao verificar o risco de devolução do orçamento.")
+        raise
+
+
 @shared_task(name="sgp.tasks.reconcile_budget_balances")
 def reconcile_budget_balances() -> int:
     from apps.sgp.management.commands.verificar_saldos import coletar_divergencias

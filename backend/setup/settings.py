@@ -360,6 +360,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "sgp.tasks.check_budget_underexecution",
         "schedule": crontab(day_of_week=1, hour=3, minute=0),  # toda segunda-feira às 3h
     },
+    "check_budget_return_risk": {
+        "task": "sgp.tasks.check_budget_return_risk",
+        "schedule": crontab(day_of_week=1, hour=3, minute=15),  # toda segunda-feira, depois da subexecução
+    },
     "check_budget_thresholds": {
         "task": "sgp.tasks.check_budget_thresholds",
         "schedule": crontab(hour=12, minute=30),  # diariamente, 30min depois do alerta do PT físico
