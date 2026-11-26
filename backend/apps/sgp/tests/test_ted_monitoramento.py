@@ -206,7 +206,7 @@ class TestVersaoDoRelatorio:
         TEDVersion.objects.filter(pk=versao.pk).update(registrado_em=ontem - timedelta(days=30))
         TEDVersion.objects.filter(pk=aditivo.pk).update(registrado_em=timezone.now())
 
-        resposta = auth_client.get(ADERENCIA, {"escopo": "acao", "data": ontem.date().isoformat()})
+        resposta = auth_client.get(ADERENCIA, {"escopo": "acao", "data": timezone.localdate(ontem).isoformat()})
 
         assert resposta.data["versao"]["numero_versao"] == 1
 
@@ -243,7 +243,7 @@ class TestSerieHistorica:
     def test_task_grava_o_mes_corrente_de_todos_os_escopos(self, plano, versao, execucao_rn):
         gravados = calculate_adherence_index()
 
-        mes = execucao.mes_da_serie(date.today())
+        mes = execucao.mes_da_serie(timezone.localdate())
         assert gravados == AdherenceIndex.objects.filter(periodo_ref=mes).count()
         assert set(AdherenceIndex.objects.values_list("escopo", flat=True)) == set(Escopo.values)
         acao = AdherenceIndex.objects.get(escopo=Escopo.ACAO, referencia_id=plano.pk)
@@ -260,7 +260,7 @@ class TestSerieHistorica:
         assert linhas.get().perc_fisico == Decimal("80.00")
 
     def test_mes_anterior_nao_muda(self, plano, versao, execucao_rn):
-        anterior = (execucao.mes_da_serie(date.today()) - timedelta(days=1)).replace(day=1)
+        anterior = (execucao.mes_da_serie(timezone.localdate()) - timedelta(days=1)).replace(day=1)
         AdherenceIndex.objects.create(
             escopo=Escopo.ACAO, referencia_id=plano.pk, periodo_ref=anterior, ted_versao=versao,
             perc_fisico=Decimal("10"), perc_financeiro=Decimal("10"), indice=Decimal("1.00"), faixa=Faixa.EQUILIBRADA,

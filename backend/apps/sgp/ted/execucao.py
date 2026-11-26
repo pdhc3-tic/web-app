@@ -17,6 +17,7 @@ from django.apps import apps
 from django.db import transaction
 from django.db.models import Count, F, IntegerField, OuterRef, Q, Subquery, Sum
 from django.db.models.functions import Coalesce
+from django.utils import timezone
 
 from apps.core.services.permissions import user_role_slugs
 from apps.core.utils import get_config
@@ -414,7 +415,7 @@ def gravar_serie_do_mes(hoje: date | None = None) -> int:
     except ErroComCodigo:
         return 0
     dados = execucao(None, versao, por_territorio=True)
-    mes = mes_da_serie(hoje or date.today())
+    mes = mes_da_serie(hoje or timezone.localdate())
     gravados = 0
     with transaction.atomic():
         for escopo in Escopo.values:
