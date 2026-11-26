@@ -206,6 +206,10 @@ LOCAL_STORAGE_UPLOAD_URL = os.getenv(
     "LOCAL_STORAGE_UPLOAD_URL",
     "/api/v1/storage/local-upload/",
 )
+LOCAL_STORAGE_DOWNLOAD_URL = os.getenv(
+    "LOCAL_STORAGE_DOWNLOAD_URL",
+    "/api/v1/storage/local-download/",
+)
 
 
 def _origin_from_url(value):

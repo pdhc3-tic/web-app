@@ -47,6 +47,10 @@ class FakeStorage:
     def get_public_url(self, key):
         return f"{self.public_url}/{key}"
 
+    def sign_url(self, url):
+        # Como o R2: bucket público, a URL gravada já é a de leitura.
+        return url
+
     def get_key_from_url(self, url):
         prefix = f"{self.public_url}/"
         if url and url.startswith(prefix):
@@ -342,6 +346,8 @@ def test_local_backend_path_storage(auth_client, ufpa, settings, tmp_path):
     )
     assert confirm_response.status_code == 200
     assert UFPA.objects.get(pk=ufpa.pk).foto_url == f"/media/{key}"
+    # O banco guarda o caminho; a resposta leva a URL assinada (sem /media/ público).
+    assert confirm_response.data["foto_url"].startswith("/api/v1/storage/local-download/?")
 
 
 def test_local_upload_rejects_body_larger_than_signed_size(

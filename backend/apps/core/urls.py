@@ -14,6 +14,7 @@ from .views import (
     unread_count,
     AuditLogListView,
     LocalStorageUploadView,
+    local_storage_download,
     GoogleCalendarConfigView,
     GoogleCalendarStatusView,
     SystemConfigListView,
@@ -37,6 +38,7 @@ urlpatterns = router.urls + [
     path("notifications/me/unread-count/", unread_count, name="notification-unread-count"),
     path("audit-logs/", AuditLogListView.as_view(), name="audit-log-list"),
     path("storage/local-upload/", LocalStorageUploadView.as_view(), name="local-storage-upload"),
+    path("storage/local-download/", local_storage_download, name="local-storage-download"),
     path(
         "core/config/google-calendar/",
         GoogleCalendarConfigView.as_view(),

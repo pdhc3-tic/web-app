@@ -7,6 +7,7 @@ from rest_framework import serializers
 from apps.core.models import Municipality
 from apps.core.serializers import UsuarioRefSerializer
 from apps.core.sensitive_fields import SensitiveFieldsSerializerMixin, mascarar_cpf
+from apps.core.storage.serializers import SignedMediaUrlsMixin
 from apps.sgp.models import Comunidade, MembroFamilia, Projeto, UFPA
 from apps.sgp.serializers.common import MunicipioNestedSerializer, NestedSerializer, recusar_nomes_antigos
 from apps.sgp.serializers.membro import MembroListSerializer
@@ -51,7 +52,8 @@ class TitularNestedSerializer(SensitiveFieldsSerializerMixin, serializers.ModelS
         return None
 
 
-class UFPAListSerializer(serializers.ModelSerializer):
+class UFPAListSerializer(SignedMediaUrlsMixin, serializers.ModelSerializer):
+    signed_media_url_fields = ("foto_url",)
     municipio = MunicipioNestedSerializer(read_only=True)
     territorio = serializers.CharField(source="territorio.nome", read_only=True)
     nome_titular = serializers.CharField(source="titular.nome_completo", read_only=True)
@@ -69,8 +71,9 @@ class UFPAListSerializer(serializers.ModelSerializer):
         return mascarar_cpf(obj.titular.cpf)
 
 
-class UFPADetailSerializer(SensitiveFieldsSerializerMixin, serializers.ModelSerializer):
+class UFPADetailSerializer(SignedMediaUrlsMixin, SensitiveFieldsSerializerMixin, serializers.ModelSerializer):
     sensitive_fields = {"cor_raca": ("cor_raca",)}
+    signed_media_url_fields = ("foto_url",)
 
     # ── Titular (escrita) — nomes originais do formulário ──
     nome = serializers.CharField(

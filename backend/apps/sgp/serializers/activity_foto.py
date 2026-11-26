@@ -1,9 +1,12 @@
 from rest_framework import serializers
 
+from apps.core.storage.serializers import SignedMediaUrlsMixin
 from apps.sgp.models import ActivityPhoto
 
 
-class ActivityPhotoSerializer(serializers.ModelSerializer):
+class ActivityPhotoSerializer(SignedMediaUrlsMixin, serializers.ModelSerializer):
+    signed_media_url_fields = ("arquivo_url",)
+
     class Meta:
         model = ActivityPhoto
         fields = [

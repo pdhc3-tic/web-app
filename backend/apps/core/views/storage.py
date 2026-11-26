@@ -1,4 +1,11 @@
+import mimetypes
+import time
+from urllib.parse import quote
+
+from django.conf import settings
 from django.core.exceptions import RequestDataTooBig
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
+from django.views.decorators.http import require_GET
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, OpenApiTypes, extend_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny
@@ -88,3 +95,35 @@ class LocalStorageUploadView(APIView):
             )
 
         return Response(status=status.HTTP_200_OK)
+
+
+@require_GET
+def local_storage_download(request):
+    """Entrega um arquivo do storage local para quem tem a URL assinada e ainda válida.
+
+    Em produção quem lê o disco é o nginx (X-Accel-Redirect para a location
+    interna /protected-media/); em DEBUG, sem nginx, o próprio Django entrega.
+    """
+    key = request.GET.get("key", "")
+    try:
+        expires = int(request.GET.get("expires", ""))
+    except ValueError:
+        return HttpResponseBadRequest("URL de download inválida.")
+    if not LocalStorage.verify_get_signature(key, expires, request.GET.get("signature", "")):
+        return HttpResponseForbidden("URL de download expirada ou inválida.")
+
+    try:
+        path = LocalStorage()._path_for_key(key)
+    except ValueError:
+        return HttpResponseBadRequest("Key de storage inválida.")
+    if not path.is_file():
+        raise Http404
+
+    content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    if settings.DEBUG:
+        response = FileResponse(path.open("rb"), content_type=content_type)
+    else:
+        response = HttpResponse(content_type=content_type)
+        response["X-Accel-Redirect"] = "/protected-media/" + quote(key)
+    response["Cache-Control"] = f"private, max-age={max(expires - int(time.time()), 0)}"
+    return response
