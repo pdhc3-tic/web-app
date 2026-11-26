@@ -9,6 +9,7 @@ import { Badge } from "@/app/components/ui/Badge/Badge";
 import { Button } from "@/app/components/ui/Button/Button";
 import { ConfirmDeleteDialog } from "@/app/components/ui/ConfirmDeleteDialog/ConfirmDeleteDialog";
 import { DefinitionList } from "@/app/components/ui/DefinitionList/DefinitionList";
+import { cadeiaDaDemanda, itensDaCadeia } from "@/app/components/sgp/CadeiaPlanoTrabalho/CadeiaPlanoTrabalho";
 import { useToast } from "@/app/components/ui/Toast/Toast";
 import { ApiError } from "@/app/lib/api";
 import { formatDate } from "@/app/lib/datetime";
@@ -164,10 +165,7 @@ export function MontarDemanda({ demanda }: { demanda: Demanda }) {
               label: "Município da atividade",
               value: `${demanda.contexto.municipio_nome}/${demanda.contexto.municipio_estado_sigla}`,
             },
-            {
-              label: "Plano de Trabalho",
-              value: `Meta ${demanda.contexto.meta_numero} · Ação ${demanda.contexto.acao_numero}`,
-            },
+            ...itensDaCadeia(cadeiaDaDemanda(demanda.contexto), "montar-cadeia"),
             { label: "Data prevista", value: formatDate(demanda.contexto.data_prevista) },
             { label: "Justificativa", value: demanda.justificativa || undefined },
           ]}

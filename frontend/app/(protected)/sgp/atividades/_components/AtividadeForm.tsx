@@ -34,6 +34,7 @@ import {
 // Reaproveitado do wizard de UFPA — mesmo comportamento de captura de GPS.
 import { GpsCapture } from "../../ufpas/_components/GpsCapture";
 import { EvidenceGallery } from "@/app/components/sgp/EvidenceGallery/EvidenceGallery";
+import { CadeiaPlanoTrabalho, cadeiaDaAcaoPT } from "@/app/components/sgp/CadeiaPlanoTrabalho/CadeiaPlanoTrabalho";
 import { AcaoCombobox } from "./AcaoCombobox";
 import { EquipeAdicionalPicker } from "./EquipeAdicionalPicker";
 import { ParticipantesSection } from "./ParticipantesSection";
@@ -384,6 +385,11 @@ export function AtividadeForm({
             error={errors.acao}
           />
         </div>
+        {form.acao && (
+          <div className="sm:col-span-2">
+            <CadeiaPlanoTrabalho cadeia={cadeiaDaAcaoPT(form.acao)} prefixo="atividade-form-cadeia" />
+          </div>
+        )}
       </Section>
 
       {/* ── Equipe ───────────────────────────────────────────────────────── */}

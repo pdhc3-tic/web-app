@@ -48,6 +48,21 @@ async function submeter(page: Page) {
 test.describe("SGD — montar e submeter a demanda (ADT)", () => {
   test.use({ storageState: storageStatePath("adt") });
 
+  test("a montagem mostra a cadeia do Plano de Trabalho herdada da atividade (#446)", async ({ page }) => {
+    const detalhe = page.waitForResponse(
+      (r) => new URL(r.url()).pathname === `/api/v1/sgd/demandas/${fx.vazia.id}/` && r.request().method() === "GET",
+    );
+    await abrirMontagem(page, fx.vazia.id);
+    const { contexto: c } = (await (await detalhe).json()) as { contexto: Record<string, string | number> };
+
+    await expect(page.getByTestId("montar-cadeia-acao")).toHaveText(`${c.acao_numero} — ${c.acao_descricao}`);
+    await expect(page.getByTestId("montar-cadeia-submeta")).toHaveText(`${c.submeta_numero} — ${c.submeta_titulo}`);
+    await expect(page.getByTestId("montar-cadeia-meta")).toHaveText(`Meta ${c.meta_numero} — ${c.meta_titulo}`);
+    await expect(page.getByTestId("montar-cadeia-indicador")).toHaveText(
+      `${c.indicador_codigo} — ${c.indicador_nome} (unidade: ${c.indicador_unidade_medida})`,
+    );
+  });
+
   test("diária: os campos do tipo, o saldo antes de salvar e o total calculado pelo sistema", async ({
     page,
   }) => {

@@ -36,6 +36,7 @@ import { RestrictedAccess } from "@/app/components/ui/RestrictedAccess/Restricte
 import { Tabs } from "@/app/components/ui/Tabs/Tabs";
 import { OrigemScaBadge } from "@/app/components/sgp/OrigemScaBadge";
 import { EvidenceGallery } from "@/app/components/sgp/EvidenceGallery/EvidenceGallery";
+import { cadeiaDaAtividade, itensDaCadeia } from "@/app/components/sgp/CadeiaPlanoTrabalho/CadeiaPlanoTrabalho";
 import { DemandasTab } from "./_components/DemandasTab";
 import { RiscosDeGlosa } from "./_components/RiscosDeGlosa";
 import { TransicaoStatusDialog } from "./_components/TransicaoStatusDialog";
@@ -317,10 +318,7 @@ export default function AtividadeFichaPage() {
                     </h2>
                     <DefinitionList
                       items={[
-                        {
-                          label: "Ação",
-                          value: `${atividade.acao.numero} — ${atividade.acao.descricao}`,
-                        },
+                        ...itensDaCadeia(cadeiaDaAtividade(atividade.acao), "atividade-cadeia"),
                         { label: "Âmbito", value: atividade.ambito_display },
                         {
                           label: "Forma de atuação",
