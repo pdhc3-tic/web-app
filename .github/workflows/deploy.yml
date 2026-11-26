@@ -141,11 +141,16 @@ jobs:
     runs-on: ubuntu-latest
     # Secrets só deste environment, liberado apenas para a main.
     environment: production
+    # packages:read: o token deste run puxa as imagens no servidor e expira com o job.
+    # Nenhum login de registry fica guardado no pdhc-app.
+    permissions:
+      packages: read
     steps:
       # A chave só executa /opt/pdhc/bin/promover no servidor (forced command):
       # nada de shell. O servidor valida sha e digests antes de qualquer coisa.
       - name: Promover os digests deste run
         env:
+          PULL_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SSH_KEY: ${{ secrets.PDHC_DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.PDHC_DEPLOY_KNOWN_HOSTS }}
           HOST: ${{ secrets.PDHC_DEPLOY_HOST }}
@@ -158,8 +163,9 @@ jobs:
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy
           chmod 600 ~/.ssh/deploy
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-          ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o BatchMode=yes \
-            "deploy@$HOST" "$GITHUB_SHA $BACKEND $FRONTEND $NGINX"
+          printf '%s\n' "$PULL_TOKEN" |
+            ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o BatchMode=yes \
+              "deploy@$HOST" "$GITHUB_SHA $BACKEND $FRONTEND $NGINX"
 
   notify:
     name: Notificar Slack

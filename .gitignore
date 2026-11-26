@@ -23,3 +23,6 @@ logs/
 
 # Claude Code (config de maquina/sessao)
 .claude/
+
+# Espelho do /opt/pdhc/.env de produção (pdhc-app). Só na máquina da Archelos Dev.
+.env.prod
