@@ -57,7 +57,16 @@ export function badgeStatusFor(status: string): BadgeStatus {
  */
 export type AcaoPT = Pick<
   Schema<"WorkPlanAcaoList">,
-  "id" | "meta" | "numero" | "descricao" | "meta_numero" | "meta_titulo" | "submeta_numero" | "submeta_titulo"
+  | "id"
+  | "meta"
+  | "submeta"
+  | "indicador"
+  | "numero"
+  | "descricao"
+  | "meta_numero"
+  | "meta_titulo"
+  | "submeta_numero"
+  | "submeta_titulo"
 > & {
   indicador_detalhe: Pick<Schema<"PlanoTrabalhoIndicadorRef">, "codigo" | "nome" | "unidade_medida">;
 };
@@ -216,6 +225,10 @@ export type ListAtividadesParams = {
   limit: number;
   offset: number;
   acao?: string;
+  /** Plano de Trabalho (#464): ids de Meta, Submeta e Indicador. */
+  meta?: string;
+  submeta?: string;
+  indicador?: string;
   projeto?: string;
   territorio?: string;
   tecnico?: string;
@@ -239,13 +252,16 @@ export type ListAtividadesParams = {
  *    `territorio`/`tecnico` como o UFPAFilter. Nome errado é ignorado pelo
  *    django-filter, que então devolve a lista inteira sem filtrar.
  */
-function buildAtividadesQuery(params: ListAtividadesParams): string {
+export function buildAtividadesQuery(params: ListAtividadesParams): string {
   const qs = new URLSearchParams();
 
   qs.set("page", String(Math.floor(params.offset / params.limit) + 1));
   qs.set("page_size", String(params.limit));
 
   if (params.acao) qs.set("acao", params.acao);
+  if (params.meta) qs.set("meta", params.meta);
+  if (params.submeta) qs.set("submeta", params.submeta);
+  if (params.indicador) qs.set("indicador", params.indicador);
   if (params.projeto) qs.set("projeto", params.projeto);
   if (params.territorio) qs.set("territorio_id", params.territorio);
   if (params.tecnico) qs.set("tecnico_id", params.tecnico);

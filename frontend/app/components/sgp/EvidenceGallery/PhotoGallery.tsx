@@ -36,10 +36,12 @@ import {
   updatePhoto,
   uploadBlobToStorage,
 } from "./evidenceApi";
-import { validatePhoto } from "./validation";
+import { mensagemFalhaCompressao, validatePhoto } from "./validation";
+import { comprimirFoto } from "./compressao";
 import {
   MAX_PHOTOS_PER_ACTIVITY,
   PHOTO_ACCEPTED_TYPES,
+  PHOTO_MAX_SIZE_BYTES,
   formatBytes,
   type EvidencePhoto,
 } from "./types";
@@ -50,7 +52,8 @@ const EXT_BY_TYPE: Record<string, string> = {
   "image/webp": "webp",
 };
 
-type UploadPhase = "staged" | "uploading" | "confirming" | "error";
+/** `compressing`: acima de 800 KB, a foto é comprimida antes de poder ir (#464). */
+type UploadPhase = "compressing" | "staged" | "uploading" | "confirming" | "error";
 
 type StagedUpload = {
   localId: string;
@@ -60,6 +63,8 @@ type StagedUpload = {
   progress: number;
   phase: UploadPhase;
   error?: string;
+  /** Tamanho original, quando a foto foi comprimida para caber no limite. */
+  comprimidaDe?: number;
 };
 
 type Props = {
@@ -134,6 +139,41 @@ export function PhotoGallery({ atividadeId, readOnly = false }: Props) {
   const podeAdicionarMais = totalOcupado < MAX_PHOTOS_PER_ACTIVITY;
   const vagasRestantes = Math.max(0, MAX_PHOTOS_PER_ACTIVITY - totalOcupado);
 
+  /**
+   * Comprime a foto acima do limite e troca o arquivo encenado pelo JPEG
+   * gerado. Se não couber nem assim, a foto sai da bandeja com o motivo.
+   * Descartada durante a compressão, o resultado é jogado fora.
+   */
+  const comprimir = useCallback(
+    async (upload: StagedUpload) => {
+      const resultado = await comprimirFoto(upload.file);
+      if (!uploadsRef.current.some((u) => u.localId === upload.localId)) return;
+
+      if (!resultado.ok) {
+        showToast(mensagemFalhaCompressao(upload.file.name, resultado.motivo), "error");
+        URL.revokeObjectURL(upload.previewUrl);
+        setUploads((prev) => prev.filter((u) => u.localId !== upload.localId));
+        return;
+      }
+      const previewUrl = URL.createObjectURL(resultado.arquivo);
+      URL.revokeObjectURL(upload.previewUrl);
+      setUploads((prev) =>
+        prev.map((u) =>
+          u.localId === upload.localId
+            ? {
+                ...u,
+                file: resultado.arquivo,
+                previewUrl,
+                phase: "staged",
+                comprimidaDe: upload.file.size,
+              }
+            : u,
+        ),
+      );
+    },
+    [showToast],
+  );
+
   // ── Adição de arquivos ────────────────────────────────────────────────────
   const addFiles = useCallback(
     (files: FileList | File[]) => {
@@ -163,7 +203,7 @@ export function PhotoGallery({ atividadeId, readOnly = false }: Props) {
           previewUrl: URL.createObjectURL(file),
           legenda: "",
           progress: 0,
-          phase: "staged",
+          phase: file.size > PHOTO_MAX_SIZE_BYTES ? "compressing" : "staged",
         });
         restantes--;
       }
@@ -174,9 +214,13 @@ export function PhotoGallery({ atividadeId, readOnly = false }: Props) {
       if (staged.length > 0) {
         setUploads((prev) => [...prev, ...staged]);
       }
+      for (const upload of staged) {
+        if (upload.phase === "compressing") void comprimir(upload);
+      }
     },
-    [photos.length, uploads.length, showToast],
+    [photos.length, uploads.length, showToast, comprimir],
   );
+
 
   function openPicker() {
     if (readOnly || !podeAdicionarMais) return;
@@ -391,6 +435,8 @@ export function PhotoGallery({ atividadeId, readOnly = false }: Props) {
     () => uploads.some((u) => u.phase === "uploading" || u.phase === "confirming"),
     [uploads],
   );
+  const comprimindoAlgum = useMemo(() => uploads.some((u) => u.phase === "compressing"), [uploads]);
+  const prontasParaEnviar = uploads.filter((u) => u.phase === "staged" || u.phase === "error").length;
 
   return (
     <section aria-label="Fotos da atividade" className="flex flex-col gap-4">
@@ -398,8 +444,8 @@ export function PhotoGallery({ atividadeId, readOnly = false }: Props) {
         <div>
           <h3 className="text-sm font-semibold text-text">Fotos</h3>
           <p className="text-xs text-text-muted">
-            {photos.length}/{MAX_PHOTOS_PER_ACTIVITY} · JPEG, PNG ou WEBP · até{" "}
-            {formatBytes(819_200)} por foto
+            {photos.length}/{MAX_PHOTOS_PER_ACTIVITY} · JPEG, PNG ou WEBP · acima de{" "}
+            {formatBytes(PHOTO_MAX_SIZE_BYTES)}, a foto é comprimida automaticamente
           </p>
         </div>
         {!readOnly && (
@@ -544,11 +590,12 @@ export function PhotoGallery({ atividadeId, readOnly = false }: Props) {
           <Button
             size="sm"
             onClick={enviarPendentes}
-            disabled={!temPendentesParaEnviar || enviandoAlgum}
+            disabled={!temPendentesParaEnviar || enviandoAlgum || comprimindoAlgum}
             loading={enviandoAlgum}
           >
-            Enviar {uploads.filter((u) => u.phase !== "uploading" && u.phase !== "confirming").length} foto
-            {uploads.filter((u) => u.phase !== "uploading" && u.phase !== "confirming").length === 1 ? "" : "s"}
+            {comprimindoAlgum
+              ? "Comprimindo fotos…"
+              : `Enviar ${prontasParaEnviar} foto${prontasParaEnviar === 1 ? "" : "s"}`}
           </Button>
         </div>
       )}
@@ -753,6 +800,7 @@ function UploadTile({
   onRetry: () => void;
 }) {
   const busy = upload.phase === "uploading" || upload.phase === "confirming";
+  const comprimindo = upload.phase === "compressing";
   return (
     <>
       <div className="relative aspect-square w-full bg-surface-muted">
@@ -765,6 +813,15 @@ function UploadTile({
         <span className="absolute left-2 top-2 rounded-full bg-primary/90 px-2 py-0.5 text-2xs font-semibold text-surface">
           Nova
         </span>
+        {comprimindo && (
+          <div
+            className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/60 text-white"
+            role="status"
+          >
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span className="text-2xs">Comprimindo…</span>
+          </div>
+        )}
         {busy && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/60 text-white">
             {upload.phase === "uploading" ? (
@@ -807,8 +864,9 @@ function UploadTile({
           className="h-7 rounded border border-border bg-surface px-2 text-xs text-text outline-none focus:border-primary disabled:opacity-60"
           placeholder="Legenda (opcional)"
         />
-        <p className="truncate text-2xs text-text-muted" title={upload.file.name}>
+        <p className="truncate text-2xs text-text-muted" title={upload.file.name} data-testid="foto-nova-tamanho">
           {upload.file.name} · {formatBytes(upload.file.size)}
+          {upload.comprimidaDe !== undefined && ` (comprimida de ${formatBytes(upload.comprimidaDe)})`}
         </p>
         {upload.phase === "error" && upload.error && (
           <p role="alert" className="text-2xs text-error-text">

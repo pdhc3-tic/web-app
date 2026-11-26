@@ -52,6 +52,7 @@ import { listMembros } from "@/app/lib/membros";
 import {
   absoluteDateTime,
   formatDate,
+  formatTime,
   formatTimeRange,
   relativeTime,
 } from "@/app/lib/datetime";
@@ -333,10 +334,18 @@ export default function AtividadeFichaPage() {
                     data-testid="atividade-equipe-local"
                   >
                     <h2 className="mb-4 text-sm font-medium text-text">
-                      Equipe e local
+                      Data, equipe e local
                     </h2>
                     <DefinitionList
                       items={[
+                        {
+                          label: "Início",
+                          value: <span data-testid="atividade-inicio">{dataEHora(atividade.data_inicio)}</span>,
+                        },
+                        {
+                          label: "Fim",
+                          value: <span data-testid="atividade-fim">{dataEHora(atividade.data_fim)}</span>,
+                        },
                         {
                           label: "Técnico responsável",
                           value: (
@@ -375,11 +384,13 @@ export default function AtividadeFichaPage() {
                         },
                         {
                           label: "Coordenadas",
-                          value: <Coordenadas atividade={atividade} />,
+                          // Sem dado, `null` para a lista mostrar o "—": o componente
+                          // que renderiza nada não conta como vazio.
+                          value: temCoordenadas(atividade) ? <Coordenadas atividade={atividade} /> : null,
                         },
                         {
                           label: "Parceiros",
-                          value: <Parceiros atividade={atividade} />,
+                          value: temParceiros(atividade) ? <Parceiros atividade={atividade} /> : null,
                         },
                       ]}
                     />
@@ -431,20 +442,23 @@ export default function AtividadeFichaPage() {
                     />
                   </section>
 
-                  {(atividade.descricao_narrativa ||
-                    atividade.resultados_alcancados ||
-                    atividade.justificativa) && (
-                    <section className="flex flex-col gap-5 rounded-lg border border-border bg-surface p-6">
-                      <h2 className="text-sm font-medium text-text">Registro</h2>
+                  {/* Sempre visível: "Resultados alcançados" vazio diz que não foi
+                      registrado, em vez de sumir com a seção (#464). */}
+                  <section
+                    className="flex flex-col gap-5 rounded-lg border border-border bg-surface p-6"
+                    data-testid="atividade-registro"
+                  >
+                    <h2 className="text-sm font-medium text-text">Registro</h2>
 
-                      <Texto titulo="Descrição" conteudo={atividade.descricao_narrativa} />
-                      <Texto
-                        titulo="Resultados alcançados"
-                        conteudo={atividade.resultados_alcancados}
-                      />
-                      <Texto titulo="Justificativa" conteudo={atividade.justificativa} />
-                    </section>
-                  )}
+                    <Texto titulo="Descrição" conteudo={atividade.descricao_narrativa} />
+                    <Texto
+                      titulo="Resultados alcançados"
+                      conteudo={atividade.resultados_alcancados}
+                      vazio="Não registrado."
+                      testId="atividade-resultados"
+                    />
+                    <Texto titulo="Justificativa" conteudo={atividade.justificativa} />
+                  </section>
 
 
                   <Auditoria atividade={atividade} />
@@ -508,9 +522,13 @@ export default function AtividadeFichaPage() {
  * faz com ele é copiar para o GPS. `latitude`/`longitude` são opcionais no
  * modelo, então o par incompleto vale como ausente.
  */
+function temCoordenadas({ latitude, longitude }: AtividadeDetail): boolean {
+  return !!latitude && !!longitude;
+}
+
 function Coordenadas({ atividade }: { atividade: AtividadeDetail }) {
   const { latitude, longitude } = atividade;
-  if (!latitude || !longitude) return null;
+  if (!temCoordenadas(atividade)) return null;
 
   return (
     <span
@@ -534,6 +552,10 @@ function Coordenadas({ atividade }: { atividade: AtividadeDetail }) {
  * docs/pendencias-backend-sprint-9.md), a ficha declara quantos são em vez de
  * imprimir números de banco ou de fingir que não existem.
  */
+function temParceiros(atividade: AtividadeDetail): boolean {
+  return !!atividade.parceiros_livres?.trim() || (atividade.parceiros_organizacoes?.length ?? 0) > 0;
+}
+
 function Parceiros({ atividade }: { atividade: AtividadeDetail }) {
   const livres = atividade.parceiros_livres?.trim() ?? "";
   const organizacoes = atividade.parceiros_organizacoes?.length ?? 0;
@@ -674,14 +696,12 @@ function useUfpaDoMembro(atividade: AtividadeDetail): Map<number, number> {
  *
  * Os dois vêm completos no detalhe desde a Issue #227 — nome, CPF mascarado e
  * parentesco já estão no payload, sem requisição adicional por participante.
+ * Sem nenhum, a seção fica e diz isso (#464), em vez de sumir da ficha.
  */
 function Participantes({ atividade }: { atividade: AtividadeDetail }) {
   const { ufpas_participantes: ufpas, membros_participantes: membros } = atividade;
   const ufpaDoMembro = useUfpaDoMembro(atividade);
 
-  if (ufpas.length === 0 && membros.length === 0) {
-    return null;
-  }
 
   const linhaClasse =
     "flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm text-text";
@@ -697,6 +717,12 @@ function Participantes({ atividade }: { atividade: AtividadeDetail }) {
         Participantes
         <span className="text-text-muted">({atividade.total_participantes})</span>
       </h2>
+
+      {ufpas.length === 0 && membros.length === 0 && (
+        <p className="text-sm text-text-muted" data-testid="atividade-participantes-vazio">
+          Nenhuma UFPA ou membro registrado como participante.
+        </p>
+      )}
 
       {ufpas.length > 0 && (
         <div className="flex flex-col gap-2">
@@ -767,14 +793,39 @@ function Participantes({ atividade }: { atividade: AtividadeDetail }) {
   );
 }
 
-function Texto({ titulo, conteudo }: { titulo: string; conteudo: string }) {
-  if (!conteudo?.trim()) return null;
+/**
+ * Um texto do registro. Sem `vazio`, some quando não há conteúdo; com ele,
+ * mostra o aviso no lugar.
+ */
+function Texto({
+  titulo,
+  conteudo,
+  vazio,
+  testId,
+}: {
+  titulo: string;
+  conteudo: string;
+  vazio?: string;
+  testId?: string;
+}) {
+  const preenchido = !!conteudo?.trim();
+  if (!preenchido && !vazio) return null;
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1" data-testid={testId}>
       <h3 className="text-2xs uppercase tracking-[0.08em] text-text-muted">
         {titulo}
       </h3>
-      <p className="whitespace-pre-wrap text-sm text-text">{conteudo}</p>
+      {preenchido ? (
+        <p className="whitespace-pre-wrap text-sm text-text">{conteudo}</p>
+      ) : (
+        <p className="text-sm text-text-muted">{vazio}</p>
+      )}
     </div>
   );
+}
+
+/** "10/11/2026 às 08:00"; só a data quando o valor não traz hora. */
+function dataEHora(iso: string): string {
+  const hora = formatTime(iso);
+  return hora ? `${formatDate(iso)} às ${hora}` : formatDate(iso);
 }

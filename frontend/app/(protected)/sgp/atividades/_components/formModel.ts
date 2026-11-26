@@ -110,6 +110,8 @@ export function detailToForm(atividade: AtividadeDetail): AtividadeFormData {
     acao: {
       id: atividade.acao.id,
       meta: atividade.acao.meta.id,
+      submeta: atividade.acao.submeta.id,
+      indicador: atividade.acao.indicador.id,
       numero: atividade.acao.numero,
       descricao: atividade.acao.descricao,
       meta_numero: atividade.acao.meta.numero,

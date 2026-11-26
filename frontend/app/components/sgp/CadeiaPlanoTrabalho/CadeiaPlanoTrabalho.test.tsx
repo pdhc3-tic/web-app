@@ -22,6 +22,8 @@ describe("CadeiaPlanoTrabalho (#446)", () => {
     const daLista: AcaoPT = {
       id: 1,
       meta: 10,
+      submeta: 20,
+      indicador: 2,
       numero: "1.1.1",
       descricao: "Realizar oficinas de organização produtiva",
       meta_numero: 1,
