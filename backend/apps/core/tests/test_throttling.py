@@ -120,7 +120,22 @@ def test_login_throttle_resposta_padronizada(client, usuario):
     assert "Retry-After" in response
 
 @pytest.mark.django_db
-def test_refresh_throttle_bloqueia_apos_limite(client, usuario):    
+def test_refresh_throttle_bloqueia_o_mesmo_token_apos_limite(client, usuario):
+    for _ in range(10):
+        client.post("/api/v1/auth/token/refresh/", {
+            "refresh_token": "token-invalido",
+        })
+
+    response = client.post("/api/v1/auth/token/refresh/", {
+        "refresh_token": "token-invalido",
+    })
+    assert response.status_code == 429
+
+
+@pytest.mark.django_db
+def test_refresh_throttle_nao_mistura_sessoes_do_mesmo_ip(client, usuario):
+    # Todas as renovações chegam do servidor do Next (mesmo IP): uma sessão
+    # no limite não pode derrubar a renovação das outras.
     refresh = RefreshToken.for_user(usuario)
 
     for _ in range(10):
@@ -131,7 +146,7 @@ def test_refresh_throttle_bloqueia_apos_limite(client, usuario):
     response = client.post("/api/v1/auth/token/refresh/", {
         "refresh_token": str(refresh),
     })
-    assert response.status_code == 429
+    assert response.status_code == 200
 
 
 @pytest.mark.django_db

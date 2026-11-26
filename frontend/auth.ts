@@ -97,17 +97,25 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         email: { label: "E-mail", type: "email" },
         password: { label: "Senha", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         const email = (credentials?.email as string) ?? "";
         const password = (credentials?.password as string) ?? "";
         if (!email || !password) return null;
+
+        // Repassa o X-Forwarded-For que o nginx montou. Sem ele, o Django vê o
+        // IP deste servidor em todo login: o throttle (5 a cada 5 min) vira um
+        // limite único para todos os usuários e a auditoria perde o IP real.
+        const forwardedFor = request?.headers?.get("x-forwarded-for");
 
         // 1. Autentica no Django
         let loginRes: Response;
         try {
           loginRes = await fetch(`${BASE_URL}/api/v1/auth/login/`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              ...(forwardedFor ? { "X-Forwarded-For": forwardedFor } : {}),
+            },
             body: JSON.stringify({ email, senha: password }),
           });
         } catch {
