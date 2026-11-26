@@ -8,6 +8,8 @@
 |---|---|---|
 | 1 | Filtros `meta`, `submeta` e `indicador` no calendário de atividades | #464 |
 | 2 | Histórico de remanejamentos: filtros de território, período e responsável, documento de respaldo e exportação CSV | #466 |
+| 3 | Painel do SGD: dizer se há orçamento lançado no escopo, para separar "sem orçamento" de "nenhuma rubrica em alerta" | #467 |
+| 4 | Rótulos de status da atividade no feminino (Planejada, Agendada, Concluída…) | #467 |
 
 ---
 
@@ -40,3 +42,23 @@ A issue cita `GET /api/v1/sgp/orcamento/remanejamentos/`, mas essa rota só acei
 4. **Exportação CSV**: `GET /api/v1/sgd/remanejamentos/transferencias/exportar/?formato=csv`, com os mesmos filtros da listagem e as colunas da tela (data, rubrica, tipo, origem, destino, valor, saldos antes e depois, aprovado por, motivo, documento), no padrão do `/sgd/demandas/exportar/`.
 
 *Estado atual no frontend:* a tela lista os remanejamentos com saldos antes e depois, aprovador, motivo, a origem (direto da UGP, excedente da demanda ou recurso extra, com link) e paginação, com filtro só por rubrica. Os filtros de território, período e responsável, a coluna do documento e o botão Exportar CSV entram quando o backend entregar estes pontos; a #466 fica aberta por eles.
+
+---
+
+## 3. Painel do SGD: orçamento lançado no escopo (#467)
+
+O painel do SGD (`GET /api/v1/sgd/dashboard/`, `DashboardSerializer`) devolve em `alertas_saldo` só as rubricas em faixa amarela ou vermelha. Quando a lista vem vazia, o front não sabe se é porque tudo está abaixo da faixa amarela ou porque não há orçamento lançado no escopo do usuário. A tela dizia "As rubricas do seu escopo estão abaixo da faixa amarela" mesmo sem orçamento nenhum, o que o teste de 23/11 apontou.
+
+**Pedido:** um campo no painel que diga quantas linhas de orçamento existem no escopo, por exemplo `rubricas_com_orcamento` (inteiro), contando as linhas de `_linhas_orcamento_do_escopo(user)` com `valor_aprovado` maior que zero. Zero significa "sem orçamento lançado".
+
+*Estado atual no frontend:* o aviso vazio passou a um texto neutro ("Nenhuma rubrica do seu escopo está na faixa amarela ou vermelha"). Com o campo, a tela mostra "Ainda não há orçamento lançado no seu escopo" quando ele vier zero. A #467 fica aberta por este ponto.
+
+---
+
+## 4. Rótulos de status da atividade no feminino (#467)
+
+Os rótulos de `STATUS_CHOICES` (`apps/sgp/models/activity.py`) misturam os gêneros: "Planejado", "Agendado", "Concluído" e "Concluído sem evidência" no masculino, e "Adiada", "Não realizada" e "Cancelada" no feminino. Na tela, a mesma atividade aparece como "Planejado" ao lado de "Atrasada", e a legenda do calendário põe "Cancelada" junto de "Agendado".
+
+**Pedido:** rótulos no feminino, concordando com "atividade": Planejada, Agendada, Em andamento, Concluída, Concluída sem evidência, Adiada, Não realizada e Cancelada. Só os rótulos mudam; as chaves (`planejado`, `agendado`, `concluido`…) ficam. Eles chegam ao front por `status_display` e por `/choices/` (`status_atividade`).
+
+*Estado atual no frontend:* os rótulos vêm do backend; mudar só no front deixaria a mesma tela com os dois gêneros. Quando o backend mudar, o front acerta os rótulos locais que repetem os do backend (padrões do `Badge` e legenda do calendário). A #467 fica aberta por este ponto.

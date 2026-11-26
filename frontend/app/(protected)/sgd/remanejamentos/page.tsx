@@ -71,7 +71,7 @@ function FilaRemanejamentosView() {
   if (sessao === "loading") return <Carregando />;
   if (!canAcessarFilaRemanejamentos(user)) {
     return (
-      <RestrictedAccess description="A Fila de Remanejamentos é da UGP, que decide os pedidos de recurso extra, e do Articulador Estadual, que emite o parecer." />
+      <RestrictedAccess description="Os pedidos de recurso extra são da UGP, que decide, e do Articulador Estadual, que emite o parecer." />
     );
   }
 
@@ -88,7 +88,7 @@ function FilaRemanejamentosView() {
     <>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-text">Fila de Remanejamentos</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-text">Pedidos de recurso extra</h1>
           <p className="mt-1 text-sm text-text-muted">
             Pedidos de recurso extra das demandas bloqueadas pelo limite individual e excedentes autorizados
             nas demandas.
@@ -159,7 +159,8 @@ function FilaRemanejamentosView() {
 }
 
 /**
- * Fila de Remanejamentos (#321 · SGD-FE-10): os pedidos de recurso extra das
+ * Pedidos de recurso extra (#321 · SGD-FE-10; antes "Fila de Remanejamentos",
+ * renomeada na #467 para não se confundir com o Remanejar do SGP): os pedidos das
  * demandas bloqueadas pelo limite individual, com o parecer do Articulador
  * Estadual e a decisão da UGP. Cada pedido abre em `/sgd/remanejamentos/{id}`,
  * o link que as notificações do backend usam.
@@ -168,14 +169,14 @@ export default function FilaRemanejamentosPage() {
   return (
     <>
       <PageHeader>
-        <span className="truncate text-base font-semibold text-text">SGD</span>
+        <span className="truncate text-base font-semibold text-text">Pedidos de recurso extra</span>
       </PageHeader>
       <div className="mx-auto flex max-w-6xl flex-col gap-5" data-testid="remanejamentos-page">
         <Breadcrumb
           items={[
             { label: "Início", href: "/dashboard" },
             { label: "SGD", href: "/sgd" },
-            { label: "Remanejamentos" },
+            { label: "Pedidos de recurso extra" },
           ]}
         />
         <Suspense fallback={<Carregando />}>

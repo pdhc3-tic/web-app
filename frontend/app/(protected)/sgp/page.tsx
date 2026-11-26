@@ -114,8 +114,8 @@ export default function SGPPage() {
   const submodulos = SUBMODULES.filter(
     (s) => (s.key !== "relatorios" || canExport) && (s.key !== "meu-saldo" || temLimite),
   );
-  // `null` = carregando ou erro silencioso → o card exibe "—" sem bloquear o layout.
-  const [ufpaCount, setUfpaCount] = useState<number | null>(null);
+  // `null` = carregando; `undefined` = a contagem falhou e o card fica sem número.
+  const [ufpaCount, setUfpaCount] = useState<number | null | undefined>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -123,7 +123,8 @@ export default function SGPPage() {
     fetchUfpaCount(controller.signal)
       .then((count) => setUfpaCount(count))
       .catch(() => {
-        // Erro silencioso: mantém "—" e não interrompe a renderização da tela.
+        // Erro silencioso: o card fica sem número e o resto da tela segue.
+        if (!controller.signal.aborted) setUfpaCount(undefined);
       });
 
     return () => controller.abort();

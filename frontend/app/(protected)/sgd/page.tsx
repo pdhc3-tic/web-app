@@ -59,7 +59,7 @@ const SUBMODULES: Submodule[] = [
   },
   {
     key: "remanejamentos",
-    title: "Fila de Remanejamentos",
+    title: "Pedidos de recurso extra",
     description:
       "Pedidos de recurso extra das demandas bloqueadas: parecer do Articulador e decisão da UGP.",
     Icon: Scale,
@@ -92,7 +92,7 @@ export default function SGDPage() {
   // Pendências de quem decide (Articulador, UGP, FGD) — a mesma fila do badge
   // da sidebar. Para os outros perfis o card não mostra contagem.
   const fila = useContagemFila();
-  const pendentes = fila.decide ? (fila.isError ? null : (fila.data?.total ?? null)) : undefined;
+  const pendentes = fila.decide && !fila.isError ? (fila.data?.total ?? null) : undefined;
 
   return (
     <>

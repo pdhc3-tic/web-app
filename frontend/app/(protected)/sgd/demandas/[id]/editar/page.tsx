@@ -35,7 +35,7 @@ export default function MontarDemandaPage() {
   return (
     <>
       <PageHeader>
-        <span className="truncate text-base font-semibold text-text">SGD</span>
+        <span className="truncate text-base font-semibold text-text">Editar demanda</span>
       </PageHeader>
 
       <div className="mx-auto flex max-w-4xl flex-col gap-5" data-testid="montar-demanda-page">

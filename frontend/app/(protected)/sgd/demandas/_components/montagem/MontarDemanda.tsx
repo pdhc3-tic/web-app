@@ -276,10 +276,21 @@ export function MontarDemanda({ demanda }: { demanda: Demanda }) {
           demanda={demanda}
           solicitacao={form === "nova" ? null : form}
           onClose={() => setForm(null)}
-          onSalvo={(salva, nova) => {
+          onSalvo={(salva, nova, bloqueio) => {
             setForm(null);
             esquecerBloqueio(salva.id);
             showToast(nova ? "Solicitação adicionada ao rascunho." : "Solicitação atualizada.", "success");
+            // Salva pelo atalho do bloqueio no limite individual (#467): o pedido
+            // abre já com a solicitação gravada, que é o que o backend exige.
+            if (bloqueio) {
+              setRecursoExtra({
+                solicitacaoId: salva.id,
+                rubrica: { slug: salva.rubrica_slug, nome: salva.rubrica_nome },
+                disponivel: bloqueio.disponivel,
+                solicitado: bloqueio.solicitado,
+                valorFaltante: null,
+              });
+            }
           }}
         />
       )}

@@ -409,7 +409,7 @@ export default function NovoRemanejamentoPage() {
   return (
     <>
       <PageHeader>
-        <span className="truncate text-base font-semibold text-text">SGP</span>
+        <span className="truncate text-base font-semibold text-text">Novo remanejamento</span>
       </PageHeader>
       <NovoRemanejamentoView />
     </>

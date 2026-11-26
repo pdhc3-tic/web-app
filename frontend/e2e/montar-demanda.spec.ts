@@ -283,6 +283,48 @@ test.describe("SGD — montar e submeter a demanda (ADT)", () => {
     await expect(page.getByTestId(`recurso-extra-atalho-${fx.recusada.veiculoId}`)).toBeVisible();
   });
 
+  test("no formulário, o aviso do limite individual traz o atalho: salva a solicitação e abre o pedido (#467)", async ({
+    page,
+  }) => {
+    await abrirMontagem(page, fx.recusada.id);
+    // A consulta de saldo com o valor da solicitação (R$ 1.200) é a que habilita o atalho.
+    const saldo = page.waitForResponse((r) => {
+      const url = new URL(r.url());
+      return url.pathname === "/api/v1/sgd/saldo/" && Number(url.searchParams.get("valor")) === 1200;
+    });
+    await page.getByTestId(`solicitacao-editar-${fx.recusada.veiculoId}`).click();
+    const consulta = (await (await saldo).json()) as {
+      individual: { saldo: string; acao_sugerida: string | null };
+    };
+    expect(consulta.individual.acao_sugerida).toBe("solicitar_recurso_extra");
+    await expect(page.getByTestId("saldo-individual")).toContainText("Solicitar recurso extra");
+
+    const salvar = page.waitForResponse(
+      (r) => r.request().method() === "PATCH" && r.url().includes(`/solicitacoes/${fx.recusada.veiculoId}/`),
+    );
+    await page.getByTestId("saldo-recurso-extra").click();
+    expect((await salvar).status()).toBe(200);
+    await expect(page.getByTestId("solicitacao-form")).toHaveCount(0);
+
+    const brl = (v: string) => Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+    await expect
+      .poll(async () => ((await page.getByTestId("recurso-extra-bloqueio").textContent()) ?? "").replace(/\s/g, " "))
+      .toBe(
+        `Limite individual insuficiente: ${brl(consulta.individual.saldo)} disponível, ${brl("1200")} solicitado.`.replace(
+          /\s/g,
+          " ",
+        ),
+      );
+    const drawer = page.getByTestId("recurso-extra-drawer");
+    await expect(drawer).toContainText("Locação de Veículo");
+    await drawer.getByLabel("Justificativa").fill("A van é a única opção para o grupo da comunidade.");
+    await page.getByTestId("recurso-extra-revisar").click();
+    const pedido = page.waitForResponse((r) => r.url().includes(`/demandas/${fx.recusada.id}/solicitar-recurso-extra/`));
+    await page.getByTestId("recurso-extra-enviar").click();
+    expect((await pedido).status()).toBe(201);
+    await expect(page.getByTestId("recurso-extra-enviado")).toBeVisible();
+  });
+
   test("submissão barrada pela verba do território orienta acionar o Articulador Estadual", async ({ page }) => {
     await abrirMontagem(page, fx.territorial.id);
     expect((await submeter(page)).status()).toBe(400);

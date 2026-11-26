@@ -132,7 +132,10 @@ function Conteudo({ dados }: { dados: SgdDashboard }) {
             vazio={{
               icon: <AlertTriangle className="h-6 w-6" />,
               titulo: "Nenhuma rubrica em alerta",
-              descricao: "As rubricas do seu escopo estão abaixo da faixa amarela.",
+              // Neutro: o painel não diz se há orçamento lançado no escopo, e "abaixo
+              // da faixa amarela" afirmava saldo onde pode não haver orçamento
+              // nenhum (#467; pendencias-backend-sprint-12h.md, item 3).
+              descricao: "Nenhuma rubrica do seu escopo está na faixa amarela ou vermelha.",
             }}
           >
             {dados.alertas_saldo.length > 0 && (

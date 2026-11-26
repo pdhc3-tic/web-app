@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Scale } from "lucide-react";
 import Spinner from "@/app/components/icons/Spinner";
+import { PageHeader } from "@/app/components/layout/PageHeader";
 import { TabErroSection } from "@/app/components/sgp/CrudTab/CrudTab";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
 import { Button } from "@/app/components/ui/Button/Button";
@@ -192,8 +193,13 @@ function HistoricoRemanejamentos() {
 
 export default function HistoricoRemanejamentosPage() {
   return (
-    <Suspense fallback={<Carregando />}>
-      <HistoricoRemanejamentos />
-    </Suspense>
+    <>
+      <PageHeader>
+        <span className="truncate text-base font-semibold text-text">Histórico de remanejamentos</span>
+      </PageHeader>
+      <Suspense fallback={<Carregando />}>
+        <HistoricoRemanejamentos />
+      </Suspense>
+    </>
   );
 }

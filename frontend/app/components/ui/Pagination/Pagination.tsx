@@ -25,7 +25,10 @@ export type PaginationProps = {
 const navBtn =
   "inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-text-muted transition-colors enabled:hover:bg-surface-muted enabled:hover:text-text disabled:opacity-40 disabled:cursor-not-allowed";
 
-/** Paginação genérica para listagens (LimitOffset). */
+/**
+ * Paginação genérica para listagens (LimitOffset). Em tela estreita, o seletor
+ * de tamanho e os botões quebram linha em vez de passar da largura (#467).
+ */
 export function Pagination({
   count,
   offset,
@@ -53,10 +56,11 @@ export function Pagination({
         {count === 1 ? itemNoun.one : itemNoun.other}
       </p>
 
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2" data-testid="paginacao-controles">
         <label className="flex items-center gap-2 text-sm text-text-muted">
           <span className="hidden sm:inline">Por página</span>
           <select
+            aria-label="Itens por página"
             value={limit}
             onChange={(e) => onLimitChange(Number(e.target.value))}
             className="h-8 rounded-md border border-border bg-surface px-2 text-sm text-text outline-none transition-colors hover:border-text-muted focus:border-primary"
