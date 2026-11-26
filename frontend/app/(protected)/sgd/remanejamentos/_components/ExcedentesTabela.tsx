@@ -6,12 +6,13 @@ import { Badge } from "@/app/components/ui/Badge/Badge";
 import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { formatDate } from "@/app/lib/datetime";
 import { formatCurrencyBRL } from "@/app/lib/format";
-import type { PoolDoRemanejamento, TransferenciaRemanejamento } from "@/app/lib/remanejamentos";
+import {
+  nomeDoPoolDoRemanejamento as nomeDoPool,
+  type TransferenciaRemanejamento,
+} from "@/app/lib/remanejamentos";
 
 const TH = "px-4 py-2.5 text-left text-2xs font-medium uppercase tracking-[0.06em] text-text-muted";
 const TD = "px-4 py-3 align-middle";
-
-const nomeDoPool = (a: PoolDoRemanejamento) => a.territorio ?? a.estado ?? "Nacional";
 
 /** Os excedentes autorizados nas demandas (#363): remanejamentos pontuais, sem pedido de recurso extra. */
 export function ExcedentesTabela({

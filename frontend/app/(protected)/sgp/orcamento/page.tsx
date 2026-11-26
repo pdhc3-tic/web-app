@@ -16,6 +16,7 @@ import {
   canDistribuirOrcamento,
   canGerirLimites,
   canRemanejarOrcamento,
+  canVerHistoricoRemanejamentos,
   canVerMeuSaldo,
   useOrcamentoScope,
 } from "@/app/lib/auth/roles";
@@ -55,6 +56,7 @@ function PainelOrcamentoConteudo() {
   const podeDistribuir = canDistribuirOrcamento(session?.user);
   const podeGerirLimites = canGerirLimites(session?.user);
   const podeRemanejar = canRemanejarOrcamento(session?.user);
+  const podeVerRemanejamentos = canVerHistoricoRemanejamentos(session?.user);
   const temLimite = canVerMeuSaldo(session?.user);
   const router = useRouter();
   const pathname = usePathname();
@@ -307,6 +309,18 @@ function PainelOrcamentoConteudo() {
               data-testid="orcamento-ir-remanejamento"
             >
               Remanejar
+            </Button>
+          )}
+          {/* Histórico de remanejamentos (#466): UGP, Super Admin e a FGD, em leitura. */}
+          {podeVerRemanejamentos && (
+            <Button
+              as="a"
+              size="sm"
+              variant="secondary"
+              href="/sgp/orcamento/remanejamentos"
+              data-testid="orcamento-ir-historico-remanejamentos"
+            >
+              Histórico de remanejamentos
             </Button>
           )}
           {podeDistribuir && (

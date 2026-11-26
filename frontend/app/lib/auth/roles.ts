@@ -239,6 +239,16 @@ export function canRemanejarOrcamento(
   return isSuperAdmin(user) || hasRole(user, UGP_SLUG);
 }
 
+/**
+ * Histórico de remanejamentos (#466). Espelha o `IsUGP | IsSuperAdmin | IsFGD`
+ * de `RemanejamentoViewSet.transferencias`: a FGD acompanha em leitura.
+ */
+export function canVerHistoricoRemanejamentos(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return canRemanejarOrcamento(user) || hasRole(user, FGD_SLUG);
+}
+
 export type SuperAdminState = {
   /** true enquanto a sessão ainda está carregando. */
   loading: boolean;
