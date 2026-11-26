@@ -85,6 +85,10 @@ class R2Storage:
     def get_public_url(self, key):
         return f"{self.public_url}/{quote(key)}"
 
+    def sign_url(self, url):
+        # ponytail: bucket R2 público, a URL gravada já serve para leitura.
+        return url
+
     def get_key_from_url(self, url):
         if not url or not self.public_url:
             return ""
@@ -119,7 +123,27 @@ class LocalStorage:
         return f"{settings.LOCAL_STORAGE_UPLOAD_URL}?{query}"
 
     def generate_presigned_get(self, key, expires_in=300):
-        return self.get_public_url(key)
+        return self._signed_get_url(key, int(time.time()) + expires_in)
+
+    def sign_url(self, url):
+        """Troca a URL gravada (/media/<key>) por uma URL de leitura assinada.
+
+        O nginx não serve /media/ em produção: todo arquivo sai pela view de
+        download, que confere assinatura e validade. URLs de fora passam iguais.
+        """
+        prefix = self.media_url.rstrip("/") + "/"
+        if not url or not url.startswith(prefix):
+            return url
+        # ponytail: validade arredondada para a hora cheia (vale de 1 h a 2 h). A URL não muda
+        # dentro da mesma hora, e o navegador consegue cachear a foto.
+        expires = (int(time.time()) // 3600 + 2) * 3600
+        return self._signed_get_url(unquote(url[len(prefix):]), expires)
+
+    def _signed_get_url(self, key, expires):
+        query = urlencode(
+            {"key": key, "expires": expires, "signature": self._sign_get(key, expires)}
+        )
+        return f"{settings.LOCAL_STORAGE_DOWNLOAD_URL}?{query}"
 
     def head_object(self, key):
         path = self._path_for_key(key)
@@ -160,6 +184,18 @@ class LocalStorage:
             return False
         expected = cls._sign(key, content_type, int(size), int(expires))
         return hmac.compare_digest(expected, signature)
+
+    @staticmethod
+    def _sign_get(key, expires):
+        # Prefixo "get:" separa do payload do PUT: uma assinatura de upload não vale para leitura.
+        payload = f"get:{key}:{int(expires)}".encode()
+        return hmac.new(settings.SECRET_KEY.encode(), payload, hashlib.sha256).hexdigest()
+
+    @classmethod
+    def verify_get_signature(cls, key, expires, signature):
+        if int(expires) < int(time.time()):
+            return False
+        return hmac.compare_digest(cls._sign_get(key, int(expires)), signature)
 
     def save_from_bytes(self, key, content, content_type=None):
         path = self._path_for_key(key)

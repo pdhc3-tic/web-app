@@ -13,7 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from datetime import timedelta
 from pathlib import Path
 import os
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 from dotenv import load_dotenv
 from celery.schedules import crontab
 import sentry_sdk
@@ -47,9 +47,20 @@ DEBUG = os.getenv("DEBUG", "False") == "True"
 # comandos que não tocam em campos criptografados.
 FIELD_ENCRYPTION_KEY = os.getenv("FIELD_ENCRYPTION_KEY", "")
 
-# Quantos proxies reversos confiáveis ficam entre o cliente e o Django (hoje só
-# o nginx). Define qual posição do X-Forwarded-For é o IP do cliente.
+# Quantos proxies reversos confiáveis ficam entre o cliente e o Django. Define
+# qual posição do X-Forwarded-For é o IP do cliente. Produção (Caddy + nginx): 2.
 TRUSTED_PROXY_COUNT = int(os.getenv("TRUSTED_PROXY_COUNT", "1"))
+
+# O TLS termina no Caddy; o nginx repassa o X-Forwarded-Proto que o Caddy
+# escreveu (o cliente não alcança o nginx direto).
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+]
 
 # POWER BI
 POWER_BI_SERVICE_TOKEN = os.getenv("POWER_BI_SERVICE_TOKEN", "")
@@ -206,6 +217,10 @@ LOCAL_STORAGE_UPLOAD_URL = os.getenv(
     "LOCAL_STORAGE_UPLOAD_URL",
     "/api/v1/storage/local-upload/",
 )
+LOCAL_STORAGE_DOWNLOAD_URL = os.getenv(
+    "LOCAL_STORAGE_DOWNLOAD_URL",
+    "/api/v1/storage/local-download/",
+)
 
 
 def _origin_from_url(value):
@@ -328,7 +343,10 @@ CORS_EXPOSE_HEADERS = ["Content-Disposition", "Deprecation", "Link"]
 UFPA_EXPORT_ASYNC_THRESHOLD = int(os.getenv("UFPA_EXPORT_ASYNC_THRESHOLD", "1000"))
 
 # CONFIGURAÇÕES DO CELERY
-CELERY_BROKER_URL = f"redis://{os.getenv('REDIS_HOST', 'redis')}:{os.getenv('REDIS_PORT', '6379')}/0"
+# REDIS_PASSWORD é opcional (vazio = Redis sem senha, como no dev).
+_REDIS_AUTH = f":{quote(os.getenv('REDIS_PASSWORD'), safe='')}@" if os.getenv("REDIS_PASSWORD") else ""
+REDIS_URL = f"redis://{_REDIS_AUTH}{os.getenv('REDIS_HOST', 'redis')}:{os.getenv('REDIS_PORT', '6379')}"
+CELERY_BROKER_URL = f"{REDIS_URL}/0"
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 CELERY_TIMEZONE = "America/Fortaleza"
 
@@ -410,7 +428,7 @@ if SENTRY_DSN:
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": f"redis://{os.getenv('REDIS_HOST', 'redis')}:{os.getenv('REDIS_PORT', '6379')}/1",
+        "LOCATION": f"{REDIS_URL}/1",
     }
 }
 

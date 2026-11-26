@@ -2,9 +2,10 @@
 
 Superusuário e papéis com BYPASSRLS ignoram todas as políticas, e o dono da
 tabela também, a menos que ela tenha FORCE ROW LEVEL SECURITY. As tabelas com
-RLS não usam FORCE: as migrations rodam como `postgres` e o runtime como
-`app_user` (db/init/01_app_user.sql), que não é dono delas. Este comando falha
-se essa premissa não valer para a conexão configurada.
+RLS não usam FORCE: o runtime não é dono delas. No dev, as migrations rodam
+como `postgres` e o runtime como `app_user` (db/init/01_app_user.sql); em
+produção, como `pdhc_owner` e `pdhc_app`. Este comando falha se essa premissa
+não valer para a conexão configurada.
 
 Uso no ambiente de runtime (sem sobrescrever DB_USER):
     python manage.py verificar_papel_rls

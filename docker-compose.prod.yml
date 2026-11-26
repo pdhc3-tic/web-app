@@ -1,18 +1,49 @@
+# Prod-like LOCAL: as imagens de produção (Dockerfile.prod) na máquina do dev,
+# para testar nginx, URL assinada de mídia, front standalone e healthchecks antes do push.
+# Produção NÃO usa este arquivo: o compose real fica no archelos-devops (deploy/pdhc/compose.yml).
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml run --rm \
+#     -e DB_USER=postgres -e DB_PASSWORD=<POSTGRES_PASSWORD> backend python manage.py migrate
+#   open http://localhost:8080
+#
+# Lê backend/.env e frontend/.env.local (os mesmos do dev). No frontend/.env.local,
+# AUTH_URL=http://localhost:8080 (sem isso o login redireciona para 0.0.0.0:3000).
+
 x-logging: &default-logging
   driver: json-file
   options:
     max-size: "10m"
     max-file: "5"
 
+x-backend: &backend
+  image: pdhc-backend:local
+  restart: unless-stopped
+  env_file:
+    - ./backend/.env
+  environment:
+    DEBUG: "False"
+    DB_HOST: db
+    DB_PORT: "5432"
+    REDIS_HOST: redis
+  volumes:
+    - media:/app/media
+    - logs:/app/logs
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  logging: *default-logging
+
 services:
   db:
-    image: postgres:16
-    container_name: db
-    restart: always
+    image: postgres:18.7@sha256:c699303802144847d238196173655dbbecf7a96aeca1565f2b02eb671a1f0b6b
+    restart: unless-stopped
     env_file:
       - ./backend/.env
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres18_data:/var/lib/postgresql
       - ./backend/db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
@@ -22,9 +53,10 @@ services:
     logging: *default-logging
 
   redis:
-    image: redis:7-alpine
-    container_name: redis
-    restart: always
+    image: redis:7.4.12-alpine@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
+    restart: unless-stopped
+    # Broker não pode perder tarefa: noeviction + AOF, como em produção.
+    command: redis-server --appendonly yes --appendfsync everysec --maxmemory 512mb --maxmemory-policy noeviction
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -33,97 +65,64 @@ services:
     logging: *default-logging
 
   backend:
+    <<: *backend
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
-    container_name: backend
-    restart: always
-    environment:
-      - DEBUG=False
-    env_file:
-      - ./backend/.env
-    expose:
-      - "8000"
     volumes:
-      - static_volume:/app/staticfiles
-      - media_volume:/app/media
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    logging: *default-logging
+      - media:/app/media
+      - logs:/app/logs
+      - static:/app/staticfiles
+    # Host "backend" porque ALLOWED_HOSTS de produção não tem localhost.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen(u.Request('http://127.0.0.1:8000/api/v1/health/', headers={'Host': 'backend'}), timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      retries: 5
+      start_period: 20s
 
   celery_worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
-    restart: always
-    environment:
-      - DEBUG=False
-    env_file:
-      - ./backend/.env
-    volumes:
-      - media_volume:/app/media
+    <<: *backend
     command: celery -A setup worker --loglevel=info -Q celery,normal
-    depends_on:
-      - backend
-      - redis
-    logging: *default-logging
 
   celery_beat:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
-    restart: always
-    environment:
-      - DEBUG=False
-    env_file:
-      - ./backend/.env
-    volumes:
-      - media_volume:/app/media
+    <<: *backend
     command: celery -A setup beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
-    depends_on:
-      - backend
-      - redis
-    logging: *default-logging
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-    container_name: frontend
-    restart: always
-    expose:
-      - "3000"
+    restart: unless-stopped
     env_file:
       - ./frontend/.env.local
-    environment:
-      # Mesmo limite de cabeçalho do nginx e do gunicorn.
-      NODE_OPTIONS: --max-http-header-size=32768
-    depends_on:
-      - backend
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 10s
+      timeout: 6s
+      retries: 5
+      start_period: 20s
     logging: *default-logging
 
   nginx:
     build:
       context: ./nginx
       dockerfile: Dockerfile.prod
-    container_name: nginx
-    restart: always
+    restart: unless-stopped
     ports:
-      - "80:80"
+      - "127.0.0.1:8080:80"
     volumes:
-      - static_volume:/app/staticfiles:ro
-      - media_volume:/app/media:ro
+      - static:/app/staticfiles:ro
+      - media:/app/media:ro
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
     logging: *default-logging
 
 volumes:
-  postgres_data:
-  static_volume:
-  media_volume:
+  postgres18_data:
+  static:
+  media:
+  logs:

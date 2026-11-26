@@ -122,7 +122,7 @@ class UFPAPhotoMixin:
             valores_anteriores={"foto_url": old_url, "key": old_key},
             valores_novos={"foto_url": new_url, "key": key},
         )
-        return Response({"foto_url": new_url}, status=status.HTTP_200_OK)
+        return Response({"foto_url": storage.sign_url(new_url)}, status=status.HTTP_200_OK)
 
     @extend_schema(responses={204: OpenApiResponse(description="Foto removida.")})
     @action(detail=True, methods=["delete"], url_path="foto")

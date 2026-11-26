@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from apps.core.storage.serializers import SignedMediaUrlsMixin
 from apps.sgd.models.arlo_import import ArloImport
 
 
@@ -16,7 +17,8 @@ class ArloDivergenciaSerializer(serializers.Serializer):
     risco_glosa = serializers.BooleanField(help_text="Pago acima do autorizado, registrado no risco de glosa.")
 
 
-class ArloImportSerializer(serializers.ModelSerializer):
+class ArloImportSerializer(SignedMediaUrlsMixin, serializers.ModelSerializer):
+    signed_media_url_fields = ("arquivo_url",)
     tipo_display = serializers.CharField(source="get_tipo_display", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     operado_por_nome = serializers.CharField(source="operado_por.nome", read_only=True, default=None)

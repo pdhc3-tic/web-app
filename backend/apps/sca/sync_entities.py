@@ -18,6 +18,7 @@ from django.utils import timezone
 
 from apps.core.db_context import acesso_de_sistema_ufpa
 from apps.core.models.municipality import Municipality
+from apps.core.storage import get_storage
 from apps.sgp.models import Activity, MembroFamilia, UFPA
 from apps.sgp.services.access import pode_escrever_ufpa_no_territorio
 from apps.sgp.services.activity_status import (
@@ -455,7 +456,7 @@ class UFPASyncEntity(SyncEntity):
             "numero_dap": instance.numero_dap,
             "nis": instance.nis,
             "seguridade_social": list(instance.seguridade_social or []),
-            "foto_url": instance.foto_url,
+            "foto_url": get_storage().sign_url(instance.foto_url),
             "ativo": instance.ativo,
             "titular": {
                 "nome_completo": titular.nome_completo,

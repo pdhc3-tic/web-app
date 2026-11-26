@@ -16,7 +16,8 @@ from .notifications import (
 )
 from .organizations import OrganizationViewSet
 from .power_bi_token import PowerBITokenRegenerateView, PowerBITokenView
-from .storage import LocalStorageUploadView
+from .health import health
+from .storage import LocalStorageUploadView, local_storage_download
 from .system_config import (
     GoogleCalendarConfigView,
     GoogleCalendarStatusView,
@@ -44,6 +45,8 @@ __all__ = [
     "PowerBITokenRegenerateView",
     "PowerBITokenView",
     "LocalStorageUploadView",
+    "local_storage_download",
+    "health",
     "GoogleCalendarConfigView",
     "GoogleCalendarStatusView",
     "SystemConfigDetailView",

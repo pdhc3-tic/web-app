@@ -1,3 +1,5 @@
+import hashlib
+
 from rest_framework.throttling import SimpleRateThrottle, UserRateThrottle
 
 from apps.core.utils import get_client_ip
@@ -52,7 +54,20 @@ class LoginRateThrottle(CustomWindowRateThrottle):
 
 
 class RefreshRateThrottle(CustomWindowRateThrottle):
+    """Limite por refresh token (sessão), não por IP.
+
+    A renovação sai do servidor do Next, sem o IP do usuário: por IP, todas as
+    sessões dividiriam o mesmo limite. Um refresh token é assinado e não se
+    adivinha, então a chave por token não abre força bruta.
+    """
+
     scope = "auth_refresh"
+
+    def get_cache_key(self, request, view):
+        token = str(request.data.get("refresh_token") or "")
+        if not token:
+            return super().get_cache_key(request, view)
+        return f"throttle_{self.scope}_{hashlib.sha256(token.encode()).hexdigest()}"
 
 
 class PasswordResetByIPThrottle(CustomWindowRateThrottle):
