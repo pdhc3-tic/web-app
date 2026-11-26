@@ -5,7 +5,7 @@ from django.db.models import Prefetch
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import generics, mixins, status, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.pagination import LimitOffsetPagination
@@ -27,6 +27,7 @@ from apps.sgp.services.exportacao import CONTENT_TYPES, Arquivo, gerar_arquivo
 from apps.sgp.views.exportacao import arquivo_response
 from apps.sgp.tasks import calculate_adherence_index
 from apps.sgp.ted import execucao as execucao_service
+from apps.sgp.ted import projecoes as projecoes_service
 from apps.sgp.ted import services as ted_service
 from apps.sgp.ted.serializers import (
     ERRO_DO_RELATORIO,
@@ -45,7 +46,14 @@ from apps.sgp.ted.serializers import (
     CustoPorEntregaLinhaSerializer,
     CustoPorEntregaQuerySerializer,
     CustoPorEntregaRespostaSerializer,
+    CurvaSQuerySerializer,
+    CurvaSRespostaSerializer,
+    ProjecoesQuerySerializer,
+    ProjecoesRespostaSerializer,
     RastreabilidadeQuerySerializer,
+    RankingTerritorioExportacaoQuerySerializer,
+    RankingTerritorioQuerySerializer,
+    RankingTerritorioRespostaSerializer,
     RastreabilidadeSerializer,
     VersaoDoRelatorioSerializer,
     TEDCreateSerializer,
@@ -179,6 +187,15 @@ class TEDDocumentoUploadURLView(APIView):
 # Monitoramento: aderência, custo por entrega, rastreabilidade e comparativo
 # ---------------------------------------------------------------------------
 
+SEM_ACESSO = OpenApiResponse(description="Perfil sem acesso a este relatório do Monitoramento do TED.")
+RESPOSTAS_DA_EXPORTACAO = {
+    (200, "text/csv"): OpenApiTypes.BINARY,
+    (200, CONTENT_TYPES["xlsx"]): OpenApiTypes.BINARY,
+    400: ERRO_DO_RELATORIO,
+    403: SEM_ACESSO,
+}
+
+
 def _recorte(dados) -> RecorteAtividades:
     return RecorteAtividades(
         territorio_id=dados.get("territorio_id"),
@@ -259,7 +276,7 @@ class AderenciaView(APIView):
 
     @extend_schema(
         parameters=[AderenciaQuerySerializer],
-        responses={200: AderenciaRespostaSerializer, 400: ERRO_DO_RELATORIO},
+        responses={200: AderenciaRespostaSerializer, 400: ERRO_DO_RELATORIO, 403: SEM_ACESSO},
     )
     def get(self, request):
         dados = _query(AderenciaQuerySerializer, request)
@@ -275,7 +292,7 @@ class AderenciaExportacaoView(APIView):
 
     @extend_schema(
         parameters=[AderenciaExportacaoQuerySerializer],
-        responses={(200, "text/csv"): OpenApiTypes.BINARY, 400: ERRO_DO_RELATORIO},
+        responses=RESPOSTAS_DA_EXPORTACAO,
     )
     def get(self, request):
         dados = _query(AderenciaExportacaoQuerySerializer, request)
@@ -333,7 +350,7 @@ class CustoPorEntregaView(APIView):
 
     @extend_schema(
         parameters=[CustoPorEntregaQuerySerializer],
-        responses={200: CustoPorEntregaRespostaSerializer, 400: ERRO_DO_RELATORIO},
+        responses={200: CustoPorEntregaRespostaSerializer, 400: ERRO_DO_RELATORIO, 403: SEM_ACESSO},
     )
     def get(self, request):
         dados = _query(CustoPorEntregaQuerySerializer, request)
@@ -351,7 +368,7 @@ class CustoPorEntregaExportacaoView(APIView):
 
     @extend_schema(
         parameters=[CustoPorEntregaExportacaoQuerySerializer],
-        responses={(200, "text/csv"): OpenApiTypes.BINARY, 400: ERRO_DO_RELATORIO},
+        responses=RESPOSTAS_DA_EXPORTACAO,
     )
     def get(self, request):
         dados = _query(CustoPorEntregaExportacaoQuerySerializer, request)
@@ -367,7 +384,7 @@ class ComposicaoPorRubricaView(APIView):
 
     @extend_schema(
         parameters=[ComposicaoQuerySerializer],
-        responses={200: ComposicaoRespostaSerializer, 400: ERRO_DO_RELATORIO},
+        responses={200: ComposicaoRespostaSerializer, 400: ERRO_DO_RELATORIO, 403: SEM_ACESSO},
     )
     def get(self, request):
         dados = _query(ComposicaoQuerySerializer, request)
@@ -386,7 +403,9 @@ class RastreabilidadeView(generics.ListAPIView):
     permission_classes = [IsAuthenticatedActiveAccess, AcessoAoTED]
     serializer_class = RastreabilidadeSerializer
 
-    @extend_schema(parameters=[RastreabilidadeQuerySerializer], responses={400: ERRO_DO_RELATORIO})
+    @extend_schema(
+        parameters=[RastreabilidadeQuerySerializer], responses={400: ERRO_DO_RELATORIO, 403: SEM_ACESSO},
+    )
     def get(self, request, *args, **kwargs):
         with visao_total():
             return super().get(request, *args, **kwargs)
@@ -406,7 +425,7 @@ class ComparativoDeVersoesView(APIView):
 
     @extend_schema(
         parameters=[ComparativoQuerySerializer],
-        responses={200: ComparativoRespostaSerializer, 400: ERRO_DO_RELATORIO},
+        responses={200: ComparativoRespostaSerializer, 400: ERRO_DO_RELATORIO, 403: SEM_ACESSO},
     )
     def get(self, request, ted_pk):
         dados = _query(ComparativoQuerySerializer, request)
@@ -417,3 +436,104 @@ class ComparativoDeVersoesView(APIView):
         return Response(ComparativoRespostaSerializer({
             "de": de, "para": para, "diferencas": execucao_service.comparar_versoes(de, para),
         }).data)
+
+
+# ---------------------------------------------------------------------------
+# Curva S, projeções e ranking por território
+# ---------------------------------------------------------------------------
+
+def _exigir_leitura_nacional(request, view) -> None:
+    """Os agregados por rubrica somam os pools de todos os estados. O Articulador
+    não vê saldo de outros estados, então eles ficam com quem lê o orçamento
+    inteiro."""
+    if execucao_service.estados_do_escopo(request.user) is not None:
+        _log_denial(request.user, view, reason="agregado nacional por rubrica")
+        raise PermissionDenied("Os agregados por rubrica são do orçamento nacional, fora do seu escopo.")
+
+
+class CurvaSView(APIView):
+    """Previsto contra realizado acumulados, mês a mês, em quantidade e R$, por
+    Meta, Submeta, rubrica ou para o projeto inteiro. Na árvore, o Articulador vê o
+    realizado dos seus estados; a curva da rubrica é de quem lê o orçamento inteiro."""
+
+    permission_classes = [IsAuthenticatedActiveAccess, AcessoAoTED]
+
+    @extend_schema(
+        parameters=[CurvaSQuerySerializer],
+        responses={200: CurvaSRespostaSerializer, 400: ERRO_DO_RELATORIO, 403: SEM_ACESSO},
+    )
+    def get(self, request):
+        dados = _query(CurvaSQuerySerializer, request)
+        if dados["escopo"] == projecoes_service.EscopoDaCurva.RUBRICA:
+            _exigir_leitura_nacional(request, self)
+        versao = execucao_service.versao_do_relatorio(versao_id=dados.get("versao"), data=dados.get("data"))
+        curva = projecoes_service.curva_s(
+            request.user, dados["escopo"], versao, referencia_id=dados.get("referencia_id"),
+        )
+        return Response(CurvaSRespostaSerializer(curva).data)
+
+
+class ProjecoesView(APIView):
+    """Projeção de execução no fim da vigência e de esgotamento de cada rubrica, no
+    ritmo dos últimos 90 dias. Agregado de todos os pools: Super Admin, UGP e FGD."""
+
+    permission_classes = [IsAuthenticatedActiveAccess, AcessoAoTED]
+
+    @extend_schema(
+        parameters=[ProjecoesQuerySerializer],
+        responses={200: ProjecoesRespostaSerializer, 400: ERRO_DO_RELATORIO, 403: SEM_ACESSO},
+    )
+    def get(self, request):
+        dados = _query(ProjecoesQuerySerializer, request)
+        _exigir_leitura_nacional(request, self)
+        versao = execucao_service.versao_do_relatorio(versao_id=dados.get("versao"), data=dados.get("data"))
+        return Response(ProjecoesRespostaSerializer(projecoes_service.projecoes_por_rubrica(versao)).data)
+
+
+COLUNAS_DO_RANKING = (
+    ("posicao_fisico", "Posição física"), ("posicao_financeiro", "Posição financeira"),
+    *COLUNAS_DA_ADERENCIA,
+)
+
+
+def _ranking(request, dados):
+    versao = execucao_service.versao_do_relatorio(versao_id=dados.get("versao"), data=dados.get("data"))
+    execucao = execucao_service.execucao(request.user, versao, _recorte(dados), por_territorio=True)
+    linhas = [
+        {**vars(item.aderencia), "posicao_fisico": item.posicao_fisico, "posicao_financeiro": item.posicao_financeiro}
+        for item in execucao_service.ranking_por_territorio(request.user, execucao, dados["ordenar"])
+    ]
+    return execucao, linhas
+
+
+class RankingTerritorioView(APIView):
+    """Os territórios nas dimensões física e financeira, com o índice de aderência.
+    Território sem execução entra zerado. Sem paginação: são os 16 de uma vez."""
+
+    permission_classes = [IsAuthenticatedActiveAccess, AcessoAoTED]
+
+    @extend_schema(
+        parameters=[RankingTerritorioQuerySerializer],
+        responses={200: RankingTerritorioRespostaSerializer, 400: ERRO_DO_RELATORIO, 403: SEM_ACESSO},
+    )
+    def get(self, request):
+        dados = _query(RankingTerritorioQuerySerializer, request)
+        execucao, linhas = _ranking(request, dados)
+        return Response(RankingTerritorioRespostaSerializer({
+            **_cabecalho(execucao, por_territorio=True), "ordenar": dados["ordenar"], "results": linhas,
+        }).data)
+
+
+class RankingTerritorioExportacaoView(APIView):
+    permission_classes = [IsAuthenticatedActiveAccess, AcessoAoTED]
+
+    @extend_schema(
+        parameters=[RankingTerritorioExportacaoQuerySerializer],
+        responses=RESPOSTAS_DA_EXPORTACAO,
+    )
+    def get(self, request):
+        dados = _query(RankingTerritorioExportacaoQuerySerializer, request)
+        _, linhas = _ranking(request, dados)
+        return _arquivo(
+            "ranking_territorios", dados["formato"], COLUNAS_DO_RANKING, linhas, "Ranking por território",
+        )

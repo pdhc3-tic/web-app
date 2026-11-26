@@ -524,6 +524,7 @@ class BudgetAlert(models.Model):
         SEMAFORO = "semaforo", "Semáforo"
         SUBEXECUCAO = "subexecucao", "Subexecução"
         REMANEJAMENTO_EXCESSIVO = "remanejamento_excessivo", "Remanejamento excessivo"
+        RISCO_DEVOLUCAO = "risco_devolucao", "Risco de devolução"
 
     class Escopo(models.TextChoices):
         LIMITE = "limite", "Limite"

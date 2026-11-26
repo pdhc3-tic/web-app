@@ -242,7 +242,7 @@ podem mudar por configuração.
 - **Pool em estado sem Articulador:** o aviso vai à UGP, tanto o de semáforo quanto o de remanejamento efetivado, para não ficar sem destinatário.
 - **Rubrica inativa em "meu saldo" e no espelho do SCA:** aparece só para quem tem limite vigente e já movimentou nela, porque o SGP §6.2 mantém o saldo executado e o histórico. `rubrica_ativa: false` avisa que o `disponivel` não pode ser usado em nova demanda.
 - **Extrato de "meu saldo":** por padrão, o período vigente, cuja soma é o `disponivel`; `?historico=true` traz os encerrados. Limite só herdado do padrão ainda não tem lançamento, então o extrato vem vazio com o `disponivel` igual ao padrão.
-- **Periodicidade "vigência" em "meu saldo":** `periodo_fim` e `dias_restantes` usam o fim da vigência, e vêm nulos sem Metas.
+- **Periodicidade "vigência" em "meu saldo":** `periodo_fim` e `dias_restantes` usam o fim da vigência do TED; sem TED, a maior `data_fim` das Metas (§15). Vêm nulos sem TED nem Metas.
 - **Alertas para a FGD:** a matriz de perfis do Core dá à FGD leitura de pools e nada em limites de gasto, então `/orcamento/alertas/` mostra os pools e só o limite dela. O RLS segue listando a FGD como global porque ela conclui demandas.
 - **Simulador obrigatório:** o SGP RF39 pede a simulação antes de confirmar. O backend oferece a rota e não a exige; a confirmação em duas etapas fica na tela.
 - **Remanejamento excessivo:** o evento não está na tabela do Core. Vai à UGP por e-mail e in-app, como a subexecução.
@@ -404,7 +404,7 @@ aprovado no TED para a rubrica. O que os documentos deixam em aberto foi resolvi
 - **Responsável pela versão:** `registrado_por` com `PROTECT`, como no ledger. A versão é imutável, e um `SET_NULL` apagaria quem a registrou.
 - **PDF de cada termo:** a mesma chave não entra em duas versões. Falha do storage na confirmação responde `503`, e não `500`.
 - **Rubrica inativa:** pode ter valor aprovado numa versão. Ela mantém saldo executado e histórico, e o pool nacional dela continua precisando caber no aprovado.
-- **Pontos que esperavam o TED:** o fim da vigência na subexecução e o período `vigencia` dos limites continuam como estão. Entram com o Monitoramento do TED (RF51 e RF52).
+- **Pontos que esperavam o TED:** o fim da vigência na subexecução e em "meu saldo" passou a ser o do TED (§15). O período `vigencia` dos limites continua como está: ele fica gravado nas linhas de limite, e uma prorrogação teria de regravá-las.
 
 ---
 
@@ -441,6 +441,40 @@ Atividades ativas.
 - **Paginação:** as linhas de aderência, custo e composição vêm no envelope paginado da API, com o cabeçalho do relatório ao lado.
 - **PDF:** o §7.7 também pede PDF da execução consolidada. Fica para a parte com o fechamento mensal, que gera os relatórios em PDF.
 - **Semáforo na árvore e no dashboard do Core:** a coluna na árvore do Plano de Trabalho é da #454 e o bloco no dashboard do Core é da #443. Os dois leem o índice daqui.
+
+---
+
+## 15. Monitoramento do TED — curva S, projeções, risco de devolução e ranking por território
+
+O SGP §7.3 define a curva S, as projeções de execução e de esgotamento por rubrica no ritmo dos
+últimos 90 dias, o alerta de risco de devolução e o ritmo necessário. O §7.7 pede o ranking dos
+territórios nas dimensões física e financeira, com o índice de aderência, em web e CSV.
+
+| Questão | Decisão | Fonte |
+|---|---|---|
+| Curva S | Previsto e realizado acumulados, mês a mês na vigência da versão, em quantidade e R$, por Meta, Submeta, rubrica ou projeto. O realizado para no mês corrente | SGP §7.3 |
+| Projeção de execução | Executado + ritmo diário de execução da janela × dias até o fim da vigência, sobre o aprovado da rubrica na versão | SGP §7.3 |
+| Projeção de esgotamento | Hoje + (aprovado − comprometido) ÷ ritmo diário de comprometimento. O comprometido inclui o executado | SGP §7.3 |
+| Alerta de risco de devolução | Saldo remanescente projetado acima do limiar configurado, avaliado a partir da antecedência configurada. Parâmetros próprios, separados dos da subexecução: `budget_return_risk_pct` e `budget_return_risk_alert_months` | SGP §7.3, RF52; Core CORE-RF17 |
+| Ritmo necessário | O que falta para 100% do previsto, dividido pelos meses até o fim da vigência, em unidades e R$. Na rubrica, só R$ | SGP §7.3 |
+| Ranking | Posição de cada território ativo no % físico e no % financeiro, com o índice e a faixa de aderência. Também em CSV e XLSX | SGP §7.7 |
+| Destinatários do alerta | UGP, por e-mail e in-app, como o alerta de subexecução de rubrica | Core §4.2 |
+| Agregados por rubrica | A curva por rubrica e as projeções somam os pools de todos os estados: só Super Admin, UGP e FGD. O Articulador recebe 403 | SGP §6.3; matriz do Core (Monitoramento do TED parcial para o Articulador) |
+
+### Escolhas de implementação sem regra nos documentos
+
+- **Valores padrão do risco de devolução:** os documentos pedem limiar e antecedência configuráveis, mas não dão números. A `sgp/0025` semeia 10 % de saldo remanescente e 12 meses, o dobro da antecedência da subexecução, para o aviso sair antes dela. O Super Admin ajusta em `/system-config/`, que aceita de 1 a 100 e de 1 a 24. Valor ausente ou fora da faixa vale o padrão. Com os parâmetros da subexecução, o alerta nunca sairia antes dela, porque a execução projetada é sempre maior ou igual à de hoje.
+- **Alerta:** `BudgetAlert` com tipo `risco_devolucao` e faixa `devolucao`, no pool nacional da rubrica, como a subexecução. `percentual_atingido` é o saldo remanescente projetado, que é o que se compara ao limiar. Task semanal, às segundas às 3h15. A projeção da rubrica é refeita com o pool nacional travado. A janela do alerta vai da antecedência até o fim da vigência e nunca começa antes do início: antes dele não há ritmo para projetar, e depois do fim o alerta aberto é resolvido, porque não há mais como remanejar. Rubrica sem pool nacional não tem alvo e fica fora do alerta; continua na projeção, que também traz `risco_devolucao` fora da janela do alerta.
+- **Fim da vigência:** o do TED, nas projeções, nos alertas de devolução e de subexecução e no `periodo_fim` de "meu saldo" para limites de periodicidade "vigência". Sem TED cadastrado, valem as Metas, como antes.
+- **Previsto ao longo do tempo:** a DRS não diz como o planejado se distribui no tempo. Na árvore, a quantidade e o valor de cada Ação do snapshot se distribuem por dia entre o `data_inicio` e o `data_fim` dela. A versão não obriga as Ações a caberem na vigência, e um aditivo pode encurtá-la: o último mês da curva leva o planejado inteiro, como o realizado. Na rubrica, o aprovado na versão se distribui pela vigência da versão.
+- **Realizado na árvore:** a mesma apuração e as mesmas solicitações pagas da aderência. A quantidade cai no mês do término da Atividade concluída; na soma de UFPAs ou participantes, cada um conta no mês da primeira Atividade da Ação em que aparece. O valor cai no mês em que a demanda foi concluída (`status_alterado_em`). O que tem data depois do mês corrente, como a Atividade concluída antes do término previsto, entra no mês corrente, e o último ponto com realizado fecha com a aderência.
+- **Quantidade de Meta, Submeta e projeto:** soma as unidades das Ações, como a árvore do Plano de Trabalho consolida (§14).
+- **Realizado por rubrica e ritmo:** saem do ledger do orçamento. O executado e o comprometido somam todos os pools da rubrica, como a subexecução. O ritmo de execução é a soma das execuções na janela. O de comprometimento é reserva + ajuste − liberação, mais o que a execução pagou além do reservado, que não tem lançamento de ajuste (`saldo_anterior − saldo_posterior` da execução).
+- **Janela:** os 90 dias até hoje, ou desde o início da vigência quando ela começou há menos tempo. O ritmo mensal é o diário × 30,4375.
+- **Projeções por versão:** a vigente por padrão; `?versao=` ou `?data=` usam o aprovado e a vigência daquela versão, como os outros relatórios. O alerta usa sempre a vigente.
+- **Indicador de lançamento manual:** a quantidade lançada pela UGP não tem data. Na curva, essas Ações ficam fora da quantidade, no previsto e no realizado, e entram no valor (`acoes_manuais_fora_da_quantidade`).
+- **Articulador na árvore e no ranking:** vê o realizado dos estados dos territórios do perfil dele, como na aderência. O ritmo necessário vem nulo para ele: é do projeto, e o realizado do recorte o faria parecer maior.
+- **Territórios do ranking:** os ativos, ou os que cruzam os estados do Articulador, inclusive os sem execução, que entram zerados. O denominador é o da aderência por território. Empatados dividem a posição. Sem paginação, e `territorio_id` dá 400: o ranking compara todos.
 
 ---
 

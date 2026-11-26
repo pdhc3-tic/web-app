@@ -46,7 +46,8 @@ from apps.sgp.models import (
     TEDVersion,
     UFPADocument,
 )
-from apps.sgp.ted.execucao import FaixaDeCusto
+from apps.sgp.ted.execucao import ORDENACOES_DO_RANKING, FaixaDeCusto
+from apps.sgp.ted.projecoes import EscopoDaCurva
 from apps.sgp.models.activity import (
     AMBITO_CHOICES,
     FORMA_ATUACAO_CHOICES,
@@ -101,6 +102,8 @@ CHOICES_PUBLICADOS = {
     "aderencia_escopo": AdherenceIndex.Escopo.choices,
     "aderencia_faixa": AdherenceIndex.Faixa.choices,
     "custo_faixa": FaixaDeCusto.CHOICES,
+    "curva_escopo": EscopoDaCurva.CHOICES,
+    "ranking_ordenar": ORDENACOES_DO_RANKING,
 }
 
 
