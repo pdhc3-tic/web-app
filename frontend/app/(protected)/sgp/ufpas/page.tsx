@@ -379,6 +379,7 @@ function UfpasView() {
               onOffsetChange={setOffset}
               onLimitChange={handleLimitChange}
               itemNoun={{ one: "UFPA", other: "UFPAs" }}
+              carregando={dataLoading && count === 0}
             />
           </>
         )}

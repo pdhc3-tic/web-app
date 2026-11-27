@@ -7,6 +7,7 @@ import {
   removerAtividadesFixture,
   type AtividadesFixture,
 } from "./helpers/atividadesFixture";
+import { esperarHidratacao } from "./helpers/hidratacao";
 import { pngDeRuido } from "./helpers/imagem";
 import { storageStatePath } from "./helpers/users";
 
@@ -30,14 +31,17 @@ test.afterAll(() => {
 });
 
 /**
- * Abre o formulário de nova atividade já hidratado: o técnico responsável vem
- * preenchido com o usuário depois que a tela carrega os dados. Antes disso, o
+ * Abre o formulário de nova atividade já hidratado e com os dados carregados
+ * (o técnico responsável preenchido com o usuário). Antes da hidratação, o
  * React descarta o que for digitado.
  */
 async function abrirNovaAtividade(page: Page) {
   await page.goto("/sgp/atividades/nova");
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await expect(page.locator("#atividade-tecnico-responsavel")).not.toHaveText(/Selecione/);
+  // Desde a #448 a sessão vem do servidor e o técnico já sai preenchido no HTML:
+  // isso não indica mais que a página hidratou, e o que se digita antes some.
+  await esperarHidratacao(page, "#atividade-data-inicio");
 }
 
 /** Abre um `Select` do design system pelo id e escolhe a opção. */

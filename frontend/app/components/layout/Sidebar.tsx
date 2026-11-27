@@ -137,8 +137,12 @@ function SidebarItem({ item, active, collapsed }: SidebarItemProps) {
     : "ml-auto min-w-[20px] h-[20px] px-1.5 rounded-full text-[10px] font-medium bg-primary text-surface flex items-center justify-center";
 
   return (
+    // Sem prefetch (#448): o menu está em toda tela e buscava cada módulo duas
+    // vezes ao abrir qualquer página — cada busca passa pelo proxy, que decifra
+    // o cookie. A navegação busca a rota no clique.
     <Link
       href={href}
+      prefetch={false}
       title={collapsed ? label : undefined}
       aria-current={active ? "page" : undefined}
       className={`${base} ${layout} ${state}`}
@@ -193,6 +197,7 @@ function UserMenu({ collapsed }: UserMenuProps) {
         <span title={`${nome} · ${perfilPrincipal}`}>{avatar}</span>
         <Link
           href="/preferencias"
+          prefetch={false}
           title="Preferências"
           className="p-2 rounded-lg text-text-muted hover:bg-surface-muted hover:text-text transition-colors"
         >
@@ -232,6 +237,7 @@ function UserMenu({ collapsed }: UserMenuProps) {
       <div className="flex items-center gap-1">
         <Link
           href="/preferencias"
+          prefetch={false}
           className="flex-1 inline-flex items-center justify-center gap-1.5 h-8 px-2 rounded-lg text-xs text-text-muted hover:bg-surface-muted hover:text-text transition-colors"
         >
           <SlidersHorizontal className="h-3.5 w-3.5" />

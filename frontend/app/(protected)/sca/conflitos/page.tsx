@@ -256,6 +256,7 @@ function ConflitosConteudo() {
                 onLimitChange={() => {}}
                 pageSizes={[CONFLITOS_POR_PAGINA]}
                 itemNoun={{ one: "conflito", other: "conflitos" }}
+                carregando={loading && total === 0}
               />
             )}
           </div>

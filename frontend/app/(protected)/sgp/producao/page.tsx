@@ -444,6 +444,7 @@ function ProducaoView() {
               pageSizes={PAGE_SIZES}
               onOffsetChange={setOffset}
               onLimitChange={(l) => { setLimit(l); setOffset(0); }}
+              carregando={dataLoading && count === 0}
             />
           )}
         </>

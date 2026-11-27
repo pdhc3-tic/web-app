@@ -20,6 +20,11 @@ export type PaginationProps = {
   pageSizes?: number[];
   /** Substantivo contável para o resumo (ex.: usuário/usuários). */
   itemNoun?: { one: string; other: string };
+  /**
+   * A primeira página ainda não chegou: mostra "Carregando…" no lugar do
+   * resumo e dos botões, em vez de um "0–0 de 0" que parece lista vazia (#448).
+   */
+  carregando?: boolean;
 };
 
 const navBtn =
@@ -37,7 +42,16 @@ export function Pagination({
   onLimitChange,
   pageSizes = DEFAULT_PAGE_SIZES,
   itemNoun = { one: "item", other: "itens" },
+  carregando = false,
 }: PaginationProps) {
+  if (carregando) {
+    return (
+      <p role="status" className="px-1 py-1 text-sm text-text-muted" data-testid="paginacao-carregando">
+        Carregando {itemNoun.other}…
+      </p>
+    );
+  }
+
   const from = count === 0 ? 0 : offset + 1;
   const to = Math.min(offset + limit, count);
   const totalPages = Math.max(1, Math.ceil(count / limit));

@@ -319,6 +319,7 @@ function AtividadesView() {
                 onLimitChange={handleLimitChange}
                 pageSizes={PAGE_SIZES}
                 itemNoun={{ one: "atividade", other: "atividades" }}
+                carregando={dataLoading && count === 0}
               />
             )}
           </>

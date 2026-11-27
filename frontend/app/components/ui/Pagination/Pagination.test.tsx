@@ -33,3 +33,22 @@ describe("Pagination (#467)", () => {
     expect(screen.getByText("remanejamentos", { exact: false }).textContent).toContain("21–40 de 42 remanejamentos");
   });
 });
+
+describe("Pagination carregando (#448)", () => {
+  it("na primeira carga, \"Carregando…\" no lugar do \"0–0 de 0\"", () => {
+    render(
+      <Pagination
+        count={0}
+        offset={0}
+        limit={25}
+        onOffsetChange={vi.fn()}
+        onLimitChange={vi.fn()}
+        itemNoun={{ one: "UFPA", other: "UFPAs" }}
+        carregando
+      />,
+    );
+    expect(screen.getByRole("status").textContent).toBe("Carregando UFPAs…");
+    expect(screen.queryByText(/0–0/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Próxima página" })).toBeNull();
+  });
+});

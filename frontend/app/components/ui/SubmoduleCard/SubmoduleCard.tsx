@@ -91,8 +91,11 @@ export function SubmoduleCard({
 }: SubmoduleCardProps) {
   if (href) {
     return (
+      // Sem prefetch (#448): uma home tem até onze cards, e cada um buscava a
+      // rota ao aparecer na tela.
       <Link
         href={href}
+        prefetch={false}
         data-testid={testId}
         className={`${CARD_BASE} hover:border-primary/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary`}
       >

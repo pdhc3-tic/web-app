@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { expect, test, type Download, type Page } from "@playwright/test";
 import { abrirComApi, apiGet, guardarTarefaDeExportacao } from "./helpers/apiReal";
 import { apagarJobsDesde, criarJob, marcoDosJobs } from "./helpers/exportacaoFixture";
+import { esperarHidratacao } from "./helpers/hidratacao";
 import { storageStatePath } from "./helpers/users";
 
 /**
@@ -68,9 +69,11 @@ test.describe("SGP — Relatórios (UGP)", () => {
       if (r.url().includes("/api/v1/sgp/exportacoes/") && r.method() === "POST") pedidos.push(r.url());
     });
     await page.goto("/sgp/relatorios");
-    // Botão habilitado = sessão carregada e página hidratada: antes disso o
-    // React descarta o que foi digitado.
+    // Antes da hidratação o React descarta o que foi digitado. Desde a #448 a
+    // sessão vem do servidor e o botão já sai habilitado no HTML, então ele não
+    // serve mais de sinal: espera o React de fato.
     await expect(page.getByTestId("plano-exportar")).toBeEnabled();
+    await esperarHidratacao(page, "[data-testid='plano-exportar']");
     await page.getByLabel("Período — início").first().fill("2026-06-10");
     await page.getByLabel("Período — fim").first().fill("2026-06-01");
     await expect(page.getByLabel("Período — início").first()).toHaveValue("2026-06-10");

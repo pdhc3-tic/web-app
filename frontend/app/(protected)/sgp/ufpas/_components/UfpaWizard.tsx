@@ -102,6 +102,11 @@ export function UfpaWizard({ mode, ufpaId, initialData }: UfpaWizardProps) {
     [],
   );
   const [comunidadeOptions, setComunidadeOptions] = useState<SelectOption[]>([]);
+  // Enquanto as opções de estado e, na edição, de município e comunidade não
+  // chegam, os campos aparecem vazios: ficam travados com "Carregando…" e o
+  // "Avançar" espera, para ninguém seguir com a localização em branco (#448).
+  const [carregandoEstados, setCarregandoEstados] = useState(true);
+  const [carregandoCascata, setCarregandoCascata] = useState(mode === "edit" && !!initialData);
   const [projetoOptions, setProjetoOptions] = useState<SelectOption[]>(() =>
     initialData
       ? [
@@ -130,7 +135,10 @@ export function UfpaWizard({ mode, ufpaId, initialData }: UfpaWizardProps) {
     const controller = new AbortController();
     fetchStateOptions(controller.signal)
       .then(setEstadoOptions)
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (!controller.signal.aborted) setCarregandoEstados(false);
+      });
     fetchTerritoryMap(controller.signal)
       .then(setTerritorioMap)
       .catch(() => {});
@@ -153,6 +161,7 @@ export function UfpaWizard({ mode, ufpaId, initialData }: UfpaWizardProps) {
   // Carrega as opções de cascata para um formulário já preenchido (edição/rascunho).
   const hydrateCascade = useCallback(
     async (data: UfpaFormData, signal?: AbortSignal) => {
+      setCarregandoCascata(true);
       if (data.estado) {
         const munis = await fetchMunicipalitiesByState(data.estado, signal).catch(
           () => [] as MunicipalityOpt[],
@@ -165,6 +174,7 @@ export function UfpaWizard({ mode, ufpaId, initialData }: UfpaWizardProps) {
         );
         if (!signal?.aborted) setComunidadeOptions(comus);
       }
+      if (!signal?.aborted) setCarregandoCascata(false);
     },
     [],
   );
@@ -199,6 +209,8 @@ export function UfpaWizard({ mode, ufpaId, initialData }: UfpaWizardProps) {
         setComunidadeOptions(comus);
       } catch {
         /* mantém o que já foi preenchido */
+      } finally {
+        if (!controller.signal.aborted) setCarregandoCascata(false);
       }
     })();
     return () => controller.abort();
@@ -302,6 +314,7 @@ export function UfpaWizard({ mode, ufpaId, initialData }: UfpaWizardProps) {
   }
 
   // Território derivado do município selecionado.
+  const carregandoLocalizacao = carregandoEstados || carregandoCascata;
   const selectedMuni = municipioOptions.find((o) => o.value === form.municipio);
   let territorioNome = "";
   let territorioWarning = false;
@@ -487,6 +500,7 @@ export function UfpaWizard({ mode, ufpaId, initialData }: UfpaWizardProps) {
             onMunicipioChange={handleMunicipioChange}
             onComunidadeChange={handleComunidadeChange}
             onGps={(lat, lng) => patchForm({ latitude: lat, longitude: lng })}
+            carregandoOpcoes={carregandoLocalizacao}
           />
         )}
         {currentStep === 1 && (
@@ -518,7 +532,13 @@ export function UfpaWizard({ mode, ufpaId, initialData }: UfpaWizardProps) {
             </Button>
           )}
           {currentStep < STEP_LABELS.length - 1 ? (
-            <Button onClick={handleNext}>Avançar</Button>
+            <Button
+              onClick={handleNext}
+              disabled={currentStep === 0 && carregandoLocalizacao}
+              data-testid="ufpa-wizard-avancar"
+            >
+              Avançar
+            </Button>
           ) : (
             <Button onClick={handleSubmit} loading={submitting}>
               Salvar
