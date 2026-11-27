@@ -17,11 +17,40 @@ import {
   listDemandasDaAtividade,
   STATUS_ATIVIDADE_BLOQUEIAM_DEMANDA,
   type Demanda,
+  type StatusDemanda,
 } from "@/app/lib/demandas";
 import { formatCurrencyBRL } from "@/app/lib/format";
 import { qk } from "@/app/lib/queryKeys";
 import { podeMontarDemanda } from "@/app/lib/solicitacoes";
 import type { AtividadeDetail } from "@/app/lib/atividades";
+
+/** Status em que a FGD já definiu o valor autorizado. */
+const COM_VALOR_AUTORIZADO: StatusDemanda[] = ["autorizada", "em_atendimento", "concluida"];
+
+/**
+ * Rubricas e valores de uma demanda para a aba (#464, DRS 3.4). O autorizado
+ * só existe depois da autorização, e o executado (o valor pago) só na
+ * conclusão; antes disso, `null`, que a tela mostra como "—" em vez de R$ 0,00.
+ */
+export function resumoFinanceiro(d: Pick<Demanda, "status" | "solicitacoes" | "valor_estimado_total" | "valor_autorizado_total" | "valor_pago_total">) {
+  return {
+    rubricas: [...new Set(d.solicitacoes.map((s) => s.rubrica_nome))],
+    estimado: d.valor_estimado_total,
+    autorizado: COM_VALOR_AUTORIZADO.includes(d.status) ? d.valor_autorizado_total : null,
+    executado: d.status === "concluida" ? d.valor_pago_total : null,
+  };
+}
+
+function Valor({ rotulo, valor, testId }: { rotulo: string; valor: string | null; testId: string }) {
+  return (
+    <div className="flex flex-col">
+      <dt className="text-2xs uppercase tracking-[0.08em] text-text-muted">{rotulo}</dt>
+      <dd className="text-sm tabular-nums text-text" data-testid={testId}>
+        {valor === null ? <span className="text-text-muted">—</span> : formatCurrencyBRL(valor)}
+      </dd>
+    </div>
+  );
+}
 
 function DemandasSkeleton() {
   return (
@@ -134,34 +163,53 @@ export function DemandasTab({ atividade }: { atividade: AtividadeDetail }) {
           </div>
         ) : (
           <ul className="flex list-none flex-col gap-2" data-testid="demandas-lista">
-            {demandas.map((d) => (
-              <li
-                key={d.id}
-                data-testid={`demanda-${d.id}`}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-3"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-text">{d.titulo}</p>
-                  <p className="mt-0.5 text-xs text-text-muted">
-                    Aberta em {absoluteDateTime(d.criado_em)}
-                    {d.despesa_posterior && " · despesa posterior à execução"}
-                  </p>
-                </div>
-                <span className="text-sm tabular-nums text-text-muted">
-                  {formatCurrencyBRL(d.valor_estimado_total)}
-                </span>
-                <Badge status={badgeStatusDaDemanda(d.status)} label={d.status_display} />
-                {podeMontarDemanda(d, session?.user?.id) && (
-                  <Link
-                    href={`/sgd/demandas/${d.id}/editar`}
-                    className="text-sm font-medium text-primary hover:underline"
-                    data-testid={`demanda-montar-${d.id}`}
-                  >
-                    Editar e submeter
-                  </Link>
-                )}
-              </li>
-            ))}
+            {demandas.map((d) => {
+              const resumo = resumoFinanceiro(d);
+              return (
+                <li
+                  key={d.id}
+                  data-testid={`demanda-${d.id}`}
+                  className="flex flex-col gap-3 rounded-lg border border-border bg-surface px-4 py-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-text">{d.titulo}</p>
+                      <p className="mt-0.5 text-xs text-text-muted">
+                        Aberta em {absoluteDateTime(d.criado_em)}
+                        {d.despesa_posterior && " · despesa posterior à execução"}
+                      </p>
+                    </div>
+                    <Badge status={badgeStatusDaDemanda(d.status)} label={d.status_display} />
+                    {podeMontarDemanda(d, session?.user?.id) && (
+                      <Link
+                        href={`/sgd/demandas/${d.id}/editar`}
+                        className="text-sm font-medium text-primary hover:underline"
+                        data-testid={`demanda-montar-${d.id}`}
+                      >
+                        Editar e submeter
+                      </Link>
+                    )}
+                  </div>
+                  <dl className="grid grid-cols-2 gap-x-6 gap-y-2 border-t border-border pt-3 sm:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))]">
+                    <div className="col-span-2 flex min-w-0 flex-col sm:col-span-1">
+                      <dt className="text-2xs uppercase tracking-[0.08em] text-text-muted">
+                        {resumo.rubricas.length > 1 ? "Rubricas" : "Rubrica"}
+                      </dt>
+                      <dd className="text-sm text-text" data-testid={`demanda-${d.id}-rubricas`}>
+                        {resumo.rubricas.length > 0 ? (
+                          resumo.rubricas.join(", ")
+                        ) : (
+                          <span className="text-text-muted">Nenhuma solicitação</span>
+                        )}
+                      </dd>
+                    </div>
+                    <Valor rotulo="Estimado" valor={resumo.estimado} testId={`demanda-${d.id}-estimado`} />
+                    <Valor rotulo="Autorizado" valor={resumo.autorizado} testId={`demanda-${d.id}-autorizado`} />
+                    <Valor rotulo="Executado" valor={resumo.executado} testId={`demanda-${d.id}-executado`} />
+                  </dl>
+                </li>
+              );
+            })}
           </ul>
         )}
         <AvisoListaParcial lista={data} />

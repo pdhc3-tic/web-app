@@ -10,6 +10,7 @@ import { TabErroSection } from "@/app/components/sgp/CrudTab/CrudTab";
 import { Badge } from "@/app/components/ui/Badge/Badge";
 import { Button } from "@/app/components/ui/Button/Button";
 import { DefinitionList } from "@/app/components/ui/DefinitionList/DefinitionList";
+import { cadeiaDaDemanda, itensDaCadeia } from "@/app/components/sgp/CadeiaPlanoTrabalho/CadeiaPlanoTrabalho";
 import { Tabs } from "@/app/components/ui/Tabs/Tabs";
 import { ApiError } from "@/app/lib/api";
 import { absoluteDateTime, formatDate } from "@/app/lib/datetime";
@@ -299,10 +300,7 @@ export function DemandaPainel({
                 label: "Município da atividade",
                 value: `${demanda.contexto.municipio_nome}/${demanda.contexto.municipio_estado_sigla}`,
               },
-              {
-                label: "Plano de Trabalho",
-                value: `Meta ${demanda.contexto.meta_numero} · Ação ${demanda.contexto.acao_numero}`,
-              },
+              ...itensDaCadeia(cadeiaDaDemanda(demanda.contexto), "painel-cadeia"),
               { label: "Data prevista", value: formatDate(demanda.contexto.data_prevista) },
               { label: "Valor estimado", value: formatCurrencyBRL(demanda.valor_estimado_total) },
               { label: "Justificativa", value: demanda.justificativa || undefined },

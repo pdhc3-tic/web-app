@@ -305,6 +305,7 @@ function SyncEventsView() {
               }}
               pageSizes={PAGE_SIZES}
               itemNoun={{ one: "evento", other: "eventos" }}
+              carregando={dataLoading && count === 0}
             />
           </>
         )}

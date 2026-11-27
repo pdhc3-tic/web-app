@@ -4,13 +4,14 @@ import { useRotuloChoice } from "@/app/providers/SgpChoicesProvider";
 import { Lock } from "lucide-react";
 import { Badge } from "@/app/components/ui/Badge/Badge";
 import { DefinitionList } from "@/app/components/ui/DefinitionList/DefinitionList";
+import { cadeiaDaAtividade, itensDaCadeia } from "@/app/components/sgp/CadeiaPlanoTrabalho/CadeiaPlanoTrabalho";
 import { badgeStatusFor } from "@/app/lib/atividades";
 import { formatDate } from "@/app/lib/datetime";
 import type { AtividadeElegivelDetalhe } from "@/app/lib/demandas";
 
 /**
- * Campo que a API ainda não entrega. Diz isso em vez de cair em "—", que
- * sugeriria "não preenchido" (docs/pendencias-backend-sprint-10.md, item 8).
+ * Território que a atividade não tem. Diz isso em vez de cair em "—", que
+ * sugeriria "não preenchido".
  */
 function NaoDisponivel() {
   return <span className="text-text-muted italic">Não disponível</span>;
@@ -21,11 +22,11 @@ function NaoDisponivel() {
  * município, comunidade, data, técnico e a cadeia Ação → Submeta → Meta →
  * Indicador do Plano de Trabalho.
  *
- * Sem território ou sem um elo da cadeia, mostra "Não disponível".
+ * Sem território, mostra "Não disponível". A cadeia usa o mesmo formato da
+ * ficha da atividade e do painel da demanda (#446).
  */
 export function ContextoAtividade({ atividade }: { atividade: AtividadeElegivelDetalhe }) {
   const statusLabel = useRotuloChoice("status_atividade");
-  const { meta, submeta, indicador } = atividade.acao;
 
   return (
     <section
@@ -64,26 +65,7 @@ export function ContextoAtividade({ atividade }: { atividade: AtividadeElegivelD
           { label: "Comunidade", value: atividade.comunidade?.nome },
           { label: "Data prevista", value: formatDate(atividade.data_inicio) },
           { label: "Técnico", value: atividade.tecnico_responsavel.nome },
-          {
-            label: "Ação",
-            value: `${atividade.acao.numero} — ${atividade.acao.descricao}`,
-          },
-          {
-            label: "Submeta",
-            value: submeta ? `${submeta.numero} — ${submeta.titulo}` : <NaoDisponivel />,
-          },
-          {
-            label: "Meta",
-            value: meta ? `Meta ${meta.numero} — ${meta.titulo}` : <NaoDisponivel />,
-          },
-          {
-            label: "Indicador",
-            value: indicador ? (
-              `${indicador.codigo} — ${indicador.nome} (${indicador.unidade_medida})`
-            ) : (
-              <NaoDisponivel />
-            ),
-          },
+          ...itensDaCadeia(cadeiaDaAtividade(atividade.acao), "contexto-cadeia"),
         ]}
       />
     </section>

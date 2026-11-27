@@ -10,6 +10,7 @@ histórico de eventos de sincronização, conflitos (pendente sensível e resolv
 e registros com origem "sca" para os badges. Cobre também o SGD (#310): demandas
 nos nove estados da máquina de estados, em duas UFs, com remanejamento emergencial
 (excedente autorizado), solicitação fora das rubricas previstas e despesa posterior;
+dois remanejamentos diretos da UGP para o histórico de remanejamentos (#466);
 o histórico do Arlo (exportação e importações, com e sem erros por linha); e as
 integrações: token do Power BI e eventos de sincronização do Google Calendar.
 
@@ -70,6 +71,7 @@ from apps.sgp.models import (
 from apps.sgp.tasks import refresh_power_bi_snapshot
 from apps.sgp.models.activity import filtro_atrasada
 from apps.sgp.budget import limites as limites_service
+from apps.sgp.budget import services as budget_service
 from apps.sgp.budget.models import BudgetPool, BudgetTransaction, BudgetTransfer, SpendingLimit
 from apps.sgp.models.google_calendar_sync_event import GoogleCalendarSyncEvent
 from apps.sgp.services.workplan_dashboard import (
@@ -497,6 +499,7 @@ class Command(BaseCommand):
             self._sca(tecnicos, ufpas)
             self._cenarios_e2e(projeto, acoes, comunidades, tecnicos)
             self._demandas_sgd(acoes)
+            self._remanejamentos_demo()
             self._montagem_de_demanda_sgd()
             self._integracoes()
 
@@ -519,6 +522,35 @@ class Command(BaseCommand):
             f"Demandas do SGD: {len(demandas)} (UFs: {', '.join(solicitantes)}); "
             f"histórico do Arlo: {len(historico)} operações"
         )
+
+    def _remanejamentos_demo(self):
+        """Histórico de remanejamentos (#466): dois remanejamentos diretos da UGP
+        nos pools de Alimentação que as demandas do SGD criam, um entre
+        territórios e um entre níveis, pelo mesmo serviço do Remanejar, para a
+        tela não abrir vazia. Valores pequenos, longe do que as demandas usam."""
+        ugp = User.objects.get(email=email_de_demo("Beatriz", "Nogueira"))
+        alimentacao = {"rubrica__slug": "alimentacao-refeicoes"}
+        territorio = {
+            uf: Territory.objects.filter(estados__contains=[uf]).first() for uf in SGD_MUNICIPIOS
+        }
+        territorial_pe = BudgetPool.objects.get(
+            **alimentacao, nivel=BudgetPool.Nivel.TERRITORIAL, territorio=territorio["PE"],
+        )
+        territorial_rn = BudgetPool.objects.get(
+            **alimentacao, nivel=BudgetPool.Nivel.TERRITORIAL, territorio=territorio["RN"],
+        )
+        estadual_pe = BudgetPool.objects.get(
+            **alimentacao, nivel=BudgetPool.Nivel.ESTADUAL, estado__sigla="PE",
+        )
+        budget_service.remanejar_com_registro(
+            origem=territorial_rn, destino=territorial_pe, valor=Decimal("1500.00"), usuario=ugp,
+            justificativa="Reforço de alimentação para as oficinas de PE, com execução abaixo do previsto no RN.",
+        )
+        budget_service.remanejar_com_registro(
+            origem=estadual_pe, destino=territorial_rn, valor=Decimal("2000.00"), usuario=ugp,
+            justificativa="Recompõe o pool do RN com a reserva estadual de PE até a próxima distribuição.",
+        )
+        self.stdout.write("Remanejamentos de demonstração: 2 (entre territórios e entre níveis)")
 
     def _montagem_de_demanda_sgd(self):
         """Montagem de demanda pelo ADT de teste (#295): o valor da diária, sem o

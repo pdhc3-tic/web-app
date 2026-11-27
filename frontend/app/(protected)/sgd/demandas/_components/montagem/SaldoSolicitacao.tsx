@@ -1,8 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ArrowRight } from "lucide-react";
+import type { ReactNode } from "react";
+import { AlertTriangle, ArrowRight, PlusCircle } from "lucide-react";
 import Spinner from "@/app/components/icons/Spinner";
+import { Button } from "@/app/components/ui/Button/Button";
 import { SemaforoBadge } from "@/app/components/ui/SemaforoBadge/SemaforoBadge";
 import { ApiError } from "@/app/lib/api";
 import { formatCurrencyBRL } from "@/app/lib/format";
@@ -10,7 +12,17 @@ import { useDebounced } from "@/app/lib/hooks/useDebounced";
 import { qk } from "@/app/lib/queryKeys";
 import { consultarSaldo, type TravaSaldo } from "@/app/lib/solicitacoes";
 
-function Trava({ titulo, trava, testId }: { titulo: string; trava: TravaSaldo; testId: string }) {
+function Trava({
+  titulo,
+  trava,
+  testId,
+  acao,
+}: {
+  titulo: string;
+  trava: TravaSaldo;
+  testId: string;
+  acao?: ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-1.5 rounded-md border border-border px-3 py-2.5" data-testid={testId}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -30,6 +42,7 @@ function Trava({ titulo, trava, testId }: { titulo: string; trava: TravaSaldo; t
           {trava.motivo_bloqueio}
         </p>
       )}
+      {!trava.disponivel && acao}
     </div>
   );
 }
@@ -46,11 +59,24 @@ export function SaldoSolicitacao({
   tipo,
   valor,
   devolvida,
+  onRecursoExtra,
+  recursoExtraOcupado = false,
+  recursoExtraDesabilitado = false,
 }: {
   tipo: string;
   /** Decimal "1234.56"; "0" mostra só o disponível. */
   valor: string;
   devolvida: boolean;
+  /**
+   * Atalho do bloqueio pelo limite individual (#467): o aviso do backend manda
+   * "usar a opção Solicitar recurso extra", e o botão fica junto dele. Recebe o
+   * disponível e o solicitado da consulta. Sem o callback, só o aviso.
+   */
+  onRecursoExtra?: (bloqueio: { disponivel: string; solicitado: string }) => void;
+  /** O atalho está salvando a solicitação. */
+  recursoExtraOcupado?: boolean;
+  /** O formulário está ocupado com outra coisa (o Salvar comum, um anexo subindo). */
+  recursoExtraDesabilitado?: boolean;
 }) {
   const valorAdiado = useDebounced(valor);
   const saldo = useQuery({
@@ -74,7 +100,29 @@ export function SaldoSolicitacao({
       ) : (
         <>
           <div className="grid gap-2 sm:grid-cols-2">
-            <Trava titulo="Seu limite individual" trava={saldo.data.individual} testId="saldo-individual" />
+            <Trava
+              titulo="Seu limite individual"
+              trava={saldo.data.individual}
+              testId="saldo-individual"
+              acao={
+                onRecursoExtra && saldo.data.individual.acao_sugerida === "solicitar_recurso_extra" ? (
+                  <div className="flex flex-col items-start gap-1">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      leftIcon={<PlusCircle className="h-4 w-4" />}
+                      loading={recursoExtraOcupado}
+                      disabled={recursoExtraDesabilitado || saldo.isFetching || valorAdiado !== valor}
+                      onClick={() => onRecursoExtra({ disponivel: saldo.data.individual.saldo, solicitado: valorAdiado })}
+                      data-testid="saldo-recurso-extra"
+                    >
+                      Solicitar recurso extra
+                    </Button>
+                    <span className="text-xs text-text-muted">A solicitação é salva antes de abrir o pedido.</span>
+                  </div>
+                ) : undefined
+              }
+            />
             <Trava titulo="Verba do território" trava={saldo.data.territorial} testId="saldo-territorial" />
           </div>
           {devolvida && (

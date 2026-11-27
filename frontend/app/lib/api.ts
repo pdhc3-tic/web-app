@@ -1,5 +1,5 @@
-import { getSession, signIn, signOut } from "next-auth/react";
-import type { Session } from "next-auth";
+import { signIn, signOut } from "next-auth/react";
+import { esquecerSessao, relerSessao, sessaoValida } from "@/app/lib/auth/tokenCache";
 
 // --- Tipos de erro padronizados ---
 
@@ -108,20 +108,6 @@ function buildHeaders(token: string, extra?: HeadersInit): Record<string, string
   };
 }
 
-// Deduplicação: enquanto um refresh estiver em curso, demais requisições
-// concorrentes aguardam a mesma promise em vez de cada uma disparar getSession().
-let refreshPromise: Promise<Session | null> | null = null;
-
-function getRefreshedSession(): Promise<Session | null> {
-  if (refreshPromise) return refreshPromise;
-
-  refreshPromise = getSession().finally(() => {
-    refreshPromise = null;
-  });
-
-  return refreshPromise;
-}
-
 /**
  * Fetch autenticado para uso em Client Components.
  * Injeta o Bearer token da sessão Auth.js e intercepta respostas 401,
@@ -132,10 +118,9 @@ export async function apiClient(
   path: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  // Só lê o token: sem `broadcast`, que mandaria as outras abas recarregarem a
-  // sessão a cada requisição — e, se uma delas buscar algo ao recarregar, as
-  // abas ficam se acordando sem fim. O aviso entre abas fica para o refresh.
-  const session = await getSession({ broadcast: false });
+  // O token vem do cache em memória (#448): a sessão só é relida quando ele
+  // falta ou está para vencer, numa leitura única para as requisições do momento.
+  const session = await sessaoValida();
 
   if (!session?.accessToken) {
     signIn();
@@ -152,8 +137,11 @@ export async function apiClient(
     return res;
   }
 
-  // Token expirado — aguarda o refresh compartilhado (next-auth faz a renovação)
-  const refreshed = await getRefreshedSession();
+  // 401 com um token que parecia válido (revogado, relógio adiantado): esquece o
+  // do cache e relê a sessão, que o next-auth renova no servidor. Requisições
+  // simultâneas esperam a mesma releitura.
+  esquecerSessao();
+  const refreshed = await relerSessao();
 
   if (!refreshed?.accessToken || refreshed.error === "RefreshTokenExpired") {
     const next =
@@ -177,7 +165,7 @@ export async function apiClient(
 // --- Logout ---
 
 export async function logout(): Promise<void> {
-  const session = await getSession();
+  const session = await sessaoValida();
   if (session?.accessToken && session?.refreshToken) {
     // Usa fetch direto para evitar loop infinito caso o backend retorne 401
     await fetch(`${BASE_URL}/api/v1/auth/logout/`, {

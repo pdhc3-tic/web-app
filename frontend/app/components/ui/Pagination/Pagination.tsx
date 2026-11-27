@@ -20,12 +20,20 @@ export type PaginationProps = {
   pageSizes?: number[];
   /** Substantivo contável para o resumo (ex.: usuário/usuários). */
   itemNoun?: { one: string; other: string };
+  /**
+   * A primeira página ainda não chegou: mostra "Carregando…" no lugar do
+   * resumo e dos botões, em vez de um "0–0 de 0" que parece lista vazia (#448).
+   */
+  carregando?: boolean;
 };
 
 const navBtn =
   "inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-text-muted transition-colors enabled:hover:bg-surface-muted enabled:hover:text-text disabled:opacity-40 disabled:cursor-not-allowed";
 
-/** Paginação genérica para listagens (LimitOffset). */
+/**
+ * Paginação genérica para listagens (LimitOffset). Em tela estreita, o seletor
+ * de tamanho e os botões quebram linha em vez de passar da largura (#467).
+ */
 export function Pagination({
   count,
   offset,
@@ -34,7 +42,16 @@ export function Pagination({
   onLimitChange,
   pageSizes = DEFAULT_PAGE_SIZES,
   itemNoun = { one: "item", other: "itens" },
+  carregando = false,
 }: PaginationProps) {
+  if (carregando) {
+    return (
+      <p role="status" className="px-1 py-1 text-sm text-text-muted" data-testid="paginacao-carregando">
+        Carregando {itemNoun.other}…
+      </p>
+    );
+  }
+
   const from = count === 0 ? 0 : offset + 1;
   const to = Math.min(offset + limit, count);
   const totalPages = Math.max(1, Math.ceil(count / limit));
@@ -53,10 +70,11 @@ export function Pagination({
         {count === 1 ? itemNoun.one : itemNoun.other}
       </p>
 
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2" data-testid="paginacao-controles">
         <label className="flex items-center gap-2 text-sm text-text-muted">
           <span className="hidden sm:inline">Por página</span>
           <select
+            aria-label="Itens por página"
             value={limit}
             onChange={(e) => onLimitChange(Number(e.target.value))}
             className="h-8 rounded-md border border-border bg-surface px-2 text-sm text-text outline-none transition-colors hover:border-text-muted focus:border-primary"

@@ -46,6 +46,9 @@ function AtividadesView() {
 
   const [filters, setFilters] = useState<AtividadesFiltersValue>(() => ({
     acao: searchParams.get("acao") ?? "",
+    meta: searchParams.get("meta") ?? "",
+    submeta: searchParams.get("submeta") ?? "",
+    indicador: searchParams.get("indicador") ?? "",
     projeto: searchParams.get("projeto") ?? "",
     territorio: searchParams.get("territorio") ?? "",
     tecnico: searchParams.get("tecnico") ?? "",
@@ -87,6 +90,9 @@ function AtividadesView() {
   useEffect(() => {
     const qs = new URLSearchParams();
     if (filters.acao) qs.set("acao", filters.acao);
+    if (filters.meta) qs.set("meta", filters.meta);
+    if (filters.submeta) qs.set("submeta", filters.submeta);
+    if (filters.indicador) qs.set("indicador", filters.indicador);
     if (filters.projeto) qs.set("projeto", filters.projeto);
     if (filters.territorio) qs.set("territorio", filters.territorio);
     if (filters.tecnico) qs.set("tecnico", filters.tecnico);
@@ -139,6 +145,9 @@ function AtividadesView() {
         limit,
         offset,
         acao: filters.acao || undefined,
+        meta: filters.meta || undefined,
+        submeta: filters.submeta || undefined,
+        indicador: filters.indicador || undefined,
         projeto: filters.projeto || undefined,
         territorio: filters.territorio || undefined,
         tecnico: filters.tecnico || undefined,
@@ -310,6 +319,7 @@ function AtividadesView() {
                 onLimitChange={handleLimitChange}
                 pageSizes={PAGE_SIZES}
                 itemNoun={{ one: "atividade", other: "atividades" }}
+                carregando={dataLoading && count === 0}
               />
             )}
           </>

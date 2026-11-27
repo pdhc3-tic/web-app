@@ -67,7 +67,16 @@ export function SolicitacaoForm({
   /** Null: nova solicitação. */
   solicitacao: SolicitacaoDemanda | null;
   onClose: () => void;
-  onSalvo: (salva: SolicitacaoDemanda, nova: boolean) => void;
+  /**
+   * `recursoExtra`: a solicitação foi salva pelo atalho "Solicitar recurso
+   * extra" do bloqueio pelo limite individual (#467), e quem abriu o formulário
+   * abre o pedido com o disponível e o solicitado da consulta de saldo.
+   */
+  onSalvo: (
+    salva: SolicitacaoDemanda,
+    nova: boolean,
+    recursoExtra?: { disponivel: string; solicitado: string },
+  ) => void;
 }) {
   const queryClient = useQueryClient();
   const catalogo = useTiposSolicitacao();
@@ -96,6 +105,8 @@ export function SolicitacaoForm({
   const [erros, setErros] = useState<Record<string, string>>({});
   const [erroGeral, setErroGeral] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  // Qual botão salvou: o "Salvar solicitação" ou o atalho do recurso extra.
+  const [salvandoParaRecursoExtra, setSalvandoParaRecursoExtra] = useState(false);
 
   // Anexos (#365): o nome de cada documento informado, e os que subiram neste
   // formulário e ainda não foram salvos. Estes saem do backend se o usuário
@@ -194,8 +205,8 @@ export function SolicitacaoForm({
     setErroGeral(null);
   }
 
-  async function salvar() {
-    if (enviandoAnexos > 0 || bloqueioDiaria) return;
+  async function salvar(recursoExtra?: { disponivel: string; solicitado: string }) {
+    if (enviandoAnexos > 0 || salvando || bloqueioDiaria) return;
     if (!tipo || !config) {
       setErros({ tipo: "Escolha o tipo da solicitação." });
       return;
@@ -221,6 +232,7 @@ export function SolicitacaoForm({
     );
 
     setSalvando(true);
+    setSalvandoParaRecursoExtra(!!recursoExtra);
     try {
       const salva = solicitacao
         ? await atualizarSolicitacao(demanda.id, solicitacao.id, payload)
@@ -232,7 +244,7 @@ export function SolicitacaoForm({
       for (const docId of noPayload) anexosNaoSalvos.current.delete(docId);
       descartarAnexos(anexosNaoSalvos.current);
       await queryClient.invalidateQueries({ queryKey: qk.demandas.all });
-      onSalvo(salva, solicitacao === null);
+      onSalvo(salva, solicitacao === null, recursoExtra);
     } catch (err) {
       if (!(err instanceof ApiError)) {
         setErroGeral("Não foi possível salvar a solicitação. Tente novamente.");
@@ -252,6 +264,7 @@ export function SolicitacaoForm({
       }
     } finally {
       setSalvando(false);
+      setSalvandoParaRecursoExtra(false);
     }
   }
 
@@ -272,9 +285,11 @@ export function SolicitacaoForm({
         Cancelar
       </Button>
       <Button
-        onClick={salvar}
-        loading={salvando}
-        disabled={!tipo || enviandoAnexos > 0 || bloqueioDiaria !== null}
+        onClick={() => void salvar()}
+        loading={salvando && !salvandoParaRecursoExtra}
+        disabled={
+          !tipo || enviandoAnexos > 0 || bloqueioDiaria !== null || (salvando && salvandoParaRecursoExtra)
+        }
         data-testid="solicitacao-salvar"
       >
         Salvar solicitação
@@ -352,6 +367,12 @@ export function SolicitacaoForm({
               tipo={tipo}
               valor={valorParaSaldo}
               devolvida={demanda.status === "devolvida"}
+              onRecursoExtra={(bloqueio) => void salvar(bloqueio)}
+              recursoExtraOcupado={salvando && salvandoParaRecursoExtra}
+              // Diária sem valor vigente (#440) não salva por nenhum dos dois botões.
+              recursoExtraDesabilitado={
+                enviandoAnexos > 0 || bloqueioDiaria !== null || (salvando && !salvandoParaRecursoExtra)
+              }
             />
           </>
         )}

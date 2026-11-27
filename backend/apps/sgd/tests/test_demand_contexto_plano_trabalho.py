@@ -39,9 +39,11 @@ def test_contexto_traz_submeta_e_indicador(auth_client_solicitante, demand_rascu
 
     contexto = response.data["contexto"]
     assert contexto["acao_numero"] == acao.numero
+    assert contexto["acao_descricao"] == acao.descricao
     assert contexto["submeta_numero"] == acao.submeta.numero
     assert contexto["submeta_titulo"] == acao.submeta.titulo
     assert contexto["meta_numero"] == acao.meta.numero
+    assert contexto["meta_titulo"] == acao.meta.titulo
     assert contexto["indicador_codigo"] == acao.indicador.codigo
     assert contexto["indicador_nome"] == acao.indicador.nome
     assert contexto["indicador_unidade_medida"] == acao.indicador.unidade_medida

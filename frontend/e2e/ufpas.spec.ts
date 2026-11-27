@@ -11,6 +11,10 @@ import {
  * Wizard de cadastro de UFPA contra o backend real: estados, municípios e
  * projetos vêm da API, e a UFPA criada no fluxo completo é apagada no
  * teardown (`removerUfpasDoWizard`, pelo prefixo do titular).
+ *
+ * Desde a #425 do backend, só Super Admin e ADT/ACR escrevem UFPA. O wizard
+ * roda com o Super Admin, que escreve em qualquer território; a UGP, que só
+ * consulta, tem o próprio bloco no fim (#478).
  */
 
 /** Estado do seed usado nos fluxos — o `seed_demo` cria os sete do projeto. */
@@ -78,7 +82,7 @@ async function abrirNova(page: Page) {
 }
 
 test.describe("SGP — Wizard de cadastro de UFPA", () => {
-  test.use({ storageState: storageStatePath("ugp") });
+  test.use({ storageState: storageStatePath("superAdmin") });
 
   test.beforeEach(async ({ page }) => {
     // Um rascunho de outro teste faria o wizard abrir com a oferta de continuar.
@@ -208,5 +212,61 @@ test.describe("SGP — Wizard de cadastro de UFPA", () => {
     await esperarPasso(page, "Dados Básicos");
     await expect(page.getByLabel(/^Nome do titular/)).not.toHaveValue("");
     await expect(page.getByLabel(/^CPF/)).not.toHaveValue("");
+  });
+});
+
+/**
+ * #478: a UGP só consulta UFPAs. Antes, via "Nova UFPA", preenchia o wizard
+ * inteiro e levava o 403 do backend ao salvar.
+ */
+test.describe("SGP — UFPA para quem só consulta (UGP)", () => {
+  test.use({ storageState: storageStatePath("ugp") });
+
+  test("listagem, mapa e ficha não oferecem criar, editar nem trocar a foto", async ({ page }) => {
+    await page.goto("/sgp/ufpas");
+    await expect(page.locator("tbody tr[tabindex='0']").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Nova UFPA" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Ver UFPA de / }).first()).toBeAttached();
+    await expect(page.getByRole("button", { name: /^Editar UFPA de / })).toHaveCount(0);
+
+    await page.goto("/sgp/ufpas/mapa");
+    await expect(page.getByRole("button", { name: /Filtros/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Nova UFPA" })).toHaveCount(0);
+
+    await page.goto(`/sgp/ufpas/${primeiroUfpaId()}`);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Editar", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Trocar foto do titular" })).toHaveCount(0);
+  });
+
+  test("os endereços de criar e editar explicam a restrição sem abrir o wizard", async ({ page }) => {
+    const escritas: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/api/v1/sgp/ufpas/") && r.method() !== "GET") escritas.push(r.url());
+    });
+
+    for (const caminho of ["/sgp/ufpas/nova", `/sgp/ufpas/${primeiroUfpaId()}/editar`]) {
+      await page.goto(caminho);
+      await expect(page.getByRole("heading", { name: "Conteúdo restrito" })).toBeVisible();
+      await expect(page.getByRole("alert")).toContainText("Seu perfil pode consultá-las.");
+      await expect(page.getByRole("combobox", { name: /^Estado/ })).toHaveCount(0);
+    }
+    expect(escritas).toEqual([]);
+  });
+});
+
+test.describe("SGP — UFPA para quem escreve (Super Admin)", () => {
+  test.use({ storageState: storageStatePath("superAdmin") });
+
+  // O contraponto: sem ele, o bloco da UGP passaria com os botões sumidos para todos.
+  test("listagem e ficha oferecem criar, editar e trocar a foto", async ({ page }) => {
+    await page.goto("/sgp/ufpas");
+    await expect(page.locator("tbody tr[tabindex='0']").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Nova UFPA" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Editar UFPA de / }).first()).toBeAttached();
+
+    await page.goto(`/sgp/ufpas/${primeiroUfpaId()}`);
+    await expect(page.getByRole("link", { name: "Editar", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Trocar foto do titular" })).toBeVisible();
   });
 });

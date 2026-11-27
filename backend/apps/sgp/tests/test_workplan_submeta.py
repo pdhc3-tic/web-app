@@ -244,6 +244,28 @@ class TestLeitura:
 
         assert [s["numero"] for s in response.data["submetas"]] == ["1.1", "1.2", "1.10"]
 
+    @pytest.mark.parametrize("cliente", ["auth_client", "auth_client_adt_rn"])
+    def test_detalhe_da_submeta_nao_cresce_com_as_acoes(
+        self, request, cliente, meta, submeta, municipio_rn, django_assert_num_queries
+    ):
+        cliente = request.getfixturevalue(cliente)
+        url = _detalhe(submeta.pk)
+
+        def acao_com_atividade():
+            ActivityFactory(acao=WorkPlanAcaoFactory(submeta=submeta, meta=meta), municipio=municipio_rn)
+
+        acao_com_atividade()
+        cliente.get(url)
+        with CaptureQueriesContext(connection) as uma:
+            cliente.get(url)
+        for _ in range(4):
+            acao_com_atividade()
+        with django_assert_num_queries(len(uma.captured_queries)):
+            response = cliente.get(url)
+
+        assert len(response.data["acoes"]) == 5
+        assert {a["meta_titulo"] for a in response.data["acoes"]} == {"Meta 1"}
+
     def test_listagem_em_ordem_numerica(self, auth_client, meta):
         for numero in ("1.10", "1.2", "1.1"):
             WorkPlanSubmetaFactory(meta=meta, numero=numero)

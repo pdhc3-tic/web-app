@@ -1,15 +1,20 @@
 "use client";
 
+import { useMemo } from "react";
 import { Clock, X } from "lucide-react";
 import { Select, type SelectOption } from "@/app/components/ui/Select/Select";
 import type { AcaoPT } from "@/app/lib/atividades";
 import type { SgpChoices } from "@/app/lib/choices";
 import { AcaoCombobox } from "./AcaoCombobox";
+import { opcoesDoPlano } from "./opcoesDoPlano";
 
 const fieldLabelClass = "text-label font-medium text-text leading-[1.2]";
 
 export type AtividadesFiltersValue = {
   acao: string;
+  meta: string;
+  submeta: string;
+  indicador: string;
   projeto: string;
   territorio: string;
   tecnico: string;
@@ -21,6 +26,9 @@ export type AtividadesFiltersValue = {
 
 export const EMPTY_FILTERS: AtividadesFiltersValue = {
   acao: "",
+  meta: "",
+  submeta: "",
+  indicador: "",
   projeto: "",
   territorio: "",
   tecnico: "",
@@ -71,6 +79,18 @@ export function AtividadesFilters({
   // O endpoint de usuários é restrito a Super Admin: sem opções, o filtro de
   // técnico não tem como funcionar. Mesmo tratamento do formulário.
   const tecnicoIndisponivel = !optionsLoading && tecnicoOptions.length === 0;
+  const plano = useMemo(() => opcoesDoPlano(acoes), [acoes]);
+  const submetaOptions = plano.submetasDa(value.meta);
+
+  // Trocar a Meta descarta a Submeta de outra Meta; escolher a Submeta traz a
+  // Meta dela, para os dois filtros nunca se contradizerem.
+  function escolherMeta(meta: string) {
+    const submetaFica = !!meta && plano.metaDaSubmeta(value.submeta) === meta;
+    onChange({ meta, submeta: submetaFica ? value.submeta : "" });
+  }
+  function escolherSubmeta(submeta: string) {
+    onChange({ submeta, meta: submeta ? plano.metaDaSubmeta(submeta) || value.meta : value.meta });
+  }
 
   return (
     <div className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-4">
@@ -98,7 +118,44 @@ export function AtividadesFilters({
         </div>
       </div>
 
-      {/* Linha 2: território + técnico + tipo */}
+      {/* Linha 2: cadeia do Plano de Trabalho (#464) */}
+      <div className="flex flex-wrap items-end gap-3" data-testid="atividades-filtros-plano">
+        <div className="min-w-40 flex-1">
+          <Select
+            id="atividades-filtro-meta"
+            label="Meta"
+            options={withTodos(plano.metas, "Todas as metas")}
+            value={value.meta}
+            onChange={escolherMeta}
+            disabled={optionsLoading}
+            placeholder="Todas as metas"
+          />
+        </div>
+        <div className="min-w-40 flex-1">
+          <Select
+            id="atividades-filtro-submeta"
+            label="Submeta"
+            options={withTodos(submetaOptions, value.meta ? "Todas as submetas da meta" : "Todas as submetas")}
+            value={value.submeta}
+            onChange={escolherSubmeta}
+            disabled={optionsLoading}
+            placeholder={value.meta ? "Todas as submetas da meta" : "Todas as submetas"}
+          />
+        </div>
+        <div className="min-w-40 flex-1">
+          <Select
+            id="atividades-filtro-indicador"
+            label="Indicador"
+            options={withTodos(plano.indicadores, "Todos os indicadores")}
+            value={value.indicador}
+            onChange={(v) => onChange({ indicador: v })}
+            disabled={optionsLoading}
+            placeholder="Todos os indicadores"
+          />
+        </div>
+      </div>
+
+      {/* Linha 3: território + técnico + tipo */}
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-40 flex-1">
           <Select
@@ -142,7 +199,7 @@ export function AtividadesFilters({
         </div>
       </div>
 
-      {/* Linha 3: status + período de início + limpar */}
+      {/* Linha 4: status + período de início + limpar */}
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-40 flex-1">
           <Select

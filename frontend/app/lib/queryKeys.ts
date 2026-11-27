@@ -126,6 +126,9 @@ export const qk = {
     lista: (status: readonly string[]) =>
       ["sgd", "remanejamentos", "lista", { status: [...status] }] as const,
     excedentes: ["sgd", "remanejamentos", "excedentes"] as const,
+    /** Histórico de remanejamentos efetivados (#466). */
+    historico: (filtros: { rubrica?: string; limit: number; offset: number }) =>
+      ["sgd", "remanejamentos", "historico", filtros] as const,
     detalhe: (id: string | number) => ["sgd", "remanejamentos", "detalhe", String(id)] as const,
     daDemanda: (demandaId: number) =>
       ["sgd", "remanejamentos", "demanda", String(demandaId)] as const,

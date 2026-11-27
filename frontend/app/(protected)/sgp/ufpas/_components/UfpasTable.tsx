@@ -26,6 +26,8 @@ function shortDate(iso: string | null | undefined): string {
 type UfpasTableProps = {
   ufpas: UfpaListItem[];
   loading: boolean;
+  /** Mostra o atalho Editar da linha; sem escrita de UFPA (#478), só o Ver. */
+  podeEditar?: boolean;
 };
 
 function SkeletonRows() {
@@ -64,7 +66,7 @@ function SkeletonCards() {
   );
 }
 
-export function UfpasTable({ ufpas, loading }: UfpasTableProps) {
+export function UfpasTable({ ufpas, loading, podeEditar = false }: UfpasTableProps) {
   const router = useRouter();
 
   function goToDetail(id: number) {
@@ -166,17 +168,19 @@ export function UfpasTable({ ufpas, loading }: UfpasTableProps) {
                       >
                         <Eye className="h-4 w-4" />
                       </button>
-                      <button
-                        type="button"
-                        aria-label={`Editar UFPA de ${u.nome_titular}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          router.push(`/sgp/ufpas/${u.id}/editar/`);
-                        }}
-                        className={actionBtn}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
+                      {podeEditar && (
+                        <button
+                          type="button"
+                          aria-label={`Editar UFPA de ${u.nome_titular}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/sgp/ufpas/${u.id}/editar/`);
+                          }}
+                          className={actionBtn}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

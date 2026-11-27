@@ -50,32 +50,35 @@ export function badgeStatusFor(status: string): BadgeStatus {
  * Os tipos vêm do schema (#273).
  */
 
-/** Ação do Plano de Trabalho (WorkPlanAcaoListSerializer, subset usado aqui). */
-export type AcaoPT = {
-  id: number;
-  meta: number;
-  numero: string;
-  descricao: string;
+/**
+ * Ação do Plano de Trabalho (`WorkPlanAcaoList`, subset usado aqui), com a
+ * Meta, a Submeta e o Indicador nomeados (#445) para o formulário mostrar a
+ * cadeia assim que a Ação é escolhida (#446).
+ */
+export type AcaoPT = Pick<
+  Schema<"WorkPlanAcaoList">,
+  | "id"
+  | "meta"
+  | "submeta"
+  | "indicador"
+  | "numero"
+  | "descricao"
+  | "meta_numero"
+  | "meta_titulo"
+  | "submeta_numero"
+  | "submeta_titulo"
+> & {
+  indicador_detalhe: Pick<Schema<"PlanoTrabalhoIndicadorRef">, "codigo" | "nome" | "unidade_medida">;
 };
 
 /** `TecnicoOption` — opções do filtro por técnico. */
 export type TecnicoOption = Schema<"TecnicoOption">;
 
-/** Ação aninhada no detalhe (to_representation do ActivityDetailSerializer). */
-export type AcaoNested = {
-  id: number;
-  numero: string;
-  descricao: string;
-  /**
-   * Cadeia do Plano de Trabalho da Ação (Meta → Submeta → Ação → Indicador).
-   * Ainda NÃO vem no detalhe — chega com o PR #328 do backend, nestes nomes
-   * (docs/pendencias-backend-sprint-10.md, item 8). Opcional até lá; o
-   * contexto da nova demanda (#294) mostra "Não disponível".
-   */
-  meta?: { id: number; numero: number; titulo: string };
-  submeta?: { id: number; numero: string; titulo: string };
-  indicador?: { id: number; codigo: string; nome: string; unidade_medida: string };
-};
+/**
+ * Ação aninhada no detalhe (`AcaoDaAtividade`): a cadeia Meta → Submeta →
+ * Ação → Indicador do Plano de Trabalho.
+ */
+export type AcaoNested = Schema<"AcaoDaAtividade">;
 
 /** Técnico aninhado no detalhe. */
 export type TecnicoNested = {
@@ -218,6 +221,10 @@ export type ListAtividadesParams = {
   limit: number;
   offset: number;
   acao?: string;
+  /** Plano de Trabalho (#464): ids de Meta, Submeta e Indicador. */
+  meta?: string;
+  submeta?: string;
+  indicador?: string;
   projeto?: string;
   territorio?: string;
   tecnico?: string;
@@ -241,13 +248,16 @@ export type ListAtividadesParams = {
  *    `territorio`/`tecnico` como o UFPAFilter. Nome errado é ignorado pelo
  *    django-filter, que então devolve a lista inteira sem filtrar.
  */
-function buildAtividadesQuery(params: ListAtividadesParams): string {
+export function buildAtividadesQuery(params: ListAtividadesParams): string {
   const qs = new URLSearchParams();
 
   qs.set("page", String(Math.floor(params.offset / params.limit) + 1));
   qs.set("page_size", String(params.limit));
 
   if (params.acao) qs.set("acao", params.acao);
+  if (params.meta) qs.set("meta", params.meta);
+  if (params.submeta) qs.set("submeta", params.submeta);
+  if (params.indicador) qs.set("indicador", params.indicador);
   if (params.projeto) qs.set("projeto", params.projeto);
   if (params.territorio) qs.set("territorio_id", params.territorio);
   if (params.tecnico) qs.set("tecnico_id", params.tecnico);

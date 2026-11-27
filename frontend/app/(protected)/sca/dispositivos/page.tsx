@@ -251,6 +251,7 @@ export default function DispositivosSCAPage() {
               }}
               pageSizes={PAGE_SIZES}
               itemNoun={{ one: "dispositivo", other: "dispositivos" }}
+              carregando={dataLoading && count === 0}
             />
           </>
         )}

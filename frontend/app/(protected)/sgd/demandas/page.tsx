@@ -443,7 +443,7 @@ export default function PainelDemandasPage() {
   return (
     <>
       <PageHeader>
-        <span className="truncate text-base font-semibold text-text">SGD</span>
+        <span className="truncate text-base font-semibold text-text">Demandas</span>
       </PageHeader>
       <Suspense fallback={<Carregando />}>
         <PainelDemandasView />

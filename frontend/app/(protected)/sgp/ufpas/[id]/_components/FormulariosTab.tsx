@@ -446,6 +446,7 @@ function FormulariosTabView({ ufpaId }: Props) {
         onLimitChange={() => {}}
         pageSizes={[PAGE_SIZE]}
         itemNoun={{ one: "resposta", other: "respostas" }}
+        carregando={loading && count === 0}
       />
 
       <RespostaFormularioSlideOver

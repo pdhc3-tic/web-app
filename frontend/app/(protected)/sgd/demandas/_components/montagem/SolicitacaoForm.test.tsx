@@ -22,7 +22,19 @@ vi.mock("@/app/lib/solicitacoes", async (original) => ({
   criarSolicitacao: (...args: unknown[]) => criar(...args),
 }));
 vi.mock("@/app/providers/SgpChoicesProvider", () => ({ useSgpChoices: () => ({}) }));
-vi.mock("./SaldoSolicitacao", () => ({ SaldoSolicitacao: () => null }));
+// O saldo de verdade tem teste próprio; aqui só o atalho do recurso extra (#467).
+vi.mock("./SaldoSolicitacao", () => ({
+  SaldoSolicitacao: ({
+    onRecursoExtra,
+  }: {
+    onRecursoExtra?: (b: { disponivel: string; solicitado: string }) => void;
+  }) =>
+    onRecursoExtra ? (
+      <button type="button" onClick={() => onRecursoExtra({ disponivel: "40.00", solicitado: "100.00" })}>
+        atalho do recurso extra
+      </button>
+    ) : null,
+}));
 
 const SCHEMA: SchemaCampos = {
   type: "object",
@@ -171,5 +183,48 @@ describe("SolicitacaoForm — anexos em envio (#365)", () => {
 
     concluir(42);
     await waitFor(() => expect(remover).toHaveBeenCalledWith(7, 42));
+  });
+});
+
+describe("SolicitacaoForm — atalho Solicitar recurso extra (#467)", () => {
+  it("salva a solicitação e devolve o bloqueio para abrir o pedido", async () => {
+    atualizar.mockResolvedValueOnce(solicitacao);
+    const onSalvo = vi.fn();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SolicitacaoForm demanda={demanda} solicitacao={solicitacao} onClose={vi.fn()} onSalvo={onSalvo} />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "atalho do recurso extra" }));
+    await waitFor(() => expect(onSalvo).toHaveBeenCalled());
+    expect(atualizar).toHaveBeenCalledTimes(1);
+    expect(onSalvo).toHaveBeenCalledWith(solicitacao, false, { disponivel: "40.00", solicitado: "100.00" });
+  });
+
+  it("o Salvar comum não pede o recurso extra", async () => {
+    atualizar.mockResolvedValueOnce(solicitacao);
+    const onSalvo = vi.fn();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SolicitacaoForm demanda={demanda} solicitacao={solicitacao} onClose={vi.fn()} onSalvo={onSalvo} />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(await screen.findByTestId("solicitacao-salvar"));
+    await waitFor(() => expect(onSalvo).toHaveBeenCalled());
+    expect(onSalvo).toHaveBeenCalledWith(solicitacao, false, undefined);
+  });
+
+  it("se salvar falhar, o pedido não abre", async () => {
+    const { ApiError } = await import("@/app/lib/api");
+    atualizar.mockRejectedValueOnce(new ApiError(400, { code: "X", message: "Recusado pelo backend." }));
+    const onSalvo = vi.fn();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SolicitacaoForm demanda={demanda} solicitacao={solicitacao} onClose={vi.fn()} onSalvo={onSalvo} />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "atalho do recurso extra" }));
+    expect(await screen.findByText("Recusado pelo backend.")).toBeTruthy();
+    expect(onSalvo).not.toHaveBeenCalled();
   });
 });

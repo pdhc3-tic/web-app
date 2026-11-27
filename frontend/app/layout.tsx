@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import SessionProvider from "./providers/SessionProvider";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -40,7 +39,9 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col">
-        <SessionProvider>{children}</SessionProvider>
+        {/* A sessão é da área logada: o SessionProvider fica no layout dela,
+            com a sessão já lida no servidor (#448). O login só usa signIn(). */}
+        {children}
       </body>
     </html>
   );

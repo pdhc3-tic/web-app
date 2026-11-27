@@ -3,8 +3,23 @@
 import { PageHeader } from "@/app/components/layout/PageHeader";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
 import { UfpaWizard } from "@/app/(protected)/sgp/ufpas/_components/UfpaWizard";
+import { RestrictedAccess } from "@/app/components/ui/RestrictedAccess/RestrictedAccess";
+import { SEM_ESCRITA_UFPA, useCanEscreverUfpa } from "@/app/lib/auth/roles";
 
 export default function NovaUfpaPage() {
+  // Quem chega pelo endereço, sem o botão: o wizard inteiro terminaria num 403.
+  const { loading, canEscrever } = useCanEscreverUfpa();
+  if (!loading && !canEscrever) {
+    return (
+      <>
+        <PageHeader>
+          <span className="truncate text-base font-semibold text-text">Nova UFPA</span>
+        </PageHeader>
+        <RestrictedAccess description={SEM_ESCRITA_UFPA} />
+      </>
+    );
+  }
+
   return (
     <>
       <PageHeader>

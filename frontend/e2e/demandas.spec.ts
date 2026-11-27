@@ -94,7 +94,7 @@ test.describe("SGD — demandas pela ficha da atividade (ADT)", () => {
       ["Ação", `${fx.acao.numero} — ${fx.acao.descricao}`],
       ["Submeta", `${fx.submeta.numero} — ${fx.submeta.titulo}`],
       ["Meta", `Meta ${fx.meta.numero} — ${fx.meta.titulo}`],
-      ["Indicador", `${fx.indicador.codigo} — ${fx.indicador.nome} (${fx.indicador.unidade_medida})`],
+      ["Indicador", `${fx.indicador.codigo} — ${fx.indicador.nome} (unidade: ${fx.indicador.unidade_medida})`],
     ];
     for (const [rotulo, valor] of esperado) {
       const termo = contexto.locator("dt", { hasText: new RegExp(`^${rotulo}$`) });

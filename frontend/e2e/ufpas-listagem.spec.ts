@@ -24,8 +24,9 @@ async function abrirListagem(page: Page): Promise<void> {
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 }
 
-test.describe("Listagem de UFPAs", () => {
-  test.use({ storageState: storageStatePath("ugp") });
+// Criar e editar só abrem para quem escreve UFPA (#478); por isso o Super Admin.
+test.describe("Telas da UFPA (Super Admin)", () => {
+  test.use({ storageState: storageStatePath("superAdmin") });
 
   test("as telas da UFPA não exibem a sigla antiga", async ({ page }) => {
     const id = primeiroUfpaId();
@@ -38,6 +39,10 @@ test.describe("Listagem de UFPAs", () => {
       }
     }
   });
+});
+
+test.describe("Listagem de UFPAs", () => {
+  test.use({ storageState: storageStatePath("ugp") });
 
   test("os endereços antigos (/sgp/upfs) levam para /sgp/ufpas (#407)", async ({ page }) => {
     await page.goto("/sgp/upfs");

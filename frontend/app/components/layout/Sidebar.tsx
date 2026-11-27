@@ -137,8 +137,12 @@ function SidebarItem({ item, active, collapsed }: SidebarItemProps) {
     : "ml-auto min-w-[20px] h-[20px] px-1.5 rounded-full text-[10px] font-medium bg-primary text-surface flex items-center justify-center";
 
   return (
+    // Sem prefetch (#448): o menu está em toda tela e buscava cada módulo duas
+    // vezes ao abrir qualquer página — cada busca passa pelo proxy, que decifra
+    // o cookie. A navegação busca a rota no clique.
     <Link
       href={href}
+      prefetch={false}
       title={collapsed ? label : undefined}
       aria-current={active ? "page" : undefined}
       className={`${base} ${layout} ${state}`}
@@ -193,6 +197,7 @@ function UserMenu({ collapsed }: UserMenuProps) {
         <span title={`${nome} · ${perfilPrincipal}`}>{avatar}</span>
         <Link
           href="/preferencias"
+          prefetch={false}
           title="Preferências"
           className="p-2 rounded-lg text-text-muted hover:bg-surface-muted hover:text-text transition-colors"
         >
@@ -203,6 +208,7 @@ function UserMenu({ collapsed }: UserMenuProps) {
           onClick={handleLogout}
           disabled={leaving}
           title="Sair"
+          aria-label={leaving ? "Saindo" : "Sair"}
           className="p-2 rounded-lg text-text-muted hover:bg-error-bg hover:text-error-text transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {leaving ? (
@@ -231,6 +237,7 @@ function UserMenu({ collapsed }: UserMenuProps) {
       <div className="flex items-center gap-1">
         <Link
           href="/preferencias"
+          prefetch={false}
           className="flex-1 inline-flex items-center justify-center gap-1.5 h-8 px-2 rounded-lg text-xs text-text-muted hover:bg-surface-muted hover:text-text transition-colors"
         >
           <SlidersHorizontal className="h-3.5 w-3.5" />
@@ -240,6 +247,9 @@ function UserMenu({ collapsed }: UserMenuProps) {
           type="button"
           onClick={handleLogout}
           disabled={leaving}
+          // O "Saindo" invisível só reserva a largura para o botão não pular na
+          // troca do texto; o nome acessível é o texto visível.
+          aria-label={leaving ? "Saindo" : "Sair"}
           className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-lg text-xs text-text-muted hover:bg-error-bg hover:text-error-text transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {leaving ? (
@@ -247,8 +257,8 @@ function UserMenu({ collapsed }: UserMenuProps) {
           ) : (
             <LogOut className="h-3.5 w-3.5" />
           )}
-          <span className="relative inline-flex">
-            <span aria-hidden="true" className="invisible">Saindo</span>
+          <span aria-hidden="true" className="relative inline-flex">
+            <span className="invisible">Saindo</span>
             <span className="absolute">{leaving ? "Saindo" : "Sair"}</span>
           </span>
         </button>

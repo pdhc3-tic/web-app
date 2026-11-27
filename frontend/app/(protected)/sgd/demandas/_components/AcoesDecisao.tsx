@@ -139,6 +139,9 @@ export function AcoesDecisao({
   function aplicarDecisao(atualizada: Demanda, desfecho: Desfecho) {
     queryClient.setQueryData(qk.demandas.detalhe(atualizada.id), atualizada);
     void queryClient.invalidateQueries({ queryKey: qk.demandas.all });
+    // Autorizar com excedente efetiva um remanejamento: os Excedentes pontuais
+    // da Fila (#363) e o histórico de remanejamentos (#466) mudam.
+    void queryClient.invalidateQueries({ queryKey: qk.remanejamentos.all });
     setModo("inicio");
     onDecidido(desfecho);
   }

@@ -7,6 +7,8 @@ import {
   removerAtividadesFixture,
   type AtividadesFixture,
 } from "./helpers/atividadesFixture";
+import { esperarHidratacao } from "./helpers/hidratacao";
+import { pngDeRuido } from "./helpers/imagem";
 import { storageStatePath } from "./helpers/users";
 
 /**
@@ -29,14 +31,17 @@ test.afterAll(() => {
 });
 
 /**
- * Abre o formulário de nova atividade já hidratado: o técnico responsável vem
- * preenchido com o usuário depois que a tela carrega os dados. Antes disso, o
+ * Abre o formulário de nova atividade já hidratado e com os dados carregados
+ * (o técnico responsável preenchido com o usuário). Antes da hidratação, o
  * React descarta o que for digitado.
  */
 async function abrirNovaAtividade(page: Page) {
   await page.goto("/sgp/atividades/nova");
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await expect(page.locator("#atividade-tecnico-responsavel")).not.toHaveText(/Selecione/);
+  // Desde a #448 a sessão vem do servidor e o técnico já sai preenchido no HTML:
+  // isso não indica mais que a página hidratou, e o que se digita antes some.
+  await esperarHidratacao(page, "#atividade-data-inicio");
 }
 
 /** Abre um `Select` do design system pelo id e escolhe a opção. */
@@ -173,6 +178,36 @@ test.describe("SGP — Evidências (fotos e documentos)", () => {
     await page.getByRole("button", { name: /Enviar .* foto/i }).click();
     expect((await confirmacao).status()).toBe(201);
     await expect.poll(() => contarAnexos(fx.anexos.id).fotos).toBe(1);
+  });
+
+  test("foto acima de 800 KB é comprimida no navegador e gravada dentro do limite (#464)", async ({ page }) => {
+    const original = pngDeRuido(1000);
+    expect(original.length).toBeGreaterThan(819_200);
+    const antes = contarAnexos(fx.anexos.id).fotos;
+
+    await page.goto(`/sgp/atividades/${fx.anexos.id}/editar`);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await page
+      .locator('input[type="file"]')
+      .first()
+      .setInputFiles({ name: "foto-grande.png", mimeType: "image/png", buffer: original });
+
+    // Sem recusa: a foto entra na bandeja já comprimida, em JPEG.
+    await expect(page.getByTestId("foto-nova-tamanho")).toContainText("foto-grande.jpg");
+    await expect(page.getByTestId("foto-nova-tamanho")).toContainText("comprimida de");
+
+    const pedido = page.waitForRequest(
+      (r) => r.url().includes(`/atividades/${fx.anexos.id}/fotos/upload-url/`) && r.method() === "POST",
+    );
+    const confirmacao = page.waitForResponse(
+      (r) => r.url().includes(`/atividades/${fx.anexos.id}/fotos/confirm/`) && r.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: /Enviar 1 foto/ }).click();
+    const corpo = (await pedido).postDataJSON() as { size: number; content_type: string };
+    expect(corpo.content_type).toBe("image/jpeg");
+    expect(corpo.size).toBeLessThanOrEqual(819_200);
+    expect((await confirmacao).status()).toBe(201);
+    await expect.poll(() => contarAnexos(fx.anexos.id).fotos).toBe(antes + 1);
   });
 
   test("upload de documento PDF passa pelo storage e aparece na lista", async ({ page }) => {

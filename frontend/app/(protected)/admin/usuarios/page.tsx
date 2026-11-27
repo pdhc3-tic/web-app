@@ -375,6 +375,7 @@ function UsuariosView() {
               onOffsetChange={setOffset}
               onLimitChange={handleLimitChange}
               itemNoun={{ one: "usuário", other: "usuários" }}
+              carregando={dataLoading && count === 0}
             />
           </>
         )}

@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
+import { recriarFixturesSca } from "./helpers/seedSca";
 import { storageStatePath } from "./helpers/users";
 
 /**
@@ -23,14 +24,6 @@ function consultar(sql: string): string {
     ["exec", "db", "psql", "-U", "postgres", "-d", "app_db", "-tAc", sql],
     { encoding: "utf8", timeout: 30_000 },
   ).trim();
-}
-
-function recriarFixturesSca(): void {
-  execFileSync(
-    "docker",
-    ["exec", "backend", "python", "manage.py", "seed_demo", "--sca-only"],
-    { stdio: "pipe", timeout: 120_000 },
-  );
 }
 
 function primeiroId(tabela: string, origem: "sca" | "web"): number {

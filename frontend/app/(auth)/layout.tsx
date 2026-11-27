@@ -50,8 +50,8 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
             <span className="text-white/60">da agricultura familiar.</span>
           </h2>
           <p className="mt-5 text-sm text-white/55 leading-relaxed max-w-sm">
-            Plataforma do Programa de Desenvolvimento Humano das Cadeias
-            Produtivas no semiárido brasileiro.
+            Plataforma do Projeto Dom Hélder Câmara III no semiárido
+            brasileiro.
           </p>
         </div>
 

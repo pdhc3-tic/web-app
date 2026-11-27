@@ -68,7 +68,7 @@ export default function NovaDemandaPage() {
   return (
     <>
       <PageHeader>
-        <span className="truncate text-base font-semibold text-text">SGD</span>
+        <span className="truncate text-base font-semibold text-text">Nova demanda</span>
       </PageHeader>
       <Suspense fallback={<Carregando />}>
         <NovaDemandaView />

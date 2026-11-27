@@ -18,6 +18,9 @@ import { primeiraUfpaComComunidadeId, primeiroUfpaId } from "./helpers/ufpa";
 
 test.use({ storageState: storageStatePath("ugp") });
 
+/** O wizard é escrita de UFPA: só Super Admin e ADT/ACR o abrem (#478). */
+const ESCREVE_UFPA = storageStatePath("superAdmin");
+
 test.describe("Ficha da UFPA — localização", () => {
   test("Estado aparece sem chamar /api/v1/states/ na ficha", async ({
     page,
@@ -79,6 +82,8 @@ test.describe("Ficha da UFPA — localização", () => {
 });
 
 test.describe("Wizard — cascata de localização", () => {
+  test.use({ storageState: ESCREVE_UFPA });
+
   test("troca rápida entre Estados: resposta antiga não sobrescreve a nova", async ({
     page,
   }) => {
@@ -196,6 +201,8 @@ test.describe("Wizard — cascata de localização", () => {
 });
 
 test.describe("Wizard — comportamento do formulário", () => {
+  test.use({ storageState: ESCREVE_UFPA });
+
   test("município bloqueado sem estado selecionado", async ({ page }) => {
     await page.goto("/sgp/ufpas/nova/");
     const municipioSelect = page.getByRole("combobox", { name: /município/i });

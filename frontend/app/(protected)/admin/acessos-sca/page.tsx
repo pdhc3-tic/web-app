@@ -313,6 +313,7 @@ export default function AcessosSCAPage() {
               }}
               pageSizes={PAGE_SIZES}
               itemNoun={{ one: "técnico", other: "técnicos" }}
+              carregando={dataLoading && count === 0}
             />
           </>
         )}

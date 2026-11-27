@@ -114,9 +114,9 @@ export default function SCAPage() {
   const visiveis = SUBMODULES.filter((s) => !s.visivel || s.visivel(user));
   const podeVerDispositivos = canViewScaAdmin(user);
 
-  // `null` = carregando ou erro silencioso → o card mostra "—" sem travar a
-  // tela. Só busca para quem enxerga o card, senão a chamada seria um 403 certo.
-  const [deviceCount, setDeviceCount] = useState<number | null>(null);
+  // `null` = carregando; `undefined` = a contagem falhou e o card fica sem
+  // número. Só busca para quem enxerga o card, senão a chamada seria um 403 certo.
+  const [deviceCount, setDeviceCount] = useState<number | null | undefined>(null);
 
   useEffect(() => {
     if (!podeVerDispositivos) return;
@@ -125,7 +125,8 @@ export default function SCAPage() {
     fetchDeviceCount(controller.signal)
       .then(setDeviceCount)
       .catch(() => {
-        // Silencioso: o card fica com "—" e o resto da tela segue.
+        // Silencioso: o card fica sem número e o resto da tela segue.
+        if (!controller.signal.aborted) setDeviceCount(undefined);
       });
 
     return () => controller.abort();

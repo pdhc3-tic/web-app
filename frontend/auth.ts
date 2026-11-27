@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import type { JWT } from "@auth/core/jwt";
 import { CredentialsSignin } from "@auth/core/errors";
 import type { Perfil, Territorio } from "@/app/lib/auth/types";
+import { compactarUsuario, type PerfilDaSessao } from "@/app/lib/auth/sessaoCompacta";
 
 // API_INTERNAL_URL é usado server-side (ex: dentro do container Docker, http://backend:8000).
 const BASE_URL =
@@ -19,7 +20,7 @@ declare module "next-auth" {
       id: string;
       nome_completo: string;
       foto_url: string;
-      perfis: Perfil[];
+      perfis: PerfilDaSessao[];
       territorios: Territorio[];
     } & DefaultSession["user"];
   }
@@ -31,7 +32,8 @@ declare module "next-auth" {
     nome_completo: string;
     email: string;
     foto_url: string;
-    perfis: Perfil[];
+    // O authorize() devolve o perfil completo do /auth/me; a sessão só guarda estes campos.
+    perfis: PerfilDaSessao[];
     territorios: Territorio[];
   }
 }
@@ -45,7 +47,7 @@ type AppJWT = JWT & {
   nome_completo: string;
   email: string;
   foto_url: string;
-  perfis: Perfil[];
+  perfis: PerfilDaSessao[];
   territorios: Territorio[];
   accessTokenExpiresAt: number;
   error?: "RefreshTokenExpired";
@@ -198,8 +200,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         t.nome_completo = user.nome_completo;
         t.email = user.email;
         t.foto_url = user.foto_url;
-        t.perfis = user.perfis;
-        t.territorios = user.territorios;
+        // Só o que o front lê, e sem a lista de todos os territórios dos perfis
+        // nacionais: o cookie passava de 16 KB (#448).
+        const { perfis, territorios } = compactarUsuario(user);
+        t.perfis = perfis;
+        t.territorios = territorios;
         t.accessTokenExpiresAt = getTokenExpiry(user.accessToken);
         return t;
       }

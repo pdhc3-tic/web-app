@@ -23,6 +23,8 @@ type LocalizacaoStepProps = {
   onMunicipioChange: (value: string) => void;
   onComunidadeChange: (value: string) => void;
   onGps: (lat: string, lng: string) => void;
+  /** As opções de estado, município e comunidade ainda estão chegando (#448). */
+  carregandoOpcoes?: boolean;
 };
 
 export function LocalizacaoStep({
@@ -39,6 +41,7 @@ export function LocalizacaoStep({
   onMunicipioChange,
   onComunidadeChange,
   onGps,
+  carregandoOpcoes = false,
 }: LocalizacaoStepProps) {
   const comunidadeWithCreate: SelectOption[] = [
     ...comunidadeOptions,
@@ -54,7 +57,8 @@ export function LocalizacaoStep({
         value={form.estado}
         onChange={onEstadoChange}
         error={errors.estado}
-        placeholder="Selecione o estado"
+        disabled={carregandoOpcoes}
+        placeholder={carregandoOpcoes ? "Carregando…" : "Selecione o estado"}
       />
 
       <Select
@@ -64,8 +68,10 @@ export function LocalizacaoStep({
         value={form.municipio}
         onChange={onMunicipioChange}
         error={errors.municipio}
-        disabled={!form.estado}
-        placeholder={form.estado ? "Selecione o município" : "Escolha o estado antes"}
+        disabled={carregandoOpcoes || !form.estado}
+        placeholder={
+          carregandoOpcoes ? "Carregando…" : form.estado ? "Selecione o município" : "Escolha o estado antes"
+        }
       />
 
       <Select
@@ -73,9 +79,13 @@ export function LocalizacaoStep({
         options={comunidadeWithCreate}
         value={form.comunidade}
         onChange={onComunidadeChange}
-        disabled={!form.municipio}
+        disabled={carregandoOpcoes || !form.municipio}
         placeholder={
-          form.municipio ? "Selecione a comunidade" : "Escolha o município antes"
+          carregandoOpcoes
+            ? "Carregando…"
+            : form.municipio
+              ? "Selecione a comunidade"
+              : "Escolha o município antes"
         }
       />
 

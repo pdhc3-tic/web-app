@@ -13,7 +13,6 @@ import {
   startOfMonth,
   startOfWeek,
 } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import {
   AlertTriangle,
   CalendarDays,
@@ -44,6 +43,7 @@ import { WeekView } from "./WeekView";
 import { MonthView } from "./MonthView";
 import { EventoDetailsSlideOver } from "./EventoDetailsSlideOver";
 import { STATUS_HEX_COLORS } from "./statusColor";
+import { rotuloDoPeriodo } from "./rotuloDoPeriodo";
 
 export type ViewMode = "dia" | "semana" | "mes";
 
@@ -250,18 +250,7 @@ export function CalendarioView() {
     [filters.tecnico, router],
   );
 
-  // Rótulo do período (formato pt-BR) — muda por view.
-  const periodoLabel = useMemo(() => {
-    if (view === "dia") {
-      return format(anchor, "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
-    }
-    if (view === "semana") {
-      const ini = startOfWeek(anchor, { weekStartsOn: 0 });
-      const fim = endOfWeek(anchor, { weekStartsOn: 0 });
-      return `${format(ini, "dd/MM")} — ${format(fim, "dd/MM 'de' yyyy", { locale: ptBR })}`;
-    }
-    return format(anchor, "MMMM 'de' yyyy", { locale: ptBR });
-  }, [view, anchor]);
+  const periodoLabel = useMemo(() => rotuloDoPeriodo(view, anchor), [view, anchor]);
 
   return (
     <>
@@ -314,7 +303,7 @@ export function CalendarioView() {
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
-            <p className="ml-2 text-sm font-medium capitalize text-text">
+            <p className="ml-2 text-sm font-medium text-text" data-testid="calendario-periodo">
               {periodoLabel}
             </p>
           </div>

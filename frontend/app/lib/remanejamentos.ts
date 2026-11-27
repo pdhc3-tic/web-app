@@ -125,21 +125,96 @@ export type PoolDoRemanejamento = {
   territorio: string | null;
 };
 
+/** `BudgetTransfer.Tipo`. */
+export type TipoTransferencia = "entre_rubricas" | "entre_territorios" | "entre_niveis";
+
 /** `BudgetTransferSerializer` — um remanejamento efetivado. */
 export type TransferenciaRemanejamento = {
   id: number;
+  tipo: TipoTransferencia;
+  /** Vazio no remanejamento feito direto pela UGP, sem demanda nem pedido. */
   escopo: "pontual" | "elevacao_limite" | "";
   escopo_display: string;
   origem: PoolDoRemanejamento;
   destino: PoolDoRemanejamento;
+  /** Slug da rubrica do pool de destino. */
   rubrica: string;
   valor: string;
   motivo: string;
+  saldo_origem_antes: string;
+  saldo_origem_depois: string;
+  saldo_destino_antes: string;
+  saldo_destino_depois: string;
+  aprovado_por: number | null;
   aprovado_por_nome: string | null;
+  /** Pedido de recurso extra que gerou o remanejamento (`elevacao_limite`). */
+  pedido: number | null;
   demanda_id: string | null;
   solicitacao_id: string | null;
   criado_em: string;
 };
+
+/** Nome do local do pool: o território, a UF ou "Nacional". */
+export const nomeDoPoolDoRemanejamento = (p: PoolDoRemanejamento) => p.territorio ?? p.estado ?? "Nacional";
+
+export const TIPO_DA_TRANSFERENCIA: Record<TipoTransferencia, string> = {
+  entre_rubricas: "Entre rubricas",
+  entre_territorios: "Entre territórios",
+  entre_niveis: "Entre níveis",
+};
+
+/**
+ * De onde veio o remanejamento: direto da UGP (`escopo` vazio), do excedente
+ * autorizado numa demanda (`pontual`, #363) ou da decisão de um pedido de
+ * recurso extra (`elevacao_limite`, #321), com o link para a demanda ou o pedido.
+ */
+export function origemDaTransferencia(
+  t: Pick<TransferenciaRemanejamento, "escopo" | "demanda_id" | "pedido">,
+): { rotulo: string; href: string | null } {
+  if (t.escopo === "pontual") {
+    return t.demanda_id
+      ? { rotulo: `Excedente da demanda #${t.demanda_id}`, href: `/sgd/demandas?demanda=${t.demanda_id}` }
+      : { rotulo: "Excedente de demanda", href: null };
+  }
+  if (t.escopo === "elevacao_limite") {
+    return t.pedido
+      ? { rotulo: `Recurso extra (pedido #${t.pedido})`, href: `/sgd/remanejamentos/${t.pedido}` }
+      : { rotulo: "Recurso extra", href: null };
+  }
+  return { rotulo: "Direto da UGP", href: null };
+}
+
+/** `RemanejamentoPagination.default_limit`. */
+export const TRANSFERENCIAS_POR_PAGINA = 20;
+
+/**
+ * Filtros do histórico que o backend aceita hoje. Território, período e
+ * responsável ainda não existem na rota (pendencias-backend-sprint-12h.md, item 2).
+ */
+export type FiltrosTransferencias = { rubrica?: string; limit: number; offset: number };
+
+export function queryTransferencias({ rubrica, limit, offset }: FiltrosTransferencias): URLSearchParams {
+  const qs = new URLSearchParams();
+  if (rubrica) qs.set("rubrica", rubrica);
+  qs.set("limit", String(limit));
+  if (offset > 0) qs.set("offset", String(offset));
+  return qs;
+}
+
+/**
+ * GET /api/v1/sgd/remanejamentos/transferencias/ — o histórico de remanejamentos
+ * efetivados (#466), do mais recente ao mais antigo. UGP, FGD e Super Admin.
+ */
+export async function listTransferencias(
+  filtros: FiltrosTransferencias,
+  signal?: AbortSignal,
+): Promise<{ transferencias: TransferenciaRemanejamento[]; total: number }> {
+  const res = await apiClient(`${REMANEJAMENTOS_PATH}transferencias/?${queryTransferencias(filtros)}`, {
+    signal,
+  });
+  const pagina = (await res.json()) as { count: number; results: TransferenciaRemanejamento[] };
+  return { transferencias: pagina.results, total: pagina.count };
+}
 
 /** GET /api/v1/sgd/remanejamentos/transferencias/?escopo=pontual — os excedentes autorizados nas demandas (#363). */
 export async function listExcedentes(

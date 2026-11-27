@@ -5,7 +5,7 @@ import type { LucideIcon } from "lucide-react";
  * Card de submódulo das telas-índice de módulo (SGP, SCA). Nasceu no SGP e
  * subiu para cá quando ganhou o segundo consumidor — o comportamento é o mesmo
  * nas duas: `href` ausente marca o card como "Em breve", e `count` opcional
- * mostra o número do submódulo ativo.
+ * mostra o número do submódulo ativo. A descrição aparece inteira (#467).
  */
 type SubmoduleCardProps = {
   title: string;
@@ -13,7 +13,11 @@ type SubmoduleCardProps = {
   Icon: LucideIcon;
   /** Presença define o card como ativo (navegável). Ausência => "Em breve". */
   href?: string;
-  /** Contador do card ativo: número exibido, `null` = carregando/erro ("—"). Omitir = sem contador. */
+  /**
+   * Contador do card ativo: o número; `null` enquanto carrega (um marcador
+   * discreto). Omitir, inclusive quando a contagem falhou, deixa o card sem
+   * número: um "—" solto não diz nada a quem lê (#467).
+   */
   count?: number | null;
   /** Data-testid do wrapper (Link quando ativo, div quando desabilitado). */
   testId?: string;
@@ -50,9 +54,17 @@ function CardBody({
 
         {active ? (
           count !== undefined && (
-            <span className="text-2xl font-semibold text-text tabular-nums leading-none">
-              {count === null ? "—" : count.toLocaleString("pt-BR")}
-            </span>
+            count === null ? (
+              <span
+                aria-hidden="true"
+                className="h-6 w-10 animate-pulse rounded bg-surface-muted"
+                data-testid="submodule-card-contador-carregando"
+              />
+            ) : (
+              <span className="text-2xl font-semibold text-text tabular-nums leading-none">
+                {count.toLocaleString("pt-BR")}
+              </span>
+            )
           )
         ) : (
           <span className="inline-flex items-center rounded-full bg-neutral-bg px-2 py-0.5 text-2xs font-medium text-neutral-text">
@@ -63,7 +75,7 @@ function CardBody({
 
       <div className="min-w-0">
         <h2 className="text-sm font-semibold text-text">{title}</h2>
-        <p className="mt-1 line-clamp-1 text-xs text-text-muted">{description}</p>
+        <p className="mt-1 text-xs text-text-muted">{description}</p>
       </div>
     </>
   );
@@ -79,8 +91,11 @@ export function SubmoduleCard({
 }: SubmoduleCardProps) {
   if (href) {
     return (
+      // Sem prefetch (#448): uma home tem até onze cards, e cada um buscava a
+      // rota ao aparecer na tela.
       <Link
         href={href}
+        prefetch={false}
         data-testid={testId}
         className={`${CARD_BASE} hover:border-primary/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary`}
       >

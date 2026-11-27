@@ -197,10 +197,12 @@ function NovoRemanejamentoView() {
 
   /**
    * O remanejamento muda o alocado de dois pools: recarrega as opções desta
-   * tela, o painel e os saldos que o SGD mostra na montagem e na execução.
+   * tela, o painel e os saldos que o SGD mostra na montagem e na execução. A
+   * confirmação ainda entra no histórico de remanejamentos (#466).
    */
   function recarregarSaldos() {
     void queryClient.invalidateQueries({ queryKey: ["sgp", "orcamento"] });
+    void queryClient.invalidateQueries({ queryKey: qk.remanejamentos.all });
     void queryClient.invalidateQueries({ queryKey: ["sgd", "saldo"] });
     void queryClient.invalidateQueries({ queryKey: ["sgd", "execucao", "painel"] });
   }
@@ -253,6 +255,7 @@ function NovoRemanejamentoView() {
           { label: "Início", href: "/dashboard" },
           { label: "SGP", href: "/sgp" },
           { label: "Orçamento", href: "/sgp/orcamento" },
+          { label: "Remanejamentos", href: "/sgp/orcamento/remanejamentos" },
           { label: "Novo remanejamento" },
         ]}
       />
@@ -406,7 +409,7 @@ export default function NovoRemanejamentoPage() {
   return (
     <>
       <PageHeader>
-        <span className="truncate text-base font-semibold text-text">SGP</span>
+        <span className="truncate text-base font-semibold text-text">Novo remanejamento</span>
       </PageHeader>
       <NovoRemanejamentoView />
     </>

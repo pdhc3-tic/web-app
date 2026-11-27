@@ -277,6 +277,7 @@ function TecnicosView() {
                 setLimit(l);
                 setOffset(0);
               }}
+              carregando={dataLoading && count === 0}
             />
           )}
         </>

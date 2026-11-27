@@ -1,5 +1,5 @@
-import { execFileSync } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
+import { recriarFixturesSca } from "./helpers/seedSca";
 import { storageStatePath } from "./helpers/users";
 
 /**
@@ -26,14 +26,6 @@ import { storageStatePath } from "./helpers/users";
 /** Campos dos dois conflitos sensíveis semeados, um em cada estado. */
 const CAMPO_PE = "CPF do titular";
 const CAMPO_PB = "Nome do titular";
-
-function recriarFixturesSca(): void {
-  execFileSync(
-    "docker",
-    ["exec", "backend", "python", "manage.py", "seed_demo", "--sca-only"],
-    { stdio: "pipe", timeout: 120_000 },
-  );
-}
 
 async function abrirLista(page: Page): Promise<void> {
   await page.goto("/sca/conflitos");

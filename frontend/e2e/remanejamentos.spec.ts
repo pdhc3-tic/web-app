@@ -7,7 +7,8 @@ import {
 import { storageStatePath } from "./helpers/users";
 
 /**
- * #321 — Fluxo "Solicitar recurso extra" e Fila de Remanejamentos (SGD-FE-10).
+ * #321 — Fluxo "Solicitar recurso extra" e a tela Pedidos de recurso extra (SGD-FE-10;
+ * antes "Fila de Remanejamentos", renomeada na #467).
  *
  * Contra o backend real (BE-12): a fixture cria os pedidos pelos services do
  * SGD, e o parecer do Articulador leva os da UGP a Com parecer.
@@ -175,7 +176,7 @@ test.describe("Solicitante (ADT de RN)", () => {
     await expect(page.getByTestId("pedido-page")).toContainText("Submetida");
   });
 
-  test("não acessa a Fila de Remanejamentos", async ({ page }) => {
+  test("não acessa os Pedidos de recurso extra", async ({ page }) => {
     await page.goto("/sgd");
     await expect(page.getByTestId("sgd-painel")).toBeVisible();
     await expect(page.getByTestId("sgd-remanejamentos")).toHaveCount(0);
@@ -189,7 +190,7 @@ test.describe("Solicitante (ADT de RN)", () => {
 test.describe("FGD", () => {
   test.use({ storageState: storageStatePath("fgd") });
 
-  test("não acessa a Fila de Remanejamentos", async ({ page }) => {
+  test("não acessa os Pedidos de recurso extra", async ({ page }) => {
     await page.goto("/sgd/remanejamentos");
     await expect(page.getByText("Conteúdo restrito")).toBeVisible();
     await expect(page.getByTestId("remanejamentos-tabela")).toHaveCount(0);

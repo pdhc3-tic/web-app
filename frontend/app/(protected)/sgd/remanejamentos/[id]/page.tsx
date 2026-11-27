@@ -37,7 +37,7 @@ export default function PedidoRemanejamentoPage() {
   return (
     <>
       <PageHeader>
-        <span className="truncate text-base font-semibold text-text">SGD</span>
+        <span className="truncate text-base font-semibold text-text">Pedido de recurso extra</span>
       </PageHeader>
 
       <div className="mx-auto flex max-w-3xl flex-col gap-5" data-testid="pedido-page">
@@ -45,7 +45,7 @@ export default function PedidoRemanejamentoPage() {
           items={[
             { label: "Início", href: "/dashboard" },
             { label: "SGD", href: "/sgd" },
-            { label: "Remanejamentos", href: "/sgd/remanejamentos" },
+            { label: "Pedidos de recurso extra", href: "/sgd/remanejamentos" },
             { label: `Pedido #${id}` },
           ]}
         />

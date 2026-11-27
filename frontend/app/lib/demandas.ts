@@ -27,26 +27,11 @@ export type StatusDemanda =
 
 /**
  * `DemandContextoSerializer`: o contexto herdado da atividade, já resolvido
- * pelo backend. Só Ação e Meta — o SGP não modela Submeta nem Indicador
- * (docs/pendencias-backend-sprint-10.md, item 7).
+ * pelo backend, com a cadeia Ação → Submeta → Meta → Indicador do Plano de
+ * Trabalho (#446). `municipio_estado_sigla` é a UF do município da atividade
+ * (#361) e pode diferir de `Demanda.estado_sigla`.
  */
-export type ContextoDemanda = {
-  territorio_id: number | null;
-  territorio_nome: string | null;
-  municipio_id: number;
-  municipio_nome: string;
-  /** UF do município da atividade (#361) — pode diferir de `Demanda.estado_sigla`. */
-  municipio_estado_sigla: string;
-  comunidade_id: number | null;
-  comunidade_nome: string | null;
-  data_prevista: string;
-  tecnico_id: number;
-  tecnico_nome: string;
-  acao_numero: string;
-  acao_descricao: string;
-  meta_numero: number;
-  meta_titulo: string;
-};
+export type ContextoDemanda = Schema<"DemandContexto">;
 
 /**
  * `DemandRequestSerializer` — uma solicitação de recurso da demanda.

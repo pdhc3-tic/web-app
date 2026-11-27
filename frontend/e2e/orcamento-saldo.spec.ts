@@ -150,50 +150,12 @@ test.describe("Saldo por rubrica — ADT sem território", () => {
    * a tela de orçamento convertia aquele 403 em `RestrictedAccess`, e o card
    * com o estado vazio explicativo sequer chegava a renderizar.
    *
-   * O primeiro teste continua valendo pelo que de fato cobre, com o banco
-   * INTACTO; o segundo remove o vínculo de verdade e cobre o resto.
+   * O primeiro caminho (o card decide pela sessão, sem requisição) saiu daqui
+   * na #448: a sessão passou a vir do servidor, e reescrever a resposta de
+   * /api/auth/session não a altera mais. Está coberto no Vitest
+   * (`app/components/sgp/BudgetBalance/BudgetBalance.test.tsx`). Fica aqui o
+   * segundo, que remove o vínculo de verdade.
    */
-  test("sessão sem território decide sem gastar requisição", async ({
-    page,
-  }) => {
-    const chamadasAoPainel: string[] = [];
-    page.on("request", (req) => {
-      if (req.url().includes("/api/v1/sgp/orcamento/painel/")) {
-        chamadasAoPainel.push(req.url());
-      }
-    });
-
-    await page.route("**/api/auth/session", async (route) => {
-      // O handler sobrevive ao fim do teste; sem o catch, a corrida entre a
-      // última chamada da página e o teardown vira erro fora de qualquer teste.
-      try {
-        const resposta = await route.fetch();
-        const sessao = await resposta.json();
-        if (sessao?.user) {
-          sessao.user.territorios = [];
-        }
-        await route.fulfill({ response: resposta, json: sessao });
-      } catch {
-        await route.abort("failed").catch(() => {});
-      }
-    });
-
-    // Sem território, o card nem vai buscar o saldo — é isso que separa
-    // "decidiu pela sessão" de "perguntou e recebeu vazio".
-    await page.goto("/sgp/orcamento/");
-
-    const card = page.getByTestId("budget-balance");
-    await expect(card).toBeVisible();
-    await expect(card).toContainText("Nenhum território atribuído");
-
-    // Estado vazio não é erro: nada de alerta nem de botão de retry.
-    await expect(page.getByTestId("budget-balance-erro")).toHaveCount(0);
-    await expect(page.getByTestId("budget-balance-lista")).toHaveCount(0);
-
-    // A página em volta chama o painel uma vez para montar a matriz. O card não
-    // acrescenta a segunda: ele já sabia a resposta antes de perguntar.
-    expect(chamadasAoPainel.length).toBeLessThanOrEqual(1);
-  });
 
   /**
    * O caminho que o falso positivo escondia: a API nega de verdade.
