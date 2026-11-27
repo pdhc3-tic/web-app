@@ -1,8 +1,12 @@
-"""Listagem de demandas: filtro por atividade, status repetido, fila e paginação."""
+"""Listagem de demandas: filtros, fila, paginação, ordenação e título da atividade."""
+from datetime import datetime
+
 import pytest
+from django.utils import timezone
 from drf_spectacular.generators import SchemaGenerator
 
 from apps.core.tests.factories import RoleFactory, UserFactory
+from apps.sgd.models.demand import Demand
 from apps.sgd.tests.factories import DemandFactory
 from apps.sgp.tests.factories import ActivityFactory
 
@@ -134,3 +138,62 @@ def test_schema_da_listagem_e_paginado_e_documenta_os_filtros():
         "responsavel_etapa_atual",
     } <= set(parametros)
     assert parametros["status"]["schema"]["type"] == "array"
+
+
+@pytest.fixture
+def demandas_ordenaveis(activity_rn, solicitante_rn):
+    """Duas com o mesmo título, para conferir o desempate por pk nos dois sentidos."""
+    demandas = {
+        nome: DemandFactory(activity=activity_rn, solicitante=solicitante_rn, status="submetida", titulo=titulo)
+        for nome, titulo in (("bravo", "Bravo"), ("alfa_1", "Alfa"), ("alfa_2", "Alfa"))
+    }
+    for nome, mes in (("bravo", 1), ("alfa_1", 3), ("alfa_2", 2)):
+        Demand.objects.filter(pk=demandas[nome].pk).update(
+            criado_em=timezone.make_aware(datetime(2026, mes, 1)),
+        )
+    return {nome: demanda.pk for nome, demanda in demandas.items()}
+
+
+@pytest.mark.parametrize(("ordering", "ordem"), [
+    ("criado_em", ["bravo", "alfa_2", "alfa_1"]),
+    ("-criado_em", ["alfa_1", "alfa_2", "bravo"]),
+    ("titulo", ["alfa_1", "alfa_2", "bravo"]),
+    ("-titulo", ["bravo", "alfa_2", "alfa_1"]),
+])
+def test_listagem_ordena_por_data_de_criacao_e_titulo(auth_client_ugp, demandas_ordenaveis, ordering, ordem):
+    response = auth_client_ugp.get(LISTA, {"ordering": ordering})
+
+    assert response.status_code == 200
+    assert _ids(response) == [demandas_ordenaveis[nome] for nome in ordem]
+
+
+@pytest.mark.parametrize(("ordering", "crescente"), [("criado_em", True), ("-criado_em", False)])
+def test_listagem_por_data_de_criacao_desempata_pelo_pk(
+    auth_client_ugp, activity_rn, solicitante_rn, ordering, crescente,
+):
+    pks = [
+        DemandFactory(activity=activity_rn, solicitante=solicitante_rn, status="submetida").pk for _ in range(2)
+    ]
+    Demand.objects.filter(pk__in=pks).update(criado_em=timezone.make_aware(datetime(2026, 1, 1)))
+
+    response = auth_client_ugp.get(LISTA, {"ordering": ordering})
+
+    assert response.status_code == 200
+    assert _ids(response) == sorted(pks, reverse=not crescente)
+
+
+def test_schema_documenta_as_ordenacoes_da_listagem():
+    schema = SchemaGenerator().get_schema(request=None, public=True)
+    parametros = {p["name"]: p for p in schema["paths"][LISTA]["get"]["parameters"]}
+
+    assert {"criado_em", "-criado_em", "titulo", "-titulo"} <= set(parametros["ordering"]["schema"]["enum"])
+
+
+def test_listagem_e_detalhe_trazem_o_titulo_da_atividade(auth_client_ugp, activity_rn, solicitante_rn):
+    demanda = DemandFactory(activity=activity_rn, solicitante=solicitante_rn, status="submetida")
+
+    lista = auth_client_ugp.get(LISTA)
+    detalhe = auth_client_ugp.get(f"{LISTA}{demanda.pk}/")
+
+    assert lista.data["results"][0]["activity_titulo"] == activity_rn.titulo
+    assert detalhe.data["activity_titulo"] == activity_rn.titulo

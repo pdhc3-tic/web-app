@@ -43,9 +43,16 @@ from apps.sgp.models.activity import (
     STATUS_CHOICES,
     TIPO_ATIVIDADE_CHOICES,
 )
+from apps.sgp.models.indicator import (
+    CATEGORIA_CHOICES as INDICADOR_CATEGORIA_CHOICES,
+    DESAGREGACAO_CHOICES,
+    FORMA_APURACAO_CHOICES,
+    UNIDADE_MEDIDA_CHOICES,
+)
 
-# Única lista do que o endpoint publica. Os testes de contrato conferem que
-# toda constante de choices do SGP e do SGD está aqui.
+# Única lista do que o endpoint publica. Os testes de contrato conferem que as
+# constantes de choices de `sgp/constants.py`, do model do Indicador, de
+# `sgd/constants.py` e dos models do SGD estão aqui.
 CHOICES_PUBLICADOS = {
     "genero": GENERO_CHOICES,
     "cor_raca": COR_RACA_CHOICES,
@@ -67,6 +74,10 @@ CHOICES_PUBLICADOS = {
     "forma_atuacao": FORMA_ATUACAO_CHOICES,
     "ambito": AMBITO_CHOICES,
     "status_atividade": STATUS_CHOICES,
+    "indicador_unidade_medida": UNIDADE_MEDIDA_CHOICES,
+    "indicador_forma_apuracao": FORMA_APURACAO_CHOICES,
+    "indicador_categoria": INDICADOR_CATEGORIA_CHOICES,
+    "indicador_desagregacao": DESAGREGACAO_CHOICES,
     "producao_tipo": Production.TIPO_CHOICES,
     "producao_sistema_criacao": Production.SISTEMA_CRIACAO_CHOICES,
     "producao_tipo_outra": Production.TIPO_OUTRA_CHOICES,

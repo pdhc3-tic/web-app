@@ -54,6 +54,10 @@ from apps.sgp.services.access import municipios_acessiveis_ao_usuario
 ORDENACOES_DA_LISTAGEM = {
     "valor_estimado_total": ("valor_estimado_total", "-pk"),
     "-valor_estimado_total": ("-valor_estimado_total", "-pk"),
+    "criado_em": ("criado_em", "pk"),
+    "-criado_em": ("-criado_em", "-pk"),
+    "titulo": ("titulo", "pk"),
+    "-titulo": ("-titulo", "-pk"),
 }
 ORDENACAO_PADRAO = ("-criado_em", "-pk")
 

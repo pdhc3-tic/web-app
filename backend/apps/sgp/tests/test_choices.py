@@ -17,6 +17,7 @@ from apps.sgp.constants import (
     SITUACAO_MORADIA_CHOICES,
     TIPO_MORADIA_CHOICES,
 )
+from apps.sgp.models import indicator
 from apps.sgp.views.choices import CHOICES_PUBLICADOS
 
 pytestmark = pytest.mark.django_db
@@ -151,6 +152,18 @@ class TestSGPChoicesEndpoint:
         assert response.data[chave] == esperado
         assert esperado
 
+    @pytest.mark.parametrize(("chave", "constante"), [
+        ("indicador_unidade_medida", indicator.UNIDADE_MEDIDA_CHOICES),
+        ("indicador_forma_apuracao", indicator.FORMA_APURACAO_CHOICES),
+        ("indicador_categoria", indicator.CATEGORIA_CHOICES),
+        ("indicador_desagregacao", indicator.DESAGREGACAO_CHOICES),
+    ])
+    def test_listas_do_indicador_saem_com_os_rotulos_do_model(self, auth_client, chave, constante):
+        response = auth_client.get(self.CHOICES_URL)
+
+        assert response.data[chave] == [{"value": v, "label": l} for v, l in constante]
+        assert response.data[chave]
+
     def test_all_choices_have_value_and_label_keys(self, auth_client):
         response = auth_client.get(self.CHOICES_URL)
         for key, items in response.data.items():
@@ -160,11 +173,13 @@ class TestSGPChoicesEndpoint:
 
 
 def test_choices_expoe_todas_as_constantes():
-    """Constante de choices nova em `constants.py` que não entre no endpoint
-    derruba este teste."""
+    """Constante de choices nova em `constants.py` ou no model do Indicador que
+    não entre no endpoint derruba este teste."""
     publicadas = [id(opcoes) for opcoes in CHOICES_PUBLICADOS.values()]
     constantes = {
-        nome: valor for nome, valor in vars(constants).items()
+        f"{modulo.__name__}.{nome}": valor
+        for modulo in (constants, indicator)
+        for nome, valor in vars(modulo).items()
         if nome.endswith("_CHOICES") or nome == "STATUS_WORKPLAN"
     }
     assert constantes

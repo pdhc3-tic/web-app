@@ -3378,7 +3378,11 @@ paths:
         schema:
           type: string
           enum:
+          - -criado_em
+          - -titulo
           - -valor_estimado_total
+          - criado_em
+          - titulo
           - valor_estimado_total
         description: Sem o parâmetro, as mais recentes primeiro.
       - in: query
@@ -12090,6 +12094,22 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OpcaoTexto'
+        indicador_unidade_medida:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
+        indicador_forma_apuracao:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
+        indicador_categoria:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
+        indicador_desagregacao:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcaoTexto'
         producao_tipo:
           type: array
           items:
@@ -12191,6 +12211,10 @@ components:
       - forma_atuacao
       - genero
       - grau_parentesco
+      - indicador_categoria
+      - indicador_desagregacao
+      - indicador_forma_apuracao
+      - indicador_unidade_medida
       - material_construcao
       - meio_transporte
       - ods
@@ -12990,6 +13014,9 @@ components:
           type: integer
           readOnly: true
           title: Atividade
+        activity_titulo:
+          type: string
+          readOnly: true
         justificativa:
           type: string
         status:
@@ -13079,6 +13106,7 @@ components:
           readOnly: true
       required:
       - activity
+      - activity_titulo
       - articuladores
       - atividade_fora_do_territorio
       - atualizado_em
