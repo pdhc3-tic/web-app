@@ -134,6 +134,11 @@ test.describe("Ficha da Atividade", () => {
 
     const auditoria = page.getByTestId("atividade-auditoria");
     await expect(auditoria).toContainText("Criado por");
+    // #449: o detalhe manda `criado_por` como {id, nome}; a ficha mostrava
+    // "Usuário #[object Object]".
+    await expect(auditoria).not.toContainText("[object Object]");
+    await expect(auditoria).not.toContainText("Usuário #");
+    if (fixture.criadoPorNome) await expect(auditoria).toContainText(fixture.criadoPorNome);
     await expect(auditoria).toContainText("Criado em");
     await expect(auditoria).toContainText("Última atualização");
     // Datas resolvidas, e não o em-dash de "campo ausente".

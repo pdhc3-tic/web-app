@@ -242,3 +242,54 @@ export function validarNovoValor(
   }
   return erros;
 }
+
+// ─── Faixas sem valor vigente (#440) ─────────────────────────────────────────
+
+/** A categoria que o cálculo da diária usa (`CategoriaBeneficiario.PADRAO`). */
+const CATEGORIA_DO_CALCULO = "padrao";
+
+/** `AAAA-MM-DD` + 1 dia, sem fuso. */
+function diaSeguinte(data: string): string {
+  const d = new Date(`${data}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Onde a cobertura de uma faixa ativa falha, a partir de hoje:
+ * - `sem-valor`: nenhum valor vigora hoje, e toda diária para a faixa é recusada;
+ * - `acaba`: vigora hoje, mas a partir de `desde` não há valor, e as viagens
+ *   que começam nessa data em diante são recusadas (o cálculo usa a data da ida).
+ */
+export type LacunaDaFaixa =
+  | { faixa: FaixaDestino; tipo: "sem-valor" }
+  | { faixa: FaixaDestino; tipo: "acaba"; desde: string };
+
+/**
+ * As faixas ativas com lacuna de valor, na ordem da tabela. Segue a regra de
+ * `valor_vigente` no backend: categoria padrão, início e fim inclusivos.
+ * Faixa inativa fica de fora: o município dela cai em outra faixa.
+ */
+export function lacunasDeValor(faixas: FaixaDestino[], valores: ValorDiaria[], hoje: string): LacunaDaFaixa[] {
+  const lacunas: LacunaDaFaixa[] = [];
+  for (const faixa of [...faixas].sort((a, b) => a.ordem - b.ordem || a.nome.localeCompare(b.nome, "pt-BR"))) {
+    if (!faixa.ativo) continue;
+    const daFaixa = valores.filter(
+      (v) => v.faixa_destino === faixa.id && v.categoria_beneficiario === CATEGORIA_DO_CALCULO,
+    );
+    let data = hoje;
+    // Cada volta avança até o fim de uma vigência; o limite só protege de dado incoerente.
+    for (let i = 0; i <= daFaixa.length; i++) {
+      const cobre = daFaixa
+        .filter((v) => vigoraEm(v, data))
+        .sort((a, b) => b.vigencia_inicio.localeCompare(a.vigencia_inicio))[0];
+      if (!cobre) {
+        lacunas.push(data === hoje ? { faixa, tipo: "sem-valor" } : { faixa, tipo: "acaba", desde: data });
+        break;
+      }
+      if (cobre.vigencia_fim === null) break;
+      data = diaSeguinte(cobre.vigencia_fim);
+    }
+  }
+  return lacunas;
+}

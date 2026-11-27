@@ -6,6 +6,8 @@
 
 *Os documentos das sprints anteriores continuam valendo para o que está lá. O da 12a já virou a #419.*
 
+*As pendências abertas a partir da sprint 12g estão em `pendencias-backend-sprint-12g.md`. O item 9 continua valendo aqui.*
+
 **Situação em 20/11/2026:** o backend entregou os itens 1 a 8 e o 10 no PR #427, que fechou a #423. O front passou a consumi-los na branch `frontend/sprint-12e`, e as soluções provisórias descritas em cada item saíram. Fica pendente só o item 9.
 
 | Item | Rota ou campo do PR #427 | Front (`frontend/sprint-12e`) |

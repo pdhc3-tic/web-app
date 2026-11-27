@@ -329,4 +329,38 @@ describe("Tabela de diárias (#366)", () => {
     expect(screen.getByText("Informe o valor do adicional para ligá-lo.")).toBeTruthy();
     expect((screen.getByTestId("parametros-diarias-salvar") as HTMLButtonElement).disabled).toBe(true);
   });
+
+  it("faixa ativa sem valor vigente aparece no aviso e com selo na grade (#440)", async () => {
+    montar();
+    const aviso = await screen.findByTestId("diarias-aviso-lacunas");
+
+    // "Exterior" (id 3) não tem nenhum valor; as outras duas têm valor em aberto.
+    expect(aviso).toHaveTextContent("Sem valor vigente: Exterior.");
+    expect(aviso).toHaveAttribute("data-nivel", "erro");
+    expect(aviso).not.toHaveTextContent("Demais localidades");
+    expect(screen.getByTestId("grade-lacuna-3")).toHaveTextContent("Sem valor vigente");
+    expect(screen.queryByTestId("grade-lacuna-2")).toBeNull();
+  });
+
+  it("valor que termina sem sucessor aparece com a data (#440)", async () => {
+    mocks.listarValores.mockResolvedValue([
+      ...VALORES.filter((v) => v.faixa_destino !== 2),
+      valor(20, 2, "2025-01-01", "2098-12-31", "300.00", "federal"),
+      valor(30, 3, "2025-01-01", null, "500.00", "fgd"),
+    ]);
+    montar();
+    const aviso = await screen.findByTestId("diarias-aviso-lacunas");
+
+    expect(aviso).toHaveTextContent("Demais localidades: sem valor a partir de 01/01/2099");
+    expect(aviso).toHaveAttribute("data-nivel", "alerta");
+    expect(screen.getByTestId("grade-lacuna-2")).toHaveTextContent("Sem valor a partir de 01/01/2099");
+  });
+
+  it("sem lacuna, não há aviso", async () => {
+    mocks.listarValores.mockResolvedValue([...VALORES, valor(30, 3, "2025-01-01", null, "500.00", "fgd")]);
+    montar();
+    await screen.findByTestId("grade-diarias");
+
+    expect(screen.queryByTestId("diarias-aviso-lacunas")).toBeNull();
+  });
 });

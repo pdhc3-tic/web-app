@@ -362,6 +362,16 @@ export function canDistribuirOrcamento(
 }
 
 /**
+ * Dotação nacional por rubrica (#438). Espelha `is_global_budget_user` do
+ * backend: só Super Admin e UGP criam ou alteram pools nacionais.
+ */
+export function canLancarDotacaoNacional(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return isSuperAdmin(user) || hasRole(user, UGP_SLUG);
+}
+
+/**
  * Gestão dos limites de gasto (#400). Espelha o `IsSuperAdmin | IsUGP` do
  * `SpendingLimitViewSet`: só eles leem e gravam padrões e sobrescritas.
  */

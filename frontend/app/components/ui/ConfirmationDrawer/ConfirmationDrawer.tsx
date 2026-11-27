@@ -17,6 +17,11 @@ export type ConfirmationDrawerProps = {
   keepLabel: string;
   justificativaLabel?: string;
   /**
+   * `false` deixa a justificativa opcional — o cancelamento pelo próprio
+   * solicitante (#456), em que o backend não a exige.
+   */
+  justificativaObrigatoria?: boolean;
+  /**
    * `perigo` (padrão): recusar, cancelar — botão vermelho. `confirmacao`:
    * aprovar — o mesmo rito (justificativa, botões que dizem o que fazem), com
    * o botão primário.
@@ -44,6 +49,7 @@ export function ConfirmationDrawer({
   confirmLabel,
   keepLabel,
   justificativaLabel = "Justificativa",
+  justificativaObrigatoria = true,
   tom = "perigo",
   children,
   onConfirm,
@@ -66,7 +72,7 @@ export function ConfirmationDrawer({
 
   async function confirmar() {
     const texto = justificativa.trim();
-    if (!texto) {
+    if (!texto && justificativaObrigatoria) {
       setErroCampo("A justificativa é obrigatória.");
       return;
     }
@@ -122,7 +128,7 @@ export function ConfirmationDrawer({
         <Textarea
           id={campoId}
           label={justificativaLabel}
-          required
+          required={justificativaObrigatoria}
           rows={4}
           value={justificativa}
           onChange={(e) => {

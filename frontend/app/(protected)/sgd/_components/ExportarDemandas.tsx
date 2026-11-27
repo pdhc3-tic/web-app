@@ -10,7 +10,11 @@ import {
   type ExecucaoFiltros,
 } from "@/app/lib/execucaoSgd";
 
-export function ExportarButton({
+/**
+ * Exportação CSV/Excel das demandas com os filtros da tela (RF30), pela rota
+ * `GET /sgd/demandas/exportar/`: a Execução por Rubrica e o Painel de Demandas.
+ */
+export function ExportarDemandas({
   filtros,
 }: {
   filtros: ExecucaoFiltros;

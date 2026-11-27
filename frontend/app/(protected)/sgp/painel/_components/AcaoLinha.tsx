@@ -25,9 +25,9 @@ export function AcaoLinha({ item, onSelect, mostrarMeta = false }: Props) {
   const { acao, detalhe, meta, avaliacao } = item;
   const { nivel, realizado, esperado } = avaliacao;
   const contagem = progressoLabel(acao);
-  // A unidade não vem na resposta do painel; some da linha se o cruzamento com
-  // /acoes/ não estiver disponível, em vez de deixar um "·" solto.
-  const unidade = detalhe?.tipo_unidade_display;
+  // O Indicador não vem na resposta do painel; some da linha se o cruzamento
+  // com /acoes/ não estiver disponível, em vez de deixar um "·" solto.
+  const unidade = detalhe?.indicador_detalhe?.nome;
 
   return (
     <button

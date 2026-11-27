@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Gauge,
   PiggyBank,
+  Ruler,
   Sprout,
   UserCog,
   Users,
@@ -58,6 +59,13 @@ const SUBMODULES: Submodule[] = [
     description: "Metas do PDHC III, com período, ODS e valor planejado.",
     Icon: ClipboardCheck,
     href: "/sgp/metas/",
+  },
+  {
+    key: "indicadores",
+    title: "Catálogo de Indicadores",
+    description: "Indicadores que medem as Ações, com unidade e forma de apuração.",
+    Icon: Ruler,
+    href: "/sgp/indicadores/",
   },
   {
     key: "painel",

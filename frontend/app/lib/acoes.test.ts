@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { listSubmetasDaMeta } from "./acoes";
+import { listSubmetasDaMeta, proximoNumeroDeAcao } from "./acoes";
 import { proximoNumeroDeSubmeta } from "./submetas";
 
 const api = vi.hoisted(() => ({ client: vi.fn() }));
@@ -65,5 +65,27 @@ describe("listSubmetasDaMeta (revisão do PR #434)", () => {
   it("com a lista inteira, o próximo número passa do 100: 7.102 depois de 7.101", async () => {
     servidor(submetas(101));
     expect(proximoNumeroDeSubmeta(7, await listSubmetasDaMeta(9))).toBe("7.102");
+  });
+});
+
+describe("proximoNumeroDeAcao (#452)", () => {
+  it("a primeira Ação da Submeta é X.Y.1", () => {
+    expect(proximoNumeroDeAcao("1.2", [])).toBe("1.2.1");
+  });
+
+  it("passa do maior número da Submeta, não do total de Ações", () => {
+    const acoes = [{ numero: "1.1.1" }, { numero: "1.1.2" }, { numero: "1.1.5" }];
+    expect(proximoNumeroDeAcao("1.1", acoes)).toBe("1.1.6");
+  });
+
+  it("ignora as Ações das outras Submetas, inclusive as de prefixo parecido", () => {
+    const acoes = [{ numero: "1.1.1" }, { numero: "1.10.7" }, { numero: "2.1.3" }];
+    expect(proximoNumeroDeAcao("1.1", acoes)).toBe("1.1.2");
+    expect(proximoNumeroDeAcao("1.10", acoes)).toBe("1.10.8");
+  });
+
+  it("compara número, não texto: 1.1.10 vem depois de 1.1.9", () => {
+    const acoes = [{ numero: "1.1.9" }, { numero: "1.1.10" }];
+    expect(proximoNumeroDeAcao("1.1", acoes)).toBe("1.1.11");
   });
 });

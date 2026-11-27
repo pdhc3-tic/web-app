@@ -102,15 +102,23 @@ function FiltroAtividade({
   );
 }
 
-export function ExecucaoFilters({
+/**
+ * Filtros do `DemandFilter`, comuns à Execução por Rubrica (#297) e ao Painel
+ * de Demandas (#456): as duas telas leem as mesmas demandas.
+ */
+export function FiltrosDemandas({
+  titulo,
   filtros,
   onChange,
   rubricaOptions,
+  "data-testid": testId = "execucao-filtros",
 }: {
+  titulo: string;
   filtros: ExecucaoFiltros;
   onChange: (novo: ExecucaoFiltros) => void;
-  /** Rubricas ativas, tiradas do próprio painel (o backend lista todas). */
+  /** Rubricas ativas, pelo slug (`DemandFilter.rubrica`). */
   rubricaOptions: SelectOption[];
+  "data-testid"?: string;
 }) {
   const choices = useSgpChoices();
 
@@ -148,12 +156,12 @@ export function ExecucaoFilters({
   return (
     <div
       className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4 shadow-xs"
-      data-testid="execucao-filtros"
+      data-testid={testId}
     >
       <div className="flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
         <span className="flex items-center gap-1.5">
           <Filter className="h-3.5 w-3.5" aria-hidden />
-          Filtros de Execução e Custo
+          {titulo}
         </span>
         {temFiltroAtivo && (
           <button

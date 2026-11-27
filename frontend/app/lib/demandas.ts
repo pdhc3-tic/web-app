@@ -206,6 +206,18 @@ export function badgeStatusDaDemanda(status: StatusDemanda): BadgeStatus {
  * backend (`criar_demanda`).
  */
 export const STATUS_ATIVIDADE_BLOQUEIAM_DEMANDA = ["cancelada", "nao_realizada"];
+
+/**
+ * Status em que o próprio solicitante cancela a demanda (#456), espelhando
+ * `STATUS_CANCELAVEIS_PELO_SOLICITANTE` do backend. Depois de autorizada, só a
+ * UGP e o Super Admin cancelam, com justificativa.
+ */
+export const STATUS_CANCELAVEIS_PELO_SOLICITANTE: readonly StatusDemanda[] = [
+  "rascunho",
+  "submetida",
+  "devolvida",
+  "pre_autorizada",
+];
 export const STATUS_ATIVIDADE_EXIGEM_JUSTIFICATIVA = [
   "em_andamento",
   "concluido",

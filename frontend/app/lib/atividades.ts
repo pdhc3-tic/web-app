@@ -149,9 +149,7 @@ export type MembroParticipante = {
  * - `tecnico_responsavel` e `equipe_adicional` usam `TecnicoNested`.
  * - `municipio` refinado de `MunicipioNested` para `NestedRef` (shape anterior).
  * - `ufpas_participantes`, `membros_participantes` usam os tipos locais.
- * - `parceiros_organizacoes` refinado de `Nested[]` para `number[]`.
  * - `google_calendar_sync_status` refinado de enum para union literal.
- * - `criado_por` refinado de `UsuarioRef | null` para `number | null`.
  * - `status`, `tipo_atividade`, `ambito`, `forma_atuacao` refinados para `string`.
  * - `transicoes_permitidas` refinado de enum[] para `string[]`.
  */
@@ -164,9 +162,7 @@ export type AtividadeDetail = Refinar<
     municipio: NestedRef;
     ufpas_participantes: UfpaParticipante[];
     membros_participantes: MembroParticipante[];
-    parceiros_organizacoes: number[];
     google_calendar_sync_status: "pendente" | "ok" | "erro";
-    criado_por: number | null;
     tipo_atividade: string;
     forma_atuacao: string;
     ambito: string;

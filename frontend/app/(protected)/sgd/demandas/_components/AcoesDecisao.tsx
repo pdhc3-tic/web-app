@@ -17,6 +17,7 @@ import {
   devolverDemanda,
   preAutorizarDemanda,
   recusarDemanda,
+  STATUS_CANCELAVEIS_PELO_SOLICITANTE,
   type Demanda,
 } from "@/app/lib/demandas";
 import { formatCurrencyBRL } from "@/app/lib/format";
@@ -45,6 +46,8 @@ const paraInput = (v: string | null) => (v === null ? "" : String(Number(v)));
  * - UGP, em Pré-autorizada: Autorizar · Autorizar com valor ajustado · Recusar
  * - FGD, em Autorizada: Iniciar atendimento; em Em atendimento: Concluir
  * - UGP e Super Admin, em Autorizada: Cancelar demanda
+ * - O próprio solicitante, antes da autorização (Rascunho, Submetida,
+ *   Devolvida, Pré-autorizada): Cancelar demanda, com justificativa opcional (#456)
  *
  * Toda decisão que reserva recurso passa por uma confirmação com o preview de
  * impacto no saldo. O backend continua sendo quem autoriza — um 403/400 volta
@@ -71,6 +74,7 @@ export function AcoesDecisao({
   const [erroJustificativa, setErroJustificativa] = useState<string | null>(null);
   const [recusando, setRecusando] = useState(false);
   const [cancelando, setCancelando] = useState(false);
+  const [desistindo, setDesistindo] = useState(false);
   const [valores, setValores] = useState<Record<number, string>>({});
   const [excedente, setExcedente] = useState(false);
   const [origem, setOrigem] = useState<OrigemExcedente | null>(null);
@@ -82,6 +86,9 @@ export function AcoesDecisao({
   const podeAtender = perfis.includes("fgd") && status === "autorizada";
   const podeConcluir = perfis.includes("fgd") && status === "em_atendimento";
   const podeCancelar = canCancelarDemandaAutorizada(session?.user) && status === "autorizada";
+  const podeDesistir =
+    String(session?.user?.id) === String(demanda.solicitante) &&
+    STATUS_CANCELAVEIS_PELO_SOLICITANTE.includes(status);
 
   // As decisões que reservam recurso mostram o impacto ANTES de confirmar: com o
   // valor pedido (pré-autorizar, autorizar) ou com o valor ajustado.
@@ -98,7 +105,9 @@ export function AcoesDecisao({
         : [];
   const previews = usePreviewsDecisao(demanda.id, itensPreview);
 
-  if (!podeArticulador && !podeUgp && !podeAtender && !podeConcluir && !podeCancelar) return null;
+  if (!podeArticulador && !podeUgp && !podeAtender && !podeConcluir && !podeCancelar && !podeDesistir) {
+    return null;
+  }
 
   function abrir(novo: Modo) {
     onIniciar();
@@ -393,6 +402,11 @@ export function AcoesDecisao({
               Cancelar demanda
             </Button>
           )}
+          {podeDesistir && (
+            <Button variant="danger" onClick={() => setDesistindo(true)} data-testid="acao-cancelar-solicitante">
+              Cancelar demanda
+            </Button>
+          )}
           {podeArticulador && (
             <>
               <Button variant="secondary" onClick={() => abrir("devolver")} data-testid="acao-devolver">
@@ -509,6 +523,38 @@ export function AcoesDecisao({
           });
         }}
         data-testid="cancelar-drawer"
+      />
+
+      <ConfirmationDrawer
+        open={desistindo}
+        title="Cancelar demanda"
+        description={
+          <>
+            <p className="font-medium text-text">O cancelamento é definitivo.</p>
+            <p className="mt-1">
+              A demanda “{demanda.titulo}” será encerrada e não poderá ser reaberta.
+              {/* A submissão reserva o saldo; só o rascunho não tem reserva. */}
+              {status !== "rascunho" && " O saldo reservado na submissão volta a ficar disponível."}
+            </p>
+          </>
+        }
+        confirmLabel="Cancelar demanda"
+        keepLabel="Manter demanda"
+        justificativaLabel="Motivo do cancelamento (opcional)"
+        justificativaObrigatoria={false}
+        onClose={() => setDesistindo(false)}
+        onConfirm={async (texto) => {
+          onIniciar();
+          let atualizada: Demanda;
+          try {
+            atualizada = await cancelarDemanda(demanda.id, texto);
+          } catch (e) {
+            throw new Error(mensagemDe(e));
+          }
+          setDesistindo(false);
+          aplicarDecisao(atualizada, { tipo: "info", texto: "Demanda cancelada." });
+        }}
+        data-testid="cancelar-solicitante-drawer"
       />
     </div>
   );

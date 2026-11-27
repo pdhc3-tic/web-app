@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { AlertTriangle } from "lucide-react";
 import { ApiError } from "@/app/lib/api";
 import { formatarQuantidadeDeDiarias } from "@/app/lib/diarias";
 import { formatCurrencyBRL } from "@/app/lib/format";
@@ -37,11 +38,51 @@ export function useSimulacaoDiarias(
 }
 
 /**
+ * Por que a diária não pode ser salva com o destino e as datas do formulário,
+ * ou null quando pode (#440).
+ *
+ * A simulação usa o mesmo cálculo da gravação (`calcular_diarias`), então um
+ * 400 dela é a recusa que o backend daria ao salvar — sem valor vigente na
+ * tabela para a faixa, faixa inativa, datas trocadas. Erro de rede ou 5xx não
+ * bloqueia: aí quem decide é o backend ao gravar. Um total zerado também
+ * bloqueia: a issue pede que nenhuma diária seja salva com R$ 0,00.
+ */
+export function bloqueioDaDiaria({ completo, simulacao }: SimulacaoDiariasState): string | null {
+  if (!completo) return null;
+  if (simulacao.isError) {
+    const erro = simulacao.error;
+    return erro instanceof ApiError && erro.status === 400 ? erro.message : null;
+  }
+  if (simulacao.isSuccess && !(Number(simulacao.data.valor_total) > 0)) {
+    return "O cálculo das diárias deu R$ 0,00.";
+  }
+  return null;
+}
+
+/** O 400 é a falta de valor na tabela de diárias, e não um dado do formulário. */
+function semValorNaTabela(erro: unknown): boolean {
+  return (
+    erro instanceof ApiError &&
+    (erro.fieldErrors ?? []).some((fe) => fe.field === "valor_por_diaria")
+  );
+}
+
+/**
  * Total das diárias em tempo real (#295): faixa do destino, valor unitário,
  * quantidade e total, recalculados quando destino ou datas mudam. O cálculo é
  * do backend — o front não repete a contagem nem lê o valor da diária.
+ *
+ * Quando o cálculo é recusado (#440), o quadro vira o aviso de bloqueio: o
+ * formulário não salva. `congelada` é a edição de uma diária já gravada sem
+ * mudar destino, datas nem hospedagem: o backend mantém o valor gravado e
+ * aceita salvar mesmo sem tabela vigente, então o aviso só informa.
  */
-export function SimulacaoDiarias({ completo, simulacao }: SimulacaoDiariasState) {
+export function SimulacaoDiarias({
+  completo,
+  simulacao,
+  congelada = false,
+}: SimulacaoDiariasState & { congelada?: boolean }) {
+  const bloqueio = bloqueioDaDiaria({ completo, simulacao });
   return (
     <section
       className="flex flex-col gap-1.5 rounded-md border border-border bg-surface-muted px-3 py-2.5"
@@ -55,13 +96,23 @@ export function SimulacaoDiarias({ completo, simulacao }: SimulacaoDiariasState)
         </p>
       ) : simulacao.isPending ? (
         <p className="text-sm text-text-muted">Calculando…</p>
+      ) : bloqueio ? (
+        <div role="alert" className="flex flex-col gap-1 text-sm text-error-text" data-testid="simulacao-diarias-erro">
+          <p className="flex items-start gap-1.5">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <span>{bloqueio}</span>
+          </p>
+          <p data-testid="simulacao-diarias-bloqueio">
+            {congelada
+              ? "Destino e datas não mudaram, então o valor calculado quando a solicitação foi salva continua valendo."
+              : semValorNaTabela(simulacao.error)
+                ? "A solicitação não pode ser salva enquanto não houver valor de diária vigente para este destino. A FGD ou o Super Admin cadastra o valor na Tabela de diárias."
+                : "A solicitação não pode ser salva com este destino e estas datas."}
+          </p>
+        </div>
       ) : simulacao.isError ? (
         <p role="alert" className="text-sm text-error-text" data-testid="simulacao-diarias-erro">
-          {/* Um 400 traz o motivo (ex.: sem valor vigente); o resto não diz nada a quem preenche. */}
-          {simulacao.error instanceof ApiError && simulacao.error.status === 400
-            ? simulacao.error.message
-            : "Não foi possível calcular as diárias agora."}{" "}
-          O total é calculado pelo sistema ao salvar.
+          Não foi possível calcular as diárias agora. O total é calculado pelo sistema ao salvar.
         </p>
       ) : (
         <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm" data-testid="simulacao-diarias-resultado">

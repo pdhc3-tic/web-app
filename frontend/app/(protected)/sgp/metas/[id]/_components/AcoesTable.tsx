@@ -8,6 +8,7 @@ import {
   formatQtd,
   progressoAcao,
   progressoLabel,
+  rotuloIndicadorDaAcao,
   type Acao,
 } from "@/app/lib/acoes";
 
@@ -21,6 +22,8 @@ const dangerBtn = `${actionBtn} hover:bg-error-bg hover:text-error-text`;
 
 type Props = {
   acoes: Acao[];
+  /** Nome de cada rubrica pelo id, para as rubricas previstas (#452). */
+  nomesRubricas: Map<number, string>;
   /** Espelha o `IsSuperAdmin | IsUGP` do backend. */
   canManage: boolean;
   onEdit: (acao: Acao) => void;
@@ -50,7 +53,7 @@ function ProgressoCell({ acao }: { acao: Acao }) {
       <ProgressBar
         value={percentual}
         label={`Progresso da Ação ${acao.numero}`}
-        valueText={`${contagem} — ${acao.tipo_unidade_display}`}
+        valueText={`${contagem} — ${acao.indicador_detalhe?.nome ?? ""}`}
         tone={percentual !== null && percentual >= 100 ? "success" : "primary"}
       />
     </div>
@@ -86,8 +89,35 @@ function RowActions({
   );
 }
 
+/**
+ * "Rubricas previstas: Diárias, Material de consumo" — some quando a Ação não
+ * tem nenhuma, e enquanto o catálogo não chegou. Em ordem alfabética, como no
+ * catálogo: o backend devolve os ids na ordem dele, não na que foram marcados.
+ * Um id que o catálogo não tem aparece como "#id".
+ */
+function RubricasPrevistas({
+  acao,
+  nomesRubricas,
+  testId,
+}: {
+  acao: Acao;
+  nomesRubricas: Map<number, string>;
+  testId: string;
+}) {
+  const ids = acao.rubricas_previstas ?? [];
+  if (ids.length === 0 || nomesRubricas.size === 0) return null;
+  const nomes = ids
+    .map((id) => nomesRubricas.get(id) ?? `#${id}`)
+    .sort((a, b) => a.localeCompare(b, "pt-BR"));
+  return (
+    <span className="mt-0.5 block text-xs text-text-muted" data-testid={testId}>
+      Rubricas previstas: {nomes.join(", ")}
+    </span>
+  );
+}
+
 /** Listagem das Ações de uma Meta. */
-export function AcoesTable({ acoes, canManage, onEdit, onDelete }: Props) {
+export function AcoesTable({ acoes, nomesRubricas, canManage, onEdit, onDelete }: Props) {
   return (
     <div data-testid="acoes-table">
       {/* Desktop — tabela (>= 768px) */}
@@ -104,8 +134,8 @@ export function AcoesTable({ acoes, canManage, onEdit, onDelete }: Props) {
               <th scope="col" className={`${TH_BASE} min-w-64`}>
                 Descrição
               </th>
-              <th scope="col" className={`${TH_BASE} w-32`}>
-                Tipo / unidade
+              <th scope="col" className={`${TH_BASE} min-w-40`}>
+                Indicador
               </th>
               <th scope="col" className={`${TH_BASE} w-24`}>
                 Qtd.
@@ -145,9 +175,14 @@ export function AcoesTable({ acoes, canManage, onEdit, onDelete }: Props) {
                   >
                     Submeta {acao.submeta_numero} · {periodo(acao.data_inicio, acao.data_fim)}
                   </span>
+                  <RubricasPrevistas
+                    acao={acao}
+                    nomesRubricas={nomesRubricas}
+                    testId={`acao-row-${acao.id}-rubricas`}
+                  />
                 </td>
-                <td className="px-4 py-3 text-text">
-                  {acao.tipo_unidade_display}
+                <td className="px-4 py-3 text-text" data-testid={`acao-row-${acao.id}-indicador`}>
+                  {rotuloIndicadorDaAcao(acao)}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 tabular-nums text-text">
                   {formatQtd(acao.quantidade_planejada)}
@@ -188,11 +223,16 @@ export function AcoesTable({ acoes, canManage, onEdit, onDelete }: Props) {
               <div className="flex items-start justify-between gap-2">
                 <div className="flex min-w-0 flex-col leading-tight">
                   <span className="text-xs tabular-nums text-text-muted">
-                    Ação {acao.numero} · Submeta {acao.submeta_numero} · {acao.tipo_unidade_display}
+                    Ação {acao.numero} · Submeta {acao.submeta_numero} · {rotuloIndicadorDaAcao(acao)}
                   </span>
                   <span className="font-medium text-text">
                     {acao.descricao}
                   </span>
+                  <RubricasPrevistas
+                    acao={acao}
+                    nomesRubricas={nomesRubricas}
+                    testId={`acao-row-mobile-${acao.id}-rubricas`}
+                  />
                 </div>
                 {canManage && (
                   <RowActions
