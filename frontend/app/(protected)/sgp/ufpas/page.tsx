@@ -21,6 +21,7 @@ import { EmptyState } from "@/app/components/ui/EmptyState/EmptyState";
 import { Pagination } from "@/app/components/ui/Pagination/Pagination";
 import { Breadcrumb } from "@/app/components/ui/Breadcrumb/Breadcrumb";
 import { ApiError } from "@/app/lib/api";
+import { useCanEscreverUfpa } from "@/app/lib/auth/roles";
 import {
   listUfpas,
   fetchMunicipalityOptions,
@@ -99,6 +100,7 @@ function UfpasView() {
   const [territorioOptions, setTerritorioOptions] = useState<SelectOption[]>([]);
   const [optionsLoading, setOptionsLoading] = useState(true);
   const exportacao = useExportacaoUfpas();
+  const { canEscrever } = useCanEscreverUfpa();
 
   const hasActiveFilters = useMemo(() => {
     return (
@@ -282,13 +284,15 @@ function UfpasView() {
             >
               Exportar
             </Button>
-            <Button
-              size="sm"
-              onClick={handleNewUfpa}
-              leftIcon={<Plus className="h-4 w-4" />}
-            >
-              Nova UFPA
-            </Button>
+            {canEscrever && (
+              <Button
+                size="sm"
+                onClick={handleNewUfpa}
+                leftIcon={<Plus className="h-4 w-4" />}
+              >
+                Nova UFPA
+              </Button>
+            )}
           </div>
         </div>
       </PageHeader>
@@ -356,22 +360,28 @@ function UfpasView() {
               <EmptyState
                 icon={<Users className="h-7 w-7" />}
                 title="Nenhuma UFPA cadastrada ainda"
-                description="Comece cadastrando a primeira família / Unidade Familiar de Produção Agropecuária."
+                description={
+                  canEscrever
+                    ? "Comece cadastrando a primeira família / Unidade Familiar de Produção Agropecuária."
+                    : "O cadastro de UFPAs é feito pelo ADT/ACR do território."
+                }
                 action={
-                  <Button
-                    variant="primary"
-                    onClick={handleNewUfpa}
-                    leftIcon={<Plus className="h-4 w-4" />}
-                  >
-                    Nova UFPA
-                  </Button>
+                  canEscrever ? (
+                    <Button
+                      variant="primary"
+                      onClick={handleNewUfpa}
+                      leftIcon={<Plus className="h-4 w-4" />}
+                    >
+                      Nova UFPA
+                    </Button>
+                  ) : undefined
                 }
               />
             )}
           </div>
         ) : (
           <>
-            <UfpasTable ufpas={ufpas} loading={dataLoading} />
+            <UfpasTable ufpas={ufpas} loading={dataLoading} podeEditar={canEscrever} />
             <Pagination
               count={count}
               offset={offset}

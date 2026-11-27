@@ -9,6 +9,7 @@ import { Button } from "@/app/components/ui/Button/Button";
 import { RestrictedAccess } from "@/app/components/ui/RestrictedAccess/RestrictedAccess";
 import { ApiError } from "@/app/lib/api";
 import { getUfpaDetail, type UfpaDetail } from "@/app/lib/ufpas";
+import { SEM_ESCRITA_UFPA, useCanEscreverUfpa } from "@/app/lib/auth/roles";
 import { UfpaWizard } from "@/app/(protected)/sgp/ufpas/_components/UfpaWizard";
 import { UfpaDetailSkeleton } from "@/app/(protected)/sgp/ufpas/[id]/_components/UfpaDetailSkeleton";
 
@@ -29,8 +30,12 @@ export default function EditarUfpaPage() {
   const [status, setStatus] = useState<Status>("loading");
   const [ufpa, setUfpa] = useState<UfpaDetail | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const { loading: carregandoPerfil, canEscrever } = useCanEscreverUfpa();
+  const semEscrita = !carregandoPerfil && !canEscrever;
 
   useEffect(() => {
+    // Quem só lê não edita (#478): nem busca a UFPA para o wizard.
+    if (semEscrita) return;
     if (!/^\d+$/.test(id)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setStatus("notfound");
@@ -53,7 +58,16 @@ export default function EditarUfpaPage() {
       });
 
     return () => controller.abort();
-  }, [id, reloadKey]);
+  }, [id, reloadKey, semEscrita]);
+
+  if (semEscrita) {
+    return (
+      <>
+        <HeaderSlot />
+        <RestrictedAccess description={SEM_ESCRITA_UFPA} />
+      </>
+    );
+  }
 
   if (status === "notfound") {
     notFound();

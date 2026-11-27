@@ -10,6 +10,7 @@ import { Button } from "@/app/components/ui/Button/Button";
 import { PhotoUploader } from "@/app/components/sgp/PhotoUploader/PhotoUploader";
 import { maskCpf } from "@/app/lib/format";
 import type { UfpaDetail } from "@/app/lib/ufpas";
+import { useCanEscreverUfpa } from "@/app/lib/auth/roles";
 
 type UfpaHeaderProps = {
   ufpa: UfpaDetail;
@@ -21,28 +22,38 @@ type UfpaHeaderProps = {
 export function UfpaHeader({ ufpa, onPhotoChange }: UfpaHeaderProps) {
   const cpf = maskCpf(ufpa.titular.cpf);
   const [photoOpen, setPhotoOpen] = useState(false);
+  // Foto e Editar são escrita de UFPA (#478): quem só lê vê o avatar, sem ações.
+  const { canEscrever } = useCanEscreverUfpa();
+
+  const avatar = (
+    <Avatar
+      name={ufpa.titular.nome_completo}
+      src={ufpa.foto_url || null}
+      size="lg"
+      className="shadow-sm"
+    />
+  );
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-        <button
-          type="button"
-          onClick={() => setPhotoOpen((o) => !o)}
-          aria-expanded={photoOpen}
-          aria-label="Trocar foto do titular"
-          className="group relative shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-        >
-          <Avatar
-            name={ufpa.titular.nome_completo}
-            src={ufpa.foto_url || null}
-            size="lg"
-            className="shadow-sm"
-          />
-          <span className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1 rounded-full bg-black/50 text-2xs font-medium text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-            <Camera className="h-3.5 w-3.5" aria-hidden="true" />
-            Trocar foto
-          </span>
-        </button>
+        {canEscrever ? (
+          <button
+            type="button"
+            onClick={() => setPhotoOpen((o) => !o)}
+            aria-expanded={photoOpen}
+            aria-label="Trocar foto do titular"
+            className="group relative shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+          >
+            {avatar}
+            <span className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1 rounded-full bg-black/50 text-2xs font-medium text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+              <Camera className="h-3.5 w-3.5" aria-hidden="true" />
+              Trocar foto
+            </span>
+          </button>
+        ) : (
+          <div className="shrink-0">{avatar}</div>
+        )}
 
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-2xl font-semibold tracking-tight text-text">
@@ -60,20 +71,22 @@ export function UfpaHeader({ ufpa, onPhotoChange }: UfpaHeaderProps) {
           </div>
         </div>
 
-        <div className="shrink-0">
-          <Button
-            as="a"
-            href={`/sgp/ufpas/${ufpa.id}/editar/`}
-            variant="secondary"
-            size="sm"
-            leftIcon={<Pencil className="h-4 w-4" />}
-          >
-            Editar
-          </Button>
-        </div>
+        {canEscrever && (
+          <div className="shrink-0">
+            <Button
+              as="a"
+              href={`/sgp/ufpas/${ufpa.id}/editar/`}
+              variant="secondary"
+              size="sm"
+              leftIcon={<Pencil className="h-4 w-4" />}
+            >
+              Editar
+            </Button>
+          </div>
+        )}
       </div>
 
-      {photoOpen && (
+      {canEscrever && photoOpen && (
         <div className="rounded-lg border border-border bg-surface p-4">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-text">Foto do titular</h2>

@@ -1,5 +1,18 @@
 import path from "node:path";
+import { loadEnvConfig } from "@next/env";
 import { defineConfig, devices } from "@playwright/test";
+
+/**
+ * Os mesmos `.env*` que o Next lê. Sem isto, as specs que chamam a API fora do
+ * navegador (power-bi) não enxergam o `NEXT_PUBLIC_API_URL` do `.env.local` e
+ * caem no padrão, que pode ser a porta de outro serviço (#478). Variáveis já
+ * definidas no ambiente continuam valendo.
+ *
+ * `dev = true`: os arquivos do `next dev`, que é contra o que o E2E roda. Sem
+ * ele, o modo seria produção, e um `.env.production` mandaria as specs para a
+ * API de produção.
+ */
+loadEnvConfig(__dirname, true);
 
 /**
  * E2E do frontend.

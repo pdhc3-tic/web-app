@@ -108,6 +108,11 @@ test.describe("Carregamento (UGP)", () => {
     await expect(page.getByTestId("paginacao-carregando")).toHaveCount(0);
     await expect(page.getByText(new RegExp(`de ${count} UFPAs?$`))).toBeVisible();
   });
+});
+
+// Editar UFPA é escrita: a UGP não abre o wizard (#478).
+test.describe("Carregamento (Super Admin)", () => {
+  test.use({ storageState: storageStatePath("superAdmin") });
 
   test("Editar UFPA: localização travada com \"Carregando…\" e Avançar desabilitado até as opções chegarem", async ({
     page,

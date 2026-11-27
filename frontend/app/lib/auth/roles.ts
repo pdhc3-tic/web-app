@@ -123,6 +123,33 @@ export function canCreateDemanda(
   return isAdtAcr(user) || isSuperAdmin(user);
 }
 
+/**
+ * Escrita de UFPA (#478): criar, editar e trocar a foto. Espelha
+ * `pode_escrever_ufpa` (`apps/sgp/services/access.py`), aplicado pelo
+ * `PodeEscreverUFPA` desde a #425: só Super Admin e ADT/ACR. UGP e Articulador
+ * só leem.
+ *
+ * O ADT/ACR escreve apenas nos próprios territórios, mas ele só lê esses, então
+ * o que ele vê pode editar. Quem acumula perfis (UGP com ADT/ACR) lê mais do
+ * que escreve; nesse caso o 403 do backend, com a mensagem dele, é quem avisa.
+ */
+export function canEscreverUfpa(
+  user: Pick<NonNullable<User>, "perfis"> | null | undefined,
+): boolean {
+  return isSuperAdmin(user) || isAdtAcr(user);
+}
+
+/** Explicação das rotas de criar e editar UFPA para quem só lê (#478). */
+export const SEM_ESCRITA_UFPA =
+  "Só o Super Admin e o ADT/ACR do território cadastram e editam UFPAs. Seu perfil pode consultá-las.";
+
+/** Gate das ações de escrita de UFPA (ver `canEscreverUfpa`). */
+export function useCanEscreverUfpa(): { loading: boolean; canEscrever: boolean } {
+  const { data: session, status } = useSession();
+  const loading = status === "loading";
+  return { loading, canEscrever: !loading && canEscreverUfpa(session?.user) };
+}
+
 /** Slug da Fundação Gestora (FGD) — atende e conclui demandas do SGD. */
 export const FGD_SLUG = "fgd";
 

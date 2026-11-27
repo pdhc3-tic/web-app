@@ -31,6 +31,7 @@ import {
   type UfpasFiltersValue,
 } from "../../_components/UfpasFilters";
 import { UfpaMiniFichaSlideOver } from "./UfpaMiniFichaSlideOver";
+import { useCanEscreverUfpa } from "@/app/lib/auth/roles";
 
 const DEFAULT_FILTERS: UfpasFiltersValue = {
   search: "",
@@ -58,6 +59,7 @@ function UfpasMapaContent() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
+  const { canEscrever } = useCanEscreverUfpa();
 
   const [filters, setFilters] = useState<UfpasFiltersValue>(() => ({
     search: searchParams.get("q") ?? "",
@@ -205,9 +207,11 @@ function UfpasMapaContent() {
             >
               Filtros{hasActiveFilters ? " •" : ""}
             </Button>
-            <Link href="/sgp/ufpas/nova/">
-              <Button size="sm" leftIcon={<Plus className="h-4 w-4" />}>Nova UFPA</Button>
-            </Link>
+            {canEscrever && (
+              <Link href="/sgp/ufpas/nova/">
+                <Button size="sm" leftIcon={<Plus className="h-4 w-4" />}>Nova UFPA</Button>
+              </Link>
+            )}
           </div>
         </div>
       </PageHeader>
