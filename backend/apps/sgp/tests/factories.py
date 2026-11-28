@@ -1,3 +1,7 @@
+from datetime import date
+from decimal import Decimal
+from uuid import uuid4
+
 import factory
 from django.utils import timezone
 
@@ -23,6 +27,9 @@ from apps.sgp.models import (
     Tecnico,
     UFPA,
     UFPADocument,    SpendingLimit,
+    TED,
+    TEDVersion,
+    TEDVersionRubrica,
 )
 from apps.sgp.models.indicator import Indicator
 from apps.sgp.models.workplan import WorkPlanAcao, WorkPlanMeta, WorkPlanSubmeta
@@ -327,3 +334,54 @@ class BudgetTransactionFactory(factory.django.DjangoModelFactory):
     demanda_id = None
     justificativa = ""
     criado_por = factory.SubFactory(UserFactory)
+
+
+# ---------------------------------------------------------------------------
+# TED
+# ---------------------------------------------------------------------------
+
+class TEDFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = TED
+
+    numero = factory.Sequence(lambda n: f"TED {n}/2025")
+    participes = factory.LazyFunction(lambda: ["MDA", "UFERSA"])
+    objeto = "Projeto Dom Helder Câmara III"
+
+
+class TEDVersionFactory(factory.django.DjangoModelFactory):
+    """Já vira a versão vigente do TED, com o valor global e a vigência copiados."""
+
+    class Meta:
+        model = TEDVersion
+        skip_postgeneration_save = True
+
+    ted = factory.SubFactory(TEDFactory)
+    numero_versao = 1
+    tipo = TEDVersion.Tipo.ORIGINAL
+    vigencia_inicio = date(2025, 11, 1)
+    vigencia_fim = date(2028, 10, 31)
+    valor_global = Decimal("0")
+    documento_key = factory.LazyFunction(lambda: f"ted/documentos/{uuid4()}.pdf")
+
+    @factory.post_generation
+    def vigente(self, create, extracted, **kwargs):
+        if not create or extracted is False:
+            return
+        ted = self.ted
+        ted.versao_vigente = self
+        ted.valor_global = self.valor_global
+        ted.vigencia_inicio = self.vigencia_inicio
+        ted.vigencia_fim = self.vigencia_fim
+        ted.save(update_fields=["versao_vigente", "valor_global", "vigencia_inicio", "vigencia_fim"])
+
+
+def aprovar_no_ted(rubrica, valor=Decimal("1000000")) -> TEDVersion:
+    """Aprova `valor` para a rubrica na versão vigente, criando o TED se faltar."""
+    ted = TED.objects.select_related("versao_vigente").first()
+    versao = ted.versao_vigente if ted and ted.versao_vigente_id else TEDVersionFactory(
+        **({"ted": ted} if ted else {})
+    )
+    TEDVersionRubrica.objects.create(versao=versao, rubrica=rubrica, valor_aprovado=valor)
+    return versao
+

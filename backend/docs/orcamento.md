@@ -114,9 +114,10 @@ Toda transação que trava mais de uma destas linhas segue esta ordem (resumo do
 0. Advisory lock do último Super Admin (`core.services.usuarios.travar_ultimo_super_admin`), só nos caminhos que tiram alguém de operação: desativação, revogação de acesso, retirada do perfil Super Admin e exclusão de usuário ou vínculo. Vem antes de qualquer gravação, inclusive de linhas com FK para um usuário, como o registro de exclusão do Django Admin: a checagem da FK trava a linha do usuário, e esperar a trava global segurando essa linha fecha um ciclo com quem exclui esse usuário.
 1. Linha do `User` solicitante, em `FOR NO KEY UPDATE`: a submissão e a desativação a travam antes das linhas de saldo, e assim uma não passa pela outra. A edição do cadastro também a trava, mas não toca em saldo depois. Esse modo não barra a checagem de FK de outras transações.
 2. `BudgetIncreaseRequest` (pedido de recurso extra).
-3. Saldo, rubrica por rubrica em ordem de `rubrica_id`: **primeiro todas as linhas de `SpendingLimit` da rubrica** e depois os `BudgetPool` da rubrica, cada grupo em ordem crescente de pk.
-4. `Demand`.
-5. `DemandRequest`.
+3. Linha do `TED`, em `FOR NO KEY UPDATE`, só em quem grava o pool nacional ou registra uma versão do TED. Assim, uma versão nova com teto menor não passa entre a conferência e a gravação do pool.
+4. Saldo, rubrica por rubrica em ordem de `rubrica_id`: **primeiro todas as linhas de `SpendingLimit` da rubrica** e depois os `BudgetPool` da rubrica, cada grupo em ordem crescente de pk.
+5. `Demand`.
+6. `DemandRequest`.
 
 Dentro de uma rubrica, nenhuma transação trava um limite depois de um pool. Depois da virada do período, uma demanda pode ter reservas em duas linhas de limite: travá-las uma a uma, intercaladas com o pool, abriria um ciclo com o cancelamento em lote. Por isso `balance.na_ordem_de_lock` trava, ao entrar em cada rubrica, as linhas das reservas e as do período vigente de todos os solicitantes envolvidos. Na autorização e na conclusão, trava em seguida, em ordem de pk, os pools das reservas e a origem do excedente, antes de mover qualquer solicitação.
 
@@ -143,7 +144,9 @@ As transições de status passam por `apps.sgd.services.workflow.executar_transi
 | Parecer, devolução, submissão e edição do pedido | Só o pedido |
 | Criação do pedido | A `Demand`, e depois o pedido novo, que nenhuma outra transação enxerga antes do commit |
 | Cadastro de limite (`/sgp/orcamento/limites/`, alias e Django Admin) | O limite. Com a sobrealocação desligada, depois os pools territoriais envolvidos, em ordem de pk |
-| `remanejar`, `atualizar_valor_alocado` | Pools em ordem crescente de pk |
+| `remanejar`, `atualizar_valor_alocado` | Pools em ordem crescente de pk. Com o pool nacional envolvido (o alterado, ou o destino do remanejamento), a linha do `TED` vem antes |
+| Criação de pool (`criar_pool`) | No nacional, a linha do `TED`; nos outros níveis, o pool pai |
+| Cadastro do TED e registro de versão | Advisory lock do cadastro (só no cadastro, para existir um TED só) → linha do `TED` → todos os pools, em ordem de `rubrica_id` e pk, para conferir os nacionais contra o novo aprovado e regravar `ted_versao` |
 | Conclusão de demanda (FGD ou Arlo), depois da `DemandRequest` | `Activity` (`FOR NO KEY UPDATE`) → `WorkPlanAcao`. Faz quem fecha a atividade sem evidência e quem conclui a demanda enxergarem um ao outro |
 | Salvamento da atividade | Só a `Activity`, e depois a `WorkPlanAcao`; não trava saldo nem `Demand` |
 | Avaliação de alerta (`alertas.py`) | Um alvo por transação, pool ou limite, e depois a linha do alerta. Quem move saldo grava o alerta com o alvo já travado, depois do saldo |
@@ -202,7 +205,7 @@ Resolve o nível pelo perfil do usuário: UGP/Super Admin/FGD → nacional, Arti
 
 ### `POST /api/v1/sgp/orcamento/pools/`, `PATCH`/`DELETE .../pools/{id}/` e `GET .../pools/{id}/transacoes/`
 
-Distribuição do orçamento, a única forma de alterar um pool: no Django Admin ele é só consulta. Só o nível nacional não tem pai. Estadual e territorial são limitados pelo saldo do nível acima, e uma `reserva_ugp` não recebe filhos. Pool repetido retorna `400`. UGP e Super Admin alteram qualquer nível; o Articulador, só os territórios do próprio estado.
+Distribuição do orçamento, a única forma de alterar um pool: no Django Admin ele é só consulta. Só o nível nacional não tem pai: o teto dele é o valor aprovado para a rubrica na versão vigente do TED. Sem TED cadastrado, criar ou aumentar o pool nacional retorna `400` em `valor_alocado`, e reduzir continua permitido. `ted_versao` é sempre a versão vigente: o registro de uma versão nova regrava todos os pools. Estadual e territorial são limitados pelo saldo do nível acima, e uma `reserva_ugp` não recebe filhos. Pool repetido retorna `400`. UGP e Super Admin alteram qualquer nível; o Articulador, só os territórios do próprio estado.
 
 As rotas antigas seguem como alias enquanto o front migra:
 
@@ -212,6 +215,18 @@ As rotas antigas seguem como alias enquanto o front migra:
 | `PATCH`/`DELETE /sgp/orcamento/alocacoes/{id}/` | `PATCH`/`DELETE /sgp/orcamento/pools/{id}/` |
 | `GET /sgp/orcamento/alocacoes/{id}/transacoes/` | `GET /sgp/orcamento/pools/{id}/transacoes/` |
 | `GET /sgp/metas/{id}/orcamento/` | Sem substituta direta: a resposta é a mesma para qualquer Meta. Use o painel |
+
+### `GET`/`POST /api/v1/sgp/ted/`, `GET`/`PATCH .../ted/{id}/`, versões e upload do documento
+
+O cadastro do TED, que limita o pool nacional. Um TED só: o `POST` cria o TED com a versão original (`versao`: vigência, valor global, `rubricas` com `valor_aprovado` e `documento_key`), e um segundo `POST` retorna `400`. O `PATCH` muda só `numero`, `participes` e `objeto`.
+
+| Rota | O que faz |
+|---|---|
+| `GET`/`POST /sgp/ted/{id}/versoes/` | Lista paginada das versões; o `POST` registra um aditivo ou uma prorrogação (`tipo`, `motivo` obrigatório) |
+| `GET /sgp/ted/{id}/versoes/{id_da_versao}/` | A versão com as rubricas, o `plano_snapshot` e o `documento_url` |
+| `POST /sgp/ted/documentos/upload-url/` | URL pré-assinada para o PDF (até 10 MB); a chave devolvida vai em `documento_key` |
+
+A soma das rubricas tem de ser igual ao valor global, e uma versão que deixe algum pool nacional acima do aprovado é recusada com as rubricas em `rubricas`. Versões não se alteram nem se removem. Leitura: UGP, Super Admin, Articulador e FGD. Escrita: UGP e Super Admin. As regras estão no §13 de [`decisoes-modelo-dados.md`](decisoes-modelo-dados.md).
 
 ### `POST /api/v1/sgp/orcamento/remanejamentos/`
 

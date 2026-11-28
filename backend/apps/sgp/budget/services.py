@@ -15,6 +15,7 @@ from apps.core.services.permissions import user_has_role, user_states, user_terr
 from apps.core.utils import get_config
 from apps.sgp.budget.ledger import lancar
 from apps.sgp.budget.rls import com_visao_total, visao_total
+from apps.sgp.ted import services as ted_service
 from apps.sgp.models import BudgetAlert, BudgetPool, BudgetRubrica, BudgetTransaction, BudgetTransfer
 
 Nivel = BudgetPool.Nivel
@@ -180,6 +181,13 @@ def orcamento_por_rubrica(user) -> list[dict]:
 # Distribuição — teto por nível, concorrência via select_for_update.
 # ---------------------------------------------------------------------------
 
+def _ted_para(*niveis: str):
+    """O TED travado quando um pool nacional vai ser gravado; nos outros níveis, só lido."""
+    if Nivel.NACIONAL in niveis:
+        return ted_service.travar_ted()
+    return ted_service.ted_atual()
+
+
 def _saldo_disponivel(pool: BudgetPool) -> Decimal:
     return pool.valor_alocado - pool.valor_comprometido - pool.valor_executado
 
@@ -275,6 +283,10 @@ def criar_pool(*, rubrica, nivel: str, valor_alocado: Decimal, usuario,
             "reserva_ugp": "Reserva própria da UGP só é aplicável ao nível nacional."
         })
 
+    ted_versao = ted_service.versao_do_pool(
+        _ted_para(nivel), nivel=nivel, rubrica=rubrica, novo_valor=valor_alocado,
+    )
+
     pai = _travar_pai_e_checar_teto(
         rubrica=rubrica, nivel=nivel, territorio=territorio, estado=estado,
         valor_pretendido=valor_alocado,
@@ -293,6 +305,7 @@ def criar_pool(*, rubrica, nivel: str, valor_alocado: Decimal, usuario,
                 rubrica=rubrica, nivel=nivel,
                 estado=None if nivel == Nivel.TERRITORIAL else estado, territorio=territorio,
                 valor_alocado=valor_alocado, reserva_ugp=reserva_ugp, criado_por=usuario,
+                ted_versao=ted_versao,
             )
     except IntegrityError as exc:
         raise DRFValidationError({
@@ -307,7 +320,9 @@ def criar_pool(*, rubrica, nivel: str, valor_alocado: Decimal, usuario,
 
 @transaction.atomic
 def atualizar_valor_alocado(pool: BudgetPool, *, novo_valor: Decimal, usuario) -> BudgetPool:
-    """Reduzir abaixo do já comprometido+executado é rejeitado."""
+    """Reduzir abaixo do já comprometido+executado é rejeitado. No nível nacional,
+    o TED é travado antes do pool, e um aumento não passa do aprovado da rubrica."""
+    ted = _ted_para(pool.nivel)
     pai = _linha_pai(
         rubrica=pool.rubrica, nivel=pool.nivel, territorio=pool.territorio, estado=pool.estado,
     )
@@ -336,10 +351,15 @@ def atualizar_valor_alocado(pool: BudgetPool, *, novo_valor: Decimal, usuario) -
         valor_pretendido=novo_valor, exclude_pk=pool.pk,
     )
 
+    ted_versao = ted_service.versao_do_pool(
+        ted, nivel=pool.nivel, rubrica=pool.rubrica, novo_valor=novo_valor, valor_atual=pool.valor_alocado,
+    ) or pool.ted_versao
+
     valor_delta = novo_valor - pool.valor_alocado
     saldo_anterior = _saldo_disponivel(pool)
     pool.valor_alocado = novo_valor
-    pool.save(update_fields=["valor_alocado"])
+    pool.ted_versao = ted_versao
+    pool.save(update_fields=["valor_alocado", "ted_versao"])
     lancar(
         pool=pool, tipo=BudgetTransaction.Tipo.REMANEJAMENTO, valor=valor_delta, usuario=usuario,
         saldo_anterior=saldo_anterior, saldo_posterior=_saldo_disponivel(pool), justificativa="Ajuste de pool.",
@@ -654,6 +674,10 @@ def simular_remanejamento(*, origem: BudgetPool, destino: BudgetPool, valor: Dec
     """As mesmas recusas e os mesmos números de `remanejar`, sem travar nem gravar nada."""
     _exigir_origem_e_destino_validos(origem, destino)
     _exigir_saldo_na_origem(origem, valor)
+    ted_service.versao_do_pool(
+        ted_service.ted_atual(), nivel=destino.nivel, rubrica=destino.rubrica,
+        novo_valor=destino.valor_alocado + valor, valor_atual=destino.valor_alocado, campo="valor",
+    )
     limiares = limiares_semaforo()
     return {
         "origem": _impacto_no_pool(origem, -valor, limiares),
@@ -666,8 +690,11 @@ def remanejar(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal,
               usuario, justificativa: str) -> tuple[BudgetTransaction, BudgetTransaction]:
     """Move capacidade (valor_alocado) entre dois pools da mesma rubrica —
     mecanismo de exceção da UGP, não passa pela checagem de teto
-    normal do nível pai (é o próprio propósito dele: furar a hierarquia)."""
+    normal do nível pai (é o próprio propósito dele: furar a hierarquia).
+    O pool nacional de destino continua limitado ao aprovado no TED, com o TED
+    travado antes dos pools."""
     _exigir_origem_e_destino_validos(origem, destino)
+    ted = _ted_para(destino.nivel)
 
     # trava sempre em ordem crescente de pk, não na ordem origem/destino do
     # payload — dois remanejamentos concorrentes com origem/destino trocados
@@ -680,11 +707,19 @@ def remanejar(*, origem: BudgetPool, destino: BudgetPool, valor: Decimal,
 
     saldo_origem = _exigir_saldo_na_origem(origem, valor)
     saldo_destino = _saldo_disponivel(destino)
+    destino.ted_versao = ted_service.versao_do_pool(
+        ted, nivel=destino.nivel, rubrica=destino.rubrica,
+        novo_valor=destino.valor_alocado + valor, valor_atual=destino.valor_alocado, campo="valor",
+    ) or destino.ted_versao
+    origem.ted_versao = ted_service.versao_do_pool(
+        ted, nivel=origem.nivel, rubrica=origem.rubrica,
+        novo_valor=origem.valor_alocado - valor, valor_atual=origem.valor_alocado,
+    ) or origem.ted_versao
 
     origem.valor_alocado -= valor
-    origem.save(update_fields=["valor_alocado"])
+    origem.save(update_fields=["valor_alocado", "ted_versao"])
     destino.valor_alocado += valor
-    destino.save(update_fields=["valor_alocado"])
+    destino.save(update_fields=["valor_alocado", "ted_versao"])
 
     debito = lancar(
         pool=origem, tipo=BudgetTransaction.Tipo.REMANEJAMENTO, valor=-valor, usuario=usuario,

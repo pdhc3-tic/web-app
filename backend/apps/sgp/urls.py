@@ -239,4 +239,5 @@ urlpatterns = router.urls + [
         name="workplanmeta-orcamento",
     ),
     path("", include("apps.sgp.budget.urls")),
+    path("", include("apps.sgp.ted.urls")),
 ]

@@ -229,7 +229,7 @@ podem mudar por configuração.
 - **Justificativa do alias:** `/sgd/limites-individuais/` não recebe justificativa no contrato antigo. Ela é preenchida com um texto fixo até o front migrar.
 - **`acao_sugerida` do remanejamento:** `informar_outra_origem`, além dos dois valores das travas da submissão.
 - **Testes da #387:** as asserções de redução de limite mudaram para seguir o documento: reduzir preserva o comprometido. `test_estado_da_reserva_migration.py` saiu porque rodava uma migration antiga contra o modelo removido.
-- **Campos do modelo de dados do SGP fora deste modelo:** `ted_versao_id` depende da entidade do TED; `transfer_id` não é preciso, porque o remanejamento já referencia os dois pools; `periodicidade` e `acumula_saldo` são parâmetros globais do Core; `valor_disponivel` é calculado. `BudgetPool.atualizado_em` não existe porque toda alteração de alocação já vai para o ledger, com usuário e data. Em `BudgetRubrica`, `descricao` não é usada, e `tipo_solicitacao_sgd` vive em `TipoSolicitacao`, porque o mapeamento é configuração. `demanda_id` é referência sem FK, para o SGP não depender do SGD. `BudgetAlert` fica para a #390.
+- **Campos do modelo de dados do SGP fora deste modelo:** `ted_versao_id` entrou com a entidade do TED (seção 13); `transfer_id` não é preciso, porque o remanejamento já referencia os dois pools; `periodicidade` e `acumula_saldo` são parâmetros globais do Core; `valor_disponivel` é calculado. `BudgetPool.atualizado_em` não existe porque toda alteração de alocação já vai para o ledger, com usuário e data. Em `BudgetRubrica`, `descricao` não é usada, e `tipo_solicitacao_sgd` vive em `TipoSolicitacao`, porque o mapeamento é configuração. `demanda_id` é referência sem FK, para o SGP não depender do SGD. `BudgetAlert` fica para a #390.
 
 - **Acúmulo:** o saldo acumulado é debitado da linha antiga, para não existir nas duas. O que for liberado nela depois da virada expira. Só acumula a linha que termina na véspera do novo período.
 - **Recurso extra em Devolvida:** com a reserva da rubrica de pé, o pedido é aceito com o valor informado, mesmo sem déficit calculado. A edição para mais é recusada e não fica gravada, e a mensagem orienta a pedir recurso extra, como manda o SGD §4.1.
@@ -370,6 +370,41 @@ está, restringir a quem cadastra, restringir a quem cadastra e à UGP, ou outra
 
 A matriz fica em `apps/core/sensitive_fields.py` (`SENSITIVE_FIELD_ROLES`), usada pelos serializers
 e pela exportação. O código não mudou.
+
+---
+
+## 13. TED — cadastro, versões e teto do pool nacional
+
+O SGP §7.1 e §10.3 definem o TED e as versões. O §6.3 e o RF28 limitam o pool nacional ao total
+aprovado no TED para a rubrica. O que os documentos deixam em aberto foi resolvido assim:
+
+| Questão | Decisão | Fonte |
+|---|---|---|
+| Pool nacional sem TED | Criar ou aumentar é recusado: não há aprovado contra o que validar. Reduzir continua permitido | SGP §6.3, RF28 |
+| Aditivo com rubrica abaixo do pool nacional | A versão é recusada, com as rubricas na mensagem. A UGP reduz o pool antes | SGP §6.3: o pool não passa do aprovado |
+| Soma das rubricas | Igual ao valor global da versão. Rubrica sem linha na versão tem aprovado zero | SGP §7.1 "Valor total e distribuição inicial por rubrica"; §6.1, o catálogo reflete a classificação de despesa do TED |
+| Remanejamento | Com destino no pool nacional, segue o mesmo teto: o remanejamento só acontece dentro da rubrica, e um estadual devolvido ao nacional não pode deixá-lo acima do aprovado. A simulação recusa igual. O alerta do §6.7 trata de volume remanejado, e não autoriza teto acima do aprovado | SGP §6.3 e §6.7 |
+| Quantidade de TEDs | Um só, o do PDHC III. Aditivos e prorrogações entram como versões | SGP §5 e §7.1 |
+| Versões | Imutáveis e numeradas em sequência. A original nasce com o TED; prorrogação precisa estender o fim da vigência | SGP §7.1 |
+| Snapshot do plano | Gerado pelo sistema no registro da versão, com Metas, Submetas, Ações, quantidades, valores, prazos e rubricas previstas | SGP §7.1 |
+| Documento | PDF obrigatório em cada versão, até 10 MB, com a mesma confirmação no storage dos documentos da UFPA | SGP §7.1; Arquitetura §8 |
+| Leitura | UGP, Super Admin, Articulador e FGD ("Parcial" na matriz do Core). Escrita: UGP e Super Admin | Core, matriz de permissões |
+
+### Escolhas de implementação sem regra nos documentos
+
+- **Distribuição por rubrica:** tabela própria, `TEDVersionRubrica`, porque o §10.3 lista os campos da versão sem ela.
+- **Nomes de campo:** `plano_snapshot` no lugar de `plano_snapshot_json`, porque o tipo já é JSON. `documento_key` no lugar de `documento_url`: o arquivo vai para o storage por URL pré-assinada, como nos documentos da UFPA (`arquivo_key`), e a leitura devolve `documento_url` com um link temporário.
+- **Data da versão:** a versão não tem data própria de entrada em vigor. `vigencia_inicio` e `vigencia_fim` são a vigência do TED segundo aquela versão, e a versão vale a partir de `registrado_em`. A consulta "plano vigente numa data" entra com os relatórios por versão (RF48).
+- **Painel de orçamento:** o `valor_aprovado` do painel e de `orcamento_por_rubrica` continua sendo o valor atribuído a cada nível; no nacional, o que a UGP lançou no pool, que nunca passa do aprovado no TED. O aprovado do TED vem em `/sgp/ted/` e entra no relatório "Execução por rubrica" do Monitoramento do TED.
+- **Versão pelo id:** o detalhe da versão fica em `/sgp/ted/{id}/versoes/{id}/`, no padrão de detalhe da API. O `numero_versao` vem no corpo.
+- **Sem exclusão:** o TED e as versões não têm DELETE. Os pools apontam para as versões, e o §7.1 pede preservar as anteriores. A issue fala em CRUD; a criação, a leitura e a edição da identificação cobrem o cadastro.
+- **Aditivo e vigência:** um aditivo pode mudar as duas datas, inclusive encurtar a vigência. Só a prorrogação precisa estender o fim, porque é para isso que ela existe.
+- **`BudgetPool.ted_versao`:** sempre a versão vigente. O registro de uma versão trava o TED e depois todos os pools, em ordem de rubrica e pk, que é a ordem de quem move saldo, e regrava o campo em todos eles. A criação, a alteração e o remanejamento gravam a versão vigente no pool que mudou. Com os pools travados, a conferência contra o novo aprovado e a troca de versão não deixam brecha. O plano vigente numa data passada sai das próprias versões (`registrado_em`).
+- **Identificação editável:** número, partícipes e objeto mudam sem nova versão. Valor global e vigência do `TED` espelham a versão vigente; mandá-los no `PATCH` dá `400`, para o cliente não achar que mudou o que não mudou.
+- **Responsável pela versão:** `registrado_por` com `PROTECT`, como no ledger. A versão é imutável, e um `SET_NULL` apagaria quem a registrou.
+- **PDF de cada termo:** a mesma chave não entra em duas versões. Falha do storage na confirmação responde `503`, e não `500`.
+- **Rubrica inativa:** pode ter valor aprovado numa versão. Ela mantém saldo executado e histórico, e o pool nacional dela continua precisando caber no aprovado.
+- **Pontos que esperavam o TED:** o fim da vigência na subexecução e o período `vigencia` dos limites continuam como estão. Entram com o Monitoramento do TED (RF51 e RF52).
 
 ---
 
