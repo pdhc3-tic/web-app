@@ -408,6 +408,42 @@ aprovado no TED para a rubrica. O que os documentos deixam em aberto foi resolvi
 
 ---
 
+## 14. Monitoramento do TED — aderência, custo por entrega, rastreabilidade e comparativo
+
+O SGP §7.2, §7.4 e §7.5 definem as fórmulas, e o §7.1 pede relatórios contra qualquer versão do
+TED e o comparativo entre versões. A árvore Meta → Submeta → Ação e o planejado de cada Ação
+(quantidade e valor unitário) saem do snapshot da versão; o realizado e o executado são os de agora.
+O executado segue a regra do valor executado da Ação: valor pago das demandas concluídas das
+Atividades ativas.
+
+| Questão | Decisão | Fonte |
+|---|---|---|
+| Índice | % físico ÷ % financeiro, com duas casas. Faixas na ordem: acima de 1,20 subexecução financeira; a partir de 0,95 equilibrada; a partir de 0,80 atenção; abaixo, crítica | SGP §7.2 |
+| % físico de Submeta, Meta, Indicador e projeto | Soma das quantidades realizadas sobre a soma das planejadas, como a árvore consolida | SGP §5.2, §5.3 e §5.4 |
+| Projeto | O projeto como um todo, com `referencia_id` vazio | SGP §7.2 |
+| Série histórica | Task diária às 4h (`calculate_adherence_index`) e recálculo sob demanda. Cada linha guarda a versão contra a qual foi calculada | SGP §7.1, §7.2; Arquitetura §6 |
+| Custo por entrega | Executado ÷ quantidade realizada, contra o valor unitário da versão. Indicador e território consolidam as Ações: o previsto é o valor planejado sobre a quantidade planejada delas. Ranking pelo tamanho do desvio, para cima ou para baixo | SGP §7.4 |
+| Rastreabilidade | Solicitação paga → demanda → Atividade → cadeia do Plano de Trabalho → contagem de fotos, documentos, listas de presença, UFPAs e membros | SGP §7.5 |
+| Comparativo entre versões | O que mudou em quantidade, valor e prazo por Meta, Submeta e Ação, só com o que mudou (incluída, removida ou alterada) | SGP §7.1 |
+| Formatos | Aderência e custo por entrega também em CSV e XLSX | SGP §7.7 |
+
+### Escolhas de implementação sem regra nos documentos
+
+- **Território:** o planejado não tem quebra por território. O recorte filtra o realizado e o executado, e o denominador é o planejado das Ações com atividade no território. Com uma Ação só, o índice fica igual a (quantidade entregue × valor unitário do TED) ÷ valor executado nas atividades dele.
+- **Indicador de lançamento manual:** a quantidade lançada pela UGP não tem território nem período. Com recorte (território, período ou o escopo do Articulador) e na quebra por território, essas Ações ficam fora do numerador e do denominador, e a resposta conta quantas (`acoes_manuais_fora_do_recorte`).
+- **Sem execução financeira:** com entrega física, o índice fica vazio e a faixa é subexecução financeira. Sem entrega nem gasto, não há índice nem faixa.
+- **Ação fora da versão:** a do plano atual que não existe no snapshot fica fora do relatório (`acoes_fora_da_versao`). A do snapshot que não existe mais no plano entra com o planejado e sem execução (`acoes_da_versao_fora_do_plano`), e na série fica só no total do projeto, porque a série é por id.
+- **Versão numa data:** a última versão registrada até o dia (`registrado_em`).
+- **Mês da série:** a task das 4h grava no mês de ontem: o cálculo do dia 1º fecha o mês anterior com o último dia inteiro dentro dele.
+- **Limiar do desvio de custo:** `cost_deviation_alert_pct`, com padrão de 20 % (DRS Core §3.3). A chave entra na #461; até lá, e com valor ilegível ou negativo, vale o padrão. As faixas são dentro do limiar, acima e abaixo do previsto. Uma Ação com entrega e sem pagamento sai com custo zero e desvio de −100 %, pela fórmula.
+- **Perfis:** os quatro do TED. O Super Admin, a UGP e a FGD leem o projeto inteiro. O Articulador apura só as Atividades dos estados dos territórios do perfil dele; um perfil de ADT do mesmo usuário não amplia esse recorte, porque o ADT não lê o TED. A série gravada é do projeto inteiro: o Articulador só lê a dos territórios que ficam inteiros nos seus estados. O recálculo é da UGP e do Super Admin.
+- **Recorte pela Atividade:** custo, composição e rastreabilidade recortam pelo estado da Atividade, e não pelo do solicitante, que é o recorte do RLS do SGD. A leitura do SGD nesses relatórios roda em visão total, com o escopo de quem consulta aplicado pelas Atividades.
+- **Paginação:** as linhas de aderência, custo e composição vêm no envelope paginado da API, com o cabeçalho do relatório ao lado.
+- **PDF:** o §7.7 também pede PDF da execução consolidada. Fica para a parte com o fechamento mensal, que gera os relatórios em PDF.
+- **Semáforo na árvore e no dashboard do Core:** a coluna na árvore do Plano de Trabalho é da #454 e o bloco no dashboard do Core é da #443. Os dois leem o índice daqui.
+
+---
+
 ## Observação
 
 Achado da varredura que **não** tem justificativa técnica registrada em

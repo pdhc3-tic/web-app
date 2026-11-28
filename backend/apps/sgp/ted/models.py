@@ -138,3 +138,56 @@ class TEDVersionRubrica(models.Model):
 
     def __str__(self):
         return f"{self.versao} · {self.rubrica}: R$ {self.valor_aprovado}"
+
+
+class AdherenceIndex(models.Model):
+    """Índice de aderência físico-financeira de um escopo num mês: o físico realizado
+    sobre o financeiro executado, acumulados até o cálculo. O mês corrente é refeito a
+    cada cálculo; os anteriores ficam como no último cálculo deles, formando a série."""
+
+    class Escopo(models.TextChoices):
+        ACAO = "acao", "Ação"
+        SUBMETA = "submeta", "Submeta"
+        META = "meta", "Meta"
+        INDICADOR = "indicador", "Indicador"
+        TERRITORIO = "territorio", "Território"
+        PROJETO = "projeto", "Projeto"
+
+    class Faixa(models.TextChoices):
+        EQUILIBRADA = "equilibrada", "Execução equilibrada"
+        ATENCAO = "atencao", "Atenção"
+        CRITICA = "critica", "Crítica"
+        SUBEXECUCAO_FINANCEIRA = "subexecucao_financeira", "Subexecução financeira"
+
+    escopo = models.CharField(max_length=20, choices=Escopo.choices, verbose_name="Escopo")
+    referencia_id = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name="Referência",
+        help_text="Id da Ação, Submeta, Meta, Indicador ou Território. Vazio no projeto como um todo.",
+    )
+    periodo_ref = models.DateField(verbose_name="Mês de referência", help_text="Primeiro dia do mês.")
+    ted_versao = models.ForeignKey(
+        TEDVersion, on_delete=models.PROTECT, related_name="indices_de_aderencia",
+        verbose_name="Versão do TED", help_text="Versão contra a qual o índice foi calculado.",
+    )
+    # Folga de dígitos: com planejado pequeno e executado grande, o percentual
+    # passa de milhões, e a série não pode cair por isso.
+    perc_fisico = models.DecimalField(max_digits=20, decimal_places=2, verbose_name="% físico")
+    perc_financeiro = models.DecimalField(max_digits=20, decimal_places=2, verbose_name="% financeiro")
+    indice = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True, verbose_name="Índice")
+    faixa = models.CharField(max_length=30, choices=Faixa.choices, blank=True, default="", verbose_name="Faixa")
+    calculado_em = models.DateTimeField(auto_now=True, verbose_name="Calculado em")
+
+    class Meta:
+        verbose_name = "Índice de Aderência"
+        verbose_name_plural = "Índices de Aderência"
+        ordering = ["escopo", "referencia_id", "periodo_ref"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["escopo", "referencia_id", "periodo_ref"],
+                name="unique_adherence_escopo_referencia_periodo",
+                nulls_distinct=False,
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.get_escopo_display()} {self.referencia_id or ''} · {self.periodo_ref:%m/%Y}: {self.indice}"
